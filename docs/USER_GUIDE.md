@@ -12,7 +12,7 @@ The add-on also runs a small local MCP server, so an agent such as Claude Code, 
 
 ## Install
 
-1. Download `scenario-<version>.zip` from the [releases page](https://github.com/edemaistre/scenario-for-blender/releases) (or build it with `./tools/build.sh`). Keep it zipped.
+1. Download `scenario-<version>.zip` from the [releases page](https://github.com/scenario-labs/blender-plugin/releases) (or build it with `./tools/build.sh`). Keep it zipped.
 2. Drag the zip onto any Blender window, or use Edit > Preferences > Get Extensions > Install from Disk. Blender installs it into your user extensions and enables it. Updating: install the new zip the same way; Blender replaces the old version. Restart Blender after an update so the new code loads.
 3. Create an API key in Scenario: Team > API Keys, Project or Team scope, role Editor. The secret is shown once.
 4. Edit > Preferences > Add-ons > Scenario: paste the key and the secret, press Test connection. Pick an Output Folder (default `~/Downloads/Scenario`). Blender's Allow Online Access must be on (System preferences).

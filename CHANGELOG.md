@@ -1,6 +1,6 @@
 # Changelog
 
-All notable changes to Scenario for Blender. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow semantic versioning and match `scenario/blender_manifest.toml`. Each version has a zip on the [releases page](https://github.com/edemaistre/scenario-for-blender/releases).
+All notable changes to Scenario for Blender. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow semantic versioning and match `scenario/blender_manifest.toml`. Each version has a zip on the [releases page](https://github.com/scenario-labs/blender-plugin/releases).
 
 ## [Unreleased]
 
@@ -271,11 +271,27 @@ Results of a 36-agent adversarial review of the first two phases (31 confirmed f
 - Image lane: prompt, references (file, render result), live CU estimate on the Generate button, results loaded as packed images with Show / Apply as texture / Add as plane.
 - Threaded job manager with a persisted registry (unfinished jobs resume after a restart), main-thread pump, viewport header popover.
 
-[Unreleased]: https://github.com/edemaistre/scenario-for-blender/compare/v0.5.2...HEAD
-[0.5.2]: https://github.com/edemaistre/scenario-for-blender/releases/tag/v0.5.2
-[0.5.1]: https://github.com/edemaistre/scenario-for-blender/releases/tag/v0.5.1
-[0.5.0]: https://github.com/edemaistre/scenario-for-blender/releases/tag/v0.5.0
-[0.4.0]: https://github.com/edemaistre/scenario-for-blender/commits/v0.5.0
-[0.3.0]: https://github.com/edemaistre/scenario-for-blender/commits/v0.5.0
-[0.2.0]: https://github.com/edemaistre/scenario-for-blender/commits/v0.5.0
-[0.1.0]: https://github.com/edemaistre/scenario-for-blender/commits/v0.5.0
+[Unreleased]: https://github.com/scenario-labs/blender-plugin/compare/v0.5.2...HEAD
+[0.9.9]: https://github.com/scenario-labs/blender-plugin/compare/v0.9.8...v0.9.9
+[0.9.8]: https://github.com/scenario-labs/blender-plugin/compare/v0.9.7...v0.9.8
+[0.9.7]: https://github.com/scenario-labs/blender-plugin/compare/v0.9.6...v0.9.7
+[0.9.6]: https://github.com/scenario-labs/blender-plugin/compare/v0.9.5...v0.9.6
+[0.9.5]: https://github.com/scenario-labs/blender-plugin/compare/v0.9.4...v0.9.5
+[0.9.4]: https://github.com/scenario-labs/blender-plugin/compare/v0.9.3...v0.9.4
+[0.9.3]: https://github.com/scenario-labs/blender-plugin/compare/v0.9.2...v0.9.3
+[0.9.2]: https://github.com/scenario-labs/blender-plugin/compare/v0.9.1...v0.9.2
+[0.9.1]: https://github.com/scenario-labs/blender-plugin/compare/v0.9.0...v0.9.1
+[0.9.0]: https://github.com/scenario-labs/blender-plugin/compare/v0.8.3...v0.9.0
+[0.8.3]: https://github.com/scenario-labs/blender-plugin/compare/v0.8.2...v0.8.3
+[0.8.2]: https://github.com/scenario-labs/blender-plugin/compare/v0.8.1...v0.8.2
+[0.8.1]: https://github.com/scenario-labs/blender-plugin/compare/v0.8.0...v0.8.1
+[0.8.0]: https://github.com/scenario-labs/blender-plugin/compare/v0.7.0...v0.8.0
+[0.7.0]: https://github.com/scenario-labs/blender-plugin/compare/v0.6.0...v0.7.0
+[0.6.0]: https://github.com/scenario-labs/blender-plugin/compare/v0.5.2...v0.6.0
+[0.5.2]: https://github.com/scenario-labs/blender-plugin/compare/v0.5.1...v0.5.2
+[0.5.1]: https://github.com/scenario-labs/blender-plugin/compare/v0.5.0...v0.5.1
+[0.5.0]: https://github.com/scenario-labs/blender-plugin/releases/tag/v0.5.0
+[0.4.0]: https://github.com/scenario-labs/blender-plugin/commits/v0.5.0
+[0.3.0]: https://github.com/scenario-labs/blender-plugin/commits/v0.5.0
+[0.2.0]: https://github.com/scenario-labs/blender-plugin/commits/v0.5.0
+[0.1.0]: https://github.com/scenario-labs/blender-plugin/commits/v0.5.0

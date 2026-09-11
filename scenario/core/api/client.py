@@ -14,6 +14,17 @@ RETRY_STATUSES = {429, 500, 502, 503, 504}
 MAX_429_WAIT = 30.0
 
 
+def user_agent_string():
+    """The one User-Agent the extension sends: ScenarioBlender/<version>.
+
+    Imported lazily so that scenario/__init__.py stays free of module-level
+    imports and scenario.core keeps importing without bpy.
+    """
+    from ... import __version__
+
+    return f"ScenarioBlender/{__version__}"
+
+
 def _encode_query(query):
     items = []
     for key, value in query.items():
@@ -27,12 +38,12 @@ def _encode_query(query):
 
 class ScenarioClient:
     def __init__(self, key, secret, *, base_url=DEFAULT_BASE_URL, transport=None,
-                 user_agent="ScenarioBlender/0.9.9", sleep=time.sleep, max_retries=3):
+                 user_agent=None, sleep=time.sleep, max_retries=3):
         token = base64.b64encode(f"{key}:{secret}".encode("utf-8")).decode("ascii")
         self._auth = f"Basic {token}"
         self.base_url = base_url.rstrip("/")
         self.transport = transport or UrllibTransport()
-        self.user_agent = user_agent
+        self.user_agent = user_agent or user_agent_string()
         self.sleep = sleep
         self.max_retries = max_retries
 

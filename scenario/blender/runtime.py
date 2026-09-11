@@ -84,9 +84,7 @@ def make_client():
     creds = credentials()
     if not creds.valid:
         raise ScenarioError(0, "Add your Scenario API key and secret in Preferences")
-    from .. import __version__
-
-    return ScenarioClient(creds.key, creds.secret, user_agent=f"ScenarioBlender/{__version__}")
+    return ScenarioClient(creds.key, creds.secret)
 
 
 _MAIN_THREAD = threading.main_thread()

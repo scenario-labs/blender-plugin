@@ -83,4 +83,4 @@ Verified live (2026-08-28): REST Basic auth, model records carry UI schema, `?dr
 
 ## Licence and provenance
 
-GPL-3.0-or-later (see `LICENSE`), the licence Blender requires for add-ons that use `bpy`. All code is original; the MCP bridge follows the Blender Lab `blender_mcp` protocol shape, rewritten.
+GPL-3.0-or-later (see `LICENSE`), the licence Blender requires for add-ons that use `bpy`. The extension zip carries a copy of the licence text (`scenario/LICENSE`, identical to the root `LICENSE`). All code is original; the MCP bridge follows the Blender Lab `blender_mcp` protocol shape, rewritten.

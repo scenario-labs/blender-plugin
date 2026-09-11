@@ -6,7 +6,7 @@
 
 **User guide: [`docs/USER_GUIDE.md`](docs/USER_GUIDE.md)**, also as a single-file HTML handbook with screenshots: [`docs/user-guide.html`](docs/user-guide.html). Changelog: [`CHANGELOG.md`](CHANGELOG.md).
 
-Quick start: download `scenario-<version>.zip` from the releases (or run `./tools/build.sh`), drag it onto Blender, paste your key in Preferences > Add-ons > Scenario, press N in the 3D viewport and open the Scenario tab. Details, tests and the agent setup are below; the design lives in `docs/superpowers/specs/` and the delivery plans in `docs/superpowers/plans/`.
+Quick start: download `scenario-<version>.zip` from the releases (or run `./tools/build.sh`), drag it onto Blender, paste your key in Preferences > Add-ons > Scenario, press N in the 3D viewport and open the Scenario tab. Verify your download: `gh attestation verify scenario-<version>.zip -R scenario-labs/blender-plugin`, and check `SHA256SUMS` ([details](docs/USER_GUIDE.md#verify-your-download)). Details, tests and the agent setup are below; the design lives in `docs/superpowers/specs/` and the delivery plans in `docs/superpowers/plans/`.
 
 ---
 

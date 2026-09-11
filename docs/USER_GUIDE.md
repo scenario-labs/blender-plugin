@@ -17,6 +17,10 @@ The add-on also runs a small local MCP server, so an agent such as Claude Code, 
 3. Create an API key in Scenario: Team > API Keys, Project or Team scope, role Editor. The secret is shown once.
 4. Edit > Preferences > Add-ons > Scenario: paste the key and the secret, press Test connection. Pick an Output Folder (default `~/Downloads/Scenario`). Blender's Allow Online Access must be on (System preferences).
 
+### Verify your download
+
+Every release carries `SHA256SUMS` and a build provenance attestation, both produced by GitHub Actions from the tagged commit with Blender 4.2 LTS and validated on 4.2, 4.5 and 5.2 LTS. Check the zip with `sha256sum -c SHA256SUMS` (macOS: `shasum -a 256 -c SHA256SUMS`) and, with the GitHub CLI, `gh attestation verify scenario-<version>.zip -R scenario-labs/blender-plugin`.
+
 Where things are:
 - The **Scenario tab** in the 3D viewport sidebar (press `N`, pick the Scenario tab). It holds four panels: Scenario, Jobs, Generations, Agents (MCP).
 - The **Scenario button** in the viewport header opens that sidebar tab.

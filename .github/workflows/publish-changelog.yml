@@ -14,7 +14,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: "Release tag to publish, for example v0.9.9"
+        description: "Release tag to publish, for example blender-plugin-v0.9.10"
         required: true
 
 permissions:

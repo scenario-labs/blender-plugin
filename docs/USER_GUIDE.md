@@ -1,6 +1,6 @@
 # Scenario for Blender: user guide
 
-Version 0.9.0, 2026-08-29. Blender 4.2 or newer (tested on 5.1), a Scenario account with API access (Pro plan or above), an internet connection.
+Blender 4.2 or newer (tested on 5.1), a Scenario account with API access (Pro plan or above), an internet connection.
 
 ## What it does
 

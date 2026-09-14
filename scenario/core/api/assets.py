@@ -9,6 +9,7 @@ import time
 import urllib.request
 
 from . import jobs
+from .client import user_agent_string
 from .errors import NetworkError, ScenarioError
 
 BASE64_LIMIT = 3_500_000  # bytes; the gateway body cap is 10 MB, 4.4 MB raw PNGs verified to pass
@@ -50,7 +51,7 @@ def asset_type(asset):
 
 def fetch_url_text(url, timeout=60):
     """Download a text asset's full content from its signed URL (the asset preview is capped, this is not)."""
-    req = urllib.request.Request(url, headers={"User-Agent": "ScenarioBlender"})
+    req = urllib.request.Request(url, headers={"User-Agent": user_agent_string()})
     with urllib.request.urlopen(req, timeout=timeout) as resp:
         return resp.read().decode("utf-8", errors="replace")
 
@@ -73,7 +74,7 @@ def download_file(url, dest, transport=None, timeout=300, retries=3, sleep=time.
                     raise ScenarioError(status, f"download failed ({status}) for {url[:80]}")
                 tmp.write_bytes(raw)
             else:
-                req = urllib.request.Request(url, headers={"User-Agent": "ScenarioBlender"})
+                req = urllib.request.Request(url, headers={"User-Agent": user_agent_string()})
                 with urllib.request.urlopen(req, timeout=timeout) as resp, tmp.open("wb") as out:
                     shutil.copyfileobj(resp, out, 1024 * 1024)
             tmp.replace(dest)

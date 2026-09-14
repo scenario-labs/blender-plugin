@@ -1,0 +1,34 @@
+name: release-please
+
+on:
+  push:
+    branches: [main]
+
+permissions: {}
+
+concurrency:
+  group: release-please
+  cancel-in-progress: false
+
+jobs:
+  release-please:
+    # Forks have neither the App credentials nor anything to release.
+    if: github.repository == 'scenario-labs/blender-plugin'
+    runs-on: ubuntu-latest
+    steps:
+      # The release PR, release commit, tag and release are created with a
+      # GitHub App token, not GITHUB_TOKEN: GitHub never starts a workflow from
+      # an event created by GITHUB_TOKEN, and the release PR must run the same
+      # CI as any other PR while the published release must trigger the
+      # downstream workflows (changelog publish, Pages).
+      - name: Retrieve GitHub App token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        id: app-token
+        with:
+          client-id: ${{ secrets.GH_ACTIONS_TOKEN_RETRIEVER_PUBLIC_REPO_CLIENT_ID }}
+          private-key: ${{ secrets.GH_ACTIONS_TOKEN_RETRIEVER_PUBLIC_REPO_PRIVATE_KEY }}
+
+      - uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7 # v5.0.0
+        id: release-please
+        with:
+          token: ${{ steps.app-token.outputs.token }}

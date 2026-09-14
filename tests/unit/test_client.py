@@ -94,3 +94,58 @@ def test_non_json_body_becomes_reason_text():
     with pytest.raises(ScenarioError) as exc:
         client.get("/models")
     assert "Bad gateway" in exc.value.reason
+
+
+# -- one version source (release-please owns scenario/__init__.py) ----------
+
+
+def test_default_user_agent_carries_the_package_version():
+    from scenario import __version__
+
+    t = FakeTransport().queue(200, {"models": []})
+    client, _ = make(t)
+    client.get("/models")
+    assert t.calls[0]["headers"]["User-Agent"] == f"ScenarioBlender/{__version__}"
+
+
+def test_asset_helpers_send_the_same_user_agent(monkeypatch, tmp_path):
+    import urllib.request
+
+    from scenario import __version__
+    from scenario.core.api import assets
+
+    seen = []
+
+    class FakeResponse:
+        def __init__(self, payload):
+            self._payload = payload
+
+        def read(self, *args):
+            out, self._payload = self._payload, b""
+            return out
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return False
+
+    def fake_urlopen(req, timeout=None):
+        seen.append(req.get_header("User-agent"))
+        return FakeResponse(b"payload")
+
+    monkeypatch.setattr(urllib.request, "urlopen", fake_urlopen)
+    assets.fetch_url_text("https://cdn.example/asset.txt")
+    assets.download_file("https://cdn.example/asset.bin", tmp_path / "asset.bin")
+    assert seen == [f"ScenarioBlender/{__version__}"] * 2
+
+
+def test_no_version_literal_is_left_in_the_api_sources():
+    import pathlib
+    import re
+
+    root = pathlib.Path(__file__).resolve().parents[2] / "scenario" / "core" / "api"
+    for name in ("client.py", "assets.py"):
+        text = (root / name).read_text()
+        assert not re.search(r"ScenarioBlender/\d", text), f"{name} carries a hard-coded version"
+        assert '"ScenarioBlender"' not in text, f"{name} sends a User-Agent without a version"

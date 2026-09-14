@@ -20,3 +20,9 @@ tools/*.blend?
 # commitlint run locally with the same npm command as CI
 node_modules/
 package-lock.json
+
+# Private agent state and isolated Blender development profiles
+CLAUDE.local.md
+.claude/CLAUDE.local.md
+.claude/settings.local.json
+.blender-profile/

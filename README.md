@@ -9,7 +9,9 @@ Quick start: download `scenario-<version>.zip` from the releases (or run `./tool
 ---
 
 
-**How to resume:** `claude --resume f634b620-910d-4c24-aeef-bc9232faeca7` (2026-08-28: research, design, P0 skeleton)
+**For contributors and coding agents:** read [`.claude/CLAUDE.md`](.claude/CLAUDE.md).
+Root `AGENTS.md` links to the same instructions. Claude Code also provides
+`/pr-summary` and `/squash-message` from `.claude/commands/`.
 
 ## Why
 

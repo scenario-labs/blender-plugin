@@ -5,6 +5,7 @@
   "packages": {
     ".": {
       "release-type": "simple",
+      "draft": true,
       "component": "blender-plugin",
       "include-component-in-tag": true,
       "include-v-in-tag": true,

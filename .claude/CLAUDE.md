@@ -16,10 +16,10 @@ optional expanded Studio, browser OAuth and Blender-native updates. There is no
 prototype-data migration requirement. Preserve useful capabilities and tests,
 source attribution and required third-party notices when adopting code.
 
-The current package is `scenario/`; read its manifest for the current declared
-minimum. Adoption must assess Blender 5.0, 5.1 and 5.2 before selecting the new
-support matrix. A manifest declaration or a successful ZIP validation does not
-prove runtime compatibility.
+The current package is `scenario/`; the approved minimum is Blender 5.0.
+Adoption must validate native behavior and bundled dependencies on Blender 5.0,
+5.1 and 5.2. A manifest declaration or successful ZIP validation does not prove
+runtime compatibility.
 
 ## Repository map
 

@@ -15,7 +15,17 @@ jobs:
     # Forks have neither the App credentials nor anything to release.
     if: github.repository == 'scenario-labs/blender-plugin'
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      release_created: ${{ steps.pending.outputs.found == 'true' || steps.release-please.outputs.release_created == 'true' }}
+      tag_name: ${{ steps.pending.outputs.tag_name || steps.release-please.outputs.tag_name }}
+      sha: ${{ steps.pending.outputs.sha || steps.release-please.outputs.sha }}
     steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
       # The release PR, release commit, tag and release are created with a
       # GitHub App token, not GITHUB_TOKEN: GitHub never starts a workflow from
       # an event created by GITHUB_TOKEN, and the release PR must run the same
@@ -28,7 +38,183 @@ jobs:
           client-id: ${{ secrets.GH_ACTIONS_TOKEN_RETRIEVER_PUBLIC_REPO_CLIENT_ID }}
           private-key: ${{ secrets.GH_ACTIONS_TOKEN_RETRIEVER_PUBLIC_REPO_PRIVATE_KEY }}
 
+      - name: Find an unfinished draft before creating another release
+        id: pending
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          GH_REPO: ${{ github.repository }}
+        run: python3 tools/find_release_draft.py
+
       - uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7 # v5.0.0
+        if: steps.pending.outputs.found != 'true'
         id: release-please
         with:
           token: ${{ steps.app-token.outputs.token }}
+          skip-github-pull-request: true
+
+  # The release is created as a draft, so its tag does not exist yet: the zip is
+  # built from the release commit, validated, checksummed, attested and attached
+  # to the draft, and only the publish job below flips it, which is what creates
+  # the tag and fires `release: published`.
+  assets:
+    needs: release-please
+    if: needs.release-please.outputs.release_created == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    env:
+      TAG: ${{ needs.release-please.outputs.tag_name }}
+      RELEASE_SHA: ${{ needs.release-please.outputs.sha }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.release-please.outputs.sha }}
+          persist-credentials: false
+
+      - name: Manifest version must equal the tag
+        run: |
+          set -euo pipefail
+          # The provenance action records the triggering SHA from signed OIDC
+          # claims. Recover by rerunning the original release workflow only.
+          [ "$RELEASE_SHA" = "$GITHUB_SHA" ] || { echo "::error::Re-run the original release workflow so provenance matches the release commit"; exit 1; }
+          [ "$(git rev-parse HEAD)" = "$RELEASE_SHA" ] || { echo "::error::Checkout does not match the release commit"; exit 1; }
+          V="$(python3 -c 'import tomllib; print(tomllib.load(open("scenario/blender_manifest.toml", "rb"))["version"])')"
+          [ "blender-plugin-v$V" = "$TAG" ] || { echo "::error::manifest version $V does not match $TAG"; exit 1; }
+          echo "VERSION=$V" >> "$GITHUB_ENV"
+
+      - uses: ./.github/actions/setup-blender
+        with:
+          version: "5.0.1"
+          sha256: "8019580ee1b7262e505f4196a00237ccf743c88d205b38d34201510676e60b09"
+
+      - name: Build with Blender 5.0, check the listing, validate, checksum
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          ZIP="dist/scenario-${VERSION}.zip"
+          blender --command extension build --source-dir scenario --output-filepath "$ZIP"
+          python3 -c 'import sys, zipfile; sys.exit(0 if "LICENSE" in zipfile.ZipFile(sys.argv[1]).namelist() else 1)' "$ZIP" || { echo "::error::LICENSE is missing from the zip"; exit 1; }
+          blender --command extension validate "$ZIP"
+          (cd dist && sha256sum "scenario-${VERSION}.zip" > SHA256SUMS && cat SHA256SUMS)
+
+      - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: |
+            dist/scenario-${{ env.VERSION }}.zip
+            dist/SHA256SUMS
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: release-zip
+          path: dist/scenario-${{ env.VERSION }}.zip
+          if-no-files-found: error
+          overwrite: true
+
+      - name: Retrieve GitHub App token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        id: app-token
+        with:
+          client-id: ${{ secrets.GH_ACTIONS_TOKEN_RETRIEVER_PUBLIC_REPO_CLIENT_ID }}
+          private-key: ${{ secrets.GH_ACTIONS_TOKEN_RETRIEVER_PUBLIC_REPO_PRIVATE_KEY }}
+
+      - name: Attach the zip and SHA256SUMS to the draft release
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_SHA: ${{ needs.release-please.outputs.sha }}
+        run: |
+          set -euo pipefail
+          RELEASE="$(gh release view "$TAG" --json isDraft,targetCommitish)"
+          jq -e --arg sha "$RELEASE_SHA" '.isDraft and .targetCommitish == $sha' <<<"$RELEASE" > /dev/null
+          gh release upload "$TAG" "dist/scenario-${VERSION}.zip" dist/SHA256SUMS --clobber
+
+  # The zip content does not depend on which Blender builds it, so the artefact
+  # built above is the file validated here on the other supported LTS lines.
+  validate:
+    name: validate (${{ matrix.version }})
+    needs: [release-please, assets]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { version: "5.1.2", sha256: "aaccb355f50183979b698bcce7467103a76261b5fa59f4972295842662a285fb" }
+          - { version: "5.2.1", sha256: "a31f524fa99a527d3d52b7f5aaa68c34e1a19d5a1c9473f79c5cc610fd5b10e9" }
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.release-please.outputs.sha }}
+          persist-credentials: false
+
+      - uses: ./.github/actions/setup-blender
+        with:
+          version: ${{ matrix.version }}
+          sha256: ${{ matrix.sha256 }}
+
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: release-zip
+          path: dist
+
+      - run: blender --command extension validate dist/scenario-*.zip
+
+  # Publishing the draft creates the tag (the versioning ruleset admits the App
+  # as a bypass actor) and fires `release: published`, which publish-changelog.yml
+  # consumes. Nothing may be attached after this once immutable releases are on.
+  publish:
+    needs: [release-please, assets, validate]
+    runs-on: ubuntu-24.04
+    permissions: {}
+    env:
+      TAG: ${{ needs.release-please.outputs.tag_name }}
+    steps:
+      - name: Retrieve GitHub App token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        id: app-token
+        with:
+          client-id: ${{ secrets.GH_ACTIONS_TOKEN_RETRIEVER_PUBLIC_REPO_CLIENT_ID }}
+          private-key: ${{ secrets.GH_ACTIONS_TOKEN_RETRIEVER_PUBLIC_REPO_PRIVATE_KEY }}
+
+      - name: Publish the draft (creates the tag and fires release published)
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_SHA: ${{ needs.release-please.outputs.sha }}
+        run: |
+          set -euo pipefail
+          RELEASE="$(gh release view "$TAG" --json isDraft,targetCommitish,assets)"
+          jq -e --arg sha "$RELEASE_SHA" --arg zip "scenario-${TAG#blender-plugin-v}.zip" '
+            .isDraft and .targetCommitish == $sha and
+            any(.assets[]; .name == "SHA256SUMS") and
+            any(.assets[]; .name == $zip)
+          ' <<<"$RELEASE" > /dev/null
+          gh release edit "$TAG" --draft=false
+
+  # Untagged drafts are invisible to release-please's commit-boundary discovery.
+  # Generate the next PR only after publication, or when there was no draft.
+  release-pr:
+    needs: [release-please, publish]
+    if: >-
+      ${{ !cancelled() && needs.release-please.result == 'success' &&
+          (needs.publish.result == 'success' ||
+           (needs.publish.result == 'skipped' && needs.release-please.outputs.release_created != 'true')) }}
+    runs-on: ubuntu-latest
+    permissions: {}
+    steps:
+      - name: Retrieve GitHub App token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        id: app-token
+        with:
+          client-id: ${{ secrets.GH_ACTIONS_TOKEN_RETRIEVER_PUBLIC_REPO_CLIENT_ID }}
+          private-key: ${{ secrets.GH_ACTIONS_TOKEN_RETRIEVER_PUBLIC_REPO_PRIVATE_KEY }}
+
+      - uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7 # v5.0.0
+        with:
+          token: ${{ steps.app-token.outputs.token }}
+          skip-github-release: true

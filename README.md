@@ -2,11 +2,11 @@
 
 [![Release](https://img.shields.io/github/v/release/scenario-labs/blender-plugin)](https://github.com/scenario-labs/blender-plugin/releases)
 
-**Status: experimental.** A Blender 4.2+ extension that brings [Scenario](https://scenario.com) image, video, 3D and PBR material generation into the viewport, generates audio for the sequencer, renders the scene as a finished still or clip (Render Image / Render Video, with Prompt Spark writing the look and a 20-move camera path library), edits the selected mesh with Scenario's 3D tools (remesh, retexture, UV unwrap, rigging, animate, parts), offers Prompt Spark / Rewrite / Translate next to every prompt and a model picker with Scenario's own taxonomy (no LoRAs), and runs a local MCP server so agents (Claude Code, Cursor, Claude Desktop, Codex) can build and generate in the open scene. Pure Python, no bundled wheels, GPL-3.0-or-later. You need a Scenario account and an API key (Pro plan or above).
+**Status: experimental.** A Blender 5.0+ extension that brings [Scenario](https://scenario.com) image, video, 3D and PBR material generation into the viewport, generates audio for the sequencer, renders the scene as a finished still or clip (Render Image / Render Video, with Prompt Spark writing the look and a 20-move camera path library), edits the selected mesh with Scenario's 3D tools (remesh, retexture, UV unwrap, rigging, animate, parts), offers Prompt Spark / Rewrite / Translate next to every prompt and a model picker with Scenario's own taxonomy (no LoRAs), and runs a local MCP server so agents (Claude Code, Cursor, Claude Desktop, Codex) can build and generate in the open scene. Pure Python, no bundled wheels, GPL-3.0-or-later. You need a Scenario account and an API key (Pro plan or above).
 
-**User guide: [`docs/USER_GUIDE.md`](docs/USER_GUIDE.md)**, also as a single-file HTML handbook with screenshots: [`docs/user-guide.html`](docs/user-guide.html). Changelog: [`CHANGELOG.md`](CHANGELOG.md).
+**User guide: [`docs/USER_GUIDE.md`](docs/USER_GUIDE.md)**. Changelog: [`CHANGELOG.md`](CHANGELOG.md).
 
-Quick start: download `scenario-<version>.zip` from the releases (or run `./tools/build.sh`), drag it onto Blender, paste your key in Preferences > Add-ons > Scenario, press N in the 3D viewport and open the Scenario tab. Details, tests and the agent setup are below; the design lives in `docs/superpowers/specs/` and the delivery plans in `docs/superpowers/plans/`.
+Quick start: download `scenario-<version>.zip` from the releases (or run `./tools/build.sh`), drag it onto Blender, paste your key in Preferences > Add-ons > Scenario, press N in the 3D viewport and open the Scenario tab. For automated releases, verify your download with `gh attestation verify scenario-<version>.zip -R scenario-labs/blender-plugin` and check `SHA256SUMS` ([details](docs/USER_GUIDE.md#verify-your-download)). Details, tests and the agent setup are below; the design lives in `docs/superpowers/specs/` and the delivery plans in `docs/superpowers/plans/`.
 
 ---
 
@@ -66,7 +66,7 @@ Agents get scene tools (summary, object detail, select, set frame, screenshots, 
 ## Tests
 
 - `make test`: unit tests (pytest, no Blender).
-- `make test-blender`: integration tests inside Blender 5.1.1 headless (requires `./tools/install_dev.sh` first), including the MCP server over real HTTP.
+- `make test-blender`: headless integration tests inside the selected Blender binary (requires `./tools/install_dev.sh` first), including the MCP server over real HTTP.
 - `SCENARIO_SMOKE=1 python3 tests/smoke/smoke_image.py`, `smoke_material.py`, `smoke_video.py`: one real generation each through the core (about 9, 7 and 76 CU; the video smoke aborts if its dry run exceeds 150 CU).
 - GUI check: `blender tools/blank.blend --python tools/gui_screenshot.py -- out.png image 10`, screenshots reviewed under `~/Developer/scratch/playwright-screenshots/scenario-blender/`.
 
@@ -83,7 +83,7 @@ printf '%s\n' "feat(ui): my title" | npx --no-install commitlint --config commit
 
 ## Verified vs assumed
 
-Verified live (2026-08-28): REST Basic auth, model records carry UI schema, `?dryRun=true` cost preview, Patina returns 6 typed map assets, multipart upload flow, GLB asset shape, Blender 5.1.1 Python 3.13.9 with gltf/fbx/obj importers and `render.opengl`, OAuth dynamic registration on mcp.scenario.com. Assumed: Patina smoothness semantics (pixels suggest dark = rough), normal-map convention, Blender 4.2/4.5 behaviour (only 5.1.1 installed here).
+Verified live (2026-08-28): REST Basic auth, model records carry UI schema, `?dryRun=true` cost preview, Patina returns 6 typed map assets, multipart upload flow, GLB asset shape, OAuth dynamic registration on mcp.scenario.com. Assumed: Patina smoothness semantics (pixels suggest dark = rough), normal-map convention. Native runtime compatibility on Blender 5.0, 5.1 and 5.2 must be verified separately from release ZIP validation.
 
 ## Licence and provenance
 

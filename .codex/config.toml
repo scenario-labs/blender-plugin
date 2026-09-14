@@ -1,0 +1,22 @@
+#:schema https://developers.openai.com/codex/config-schema.json
+# Shared repository defaults. Codex loads this file only for trusted projects.
+# AGENTS.md directs Codex to shared conventions in .claude/CLAUDE.md.
+# Model selection and machine-specific settings remain in user configuration.
+
+model_reasoning_effort = "high"
+web_search = "live"
+approval_policy = "on-request"
+approvals_reviewer = "auto_review"
+sandbox_mode = "workspace-write"
+
+[sandbox_workspace_write]
+network_access = true
+
+# Enable after starting the extension's MCP server in an isolated Blender profile.
+# Supply the current session token through the environment of the Codex process.
+# Never put the token in this file. See AGENTS.md for paid-action authorization.
+[mcp_servers.scenario-blender]
+url = "http://127.0.0.1:9876/mcp"
+bearer_token_env_var = "SCENARIO_BLENDER_MCP_TOKEN"
+enabled = false
+required = false

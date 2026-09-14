@@ -164,6 +164,8 @@ Node project or lockfile for the Blender extension.
 
 Do not manually bump package versions or edit release notes in an unrelated PR.
 Read the actual release workflow/configuration before describing release behavior.
+New release tags use `blender-plugin-vX.Y.Z`; package versions stay `X.Y.Z` and
+release ZIPs stay `scenario-X.Y.Z.zip`. Preserve historical `v*` tags and releases.
 
 ## History, public content and known pitfalls
 

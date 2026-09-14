@@ -12,7 +12,8 @@ Quick start: download `scenario-<version>.zip` from the releases (or run `./tool
 
 
 **For contributors and coding agents:** read [`.claude/CLAUDE.md`](.claude/CLAUDE.md).
-Root `AGENTS.md` links to the same instructions. Claude Code also provides
+Root [`AGENTS.md`](AGENTS.md) directs Codex to those shared instructions and adds
+Codex-specific guidance. Claude Code also provides
 `/pr-summary` and `/squash-message` from `.claude/commands/`.
 
 ## Why

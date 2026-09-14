@@ -1,8 +1,9 @@
 # Scenario for Blender: agent instructions
 
-`.claude/CLAUDE.md` is the canonical instruction file. Root `AGENTS.md` is a
-relative symlink to it, so Claude Code and agents that read AGENTS.md share one
-contract. Edit this file, not a second copy. Paths below are repository-relative.
+`.claude/CLAUDE.md` is the canonical source for shared repository conventions
+and Claude Code guidance. Root `AGENTS.md` directs Codex to read this file and
+adds Codex-specific instructions. Edit shared conventions here without duplicating
+them in `AGENTS.md`. Paths below are repository-relative.
 
 ## Project and current direction
 

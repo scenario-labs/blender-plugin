@@ -1,6 +1,6 @@
 # Scenario for Blender: user guide
 
-Blender 4.2 or newer (tested on 5.1), a Scenario account with API access (Pro plan or above), an internet connection.
+Blender 5.0 or newer, a Scenario account with API access (Pro plan or above), an internet connection.
 
 ## What it does
 
@@ -19,7 +19,7 @@ The add-on also runs a small local MCP server, so an agent such as Claude Code, 
 
 ### Verify your download
 
-Releases produced by the automated pipeline include `SHA256SUMS` and a build provenance attestation. GitHub Actions builds the ZIP from the release commit with Blender 4.2 and validates the same archive on 4.2, 4.5 and 5.2 before publishing. These checks validate the package format, not runtime compatibility. Historical `v*` releases do not include checksums or attestations.
+Releases produced by the automated pipeline include `SHA256SUMS` and a build provenance attestation. GitHub Actions builds the ZIP from the release commit with Blender 5.0 and validates the same archive on 5.0, 5.1 and 5.2 before publishing. These checks validate the package format, not runtime compatibility. Historical `v*` releases do not include checksums or attestations.
 
 For automated releases, download the ZIP and `SHA256SUMS` into the same directory. Check the ZIP with `sha256sum -c SHA256SUMS` (macOS: `shasum -a 256 -c SHA256SUMS`) and, with the GitHub CLI, `gh attestation verify scenario-<version>.zip -R scenario-labs/blender-plugin`.
 

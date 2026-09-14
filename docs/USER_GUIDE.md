@@ -19,7 +19,9 @@ The add-on also runs a small local MCP server, so an agent such as Claude Code, 
 
 ### Verify your download
 
-Every release carries `SHA256SUMS` and a build provenance attestation, both produced by GitHub Actions from the tagged commit with Blender 4.2 LTS and validated on 4.2, 4.5 and 5.2 LTS. Check the zip with `sha256sum -c SHA256SUMS` (macOS: `shasum -a 256 -c SHA256SUMS`) and, with the GitHub CLI, `gh attestation verify scenario-<version>.zip -R scenario-labs/blender-plugin`.
+Releases produced by the automated pipeline include `SHA256SUMS` and a build provenance attestation. GitHub Actions builds the ZIP from the release commit with Blender 4.2 and validates the same archive on 4.2, 4.5 and 5.2 before publishing. These checks validate the package format, not runtime compatibility. Historical `v*` releases do not include checksums or attestations.
+
+For automated releases, download the ZIP and `SHA256SUMS` into the same directory. Check the ZIP with `sha256sum -c SHA256SUMS` (macOS: `shasum -a 256 -c SHA256SUMS`) and, with the GitHub CLI, `gh attestation verify scenario-<version>.zip -R scenario-labs/blender-plugin`.
 
 Where things are:
 - The **Scenario tab** in the 3D viewport sidebar (press `N`, pick the Scenario tab). It holds four panels: Scenario, Jobs, Generations, Agents (MCP).

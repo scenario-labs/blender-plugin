@@ -62,7 +62,7 @@ jobs:
         run: |
           set -euo pipefail
           V="$(python3 -c 'import tomllib; print(tomllib.load(open("scenario/blender_manifest.toml", "rb"))["version"])')"
-          [ "v$V" = "$TAG" ] || { echo "::error::manifest version $V does not match $TAG"; exit 1; }
+          [ "blender-plugin-v$V" = "$TAG" ] || { echo "::error::manifest version $V does not match $TAG"; exit 1; }
           echo "VERSION=$V" >> "$GITHUB_ENV"
 
       - uses: ./.github/actions/setup-blender
@@ -163,5 +163,5 @@ jobs:
           set -euo pipefail
           NAMES="$(gh release view "$TAG" --json assets --jq '.assets[].name')"
           grep -qx "SHA256SUMS" <<<"$NAMES"
-          grep -qx "scenario-${TAG#v}.zip" <<<"$NAMES"
+          grep -Fxq "scenario-${TAG#blender-plugin-v}.zip" <<<"$NAMES"
           gh release edit "$TAG" --draft=false

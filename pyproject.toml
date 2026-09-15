@@ -1,6 +1,19 @@
 # SPDX-FileCopyrightText: 2026 Scenario Inc.
 # SPDX-License-Identifier: GPL-3.0-or-later
 
+[project]
+# Environment metadata only; this project is never built or installed.
+name = "blender-plugin-dev"
+version = "0.0.0"
+requires-python = ">=3.11"
+
+[dependency-groups]
+dev = ["ruff==0.16.7", "pytest>=8,<10"]
+
+[tool.uv]
+required-version = "==0.9.26"
+package = false
+
 [tool.ruff]
 required-version = "==0.16.7"
 # Blender v5.0.1 build_files/build_environment/cmake/versions.cmake: Python 3.11.13.

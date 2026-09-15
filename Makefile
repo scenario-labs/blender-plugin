@@ -1,17 +1,19 @@
 BLENDER ?= /Applications/Blender.app/Contents/MacOS/Blender
-PYTHON ?= python3
+UV ?= uv
 LINT_PATHS ?= .
 
-.PHONY: test test-blender build install lint format
+.PHONY: sync test test-blender build install lint format
+sync:
+	$(UV) sync --locked
 test:
-	$(PYTHON) -m pytest
+	$(UV) run --locked python -m pytest
 lint:
-	$(PYTHON) -m ruff check $(LINT_PATHS)
-	$(PYTHON) -m ruff format --check $(LINT_PATHS)
+	$(UV) run --locked ruff check -- $(LINT_PATHS)
+	$(UV) run --locked ruff format --check -- $(LINT_PATHS)
 format:
 	@result=0; \
-	$(PYTHON) -m ruff check --fix $(LINT_PATHS) || result=$$?; \
-	$(PYTHON) -m ruff format $(LINT_PATHS) || exit $$?; \
+	$(UV) run --locked ruff check --fix -- $(LINT_PATHS) || result=$$?; \
+	$(UV) run --locked ruff format -- $(LINT_PATHS) || exit $$?; \
 	exit $$result
 test-blender:
 	$(BLENDER) --background --python-exit-code 1 --python tests/blender/run_all.py

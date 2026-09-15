@@ -1,5 +1,0 @@
-# SPDX-FileCopyrightText: 2026 Scenario Inc.
-# SPDX-License-Identifier: GPL-3.0-or-later
-# Development tools only; SDK/runtime dependencies are packaged separately.
-ruff==0.16.7
-pytest>=8,<10

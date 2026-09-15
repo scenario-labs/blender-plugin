@@ -99,11 +99,16 @@ mean the current prototype client has already been replaced.
 
 ## Validation and local commands
 
-Install `requirements-dev.txt` in the project's selected Python environment.
-`make test` runs `python3 -m pytest` using `pyproject.toml`; override `PYTHON`
-to select an interpreter. A focused `python3 -m pytest <path>` is appropriate
-when it covers the change. Preserve exit codes when capturing logs, and
-distinguish a passed check from a check that was not run.
+Use the uv version required by `pyproject.toml`. Run `uv sync --locked` to create
+the worktree's `.venv` from `uv.lock` and the interpreter in `.python-version`.
+`make test` runs `uv run --locked python -m pytest`; use the same prefix for
+focused tests. Development dependencies belong in `[dependency-groups].dev`;
+commit the updated lockfile when changing them. Do not maintain a parallel
+requirements-dev.txt or install ad hoc tools into the managed environment.
+For an explicit interpreter check, use `uv run --locked --python <version>`.
+Blender native tests still use Blender's bundled Python and an isolated profile.
+Preserve exit codes when capturing logs, and distinguish passed checks from
+checks that were not run.
 
 Use the pinned Ruff configuration before further Python development:
 `make format` applies safe fixes and formatting; `make lint` checks both.

@@ -1,37 +1,67 @@
 # Python linting and formatting
 
-Use Ruff for linting, import sorting, safe automatic fixes and formatting.
-[pyproject.toml](../pyproject.toml) is the shared configuration for editors,
-contributors, agents and CI. Its required version matches the exact Ruff pin in
-[requirements-dev.txt](../requirements-dev.txt); upgrade both together.
+Use uv to manage the development interpreter, environment and dependencies,
+and Ruff for linting, import sorting, safe fixes and formatting.
+[pyproject.toml](../pyproject.toml) is the shared configuration for contributors,
+agents and CI. [uv.lock](../uv.lock) locks direct and transitive development
+dependencies. [.python-version](../.python-version) selects Python 3.11.13,
+matching the Python version used by Blender 5.0.1.
 
 ## Setup and commands
 
-Create a development environment with Python 3.11 or later:
+Install **uv 0.9.26** using the [uv installation guide](https://docs.astral.sh/uv/getting-started/installation/).
+The required uv version is recorded in `[tool.uv]`; CI reads that same pin.
+From the repository root:
 
 ```sh
-python3 -m venv .venv
-.venv/bin/python -m pip install -r requirements-dev.txt
-make lint PYTHON=.venv/bin/python
-make format PYTHON=.venv/bin/python
-make test PYTHON=.venv/bin/python
+uv sync --locked
+uv run --locked ruff check .
+uv run --locked ruff format --check .
+uv run --locked ruff check --fix .
+uv run --locked ruff format .
+uv run --locked python -m pytest
 ```
 
-On Windows, use `.venv\Scripts\python.exe -m pip`, `-m ruff` and `-m pytest`
-directly, or use Make from a compatible shell. With an activated environment,
-the normal commands are:
+uv downloads the selected Python if needed and creates `.venv` in the current
+checkout or worktree. No environment activation is required. These commands
+also work on Windows. The changelog workflow tests additionally require `bash`
+and `jq` on PATH. Make provides the same workflow:
 
 ```sh
-ruff check .
-ruff format --check .
-ruff check --fix .
-ruff format .
+make sync
+make lint
+make format
+make test
 ```
 
 `make format` attempts safe lint fixes and formatting, then fails if lint
 findings still need manual attention. Review the diff and run the relevant
-tests. Do not enable unsafe fixes as a routine cleanup step. Neither linting nor
-formatting needs Blender, a Scenario account or network service calls.
+tests. Do not enable unsafe fixes as a routine cleanup step. Tests collect only
+the offline unit suite by default; smoke tests require separate authorization.
+
+The uv project is not built or installed as a Python package (`package = false`).
+The `blender-plugin-dev` metadata version is a fixed tooling placeholder;
+release automation continues to own the extension version in its existing files.
+Blender still loads the extension ZIP with its own Python. The development
+lockfile does not establish SDK bundle or native runtime compatibility.
+
+## Dependency changes
+
+Development tools belong in `[dependency-groups].dev`. Use `uv add --dev` or
+`uv remove --dev`, and commit both `pyproject.toml` and `uv.lock`. When upgrading
+Ruff, update its exact dependency pin and `[tool.ruff].required-version together.
+Use `uv lock --upgrade-package <name>` for an intentional dependency update.
+
+Normal local commands and CI use `--locked`: stale or missing locks fail instead
+of silently resolving new versions. Do not maintain a second development
+requirements file or install extra packages into `.venv` with pip. Put one-off
+tools in a separate environment. Each worktree owns its own `.venv`.
+
+For a deliberate check on another interpreter, use
+`uv run --locked --python 3.13 python -m pytest`; this can recreate `.venv`.
+Run `uv sync --locked` afterwards to restore the default interpreter. Changing
+`.python-version` is a reviewed development-environment update, not a change to
+the supported Blender minimum.
 
 ## Policy
 

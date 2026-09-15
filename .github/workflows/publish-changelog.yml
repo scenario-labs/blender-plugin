@@ -80,8 +80,8 @@ jobs:
               --header "Content-Type: application/json" \
               --data-binary "@$payload"
 
-          # Source contract: scenario-com-landing-page/app/api/changelog/ingest/route.ts.
-          # HTTP 200 can contain DB/queue errors. Queuing is asynchronous and an
+          # The ingest response reports queued or skipped versions.
+          # HTTP 200 can contain processing errors. Queuing is asynchronous and an
           # existing record may still be processing or failed, not published.
           version="${TAG#blender-plugin-v}"
           version="${version#v}"
@@ -93,7 +93,7 @@ jobs:
               all(.skipped[]; .version == $version and .reason == "already exists" and (.entryId | type == "number"))
             ) catch false
           ' "$response" > /dev/null; then
-            echo "::error::Changelog ingest did not acknowledge this version; inspect website database/queue status before retrying"
+            echo "::error::Changelog ingest did not acknowledge this version; check changelog status before retrying"
             exit 1
           fi
 

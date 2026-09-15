@@ -4,6 +4,7 @@
 
 import importlib
 import pathlib
+import sys
 import tempfile
 from contextlib import contextmanager
 from unittest.mock import patch
@@ -102,4 +103,8 @@ def isolated_manager():
                 manager.join(timeout=5)
                 runtime.state.manager = previous
                 if manager.has_active():
-                    raise RuntimeError("Test job workers did not stop before storage cleanup")
+                    message = "Test job workers did not stop before storage cleanup"
+                    original = sys.exception()
+                    if original is None:
+                        raise RuntimeError(message)
+                    original.add_note(message)

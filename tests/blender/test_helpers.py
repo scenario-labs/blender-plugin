@@ -3,6 +3,7 @@
 """Native regressions for nested test state and guaranteed cleanup."""
 
 import unittest
+from unittest.mock import patch
 
 import bpy
 from helpers import isolated_manager, online_access, submodule, temp_credentials
@@ -49,3 +50,18 @@ class HelperTests(unittest.TestCase):
         self.assertIs(runtime.state.manager, previous)
         self.assertFalse(manager.has_active())
         self.assertFalse(root.exists())
+
+    def test_worker_timeout_preserves_the_original_test_failure(self):
+        manager_class = submodule("core.jobs.manager").JobManager
+        with patch.object(manager_class, "has_active", return_value=True):
+            with self.assertRaisesRegex(AssertionError, "original test failure") as failure:
+                with isolated_manager():
+                    raise AssertionError("original test failure")
+        self.assertIn("Test job workers did not stop", failure.exception.__notes__[0])
+
+    def test_worker_timeout_still_fails_a_successful_test(self):
+        manager_class = submodule("core.jobs.manager").JobManager
+        with patch.object(manager_class, "has_active", return_value=True):
+            with self.assertRaisesRegex(RuntimeError, "Test job workers did not stop"):
+                with isolated_manager():
+                    pass

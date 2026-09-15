@@ -94,7 +94,7 @@ installed files against the ZIP. Missing, changed and extra files fail the run;
 source-checkout imports are forbidden. Supplying `--zip /path/to/candidate.zip`
 tests a copied snapshot of an existing artifact instead of rebuilding.
 
-The default **baseline** runs 55 native tests: registration defaults and paths,
+The default **baseline** covers registration defaults and paths,
 fixture-driven generation events, image/material/GLB import, installed core/MCP
 dependency imports, offline generation gating and authenticated MCP. A scene-tool
 request also checks that Blender work runs on the main thread. The runner then

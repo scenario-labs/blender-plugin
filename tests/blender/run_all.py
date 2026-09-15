@@ -32,6 +32,7 @@ BASELINE = (
     "test_history",
     "test_render_lanes",
     "test_prompt_tools",
+    "test_offline_runtime",
 )
 
 

@@ -107,6 +107,12 @@ operators with synthetic clients. Test context managers restore credentials and
 Blender's online-access preference, isolate job/cache/output paths, stop workers
 and clean temporary storage. Prompt tests import only the verified installed ZIP.
 
+Online/offline contracts toggle Blender's actual preference with fixture credentials.
+They cover catalog worker success/failure and loading state, refused offline MCP
+startup, network-operator polls, persisted jobs and pump resume gating. Synthetic
+clients exercise online branches; service transport tripwires and the runner's
+external socket guard remain active.
+
 This baseline is smaller than the full existing suite.
 Use `--suite all` (or `make test-blender BLENDER_TEST_ARGS="--suite all"`) to run
 all integration tests through the same guards. Full adoption coverage, broader

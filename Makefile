@@ -6,7 +6,7 @@ LINT_PATHS ?= .
 sync:
 	$(UV) sync --locked
 test:
-	$(UV) run --locked python -m pytest
+	$(UV) run --locked --no-env-file python -m pytest
 lint:
 	$(UV) run --locked ruff check -- $(LINT_PATHS)
 	$(UV) run --locked ruff format --check -- $(LINT_PATHS)

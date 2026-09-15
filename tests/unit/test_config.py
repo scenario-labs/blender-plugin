@@ -6,7 +6,11 @@ from scenario.core import config
 
 
 def test_env_overrides_prefs():
-    creds = config.resolve_credentials("pref_key", "pref_secret", environ={"SCENARIO_API_KEY": " env_key ", "SCENARIO_API_SECRET": "env_secret"})
+    creds = config.resolve_credentials(
+        "pref_key",
+        "pref_secret",
+        environ={"SCENARIO_API_KEY": " env_key ", "SCENARIO_API_SECRET": "env_secret"},
+    )
     assert creds.key == "env_key" and creds.secret == "env_secret" and creds.valid
 
 
@@ -16,15 +20,10 @@ def test_prefs_used_when_env_missing_and_invalid_when_empty():
     assert not config.resolve_credentials(None, None, environ={}).valid
 
 
-def test_load_dotenv(tmp_path):
-    p = tmp_path / ".env.local"
-    p.write_text("# comment\nSCENARIO_API_KEY=abc\nSCENARIO_API_SECRET='quoted'\nEMPTY=\n")
-    assert config.load_dotenv(p) == {"SCENARIO_API_KEY": "abc", "SCENARIO_API_SECRET": "quoted", "EMPTY": ""}
-    assert config.load_dotenv(tmp_path / "missing") == {}
-
-
 def test_paths_layout(tmp_path):
-    paths = config.Paths(state_dir=tmp_path / "state", cache_dir=tmp_path / "cache", output_dir=tmp_path / "out")
+    paths = config.Paths(
+        state_dir=tmp_path / "state", cache_dir=tmp_path / "cache", output_dir=tmp_path / "out"
+    )
     assert paths.models_cache_dir == tmp_path / "cache" / "models"
     assert paths.registry_file == tmp_path / "state" / "jobs.json"
     when = dt.datetime(2026, 8, 28, 9, 30, 5)
@@ -46,8 +45,12 @@ def test_ext_for_mime():
 
 def test_output_filename_is_readable_and_unique():
     when = dt.datetime(2026, 8, 28, 9, 30, 5)
-    name = config.output_filename("image", "model_patina-material", "job_KWxxsnSdVXDFZRMsoCvLTmKY", 2, "png", when=when)
+    name = config.output_filename(
+        "image", "model_patina-material", "job_KWxxsnSdVXDFZRMsoCvLTmKY", 2, "png", when=when
+    )
     assert name == "20260828_093005_patina-material_soCvLTmKY_02.png"
-    with_asset = config.output_filename("3d", "model_hitem-3d-split", "job_x", 0, "glb", when=when, asset_id="asset_ccpDR7Ga1Q2w")
+    with_asset = config.output_filename(
+        "3d", "model_hitem-3d-split", "job_x", 0, "glb", when=when, asset_id="asset_ccpDR7Ga1Q2w"
+    )
     assert with_asset == "20260828_093005_hitem-3d-split_asset_ccpDR7Ga1Q2w_00.glb"
     assert config.slug("model_Google Gemini 3.1 🍌", limit=12) == "google-gemin"

@@ -20,7 +20,7 @@
 - Never write inside the add-on directory; state and caches go under `bpy.utils.extension_path_user(__package__, path=..., create=True)`.
 - Check `bpy.app.online_access` before any network action in the UI.
 - Never `rm`: move superseded files to `archive/`. Version deliverables before overwriting.
-- Dev credentials live in git-ignored `.env.local` (`SCENARIO_API_KEY`, `SCENARIO_API_SECRET`, `SCENARIO_TEAM_ID`, `SCENARIO_PROJECT_ID`). Never print them. Paid calls only in explicitly opt-in smoke steps; dev cap about $30.
+- Dev credential setup is documented in [CONTRIBUTING.md](../../../CONTRIBUTING.md#environment-variables). Never print them. Paid calls only in explicitly opt-in smoke steps; dev cap about $30.
 - Blender binary: `/Applications/Blender.app/Contents/MacOS/Blender` (5.1.1). Use `BLENDER` env var to override.
 - Work on branch `p0-skeleton-image-lane`; merge into `main` with `git merge --no-ff` at the end of Task 11. Commit after every task.
 

@@ -1,20 +1,46 @@
 # SPDX-FileCopyrightText: 2026 Scenario Inc.
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Credentials, filesystem layout and output naming. No bpy."""
+
 import datetime as dt
 import os
 import pathlib
 import re
 from dataclasses import dataclass
 
-KIND_SUBDIR = {"image": "images", "video": "videos", "3d": "3d", "material": "materials", "audio": "audio"}
+KIND_SUBDIR = {
+    "image": "images",
+    "video": "videos",
+    "3d": "3d",
+    "material": "materials",
+    "audio": "audio",
+}
 
 _MIME_EXT = {
-    "image/png": "png", "image/jpeg": "jpg", "image/jpg": "jpg", "image/webp": "webp", "image/gif": "gif",
-    "image/avif": "avif", "image/tiff": "tif", "video/mp4": "mp4", "video/webm": "webm",
-    "model/gltf-binary": "glb", "model/gltf+json": "gltf", "model/x-fbx": "fbx", "model/obj": "obj",
-    "model/spz": "spz", "model/ply": "ply", "application/x-ply": "ply", "model/splat": "splat", "model/stl": "stl", "model/usd": "usdz",
-    "model/x-3d-vox": "vox", "audio/mpeg": "mp3", "audio/wav": "wav", "audio/x-wav": "wav", "audio/ogg": "ogg",
+    "image/png": "png",
+    "image/jpeg": "jpg",
+    "image/jpg": "jpg",
+    "image/webp": "webp",
+    "image/gif": "gif",
+    "image/avif": "avif",
+    "image/tiff": "tif",
+    "video/mp4": "mp4",
+    "video/webm": "webm",
+    "model/gltf-binary": "glb",
+    "model/gltf+json": "gltf",
+    "model/x-fbx": "fbx",
+    "model/obj": "obj",
+    "model/spz": "spz",
+    "model/ply": "ply",
+    "application/x-ply": "ply",
+    "model/splat": "splat",
+    "model/stl": "stl",
+    "model/usd": "usdz",
+    "model/x-3d-vox": "vox",
+    "audio/mpeg": "mp3",
+    "audio/wav": "wav",
+    "audio/x-wav": "wav",
+    "audio/ogg": "ogg",
     "application/octet-stream": "bin",
 }
 
@@ -34,24 +60,6 @@ def resolve_credentials(pref_key, pref_secret, environ=None):
     key = (environ.get("SCENARIO_API_KEY") or pref_key or "").strip()
     secret = (environ.get("SCENARIO_API_SECRET") or pref_secret or "").strip()
     return Credentials(key, secret)
-
-
-def load_dotenv(path):
-    """Minimal KEY=VALUE parser for dev scripts and tests. Never logs values."""
-    path = pathlib.Path(path)
-    if not path.exists():
-        return {}
-    out = {}
-    for line in path.read_text(encoding="utf-8").splitlines():
-        line = line.strip()
-        if not line or line.startswith("#") or "=" not in line:
-            continue
-        key, value = line.split("=", 1)
-        value = value.strip()
-        if len(value) >= 2 and value[0] == value[-1] and value[0] in "'\"":
-            value = value[1:-1]
-        out[key.strip()] = value
-    return out
 
 
 @dataclass(frozen=True)
@@ -83,7 +91,7 @@ def ext_for_mime(mime):
 def slug(text, limit=40):
     text = str(text or "")
     if text.startswith("model_"):
-        text = text[len("model_"):]
+        text = text[len("model_") :]
     text = re.sub(r"[^A-Za-z0-9]+", "-", text).strip("-").lower()
     return text[:limit].rstrip("-") or "model"
 

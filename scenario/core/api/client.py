@@ -1,6 +1,7 @@
 # SPDX-FileCopyrightText: 2026 Scenario Inc.
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Scenario REST client: Basic auth, JSON, query params, bounded retries."""
+
 import base64
 import json
 import time
@@ -37,15 +38,26 @@ def _encode_query(query):
 
 
 class ScenarioClient:
-    def __init__(self, key, secret, *, base_url=DEFAULT_BASE_URL, transport=None,
-                 user_agent=None, sleep=time.sleep, max_retries=3):
-        token = base64.b64encode(f"{key}:{secret}".encode("utf-8")).decode("ascii")
+    def __init__(
+        self,
+        key,
+        secret,
+        *,
+        base_url=DEFAULT_BASE_URL,
+        transport=None,
+        user_agent=None,
+        sleep=time.sleep,
+        max_retries=3,
+        project_id=None,
+    ):
+        token = base64.b64encode(f"{key}:{secret}".encode()).decode("ascii")
         self._auth = f"Basic {token}"
         self.base_url = base_url.rstrip("/")
         self.transport = transport or UrllibTransport()
         self.user_agent = user_agent or user_agent_string()
         self.sleep = sleep
         self.max_retries = max_retries
+        self.project_id = (project_id or "").strip() or None
 
     # -- public helpers -------------------------------------------------
     def get(self, path, **kw):
@@ -59,6 +71,9 @@ class ScenarioClient:
 
     def url(self, path, query=None):
         full = f"{self.base_url}/{path.lstrip('/')}"
+        query = dict(query or {})
+        if self.project_id is not None:
+            query["projectId"] = self.project_id
         if query:
             encoded = _encode_query(query)
             if encoded:
@@ -69,7 +84,11 @@ class ScenarioClient:
     def request(self, method, path, *, query=None, json_body=None, timeout=60, retries=None):
         url = self.url(path, query)
         body = json.dumps(json_body).encode("utf-8") if json_body is not None else None
-        headers = {"Authorization": self._auth, "Accept": "application/json", "User-Agent": self.user_agent}
+        headers = {
+            "Authorization": self._auth,
+            "Accept": "application/json",
+            "User-Agent": self.user_agent,
+        }
         if body is not None:
             headers["Content-Type"] = "application/json"
         attempts = self.max_retries if retries is None else retries
@@ -77,7 +96,9 @@ class ScenarioClient:
         attempt = 0
         while True:
             try:
-                status, _resp_headers, raw = self.transport.request(method, url, headers, body, timeout)
+                status, _resp_headers, raw = self.transport.request(
+                    method, url, headers, body, timeout
+                )
             except NetworkError:
                 if attempt >= attempts:
                     raise
@@ -93,7 +114,9 @@ class ScenarioClient:
                 continue
             if 200 <= status < 300:
                 return data
-            raise ScenarioError(status, self._reason(data, raw), trace_id=self._trace_id(data), body=data, path=path)
+            raise ScenarioError(
+                status, self._reason(data, raw), trace_id=self._trace_id(data), body=data, path=path
+            )
 
     @staticmethod
     def _decode(raw):

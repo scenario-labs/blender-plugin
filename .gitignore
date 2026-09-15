@@ -1,23 +1,31 @@
-.env.local
+# Local secrets (copy .env.example to .env.local)
 .env*.local
+!.env.example
+
+# Python
 __pycache__/
 *.pyc
+.pytest_cache/
+.ruff_cache/
 .venv/
 venv/
+
+# Build output
 dist/
 *.zip
+
+# Per-machine files
 .DS_Store
 scenario_output/
-dist/
 
-# scene files other than the test scene (Robots.blend is a 700 MB working file)
+# Working .blend files stay local; tools/blank.blend is the test scene
 tools/*.blend
 !tools/blank.blend
 tools/*.blend?
 *.blend1
 *.blend2
 
-# commitlint run locally with the same npm command as CI
+# Commitlint run locally with the same npm command as CI
 node_modules/
 package-lock.json
 

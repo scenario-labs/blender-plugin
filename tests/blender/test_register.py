@@ -4,7 +4,6 @@ import pathlib
 import unittest
 
 import bpy
-
 from helpers import addon, addon_name, submodule
 
 
@@ -12,7 +11,12 @@ class RegisterTests(unittest.TestCase):
     def test_extension_enabled_and_prefs_have_defaults(self):
         mod = addon()
         import re
-        manifest = re.search(r'^version = "([^"]+)"', (pathlib.Path(mod.__file__).parent / "blender_manifest.toml").read_text(), re.M).group(1)
+
+        manifest = re.search(
+            r'^version = "([^"]+)"',
+            (pathlib.Path(mod.__file__).parent / "blender_manifest.toml").read_text(),
+            re.M,
+        ).group(1)
         self.assertEqual(mod.__version__, manifest)
         prefs = bpy.context.preferences.addons[addon_name()].preferences
         self.assertEqual(prefs.output_dir, "~/Downloads/Scenario")
@@ -23,14 +27,18 @@ class RegisterTests(unittest.TestCase):
         runtime = submodule("blender.runtime")
         paths = runtime.paths()
         self.assertTrue(str(paths.state_dir).endswith("state"))
-        self.assertNotIn("extensions/user_default/scenario/", str(paths.state_dir).replace("\\", "/") + "/")
+        self.assertNotIn(
+            "extensions/user_default/scenario/", str(paths.state_dir).replace("\\", "/") + "/"
+        )
         self.assertTrue(paths.state_dir.exists())
 
     def test_credentials_resolve_from_prefs(self):
         runtime = submodule("blender.runtime")
         prefs = bpy.context.preferences.addons[addon_name()].preferences
+        # These background tests do not save preferences; restore placeholders after use.
+        saved = (prefs.api_key, prefs.api_secret)
         prefs.api_key, prefs.api_secret = "k", "s"
         try:
             self.assertTrue(runtime.credentials().valid)
         finally:
-            prefs.api_key, prefs.api_secret = "", ""
+            prefs.api_key, prefs.api_secret = saved

@@ -7,6 +7,7 @@ import importlib
 import json
 import os
 import platform
+import subprocess
 import sys
 import traceback
 from pathlib import Path
@@ -14,7 +15,9 @@ from pathlib import Path
 import bpy
 import gpu
 
-OUTPUT, INSTALLED, VIEW, LANE, DELAY, FIXTURE = sys.argv[sys.argv.index("--") + 1 :]
+OUTPUT, INSTALLED, VIEW, LANE, DELAY, FIXTURE, CAPTURE_BACKEND = sys.argv[
+    sys.argv.index("--") + 1 :
+]
 OUTPUT = Path(OUTPUT)
 FAILED = False
 
@@ -116,6 +119,27 @@ def select():
     area.tag_redraw()
 
 
+def capture_x11(destination):
+    """Read only this disposable Blender process's visible X11 window."""
+    if sys.platform != "linux" or not os.environ.get("DISPLAY"):
+        raise RuntimeError("X11 capture requires a Linux X display")
+    found = subprocess.run(
+        ["xdotool", "search", "--onlyvisible", "--pid", str(os.getpid())],
+        check=True,
+        capture_output=True,
+        text=True,
+        timeout=10,
+    ).stdout.split()
+    if len(found) != 1 or not found[0].isdigit():
+        raise RuntimeError("Expected exactly one visible window owned by this Blender process")
+    subprocess.run(
+        ["import", "-window", found[0], str(destination)],
+        check=True,
+        capture_output=True,
+        timeout=10,
+    )
+
+
 def capture():
     window, area, region = view3d()
     if bpy.app.online_access:
@@ -124,9 +148,12 @@ def capture():
         raise RuntimeError("Scenario sidebar is not active")
     with bpy.context.temp_override(window=window, area=area):
         bpy.ops.wm.redraw_timer(type="DRAW_WIN_SWAP", iterations=2)
-        result = bpy.ops.screen.screenshot(filepath=str(OUTPUT / "plugin.png"))
-    if result != {"FINISHED"}:
-        raise RuntimeError("Blender screenshot operator did not finish")
+        if CAPTURE_BACKEND == "blender":
+            result = bpy.ops.screen.screenshot(filepath=str(OUTPUT / "plugin.png"))
+            if result != {"FINISHED"}:
+                raise RuntimeError("Blender screenshot operator did not finish")
+        else:
+            capture_x11(OUTPUT / "plugin.png")
     shot = bpy.data.images.load(str(OUTPUT / "plugin.png"), check_existing=False)
     try:
         dimensions = list(shot.size)
@@ -156,6 +183,7 @@ def capture():
                 "fixture": FIXTURE,
                 "active_sidebar": region.active_panel_category,
                 "image_size": dimensions,
+                "capture_backend": CAPTURE_BACKEND,
                 "gpu_backend": gpu.platform.backend_type_get(),
                 "gpu_renderer": gpu.platform.renderer_get(),
                 "distinct_rgb_samples": len(samples),

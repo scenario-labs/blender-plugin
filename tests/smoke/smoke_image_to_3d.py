@@ -84,7 +84,7 @@ while time.time() < deadline:
                     os.path.basename(f),
                     os.path.getsize(f),
                     "B",
-                    payload.asset_types.get(next((a for a in payload.asset_ids if True), ""), ""),
+                    payload.asset_types.get(next(iter(payload.asset_ids), ""), ""),
                 )
             primary, alternates = placement.pick_primary_mesh(payload.files)
             print(

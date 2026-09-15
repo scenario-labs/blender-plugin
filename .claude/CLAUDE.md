@@ -105,9 +105,12 @@ mean the current prototype client has already been replaced.
 
 ## Validation and local commands
 
+See [the environment reference](../CONTRIBUTING.md#environment-variables) for
+developer credentials and explicit live commands.
+
 Use the uv version required by `pyproject.toml`. Run `uv sync --locked` to create
 the worktree's `.venv` from `uv.lock` and the interpreter in `.python-version`.
-`make test` runs `uv run --locked python -m pytest`; use the same prefix for
+`make test` runs `uv run --locked --no-env-file python -m pytest`; use the same prefix for
 focused tests. Development dependencies belong in `[dependency-groups].dev`;
 commit the updated lockfile when changing them. Do not maintain a parallel
 requirements-dev.txt or install ad hoc tools into the managed environment.

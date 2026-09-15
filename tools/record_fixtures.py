@@ -15,7 +15,7 @@ sys.path.insert(0, str(ROOT))
 
 from scenario.core.api.client import ScenarioClient
 from scenario.core.api.errors import ScenarioError
-from tools.dev_config import legacy_credentials
+from tools.dev_config import live_settings
 
 MODEL_IDS = [
     "model_patina-material",
@@ -31,8 +31,10 @@ MODEL_IDS = [
 
 
 def main():
-    creds = legacy_credentials()
-    client = ScenarioClient(creds.key, creds.secret)
+    settings = live_settings()
+    client = ScenarioClient(
+        settings.credentials.key, settings.credentials.secret, project_id=settings.project_id
+    )
     out = ROOT / "tests" / "fixtures" / "models"
     out.mkdir(parents=True, exist_ok=True)
     for model_id in MODEL_IDS:

@@ -9,7 +9,7 @@ from pathlib import Path
 
 import pytest
 
-from tools.dev_config import legacy_credentials, live_settings
+from tools.dev_config import live_settings
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -26,7 +26,6 @@ def test_api_keys_work_without_project(project):
         env["SCENARIO_TEST_PROJECT_ID"] = project
     settings = live_settings(env)
     assert settings.project_id is None
-    assert legacy_credentials(env) == settings.credentials
     assert settings.credentials.key == "test-key"
     assert "test-key" not in repr(settings)
     assert "test-secret" not in repr(settings)
@@ -39,8 +38,7 @@ def test_project_selection_is_preserved_and_not_silently_ignored():
         "SCENARIO_TEST_PROJECT_ID": " selected-project ",
     }
     assert live_settings(env).project_id == "selected-project"
-    with pytest.raises(SystemExit, match="cannot select"):
-        legacy_credentials(env)
+    assert live_settings(env).credentials.valid
 
 
 @pytest.mark.parametrize("key,secret", [("", ""), ("key", ""), ("", "secret"), ("  ", "secret")])
@@ -116,8 +114,16 @@ def test_uv_dotenv_precedence_and_no_file_loading(tmp_path):
     assert result.stderr.startswith("no test credentials:")
 
 
-@pytest.mark.parametrize("script", ["tools/audit_payloads.py", "tools/record_fixtures.py"])
-def test_live_tools_pass_selected_pair_explicitly(script, monkeypatch):
+@pytest.mark.parametrize("project", [None, "", " selected-project "])
+@pytest.mark.parametrize(
+    "script",
+    [
+        "tools/audit_payloads.py",
+        "tools/record_fixtures.py",
+        *[str(p.relative_to(ROOT)) for p in sorted((ROOT / "tests/smoke").glob("*.py"))],
+    ],
+)
+def test_live_tools_pass_selected_pair_explicitly(script, project, monkeypatch):
     from scenario.core.api import client
 
     class ClientReached(Exception):
@@ -125,12 +131,18 @@ def test_live_tools_pass_selected_pair_explicitly(script, monkeypatch):
 
     def selected(key, secret, **kwargs):
         assert (key, secret) == ("selected-key", "selected-secret")
+        assert kwargs["project_id"] == ((project or "").strip() or None)
         raise ClientReached
 
     monkeypatch.setattr(client, "ScenarioClient", selected)
     monkeypatch.setenv("SCENARIO_TEST_API_KEY", "selected-key")
     monkeypatch.setenv("SCENARIO_TEST_API_SECRET", "selected-secret")
-    monkeypatch.delenv("SCENARIO_TEST_PROJECT_ID", raising=False)
+    if project is None:
+        monkeypatch.delenv("SCENARIO_TEST_PROJECT_ID", raising=False)
+    else:
+        monkeypatch.setenv("SCENARIO_TEST_PROJECT_ID", project)
+    monkeypatch.setenv("SCENARIO_SMOKE", "1")
+    monkeypatch.setattr("sys.argv", [script, "synthetic-image.png"])
     monkeypatch.setenv("SCENARIO_API_KEY", "unrelated-key")
     monkeypatch.setenv("SCENARIO_API_SECRET", "unrelated-secret")
     with pytest.raises(ClientReached):
@@ -142,3 +154,38 @@ def test_smokes_require_opt_in_before_reading_credentials(script, monkeypatch):
     monkeypatch.delenv("SCENARIO_SMOKE", raising=False)
     with pytest.raises(SystemExit, match="set SCENARIO_SMOKE=1"):
         runpy.run_path(str(script), run_name="__main__")
+
+
+def test_schema_cache_isolated_by_selected_scope(tmp_path, monkeypatch):
+    from scenario.core.config import Credentials
+    from tools import audit_payloads
+    from tools.dev_config import LiveSettings
+
+    monkeypatch.setattr(audit_payloads, "CACHE", tmp_path)
+    monkeypatch.setattr(audit_payloads.time, "sleep", lambda _: None)
+
+    class Client:
+        def __init__(self, label):
+            self.label = label
+            self.calls = 0
+
+        def get(self, path):
+            self.calls += 1
+            return {"model": {"name": self.label}}
+
+    settings = [
+        (LiveSettings(Credentials("key", "secret")), "https://one.invalid"),
+        (LiveSettings(Credentials("key", "secret"), "project"), "https://one.invalid"),
+        (LiveSettings(Credentials("other", "secret"), "project"), "https://one.invalid"),
+        (LiveSettings(Credentials("key", "rotated"), "project"), "https://one.invalid"),
+        (LiveSettings(Credentials("key", "secret"), "project"), "https://two.invalid"),
+    ]
+    for index, (selected, base_url) in enumerate(settings):
+        client = Client(str(index))
+        cache_dir = audit_payloads.schema_cache_dir(selected, base_url)
+        for _ in range(2):
+            assert audit_payloads.fetch(client, "model_x", cache_dir) == (
+                {"name": str(index)},
+                None,
+            )
+        assert client.calls == 1

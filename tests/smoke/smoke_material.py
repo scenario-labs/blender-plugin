@@ -21,12 +21,14 @@ from scenario.core.jobs.manager import JobManager
 from scenario.core.jobs.records import JobRegistry
 from scenario.core.scene import material_plan
 from scenario.core.schema.params import build_body, parse_schema
-from tools.dev_config import legacy_credentials
+from tools.dev_config import live_settings
 
 if os.environ.get("SCENARIO_SMOKE") != "1":
     sys.exit("set SCENARIO_SMOKE=1 to spend credits")
-creds = legacy_credentials()
-client = ScenarioClient(creds.key, creds.secret)
+settings = live_settings()
+client = ScenarioClient(
+    settings.credentials.key, settings.credentials.secret, project_id=settings.project_id
+)
 tmp = pathlib.Path(tempfile.mkdtemp(prefix="scenario-smoke-material-"))
 paths = config.Paths(state_dir=tmp / "state", cache_dir=tmp / "cache", output_dir=tmp / "out")
 catalog = Catalog(client, paths.cache_dir)

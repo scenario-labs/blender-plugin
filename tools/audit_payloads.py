@@ -8,6 +8,7 @@ $SCHEMA_CACHE (default: <tempdir>/scenario-schema-cache) so re-runs use cached s
 No bpy. Run: uv run --locked --env-file .env.local python tools/audit_payloads.py
 """
 
+import hashlib
 import json
 import os
 import pathlib
@@ -22,12 +23,11 @@ from scenario.core.api import catalog as C
 from scenario.core.api.client import DEFAULT_BASE_URL, ScenarioClient
 from scenario.core.api.errors import NetworkError, ScenarioError
 from scenario.core.schema.params import parse_schema
-from tools.dev_config import legacy_credentials
+from tools.dev_config import live_settings
 
 CACHE = pathlib.Path(
     os.environ.get("SCHEMA_CACHE", pathlib.Path(tempfile.gettempdir()) / "scenario-schema-cache")
 )
-CACHE.mkdir(parents=True, exist_ok=True)
 
 CONDITIONAL_WORDS = (
     "if no",
@@ -65,8 +65,15 @@ def surfaced_model_ids():
     return ids
 
 
-def fetch(client, model_id):
-    cache = CACHE / f"{model_id}.json"
+def schema_cache_dir(settings, base_url):
+    scope = [settings.credentials.key, settings.credentials.secret, settings.project_id, base_url]
+    digest = hashlib.sha256(json.dumps(scope).encode()).hexdigest()
+    return CACHE / digest
+
+
+def fetch(client, model_id, cache_dir):
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    cache = cache_dir / f"{model_id}.json"
     if cache.exists():
         return json.loads(cache.read_text()), None
     try:
@@ -193,16 +200,20 @@ def audit_one(model_id, contexts, record, schema):
 
 
 def main():
-    creds = legacy_credentials()
+    settings = live_settings()
     client = ScenarioClient(
-        creds.key, creds.secret, base_url=os.environ.get("SCENARIO_API_BASE") or DEFAULT_BASE_URL
+        settings.credentials.key,
+        settings.credentials.secret,
+        project_id=settings.project_id,
+        base_url=os.environ.get("SCENARIO_API_BASE") or DEFAULT_BASE_URL,
     )
+    cache_dir = schema_cache_dir(settings, client.base_url)
     ids = surfaced_model_ids()
     print(f"# Payload audit: {len(ids)} surfaced models\n")
     findings, failed = {}, {}
     schemas = {}
     for model_id in sorted(ids):
-        model, err = fetch(client, model_id)
+        model, err = fetch(client, model_id, cache_dir)
         if model is None:
             failed[model_id] = err
             continue

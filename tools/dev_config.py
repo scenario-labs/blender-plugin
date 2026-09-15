@@ -27,15 +27,3 @@ def live_settings(environ=None):
         )
     project_id = (environ.get("SCENARIO_TEST_PROJECT_ID") or "").strip() or None
     return LiveSettings(credentials, project_id)
-
-
-def legacy_credentials(environ=None):
-    """Bridge existing tools until SDK adoption; never silently discard selected scope."""
-    settings = live_settings(environ)
-    if settings.project_id is not None:
-        raise SystemExit(
-            "this prototype tool cannot select SCENARIO_TEST_PROJECT_ID; "
-            "project selection requires the shared SDK adapter (#64/#41). "
-            "Use credentials scoped to the intended project with the optional project variable unset."
-        )
-    return settings.credentials

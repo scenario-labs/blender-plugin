@@ -68,6 +68,12 @@ the UI, jobs, local MCP and supporting tools. Its source and issue tracker are
    a verified server idempotency contract makes retry safe. A timeout is an
    uncertain submission, not permission to submit again.
 
+Before changing the shared SDK adapter or its dependency pin, read
+`docs/SDK_ADOPTION.md` and run
+`uv run --locked python -m pytest tests/unit/test_scenario_sdk_contract.py -rx`.
+The known authentication expected failure is an unresolved gap, not production
+acceptance. Extend these offline contracts when mapping adopted operations.
+
 Changes to Scenario API calls must identify the SDK method or the documented
 exception in the PR. Documentation-only work does not need an API coverage audit.
 The SDK is an adoption requirement; its presence in these instructions does not

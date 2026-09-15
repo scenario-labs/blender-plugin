@@ -3,24 +3,18 @@
 import unittest
 
 import bpy
-from helpers import addon_name, submodule
+from helpers import isolated_manager, submodule, temp_credentials
 
 
 class HistoryTests(unittest.TestCase):
     def setUp(self):
-        prefs = bpy.context.preferences.addons[addon_name()].preferences
-        self._saved = (prefs.api_key, prefs.api_secret)
-        # These background tests do not save preferences; restore placeholders after use.
-        prefs.api_key, prefs.api_secret = prefs.api_key or "k", prefs.api_secret or "s"
-
-    def tearDown(self):
-        prefs = bpy.context.preferences.addons[addon_name()].preferences
-        prefs.api_key, prefs.api_secret = self._saved
+        self.enterContext(temp_credentials())
 
     def test_history_event_populates_state(self):
         runtime = submodule("blender.runtime")
         handlers = submodule("blender.handlers")
         runtime.state.reset()
+        self.enterContext(isolated_manager())
         runtime.ensure_manager()
         jobs = [
             {
@@ -64,7 +58,7 @@ class GenerationListTests(unittest.TestCase):
         self.assertFalse(a.meta["collapsed"] or b.meta["collapsed"])
 
     def test_error_details_description_is_the_full_message(self):
-        from bl_ext.user_default.scenario.blender.operators import SCENARIO_OT_error_details
+        operator = submodule("blender.operators").SCENARIO_OT_error_details
 
         long_error = "The model file is too large for processing. Try reducing the resolution. [Error ID: error_ABC123]"
         job = self._job(error=long_error, status="failed")
@@ -73,4 +67,4 @@ class GenerationListTests(unittest.TestCase):
         class P:
             local_id = job.local_id
 
-        self.assertEqual(SCENARIO_OT_error_details.description(bpy.context, P()), long_error)
+        self.assertEqual(operator.description(bpy.context, P()), long_error)

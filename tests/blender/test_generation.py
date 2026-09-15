@@ -4,8 +4,7 @@ import json
 import unittest
 
 import bpy
-
-from helpers import FIXTURES, reset_scene, submodule
+from helpers import FIXTURES, isolated_manager, reset_scene, submodule
 
 
 class GenerationTests(unittest.TestCase):
@@ -16,17 +15,30 @@ class GenerationTests(unittest.TestCase):
         self.catalog = submodule("core.api.catalog")
         self.handlers = submodule("blender.handlers")
         self.runtime.state.reset()
-        patina = json.loads((FIXTURES / "models" / "model_patina-material.json").read_text())["model"]
-        gemini = json.loads((FIXTURES / "models" / "model_google-gemini-3-1-flash.json").read_text())["model"]
-        records = [self.catalog.ModelRecord.from_api(patina), self.catalog.ModelRecord.from_api(gemini)]
-        self.handlers.dispatch(("catalog", {"privacy": "public", "records": records, "detailed": records}))
+        self.enterContext(isolated_manager())
+        patina = json.loads((FIXTURES / "models" / "model_patina-material.json").read_text())[
+            "model"
+        ]
+        gemini = json.loads(
+            (FIXTURES / "models" / "model_google-gemini-3-1-flash.json").read_text()
+        )["model"]
+        records = [
+            self.catalog.ModelRecord.from_api(patina),
+            self.catalog.ModelRecord.from_api(gemini),
+        ]
+        self.handlers.dispatch(
+            ("catalog", {"privacy": "public", "records": records, "detailed": records})
+        )
 
     def test_catalog_event_fills_lane_enums_and_syncs_params(self):
         items = self.runtime.enum_items(("models", "image"))
         ids = [i[0] for i in items]
         self.assertEqual(ids[0], "model_google-gemini-3-1-flash")
         self.assertIn("model_patina-material", ids)
-        self.assertEqual([i[0] for i in self.runtime.enum_items(("models", "material"))], ["model_patina-material"])
+        self.assertEqual(
+            [i[0] for i in self.runtime.enum_items(("models", "material"))],
+            ["model_patina-material"],
+        )
         lane = bpy.context.scene.scenario.lane_state("image")
         self.assertEqual(lane.model_id, "model_google-gemini-3-1-flash")
         self.assertIn("resolution", [p.name for p in lane.params])
@@ -37,7 +49,11 @@ class GenerationTests(unittest.TestCase):
         props = submodule("blender.props")
         lane = bpy.context.scene.scenario.lane_state("image")
         schema = self.generation.schema_for(lane.model_id)
-        enum_spec = next(s for s in schema.specs if s.allowed_values and s.ptype != "string_array" and not s.is_file)
+        enum_spec = next(
+            s
+            for s in schema.specs
+            if s.allowed_values and s.ptype != "string_array" and not s.is_file
+        )
         item = lane.params[lane.params.find(enum_spec.name)]
         self.runtime.state.enum_cache.clear()  # simulate the reloaded-file state
         ids = [i[0] for i in props._param_items(item, bpy.context)]
@@ -47,14 +63,16 @@ class GenerationTests(unittest.TestCase):
     def test_estimate_event_updates_lane_state(self):
         lane = bpy.context.scene.scenario.lane_state("image")
         lane.estimate_key = "image:k1"
-        lane.estimate_state = 'PENDING'
+        lane.estimate_state = "PENDING"
         est = submodule("core.jobs.manager").EstimateResult(key="image:k1", cu_cost=13.25)
         self.handlers.dispatch(("estimate", est))
-        self.assertEqual(lane.estimate_state, 'READY')
+        self.assertEqual(lane.estimate_state, "READY")
         self.assertAlmostEqual(lane.estimate_cu, 13.25)
-        bad = submodule("core.jobs.manager").EstimateResult(key="image:k1", error="Input prompt is required")
+        bad = submodule("core.jobs.manager").EstimateResult(
+            key="image:k1", error="Input prompt is required"
+        )
         self.handlers.dispatch(("estimate", bad))
-        self.assertEqual(lane.estimate_state, 'ERROR')
+        self.assertEqual(lane.estimate_state, "ERROR")
         self.assertIn("prompt", lane.estimate_error)
 
     def test_build_request_from_scene_state(self):
@@ -62,12 +80,18 @@ class GenerationTests(unittest.TestCase):
         lane.prompt = "a copper teapot"
         lane.params["resolution"].enum_value = "2K"
         ref = lane.references.add()
-        ref.param_name, ref.source, ref.filepath = "referenceImages", 'FILE', str(FIXTURES / "patina-copper-512" / "albedo.png")
+        ref.param_name, ref.source, ref.filepath = (
+            "referenceImages",
+            "FILE",
+            str(FIXTURES / "patina-copper-512" / "albedo.png"),
+        )
         request = self.generation.build_request(bpy.context.scene, "image")
         self.assertEqual(request.model_id, "model_google-gemini-3-1-flash")
         self.assertEqual(request.body["prompt"], "a copper teapot")
         self.assertEqual(request.body["resolution"], "2K")
-        self.assertEqual(request.files["referenceImages"], [str(FIXTURES / "patina-copper-512" / "albedo.png")])
+        self.assertEqual(
+            request.files["referenceImages"], [str(FIXTURES / "patina-copper-512" / "albedo.png")]
+        )
         self.assertIn("referenceImages", request.array_params)
         self.assertEqual(request.errors, [])
 
@@ -84,6 +108,8 @@ class GenerationTests(unittest.TestCase):
         props = submodule("blender.props")
         lane = bpy.context.scene.scenario.lane_state("image")
         props.mark_estimate_dirty(lane)
-        self.assertLess(lane.estimate_dirty_at, 1e6)  # relative clock, not an epoch (FloatProperty is 32-bit)
+        self.assertLess(
+            lane.estimate_dirty_at, 1e6
+        )  # relative clock, not an epoch (FloatProperty is 32-bit)
         self.assertGreaterEqual(props.clock() - lane.estimate_dirty_at, 0.0)
         self.assertEqual(lane.estimate_key, "")

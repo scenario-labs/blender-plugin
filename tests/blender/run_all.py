@@ -28,6 +28,10 @@ BASELINE = (
     "test_apply_3d",
     "test_mcp_server",
     "test_installed_contract",
+    "test_helpers",
+    "test_history",
+    "test_render_lanes",
+    "test_prompt_tools",
 )
 
 

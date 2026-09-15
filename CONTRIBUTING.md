@@ -163,7 +163,11 @@ uv run --locked --no-env-file python tools/fetch_blender.py --version 5.0.1
 The fetcher reads the official checksum file, verifies the archive before
 extraction and prints the executable path to use with `BLENDER`. CI supplies
 `--sha256` to pin the expected digest. Archives are cached under `.blender/`;
-every invocation creates a fresh installation from the verified archive.
+every invocation re-extracts the verified archive into the same managed slot for
+that version and checksum. Successful replacement removes the previous extraction;
+a failed extraction leaves it intact. Do not fetch a build while using that cached
+Blender executable. Older builds from the previous tool may leave randomly named
+version directories; remove those manually when no longer in use.
 Other platforms require a separately installed Blender selected with `BLENDER`.
 No download happens implicitly during build, install or tests.
 

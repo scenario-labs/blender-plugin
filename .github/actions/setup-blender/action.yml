@@ -22,6 +22,7 @@ runs:
         SHA256: ${{ inputs.sha256 }}
       run: |
         set -euo pipefail
+        : "${SHA256:?A pinned Blender SHA-256 is required}"
         export BLENDER_USER_RESOURCES="$(mktemp -d "$RUNNER_TEMP/blender-profile.XXXXXX")"
         mkdir -p "$BLENDER_USER_RESOURCES"
         echo "BLENDER_USER_RESOURCES=$BLENDER_USER_RESOURCES" >> "$GITHUB_ENV"

@@ -17,8 +17,12 @@ def tools(monkeypatch):
     return importlib.import_module("build"), importlib.import_module("fetch_blender")
 
 
-def test_build_selects_manifest_zip_and_does_not_copy_a_stale_newer_zip(tools, tmp_path):
+def test_build_selects_manifest_zip_and_does_not_copy_a_stale_newer_zip(
+    tools, tmp_path, monkeypatch
+):
     build, _ = tools
+    monkeypatch.setattr(build, "prepare_source", lambda source, destination: source)
+    monkeypatch.setattr(build, "validate_bundle", lambda candidate: None)
     output = tmp_path / "output"
     output.mkdir()
     stale = output / "scenario-99.0.0.zip"

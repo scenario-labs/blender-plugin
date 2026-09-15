@@ -90,14 +90,18 @@ jobs:
           version: "5.0.1"
           sha256: "8019580ee1b7262e505f4196a00237ccf743c88d205b38d34201510676e60b09"
 
-      - name: Build with Blender 5.0, check the listing, validate, checksum
+      - name: Install pinned uv
+        uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
+        with:
+          version-file: pyproject.toml
+          enable-cache: true
+
+      - name: Build the pinned SDK bundle with Blender 5.0, validate, checksum
         run: |
           set -euo pipefail
           mkdir -p dist
           ZIP="dist/scenario-${VERSION}.zip"
-          blender --command extension build --source-dir scenario --output-filepath "$ZIP"
-          python3 -c 'import sys, zipfile; sys.exit(0 if "LICENSE" in zipfile.ZipFile(sys.argv[1]).namelist() else 1)' "$ZIP" || { echo "::error::LICENSE is missing from the zip"; exit 1; }
-          blender --command extension validate "$ZIP"
+          uv run --locked --no-env-file python tools/build.py --blender blender --output dist --artifacts "$RUNNER_TEMP/scenario-release"
           (cd dist && sha256sum "scenario-${VERSION}.zip" > SHA256SUMS && cat SHA256SUMS)
 
       - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2

@@ -22,6 +22,7 @@ from blender_env import (
     run_step,
     sha256,
 )
+from wheel_bundle import prepare_source, validate_bundle
 
 PROBE = "import bpy,json,platform,sys; print('SCENARIO_ENV='+json.dumps(dict(blender=bpy.app.version_string,version=list(bpy.app.version),python=sys.version,os=platform.platform())))"
 
@@ -74,6 +75,7 @@ def run(args):
         if args.zip:
             shutil.copyfile(args.zip, candidate)
         else:
+            source = prepare_source(ROOT / "scenario", directory / "source")
             step(
                 "build",
                 [
@@ -81,7 +83,7 @@ def run(args):
                     "extension",
                     "build",
                     "--source-dir",
-                    str(ROOT / "scenario"),
+                    str(source),
                     "--output-filepath",
                     str(candidate),
                 ],
@@ -99,6 +101,7 @@ def run(args):
             raise ValueError("Root and package licenses differ")
         if candidate_files["LICENSE"] != sha256(ROOT / "LICENSE"):
             raise ValueError("Candidate ZIP does not contain the repository GPL text")
+        validate_bundle(candidate)
         step("validate", ["--command", "extension", "validate", str(candidate)])
         report["zip_sha256"] = sha256(candidate)
         report["extension_version"] = candidate_manifest["version"]

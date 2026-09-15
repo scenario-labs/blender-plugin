@@ -98,6 +98,11 @@ local `.blender/` builds. It reports the actual Blender/Python/OS versions and
 rejects binaries below the manifest minimum. An installed Blender 4.x cannot
 provide acceptance evidence for this extension's 5.0+ target.
 
+Build preparation stages the pinned SDK wheels and their original notices in a
+temporary source tree, downloading missing artifacts from PyPI into the ignored
+`.blender/wheels/` cache and checking their hashes. Native test processes still
+forbid external network access. See [SDK bundle details](docs/SDK_BUNDLE.md).
+
 Every run creates its own directory under `.blender-profile/`, builds to an exact
 ZIP filename, validates that file, installs it in a fresh profile and checks all
 installed files against the ZIP. Missing, changed and extra files fail the run;
@@ -122,6 +127,11 @@ They cover catalog worker success/failure and loading state, refused offline MCP
 startup, network-operator polls, persisted jobs and pump resume gating. Synthetic
 clients exercise online branches; service transport tripwires and the runner's
 external socket guard remain active.
+
+The baseline also imports the actual bundled SDK and all runtime dependencies,
+checks loaded source/binary identities, and exercises catalog/estimate/auth
+contracts through a synthetic HTTP transport with Blender's real online setting.
+The JSON test report includes dependency versions and the native wheel identity.
 
 This baseline is smaller than the full existing suite.
 Use `--suite all` (or `make test-blender BLENDER_TEST_ARGS="--suite all"`) to run

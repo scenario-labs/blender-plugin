@@ -13,6 +13,7 @@ import zipfile
 from pathlib import Path
 
 from blender_env import ROOT, find_blender, inspect_zip, isolated_environment, run_step, sha256
+from wheel_bundle import prepare_source, validate_bundle
 
 
 class Session:
@@ -54,6 +55,7 @@ def validate(session, candidate):
         raise ValueError("Root and package licenses differ")
     if files["LICENSE"] != sha256(ROOT / "LICENSE"):
         raise ValueError("Candidate ZIP does not contain the repository GPL text")
+    validate_bundle(candidate)
     session.step("validate", ["--command", "extension", "validate", str(candidate)])
     return manifest
 
@@ -61,6 +63,7 @@ def validate(session, candidate):
 def build(session, output):
     manifest = tomllib.loads((ROOT / "scenario/blender_manifest.toml").read_text())
     candidate = session.directory / f"{manifest['id']}-{manifest['version']}.zip"
+    source = prepare_source(ROOT / "scenario", session.directory / "source")
     session.step(
         "build",
         [
@@ -68,7 +71,7 @@ def build(session, output):
             "extension",
             "build",
             "--source-dir",
-            str(ROOT / "scenario"),
+            str(source),
             "--output-filepath",
             str(candidate),
         ],

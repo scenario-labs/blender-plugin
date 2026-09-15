@@ -1,6 +1,8 @@
 ifdef BLENDER
 export BLENDER
 endif
+BLENDER_BUILD_ARGS ?=
+BLENDER_INSTALL_ARGS ?=
 BLENDER_TEST_ARGS ?=
 UV ?= uv
 LINT_PATHS ?= .
@@ -21,6 +23,6 @@ format:
 test-blender:
 	$(UV) run --locked --no-env-file python tools/test_blender.py $(BLENDER_TEST_ARGS)
 build:
-	./tools/build.sh
+	$(UV) run --locked --no-env-file python tools/build.py $(BLENDER_BUILD_ARGS)
 install:
-	./tools/install_dev.sh
+	$(UV) run --locked --no-env-file python tools/install.py $(BLENDER_INSTALL_ARGS)

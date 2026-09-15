@@ -8,6 +8,7 @@ import platform
 import re
 import shutil
 import stat
+import subprocess
 import tomllib
 import zipfile
 from pathlib import Path, PurePosixPath
@@ -41,6 +42,7 @@ def find_blender(explicit=None):
         candidates.extend(
             [
                 folder / "blender",
+                *sorted(folder.glob("blender-*-linux-x64/blender")),
                 folder / "blender.exe",
                 folder / "Blender.app/Contents/MacOS/Blender",
             ]
@@ -143,3 +145,20 @@ def profile_snapshot(root):
                 info = path.lstat()
                 result[str(path.relative_to(root))] = (info.st_mode, info.st_size, info.st_mtime_ns)
     return result
+
+
+def run_step(binary, args, *, env, directory, name, timeout):
+    log = directory / f"{name}.log"
+    print(f"{name}: {log}", flush=True)
+    with log.open("w", encoding="utf-8") as output:
+        result = subprocess.run(
+            [str(binary), *args],
+            cwd=directory,
+            env=env,
+            stdout=output,
+            stderr=subprocess.STDOUT,
+            timeout=timeout,
+        )
+    if result.returncode:
+        raise subprocess.CalledProcessError(result.returncode, name)
+    return log

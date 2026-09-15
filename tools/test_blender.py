@@ -19,27 +19,11 @@ from blender_env import (
     isolated_environment,
     normal_profile_root,
     profile_snapshot,
+    run_step,
     sha256,
 )
 
 PROBE = "import bpy,json,platform,sys; print('SCENARIO_ENV='+json.dumps(dict(blender=bpy.app.version_string,version=list(bpy.app.version),python=sys.version,os=platform.platform())))"
-
-
-def run_step(binary, args, *, env, directory, name, timeout):
-    log = directory / f"{name}.log"
-    print(f"{name}: {log}", flush=True)
-    with log.open("w", encoding="utf-8") as output:
-        result = subprocess.run(
-            [str(binary), *args],
-            cwd=directory,
-            env=env,
-            stdout=output,
-            stderr=subprocess.STDOUT,
-            timeout=timeout,
-        )
-    if result.returncode:
-        raise subprocess.CalledProcessError(result.returncode, name)
-    return log
 
 
 def run(args):

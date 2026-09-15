@@ -14,26 +14,19 @@ runs:
   steps:
     - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
       with:
-        path: ~/blender/${{ inputs.version }}
-        key: blender-linux-x64-${{ inputs.version }}-${{ inputs.sha256 }}
+        path: ~/blender-cache/*.tar.xz.*
+        key: blender-archive-linux-x64-${{ inputs.version }}-${{ inputs.sha256 }}
     - shell: bash
       env:
         VERSION: ${{ inputs.version }}
         SHA256: ${{ inputs.sha256 }}
       run: |
         set -euo pipefail
-        export BLENDER_USER_RESOURCES="$RUNNER_TEMP/blender-profile"
+        export BLENDER_USER_RESOURCES="$(mktemp -d "$RUNNER_TEMP/blender-profile.XXXXXX")"
         mkdir -p "$BLENDER_USER_RESOURCES"
         echo "BLENDER_USER_RESOURCES=$BLENDER_USER_RESOURCES" >> "$GITHUB_ENV"
         sudo apt-get update -q
         sudo apt-get install -y --no-install-recommends libxi6 libxxf86vm1 libxfixes3 libxrender1 libgl1 libegl1 libxkbcommon0 libsm6
-        DEST="$HOME/blender/$VERSION"
-        if [ ! -x "$DEST/blender" ]; then
-          SERIES="${VERSION%.*}"
-          curl -fsSL -o "$RUNNER_TEMP/blender.tar.xz" "https://download.blender.org/release/Blender${SERIES}/blender-${VERSION}-linux-x64.tar.xz"
-          echo "${SHA256}  $RUNNER_TEMP/blender.tar.xz" | sha256sum -c -
-          mkdir -p "$DEST"
-          tar -xJf "$RUNNER_TEMP/blender.tar.xz" -C "$DEST" --strip-components=1
-        fi
-        echo "$DEST" >> "$GITHUB_PATH"
-        "$DEST/blender" --version
+        BINARY="$(python3 tools/fetch_blender.py --version "$VERSION" --sha256 "$SHA256" --cache "$HOME/blender-cache")"
+        echo "$(dirname "$BINARY")" >> "$GITHUB_PATH"
+        "$BINARY" --version

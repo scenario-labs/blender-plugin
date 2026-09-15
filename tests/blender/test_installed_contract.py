@@ -3,11 +3,13 @@
 """Basic installed runtime and Blender-thread MCP checks, with no Scenario service."""
 
 import importlib
+import os
 import pkgutil
 import socket
 import threading
 import time
 import unittest
+from unittest.mock import patch
 
 import bpy
 from helpers import addon_name, reset_scene, submodule
@@ -31,6 +33,30 @@ class InstalledContractTests(unittest.TestCase):
             self.assertTrue(runtime.credentials().valid)
             self.assertFalse(runtime.online())
             self.assertFalse(bpy.ops.scenario.generate.poll())
+        finally:
+            prefs.api_key, prefs.api_secret = saved
+
+    def test_blockout_network_operators_reject_probe_offline_and_missing_credentials(self):
+        runtime = submodule("blender.runtime")
+        prefs = runtime.prefs()
+        saved = (prefs.api_key, prefs.api_secret)
+        operators = (bpy.ops.scenario.blockout_design, bpy.ops.scenario.blockout_refine)
+        try:
+            prefs.api_key, prefs.api_secret = "fixture-key", "fixture-secret"
+            for operator in operators:
+                self.assertFalse(operator.poll())
+            with patch.object(runtime, "online", return_value=True):
+                with patch.dict(os.environ, {"SCENARIO_GUI_PROBE": "1"}):
+                    for operator in operators:
+                        self.assertFalse(operator.poll())
+                        with self.assertRaises(RuntimeError):
+                            operator()
+                with patch.dict(os.environ, {"SCENARIO_GUI_PROBE": "0"}):
+                    for operator in operators:
+                        self.assertTrue(operator.poll())
+                    prefs.api_key, prefs.api_secret = "", ""
+                    for operator in operators:
+                        self.assertFalse(operator.poll())
         finally:
             prefs.api_key, prefs.api_secret = saved
 

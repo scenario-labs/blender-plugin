@@ -1,8 +1,9 @@
 # SPDX-FileCopyrightText: 2026 Scenario Inc.
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Bridge between ParamSpec schemas and the ScenarioParamValue collection, plus drawing."""
-from . import props, runtime
+
 from ..core.api.catalog import param_override
+from . import props, runtime
 
 SEP = ","
 
@@ -21,12 +22,13 @@ def _drawable(spec):
 
 def sync_params(lane_state, schema, model_id):
     """Ensure one collection item per drawable spec; keep values whose name, type and model match."""
-    existing = {item.name: item for item in lane_state.params}
     keep = {}
     for spec in schema.specs:
         if not _drawable(spec):
             continue
-        item = existing.get(spec.name)
+        # Collection removals invalidate cached RNA item references. Resolve each
+        # item from the current collection after any preceding removal/addition.
+        item = lane_state.params.get(spec.name)
         compatible = item is not None and item.ptype == spec.ptype and item.model_id == model_id
         created = False
         if item is None or not compatible:
@@ -43,13 +45,19 @@ def sync_params(lane_state, schema, model_id):
             options = [v for v in spec.allowed_values if str(v) != ""]
             if not options:
                 continue
-            runtime.set_enum_items(("param", model_id, spec.name), [(str(v), spec.label_for(v), spec.description) for v in options])
+            runtime.set_enum_items(
+                ("param", model_id, spec.name),
+                [(str(v), spec.label_for(v), spec.description) for v in options],
+            )
             valid = [str(v) for v in options]
             override = param_override(model_id, spec.name)
             if override is not None and str(override) in valid:
                 spec_default, has_default = override, True
             else:
-                spec_default, has_default = spec.default, spec.default is not None and str(spec.default) in valid
+                spec_default, has_default = (
+                    spec.default,
+                    spec.default is not None and str(spec.default) in valid,
+                )
             default = str(spec_default) if has_default else valid[0]
             if created or item.enum_value not in valid:
                 item.enum_value = default
@@ -66,7 +74,13 @@ def _numeric_fallback(spec, schema=None):
     hi = spec.max if spec.max is not None else lo
     if schema is not None and schema.resolution_presets:
         # prefer a square preset, then the one closest to 1024 px, so first-run defaults look sane
-        presets = sorted(schema.resolution_presets, key=lambda pr: (abs((pr.get("width") or 0) - (pr.get("height") or 0)), abs((pr.get("width") or 0) - 1024)))
+        presets = sorted(
+            schema.resolution_presets,
+            key=lambda pr: (
+                abs((pr.get("width") or 0) - (pr.get("height") or 0)),
+                abs((pr.get("width") or 0) - 1024),
+            ),
+        )
         for preset in presets:
             if preset.get("width_param") == spec.name and preset.get("width"):
                 return preset["width"]
@@ -142,7 +156,7 @@ def draw_params(layout, lane_state, schema, exclude=(), locked=()):
         groups.setdefault(spec.group or "Settings", []).append(spec)
     for group, specs in groups.items():
         box = layout.box()
-        box.label(text=group, icon='PREFERENCES')
+        box.label(text=group, icon="PREFERENCES")
         for spec in specs:
             index = lane_state.params.find(spec.name)
             if index < 0:
@@ -168,8 +182,16 @@ def draw_params(layout, lane_state, schema, exclude=(), locked=()):
                 grid = col.grid_flow(columns=2, align=True)
                 selected = set(multi_selection(item))
                 for value in spec.allowed_values:
-                    op = grid.operator("scenario.toggle_multi", text=spec.label_for(value), depress=str(value) in selected)
-                    op.lane, op.param_name, op.value = props.lane_of(lane_state), spec.name, str(value)
+                    op = grid.operator(
+                        "scenario.toggle_multi",
+                        text=spec.label_for(value),
+                        depress=str(value) in selected,
+                    )
+                    op.lane, op.param_name, op.value = (
+                        props.lane_of(lane_state),
+                        spec.name,
+                        str(value),
+                    )
             elif spec.allowed_values:
                 sub.prop(item, "enum_value", text=label)
             else:

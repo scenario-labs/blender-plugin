@@ -179,3 +179,35 @@ assert violations == ["socket.connect"]
         text=True,
     )
     assert result.returncode == 0, result.stderr
+
+
+@pytest.mark.parametrize("version,exit_code", [([5, 2, 1], 7), ([5, 2, 0], 1)])
+def test_expected_version_checks_numeric_release_not_lts_label(
+    tmp_path, monkeypatch, runner, version, exit_code
+):
+    monkeypatch.setattr(runner, "find_blender", lambda _: Path("blender"))
+    monkeypatch.setattr(runner, "normal_profile_root", lambda: tmp_path / "normal")
+    steps = []
+
+    def probe_then_stop(*args, **kwargs):
+        steps.append(kwargs["name"])
+        if kwargs["name"] == "probe":
+            log = tmp_path / "probe.log"
+            log.write_text(
+                "SCENARIO_ENV=" + json.dumps({"blender": "5.2.1 LTS", "version": version})
+            )
+            return log
+        raise subprocess.CalledProcessError(7, "build")
+
+    monkeypatch.setattr(runner, "run_step", probe_then_stop)
+    args = SimpleNamespace(
+        blender=None,
+        artifacts=tmp_path / "artifacts",
+        suite="baseline",
+        timeout=2,
+        keep_profile=False,
+        expected_version="5.2.1",
+        zip=None,
+    )
+    assert runner.run(args) == exit_code
+    assert steps == (["probe", "build"] if exit_code == 7 else ["probe"])

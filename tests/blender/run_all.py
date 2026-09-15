@@ -57,6 +57,7 @@ def install_network_guard():
             if ipaddress.ip_address(host).is_loopback:
                 return
         except ValueError:
+            # Non-numeric hosts other than localhost fall through to rejection.
             pass
         violations.append(event)
         raise RuntimeError("External network access is forbidden in offline Blender tests")

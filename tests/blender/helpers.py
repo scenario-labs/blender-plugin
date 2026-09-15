@@ -13,12 +13,11 @@ FIXTURES = ROOT / "tests" / "fixtures"
 
 _PACKAGE = None
 _INSTALLED = None
-_PROFILE = None
 
 
 def configure(package, installed, profile):
-    global _PACKAGE, _INSTALLED, _PROFILE
-    _PACKAGE, _INSTALLED, _PROFILE = package, installed, profile
+    global _PACKAGE, _INSTALLED
+    _PACKAGE, _INSTALLED = package, installed
     prefs = bpy.context.preferences.addons[package].preferences
     prefs.output_dir = str(profile / "output")
     prefs.api_key = prefs.api_secret = ""

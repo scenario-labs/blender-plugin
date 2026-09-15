@@ -87,7 +87,9 @@ def run(args):
             raise ValueError(
                 f"Blender {environment['blender']} is below the extension minimum {manifest['blender_version_min']}"
             )
-        if args.expected_version and environment["blender"] != args.expected_version:
+        if args.expected_version and tuple(environment["version"]) != tuple(
+            int(part) for part in args.expected_version.split(".")
+        ):
             raise ValueError("Blender binary does not match --expected-version")
         candidate = directory / f"{manifest['id']}-{manifest['version']}.zip"
         if args.zip:
@@ -209,7 +211,8 @@ def main():
     try:
         return run(args)
     except (OSError, ValueError) as error:
-        parser.exit(1, f"{error}\n")
+        print(error, file=sys.stderr)
+        return 1
 
 
 if __name__ == "__main__":

@@ -118,3 +118,19 @@ def test_official_checksum_requires_exact_filename(tools):
     assert fetch.checksum(f"{digest} *blender.tar.xz", "blender.tar.xz") == digest
     with pytest.raises(ValueError):
         fetch.checksum(f"{digest} other.tar.xz", "blender.tar.xz")
+
+
+def test_download_identifies_the_tool_to_the_official_server(tools, monkeypatch, tmp_path):
+    _, fetch = tools
+    requests = []
+
+    def open_url(request, timeout):
+        requests.append((request, timeout))
+        return io.BytesIO(b"archive bytes")
+
+    monkeypatch.setattr(fetch.urllib.request, "urlopen", open_url)
+    destination = tmp_path / "download"
+    fetch.download("https://download.blender.org/release/example", destination)
+    assert destination.read_bytes() == b"archive bytes"
+    assert requests[0][0].get_header("User-agent") == "scenario-blender-tools/1.0"
+    assert requests[0][1] == 120

@@ -16,7 +16,8 @@ from blender_env import ROOT, sha256
 
 
 def download(url, destination):
-    with urllib.request.urlopen(url, timeout=120) as response, destination.open("wb") as output:
+    request = urllib.request.Request(url, headers={"User-Agent": "scenario-blender-tools/1.0"})
+    with urllib.request.urlopen(request, timeout=120) as response, destination.open("wb") as output:
         shutil.copyfileobj(response, output)
 
 

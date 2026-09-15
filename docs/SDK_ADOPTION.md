@@ -9,10 +9,11 @@ The development dependency group pins this version and the MockTransport test
 client, `httpx==0.28.1`; [uv.lock](../uv.lock) pins their transitive dependencies.
 
 This is a prerequisite for [Studio adoption](https://github.com/scenario-labs/blender-plugin/issues/64).
-The SDK is currently a development dependency. The
+The SDK is pinned for development and packaged as a runtime dependency. The
 [shared read/estimate adapter](../scenario/core/api/sdk_adapter.py) now uses it;
 the existing UI and local MCP still use the prototype client pending shared-job
-integration. Runtime dependency packaging is a separate follow-up.
+integration. See [SDK_BUNDLE.md](SDK_BUNDLE.md) for exact artifact/notice pinning,
+supported wheel targets, staging and installed-runtime verification.
 
 ## Executable contracts
 
@@ -132,11 +133,12 @@ Before the adopted extension is accepted:
   second caller from submitting again.
 - Verify workflow cancellation separately: the SDK's `jobs.trigger_action`
   documentation currently describes cancellation of inference jobs only.
-- Package the pinned runtime dependencies and their licenses, including the
-  SDK's MIT license notice and binary wheels required by dependencies such as
-  `pydantic-core`. A development lockfile is not an extension wheel bundle.
-- Validate the actual bundle inside Blender 5.0, 5.1 and 5.2, including isolated
-  installation/import, representative operations and native UI behavior.
+- Maintain the pinned runtime bundle and its licenses, including the SDK's MIT
+  notice and `pydantic-core` binary wheels. Re-run actual installed-bundle checks
+  on dependency upgrades; a development lockfile alone is not bundle evidence.
+- Complete supported OS/CPU acceptance on Blender 5.0, 5.1 and 5.2, including
+  native UI behavior and coexistence with other extensions. The new isolated
+  dependency/adapter contracts do not establish those broader properties.
 - Preserve Studio source provenance/authorship, GPL text, Poppins OFL and Tabler
   MIT notices when importing useful source, tests and resources. Keep demo
   media, historical ZIPs and account-specific validation exports out of the

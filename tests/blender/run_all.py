@@ -33,6 +33,7 @@ BASELINE = (
     "test_render_lanes",
     "test_prompt_tools",
     "test_offline_runtime",
+    "test_sdk_bundle",
 )
 
 
@@ -149,6 +150,7 @@ def main():
                 "package": package,
                 "installed_path": str(installed),
                 "lifecycle": "passed",
+                "sdk_bundle": getattr(sys.modules.get("test_sdk_bundle"), "EVIDENCE", None),
             },
             indent=2,
         )

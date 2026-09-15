@@ -99,10 +99,25 @@ mean the current prototype client has already been replaced.
 
 ## Validation and local commands
 
-Use the project's selected Python environment. `make test` currently runs
-`python3 -m pytest` using `pytest.ini`; a focused `python3 -m pytest <path>`
-is appropriate when it covers the change. Preserve exit codes when capturing
-logs, and distinguish a passed check from a check that was not run.
+Use the uv version required by `pyproject.toml`. Run `uv sync --locked` to create
+the worktree's `.venv` from `uv.lock` and the interpreter in `.python-version`.
+`make test` runs `uv run --locked python -m pytest`; use the same prefix for
+focused tests. Development dependencies belong in `[dependency-groups].dev`;
+commit the updated lockfile when changing them. Do not maintain a parallel
+requirements-dev.txt or install ad hoc tools into the managed environment.
+For an explicit interpreter check, use `uv run --locked --python <version>`.
+Blender native tests still use Blender's bundled Python and an isolated profile.
+Preserve exit codes when capturing logs, and distinguish passed checks from
+checks that were not run.
+
+Use the pinned Ruff configuration before further Python development:
+`make format` applies safe fixes and formatting; `make lint` checks both.
+During Studio adoption, scope these commands with `LINT_PATHS` to changed or
+adopted files. CI checks whole changed Python files; full-tree findings remain
+tracked in #28 until the dedicated mechanical normalization. Do not reformat
+obsolete prototypes as unrelated cleanup. Follow `docs/PYTHON_STYLE.md`,
+including Blender registration/annotation cautions, and keep any eventual
+pre-commit hook version aligned with the required Ruff version.
 
 The existing scripts have limitations: Blender location defaults to a macOS
 path, and the install script targets `user_default`. Set `BLENDER` explicitly
@@ -156,6 +171,13 @@ Use `Closes` only for fully completed issues and `Refs` for partial work.
 Preserve actual contributor attribution. Keep issue references in commit footers.
 Write multiline PR bodies/messages to files and use `--body-file` or `-F`,
 with proper shell quoting.
+
+When asked to check or address a PR review comment, always reply in that
+comment's GitHub thread after investigating. State the outcome concisely:
+link the pushed fix commit and relevant validation, explain why no change is
+needed, or describe what remains unresolved. Apply this to human and bot
+comments alike. A local fix or a chat response alone does not complete the
+review follow-up. Do not claim a fix is pushed before it is available remotely.
 
 For local commit linting, use the versions and command from
 `.github/workflows/pr-name.yml`:

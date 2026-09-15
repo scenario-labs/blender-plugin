@@ -1,0 +1,46 @@
+# SPDX-FileCopyrightText: 2026 Scenario Inc.
+# SPDX-License-Identifier: GPL-3.0-or-later
+
+[project]
+# Environment metadata only; this project is never built or installed.
+name = "blender-plugin-dev"
+version = "0.0.0"
+requires-python = ">=3.11"
+
+[dependency-groups]
+dev = ["ruff==0.16.7", "pytest>=8,<10"]
+
+[tool.uv]
+required-version = "==0.9.26"
+package = false
+
+[tool.ruff]
+required-version = "==0.16.7"
+# Blender v5.0.1 build_files/build_environment/cmake/versions.cmake: Python 3.11.13.
+target-version = "py311"
+line-length = 100
+unsafe-fixes = false
+# Retired snapshots are removed separately; never reformat installed packages.
+extend-exclude = ["archive", "versions", ".blender-profile"]
+force-exclude = true
+
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F", "I", "B", "UP", "RUF100"]
+
+[tool.ruff.lint.per-file-ignores]
+# These standalone entry points establish the repository import path first.
+"tests/smoke/*.py" = ["E402"]
+"tools/audit_payloads.py" = ["E402"]
+"tools/record_fixtures.py" = ["E402"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["scenario", "scenario_studio"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+line-ending = "lf"
+
+[tool.pytest.ini_options]
+testpaths = ["tests/unit"]
+addopts = "-q"

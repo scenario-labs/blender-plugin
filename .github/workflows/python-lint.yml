@@ -1,0 +1,46 @@
+# SPDX-FileCopyrightText: 2026 Scenario Inc.
+# SPDX-License-Identifier: GPL-3.0-or-later
+name: Python lint
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  python-lint:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Install the pinned uv version
+        uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
+        with:
+          version-file: pyproject.toml
+          enable-cache: true
+      - name: Sync the locked development environment
+        run: uv sync --locked
+      - name: Check changed Python files
+        # Temporary adoption scope (#28/#64): the existing prototype has lint
+        # debt. Switch to `make lint` over the full tree after normalization.
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          set -euo pipefail
+          # This also validates the config and the required Ruff version when
+          # the PR contains no Python changes.
+          uv run --locked ruff check --show-settings > /dev/null
+          git diff --name-only -z --diff-filter=ACMR "$BASE_SHA" HEAD -- '*.py' '*.pyi' > "$RUNNER_TEMP/python-files"
+          files=()
+          while IFS= read -r -d '' file; do
+            files+=("$file")
+          done < "$RUNNER_TEMP/python-files"
+          if [ "${#files[@]}" -eq 0 ]; then
+            echo "No changed Python files; Ruff configuration is valid"
+            exit 0
+          fi
+          uv run --locked ruff check -- "${files[@]}"
+          uv run --locked ruff format --check -- "${files[@]}"

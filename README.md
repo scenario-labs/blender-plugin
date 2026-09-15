@@ -66,6 +66,7 @@ Agents get scene tools (summary, object detail, select, set frame, screenshots, 
 
 ## Tests
 
+- Python linting, safe fixes and formatting: [`docs/PYTHON_STYLE.md`](docs/PYTHON_STYLE.md), `make lint` and `make format`.
 - `make test`: unit tests (pytest, no Blender).
 - `make test-blender`: headless integration tests inside the selected Blender binary (requires `./tools/install_dev.sh` first), including the MCP server over real HTTP.
 - `SCENARIO_SMOKE=1 python3 tests/smoke/smoke_image.py`, `smoke_material.py`, `smoke_video.py`: one real generation each through the core (about 9, 7 and 76 CU; the video smoke aborts if its dry run exceeds 150 CU).

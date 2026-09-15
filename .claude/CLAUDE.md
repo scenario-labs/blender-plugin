@@ -99,10 +99,20 @@ mean the current prototype client has already been replaced.
 
 ## Validation and local commands
 
-Use the project's selected Python environment. `make test` currently runs
-`python3 -m pytest` using `pytest.ini`; a focused `python3 -m pytest <path>`
-is appropriate when it covers the change. Preserve exit codes when capturing
-logs, and distinguish a passed check from a check that was not run.
+Install `requirements-dev.txt` in the project's selected Python environment.
+`make test` runs `python3 -m pytest` using `pyproject.toml`; override `PYTHON`
+to select an interpreter. A focused `python3 -m pytest <path>` is appropriate
+when it covers the change. Preserve exit codes when capturing logs, and
+distinguish a passed check from a check that was not run.
+
+Use the pinned Ruff configuration before further Python development:
+`make format` applies safe fixes and formatting; `make lint` checks both.
+During Studio adoption, scope these commands with `LINT_PATHS` to changed or
+adopted files. CI checks whole changed Python files; full-tree findings remain
+tracked in #28 until the dedicated mechanical normalization. Do not reformat
+obsolete prototypes as unrelated cleanup. Follow `docs/PYTHON_STYLE.md`,
+including Blender registration/annotation cautions, and keep any eventual
+pre-commit hook version aligned with the required Ruff version.
 
 The existing scripts have limitations: Blender location defaults to a macOS
 path, and the install script targets `user_default`. Set `BLENDER` explicitly

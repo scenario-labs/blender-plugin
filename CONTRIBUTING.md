@@ -248,3 +248,15 @@ what Blender rendered. A captured image also does not prove input/focus behavior
 live API access or paid generation. Keep local images and an evidence index in
 ignored `workdir/screenshots/`; when using worktrees, pass the root checkout's
 absolute screenshots directory to collect milestones together.
+
+The Blender baseline CI matrix also captures sidebar and composer on 5.0.1,
+5.1.2 and 5.2.1 using a virtual X display, Openbox and software OpenGL. The X11
+capture backend reads the Blender window directly because llvmpipe can return
+black frames through Blender’s GPU screenshot operator. CI passes the
+same ZIP that completed the native tests to the capture runner. Each matrix
+leg publishes `blender-screenshots-<version>` with PNGs, JSON evidence and logs;
+the baseline artifact retains the corresponding ZIP. Profiles and local fixture
+blend files are excluded from uploads. A capture failure fails that matrix leg.
+Download and inspect these artifacts during review: software-rendered Linux
+images complement local native GUI checks and do not replace input testing or
+other OS/GPU acceptance.

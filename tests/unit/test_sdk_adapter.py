@@ -11,6 +11,7 @@ from decimal import Decimal
 import httpx
 import pytest
 
+from scenario import __version__
 from scenario.core.api.sdk_adapter import AdapterError, Credentials, SDKAdapter
 
 URL = "https://service.example.invalid/v1"
@@ -92,6 +93,7 @@ def test_account_and_headers_are_isolated_without_changing_environment(
     assert request.url.host == "service.example.invalid"
     assert request.headers["Host"] == "service.example.invalid"
     assert request.headers["Authorization"] == credentials.authorization()
+    assert request.headers["User-Agent"] == f"ScenarioBlender/{__version__}"
     assert len(request.headers.get_list("Authorization")) == 1
     assert "X-Private" not in request.headers and "X-Project-Id" not in request.headers
     assert dict(request.url.params) == {"projectId": "selected-project"}

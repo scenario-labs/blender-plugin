@@ -18,6 +18,7 @@ from urllib.parse import urlsplit
 
 from ..schema.forms import prepare_run
 from ..schema.params import parse_schema, validate
+from .client import user_agent_string
 
 API_URL = "https://api.cloud.scenario.com/v1"
 
@@ -139,7 +140,7 @@ def _client(credentials, base_url, timeout, transport):
                 "Authorization": authorization,
                 "Accept": "application/json",
                 "Content-Type": "application/json",
-                "User-Agent": "ScenarioBlender/SDK-adapter",
+                "User-Agent": user_agent_string(),
             }
 
     http = httpx.Client(

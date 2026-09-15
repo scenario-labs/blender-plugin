@@ -228,6 +228,8 @@ its form while offline; the composer can display the synthetic model and prompt.
 `--lane` selects image,
 video, audio or 3d. Capture runs always use offline mode and the GUI probe guard.
 Inherited Scenario credentials and Blender/Python overrides are removed.
+`--gpu-backend` can select a Blender graphics backend explicitly; the capture
+report records the actual backend and renderer. Blank captures are rejected.
 
 Each invocation keeps a unique timestamped directory containing `plugin.png`,
 `report.json`, the candidate ZIP, the fixture blend and phase logs. The report

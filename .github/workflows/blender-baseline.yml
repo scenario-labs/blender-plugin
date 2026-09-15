@@ -80,7 +80,7 @@ jobs:
                 trap cleanup EXIT
                 uv run --locked --no-env-file python tools/capture_gui.py "$@"
               ' capture \
-              --zip "${candidates[0]}" --view "$view" --fixture form \
+              --zip "${candidates[0]}" --view "$view" --fixture form --gpu-backend opengl \
               --output "$RUNNER_TEMP/scenario-screenshots" --label "$GITHUB_SHA"
           done
       - name: Preserve plugin screenshots and capture evidence

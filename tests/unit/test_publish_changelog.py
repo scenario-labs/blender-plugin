@@ -10,18 +10,14 @@ from pathlib import Path
 
 import pytest
 
-WORKFLOW = (
-    Path(__file__).resolve().parents[2] / ".github/workflows/publish-changelog.yml"
-)
+WORKFLOW = Path(__file__).resolve().parents[2] / ".github/workflows/publish-changelog.yml"
 VERSION = "0.9.10"
 QUEUED = {"version": VERSION, "action": "create", "entryId": 123}
 EXISTING = {"version": VERSION, "reason": "already exists", "entryId": 123}
 BODY = "## [0.9.10](https://example.com/release) (2026-09-14)\n\n### Bug Fixes\n\n* Ship license"
 
 
-def run_workflow(
-    tmp_path, response, *, release=None, secret="test-secret", curl_exit=0
-):
+def run_workflow(tmp_path, response, *, release=None, secret="test-secret", curl_exit=0):
     # This workflow has a single final run block. Execute it verbatim so the
     # tests exercise jq, shell exit behavior, and the submitted payload together.
     script = textwrap.dedent(WORKFLOW.read_text().split("        run: |\n")[1])
@@ -97,10 +93,7 @@ def test_acknowledged_response_does_not_claim_publication(tmp_path, response, me
     args = (tmp_path / "curl-args").read_text()
     assert "test-secret" not in args
     assert "--retry" not in args
-    assert (
-        'header = "Authorization: Bearer test-secret"'
-        in (tmp_path / "curl-config").read_text()
-    )
+    assert 'header = "Authorization: Bearer test-secret"' in (tmp_path / "curl-config").read_text()
 
 
 @pytest.mark.parametrize(

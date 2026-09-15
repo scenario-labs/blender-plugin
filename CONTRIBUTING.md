@@ -44,6 +44,10 @@ Never put development credentials in the extension ZIP or a normal Blender profi
 From the repository root, after `uv sync --locked`:
 
 ```sh
+# Exercise the new SDK adapter's catalog read (no record export).
+uv run --locked --env-file .env.local python -m tools.check_sdk
+# Explicit SDK estimate for a custom model; parameters.json is a local input object.
+uv run --locked --env-file .env.local python -m tools.check_sdk --model MODEL_ID --parameters parameters.json
 # Fetch schemas without submitting generations (or reuse the local schema cache).
 uv run --locked --env-file .env.local python tools/audit_payloads.py
 # Fetch records into tests/fixtures; review and sanitize before committing them.
@@ -53,8 +57,14 @@ uv run --locked --env-file .env.local python tools/record_fixtures.py
 If CI or your shell already supplies the test pair, omit `--env-file .env.local`;
 use `--no-env-file` to explicitly disable file loading. Missing/blank credentials
 produce one actionable error before a service call. Neither script submits a
-generation. They still use the prototype REST client: SDK migration and verified
+generation. The older audit/record scripts still use the prototype REST client: SDK migration and verified
 non-spending service contracts remain tracked in #64 and #41.
+
+`tools.check_sdk` uses the shared SDK read/estimate adapter and always sends
+estimates with `dryRun=true` in the query. It prints counts and the exact cost,
+not account records, request inputs or signed URLs. It has no paid submission
+command and is never invoked by offline tests or PR CI. Live endpoint acceptance
+must be recorded separately from synthetic SDK contract results.
 
 The scripts in `tests/smoke/` spend credits. Credentials alone do not authorize a
 run: agree on the account/project, exact quote and budget first. After approval,

@@ -4,6 +4,7 @@
 
 import json
 import unittest
+from unittest.mock import patch
 
 import bpy
 from helpers import FIXTURES, isolated_manager, reset_scene, submodule
@@ -213,6 +214,43 @@ class TimelineSyncTests(unittest.TestCase):
         self.lane.model_id = "model_bytedance-seedance-2-0"
         request = self.generation.build_request(self.scene, "render_video")
         self.assertEqual(request.body["duration"], -1)
+
+    def test_model_switch_rebuilds_every_parameter_without_callback_errors(self):
+        params_ui = submodule("blender.params_ui")
+        original_sync = params_ui.sync_params
+        errors = []
+
+        def sync(*args):
+            try:
+                return original_sync(*args)
+            except Exception as error:
+                # Blender catches property-update errors itself, so record them
+                # explicitly instead of letting unittest report a false pass.
+                errors.append(str(error))
+                raise
+
+        with patch.object(params_ui, "sync_params", side_effect=sync):
+            for model_id in (
+                "model_minimax-h3",
+                "model_bytedance-seedance-2-0",
+                "model_minimax-h3",
+            ):
+                self.lane.model_id = model_id
+                self.assertEqual(errors, [], "Model-switch callback failed")
+                schema = self.generation.schema_for(model_id)
+                expected = {
+                    spec.name for spec in schema.specs if not spec.is_prompt and not spec.is_file
+                }
+                self.assertEqual({item.name for item in self.lane.params}, expected)
+                self.assertEqual(len(self.lane.params), len(expected))
+                self.assertTrue(all(item.model_id == model_id for item in self.lane.params))
+                for item in self.lane.params:
+                    spec = schema.by_name(item.name)
+                    if spec.allowed_values and spec.ptype != "string_array":
+                        self.assertIn(
+                            item.enum_value,
+                            [str(value) for value in spec.allowed_values if str(value)],
+                        )
 
     def test_messages_expire(self):
         self.runtime.set_message("Submitted to Meshy 7")

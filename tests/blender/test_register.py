@@ -4,7 +4,7 @@ import pathlib
 import unittest
 
 import bpy
-from helpers import addon, addon_name, submodule
+from helpers import addon, addon_name, submodule, temp_credentials
 
 
 class RegisterTests(unittest.TestCase):
@@ -34,11 +34,5 @@ class RegisterTests(unittest.TestCase):
 
     def test_credentials_resolve_from_prefs(self):
         runtime = submodule("blender.runtime")
-        prefs = bpy.context.preferences.addons[addon_name()].preferences
-        # These background tests do not save preferences; restore placeholders after use.
-        saved = (prefs.api_key, prefs.api_secret)
-        prefs.api_key, prefs.api_secret = "k", "s"
-        try:
+        with temp_credentials():
             self.assertTrue(runtime.credentials().valid)
-        finally:
-            prefs.api_key, prefs.api_secret = saved

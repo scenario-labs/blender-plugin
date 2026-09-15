@@ -94,7 +94,7 @@ installed files against the ZIP. Missing, changed and extra files fail the run;
 source-checkout imports are forbidden. Supplying `--zip /path/to/candidate.zip`
 tests a copied snapshot of an existing artifact instead of rebuilding.
 
-The default **baseline** reuses 25 native tests: registration defaults and paths,
+The default **baseline** covers registration defaults and paths,
 fixture-driven generation events, image/material/GLB import, installed core/MCP
 dependency imports, offline generation gating and authenticated MCP. A scene-tool
 request also checks that Blender work runs on the main thread. The runner then
@@ -102,7 +102,12 @@ checks disable/re-enable. External socket connections are forbidden and recorded
 as failures even if application code catches the exception; loopback is allowed
 for local MCP. No Scenario credentials, dotenv files or paid calls are needed.
 
-This initial baseline is deliberately smaller than the full existing suite.
+The baseline also covers history, render-lane request preparation and prompt
+operators with synthetic clients. Test context managers restore credentials and
+Blender's online-access preference, isolate job/cache/output paths, stop workers
+and clean temporary storage. Prompt tests import only the verified installed ZIP.
+
+This baseline is smaller than the full existing suite.
 Use `--suite all` (or `make test-blender BLENDER_TEST_ARGS="--suite all"`) to run
 all integration tests through the same guards. Full adoption coverage, broader
 offline behavior, SDK bundle compatibility, GUI/input/rendering and OS acceptance

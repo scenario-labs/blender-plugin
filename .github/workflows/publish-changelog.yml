@@ -56,13 +56,11 @@ jobs:
           fi
           jq -r .body "$temp_dir/release" > "$body"
 
-          # release-please-config.json hides docs, chore, ci, test, refactor,
-          # build and style, and release-please cuts no release from those
-          # alone. A release created or edited by hand can still carry a body
-          # with no "### " section; posting it would create an empty public
-          # entry or fail on the endpoint's header check for nothing.
+          # Release notes include every supported Conventional Commit type.
+          # A manually created or edited release can still lack changelog
+          # sections; avoid posting an empty entry in that case.
           if ! grep -q '^### ' "$body"; then
-            echo "::notice::$TAG has no user-facing sections, nothing to publish"
+            echo "::notice::$TAG has no changelog sections, nothing to publish"
             exit 0
           fi
 

@@ -73,11 +73,25 @@ Release-App credentials, installation and bypass configuration should be checked
 only when evidence points to an access failure. They are not routine setup steps
 for each release.
 
+## Included commit types
+
+[release-please-config.json](../release-please-config.json) includes every type
+accepted by commitlint: `feat`, `fix`, `perf`, `revert`, `docs`, `chore`, `ci`,
+`test`, `refactor`, `build` and `style`. Maintenance and documentation changes
+appear in their own sections alongside product changes. Commitlint validates
+messages; release-please controls their visibility in the generated notes.
+
+Keep these sections aligned when adding a commit type. Visible maintenance-only
+changes can produce a patch release proposal; feature and breaking-change
+version rules remain unchanged. Merging a configuration change refreshes the
+open release PR on the next successful release-please run. Review the generated
+notes there before merging the release PR.
+
 ## Public changelog
 
 [publish-changelog.yml](../.github/workflows/publish-changelog.yml) runs after
 publication or by explicit manual dispatch for a published stable tag. It skips
-bodies without user-facing sections and requires `CHANGELOG_INGEST_SECRET`.
+bodies without changelog sections and requires `CHANGELOG_INGEST_SECRET`.
 The workflow sends release notes to the Scenario changelog and checks the
 response for the exact release version. A successful HTTP status alone is
 insufficient: a response can report that processing failed.

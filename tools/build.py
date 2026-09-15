@@ -19,10 +19,10 @@ from wheel_bundle import prepare_source, validate_bundle
 class Session:
     """Own only this invocation's profile; retain logs and failed profiles."""
 
-    def __init__(self, binary, artifacts, timeout=300):
+    def __init__(self, binary, artifacts, timeout=300, *, prefix="tools-"):
         self.binary = binary
         artifacts.mkdir(parents=True, exist_ok=True)
-        self.directory = Path(tempfile.mkdtemp(prefix="tools-", dir=artifacts)).resolve()
+        self.directory = Path(tempfile.mkdtemp(prefix=prefix, dir=artifacts)).resolve()
         self.profile = self.directory / "profile"
         self.temporary = self.directory / "tmp"
         self.profile.mkdir()

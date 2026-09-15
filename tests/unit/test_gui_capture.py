@@ -77,6 +77,7 @@ def test_capture_evidence_and_cleanup(tmp_path, monkeypatch, failure):
         delay=8,
         label="fixture milestone",
         gpu_backend="opengl",
+        capture_backend="blender",
     )
     assert capture.capture(args) == (1 if failure else 0)
     directory = next(args.output.iterdir())

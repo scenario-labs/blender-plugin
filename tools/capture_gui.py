@@ -97,6 +97,7 @@ def capture(args):
                 args.lane,
                 str(args.delay),
                 args.fixture,
+                args.capture_backend,
             ],
         )
         evidence = json.loads((session.directory / "gui.json").read_text())
@@ -154,6 +155,12 @@ def main():
         "--gpu-backend",
         choices=("opengl", "metal", "vulkan"),
         help="Optional Blender GPU backend override for capture",
+    )
+    parser.add_argument(
+        "--capture-backend",
+        choices=("blender", "x11"),
+        default="blender",
+        help="Screenshot mechanism; x11 needs xdotool and ImageMagick on Linux",
     )
     parser.add_argument("--view", choices=("sidebar", "composer"), default="sidebar")
     parser.add_argument("--lane", choices=("image", "video", "audio", "3d"), default="image")

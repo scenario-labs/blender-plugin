@@ -230,6 +230,10 @@ video, audio or 3d. Capture runs always use offline mode and the GUI probe guard
 Inherited Scenario credentials and Blender/Python overrides are removed.
 `--gpu-backend` can select a Blender graphics backend explicitly; the capture
 report records the actual backend and renderer. Blank captures are rejected.
+On Linux, `--capture-backend x11` uses xdotool and ImageMagick to read only the
+visible window belonging to the disposable Blender process. This is useful when
+software OpenGL produces a blank GPU screenshot; the default remains Blender’s
+screenshot operator. The report identifies the capture mechanism.
 
 Each invocation keeps a unique timestamped directory containing `plugin.png`,
 `report.json`, the candidate ZIP, the fixture blend and phase logs. The report

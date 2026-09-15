@@ -121,9 +121,24 @@ def capture():
     if VIEW == "sidebar" and (region.width <= 1 or region.active_panel_category != "Scenario"):
         raise RuntimeError("Scenario sidebar is not active")
     with bpy.context.temp_override(window=window, area=area):
+        bpy.ops.wm.redraw_timer(type="DRAW_WIN_SWAP", iterations=2)
         result = bpy.ops.screen.screenshot(filepath=str(OUTPUT / "plugin.png"))
     if result != {"FINISHED"}:
         raise RuntimeError("Blender screenshot operator did not finish")
+    shot = bpy.data.images.load(str(OUTPUT / "plugin.png"), check_existing=False)
+    try:
+        dimensions = list(shot.size)
+        # Xvfb without a window manager can return a valid but entirely black
+        # front buffer. Sample RGB pixels (exclude alpha) before claiming capture.
+        pixels = shot.pixels
+        stride = max(4, (len(pixels) // 512 // 4) * 4)
+        samples = {
+            tuple(round(v, 3) for v in pixels[i : i + 3]) for i in range(0, len(pixels), stride)
+        }
+        if len(samples) < 2:
+            raise RuntimeError("Screenshot is blank; check the display/window manager")
+    finally:
+        bpy.data.images.remove(shot)
     (OUTPUT / "gui.json").write_text(
         json.dumps(
             {
@@ -138,6 +153,8 @@ def capture():
                 "lane": LANE,
                 "fixture": FIXTURE,
                 "active_sidebar": region.active_panel_category,
+                "image_size": dimensions,
+                "distinct_rgb_samples": len(samples),
             },
             indent=2,
         )

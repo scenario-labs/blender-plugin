@@ -230,6 +230,8 @@ Useful prototype lessons to retain while changing implementations:
 
 ## Claude commands
 
+- `/download-artifacts <prnumber>`: collect the PR head's CI artifacts under
+  ignored `workdir/`, preserve screenshot history and create a local review index.
 - `/pr-summary`: update the current PR's summary/title from its actual diff and
   verified evidence; return a draft instead when requested.
 - `/squash-message`: prepare and lint one squash message, align the PR title when

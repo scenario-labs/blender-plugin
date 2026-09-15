@@ -1,9 +1,22 @@
 # SPDX-FileCopyrightText: 2026 Scenario Inc.
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""Offline contracts for the published SDK selected for Studio adoption.
+"""Verify SDK behavior that the Blender integration will depend on.
 
-These exercise SDK public operations, not either prototype's client. Every
-request uses MockTransport; socket connections are additionally forbidden.
+Studio adoption will replace its custom Scenario client with the official SDK.
+These tests document and check the assumptions needed for that replacement:
+project selection and dry-run flags reach the correct query parameters,
+model-specific inputs and exact quote bytes survive unchanged, response fields
+remain accessible, and disabling retries prevents a second submission attempt.
+They also record the known bug where ambient Basic credentials override an
+explicitly selected Bearer token; that assertion is an expected failure.
+
+The real pinned SDK runs against a fake HTTP service (httpx.MockTransport).
+Tests inspect its outgoing requests and how it parses synthetic responses.
+Network connections are forbidden, so even submission tests spend no credits.
+
+These are dependency checks: an SDK upgrade that changes these behaviors needs
+review. They do not yet exercise a Blender integration adapter, prove that the
+live API accepts the requests, or establish native Blender compatibility.
 """
 
 import base64

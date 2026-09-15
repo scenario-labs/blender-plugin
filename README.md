@@ -68,7 +68,7 @@ Agents get scene tools (summary, object detail, select, set frame, screenshots, 
 
 - Python environment, linting and formatting: [`docs/PYTHON_STYLE.md`](docs/PYTHON_STYLE.md), `uv sync --locked`, `make lint` and `make format`.
 - `make test`: unit tests (pytest, no Blender).
-- `make test-blender`: headless integration tests inside the selected Blender binary (requires `./tools/install_dev.sh` first), including the MCP server over real HTTP.
+- `make test-blender`: build, validate and test an exact ZIP in a fresh disposable profile, including imports and authenticated MCP. See the [native test loop](CONTRIBUTING.md#native-blender-test-loop) for coverage, artifacts and binary selection.
 - Paid smoke scripts: see [live commands and authorization](CONTRIBUTING.md#live-commands).
 - GUI check: `blender tools/blank.blend --python tools/gui_screenshot.py -- out.png image 10`, screenshots reviewed under `~/Developer/scratch/playwright-screenshots/scenario-blender/`.
 

@@ -1,0 +1,82 @@
+# SPDX-FileCopyrightText: 2026 Scenario Inc.
+# SPDX-License-Identifier: GPL-3.0-or-later
+name: Blender baseline
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  runner-unit:
+    name: runner-unit
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
+        with:
+          version-file: pyproject.toml
+          enable-cache: true
+      - run: uv sync --locked
+      - run: make test
+
+  blender:
+    name: blender-baseline (${{ matrix.version }})
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - version: "5.0.1"
+            sha256: "8019580ee1b7262e505f4196a00237ccf743c88d205b38d34201510676e60b09"
+          - version: "5.1.2"
+            sha256: "aaccb355f50183979b698bcce7467103a76261b5fa59f4972295842662a285fb"
+          - version: "5.2.1"
+            sha256: "a31f524fa99a527d3d52b7f5aaa68c34e1a19d5a1c9473f79c5cc610fd5b10e9"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup-blender
+        with:
+          version: ${{ matrix.version }}
+          sha256: ${{ matrix.sha256 }}
+      - name: Install pinned uv
+        uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
+        with:
+          version-file: pyproject.toml
+          enable-cache: true
+      - run: uv sync --locked
+      - name: Test the exact ZIP in a new profile
+        env:
+          BLENDER_VERSION: ${{ matrix.version }}
+        run: uv run --locked --no-env-file python tools/test_blender.py --expected-version "$BLENDER_VERSION" --artifacts "$RUNNER_TEMP/scenario-tests"
+      - name: Preserve ZIP, reports and logs
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: blender-baseline-${{ matrix.version }}
+          if-no-files-found: warn
+          path: |
+            ${{ runner.temp }}/scenario-tests/*/*.log
+            ${{ runner.temp }}/scenario-tests/*/result.json
+            ${{ runner.temp }}/scenario-tests/*/tests.json
+            ${{ runner.temp }}/scenario-tests/*/*.zip
+
+  blender-baseline-ok:
+    if: always()
+    needs: [runner-unit, blender]
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Require every baseline matrix leg
+        env:
+          UNIT_RESULT: ${{ needs.runner-unit.result }}
+          MATRIX_RESULT: ${{ needs.blender.result }}
+        run: test "$UNIT_RESULT" = success && test "$MATRIX_RESULT" = success

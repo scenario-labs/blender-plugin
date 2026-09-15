@@ -187,6 +187,13 @@ commit header. Keep branch commits conventional too: current CI checks them.
 Lead PR descriptions with the problem and resulting behavior. Include relevant
 validation and limitations; do not invent passing counts, approvals or authorship.
 Use `Closes` only for fully completed issues and `Refs` for partial work.
+Before creating or updating a PR, read related issues and check their current
+acceptance criteria against the final diff and verified evidence. Add missing
+references, explain remaining scope for partial work, and verify GitHub's closing
+links. Closing keywords in a PR description only apply when it targets the default
+branch; recheck stacked PRs after retargeting. Carry verified references into the
+squash message and check issue state after an authorized merge. Generated release
+notes and historical keywords are not evidence that an issue is complete.
 Preserve actual contributor attribution. Keep issue references in commit footers.
 Write multiline PR bodies/messages to files and use `--body-file` or `-F`,
 with proper shell quoting.

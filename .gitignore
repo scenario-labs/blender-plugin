@@ -26,3 +26,6 @@ CLAUDE.local.md
 .claude/CLAUDE.local.md
 .claude/settings.local.json
 .blender-profile/
+
+# Local execution plans and working files
+/workdir/

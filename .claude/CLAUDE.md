@@ -128,16 +128,24 @@ obsolete prototypes as unrelated cleanup. Follow `docs/PYTHON_STYLE.md`,
 including Blender registration/annotation cautions, and keep any eventual
 pre-commit hook version aligned with the required Ruff version.
 
-The existing scripts have limitations: Blender location defaults to a macOS
-path, and the install script targets `user_default`. Set `BLENDER` explicitly
-when needed, and export an absolute disposable profile before **every** Blender
-invocation, including probes: `export BLENDER_USER_RESOURCES="$PWD/.blender-profile"`.
+`make test-blender` owns fresh disposable profiles for its entire build/install/test
+sequence, including probes. It strips inherited credentials and Blender/Python path
+overrides, verifies installed ZIP contents and reports actual runtime versions.
+See [the native test loop](../CONTRIBUTING.md#native-blender-test-loop). Use `BLENDER`
+or `--blender` to select a supported binary; discovery does not prove compatibility.
+
+The older standalone build/install scripts still default to a macOS path and
+`user_default`. For every direct Blender invocation outside the test runner,
+including probes, export an absolute disposable profile:
+`export BLENDER_USER_RESOURCES="$PWD/.blender-profile"`.
 Never install development builds into the user's normal profile.
 
 - `make build`: build and validate the extension ZIP.
 - `make install`: build and install, with the isolated profile environment set.
-- `make test-blender`: run integration tests in that same profile. First install
-  the exact candidate ZIP and verify the loaded package comes from it.
+- `make test-blender`: build/validate/install an exact ZIP, then run the offline
+  baseline in a new profile. No prior installation is needed. Logs and ZIP remain
+  under `.blender-profile/run-*`; successful profiles are removed. Use
+  `BLENDER_TEST_ARGS="--suite all"` for the full existing integration suite.
 - For package changes, inspect the resulting ZIP, validate it and check its
   license content. Keep root `LICENSE` and `scenario/LICENSE` identical.
 - For UI changes, exercise native behavior and inspect captured screenshots.

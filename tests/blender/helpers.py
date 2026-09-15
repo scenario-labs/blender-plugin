@@ -1,6 +1,7 @@
 # SPDX-FileCopyrightText: 2026 Scenario Inc.
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Helpers for tests that run inside `blender --background`."""
+
 import importlib
 import pathlib
 
@@ -10,11 +11,22 @@ ROOT = pathlib.Path(__file__).resolve().parents[2]
 FIXTURES = ROOT / "tests" / "fixtures"
 
 
+_PACKAGE = None
+_INSTALLED = None
+
+
+def configure(package, installed, profile):
+    global _PACKAGE, _INSTALLED
+    _PACKAGE, _INSTALLED = package, installed
+    prefs = bpy.context.preferences.addons[package].preferences
+    prefs.output_dir = str(profile / "output")
+    prefs.api_key = prefs.api_secret = ""
+
+
 def addon_name():
-    for name in bpy.context.preferences.addons.keys():
-        if name == "scenario" or name.endswith(".scenario"):
-            return name
-    raise RuntimeError("scenario extension is not enabled: run ./tools/install_dev.sh first")
+    if _PACKAGE is None:
+        raise RuntimeError("Installed package not verified: use make test-blender")
+    return _PACKAGE
 
 
 def addon():
@@ -22,7 +34,10 @@ def addon():
 
 
 def submodule(path):
-    return importlib.import_module(f"{addon_name()}.{path}")
+    module = importlib.import_module(f"{addon_name()}.{path}")
+    if not pathlib.Path(module.__file__).resolve().is_relative_to(_INSTALLED):
+        raise RuntimeError("Submodule is outside the verified installed package")
+    return module
 
 
 def reset_scene():

@@ -37,3 +37,6 @@ CLAUDE.local.md
 
 # Local execution plans and working files
 /workdir/
+
+# Downloaded Blender builds for native verification
+.blender/

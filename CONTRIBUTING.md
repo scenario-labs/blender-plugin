@@ -70,3 +70,63 @@ complete budget, uncertain-submission and protected CI requirements of #40.
 Do not treat their opt-in flag as a substitute for those requirements or run
 smokes as part of offline verification. uv loads every variable in a dotenv file,
 so keep the spending flag on the command line only.
+
+## Native Blender test loop
+
+Run from the repository root after `uv sync --locked`:
+
+```sh
+make test-blender
+# Equivalent portable command (also works without make):
+uv run --locked --no-env-file python tools/test_blender.py
+# Select a particular Blender executable, including paths containing spaces:
+uv run --locked --no-env-file python tools/test_blender.py --blender /path/to/blender
+```
+
+The runner checks `--blender`, then `BLENDER`, then PATH, platform locations and
+local `.blender/` builds. It reports the actual Blender/Python/OS versions and
+rejects binaries below the manifest minimum. An installed Blender 4.x cannot
+provide acceptance evidence for this extension's 5.0+ target.
+
+Every run creates its own directory under `.blender-profile/`, builds to an exact
+ZIP filename, validates that file, installs it in a fresh profile and checks all
+installed files against the ZIP. Missing, changed and extra files fail the run;
+source-checkout imports are forbidden. Supplying `--zip /path/to/candidate.zip`
+tests a copied snapshot of an existing artifact instead of rebuilding.
+
+The default **baseline** reuses 25 native tests: registration defaults and paths,
+fixture-driven generation events, image/material/GLB import, installed core/MCP
+dependency imports, offline generation gating and authenticated MCP. A scene-tool
+request also checks that Blender work runs on the main thread. The runner then
+checks disable/re-enable. External socket connections are forbidden and recorded
+as failures even if application code catches the exception; loopback is allowed
+for local MCP. No Scenario credentials, dotenv files or paid calls are needed.
+
+This initial baseline is deliberately smaller than the full existing suite.
+Use `--suite all` (or `make test-blender BLENDER_TEST_ARGS="--suite all"`) to run
+all integration tests through the same guards. Full adoption coverage, broader
+offline behavior, SDK bundle compatibility, GUI/input/rendering and OS acceptance
+remain separate work; the baseline does not certify those paths.
+
+The runner removes inherited Scenario credentials and Blender/Python path
+overrides from its child environment. It uses fresh user resources and temporary
+files, redirects test output into that profile, and compares file metadata in the
+normal Blender profile before/after successful runs. It never reuses or deletes
+a profile supplied through the shell. Avoid changing your normal preferences
+while this check runs, since that would correctly report a profile change.
+
+Artifacts in `.blender-profile/run-*` include per-phase logs, the candidate ZIP,
+its SHA-256 and JSON runtime/test reports. Blender failures retain their exit code;
+a per-process timeout prevents indefinite hangs. Successful profiles and temporary
+files are removed unless `--keep-profile` is given. Failed profiles remain for
+investigation. `--artifacts DIR` changes the parent directory for these unique runs.
+Do not invoke `tests/blender/run_all.py` directly; it refuses unmanaged profiles.
+
+[Blender baseline CI](.github/workflows/blender-baseline.yml) runs the full offline
+unit suite and the same native baseline on Linux with Blender **5.0.1, 5.1.2 and
+5.2.1**. It reuses the release pipeline's checksum-verifying setup action and
+publishes logs/reports/ZIPs, including on failure. The `blender-baseline-ok` check
+requires every leg to pass. Required-check rules remain a maintainer follow-up.
+To change a pinned version, verify its Linux x64 archive checksum in the official
+[Blender download directory](https://download.blender.org/release/), update the
+matrix version and hash together, and inspect the actual runtime report from CI.

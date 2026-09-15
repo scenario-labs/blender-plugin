@@ -1,4 +1,7 @@
-BLENDER ?= /Applications/Blender.app/Contents/MacOS/Blender
+ifdef BLENDER
+export BLENDER
+endif
+BLENDER_TEST_ARGS ?=
 UV ?= uv
 LINT_PATHS ?= .
 
@@ -16,7 +19,7 @@ format:
 	$(UV) run --locked ruff format -- $(LINT_PATHS) || exit $$?; \
 	exit $$result
 test-blender:
-	$(BLENDER) --background --python-exit-code 1 --python tests/blender/run_all.py
+	$(UV) run --locked --no-env-file python tools/test_blender.py $(BLENDER_TEST_ARGS)
 build:
 	./tools/build.sh
 install:

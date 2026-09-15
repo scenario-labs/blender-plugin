@@ -104,6 +104,10 @@ def select():
     window, area, region = view3d()
     if VIEW == "sidebar":
         with bpy.context.temp_override(window=window, area=area, region=region):
+            # Software-rendered CI can reach this timer before the first sidebar
+            # draw. Blender keeps the dynamic category property read-only until
+            # that draw has populated its enum items.
+            bpy.ops.wm.redraw_timer(type="DRAW_WIN_SWAP", iterations=2)
             region.active_panel_category = "Scenario"
             region.tag_redraw()
             bpy.ops.wm.redraw_timer(type="DRAW_WIN_SWAP", iterations=2)

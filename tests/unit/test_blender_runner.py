@@ -211,3 +211,65 @@ def test_expected_version_checks_numeric_release_not_lts_label(
     )
     assert runner.run(args) == exit_code
     assert steps == (["probe", "build"] if exit_code == 7 else ["probe"])
+
+
+@pytest.mark.parametrize("supplied", [False, True])
+@pytest.mark.parametrize(
+    "minimum,checkout_minimum,expected_exit", [("5.0.0", "5.2.0", 7), ("5.1.0", "5.0.0", 1)]
+)
+def test_candidate_minimum_is_checked_before_validation(
+    tmp_path, monkeypatch, runner, supplied, minimum, checkout_minimum, expected_exit
+):
+    checkout = tmp_path / "checkout"
+    (checkout / "scenario").mkdir(parents=True)
+    (checkout / "scenario/blender_manifest.toml").write_text(
+        f'id = "scenario"\nversion = "0.9.9"\nblender_version_min = "{checkout_minimum}"\n'
+    )
+    for path in (checkout / "LICENSE", checkout / "scenario/LICENSE"):
+        path.write_text("fixture license")
+    monkeypatch.setattr(runner, "ROOT", checkout)
+    monkeypatch.setattr(runner, "find_blender", lambda _: Path("blender"))
+    monkeypatch.setattr(runner, "normal_profile_root", lambda: tmp_path / "normal")
+
+    def candidate(path):
+        with zipfile.ZipFile(path, "w") as archive:
+            archive.writestr(
+                "blender_manifest.toml",
+                f'id = "scenario"\nversion = "0.9.9"\nblender_version_min = "{minimum}"\n',
+            )
+            archive.writestr("LICENSE", "fixture license")
+            archive.writestr("__init__.py", "# fixture")
+
+    supplied_zip = tmp_path / "supplied.zip"
+    candidate(supplied_zip)
+    steps = []
+
+    def step(binary, command, **kwargs):
+        name = kwargs["name"]
+        steps.append(name)
+        if name == "probe":
+            log = tmp_path / "probe.log"
+            log.write_text("SCENARIO_ENV=" + json.dumps({"blender": "5.0.1", "version": [5, 0, 1]}))
+            return log
+        if name == "build":
+            candidate(Path(command[command.index("--output-filepath") + 1]))
+            return tmp_path / "build.log"
+        raise subprocess.CalledProcessError(7, name)
+
+    monkeypatch.setattr(runner, "run_step", step)
+    args = SimpleNamespace(
+        blender=None,
+        artifacts=tmp_path / "artifacts",
+        suite="baseline",
+        timeout=2,
+        keep_profile=False,
+        expected_version=None,
+        zip=supplied_zip if supplied else None,
+    )
+    assert runner.run(args) == expected_exit
+    assert steps == ["probe"] + ([] if supplied else ["build"]) + (
+        ["validate"] if expected_exit == 7 else []
+    )
+    if expected_exit == 1:
+        report = json.loads(next(args.artifacts.glob("run-*/result.json")).read_text())
+        assert "candidate ZIP minimum 5.1.0" in report["error"]

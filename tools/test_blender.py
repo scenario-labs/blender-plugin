@@ -82,11 +82,6 @@ def run(args):
         report.update(environment)
         print(json.dumps(environment), flush=True)
         manifest = tomllib.loads((ROOT / "scenario/blender_manifest.toml").read_text())
-        minimum = tuple(int(part) for part in manifest["blender_version_min"].split("."))
-        if tuple(environment["version"]) < minimum:
-            raise ValueError(
-                f"Blender {environment['blender']} is below the extension minimum {manifest['blender_version_min']}"
-            )
         if args.expected_version and tuple(environment["version"]) != tuple(
             int(part) for part in args.expected_version.split(".")
         ):
@@ -110,6 +105,12 @@ def run(args):
         candidate_manifest, candidate_files = inspect_zip(candidate)
         if candidate_manifest["id"] != manifest["id"]:
             raise ValueError("Candidate ZIP is for a different extension")
+        minimum_text = candidate_manifest["blender_version_min"]
+        minimum = tuple(int(part) for part in minimum_text.split("."))
+        if tuple(environment["version"]) < minimum:
+            raise ValueError(
+                f"Blender {environment['blender']} is below the candidate ZIP minimum {minimum_text}"
+            )
         if (ROOT / "LICENSE").read_bytes() != (ROOT / "scenario/LICENSE").read_bytes():
             raise ValueError("Root and package licenses differ")
         if candidate_files["LICENSE"] != sha256(ROOT / "LICENSE"):

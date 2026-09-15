@@ -49,7 +49,7 @@ lockfile does not establish SDK bundle or native runtime compatibility.
 
 Development tools belong in `[dependency-groups].dev`. Use `uv add --dev` or
 `uv remove --dev`, and commit both `pyproject.toml` and `uv.lock`. When upgrading
-Ruff, update its exact dependency pin and `[tool.ruff].required-version together.
+Ruff, update its exact dependency pin and `[tool.ruff].required-version` together.
 Use `uv lock --upgrade-package <name>` for an intentional dependency update.
 
 Normal local commands and CI use `--locked`: stale or missing locks fail instead

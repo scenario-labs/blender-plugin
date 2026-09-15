@@ -6,8 +6,8 @@ name: publish-changelog
 # This lives off the `release: published` event rather than inside
 # release-please.yml so a failed POST stays recoverable: a failure fails this
 # job visibly, "Re-run jobs" retries it, and workflow_dispatch republishes any
-# tag by hand. The ingest endpoint skips versions it already holds, so a rerun
-# never duplicates an entry.
+# published tag by hand. Existing entries are skipped, even when their processing
+# failed; inspect the website entry before treating a rerun as recovery.
 on:
   release:
     types: [published]
@@ -44,9 +44,17 @@ jobs:
             exit 1
           fi
 
-          body="$(mktemp)"
-          payload="$(mktemp)"
-          gh release view "$TAG" --json body --jq .body > "$body"
+          temp_dir="$(mktemp -d)"
+          trap 'rm -rf "$temp_dir"' EXIT
+          body="$temp_dir/body"
+          payload="$temp_dir/payload"
+          response="$temp_dir/response"
+          gh release view "$TAG" --json body,isDraft,isPrerelease > "$temp_dir/release"
+          if ! jq -e '.isDraft == false and .isPrerelease == false' "$temp_dir/release" > /dev/null; then
+            echo "::error::Only published stable releases can enter the public changelog"
+            exit 1
+          fi
+          jq -r .body "$temp_dir/release" > "$body"
 
           # release-please-config.json hides docs, chore, ci, test, refactor,
           # build and style, and release-please cuts no release from those
@@ -66,9 +74,31 @@ jobs:
           printf 'header = "Authorization: Bearer %s"\n' "$CHANGELOG_INGEST_SECRET" \
             | curl --config - \
               --silent --show-error --location --fail-with-body \
-              --max-time 30 --retry 5 --retry-all-errors \
+              --max-time 30 \
+              --output "$response" \
               --request POST https://www.scenario.com/api/changelog/ingest \
               --header "Content-Type: application/json" \
               --data-binary "@$payload"
 
-          echo "Published $TAG to www.scenario.com/changelog"
+          # Source contract: scenario-com-landing-page/app/api/changelog/ingest/route.ts.
+          # HTTP 200 can contain DB/queue errors. Queuing is asynchronous and an
+          # existing record may still be processing or failed, not published.
+          version="${TAG#blender-plugin-v}"
+          version="${version#v}"
+          if ! jq -e --arg version "$version" '
+            try (
+              (.queued | type == "array") and (.skipped | type == "array") and
+              ((.queued + .skipped) | length == 1) and
+              all(.queued[]; .version == $version and .action == "create" and (.entryId | type == "number")) and
+              all(.skipped[]; .version == $version and .reason == "already exists" and (.entryId | type == "number"))
+            ) catch false
+          ' "$response" > /dev/null; then
+            echo "::error::Changelog ingest did not acknowledge this version; inspect website database/queue status before retrying"
+            exit 1
+          fi
+
+          if jq -e '.queued | length == 1' "$response" > /dev/null; then
+            echo "Queued $TAG for changelog processing; public visibility still requires verification"
+          else
+            echo "::warning::$TAG already exists; verify its website processing status and public visibility"
+          fi

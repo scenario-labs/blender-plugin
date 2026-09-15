@@ -116,6 +116,9 @@ def runner(monkeypatch):
     )
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
+    # Runner tests exercise process/artifact boundaries; bundle verification has
+    # separate synthetic tests and must never download dependencies here.
+    monkeypatch.setattr(module, "prepare_source", lambda source, destination: source)
     return module
 
 

@@ -134,14 +134,16 @@ overrides, verifies installed ZIP contents and reports actual runtime versions.
 See [the native test loop](../CONTRIBUTING.md#native-blender-test-loop). Use `BLENDER`
 or `--blender` to select a supported binary; discovery does not prove compatibility.
 
-The older standalone build/install scripts still default to a macOS path and
-`user_default`. For every direct Blender invocation outside the test runner,
+The portable build/install tools also create fresh isolated profiles and scrub
+inherited credentials and path overrides. For every direct Blender invocation outside these tools,
 including probes, export an absolute disposable profile:
 `export BLENDER_USER_RESOURCES="$PWD/.blender-profile"`.
 Never install development builds into the user's normal profile.
 
-- `make build`: build and validate the extension ZIP.
-- `make install`: build and install, with the isolated profile environment set.
+- `make build`: build and validate the extension ZIP; use
+  `BLENDER_BUILD_ARGS="--repo"` to also generate a local extension repository.
+- `make install`: build and install into a new isolated profile; use
+  `BLENDER_INSTALL_ARGS="--launch"` to open it.
 - `make test-blender`: build/validate/install an exact ZIP, then run the offline
   baseline in a new profile. No prior installation is needed. Logs and ZIP remain
   under `.blender-profile/run-*`; successful profiles are removed. Use

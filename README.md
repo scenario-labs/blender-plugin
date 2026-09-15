@@ -6,7 +6,7 @@
 
 **User guide: [`docs/USER_GUIDE.md`](docs/USER_GUIDE.md)**. Changelog: [`CHANGELOG.md`](CHANGELOG.md).
 
-Quick start: download `scenario-<version>.zip` from the releases (or run `./tools/build.sh`), drag it onto Blender, paste your key in Preferences > Add-ons > Scenario, press N in the 3D viewport and open the Scenario tab. For automated releases, verify your download with `gh attestation verify scenario-<version>.zip -R scenario-labs/blender-plugin` and check `SHA256SUMS` ([details](docs/USER_GUIDE.md#verify-your-download)). Details, tests and the agent setup are below; the design lives in `docs/superpowers/specs/` and the delivery plans in `docs/superpowers/plans/`.
+Quick start: download `scenario-<version>.zip` from the releases (or run `uv run --locked --no-env-file python tools/build.py`), drag it onto Blender, paste your key in Preferences > Add-ons > Scenario, press N in the 3D viewport and open the Scenario tab. For automated releases, verify your download with `gh attestation verify scenario-<version>.zip -R scenario-labs/blender-plugin` and check `SHA256SUMS` ([details](docs/USER_GUIDE.md#verify-your-download)). Details, tests and the agent setup are below; the design lives in `docs/superpowers/specs/` and the delivery plans in `docs/superpowers/plans/`.
 
 ---
 
@@ -31,13 +31,13 @@ Bring Scenario's generation into the Blender viewport so creators stay in one to
 - [`.env.example`](.env.example) and [developer environment setup](CONTRIBUTING.md#environment-variables): explicit test credentials for live tools.
 - `scenario/`: the extension source (`core/` is plain Python, `blender/` is the bpy glue). `blender_manifest.toml` at its root.
 - `tests/unit/` (pytest, no Blender), `tests/blender/` (run inside `blender --background`), `tests/smoke/` (opt-in, spends credits), `tests/fixtures/` (recorded API records and a real Patina job).
-- `tools/build.sh`, `tools/install_dev.sh`, `tools/record_fixtures.py`, `tools/gui_screenshot.py`, `tools/blank.blend`. `dist/` (ignored) holds built zips.
+- `tools/build.py`, `tools/install.py`, `tools/record_fixtures.py`, `tools/gui_screenshot.py`, `tools/blank.blend`. `dist/` (ignored) holds built zips.
 - `docs/superpowers/plans/`: P0 and P1 implementation plans (executed task by task).
 - `CHANGELOG.md`: what shipped per phase.
 
 ## Run it
 
-1. `./tools/install_dev.sh` (builds, validates and installs the zip into Blender's `user_default` repository and enables it). Restart running Blender instances.
+1. `uv run --locked --no-env-file python tools/install.py --launch` builds, validates and opens the extension in a fresh isolated development profile. For normal use, install the release ZIP through Blender.
 2. Blender > Edit > Preferences > Add-ons > Scenario: paste an API key and secret (Scenario portal > Team > API Keys, Project or Team scope), press Test connection.
 3. In the 3D viewport press N, open the Scenario tab (or the Scenario button in the viewport header), pick a model, type a prompt, read the CU price on Generate, generate.
 
@@ -51,7 +51,7 @@ A pill at the bottom of every 3D viewport shows the current prompt and a Generat
 
 ## Install from a repository (updates through Blender)
 
-`./tools/build_repo.sh` builds `dist/repo/` (index.json, the zip, an HTML listing). Host that folder on any static HTTPS server, then in Blender: Preferences > Get Extensions > Repositories > add the `index.json` URL (requires Allow Online Access). Updates then appear in Blender's own updater. The Extensions store itself is not an option for an account-gated add-on (ToS 3.10 / 4.3), see the spec.
+`uv run --locked --no-env-file python tools/build.py --repo` builds `dist/repo/` (index.json, the zip, an HTML listing). Host that folder on any static HTTPS server, then in Blender: Preferences > Get Extensions > Repositories > add the `index.json` URL (requires Allow Online Access). Updates then appear in Blender's own updater. The Extensions store itself is not an option for an account-gated add-on (ToS 3.10 / 4.3), see the spec.
 
 ## Agents (MCP)
 

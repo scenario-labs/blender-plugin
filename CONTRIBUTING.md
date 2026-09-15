@@ -130,3 +130,47 @@ requires every leg to pass. Required-check rules remain a maintainer follow-up.
 To change a pinned version, verify its Linux x64 archive checksum in the official
 [Blender download directory](https://download.blender.org/release/), update the
 matrix version and hash together, and inspect the actual runtime report from CI.
+
+
+### Portable build, install and download tools
+
+The build/install/download tools use Python 3.11.13+ and the standard library. Select Blender with `BLENDER`
+or `--blender`; an explicitly selected missing binary is an error. Build/install
+commands create fresh profiles under `.blender-profile/tools-*`, strip inherited
+Scenario credentials and Blender/Python path overrides, and retain per-phase logs.
+
+```sh
+uv run --locked --no-env-file python tools/build.py --output dist
+uv run --locked --no-env-file python tools/build.py --repo
+uv run --locked --no-env-file python tools/install.py --zip dist/scenario-<version>.zip --launch
+```
+
+`build.py` builds the manifest's exact ZIP, checks its GPL text and validates it
+before copying it to the output directory. `--repo` generates `OUTPUT/repo/`.
+Successful build profiles are removed; failures retain their profiles and logs.
+`install.py` builds when `--zip` is absent, verifies installed files against that
+ZIP and retains its new profile. `--launch` opens that profile for manual testing.
+An existing shell profile is never reused. Remove the printed `tools-*` directory
+when finished with it and after closing Blender. `make build` and `make install`
+accept `BLENDER_BUILD_ARGS` and `BLENDER_INSTALL_ARGS`, respectively.
+
+On Linux x64, fetch an official Blender release with:
+
+```sh
+uv run --locked --no-env-file python tools/fetch_blender.py --version 5.0.1
+```
+
+The fetcher reads the official checksum file, verifies the archive before
+extraction and prints the executable path to use with `BLENDER`. CI supplies
+`--sha256` to pin the expected digest. Archives are cached under `.blender/`;
+every invocation re-extracts the verified archive into the same managed slot for
+that version and checksum. Successful replacement removes the previous extraction;
+a failed extraction leaves it intact. Do not fetch a build while using that cached
+Blender executable. Older builds from the previous tool may leave randomly named
+version directories; remove those manually when no longer in use.
+Other platforms require a separately installed Blender selected with `BLENDER`.
+No download happens implicitly during build, install or tests.
+
+Screenshot probes prepare the blockout form without submitting a design.
+Design/refine operators also respect offline access, missing credentials and
+`SCENARIO_GUI_PROBE=1`. This flag is a development guard, not a paid-test mode.

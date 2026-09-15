@@ -13,36 +13,56 @@ box-filters them down to the button size, so the 16 px preview in the sheet is t
 The Latin A of the translate icon is drawn with strokes like the rest of the set (the web app's glyph is a stroked A);
 --font-a renders it with a font instead (DejaVu Sans, Blender's bundled Inter, Arial), which came out narrower and
 denser than the 1.5 px strokes at 16 px, so it is opt-in."""
+
 import argparse
 import glob
 import math
+import os
 import pathlib
 
 from PIL import Image, ImageDraw, ImageFont
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 OUT = ROOT / "scenario" / "icons"
-COLOR = (230, 230, 230, 255)   # #E6E6E6
-GRID = 16                      # design grid, in Blender 1x pixels
-SIZE = 64                      # shipped size
-SUPER = 8                      # supersampling of the shipped size
-S = SIZE * SUPER               # working canvas, 512 px
-U = S / GRID                   # canvas px per grid unit (32)
-STROKE = 1.5                   # grid units, the web app's stroke at 16 px
+COLOR = (230, 230, 230, 255)  # #E6E6E6
+GRID = 16  # design grid, in Blender 1x pixels
+SIZE = 64  # shipped size
+SUPER = 8  # supersampling of the shipped size
+S = SIZE * SUPER  # working canvas, 512 px
+U = S / GRID  # canvas px per grid unit (32)
+STROKE = 1.5  # grid units, the web app's stroke at 16 px
 W = STROKE * U
 
 # proportional fonts first; Blender's bundled DejaVu is the monospaced one in recent releases, its A is condensed
 FONT_CANDIDATES = [
-    "/System/Library/Fonts/DejaVuSans.ttf", "/System/Library/Fonts/Supplemental/DejaVuSans.ttf",
-    "/Library/Fonts/DejaVuSans.ttf", "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
-    *sorted(glob.glob("/Applications/Blender*.app/Contents/Resources/*/datafiles/fonts/Inter.woff2"), reverse=True),
-    *sorted(glob.glob("/Applications/Blender*.app/Contents/Resources/*/datafiles/fonts/DejaVuSans.woff2")),
-    "/System/Library/Fonts/Supplemental/Arial.ttf", "/System/Library/Fonts/Helvetica.ttc",
-    *sorted(glob.glob("/Applications/Blender*.app/Contents/Resources/*/datafiles/fonts/DejaVuSans*.woff2")),
+    str(pathlib.Path(os.environ.get("WINDIR", "C:/Windows")) / "Fonts/arial.ttf"),
+    "/usr/share/fonts/truetype/liberation2/LiberationSans-Regular.ttf",
+    "/usr/share/fonts/TTF/DejaVuSans.ttf",
+    "/System/Library/Fonts/DejaVuSans.ttf",
+    "/System/Library/Fonts/Supplemental/DejaVuSans.ttf",
+    "/Library/Fonts/DejaVuSans.ttf",
+    "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+    *sorted(
+        glob.glob("/Applications/Blender*.app/Contents/Resources/*/datafiles/fonts/Inter.woff2"),
+        reverse=True,
+    ),
+    *sorted(
+        glob.glob(
+            "/Applications/Blender*.app/Contents/Resources/*/datafiles/fonts/DejaVuSans.woff2"
+        )
+    ),
+    "/System/Library/Fonts/Supplemental/Arial.ttf",
+    "/System/Library/Fonts/Helvetica.ttc",
+    *sorted(
+        glob.glob(
+            "/Applications/Blender*.app/Contents/Resources/*/datafiles/fonts/DejaVuSans*.woff2"
+        )
+    ),
 ]
 
 
 # ---------------------------------------------------------------- drawing helpers (grid units in, canvas px out)
+
 
 def P(x, y):
     return (x * U, y * U)
@@ -69,14 +89,18 @@ def stroke(d, pts, width=STROKE, closed=False):
 
 
 def rrect(d, x0, y0, x1, y1, radius, width=STROKE):
-    d.rounded_rectangle((x0 * U, y0 * U, x1 * U, y1 * U), radius=radius * U, outline=COLOR, width=round(width * U))
+    d.rounded_rectangle(
+        (x0 * U, y0 * U, x1 * U, y1 * U), radius=radius * U, outline=COLOR, width=round(width * U)
+    )
 
 
 def arc(d, cx, cy, r, start, end, width=STROKE):
     """Arc in degrees (PIL convention: 0 at 3 o'clock, clockwise on screen) with round caps. PIL draws the
     width inward from the bounding ellipse, so the box is grown by half a stroke to keep the centreline at r."""
     x, y, rr = cx * U, cy * U, (r + width / 2) * U
-    d.arc((x - rr, y - rr, x + rr, y + rr), start=start, end=end, fill=COLOR, width=round(width * U))
+    d.arc(
+        (x - rr, y - rr, x + rr, y + rr), start=start, end=end, fill=COLOR, width=round(width * U)
+    )
     for a in (start, end):
         dot(d, cx + r * math.cos(math.radians(a)), cy + r * math.sin(math.radians(a)), width / 2)
 
@@ -91,8 +115,8 @@ def star(d, cx, cy, radius, waist=0.42, steps=24):
         sx, sy = math.copysign(c, ax + bx), math.copysign(c, ay + by)
         for k in range(steps):
             t = k / steps
-            x = (1 - t) ** 2 * ax + 2 * (1 - t) * t * sx + t ** 2 * bx
-            y = (1 - t) ** 2 * ay + 2 * (1 - t) * t * sy + t ** 2 * by
+            x = (1 - t) ** 2 * ax + 2 * (1 - t) * t * sx + t**2 * bx
+            y = (1 - t) ** 2 * ay + 2 * (1 - t) * t * sy + t**2 * by
             pts.append(P(cx + x, cy + y))
     d.polygon(pts, fill=COLOR)
 
@@ -111,14 +135,16 @@ def glyph_mask(path, char, cap_height):
     """Render `char` with the font at `cap_height` grid units, thickened so its legs match STROKE.
     Returns an L mask at canvas resolution, tightly cropped."""
     probe = ImageFont.truetype(path, 400)
-    l, t, r, b = probe.getbbox(char)
-    font = ImageFont.truetype(path, round(400 * cap_height * U / (b - t)))
+    _, top, _, bottom = probe.getbbox(char)
+    font = ImageFont.truetype(path, round(400 * cap_height * U / (bottom - top)))
 
     def render(sw):
-        l, t, r, b = font.getbbox(char, stroke_width=sw)
+        left, top, right, bottom = font.getbbox(char, stroke_width=sw)
         pad = round(W)
-        mask = Image.new("L", (r - l + 2 * pad, b - t + 2 * pad), 0)
-        ImageDraw.Draw(mask).text((pad - l, pad - t), char, fill=255, font=font, stroke_width=sw, stroke_fill=255)
+        mask = Image.new("L", (right - left + 2 * pad, bottom - top + 2 * pad), 0)
+        ImageDraw.Draw(mask).text(
+            (pad - left, pad - top), char, fill=255, font=font, stroke_width=sw, stroke_fill=255
+        )
         return mask.crop(mask.getbbox())
 
     mask = render(0)
@@ -147,6 +173,7 @@ def paste_mask(im, mask, cx, cy):
 
 # ---------------------------------------------------------------- modality icons
 
+
 def icon_image():
     """Landscape frame, a sun and one mountain running to the frame."""
     im, d = canvas()
@@ -167,7 +194,11 @@ def icon_video():
 def icon_audio():
     """Speaker (box + cone) and two sound waves."""
     im, d = canvas()
-    stroke(d, [(3.75, 5.5), (1.25, 5.5), (1.25, 10.5), (3.75, 10.5), (7.25, 12.75), (7.25, 3.25)], closed=True)
+    stroke(
+        d,
+        [(3.75, 5.5), (1.25, 5.5), (1.25, 10.5), (3.75, 10.5), (7.25, 12.75), (7.25, 3.25)],
+        closed=True,
+    )
     arc(d, 8.25, 8.0, 3.25, -40, 40)
     arc(d, 8.25, 8.0, 6.25, -45, 45)
     return im
@@ -177,10 +208,15 @@ def icon_3d():
     """Cube seen from above: a hexagon with an inner Y to the upper corners and the bottom."""
     im, d = canvas()
     cx, cy, r = 8.0, 8.0, 6.75
-    hexagon = [(cx + r * math.cos(math.radians(a)), cy + r * math.sin(math.radians(a))) for a in (270, 330, 30, 90, 150, 210)]
+    hexagon = [
+        (cx + r * math.cos(math.radians(a)), cy + r * math.sin(math.radians(a)))
+        for a in (270, 330, 30, 90, 150, 210)
+    ]
     stroke(d, hexagon, closed=True)
     for a in (210, 330, 90):  # upper-left, upper-right, bottom
-        stroke(d, [(cx, cy), (cx + r * math.cos(math.radians(a)), cy + r * math.sin(math.radians(a)))])
+        stroke(
+            d, [(cx, cy), (cx + r * math.cos(math.radians(a)), cy + r * math.sin(math.radians(a)))]
+        )
     return im
 
 
@@ -196,6 +232,7 @@ def icon_text():
 
 
 # ---------------------------------------------------------------- prompt tool icons
+
 
 def icon_dice():
     """One rounded die with five pips (Scenario's 'Generate a new prompt')."""
@@ -232,8 +269,16 @@ def icon_translate(font=None):
     return im
 
 
-ICONS = {"image": icon_image, "video": icon_video, "audio": icon_audio, "3d": icon_3d, "text": icon_text,
-         "dice": icon_dice, "sparkles": icon_sparkles, "translate": icon_translate}
+ICONS = {
+    "image": icon_image,
+    "video": icon_video,
+    "audio": icon_audio,
+    "3d": icon_3d,
+    "text": icon_text,
+    "dice": icon_dice,
+    "sparkles": icon_sparkles,
+    "translate": icon_translate,
+}
 
 
 def render_all(font):
@@ -261,8 +306,11 @@ def sheet(images, path):
 def main():
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--sheet", type=pathlib.Path, help="also write a review contact sheet here")
-    ap.add_argument("--font-a", action="store_true",
-                    help="render the translate A with a font (Inter or DejaVu from Blender, Arial) instead of strokes")
+    ap.add_argument(
+        "--font-a",
+        action="store_true",
+        help="render the translate A with a font (Inter or DejaVu from Blender, Arial) instead of strokes",
+    )
     args = ap.parse_args()
     font = find_font() if args.font_a else None
     print(f"translate A: {font or 'strokes'}")

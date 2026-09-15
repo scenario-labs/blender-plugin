@@ -9,8 +9,10 @@ The development dependency group pins this version and the MockTransport test
 client, `httpx==0.28.1`; [uv.lock](../uv.lock) pins their transitive dependencies.
 
 This is a prerequisite for [Studio adoption](https://github.com/scenario-labs/blender-plugin/issues/64).
-The SDK is currently a development dependency for contract tests. It has not
-replaced either prototype's client or been added to the extension ZIP.
+The SDK is currently a development dependency. The
+[shared read/estimate adapter](../scenario/core/api/sdk_adapter.py) now uses it;
+the existing UI and local MCP still use the prototype client pending shared-job
+integration. Runtime dependency packaging is a separate follow-up.
 
 ## Executable contracts
 
@@ -50,14 +52,58 @@ tracks ambient Basic credentials overriding explicitly selected Bearer auth.
 The expected behavior is an executable **strict expected failure**: the suite
 reports it separately, and an unexpected pass fails CI so an SDK update requires
 reviewing and removing the marker. This is an unresolved adoption blocker, not
-accepted account-switching behavior.
+accepted account-switching behavior in the unconfigured SDK.
 
-The tests clear SDK environment variables only to isolate fixtures. Production
-code must not temporarily edit process-wide environment variables in Blender.
-The shared adapter must isolate selected credentials, custom headers and base
-URL without affecting other workers or extensions. A tested SDK configuration
-workaround or an upstream fix is needed before OAuth wiring. Token serialization
-alone does not establish that browser OAuth tokens are accepted by REST.
+The dependency tests clear SDK environment variables only to isolate fixtures.
+The adapter does not edit process-wide environment variables. It configures all
+credential arguments and the API URL explicitly, owns an HTTP client with
+`trust_env=False` and `follow_redirects=False`, and overrides the SDK's public
+`default_headers` property with adapter-owned headers including the selected
+Authorization value. This configuration avoids ambient Basic/header overrides;
+it is not a raw endpoint fallback. Adapter contracts leave conflicting ambient
+values in place and verify both Basic and Bearer requests. Keep the upstream
+expected failure until the SDK itself fixes #26, and remove the configuration
+workaround only after a verified environment-isolation interface replaces it.
+Token serialization does not establish browser OAuth acceptance by REST.
+
+## Adapter coverage
+
+The adapter is deliberately a read/estimate foundation. It has no paid dispatch
+or cancellation entry point; #65 must establish durable request identity and
+reconciliation before enabling those actions. All calls use public SDK methods
+with `max_retries=0`; their `with_raw_response` wrappers preserve wire JSON.
+
+| Adapter operation | SDK 2.1.0 method and contract |
+| --- | --- |
+| Public/private model catalog | `models.list`: explicit page size/status/privacy, `paginationToken`, scope on every page, deduplication and cursor-loop/page-limit failures |
+| Public/private workflow catalog | `workflows.list`: SDK REST catalog replaces the need for Studio's public-workflow HTTP bypass; pagination and scope are tested synthetically |
+| Model/workflow/asset/job records | `models.retrieve`, `workflows.retrieve`, `assets.retrieve`, `jobs.retrieve`: unwrap the named record and retain unknown fields |
+| Custom-model estimate | `generate.run_model(dry_run=True)`: adopted form value validation plus retained conditional/one-of rules; inputs in JSON and dry-run/project in query |
+| Workflow estimate | `workflows.run(dry_run=True)`: normalize workflow fields/defaults and preserve the same query/body boundary |
+| Exact estimate record | Keep immutable request/response bytes and a `Decimal` cost, including zero; reject absent, negative, nonnumeric or non-finite costs rather than inventing a free estimate |
+
+Each client owns an immutable selected project and connection scope. Estimates
+from a different client fail `owns_estimate`, including a recreated client for
+the same account. This is a building block for shared-runtime invalidation, not
+a persisted quote or spending-authorization mechanism. Online permission is
+checked before every request, including every catalog page. Blender callers must
+supply a predicate reflecting their actual online-access permission.
+
+Custom-model records must explicitly declare `type=custom`; trained-model
+routing remains unavailable until its REST schema contract is established.
+Studio's pure routing helper/tests are retained, but remote-MCP `run_with`
+metadata is not silently assumed to exist in REST. Uploads, signed transfers,
+discovery, search/organization, submission and cancellation remain to be mapped.
+
+Run the adapter and command contracts offline with:
+
+```sh
+uv run --locked --no-env-file python -m pytest tests/unit/test_sdk_adapter.py tests/unit/test_check_sdk.py
+```
+
+The explicit live command is documented in
+[CONTRIBUTING.md](../CONTRIBUTING.md#live-commands). Its existence and synthetic
+tests do not claim live service acceptance or authorize a paid operation.
 
 ## Source baseline and remaining work
 

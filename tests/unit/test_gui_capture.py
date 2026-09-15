@@ -51,6 +51,7 @@ def test_capture_evidence_and_cleanup(tmp_path, monkeypatch, failure):
                 archive.extractall(installed)
         if name == "capture":
             assert session.env["SCENARIO_GUI_PROBE"] == "1"
+            assert command[command.index("--gpu-backend") + 1] == "opengl"
             if failure == "timeout":
                 raise subprocess.TimeoutExpired("fixture GUI", 10)
             evidence = {
@@ -75,6 +76,7 @@ def test_capture_evidence_and_cleanup(tmp_path, monkeypatch, failure):
         fixture="form",
         delay=8,
         label="fixture milestone",
+        gpu_backend="opengl",
     )
     assert capture.capture(args) == (1 if failure else 0)
     directory = next(args.output.iterdir())

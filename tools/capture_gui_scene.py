@@ -12,6 +12,7 @@ import traceback
 from pathlib import Path
 
 import bpy
+import gpu
 
 OUTPUT, INSTALLED, VIEW, LANE, DELAY, FIXTURE = sys.argv[sys.argv.index("--") + 1 :]
 OUTPUT = Path(OUTPUT)
@@ -44,6 +45,7 @@ def guarded(callback):
 
 
 def prepare():
+    print("Capture GPU:", gpu.platform.backend_type_get(), gpu.platform.renderer_get(), flush=True)
     if bpy.app.online_access or os.environ.get("SCENARIO_GUI_PROBE") != "1":
         raise RuntimeError("Capture requires offline mode and the GUI probe guard")
     name = next(n for n in bpy.context.preferences.addons.keys() if n.endswith(".scenario"))
@@ -154,6 +156,8 @@ def capture():
                 "fixture": FIXTURE,
                 "active_sidebar": region.active_panel_category,
                 "image_size": dimensions,
+                "gpu_backend": gpu.platform.backend_type_get(),
+                "gpu_renderer": gpu.platform.renderer_get(),
                 "distinct_rgb_samples": len(samples),
             },
             indent=2,

@@ -86,6 +86,7 @@ def capture(args):
                 "--offline-mode",
                 "--python-exit-code",
                 "1",
+                *(["--gpu-backend", args.gpu_backend] if args.gpu_backend else []),
                 str(session.directory / "fixture.blend"),
                 "--python",
                 str(ROOT / "tools/capture_gui_scene.py"),
@@ -148,6 +149,11 @@ def main():
         type=Path,
         default=ROOT / "workdir/screenshots",
         help="Parent directory for unique capture folders (default: workdir/screenshots)",
+    )
+    parser.add_argument(
+        "--gpu-backend",
+        choices=("opengl", "metal", "vulkan"),
+        help="Optional Blender GPU backend override for capture",
     )
     parser.add_argument("--view", choices=("sidebar", "composer"), default="sidebar")
     parser.add_argument("--lane", choices=("image", "video", "audio", "3d"), default="image")

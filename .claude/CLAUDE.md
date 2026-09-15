@@ -172,6 +172,13 @@ Preserve actual contributor attribution. Keep issue references in commit footers
 Write multiline PR bodies/messages to files and use `--body-file` or `-F`,
 with proper shell quoting.
 
+When asked to check or address a PR review comment, always reply in that
+comment's GitHub thread after investigating. State the outcome concisely:
+link the pushed fix commit and relevant validation, explain why no change is
+needed, or describe what remains unresolved. Apply this to human and bot
+comments alike. A local fix or a chat response alone does not complete the
+review follow-up. Do not claim a fix is pushed before it is available remotely.
+
 For local commit linting, use the versions and command from
 `.github/workflows/pr-name.yml`:
 `npx --no-install commitlint --config commitlint.config.ts --verbose`.

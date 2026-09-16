@@ -63,7 +63,8 @@ its database disappears. No prototype import or automatic migration is provided.
 | Prepared intent | `prepared` → `submitting` or local `canceled` |
 | Submission attempt | `submitting` → `remote` with a remote ID, or `uncertain` |
 | Lost response | `uncertain` → `remote` only after authoritative correlation |
-| Remote job | `remote` → `succeeded`, `failed` or acknowledged `canceled` |
+| Remote job | `remote` → observed `succeeded`, `failed` or `canceled`, or durable `cancel_requested` |
+| Cancellation claim | `cancel_requested` → observed `succeeded`, `failed` or `canceled`; never reset or replay |
 | Download | `succeeded` → `downloading` → `ready` or `download_failed`; explicit download retry is allowed |
 | Blender application | `ready` → `applying` → `applied` or `apply_failed`; explicit application retry requires origin/target checks |
 
@@ -71,6 +72,12 @@ There is no transition from `submitting` or `uncertain` back to `prepared` or
 `submitting`. Neither a timeout nor an empty job listing permits replay. Remote
 cancellation may race with success; the coordinator must reconcile the server's
 actual state rather than declaring a cancellation on request acknowledgement.
+A cancellation command claims `remote → cancel_requested` with the same atomic
+revision check before sending. A second coordinator/process cannot claim it
+again. Restart recovery polls this state even after a crash before sending;
+there is no lease expiry or explicit reset/reattempt command. The SQL schema and
+record fields remain version 1; older readers reject the new state rather than
+turning it into a dispatchable record.
 
 Opening storage never executes or automatically advances work. At startup, once
 old workers are stopped, the coordinator must treat saved `submitting` as
@@ -87,7 +94,7 @@ rollback, process exit before commit, and corrupt/incompatible databases. An
 installed-ZIP baseline test verifies SQLite and the store inside Blender's Python.
 
 The prototype still uses its existing registry until the shared coordinator is
-wired in. Result/download metadata, cancellation intents, durable recovery
-commands, bounded workers, teardown, current-quote validation, SDK dispatch,
-UI/MCP integration and safe main-thread application remain under #65. This store
-adds no alternate executor and does not claim those acceptance criteria complete.
+wired in. Result/download metadata, UI/MCP integration, live cancellation
+acceptance and safe main-thread application remain under #65. Cancellation
+claims, coordinator recovery and bounded workers provide foundations without
+completing those integrated acceptance criteria.

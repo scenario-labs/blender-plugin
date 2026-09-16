@@ -125,6 +125,7 @@ class JobState(StrEnum):
     SUBMITTING = "submitting"
     UNCERTAIN = "uncertain"
     REMOTE = "remote"
+    CANCEL_REQUESTED = "cancel_requested"
     SUCCEEDED = "succeeded"
     FAILED = "failed"
     CANCELED = "canceled"
@@ -140,7 +141,13 @@ _TRANSITIONS = {
     JobState.PREPARED: {JobState.SUBMITTING, JobState.CANCELED},
     JobState.SUBMITTING: {JobState.UNCERTAIN, JobState.REMOTE},
     JobState.UNCERTAIN: {JobState.REMOTE},
-    JobState.REMOTE: {JobState.SUCCEEDED, JobState.FAILED, JobState.CANCELED},
+    JobState.REMOTE: {
+        JobState.CANCEL_REQUESTED,
+        JobState.SUCCEEDED,
+        JobState.FAILED,
+        JobState.CANCELED,
+    },
+    JobState.CANCEL_REQUESTED: {JobState.SUCCEEDED, JobState.FAILED, JobState.CANCELED},
     JobState.SUCCEEDED: {JobState.DOWNLOADING},
     JobState.DOWNLOADING: {JobState.READY, JobState.DOWNLOAD_FAILED},
     JobState.DOWNLOAD_FAILED: {JobState.DOWNLOADING},

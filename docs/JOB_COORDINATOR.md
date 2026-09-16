@@ -83,7 +83,7 @@ review, while completed/failed/canceled records are finished. Inspection does no
 claim another process's worker is dead or silently change its state.
 
 `refresh_remote(request_id, expected_revision=...)` only accepts the current
-`remote` record with a known remote ID. It uses `SDKAdapter.job`, which calls the
+`remote` or `cancel_requested` record with a known remote ID. It uses `SDKAdapter.job`, which calls the
 public SDK `jobs.retrieve` with the selected project and online-access guard.
 A matching ID and recognized terminal state are committed before returning an
 immutable `RemoteSnapshot`. Unknown states, mismatched IDs, read failures and
@@ -143,34 +143,50 @@ main-thread result application remain separate integration work; the prototype
 runtime is not replaced or supplemented by a second active runtime here.
 
 
-## Known inference cancellation
+## Known model-job cancellation
 
 `cancel_remote(request_id, expected_revision=...)` accepts only a current scoped
 `remote` record with a known ID and a model operation. A fresh `jobs.retrieve`
-observation must identify `jobType=inference`; workflow and unrecognized job
-kinds are unsupported. A job already observed terminal is committed without
-sending a cancellation. Stale revisions, an inactive context and concurrent
-cancellation of the same request in one coordinator are rejected.
+observation must identify `jobType=custom` or `jobType=inference`. The sanitized
+[captured model-job fixture](../tests/fixtures/patina-copper-512/job.json) uses
+`custom`; the pinned SDK 2.1.0 enum also includes `inference`. These are model-job
+categories, not a general workflow-cancellation contract. Workflow operations
+and other kinds remain unsupported. A job already observed terminal is committed
+without sending a cancellation.
 
-An eligible job receives one SDK `jobs.trigger_action(action="cancel")` call,
+After eligibility checks, an atomic revision-checked store transition commits
+`remote → cancel_requested` before the SDK action. This claim serializes competing
+coordinators and Blender processes sharing the database; only one can dispatch.
+A failed claim write stops the action. There is no lease expiry or reset back to
+`remote`, so process death or a delayed first caller cannot allow another caller
+to repeat the same cancellation. Stale revisions and inactive contexts fail too.
+
+The winning caller makes one SDK `jobs.trigger_action(action="cancel")` call,
 with the selected project, online-access guard and `max_retries=0`. The action
-acknowledgement never changes durable status, even if it reports `canceled`.
+acknowledgement never establishes terminal status, even if it reports `canceled`.
 A subsequent `jobs.retrieve` supplies the authoritative snapshot: an active job
-remains `remote`, a completed job becomes `succeeded`, and only observed
+remains `cancel_requested`, a completed job becomes `succeeded`, and only observed
 `canceled` becomes `canceled`. Completion races retain their actual outcome.
 
 Action/observation transport or malformed-wrapper failures report
 `CancellationUncertain`; invalid status/identity evidence reports `RecoveryError`.
-Both preserve the known remote record for explicit refresh. Persistence and
-revision conflicts also propagate; failed writes never report terminal success.
-No cancel request is automatically retried, and no cancellation command is
-persisted for replay. After a crash, `recovery_plan()` suggests polling the saved
-ID. Another explicit cancellation remains a new user decision after refreshing.
-The existing store schema is sufficient for this conservative recovery path.
+Both preserve the durable cancellation claim and known ID for explicit refresh.
+Persistence and revision conflicts also propagate; failed writes never report
+terminal success. After restart, `recovery_plan()` suggests polling that saved ID,
+including if the process died after the claim but before sending. Recovery never
+replays the action. A fresh explicit cancel command also rejects a claimed job;
+a safe reattempt/reset contract is not implemented. This conservative boundary
+can leave a job running after a claim-before-send crash or definitive action
+rejection, while polling still recovers its eventual terminal result.
+
+The SQL schema and stored record fields remain unchanged. The additional
+`cancel_requested` state requires a reader that understands it; older readers
+fail closed on that record instead of silently treating it as dispatchable.
 
 `JobWorkers.cancel_remote` uses the bounded application pool and the same task
 polling interface. Deactivation before the action is claimed stops dispatch;
 once claimed, late observations stay bound to the original store. Shutdown
 joins this work before closing the SDK. General workflow cancellation, live
 service acceptance, and the UI/MCP cancellation controls remain outstanding
-under #65; rejecting a workflow approval node is not a substitute.
+under #65; rejecting a workflow approval node is not a substitute. Captured job
+types and offline tests do not establish live cancellation acceptance.

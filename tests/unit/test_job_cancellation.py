@@ -43,7 +43,7 @@ INTENT = JobIntent(
 
 
 def response(status="in-progress", **fields):
-    return {"jobId": "remote", "jobType": "inference", "status": status, **fields}
+    return {"jobId": "remote", "jobType": "custom", "status": status, **fields}
 
 
 @pytest.fixture(autouse=True)
@@ -117,7 +117,7 @@ def setup(tmp_path):
 @pytest.mark.parametrize(
     "observed,expected",
     [
-        ("in-progress", JobState.REMOTE),
+        ("in-progress", JobState.CANCEL_REQUESTED),
         ("canceled", JobState.CANCELED),
         ("success", JobState.SUCCEEDED),
         ("failure", JobState.FAILED),
@@ -138,7 +138,7 @@ def test_only_retrieval_decides_state_and_restart_does_not_replay(
     fresh = JobCoordinator(adapter, reopened)
     assert fresh.recovery_plan()[0].record == snapshot.record
     assert len(calls) == 3
-    if expected == JobState.REMOTE:
+    if expected == JobState.CANCEL_REQUESTED:
         assert fresh.recovery_plan()[0].action == RecoveryAction.POLL_REMOTE
 
 
@@ -153,7 +153,7 @@ def test_preflight_completion_avoids_cancel(setup, status):
 @pytest.mark.parametrize("kind", [None, "workflow", "training", [], "Inference"])
 def test_only_verified_inference_is_cancelable(setup, kind):
     coordinator, store, calls, record, _ = setup([response(jobType=kind)])
-    with pytest.raises(RecoveryError, match="verified inference"):
+    with pytest.raises(RecoveryError, match="verified model-generation"):
         coordinator.cancel_remote("request", expected_revision=record.revision)
     assert store.get("request") == record and len(calls) == 1
 
@@ -192,7 +192,9 @@ def test_failure_never_retries_and_keeps_known_id_recoverable(setup, phase, fail
     with pytest.raises(AdapterError if phase == "preflight" else CancellationUncertain) as error:
         coordinator.cancel_remote("request", expected_revision=record.revision)
     assert "private" not in str(error.value) and "secret" not in str(error.value)
-    assert store.get("request") == record
+    saved = store.get("request")
+    assert saved.intent == record.intent and saved.remote_job_id == record.remote_job_id
+    assert saved.state == (JobState.REMOTE if phase == "preflight" else JobState.CANCEL_REQUESTED)
     assert len(calls) == len(replies)
     assert coordinator.recovery_plan()[0].action == RecoveryAction.POLL_REMOTE
 
@@ -203,7 +205,7 @@ def test_post_action_invalid_identity_never_updates_local_state(setup):
     )
     with pytest.raises(RecoveryError, match="identity"):
         coordinator.cancel_remote("request", expected_revision=record.revision)
-    assert store.get("request") == record and len(calls) == 3
+    assert store.get("request").state == JobState.CANCEL_REQUESTED and len(calls) == 3
 
 
 def test_offline_is_checked_again_before_action(setup):
@@ -217,7 +219,7 @@ def test_offline_is_checked_again_before_action(setup):
     coordinator, store, calls, record, _ = setup([preflight], online=lambda: online)
     with pytest.raises(CancellationUncertain):
         coordinator.cancel_remote("request", expected_revision=record.revision)
-    assert len(calls) == 1 and store.get("request") == record
+    assert len(calls) == 1 and store.get("request").state == JobState.CANCEL_REQUESTED
 
 
 def test_deactivation_during_preflight_prevents_action(setup):
@@ -254,12 +256,12 @@ def test_write_failure_is_visible_without_false_cancellation(setup, monkeypatch)
     monkeypatch.setattr(store, "transition", fail)
     with pytest.raises(StoreError):
         coordinator.cancel_remote("request", expected_revision=record.revision)
-    assert store.get("request") == record and len(calls) == 3
+    assert store.get("request") == record and len(calls) == 1
 
 
 def test_competing_terminal_result_cannot_be_overwritten(setup):
     def observed(request):
-        store.transition("request", expected_revision=record.revision, state=JobState.SUCCEEDED)
+        store.transition("request", expected_revision=record.revision + 1, state=JobState.SUCCEEDED)
         return httpx.Response(200, json={"job": response("canceled")})
 
     coordinator, store, calls, record, _ = setup([response(), response(), observed])
@@ -301,7 +303,7 @@ def test_wrong_acknowledgement_identity_stays_uncertain(setup, ack):
     coordinator, store, calls, record, _ = setup([response(), ack])
     with pytest.raises(CancellationUncertain):
         coordinator.cancel_remote("request", expected_revision=record.revision)
-    assert store.get("request") == record and len(calls) == 2
+    assert store.get("request").state == JobState.CANCEL_REQUESTED and len(calls) == 2
 
 
 @pytest.mark.parametrize("reason", ["offline", "inactive", "stale"])
@@ -313,3 +315,172 @@ def test_ineligible_request_never_reaches_service(setup, reason):
     with pytest.raises((AdapterError, RecoveryError, StoreConflict)):
         coordinator.cancel_remote("request", expected_revision=expected_revision)
     assert store.get("request") == record and calls == []
+
+
+def test_captured_custom_model_record_is_eligible(setup):
+    from pathlib import Path
+
+    captured = json.loads(
+        (Path(__file__).parents[1] / "fixtures/patina-copper-512/job.json").read_text()
+    )["job"]
+    assert captured["jobType"] == "custom"
+    # Retain captured metadata/type, using a synthetic known ID and active phase.
+    captured.update(jobId="remote", status="in-progress")
+    intent = replace(INTENT, target_id=captured["metadata"]["input"]["modelId"])
+    coordinator, store, calls, record, _ = setup(
+        [captured, response(), response("canceled")], intent=intent
+    )
+    assert (
+        coordinator.cancel_remote("request", expected_revision=record.revision).record.state
+        == JobState.CANCELED
+    )
+    assert [r.method for r in calls] == ["GET", "POST", "GET"]
+    assert store.get("request").intent == intent
+
+
+def test_sdk_inference_spelling_remains_eligible(setup):
+    coordinator, _, calls, record, _ = setup(
+        [response(jobType="inference"), response(), response("canceled")]
+    )
+    assert (
+        coordinator.cancel_remote("request", expected_revision=record.revision).record.state
+        == JobState.CANCELED
+    )
+    assert sum(r.method == "POST" for r in calls) == 1
+
+
+def test_independent_coordinators_share_durable_cancel_claim(setup, tmp_path):
+    barrier = threading.Barrier(2)
+
+    def preflight(request):
+        barrier.wait(5)
+        return httpx.Response(200, json={"job": response()})
+
+    first, store, calls, record, adapter = setup(
+        [preflight, preflight, response(), response("canceled")]
+    )
+    second_store = JobStore(tmp_path / "jobs.sqlite3", SCOPE)
+    second = JobCoordinator(adapter, second_store)
+
+    def cancel(coordinator):
+        try:
+            return coordinator.cancel_remote("request", expected_revision=record.revision)
+        except StoreConflict:
+            return None
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        results = list(pool.map(cancel, (first, second)))
+    assert sum(result is not None for result in results) == 1
+    assert sum(request.method == "POST" for request in calls) == 1
+    assert store.get("request") == second_store.get("request")
+    assert store.get("request").state == JobState.CANCELED
+
+
+def test_lost_ack_reopens_as_poll_only_even_while_job_remains_active(setup, tmp_path):
+    def lost(request):
+        raise httpx.ReadTimeout("private", request=request)
+
+    coordinator, store, calls, record, adapter = setup(
+        [response(), lost, response(), response("success")]
+    )
+    with pytest.raises(CancellationUncertain):
+        coordinator.cancel_remote("request", expected_revision=record.revision)
+    reopened = JobStore(tmp_path / "jobs.sqlite3", SCOPE)
+    recovered = JobCoordinator(adapter, reopened)
+    claimed = reopened.get("request")
+    assert claimed.state == JobState.CANCEL_REQUESTED and claimed.revision == record.revision + 1
+    assert recovered.recovery_plan()[0].action == RecoveryAction.POLL_REMOTE
+    for _ in range(2):
+        with pytest.raises(StoreConflict, match="already requested"):
+            recovered.cancel_remote("request", expected_revision=claimed.revision)
+    active = recovered.refresh_remote("request", expected_revision=claimed.revision)
+    assert active.record == claimed
+    result = recovered.refresh_remote("request", expected_revision=claimed.revision)
+    assert result.record.state == JobState.SUCCEEDED
+    assert store.get("request") == result.record
+    assert [r.method for r in calls] == ["GET", "POST", "GET", "GET"]
+
+
+def test_process_exit_after_claim_before_send_never_replays(setup, tmp_path):
+    import subprocess
+    import sys
+    from dataclasses import asdict
+
+    _, store, calls, record, adapter = setup([response("success")])
+    script = """
+import json, os, sys
+from scenario.core.jobs.store import JobScope, JobState, JobStore
+store = JobStore(sys.argv[1], JobScope(**json.loads(sys.argv[2])))
+store.transition('request', expected_revision=2, state=JobState.CANCEL_REQUESTED)
+os._exit(0)
+"""
+    subprocess.run(
+        [sys.executable, "-c", script, str(tmp_path / "jobs.sqlite3"), json.dumps(asdict(SCOPE))],
+        check=True,
+        timeout=10,
+    )
+    reopened = JobStore(tmp_path / "jobs.sqlite3", SCOPE)
+    coordinator = JobCoordinator(adapter, reopened)
+    claimed = reopened.get("request")
+    assert claimed.state == JobState.CANCEL_REQUESTED and claimed.revision == record.revision + 1
+    with pytest.raises(StoreConflict, match="already requested"):
+        coordinator.cancel_remote("request", expected_revision=claimed.revision)
+    assert calls == []
+    result = coordinator.refresh_remote("request", expected_revision=claimed.revision)
+    assert result.record.state == JobState.SUCCEEDED
+    assert len(calls) == 1 and calls[0].method == "GET"
+    assert store.get("request") == result.record
+
+
+def test_failed_cancel_claim_commit_rolls_back_before_action(setup, monkeypatch):
+    import sqlite3
+
+    coordinator, store, calls, record, _ = setup([response()])
+    connect = sqlite3.connect
+
+    class FailCommit(sqlite3.Connection):
+        def commit(self):
+            raise sqlite3.OperationalError("fixture commit failure")
+
+    # The read preflight is allowed; only the durable cancellation transaction fails.
+    original = store.transition
+
+    def fail_claim(*args, **kwargs):
+        with monkeypatch.context() as patch:
+            patch.setattr(
+                sqlite3, "connect", lambda *a, **kw: connect(*a, **kw, factory=FailCommit)
+            )
+            return original(*args, **kwargs)
+
+    monkeypatch.setattr(store, "transition", fail_claim)
+    with pytest.raises(StoreError):
+        coordinator.cancel_remote("request", expected_revision=record.revision)
+    assert store.get("request") == record
+    assert len(calls) == 1 and calls[0].method == "GET"
+
+
+def test_terminal_commit_failure_keeps_durable_cancel_claim(setup, monkeypatch):
+    coordinator, store, calls, record, _ = setup([response(), response(), response("canceled")])
+    transition = store.transition
+
+    def fail_terminal(*args, **kwargs):
+        if kwargs["state"] != JobState.CANCEL_REQUESTED:
+            raise StoreError("fixture terminal persistence failure")
+        return transition(*args, **kwargs)
+
+    monkeypatch.setattr(store, "transition", fail_terminal)
+    with pytest.raises(StoreError):
+        coordinator.cancel_remote("request", expected_revision=record.revision)
+    assert store.get("request").state == JobState.CANCEL_REQUESTED and len(calls) == 3
+
+
+def test_matching_terminal_observation_after_cancel_is_idempotent(setup):
+    def observed(request):
+        claimed = store.get("request")
+        store.transition("request", expected_revision=claimed.revision, state=JobState.CANCELED)
+        return httpx.Response(200, json={"job": response("canceled")})
+
+    coordinator, store, calls, record, _ = setup([response(), response(), observed])
+    result = coordinator.cancel_remote("request", expected_revision=record.revision)
+    assert result.record == store.get("request") and result.record.state == JobState.CANCELED
+    assert len(calls) == 3

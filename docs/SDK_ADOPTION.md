@@ -107,7 +107,12 @@ Persist scope and request identity before dispatch; poll a known remote ID, but
 keep a lost-ID submission uncertain unless authoritative correlation is available.
 Never resolve an empty or ambiguous listing by automatically submitting again.
 
-The job action documentation limits cancellation to inference jobs. No general
+The job action documentation limits cancellation to inference jobs. The captured
+model-generation record in `tests/fixtures/patina-copper-512/job.json` uses
+`jobType=custom`; the pinned retrieve-response enum includes both `custom` and
+`inference`. The coordinator accepts these two kinds only for persisted model
+operations, with a durable `cancel_requested` claim before its single action.
+No general
 workflow-cancel method appears in the inspected workflow resource. Rejection
 requires a user-approval node and has node/loop-specific semantics; it must not
 be repurposed as general cancellation. A response may still be `in-progress` or
@@ -151,7 +156,7 @@ with `max_retries=0`; their `with_raw_response` wrappers preserve wire JSON.
 | --- | --- |
 | Public/private model catalog | `models.list`: explicit page size/status/privacy, `paginationToken`, scope on every page, deduplication and cursor-loop/page-limit failures |
 | Public/private workflow catalog | `workflows.list`: SDK REST catalog replaces the need for Studio's public-workflow HTTP bypass; pagination and scope are tested synthetically |
-| Known inference cancellation | `jobs.trigger_action(action="cancel")` through its public raw-response wrapper: one attempt, selected project, no terminal-state assumption from acknowledgement; coordinator retrieves before and after the action |
+| Known model-job cancellation | `jobs.trigger_action(action="cancel")` through its public raw-response wrapper: one attempt, selected project, no terminal-state assumption from acknowledgement; coordinator retrieves before and after the action |
 | Scoped job discovery | `jobs.list` through the public raw-response wrapper: optional author/workflow/type/status filters, 1–200 items per page, bounded pagination and explicit errors instead of partial or conflicting history |
 | Model/workflow/asset/job records | `models.retrieve`, `workflows.retrieve`, `assets.retrieve`, `jobs.retrieve`: unwrap the named record and retain unknown fields |
 | Custom-model estimate | `generate.run_model(dry_run=True)`: adopted form value validation plus retained conditional/one-of rules; inputs in JSON and dry-run/project in query |

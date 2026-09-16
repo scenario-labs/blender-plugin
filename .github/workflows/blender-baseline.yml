@@ -72,14 +72,18 @@ jobs:
             exit 1
           fi
           for view in sidebar composer; do
-            xvfb-run -a -s '-screen 0 1920x1080x24' \
+            display_logs="$RUNNER_TEMP/scenario-screenshots/display-$view"
+            mkdir -p "$display_logs"
+            xvfb-run -a -e "$display_logs/xvfb.log" -s '-screen 0 1920x1080x24' \
               bash -euc '
-                openbox --sm-disable >"$RUNNER_TEMP/scenario-openbox.log" 2>&1 &
+                openbox_log=$1
+                shift
+                openbox --sm-disable >"$openbox_log" 2>&1 &
                 window_manager_pid=$!
                 cleanup() { kill "$window_manager_pid" 2>/dev/null || true; }
                 trap cleanup EXIT
                 uv run --locked --no-env-file python tools/capture_gui.py "$@"
-              ' capture \
+              ' capture "$display_logs/openbox.log" \
               --zip "${candidates[0]}" --view "$view" --fixture form --gpu-backend opengl --capture-backend x11 \
               --output "$RUNNER_TEMP/scenario-screenshots" --label "$GITHUB_SHA"
           done

@@ -10,6 +10,7 @@ SDK imports are lazy so package registration does not start client work.
 import copy
 import json
 import math
+import re
 import threading
 import time
 from collections.abc import Callable
@@ -100,6 +101,32 @@ def _identifier(value):
     if any(char in value for char in "/\\?#%") or any(ord(char) < 33 for char in value):
         raise ValueError("Identifier contains unsupported characters")
     return value
+
+
+def _upload_identifier(value):
+    """Keep upload and asset-option identities safe for paths and future storage."""
+    value = _identifier(value)
+    if len(value) > 256 or any(char.isspace() or ord(char) == 127 for char in value):
+        raise ValueError("Upload identifiers must be at most 256 characters without whitespace")
+    return value
+
+
+def _upload_record(raw, identifier=None):
+    record = _json(raw).get("upload")
+    if not isinstance(record, dict):
+        raise AdapterError("Scenario returned no upload record")
+    try:
+        actual = _upload_identifier(record.get("id"))
+    except ValueError:
+        raise AdapterError("Scenario returned an invalid upload identity") from None
+    if identifier is not None and actual != identifier:
+        raise AdapterError("Scenario returned a different upload identity")
+    status = record.get("status")
+    if not isinstance(status, str) or not status.strip():
+        raise AdapterError("Scenario returned no upload status")
+    # Preserve future statuses, transfer instructions and fields verbatim. This
+    # is metadata, not a validated transfer plan or proof of completed import.
+    return record
 
 
 def _prepare(identifier, fields, parameters, ui_config=None):
@@ -273,6 +300,93 @@ class SDKAdapter:
 
     def job(self, identifier):
         return self._retrieve("jobs", identifier, "job")
+
+    def create_upload(self, *, kind, file_name, content_type, file_size, parts, asset_options=None):
+        """Initialize multipart metadata once; never read or transfer local bytes.
+
+        Errors after dispatch may mean the server created an upload. Callers
+        must preserve known identity and reconcile, not recreate automatically.
+        """
+        if not isinstance(kind, str) or kind not in {
+            "3d",
+            "asset",
+            "audio",
+            "avatar",
+            "image",
+            "model",
+            "text",
+            "video",
+        }:
+            raise ValueError("Use a supported upload kind")
+        if (
+            not isinstance(file_name, str)
+            or not file_name.strip()
+            or file_name in {".", ".."}
+            or any(char in file_name for char in "/\\:")
+            or any(ord(char) < 32 or ord(char) == 127 for char in file_name)
+        ):
+            raise ValueError("Use a file basename without paths or control characters")
+        if not isinstance(content_type, str) or not re.fullmatch(
+            r"[A-Za-z0-9!#$&^_.+-]+/[A-Za-z0-9!#$&^_.+-]+", content_type
+        ):
+            raise ValueError("Use a MIME type without parameters or control characters")
+        if type(file_size) is not int or file_size < 0:
+            raise ValueError("Upload file size must be a nonnegative integer byte count")
+        if type(parts) is not int or parts < 1:
+            raise ValueError("Upload part count must be a positive integer")
+        options = {}
+        if asset_options is not None:
+            if kind == "model":
+                raise ValueError("Model uploads do not support asset options")
+            if not isinstance(asset_options, dict) or set(asset_options) - {
+                "collection_ids",
+                "parent_id",
+                "hide",
+            }:
+                raise ValueError("Use supported SDK asset option names")
+            copied = copy.deepcopy(asset_options)
+            if "collection_ids" in copied:
+                if not isinstance(copied["collection_ids"], list):
+                    raise ValueError("Upload collections must be a list of identifiers")
+                for value in copied["collection_ids"]:
+                    _upload_identifier(value)
+            if "parent_id" in copied:
+                _upload_identifier(copied["parent_id"])
+            if "hide" in copied and type(copied["hide"]) is not bool:
+                raise ValueError("Upload visibility must be a boolean")
+            options["asset_options"] = copied
+        return _upload_record(
+            self._request(
+                self._sdk.uploads.with_raw_response.create,
+                kind=kind,
+                file_name=file_name,
+                content_type=content_type,
+                file_size=file_size,
+                parts=parts,
+                **options,
+            )
+        )
+
+    def upload(self, identifier):
+        """Retrieve one known upload in the selected project without side effects."""
+        identifier = _upload_identifier(identifier)
+        return _upload_record(
+            self._request(self._sdk.uploads.with_raw_response.retrieve, identifier), identifier
+        )
+
+    def complete_upload(self, identifier):
+        """Explicitly request completion once; an acknowledgement may be validating.
+
+        The caller must establish that its parts were transferred. This adapter
+        does not infer transfer success, poll, retry, or claim asset import.
+        """
+        identifier = _upload_identifier(identifier)
+        return _upload_record(
+            self._request(
+                self._sdk.uploads.with_raw_response.trigger_action, identifier, action="complete"
+            ),
+            identifier,
+        )
 
     def jobs(
         self,

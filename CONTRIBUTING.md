@@ -24,7 +24,7 @@ the default unit-test collection and are not added to PR workflows.
 | `SCENARIO_API_KEY`, `SCENARIO_API_SECRET` | `scenario/core/config.py`: `resolve_credentials` | Runtime environment values override Preferences; the panel does not identify the source. These variables are not used by live-tool credential selection | Developer launching Blender |
 | `SCENARIO_API_BASE` | `tools/audit_payloads.py`: `main` | Audit-only REST base URL; default `https://api.cloud.scenario.com/v1` | Developer |
 | `SCENARIO_SMOKE` | `tests/smoke/*.py` | `=1` allows a paid smoke to run; keep this out of dotenv files | Developer, on the command line after authorization |
-| `SCENARIO_GUI_PROBE` | `scenario/blender/operators.py`: `probe_mode`; `scenario/mcp/tools_scenario.py`: `generate`; `tools/gui_screenshot.py` | `=1` gates panel Generate and MCP generation during screenshots; it is not a general network or spending sandbox | Screenshot tool |
+| `SCENARIO_GUI_PROBE` | `scenario/blender/operators.py`: `probe_mode`; `scenario/mcp/tools_scenario.py`: `generate`; `tools/gui_screenshot.py`; `tools/capture_gui.py`; `tools/capture_gui_scene.py` | `=1` gates panel Generate and MCP generation during screenshots; it is not a general network or spending sandbox | Screenshot tool |
 | `SCENARIO_PROBE_MODEL` | `tools/gui_screenshot.py` | Selects a model for 3D-tab screenshots | Test tools |
 | `SCENARIO_SHOT_SOURCE` | `tests/blender/test_shot_planner.py` | `=1` loads the shot planner from source rather than the installed extension; unsuitable as evidence of ZIP acceptance | Test tools |
 | `SCHEMA_CACHE` | `tools/audit_payloads.py` | Cached schema root; default `<tempdir>/scenario-schema-cache`, with separate hashed subdirectories for credentials, project and API base URL | Developer |
@@ -205,3 +205,53 @@ No download happens implicitly during build, install or tests.
 Screenshot probes prepare the blockout form without submitting a design.
 Design/refine operators also respect offline access, missing credentials and
 `SCENARIO_GUI_PROBE=1`. This flag is a development guard, not a paid-test mode.
+
+### Repeatable GUI screenshots
+
+Use an interactive desktop session (the command opens and closes its own Blender
+window). The capture runner builds or installs an exact ZIP in a fresh offline
+profile, prepares a version-matched default scene, and captures the Scenario UI:
+
+```sh
+uv run --locked --no-env-file python tools/capture_gui.py --blender /path/to/blender \
+  --zip dist/scenario-<version>.zip --output workdir/screenshots \
+  --view sidebar --fixture form --label "milestone / candidate commit"
+uv run --locked --no-env-file python tools/capture_gui.py --blender /path/to/blender \
+  --zip dist/scenario-<version>.zip --output workdir/screenshots \
+  --view composer --fixture form --label "milestone / candidate commit"
+```
+
+Omit `--zip` to build the current source. Successful cleanup keeps one candidate
+ZIP, screenshots, reports and
+logs; staged source/wheels and the temporary ZIP copy are removed. Setup errors
+produce a failed report when the output directory is writable. A cleanup error
+retains capture evidence with `status: cleanup_failed` and a nonzero exit.
+The composer has no audio lane; use `--view sidebar --lane audio` for that lane.
+
+`--fixture empty` (default) captures the
+signed-out UI; `form` supplies a clearly named synthetic model and fake credentials
+in memory, without service requests or an actual quote. The current sidebar hides
+its form while offline; the composer can display the synthetic model and prompt.
+`--lane` selects image,
+video, audio or 3d. Capture runs always use offline mode and the GUI probe guard.
+Inherited Scenario credentials and Blender/Python overrides are removed.
+`--gpu-backend` can select a Blender graphics backend explicitly; the capture
+report records the actual backend and renderer. Blank captures are rejected.
+On Linux, `--capture-backend x11` uses xdotool and ImageMagick to read only the
+visible window belonging to the disposable Blender process. This is useful when
+software OpenGL produces a blank GPU screenshot; the default remains Blender’s
+screenshot operator. The report identifies the capture mechanism.
+
+Each invocation keeps a unique timestamped directory containing `plugin.png`,
+`report.json`, the candidate ZIP, the fixture blend and phase logs. The report
+records the ZIP/PNG hashes, actual Blender/Python/OS, view, lane, fixture and an
+optional user-supplied label. A label identifies the intended milestone; the ZIP
+hash identifies the actual artifact. Successful profiles are removed. Failure
+profiles remain for diagnosis, and the command exits unsuccessfully on missing
+GUI evidence, a missing PNG, changed installed files, timeout or runtime mismatch.
+
+**Inspect each saved image:** the API's active-tab value alone does not establish
+what Blender rendered. A captured image also does not prove input/focus behavior,
+live API access or paid generation. Keep local images and an evidence index in
+ignored `workdir/screenshots/`; when using worktrees, pass the root checkout's
+absolute screenshots directory to collect milestones together.

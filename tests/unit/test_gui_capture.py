@@ -1,0 +1,182 @@
+# SPDX-FileCopyrightText: 2026 Scenario Inc.
+# SPDX-License-Identifier: GPL-3.0-or-later
+"""Capture evidence cannot mask failed GUI setup or a changed installed package."""
+
+import importlib
+import json
+import subprocess
+import zipfile
+from pathlib import Path
+from types import SimpleNamespace
+
+import pytest
+
+
+@pytest.mark.parametrize(
+    "failure",
+    [
+        None,
+        "setup",
+        "missing_png",
+        "changed_install",
+        "version",
+        "online",
+        "timeout",
+        "minimum",
+        "discovery",
+        "snapshot",
+        "cleanup",
+        "output",
+        "build",
+    ],
+)
+def test_capture_evidence_and_cleanup(tmp_path, monkeypatch, failure):
+    monkeypatch.syspath_prepend(str(Path(__file__).resolve().parents[2] / "tools"))
+    capture = importlib.import_module("capture_gui")
+
+    def find(_):
+        if failure == "discovery":
+            raise ValueError("fixture missing executable")
+        return Path("blender")
+
+    monkeypatch.setattr(capture, "find_blender", find)
+    normal = tmp_path / "normal"
+    normal.mkdir()
+    (normal / "keep").write_text("normal profile")
+    monkeypatch.setattr(capture, "normal_profile_root", lambda: normal)
+    monkeypatch.setenv("SCENARIO_API_KEY", "must-not-be-inherited")
+    candidate = tmp_path / "input.zip"
+    with zipfile.ZipFile(candidate, "w") as archive:
+        archive.writestr(
+            "blender_manifest.toml", 'id="scenario"\nversion="0.9.9"\nblender_version_min="5.0.0"'
+        )
+        archive.writestr("LICENSE", "fixture")
+        archive.writestr("__init__.py", "# installed fixture")
+    monkeypatch.setattr(capture, "validate", lambda session, path: capture.inspect_zip(path)[0])
+    if failure == "snapshot":
+
+        def snapshot(_):
+            raise PermissionError("fixture unreadable profile")
+
+        monkeypatch.setattr(capture, "profile_snapshot", snapshot)
+    if failure == "cleanup":
+
+        def cleanup(_):
+            raise PermissionError("fixture locked profile")
+
+        monkeypatch.setattr(capture.Session, "cleanup", cleanup)
+    build_tools = importlib.import_module("build")
+    monkeypatch.setattr(build_tools, "validate", lambda session, path: capture.inspect_zip(path)[0])
+
+    def stage(source, destination):
+        assert destination.parent.name == "tmp"
+        destination.mkdir()
+        (destination / "fixture.whl").write_bytes(b"staged wheel")
+        return destination
+
+    monkeypatch.setattr(build_tools, "prepare_source", stage)
+    calls = []
+
+    def step(session, name, command):
+        calls.append(name)
+        assert session.env["BLENDER_USER_RESOURCES"] == str(session.profile)
+        assert "SCENARIO_API_KEY" not in session.env
+        if name == "build":
+            output = Path(command[command.index("--output-filepath") + 1])
+            output.write_bytes(candidate.read_bytes())
+            return None
+        assert "--offline-mode" in command
+        if name == "prepare":
+            log = session.directory / "prepare.log"
+            version = [4, 3, 2] if failure == "minimum" else [5, 0, 1]
+            log.write_text("CAPTURE_VERSION=" + json.dumps(version))
+            return log
+        installed = session.profile / "extensions/user_default/scenario"
+        if name == "install":
+            with zipfile.ZipFile(candidate) as archive:
+                archive.extractall(installed)
+        if name == "capture":
+            assert session.env["SCENARIO_GUI_PROBE"] == "1"
+            assert command[command.index("--gpu-backend") + 1] == "opengl"
+            if failure == "timeout":
+                raise subprocess.TimeoutExpired("fixture GUI", 10)
+            evidence = {
+                "status": "failed" if failure == "setup" else "captured",
+                "blender_version": [5, 1, 2] if failure == "version" else [5, 0, 1],
+                "online_access": failure == "online",
+            }
+            (session.directory / "gui.json").write_text(json.dumps(evidence))
+            if failure != "missing_png":
+                (session.directory / "plugin.png").write_bytes(b"\x89PNG\r\n\x1a\nfixture")
+            if failure == "changed_install":
+                (installed / "__init__.py").write_text("# changed")
+        return None
+
+    monkeypatch.setattr(capture.Session, "step", step)
+    args = SimpleNamespace(
+        blender=None,
+        output=tmp_path / "captures",
+        timeout=20,
+        zip=None if failure == "build" else candidate,
+        view="sidebar",
+        lane="image",
+        fixture="form",
+        delay=8,
+        label="fixture milestone",
+        gpu_backend="opengl",
+        capture_backend="blender",
+    )
+    if failure == "output":
+        args.output.write_text("not a directory")
+    failed = failure not in (None, "build")
+    assert capture.capture(args) == (1 if failed else 0)
+    if failure == "output":
+        assert calls == []
+        return
+    directory = next(args.output.iterdir())
+    report = json.loads((directory / "report.json").read_text())
+    expected = "cleanup_failed" if failure == "cleanup" else "failed" if failed else "captured"
+    assert report["status"] == expected
+    if failure in ("discovery", "snapshot"):
+        assert calls == []
+        assert "error" in report
+    if failure == "cleanup":
+        assert report["cleanup_error"] == "fixture locked profile"
+        assert report["png_sha256"] == capture.sha256(directory / "plugin.png")
+        assert report["normal_profile_unchanged"]
+    assert report["label"] == "fixture milestone"
+    assert (directory / "profile").exists() == failed
+    assert (normal / "keep").read_text() == "normal profile"
+    if failure == "minimum":
+        assert calls == ["prepare"]
+    if not failed:
+        assert not (directory / "tmp").exists()
+        assert not (directory / "source").exists()
+        assert len(list(directory.rglob("*.zip"))) == 1
+        assert not list(directory.rglob("*.whl"))
+        assert report["normal_profile_unchanged"]
+        assert report["zip_sha256"] == capture.sha256(candidate)
+        assert report["png_sha256"] == capture.sha256(directory / "plugin.png")
+
+
+def test_audio_composer_is_rejected_before_launch(tmp_path):
+    import sys
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            str(Path(__file__).resolve().parents[2] / "tools/capture_gui.py"),
+            "--view",
+            "composer",
+            "--lane",
+            "audio",
+            "--output",
+            str(tmp_path / "captures"),
+        ],
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 2
+    assert "composer has no audio lane" in result.stderr
+    assert "Traceback" not in result.stderr
+    assert not (tmp_path / "captures").exists()

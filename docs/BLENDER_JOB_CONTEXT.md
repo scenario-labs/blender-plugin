@@ -19,8 +19,13 @@ Dependency updates conservatively invalidate the affected scene's revisions;
 frame changes invalidate unconditionally in their own pre-change hook, regardless
 of whether the unevaluated depsgraph lists updates. Undo/redo and file loading
 invalidate captured state too. Every main-thread scene callback and reaper tick
-prunes removed captured scenes, including when a surviving scene has no dependency
-updates. This is an event-level guard, not synchronous interception of every
+prunes removed captured scenes and deleted object wrappers, including when a surviving
+scene has no dependency updates. Deleted targets invalidate the scenes that captured
+them and their registry entries are dropped; live targets in other scenes retain
+their origins. The target pass reads captured RNA references, proportional to captured
+target count; it does not scan every object or rediscover targets by name. Unlinked
+but still live objects remain recorded, while delivery still requires originating-scene
+membership. Reused object names never rebind a deleted target. This is an event-level guard, not synchronous interception of every
 scene deletion; work already durably claimed remains in flight.
 Render-thread frame/dependency callbacks invalidate only the thread-safe revision
 registry conservatively across sessions; they never inspect or mutate bpy data. Callers

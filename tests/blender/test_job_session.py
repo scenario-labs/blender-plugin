@@ -372,3 +372,54 @@ class JobSessionTests(unittest.TestCase):
                 self.module._reap_inactive()
         self.assertTrue(self.session._workers.stopped)
         self.assertNotIn(self.session, self.module._sessions)
+
+    def test_deleted_target_registry_is_pruned_without_rebinding_live_targets(self):
+        from types import SimpleNamespace
+
+        live = self.session.capture(self.scene, self.target)
+        for index in range(12):
+            target = bpy.data.objects.new("Repeated target", None)
+            self.scene.collection.objects.link(target)
+            deleted = self.session.capture(self.scene, target)
+            bpy.data.objects.remove(target, do_unlink=True)
+            if index % 2:
+                self.module._scene_changed(self.scene, SimpleNamespace(updates=()))
+            else:
+                self.module._reap_inactive()
+            self.assertNotIn(deleted.target_id, self.session._targets)
+            self.assertNotIn(deleted.target_id, self.session._target_scenes)
+            self.assertFalse(self.session._origins.current(deleted))
+            self.assertEqual(len(self.session._targets), 1)
+            fresh = self.session.capture(self.scene, self.target)
+            self.assertEqual(fresh.target_id, live.target_id)
+            self.assertEqual(self.session._resolve(fresh), (self.scene, self.target))
+        self.assertEqual(len(self.session._target_scenes), 1)
+
+    def test_deleted_target_pruning_preserves_an_unrelated_scene_origin(self):
+        other = bpy.data.scenes.new("Other captured scene")
+        other_target = bpy.data.objects.new("Other captured target", None)
+        other.collection.objects.link(other_target)
+        try:
+            unrelated = self.session.capture(other, other_target)
+            deleted = self.session.capture(self.scene, self.target)
+            bpy.data.objects.remove(self.target, do_unlink=True)
+            self.target = None
+            self.module._reap_inactive()
+            self.assertFalse(self.session._origins.current(deleted))
+            self.assertTrue(self.session._origins.current(unrelated))
+            self.assertIs(self.session._targets[unrelated.target_id], other_target)
+        finally:
+            bpy.data.objects.remove(other_target, do_unlink=True)
+            bpy.data.scenes.remove(other)
+
+    def test_unlinked_live_target_is_retained_but_cannot_resolve_in_original_scene(self):
+        origin = self.session.capture(self.scene, self.target)
+        self.scene.collection.objects.unlink(self.target)
+        self.module._reap_inactive()
+        self.assertIs(self.session._targets[origin.target_id], self.target)
+        with self.assertRaises(self.module.OriginUnavailable):
+            self.session._resolve(origin)
+        self.scene.collection.objects.link(self.target)
+        fresh = self.session.capture(self.scene, self.target)
+        self.assertEqual(fresh.target_id, origin.target_id)
+        self.assertEqual(self.session._resolve(fresh), (self.scene, self.target))

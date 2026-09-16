@@ -1,6 +1,5 @@
 # SPDX-FileCopyrightText: 2026 Scenario
 # SPDX-License-Identifier: GPL-3.0-or-later
-# Adapted from Scenario Blender Studio; see docs/SOURCE_PROVENANCE.md.
 """Schema-driven defaults, validation and Scenario LoRA/composition routing."""
 
 from __future__ import annotations

@@ -1,6 +1,5 @@
 # SPDX-FileCopyrightText: 2026 Scenario
 # SPDX-License-Identifier: GPL-3.0-or-later
-# Adapted from Scenario Blender Studio; see docs/SOURCE_PROVENANCE.md.
 """Contracts for dynamic Scenario forms, including routing and reference types."""
 
 from copy import deepcopy

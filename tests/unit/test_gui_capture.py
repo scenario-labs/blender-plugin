@@ -84,7 +84,7 @@ def test_capture_evidence_and_cleanup(tmp_path, monkeypatch, failure):
         if name == "build":
             output = Path(command[command.index("--output-filepath") + 1])
             output.write_bytes(candidate.read_bytes())
-            return
+            return None
         assert "--offline-mode" in command
         if name == "prepare":
             log = session.directory / "prepare.log"
@@ -110,6 +110,7 @@ def test_capture_evidence_and_cleanup(tmp_path, monkeypatch, failure):
                 (session.directory / "plugin.png").write_bytes(b"\x89PNG\r\n\x1a\nfixture")
             if failure == "changed_install":
                 (installed / "__init__.py").write_text("# changed")
+        return None
 
     monkeypatch.setattr(capture.Session, "step", step)
     args = SimpleNamespace(

@@ -57,6 +57,11 @@ class ModelPayloadValidationTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             forms.prepare_run("base", schema, {"a": "asset"})
         self.assertEqual(forms.prepare_run("base", schema, {"b": "asset"})[1], {"b": "asset"})
+        with self.assertRaises(ValueError):
+            forms.prepare_run("base", schema, {"b": "  "})
+        schema["parameters"][0]["required"] = {"ifNotDefined": {"missing": {}}}
+        with self.assertRaises(ValueError):
+            forms.prepare_run("base", schema, {"b": "asset"})
 
     def test_synthetic_routing_fills_required_fields_and_rejects_bad_target(self):
         forms = submodule("core.schema.forms")

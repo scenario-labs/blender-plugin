@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Explicit synchronous World replacement with guarded, session-local restoration."""
 
+import hashlib
 import os
 import stat
 import tempfile
@@ -68,6 +69,13 @@ def _settings(value):
     return tuple(values)
 
 
+def _packed_digest(image):
+    packed = image.packed_file
+    if packed is None or packed.size > MAX_FILE_BYTES:
+        raise WorldApplicationError("The packed panorama changed; preserve or restore it manually")
+    return hashlib.sha256(packed.data).digest()
+
+
 def _fingerprint(world, image):
     if not world.use_nodes or world.node_tree is None:
         raise WorldApplicationError("The applied World was edited; preserve or restore it manually")
@@ -107,7 +115,7 @@ def _fingerprint(world, image):
         _settings(image.colorspace_settings),
         tuple(image.size),
         bool(image.is_dirty),
-        bool(image.packed_file),
+        _packed_digest(image),
     )
 
 

@@ -410,3 +410,67 @@ def test_manifest_digest_accepts_hex_case_variants(casing, tmp_path, storage):
     result = downloader().download(URL, root=tmp_path, name="result.bin", expected_sha256=expected)
     assert result.sha256 == canonical
     assert (tmp_path / result.name).read_bytes() == DATA
+
+
+@pytest.mark.parametrize("failure_point", ["staging", "response", "connection"])
+@pytest.mark.parametrize("publish", [True, False])
+def test_cleanup_failure_preserves_publication_outcome(
+    failure_point, publish, tmp_path, storage, monkeypatch
+):
+    temporary_directories = []
+    original_directory = transfers.tempfile.TemporaryDirectory
+    response = storage[0].getresponse.return_value
+    original_response_close = response.close
+
+    if failure_point == "staging":
+
+        class FailingCleanup:
+            def __init__(self, **kwargs):
+                self.directory = original_directory(**kwargs)
+                temporary_directories.append(self.directory)
+                self.name = self.directory.name
+
+            def cleanup(self):
+                raise OSError(URL)
+
+        monkeypatch.setattr(transfers.tempfile, "TemporaryDirectory", FailingCleanup)
+    elif failure_point == "response":
+        response.close = Mock(side_effect=OSError(URL))
+    else:
+        storage[0].close.side_effect = RuntimeError(URL)
+
+    try:
+        if publish:
+            result = downloader().download(URL, root=tmp_path, name="result.bin")
+            assert result.size == len(DATA)
+            assert result.sha256 == hashlib.sha256(DATA).hexdigest()
+            assert (tmp_path / result.name).read_bytes() == DATA
+        else:
+            with pytest.raises(transfers.TransferError) as caught:
+                downloader().download(
+                    URL, root=tmp_path, name="result.bin", expected_sha256="a" * 64
+                )
+            assert "private-fixture" not in str(caught.value)
+            assert not (tmp_path / "result.bin").exists()
+        assert storage[0].request.call_count == 1
+        storage[0].close.assert_called_once()
+    finally:
+        original_response_close()
+        for directory in temporary_directories:
+            directory.cleanup()
+
+
+def test_cleanup_errors_do_not_mask_control_exception(tmp_path, storage):
+    response = storage[0].getresponse.return_value
+    original_close = response.close
+    response.read1 = Mock(side_effect=KeyboardInterrupt())
+    response.close = Mock(side_effect=OSError(URL))
+    storage[0].close.side_effect = RuntimeError(URL)
+    try:
+        with pytest.raises(KeyboardInterrupt):
+            downloader().download(URL, root=tmp_path, name="result.bin")
+        assert not list(tmp_path.iterdir())
+        response.close.assert_called_once()
+        storage[0].close.assert_called_once()
+    finally:
+        original_close()

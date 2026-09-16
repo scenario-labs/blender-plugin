@@ -20,11 +20,12 @@ Blender UI is imported. The existing conditional/one-of parameter implementation
 remains in place until its contracts are reconciled with these form helpers.
 
 Studio's manifest licenses its source as GPL-3.0-or-later and attributes it to
-2026 Scenario. Its original GPL text is preserved verbatim as
-[scenario/licenses/Studio-GPL-3.0.txt](../scenario/licenses/Studio-GPL-3.0.txt).
-That copy uses older FSF URLs; the canonical root and package `LICENSE` files
-remain identical. No Studio fonts, icons, model records or media are included in
-this intake, so their separate notices arrive with their eventual resources.
+2026 Scenario. The GPL v3 text is already shipped in
+[scenario/LICENSE](../scenario/LICENSE), identical to the root `LICENSE`.
+Studio's copy differs only in older FSF URLs, so no separate copy is bundled.
+Source attribution and revision references are retained above and in the file
+headers. No Studio fonts, icons, model records or media are included in this
+intake, so their separate notices arrive with their eventual resources.
 
 The dedicated intake/normalization PR precedes functional integration. Record
 its final squash SHA in `.git-blame-ignore-revs` after merge; branch commit IDs

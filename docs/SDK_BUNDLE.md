@@ -87,8 +87,7 @@ from a successful isolated installation.
 | typing-inspection | 0.4.4 | MIT |
 
 License expressions summarize inspected wheel metadata; the included license
-texts and original copyright notices remain authoritative. Source provenance
-for adopted Studio code is separate in [SOURCE_PROVENANCE.md](SOURCE_PROVENANCE.md).
+texts and original copyright notices remain authoritative.
 
 For an upgrade, inspect the exact SDK release and run its dependency contracts
 first. Update the uv pin/lock intentionally, select the complete runtime closure

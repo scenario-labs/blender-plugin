@@ -116,6 +116,9 @@ def runner(monkeypatch):
     )
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
+    # Runner tests exercise process/artifact boundaries; bundle verification has
+    # separate synthetic tests and must never download dependencies here.
+    monkeypatch.setattr(module, "prepare_source", lambda source, destination: source)
     return module
 
 
@@ -273,3 +276,66 @@ def test_candidate_minimum_is_checked_before_validation(
     if expected_exit == 1:
         report = json.loads(next(args.artifacts.glob("run-*/result.json")).read_text())
         assert "candidate ZIP minimum 5.1.0" in report["error"]
+
+
+@pytest.mark.parametrize("failure,keep", [(False, False), (False, True), (True, False)])
+def test_staging_cleanup_keeps_artifacts_and_failure_diagnostics(
+    tmp_path, monkeypatch, runner, failure, keep
+):
+    monkeypatch.setattr(runner, "find_blender", lambda _: Path("blender"))
+    monkeypatch.setattr(runner, "normal_profile_root", lambda: tmp_path / "normal")
+    staged = []
+
+    def stage(source, destination):
+        destination.mkdir(parents=True)
+        (destination / "fixture.whl").write_bytes(b"wheel")
+        staged.append(destination)
+        return destination
+
+    def step(*args, **kwargs):
+        directory, name = kwargs["directory"], kwargs["name"]
+        log = directory / f"{name}.log"
+        log.write_text("fixture")
+        if name == "probe":
+            log.write_text('SCENARIO_ENV={"blender":"5.0.1","version":[5,0,1]}')
+        elif name == "build":
+            command = args[1]
+            candidate = Path(command[command.index("--output-filepath") + 1])
+            with zipfile.ZipFile(candidate, "w") as archive:
+                for member in ("blender_manifest.toml", "LICENSE", "__init__.py"):
+                    archive.write(ROOT / "scenario" / member, member)
+        elif name == "tests":
+            if failure:
+                raise subprocess.CalledProcessError(7, "tests")
+            candidate = next(directory.glob("*.zip"))
+            (directory / "tests.json").write_text(
+                json.dumps(
+                    {
+                        "zip_sha256": runner.sha256(candidate),
+                        "success": True,
+                        "tests_run": 1,
+                    }
+                )
+            )
+        return log
+
+    monkeypatch.setattr(runner, "prepare_source", stage)
+    monkeypatch.setattr(runner, "validate_bundle", lambda _: None)
+    monkeypatch.setattr(runner, "run_step", step)
+    args = SimpleNamespace(
+        blender=None,
+        artifacts=tmp_path / "artifacts",
+        suite="baseline",
+        timeout=2,
+        keep_profile=keep,
+        expected_version=None,
+        zip=None,
+    )
+    assert runner.run(args) == (7 if failure else 0)
+    directory = next(args.artifacts.glob("run-*"))
+    assert staged == [directory / "tmp/source"]
+    assert staged[0].exists() == (failure or keep)
+    assert (directory / "profile").exists() == (failure or keep)
+    assert (directory / "result.json").is_file()
+    assert (directory / "tests.log").is_file()
+    assert len(list(directory.glob("*.zip"))) == 1

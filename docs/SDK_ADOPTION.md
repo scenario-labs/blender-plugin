@@ -61,9 +61,13 @@ alone does not establish that browser OAuth tokens are accepted by REST.
 
 ## Source baseline and remaining work
 
-The currently inspected Studio candidate is
-[`bfeac2873f3a3cb9e2bef1fdf97a14431ce4c65f`](https://github.com/edemaistre/scenario-blender-studio/commit/bfeac2873f3a3cb9e2bef1fdf97a14431ce4c65f),
-version 0.1.5. It adds generation progress and automatic asset previews to 0.1.4.
+The selected Studio candidate is
+[`e2b0277064f0c502d46524fba1d006d0ac83f846`](https://github.com/edemaistre/scenario-blender-studio/commit/e2b0277064f0c502d46524fba1d006d0ac83f846),
+version 0.1.5. Its runtime and test trees are unchanged from the previously
+inspected `bfeac2873f3a3cb9e2bef1fdf97a14431ce4c65f`; later commits add documentation
+and validation media. See [the source and capability inventory](STUDIO_ADOPTION.md)
+for tree identities, retained/replaced/deferred capabilities, ownership and intake
+boundaries. Version 0.1.5 adds generation progress and automatic asset previews to 0.1.4.
 Its `src/scenario_studio/client.py` still uses a custom remote-MCP client, including
 project discovery and a public-workflow HTTP path. Importing it unchanged would
 not satisfy the SDK-first contract.

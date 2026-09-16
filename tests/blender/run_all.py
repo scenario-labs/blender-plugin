@@ -40,6 +40,7 @@ BASELINE = (
     "test_job_session",
     "test_sdk_uploads",
     "test_model_payload_validation",
+    "test_world_application",
 )
 
 

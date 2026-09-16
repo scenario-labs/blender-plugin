@@ -7,7 +7,6 @@ dispatch requires an issued estimate and a durable claim callback.
 SDK imports are lazy so package registration does not start client work.
 """
 
-import copy
 import json
 import math
 import threading
@@ -15,12 +14,10 @@ import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from decimal import Decimal
-from types import SimpleNamespace
 from urllib.parse import urlsplit
 from weakref import WeakValueDictionary
 
 from ..schema.forms import prepare_run
-from ..schema.params import parse_schema, validate
 from .client import user_agent_string
 
 API_URL = "https://api.cloud.scenario.com/v1"
@@ -102,28 +99,9 @@ def _identifier(value):
     return value
 
 
-def _prepare(identifier, fields, parameters, ui_config=None):
-    """Combine adopted value validation with retained conditional/one-of rules."""
-    if isinstance(fields, dict):
-        fields = [dict(value, name=name) for name, value in fields.items()]
-    if not isinstance(fields, list) or not all(isinstance(value, dict) for value in fields):
-        raise ValueError("A current input schema is required")
-    fields = copy.deepcopy(fields)
-    names = [value.get("name") for value in fields]
-    if any(not isinstance(name, str) or not name for name in names) or len(set(names)) != len(
-        names
-    ):
-        raise ValueError("Input names must be unique nonempty strings")
-    parsed = parse_schema(SimpleNamespace(parameters=fields, ui_config=ui_config or {}))
-    # Retain the canonical relaxation for a file required only without a prompt.
-    # Conditional presence checks run after Studio's type/default validation.
-    for value, spec in zip(fields, parsed.specs, strict=True):
-        value["required"] = spec.required_always
-    target, payload = prepare_run(identifier, {"parameters": fields}, parameters)
-    errors = validate(parsed.specs, payload, parsed.one_of)
-    if errors:
-        raise ValueError("; ".join(errors))
-    return target, payload
+def _prepare(identifier, fields, parameters):
+    """Use the shared pure form preparation and conditional requirements."""
+    return prepare_run(identifier, {"parameters": fields}, parameters)
 
 
 def _client(credentials, base_url, timeout, transport):
@@ -385,7 +363,7 @@ class SDKAdapter:
         fields = model.get("inputs")
         if fields is None:
             fields = model.get("parameters")
-        target, payload = _prepare(identifier, fields, parameters, model.get("uiConfig"))
+        target, payload = _prepare(identifier, fields, parameters)
         return self._estimate("model", target, payload)
 
     def estimate_workflow(self, workflow, parameters):

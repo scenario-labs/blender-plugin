@@ -164,8 +164,19 @@ supply a predicate reflecting their actual online-access permission.
 
 Custom-model records must explicitly declare `type=custom`; trained-model
 routing remains unavailable until its REST schema contract is established.
-Studio's pure routing helper/tests are retained, but remote-MCP `run_with`
-metadata is not silently assumed to exist in REST. Upload/job dependency contracts
+The adapter uses the same pure payload preparation as form callers: validate
+explicit input types first, merge actual defaults and mandatory routing, then
+validate the final values and each conditional/either-or clause. Overlapping
+clauses remain separate requirements. Malformed schema names and route IDs fail
+before SDK dispatch, without coercion. Captured custom-model fixtures exercise
+this shared path, including Minimax frame dependencies and Rodin prompt/image
+alternatives.
+
+The pure LoRA/composition routing helper retains required base-model wiring and
+existing scale alignment behavior. Its sanitized remote-MCP projection and
+synthetic composition tests do not establish REST routing, universal strength
+bounds, catalog discovery, model selection UI or paid execution. Remote-MCP
+`run_with` metadata is not silently assumed to exist in REST. Upload/job dependency contracts
 are mapped above; upload adapter integration, signed transfers, account/project
 discovery, search/organization and cancellation remain to implement. Submission
 uses the coordinator contract above; live acceptance remains separate.

@@ -16,7 +16,12 @@ It never stamps an old quote with a fresh revision after estimation.
 Names, active-object selection and file paths are never used to rediscover a
 missing target. `capture` also exposes this origin for callers preparing inputs.
 Dependency updates conservatively invalidate the affected scene's revisions;
-frame changes, undo/redo and file loading invalidate captured state too.
+frame changes invalidate unconditionally in their own pre-change hook, regardless
+of whether the unevaluated depsgraph lists updates. Undo/redo and file loading
+invalidate captured state too. Every main-thread scene callback and reaper tick
+prunes removed captured scenes, including when a surviving scene has no dependency
+updates. This is an event-level guard, not synchronous interception of every
+scene deletion; work already durably claimed remains in flight.
 Render-thread frame/dependency callbacks invalidate only the thread-safe revision
 registry conservatively across sessions; they never inspect or mutate bpy data. Callers
 must prepare inputs and capture their origin together on the main thread.
@@ -38,8 +43,10 @@ integration work; matching a scene or object name is insufficient.
 ## Results and lifecycle
 
 `submit` and `refresh_remote` return task handles. `drain()` returns completed
-outcomes on the main thread without waiting for network work. Undrained outcomes
-count against a separate admission limit, so a closed view cannot accumulate
+outcomes on the main thread without waiting for network work. Per-task errors
+for invalid worker origin/scope or malformed results do not drop successful
+neighbors from the same drain. Undrained outcomes count against a separate
+admission limit, so a closed view cannot accumulate
 unbounded completed payloads. UI closure itself does not deactivate the session.
 
 `deliver(completion, callback)` validates the issuing session, active scope,

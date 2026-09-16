@@ -49,3 +49,52 @@ class JobStoreTests(unittest.TestCase):
             other = module.JobStore(path, module.JobScope(scope.service, "other-account"))
             self.assertIsNone(other.get(intent.request_id))
             self.assertEqual(other.records(), ())
+
+    def test_installed_coordinator_persists_before_sdk_dispatch(self):
+        import httpx
+
+        api = submodule("core.api.sdk_adapter")
+        storage = submodule("core.jobs.store")
+        commands = submodule("core.jobs.coordinator")
+        scope = storage.JobScope("https://service.example.invalid/v1", "fixture-account")
+        origin = storage.JobOrigin("fixture-file", "fixture-scene", "fixture-revision")
+        with tempfile.TemporaryDirectory(dir=bpy.utils.resource_path("USER")) as directory:
+            store = storage.JobStore(Path(directory) / "jobs.sqlite3", scope)
+            calls = []
+
+            def respond(request):
+                calls.append(request)
+                if request.url.params["dryRun"] == "true":
+                    return httpx.Response(200, content=b'{"creativeUnitsCost":0.10000000000000001}')
+                self.assertEqual(store.records()[0].state, storage.JobState.SUBMITTING)
+                return httpx.Response(200, json={"job": {"jobId": "fixture-remote"}})
+
+            with api.SDKAdapter(
+                api.Credentials("fixture-key", "fixture-secret"),
+                online=lambda: True,  # Only MockTransport is allowed; sockets remain guarded.
+                account_id=scope.account_id,
+                base_url=scope.service,
+                transport=httpx.MockTransport(respond),
+            ) as adapter:
+                estimate = adapter.estimate_workflow({"id": "fixture-workflow", "inputs": []}, {})
+                coordinator = commands.JobCoordinator(adapter, store)
+                prepared = coordinator.prepare(estimate, origin)
+                record = coordinator.submit(
+                    prepared,
+                    origin=origin,
+                    operation="workflow",
+                    target_id="fixture-workflow",
+                    payload={},
+                )
+                self.assertEqual(record.state, storage.JobState.REMOTE)
+                self.assertEqual(record.intent.quote_cost, "0.10000000000000001")
+                self.assertEqual(len(calls), 2)
+                with self.assertRaises(ValueError):
+                    coordinator.submit(
+                        prepared,
+                        origin=origin,
+                        operation="workflow",
+                        target_id="fixture-workflow",
+                        payload={},
+                    )
+                self.assertEqual(len(calls), 2)

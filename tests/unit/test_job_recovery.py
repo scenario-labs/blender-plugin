@@ -100,6 +100,10 @@ def remote_record(store):
         ([JobState.SUBMITTING, JobState.UNCERTAIN], RecoveryAction.RECONCILE_UNKNOWN),
         ([JobState.SUBMITTING, JobState.REMOTE], RecoveryAction.POLL_REMOTE),
         (
+            [JobState.SUBMITTING, JobState.REMOTE, JobState.CANCEL_REQUESTED],
+            RecoveryAction.POLL_REMOTE,
+        ),
+        (
             [JobState.SUBMITTING, JobState.REMOTE, JobState.SUCCEEDED],
             RecoveryAction.DOWNLOAD_RESULT,
         ),

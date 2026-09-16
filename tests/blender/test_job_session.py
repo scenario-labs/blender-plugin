@@ -37,12 +37,13 @@ class JobSessionTests(unittest.TestCase):
                 return httpx.Response(200, json={"creativeUnitsCost": 1})
             return httpx.Response(200, json={"job": {"jobId": "fixture-remote"}})
 
+        self.handler = respond
         adapter = self.api.SDKAdapter(
             self.api.Credentials("key", "secret"),
             online=lambda: True,
             account_id=self.scope.account_id,
             base_url=self.scope.service,
-            transport=httpx.MockTransport(respond),
+            transport=httpx.MockTransport(lambda request: self.handler(request)),
         )
         self.addCleanup(adapter.close)
         self.session = self.module.JobSession(adapter, self.store, workers=1)
@@ -205,3 +206,96 @@ class JobSessionTests(unittest.TestCase):
         with ThreadPoolExecutor(max_workers=1) as pool:
             pool.submit(self.module._scene_changed, None, None).result(5)
         self.assertFalse(self.session._origins.current(origin))
+
+    def test_deleted_scene_invalidates_queued_spend_from_surviving_scene_update(self):
+        from types import SimpleNamespace
+
+        commands = submodule("core.jobs.coordinator")
+        storage = submodule("core.jobs.store")
+        first, second = self.prepare(), self.prepare()
+        entered, release = threading.Event(), threading.Event()
+        original = self.handler
+
+        def blocked(request):
+            entered.set()
+            self.assertTrue(release.wait(5), "Fixture did not release claimed request")
+            return original(request)
+
+        self.handler = blocked
+        running = self.session.submit(
+            first, operation="workflow", target_id="fixture-workflow", payload={}
+        )
+        try:
+            self.assertTrue(entered.wait(5))
+            queued = self.session.submit(
+                second, operation="workflow", target_id="fixture-workflow", payload={}
+            )
+            bpy.data.scenes.remove(self.scene)
+            self.scene = None
+            self.module._scene_changed(bpy.context.scene, SimpleNamespace(updates=()))
+            self.assertFalse(self.session._origins.current(second.intent.origin))
+            release.set()
+            self.assertEqual(running.result(5).state, storage.JobState.REMOTE)
+            with self.assertRaisesRegex(commands.QuoteError, "Origin changed"):
+                queued.result(5)
+            self.assertEqual(
+                self.store.get(second.intent.request_id).state, storage.JobState.PREPARED
+            )
+            self.assertEqual(len(self.calls), 3)  # Two estimates, one already-claimed submission.
+        finally:
+            release.set()
+
+    def test_frame_pre_with_empty_depsgraph_invalidates_origin(self):
+        from types import SimpleNamespace
+
+        origin = self.session.capture(self.scene, self.target)
+        self.assertIn(self.module._frame_change_pre, bpy.app.handlers.frame_change_pre)
+        self.module._frame_change_pre(self.scene, SimpleNamespace(updates=()))
+        self.assertFalse(self.session._origins.current(origin))
+
+    def test_frame_pre_on_render_thread_does_not_inspect_depsgraph(self):
+        class Unevaluated:
+            @property
+            def updates(self):
+                raise AssertionError("Render thread must not inspect Blender depsgraph")
+
+        origin = self.session.capture(self.scene, self.target)
+        with ThreadPoolExecutor(max_workers=1) as pool:
+            pool.submit(self.module._frame_change_pre, None, Unevaluated()).result(5)
+        self.assertFalse(self.session._origins.current(origin))
+
+    def test_drain_keeps_valid_neighbors_and_reports_each_invalid_record(self):
+        from dataclasses import replace
+
+        workers = submodule("core.jobs.workers")
+        prepared = self.prepare()
+        record = self.store.get(prepared.intent.request_id)
+        bad_origin = replace(
+            record,
+            intent=replace(record.intent, origin=replace(record.intent.origin, file_id="other")),
+        )
+        bad_scope = replace(
+            record,
+            intent=replace(record.intent, scope=replace(record.intent.scope, account_id="other")),
+        )
+        for result in (record, bad_origin, object(), bad_scope, record):
+            task = workers.JobTask()
+            task._future.set_result(result)
+            self.session._pending.append((task, record.intent.origin))
+        outcomes = self.session.drain()
+        self.assertEqual(len(outcomes), 5)
+        self.assertEqual(self.session._pending, [])
+        self.assertEqual(self.session.drain(), ())
+        for index in (0, 4):
+            self.assertIsNone(outcomes[index].error)
+            self.assertEqual(outcomes[index].result, record)
+            self.assertEqual(
+                self.session.deliver(outcomes[index], lambda result, scene, target: result), record
+            )
+        for index in (1, 3):
+            self.assertIsInstance(outcomes[index].error, self.module.OriginUnavailable)
+            with self.assertRaises(self.module.OriginUnavailable):
+                self.session.deliver(
+                    outcomes[index], lambda *args: self.fail("Delivered foreign result")
+                )
+        self.assertIsInstance(outcomes[2].error, AttributeError)

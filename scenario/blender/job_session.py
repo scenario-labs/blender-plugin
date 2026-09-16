@@ -145,12 +145,12 @@ class JobSession:
             self._pending.remove((task, origin))
             try:
                 result = task.result()
-            except Exception as exc:
-                completion = JobCompletion(origin, error=exc)
-            else:
                 record = result.record if isinstance(result, RemoteSnapshot) else result
                 if record.intent.origin != origin or record.intent.scope != self.scope:
                     raise OriginUnavailable("Worker returned a different job origin or scope")
+            except Exception as exc:
+                completion = JobCompletion(origin, error=exc)
+            else:
                 completion = JobCompletion(origin, result=result)
             self._issued[id(completion)] = completion
             completions.append(completion)
@@ -184,6 +184,19 @@ class JobSession:
         scene, target = self._resolve(completion.origin)
         del self._issued[id(completion)]
         return callback(completion.result, scene, target)
+
+    def prune_missing_scenes(self):
+        """Invalidate removed scenes even when only a surviving scene emits an update."""
+        _main_thread()
+        live_scenes = tuple(bpy.data.scenes)
+        for scene_id, scene in tuple(self._scenes.items()):
+            try:
+                present = scene in live_scenes
+            except ReferenceError:
+                present = False
+            if not present:
+                self._origins.invalidate(scene_id)
+                del self._scenes[scene_id]
 
     def invalidate_scene(self, scene):
         _main_thread()
@@ -222,6 +235,7 @@ def _reap_inactive():
     """Close retired connections once their tracked network work has finished."""
     _main_thread()
     for session in _session_snapshot():
+        session.prune_missing_scenes()
         if not session._active and all(task.done() for task, _ in session._pending):
             session.shutdown()
     return 0.25 if _sessions else None
@@ -241,11 +255,22 @@ def _scene_changed(scene, depsgraph=None):
         for session in _session_snapshot():
             session._origins.reset()
         return
-    # Dependency changes conservatively invalidate all captured targets in
-    # that scene; frame changes also invalidate even with no dependency update.
+    sessions = _session_snapshot()
+    # A deleted scene cannot emit its own update. Inspect all captured scenes
+    # even when the surviving scene's depsgraph has no evaluated changes.
+    for session in sessions:
+        session.prune_missing_scenes()
     if depsgraph is None or any(depsgraph.updates):
-        for session in _session_snapshot():
+        for session in sessions:
             session.invalidate_scene(scene)
+
+
+@persistent
+def _frame_change_pre(scene, depsgraph=None):
+    # The supplied depsgraph has not been evaluated yet; frame invalidation
+    # must not depend on its update collection. Render threads use the same
+    # pure-state fallback as dependency handlers.
+    _scene_changed(scene)
 
 
 @persistent
@@ -257,7 +282,7 @@ def _history_pre(_):
 _HOOKS = (
     (bpy.app.handlers.load_pre, _load_pre),
     (bpy.app.handlers.depsgraph_update_post, _scene_changed),
-    (bpy.app.handlers.frame_change_pre, _scene_changed),
+    (bpy.app.handlers.frame_change_pre, _frame_change_pre),
     (bpy.app.handlers.undo_pre, _history_pre),
     (bpy.app.handlers.redo_pre, _history_pre),
 )

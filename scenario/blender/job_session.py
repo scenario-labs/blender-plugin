@@ -90,9 +90,11 @@ class JobSession:
         target_id = self._identity(self._targets, target) if target is not None else None
         return self._origins.capture(scene_id, target_id)
 
-    def prepare(self, estimate, *, scene, target=None):
+    def prepare(self, estimate, *, origin):
+        """Use the origin captured with inputs before requesting the estimate."""
         _main_thread()
-        return self._coordinator.prepare(estimate, self.capture(scene, target))
+        self._resolve(origin)
+        return self._coordinator.prepare(estimate, origin)
 
     def _check_capacity(self):
         if len(self._pending) >= self._completion_limit:

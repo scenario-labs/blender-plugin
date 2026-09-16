@@ -98,3 +98,57 @@ class JobStoreTests(unittest.TestCase):
                         payload={},
                     )
                 self.assertEqual(len(calls), 2)
+
+    def test_installed_recovery_polls_known_id_without_replay(self):
+        import httpx
+
+        api = submodule("core.api.sdk_adapter")
+        storage = submodule("core.jobs.store")
+        commands = submodule("core.jobs.coordinator")
+        scope = storage.JobScope("https://service.example.invalid/v1", "fixture-account")
+        with tempfile.TemporaryDirectory(dir=bpy.utils.resource_path("USER")) as directory:
+            store = storage.JobStore(Path(directory) / "jobs.sqlite3", scope)
+            intent = storage.JobIntent(
+                "fixture-request",
+                scope,
+                storage.JobOrigin("fixture-file", "fixture-scene", "fixture-revision"),
+                "model",
+                "fixture-model",
+                "a" * 64,
+                "b" * 64,
+                "0.1",
+            )
+            store.create(intent)
+            store.transition(
+                intent.request_id, expected_revision=0, state=storage.JobState.SUBMITTING
+            )
+            store.transition(
+                intent.request_id,
+                expected_revision=1,
+                state=storage.JobState.REMOTE,
+                remote_job_id="fixture-remote",
+            )
+            calls = []
+
+            def respond(request):
+                calls.append(request)
+                self.assertEqual(request.method, "GET")
+                return httpx.Response(
+                    200, json={"job": {"jobId": "fixture-remote", "status": "success"}}
+                )
+
+            with api.SDKAdapter(
+                api.Credentials("key", "secret"),
+                online=lambda: True,
+                account_id=scope.account_id,
+                base_url=scope.service,
+                transport=httpx.MockTransport(respond),
+            ) as adapter:
+                coordinator = commands.JobCoordinator(adapter, store)
+                self.assertEqual(
+                    coordinator.recovery_plan()[0].action, commands.RecoveryAction.POLL_REMOTE
+                )
+                self.assertEqual(calls, [])
+                snapshot = coordinator.refresh_remote(intent.request_id, expected_revision=2)
+                self.assertEqual(snapshot.record.state, storage.JobState.SUCCEEDED)
+                self.assertEqual(len(calls), 1)

@@ -15,6 +15,8 @@ opaque file-session, scene and optional object identities in the durable intent.
 It never stamps an old quote with a fresh revision after estimation.
 Names, active-object selection and file paths are never used to rediscover a
 missing target. `capture` also exposes this origin for callers preparing inputs.
+Removed RNA scene/target references are reported as `OriginUnavailable` at capture
+and delivery boundaries; callers do not need a separate stale-RNA error branch.
 Dependency updates conservatively invalidate the affected scene's revisions;
 frame changes invalidate unconditionally in their own pre-change hook, regardless
 of whether the unevaluated depsgraph lists updates. Undo/redo and file loading

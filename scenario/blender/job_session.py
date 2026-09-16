@@ -91,10 +91,13 @@ class JobSession:
         _main_thread()
         if not self._active:
             raise OriginUnavailable("This job context is inactive")
-        if scene not in tuple(bpy.data.scenes):
-            raise OriginUnavailable("The originating scene is unavailable")
-        if target is not None and target not in tuple(scene.objects):
-            raise OriginUnavailable("The target is not in the originating scene")
+        try:
+            if scene not in tuple(bpy.data.scenes):
+                raise OriginUnavailable("The originating scene is unavailable")
+            if target is not None and target not in tuple(scene.objects):
+                raise OriginUnavailable("The target is not in the originating scene")
+        except ReferenceError:
+            raise OriginUnavailable("The original scene or target was removed") from None
         scene_id = self._identity(self._scenes, scene)
         target_id = self._identity(self._targets, target) if target is not None else None
         if target_id is not None:

@@ -352,7 +352,8 @@ def test_closed_clients_and_blank_projects_are_rejected(adapter):
 
 
 @pytest.mark.parametrize("project", [None, "selected-project"])
-def test_job_discovery_keeps_filters_scope_and_extended_records(adapter, project):
+@pytest.mark.parametrize("hide_results", [None, True, False])
+def test_job_discovery_keeps_filters_scope_and_extended_records(adapter, project, hide_results):
     calls = []
     first = {"jobId": "job-first", "status": "future-state", "metadata": {"future": True}}
     second = {"jobId": "job-second", "jobType": "workflow"}
@@ -376,6 +377,7 @@ def test_job_discovery_keeps_filters_scope_and_extended_records(adapter, project
         status="success",
         page_size=2,
         max_pages=2,
+        **({} if hide_results is None else {"hide_results": hide_results}),
     ) == [first, second]
     assert len(calls) == 2
     for index, request in enumerate(calls):
@@ -387,7 +389,7 @@ def test_job_discovery_keeps_filters_scope_and_extended_records(adapter, project
             "type": "workflow",
             "status": "success",
             "pageSize": "2",
-            "hideResults": "false",
+            "hideResults": "false" if hide_results is False else "true",
         }
         if project:
             query["projectId"] = project
@@ -405,6 +407,10 @@ def test_job_discovery_keeps_filters_scope_and_extended_records(adapter, project
         {"jobs": [None]},
         {"jobs": [{"id": "wrong-key"}]},
         {"jobs": [{"jobId": " "}]},
+        {"jobs": [{"jobId": " job-1"}]},
+        {"jobs": [{"jobId": "job-1 "}]},
+        {"jobs": [{"jobId": "bad/id"}]},
+        {"jobs": [{"jobId": "bad?id"}]},
         {"jobs": [{"jobId": 3}]},
     ],
 )
@@ -474,6 +480,8 @@ def test_job_discovery_rechecks_online_permission_before_each_page(adapter):
 @pytest.mark.parametrize(
     "options",
     [
+        {"hide_results": "false"},
+        {"hide_results": 0},
         {"page_size": 0},
         {"page_size": 201},
         {"page_size": True},

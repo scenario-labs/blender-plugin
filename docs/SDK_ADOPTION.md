@@ -92,7 +92,10 @@ requests, project and filters on every page, online permission before every requ
 loop detection and a hard page limit. Exact duplicate IDs are deduplicated;
 conflicting records with the same ID fail the listing so callers can refresh.
 Malformed pages and later-page errors never return a silent partial result.
-Unknown response fields/statuses are preserved. Listings are not server snapshots;
+Discovery omits embedded results by default (`hide_results=True`); callers can
+explicitly request them with `False`. This option stays unchanged on every page.
+Job IDs use the same validation as retrieval, so malformed or padded IDs fail
+the listing. Unknown response fields/statuses are preserved. Listings are not server snapshots;
 retrieve a known remote ID again before acting on its state.
 
 The inspected SDK has no dedicated lookup by client request identity or explicit

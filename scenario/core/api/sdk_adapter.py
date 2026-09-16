@@ -256,6 +256,7 @@ class SDKAdapter:
         workflow_id=None,
         job_type=None,
         status=None,
+        hide_results=True,
         page_size=100,
         max_pages=100,
     ):
@@ -281,7 +282,9 @@ class SDKAdapter:
         }
         if status is not None and (not isinstance(status, str) or status not in statuses):
             raise ValueError("Choose a supported job status")
-        options = {"page_size": page_size, "hide_results": False}
+        if not isinstance(hide_results, bool):
+            raise ValueError("Result visibility must be a boolean")
+        options = {"page_size": page_size, "hide_results": hide_results}
         for key, value in (
             ("author_id", author_id),
             ("workflow_id", workflow_id),
@@ -298,13 +301,10 @@ class SDKAdapter:
             if not isinstance(rows, list):
                 raise AdapterError("Scenario returned an invalid job page")
             for row in rows:
-                if (
-                    not isinstance(row, dict)
-                    or not isinstance(row.get("jobId"), str)
-                    or not row["jobId"].strip()
-                ):
-                    raise AdapterError("Scenario returned an invalid job record")
-                identifier = row["jobId"]
+                try:
+                    identifier = _identifier(row.get("jobId") if isinstance(row, dict) else None)
+                except ValueError:
+                    raise AdapterError("Scenario returned an invalid job record") from None
                 if identifier in records and records[identifier] != row:
                     raise AdapterError("Scenario returned conflicting job records; refresh history")
                 records[identifier] = row

@@ -5,9 +5,8 @@
 import os
 import tempfile
 import threading
-import unittest
+import unittest.mock
 from pathlib import Path
-from unittest import mock
 
 import bpy
 from helpers import submodule
@@ -110,6 +109,21 @@ class WorldApplicationTests(unittest.TestCase):
         self.assertIn(image, tuple(bpy.data.images))
         self.assertTrue(image.packed_file)
 
+    def test_image_shared_with_material_is_preserved_on_restore(self):
+        receipt = self.module.apply_world(self.scene, self.fixture())
+        image = receipt._image
+        material = bpy.data.materials.new("Fixture Shared Panorama")
+        try:
+            material.use_nodes = True
+            texture = material.node_tree.nodes.new("ShaderNodeTexImage")
+            texture.image = image
+            self.assertTrue(receipt.restore())
+            self.assertEqual(texture.image, image)
+            self.assertIsNotNone(image.packed_file)
+            self.assert_original()
+        finally:
+            bpy.data.materials.remove(material)
+
     def test_manual_world_or_image_edits_refuse_restore(self):
         mutations = (
             lambda world, image: setattr(world, "use_nodes", False),
@@ -138,6 +152,15 @@ class WorldApplicationTests(unittest.TestCase):
                     receipt.restore()
                 self.assertEqual(self.scene.world, world)
                 self.assertIn(image, tuple(bpy.data.images))
+
+    def test_readonly_ramp_pointer_still_guards_edited_elements(self):
+        receipt = self.module.apply_world(self.scene, self.fixture())
+        world = self.scene.world
+        environment = next(node for node in world.node_tree.nodes if node.type == "TEX_ENVIRONMENT")
+        environment.color_mapping.color_ramp.elements[0].color = (1.0, 0.0, 0.0, 1.0)
+        with self.assertRaises(self.module.WorldApplicationError):
+            receipt.restore()
+        self.assertEqual(self.scene.world, world)
 
     def test_repacked_pixel_edits_refuse_restore(self):
         receipt = self.module.apply_world(self.scene, self.fixture())
@@ -218,7 +241,7 @@ class WorldApplicationTests(unittest.TestCase):
     def test_failure_after_decode_cleans_owned_data_and_preserves_original(self):
         path = self.fixture()
         worlds, images = set(bpy.data.worlds), set(bpy.data.images)
-        with mock.patch.object(
+        with unittest.mock.patch.object(
             self.module, "_fingerprint", side_effect=RuntimeError("fixture failure")
         ):
             with self.assertRaises(self.module.WorldApplicationError):

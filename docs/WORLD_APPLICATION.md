@@ -17,19 +17,21 @@ Temporary copies live under the extension's user directory, not its installation
 
 - RGB/RGBA PNG with 8- or 16-bit samples. CRCs and chunk boundaries are checked;
   animated PNG and HDR metadata (`cICP`, `mDCV`, `cLLI`) are rejected.
-- Single-part, non-deep OpenEXR version 2, scanline or tiled, with matching data
+- Single-part, non-deep OpenEXR version 2 scanline files (compression types 0–9), with matching data
   and display windows. Explicit cubemap metadata is rejected. Blender must decode
   the result as a floating-point image.
 - Both require a 2:1 aspect ratio, minimum 4×2, at most 32 megapixels and 128 MiB
-  on disk. EXR header scanning is limited to 1 MiB. Non-regular files are rejected;
+  on disk. EXR header scanning is limited to 1 MiB; the expected scanline table, block
+  coordinates and complete nonoverlapping byte extents are checked before decode. Non-regular files are rejected;
   POSIX FIFOs are opened without waiting for a writer.
 
 The parser follows the [OpenEXR file layout](https://openexr.com/en/latest/OpenEXRFileLayout.html)
 (version/flags and null-terminated attribute headers) and
 [PNG specification](https://www.w3.org/TR/png-3/) (signature, IHDR, CRC and chunks).
-It is a preflight, not another image decoder: Blender's decoder remains authoritative.
+It checks structural completeness, not compressed-payload integrity or a trusted
+source checksum. It is a preflight, not another image decoder: Blender's decoder remains authoritative.
 The byte/pixel limits bound input and decoded dimensions, not decoder CPU time.
-JPEG, Radiance HDR, layered/multipart/deep EXR and other formats remain unsupported.
+JPEG, Radiance HDR, tiled/layered/multipart/deep EXR and other formats remain unsupported.
 
 `PanoramaInfo.hdr_capable` describes accepted floating-point OpenEXR capability.
 It does not assert measured dynamic range. Ordinary accepted PNG is treated as LDR.

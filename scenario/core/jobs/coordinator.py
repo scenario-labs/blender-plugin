@@ -12,7 +12,7 @@ from dataclasses import dataclass, field
 from weakref import WeakValueDictionary
 
 from ..api.sdk_adapter import Estimate, SDKAdapter
-from .store import JobIntent, JobOrigin, JobScope, JobState, JobStore, StoreConflict
+from .store import JobIntent, JobOrigin, JobScope, JobState, JobStore, StoreConflict, _identity
 
 
 class QuoteError(ValueError):
@@ -60,6 +60,8 @@ class JobCoordinator:
             or not callable(clock)
         ):
             raise ValueError("Use a positive finite quote lifetime and monotonic clock")
+        if adapter.account_id is None:
+            raise ValueError("JobCoordinator requires an explicit adapter account_id")
         scope = JobScope(adapter.base_url, adapter.account_id, adapter.project_id, adapter.team_id)
         if scope != store.scope:
             raise ValueError("Selected connection and job store scopes differ")
@@ -152,6 +154,9 @@ class JobCoordinator:
             raise QuoteError("Use a prepared request from this coordinator")
         try:
             receipt = self._adapter.submit_estimate(prepared.estimate, before_send=claim)
+            # A receipt must also satisfy the exact persisted identity contract.
+            # Validate inside the uncertainty boundary before storing its ID.
+            _identity(receipt["jobId"])
         except Exception:
             if not claimed:
                 raise

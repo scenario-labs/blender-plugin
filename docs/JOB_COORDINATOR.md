@@ -9,7 +9,9 @@ its existing manager until the shared runtime is integrated.
 ## Prepare, claim, send, acknowledge
 
 1. Build the adapter with the selected service, non-secret account/team identity
-   and optional project. The coordinator rejects a store with different scope.
+   and optional project. `account_id` is required for the coordinator even though
+   read/estimate-only adapters may omit it. Missing identity fails before any
+   request; a store with different scope is also rejected.
    The authentication layer supplies these identities; they are not proof that
    a token has been accepted by the remote service.
 2. Obtain a real estimate through the adapter. Only the actual unchanged object
@@ -44,8 +46,11 @@ no live generation is performed by the test suite.
 ## Failure and context boundaries
 
 Transport/HTTP failures and missing/malformed receipts after a durable claim
-produce `SubmissionUncertain` and store `uncertain`. No failure triggers a second
-request, and a consumed quote cannot be reused through another coordinator.
+produce `SubmissionUncertain` and store `uncertain`. This includes remote IDs
+that cannot satisfy the store's identity rules (such as overlong IDs or internal
+Unicode whitespace), even if SDK-level ID validation accepted them. No failure
+triggers a second request, and a consumed quote cannot be reused through another
+coordinator.
 Even an apparent HTTP rejection is treated conservatively until reconciliation.
 If saving uncertainty or the successful receipt fails, `StoreError` propagates;
 the durable `submitting` record remains recoverable and cannot be resubmitted.

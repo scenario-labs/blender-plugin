@@ -282,3 +282,78 @@ def test_connection_and_store_scope_must_match(setup, tmp_path, change):
     with pytest.raises(ValueError, match="scopes differ"):
         JobCoordinator(adapter, other)
     assert len(requests) == 1
+
+
+def test_coordinator_requires_explicit_account_identity_before_network(tmp_path):
+    def unexpected(request):
+        pytest.fail("Missing account identity must fail before network access")
+
+    store = JobStore(tmp_path / "jobs.sqlite3", SCOPE)
+    with SDKAdapter(
+        Credentials("selected", "secret"),
+        online=lambda: True,
+        base_url=SCOPE.service,
+        project_id=SCOPE.project_id,
+        team_id=SCOPE.team_id,
+        transport=httpx.MockTransport(unexpected),
+    ) as adapter:
+        with pytest.raises(ValueError, match="account_id"):
+            JobCoordinator(adapter, store)
+    assert store.records() == ()
+
+
+@pytest.mark.parametrize("operation", ["model", "workflow"])
+@pytest.mark.parametrize(
+    "remote_id",
+    ["r" * 257, "remote\u00a0id", "remote\u2003id"],
+    ids=["too-long", "no-break-space", "em-space"],
+)
+def test_unpersistable_receipt_identity_is_uncertain_without_replay(
+    setup, tmp_path, operation, remote_id
+):
+    def respond(request):
+        return httpx.Response(200, json={"job": {"jobId": remote_id}})
+
+    coordinator, store, prepared, requests, adapter = setup(respond, operation=operation)
+    with pytest.raises(SubmissionUncertain) as error:
+        submit(coordinator, prepared)
+    assert remote_id not in str(error.value)
+    record = JobStore(tmp_path / "jobs.sqlite3", SCOPE).get(prepared.intent.request_id)
+    assert record.state == JobState.UNCERTAIN and record.remote_job_id is None
+    assert not adapter.owns_estimate(prepared.estimate)
+    with pytest.raises(ValueError):
+        submit(coordinator, prepared)
+    assert len(requests) == 2
+
+
+@pytest.mark.parametrize("operation", ["model", "workflow"])
+def test_receipt_identity_limit_is_accepted(setup, operation):
+    remote_id = "r" * 256
+    coordinator, store, prepared, requests, _ = setup(
+        lambda request: httpx.Response(200, json={"job": {"jobId": remote_id}}),
+        operation=operation,
+    )
+    record = submit(coordinator, prepared)
+    assert record.state == JobState.REMOTE and record.remote_job_id == remote_id
+    assert store.get(prepared.intent.request_id) == record and len(requests) == 2
+
+
+def test_malformed_receipt_persistence_failure_stays_unreplayable(setup, monkeypatch):
+    coordinator, store, prepared, requests, adapter = setup(
+        lambda request: httpx.Response(200, json={"job": {"jobId": "r" * 257}})
+    )
+    transition = store.transition
+
+    def fail_uncertainty(*args, **kwargs):
+        if kwargs["state"] == JobState.UNCERTAIN:
+            raise StoreError("fixture failed uncertainty commit")
+        return transition(*args, **kwargs)
+
+    monkeypatch.setattr(store, "transition", fail_uncertainty)
+    with pytest.raises(StoreError, match="uncertainty commit"):
+        submit(coordinator, prepared)
+    assert store.get(prepared.intent.request_id).state == JobState.SUBMITTING
+    assert not adapter.owns_estimate(prepared.estimate)
+    with pytest.raises(ValueError):
+        submit(coordinator, prepared)
+    assert len(requests) == 2

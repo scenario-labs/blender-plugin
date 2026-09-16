@@ -423,3 +423,20 @@ class JobSessionTests(unittest.TestCase):
         fresh = self.session.capture(self.scene, self.target)
         self.assertEqual(fresh.target_id, origin.target_id)
         self.assertEqual(self.session._resolve(fresh), (self.scene, self.target))
+
+    def test_capture_removed_target_reports_origin_unavailable_without_recording_it(self):
+        removed = bpy.data.objects.new("Removed capture target", None)
+        self.scene.collection.objects.link(removed)
+        bpy.data.objects.remove(removed, do_unlink=True)
+        with self.assertRaises(self.module.OriginUnavailable):
+            self.session.capture(self.scene, removed)
+        self.assertEqual(self.session._targets, {})
+        self.assertEqual(self.session._target_scenes, {})
+
+    def test_capture_removed_scene_reports_origin_unavailable_without_recording_it(self):
+        removed = bpy.data.scenes.new("Removed capture scene")
+        bpy.data.scenes.remove(removed)
+        with self.assertRaises(self.module.OriginUnavailable):
+            self.session.capture(removed, self.target)
+        self.assertEqual(self.session._scenes, {})
+        self.assertEqual(self.session._targets, {})

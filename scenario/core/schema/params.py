@@ -1,6 +1,7 @@
 # SPDX-FileCopyrightText: 2026 Scenario Inc.
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Turn a model record's parameter schema into UI specs and request bodies."""
+
 from dataclasses import dataclass, field
 
 FILE_TYPES = ("file", "file_array")
@@ -36,7 +37,9 @@ class ParamSpec:
     def is_integer(self):
         if self.ptype != "number":
             return False
-        candidates = [v for v in (self.step, self.default, self.min, self.max) if isinstance(v, (int, float))]
+        candidates = [
+            v for v in (self.step, self.default, self.min, self.max) if isinstance(v, (int, float))
+        ]
         if self.allowed_values:
             candidates.extend(v for v in self.allowed_values if isinstance(v, (int, float)))
         return bool(candidates) and all(float(v).is_integer() for v in candidates)
@@ -50,7 +53,9 @@ class Schema:
     specs: list
     resolution_presets: list = field(default_factory=list)
     prompt_name: str = None
-    one_of: list = field(default_factory=list)  # groups where at least one member must be provided (either image or prompt)
+    one_of: list = field(
+        default_factory=list
+    )  # groups where at least one member must be provided (either image or prompt)
 
     def by_name(self, name):
         return next((s for s in self.specs if s.name == name), None)
@@ -95,54 +100,65 @@ def parse_schema(record):
         for key, label in (selects.get(name) or {}).items():
             match = next((v for v in allowed if str(v) == str(key)), key)
             labels[match] = label
-        specs.append(ParamSpec(
-            name=name,
-            label=raw.get("label") or name,
-            ptype=ptype,
-            default=raw.get("default"),
-            description=raw.get("description") or "",
-            group=raw.get("group") or ("Prompt" if raw.get("prompt") else "Settings"),
-            required_always=always,
-            required_if_defined=if_defined,
-            required_if_not_defined=if_not_defined,
-            allowed_values=allowed,
-            allowed_labels=labels,
-            min=raw.get("min"),
-            max=raw.get("max"),
-            step=raw.get("step"),
-            max_length=raw.get("maxLength") or raw.get("max_length"),
-            cost_impact=bool(raw.get("costImpact") or raw.get("cost_impact")),
-            kind=raw.get("kind"),
-            is_prompt=bool(raw.get("prompt")),
-            is_array=ptype in ("file_array", "string_array") or bool(raw.get("array")),
-        ))
+        specs.append(
+            ParamSpec(
+                name=name,
+                label=raw.get("label") or name,
+                ptype=ptype,
+                default=raw.get("default"),
+                description=raw.get("description") or "",
+                group=raw.get("group") or ("Prompt" if raw.get("prompt") else "Settings"),
+                required_always=always,
+                required_if_defined=if_defined,
+                required_if_not_defined=if_not_defined,
+                allowed_values=allowed,
+                allowed_labels=labels,
+                min=raw.get("min"),
+                max=raw.get("max"),
+                step=raw.get("step"),
+                max_length=raw.get("maxLength") or raw.get("max_length"),
+                cost_impact=bool(raw.get("costImpact") or raw.get("cost_impact")),
+                kind=raw.get("kind"),
+                is_prompt=bool(raw.get("prompt")),
+                is_array=ptype in ("file_array", "string_array") or bool(raw.get("array")),
+            )
+        )
     presets = []
     res = ui.get("resolutionComponent") or {}
     for preset in res.get("presets") or []:
-        presets.append({"label": preset.get("label"), "width": preset.get("width"), "height": preset.get("height"),
-                        "width_param": res.get("widthInput", "width"), "height_param": res.get("heightInput", "height")})
+        presets.append(
+            {
+                "label": preset.get("label"),
+                "width": preset.get("width"),
+                "height": preset.get("height"),
+                "width_param": res.get("widthInput", "width"),
+                "height_param": res.get("heightInput", "height"),
+            }
+        )
     prompt_name = next((s.name for s in specs if s.is_prompt), None)
     by_name = {s.name: s for s in specs}
     one_of = []
     # Explicit either/or from the schema: `required: {ifNotDefined: {sibling: ...}}` means "at least one of this
-    # input and its named siblings" (Cartwheel: a 3D character mesh OR a reference image). Merge into groups.
+    # input and its named siblings" (Cartwheel: a 3D character mesh OR a reference image).
+    # Each distinct group is required. Overlapping groups are not interchangeable:
+    # (a OR b) AND (b OR c) cannot be weakened to (a OR b OR c).
     for spec in specs:
         members = {spec.name} | {n for n in spec.required_if_not_defined if n in by_name}
         if len(members) < 2:
             continue
-        merged = next((g for g in one_of if members & set(g)), None)
-        if merged is None:
-            one_of.append(tuple(sorted(members)))
-        else:
-            one_of[one_of.index(merged)] = tuple(sorted(set(merged) | members))
+        group = tuple(sorted(members))
+        if group not in one_of:
+            one_of.append(group)
     if prompt_name:
         # implicit either/or: a required file whose own description says it applies only "if no prompt" is an
-        # alternative to the prompt, not a hard requirement. Relax it and require at least one of {file(s), prompt}.
-        conditional = [s for s in specs if s.is_file and s.required_always and _is_conditional(s.description)]
+        # alternative to the prompt, not a hard requirement. Preserve each file-or-prompt clause.
+        conditional = [
+            s for s in specs if s.is_file and s.required_always and _is_conditional(s.description)
+        ]
         if conditional:
             for spec in conditional:
                 spec.required_always = False
-            one_of.append(tuple([s.name for s in conditional] + [prompt_name]))
+                one_of.append((spec.name, prompt_name))
     return Schema(specs=specs, resolution_presets=presets, prompt_name=prompt_name, one_of=one_of)
 
 
@@ -198,18 +214,33 @@ def validate(specs, body, one_of=()):
             continue
         if spec.max_length and isinstance(value, str) and len(value) > spec.max_length:
             errors.append(f"{spec.label} is longer than {spec.max_length} characters")
-        if spec.allowed_values and spec.ptype != "string_array" and value not in spec.allowed_values:
+        if (
+            spec.allowed_values
+            and spec.ptype != "string_array"
+            and value not in spec.allowed_values
+        ):
             options = ", ".join(str(v) for v in spec.allowed_values)
             errors.append(f"{spec.label} must be one of {options}")
         if spec.ptype == "number" and isinstance(value, (int, float)) and not spec.allowed_values:
             lo, hi = spec.min, spec.max
             if (lo is not None and value < lo) or (hi is not None and value > hi):
                 errors.append(f"{spec.label} must be between {_fmt(lo)} and {_fmt(hi)}")
+    errors.extend(validate_requirements(specs, body, one_of))
+    return errors
+
+
+def validate_requirements(specs, body, one_of=()):
+    """Validate sibling relationships independently of field type/value checks."""
+    errors = []
     by_name = {s.name: s for s in specs}
     for spec in specs:
         for dep_name in spec.required_if_defined:
             dep = by_name.get(dep_name)
-            if dep is not None and body.get(dep_name) not in (None, "", []) and body.get(spec.name) in (None, "", []):
+            if (
+                dep is not None
+                and body.get(dep_name) not in (None, "", [])
+                and body.get(spec.name) in (None, "", [])
+            ):
                 errors.append(f"{spec.label} is required when {dep.label} is set")
     for group in one_of:
         if not any(body.get(name) not in (None, "", []) for name in group):
@@ -219,7 +250,11 @@ def validate(specs, body, one_of=()):
 
 
 def missing_required_files(specs, body):
-    return [s.name for s in specs if s.is_file and s.required_always and body.get(s.name) in (None, "", [])]
+    return [
+        s.name
+        for s in specs
+        if s.is_file and s.required_always and body.get(s.name) in (None, "", [])
+    ]
 
 
 def _fmt(value):

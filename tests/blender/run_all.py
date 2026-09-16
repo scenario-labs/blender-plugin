@@ -38,6 +38,7 @@ BASELINE = (
     "test_result_transfers",
     "test_job_session",
     "test_sdk_uploads",
+    "test_model_payload_validation",
 )
 
 

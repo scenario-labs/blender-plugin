@@ -110,7 +110,13 @@ class JobCoordinator:
     """
 
     def __init__(
-        self, adapter: SDKAdapter, store: JobStore, *, quote_ttl=120.0, clock=time.monotonic
+        self,
+        adapter: SDKAdapter,
+        store: JobStore,
+        *,
+        quote_ttl=120.0,
+        clock=time.monotonic,
+        origin_current=None,
     ):
         if not isinstance(adapter, SDKAdapter) or not isinstance(store, JobStore):
             raise TypeError("Use the shared SDK adapter and job store")
@@ -127,6 +133,9 @@ class JobCoordinator:
         scope = JobScope(adapter.base_url, adapter.account_id, adapter.project_id, adapter.team_id)
         if scope != store.scope:
             raise ValueError("Selected connection and job store scopes differ")
+        if origin_current is not None and not callable(origin_current):
+            raise TypeError("Origin validation must be a thread-safe callable")
+        self._origin_current = origin_current
         self._adapter = adapter
         self._store = store
         self._ttl = quote_ttl
@@ -205,6 +214,8 @@ class JobCoordinator:
                     or current_payload != _payload(prepared.estimate.payload)
                 ):
                     raise QuoteError("Request or origin changed; request a fresh estimate")
+                if self._origin_current is not None and not self._origin_current(origin):
+                    raise QuoteError("Origin changed while queued; request a fresh estimate")
                 current = self._store.get(intent.request_id)
                 if (
                     current is None

@@ -16,7 +16,9 @@ It never stamps an old quote with a fresh revision after estimation.
 Names, active-object selection and file paths are never used to rediscover a
 missing target. `capture` also exposes this origin for callers preparing inputs.
 Dependency updates conservatively invalidate the affected scene's revisions;
-frame changes, undo/redo and file loading invalidate captured state too. Callers
+frame changes, undo/redo and file loading invalidate captured state too.
+Render-thread frame/dependency callbacks invalidate only the thread-safe revision
+registry conservatively across sessions; they never inspect or mutate bpy data. Callers
 must prepare inputs and capture their origin together on the main thread.
 
 A thread-safe, bpy-free revision registry is checked again by the coordinator

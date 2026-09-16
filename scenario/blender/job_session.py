@@ -19,6 +19,7 @@ from ..core.jobs.origins import OriginRevisions
 from ..core.jobs.workers import JobWorkers
 
 _sessions = set()
+_sessions_lock = threading.Lock()
 _registered = False
 
 
@@ -61,9 +62,14 @@ class JobSession:
         self._active = True
         self._coordinator = JobCoordinator(adapter, store, origin_guard=self._origins.guard)
         self._workers = JobWorkers(self._coordinator, workers=workers, pending_limit=pending_limit)
-        _sessions.add(self)
-        if not bpy.app.timers.is_registered(_reap_inactive):
-            bpy.app.timers.register(_reap_inactive, first_interval=0.25, persistent=True)
+        with _sessions_lock:
+            _sessions.add(self)
+        try:
+            if not bpy.app.timers.is_registered(_reap_inactive):
+                bpy.app.timers.register(_reap_inactive, first_interval=0.25, persistent=True)
+        except BaseException:
+            self.shutdown()
+            raise
 
     @property
     def scope(self):
@@ -203,13 +209,19 @@ class JobSession:
         self._workers.shutdown()
         self._pending.clear()
         self._issued.clear()
-        _sessions.discard(self)
+        with _sessions_lock:
+            _sessions.discard(self)
+
+
+def _session_snapshot():
+    with _sessions_lock:
+        return tuple(_sessions)
 
 
 def _reap_inactive():
     """Close retired connections once their tracked network work has finished."""
     _main_thread()
-    for session in tuple(_sessions):
+    for session in _session_snapshot():
         if not session._active and all(task.done() for task, _ in session._pending):
             session.shutdown()
     return 0.25 if _sessions else None
@@ -217,22 +229,28 @@ def _reap_inactive():
 
 @persistent
 def _load_pre(_):
-    for session in tuple(_sessions):
+    for session in _session_snapshot():
         session.deactivate()
 
 
 @persistent
 def _scene_changed(scene, depsgraph=None):
+    # Rendering can invoke frame/dependency handlers on a render thread. Never
+    # inspect bpy data there: conservatively invalidate the pure revision state.
+    if threading.current_thread() is not threading.main_thread():
+        for session in _session_snapshot():
+            session._origins.reset()
+        return
     # Dependency changes conservatively invalidate all captured targets in
     # that scene; frame changes also invalidate even with no dependency update.
     if depsgraph is None or any(depsgraph.updates):
-        for session in tuple(_sessions):
+        for session in _session_snapshot():
             session.invalidate_scene(scene)
 
 
 @persistent
 def _history_pre(_):
-    for session in tuple(_sessions):
+    for session in _session_snapshot():
         session.invalidate_all()
 
 
@@ -257,7 +275,7 @@ def register():
 def unregister():
     global _registered
     _main_thread()
-    for session in tuple(_sessions):
+    for session in _session_snapshot():
         session.shutdown()
     if bpy.app.timers.is_registered(_reap_inactive):
         bpy.app.timers.unregister(_reap_inactive)

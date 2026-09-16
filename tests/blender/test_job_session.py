@@ -173,3 +173,35 @@ class JobSessionTests(unittest.TestCase):
             self.session.prepare(quote, origin=origin)
         self.assertEqual(self.store.records(), ())
         self.assertEqual(len(self.calls), 1)
+
+    def test_timer_start_failure_releases_new_workers_and_connection(self):
+        from unittest.mock import patch
+
+        import httpx
+
+        adapter = self.api.SDKAdapter(
+            self.api.Credentials("key", "secret"),
+            online=lambda: False,
+            account_id=self.scope.account_id,
+            base_url=self.scope.service,
+            transport=httpx.MockTransport(lambda request: self.fail("Unexpected request")),
+        )
+        before_sessions = set(self.module._sessions)
+        before_threads = set(threading.enumerate())
+        with (
+            patch.object(bpy.app.timers, "is_registered", return_value=False),
+            patch.object(
+                bpy.app.timers, "register", side_effect=RuntimeError("fixture timer exhaustion")
+            ),
+        ):
+            with self.assertRaisesRegex(RuntimeError, "timer exhaustion"):
+                self.module.JobSession(adapter, self.store)
+        self.assertEqual(self.module._sessions, before_sessions)
+        self.assertEqual(set(threading.enumerate()), before_threads)
+        self.assertTrue(adapter._sdk.is_closed())
+
+    def test_render_thread_handler_invalidates_without_blender_access(self):
+        origin = self.session.capture(self.scene, self.target)
+        with ThreadPoolExecutor(max_workers=1) as pool:
+            pool.submit(self.module._scene_changed, None, None).result(5)
+        self.assertFalse(self.session._origins.current(origin))

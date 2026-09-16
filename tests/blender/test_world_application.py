@@ -139,6 +139,16 @@ class WorldApplicationTests(unittest.TestCase):
                 self.assertEqual(self.scene.world, world)
                 self.assertIn(image, tuple(bpy.data.images))
 
+    def test_repacked_pixel_edits_refuse_restore(self):
+        receipt = self.module.apply_world(self.scene, self.fixture())
+        world, image = self.scene.world, receipt._image
+        image.pixels[0] = 0.875
+        image.pack()
+        with self.assertRaises(self.module.WorldApplicationError):
+            receipt.restore()
+        self.assertEqual(self.scene.world, world)
+        self.assertIn(image, tuple(bpy.data.images))
+
     def test_replaced_world_is_not_overwritten(self):
         receipt = self.module.apply_world(self.scene, self.fixture())
         self.scene.world = self.original

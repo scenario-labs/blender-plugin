@@ -9,10 +9,20 @@ import threading
 import time
 import uuid
 from dataclasses import dataclass, field
+from enum import StrEnum
 from weakref import WeakValueDictionary
 
 from ..api.sdk_adapter import Estimate, SDKAdapter
-from .store import JobIntent, JobOrigin, JobScope, JobState, JobStore, StoreConflict, _identity
+from .store import (
+    JobIntent,
+    JobOrigin,
+    JobScope,
+    JobState,
+    JobStore,
+    StoreConflict,
+    StoredJob,
+    _identity,
+)
 
 
 class QuoteError(ValueError):
@@ -28,6 +38,53 @@ class PreparedJob:
     intent: JobIntent
     expires_at: float
     estimate: Estimate = field(repr=False)
+
+
+class RecoveryError(RuntimeError):
+    """Remote evidence is missing or inconsistent; preserve local state."""
+
+
+class RecoveryAction(StrEnum):
+    REVIEW_QUOTE = "review_quote"
+    RECONCILE_UNKNOWN = "reconcile_unknown"
+    POLL_REMOTE = "poll_remote"
+    DOWNLOAD_RESULT = "download_result"
+    REVIEW_DOWNLOAD = "review_download"
+    REVIEW_APPLICATION = "review_application"
+    FINISHED = "finished"
+
+
+@dataclass(frozen=True)
+class RecoveryItem:
+    record: StoredJob
+    action: RecoveryAction
+
+
+@dataclass(frozen=True)
+class RemoteSnapshot:
+    record: StoredJob
+    response_json: bytes = field(repr=False)
+
+    @property
+    def response(self):
+        return json.loads(self.response_json)
+
+
+_RECOVERY = {
+    JobState.PREPARED: RecoveryAction.REVIEW_QUOTE,
+    JobState.SUBMITTING: RecoveryAction.RECONCILE_UNKNOWN,
+    JobState.UNCERTAIN: RecoveryAction.RECONCILE_UNKNOWN,
+    JobState.REMOTE: RecoveryAction.POLL_REMOTE,
+    JobState.SUCCEEDED: RecoveryAction.DOWNLOAD_RESULT,
+    JobState.DOWNLOADING: RecoveryAction.REVIEW_DOWNLOAD,
+    JobState.DOWNLOAD_FAILED: RecoveryAction.REVIEW_DOWNLOAD,
+    JobState.READY: RecoveryAction.REVIEW_APPLICATION,
+    JobState.APPLYING: RecoveryAction.REVIEW_APPLICATION,
+    JobState.APPLY_FAILED: RecoveryAction.REVIEW_APPLICATION,
+    JobState.FAILED: RecoveryAction.FINISHED,
+    JobState.CANCELED: RecoveryAction.FINISHED,
+    JobState.APPLIED: RecoveryAction.FINISHED,
+}
 
 
 def _payload(value):
@@ -181,3 +238,77 @@ class JobCoordinator:
             state=JobState.REMOTE,
             remote_job_id=receipt["jobId"],
         )
+
+    def recovery_plan(self):
+        """Inspect only this scope; never replay or guess that a worker is dead.
+
+        In-flight records remain unchanged because another process might still
+        own them. The application owner decides when explicit recovery is safe.
+        """
+        with self._lock:
+            if not self._active:
+                raise RecoveryError("This job context is inactive")
+            return tuple(
+                RecoveryItem(record, _RECOVERY[record.state]) for record in self._store.records()
+            )
+
+    def cancel_prepared(self, request_id, *, expected_revision):
+        """Cancel queued local intent only. This sends no remote cancel request."""
+        with self._lock:
+            if not self._active:
+                raise RecoveryError("This job context is inactive")
+            current = self._store.get(request_id)
+            if current is None or current.state != JobState.PREPARED:
+                raise StoreConflict("Only a prepared local request can be canceled here")
+            return self._store.transition(
+                request_id, expected_revision=expected_revision, state=JobState.CANCELED
+            )
+
+    def refresh_remote(self, request_id, *, expected_revision):
+        """Poll a known ID and persist its terminal status; never submit/rebind."""
+        with self._lock:
+            if not self._active:
+                raise RecoveryError("This job context is inactive")
+            current = self._store.get(request_id)
+            if (
+                current is None
+                or current.revision != expected_revision
+                or current.state != JobState.REMOTE
+                or current.remote_job_id is None
+            ):
+                raise StoreConflict("Only the current known remote job can be refreshed")
+        response = self._adapter.job(current.remote_job_id)
+        if response.get("jobId") != current.remote_job_id:
+            raise RecoveryError("Scenario returned a different remote job identity")
+        status = response.get("status")
+        terminal = {
+            "success": JobState.SUCCEEDED,
+            "failure": JobState.FAILED,
+            "canceled": JobState.CANCELED,
+        }
+        active = {"pending", "queued", "warming-up", "in-progress", "finalizing"}
+        if not isinstance(status, str) or status not in active | terminal.keys():
+            raise RecoveryError("Scenario returned an unrecognized job state")
+        try:
+            raw = json.dumps(response, allow_nan=False).encode()
+        except (TypeError, ValueError):
+            raise RecoveryError("Scenario returned invalid job result data") from None
+        if status in terminal:
+            try:
+                updated = self._store.transition(
+                    request_id, expected_revision=current.revision, state=terminal[status]
+                )
+            except StoreConflict:
+                updated = self._store.get(request_id)
+                if (
+                    updated is None
+                    or updated.intent != current.intent
+                    or updated.remote_job_id != current.remote_job_id
+                    or updated.state != terminal[status]
+                ):
+                    raise
+        else:
+            updated = self._store.get(request_id)
+            if updated != current:
+                raise StoreConflict("Job changed during polling; refresh the local record")
+        return RemoteSnapshot(updated, raw)

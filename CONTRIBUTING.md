@@ -221,7 +221,14 @@ uv run --locked --no-env-file python tools/capture_gui.py --blender /path/to/ble
   --view composer --fixture form --label "milestone / candidate commit"
 ```
 
-Omit `--zip` to build the current source. `--fixture empty` (default) captures the
+Omit `--zip` to build the current source. Successful cleanup keeps one candidate
+ZIP, screenshots, reports and
+logs; staged source/wheels and the temporary ZIP copy are removed. Setup errors
+produce a failed report when the output directory is writable. A cleanup error
+retains capture evidence with `status: cleanup_failed` and a nonzero exit.
+The composer has no audio lane; use `--view sidebar --lane audio` for that lane.
+
+`--fixture empty` (default) captures the
 signed-out UI; `form` supplies a clearly named synthetic model and fake credentials
 in memory, without service requests or an actual quote. The current sidebar hides
 its form while offline; the composer can display the synthetic model and prompt.

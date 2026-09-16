@@ -32,17 +32,19 @@ PREPARE = (
 
 def capture(args):
     stamp = datetime.datetime.now(datetime.UTC).strftime("%Y%m%dT%H%M%SZ")
-    session = Session(
-        find_blender(args.blender),
-        args.output,
-        args.timeout,
-        prefix=f"{stamp}-{args.view}-{args.lane}-",
-    )
-    normal = normal_profile_root()
-    before = profile_snapshot(normal)
+    session = None
+    exit_code = 1
     report = {"status": "failed", "view": args.view, "lane": args.lane, "fixture": args.fixture}
     report["label"] = args.label
     try:
+        # Allocate the report location before executable discovery or profile
+        # scanning so setup failures retain the same diagnostic artifact.
+        session = Session(
+            None, args.output, args.timeout, prefix=f"{stamp}-{args.view}-{args.lane}-"
+        )
+        session.binary = find_blender(args.blender)
+        normal = normal_profile_root()
+        before = profile_snapshot(normal)
         log = session.step(
             "prepare",
             ["--offline-mode", "--background", "--python-exit-code", "1", "--python-expr", PREPARE],
@@ -57,7 +59,8 @@ def capture(args):
             shutil.copyfile(args.zip, candidate)
             manifest = validate(session, candidate)
         else:
-            candidate = build(session, session.directory / "dist")
+            built = build(session, session.temporary / "dist")
+            candidate = session.directory / built.name
             manifest, _ = inspect_zip(candidate)
         minimum = tuple(int(part) for part in manifest["blender_version_min"].split("."))
         if tuple(version) < minimum:
@@ -115,9 +118,14 @@ def capture(args):
         if profile_snapshot(normal) != before:
             raise ValueError("Normal Blender profile changed during capture")
         report["normal_profile_unchanged"] = True
-        session.cleanup()
-        print(f"Captured: {png}\nInspect the image before claiming visual acceptance.")
-        return 0
+        try:
+            session.cleanup()
+        except OSError as error:
+            report.update(status="cleanup_failed", cleanup_error=str(error))
+            print(f"Capture saved but cleanup failed: {error}", file=sys.stderr)
+        else:
+            print(f"Captured: {png}\nInspect the image before claiming visual acceptance.")
+            exit_code = 0
     except (
         OSError,
         ValueError,
@@ -130,9 +138,14 @@ def capture(args):
         report["status"] = "failed"
         report["error"] = str(error)
         print(f"Capture failed: {error}", file=sys.stderr)
-        return 1
     finally:
-        (session.directory / "report.json").write_text(json.dumps(report, indent=2) + "\n")
+        if session is not None:
+            try:
+                (session.directory / "report.json").write_text(json.dumps(report, indent=2) + "\n")
+            except OSError as error:
+                print(f"Cannot write capture report: {error}", file=sys.stderr)
+                exit_code = 1
+    return exit_code
 
 
 def main():
@@ -174,6 +187,8 @@ def main():
         "--delay", type=float, default=8, help="Seconds before capture (at least 4)"
     )
     args = parser.parse_args()
+    if args.view == "composer" and args.lane == "audio":
+        parser.error("The composer has no audio lane; use --view sidebar for audio")
     if not math.isfinite(args.delay) or args.delay < 4:
         parser.error("--delay must be finite and at least 4 seconds")
     if not math.isfinite(args.timeout) or args.timeout <= args.delay:

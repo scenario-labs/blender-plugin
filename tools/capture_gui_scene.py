@@ -51,6 +51,8 @@ def prepare():
     print("Capture GPU:", gpu.platform.backend_type_get(), gpu.platform.renderer_get(), flush=True)
     if bpy.app.online_access or os.environ.get("SCENARIO_GUI_PROBE") != "1":
         raise RuntimeError("Capture requires offline mode and the GUI probe guard")
+    if VIEW == "composer" and LANE == "audio":
+        raise RuntimeError("The composer has no audio lane")
     name = next(n for n in bpy.context.preferences.addons.keys() if n.endswith(".scenario"))
     module = importlib.import_module(name)
     if Path(module.__file__).resolve().parent != Path(INSTALLED).resolve():
@@ -92,6 +94,9 @@ def prepare():
         handlers.dispatch(
             ("catalog", {"privacy": "public", "records": [record], "detailed": [record]})
         )
+        lane_state = bpy.context.scene.scenario.lane_state(LANE)
+        lane_state.model_id = record.id
+        lane_state.model_key = record.id
         runtime.state.account_label = "Offline screenshot fixture"
     bpy.context.scene.scenario.lane = LANE
     bpy.context.scene.scenario.lane_state(
@@ -144,6 +149,12 @@ def capture():
     window, area, region = view3d()
     if bpy.app.online_access:
         raise RuntimeError("Online access changed during capture")
+    lane_state = bpy.context.scene.scenario.lane_state(LANE)
+    if FIXTURE == "form" and (
+        lane_state.model_id != "model_offline-screenshot"
+        or lane_state.model_key != "model_offline-screenshot"
+    ):
+        raise RuntimeError("Synthetic fixture model is not selected")
     if VIEW == "sidebar" and (region.width <= 1 or region.active_panel_category != "Scenario"):
         raise RuntimeError("Scenario sidebar is not active")
     with bpy.context.temp_override(window=window, area=area):
@@ -181,6 +192,7 @@ def capture():
                 "view": VIEW,
                 "lane": LANE,
                 "fixture": FIXTURE,
+                "selected_model_id": lane_state.model_id,
                 "active_sidebar": region.active_panel_category,
                 "image_size": dimensions,
                 "capture_backend": CAPTURE_BACKEND,

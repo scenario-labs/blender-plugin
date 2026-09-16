@@ -14,12 +14,32 @@ import pytest
 
 @pytest.mark.parametrize(
     "failure",
-    [None, "setup", "missing_png", "changed_install", "version", "online", "timeout", "minimum"],
+    [
+        None,
+        "setup",
+        "missing_png",
+        "changed_install",
+        "version",
+        "online",
+        "timeout",
+        "minimum",
+        "discovery",
+        "snapshot",
+        "cleanup",
+        "output",
+        "build",
+    ],
 )
 def test_capture_evidence_and_cleanup(tmp_path, monkeypatch, failure):
     monkeypatch.syspath_prepend(str(Path(__file__).resolve().parents[2] / "tools"))
     capture = importlib.import_module("capture_gui")
-    monkeypatch.setattr(capture, "find_blender", lambda _: Path("blender"))
+
+    def find(_):
+        if failure == "discovery":
+            raise ValueError("fixture missing executable")
+        return Path("blender")
+
+    monkeypatch.setattr(capture, "find_blender", find)
     normal = tmp_path / "normal"
     normal.mkdir()
     (normal / "keep").write_text("normal profile")
@@ -33,12 +53,38 @@ def test_capture_evidence_and_cleanup(tmp_path, monkeypatch, failure):
         archive.writestr("LICENSE", "fixture")
         archive.writestr("__init__.py", "# installed fixture")
     monkeypatch.setattr(capture, "validate", lambda session, path: capture.inspect_zip(path)[0])
+    if failure == "snapshot":
+
+        def snapshot(_):
+            raise PermissionError("fixture unreadable profile")
+
+        monkeypatch.setattr(capture, "profile_snapshot", snapshot)
+    if failure == "cleanup":
+
+        def cleanup(_):
+            raise PermissionError("fixture locked profile")
+
+        monkeypatch.setattr(capture.Session, "cleanup", cleanup)
+    build_tools = importlib.import_module("build")
+    monkeypatch.setattr(build_tools, "validate", lambda session, path: capture.inspect_zip(path)[0])
+
+    def stage(source, destination):
+        assert destination.parent.name == "tmp"
+        destination.mkdir()
+        (destination / "fixture.whl").write_bytes(b"staged wheel")
+        return destination
+
+    monkeypatch.setattr(build_tools, "prepare_source", stage)
     calls = []
 
     def step(session, name, command):
         calls.append(name)
         assert session.env["BLENDER_USER_RESOURCES"] == str(session.profile)
         assert "SCENARIO_API_KEY" not in session.env
+        if name == "build":
+            output = Path(command[command.index("--output-filepath") + 1])
+            output.write_bytes(candidate.read_bytes())
+            return
         assert "--offline-mode" in command
         if name == "prepare":
             log = session.directory / "prepare.log"
@@ -70,7 +116,7 @@ def test_capture_evidence_and_cleanup(tmp_path, monkeypatch, failure):
         blender=None,
         output=tmp_path / "captures",
         timeout=20,
-        zip=candidate,
+        zip=None if failure == "build" else candidate,
         view="sidebar",
         lane="image",
         fixture="form",
@@ -79,16 +125,57 @@ def test_capture_evidence_and_cleanup(tmp_path, monkeypatch, failure):
         gpu_backend="opengl",
         capture_backend="blender",
     )
-    assert capture.capture(args) == (1 if failure else 0)
+    if failure == "output":
+        args.output.write_text("not a directory")
+    failed = failure not in (None, "build")
+    assert capture.capture(args) == (1 if failed else 0)
+    if failure == "output":
+        assert calls == []
+        return
     directory = next(args.output.iterdir())
     report = json.loads((directory / "report.json").read_text())
-    assert report["status"] == ("failed" if failure else "captured")
+    expected = "cleanup_failed" if failure == "cleanup" else "failed" if failed else "captured"
+    assert report["status"] == expected
+    if failure in ("discovery", "snapshot"):
+        assert calls == []
+        assert "error" in report
+    if failure == "cleanup":
+        assert report["cleanup_error"] == "fixture locked profile"
+        assert report["png_sha256"] == capture.sha256(directory / "plugin.png")
+        assert report["normal_profile_unchanged"]
     assert report["label"] == "fixture milestone"
-    assert (directory / "profile").exists() == bool(failure)
+    assert (directory / "profile").exists() == failed
     assert (normal / "keep").read_text() == "normal profile"
     if failure == "minimum":
         assert calls == ["prepare"]
-    if not failure:
+    if not failed:
+        assert not (directory / "tmp").exists()
+        assert not (directory / "source").exists()
+        assert len(list(directory.rglob("*.zip"))) == 1
+        assert not list(directory.rglob("*.whl"))
         assert report["normal_profile_unchanged"]
         assert report["zip_sha256"] == capture.sha256(candidate)
         assert report["png_sha256"] == capture.sha256(directory / "plugin.png")
+
+
+def test_audio_composer_is_rejected_before_launch(tmp_path):
+    import sys
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            str(Path(__file__).resolve().parents[2] / "tools/capture_gui.py"),
+            "--view",
+            "composer",
+            "--lane",
+            "audio",
+            "--output",
+            str(tmp_path / "captures"),
+        ],
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 2
+    assert "composer has no audio lane" in result.stderr
+    assert "Traceback" not in result.stderr
+    assert not (tmp_path / "captures").exists()

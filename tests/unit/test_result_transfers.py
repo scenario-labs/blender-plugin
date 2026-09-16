@@ -396,3 +396,17 @@ def test_root_permission_failure_reports_local_setup_error(tmp_path, storage, mo
         downloader().download(URL, root=tmp_path, name="result.bin")
     assert "private-path" not in str(caught.value)
     storage[1].assert_not_called()
+
+
+@pytest.mark.parametrize("casing", ["upper", "mixed"])
+def test_manifest_digest_accepts_hex_case_variants(casing, tmp_path, storage):
+    canonical = hashlib.sha256(DATA).hexdigest()
+    expected = (
+        canonical.upper()
+        if casing == "upper"
+        else "".join(char.upper() if index % 2 else char for index, char in enumerate(canonical))
+    )
+    assert expected != canonical
+    result = downloader().download(URL, root=tmp_path, name="result.bin", expected_sha256=expected)
+    assert result.sha256 == canonical
+    assert (tmp_path / result.name).read_bytes() == DATA

@@ -173,9 +173,11 @@ class ResultDownloader:
             raise TransferError("Invalid expected result size")
         if expected_sha256 is not None and (
             not isinstance(expected_sha256, str)
-            or not re.fullmatch(r"[a-f0-9]{64}", expected_sha256)
+            or not re.fullmatch(r"[a-fA-F0-9]{64}", expected_sha256)
         ):
             raise TransferError("Invalid expected result digest")
+        if expected_sha256 is not None:
+            expected_sha256 = expected_sha256.lower()
         connection = None
         try:
             root = _root(root)

@@ -137,15 +137,19 @@ def parse_schema(record):
         )
     prompt_name = next((s.name for s in specs if s.is_prompt), None)
     by_name = {s.name: s for s in specs}
+    for spec in specs:
+        for sibling in (*spec.required_if_defined, *spec.required_if_not_defined):
+            if sibling not in by_name:
+                raise ValueError(f"{spec.name}: conditional requirement names an unknown input")
     one_of = []
     # Explicit either/or from the schema: `required: {ifNotDefined: {sibling: ...}}` means "at least one of this
     # input and its named siblings" (Cartwheel: a 3D character mesh OR a reference image).
     # Each distinct group is required. Overlapping groups are not interchangeable:
     # (a OR b) AND (b OR c) cannot be weakened to (a OR b OR c).
     for spec in specs:
-        members = {spec.name} | {n for n in spec.required_if_not_defined if n in by_name}
-        if len(members) < 2:
+        if not spec.required_if_not_defined:
             continue
+        members = {spec.name, *spec.required_if_not_defined}
         group = tuple(sorted(members))
         if group not in one_of:
             one_of.append(group)
@@ -202,11 +206,16 @@ def build_body(specs, values, files, enabled=None):
     return body
 
 
+def _defined(value):
+    """Treat blank strings as absent while preserving supplied false and zero."""
+    return value is not None and value != [] and not (isinstance(value, str) and not value.strip())
+
+
 def validate(specs, body, one_of=()):
     errors = []
     for spec in specs:
         value = body.get(spec.name)
-        present = value is not None and value != "" and value != []
+        present = _defined(value)
         if spec.required_always and not present:
             errors.append(f"{spec.label} is required")
             continue
@@ -238,12 +247,12 @@ def validate_requirements(specs, body, one_of=()):
             dep = by_name.get(dep_name)
             if (
                 dep is not None
-                and body.get(dep_name) not in (None, "", [])
-                and body.get(spec.name) in (None, "", [])
+                and _defined(body.get(dep_name))
+                and not _defined(body.get(spec.name))
             ):
                 errors.append(f"{spec.label} is required when {dep.label} is set")
     for group in one_of:
-        if not any(body.get(name) not in (None, "", []) for name in group):
+        if not any(_defined(body.get(name)) for name in group):
             labels = [(by_name[name].label if name in by_name else name) for name in group]
             errors.append("Provide one of: " + " or ".join(labels))
     return errors

@@ -359,3 +359,48 @@ def test_malformed_fields_fail_consistently_before_sdk_dispatch(fields):
     ) as adapter:
         with pytest.raises(ValueError):
             adapter.estimate_model({"id": "base", "type": "custom", "inputs": fields}, {})
+
+
+@pytest.mark.parametrize("condition", ["ifDefined", "ifNotDefined"])
+@pytest.mark.parametrize("sibling", ["missing", "", " "])
+def test_unknown_conditional_siblings_fail_closed(condition, sibling):
+    fields = [{"name": "dependent", "type": "file", "required": {condition: {sibling: {}}}}]
+    with pytest.raises(ValueError, match="unknown input"):
+        parse_schema(SimpleNamespace(parameters=fields, ui_config={}))
+    with pytest.raises(ValueError, match="unknown input"):
+        prepare_run("base", {"parameters": fields}, {})
+    with SDKAdapter(
+        Credentials("key", "secret"),
+        online=lambda: True,
+        transport=httpx.MockTransport(lambda r: pytest.fail("Unknown sibling reached REST")),
+    ) as adapter:
+        with pytest.raises(ValueError, match="unknown input"):
+            adapter.estimate_model({"id": "base", "type": "custom", "inputs": fields}, {})
+
+
+@pytest.mark.parametrize("condition,trigger", [("ifDefined", True), ("ifNotDefined", None)])
+def test_blank_strings_cannot_satisfy_conditional_requirements(condition, trigger):
+    fields = [
+        {"name": "dependent", "type": "string", "required": {condition: {"trigger": {}}}},
+        {"name": "trigger", "type": "boolean"},
+    ]
+    values = {"dependent": "  ", "trigger": trigger}
+    with pytest.raises(ValueError):
+        prepare_run("base", {"parameters": fields}, values)
+    parsed = parse_schema(SimpleNamespace(parameters=fields, ui_config={}))
+    assert validate(parsed.specs, values, parsed.one_of)
+
+
+def test_blank_trigger_does_not_require_dependent_but_self_alternative_does():
+    schema = {
+        "parameters": [
+            {"name": "dependent", "required": {"ifDefined": {"trigger": {}}}},
+            {"name": "trigger"},
+        ]
+    }
+    assert prepare_run("base", schema, {"trigger": " "})[1] == {"trigger": " "}
+    schema = {
+        "parameters": [{"name": "file", "type": "file", "required": {"ifNotDefined": {"file": {}}}}]
+    }
+    with pytest.raises(ValueError, match="Provide one"):
+        prepare_run("base", schema, {})

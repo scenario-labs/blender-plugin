@@ -46,7 +46,8 @@ It requires the original live scene, the applied World still assigned there, the
 original World still available, and unchanged owned World/image settings. A changed
 node graph, socket value, mapping/image-user setting, World setting, image color
 space, dirty pixel buffer or changed packed bytes refuses restoration. This conservative fingerprint
-also includes writable UI properties such as node positions/names; preserve edits
+excludes the large image pixel array (dirty state and the bounded packed-byte
+digest guard content edits). It also includes writable UI properties such as node positions/names; preserve edits
 or restore manually when it refuses. It never searches by scene or World name.
 
 Restore preserves the applied World/image if another scene or material has acquired

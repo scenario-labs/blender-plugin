@@ -50,19 +50,24 @@ def _value(value):
     return tuple(_value(item) for item in value)
 
 
-def _settings(value):
+def _settings(value, *, exclude=()):
     if value is None:
         return None
     values = []
     for prop in value.bl_rna.properties:
-        if not prop.is_readonly and prop.type in {
-            "BOOLEAN",
-            "INT",
-            "FLOAT",
-            "STRING",
-            "ENUM",
-            "POINTER",
-        }:
+        if (
+            prop.identifier not in exclude
+            and not prop.is_readonly
+            and prop.type
+            in {
+                "BOOLEAN",
+                "INT",
+                "FLOAT",
+                "STRING",
+                "ENUM",
+                "POINTER",
+            }
+        ):
             values.append((prop.identifier, _value(getattr(value, prop.identifier))))
     if hasattr(value, "keys"):
         try:
@@ -128,7 +133,9 @@ def _fingerprint(world, image):
             )
             for link in tree.links
         ),
-        _settings(image),
+        # Pixels are a potentially huge writable FLOAT array, not a setting.
+        # Dirty state and packed-byte digest guard edits without boxing pixels.
+        _settings(image, exclude={"pixels"}),
         _settings(image.colorspace_settings),
         tuple(image.size),
         bool(image.is_dirty),

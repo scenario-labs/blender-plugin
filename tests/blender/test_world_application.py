@@ -3,9 +3,11 @@
 """Offline generated PNG/EXR fixtures applied by the installed extension."""
 
 import os
+import struct
 import tempfile
 import threading
 import unittest.mock
+import zlib
 from pathlib import Path
 
 import bpy
@@ -126,7 +128,8 @@ class WorldApplicationTests(unittest.TestCase):
 
     def test_manual_world_or_image_edits_refuse_restore(self):
         mutations = (
-            lambda world, image: setattr(world, "use_nodes", False),
+            # Blender 5 always uses World nodes; use_nodes=False is a no-op.
+            lambda world, image: world.node_tree.nodes.clear(),
             lambda world, image: setattr(world, "color", (0.2, 0.3, 0.4)),
             lambda world, image: setattr(
                 world.node_tree.nodes.get("Background").inputs["Strength"], "default_value", 2.0
@@ -142,8 +145,8 @@ class WorldApplicationTests(unittest.TestCase):
             lambda world, image: setattr(image.colorspace_settings, "name", "Non-Color"),
             lambda world, image: image.pixels.__setitem__(0, 0.75),
         )
-        for mutate in mutations:
-            with self.subTest(mutate=mutate):
+        for index, mutate in enumerate(mutations):
+            with self.subTest(mutation=index):
                 self.scene.world = self.original
                 receipt = self.module.apply_world(self.scene, self.fixture())
                 world, image = self.scene.world, receipt._image
@@ -161,6 +164,23 @@ class WorldApplicationTests(unittest.TestCase):
         with self.assertRaises(self.module.WorldApplicationError):
             receipt.restore()
         self.assertEqual(self.scene.world, world)
+
+    def test_fingerprint_does_not_copy_pixel_buffer_into_python_floats(self):
+        array_type = type(
+            self.original.node_tree.nodes.get("Background").inputs["Color"].default_value
+        )
+        original = self.module._value
+
+        def bounded(value):
+            if isinstance(value, array_type) and len(value) > 16:
+                raise AssertionError("Fingerprint copied the image pixel buffer")
+            return original(value)
+
+        path = self.fixture()
+        with unittest.mock.patch.object(self.module, "_value", side_effect=bounded):
+            receipt = self.module.apply_world(self.scene, path)
+            self.assertTrue(receipt.restore())
+        self.assert_original()
 
     def test_repacked_pixel_edits_refuse_restore(self):
         receipt = self.module.apply_world(self.scene, self.fixture())
@@ -219,6 +239,27 @@ class WorldApplicationTests(unittest.TestCase):
             ):
                 self.module.apply_world(self.scene, path)
             self.assert_original()
+
+    def test_invalid_png_pixel_stream_fails_after_header_preflight(self):
+        def chunk(kind, payload=b""):
+            body = kind + payload
+            return struct.pack(">I", len(payload)) + body + struct.pack(">I", zlib.crc32(body))
+
+        data = (
+            b"\x89PNG\r\n\x1a\n"
+            + chunk(b"IHDR", struct.pack(">IIBBBBB", 4, 2, 8, 6, 0, 0, 0))
+            + chunk(b"IDAT", b"invalid compressed pixels")
+            + chunk(b"IEND")
+        )
+        self.assertEqual(self.module.inspect_panorama(data).width, 4)
+        path = Path(self.temp.name) / "bad-pixels.png"
+        path.write_bytes(data)
+        worlds, images = set(bpy.data.worlds), set(bpy.data.images)
+        with self.assertRaises(self.module.WorldApplicationError):
+            self.module.apply_world(self.scene, path)
+        self.assertEqual(set(bpy.data.worlds), worlds)
+        self.assertEqual(set(bpy.data.images), images)
+        self.assert_original()
 
     def test_truncated_exr_cannot_publish_world_or_leak_image(self):
         path = self.fixture(exr=True)

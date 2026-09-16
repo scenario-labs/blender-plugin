@@ -82,6 +82,11 @@ and persistent records. Expiry, part transfer failure, completion uncertainty an
 server-side cleanup still need implementation and verification. An upload
 completion acknowledgement alone does not establish that an asset is imported.
 
+The [signed result transport](RESULT_TRANSFERS.md) implements the download
+primitive with explicit trusted-host configuration, bounded reads and atomic
+non-overwriting output. Production host selection, durable download-state
+integration and upload-part transfers remain separate work.
+
 ### Reconciliation and cancellation
 
 Job records retain `jobId`, `jobType`, status and metadata such as inputs,

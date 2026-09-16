@@ -35,6 +35,7 @@ BASELINE = (
     "test_offline_runtime",
     "test_sdk_bundle",
     "test_job_store",
+    "test_world_application",
 )
 
 

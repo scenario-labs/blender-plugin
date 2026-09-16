@@ -349,3 +349,163 @@ def test_closed_clients_and_blank_projects_are_rejected(adapter):
     client.close()
     with pytest.raises(AdapterError, match="closed"):
         client.job("fixture-job")
+
+
+@pytest.mark.parametrize("project", [None, "selected-project"])
+@pytest.mark.parametrize("hide_results", [None, True, False])
+def test_job_discovery_keeps_filters_scope_and_extended_records(adapter, project, hide_results):
+    calls = []
+    first = {"jobId": "job-first", "status": "future-state", "metadata": {"future": True}}
+    second = {"jobId": "job-second", "jobType": "workflow"}
+
+    def handler(request):
+        calls.append(request)
+        assert len(calls) <= 2
+        return httpx.Response(
+            200,
+            json={
+                "jobs": [first] if len(calls) == 1 else [first, second],
+                "nextPaginationToken": "opaque+/= cursor" if len(calls) == 1 else None,
+            },
+        )
+
+    client = adapter(handler, project_id=project)
+    assert client.jobs(
+        author_id="author",
+        workflow_id="workflow",
+        job_type="workflow",
+        status="success",
+        page_size=2,
+        max_pages=2,
+        **({} if hide_results is None else {"hide_results": hide_results}),
+    ) == [first, second]
+    assert len(calls) == 2
+    for index, request in enumerate(calls):
+        assert (request.method, request.url.path) == ("GET", "/v1/jobs")
+        assert request.content == b""
+        query = {
+            "authorId": "author",
+            "workflowId": "workflow",
+            "type": "workflow",
+            "status": "success",
+            "pageSize": "2",
+            "hideResults": "false" if hide_results is False else "true",
+        }
+        if project:
+            query["projectId"] = project
+        if index:
+            query["paginationToken"] = "opaque+/= cursor"
+        assert dict(request.url.params) == query
+
+
+@pytest.mark.parametrize(
+    "page",
+    [
+        None,
+        {},
+        {"jobs": None},
+        {"jobs": [None]},
+        {"jobs": [{"id": "wrong-key"}]},
+        {"jobs": [{"jobId": " "}]},
+        {"jobs": [{"jobId": " job-1"}]},
+        {"jobs": [{"jobId": "job-1 "}]},
+        {"jobs": [{"jobId": "bad/id"}]},
+        {"jobs": [{"jobId": "bad?id"}]},
+        {"jobs": [{"jobId": 3}]},
+    ],
+)
+def test_job_discovery_rejects_malformed_pages(adapter, page):
+    with pytest.raises(AdapterError):
+        adapter(lambda r: httpx.Response(200, json=page)).jobs()
+
+
+@pytest.mark.parametrize("mode", ["loop", "limit", "bad-cursor", "conflict", "http-error"])
+def test_job_discovery_never_returns_partial_or_conflicting_history(adapter, mode):
+    calls = []
+
+    def handler(request):
+        calls.append(request)
+        assert len(calls) <= 2
+        if mode == "http-error" and len(calls) == 2:
+            return httpx.Response(503, json={"private": "do-not-expose"})
+        row = {"jobId": "job-one", "status": "pending"}
+        if mode == "conflict" and len(calls) == 2:
+            row["status"] = "success"
+        return httpx.Response(
+            200,
+            json={
+                "jobs": [row],
+                "nextPaginationToken": 123 if mode == "bad-cursor" else "cursor",
+            },
+        )
+
+    with pytest.raises(AdapterError) as error:
+        adapter(handler).jobs(max_pages=1 if mode == "limit" else 4)
+    assert "do-not-expose" not in str(error.value)
+    assert len(calls) <= 2
+
+
+def test_job_discovery_follows_empty_page_cursor_but_stops_when_exhausted(adapter):
+    calls = []
+
+    def handler(request):
+        calls.append(request)
+        assert len(calls) <= 2
+        return httpx.Response(
+            200,
+            json={
+                "jobs": [],
+                "nextPaginationToken": "next" if len(calls) == 1 else "",
+            },
+        )
+
+    assert adapter(handler).jobs() == []
+    assert len(calls) == 2
+
+
+def test_job_discovery_rechecks_online_permission_before_each_page(adapter):
+    online = [True]
+    calls = []
+
+    def handler(request):
+        calls.append(request)
+        online[0] = False
+        return httpx.Response(200, json={"jobs": [{"jobId": "one"}], "nextPaginationToken": "next"})
+
+    with pytest.raises(AdapterError, match="Online access"):
+        adapter(handler, online=lambda: online[0]).jobs()
+    assert len(calls) == 1
+
+
+@pytest.mark.parametrize(
+    "options",
+    [
+        {"hide_results": "false"},
+        {"hide_results": 0},
+        {"page_size": 0},
+        {"page_size": 201},
+        {"page_size": True},
+        {"page_size": 1.5},
+        {"max_pages": 0},
+        {"max_pages": False},
+        {"max_pages": 1.5},
+        {"status": "unknown"},
+        {"status": []},
+        {"author_id": "bad/id"},
+        {"workflow_id": ""},
+        {"job_type": "bad?type"},
+    ],
+)
+def test_job_discovery_validates_options_before_network(adapter, options):
+    def unexpected(request):
+        pytest.fail("Invalid options must not send a request")
+
+    with pytest.raises(ValueError):
+        adapter(unexpected).jobs(**options)
+
+
+def test_job_discovery_rejects_a_closed_client(adapter):
+    client = adapter()
+    client.close()
+    with pytest.raises(AdapterError, match="closed"):
+        client.jobs()

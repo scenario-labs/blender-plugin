@@ -37,7 +37,10 @@ using the locked environment.
 | Workflow estimate and submission | `workflows.run`: PUT, unchanged workflow-specific body, `dryRun` and `projectId` in the query |
 | Exact quote preservation | `generate.with_raw_response.run_model` retains JSON bytes for decimal parsing; this is a public SDK wrapper, not a custom endpoint call |
 | Model, asset and job retrieval | `models.retrieve`, `assets.retrieve`, `jobs.retrieve`: project query and response wrappers, including unrecognized fields |
-| Remote cancellation | `jobs.trigger_action(action="cancel")`: POST action and project query; an acknowledgement is not necessarily a terminal canceled status |
+| Multipart upload lifecycle | `uploads.create/retrieve/trigger_action`: project query, asset-option aliases, part URLs and processing/result fields; creation does not transfer bytes |
+| Job discovery | `jobs.list`: `jobs` page wrapper, filters, comma-separated `types`, opaque cursor and project/filter preservation on the next page |
+| Workflow approval rejection | `workflows.user_approval(action="reject")`: workflow, job and node identity; this is not general workflow cancellation |
+| Remote cancellation | `jobs.trigger_action(action="cancel")`: POST action and project query; acknowledgements can remain in progress or report a completion race; upload/cancel failures make one attempt |
 | Uncertain submissions | `max_retries=0` makes one attempt for model/workflow transport errors and retryable HTTP statuses, even with `Retry-After` |
 | Redirect handling | An explicit HTTP client with `follow_redirects=False` prevents a second request; also use `trust_env=False` to avoid ambient proxy configuration |
 | Authentication | Explicit Basic credentials take precedence over ambient Basic credentials; explicit Bearer precedence has the known failure below |
@@ -45,6 +48,63 @@ using the locked environment.
 Synthetic responses intentionally cover partial and extended records. Passing
 these tests proves serialization and parsing of those fixtures, not live endpoint
 acceptance, complete schemas, remote cancellation or successful generation.
+
+## Upload and job operation boundaries
+
+The operation audit uses the published wheel's `resources/uploads.py`,
+`resources/jobs.py`, `resources/workflows.py`, their generated parameter/response
+models and `pagination.py`. These dependency contracts do not add adapter methods.
+
+| Operation | Request and response shape |
+| --- | --- |
+| Begin multipart upload | `uploads.create`: POST `/uploads`; `projectId` query; `kind`, `fileName`, `contentType`, `fileSize`, `parts` and optional `assetOptions` body; response wrapped in `upload` |
+| Poll upload | `uploads.retrieve`: GET `/uploads/{id}` with `projectId`; `upload.status`, `jobId`, `entityId`, `errorMessage` and extension fields remain accessible |
+| Finalize upload | `uploads.trigger_action(action="complete")`: POST `/uploads/{id}/action`, action body and `projectId` query; response remains an `upload`, potentially still `validating` |
+| Discover jobs | `jobs.list`: GET `/jobs`; supports `authorId`, `workflowId`, `status`, `type` or comma-separated `types`, `hideResults`, `pageSize`, `paginationToken` and `projectId`; `jobs` array plus `nextPaginationToken` |
+| Retrieve known job | `jobs.retrieve`: GET `/jobs/{id}`, `projectId` query, `job` wrapper |
+| Request inference cancellation | `jobs.trigger_action(action="cancel")`: POST `/jobs/{id}/action`, `projectId` query, `job` wrapper |
+| Reject workflow approval | `workflows.user_approval(action="reject")`: PUT `/workflows/{id}/user-approval`, `projectId` query, `nodeId`/`workflowJobId`/`action` body, `job` wrapper |
+
+### Uploads and signed storage
+
+The SDK returns numbered upload parts with URLs and expiry values; creating an
+upload makes only the Scenario API request. The inspected resource has no byte
+transfer or upload-abort method. The generated completion parameter is
+`Literal["complete"]`, while its docstring says `"upload-complete"`. Tests record
+the literal's serialization; service acceptance of that action remains to verify.
+Do not silently substitute the docstring value or invent an abort endpoint.
+
+Before enabling file transfer, define a separate storage transport that checks
+online permission and destination policy, sends no Scenario Authorization header,
+does not follow redirects implicitly, and keeps signed URL queries out of logs
+and persistent records. Expiry, part transfer failure, completion uncertainty and
+server-side cleanup still need implementation and verification. An upload
+completion acknowledgement alone does not establish that an asset is imported.
+
+### Reconciliation and cancellation
+
+Job records retain `jobId`, `jobType`, status and metadata such as inputs,
+produced asset IDs, non-asset output and workflow/job relationships. The tests
+exercise explicit next-page requests with unchanged project and filters. The
+future adapter must additionally bound pages, reject cursor loops and check
+online permission per request, as the existing catalog adapter already does.
+
+The inspected SDK has no dedicated lookup by client request identity or explicit
+idempotency parameter for model/workflow submission. Generic extension parameters
+do not establish server support for either. A listing of similar inputs is only
+a set of candidates, not proof of which job belongs to an uncertain submission.
+Persist scope and request identity before dispatch; poll a known remote ID, but
+keep a lost-ID submission uncertain unless authoritative correlation is available.
+Never resolve an empty or ambiguous listing by automatically submitting again.
+
+The job action documentation limits cancellation to inference jobs. No general
+workflow-cancel method appears in the inspected workflow resource. Rejection
+requires a user-approval node and has node/loop-specific semantics; it must not
+be repurposed as general cancellation. A response may still be `in-progress` or
+already `success`; the SDK preserves it without forcing `canceled`. Live support,
+completion races and restart reconciliation remain acceptance work under #65.
+Record a sanitized upstream SDK issue before any fallback for these boundaries;
+this audit introduces no raw calls or fallback and claims no live service failure.
 
 ## Known authentication failure
 
@@ -93,8 +153,9 @@ supply a predicate reflecting their actual online-access permission.
 Custom-model records must explicitly declare `type=custom`; trained-model
 routing remains unavailable until its REST schema contract is established.
 Studio's pure routing helper/tests are retained, but remote-MCP `run_with`
-metadata is not silently assumed to exist in REST. Uploads, signed transfers,
-discovery, search/organization, submission and cancellation remain to be mapped.
+metadata is not silently assumed to exist in REST. Upload/job dependency contracts
+are mapped above; their adapter integration, signed transfers, account/project
+discovery, search/organization, submission and cancellation remain to implement.
 
 Run the adapter and command contracts offline with:
 

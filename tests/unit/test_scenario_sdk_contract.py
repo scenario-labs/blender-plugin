@@ -7,6 +7,8 @@ These tests document and check the assumptions needed for that replacement:
 project selection and dry-run flags reach the correct query parameters,
 model-specific inputs and exact quote bytes survive unchanged, response fields
 remain accessible, and disabling retries prevents a second submission attempt.
+Upload lifecycle and job discovery tests check scope, wrappers and cursors;
+cancellation fixtures preserve acknowledgements and completion races.
 They also record the known bug where ambient Basic credentials override an
 explicitly selected Bearer token; that assertion is an expected failure.
 
@@ -267,3 +269,280 @@ def test_explicit_bearer_must_override_ambient_basic(client_factory, monkeypatch
     sdk = client_factory(respond, api_key=None, api_secret=None, bearer_auth="selected-oauth")
     sdk.jobs.retrieve("fixture-job", project_id=PROJECT)
     assert requests[0].headers["Authorization"] == "Bearer selected-oauth"
+
+
+@pytest.fixture
+def upload_record():
+    return {
+        "id": "fixture-upload",
+        "authorId": "fixture-author",
+        "ownerId": PROJECT,
+        "createdAt": "2026-01-01T00:00:00Z",
+        "updatedAt": "2026-01-01T00:00:00Z",
+        "fileName": "reference.png",
+        "kind": "image",
+        "source": "multipart",
+        "status": "pending",
+        "parts": [
+            {
+                "number": number,
+                "url": f"https://storage.example.invalid/part-{number}?signature=synthetic",
+                "expires": "2026-01-01T01:00:00Z",
+            }
+            for number in (1, 2)
+        ],
+        "futureField": {"retain": True},
+    }
+
+
+def test_upload_create_preserves_parts_and_asset_options(client_factory, upload_record):
+    requests = []
+    options = {
+        "collection_ids": ["fixture-collection"],
+        "parent_id": "fixture-parent",
+        "hide": False,
+    }
+    original = copy.deepcopy(options)
+
+    def respond(request):
+        requests.append(request)
+        return httpx.Response(200, json={"upload": upload_record})
+
+    sdk = client_factory(respond)
+    result = sdk.uploads.create(
+        project_id=PROJECT,
+        kind="image",
+        file_name="reference.png",
+        content_type="image/png",
+        file_size=4096,
+        parts=2,
+        asset_options=options,
+    )
+    # Creation returns transfer instructions; it must not PUT bytes to storage.
+    assert len(requests) == 1
+    request = requests[0]
+    assert (request.method, request.url.path) == ("POST", "/v1/uploads")
+    assert dict(request.url.params) == {"projectId": PROJECT}
+    assert json.loads(request.content) == {
+        "kind": "image",
+        "fileName": "reference.png",
+        "contentType": "image/png",
+        "fileSize": 4096,
+        "parts": 2,
+        "assetOptions": {
+            "collectionIds": ["fixture-collection"],
+            "parentId": "fixture-parent",
+            "hide": False,
+        },
+    }
+    assert options == original
+    assert result.upload.id == "fixture-upload"
+    assert [part.number for part in result.upload.parts] == [1, 2]
+    assert result.to_dict()["upload"] == upload_record
+
+
+@pytest.mark.parametrize("operation", ["retrieve", "complete"])
+@pytest.mark.parametrize("status", ["validating", "imported", "failed"])
+def test_upload_poll_and_completion_keep_processing_state(
+    client_factory, upload_record, operation, status
+):
+    requests = []
+    upload_record.update(status=status, jobId="fixture-upload-job", entityId="fixture-asset")
+    if status == "failed":
+        upload_record["errorMessage"] = "fixture validation failure"
+
+    def respond(request):
+        requests.append(request)
+        return httpx.Response(200, json={"upload": upload_record})
+
+    sdk = client_factory(respond)
+    if operation == "retrieve":
+        result = sdk.uploads.retrieve("fixture-upload", project_id=PROJECT)
+        method, path, body = "GET", "/v1/uploads/fixture-upload", b""
+    else:
+        # The generated Literal is "complete" although its docstring says
+        # "upload-complete". This tests serialization, not live acceptance.
+        result = sdk.uploads.trigger_action("fixture-upload", action="complete", project_id=PROJECT)
+        method, path, body = "POST", "/v1/uploads/fixture-upload/action", b'{"action":"complete"}'
+    assert len(requests) == 1
+    request = requests[0]
+    assert (request.method, request.url.path) == (method, path)
+    assert dict(request.url.params) == {"projectId": PROJECT}
+    assert request.content == body
+    assert result.upload.status == status
+    assert result.upload.job_id == "fixture-upload-job"
+    assert result.upload.entity_id == "fixture-asset"
+    assert result.to_dict()["upload"] == upload_record
+
+
+@pytest.mark.parametrize("job_type", ["custom", "workflow"])
+def test_job_pages_preserve_filters_and_reconciliation_fields(client_factory, job_type):
+    requests = []
+    metadata = {
+        "input": {"prompt": "fixture"},
+        "assetIds": ["fixture-asset"],
+        "output": {"text": "fixture result"},
+        "workflowId": "fixture-workflow",
+        "workflowJobId": "fixture-parent-job",
+        "futureField": {"retain": True},
+    }
+
+    def respond(request):
+        requests.append(request)
+        # Bound this fake service so a broken cursor cannot hang the test.
+        assert len(requests) <= 2
+        page_number = len(requests)
+        return httpx.Response(
+            200,
+            json={
+                "jobs": [
+                    {
+                        "jobId": f"fixture-job-{page_number}",
+                        "jobType": job_type,
+                        "status": "success",
+                        "metadata": metadata,
+                    }
+                ],
+                "nextPaginationToken": "cursor+/= fixture" if page_number == 1 else None,
+            },
+        )
+
+    sdk = client_factory(respond)
+    first = sdk.jobs.list(
+        project_id=PROJECT,
+        author_id="fixture-author",
+        workflow_id="fixture-workflow",
+        type=job_type,
+        status="success",
+        hide_results=False,
+        page_size=1,
+    )
+    assert len(requests) == 1
+    assert first.jobs[0].job_id == "fixture-job-1"
+    assert first.next_pagination_token == "cursor+/= fixture"
+    second = first.get_next_page()
+    assert len(requests) == 2
+    assert not second.has_next_page()
+    for index, (request, page) in enumerate(zip(requests, (first, second), strict=True)):
+        expected_query = {
+            "projectId": PROJECT,
+            "authorId": "fixture-author",
+            "workflowId": "fixture-workflow",
+            "type": job_type,
+            "status": "success",
+            "hideResults": "false",
+            "pageSize": "1",
+        }
+        if index:
+            expected_query["paginationToken"] = "cursor+/= fixture"
+        assert (request.method, request.url.path) == ("GET", "/v1/jobs")
+        assert dict(request.url.params) == expected_query
+        assert request.content == b""
+        job = page.jobs[0]
+        assert job.job_id == f"fixture-job-{index + 1}"
+        assert job.job_type == job_type
+        assert job.to_dict()["metadata"] == metadata
+
+
+def test_job_list_serializes_multiple_types_as_csv(client_factory):
+    requests = []
+
+    def respond(request):
+        requests.append(request)
+        return httpx.Response(200, json={"jobs": []})
+
+    sdk = client_factory(respond)
+    page = sdk.jobs.list(project_id=PROJECT, types=["custom", "workflow", "upload"])
+    assert len(requests) == 1
+    assert dict(requests[0].url.params) == {"projectId": PROJECT, "types": "custom,workflow,upload"}
+    assert page.jobs == []
+    assert not page.has_next_page()
+
+
+@pytest.mark.parametrize("status", ["in-progress", "canceled", "success"])
+def test_cancel_acknowledgement_can_race_with_completion(client_factory, status):
+    requests = []
+    fixture = {
+        "job": {
+            "jobId": "fixture-job",
+            "status": status,
+            "metadata": {"assetIds": ["fixture-asset"]},
+            "futureField": True,
+        }
+    }
+
+    def respond(request):
+        requests.append(request)
+        return httpx.Response(200, json=fixture)
+
+    sdk = client_factory(respond)
+    result = sdk.jobs.trigger_action("fixture-job", action="cancel", project_id=PROJECT)
+    assert len(requests) == 1
+    assert result.to_dict() == fixture
+    assert result.job.status == status
+
+
+def test_workflow_rejection_targets_an_approval_node(client_factory):
+    requests = []
+
+    def respond(request):
+        requests.append(request)
+        return httpx.Response(
+            200, json={"job": {"jobId": "fixture-workflow-job", "status": "in-progress"}}
+        )
+
+    sdk = client_factory(respond)
+    # This is a node decision, not a general cancel-workflow operation.
+    result = sdk.workflows.user_approval(
+        "fixture-workflow",
+        project_id=PROJECT,
+        node_id="fixture-node",
+        workflow_job_id="fixture-workflow-job",
+        action="reject",
+    )
+    assert len(requests) == 1
+    request = requests[0]
+    assert (request.method, request.url.path) == (
+        "PUT",
+        "/v1/workflows/fixture-workflow/user-approval",
+    )
+    assert dict(request.url.params) == {"projectId": PROJECT}
+    assert json.loads(request.content) == {
+        "nodeId": "fixture-node",
+        "workflowJobId": "fixture-workflow-job",
+        "action": "reject",
+    }
+    assert result.job.job_id == "fixture-workflow-job"
+    assert result.job.status == "in-progress"
+
+
+@pytest.mark.parametrize("operation", ["upload-create", "upload-complete", "cancel"])
+@pytest.mark.parametrize("failure", ["timeout", 409, 429, 503])
+def test_upload_and_cancel_failures_do_not_replay_mutations(client_factory, operation, failure):
+    requests = []
+
+    def fail(request):
+        requests.append(request)
+        if failure == "timeout":
+            raise httpx.ReadTimeout("fixture lost response", request=request)
+        return httpx.Response(
+            failure, json={"error": "fixture failure"}, headers={"Retry-After": "0"}
+        )
+
+    sdk = client_factory(fail)
+    expected = APITimeoutError if failure == "timeout" else APIStatusError
+    with pytest.raises(expected):
+        if operation == "upload-create":
+            sdk.uploads.create(
+                project_id=PROJECT,
+                kind="image",
+                file_name="reference.png",
+                content_type="image/png",
+                file_size=4096,
+                parts=1,
+            )
+        elif operation == "upload-complete":
+            sdk.uploads.trigger_action("fixture-upload", action="complete", project_id=PROJECT)
+        else:
+            sdk.jobs.trigger_action("fixture-job", action="cancel", project_id=PROJECT)
+    assert len(requests) == 1

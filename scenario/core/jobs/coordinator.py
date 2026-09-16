@@ -44,6 +44,10 @@ class RecoveryError(RuntimeError):
     """Remote evidence is missing or inconsistent; preserve local state."""
 
 
+class CancellationUncertain(RecoveryError):
+    """Cancellation was attempted; poll the known ID instead of replaying it."""
+
+
 class RecoveryAction(StrEnum):
     REVIEW_QUOTE = "review_quote"
     RECONCILE_UNKNOWN = "reconcile_unknown"
@@ -129,6 +133,7 @@ class JobCoordinator:
         self._active = True
         self._lock = threading.RLock()
         self._prepared = WeakValueDictionary()
+        self._canceling = set()
 
     @property
     def scope(self):
@@ -283,6 +288,11 @@ class JobCoordinator:
             ):
                 raise StoreConflict("Only the current known remote job can be refreshed")
         response = self._adapter.job(current.remote_job_id)
+        return self._observe_remote(current, response)
+
+    def _observe_remote(self, current, response):
+        """Commit only retrieval evidence, never cancellation acknowledgements."""
+        request_id = current.intent.request_id
         if response.get("jobId") != current.remote_job_id:
             raise RecoveryError("Scenario returned a different remote job identity")
         status = response.get("status")
@@ -317,3 +327,51 @@ class JobCoordinator:
             if updated != current:
                 raise StoreConflict("Job changed during polling; refresh the local record")
         return RemoteSnapshot(updated, raw)
+
+    def cancel_remote(self, request_id, *, expected_revision):
+        """Request known inference cancellation, then retrieve authoritative state.
+
+        No cancel intent is replayed on restart. The saved REMOTE record remains
+        pollable if the acknowledgement or subsequent observation is lost.
+        """
+        with self._lock:
+            if not self._active:
+                raise RecoveryError("This job context is inactive")
+            current = self._store.get(request_id)
+            if (
+                current is None
+                or current.revision != expected_revision
+                or current.state != JobState.REMOTE
+                or current.remote_job_id is None
+            ):
+                raise StoreConflict("Only the current known remote job can be canceled")
+            if current.intent.operation != "model":
+                raise RecoveryError("General workflow cancellation is not supported")
+            if request_id in self._canceling:
+                raise StoreConflict("Cancellation is already being requested for this job")
+            self._canceling.add(request_id)
+        try:
+            response = self._adapter.job(current.remote_job_id)
+            snapshot = self._observe_remote(current, response)
+            if snapshot.record.state != JobState.REMOTE:
+                return snapshot
+            if response.get("jobType") != "inference":
+                raise RecoveryError("Only a verified inference job can be canceled")
+            # Recheck after the preflight read. Claim under the same lock as
+            # deactivate; once claimed, late evidence belongs to this store.
+            with self._lock:
+                if not self._active:
+                    raise RecoveryError("This job context is inactive")
+                if self._store.get(request_id) != current:
+                    raise StoreConflict("Job changed before cancellation; refresh its record")
+            try:
+                self._adapter.cancel_inference(current.remote_job_id)
+                response = self._adapter.job(current.remote_job_id)
+            except Exception:
+                raise CancellationUncertain(
+                    "Cancellation outcome is unknown; refresh the known job before acting again"
+                ) from None
+            return self._observe_remote(current, response)
+        finally:
+            with self._lock:
+                self._canceling.discard(request_id)

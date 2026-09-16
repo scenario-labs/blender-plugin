@@ -104,6 +104,12 @@ class JobWorkers:
             self._coordinator.refresh_remote, request_id, expected_revision=expected_revision
         )
 
+    def cancel_remote(self, request_id, *, expected_revision):
+        """Queue an explicit remote cancel request; its acknowledgement is not success."""
+        return self._enqueue(
+            self._coordinator.cancel_remote, request_id, expected_revision=expected_revision
+        )
+
     def cancel_prepared(self, request_id, *, expected_revision):
         """Persist local cancellation now; a queued command then cannot dispatch."""
         with self._condition:

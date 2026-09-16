@@ -54,7 +54,8 @@ acceptance, complete schemas, remote cancellation or successful generation.
 The operation audit uses the published wheel's `resources/uploads.py`,
 `resources/jobs.py`, `resources/workflows.py`, their generated parameter/response
 models and `pagination.py`. The adapter now exposes bounded job discovery as
-described below; upload mutations and cancellation remain dependency contracts.
+described below; inference cancellation is exposed through the coordinator,
+while upload mutations remain dependency contracts.
 
 | Operation | Request and response shape |
 | --- | --- |
@@ -110,8 +111,9 @@ The job action documentation limits cancellation to inference jobs. No general
 workflow-cancel method appears in the inspected workflow resource. Rejection
 requires a user-approval node and has node/loop-specific semantics; it must not
 be repurposed as general cancellation. A response may still be `in-progress` or
-already `success`; the SDK preserves it without forcing `canceled`. Live support,
-completion races and restart reconciliation remain acceptance work under #65.
+already `success`; the SDK preserves it without forcing `canceled`. Live support
+remains acceptance work under #65; the coordinator tests completion races and
+known-ID restart polling offline.
 Record a sanitized upstream SDK issue before any fallback for these boundaries;
 this audit introduces no raw calls or fallback and claims no live service failure.
 
@@ -140,14 +142,16 @@ Token serialization does not establish browser OAuth acceptance by REST.
 
 The adapter provides reads/estimates and a coordinator-only submission hook.
 The [job coordinator](JOB_COORDINATOR.md) commits a scoped intent before dispatch,
-consumes each issued quote once and preserves uncertain outcomes. Cancellation
-and product UI/MCP dispatch remain unavailable. All calls use public SDK methods
+consumes each issued quote once and preserves uncertain outcomes. Inference
+cancellation is available through the coordinator; product UI/MCP dispatch
+remains unavailable. All calls use public SDK methods
 with `max_retries=0`; their `with_raw_response` wrappers preserve wire JSON.
 
 | Adapter operation | SDK 2.1.0 method and contract |
 | --- | --- |
 | Public/private model catalog | `models.list`: explicit page size/status/privacy, `paginationToken`, scope on every page, deduplication and cursor-loop/page-limit failures |
 | Public/private workflow catalog | `workflows.list`: SDK REST catalog replaces the need for Studio's public-workflow HTTP bypass; pagination and scope are tested synthetically |
+| Known inference cancellation | `jobs.trigger_action(action="cancel")` through its public raw-response wrapper: one attempt, selected project, no terminal-state assumption from acknowledgement; coordinator retrieves before and after the action |
 | Scoped job discovery | `jobs.list` through the public raw-response wrapper: optional author/workflow/type/status filters, 1–200 items per page, bounded pagination and explicit errors instead of partial or conflicting history |
 | Model/workflow/asset/job records | `models.retrieve`, `workflows.retrieve`, `assets.retrieve`, `jobs.retrieve`: unwrap the named record and retain unknown fields |
 | Custom-model estimate | `generate.run_model(dry_run=True)`: adopted form value validation plus retained conditional/one-of rules; inputs in JSON and dry-run/project in query |
@@ -167,8 +171,8 @@ routing remains unavailable until its REST schema contract is established.
 Studio's pure routing helper/tests are retained, but remote-MCP `run_with`
 metadata is not silently assumed to exist in REST. Upload/job dependency contracts
 are mapped above; upload adapter integration, signed transfers, account/project
-discovery, search/organization and cancellation remain to implement. Submission
-uses the coordinator contract above; live acceptance remains separate.
+discovery, search/organization and workflow cancellation remain to implement.
+Submission uses the coordinator contract above; live acceptance remains separate.
 
 Run the adapter and command contracts offline with:
 

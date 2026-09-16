@@ -106,7 +106,10 @@ class JobStoreTests(unittest.TestCase):
     def test_installed_worker_polls_and_joins_without_blender_access(self):
         self._check_recovery(worker=True)
 
-    def _check_recovery(self, *, worker):
+    def test_installed_cancellation_uses_retrieval_after_acknowledgement(self):
+        self._check_recovery(worker=True, cancel=True)
+
+    def _check_recovery(self, *, worker, cancel=False):
         import httpx
 
         api = submodule("core.api.sdk_adapter")
@@ -142,9 +145,16 @@ class JobStoreTests(unittest.TestCase):
             def respond(request):
                 calls.append(request)
                 self.assertEqual(threading.get_ident() != main_thread, worker)
-                self.assertEqual(request.method, "GET")
+                self.assertEqual(request.method, "POST" if cancel and len(calls) == 2 else "GET")
+                status = "success"
+                if cancel:
+                    status = {1: "in-progress", 2: "canceled", 3: "success"}[len(calls)]
+                    self.assertEqual(store.get(intent.request_id).state, storage.JobState.REMOTE)
                 return httpx.Response(
-                    200, json={"job": {"jobId": "fixture-remote", "status": "success"}}
+                    200,
+                    json={
+                        "job": {"jobId": "fixture-remote", "jobType": "inference", "status": status}
+                    },
                 )
 
             with api.SDKAdapter(
@@ -162,13 +172,12 @@ class JobStoreTests(unittest.TestCase):
                 if worker:
                     owner = submodule("core.jobs.workers").JobWorkers(coordinator, workers=1)
                     try:
-                        snapshot = owner.refresh_remote(
-                            intent.request_id, expected_revision=2
-                        ).result(timeout=5)
+                        command = owner.cancel_remote if cancel else owner.refresh_remote
+                        snapshot = command(intent.request_id, expected_revision=2).result(timeout=5)
                     finally:
                         owner.shutdown()
                     self.assertTrue(all(not thread.is_alive() for thread in owner._threads))
                 else:
                     snapshot = coordinator.refresh_remote(intent.request_id, expected_revision=2)
                 self.assertEqual(snapshot.record.state, storage.JobState.SUCCEEDED)
-                self.assertEqual(len(calls), 1)
+                self.assertEqual(len(calls), 3 if cancel else 1)

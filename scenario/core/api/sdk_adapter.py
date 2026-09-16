@@ -274,6 +274,20 @@ class SDKAdapter:
     def job(self, identifier):
         return self._retrieve("jobs", identifier, "job")
 
+    def cancel_inference(self, identifier):
+        """Request cancellation once; the coordinator verifies inference eligibility.
+
+        This acknowledgement is not authoritative terminal-state evidence. Poll
+        the known job afterwards, including after an uncertain request outcome.
+        """
+        identifier = _identifier(identifier)
+        method = self._sdk.jobs.with_raw_response.trigger_action
+        response = _json(self._request(method, identifier, action="cancel"))
+        job = response.get("job")
+        if not isinstance(job, dict) or job.get("jobId") != identifier:
+            raise AdapterError("Scenario returned no matching cancellation acknowledgement")
+        return job
+
     def jobs(
         self,
         *,

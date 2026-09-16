@@ -69,9 +69,8 @@ submission ordering and single-use consumption are tested with the actual SDK,
 including racing callers and late responses. Installed-Blender tests verify the
 same ordering against the bundled SDK and SQLite.
 
-Bounded workers, restart/reconciliation commands, cancellation, result/download
-persistence, main-thread application and UI/MCP wiring remain separate integration
-work. The low-level adapter hook orders persistence but cannot enforce correct
+Result/download persistence, main-thread application and UI/MCP wiring remain
+separate integration work. The low-level adapter hook orders persistence but cannot enforce correct
 behavior by arbitrary callers; product code must use the shared coordinator.
 
 ## Restart inspection and known-job refresh
@@ -142,3 +141,36 @@ coordinator/adapter users must also be stopped before transferring ownership or
 shutdown. One owner per coordinator is required. UI/MCP lifecycle hooks and
 main-thread result application remain separate integration work; the prototype
 runtime is not replaced or supplemented by a second active runtime here.
+
+
+## Known inference cancellation
+
+`cancel_remote(request_id, expected_revision=...)` accepts only a current scoped
+`remote` record with a known ID and a model operation. A fresh `jobs.retrieve`
+observation must identify `jobType=inference`; workflow and unrecognized job
+kinds are unsupported. A job already observed terminal is committed without
+sending a cancellation. Stale revisions, an inactive context and concurrent
+cancellation of the same request in one coordinator are rejected.
+
+An eligible job receives one SDK `jobs.trigger_action(action="cancel")` call,
+with the selected project, online-access guard and `max_retries=0`. The action
+acknowledgement never changes durable status, even if it reports `canceled`.
+A subsequent `jobs.retrieve` supplies the authoritative snapshot: an active job
+remains `remote`, a completed job becomes `succeeded`, and only observed
+`canceled` becomes `canceled`. Completion races retain their actual outcome.
+
+Action/observation transport or malformed-wrapper failures report
+`CancellationUncertain`; invalid status/identity evidence reports `RecoveryError`.
+Both preserve the known remote record for explicit refresh. Persistence and
+revision conflicts also propagate; failed writes never report terminal success.
+No cancel request is automatically retried, and no cancellation command is
+persisted for replay. After a crash, `recovery_plan()` suggests polling the saved
+ID. Another explicit cancellation remains a new user decision after refreshing.
+The existing store schema is sufficient for this conservative recovery path.
+
+`JobWorkers.cancel_remote` uses the bounded application pool and the same task
+polling interface. Deactivation before the action is claimed stops dispatch;
+once claimed, late observations stay bound to the original store. Shutdown
+joins this work before closing the SDK. General workflow cancellation, live
+service acceptance, and the UI/MCP cancellation controls remain outstanding
+under #65; rejecting a workflow approval node is not a substitute.

@@ -109,7 +109,12 @@ def _root(root):
     path = Path(root)
     # The caller owns this private directory and its ancestors for the entire
     # operation. Resolving a symlink here would silently authorize another root.
-    if not path.is_absolute() or path != path.resolve(strict=True) or not path.is_dir():
+    try:
+        valid = path.is_absolute() and path == path.resolve(strict=True) and path.is_dir()
+    except (OSError, RuntimeError):
+        # Missing/inaccessible paths and symlink loops are local setup failures.
+        valid = False
+    if not valid:
         raise TransferError("Use an existing absolute private result directory")
     return path
 

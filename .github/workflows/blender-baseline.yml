@@ -58,6 +58,46 @@ jobs:
         env:
           BLENDER_VERSION: ${{ matrix.version }}
         run: uv run --locked --no-env-file python tools/test_blender.py --expected-version "$BLENDER_VERSION" --artifacts "$RUNNER_TEMP/scenario-tests"
+      - name: Install virtual display for offline GUI captures
+        run: sudo apt-get install -y --no-install-recommends xvfb xauth openbox libgl1-mesa-dri xdotool imagemagick
+      - name: Capture the tested ZIP in both UI views
+        env:
+          LIBGL_ALWAYS_SOFTWARE: "1"
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          candidates=("$RUNNER_TEMP"/scenario-tests/run-*/*.zip)
+          if [ "${#candidates[@]}" -ne 1 ]; then
+            echo "Expected exactly one tested candidate ZIP" >&2
+            exit 1
+          fi
+          for view in sidebar composer; do
+            display_logs="$RUNNER_TEMP/scenario-screenshots/display-$view"
+            mkdir -p "$display_logs"
+            xvfb-run -a -e "$display_logs/xvfb.log" -s '-screen 0 1920x1080x24' \
+              bash -euc '
+                openbox_log=$1
+                shift
+                openbox --sm-disable >"$openbox_log" 2>&1 &
+                window_manager_pid=$!
+                cleanup() { kill "$window_manager_pid" 2>/dev/null || true; }
+                trap cleanup EXIT
+                uv run --locked --no-env-file python tools/capture_gui.py "$@"
+              ' capture "$display_logs/openbox.log" \
+              --zip "${candidates[0]}" --view "$view" --fixture form --gpu-backend opengl --capture-backend x11 \
+              --output "$RUNNER_TEMP/scenario-screenshots" --label "$GITHUB_SHA"
+          done
+      - name: Preserve plugin screenshots and capture evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: blender-screenshots-${{ matrix.version }}
+          if-no-files-found: warn
+          path: |
+            ${{ runner.temp }}/scenario-screenshots/*/plugin.png
+            ${{ runner.temp }}/scenario-screenshots/*/report.json
+            ${{ runner.temp }}/scenario-screenshots/*/gui.json
+            ${{ runner.temp }}/scenario-screenshots/*/*.log
       - name: Preserve ZIP, reports and logs
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1

@@ -2,19 +2,22 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Scoped SDK reads and exact estimates for the consolidated runtime.
 
-No bpy imports, ambient credentials, redirects, automatic retries or paid
-dispatch. The shared job runtime must persist intent before adding dispatch.
+No bpy imports, ambient credentials, redirects or automatic retries. Paid
+dispatch requires an issued estimate and a durable claim callback.
 SDK imports are lazy so package registration does not start client work.
 """
 
 import copy
 import json
 import math
+import threading
+import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from decimal import Decimal
 from types import SimpleNamespace
 from urllib.parse import urlsplit
+from weakref import WeakValueDictionary
 
 from ..schema.forms import prepare_run
 from ..schema.params import parse_schema, validate
@@ -64,6 +67,7 @@ class Estimate:
     payload_json: bytes = field(repr=False)
     response_json: bytes = field(repr=False)
     scope: object = field(repr=False)
+    issued_at: float = field(repr=False)
 
     @property
     def payload(self):
@@ -174,6 +178,8 @@ class SDKAdapter:
         *,
         online: Callable[[], bool],
         project_id=None,
+        account_id=None,
+        team_id=None,
         base_url=API_URL,
         timeout=45.0,
         transport=None,
@@ -192,6 +198,11 @@ class SDKAdapter:
             raise TypeError("An online-access predicate is required")
         if isinstance(timeout, bool) or not math.isfinite(timeout) or timeout <= 0:
             raise ValueError("Timeout must be finite and positive")
+        self._base_url = base_url.rstrip("/")
+        self._account_id = _identifier(account_id) if account_id is not None else None
+        self._team_id = _identifier(team_id) if team_id is not None else None
+        self._estimates = WeakValueDictionary()
+        self._estimate_lock = threading.RLock()
         self._project_id = _identifier(project_id) if project_id is not None else None
         self._online = online
         self._scope = object()
@@ -202,8 +213,22 @@ class SDKAdapter:
     def project_id(self):
         return self._project_id
 
+    @property
+    def base_url(self):
+        return self._base_url
+
+    @property
+    def account_id(self):
+        return self._account_id
+
+    @property
+    def team_id(self):
+        return self._team_id
+
     def close(self):
-        self._closed = True
+        with self._estimate_lock:
+            self._estimates.clear()
+            self._closed = True
         self._sdk.close()
 
     def __enter__(self):
@@ -386,9 +411,54 @@ class SDKAdapter:
         cost = result.get("creativeUnitsCost")
         if isinstance(cost, bool) or not isinstance(cost, (int, Decimal)) or cost < 0:
             raise AdapterError("Scenario returned no valid exact estimate")
-        return Estimate(
-            operation, identifier, self.project_id, Decimal(cost), payload_json, raw, self._scope
+        estimate = Estimate(
+            operation,
+            identifier,
+            self.project_id,
+            Decimal(cost),
+            payload_json,
+            raw,
+            self._scope,
+            time.monotonic(),
         )
+        with self._estimate_lock:
+            self._estimates[id(estimate)] = estimate
+        return estimate
 
     def owns_estimate(self, estimate):
-        return isinstance(estimate, Estimate) and estimate.scope is self._scope
+        with self._estimate_lock:
+            return (
+                not self._closed
+                and isinstance(estimate, Estimate)
+                and self._estimates.get(id(estimate)) is estimate
+            )
+
+    def submit_estimate(self, estimate, *, before_send):
+        """Coordinator-only dispatch: commit intent in before_send or raise.
+
+        Claim and consume an issued quote once, including across coordinators.
+        The hook orders persistence; it does not grant spending authorization.
+        """
+        with self._estimate_lock:
+            if not self.owns_estimate(estimate):
+                raise ValueError("Use an unchanged, unused estimate issued by this active client")
+            if not callable(before_send):
+                raise TypeError("A durable submission claim callback is required")
+            if not self._online():
+                raise AdapterError("Online access is disabled")
+            before_send()
+            del self._estimates[id(estimate)]
+        method = (
+            self._sdk.generate.with_raw_response.run_model
+            if estimate.operation == "model"
+            else self._sdk.workflows.with_raw_response.run
+        )
+        raw = self._request(method, estimate.target_id, body=estimate.payload, dry_run=False)
+        job = _json(raw).get("job")
+        if not isinstance(job, dict):
+            raise AdapterError("Scenario returned no submission receipt")
+        try:
+            _identifier(job.get("jobId"))
+        except ValueError:
+            raise AdapterError("Scenario returned no valid remote job identity") from None
+        return job

@@ -138,9 +138,10 @@ Token serialization does not establish browser OAuth acceptance by REST.
 
 ## Adapter coverage
 
-The adapter is deliberately a read/estimate foundation. It has no paid dispatch
-or cancellation entry point; #65 must establish durable request identity and
-reconciliation before enabling those actions. All calls use public SDK methods
+The adapter provides reads/estimates and a coordinator-only submission hook.
+The [job coordinator](JOB_COORDINATOR.md) commits a scoped intent before dispatch,
+consumes each issued quote once and preserves uncertain outcomes. Cancellation
+and product UI/MCP dispatch remain unavailable. All calls use public SDK methods
 with `max_retries=0`; their `with_raw_response` wrappers preserve wire JSON.
 
 | Adapter operation | SDK 2.1.0 method and contract |
@@ -155,8 +156,9 @@ with `max_retries=0`; their `with_raw_response` wrappers preserve wire JSON.
 
 Each client owns an immutable selected project and connection scope. Estimates
 from a different client fail `owns_estimate`, including a recreated client for
-the same account. This is a building block for shared-runtime invalidation, not
-a persisted quote or spending-authorization mechanism. Online permission is
+the same account. Only the original issued object is accepted; copies and consumed quotes fail
+ownership checks. The coordinator binds it to persisted request/origin identity;
+neither mechanism grants spending authorization. Online permission is
 checked before every request, including every catalog page. Blender callers must
 supply a predicate reflecting their actual online-access permission.
 
@@ -165,7 +167,8 @@ routing remains unavailable until its REST schema contract is established.
 Studio's pure routing helper/tests are retained, but remote-MCP `run_with`
 metadata is not silently assumed to exist in REST. Upload/job dependency contracts
 are mapped above; upload adapter integration, signed transfers, account/project
-discovery, search/organization, submission and cancellation remain to implement.
+discovery, search/organization and cancellation remain to implement. Submission
+uses the coordinator contract above; live acceptance remains separate.
 
 Run the adapter and command contracts offline with:
 

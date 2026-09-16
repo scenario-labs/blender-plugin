@@ -116,6 +116,11 @@ No result callback runs application code on a worker. Results retain their
 stored scope/origin; callers must verify the captured file/scene/revision/target
 before any Blender mutation. Exceptions remain observable through `result`.
 The owner retains task handles; workers drop completed task/payload references.
+Ordinary command exceptions settle the task and leave worker capacity available.
+Thread-control exceptions (such as `SystemExit` or `KeyboardInterrupt`) settle
+that task, deactivate the owner and cancel queued execution, then propagate out
+of the worker. The application owner still calls `shutdown()` to join other
+in-flight work and close the client; no pending task is abandoned unresolved.
 
 `cancel_prepared` persists local cancellation immediately. If a queued command
 later runs, the coordinator rejects it before network dispatch. If dispatch has

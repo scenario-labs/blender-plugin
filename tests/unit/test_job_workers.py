@@ -286,3 +286,41 @@ def test_failed_thread_start_joins_started_workers(setup, monkeypatch):
     with pytest.raises(RuntimeError, match="exhaustion"):
         JobWorkers(coordinator, workers=2)
     assert not any(thread.is_alive() for thread in threads)
+
+
+@pytest.mark.parametrize("failure_type", [KeyboardInterrupt, SystemExit, GeneratorExit])
+def test_control_exception_stops_owner_without_stranding_tasks(setup, monkeypatch, failure_type):
+    owner, coordinator, store, prepare, entered, release, calls, _ = setup()
+    first, second = prepare(), prepare()
+    failure = failure_type("fixture worker interruption")
+    propagated = []
+    reported = threading.Event()
+
+    def observe(args):
+        propagated.append(args.exc_value)
+        reported.set()
+
+    def interrupt(*args, **kwargs):
+        entered.set()
+        assert release.wait(5), "Test did not release worker fixture"
+        raise failure
+
+    monkeypatch.setattr(threading, "excepthook", observe)
+    monkeypatch.setattr(coordinator, "submit", interrupt)
+    running = submit(owner, first)
+    assert entered.wait(2)
+    queued = submit(owner, second)
+    release.set()
+    with pytest.raises(failure_type) as error:
+        running.result(2)
+    assert error.value is failure
+    assert reported.wait(2), "Control exception did not escape the worker"
+    assert propagated == [failure]
+    with pytest.raises(CancelledError):
+        queued.result(2)
+    with pytest.raises(WorkerError, match="inactive"):
+        submit(owner, second)
+    assert calls == []
+    assert store.get(second.intent.request_id).state == JobState.PREPARED
+    owner.shutdown()
+    assert all(not thread.is_alive() for thread in owner._threads)

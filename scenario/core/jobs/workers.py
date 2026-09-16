@@ -123,8 +123,14 @@ class JobWorkers:
             if task._future.set_running_or_notify_cancel():
                 try:
                     result = command(*args, **kwargs)
-                except BaseException as exc:
+                except Exception as exc:
                     task._future.set_exception(exc)
+                except BaseException as exc:
+                    # Settle the handle and stop queued work before propagating
+                    # thread-control exceptions; never leave a running future.
+                    task._future.set_exception(exc)
+                    self.deactivate()
+                    raise
                 else:
                     task._future.set_result(result)
                     del result

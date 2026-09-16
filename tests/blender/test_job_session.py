@@ -57,10 +57,11 @@ class JobSessionTests(unittest.TestCase):
             bpy.data.scenes.remove(self.scene)
 
     def prepare(self):
+        origin = self.session.capture(self.scene, self.target)
         quote = self.session._coordinator._adapter.estimate_workflow(
             {"id": "fixture-workflow", "inputs": []}, {}
         )
-        return self.session.prepare(quote, scene=self.scene, target=self.target)
+        return self.session.prepare(quote, origin=origin)
 
     def completion(self):
         prepared = self.prepare()
@@ -160,3 +161,15 @@ class JobSessionTests(unittest.TestCase):
         self.module._reap_inactive()
         self.assertNotIn(self.session, self.module._sessions)
         self.assertTrue(self.session._workers._closed)
+
+    def test_scene_changed_during_estimate_cannot_be_rebound_to_new_revision(self):
+        origin = self.session.capture(self.scene, self.target)
+        quote = self.session._coordinator._adapter.estimate_workflow(
+            {"id": "fixture-workflow", "inputs": []}, {}
+        )
+        self.target.location.x += 1
+        bpy.context.view_layer.update()
+        with self.assertRaises(self.module.OriginUnavailable):
+            self.session.prepare(quote, origin=origin)
+        self.assertEqual(self.store.records(), ())
+        self.assertEqual(len(self.calls), 1)

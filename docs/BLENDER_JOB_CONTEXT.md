@@ -8,8 +8,11 @@ The existing prototype UI/MCP has not yet been switched to it.
 
 ## Origin and quote lifetime
 
-On Blender's main thread, `prepare(estimate, scene=..., target=...)` captures
+On Blender's main thread, capture inputs together with
+`origin = capture(scene, target)`, then request the estimate.
+`prepare(estimate, origin=origin)` validates that same origin and persists its
 opaque file-session, scene and optional object identities in the durable intent.
+It never stamps an old quote with a fresh revision after estimation.
 Names, active-object selection and file paths are never used to rediscover a
 missing target. `capture` also exposes this origin for callers preparing inputs.
 Dependency updates conservatively invalidate the affected scene's revisions;

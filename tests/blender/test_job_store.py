@@ -3,6 +3,7 @@
 """Exercise SQLite and the installed intent store with Blender's own Python."""
 
 import tempfile
+import threading
 import unittest
 from pathlib import Path
 
@@ -100,6 +101,12 @@ class JobStoreTests(unittest.TestCase):
                 self.assertEqual(len(calls), 2)
 
     def test_installed_recovery_polls_known_id_without_replay(self):
+        self._check_recovery(worker=False)
+
+    def test_installed_worker_polls_and_joins_without_blender_access(self):
+        self._check_recovery(worker=True)
+
+    def _check_recovery(self, *, worker):
         import httpx
 
         api = submodule("core.api.sdk_adapter")
@@ -130,8 +137,11 @@ class JobStoreTests(unittest.TestCase):
             )
             calls = []
 
+            main_thread = threading.get_ident()
+
             def respond(request):
                 calls.append(request)
+                self.assertEqual(threading.get_ident() != main_thread, worker)
                 self.assertEqual(request.method, "GET")
                 return httpx.Response(
                     200, json={"job": {"jobId": "fixture-remote", "status": "success"}}
@@ -149,6 +159,16 @@ class JobStoreTests(unittest.TestCase):
                     coordinator.recovery_plan()[0].action, commands.RecoveryAction.POLL_REMOTE
                 )
                 self.assertEqual(calls, [])
-                snapshot = coordinator.refresh_remote(intent.request_id, expected_revision=2)
+                if worker:
+                    owner = submodule("core.jobs.workers").JobWorkers(coordinator, workers=1)
+                    try:
+                        snapshot = owner.refresh_remote(
+                            intent.request_id, expected_revision=2
+                        ).result(timeout=5)
+                    finally:
+                        owner.shutdown()
+                    self.assertTrue(all(not thread.is_alive() for thread in owner._threads))
+                else:
+                    snapshot = coordinator.refresh_remote(intent.request_id, expected_revision=2)
                 self.assertEqual(snapshot.record.state, storage.JobState.SUCCEEDED)
                 self.assertEqual(len(calls), 1)

@@ -140,6 +140,11 @@ class JobCoordinator:
             self._active = False
             self._prepared.clear()
 
+    def close(self):
+        """Release the SDK client after the application owner has joined workers."""
+        self.deactivate()
+        self._adapter.close()
+
     def prepare(self, estimate: Estimate, origin: JobOrigin):
         """Persist an intent after the caller has chosen this quote; do not spend."""
         if not self._adapter.owns_estimate(estimate):

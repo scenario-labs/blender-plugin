@@ -100,3 +100,45 @@ attach a guessed remote ID or regenerate an unknown submission.
 unclaimed local intent and sends no request. A queued submit will subsequently
 fail its stored-state check. Remote cancellation is separate: neither canceling
 a Python future nor receiving an action acknowledgement proves server cancellation.
+
+## Application-owned workers
+
+`JobWorkers` owns a coordinator and its SDK client for an application context.
+It starts a fixed number of non-daemon threads, bounds the pending queue, and
+rejects excess commands before dispatch. `submit` copies the current JSON
+payload at admission; the coordinator checks the original quote, origin and
+expiry again when the worker reaches the spend boundary. `refresh_remote` uses
+the same pool. There is no generic callable execution or Blender access.
+
+Each command returns a `JobTask` with `done()` and `result(timeout=...)`. A GUI
+owner polls from its main-thread pump; a headless owner can block explicitly.
+No result callback runs application code on a worker. Results retain their
+stored scope/origin; callers must verify the captured file/scene/revision/target
+before any Blender mutation. Exceptions remain observable through `result`.
+The owner retains task handles; workers drop completed task/payload references.
+Ordinary command exceptions settle the task and leave worker capacity available.
+Thread-control exceptions (such as `SystemExit` or `KeyboardInterrupt`) settle
+that task, deactivate the owner and cancel queued execution, then propagate out
+of the worker. The application owner still calls `shutdown()` to join other
+in-flight work and close the client; no pending task is abandoned unresolved.
+
+`cancel_prepared` persists local cancellation immediately. If a queued command
+later runs, the coordinator rejects it before network dispatch. If dispatch has
+already claimed the record, cancellation reports a conflict: it cannot claim
+that remote work was canceled. A failed cancellation write propagates.
+
+On a context switch, `deactivate()` stops admission, invalidates quotes and
+cancels queued task execution without waiting for network calls. Their PREPARED
+records remain available for recovery review; cancellation of execution alone
+is not a durable user cancellation. Already claimed requests can finish and
+persist only to the original store. Closing/collapsing a view must not call this
+method. A file-load owner must suppress old-target application independently.
+
+On extension disable/exit, `shutdown()` deactivates, joins in-flight workers,
+then closes the SDK connection. It is idempotent and safe for concurrent owners;
+it rejects calls from its own worker threads. It does not kill network I/O or
+promise instant shutdown; HTTP timeout policy still applies. Direct synchronous
+coordinator/adapter users must also be stopped before transferring ownership or
+shutdown. One owner per coordinator is required. UI/MCP lifecycle hooks and
+main-thread result application remain separate integration work; the prototype
+runtime is not replaced or supplemented by a second active runtime here.

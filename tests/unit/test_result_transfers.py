@@ -372,3 +372,27 @@ def test_connect_failure_redacted_without_retry(tmp_path, storage):
     storage[0].set_debuglevel.assert_called_once_with(0)
     storage[0].request.assert_not_called()
     storage[0].close.assert_called_once()
+
+
+def test_missing_root_reports_local_setup_error_before_network(tmp_path, storage):
+    root = tmp_path / "missing-private-result-directory"
+    with pytest.raises(
+        transfers.TransferError, match="existing absolute private result directory"
+    ) as caught:
+        downloader().download(URL, root=root, name="result.bin")
+    assert str(root) not in str(caught.value)
+    storage[1].assert_not_called()
+    assert not root.exists()
+
+
+def test_root_permission_failure_reports_local_setup_error(tmp_path, storage, monkeypatch):
+    def inaccessible(self, *, strict=False):
+        raise PermissionError("private-path-that-must-not-be-logged")
+
+    monkeypatch.setattr(Path, "resolve", inaccessible)
+    with pytest.raises(
+        transfers.TransferError, match="existing absolute private result directory"
+    ) as caught:
+        downloader().download(URL, root=tmp_path, name="result.bin")
+    assert "private-path" not in str(caught.value)
+    storage[1].assert_not_called()

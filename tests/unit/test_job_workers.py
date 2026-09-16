@@ -324,3 +324,19 @@ def test_control_exception_stops_owner_without_stranding_tasks(setup, monkeypatc
     assert store.get(second.intent.request_id).state == JobState.PREPARED
     owner.shutdown()
     assert all(not thread.is_alive() for thread in owner._threads)
+
+
+def test_stopped_workers_remain_observable_when_sdk_close_fails(setup, monkeypatch):
+    owner, _, _, _, _, _, _, adapter = setup()
+    assert not owner.stopped
+    with monkeypatch.context() as patch:
+
+        def fail_close():
+            raise RuntimeError("fixture transport close failure")
+
+        patch.setattr(adapter, "close", fail_close)
+        with pytest.raises(RuntimeError, match="transport close"):
+            owner.shutdown()
+    assert owner.stopped and not owner._closed
+    owner.shutdown()
+    assert owner._closed

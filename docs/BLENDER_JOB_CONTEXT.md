@@ -1,0 +1,54 @@
+# Blender job contexts
+
+`scenario.blender.job_session.JobSession` owns one explicitly selected SDK
+connection, scoped store, coordinator and worker pool. Extension registration
+installs file, dependency, frame, undo and redo hooks; it creates no session,
+connection or worker. This is the integration boundary for the shared runtime.
+The existing prototype UI/MCP has not yet been switched to it.
+
+## Origin and quote lifetime
+
+On Blender's main thread, `prepare(estimate, scene=..., target=...)` captures
+opaque file-session, scene and optional object identities in the durable intent.
+Names, active-object selection and file paths are never used to rediscover a
+missing target. `capture` also exposes this origin for callers preparing inputs.
+Dependency updates conservatively invalidate the affected scene's revisions;
+frame changes, undo/redo and file loading invalidate captured state too. Callers
+must prepare inputs and capture their origin together on the main thread.
+
+A thread-safe, bpy-free revision registry is checked again by the coordinator
+inside the submission claim, immediately before it writes SUBMITTING. A queued
+quote whose origin was invalidated cannot spend. Work already claimed can finish
+and persist to its originating scope. The optional `origin_current` callback on
+`JobCoordinator` must be thread-safe and must never access Blender.
+
+File identities are deliberately session-local. Restarted records stay available
+for recovery, but automatic application cannot assume an old file or target is
+unchanged. Persistent target selection and explicit recovery/application UI remain
+integration work; matching a scene or object name is insufficient.
+
+## Results and lifecycle
+
+`submit` and `refresh_remote` return task handles. `drain()` returns completed
+outcomes on the main thread without waiting for network work. Undrained outcomes
+count against a separate admission limit, so a closed view cannot accumulate
+unbounded completed payloads. UI closure itself does not deactivate the session.
+
+`deliver(completion, callback)` validates the issuing session, active scope,
+origin revision, selected scene and continued target membership immediately
+before calling `callback(result, captured_scene, captured_target)`. Successful
+outcomes can be delivered only once, even when the callback fails. This guard
+never performs import itself or marks a job APPLIED: durable import transactions
+and error/retry UI must be layered above it. Failed or stale results are available
+for caller review; they never silently fall back to the current selection.
+
+Account/project switching must explicitly deactivate the previous session before
+creating its replacement from authoritative credentials/scope. File loading does
+this automatically. A main-thread timer closes inactive owners after tracked work
+finishes; an explicit headless loop can call shutdown directly. Extension disable
+joins every session before unregistering Blender services. HTTP waits retain the
+worker timeout limitations; shutting down is not remote cancellation.
+
+The actual authentication context, safe online-access snapshot for worker calls,
+UI/MCP activation and durable result downloads/application remain separate work.
+No account ID is guessed and no privileged or live service call is introduced.

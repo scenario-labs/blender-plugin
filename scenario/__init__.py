@@ -10,12 +10,14 @@ __version__ = "0.9.9"  # x-release-please-version
 
 
 def register():
-    from .blender import registry
+    from .blender import job_session, registry
 
     registry.register()
+    job_session.register()
 
 
 def unregister():
-    from .blender import registry
+    from .blender import job_session, registry
 
+    job_session.unregister()
     registry.unregister()

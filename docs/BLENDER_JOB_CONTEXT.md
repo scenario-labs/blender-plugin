@@ -17,10 +17,13 @@ frame changes, undo/redo and file loading invalidate captured state too. Callers
 must prepare inputs and capture their origin together on the main thread.
 
 A thread-safe, bpy-free revision registry is checked again by the coordinator
-inside the submission claim, immediately before it writes SUBMITTING. A queued
+inside the submission claim, with its lock held through the durable SUBMITTING
+write. Invalidation is serialized against that boundary; it cannot slip between
+the origin check and storage commit. A queued
 quote whose origin was invalidated cannot spend. Work already claimed can finish
-and persist to its originating scope. The optional `origin_current` callback on
-`JobCoordinator` must be thread-safe and must never access Blender.
+and persist to its originating scope. The optional `origin_guard` context-manager factory on
+`JobCoordinator` must be thread-safe and must never access Blender. The guard covers local
+SQLite work only, never HTTP; invalidation may briefly wait for that commit.
 
 File identities are deliberately session-local. Restarted records stay available
 for recovery, but automatic application cannot assume an old file or target is

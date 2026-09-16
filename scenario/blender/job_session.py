@@ -59,7 +59,7 @@ class JobSession:
         self._pending = []
         self._issued = WeakValueDictionary()
         self._active = True
-        self._coordinator = JobCoordinator(adapter, store, origin_current=self._origins.current)
+        self._coordinator = JobCoordinator(adapter, store, origin_guard=self._origins.guard)
         self._workers = JobWorkers(self._coordinator, workers=workers, pending_limit=pending_limit)
         _sessions.add(self)
         if not bpy.app.timers.is_registered(_reap_inactive):

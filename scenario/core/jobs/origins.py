@@ -4,6 +4,7 @@
 
 import threading
 import uuid
+from contextlib import contextmanager
 
 from .store import JobOrigin, _identity
 
@@ -28,13 +29,19 @@ class OriginRevisions:
             revision = self._revisions.setdefault(scene_id, uuid.uuid4().hex)
             return JobOrigin(self._file_id, scene_id, revision, target_id)
 
-    def current(self, origin):
+    @contextmanager
+    def guard(self, origin):
+        """Serialize invalidation against the entire durable submission claim."""
         with self._lock:
-            return (
+            yield (
                 isinstance(origin, JobOrigin)
                 and origin.file_id == self._file_id
                 and self._revisions.get(origin.scene_id) == origin.revision
             )
+
+    def current(self, origin):
+        with self.guard(origin) as current:
+            return current
 
     def invalidate(self, scene_id):
         with self._lock:

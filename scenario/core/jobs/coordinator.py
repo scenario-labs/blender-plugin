@@ -8,6 +8,7 @@ import math
 import threading
 import time
 import uuid
+from contextlib import nullcontext
 from dataclasses import dataclass, field
 from enum import StrEnum
 from weakref import WeakValueDictionary
@@ -111,7 +112,7 @@ class JobCoordinator:
         *,
         quote_ttl=120.0,
         clock=time.monotonic,
-        origin_current=None,
+        origin_guard=None,
     ):
         if not isinstance(adapter, SDKAdapter) or not isinstance(store, JobStore):
             raise TypeError("Use the shared SDK adapter and job store")
@@ -128,9 +129,9 @@ class JobCoordinator:
         scope = JobScope(adapter.base_url, adapter.account_id, adapter.project_id, adapter.team_id)
         if scope != store.scope:
             raise ValueError("Selected connection and job store scopes differ")
-        if origin_current is not None and not callable(origin_current):
-            raise TypeError("Origin validation must be a thread-safe callable")
-        self._origin_current = origin_current
+        if origin_guard is not None and not callable(origin_guard):
+            raise TypeError("Origin guard must be a thread-safe context manager factory")
+        self._origin_guard = origin_guard
         self._adapter = adapter
         self._store = store
         self._ttl = quote_ttl
@@ -209,19 +210,23 @@ class JobCoordinator:
                     or current_payload != _payload(prepared.estimate.payload)
                 ):
                     raise QuoteError("Request or origin changed; request a fresh estimate")
-                if self._origin_current is not None and not self._origin_current(origin):
-                    raise QuoteError("Origin changed while queued; request a fresh estimate")
-                current = self._store.get(intent.request_id)
-                if (
-                    current is None
-                    or current.intent != intent
-                    or current.state != JobState.PREPARED
-                ):
-                    raise StoreConflict("Request is no longer prepared; do not resubmit")
-                self._store.transition(
-                    intent.request_id, expected_revision=current.revision, state=JobState.SUBMITTING
-                )
-                claimed = True
+                guard = self._origin_guard(origin) if self._origin_guard else nullcontext(True)
+                with guard as current_origin:
+                    if not current_origin:
+                        raise QuoteError("Origin changed while queued; request a fresh estimate")
+                    current = self._store.get(intent.request_id)
+                    if (
+                        current is None
+                        or current.intent != intent
+                        or current.state != JobState.PREPARED
+                    ):
+                        raise StoreConflict("Request is no longer prepared; do not resubmit")
+                    self._store.transition(
+                        intent.request_id,
+                        expected_revision=current.revision,
+                        state=JobState.SUBMITTING,
+                    )
+                    claimed = True
 
         if not isinstance(prepared, PreparedJob):
             raise QuoteError("Use a prepared request from this coordinator")

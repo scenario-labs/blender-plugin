@@ -55,7 +55,7 @@ def test_queued_origin_rechecked_before_paid_dispatch(tmp_path, change):
         base_url=scope.service,
         transport=httpx.MockTransport(respond),
     ) as adapter:
-        coordinator = JobCoordinator(adapter, store, origin_current=origins.current)
+        coordinator = JobCoordinator(adapter, store, origin_guard=origins.guard)
         owner = JobWorkers(coordinator, workers=1)
         origin = origins.capture("scene", "target")
 
@@ -91,3 +91,76 @@ def test_queued_origin_rechecked_before_paid_dispatch(tmp_path, change):
         finally:
             release.set()
             owner.shutdown()
+
+
+def test_origin_guard_covers_storage_claim_but_not_http(tmp_path, monkeypatch):
+    from contextlib import contextmanager
+
+    origins = OriginRevisions()
+    origin = origins.capture("scene")
+    held = False
+    scope = JobScope("https://fixture.invalid/v1", "fixture-account")
+    store = JobStore(tmp_path / "jobs.sqlite3", scope)
+    transitions = []
+
+    @contextmanager
+    def guard(value):
+        nonlocal held
+        with origins.guard(value) as current:
+            held = True
+            try:
+                yield current
+            finally:
+                held = False
+
+    def respond(request):
+        assert not held, "Origin invalidation must not wait for HTTP"
+        if request.url.params["dryRun"] == "true":
+            return httpx.Response(200, json={"creativeUnitsCost": 1})
+        return httpx.Response(200, json={"job": {"jobId": "remote"}})
+
+    original = store.transition
+
+    def transition(*args, **kwargs):
+        transitions.append((kwargs["state"], held))
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(store, "transition", transition)
+    with SDKAdapter(
+        Credentials("key", "secret"),
+        online=lambda: True,
+        account_id=scope.account_id,
+        base_url=scope.service,
+        transport=httpx.MockTransport(respond),
+    ) as adapter:
+        coordinator = JobCoordinator(adapter, store, origin_guard=guard)
+        quote = adapter.estimate_workflow({"id": "workflow", "inputs": []}, {})
+        prepared = coordinator.prepare(quote, origin)
+        result = coordinator.submit(
+            prepared, origin=origin, operation="workflow", target_id="workflow", payload={}
+        )
+        assert result.state == JobState.REMOTE
+    assert transitions == [(JobState.SUBMITTING, True), (JobState.REMOTE, False)]
+
+
+def test_invalidation_waits_for_an_existing_origin_claim():
+    from concurrent.futures import ThreadPoolExecutor
+
+    origins = OriginRevisions()
+    origin = origins.capture("scene")
+    started = threading.Event()
+    finished = threading.Event()
+
+    def invalidate():
+        started.set()
+        origins.invalidate("scene")
+        finished.set()
+
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        with origins.guard(origin) as valid:
+            assert valid
+            future = pool.submit(invalidate)
+            assert started.wait(2)
+            assert not finished.is_set()
+        future.result(2)
+    assert finished.is_set() and not origins.current(origin)

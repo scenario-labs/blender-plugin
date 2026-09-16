@@ -75,7 +75,7 @@ def run(args):
         if args.zip:
             shutil.copyfile(args.zip, candidate)
         else:
-            source = prepare_source(ROOT / "scenario", directory / "source")
+            source = prepare_source(ROOT / "scenario", temporary / "source")
             step(
                 "build",
                 [

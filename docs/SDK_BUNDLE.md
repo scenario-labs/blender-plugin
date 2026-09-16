@@ -37,10 +37,16 @@ point. [tools/wheel_bundle.py](../tools/wheel_bundle.py):
    ignored `.blender/wheels/` cache. Downloads use the pinned PyPI file URLs,
    never package names resolved to latest versions. This build preparation can
    use the network; native test processes remain under the offline socket guard.
+   Transient transport failures and HTTP 408/429/500/502/503/504 receive at most
+   three attempts, with 1- and 2-second delays. Other HTTP errors and hash
+   mismatches are not retried.
 2. Verifies SHA-256 on every cache reuse. Downloads use private temporary paths
    and atomic replacement; a missing/corrupt artifact cannot yield a partial ZIP.
 3. Copies source to a fresh build staging directory and adds only the locked
    wheels. The checkout and Blender's normal user profile are unchanged.
+   Staging lives in the run's temporary directory: successful cleanup removes
+   it while retaining logs and the ZIP. Failed runs and `--keep-profile` native
+   runs retain it for diagnosis.
 4. Preserves all recorded license texts inside the wheels and copies them
    verbatim into `licenses/dependencies/` in the extension. Filenames include a
    content digest so duplicate notices can be shared without overwriting
@@ -48,6 +54,13 @@ point. [tools/wheel_bundle.py](../tools/wheel_bundle.py):
 5. Checks the candidate ZIP against its own lock and verifies every wheel and
    notice before Blender validation/installation. A supplied ZIP is not compared
    against a different checkout's SDK version.
+
+Archive inspection and bundle verification reject more than 10,000 entries,
+members larger than 64 MiB, or more than 256 MiB of declared expanded content
+per archive before reading payloads. The same checks apply to nested wheels;
+manifest/lock files and individual license notices are limited to 1 MiB.
+Downloads and cached wheel reads are bounded at 64 MiB. These resource limits
+are independent of the candidate's own lock and hashes.
 
 `prepare_source(..., offline=True)` permits cache-only staging and fails on a
 missing/corrupt wheel. The source manifest names staged wheel paths, so a direct

@@ -176,3 +176,119 @@ def test_zip_verification_rejects_tampered_wheels_or_notices(
                 archive.write(path, path.relative_to(stage))
     with pytest.raises(ValueError):
         bundle.validate_bundle(candidate)
+
+
+@pytest.mark.parametrize("failure", ["timeout", "reset", "503", "partial"])
+def test_transient_download_restarts_and_publishes_only_verified_bytes(
+    fixture, tmp_path, monkeypatch, failure
+):
+    _, wheel, raw = fixture
+    attempts, sleeps = [], []
+
+    class Interrupted(io.BytesIO):
+        def read(self, size=-1):
+            if self.tell():
+                raise bundle.http.client.IncompleteRead(b"partial")
+            return super().read(3)
+
+    def open_url(request, timeout):
+        attempts.append(request.full_url)
+        if len(attempts) < 3:
+            if failure == "partial":
+                return Interrupted(b"interrupted response")
+            if failure == "503":
+                raise bundle.urllib.error.HTTPError(request.full_url, 503, "unavailable", {}, None)
+            if failure == "reset":
+                raise ConnectionResetError("reset")
+            raise bundle.urllib.error.URLError(TimeoutError("timeout"))
+        return io.BytesIO(raw)
+
+    monkeypatch.setattr(bundle.urllib.request, "urlopen", open_url)
+    monkeypatch.setattr(bundle.time, "sleep", sleeps.append)
+    cache = tmp_path / "cache"
+    path = bundle.cached_wheel(wheel, cache)
+    assert path.read_bytes() == raw
+    assert attempts == [wheel["url"]] * 3
+    assert sleeps == [1, 2]
+    assert list(cache.iterdir()) == [path]
+
+
+@pytest.mark.parametrize(
+    "failure,expected_attempts", [("timeout", 3), ("404", 1), ("hash", 1), ("size", 1)]
+)
+def test_failed_download_is_bounded_and_never_published(
+    fixture, tmp_path, monkeypatch, failure, expected_attempts
+):
+    _, wheel, _ = fixture
+    attempts, sleeps = [], []
+
+    def open_url(request, timeout):
+        attempts.append(request.full_url)
+        if failure == "timeout":
+            raise TimeoutError("timeout")
+        if failure == "404":
+            raise bundle.urllib.error.HTTPError(request.full_url, 404, "missing", {}, None)
+        return io.BytesIO(b"bad bytes")
+
+    if failure == "size":
+        monkeypatch.setattr(bundle.zip_limits, "MAX_MEMBER_BYTES", 4)
+    monkeypatch.setattr(bundle.urllib.request, "urlopen", open_url)
+    monkeypatch.setattr(bundle.time, "sleep", sleeps.append)
+    cache = tmp_path / "cache"
+    with pytest.raises((TimeoutError, bundle.urllib.error.HTTPError, ValueError)):
+        bundle.cached_wheel(wheel, cache)
+    assert len(attempts) == expected_attempts
+    assert sleeps == ([1, 2] if expected_attempts == 3 else [])
+    assert list(cache.iterdir()) == []
+
+
+@pytest.mark.parametrize(
+    "limit,value", [("MAX_MEMBERS", 1), ("MAX_MEMBER_BYTES", 512), ("MAX_TOTAL_BYTES", 20)]
+)
+@pytest.mark.parametrize("target", ["inspection", "bundle", "wheel"])
+def test_expansion_limits_reject_before_any_payload_read(
+    fixture, tmp_path, monkeypatch, limit, value, target
+):
+    from tools import blender_env
+
+    _, wheel, _ = fixture
+    data = io.BytesIO()
+    with zipfile.ZipFile(data, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+        archive.writestr("blender_manifest.toml", 'id = "scenario"\n')
+        archive.writestr("payload", b"x" * 4096)
+    raw = data.getvalue()
+    candidate = tmp_path / "oversized.zip"
+    candidate.write_bytes(raw)
+    wheel["sha256"] = bundle.digest(raw)
+    monkeypatch.setattr(bundle.zip_limits, limit, value)
+
+    def no_read(*args, **kwargs):
+        pytest.fail("Archive payload read before resource-limit check")
+
+    monkeypatch.setattr(zipfile.ZipFile, "open", no_read)
+    with pytest.raises(ValueError, match="exceeds limit"):
+        if target == "inspection":
+            blender_env.inspect_zip(candidate)
+        elif target == "bundle":
+            bundle.validate_bundle(candidate)
+        else:
+            bundle.wheel_notices(wheel, raw)
+
+
+def test_hash_valid_notice_still_obeys_smaller_notice_limit(fixture, monkeypatch):
+    _, wheel, raw = fixture
+    monkeypatch.setattr(bundle.zip_limits, "MAX_NOTICE_BYTES", 4)
+    with pytest.raises(ValueError, match="member size exceeds limit"):
+        bundle.wheel_notices(wheel, raw)
+
+
+@pytest.mark.parametrize("target", ["inspection", "bundle"])
+def test_metadata_obeys_smaller_limit(tmp_path, monkeypatch, target):
+    from tools import blender_env
+
+    candidate = tmp_path / "metadata.zip"
+    with zipfile.ZipFile(candidate, "w") as archive:
+        archive.writestr("blender_manifest.toml", 'id = "scenario"\n')
+    monkeypatch.setattr(bundle.zip_limits, "MAX_METADATA_BYTES", 4)
+    with pytest.raises(ValueError, match="member size exceeds limit"):
+        (blender_env.inspect_zip if target == "inspection" else bundle.validate_bundle)(candidate)

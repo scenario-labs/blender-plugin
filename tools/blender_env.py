@@ -13,6 +13,11 @@ import tomllib
 import zipfile
 from pathlib import Path, PurePosixPath
 
+if __package__:
+    from . import zip_limits
+else:
+    import zip_limits
+
 ROOT = Path(__file__).resolve().parents[1]
 
 
@@ -78,6 +83,12 @@ def inspect_zip(path):
     """Reject unsafe or ambiguous layouts before Blender installs the archive."""
     files = {}
     with zipfile.ZipFile(path) as archive:
+        zip_limits.check_archive(archive)
+        manifest = tomllib.loads(
+            zip_limits.read_member(
+                archive, "blender_manifest.toml", limit=zip_limits.MAX_METADATA_BYTES
+            ).decode()
+        )
         for entry in archive.infolist():
             name = PurePosixPath(entry.filename)
             if (
@@ -90,8 +101,8 @@ def inspect_zip(path):
             ):
                 raise ValueError("Unsafe or duplicate extension ZIP member")
             if not entry.is_dir():
-                files[entry.filename] = hashlib.sha256(archive.read(entry)).hexdigest()
-        manifest = tomllib.loads(archive.read("blender_manifest.toml").decode())
+                with archive.open(entry) as member:
+                    files[entry.filename] = hashlib.file_digest(member, "sha256").hexdigest()
         if not re.fullmatch(r"[a-z][a-z0-9_]*", manifest["id"]):
             raise ValueError("Invalid extension module ID")
         if "LICENSE" not in files or "__init__.py" not in files:

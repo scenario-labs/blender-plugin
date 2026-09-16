@@ -21,7 +21,13 @@ def test_build_selects_manifest_zip_and_does_not_copy_a_stale_newer_zip(
     tools, tmp_path, monkeypatch
 ):
     build, _ = tools
-    monkeypatch.setattr(build, "prepare_source", lambda source, destination: source)
+
+    def stage(source, destination):
+        destination.mkdir(parents=True)
+        (destination / "fixture.whl").write_bytes(b"staged wheel")
+        return destination
+
+    monkeypatch.setattr(build, "prepare_source", stage)
     monkeypatch.setattr(build, "validate_bundle", lambda candidate: None)
     output = tmp_path / "output"
     output.mkdir()
@@ -46,9 +52,12 @@ def test_build_selects_manifest_zip_and_does_not_copy_a_stale_newer_zip(
         ["--command", "extension", "validate", str(session.directory / candidate.name)],
     )
     assert stale.read_text() == "stale"
+    assert (session.temporary / "source/fixture.whl").is_file()
     session.cleanup()
     assert session.directory.exists()
     assert not session.profile.exists()
+    assert not session.temporary.exists()
+    assert (session.directory / candidate.name).is_file()
 
 
 def test_sessions_never_reuse_inherited_profiles(tools, monkeypatch, tmp_path):

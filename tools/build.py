@@ -63,7 +63,7 @@ def validate(session, candidate):
 def build(session, output):
     manifest = tomllib.loads((ROOT / "scenario/blender_manifest.toml").read_text())
     candidate = session.directory / f"{manifest['id']}-{manifest['version']}.zip"
-    source = prepare_source(ROOT / "scenario", session.directory / "source")
+    source = prepare_source(ROOT / "scenario", session.temporary / "source")
     session.step(
         "build",
         [

@@ -10,6 +10,7 @@ import re
 import ssl
 import tempfile
 import time
+from contextlib import ExitStack
 from dataclasses import dataclass
 from pathlib import Path
 from urllib.parse import urlsplit
@@ -139,6 +140,15 @@ def _name(name):
     return name
 
 
+def _cleanup(close):
+    try:
+        close()
+    except Exception:
+        # Do not mask the verified publication or an existing transfer/control
+        # failure. Recovery can remove leftover staging after workers stop.
+        pass
+
+
 class ResultDownloader:
     """One attempt per explicit download, with no credentials or ambient proxies.
 
@@ -159,8 +169,10 @@ class ResultDownloader:
 
         Content hashes supplied by a trusted manifest are optional. Without one,
         the returned digest detects later local changes, not server authenticity.
-        Temporary files are cleaned on ordinary/control exceptions. After process
-        death, unreferenced .scenario-download-* directories can be removed by
+        Temporary cleanup is attempted on ordinary/control exceptions. Once
+        published, cleanup failures cannot turn verified output into a failed
+        transfer. After cleanup failure or process death, unreferenced
+        .scenario-download-* directories can be removed by
         the application after all its workers stop; never infer successful jobs
         from partial files or replay generation to recover a download.
         """
@@ -211,10 +223,13 @@ class ResultDownloader:
             )
             check_permission_and_deadline()
             response = connection.getresponse()
-            with (
-                response,
-                tempfile.TemporaryDirectory(prefix=".scenario-download-", dir=root) as staging,
-            ):
+            with ExitStack() as cleanup:
+                cleanup.callback(_cleanup, response.close)
+                staging_directory = tempfile.TemporaryDirectory(
+                    prefix=".scenario-download-", dir=root
+                )
+                cleanup.callback(_cleanup, staging_directory.cleanup)
+                staging = staging_directory.name
                 if response.status != 200:
                     raise TransferError("Storage request did not return a complete result")
                 if response.getheader("Content-Encoding", "identity").lower() != "identity":
@@ -258,15 +273,13 @@ class ResultDownloader:
                 # Hard-link publication is atomic and fails if anything already
                 # occupies the name, including a symlink. Same filesystem only.
                 check_permission_and_deadline()
+                receipt = DownloadedResult(name, size, digest.hexdigest())
                 os.link(temporary, destination)
-                return DownloadedResult(name, size, digest.hexdigest())
+                return receipt
         except TransferError:
             raise
         except Exception:
             raise TransferError("Storage transfer failed") from None
         finally:
             if connection is not None:
-                try:
-                    connection.close()
-                except OSError:
-                    pass
+                _cleanup(connection.close)

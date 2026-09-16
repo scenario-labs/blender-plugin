@@ -52,7 +52,10 @@ A computed hash without a trusted expected digest proves local consistency, not
 remote content authenticity. Existing files and symlinks are never replaced,
 including competing publication from another worker.
 
-Ordinary failures and control exceptions clean staging. After process death,
+Cleanup is attempted for ordinary failures and control exceptions. Once the
+verified file is published, ordinary staging/response/connection cleanup failures
+do not replace its successful receipt with a failed-transfer error. Control
+exceptions still propagate. After cleanup failure or process death,
 `.scenario-download-*` directories may remain. Once all the application's
 transfer workers have stopped, recovery may remove those unreferenced staging
 directories and explicitly retry a download using a freshly retrieved URL.

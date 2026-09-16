@@ -53,7 +53,8 @@ acceptance, complete schemas, remote cancellation or successful generation.
 
 The operation audit uses the published wheel's `resources/uploads.py`,
 `resources/jobs.py`, `resources/workflows.py`, their generated parameter/response
-models and `pagination.py`. These dependency contracts do not add adapter methods.
+models and `pagination.py`. The adapter now exposes bounded job discovery as
+described below; upload mutations and cancellation remain dependency contracts.
 
 | Operation | Request and response shape |
 | --- | --- |
@@ -86,8 +87,13 @@ completion acknowledgement alone does not establish that an asset is imported.
 Job records retain `jobId`, `jobType`, status and metadata such as inputs,
 produced asset IDs, non-asset output and workflow/job relationships. The tests
 exercise explicit next-page requests with unchanged project and filters. The
-future adapter must additionally bound pages, reject cursor loops and check
-online permission per request, as the existing catalog adapter already does.
+adapter implements bounded discovery through `SDKAdapter.jobs`: explicit page
+requests, project and filters on every page, online permission before every request,
+loop detection and a hard page limit. Exact duplicate IDs are deduplicated;
+conflicting records with the same ID fail the listing so callers can refresh.
+Malformed pages and later-page errors never return a silent partial result.
+Unknown response fields/statuses are preserved. Listings are not server snapshots;
+retrieve a known remote ID again before acting on its state.
 
 The inspected SDK has no dedicated lookup by client request identity or explicit
 idempotency parameter for model/workflow submission. Generic extension parameters
@@ -138,6 +144,7 @@ with `max_retries=0`; their `with_raw_response` wrappers preserve wire JSON.
 | --- | --- |
 | Public/private model catalog | `models.list`: explicit page size/status/privacy, `paginationToken`, scope on every page, deduplication and cursor-loop/page-limit failures |
 | Public/private workflow catalog | `workflows.list`: SDK REST catalog replaces the need for Studio's public-workflow HTTP bypass; pagination and scope are tested synthetically |
+| Scoped job discovery | `jobs.list` through the public raw-response wrapper: optional author/workflow/type/status filters, 1–200 items per page, bounded pagination and explicit errors instead of partial or conflicting history |
 | Model/workflow/asset/job records | `models.retrieve`, `workflows.retrieve`, `assets.retrieve`, `jobs.retrieve`: unwrap the named record and retain unknown fields |
 | Custom-model estimate | `generate.run_model(dry_run=True)`: adopted form value validation plus retained conditional/one-of rules; inputs in JSON and dry-run/project in query |
 | Workflow estimate | `workflows.run(dry_run=True)`: normalize workflow fields/defaults and preserve the same query/body boundary |
@@ -154,7 +161,7 @@ Custom-model records must explicitly declare `type=custom`; trained-model
 routing remains unavailable until its REST schema contract is established.
 Studio's pure routing helper/tests are retained, but remote-MCP `run_with`
 metadata is not silently assumed to exist in REST. Upload/job dependency contracts
-are mapped above; their adapter integration, signed transfers, account/project
+are mapped above; upload adapter integration, signed transfers, account/project
 discovery, search/organization, submission and cancellation remain to implement.
 
 Run the adapter and command contracts offline with:

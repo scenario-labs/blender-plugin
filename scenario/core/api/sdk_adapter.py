@@ -249,6 +249,74 @@ class SDKAdapter:
     def job(self, identifier):
         return self._retrieve("jobs", identifier, "job")
 
+    def jobs(
+        self,
+        *,
+        author_id=None,
+        workflow_id=None,
+        job_type=None,
+        status=None,
+        page_size=100,
+        max_pages=100,
+    ):
+        """Return scoped discovery candidates, never proof of submission identity.
+
+        Fail instead of returning a partial history. Callers must retrieve a
+        known job again before relying on its state; listing is not a snapshot.
+        """
+        for value in (page_size, max_pages):
+            if not isinstance(value, int) or isinstance(value, bool) or value < 1:
+                raise ValueError("Page size and limit must be positive integers")
+        if page_size > 200:
+            raise ValueError("Job page size cannot exceed 200")
+        statuses = {
+            "pending",
+            "queued",
+            "warming-up",
+            "in-progress",
+            "success",
+            "failure",
+            "canceled",
+            "finalizing",
+        }
+        if status is not None and (not isinstance(status, str) or status not in statuses):
+            raise ValueError("Choose a supported job status")
+        options = {"page_size": page_size, "hide_results": False}
+        for key, value in (
+            ("author_id", author_id),
+            ("workflow_id", workflow_id),
+            ("type", job_type),
+        ):
+            if value is not None:
+                options[key] = _identifier(value)
+        if status is not None:
+            options["status"] = status
+        records, tokens = {}, set()
+        for _ in range(max_pages):
+            page = _json(self._request(self._sdk.jobs.with_raw_response.list, **options))
+            rows = page.get("jobs")
+            if not isinstance(rows, list):
+                raise AdapterError("Scenario returned an invalid job page")
+            for row in rows:
+                if (
+                    not isinstance(row, dict)
+                    or not isinstance(row.get("jobId"), str)
+                    or not row["jobId"].strip()
+                ):
+                    raise AdapterError("Scenario returned an invalid job record")
+                identifier = row["jobId"]
+                if identifier in records and records[identifier] != row:
+                    raise AdapterError("Scenario returned conflicting job records; refresh history")
+                records[identifier] = row
+            token = page.get("nextPaginationToken")
+            if token is None or token == "":
+                return list(records.values())
+            if not isinstance(token, str) or token in tokens:
+                raise AdapterError("Scenario repeated or returned an invalid job cursor")
+            tokens.add(token)
+            options["pagination_token"] = token
+        raise AdapterError("Scenario job history exceeded the page limit")
+
     def _catalog(self, resource, privacy, max_pages):
         if privacy not in {"public", "private"}:
             raise ValueError("Choose public or private catalog visibility")

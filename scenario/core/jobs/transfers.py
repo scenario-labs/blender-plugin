@@ -37,7 +37,7 @@ def _host(value):
         and value == value.lower()
         and "." in value
         and all(re.fullmatch(r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?", p) for p in value.split("."))
-        and not all(p.isdigit() for p in value.split("."))
+        and not all(re.fullmatch(r"(?:[0-9]+|0x[0-9a-f]+)", p) for p in value.split("."))
         and not value.endswith((".localhost", ".local"))
     )
 

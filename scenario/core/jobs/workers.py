@@ -73,6 +73,11 @@ class JobWorkers:
     def scope(self):
         return self._coordinator.scope
 
+    @property
+    def stopped(self):
+        """Whether every owned worker has exited, independently of SDK close success."""
+        return all(not thread.is_alive() for thread in self._threads)
+
     def _enqueue(self, command, *args, **kwargs):
         with self._condition:
             if not self._accepting:

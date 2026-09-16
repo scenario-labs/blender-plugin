@@ -6,6 +6,7 @@ Registration installs invalidation hooks only. No connection, worker or second
 runtime starts until an integration explicitly creates a JobSession.
 """
 
+import logging
 import threading
 import uuid
 from dataclasses import dataclass, field
@@ -18,6 +19,7 @@ from ..core.jobs.coordinator import JobCoordinator, RemoteSnapshot
 from ..core.jobs.origins import OriginRevisions
 from ..core.jobs.workers import JobWorkers
 
+_log = logging.getLogger("scenario.jobs")
 _sessions = set()
 _sessions_lock = threading.Lock()
 _registered = False
@@ -219,11 +221,16 @@ class JobSession:
     def shutdown(self):
         _main_thread()
         self.deactivate()
-        self._workers.shutdown()
-        self._pending.clear()
-        self._issued.clear()
-        with _sessions_lock:
-            _sessions.discard(self)
+        try:
+            self._workers.shutdown()
+        finally:
+            # A failed SDK close occurs after joining. Release local ownership
+            # then, but retain it if a control exception interrupted live workers.
+            if self._workers.stopped:
+                self._pending.clear()
+                self._issued.clear()
+                with _sessions_lock:
+                    _sessions.discard(self)
 
 
 def _session_snapshot():
@@ -235,10 +242,15 @@ def _reap_inactive():
     """Close retired connections once their tracked network work has finished."""
     _main_thread()
     for session in _session_snapshot():
-        session.prune_missing_scenes()
-        if not session._active and all(task.done() for task, _ in session._pending):
-            session.shutdown()
-    return 0.25 if _sessions else None
+        try:
+            session.prune_missing_scenes()
+            if not session._active and all(task.done() for task, _ in session._pending):
+                session.shutdown()
+        except Exception:
+            # Do not include transport errors/tracebacks that may contain secrets.
+            # An ordinary cleanup failure must not cancel Blender's timer service.
+            _log.warning("Scenario job session cleanup failed")
+    return 0.25 if _session_snapshot() else None
 
 
 @persistent
@@ -300,11 +312,18 @@ def register():
 def unregister():
     global _registered
     _main_thread()
-    for session in _session_snapshot():
-        session.shutdown()
-    if bpy.app.timers.is_registered(_reap_inactive):
-        bpy.app.timers.unregister(_reap_inactive)
-    for handlers, callback in _HOOKS:
-        if callback in handlers:
-            handlers.remove(callback)
-    _registered = False
+    try:
+        for session in _session_snapshot():
+            try:
+                session.shutdown()
+            except Exception:
+                _log.warning("Scenario job session cleanup failed")
+    finally:
+        try:
+            if bpy.app.timers.is_registered(_reap_inactive):
+                bpy.app.timers.unregister(_reap_inactive)
+        finally:
+            for handlers, callback in _HOOKS:
+                if callback in handlers:
+                    handlers.remove(callback)
+            _registered = False

@@ -299,3 +299,76 @@ class JobSessionTests(unittest.TestCase):
                     outcomes[index], lambda *args: self.fail("Delivered foreign result")
                 )
         self.assertIsInstance(outcomes[2].error, AttributeError)
+
+    def _second_session(self):
+        import httpx
+
+        adapter = self.api.SDKAdapter(
+            self.api.Credentials("key", "secret"),
+            online=lambda: False,
+            account_id=self.scope.account_id,
+            base_url=self.scope.service,
+            transport=httpx.MockTransport(lambda request: self.fail("Unexpected request")),
+        )
+        self.addCleanup(adapter.close)
+        session = self.module.JobSession(adapter, self.store, workers=1)
+        self.addCleanup(session.shutdown)
+        return session, adapter
+
+    def test_unregister_isolates_failed_sdk_close_and_cleans_remaining_owner(self):
+        from unittest.mock import patch
+
+        second, adapter = self._second_session()
+        first_sdk = self.session._coordinator._adapter._sdk
+        try:
+            with (
+                patch.object(self.module, "_session_snapshot", return_value=(self.session, second)),
+                patch.object(first_sdk, "close", side_effect=RuntimeError("private signed URL")),
+                self.assertLogs("scenario.jobs", level="WARNING") as logs,
+            ):
+                self.module.unregister()
+            self.assertNotIn("private", " ".join(logs.output))
+            self.assertTrue(self.session._workers.stopped)
+            self.assertTrue(second._workers.stopped)
+            self.assertTrue(adapter._sdk.is_closed())
+            self.assertNotIn(self.session, self.module._sessions)
+            self.assertNotIn(second, self.module._sessions)
+            self.assertFalse(self.module._registered)
+            self.assertFalse(bpy.app.timers.is_registered(self.module._reap_inactive))
+            for handlers, callback in self.module._HOOKS:
+                self.assertNotIn(callback, handlers)
+        finally:
+            self.module.register()
+
+    def test_reaper_close_failure_keeps_timer_service_for_other_owner(self):
+        from unittest.mock import patch
+
+        second, adapter = self._second_session()
+        self.session.deactivate()
+        first_sdk = self.session._coordinator._adapter._sdk
+        with (
+            patch.object(first_sdk, "close", side_effect=RuntimeError("private signed URL")),
+            self.assertLogs("scenario.jobs", level="WARNING") as logs,
+        ):
+            self.assertEqual(self.module._reap_inactive(), 0.25)
+        self.assertNotIn("private", " ".join(logs.output))
+        self.assertNotIn(self.session, self.module._sessions)
+        self.assertTrue(self.session._workers.stopped)
+        self.assertIn(second, self.module._sessions)
+        self.assertTrue(bpy.app.timers.is_registered(self.module._reap_inactive))
+        second.deactivate()
+        self.assertIsNone(self.module._reap_inactive())
+        self.assertTrue(second._workers.stopped)
+        self.assertTrue(adapter._sdk.is_closed())
+        self.assertNotIn(second, self.module._sessions)
+
+    def test_reaper_preserves_control_exception_after_local_cleanup(self):
+        from unittest.mock import patch
+
+        self.session.deactivate()
+        first_sdk = self.session._coordinator._adapter._sdk
+        with patch.object(first_sdk, "close", side_effect=KeyboardInterrupt):
+            with self.assertRaises(KeyboardInterrupt):
+                self.module._reap_inactive()
+        self.assertTrue(self.session._workers.stopped)
+        self.assertNotIn(self.session, self.module._sessions)

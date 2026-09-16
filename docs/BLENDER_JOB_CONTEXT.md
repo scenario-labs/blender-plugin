@@ -64,6 +64,15 @@ finishes; an explicit headless loop can call shutdown directly. Extension disabl
 joins every session before unregistering Blender services. HTTP waits retain the
 worker timeout limitations; shutting down is not remote cancellation.
 
+Once every owned worker has exited, session-local outcomes and registry ownership
+are released even if SDK connection cleanup raises. Direct `shutdown()` callers
+still observe that exception. The background reaper and extension unregister
+isolate ordinary failures per session, log a fixed message without transport
+exception details, and continue servicing or cleaning up the other owners.
+Unregister removes timer and lifecycle hooks even after session cleanup failures,
+allowing the remaining extension registry cleanup to proceed. Control exceptions
+continue to propagate; a session with live workers retains its ownership.
+
 The actual authentication context, safe online-access snapshot for worker calls,
 UI/MCP activation and durable result downloads/application remain separate work.
 No account ID is guessed and no privileged or live service call is introduced.

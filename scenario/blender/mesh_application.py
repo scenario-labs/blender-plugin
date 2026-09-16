@@ -1,0 +1,349 @@
+# SPDX-FileCopyrightText: 2026 Scenario Inc.
+# SPDX-License-Identifier: GPL-3.0-or-later
+"""Synchronous, explicit-target mesh application; no import, jobs or selection lookup."""
+
+import hashlib
+import math
+import threading
+from dataclasses import dataclass, field
+
+import bpy
+from mathutils import Matrix
+
+# Fingerprints run synchronously. Bound both geometry and generic attribute work.
+MAX_COMPONENTS = 2_000_000
+_ATTRIBUTE_FIELDS = {
+    "FLOAT": "value",
+    "INT": "value",
+    "BOOLEAN": "value",
+    "INT8": "value",
+    "INT32_2D": "value",
+    "FLOAT_VECTOR": "vector",
+    "FLOAT2": "vector",
+    "FLOAT_COLOR": "color",
+    "BYTE_COLOR": "color",
+}
+
+
+class MeshApplicationError(RuntimeError):
+    """An unsupported or changed target requires explicit caller review."""
+
+
+def _main_thread():
+    if threading.current_thread() is not threading.main_thread():
+        raise MeshApplicationError("Mesh application must run on Blender's main thread")
+
+
+def _present(collection, value):
+    return any(item is value for item in collection)
+
+
+def _validate_object(scene, obj):
+    if not _present(bpy.data.scenes, scene) or not _present(scene.objects, obj):
+        raise MeshApplicationError("Use a live object in the explicit originating scene")
+    if obj.type != "MESH" or obj.mode != "OBJECT":
+        raise MeshApplicationError("Only meshes in Object Mode are supported")
+    if obj.library or obj.override_library or obj.data.library or obj.data.override_library:
+        raise MeshApplicationError("Linked and overridden objects or meshes are unsupported")
+    if obj.modifiers or obj.constraints or obj.vertex_groups:
+        raise MeshApplicationError(
+            "Modifiers, constraints and vertex groups require another policy"
+        )
+    if obj.animation_data or obj.data.animation_data or obj.data.shape_keys:
+        raise MeshApplicationError("Animation and shape keys require another policy")
+    if obj.parent and (obj.parent.type == "ARMATURE" or obj.parent_type != "OBJECT"):
+        raise MeshApplicationError("Bone and vertex parenting require another policy")
+    if any(child.parent_type != "OBJECT" for child in obj.children):
+        raise MeshApplicationError("Vertex-parented children require another policy")
+    if any(slot.link != "DATA" for slot in obj.material_slots):
+        raise MeshApplicationError("Object material overrides require another policy")
+    if obj.data.keys():
+        raise MeshApplicationError("Custom mesh properties require another policy")
+
+
+def _plain(value):
+    if isinstance(value, float) and not math.isfinite(value):
+        raise MeshApplicationError("Nonfinite mesh values are unsupported")
+    if isinstance(value, (bool, int, float, str)) or value is None:
+        return value
+    return tuple(_plain(component) for component in value)
+
+
+def _fingerprint(mesh):
+    """Guard geometry, generic attributes, UV roles and material slot bindings."""
+    size = len(mesh.vertices) + len(mesh.edges) + len(mesh.loops) + len(mesh.polygons)
+    size += sum(len(attribute.data) for attribute in mesh.attributes)
+    if size > MAX_COMPONENTS:
+        raise MeshApplicationError("Mesh exceeds the synchronous application component limit")
+    digest = hashlib.sha256()
+
+    def add(value):
+        digest.update(repr(_plain(value)).encode("utf-8"))
+        digest.update(b"\0")
+
+    add((len(mesh.vertices), len(mesh.edges), len(mesh.loops), len(mesh.polygons)))
+    for vertex in mesh.vertices:
+        add((vertex.co, vertex.select, vertex.hide))
+    for edge in mesh.edges:
+        add((edge.vertices, edge.use_seam, edge.use_edge_sharp, edge.select, edge.hide))
+    for polygon in mesh.polygons:
+        add(
+            (
+                polygon.vertices,
+                polygon.material_index,
+                polygon.use_smooth,
+                polygon.select,
+                polygon.hide,
+            )
+        )
+    for loop in mesh.loops:
+        add((loop.vertex_index, loop.edge_index))
+    for attribute in mesh.attributes:
+        name = _ATTRIBUTE_FIELDS.get(attribute.data_type)
+        if name is None:
+            raise MeshApplicationError("Unsupported mesh attribute type")
+        add((attribute.name, attribute.data_type, attribute.domain))
+        for item in attribute.data:
+            add(getattr(item, name))
+    add(
+        tuple(
+            (material.as_pointer(), material.name) if material else None
+            for material in mesh.materials
+        )
+    )
+    add(tuple((layer.name, layer.active_render, layer.active_clone) for layer in mesh.uv_layers))
+    add(mesh.uv_layers.active_index)
+    add((mesh.use_auto_texspace, mesh.texspace_location, mesh.texspace_size, mesh.use_fake_user))
+    return digest.digest()
+
+
+def _matrix(value):
+    try:
+        matrix = Matrix(value)
+        if len(matrix) != 4 or any(len(row) != 4 for row in matrix):
+            raise ValueError
+        if any(not math.isfinite(component) for row in matrix for component in row):
+            raise ValueError
+        if tuple(matrix[3]) != (0.0, 0.0, 0.0, 1.0) or matrix.determinant() <= 0:
+            raise ValueError
+    except (TypeError, ValueError):
+        raise MeshApplicationError(
+            "Use an explicit finite orientation-preserving affine 4x4 mapping"
+        ) from None
+    return matrix
+
+
+def _same_topology(source, result, mapping):
+    if (len(source.vertices), len(source.edges), len(source.polygons), len(source.loops)) != (
+        len(result.vertices),
+        len(result.edges),
+        len(result.polygons),
+        len(result.loops),
+    ):
+        return False
+    return (
+        all(
+            tuple(a.co) == tuple(mapping @ b.co)
+            for a, b in zip(source.vertices, result.vertices, strict=True)
+        )
+        and all(
+            tuple(a.vertices) == tuple(b.vertices)
+            for a, b in zip(source.edges, result.edges, strict=True)
+        )
+        and all(
+            tuple(a.vertices) == tuple(b.vertices)
+            for a, b in zip(source.polygons, result.polygons, strict=True)
+        )
+        and all(
+            (a.vertex_index, a.edge_index) == (b.vertex_index, b.edge_index)
+            for a, b in zip(source.loops, result.loops, strict=True)
+        )
+    )
+
+
+def _stage(source, result, policy, mapping):
+    if policy == "REMESH":
+        staged = result.copy()
+        try:
+            staged.transform(mapping)
+            staged.update()
+            return staged
+        except BaseException:
+            bpy.data.meshes.remove(staged)
+            raise
+    if not _same_topology(source, result, mapping):
+        raise MeshApplicationError(
+            "UV application requires identical indexed topology and positions"
+        )
+    if len(result.uv_layers) != 1:
+        raise MeshApplicationError("UV application requires exactly one result UV layer")
+    staged = source.copy()
+    try:
+        destination = staged.uv_layers.active or staged.uv_layers.new(name=result.uv_layers[0].name)
+        for old, new in zip(destination.data, result.uv_layers[0].data, strict=True):
+            old.uv = new.uv
+        staged.update()
+        return staged
+    except BaseException:
+        bpy.data.meshes.remove(staged)
+        raise
+
+
+def _holder_signature(holder):
+    """Snapshot writable object settings; deletion is reserved for our pristine holder."""
+    settings = []
+    for prop in holder.bl_rna.properties:
+        if prop.is_readonly or prop.type == "COLLECTION":
+            continue
+        value = getattr(holder, prop.identifier)
+        if prop.type == "POINTER":
+            value = value.as_pointer() if value is not None else None
+        elif isinstance(value, set):
+            value = tuple(sorted(value))
+        settings.append((prop.identifier, _plain(value)))
+    return tuple(settings)
+
+
+def _publish(source, staged):
+    source.data = staged
+
+
+@dataclass(eq=False)
+class MeshApplication:
+    """Caller-owned rollback boundary. Call accept() or rollback() on the main thread.
+
+    A visible Keep original object is user-owned once returned and survives both
+    methods. Without Keep original, an unlinked holder retains the original mesh
+    until this receipt is finalized. No destructor touches Blender data.
+    """
+
+    source: object
+    original: object | None
+    _scene: object = field(repr=False)
+    _before: object = field(repr=False)
+    _applied: object = field(repr=False)
+    _holder: object = field(repr=False)
+    _holder_state: tuple = field(repr=False)
+    _before_active: int = field(repr=False)
+    _applied_active: int = field(repr=False)
+    _before_hash: bytes = field(repr=False)
+    _applied_hash: bytes = field(repr=False)
+    _closed: bool = field(default=False, repr=False)
+
+    def _release_holder(self):
+        if self.original is not None or not _present(bpy.data.objects, self._holder):
+            return
+        holder = self._holder
+        # Any new ownership or settings retain the object for user review.
+        if (
+            not holder.users
+            and not holder.users_collection
+            and not holder.keys()
+            and not holder.modifiers
+            and not holder.constraints
+            and not holder.vertex_groups
+            and not holder.animation_data
+            and not holder.children
+            and not holder.rigid_body
+            and not holder.rigid_body_constraint
+            and all(slot.link == "DATA" for slot in holder.material_slots)
+            and _holder_signature(holder) == self._holder_state
+        ):
+            bpy.data.objects.remove(holder)
+
+    def accept(self):
+        """Release the private rollback holder; never remove a visible original."""
+        _main_thread()
+        if self._closed:
+            raise MeshApplicationError("This application receipt is already finalized")
+        self._release_holder()
+        self._closed = True
+
+    def rollback(self):
+        """Restore only if both mesh snapshots and the explicit target remain valid."""
+        _main_thread()
+        if self._closed:
+            raise MeshApplicationError("This application receipt is already finalized")
+        try:
+            _validate_object(self._scene, self.source)
+            if self.source.active_material_index != self._applied_active:
+                raise MeshApplicationError("Active material selection changed after application")
+            if self.source.data is not self._applied:
+                raise MeshApplicationError("The target mesh was replaced after application")
+            if (
+                _fingerprint(self._applied) != self._applied_hash
+                or _fingerprint(self._before) != self._before_hash
+            ):
+                raise MeshApplicationError("Mesh data changed; rollback requires explicit review")
+        except ReferenceError:
+            raise MeshApplicationError(
+                "Application data was removed; rollback is unavailable"
+            ) from None
+        self.source.data = self._before
+        self.source.active_material_index = self._before_active
+        self._release_holder()
+        # This is our staged copy only; never remove the imported result or a
+        # mesh that another object/user has adopted since application.
+        if not self._applied.users:
+            bpy.data.meshes.remove(self._applied)
+        self._closed = True
+
+
+def apply_mesh(scene, source, result, *, policy, result_to_source, keep_original=False):
+    """Apply one explicit imported mesh in source-local coordinates.
+
+    REMESH adopts result geometry, materials and UVs. UV preserves source mesh
+    attributes/materials and replaces only its active UV coordinates, requiring
+    exact indexed topology/positions and one result UV layer. Selection is unused.
+    The caller must validate captured job origin immediately before invoking this
+    synchronous primitive; it does not prove cloud provenance or import safety.
+    """
+    _main_thread()
+    if policy not in {"REMESH", "UV"} or type(keep_original) is not bool:
+        raise MeshApplicationError("Use an explicit REMESH/UV policy and boolean Keep original")
+    _validate_object(scene, source)
+    _validate_object(scene, result)
+    if source is result or source.data is result.data:
+        raise MeshApplicationError("Use a separate imported result mesh")
+    mapping = _matrix(result_to_source)
+    before = source.data
+    before_active = source.active_material_index
+    before_hash = _fingerprint(before)
+    _fingerprint(result.data)
+    staged = holder = None
+    try:
+        staged = _stage(before, result.data, policy, mapping)
+        staged.use_fake_user = False
+        applied_hash = _fingerprint(staged)
+        holder = (
+            source.copy() if keep_original else bpy.data.objects.new("Scenario rollback", before)
+        )
+        holder.use_fake_user = False
+        if keep_original:
+            holder.name = f"{source.name} Original"
+            for collection in source.users_collection:
+                collection.objects.link(holder)
+        holder_state = _holder_signature(holder) if not keep_original else ()
+        _publish(source, staged)
+        return MeshApplication(
+            source,
+            holder if keep_original else None,
+            scene,
+            before,
+            staged,
+            holder,
+            holder_state,
+            before_active,
+            source.active_material_index,
+            before_hash,
+            applied_hash,
+        )
+    except BaseException:
+        if staged is not None and source.data is staged:
+            source.data = before
+            source.active_material_index = before_active
+        if holder is not None:
+            bpy.data.objects.remove(holder, do_unlink=True)
+        if staged is not None and not staged.users:
+            bpy.data.meshes.remove(staged)
+        raise

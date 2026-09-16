@@ -65,7 +65,12 @@ def _settings(value):
         }:
             values.append((prop.identifier, _value(getattr(value, prop.identifier))))
     if hasattr(value, "keys"):
-        values.append(("custom", tuple(sorted((key, _value(value[key])) for key in value.keys()))))
+        try:
+            keys = value.keys()
+        except TypeError:
+            # Some RNA settings expose keys() but do not support IDProperties.
+            keys = ()
+        values.append(("custom", tuple(sorted((key, _value(value[key])) for key in keys))))
     return tuple(values)
 
 
@@ -76,16 +81,27 @@ def _packed_digest(image):
     return hashlib.sha256(packed.data).digest()
 
 
+def _ramp(node):
+    mapping = getattr(node, "color_mapping", None)
+    if mapping is None:
+        return None
+    ramp = mapping.color_ramp
+    return _settings(ramp), tuple(_settings(element) for element in ramp.elements)
+
+
 def _fingerprint(world, image):
     if not world.use_nodes or world.node_tree is None:
         raise WorldApplicationError("The applied World was edited; preserve or restore it manually")
     tree = world.node_tree
+    # Accessing extension PropertyGroups can initialize custom IDProperties.
+    # Capture them before taking the parent ID snapshot so the first is stable.
+    world_options = tuple(
+        _settings(getattr(world, name, None))
+        for name in ("cycles", "cycles_visibility", "mist_settings")
+    )
     return (
         _settings(world),
-        tuple(
-            _settings(getattr(world, name, None))
-            for name in ("cycles", "cycles_visibility", "mist_settings")
-        ),
+        world_options,
         bool(world.animation_data),
         bool(world.asset_data),
         _settings(tree),
@@ -98,6 +114,7 @@ def _fingerprint(world, image):
                     _settings(getattr(node, name, None))
                     for name in ("texture_mapping", "color_mapping", "image_user")
                 ),
+                _ramp(node),
                 tuple(_settings(socket) for socket in node.inputs),
             )
             for node in tree.nodes
@@ -127,7 +144,8 @@ def _discard_unused(world, image):
             if _present(value, collection) and value.users == 0:
                 collection.remove(value)
         except Exception:
-            pass
+            # Best-effort orphan cleanup must not undo a completed restoration.
+            continue
 
 
 @dataclass(eq=False)
@@ -222,7 +240,11 @@ def apply_world(scene, filepath):
     _scene(scene)
     previous, world, image = scene.world, None, None
     try:
-        descriptor = os.open(Path(filepath), os.O_RDONLY | getattr(os, "O_NONBLOCK", 0))
+        path = Path(filepath)
+        if not stat.S_ISREG(path.stat().st_mode):
+            raise WorldApplicationError("Select a regular local panorama file")
+        flags = os.O_RDONLY | getattr(os, "O_NONBLOCK", 0) | getattr(os, "O_BINARY", 0)
+        descriptor = os.open(path, flags)
         with os.fdopen(descriptor, "rb") as source:
             if not stat.S_ISREG(os.fstat(source.fileno()).st_mode):
                 raise WorldApplicationError("Select a regular local panorama file")

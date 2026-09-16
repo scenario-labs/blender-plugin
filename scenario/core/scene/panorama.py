@@ -76,10 +76,10 @@ def _exr(data):
     if len(data) < 9:
         raise PanoramaError("OpenEXR header is incomplete")
     version = struct.unpack_from("<I", data, 4)[0]
-    # OpenEXR File Layout, Version Field: v2 + optional tiled (bit 9) and
-    # long-name (bit 10) flags. Deep, multipart and unused flags fail closed.
-    if version & 0xFF != 2 or version & ~0x602:
-        raise PanoramaError("Use a single-part non-deep OpenEXR panorama")
+    # OpenEXR File Layout: v2 + optional long-name (bit 10) flag. This
+    # initial slice accepts scanline files; tiled/deep/multipart fail closed.
+    if version & 0xFF != 2 or version & ~0x402:
+        raise PanoramaError("Use a single-part non-deep scanline OpenEXR panorama")
     limit, offset, attributes = min(len(data), 1024 * 1024), 8, {}
     name_limit = 255 if version & 0x400 else 31
     while offset < limit:
@@ -114,7 +114,51 @@ def _exr(data):
     if b"envmap" in attributes and attributes[b"envmap"] != (b"envmap", b"\0"):
         raise PanoramaError("Cubemap OpenEXR images are unsupported")
     x0, y0, x1, y1 = struct.unpack("<iiii", window)
-    return _dimensions("OPEN_EXR", x1 - x0 + 1, y1 - y0 + 1)
+    info = _dimensions("OPEN_EXR", x1 - x0 + 1, y1 - y0 + 1)
+    _exr_chunks(data, offset + 1, attributes, info.height, y0)
+    return info
+
+
+def _exr_chunks(data, start, attributes, height, y0):
+    # OpenEXR File Layout: scanline offsets are ordered by increasing y,
+    # regardless of physical block order. Each block stores y, size, payload.
+    compression_type, compression = attributes.get(b"compression", (None, b""))
+    lines_per_chunk = (1, 1, 1, 16, 32, 16, 32, 32, 32, 256)
+    if (
+        compression_type != b"compression"
+        or len(compression) != 1
+        or compression[0] >= len(lines_per_chunk)
+    ):
+        raise PanoramaError("OpenEXR compression is unsupported")
+    lines = lines_per_chunk[compression[0]]
+    count = (height + lines - 1) // lines
+    if b"type" in attributes and attributes[b"type"] != (b"string", b"scanlineimage"):
+        raise PanoramaError("OpenEXR image layout is unsupported")
+    if b"chunkCount" in attributes and attributes[b"chunkCount"] != (
+        b"int",
+        struct.pack("<i", count),
+    ):
+        raise PanoramaError("OpenEXR chunk count conflicts with its dimensions")
+    table_end = start + count * 8
+    if table_end > len(data):
+        raise PanoramaError("OpenEXR offset table is incomplete")
+    ranges = []
+    for index in range(count):
+        chunk = struct.unpack_from("<Q", data, start + index * 8)[0]
+        if chunk < table_end or chunk + 8 > len(data):
+            raise PanoramaError("OpenEXR chunk offset is invalid")
+        y, size = struct.unpack_from("<ii", data, chunk)
+        end = chunk + 8 + size
+        if y != y0 + index * lines or size <= 0 or end > len(data):
+            raise PanoramaError("OpenEXR pixel block is incomplete or invalid")
+        ranges.append((chunk, end))
+    end = table_end
+    for chunk, chunk_end in sorted(ranges):
+        if chunk != end:
+            raise PanoramaError("OpenEXR pixel blocks overlap or contain gaps")
+        end = chunk_end
+    if end != len(data):
+        raise PanoramaError("OpenEXR has unexpected trailing data")
 
 
 def inspect_panorama(data):

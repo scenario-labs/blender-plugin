@@ -59,6 +59,7 @@ class JobSession:
         self._origins = OriginRevisions()
         self._scenes = {}
         self._targets = {}
+        self._target_scenes = {}
         self._pending = []
         self._issued = WeakValueDictionary()
         self._active = True
@@ -96,6 +97,8 @@ class JobSession:
             raise OriginUnavailable("The target is not in the originating scene")
         scene_id = self._identity(self._scenes, scene)
         target_id = self._identity(self._targets, target) if target is not None else None
+        if target_id is not None:
+            self._target_scenes.setdefault(target_id, set()).add(scene_id)
         return self._origins.capture(scene_id, target_id)
 
     def prepare(self, estimate, *, origin):
@@ -188,7 +191,7 @@ class JobSession:
         return callback(completion.result, scene, target)
 
     def prune_missing_scenes(self):
-        """Invalidate removed scenes even when only a surviving scene emits an update."""
+        """Prune deleted scene/target references and invalidate their captured origins."""
         _main_thread()
         live_scenes = tuple(bpy.data.scenes)
         for scene_id, scene in tuple(self._scenes.items()):
@@ -199,6 +202,18 @@ class JobSession:
             if not present:
                 self._origins.invalidate(scene_id)
                 del self._scenes[scene_id]
+                for scene_ids in self._target_scenes.values():
+                    scene_ids.discard(scene_id)
+        # Reading the captured RNA reference checks liveness in O(captured
+        # targets), without scanning all scene objects or resolving a name.
+        # Unlinked but still live datablocks remain eligible for explicit reuse.
+        for target_id, target in tuple(self._targets.items()):
+            try:
+                _ = target.name
+            except ReferenceError:
+                for scene_id in self._target_scenes.pop(target_id, ()):
+                    self._origins.invalidate(scene_id)
+                del self._targets[target_id]
 
     def invalidate_scene(self, scene):
         _main_thread()
@@ -211,6 +226,7 @@ class JobSession:
         self._origins.reset()
         self._scenes.clear()
         self._targets.clear()
+        self._target_scenes.clear()
 
     def deactivate(self):
         _main_thread()

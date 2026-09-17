@@ -19,3 +19,4 @@ jobs:
         with:
           cache-dependency-glob: scripts/agents/validate-skills.py
       - run: uv run --no-project --python 3.12 scripts/agents/validate-skills.py
+      - run: uv run --no-project --python 3.12 scripts/agents/validate-skills.py --test

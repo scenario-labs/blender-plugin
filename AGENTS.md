@@ -269,3 +269,7 @@ Run `uv run --no-project --python 3.12 scripts/agents/validate-skills.py --sync`
 renaming a skill. Without `--sync`, the same command checks all skills with the
 pinned Agent Skills reference validator and verifies the rulebook and command
 links without writing. CI runs this check on every pull request.
+
+CI also checks Claude command adapters, argument hints, explicit invocation guards on both
+agents, and the Codex instruction byte limit. Run the regression suite with
+`uv run --no-project --python 3.12 scripts/agents/validate-skills.py --test`.

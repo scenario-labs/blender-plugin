@@ -1,6 +1,7 @@
 # /// script
 # requires-python = ">=3.11"
 # dependencies = [
+#   "PyYAML==6.0.2",
 #   "skills-ref @ git+https://github.com/agentskills/agentskills.git@69ef37e9424c0a7ea9dd2293b559e43ec8176379#subdirectory=skills-ref",
 # ]
 # ///
@@ -13,9 +14,82 @@ from __future__ import annotations
 import argparse
 import os
 import sys
+import tomllib
+import unittest
 from pathlib import Path
 
+import yaml
 from skills_ref import read_properties, validate
+
+# Existing command behavior is independent of editable skill metadata: deleting
+# a hint or invocation guard must fail validation rather than redefine it.
+COMMAND_CONTRACTS: dict[str, dict] = {
+    "blender-download-artifacts": {"argument-hint": "<prnumber>", "explicit-only": True}
+}
+
+
+def check_instruction_budget(root: Path) -> list[str]:
+    """Prevent canonical repository instructions from exceeding Codex's limit."""
+    config_path = root / ".codex/config.toml"
+    config = tomllib.loads(config_path.read_text()) if config_path.is_file() else {}
+    limit = config.get("project_doc_max_bytes", 32768)
+    if type(limit) is not int or limit <= 0:
+        return ["project_doc_max_bytes must be a positive integer"]
+    rulebook = root / "AGENTS.md"
+    if rulebook.is_file() and rulebook.stat().st_size > limit:
+        return [f"AGENTS.md exceeds project_doc_max_bytes ({limit} bytes)"]
+    return []
+
+
+def check_codex_policy(folder: Path, *, explicit: bool) -> list[str]:
+    """Require a boolean Codex guard matching explicit-only Claude commands."""
+    config_path = folder / "agents/openai.yaml"
+    if not explicit and not config_path.exists():
+        return []
+    config = yaml.safe_load(config_path.read_text())
+    policy = config.get("policy", {}) if isinstance(config, dict) else None
+    if not isinstance(policy, dict):
+        return [f"{folder.name}: openai.yaml policy must be a mapping"]
+    implicit = policy.get("allow_implicit_invocation", True)
+    if type(implicit) is not bool or (explicit and implicit is not False):
+        return [f"{folder.name}: invalid allow_implicit_invocation guard"]
+    return []
+
+
+def check_command_behavior(folder: Path) -> list[str]:
+    """Check adapter arguments and preserve explicit invocation on both agents."""
+    contract = COMMAND_CONTRACTS.get(folder.name, {})
+    adapter = folder / "agents/claude-command.md"
+    errors: list[str] = []
+    explicit = contract.get("explicit-only", False)
+    try:
+        if contract or adapter.exists():
+            if adapter.is_symlink() or not adapter.is_file():
+                return [f"{folder.name}: expected a regular Claude command adapter"]
+            content = adapter.read_text()
+            parts = content.split("---", 2)
+            if not content.startswith("---\n") or len(parts) != 3:
+                return [f"{folder.name}: adapter needs YAML frontmatter"]
+            metadata = yaml.safe_load(parts[1])
+            if not isinstance(metadata, dict):
+                return [f"{folder.name}: adapter frontmatter must be a mapping"]
+            description = metadata.get("description")
+            if not isinstance(description, str) or not description.strip():
+                errors.append(f"{folder.name}: adapter needs a description")
+            hint = contract.get("argument-hint")
+            if hint and metadata.get("argument-hint") != hint:
+                errors.append(f"{folder.name}: argument-hint must be {hint}")
+            guard = metadata.get("disable-model-invocation", False)
+            if type(guard) is not bool or (explicit and guard is not True):
+                errors.append(f"{folder.name}: invalid disable-model-invocation guard")
+            explicit = explicit or guard is True
+            reference = f".agents/skills/{folder.name}/SKILL.md"
+            if reference not in parts[2] or "Arguments: $ARGUMENTS" not in parts[2]:
+                errors.append(f"{folder.name}: adapter must forward instructions and arguments")
+        errors.extend(check_codex_policy(folder, explicit=explicit))
+    except (OSError, yaml.YAMLError) as error:
+        errors.append(f"{folder.name}: invalid command configuration: {error}")
+    return errors
 
 
 def skill_links(root: Path, folder: Path) -> dict[Path, Path]:
@@ -57,6 +131,7 @@ def collect_links(root: Path) -> tuple[dict[Path, Path], list[str]]:
             errors.append(f"{folder.name}: expected a real skill directory and SKILL.md")
             continue
         problems = validate(folder)
+        problems.extend(check_command_behavior(folder))
         errors.extend(f"{folder.name}: {problem}" for problem in problems)
         if problems:
             continue
@@ -92,6 +167,7 @@ def check_link(root: Path, target: Path, source: Path, *, sync: bool) -> list[st
 def check(root: Path, *, sync: bool = False) -> list[str]:
     """Validate skills, canonical rulebook ownership and every compatibility entry."""
     expected, errors = collect_links(root)
+    errors.extend(check_instruction_budget(root))
     if errors:
         return errors
     for target, source in expected.items():
@@ -116,8 +192,15 @@ def check(root: Path, *, sync: bool = False) -> list[str]:
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--sync", action="store_true", help="Create or repair compatibility links")
+    options = parser.add_mutually_exclusive_group()
+    options.add_argument("--test", action="store_true", help="Run validator regression tests")
+    options.add_argument("--sync", action="store_true", help="Create or repair compatibility links")
     args = parser.parse_args()
+    if args.test:
+        suite = unittest.defaultTestLoader.discover(
+            str(Path(__file__).parent), pattern="test_validate_skills.py"
+        )
+        raise SystemExit(not unittest.TextTestRunner(verbosity=2).run(suite).wasSuccessful())
     failures = check(Path(__file__).resolve().parents[2], sync=args.sync)
     sys.stdout.write(
         "\n".join(

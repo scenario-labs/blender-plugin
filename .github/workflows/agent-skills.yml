@@ -1,0 +1,22 @@
+name: Agent skills
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  agent-skills:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@v10.0.0
+        with:
+          cache-dependency-glob: scripts/agents/validate-skills.py
+      - run: uv run --no-project --python 3.12 scripts/agents/validate-skills.py
+      - run: uv run --no-project --python 3.12 scripts/agents/validate-skills.py --test

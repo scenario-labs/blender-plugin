@@ -22,6 +22,7 @@ new primitive does not mean it is wired into the user interface or local MCP.
 
 ## Development and contributions
 
+- [Private vulnerability reporting and security scope](../SECURITY.md)
 - [Contributor setup and environment](../CONTRIBUTING.md)
 - [Canonical agent instructions](../AGENTS.md)
 - [Python style and linting](PYTHON_STYLE.md)

@@ -1,0 +1,4 @@
+interface:
+  display_name: "Blender Squash Message"
+  short_description: "Prepare the current Blender PR squash message"
+  default_prompt: "$blender-squash-message"

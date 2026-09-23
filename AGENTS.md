@@ -265,11 +265,21 @@ Keep canonical skills in regular `.agents/skills/<name>/SKILL.md` files, with va
 are links. Claude-specific frontmatter, when needed, lives in
 `agents/claude-command.md` beside the canonical skill and delegates to it.
 
+| Codex skill | Claude command | Purpose |
+| --- | --- | --- |
+| `$blender-download-artifacts <prnumber>` | `/download-artifacts <prnumber>` | Collect current PR artifacts; explicit invocation only |
+| `$blender-pr-summary` | `/pr-summary` | Refresh the current PR description |
+| `$blender-squash-message` | `/squash-message` | Prepare the current PR squash message |
+
+Each command includes a Codex picker description and starting prompt in
+`agents/openai.yaml`. Keep these consistent with its canonical instructions.
+
 Run `uv run --no-project --python 3.12 scripts/agents/validate-skills.py --sync` after adding or
 renaming a skill. Without `--sync`, the same command checks all skills with the
 pinned Agent Skills reference validator and verifies the rulebook and command
 links without writing. CI runs this check on every pull request.
 
-CI also checks Claude command adapters, argument hints, explicit invocation guards on both
-agents, and the Codex instruction byte limit. Run the regression suite with
+CI also checks Claude command adapters, argument hints, Codex picker metadata,
+explicit invocation guards on both agents, and the Codex instruction byte limit.
+Run the regression suite with
 `uv run --no-project --python 3.12 scripts/agents/validate-skills.py --test`.

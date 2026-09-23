@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import re
 import sys
 import tomllib
 import unittest
@@ -24,7 +25,13 @@ from skills_ref import read_properties, validate
 # Existing command behavior is independent of editable skill metadata: deleting
 # a hint or invocation guard must fail validation rather than redefine it.
 COMMAND_CONTRACTS: dict[str, dict] = {
-    "blender-download-artifacts": {"argument-hint": "<prnumber>", "explicit-only": True}
+    "blender-download-artifacts": {
+        "argument-hint": "<prnumber>",
+        "explicit-only": True,
+        "codex-interface": True,
+    },
+    "blender-pr-summary": {"codex-interface": True},
+    "blender-squash-message": {"codex-interface": True},
 }
 
 
@@ -41,10 +48,10 @@ def check_instruction_budget(root: Path) -> list[str]:
     return []
 
 
-def check_codex_policy(folder: Path, *, explicit: bool) -> list[str]:
-    """Require a boolean Codex guard matching explicit-only Claude commands."""
+def check_codex_policy(folder: Path, *, explicit: bool, required_interface: bool) -> list[str]:
+    """Validate Codex picker metadata and explicit-only command guards."""
     config_path = folder / "agents/openai.yaml"
-    if not explicit and not config_path.exists():
+    if not explicit and not required_interface and not config_path.exists():
         return []
     config = yaml.safe_load(config_path.read_text())
     policy = config.get("policy", {}) if isinstance(config, dict) else None
@@ -53,6 +60,20 @@ def check_codex_policy(folder: Path, *, explicit: bool) -> list[str]:
     implicit = policy.get("allow_implicit_invocation", True)
     if type(implicit) is not bool or (explicit and implicit is not False):
         return [f"{folder.name}: invalid allow_implicit_invocation guard"]
+    if required_interface:
+        interface = config.get("interface")
+        if not isinstance(interface, dict):
+            return [f"{folder.name}: openai.yaml interface must be a mapping"]
+        description = interface.get("short_description")
+        prompt = interface.get("default_prompt")
+        errors = []
+        if not isinstance(description, str) or not description.strip():
+            errors.append(f"{folder.name}: a Codex picker description is required")
+        if not isinstance(prompt, str) or not re.search(
+            rf"\${re.escape(folder.name)}(?![\w-])", prompt
+        ):
+            errors.append(f"{folder.name}: default_prompt must invoke ${folder.name}")
+        return errors
     return []
 
 
@@ -63,7 +84,7 @@ def check_command_behavior(folder: Path) -> list[str]:
     errors: list[str] = []
     explicit = contract.get("explicit-only", False)
     try:
-        if contract or adapter.exists():
+        if contract.get("argument-hint") or explicit or adapter.exists():
             if adapter.is_symlink() or not adapter.is_file():
                 return [f"{folder.name}: expected a regular Claude command adapter"]
             content = adapter.read_text()
@@ -86,7 +107,13 @@ def check_command_behavior(folder: Path) -> list[str]:
             reference = f".agents/skills/{folder.name}/SKILL.md"
             if reference not in parts[2] or "Arguments: $ARGUMENTS" not in parts[2]:
                 errors.append(f"{folder.name}: adapter must forward instructions and arguments")
-        errors.extend(check_codex_policy(folder, explicit=explicit))
+        errors.extend(
+            check_codex_policy(
+                folder,
+                explicit=explicit,
+                required_interface=contract.get("codex-interface", False),
+            )
+        )
     except (OSError, yaml.YAMLError) as error:
         errors.append(f"{folder.name}: invalid command configuration: {error}")
     return errors

@@ -41,10 +41,21 @@ class CommandValidationTests(unittest.TestCase):
         )
         self.adapter.write_text(self.original)
         self.policy = self.folder / "agents/openai.yaml"
-        self.policy.write_text("policy:\n  allow_implicit_invocation: false\n")
+        self.codex_config = (
+            'interface:\n  short_description: "Run the example command"\n'
+            '  default_prompt: "$example <number>"\n'
+            "policy:\n  allow_implicit_invocation: false\n"
+        )
+        self.policy.write_text(self.codex_config)
         contracts = patch.dict(
             validator.COMMAND_CONTRACTS,
-            {"example": {"argument-hint": "<number>", "explicit-only": True}},
+            {
+                "example": {
+                    "argument-hint": "<number>",
+                    "explicit-only": True,
+                    "codex-interface": True,
+                }
+            },
             clear=True,
         )
         contracts.start()
@@ -97,6 +108,34 @@ class CommandValidationTests(unittest.TestCase):
     def test_both_guards_removed(self) -> None:
         """Prevent coupled deletions from silently redefining command behavior."""
         self.adapter.write_text(self.original.replace("disable-model-invocation: true\n", ""))
+        self.policy.unlink()
+        assert validator.check(self.root)
+
+    def test_codex_picker_metadata(self) -> None:
+        """Detect missing, malformed or misrouted picker metadata."""
+        for old, new in (
+            ('  short_description: "Run the example command"\n', ""),
+            ('"Run the example command"', '"  "'),
+            ('"Run the example command"', "false"),
+            ('  default_prompt: "$example <number>"\n', ""),
+            ('"$example <number>"', '"$example-other <number>"'),
+            ('"$example <number>"', "false"),
+        ):
+            with self.subTest(old=old, new=new):
+                self.policy.write_text(self.codex_config.replace(old, new))
+                assert validator.check(self.root)
+        self.policy.write_text("interface: []\npolicy:\n  allow_implicit_invocation: false\n")
+        assert validator.check(self.root)
+
+    def test_implicit_command_still_requires_picker_metadata(self) -> None:
+        """Picker checks also cover commands without an explicit-only guard."""
+        validator.COMMAND_CONTRACTS["example"] = {"codex-interface": True}
+        self.adapter.unlink()
+        self.policy.write_text(
+            'interface:\n  short_description: "Run the example command"\n'
+            '  default_prompt: "$example"\n'
+        )
+        assert not validator.check(self.root, sync=True)
         self.policy.unlink()
         assert validator.check(self.root)
 

@@ -174,7 +174,7 @@
     {
       "path": "docs/RESULT_TRANSFERS.md",
       "coverage": "inherited",
-      "reviewed_at": "2026-09-24",
+      "reviewed_at": "2026-09-23",
       "limits": "Existing guide indexed during this intake, without a fresh claim-by-claim or live verification; consult current integration status and issue acceptance.",
       "sources": {
         "scenario/core/jobs/transfers.py": "0f02ad2823787816d3c25695f9d0749cab3fe29b26451d279c4ecd56d60a9d17",
@@ -305,7 +305,7 @@
     {
       "path": "docs/architecture/runtime.md",
       "coverage": "source-reviewed",
-      "reviewed_at": "2026-09-24",
+      "reviewed_at": "2026-09-23",
       "limits": "Agent source inspection of the listed files; no live service calls, native runtime rerun or human verification in this review.",
       "sources": {
         "scenario/blender/runtime.py": "2afa6267f835569288ae6d1947af5410b05a0bbdcd3bbad985ff30a6dcb8a000",

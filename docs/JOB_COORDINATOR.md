@@ -69,8 +69,8 @@ submission ordering and single-use consumption are tested with the actual SDK,
 including racing callers and late responses. Installed-Blender tests verify the
 same ordering against the bundled SDK and SQLite.
 
-Result/download persistence, main-thread application and UI/MCP wiring remain
-separate integration work. The low-level adapter hook orders persistence but cannot enforce correct
+The store persists result manifests and receipts; connecting download commands,
+main-thread application and UI/MCP remains separate integration work. The low-level adapter hook orders persistence but cannot enforce correct
 behavior by arbitrary callers; product code must use the shared coordinator.
 
 ## Restart inspection and known-job refresh

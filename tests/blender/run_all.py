@@ -36,6 +36,7 @@ BASELINE = (
     "test_sdk_bundle",
     "test_job_store",
     "test_result_transfers",
+    "test_job_session",
 )
 
 

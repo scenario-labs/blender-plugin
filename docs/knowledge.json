@@ -231,7 +231,9 @@
       "sources": {
         "scenario/blender/panels.py": "9c1001ed64038813141d42bccb1f1091058f4b4c10702949097a405e02958756",
         "scenario/blender/composer/draw.py": "52a366ce04766edc3aef343c7b115d7e360e8c88a27688c4446be36ecc78c6e8",
-        "scenario/blender/registry.py": "326cc50843ee65053091e35e0141ba0fab1fa64632dc214850222d6f1abd3626"
+        "scenario/blender/registry.py": "326cc50843ee65053091e35e0141ba0fab1fa64632dc214850222d6f1abd3626",
+        "scenario/mcp/tools_blender.py": "d806aab28a9ac7b675cd7370402aa6459da377bea7b251be5945aa6355760294",
+        "scenario/mcp/server.py": "e201d006e5189f32742db38c3f2b00879fbcc1b71b665436b45a0930ff696cd0"
       }
     },
     {

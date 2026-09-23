@@ -11,6 +11,13 @@ from concurrent.futures import Future
 from .coordinator import JobCoordinator, QuoteError, _payload
 
 
+def _snapshot(payload):
+    try:
+        return json.loads(_payload(payload))
+    except (RecursionError, OverflowError):
+        raise QuoteError("The current payload must contain finite JSON values") from None
+
+
 class WorkerError(RuntimeError):
     """The application owner cannot accept this command."""
 
@@ -103,11 +110,11 @@ class JobWorkers:
         return self._enqueue(self._coordinator.workflow, identifier)
 
     def quote_model(self, identifier, parameters, *, origin):
-        snapshot = json.loads(_payload(parameters))
+        snapshot = _snapshot(parameters)
         return self._enqueue(self._coordinator.quote_model, identifier, snapshot, origin=origin)
 
     def quote_workflow(self, identifier, parameters, *, origin):
-        snapshot = json.loads(_payload(parameters))
+        snapshot = _snapshot(parameters)
         return self._enqueue(self._coordinator.quote_workflow, identifier, snapshot, origin=origin)
 
     def prepare_upload(self, source, *, origin, kind, content_type):
@@ -141,10 +148,7 @@ class JobWorkers:
 
     def submit(self, prepared, *, origin, operation, target_id, payload):
         """Queue an explicitly chosen paid action using an immutable payload copy."""
-        try:
-            snapshot = json.loads(_payload(payload))
-        except (RecursionError, OverflowError):
-            raise QuoteError("The current payload must contain finite JSON values") from None
+        snapshot = _snapshot(payload)
         return self._enqueue(
             self._coordinator.submit,
             prepared,

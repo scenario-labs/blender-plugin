@@ -3,6 +3,7 @@
 """Scoped metadata and quote ownership through the real SDK and shared workers."""
 
 import json
+import sys
 import threading
 from dataclasses import replace
 from decimal import Decimal
@@ -245,3 +246,37 @@ def test_quote_requires_a_captured_origin_before_any_request(env, origin):
     with pytest.raises(QuoteError, match="origin"):
         env.coordinator.quote_model("model-one", {"prompt": "fixture"}, origin=origin)
     assert env.calls == []
+
+
+@pytest.mark.parametrize("operation", ["model", "workflow"])
+def test_deep_quote_payload_fails_before_queue_or_network(env, operation):
+    payload = {}
+    nested = payload
+    for _ in range(sys.getrecursionlimit() + 10):
+        nested["nested"] = {}
+        nested = nested["nested"]
+    workers = JobWorkers(env.coordinator, workers=1)
+    try:
+        with pytest.raises(QuoteError, match="finite JSON"):
+            getattr(workers, f"quote_{operation}")("identifier", payload, origin=env.origin)
+        assert not env.calls
+        assert env.store.records() == ()
+    finally:
+        workers.shutdown()
+
+
+@pytest.mark.parametrize("operation", ["model", "workflow"])
+def test_quote_encoder_overflow_is_sanitized_before_admission(env, monkeypatch, operation):
+    def overflow(_):
+        raise OverflowError("private payload")
+
+    monkeypatch.setattr("scenario.core.jobs.workers._payload", overflow)
+    workers = JobWorkers(env.coordinator, workers=1)
+    try:
+        with pytest.raises(QuoteError, match="finite JSON") as error:
+            getattr(workers, f"quote_{operation}")("identifier", {}, origin=env.origin)
+        assert "private" not in str(error.value)
+        assert error.value.__suppress_context__
+        assert not env.calls
+    finally:
+        workers.shutdown()

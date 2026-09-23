@@ -69,7 +69,7 @@
         "scenario/blender/job_session.py": "c1d0c91a1a76977691e6690a0e369a6e9282ca430de92d1f9c300acfbe2fd79a",
         "scenario/core/jobs/origins.py": "d1282d67aacdfe2444a776cf1338667bea9ee67392ff3f473db581a0f8059977",
         "tests/blender/test_job_session.py": "9013928c41cd78b0848761c99fe9750b2bdbcd2b3a330c45fc95207da5e17bb5",
-        "tests/unit/test_shared_quotes.py": "f25f35aa1d7a93db82f7398d51dd86188c32b0576660d64548c6963a797e8f25"
+        "tests/unit/test_shared_quotes.py": "42a8e35397aed3f8b4564d4b24b7402ed6827c441dbaabecd03f1ffc52f84923"
       }
     },
     {
@@ -79,7 +79,7 @@
       "limits": "Existing guide indexed during this intake, without a fresh claim-by-claim or live verification; consult current integration status and issue acceptance.",
       "sources": {
         "scenario/core/jobs/coordinator.py": "fb1b1d4b917d97da08e1c64e3eb73e694a309e6c86f8dd9b24b18e203827ae96",
-        "scenario/core/jobs/workers.py": "a8d6199a58dd5cfff246da059f63de6d49b6452678b65c88696d4b1ec3fa4a48",
+        "scenario/core/jobs/workers.py": "fc584737c05c28bcb20309220ed6dc99bb40b330339b995075c1392497d3ebed",
         "tests/unit/test_job_coordinator.py": "ac8d3ac91dfee6df7fa00029d05324588bcff807cf34eaa48acaa82449fee5e0",
         "tests/unit/test_job_cancellation.py": "0d26f5fdd7896e86c9730cf64a9dad3a23ac58caf7f04f365809cbdedd186732",
         "scenario/core/jobs/results.py": "6f8735b1fe64f0607ae63c4a5cb43c443904730ede7a2466ceb6439a425d93a2",
@@ -89,7 +89,7 @@
         "tests/unit/test_upload_commands.py": "dd0cd1865c9da7b1e0c7a48e1c1e85a1b628664d7a5ce38543d299b517ec5a9c",
         "tests/blender/test_upload_commands.py": "496927b98c0774db28bac4da626f568bc147c9fc45f07da9e99a1aba0a0be9f1",
         "scenario/core/jobs/uploads.py": "cfbed5605683aea4daeb8267ef63b386830f1779e11987be73c06764e8d73652",
-        "tests/unit/test_shared_quotes.py": "f25f35aa1d7a93db82f7398d51dd86188c32b0576660d64548c6963a797e8f25"
+        "tests/unit/test_shared_quotes.py": "42a8e35397aed3f8b4564d4b24b7402ed6827c441dbaabecd03f1ffc52f84923"
       }
     },
     {
@@ -326,7 +326,7 @@
         "scenario/core/config.py": "74a45b99fde47d741710dbf2a9d8051f2b31903f10ecae679d061340c62fb1be",
         "scenario/core/api/sdk_adapter.py": "a5f8a5da9ce1f482dbe1af19b43d00f211b66401781fa03d18c9fd3ef2340467",
         "scenario/core/jobs/coordinator.py": "fb1b1d4b917d97da08e1c64e3eb73e694a309e6c86f8dd9b24b18e203827ae96",
-        "scenario/core/jobs/workers.py": "a8d6199a58dd5cfff246da059f63de6d49b6452678b65c88696d4b1ec3fa4a48",
+        "scenario/core/jobs/workers.py": "fc584737c05c28bcb20309220ed6dc99bb40b330339b995075c1392497d3ebed",
         "scenario/blender/job_session.py": "c1d0c91a1a76977691e6690a0e369a6e9282ca430de92d1f9c300acfbe2fd79a",
         "scenario/core/jobs/transfers.py": "0f02ad2823787816d3c25695f9d0749cab3fe29b26451d279c4ecd56d60a9d17",
         "scenario/core/schema/forms.py": "5fae21a416ee5e72f444bc2b6d3502b5ace4b728f7790766161d8e7100b64af5",
@@ -349,7 +349,7 @@
         "tests/unit/test_upload_commands.py": "dd0cd1865c9da7b1e0c7a48e1c1e85a1b628664d7a5ce38543d299b517ec5a9c",
         "tests/blender/test_upload_commands.py": "496927b98c0774db28bac4da626f568bc147c9fc45f07da9e99a1aba0a0be9f1",
         "scenario/core/jobs/uploads.py": "cfbed5605683aea4daeb8267ef63b386830f1779e11987be73c06764e8d73652",
-        "tests/unit/test_shared_quotes.py": "f25f35aa1d7a93db82f7398d51dd86188c32b0576660d64548c6963a797e8f25"
+        "tests/unit/test_shared_quotes.py": "42a8e35397aed3f8b4564d4b24b7402ed6827c441dbaabecd03f1ffc52f84923"
       }
     },
     {

@@ -3,7 +3,6 @@
 # AGENTS.md directs Codex to shared conventions in .claude/CLAUDE.md.
 # Model selection and machine-specific settings remain in user configuration.
 
-model_reasoning_effort = "high"
 web_search = "live"
 approval_policy = "on-request"
 approvals_reviewer = "auto_review"

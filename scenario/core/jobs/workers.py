@@ -90,6 +90,26 @@ class JobWorkers:
             self._condition.notify()
             return task
 
+    def models(self, *, privacy="public", max_pages=100):
+        return self._enqueue(self._coordinator.models, privacy=privacy, max_pages=max_pages)
+
+    def workflows(self, *, privacy="private", max_pages=100):
+        return self._enqueue(self._coordinator.workflows, privacy=privacy, max_pages=max_pages)
+
+    def model(self, identifier):
+        return self._enqueue(self._coordinator.model, identifier)
+
+    def workflow(self, identifier):
+        return self._enqueue(self._coordinator.workflow, identifier)
+
+    def quote_model(self, identifier, parameters, *, origin):
+        snapshot = json.loads(_payload(parameters))
+        return self._enqueue(self._coordinator.quote_model, identifier, snapshot, origin=origin)
+
+    def quote_workflow(self, identifier, parameters, *, origin):
+        snapshot = json.loads(_payload(parameters))
+        return self._enqueue(self._coordinator.quote_workflow, identifier, snapshot, origin=origin)
+
     def prepare_upload(self, source, *, origin, kind, content_type):
         return self._enqueue(
             self._coordinator.prepare_upload,

@@ -172,6 +172,10 @@ class ResultDownloader:
         self._policy = policy
         self._online_access = online_access
 
+    def verify(self, root, receipt):
+        """Verify local bytes with the same size bound as this transfer policy."""
+        return verify_download(root, receipt, max_bytes=self._policy.max_bytes)
+
     def download(self, url, *, root, name, expected_size=None, expected_sha256=None):
         """Publish complete verified bytes atomically without replacing a result.
 

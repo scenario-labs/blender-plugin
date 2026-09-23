@@ -8,12 +8,13 @@ import math
 import threading
 import time
 import uuid
-from contextlib import nullcontext
+from contextlib import contextmanager, nullcontext
 from dataclasses import dataclass, field
 from enum import StrEnum
 from weakref import WeakValueDictionary
 
 from ..api.sdk_adapter import Estimate, SDKAdapter
+from .results import ResultCommands, ResultError
 from .store import (
     JobIntent,
     JobOrigin,
@@ -118,6 +119,8 @@ class JobCoordinator:
         quote_ttl=120.0,
         clock=time.monotonic,
         origin_guard=None,
+        result_downloader=None,
+        result_root=None,
     ):
         if not isinstance(adapter, SDKAdapter) or not isinstance(store, JobStore):
             raise TypeError("Use the shared SDK adapter and job store")
@@ -144,10 +147,29 @@ class JobCoordinator:
         self._active = True
         self._lock = threading.RLock()
         self._prepared = WeakValueDictionary()
+        self._results = ResultCommands(
+            adapter, store, self._result_guard, downloader=result_downloader, root=result_root
+        )
 
     @property
     def scope(self):
         return self._store.scope
+
+    @contextmanager
+    def _result_guard(self):
+        with self._lock:
+            if not self._active:
+                raise ResultError("This result context is inactive")
+            yield
+
+    def load_results(self, request_id, *, expected_revision):
+        return self._results.load_manifest(request_id, expected_revision=expected_revision)
+
+    def download_results(self, request_id, *, expected_revision):
+        return self._results.download(request_id, expected_revision=expected_revision)
+
+    def verify_results(self, request_id, *, expected_revision):
+        return self._results.verify_ready(request_id, expected_revision=expected_revision)
 
     def deactivate(self):
         """Invalidate queued quotes without waiting for in-flight network calls."""

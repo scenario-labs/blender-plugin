@@ -109,6 +109,21 @@ class JobWorkers:
             self._coordinator.refresh_remote, request_id, expected_revision=expected_revision
         )
 
+    def load_results(self, request_id, *, expected_revision):
+        return self._enqueue(
+            self._coordinator.load_results, request_id, expected_revision=expected_revision
+        )
+
+    def download_results(self, request_id, *, expected_revision):
+        return self._enqueue(
+            self._coordinator.download_results, request_id, expected_revision=expected_revision
+        )
+
+    def verify_results(self, request_id, *, expected_revision):
+        return self._enqueue(
+            self._coordinator.verify_results, request_id, expected_revision=expected_revision
+        )
+
     def cancel_remote(self, request_id, *, expected_revision):
         """Queue an explicit remote cancel request; its acknowledgement is not success."""
         return self._enqueue(

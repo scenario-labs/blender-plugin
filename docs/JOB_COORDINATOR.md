@@ -190,3 +190,56 @@ joins this work before closing the SDK. General workflow cancellation, live
 service acceptance, and the UI/MCP cancellation controls remain outstanding
 under #65; rejecting a workflow approval node is not a substitute. Captured job
 types and offline tests do not establish live cancellation acceptance.
+
+
+## Result retrieval and download commands
+
+`load_results(request_id, expected_revision=...)` rechecks the saved successful
+job through public SDK `jobs.retrieve`, then reads every asset through
+`assets.retrieve`, always under the original immutable project scope. Only a
+matching successful job with a nonempty unique `metadata.assetIds` list (up to
+128) is supported. Each retrieved asset must match its ID and declare success,
+a valid MIME type and an integral nonnegative `properties.size`. Unsupported
+non-asset outputs and malformed/changed metadata fail explicitly. No result list
+is inferred from a similar job or current selection.
+
+The entire URL-free manifest is committed once after metadata validation. Local
+basenames derive from index, asset-ID digest and MIME extension; provider paths
+and filenames never choose local directories. Signed URLs remain in memory.
+These contracts come from the pinned SDK's job/asset response models plus the
+captured model-job asset list; they still need live provider acceptance.
+
+Configure the coordinator with `result_downloader=ResultDownloader(policy, ...)`
+and an existing absolute private `result_root` from Blender's extension user
+data. There is no implicit storage-host allowlist. The root is split by hashes
+of the full account/team/project/service scope and local request identity, so
+identical asset names in separate requests cannot overwrite each other.
+
+`download_results` loads a missing manifest, durably claims `downloading`, and
+retrieves each unfinished asset again for a fresh signed URL. Identity, MIME and
+size must still match the manifest. The bounded downloader publishes without
+overwriting files; its verification uses the same configured byte cap. Each
+receipt commits before advancing to another asset. Existing receipts are
+rehash-verified instead of redownloaded. All receipts must exist before `ready`.
+
+A transfer, metadata or verification failure saves `download_failed` and reports
+a sanitized error. A persistence failure propagates and can leave `downloading`
+for explicit recovery inspection; it never claims an uncommitted state was saved.
+An explicit retry accepts only `succeeded` or `download_failed`, refreshes missing
+URLs and preserves completed receipts. It never deletes/replaces a suspect file,
+resumes an interrupted worker automatically or calls generation. An unreceipted
+published file after a crash requires separate explicit reconciliation.
+
+`verify_results` returns the unchanged scoped/origin-bound record and verified
+local paths for `ready`, `apply_failed` or `applied`. It performs no service call
+or scene mutation and rejects a changed job revision. These paths are not an
+application authorization: the Blender owner must recheck origin/target and
+atomically claim application before changing the scene. Interrupted `applying`
+is deliberately rejected; a prior scene mutation may already have occurred.
+
+All three methods are available through `JobWorkers` using the same bounded pool,
+SDK lifetime and main-thread polling interface. Deactivation stops subsequent
+asset work; a transfer already in flight can save its receipt to the old scope.
+Closing a view must not deactivate these application-owned workers. Runtime
+registration, production host configuration, interrupted-download reconciliation,
+application recovery and UI/MCP controls remain integration work under #65.

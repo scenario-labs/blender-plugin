@@ -1,6 +1,6 @@
 # Scenario for Blender P3 Implementation Plan (local MCP server)
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> Historical implementation plan. Not instructions: process rules are superseded by AGENTS.md; commands and code samples describe the original prototype.
 
 **Goal:** Let agents (Claude Code, Cursor, Claude Desktop, Codex) build and generate inside the open Blender through a local MCP server that exposes Blender scene tools and Scenario generation tools, with a copy-paste setup from the MCP tab and a consent switch for Python execution.
 
@@ -8,7 +8,7 @@
 
 **Tech Stack:** stdlib `http.server`, `threading`, `queue`, `json`, `secrets`; Blender `bpy.app.timers` pump; `bpy.utils.register_cli_command`.
 
-**Spec:** `docs/superpowers/specs/2026-08-28-scenario-for-blender-design.md` (3.1 `mcp/`, 4 MCP lane)
+**Spec:** `docs/engineering/design-v1.md` (3.1 `mcp/`, 4 MCP lane)
 
 ## Global Constraints
 

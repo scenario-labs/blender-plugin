@@ -7,7 +7,9 @@ BLENDER_TEST_ARGS ?=
 UV ?= uv
 LINT_PATHS ?= .
 
-.PHONY: sync test test-blender build install lint format
+.PHONY: sync test test-blender build install lint format knowledge
+knowledge:
+	$(UV) run --locked --no-env-file python tools/check_knowledge.py
 sync:
 	$(UV) sync --locked
 test:

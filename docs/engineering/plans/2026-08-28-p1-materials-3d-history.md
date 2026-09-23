@@ -1,6 +1,6 @@
 # Scenario for Blender P1 Implementation Plan (Materials, 3D, Generations)
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> Historical implementation plan. Not instructions: process rules are superseded by AGENTS.md; commands and code samples describe the original prototype.
 
 **Goal:** On top of P0, add the Materials lane (Patina PBR sets applied as Principled BSDF materials on the selected meshes), the 3D lane (text, image and multi-view to 3D imported at the 3D cursor) and the Generations history (cloud job list with thumbnails and per-kind actions).
 
@@ -8,11 +8,11 @@
 
 **Tech Stack:** same as P0.
 
-**Spec:** `docs/superpowers/specs/2026-08-28-scenario-for-blender-design.md` (sections 3.1 `core/scene`, 4 lanes 3D and Materials, 4 Generations)
+**Spec:** `docs/engineering/design-v1.md` (sections 3.1 `core/scene`, 4 lanes 3D and Materials, 4 Generations)
 
 ## Global Constraints
 
-Same as the P0 plan (`docs/superpowers/plans/2026-08-28-p0-skeleton-image-lane.md`), plus:
+Same as the P0 plan (`docs/engineering/plans/2026-08-28-p0-skeleton-image-lane.md`), plus:
 - Patina map roles come from `asset.metadata.type`: `texture-albedo`, `texture-normal`, `texture-smoothness`, `texture-metallic`, `texture-height`, base texture `inference-txt2img-texture`. Roughness = 1 - smoothness (Invert node). Non-color data for every map except albedo and base.
 - 3D results are imported into a collection named `Scenario`, placed so the bounding box bottom centre sits on the 3D cursor, selected and made active.
 - Work on branch `p1-materials-3d-history`; merge `--no-ff` into `main` at the end.
@@ -486,7 +486,7 @@ and in `SCENARIO_PT_results.draw`, for `rec.kind == "material"` rows show `box.l
 
 Also enable the Materials lane and the 3D lane in `SCENARIO_PT_main.draw` (`lane in ("image", "3d", "material")` already covers it).
 
-Run: `./tools/install_dev.sh && make test-blender` Expected: OK. GUI screenshot: `... tools/gui_screenshot.py -- ~/Developer/scratch/playwright-screenshots/scenario-blender/p1-materials.png material` and check the maps toggles, the "Applies to" hint and the CU on Generate.
+Run: `./tools/install_dev.sh && make test-blender` Expected: OK. GUI screenshot: `... tools/gui_screenshot.py -- <screenshot dir>/p1-materials.png material` and check the maps toggles, the "Applies to" hint and the CU on Generate.
 
 - [ ] **Step 3: Commit**
 
@@ -1091,7 +1091,7 @@ git add -A && git commit -m "feat(blender): Generations history with cloud jobs,
 - Create: `tests/smoke/smoke_material.py`
 - Modify: `CHANGELOG.md`, `README.md`, `CLAUDE.md`
 
-- [ ] **Step 1: Opt-in material smoke (about 7 CU)**
+- [ ] **Step 1: Opt-in material smoke (spends credits)**
 
 `tests/smoke/smoke_material.py`: same shape as `tests/smoke/smoke_image.py` but `model_patina-material`, body `{"prompt": "mossy stone wall", "width": 512, "height": 512, "numOutputs": 1}`, lane/kind `material`, and on `job_done` assert `len(payload.files) == 6` and print `payload.asset_types`. Run: `SCENARIO_SMOKE=1 python3 tests/smoke/smoke_material.py`.
 

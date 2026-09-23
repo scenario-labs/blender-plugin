@@ -1,6 +1,6 @@
 # Scenario for Blender P0 Implementation Plan (skeleton + Image lane)
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> Historical implementation plan. Not instructions: process rules are superseded by AGENTS.md; commands and code samples describe the original prototype.
 
 **Goal:** A pure-Python Blender 4.2+ extension `scenario` that authenticates with a Scenario API key, lists models, renders a schema-driven Image lane in the N-panel with a live CU cost preview, submits generations through a non-blocking job manager, downloads results and loads them into Blender.
 
@@ -8,7 +8,7 @@
 
 **Tech Stack:** Blender 4.2+ (tested on 5.1.1, Python 3.13), stdlib only (`urllib`, `ssl`, `json`, `threading`, `queue`), pytest for unit tests, Blender `--background` for integration tests, `blender --command extension build|validate|install-file` for packaging.
 
-**Spec:** `docs/superpowers/specs/2026-08-28-scenario-for-blender-design.md`
+**Spec:** `docs/engineering/design-v1.md`
 
 ## Global Constraints
 
@@ -20,7 +20,7 @@
 - Never write inside the add-on directory; state and caches go under `bpy.utils.extension_path_user(__package__, path=..., create=True)`.
 - Check `bpy.app.online_access` before any network action in the UI.
 - Never `rm`: move superseded files to `archive/`. Version deliverables before overwriting.
-- Dev credential setup is documented in [CONTRIBUTING.md](../../../CONTRIBUTING.md#environment-variables). Never print them. Paid calls only in explicitly opt-in smoke steps; dev cap about $30.
+- Dev credential setup is documented in [CONTRIBUTING.md](../../../CONTRIBUTING.md#environment-variables). Never print them. Paid calls only in explicitly opt-in smoke steps.
 - Blender binary: `/Applications/Blender.app/Contents/MacOS/Blender` (5.1.1). Use `BLENDER` env var to override.
 - Work on branch `p0-skeleton-image-lane`; merge into `main` with `git merge --no-ff` at the end of Task 11. Commit after every task.
 
@@ -43,7 +43,7 @@
 - [ ] **Step 1: Create the branch and the failing unit test**
 
 ```bash
-cd "/Users/emmanuel/Developer/pro/2026-08-28 Scenario For Blender" && git checkout -b p0-skeleton-image-lane
+git checkout -b p0-skeleton-image-lane
 ```
 
 `tests/unit/conftest.py`:
@@ -86,7 +86,7 @@ addopts = -q
 
 - [ ] **Step 2: Run the test to see it fail**
 
-Run: `cd "/Users/emmanuel/Developer/pro/2026-08-28 Scenario For Blender" && python3 -m pytest tests/unit/test_package.py -v`
+Run: `python3 -m pytest tests/unit/test_package.py -v`
 Expected: FAIL with `ModuleNotFoundError: No module named 'scenario'` (install pytest first if missing: `python3 -m pip install --user pytest`).
 
 - [ ] **Step 3: Create the package**
@@ -3990,7 +3990,7 @@ def _shot():
 bpy.app.timers.register(_shot, first_interval=4.0)
 ```
 
-Run: `mkdir -p ~/Developer/scratch/playwright-screenshots/scenario-blender && /Applications/Blender.app/Contents/MacOS/Blender --python tools/gui_screenshot.py -- ~/Developer/scratch/playwright-screenshots/scenario-blender/p0-image-lane.png image` then open the PNG with the Read tool and check: the Scenario tab shows the account strip, the lane tabs, a model dropdown, the prompt row, the reference box and a Generate button with a CU figure (the API key must be set in Preferences first: set it once via `--python-expr` using the values from `.env.local`, never typed into a commit).
+Run: `mkdir -p <screenshot dir> && /Applications/Blender.app/Contents/MacOS/Blender --python tools/gui_screenshot.py -- <screenshot dir>/p0-image-lane.png image` then open the PNG with the Read tool and check: the Scenario tab shows the account strip, the lane tabs, a model dropdown, the prompt row, the reference box and a Generate button with a CU figure (the API key must be set in Preferences first: set it once via `--python-expr` using the values from `.env.local`, never typed into a commit).
 
 - [ ] **Step 8: Commit**
 
@@ -4100,9 +4100,9 @@ In `scenario/blender/registry.py`, change `_modules()` to import and return `[pr
 - [ ] **Step 4: Run the headless tests and take a screenshot of the popover**
 
 Run: `./tools/install_dev.sh && make test-blender` Expected: `Ran 17 tests ... OK`.
-Screenshot: `/Applications/Blender.app/Contents/MacOS/Blender --python tools/gui_screenshot.py -- ~/Developer/scratch/playwright-screenshots/scenario-blender/p0-header.png image` and confirm the "Scenario" button sits in the viewport header (open the PNG with Read).
+Screenshot: `/Applications/Blender.app/Contents/MacOS/Blender --python tools/gui_screenshot.py -- <screenshot dir>/p0-header.png image` and confirm the "Scenario" button sits in the viewport header (open the PNG with Read).
 
-- [ ] **Step 5: Opt-in smoke test (spends about 13 CU) and record the outcome**
+- [ ] **Step 5: Opt-in smoke test (spends credits) and record the outcome**
 
 `tests/smoke/smoke_image.py`:
 ```python

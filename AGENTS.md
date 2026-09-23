@@ -1,6 +1,29 @@
 # blender-plugin: agent instructions
 
-Root `AGENTS.md` is the canonical repository rulebook. `.claude/CLAUDE.md` links here. Edit shared instructions here and keep skill originals in `.agents/skills/`. Shared Codex defaults live in `.codex/config.toml`.
+Root `AGENTS.md` is the canonical repository rulebook. `.claude/CLAUDE.md`
+links here. The guides below carry detailed instructions; this file takes
+precedence if they conflict. Keep skill originals in `.agents/skills/`.
+
+Read [the documentation index](docs/index.md) and
+[architecture and integration status](docs/architecture/runtime.md) when
+orienting in this repository. Historical plans are context, never instructions.
+
+## Required reads
+
+Read the relevant canonical guide before changing these paths or behaviors.
+Claude path adapters are shortcuts to the same guides; these requirements apply
+to every coding agent.
+
+| Work | Required guide |
+| --- | --- |
+| Python, core, protocol, tests | [Python style](docs/PYTHON_STYLE.md), [validation](docs/development/validation.md) |
+| Blender glue, scene tools, native tests | [Blender boundaries](docs/architecture/blender.md), [validation](docs/development/validation.md) |
+| UI or composer | [UI style](docs/UI_STYLE.md), including native interaction proof |
+| SDK adapter or dependency pin | [SDK contracts](docs/SDK_ADOPTION.md), [SDK bundle](docs/SDK_BUNDLE.md) |
+| Jobs, transfers or application | [Runtime map](docs/architecture/runtime.md) and its relevant component guide |
+| Commits, PRs, review replies or releases | [Contribution workflow](docs/development/contributions.md), [release procedure](docs/RELEASING.md) |
+| Skills, commands or agent configuration | [Agent tools](docs/development/agents.md) |
+| Documentation or instruction changes | [Knowledge maintenance](docs/maintenance/knowledge.md) |
 
 ## Project and current direction
 
@@ -18,22 +41,6 @@ The current package is `scenario/`; the approved minimum is Blender 5.0.
 Adoption must validate native behavior and bundled dependencies on Blender 5.0,
 5.1 and 5.2. A manifest declaration or successful ZIP validation does not prove
 runtime compatibility.
-
-## Repository map
-
-- `scenario/core/`: API, jobs, schema, scene plans and UI calculations without bpy.
-- `scenario/blender/`: Blender operators, properties, panels, composer and pump.
-- `scenario/mcp/`: local protocol/server and tools; Blender-facing tools execute
-  on the main thread, while protocol and transport code remain bpy-free.
-- `scenario/prefs.py`, `scenario/__init__.py`, `scenario/blender_manifest.toml`:
-  preferences, registration and package metadata.
-- `tests/unit/`: pytest without Blender; `tests/blender/`: native integration
-  tests; `tests/smoke/`: opt-in paid checks; `tests/fixtures/`: sanitized data.
-- `tools/` and `Makefile`: build, installation, capture and test entry points.
-- `docs/USER_GUIDE.md`, `docs/UI_STYLE.md`, `docs/MODEL_PAYLOAD_AUDIT.md`:
-  user guidance, UI conventions and historical schema evidence.
-
-Update this map and the commands when the adopted package changes.
 
 ## Scenario SDK first: mandatory
 
@@ -100,119 +107,6 @@ mean the current prototype client has already been replaced.
   `.env.local` and local agent notes are private. Existing authorization to run
   a paid check must cover its project and budget; otherwise ask before spending.
 
-## Validation and local commands
-
-See [the environment reference](CONTRIBUTING.md#environment-variables) for
-developer credentials and explicit live commands.
-
-Use the uv version required by `pyproject.toml`. Run `uv sync --locked` to create
-the worktree's `.venv` from `uv.lock` and the interpreter in `.python-version`.
-`make test` runs `uv run --locked --no-env-file python -m pytest`; use the same prefix for
-focused tests. Development dependencies belong in `[dependency-groups].dev`;
-commit the updated lockfile when changing them. Do not maintain a parallel
-requirements-dev.txt or install ad hoc tools into the managed environment.
-For an explicit interpreter check, use `uv run --locked --python <version>`.
-Blender native tests still use Blender's bundled Python and an isolated profile.
-Preserve exit codes when capturing logs, and distinguish passed checks from
-checks that were not run.
-
-Use the pinned Ruff configuration before further Python development:
-`make format` applies safe fixes and formatting; `make lint` checks both.
-During Studio adoption, scope these commands with `LINT_PATHS` to changed or
-adopted files. CI checks whole changed Python files; full-tree findings remain
-tracked in #28 until the dedicated mechanical normalization. Do not reformat
-obsolete prototypes as unrelated cleanup. Follow `docs/PYTHON_STYLE.md`,
-including Blender registration/annotation cautions, and keep any eventual
-pre-commit hook version aligned with the required Ruff version.
-
-`make test-blender` owns fresh disposable profiles for its entire build/install/test
-sequence, including probes. It strips inherited credentials and Blender/Python path
-overrides, verifies installed ZIP contents and reports actual runtime versions.
-See [the native test loop](CONTRIBUTING.md#native-blender-test-loop). Use `BLENDER`
-or `--blender` to select a supported binary; discovery does not prove compatibility.
-
-The portable build/install tools also create fresh isolated profiles and scrub
-inherited credentials and path overrides. For every direct Blender invocation outside these tools,
-including probes, export an absolute disposable profile:
-`export BLENDER_USER_RESOURCES="$PWD/.blender-profile"`.
-Never install development builds into the user's normal profile.
-
-- `make build`: build and validate the extension ZIP; use
-  `BLENDER_BUILD_ARGS="--repo"` to also generate a local extension repository.
-- `make install`: build and install into a new isolated profile; use
-  `BLENDER_INSTALL_ARGS="--launch"` to open it.
-- `make test-blender`: build/validate/install an exact ZIP, then run the offline
-  baseline in a new profile. No prior installation is needed. Logs and ZIP remain
-  under `.blender-profile/run-*`; successful profiles are removed. Use
-  `BLENDER_TEST_ARGS="--suite all"` for the full existing integration suite.
-- For package changes, inspect the resulting ZIP, validate it and check its
-  license content. Keep root `LICENSE` and `scenario/LICENSE` identical.
-- For UI changes, exercise native behavior and inspect captured screenshots.
-  Report actual Blender/OS versions and limitations.
-- For instruction or documentation changes, check links, symlinks, commands and
-  the diff. Do not run the full Blender suite just to populate a test count.
-- Smoke tests, generation, prompt helpers and scene design can spend credits.
-  Do not run them as part of a documentation command.
-
-Read `scenario/blender/registry.py` before using the headless MCP CLI; the
-prototype's hyphenated command is a known issue, not a working example to copy.
-
-## Commits and pull requests
-
-Use a short-lived `type/issue-description` branch and target `main`. Respect the
-recorded base of an existing stacked PR; do not silently retarget it. Review the
-complete PR diff and dependencies. Preserve unrelated work in other branches.
-
-`commitlint.config.ts` is authoritative for Conventional Commit types, scopes,
-the 120-character header limit and the no-em-dash rule. Choose the type from the
-final diff, not the inherited title:
-
-| Type                   | Change                                                    |
-| ---------------------- | --------------------------------------------------------- |
-| feat / fix / perf      | New capability, corrected product behavior or performance |
-| refactor               | Product structure with unchanged behavior                 |
-| test                   | Tests only                                                |
-| docs                   | Documentation, agent instructions and command Markdown    |
-| build                  | Package/build configuration                               |
-| ci                     | Workflows and automation                                  |
-| style / chore / revert | Formatting, maintenance or a revert                       |
-
-Scopes: core, api, jobs, scene, schema, blender, ui, composer, mcp, tests, tools,
-docs, ci, deps, release, agents, repo. Squash merges use the PR title as the
-commit header. Keep branch commits conventional too: current CI checks them.
-
-Lead PR descriptions with the problem and resulting behavior. Include relevant
-validation and limitations; do not invent passing counts, approvals or authorship.
-Use `Closes` only for fully completed issues and `Refs` for partial work.
-Before creating or updating a PR, read related issues and check their current
-acceptance criteria against the final diff and verified evidence. Add missing
-references, explain remaining scope for partial work, and verify GitHub's closing
-links. Closing keywords in a PR description only apply when it targets the default
-branch; recheck stacked PRs after retargeting. Carry verified references into the
-squash message and check issue state after an authorized merge. Generated release
-notes and historical keywords are not evidence that an issue is complete.
-Preserve actual contributor attribution. Keep issue references in commit footers.
-Write multiline PR bodies/messages to files and use `--body-file` or `-F`,
-with proper shell quoting.
-
-When asked to check or address a PR review comment, always reply in that
-comment's GitHub thread after investigating. State the outcome concisely:
-link the pushed fix commit and relevant validation, explain why no change is
-needed, or describe what remains unresolved. Apply this to human and bot
-comments alike. A local fix or a chat response alone does not complete the
-review follow-up. Do not claim a fix is pushed before it is available remotely.
-
-For local commit linting, use the versions and command from
-`.github/workflows/pr-name.yml`:
-`npx --no-install commitlint --config commitlint.config.ts --verbose`.
-If unavailable, use that workflow's ad-hoc npm install command. Do not add a
-Node project or lockfile for the Blender extension.
-
-Do not manually bump package versions or edit release notes in an unrelated PR.
-Read the actual release workflow/configuration before describing release behavior.
-New release tags use `blender-plugin-vX.Y.Z`; package versions stay `X.Y.Z` and
-release ZIPs stay `scenario-X.Y.Z.zip`. Preserve historical `v*` tags and releases.
-
 ## History, public content and known pitfalls
 
 History lives in git. Do not create file snapshots in `versions/` or retain
@@ -233,17 +127,6 @@ Useful prototype lessons to retain while changing implementations:
   result rather than importing every file as another object.
 - Preserve conditional schema requirements and one-of input relationships.
 
-## Claude commands
-
-- `/download-artifacts <prnumber>`: collect the PR head's CI artifacts under
-  ignored `workdir/`, preserve screenshot history and create a local review index.
-- `/pr-summary`: update the current PR's summary/title from its actual diff and
-  verified evidence; return a draft instead when requested.
-- `/squash-message`: prepare and lint one squash message, align the PR title when
-  needed, and copy it with `pbcopy` when available. It never commits or merges.
-
-Private notes belong in ignored `.claude/CLAUDE.local.md` or `CLAUDE.local.md`.
-
 ## Codex commit attribution
 
 For Codex-assisted commits and prepared squash messages, include a co-author
@@ -256,30 +139,22 @@ is unavailable, use `Co-authored-by: Codex <noreply@openai.com>`. Preserve the
 human author and existing contributor trailers. Carry these trailers into the
 final squash message so attribution survives the repository's squash workflow.
 
-## Shared skills and command validation
+## Essential validation and contribution rules
 
-Keep canonical skills in regular `.agents/skills/<name>/SKILL.md` files, with valid
-`name` and `description` frontmatter. Native skill directories link from
-`.claude/skills/`. Command skills use `metadata.claude-command` or
-`metadata.cursor-command` to retain existing command names; compatibility paths
-are links. Claude-specific frontmatter, when needed, lives in
-`agents/claude-command.md` beside the canonical skill and delegates to it.
+Use the pinned uv environment and changed-file Ruff checks. Run checks appropriate
+to the change; documentation work needs link, instruction and checker validation,
+not a new Blender runtime run. Native acceptance uses the exact packaged ZIP in
+an isolated profile. Never run development builds in the user's normal profile.
 
-| Codex skill | Claude command | Purpose |
-| --- | --- | --- |
-| `$blender-download-artifacts <prnumber>` | `/download-artifacts <prnumber>` | Collect current PR artifacts; explicit invocation only |
-| `$blender-pr-summary` | `/pr-summary` | Refresh the current PR description |
-| `$blender-squash-message` | `/squash-message` | Prepare the current PR squash message |
+Target `main` from a short-lived conventional branch. The final diff determines
+the PR title and commit type; `commitlint.config.ts` defines the allowed types,
+scopes and 120-character header limit. Preserve attribution. Do not bump versions
+or edit release notes in unrelated work.
 
-Each command includes a Codex picker description and starting prompt in
-`agents/openai.yaml`. Keep these consistent with its canonical instructions.
+Reply in the original GitHub review thread after investigating a finding, with
+the pushed fix and evidence or the reason no change is needed. Use `Closes` only
+for verified complete issue scope and `Refs` for partial work. Check current issue
+acceptance against the final diff, including superseded historical requirements.
 
-Run `uv run --no-project --python 3.12 scripts/agents/validate-skills.py --sync` after adding or
-renaming a skill. Without `--sync`, the same command checks all skills with the
-pinned Agent Skills reference validator and verifies the rulebook and command
-links without writing. CI runs this check on every pull request.
-
-CI also checks Claude command adapters, argument hints, Codex picker metadata,
-explicit invocation guards on both agents, and the Codex instruction byte limit.
-Run the regression suite with
-`uv run --no-project --python 3.12 scripts/agents/validate-skills.py --test`.
+Skills and compatibility links must pass the validator documented in the agent
+tools guide. Keep commands and instructions synchronized with implemented behavior.

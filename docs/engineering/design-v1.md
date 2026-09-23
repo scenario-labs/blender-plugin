@@ -1,6 +1,10 @@
-# Scenario for Blender: design spec (v1)
+# Scenario for Blender: architecture and design (v1)
 
-Date: 2026-08-28. Status: approved direction (Emmanuel, 2026-08-28: API key first, OAuth later; v1 "more" = render-to-real + Patina materials; native N-panel + floating composer; clean-room). Session: f634b620-910d-4c24-aeef-bc9232faeca7.
+Historical design. The current code, tests and CHANGELOG.md establish behavior.
+The original SDK, Blender support, delivery and history rules below are superseded
+by AGENTS.md; do not execute them as a development plan.
+
+Date: 2026-08-28. Status: approved direction (product decisions, 2026-08-28: API key first, OAuth later; v1 "more" = render-to-real + Patina materials; native N-panel + floating composer; clean-room).
 
 ## 1. Goal
 
@@ -88,8 +92,8 @@ Features intentionally moved to v2 with their Scenario equivalents: HDRI/skybox 
 
 - Unit tests run with system Python 3.13 (`pytest`), no bpy import: fake transport records requests and replays fixtures (`research/fixtures/patina-copper-512/*.json`, recorded job/asset/model records).
 - Blender headless tests via `blender --background --python-exit-code 1 --python tests/blender/run.py`: register, catalog cache from fixtures, GLB import, Patina material graph, image apply, job registry persistence.
-- Smoke (opt-in): one dryRun per lane, one tiny Patina run, budget logged; total dev spend cap about $30 (spent so far about $0.15).
-- UI proof before "delivered": Blender GUI launched with the add-on, screenshots taken through the add-on's own MCP `screenshot_viewport` tool for each lane and the composer, saved under `~/Developer/scratch/playwright-screenshots/scenario-blender/`, and looked at.
+- Smoke (opt-in): one dryRun per lane, one tiny Patina run, budget logged.
+- UI proof before "delivered": Blender GUI launched with the add-on, screenshots taken through the add-on's own MCP `screenshot_viewport` tool for each lane and the composer, saved under `<screenshot dir>/`, and looked at.
 - `blender --command extension validate` and `build` pass; install-file into `user_default` works on 5.1.1.
 
 ## 7. Delivery phases

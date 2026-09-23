@@ -36,7 +36,7 @@ def guarded(callback):
         if FAILED:
             return None
         try:
-            callback()
+            return callback()
         except Exception:
             FAILED = True
             (OUTPUT / "gui.json").write_text(
@@ -168,29 +168,44 @@ def verify_mcp_captures():
     return results
 
 
-def capture_credential_preferences(window, area):
-    """Exercise both registered choices and preserve their actual native layouts."""
+def capture_credential_preferences(window, area, complete):
+    """Wait for each preference layout to draw before capturing its native window."""
     name = next(n for n in bpy.context.preferences.addons.keys() if n.endswith(".scenario"))
     prefs = bpy.context.preferences.addons[name].preferences
     runtime = importlib.import_module(name + ".blender.runtime")
+    sources = iter((("PREFERENCES", True), ("ENVIRONMENT", False)))
     area.type = "PREFERENCES"
     with bpy.context.temp_override(window=window, area=area):
         bpy.ops.preferences.addon_show(module=name)
-        prefs.api_key = prefs.api_secret = "offline-preferences-fixture"
-        for source, valid in (("PREFERENCES", True), ("ENVIRONMENT", False)):
-            prefs.credential_source = source
-            if runtime.credentials().valid != valid:
-                raise RuntimeError("Credential source did not select the expected offline pair")
-            area.tag_redraw()
-            bpy.ops.wm.redraw_timer(type="DRAW_WIN_SWAP", iterations=2)
+    prefs.api_key = prefs.api_secret = "offline-preferences-fixture"
+
+    def select_next():
+        selection = next(sources, None)
+        if selection is None:
+            prefs.credential_source = "PREFERENCES"
+            complete()
+            return
+        source, valid = selection
+        prefs.credential_source = source
+        if runtime.credentials().valid != valid:
+            raise RuntimeError("Credential source did not select the expected offline pair")
+        area.tag_redraw()
+
+        def capture_selected():
             destination = OUTPUT / f"preferences-{source.lower()}.png"
-            if CAPTURE_BACKEND == "blender":
-                if bpy.ops.screen.screenshot(filepath=str(destination)) != {"FINISHED"}:
-                    raise RuntimeError("Preferences screenshot did not finish")
-            else:
-                capture_x11(destination)
-        prefs.credential_source = "PREFERENCES"
-    return ["preferences-preferences.png", "preferences-environment.png"]
+            with bpy.context.temp_override(window=window, area=area):
+                if CAPTURE_BACKEND == "blender":
+                    if bpy.ops.screen.screenshot(filepath=str(destination)) != {"FINISHED"}:
+                        raise RuntimeError("Preferences screenshot did not finish")
+                else:
+                    capture_x11(destination)
+            select_next()
+
+        # Return to Blender's event loop so the window presents the new layout.
+        # Synchronous redraw_timer calls can still capture the previous frame.
+        bpy.app.timers.register(guarded(capture_selected), first_interval=1.0)
+
+    select_next()
 
 
 def capture():
@@ -229,35 +244,41 @@ def capture():
         bpy.data.images.remove(shot)
     mcp_captures = verify_mcp_captures()
     active_sidebar = region.active_panel_category
-    credential_captures = capture_credential_preferences(window, area)
-    (OUTPUT / "gui.json").write_text(
-        json.dumps(
-            {
-                "status": "captured",
-                "credential_captures": credential_captures,
-                "captured_at": datetime.datetime.now(datetime.UTC).isoformat(),
-                "blender_version": list(bpy.app.version),
-                "blender": bpy.app.version_string,
-                "python": sys.version,
-                "os": platform.platform(),
-                "online_access": bpy.app.online_access,
-                "view": VIEW,
-                "lane": LANE,
-                "fixture": FIXTURE,
-                "selected_model_id": lane_state.model_id,
-                "active_sidebar": active_sidebar,
-                "image_size": dimensions,
-                "capture_backend": CAPTURE_BACKEND,
-                "gpu_backend": gpu.platform.backend_type_get(),
-                "gpu_renderer": gpu.platform.renderer_get(),
-                "distinct_rgb_samples": len(samples),
-                "mcp_captures": mcp_captures,
-            },
-            indent=2,
+
+    def complete():
+        (OUTPUT / "gui.json").write_text(
+            json.dumps(
+                {
+                    "status": "captured",
+                    "credential_captures": [
+                        "preferences-preferences.png",
+                        "preferences-environment.png",
+                    ],
+                    "captured_at": datetime.datetime.now(datetime.UTC).isoformat(),
+                    "blender_version": list(bpy.app.version),
+                    "blender": bpy.app.version_string,
+                    "python": sys.version,
+                    "os": platform.platform(),
+                    "online_access": bpy.app.online_access,
+                    "view": VIEW,
+                    "lane": LANE,
+                    "fixture": FIXTURE,
+                    "selected_model_id": lane_state.model_id,
+                    "active_sidebar": active_sidebar,
+                    "image_size": dimensions,
+                    "capture_backend": CAPTURE_BACKEND,
+                    "gpu_backend": gpu.platform.backend_type_get(),
+                    "gpu_renderer": gpu.platform.renderer_get(),
+                    "distinct_rgb_samples": len(samples),
+                    "mcp_captures": mcp_captures,
+                },
+                indent=2,
+            )
+            + "\n"
         )
-        + "\n"
-    )
-    bpy.ops.wm.quit_blender()
+        bpy.ops.wm.quit_blender()
+
+    capture_credential_preferences(window, area, complete)
 
 
 bpy.app.timers.register(guarded(prepare), first_interval=1.5)

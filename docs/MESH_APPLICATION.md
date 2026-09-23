@@ -71,17 +71,24 @@ and rollback. It shares the old mesh with any existing users; subsequent edits t
 that old mesh prevent automatic rollback.
 
 Without Keep original, a private unlinked object retains the original mesh until
-the caller finalizes the receipt. `accept()` releases that holder; `rollback()`
-restores the original mesh and then releases it. A linked, renamed, configured or
-otherwise adopted holder is retained for user review. There is no destructor that
+the caller finalizes the receipt. `accept()` releases that holder and removes the
+original mesh only if it has no remaining users and is unchanged. Shared meshes,
+fake-user ownership, renamed meshes, new metadata and other edits are retained.
+`rollback()` restores the original mesh and then releases the holder. A linked,
+renamed, configured or otherwise adopted holder is retained for user review. There is no destructor that
 accesses Blender. Callers must finalize their receipts; this is an in-memory
 transaction boundary, not persisted recovery or integration with Blender's global
 undo stack. File loading, undo that removes datablocks and source deletion can make
 a receipt unusable; it never re-finds targets by name.
 
-Rollback checks source/scene membership, the applied mesh pointer, active material
-selection and fingerprints of both original and applied meshes. The fingerprints
-cover geometry, supported generic attributes, UV layer roles and material slot
+Rollback rechecks the supported object structure as well as source/scene membership,
+the applied mesh pointer, active material selection and fingerprints of both original
+and applied meshes. Adding modifiers, constraints, vertex groups, shape keys,
+animation, incompatible parenting, object material overrides or mesh custom properties
+requires explicit review before rollback. These guards protect topology-dependent
+data and metadata outside the fingerprint. A refusal leaves the receipt open;
+removing the added structure allows retry if the remaining guards still pass.
+The fingerprints cover geometry, supported generic attributes, UV layer roles and material slot
 bindings, so editing the applied mesh in place cannot silently lose user work.
 Shader node graph edits are outside that fingerprint and are never reverted.
 Rollback removes its unchanged staged mesh only when no other user owns it; it

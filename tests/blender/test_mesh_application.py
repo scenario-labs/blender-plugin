@@ -268,8 +268,69 @@ class MeshApplicationTests(unittest.TestCase):
                 with self.assertRaisesRegex(self.module.MeshApplicationError, "Mesh data changed"):
                     receipt.rollback()
                 self.assertIs(self.source.data, applied)
-                receipt.accept()
                 self.source.data = before
+                receipt.accept()
+
+    def test_accept_discards_unused_original_without_accumulating_meshes(self):
+        objects_before = set(bpy.data.objects)
+        mesh_count = len(bpy.data.meshes)
+        result = self.result.data
+        for _ in range(3):
+            receipt = self.apply()
+            receipt.accept()
+            self.assertEqual(set(bpy.data.objects), objects_before)
+            self.assertEqual(len(bpy.data.meshes), mesh_count)
+            self.assertIs(self.result.data, result)
+
+    def test_accept_preserves_original_with_shared_or_explicit_ownership(self):
+        for kind in ("shared", "keep_original", "fake_user"):
+            with self.subTest(kind=kind):
+                before = self.source.data
+                if kind == "shared":
+                    other = bpy.data.objects.new("Shared original", before)
+                    self.scene.collection.objects.link(other)
+                elif kind == "fake_user":
+                    before.use_fake_user = True
+                receipt = self.apply(keep_original=kind == "keep_original")
+                receipt.accept()
+                self.assertIn(before, tuple(bpy.data.meshes))
+                if kind == "keep_original":
+                    self.assertIs(receipt.original.data, before)
+
+    def test_accept_preserves_original_edited_since_application(self):
+        for kind in ("geometry", "metadata", "rename", "unsupported_attribute"):
+            with self.subTest(kind=kind):
+                before = self.source.data
+                receipt = self.apply()
+                if kind == "geometry":
+                    before.vertices[0].co.x += 1
+                elif kind == "metadata":
+                    before["user_metadata"] = "retain"
+                elif kind == "rename":
+                    before.name = "User retained original"
+                else:
+                    before.attributes.new("User text", "STRING", "POINT")
+                receipt.accept()
+                self.assertIn(before, tuple(bpy.data.meshes))
+
+    def test_rollback_refuses_structural_edits_and_allows_retry_after_removal(self):
+        before = self.source.data
+        receipt = self.apply()
+        applied = self.source.data
+        modifier = self.source.modifiers.new("Preview", "SUBSURF")
+        with self.assertRaisesRegex(self.module.MeshApplicationError, "Target structure changed"):
+            receipt.rollback()
+        self.assertIs(self.source.data, applied)
+        self.assertFalse(receipt._closed)
+        self.source.modifiers.remove(modifier)
+        applied["user_metadata"] = "retain"
+        with self.assertRaisesRegex(self.module.MeshApplicationError, "Target structure changed"):
+            receipt.rollback()
+        self.assertEqual(applied["user_metadata"], "retain")
+        self.assertIs(self.source.data, applied)
+        del applied["user_metadata"]
+        receipt.rollback()
+        self.assertIs(self.source.data, before)
 
     def test_rollback_refuses_replaced_target_and_changed_original(self):
         before = self.source.data

@@ -226,13 +226,14 @@ class MeshApplication:
     _holder_state: tuple = field(repr=False)
     _before_active: int = field(repr=False)
     _applied_active: int = field(repr=False)
+    _before_name: str = field(repr=False)
     _before_hash: bytes = field(repr=False)
     _applied_hash: bytes = field(repr=False)
     _closed: bool = field(default=False, repr=False)
 
     def _release_holder(self):
         if self.original is not None or not _present(bpy.data.objects, self._holder):
-            return
+            return False
         holder = self._holder
         # Any new ownership or settings retain the object for user review.
         if (
@@ -250,13 +251,37 @@ class MeshApplication:
             and _holder_signature(holder) == self._holder_state
         ):
             bpy.data.objects.remove(holder)
+            return True
+        return False
+
+    def _discard_unused_original(self):
+        """Discard only the unchanged original after releasing our private holder."""
+        mesh = self._before
+        if not _present(bpy.data.meshes, mesh) or mesh.users:
+            return
+        if (
+            mesh.name != self._before_name
+            or mesh.keys()
+            or mesh.animation_data
+            or mesh.shape_keys
+            or mesh.asset_data
+        ):
+            return
+        try:
+            unchanged = _fingerprint(mesh) == self._before_hash
+        except MeshApplicationError:
+            # New unsupported data or an exceeded work cap needs user review.
+            return
+        if unchanged:
+            bpy.data.meshes.remove(mesh)
 
     def accept(self):
-        """Release the private rollback holder; never remove a visible original."""
+        """Release private rollback data; retain originals with user edits or owners."""
         _main_thread()
         if self._closed:
             raise MeshApplicationError("This application receipt is already finalized")
-        self._release_holder()
+        if self._release_holder():
+            self._discard_unused_original()
         self._closed = True
 
     def rollback(self):
@@ -265,7 +290,12 @@ class MeshApplication:
         if self._closed:
             raise MeshApplicationError("This application receipt is already finalized")
         try:
-            _validate_object(self._scene, self.source)
+            try:
+                _validate_object(self._scene, self.source)
+            except MeshApplicationError as exc:
+                raise MeshApplicationError(
+                    f"Target structure changed; rollback requires explicit review: {exc}"
+                ) from exc
             if self.source.active_material_index != self._applied_active:
                 raise MeshApplicationError("Active material selection changed after application")
             if self.source.data is not self._applied:
@@ -335,6 +365,7 @@ def apply_mesh(scene, source, result, *, policy, result_to_source, keep_original
             holder_state,
             before_active,
             source.active_material_index,
+            before.name,
             before_hash,
             applied_hash,
         )

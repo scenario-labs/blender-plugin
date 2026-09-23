@@ -49,6 +49,7 @@ def find_blender(explicit=None):
                 folder / "blender",
                 *sorted(folder.glob("blender-*-linux-x64/blender")),
                 folder / "blender.exe",
+                *sorted(folder.glob("blender-*-windows-x64/blender.exe")),
                 folder / "Blender.app/Contents/MacOS/Blender",
             ]
         )

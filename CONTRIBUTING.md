@@ -157,11 +157,11 @@ investigation. `--artifacts DIR` changes the parent directory for these unique r
 Do not invoke `tests/blender/run_all.py` directly; it refuses unmanaged profiles.
 
 [Blender baseline CI](.github/workflows/blender-baseline.yml) runs the full offline
-unit suite and the same native baseline on Linux with Blender **5.0.1, 5.1.2 and
-5.2.1**. It reuses the release pipeline's checksum-verifying setup action and
+unit suite on Linux and the same native baseline on Linux x64 and Windows x64
+with Blender **5.0.1, 5.1.2 and 5.2.1**. It reuses the release pipeline's checksum-verifying setup action and
 publishes logs/reports/ZIPs, including on failure. The `blender-baseline-ok` check
 requires every leg to pass. Required-check rules remain a maintainer follow-up.
-To change a pinned version, verify its Linux x64 archive checksum in the official
+To change a pinned version, verify each platform archive checksum in the official
 [Blender download directory](https://download.blender.org/release/), update the
 matrix version and hash together, and inspect the actual runtime report from CI.
 
@@ -188,7 +188,7 @@ An existing shell profile is never reused. Remove the printed `tools-*` director
 when finished with it and after closing Blender. `make build` and `make install`
 accept `BLENDER_BUILD_ARGS` and `BLENDER_INSTALL_ARGS`, respectively.
 
-On Linux x64, fetch an official Blender release with:
+On Linux x64 or Windows x64, fetch an official Blender release with:
 
 ```sh
 uv run --locked --no-env-file python tools/fetch_blender.py --version 5.0.1
@@ -198,7 +198,7 @@ The fetcher reads the official checksum file, verifies the archive before
 extraction and prints the executable path to use with `BLENDER`. CI supplies
 `--sha256` to pin the expected digest. Archives are cached under `.blender/`;
 every invocation re-extracts the verified archive into the same managed slot for
-that version and checksum. Successful replacement removes the previous extraction;
+that platform, version and checksum. Successful replacement removes the previous extraction;
 a failed extraction leaves it intact. Do not fetch a build while using that cached
 Blender executable. Older builds from the previous tool may leave randomly named
 version directories; remove those manually when no longer in use.

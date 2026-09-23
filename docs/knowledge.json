@@ -48,7 +48,11 @@
         "tests/unit/test_config.py": "3d8ea8a6f0bcef70f0bb16146e794346cbbe7d2fc0f26aec1631b108cf6914f3",
         "tests/blender/test_credentials.py": "0767fbe1917c977631dc4243bfcb05dce97d5ed0c0b2c731b8ea4bfdb07e3b45",
         "tools/capture_gui_scene.py": "7538cb1e90510a31cdfac22e390d5d595cf2bc73628f1cc3139071b2ef855609",
-        "tests/unit/test_gui_capture.py": "beee6cba15adf7da1e7434c18dcb2b948e36f4b459af06fc98a6c850a5fea87c"
+        "tests/unit/test_gui_capture.py": "beee6cba15adf7da1e7434c18dcb2b948e36f4b459af06fc98a6c850a5fea87c",
+        "tools/fetch_blender.py": "6ffb40560e1344850f6452ae1aa0de0834d08e9bb7be11647307e5cf8b4ac648",
+        "tests/unit/test_portable_tools.py": "2cea13137994d2d09b76abe0f5a6916a36c3c61faa546bcc6fa82e0e660c14c5",
+        ".github/actions/setup-blender/action.yml": "276722b203227e8f7a7a98a76a0e7095c566bae2c308b4166dff5e7a3698c105",
+        ".github/workflows/blender-baseline.yml": "c4fabf3cc73eaad72df2da1bd158ce118c4ebab177980819a540b28c8b66cc4d"
       }
     },
     {
@@ -154,7 +158,7 @@
         "scenario/core/api/model_filter.py": "ad728743dae392c8fb14cae621bd6642c9959409e56878336723c17e535e8fbb",
         "scenario/core/api/spark.py": "ec8f1c663a2052d56681a83eab9187101c825f9a370a993eb6e361de68980689",
         "tools/test_blender.py": "fec317c68c24c49302b456a478e02a0a8352d29aa30c3e9e3cf173d47f0697cd",
-        "tools/blender_env.py": "2943b2aaf3bf1de923d078f75635fef439119deb1b5d66da952df878e6a8d428",
+        "tools/blender_env.py": "0e78f2a51edd2943567226537d8faed6170d41ba10ba84a663118b9b2c2251b8",
         "tools/gui_screenshot.py": "f773d0c3457163fb0bef827a98cda38738f12c543f50ea43ba4f885a0fe59666",
         "scenario/blender/composer/modal.py": "5db6dcddc6b8ca2533fcf73f3d7782c0cd3bd47c99ca11eadf3a8c57d68ed632",
         "scenario/blender/composer/draw.py": "52a366ce04766edc3aef343c7b115d7e360e8c88a27688c4446be36ecc78c6e8",
@@ -243,7 +247,8 @@
       "sources": {
         "scenario/sdk-wheel-lock.json": "6e2de1e24a3cc2cc6f5d038637e25a1694efa56c9f32588b8120c1e6d47d2d51",
         "tools/wheel_bundle.py": "5189baee1a5381a3be9dd667e0b34357ce6101bd1ea0c7bb03098332ea53c518",
-        "tests/blender/test_sdk_bundle.py": "750e7098f727b4ca188dfb54ddc45484d3e2395a26559486aade4c0de99b7ec0"
+        "tests/blender/test_sdk_bundle.py": "750e7098f727b4ca188dfb54ddc45484d3e2395a26559486aade4c0de99b7ec0",
+        ".github/workflows/blender-baseline.yml": "c4fabf3cc73eaad72df2da1bd158ce118c4ebab177980819a540b28c8b66cc4d"
       }
     },
     {
@@ -415,7 +420,7 @@
         "Makefile": "c86ffba526a4882788cec66b53924504eceab7114f0b4776ff23ceee1d7a4c8b",
         "pyproject.toml": "28e3115a28f23530662dfe37a5f07328302607b6c2f8c59d8c8f20c79470d5c2",
         "tools/test_blender.py": "fec317c68c24c49302b456a478e02a0a8352d29aa30c3e9e3cf173d47f0697cd",
-        "tools/blender_env.py": "2943b2aaf3bf1de923d078f75635fef439119deb1b5d66da952df878e6a8d428",
+        "tools/blender_env.py": "0e78f2a51edd2943567226537d8faed6170d41ba10ba84a663118b9b2c2251b8",
         "scenario/mcp/cli.py": "733ec02de0f03a9bfb0a9326a8f94ac32a2b6c33a5c11a09b79694cabd87c156",
         "tests/blender/test_mcp_cli.py": "69c6b9ad670cd59f4eb2e18f91bda4deb20c487fe1539d69f0825799233adef8"
       }
@@ -513,7 +518,7 @@
         "scenario/core/api/model_filter.py": "ad728743dae392c8fb14cae621bd6642c9959409e56878336723c17e535e8fbb",
         "scenario/core/api/spark.py": "ec8f1c663a2052d56681a83eab9187101c825f9a370a993eb6e361de68980689",
         "tools/test_blender.py": "fec317c68c24c49302b456a478e02a0a8352d29aa30c3e9e3cf173d47f0697cd",
-        "tools/blender_env.py": "2943b2aaf3bf1de923d078f75635fef439119deb1b5d66da952df878e6a8d428",
+        "tools/blender_env.py": "0e78f2a51edd2943567226537d8faed6170d41ba10ba84a663118b9b2c2251b8",
         "tools/gui_screenshot.py": "f773d0c3457163fb0bef827a98cda38738f12c543f50ea43ba4f885a0fe59666",
         "scenario/blender/composer/modal.py": "5db6dcddc6b8ca2533fcf73f3d7782c0cd3bd47c99ca11eadf3a8c57d68ed632",
         "scenario/blender/composer/draw.py": "52a366ce04766edc3aef343c7b115d7e360e8c88a27688c4446be36ecc78c6e8",

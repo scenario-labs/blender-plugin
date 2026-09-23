@@ -17,9 +17,12 @@ following `pydantic-core` binary wheels:
 | 5.1 / 5.2 | cp313 | Linux x64 (manylinux2014), Windows x64, macOS arm64, macOS x64 |
 
 These are package targets. Passing validation on a platform does not prove
-native execution there. The native CI matrix exercises Linux x64 on Blender
-5.0.1, 5.1.2 and 5.2.1; macOS/Windows execution evidence must be recorded
-separately. No Linux arm64 or Windows arm64 binary is included.
+native execution there. The native CI matrix requires Linux x64 and Windows x64
+runs on Blender 5.0.1, 5.1.2 and 5.2.1. Inspect each run's actual installed-ZIP
+result before claiming acceptance; configuring a leg is not a passing result.
+macOS execution evidence must be recorded separately. Desktop interaction and
+GPU acceptance remain separate from this headless baseline. No Linux arm64 or
+Windows arm64 binary is included.
 
 Blender's extension manager selects and installs compatible wheels into its
 extension `site-packages`. See the official

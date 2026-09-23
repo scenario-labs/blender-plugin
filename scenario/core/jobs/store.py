@@ -11,6 +11,7 @@ import json
 import os
 import re
 import sqlite3
+import stat
 from contextlib import contextmanager
 from dataclasses import asdict, dataclass, replace
 from decimal import Decimal, InvalidOperation
@@ -26,6 +27,16 @@ _APPLICATION_ID = 0x53434A42
 
 class StoreError(RuntimeError):
     """Persistence failed; callers must stop before dispatching or applying."""
+
+
+def _regular_database(path):
+    """Recheck each connection; the caller must still own the parent directory."""
+    try:
+        regular = stat.S_ISREG(path.lstat().st_mode)
+    except OSError:
+        raise StoreError("Storage path is unavailable; preserve it for recovery") from None
+    if not regular:
+        raise StoreError("Storage must be a regular local file")
 
 
 class StoreConflict(StoreError):
@@ -383,6 +394,7 @@ class JobStore:
     def _connection(self, *, write=False, initialize=False):
         connection = None
         try:
+            _regular_database(self._path)
             # mode=rw prevents a removed database from silently becoming empty.
             connection = sqlite3.connect(
                 self._path.as_uri() + "?mode=rw", uri=True, timeout=2.0, isolation_level=None

@@ -92,7 +92,7 @@
       "reviewed_at": "2026-09-23",
       "limits": "Existing guide indexed during this intake, without a fresh claim-by-claim or live verification; consult current integration status and issue acceptance.",
       "sources": {
-        "scenario/core/jobs/store.py": "9353d0c81e4fd549bebec967dff9ac6b9cfc3c64e30ff3e596ae565fc2448497",
+        "scenario/core/jobs/store.py": "0053c3e48ce89ad699bab664f4f5fddc6af89f7cd01c8bbcab8a323c198c01fc",
         "tests/unit/test_job_store.py": "2bc71047d762d63d960ef249a30384ae41d508e5cf2f236e0e08c9caf6aba655",
         "scenario/core/jobs/transfers.py": "0f02ad2823787816d3c25695f9d0749cab3fe29b26451d279c4ecd56d60a9d17",
         "tests/unit/test_result_manifest.py": "5e0414f331a07f245d31bc11945351eaebdb1786cd9ddd7648108365468520e8",
@@ -174,12 +174,12 @@
     {
       "path": "docs/RESULT_TRANSFERS.md",
       "coverage": "inherited",
-      "reviewed_at": "2026-09-23",
+      "reviewed_at": "2026-09-24",
       "limits": "Existing guide indexed during this intake, without a fresh claim-by-claim or live verification; consult current integration status and issue acceptance.",
       "sources": {
         "scenario/core/jobs/transfers.py": "0f02ad2823787816d3c25695f9d0749cab3fe29b26451d279c4ecd56d60a9d17",
         "tests/unit/test_result_transfers.py": "494547ee1c4a756f1cc2e3f94084eade4cab746a88431844d6f44b67e925f8ed",
-        "scenario/core/jobs/store.py": "9353d0c81e4fd549bebec967dff9ac6b9cfc3c64e30ff3e596ae565fc2448497",
+        "scenario/core/jobs/store.py": "0053c3e48ce89ad699bab664f4f5fddc6af89f7cd01c8bbcab8a323c198c01fc",
         "tests/unit/test_result_manifest.py": "5e0414f331a07f245d31bc11945351eaebdb1786cd9ddd7648108365468520e8",
         "tests/blender/test_job_store.py": "9391c63dd8837345ea383e2a2fa250d9a911c1a3ddda16e07617c66854b2fc65",
         "scenario/core/jobs/results.py": "6f8735b1fe64f0607ae63c4a5cb43c443904730ede7a2466ceb6439a425d93a2",
@@ -223,9 +223,11 @@
         "scenario/core/jobs/upload_transfers.py": "c43885db190b669c5f1ba72bb64d7c17e57d84aabab964d676f039c1d38165b2",
         "tests/unit/test_upload_transfers.py": "0d26e96c55bb0c895220d0d0f64a4573067d9630ec0e9fc80525a8a126d77d97",
         "tests/blender/test_upload_transfers.py": "f6847d8595f363b66b00bcbc7d5634b5212221e7b8cda49e2eefd8eebfdd0b4e",
-        "scenario/core/jobs/upload_store.py": "3ca93f21aed4d2ccfc164f8e4ed58e543f424e1788d8d16107ef290c7d127497",
-        "tests/unit/test_upload_store.py": "0cfb6e4471e790537dc47cd08a7789b710e2c96435d93ac38c88af7aa7c533d5",
-        "tests/blender/test_upload_store.py": "b5bdade91572d9d8a919fbe8dea2a2cb4587a3f53e7b48425e95af5e1cd20a41"
+        "scenario/core/jobs/upload_store.py": "e53e44059fba806e5284f75327277fc7dcfceb7cd8a5f77e7a57696ce6372cf8",
+        "tests/unit/test_upload_store.py": "499172c31e93300bbe3e7b0ad870bdb9e27b2ee99163317ff1c04e0f48061a35",
+        "tests/blender/test_upload_store.py": "b5bdade91572d9d8a919fbe8dea2a2cb4587a3f53e7b48425e95af5e1cd20a41",
+        "scenario/core/jobs/store.py": "0053c3e48ce89ad699bab664f4f5fddc6af89f7cd01c8bbcab8a323c198c01fc",
+        "tests/unit/test_job_store.py": "2bc71047d762d63d960ef249a30384ae41d508e5cf2f236e0e08c9caf6aba655"
       }
     },
     {
@@ -303,7 +305,7 @@
     {
       "path": "docs/architecture/runtime.md",
       "coverage": "source-reviewed",
-      "reviewed_at": "2026-09-23",
+      "reviewed_at": "2026-09-24",
       "limits": "Agent source inspection of the listed files; no live service calls, native runtime rerun or human verification in this review.",
       "sources": {
         "scenario/blender/runtime.py": "2afa6267f835569288ae6d1947af5410b05a0bbdcd3bbad985ff30a6dcb8a000",
@@ -321,7 +323,7 @@
         "scenario/prefs.py": "7c02f5d7fb65dd8c609e043f8ba8a613e7e6d60d47bc3e2f4b5ffbbf00261a61",
         "tests/unit/test_config.py": "3d8ea8a6f0bcef70f0bb16146e794346cbbe7d2fc0f26aec1631b108cf6914f3",
         "tests/blender/test_credentials.py": "2e74d6f8292a2add5b77a1827a6624960595d7073d5b94f72a63c7214fc4e920",
-        "scenario/core/jobs/store.py": "9353d0c81e4fd549bebec967dff9ac6b9cfc3c64e30ff3e596ae565fc2448497",
+        "scenario/core/jobs/store.py": "0053c3e48ce89ad699bab664f4f5fddc6af89f7cd01c8bbcab8a323c198c01fc",
         "tests/unit/test_result_manifest.py": "5e0414f331a07f245d31bc11945351eaebdb1786cd9ddd7648108365468520e8",
         "tests/blender/test_job_store.py": "9391c63dd8837345ea383e2a2fa250d9a911c1a3ddda16e07617c66854b2fc65",
         "scenario/core/jobs/results.py": "6f8735b1fe64f0607ae63c4a5cb43c443904730ede7a2466ceb6439a425d93a2",
@@ -330,8 +332,8 @@
         "scenario/core/jobs/upload_transfers.py": "c43885db190b669c5f1ba72bb64d7c17e57d84aabab964d676f039c1d38165b2",
         "tests/unit/test_upload_transfers.py": "0d26e96c55bb0c895220d0d0f64a4573067d9630ec0e9fc80525a8a126d77d97",
         "tests/blender/test_upload_transfers.py": "f6847d8595f363b66b00bcbc7d5634b5212221e7b8cda49e2eefd8eebfdd0b4e",
-        "scenario/core/jobs/upload_store.py": "3ca93f21aed4d2ccfc164f8e4ed58e543f424e1788d8d16107ef290c7d127497",
-        "tests/unit/test_upload_store.py": "0cfb6e4471e790537dc47cd08a7789b710e2c96435d93ac38c88af7aa7c533d5",
+        "scenario/core/jobs/upload_store.py": "e53e44059fba806e5284f75327277fc7dcfceb7cd8a5f77e7a57696ce6372cf8",
+        "tests/unit/test_upload_store.py": "499172c31e93300bbe3e7b0ad870bdb9e27b2ee99163317ff1c04e0f48061a35",
         "tests/blender/test_upload_store.py": "b5bdade91572d9d8a919fbe8dea2a2cb4587a3f53e7b48425e95af5e1cd20a41"
       }
     },

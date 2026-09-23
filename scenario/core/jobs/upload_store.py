@@ -12,7 +12,15 @@ from dataclasses import asdict, dataclass, replace
 from enum import StrEnum
 from pathlib import Path
 
-from .store import JobOrigin, JobScope, StoreConflict, StoreError, _identity, _json
+from .store import (
+    JobOrigin,
+    JobScope,
+    StoreConflict,
+    StoreError,
+    _identity,
+    _json,
+    _regular_database,
+)
 from .upload_transfers import UploadedPart
 
 _APPLICATION_ID = 0x53435550
@@ -264,6 +272,7 @@ class UploadStore:
     def _connection(self, *, write=False, initialize=False):
         connection = None
         try:
+            _regular_database(self._path)
             connection = sqlite3.connect(
                 self._path.as_uri() + "?mode=rw", uri=True, timeout=2.0, isolation_level=None
             )

@@ -8,11 +8,12 @@ import os
 import sqlite3
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
+from pathlib import Path
 from threading import Barrier
 
 import pytest
 
-from scenario.core.jobs.store import JobOrigin, JobScope, StoreConflict, StoreError
+from scenario.core.jobs.store import JobOrigin, JobScope, JobStore, StoreConflict, StoreError
 from scenario.core.jobs.upload_store import UploadIntent, UploadState, UploadStore
 from scenario.core.jobs.upload_transfers import UploadedPart
 
@@ -285,3 +286,38 @@ def test_foreign_database_and_future_schema_are_not_reset(tmp_path, intent):
         store.get(intent.request_id)
     with pytest.raises(StoreError):
         UploadStore(path, intent.scope)
+
+
+@pytest.mark.parametrize("store_type", [UploadStore, JobStore])
+def test_symlink_created_during_exclusive_open_does_not_reach_sqlite(
+    tmp_path, intent, monkeypatch, store_type
+):
+    path = tmp_path / "database.sqlite3"
+    target = tmp_path / "preserve.sqlite3"
+    target.write_bytes(b"unrelated original bytes")
+    original_open = os.open
+
+    def swapped_open(name, flags, mode=0o777, **kwargs):
+        if Path(name) == path:
+            path.symlink_to(target)
+        return original_open(name, flags, mode, **kwargs)
+
+    monkeypatch.setattr(os, "open", swapped_open)
+    with pytest.raises(StoreError, match="regular local file"):
+        store_type(path, intent.scope)
+    assert target.read_bytes() == b"unrelated original bytes"
+
+
+@pytest.mark.parametrize("store_type", [UploadStore, JobStore])
+def test_database_replaced_by_symlink_after_initialization_is_rejected(
+    tmp_path, intent, store_type
+):
+    path = tmp_path / "database.sqlite3"
+    database = store_type(path, intent.scope)
+    saved = tmp_path / "saved.sqlite3"
+    path.rename(saved)
+    previous = saved.read_bytes()
+    path.symlink_to(saved)
+    with pytest.raises(StoreError, match="regular local file"):
+        database.records()
+    assert saved.read_bytes() == previous

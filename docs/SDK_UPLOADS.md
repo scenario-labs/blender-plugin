@@ -158,5 +158,8 @@ writes raise errors and preserve evidence rather than resetting storage. Failed
 receipt persistence leaves the earlier claim in place. New database files and
 directories use private permissions where supported. The application owns the
 storage directory under Blender's extension user path and must prevent its
-replacement while in use. This database is separate from the job database;
+replacement while in use. Each SQLite connection rechecks the database with
+`lstat`, including after a competing creation. This rejects a symlink observed
+at that boundary; it is not an atomic defense against an attacker who controls
+the directory and can swap the path after the check. This database is separate from the job database;
 there is no migration or active prototype integration in this component.

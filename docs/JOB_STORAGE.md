@@ -39,6 +39,9 @@ private local directory. Newly created directories/database files request 0700/
 0600 permissions where the OS supports them; existing parent permissions and
 Windows ACLs are not changed. Scope separation is application isolation, not
 on-disk encryption or protection from another process with filesystem access.
+Every connection rechecks that the database is a regular nonsymlink file,
+including after a competing creation. The parent must remain trusted: this check
+and SQLite's path open are separate operations, not an atomic no-follow open.
 
 The database has an application ID and schema version **2**. SQLite transactions
 with `synchronous=FULL` commit the whole change or report `StoreError`; no cached

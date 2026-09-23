@@ -14,7 +14,7 @@ is Blender 5.0; dependency and runtime acceptance have separate gates.
 | UI generation | [generation.py](../../scenario/blender/generation.py) | Prepares the current lane and submits through the prototype manager. |
 | Main-thread application | [pump.py](../../scenario/blender/pump.py) | Drains prototype events and applies results to Blender. GUI timer handling differs from headless execution. |
 | Local MCP | [server.py](../../scenario/mcp/server.py), [tools_scenario.py](../../scenario/mcp/tools_scenario.py), [mcp_service.py](../../scenario/blender/mcp_service.py) | Queues scene tools for main-thread execution; service tools still call the prototype runtime. |
-| Credentials | [config.py](../../scenario/core/config.py), [prefs.py](../../scenario/prefs.py) | Current preference credentials can be overridden by environment variables. Browser sign-in and account/project selection remain #67. |
+| Credentials | [config.py](../../scenario/core/config.py), [prefs.py](../../scenario/prefs.py) | Credentials default to the saved Blender pair; environment credentials require explicit selection and cannot mix with preferences. OAuth is deferred; shared runtime scope/project integration remains #65. |
 
 These are source-inspection findings. Do not infer UI/MCP parity from the shared
 adapter's test coverage, or promote prototype transport usage into an approved

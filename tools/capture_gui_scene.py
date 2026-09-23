@@ -168,6 +168,31 @@ def verify_mcp_captures():
     return results
 
 
+def capture_credential_preferences(window, area):
+    """Exercise both registered choices and preserve their actual native layouts."""
+    name = next(n for n in bpy.context.preferences.addons.keys() if n.endswith(".scenario"))
+    prefs = bpy.context.preferences.addons[name].preferences
+    runtime = importlib.import_module(name + ".blender.runtime")
+    area.type = "PREFERENCES"
+    with bpy.context.temp_override(window=window, area=area):
+        bpy.ops.preferences.addon_show(module=name)
+        prefs.api_key = prefs.api_secret = "offline-preferences-fixture"
+        for source, valid in (("PREFERENCES", True), ("ENVIRONMENT", False)):
+            prefs.credential_source = source
+            if runtime.credentials().valid != valid:
+                raise RuntimeError("Credential source did not select the expected offline pair")
+            area.tag_redraw()
+            bpy.ops.wm.redraw_timer(type="DRAW_WIN_SWAP", iterations=2)
+            destination = OUTPUT / f"preferences-{source.lower()}.png"
+            if CAPTURE_BACKEND == "blender":
+                if bpy.ops.screen.screenshot(filepath=str(destination)) != {"FINISHED"}:
+                    raise RuntimeError("Preferences screenshot did not finish")
+            else:
+                capture_x11(destination)
+        prefs.credential_source = "PREFERENCES"
+    return ["preferences-preferences.png", "preferences-environment.png"]
+
+
 def capture():
     window, area, region = view3d()
     if bpy.app.online_access:
@@ -203,10 +228,13 @@ def capture():
     finally:
         bpy.data.images.remove(shot)
     mcp_captures = verify_mcp_captures()
+    active_sidebar = region.active_panel_category
+    credential_captures = capture_credential_preferences(window, area)
     (OUTPUT / "gui.json").write_text(
         json.dumps(
             {
                 "status": "captured",
+                "credential_captures": credential_captures,
                 "captured_at": datetime.datetime.now(datetime.UTC).isoformat(),
                 "blender_version": list(bpy.app.version),
                 "blender": bpy.app.version_string,
@@ -217,7 +245,7 @@ def capture():
                 "lane": LANE,
                 "fixture": FIXTURE,
                 "selected_model_id": lane_state.model_id,
-                "active_sidebar": region.active_panel_category,
+                "active_sidebar": active_sidebar,
                 "image_size": dimensions,
                 "capture_backend": CAPTURE_BACKEND,
                 "gpu_backend": gpu.platform.backend_type_get(),

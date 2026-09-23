@@ -5,19 +5,53 @@ import datetime as dt
 from scenario.core import config
 
 
-def test_env_overrides_prefs():
+def test_preferences_ignore_ambient_environment():
+    creds = config.resolve_credentials(
+        " pref_key ",
+        "pref_secret",
+        environ={"SCENARIO_API_KEY": "env_key", "SCENARIO_API_SECRET": "env_secret"},
+    )
+    assert (creds.key, creds.secret) == ("pref_key", "pref_secret")
+    assert creds.valid
+
+
+def test_environment_requires_explicit_selection():
     creds = config.resolve_credentials(
         "pref_key",
         "pref_secret",
+        source="ENVIRONMENT",
         environ={"SCENARIO_API_KEY": " env_key ", "SCENARIO_API_SECRET": "env_secret"},
     )
-    assert creds.key == "env_key" and creds.secret == "env_secret" and creds.valid
+    assert (creds.key, creds.secret) == ("env_key", "env_secret")
+    assert creds.valid
 
 
-def test_prefs_used_when_env_missing_and_invalid_when_empty():
-    assert config.resolve_credentials("k", "s", environ={}).valid
-    assert not config.resolve_credentials("", "s", environ={}).valid
-    assert not config.resolve_credentials(None, None, environ={}).valid
+def test_partial_environment_never_borrows_from_saved_preferences():
+    for env in (
+        {},
+        {"SCENARIO_API_KEY": "k"},
+        {"SCENARIO_API_SECRET": "s"},
+        {"SCENARIO_API_KEY": "k", "SCENARIO_API_SECRET": " "},
+    ):
+        creds = config.resolve_credentials("pref_key", "pref_secret", env, source="ENVIRONMENT")
+        assert not creds.valid
+        assert "pref_key" not in (creds.key, creds.secret)
+        assert "pref_secret" not in (creds.key, creds.secret)
+
+
+def test_partial_preferences_never_borrow_from_environment():
+    env = {"SCENARIO_API_KEY": "env_key", "SCENARIO_API_SECRET": "env_secret"}
+    for key, secret in ((None, None), ("k", ""), ("", "s")):
+        assert not config.resolve_credentials(key, secret, env).valid
+
+
+def test_unknown_source_is_rejected_and_credentials_are_not_in_repr():
+    import pytest
+
+    with pytest.raises(ValueError, match="Unknown credential source"):
+        config.resolve_credentials("k", "s", source="invalid")
+    representation = repr(config.Credentials("sensitive-key", "sensitive-secret"))
+    assert "sensitive" not in representation
 
 
 def test_paths_layout(tmp_path):

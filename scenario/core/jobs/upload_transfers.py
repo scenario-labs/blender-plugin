@@ -39,6 +39,10 @@ class PartUploader:
         self._policy = policy
         self._online_access = online_access
 
+    @property
+    def policy(self):
+        return self._policy
+
     def upload(self, url, data, *, number, content_type, expected_sha256):
         host, target = self._policy.destination(url)
         if type(number) is not int or number < 1:

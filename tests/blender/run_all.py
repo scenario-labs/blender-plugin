@@ -25,6 +25,7 @@ BASELINE = (
     "test_upload_store",
     "test_credentials",
     "test_result_commands",
+    "test_upload_commands",
     "test_register",
     "test_generation",
     "test_apply_image",

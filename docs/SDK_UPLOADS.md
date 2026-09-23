@@ -68,9 +68,9 @@ uncertain; do not attach a guessed upload or automatically recreate it.
 
 ## Remaining integration and verification
 
-A signed PUT primitive is available as described below. File staging/part planning,
-expiry policy, upload orchestration/completion reconciliation, server
-cleanup and UI/MCP wiring remain separate work. Storage requests must check destination/online policy and never forward
+Signed PUT transport, private source staging, durable claims and explicit shared
+worker commands are available as described below. Production host/size policy,
+recovery UI, source retention/cleanup and UI/MCP wiring remain separate work. Storage requests must check destination/online policy and never forward
 Scenario Authorization. No upload-abort method was established in this SDK.
 
 Offline contracts exercise the actual SDK through MockTransport, including
@@ -163,3 +163,51 @@ replacement while in use. Each SQLite connection rechecks the database with
 at that boundary; it is not an atomic defense against an attacker who controls
 the directory and can swap the path after the check. This database is separate from the job database;
 there is no migration or active prototype integration in this component.
+
+
+## Shared worker commands
+
+The coordinator optionally owns one `UploadStore`, `UploadSources` and
+`PartUploader` with the same scope as its job store. Its existing `JobWorkers`
+queue exposes five fixed commands; there is no second SDK client or thread pool.
+
+| Command | Behavior |
+| --- | --- |
+| `prepare_upload` | Copy the chosen source into private storage and persist its immutable identity; no network |
+| `initialize_upload` | Verify the staged whole file, commit initialization intent, call SDK create once and preserve the returned ID |
+| `transfer_upload_part` | Retrieve the known upload, verify its metadata/next part destination and immutable bytes, claim and send exactly one part |
+| `finalize_upload` | Require all saved receipts, claim completion, then call the SDK completion action once |
+| `refresh_upload` | Retrieve a known upload and commit recognized processing/imported/failed observations without replay |
+
+Staging defaults to a local 256 MiB file limit and 8 MiB parts, configurable by
+the application. Files are copied with bounded reads into a new private directory;
+symlinks, nonregular sources, changed size/timestamps and incomplete copies fail.
+File and directory flushes precede intent persistence (directory fsync on POSIX).
+The original path is not stored. Subsequent edits to the original file do not
+alter the snapshot. Each part read rechecks size and its saved digest; initialization
+also verifies the full digest. The application must retain ownership of the
+staging directory and ancestors. Failed intent persistence or deactivation after
+staging may leave a private orphan for explicit retention/cleanup policy; no
+user source is deleted. These are local resource limits, not service guarantees.
+
+The SDK's pending multipart plan must match kind, filename, MIME, size, count and
+ordered part numbers. The selected URL must match the configured exact host policy
+and carry a timezone-aware expiry more than 30 seconds away. This local freshness
+margin is not a transfer-duration guarantee. A fresh plan is retrieved for each
+explicit part command; signed URLs remain ephemeral. Provider-specific size,
+part-order and expiry formats still need live acceptance. Model import is rejected
+because its entity is not an asset reference.
+
+Deactivation before a mutation claim prevents dispatch. Once claimed, responses
+can persist only to the old scope; a later command is rejected by that inactive
+owner. Ordinary errors after a claim conservatively become uncertainty, including
+local permission revocation or definitive rejections; the commands do not infer
+that retry is safe. Failed persistence and thread-control exceptions leave the
+in-flight claim intact. A known upload's `complete`, `validating` or `validated`
+status means processing, not imported. Only `imported` with a valid `entityId`
+binds an asset; pending status does not release uncertain claims.
+
+Offline tests exercise the actual SDK with synthetic HTTP responses and mocked
+storage connections, including the installed extension and shared worker queue.
+No live source is uploaded by these tests. Active UI/MCP wiring, authoritative
+account discovery, production storage policy and user-facing recovery remain #65.

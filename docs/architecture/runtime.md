@@ -58,6 +58,9 @@ for its actual state machine and tested boundaries.
 adoption, [#65](https://github.com/scenario-labs/blender-plugin/issues/65) shared
 runtime integration, [#66](https://github.com/scenario-labs/blender-plugin/issues/66)
 the views, [#67](https://github.com/scenario-labs/blender-plugin/issues/67)
-authentication and [#68](https://github.com/scenario-labs/blender-plugin/issues/68)
+future OAuth authentication (deferred for this release) and [#68](https://github.com/scenario-labs/blender-plugin/issues/68)
 integrated release acceptance. Offline serialization tests and source inspection
 do not satisfy their live or native acceptance criteria.
+
+The current release follows the [API-key release plan](../maintenance/release-plan.md).
+OAuth deferral does not relax credential precedence, project scope or paid-job safety.

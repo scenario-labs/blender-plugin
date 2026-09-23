@@ -199,6 +199,8 @@ def capture_credential_preferences(window, area, complete):
                         raise RuntimeError("Preferences screenshot did not finish")
                 else:
                     capture_x11(destination)
+            if not destination.is_file():
+                raise RuntimeError("Preferences screenshot file is missing")
             select_next()
 
         # Return to Blender's event loop so the window presents the new layout.

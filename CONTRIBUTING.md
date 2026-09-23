@@ -229,6 +229,9 @@ ZIP, screenshots, reports and
 logs; staged source/wheels and the temporary ZIP copy are removed. Setup errors
 produce a failed report when the output directory is writable. A cleanup error
 retains capture evidence with `status: cleanup_failed` and a nonzero exit.
+The Blender-side `gui.json` reports `captured` only after the sidebar/composer
+and both credential-preference screenshots have been written; a timeout between
+timer callbacks cannot leave a successful capture report.
 The composer has no audio lane; use `--view sidebar --lane audio` for that lane.
 
 `--fixture empty` (default) captures the

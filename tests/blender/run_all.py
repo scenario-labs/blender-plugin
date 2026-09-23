@@ -21,6 +21,7 @@ sys.path.insert(0, str(HERE))
 from blender_env import inspect_zip, sha256, verify_installed  # noqa: E402
 
 BASELINE = (
+    "test_upload_transfers",
     "test_credentials",
     "test_result_commands",
     "test_register",

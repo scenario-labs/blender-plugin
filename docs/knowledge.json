@@ -219,7 +219,10 @@
       "limits": "Existing guide indexed during this intake, without a fresh claim-by-claim or live verification; consult current integration status and issue acceptance.",
       "sources": {
         "scenario/core/api/sdk_adapter.py": "a5f8a5da9ce1f482dbe1af19b43d00f211b66401781fa03d18c9fd3ef2340467",
-        "tests/unit/test_sdk_uploads.py": "52a3a5d7016289264e7065c3945eec929f9d57feb61b0f7c1436b195fe3e06f6"
+        "tests/unit/test_sdk_uploads.py": "52a3a5d7016289264e7065c3945eec929f9d57feb61b0f7c1436b195fe3e06f6",
+        "scenario/core/jobs/upload_transfers.py": "c43885db190b669c5f1ba72bb64d7c17e57d84aabab964d676f039c1d38165b2",
+        "tests/unit/test_upload_transfers.py": "0d26e96c55bb0c895220d0d0f64a4573067d9630ec0e9fc80525a8a126d77d97",
+        "tests/blender/test_upload_transfers.py": "f6847d8595f363b66b00bcbc7d5634b5212221e7b8cda49e2eefd8eebfdd0b4e"
       }
     },
     {
@@ -320,7 +323,10 @@
         "tests/blender/test_job_store.py": "9391c63dd8837345ea383e2a2fa250d9a911c1a3ddda16e07617c66854b2fc65",
         "scenario/core/jobs/results.py": "6f8735b1fe64f0607ae63c4a5cb43c443904730ede7a2466ceb6439a425d93a2",
         "tests/unit/test_result_commands.py": "3bcba6d1b719ad3016fd5a68e0b740ff5d7eaba1924d59700f0e6d6adbec8009",
-        "tests/blender/test_result_commands.py": "bcb919c9a8dfcd3498959492b5bb49a3f1395b6923282f38182cc9b12c68089e"
+        "tests/blender/test_result_commands.py": "bcb919c9a8dfcd3498959492b5bb49a3f1395b6923282f38182cc9b12c68089e",
+        "scenario/core/jobs/upload_transfers.py": "c43885db190b669c5f1ba72bb64d7c17e57d84aabab964d676f039c1d38165b2",
+        "tests/unit/test_upload_transfers.py": "0d26e96c55bb0c895220d0d0f64a4573067d9630ec0e9fc80525a8a126d77d97",
+        "tests/blender/test_upload_transfers.py": "f6847d8595f363b66b00bcbc7d5634b5212221e7b8cda49e2eefd8eebfdd0b4e"
       }
     },
     {

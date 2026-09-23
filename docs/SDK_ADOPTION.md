@@ -86,8 +86,9 @@ completion acknowledgement alone does not establish that an asset is imported.
 
 The [signed result transport](RESULT_TRANSFERS.md) implements the download
 primitive with explicit trusted-host configuration, bounded reads and atomic
-non-overwriting output. Production host selection, durable download-state
-integration and upload-part transfers remain separate work.
+non-overwriting output. The coordinator now connects scoped SDK job/asset metadata to persisted download
+state and explicit retries with fresh URLs. Production host selection, interrupted
+worker reconciliation, UI wiring and upload-part transfers remain separate work.
 
 ### Reconciliation and cancellation
 

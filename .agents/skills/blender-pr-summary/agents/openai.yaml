@@ -1,0 +1,4 @@
+interface:
+  display_name: "Blender PR Summary"
+  short_description: "Refresh the current Blender PR description"
+  default_prompt: "$blender-pr-summary"

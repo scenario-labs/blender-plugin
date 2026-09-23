@@ -1,6 +1,6 @@
 #:schema https://developers.openai.com/codex/config-schema.json
 # Shared repository defaults. Codex loads this file only for trusted projects.
-# AGENTS.md directs Codex to shared conventions in .claude/CLAUDE.md.
+# AGENTS.md holds shared conventions; .claude/CLAUDE.md links to it.
 # Model selection and machine-specific settings remain in user configuration.
 
 web_search = "live"

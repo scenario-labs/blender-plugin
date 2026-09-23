@@ -1,0 +1,6 @@
+interface:
+  short_description: "Download current PR artifacts: <prnumber>"
+  default_prompt: "$blender-download-artifacts <prnumber>"
+
+policy:
+  allow_implicit_invocation: false

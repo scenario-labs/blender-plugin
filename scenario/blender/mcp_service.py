@@ -176,7 +176,10 @@ def cli(argv):
     except KeyboardInterrupt:
         stop_event.set()
     finally:
-        for sig, handler in previous.items():
-            signal.signal(sig, handler)
         server.stop()
+        for sig, handler in previous.items():
+            # Blender can install a native handler that Python reports as None.
+            # None is not accepted by signal.signal; the command is exiting.
+            if handler is not None:
+                signal.signal(sig, handler)
     return 0

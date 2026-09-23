@@ -105,9 +105,10 @@ class McpCliTests(unittest.TestCase):
                 self.assertNotIn("error", scene)
                 self.assertFalse(scene["result"].get("isError"))
                 process.send_signal(signal.SIGTERM)
-                self.assertEqual(process.wait(timeout=15), 0)
+                returncode = process.wait(timeout=15)
                 log.seek(0)
                 output = log.read()
+                self.assertEqual(returncode, 0, output)
                 self.assertIn("token provided; hidden", output)
                 self.assertNotIn(token, output)
             finally:

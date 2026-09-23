@@ -45,7 +45,7 @@ _MIME_EXT = {
 }
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, repr=False)
 class Credentials:
     key: str
     secret: str
@@ -55,11 +55,17 @@ class Credentials:
         return bool(self.key and self.secret)
 
 
-def resolve_credentials(pref_key, pref_secret, environ=None):
-    environ = os.environ if environ is None else environ
-    key = (environ.get("SCENARIO_API_KEY") or pref_key or "").strip()
-    secret = (environ.get("SCENARIO_API_SECRET") or pref_secret or "").strip()
-    return Credentials(key, secret)
+def resolve_credentials(pref_key, pref_secret, environ=None, *, source="PREFERENCES"):
+    """Use one explicitly selected pair; never mix sources or silently fall back."""
+    if source == "PREFERENCES":
+        key, secret = pref_key, pref_secret
+    elif source == "ENVIRONMENT":
+        environ = os.environ if environ is None else environ
+        key = environ.get("SCENARIO_API_KEY")
+        secret = environ.get("SCENARIO_API_SECRET")
+    else:
+        raise ValueError("Unknown credential source")
+    return Credentials((key or "").strip(), (secret or "").strip())
 
 
 @dataclass(frozen=True)

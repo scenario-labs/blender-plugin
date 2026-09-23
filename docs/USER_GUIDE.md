@@ -17,7 +17,14 @@ The add-on also runs a small local MCP server, so an agent such as Claude Code, 
 1. Download `scenario-<version>.zip` from the [releases page](https://github.com/scenario-labs/blender-plugin/releases) (or build it with `uv run --locked --no-env-file python tools/build.py`). Keep it zipped.
 2. Drag the zip onto any Blender window, or use Edit > Preferences > Get Extensions > Install from Disk. Blender installs it into your user extensions and enables it. Updating: install the new zip the same way; Blender replaces the old version. Restart Blender after an update so the new code loads.
 3. Create an API key in Scenario: Team > API Keys, Project or Team scope, role Editor. The secret is shown once.
-4. Edit > Preferences > Add-ons > Scenario: paste the key and the secret, press Test connection. Pick an Output Folder (default `~/Downloads/Scenario`). Blender's Allow Online Access must be on (System preferences).
+4. Edit > Preferences > Add-ons > Scenario: leave Credentials set to **Saved in Blender**, paste the key and the secret, and press Test connection. Pick an Output Folder (default `~/Downloads/Scenario`). Blender's Allow Online Access must be on (System preferences).
+
+For automation, select **Credentials > Environment** to use `SCENARIO_API_KEY`
+and `SCENARIO_API_SECRET` from the environment that launched Blender. Both are
+required. Environment values never override **Saved in Blender**, and an incomplete
+pair never borrows from the other source. Secrets are masked in the preferences;
+Blender saves entered credentials with its preferences, not in an OS keychain.
+The account strip names the selected source when its key or secret is missing.
 
 ### Verify your download
 

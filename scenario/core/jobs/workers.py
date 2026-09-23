@@ -3,6 +3,7 @@
 """Bounded application-owned workers for the shared job commands, without bpy."""
 
 import json
+import os
 import threading
 from collections import deque
 from concurrent.futures import Future
@@ -88,6 +89,35 @@ class JobWorkers:
             self._pending.append((task, command, args, kwargs))
             self._condition.notify()
             return task
+
+    def prepare_upload(self, source, *, origin, kind, content_type):
+        return self._enqueue(
+            self._coordinator.prepare_upload,
+            os.fspath(source),
+            origin=origin,
+            kind=kind,
+            content_type=content_type,
+        )
+
+    def initialize_upload(self, request_id, *, expected_revision):
+        return self._enqueue(
+            self._coordinator.initialize_upload, request_id, expected_revision=expected_revision
+        )
+
+    def transfer_upload_part(self, request_id, *, expected_revision):
+        return self._enqueue(
+            self._coordinator.transfer_upload_part, request_id, expected_revision=expected_revision
+        )
+
+    def finalize_upload(self, request_id, *, expected_revision):
+        return self._enqueue(
+            self._coordinator.finalize_upload, request_id, expected_revision=expected_revision
+        )
+
+    def refresh_upload(self, request_id, *, expected_revision):
+        return self._enqueue(
+            self._coordinator.refresh_upload, request_id, expected_revision=expected_revision
+        )
 
     def submit(self, prepared, *, origin, operation, target_id, payload):
         """Queue an explicitly chosen paid action using an immutable payload copy."""

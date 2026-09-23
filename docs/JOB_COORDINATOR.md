@@ -243,3 +243,13 @@ asset work; a transfer already in flight can save its receipt to the old scope.
 Closing a view must not deactivate these application-owned workers. Runtime
 registration, production host configuration, interrupted-download reconciliation,
 application recovery and UI/MCP controls remain integration work under #65.
+
+
+## Reference upload commands
+
+Optional upload storage, source staging and signed PUT configuration attach to
+this same coordinator and worker queue. Their scope must match the job store.
+See [upload commands](SDK_UPLOADS.md#shared-worker-commands) for preparation,
+initialization, one-part transfer, finalization and explicit refresh. They do not
+submit generation, create another client/pool, or apply references to Blender.
+The active UI/MCP still needs to adopt these commands and its recovery controls.

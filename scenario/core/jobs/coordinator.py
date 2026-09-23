@@ -25,6 +25,7 @@ from .store import (
     StoredJob,
     _identity,
 )
+from .uploads import UploadCommands, UploadError
 
 
 class QuoteError(ValueError):
@@ -121,6 +122,9 @@ class JobCoordinator:
         origin_guard=None,
         result_downloader=None,
         result_root=None,
+        upload_store=None,
+        upload_sources=None,
+        part_uploader=None,
     ):
         if not isinstance(adapter, SDKAdapter) or not isinstance(store, JobStore):
             raise TypeError("Use the shared SDK adapter and job store")
@@ -150,6 +154,44 @@ class JobCoordinator:
         self._results = ResultCommands(
             adapter, store, self._result_guard, downloader=result_downloader, root=result_root
         )
+        self._uploads = None
+        if any(value is not None for value in (upload_store, upload_sources, part_uploader)):
+            if upload_store is None or upload_store.scope != self.scope:
+                raise ValueError("Upload and job scopes must match")
+            self._uploads = UploadCommands(
+                adapter, upload_store, upload_sources, part_uploader, self._upload_guard
+            )
+
+    @contextmanager
+    def _upload_guard(self):
+        with self._lock:
+            if not self._active:
+                raise UploadError("This upload context is inactive")
+            yield
+
+    def _upload_commands(self):
+        if self._uploads is None:
+            raise UploadError("Upload storage and transfer policy are not configured")
+        return self._uploads
+
+    def prepare_upload(self, source, *, origin, kind, content_type):
+        return self._upload_commands().prepare(
+            source, origin=origin, kind=kind, content_type=content_type
+        )
+
+    def initialize_upload(self, request_id, *, expected_revision):
+        return self._upload_commands().initialize(request_id, expected_revision=expected_revision)
+
+    def transfer_upload_part(self, request_id, *, expected_revision):
+        return self._upload_commands().transfer_part(
+            request_id, expected_revision=expected_revision
+        )
+
+    def finalize_upload(self, request_id, *, expected_revision):
+        return self._upload_commands().finalize(request_id, expected_revision=expected_revision)
+
+    def refresh_upload(self, request_id, *, expected_revision):
+        return self._upload_commands().refresh(request_id, expected_revision=expected_revision)
 
     @property
     def scope(self):

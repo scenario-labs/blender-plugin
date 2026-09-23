@@ -271,6 +271,23 @@ class WorldApplicationTests(unittest.TestCase):
         self.assertEqual(set(bpy.data.images), images)
         self.assert_original()
 
+    def test_excess_png_chunks_rejected_before_decode_without_scene_changes(self):
+        panorama = submodule("core.scene.panorama")
+        path = self.fixture()
+        data = path.read_bytes()
+        # Insert legal private ancillary chunks after IHDR in a real decoded fixture.
+        kind = b"vpAg"
+        chunk = struct.pack(">I", 0) + kind + struct.pack(">I", zlib.crc32(kind))
+        path.write_bytes(data[:33] + chunk * panorama.MAX_PNG_CHUNKS + data[33:])
+        worlds, images = set(bpy.data.worlds), set(bpy.data.images)
+        with unittest.mock.patch.object(self.module, "_load_image") as decode:
+            with self.assertRaisesRegex(self.module.PanoramaError, "chunk limit"):
+                self.module.apply_world(self.scene, path)
+            decode.assert_not_called()
+        self.assertEqual(set(bpy.data.worlds), worlds)
+        self.assertEqual(set(bpy.data.images), images)
+        self.assert_original()
+
     @unittest.skipUnless(hasattr(os, "mkfifo"), "POSIX special-file fixture")
     def test_fifo_rejected_without_waiting_for_a_writer(self):
         path = Path(self.temp.name) / "fifo.png"

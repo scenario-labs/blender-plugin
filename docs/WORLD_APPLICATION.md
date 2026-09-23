@@ -16,7 +16,10 @@ is packed before scene assignment; deleting the source file afterward is safe.
 Temporary copies live under the extension's user directory, not its installation.
 
 - RGB/RGBA PNG with 8- or 16-bit samples. CRCs and chunk boundaries are checked;
-  animated PNG and HDR metadata (`cICP`, `mDCV`, `cLLI`) are rejected.
+  animated PNG and HDR metadata (`cICP`, `mDCV`, `cLLI`) are rejected. A maximum
+  of 4,096 total chunks, including IHDR, IDAT and IEND, bounds per-chunk preflight
+  work independently of file size and pixel dimensions. Files above this
+  application limit are rejected before decoding; it is not a PNG format limit.
 - Single-part, non-deep OpenEXR version 2 scanline files (compression types 0–9), with matching data
   and display windows. Explicit cubemap metadata is rejected. Blender must decode
   the result as a floating-point image.

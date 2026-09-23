@@ -8,6 +8,7 @@ from dataclasses import dataclass
 
 MAX_FILE_BYTES = 128 * 1024 * 1024
 MAX_PIXELS = 32 * 1024 * 1024
+MAX_PNG_CHUNKS = 4096
 
 
 class PanoramaError(ValueError):
@@ -30,7 +31,13 @@ def _dimensions(file_format, width, height):
 
 def _png(data):
     offset, info, has_data, ended = 8, None, False, False
+    chunks = 0
     while offset + 12 <= len(data):
+        # Bound per-chunk main-thread work independently of file/pixel size.
+        # Count IDAT too, so empty data chunks cannot bypass the same budget.
+        if chunks >= MAX_PNG_CHUNKS:
+            raise PanoramaError("PNG exceeds the supported chunk limit")
+        chunks += 1
         size = struct.unpack_from(">I", data, offset)[0]
         kind = data[offset + 4 : offset + 8]
         end = offset + 12 + size

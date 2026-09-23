@@ -4,6 +4,7 @@
 
 import struct
 import zlib
+from unittest.mock import patch
 
 import pytest
 
@@ -98,6 +99,23 @@ def test_png_crc_corruption_rejected():
     data[20] ^= 1
     with pytest.raises(panorama.PanoramaError, match="integrity"):
         panorama.inspect_panorama(bytes(data))
+
+
+@pytest.mark.parametrize("kind", [b"vpAg", b"IDAT"])
+def test_png_chunk_limit_includes_all_chunks_and_accepts_boundary(kind):
+    # IHDR, the existing IDAT and IEND also consume the chunk budget.
+    data = png(extra=chunk(kind) * (panorama.MAX_PNG_CHUNKS - 3))
+    assert panorama.inspect_panorama(data) == panorama.PanoramaInfo("PNG", 4, 2, False)
+
+
+@pytest.mark.parametrize("kind", [b"vpAg", b"IDAT"])
+def test_png_excess_chunks_rejected_before_further_crc_work(kind):
+    data = png(extra=chunk(kind) * (panorama.MAX_PNG_CHUNKS * 2))
+    assert len(data) < panorama.MAX_FILE_BYTES
+    with patch.object(panorama.zlib, "crc32", wraps=zlib.crc32) as crc:
+        with pytest.raises(panorama.PanoramaError, match="chunk limit"):
+            panorama.inspect_panorama(data)
+        assert crc.call_count == panorama.MAX_PNG_CHUNKS
 
 
 @pytest.mark.parametrize("kind", [b"acTL", b"cICP", b"mDCV", b"cLLI"])

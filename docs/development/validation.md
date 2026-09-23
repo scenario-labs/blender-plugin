@@ -52,5 +52,7 @@ Never install development builds into the user's normal profile.
 - Smoke tests, generation, prompt helpers and scene design can spend credits.
   Do not run them as part of a documentation command.
 
-Read `scenario/blender/registry.py` before using the headless MCP CLI; the
-prototype's hyphenated command is a known issue, not a working example to copy.
+Use `blender --background scene.blend --command scenario_blender` for local MCP.
+Set `SCENARIO_BLENDER_TOKEN` for an explicit token, or use the generated session
+token shown at startup. Online access must be enabled; SIGINT/SIGTERM stop the
+server cleanly. Run it only in the isolated development profile described above.

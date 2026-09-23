@@ -1,6 +1,7 @@
 # SPDX-FileCopyrightText: 2026 Scenario Inc.
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Registers every Blender class of the extension in dependency order."""
+
 import logging
 
 import bpy
@@ -14,11 +15,33 @@ _log_handler = None
 
 
 def _modules():
-    from . import props, shot_planner, operators, prompt_tools, blockout, model_picker, panels, popover, composer  # noqa: F401
+    from . import (
+        blockout,
+        composer,
+        model_picker,
+        operators,
+        panels,
+        popover,
+        prompt_tools,
+        props,
+        shot_planner,
+    )
 
-    modules = [props, shot_planner, operators, prompt_tools, blockout, model_picker, panels, popover, composer]
+    modules = [
+        props,
+        shot_planner,
+        operators,
+        prompt_tools,
+        blockout,
+        model_picker,
+        panels,
+        popover,
+        composer,
+    ]
     try:
-        from . import icons  # Scenario's modality icons; optional so a build without the PNGs still loads
+        from . import (
+            icons,  # Scenario's modality icons; optional so a build without the PNGs still loads
+        )
 
         modules.insert(0, icons)
     except ImportError:
@@ -39,11 +62,11 @@ def _configure_logging():
         prefs = __import__(__package__ + ".runtime", fromlist=["prefs"]).prefs()
     except Exception:
         pass
-    log.setLevel(logging.DEBUG if (prefs and prefs.log_level == 'DEBUG') else logging.INFO)
+    log.setLevel(logging.DEBUG if (prefs and prefs.log_level == "DEBUG") else logging.INFO)
 
 
 def apply_log_level(level):
-    log.setLevel(logging.DEBUG if level == 'DEBUG' else logging.INFO)
+    log.setLevel(logging.DEBUG if level == "DEBUG" else logging.INFO)
 
 
 def register():
@@ -59,9 +82,11 @@ def register():
         mcp_service.start()
     try:
         runtime_module = __import__(__package__ + ".runtime", fromlist=["state"])
-        runtime_module.state.cli_handle = bpy.utils.register_cli_command("scenario-mcp", mcp_service.cli)
+        runtime_module.state.cli_handle = bpy.utils.register_cli_command(
+            mcp_service.CLI_COMMAND, mcp_service.cli
+        )
     except (AttributeError, ValueError, RuntimeError) as err:
-        log.debug("cli command not registered: %s", err)
+        log.warning("CLI command %r not registered: %s", mcp_service.CLI_COMMAND, err)
     log.info("Scenario for Blender registered")
 
 

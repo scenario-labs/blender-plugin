@@ -15,8 +15,6 @@ boundaries. No paid or live acceptance is implied by this documentation.
   The new SDK adapter's isolation does not fix every active entry point.
   Browser sign-in and explicit account/project selection are tracked in
   [#67](https://github.com/scenario-labs/blender-plugin/issues/67).
-- The registered headless command still uses the old hyphenated spelling;
-  [#15](https://github.com/scenario-labs/blender-plugin/issues/15) owns its repair.
 - Trained/custom-model discovery and routing remain incomplete
   ([#97](https://github.com/scenario-labs/blender-plugin/issues/97)).
 

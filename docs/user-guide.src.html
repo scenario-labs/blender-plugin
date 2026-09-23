@@ -385,7 +385,7 @@ footer{border-top:1px solid var(--line);padding-top:1.2rem;font-size:.88rem;colo
         <span>scene_summary</span><span>object_detail</span><span class="gated">execute_python</span><span>select_objects</span><span>set_frame</span><span>screenshot_viewport</span><span>render_still</span><span>camera_path</span><span>list_models</span><span>model_schema</span><span>estimate_cost</span><span>generate</span><span>job_status</span><span>wait_for_job</span><span>import_result</span><span>capture_reference</span><span>list_generations</span>
       </div>
       <p>Headless, without a window:</p>
-      <pre><code>blender --background scene.blend --command scenario-mcp --port 9876 --token &lt;token&gt;</code></pre>
+      <pre><code>blender --background scene.blend --command scenario_blender --port 9876 --token &lt;token&gt;</code></pre>
     </div>
     <figure>
       <img src="{{img:panel-mcp.png}}" alt="Agents (MCP) panel showing the server status, masked token, client setup buttons and the Python toggle">

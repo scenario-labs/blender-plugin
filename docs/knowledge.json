@@ -222,7 +222,10 @@
         "tests/unit/test_sdk_uploads.py": "52a3a5d7016289264e7065c3945eec929f9d57feb61b0f7c1436b195fe3e06f6",
         "scenario/core/jobs/upload_transfers.py": "c43885db190b669c5f1ba72bb64d7c17e57d84aabab964d676f039c1d38165b2",
         "tests/unit/test_upload_transfers.py": "0d26e96c55bb0c895220d0d0f64a4573067d9630ec0e9fc80525a8a126d77d97",
-        "tests/blender/test_upload_transfers.py": "f6847d8595f363b66b00bcbc7d5634b5212221e7b8cda49e2eefd8eebfdd0b4e"
+        "tests/blender/test_upload_transfers.py": "f6847d8595f363b66b00bcbc7d5634b5212221e7b8cda49e2eefd8eebfdd0b4e",
+        "scenario/core/jobs/upload_store.py": "3ca93f21aed4d2ccfc164f8e4ed58e543f424e1788d8d16107ef290c7d127497",
+        "tests/unit/test_upload_store.py": "0cfb6e4471e790537dc47cd08a7789b710e2c96435d93ac38c88af7aa7c533d5",
+        "tests/blender/test_upload_store.py": "b5bdade91572d9d8a919fbe8dea2a2cb4587a3f53e7b48425e95af5e1cd20a41"
       }
     },
     {
@@ -326,7 +329,10 @@
         "tests/blender/test_result_commands.py": "bcb919c9a8dfcd3498959492b5bb49a3f1395b6923282f38182cc9b12c68089e",
         "scenario/core/jobs/upload_transfers.py": "c43885db190b669c5f1ba72bb64d7c17e57d84aabab964d676f039c1d38165b2",
         "tests/unit/test_upload_transfers.py": "0d26e96c55bb0c895220d0d0f64a4573067d9630ec0e9fc80525a8a126d77d97",
-        "tests/blender/test_upload_transfers.py": "f6847d8595f363b66b00bcbc7d5634b5212221e7b8cda49e2eefd8eebfdd0b4e"
+        "tests/blender/test_upload_transfers.py": "f6847d8595f363b66b00bcbc7d5634b5212221e7b8cda49e2eefd8eebfdd0b4e",
+        "scenario/core/jobs/upload_store.py": "3ca93f21aed4d2ccfc164f8e4ed58e543f424e1788d8d16107ef290c7d127497",
+        "tests/unit/test_upload_store.py": "0cfb6e4471e790537dc47cd08a7789b710e2c96435d93ac38c88af7aa7c533d5",
+        "tests/blender/test_upload_store.py": "b5bdade91572d9d8a919fbe8dea2a2cb4587a3f53e7b48425e95af5e1cd20a41"
       }
     },
     {

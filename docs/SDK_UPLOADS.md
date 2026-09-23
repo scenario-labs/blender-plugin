@@ -69,7 +69,7 @@ uncertain; do not attach a guessed upload or automatically recreate it.
 ## Remaining integration and verification
 
 A signed PUT primitive is available as described below. File staging/part planning,
-expiry policy, durable upload state, completion/restart reconciliation, server
+expiry policy, upload orchestration/completion reconciliation, server
 cleanup and UI/MCP wiring remain separate work. Storage requests must check destination/online policy and never forward
 Scenario Authorization. No upload-abort method was established in this SDK.
 
@@ -124,3 +124,39 @@ known upload identity. Control exceptions propagate after cleanup and likewise
 must leave the caller's persisted claim available for recovery. Ordinary cleanup
 errors do not replace an acknowledged receipt with a failure that could invite
 replay. These are offline transport contracts, not live upload acceptance.
+
+
+## Durable upload claims
+
+[`UploadStore`](../scenario/core/jobs/upload_store.py) records immutable source
+metadata, whole-file and per-part SHA256 identities, original account/project
+scope and Blender origin in a separate versioned SQLite database. It does not
+read source files, run workers or call the network. The application must stage
+and hash its actual source before creating the intent, then verify each part
+against that identity before sending it. Signed URLs and credentials have no
+fields in this record. Local chunking limits are not service acceptance claims.
+
+Initialization, each part, and finalization require a committed claim before the
+caller performs the corresponding mutation. Revisions and immediate SQLite
+transactions reject stale or competing claims across connections. A part receipt
+must match the claimed number, exact size and saved digest; receipts form an
+ordered prefix. Finalization requires every receipt. Only an authoritative
+imported observation can attach an asset ID.
+
+Reopening preserves in-flight states verbatim. An interrupted initialization
+without a known remote ID remains uncertain; it cannot be reset or recreated.
+A part claimed without a receipt cannot be claimed again, including after a
+restart. Uncertain finalization cannot be retried. Explicit SDK reads of a known
+upload may reconcile processing, imported or failed observations without sending
+bytes again. The selected SDK has no per-part receipt or abort API; pending
+remote status alone cannot prove an interrupted part was rejected. No automatic
+retry or cleanup endpoint is invented here.
+
+The store validates source identity, state invariants, scope and revision when
+reading. Missing/corrupt records, foreign databases, future versions and failed
+writes raise errors and preserve evidence rather than resetting storage. Failed
+receipt persistence leaves the earlier claim in place. New database files and
+directories use private permissions where supported. The application owns the
+storage directory under Blender's extension user path and must prevent its
+replacement while in use. This database is separate from the job database;
+there is no migration or active prototype integration in this component.

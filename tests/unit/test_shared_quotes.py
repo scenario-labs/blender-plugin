@@ -280,3 +280,70 @@ def test_quote_encoder_overflow_is_sanitized_before_admission(env, monkeypatch, 
         assert not env.calls
     finally:
         workers.shutdown()
+
+
+@pytest.mark.parametrize("bound", [False, True])
+def test_preparation_overlapping_submission_does_not_invert_locks(env, monkeypatch, bound):
+    from concurrent.futures import ThreadPoolExecutor
+
+    coordinator = env.coordinator
+    adapter = coordinator._adapter
+    first = coordinator.quote_model("model-one", {"prompt": "first"}, origin=env.origin)
+    prepared = coordinator.prepare_quote(first)
+    second = (
+        coordinator.quote_model("model-one", {"prompt": "second"}, origin=env.origin)
+        if bound
+        else adapter.estimate_model(env.model, {"prompt": "second"})
+    )
+    preparing, submitting = threading.Event(), threading.Event()
+    original_prepare = coordinator._prepare
+
+    class BoundedEstimateLock:
+        # Fail a lock inversion instead of leaving deadlocked threads in the suite.
+        def __init__(self):
+            self.lock = threading.RLock()
+
+        def __enter__(self):
+            if not self.lock.acquire(timeout=2):
+                raise TimeoutError("Estimate lock blocked by concurrent preparation")
+            return self
+
+        def __exit__(self, *args):
+            self.lock.release()
+
+    def prepare_inside_lock(*args):
+        preparing.set()
+        assert submitting.wait(5)
+        return original_prepare(*args)
+
+    def online():
+        # submit_estimate calls this while holding the adapter lock, before claim.
+        submitting.set()
+        assert preparing.wait(5)
+        return True
+
+    monkeypatch.setattr(adapter, "_estimate_lock", BoundedEstimateLock())
+    monkeypatch.setattr(adapter, "_online", online)
+    monkeypatch.setattr(coordinator, "_prepare", prepare_inside_lock)
+
+    def prepare_second():
+        return (
+            coordinator.prepare_quote(second) if bound else coordinator.prepare(second, env.origin)
+        )
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        pending_prepare = pool.submit(prepare_second)
+        assert preparing.wait(5)
+        pending_submit = pool.submit(
+            coordinator.submit,
+            prepared,
+            origin=env.origin,
+            operation="model",
+            target_id="model-one",
+            payload=first.estimate.payload,
+        )
+        next_prepared = pending_prepare.result(5)
+        submitted = pending_submit.result(5)
+    assert submitted.state == JobState.REMOTE
+    assert env.store.get(next_prepared.intent.request_id).state == JobState.PREPARED
+    assert sum(request.url.params.get("dryRun") == "false" for request in env.calls) == 1

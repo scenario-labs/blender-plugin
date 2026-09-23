@@ -304,6 +304,10 @@ class JobCoordinator:
         """Persist one chosen quote without rebinding it to a newer scene revision."""
         if not isinstance(quote, OriginQuote):
             raise QuoteError("Use an unchanged quote issued by this context")
+        # Adapter ownership takes its estimate lock. Never acquire it while
+        # holding our lock: submission claims acquire them in the reverse order.
+        if not self._adapter.owns_estimate(quote.estimate):
+            raise QuoteError("Use a quote issued by the current active connection")
         with self._request_guard(quote.origin):
             if self._quotes.get(id(quote)) is not quote or quote.scope != self.scope:
                 raise QuoteError("Use an unchanged quote issued by this context")
@@ -321,9 +325,11 @@ class JobCoordinator:
             return self._prepare(estimate, origin)
 
     def _prepare(self, estimate: Estimate, origin: JobOrigin):
-        """Persist an intent after the caller has chosen this quote; do not spend."""
-        if not self._adapter.owns_estimate(estimate):
-            raise QuoteError("Use a quote issued by the current active connection")
+        """Persist after ownership was checked outside the coordinator lock.
+
+        Preparation does not reserve or consume an estimate. Submission rechecks
+        ownership atomically with the durable claim and single-use consumption.
+        """
         with self._lock:
             if not self._active:
                 raise QuoteError("Use a quote issued by the current active connection")

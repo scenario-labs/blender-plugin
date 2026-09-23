@@ -287,3 +287,10 @@ captured origin. `prepare_quote` resolves that same scene/target before persisti
 Frame/file/dependency invalidation, view-independent lifetime and shutdown retain
 the existing session rules. Active compact/expanded UI and MCP entry points still
 need to switch from the prototype runtime to these shared commands.
+
+Estimate ownership is checked before acquiring the coordinator/origin locks.
+Preparation keeps quote selection and persistence under the coordinator lock,
+but never acquires the adapter estimate lock there. Submission rechecks and
+consumes the estimate under the adapter lock while committing its durable claim;
+preparation does not reserve spending authorization. This ordering lets a new
+preparation overlap an existing submission without deadlocking either thread.

@@ -227,12 +227,22 @@ def capture_extension_permissions(window, area):
         bpy.ops.extensions.package_show_set(pkg_id="scenario", repo_index=index)
         area.tag_redraw()
         bpy.ops.wm.redraw_timer(type="DRAW_WIN_SWAP", iterations=2)
+    # Metal needs a real event-loop turn after changing editor type; an immediate
+    # screenshot can still contain the previous viewport front buffer.
+    bpy.app.timers.register(guarded(capture_permissions), first_interval=1.0)
+
+
+def capture_permissions():
+    window = bpy.context.window_manager.windows[0]
+    area = next(area for area in window.screen.areas if area.type == "PREFERENCES")
+    with bpy.context.temp_override(window=window, area=area):
         destination = OUTPUT / "permissions.png"
         if CAPTURE_BACKEND == "blender":
             if bpy.ops.screen.screenshot(filepath=str(destination)) != {"FINISHED"}:
                 raise RuntimeError("Permissions screenshot did not finish")
         else:
             capture_x11(destination)
+    bpy.ops.wm.quit_blender()
 
 
 def capture():
@@ -304,7 +314,6 @@ def capture():
             )
             + "\n"
         )
-        bpy.ops.wm.quit_blender()
 
     capture_credential_preferences(window, area, complete)
 

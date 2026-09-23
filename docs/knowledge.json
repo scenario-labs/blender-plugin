@@ -385,7 +385,7 @@
       "reviewed_at": "2026-09-23",
       "limits": "Navigation and maintenance contract; structural validation does not certify prose or product behavior.",
       "sources": {
-        "tools/check_knowledge.py": "112875bbbbe383703edcb0936330f1c502472ba096b45626c2466ead579abe56"
+        "tools/check_knowledge.py": "9a000a610ece0164888d9ba2f603fb5fd5a851c41409e87917f7caf906496454"
       }
     },
     {
@@ -423,8 +423,8 @@
       "reviewed_at": "2026-09-23",
       "limits": "Navigation and maintenance contract; structural validation does not certify prose or product behavior.",
       "sources": {
-        "tools/check_knowledge.py": "112875bbbbe383703edcb0936330f1c502472ba096b45626c2466ead579abe56",
-        "tests/unit/test_knowledge.py": "aaac1842c7752656a72010f7d12d5cedb8a98521b0e327ec938222f5243a98d8",
+        "tools/check_knowledge.py": "9a000a610ece0164888d9ba2f603fb5fd5a851c41409e87917f7caf906496454",
+        "tests/unit/test_knowledge.py": "03422fe1c97d3204d0c5ac89390717961888014b57d52de2981c88678388bcce",
         ".github/workflows/knowledge.yml": "8606852814ef8ff2588a7f7f0311e032fb6e34d64ec56ef080ed2470bb285160"
       }
     }

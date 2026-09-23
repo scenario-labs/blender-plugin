@@ -25,8 +25,11 @@ Structural errors fail: malformed metadata, absent sources, files outside the
 repository, ignored file links, unregistered documents, broken local links or
 Markdown fragments, and documents unreachable from the index. Link parsing
 supports ordinary inline Markdown links/images and reference definitions,
-including angle-bracket destinations with spaces. Fenced examples and inline
-code are ignored. It is not a full HTML or CommonMark renderer; HTML links and
+including angle-bracket destinations with spaces. Local links must be relative
+to their document; leading-slash paths are rejected with a diagnostic naming the
+link. Undefined-reference checks apply to standalone bracket pairs, excluding
+attached indexing notation such as `config[env][key]` and escaped opening brackets.
+Fenced examples and inline code are ignored. It is not a full HTML or CommonMark renderer; HTML links and
 external URL redirects/availability remain outside this check (#47).
 
 Changed source bytes and reviews older than 45 days produce warnings. A warning

@@ -92,9 +92,12 @@ def undefined_references(text):
     definitions = {
         " ".join(label.lower().split()) for label in re.findall(r"^\s*\[([^\]]+)\]:", text, re.M)
     }
+    # Only lint standalone reference pairs. Attached indexing expressions and
+    # escaped opening brackets are ordinary prose in this supported subset.
+    pattern = r"(?<![\w\]\\)])\[([^\]]+)\]\[([^\]]*)\]"
     return [
         reference or label
-        for label, reference in re.findall(r"\[([^\]]+)\]\[([^\]]*)\]", text)
+        for label, reference in re.findall(pattern, text)
         if " ".join((reference or label).lower().split()) not in definitions
     ]
 
@@ -120,9 +123,14 @@ def navigation(root, known, paths, errors):
                 parsed = urlsplit(link)
                 if parsed.scheme or parsed.netloc:
                     continue
+                destination = unquote(parsed.path)
+                if destination.startswith("/"):
+                    raise ValueError(
+                        f"unsupported root-relative link: {link}; use a document-relative link"
+                    )
                 target = (
-                    safe_path(root, str(Path(relative).parent / unquote(parsed.path)))
-                    if parsed.path
+                    safe_path(root, str(Path(relative).parent / destination))
+                    if destination
                     else path
                 )
                 if not target.exists():

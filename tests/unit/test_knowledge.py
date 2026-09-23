@@ -233,3 +233,32 @@ def test_undefined_reference_and_encoded_space_links(repo):
     errors = audit(repo)["errors"]
     assert len(errors) == 1
     assert "undefined reference" in errors[0]
+
+
+@pytest.mark.parametrize("destination", ["/README.md", "%2FREADME.md"])
+def test_root_relative_link_has_actionable_error_and_audit_continues(repo, destination):
+    write(
+        repo[0],
+        "docs/guide.md",
+        f"# Guide\n## API value\n[Root]({destination})\n[Missing](missing.md)\n",
+    )
+    errors = audit(repo)["errors"]
+    assert len(errors) == 2
+    assert any(
+        f"unsupported root-relative link: {destination}; use a document-relative link" in error
+        for error in errors
+    )
+    assert any("missing link target: missing.md" in error for error in errors)
+
+
+def test_indexing_prose_is_not_an_undefined_reference(repo):
+    write(
+        repo[0],
+        "docs/guide.md",
+        "# Guide\n## API value\n"
+        "Inspect config[env][key], results[0][1], matrix[i][j][k] and lookup()[a][b].\n"
+        r"An escaped \[label][ref] is text too."
+        "\n[Source][known]\n[known]: ../source.py\n"
+        "A real missing reference still fails: ([Broken][missing]).\n",
+    )
+    assert audit(repo)["errors"] == ["docs/guide.md: undefined reference link: missing"]

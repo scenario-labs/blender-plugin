@@ -208,7 +208,26 @@ def capture_credential_preferences(window, area, complete):
     select_next()
 
 
-def capture_extension_permissions(window, area):
+def inspect_screenshot(path):
+    """Reject blank evidence and always release the temporary Blender image."""
+    shot = bpy.data.images.load(str(path), check_existing=False)
+    try:
+        dimensions = list(shot.size)
+        # Xvfb without a window manager can return a valid but entirely black
+        # front buffer. Sample RGB pixels (exclude alpha) before claiming capture.
+        pixels = shot.pixels
+        stride = max(4, (len(pixels) // 512 // 4) * 4)
+        samples = {
+            tuple(round(v, 3) for v in pixels[i : i + 3]) for i in range(0, len(pixels), stride)
+        }
+        if len(samples) < 2:
+            raise RuntimeError("Screenshot is blank; check the display/window manager")
+    finally:
+        bpy.data.images.remove(shot)
+    return dimensions, len(samples)
+
+
+def capture_extension_permissions(window, area, report):
     """Show the installed manifest's actual Get Extensions permission row."""
     repository = Path(INSTALLED).resolve().parent
     index = next(
@@ -229,10 +248,10 @@ def capture_extension_permissions(window, area):
         bpy.ops.wm.redraw_timer(type="DRAW_WIN_SWAP", iterations=2)
     # Metal needs a real event-loop turn after changing editor type; an immediate
     # screenshot can still contain the previous viewport front buffer.
-    bpy.app.timers.register(guarded(capture_permissions), first_interval=1.0)
+    bpy.app.timers.register(guarded(lambda: capture_permissions(report)), first_interval=1.0)
 
 
-def capture_permissions():
+def capture_permissions(report):
     window = bpy.context.window_manager.windows[0]
     area = next(area for area in window.screen.areas if area.type == "PREFERENCES")
     with bpy.context.temp_override(window=window, area=area):
@@ -242,6 +261,10 @@ def capture_permissions():
                 raise RuntimeError("Permissions screenshot did not finish")
         else:
             capture_x11(destination)
+    inspect_screenshot(destination)
+    report["status"] = "captured"
+    report["captured_at"] = datetime.datetime.now(datetime.UTC).isoformat()
+    (OUTPUT / "gui.json").write_text(json.dumps(report, indent=2) + "\n")
     bpy.ops.wm.quit_blender()
 
 
@@ -265,57 +288,32 @@ def capture():
                 raise RuntimeError("Blender screenshot operator did not finish")
         else:
             capture_x11(OUTPUT / "plugin.png")
-    shot = bpy.data.images.load(str(OUTPUT / "plugin.png"), check_existing=False)
-    try:
-        dimensions = list(shot.size)
-        # Xvfb without a window manager can return a valid but entirely black
-        # front buffer. Sample RGB pixels (exclude alpha) before claiming capture.
-        pixels = shot.pixels
-        stride = max(4, (len(pixels) // 512 // 4) * 4)
-        samples = {
-            tuple(round(v, 3) for v in pixels[i : i + 3]) for i in range(0, len(pixels), stride)
-        }
-        if len(samples) < 2:
-            raise RuntimeError("Screenshot is blank; check the display/window manager")
-    finally:
-        bpy.data.images.remove(shot)
+    dimensions, sample_count = inspect_screenshot(OUTPUT / "plugin.png")
     mcp_captures = verify_mcp_captures()
     active_sidebar = region.active_panel_category
 
-    def complete():
-        capture_extension_permissions(window, area)
-        (OUTPUT / "gui.json").write_text(
-            json.dumps(
-                {
-                    "status": "captured",
-                    "credential_captures": [
-                        "preferences-preferences.png",
-                        "preferences-environment.png",
-                    ],
-                    "captured_at": datetime.datetime.now(datetime.UTC).isoformat(),
-                    "blender_version": list(bpy.app.version),
-                    "blender": bpy.app.version_string,
-                    "python": sys.version,
-                    "os": platform.platform(),
-                    "online_access": bpy.app.online_access,
-                    "view": VIEW,
-                    "lane": LANE,
-                    "fixture": FIXTURE,
-                    "selected_model_id": lane_state.model_id,
-                    "active_sidebar": active_sidebar,
-                    "image_size": dimensions,
-                    "capture_backend": CAPTURE_BACKEND,
-                    "gpu_backend": gpu.platform.backend_type_get(),
-                    "gpu_renderer": gpu.platform.renderer_get(),
-                    "distinct_rgb_samples": len(samples),
-                    "mcp_captures": mcp_captures,
-                },
-                indent=2,
-            )
-            + "\n"
-        )
-
-    capture_credential_preferences(window, area, complete)
+    report = {
+        "credential_captures": ["preferences-preferences.png", "preferences-environment.png"],
+        "mcp_captures": mcp_captures,
+        "blender_version": list(bpy.app.version),
+        "blender": bpy.app.version_string,
+        "python": sys.version,
+        "os": platform.platform(),
+        "online_access": bpy.app.online_access,
+        "view": VIEW,
+        "lane": LANE,
+        "fixture": FIXTURE,
+        "selected_model_id": lane_state.model_id,
+        "active_sidebar": active_sidebar,
+        "image_size": dimensions,
+        "capture_backend": CAPTURE_BACKEND,
+        "gpu_backend": gpu.platform.backend_type_get(),
+        "gpu_renderer": gpu.platform.renderer_get(),
+        "distinct_rgb_samples": sample_count,
+    }
+    capture_credential_preferences(
+        window, area, lambda: capture_extension_permissions(window, area, report)
+    )
 
 
 bpy.app.timers.register(guarded(prepare), first_interval=1.5)

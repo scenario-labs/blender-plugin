@@ -92,7 +92,7 @@
         "scenario/core/jobs/store.py": "9353d0c81e4fd549bebec967dff9ac6b9cfc3c64e30ff3e596ae565fc2448497",
         "tests/unit/test_job_store.py": "2bc71047d762d63d960ef249a30384ae41d508e5cf2f236e0e08c9caf6aba655",
         "scenario/core/jobs/transfers.py": "ea40d9bc7ced4e633b1c63171e6f1bf52c69a0988b6dbea2861872df49b8db41",
-        "tests/unit/test_result_manifest.py": "f7da231e931508681901d12a465d9e404e97f1b5e105c80159b109893cd83973",
+        "tests/unit/test_result_manifest.py": "5e0414f331a07f245d31bc11945351eaebdb1786cd9ddd7648108365468520e8",
         "tests/blender/test_job_store.py": "9391c63dd8837345ea383e2a2fa250d9a911c1a3ddda16e07617c66854b2fc65"
       }
     },
@@ -177,7 +177,7 @@
         "scenario/core/jobs/transfers.py": "ea40d9bc7ced4e633b1c63171e6f1bf52c69a0988b6dbea2861872df49b8db41",
         "tests/unit/test_result_transfers.py": "494547ee1c4a756f1cc2e3f94084eade4cab746a88431844d6f44b67e925f8ed",
         "scenario/core/jobs/store.py": "9353d0c81e4fd549bebec967dff9ac6b9cfc3c64e30ff3e596ae565fc2448497",
-        "tests/unit/test_result_manifest.py": "f7da231e931508681901d12a465d9e404e97f1b5e105c80159b109893cd83973",
+        "tests/unit/test_result_manifest.py": "5e0414f331a07f245d31bc11945351eaebdb1786cd9ddd7648108365468520e8",
         "tests/blender/test_job_store.py": "9391c63dd8837345ea383e2a2fa250d9a911c1a3ddda16e07617c66854b2fc65"
       }
     },
@@ -303,7 +303,7 @@
         "tests/unit/test_config.py": "3d8ea8a6f0bcef70f0bb16146e794346cbbe7d2fc0f26aec1631b108cf6914f3",
         "tests/blender/test_credentials.py": "2e74d6f8292a2add5b77a1827a6624960595d7073d5b94f72a63c7214fc4e920",
         "scenario/core/jobs/store.py": "9353d0c81e4fd549bebec967dff9ac6b9cfc3c64e30ff3e596ae565fc2448497",
-        "tests/unit/test_result_manifest.py": "f7da231e931508681901d12a465d9e404e97f1b5e105c80159b109893cd83973",
+        "tests/unit/test_result_manifest.py": "5e0414f331a07f245d31bc11945351eaebdb1786cd9ddd7648108365468520e8",
         "tests/blender/test_job_store.py": "9391c63dd8837345ea383e2a2fa250d9a911c1a3ddda16e07617c66854b2fc65"
       }
     },

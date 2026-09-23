@@ -213,7 +213,7 @@ def test_corrupt_result_data_is_preserved_and_rejected(setup, tmp_path, change):
     store, record = setup
     record = advance(store, attach(store, record), JobState.DOWNLOADING)
     if change == "missing-receipt-field":
-        record = download(store, record)
+        download(store, record)
     with sqlite3.connect(tmp_path / "jobs.sqlite3") as connection:
         raw = json.loads(connection.execute("SELECT record FROM jobs").fetchone()[0])
         if change == "missing-results":

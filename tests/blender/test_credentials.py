@@ -4,7 +4,7 @@
 
 import os
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 from helpers import submodule
 
@@ -34,6 +34,32 @@ class CredentialTests(unittest.TestCase):
                     self.assertFalse(runtime.credentials().valid)
                 prefs.credential_source = "PREFERENCES"
                 self.assertTrue(runtime.credentials().valid)
+        finally:
+            prefs.credential_source, prefs.api_key, prefs.api_secret = saved
+            runtime.state.account_label = label
+
+    def test_missing_credentials_banner_matches_selected_source(self):
+        runtime = submodule("blender.runtime")
+        panels = submodule("blender.panels")
+        prefs = runtime.prefs()
+        saved = prefs.credential_source, prefs.api_key, prefs.api_secret
+        label = runtime.state.account_label
+        try:
+            with patch.dict(os.environ, {}, clear=True):
+                prefs.api_key, prefs.api_secret = "saved-key", "saved-secret"
+                prefs.credential_source = "ENVIRONMENT"
+                layout = Mock()
+                self.assertFalse(panels.draw_account_strip(layout, None))
+                layout.row.return_value.label.assert_called_once_with(
+                    text="Environment key/secret missing", icon="ERROR"
+                )
+                prefs.api_key = prefs.api_secret = ""
+                prefs.credential_source = "PREFERENCES"
+                layout = Mock()
+                self.assertFalse(panels.draw_account_strip(layout, None))
+                layout.row.return_value.label.assert_called_once_with(
+                    text="Add key and secret in Preferences", icon="ERROR"
+                )
         finally:
             prefs.credential_source, prefs.api_key, prefs.api_secret = saved
             runtime.state.account_label = label

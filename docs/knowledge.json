@@ -46,7 +46,7 @@
         "scenario/core/config.py": "74a45b99fde47d741710dbf2a9d8051f2b31903f10ecae679d061340c62fb1be",
         "scenario/prefs.py": "7c02f5d7fb65dd8c609e043f8ba8a613e7e6d60d47bc3e2f4b5ffbbf00261a61",
         "tests/unit/test_config.py": "3d8ea8a6f0bcef70f0bb16146e794346cbbe7d2fc0f26aec1631b108cf6914f3",
-        "tests/blender/test_credentials.py": "29c10db5e7e6e2cb25d6b36fdd8ea75fb766dd7d1599e73a58b43b8f983b570e"
+        "tests/blender/test_credentials.py": "2e74d6f8292a2add5b77a1827a6624960595d7073d5b94f72a63c7214fc4e920"
       }
     },
     {
@@ -226,7 +226,7 @@
       "sources": {
         "scenario/blender/composer/draw.py": "52a366ce04766edc3aef343c7b115d7e360e8c88a27688c4446be36ecc78c6e8",
         "scenario/blender/composer/modal.py": "5db6dcddc6b8ca2533fcf73f3d7782c0cd3bd47c99ca11eadf3a8c57d68ed632",
-        "scenario/blender/panels.py": "9c1001ed64038813141d42bccb1f1091058f4b4c10702949097a405e02958756"
+        "scenario/blender/panels.py": "5fbdc508c0d05c3472aa1ad489dfd366487ff39e3e32eef4fa9d79475ff64f0c"
       }
     },
     {
@@ -235,7 +235,7 @@
       "reviewed_at": "2026-09-23",
       "limits": "Existing guide indexed during this intake, without a fresh claim-by-claim or live verification; consult current integration status and issue acceptance.",
       "sources": {
-        "scenario/blender/panels.py": "9c1001ed64038813141d42bccb1f1091058f4b4c10702949097a405e02958756",
+        "scenario/blender/panels.py": "5fbdc508c0d05c3472aa1ad489dfd366487ff39e3e32eef4fa9d79475ff64f0c",
         "scenario/blender/composer/draw.py": "52a366ce04766edc3aef343c7b115d7e360e8c88a27688c4446be36ecc78c6e8",
         "scenario/blender/registry.py": "a34fcb0110b5c991764df22d423546d9de3c949d3183b6dad1c5ca9e05123af2",
         "scenario/mcp/tools_blender.py": "d806aab28a9ac7b675cd7370402aa6459da377bea7b251be5945aa6355760294",
@@ -245,7 +245,7 @@
         "scenario/core/config.py": "74a45b99fde47d741710dbf2a9d8051f2b31903f10ecae679d061340c62fb1be",
         "scenario/prefs.py": "7c02f5d7fb65dd8c609e043f8ba8a613e7e6d60d47bc3e2f4b5ffbbf00261a61",
         "tests/unit/test_config.py": "3d8ea8a6f0bcef70f0bb16146e794346cbbe7d2fc0f26aec1631b108cf6914f3",
-        "tests/blender/test_credentials.py": "29c10db5e7e6e2cb25d6b36fdd8ea75fb766dd7d1599e73a58b43b8f983b570e"
+        "tests/blender/test_credentials.py": "2e74d6f8292a2add5b77a1827a6624960595d7073d5b94f72a63c7214fc4e920"
       }
     },
     {
@@ -295,7 +295,7 @@
         "scenario/core/schema/forms.py": "5fae21a416ee5e72f444bc2b6d3502b5ace4b728f7790766161d8e7100b64af5",
         "scenario/prefs.py": "7c02f5d7fb65dd8c609e043f8ba8a613e7e6d60d47bc3e2f4b5ffbbf00261a61",
         "tests/unit/test_config.py": "3d8ea8a6f0bcef70f0bb16146e794346cbbe7d2fc0f26aec1631b108cf6914f3",
-        "tests/blender/test_credentials.py": "29c10db5e7e6e2cb25d6b36fdd8ea75fb766dd7d1599e73a58b43b8f983b570e"
+        "tests/blender/test_credentials.py": "2e74d6f8292a2add5b77a1827a6624960595d7073d5b94f72a63c7214fc4e920"
       }
     },
     {

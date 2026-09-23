@@ -24,6 +24,7 @@ and `SCENARIO_API_SECRET` from the environment that launched Blender. Both are
 required. Environment values never override **Saved in Blender**, and an incomplete
 pair never borrows from the other source. Secrets are masked in the preferences;
 Blender saves entered credentials with its preferences, not in an OS keychain.
+The account strip names the selected source when its key or secret is missing.
 
 ### Verify your download
 

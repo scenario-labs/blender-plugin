@@ -1,7 +1,7 @@
 {
   "version": 1,
   "index": "docs/index.md",
-  "base_revision": "b94e8603e2249c0046b88b9dc8023209830e36d3",
+  "base_revision": "62f40e9c577cbe66aa916db8fef3e63a6191c018",
   "documents": [
     {
       "path": ".claude/rules/blender-glue.md",
@@ -9,7 +9,7 @@
       "reviewed_at": "2026-09-23",
       "limits": "Canonical instructions consolidated from the existing rulebook; normative requirements do not imply runtime acceptance.",
       "sources": {
-        "AGENTS.md": "6719140cfbb457a8c99cc34853153a3e65efb8f11fe32ce995c06f27d9e17f5c"
+        "AGENTS.md": "6a9781d3c0b8b7d1b48635e4ab22fc6a4089c9f39317a49f884aac4b715b28be"
       }
     },
     {
@@ -18,7 +18,7 @@
       "reviewed_at": "2026-09-23",
       "limits": "Canonical instructions consolidated from the existing rulebook; normative requirements do not imply runtime acceptance.",
       "sources": {
-        "AGENTS.md": "6719140cfbb457a8c99cc34853153a3e65efb8f11fe32ce995c06f27d9e17f5c"
+        "AGENTS.md": "6a9781d3c0b8b7d1b48635e4ab22fc6a4089c9f39317a49f884aac4b715b28be"
       }
     },
     {
@@ -322,7 +322,7 @@
       "reviewed_at": "2026-09-23",
       "limits": "Historical context only; examples and recorded service observations are not current instructions or live verification.",
       "sources": {
-        "AGENTS.md": "6719140cfbb457a8c99cc34853153a3e65efb8f11fe32ce995c06f27d9e17f5c"
+        "AGENTS.md": "6a9781d3c0b8b7d1b48635e4ab22fc6a4089c9f39317a49f884aac4b715b28be"
       }
     },
     {
@@ -331,7 +331,7 @@
       "reviewed_at": "2026-09-23",
       "limits": "Historical context only; examples and recorded service observations are not current instructions or live verification.",
       "sources": {
-        "AGENTS.md": "6719140cfbb457a8c99cc34853153a3e65efb8f11fe32ce995c06f27d9e17f5c"
+        "AGENTS.md": "6a9781d3c0b8b7d1b48635e4ab22fc6a4089c9f39317a49f884aac4b715b28be"
       }
     },
     {
@@ -340,7 +340,7 @@
       "reviewed_at": "2026-09-23",
       "limits": "Historical context only; examples and recorded service observations are not current instructions or live verification.",
       "sources": {
-        "AGENTS.md": "6719140cfbb457a8c99cc34853153a3e65efb8f11fe32ce995c06f27d9e17f5c"
+        "AGENTS.md": "6a9781d3c0b8b7d1b48635e4ab22fc6a4089c9f39317a49f884aac4b715b28be"
       }
     },
     {
@@ -349,7 +349,7 @@
       "reviewed_at": "2026-09-23",
       "limits": "Historical context only; examples and recorded service observations are not current instructions or live verification.",
       "sources": {
-        "AGENTS.md": "6719140cfbb457a8c99cc34853153a3e65efb8f11fe32ce995c06f27d9e17f5c"
+        "AGENTS.md": "6a9781d3c0b8b7d1b48635e4ab22fc6a4089c9f39317a49f884aac4b715b28be"
       }
     },
     {
@@ -358,7 +358,7 @@
       "reviewed_at": "2026-09-23",
       "limits": "Historical context only; examples and recorded service observations are not current instructions or live verification.",
       "sources": {
-        "AGENTS.md": "6719140cfbb457a8c99cc34853153a3e65efb8f11fe32ce995c06f27d9e17f5c"
+        "AGENTS.md": "6a9781d3c0b8b7d1b48635e4ab22fc6a4089c9f39317a49f884aac4b715b28be"
       }
     },
     {
@@ -367,7 +367,7 @@
       "reviewed_at": "2026-09-23",
       "limits": "Historical context only; examples and recorded service observations are not current instructions or live verification.",
       "sources": {
-        "AGENTS.md": "6719140cfbb457a8c99cc34853153a3e65efb8f11fe32ce995c06f27d9e17f5c"
+        "AGENTS.md": "6a9781d3c0b8b7d1b48635e4ab22fc6a4089c9f39317a49f884aac4b715b28be"
       }
     },
     {
@@ -376,7 +376,7 @@
       "reviewed_at": "2026-09-23",
       "limits": "Historical context only; examples and recorded service observations are not current instructions or live verification.",
       "sources": {
-        "AGENTS.md": "6719140cfbb457a8c99cc34853153a3e65efb8f11fe32ce995c06f27d9e17f5c"
+        "AGENTS.md": "6a9781d3c0b8b7d1b48635e4ab22fc6a4089c9f39317a49f884aac4b715b28be"
       }
     },
     {
@@ -426,6 +426,17 @@
         "tools/check_knowledge.py": "9a000a610ece0164888d9ba2f603fb5fd5a851c41409e87917f7caf906496454",
         "tests/unit/test_knowledge.py": "03422fe1c97d3204d0c5ac89390717961888014b57d52de2981c88678388bcce",
         ".github/workflows/knowledge.yml": "8606852814ef8ff2588a7f7f0311e032fb6e34d64ec56ef080ed2470bb285160"
+      }
+    },
+    {
+      "path": "docs/maintenance/release-plan.md",
+      "coverage": "policy",
+      "reviewed_at": "2026-09-23",
+      "limits": "Current maintainer release direction and acceptance plan; no completed runtime or release acceptance is implied.",
+      "sources": {
+        "AGENTS.md": "6a9781d3c0b8b7d1b48635e4ab22fc6a4089c9f39317a49f884aac4b715b28be",
+        "scenario/blender/runtime.py": "63ecd2fb0fc6966897d59241e0a93fbb558e777dbfa52b28b3bf853b16787e63",
+        ".github/workflows/release-please.yml": "8f879d0d9aa9e63d67a18cade277dd7ef081024a9975f983e3c547e3412d659f"
       }
     }
   ]

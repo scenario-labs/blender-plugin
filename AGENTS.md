@@ -33,7 +33,8 @@ Older design documents and session notes describe the prototype; they do not
 override the user's instructions or the current issue and PR scope.
 
 The approved direction is one consolidated extension, a compact default UI,
-optional expanded Studio, browser OAuth and Blender-native updates. There is no
+optional expanded Studio and Blender-native updates. The current release uses
+explicit API key/secret configuration; browser OAuth is deferred under #67. There is no
 prototype-data migration requirement. Preserve useful capabilities and tests,
 source attribution and required third-party notices when adopting code.
 

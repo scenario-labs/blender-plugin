@@ -34,6 +34,7 @@ new primitive does not mean it is wired into the user interface or local MCP.
 ## Maintenance and historical evidence
 
 - [Knowledge checks and review procedure](maintenance/knowledge.md)
+- [API-key release plan](maintenance/release-plan.md)
 - [Issue disposition and limitations audit](maintenance/backlog.md)
 - [Historical model-payload audit](MODEL_PAYLOAD_AUDIT.md)
 - [Historical engineering design and plans](engineering/README.md)

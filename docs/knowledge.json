@@ -457,7 +457,7 @@
       "limits": "Current maintainer release direction and acceptance plan; no completed runtime or release acceptance is implied.",
       "sources": {
         "AGENTS.md": "6a9781d3c0b8b7d1b48635e4ab22fc6a4089c9f39317a49f884aac4b715b28be",
-        "scenario/blender/runtime.py": "63ecd2fb0fc6966897d59241e0a93fbb558e777dbfa52b28b3bf853b16787e63",
+        "scenario/blender/runtime.py": "2afa6267f835569288ae6d1947af5410b05a0bbdcd3bbad985ff30a6dcb8a000",
         ".github/workflows/release-please.yml": "8f879d0d9aa9e63d67a18cade277dd7ef081024a9975f983e3c547e3412d659f"
       }
     }

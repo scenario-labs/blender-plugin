@@ -8,7 +8,7 @@ from pathlib import Path
 
 from ..config import ext_for_mime
 from .store import JobState, ResultAsset, StoreConflict, StoredJob, StoreError, _identity, _json
-from .transfers import ResultDownloader, _root
+from .transfers import ResultDownloader, TransferError, _root
 
 
 class ResultError(RuntimeError):
@@ -131,7 +131,7 @@ class ResultCommands:
             current = self.load_manifest(request_id, expected_revision=current.revision)
         try:
             directory = self._directory(current)
-        except (OSError, ValueError):
+        except (OSError, ValueError, TransferError):
             raise ResultError("Could not prepare private result storage") from None
         with self._guard():
             current = self._store.transition(

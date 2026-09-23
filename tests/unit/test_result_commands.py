@@ -340,3 +340,20 @@ def test_manifest_persistence_failure_stops_before_storage_transfer(setup, monke
         coordinator.download_results("request", expected_revision=current.revision)
     assert store.get("request") == current
     assert not downloader.calls
+
+
+@pytest.mark.parametrize("kind", ["missing", "file", "symlink"])
+def test_unavailable_result_root_reports_command_error_before_download_claim(setup, tmp_path, kind):
+    coordinator, store, current, _, _, downloader, _, root = setup
+    manifest = coordinator.load_results("request", expected_revision=current.revision)
+    root.rmdir()
+    if kind == "file":
+        root.write_bytes(b"not a directory")
+    elif kind == "symlink":
+        other = tmp_path / "replacement"
+        other.mkdir()
+        root.symlink_to(other, target_is_directory=True)
+    with pytest.raises(ResultError, match="prepare private result storage"):
+        coordinator.download_results("request", expected_revision=manifest.revision)
+    assert store.get("request") == manifest
+    assert not downloader.calls

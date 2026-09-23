@@ -170,7 +170,10 @@ def cli(argv):
     try:
         for sig in (signal.SIGINT, signal.SIGTERM):
             previous[sig] = signal.signal(sig, lambda *_: stop_event.set())
-        server.start()
+        try:
+            server.start()
+        except OSError as error:
+            parser.error(f"Unable to start local MCP: {error}")
         print(cli_banner(server.url, token, generated), flush=True)
         server.serve_blocking(stop_event)
     except KeyboardInterrupt:

@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Actual registered command and clean native headless MCP process lifetime."""
 
+import io
 import json
 import os
 import signal
@@ -12,7 +13,9 @@ import time
 import unittest
 import urllib.error
 import urllib.request
+from contextlib import redirect_stderr
 from pathlib import Path
+from unittest.mock import patch
 
 import bpy
 from helpers import submodule
@@ -45,6 +48,30 @@ class McpCliTests(unittest.TestCase):
             )
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             self.assertIn(expected, result.stdout + result.stderr)
+
+    def test_busy_ports_report_usage_error_and_restore_signal_handlers(self):
+        service = submodule("blender.mcp_service")
+        error_output = io.StringIO()
+        with (
+            patch.object(service.runtime, "online", return_value=True),
+            patch.object(service.runtime.state, "mcp_token", service.runtime.state.mcp_token),
+            patch.object(service, "McpServer") as constructor,
+            patch.object(signal, "signal", return_value=signal.SIG_DFL) as handlers,
+            redirect_stderr(error_output),
+        ):
+            server = constructor.return_value
+            server.start.side_effect = OSError("no free port from 9876")
+            with self.assertRaises(SystemExit) as error:
+                service.cli(["--token", "synthetic-cli-token"])
+            self.assertEqual(error.exception.code, 2)
+            self.assertIn(
+                "Unable to start local MCP: no free port from 9876", error_output.getvalue()
+            )
+            self.assertNotIn("Traceback", error_output.getvalue())
+            server.stop.assert_called_once()
+            server.serve_blocking.assert_not_called()
+            self.assertEqual(handlers.call_args_list[-2].args, (signal.SIGINT, signal.SIG_DFL))
+            self.assertEqual(handlers.call_args_list[-1].args, (signal.SIGTERM, signal.SIG_DFL))
 
     @unittest.skipIf(os.name == "nt", "POSIX signal shutdown; Windows acceptance is separate")
     def test_cli_lists_tools_executes_on_main_thread_and_stops_cleanly(self):

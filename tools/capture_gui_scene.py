@@ -208,6 +208,33 @@ def capture_credential_preferences(window, area, complete):
     select_next()
 
 
+def capture_extension_permissions(window, area):
+    """Show the installed manifest's actual Get Extensions permission row."""
+    repository = Path(INSTALLED).resolve().parent
+    index = next(
+        index
+        for index, repo in enumerate(bpy.context.preferences.extensions.repos)
+        if Path(repo.directory).resolve() == repository
+    )
+    area.type = "PREFERENCES"
+    with bpy.context.temp_override(window=window, area=area):
+        bpy.context.preferences.active_section = "EXTENSIONS"
+        wm = bpy.context.window_manager
+        wm.extension_search = "Scenario"
+        wm.extension_type = "ALL"
+        wm.extension_show_panel_installed = True
+        wm.extension_show_panel_available = False
+        bpy.ops.extensions.package_show_set(pkg_id="scenario", repo_index=index)
+        area.tag_redraw()
+        bpy.ops.wm.redraw_timer(type="DRAW_WIN_SWAP", iterations=2)
+        destination = OUTPUT / "permissions.png"
+        if CAPTURE_BACKEND == "blender":
+            if bpy.ops.screen.screenshot(filepath=str(destination)) != {"FINISHED"}:
+                raise RuntimeError("Permissions screenshot did not finish")
+        else:
+            capture_x11(destination)
+
+
 def capture():
     window, area, region = view3d()
     if bpy.app.online_access:
@@ -246,6 +273,7 @@ def capture():
     active_sidebar = region.active_panel_category
 
     def complete():
+        capture_extension_permissions(window, area)
         (OUTPUT / "gui.json").write_text(
             json.dumps(
                 {

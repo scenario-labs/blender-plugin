@@ -41,6 +41,7 @@ wheels = [
 [permissions]
 network = "Generate with your Scenario account (api.cloud.scenario.com)"
 files = "Save generated media to disk and import it into the scene"
+clipboard = "Copy asset ids, errors and MCP setup; paste into the prompt"
 
 [build]
 paths_exclude_pattern = [

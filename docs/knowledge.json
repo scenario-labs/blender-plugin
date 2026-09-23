@@ -57,7 +57,7 @@
       "sources": {
         "scenario/blender/runtime.py": "2afa6267f835569288ae6d1947af5410b05a0bbdcd3bbad985ff30a6dcb8a000",
         "scenario/blender/registry.py": "a34fcb0110b5c991764df22d423546d9de3c949d3183b6dad1c5ca9e05123af2",
-        "scenario/blender_manifest.toml": "e36f405fb36e4531ab5c5dd7fcb15f2d9e1c56b3a15c315faeca57c4fc05aea0"
+        "scenario/blender_manifest.toml": "7ad91531b81e632aa219d4a1f0f8e1d8b22bf8abac6139935d9953b6acf51b14"
       }
     },
     {
@@ -230,7 +230,7 @@
       "sources": {
         "scenario/blender/runtime.py": "2afa6267f835569288ae6d1947af5410b05a0bbdcd3bbad985ff30a6dcb8a000",
         "scenario/core/api/sdk_adapter.py": "a5f8a5da9ce1f482dbe1af19b43d00f211b66401781fa03d18c9fd3ef2340467",
-        "scenario/blender_manifest.toml": "e36f405fb36e4531ab5c5dd7fcb15f2d9e1c56b3a15c315faeca57c4fc05aea0"
+        "scenario/blender_manifest.toml": "7ad91531b81e632aa219d4a1f0f8e1d8b22bf8abac6139935d9953b6acf51b14"
       }
     },
     {
@@ -260,7 +260,10 @@
         "scenario/core/config.py": "74a45b99fde47d741710dbf2a9d8051f2b31903f10ecae679d061340c62fb1be",
         "scenario/prefs.py": "7c02f5d7fb65dd8c609e043f8ba8a613e7e6d60d47bc3e2f4b5ffbbf00261a61",
         "tests/unit/test_config.py": "3d8ea8a6f0bcef70f0bb16146e794346cbbe7d2fc0f26aec1631b108cf6914f3",
-        "tests/blender/test_credentials.py": "2e74d6f8292a2add5b77a1827a6624960595d7073d5b94f72a63c7214fc4e920"
+        "tests/blender/test_credentials.py": "2e74d6f8292a2add5b77a1827a6624960595d7073d5b94f72a63c7214fc4e920",
+        "scenario/blender_manifest.toml": "7ad91531b81e632aa219d4a1f0f8e1d8b22bf8abac6139935d9953b6acf51b14",
+        "tests/unit/test_manifest.py": "94944321a2c829fe61bbb80ec953060c508af5a4d709e4842145268d331c8054",
+        "tools/capture_gui_scene.py": "15ec27870d0a321bbdd6f42f29b2c0352d792dc76d2cc5290671a105b5c28b5b"
       }
     },
     {

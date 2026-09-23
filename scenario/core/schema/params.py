@@ -137,19 +137,18 @@ def parse_schema(record):
         )
     prompt_name = next((s.name for s in specs if s.is_prompt), None)
     by_name = {s.name: s for s in specs}
-    for spec in specs:
-        for sibling in (*spec.required_if_defined, *spec.required_if_not_defined):
-            if sibling not in by_name:
-                raise ValueError(f"{spec.name}: conditional requirement names an unknown input")
     one_of = []
     # Explicit either/or from the schema: `required: {ifNotDefined: {sibling: ...}}` means "at least one of this
     # input and its named siblings" (Cartwheel: a 3D character mesh OR a reference image).
     # Each distinct group is required. Overlapping groups are not interchangeable:
     # (a OR b) AND (b OR c) cannot be weakened to (a OR b OR c).
     for spec in specs:
-        if not spec.required_if_not_defined:
+        # Panel drawing uses this parser directly. Ignore unknown siblings here;
+        # strict form preparation rejects them before any SDK dispatch.
+        siblings = {name for name in spec.required_if_not_defined if name in by_name}
+        if not siblings:
             continue
-        members = {spec.name, *spec.required_if_not_defined}
+        members = {spec.name, *siblings}
         group = tuple(sorted(members))
         if group not in one_of:
             one_of.append(group)

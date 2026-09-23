@@ -4,12 +4,49 @@
 
 import json
 import unittest
+import unittest.mock
 from pathlib import Path
+from types import SimpleNamespace
 
 from helpers import online_access, submodule
 
 
 class ModelPayloadValidationTests(unittest.TestCase):
+    def test_panel_schema_cache_tolerates_unknown_siblings_but_sdk_rejects(self):
+        import httpx
+
+        generation = submodule("blender.generation")
+        runtime = submodule("blender.runtime")
+        api = submodule("core.api.sdk_adapter")
+        forms = submodule("core.schema.forms")
+        for condition in ("ifDefined", "ifNotDefined"):
+            with self.subTest(condition=condition):
+                fields = [
+                    {"name": "reference", "type": "file", "required": {condition: {"missing": {}}}}
+                ]
+                record = SimpleNamespace(parameters=fields, ui_config={})
+                with (
+                    unittest.mock.patch.dict(runtime.state.records, {"fixture-schema": record}),
+                    unittest.mock.patch.dict(generation._schemas, {}, clear=True),
+                    api.SDKAdapter(
+                        api.Credentials("fixture-key", "fixture-secret"),
+                        online=lambda: True,
+                        transport=httpx.MockTransport(
+                            lambda request: self.fail("Invalid schema reached the SDK transport")
+                        ),
+                    ) as adapter,
+                ):
+                    # Both generate and Edit 3D panels call this cache while drawing.
+                    parsed = generation.schema_for("fixture-schema")
+                    self.assertIs(parsed, generation.schema_for("fixture-schema"))
+                    self.assertIsNotNone(parsed.by_name("reference"))
+                    with self.assertRaisesRegex(ValueError, "unknown input"):
+                        forms.prepare_run("fixture-schema", {"parameters": fields}, {})
+                    with self.assertRaisesRegex(ValueError, "unknown input"):
+                        adapter.estimate_model(
+                            {"id": "fixture-schema", "type": "custom", "inputs": fields}, {}
+                        )
+
     def test_captured_minimax_conditional_matches_installed_sdk_adapter(self):
         import httpx
 

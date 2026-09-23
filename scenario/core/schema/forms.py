@@ -82,6 +82,10 @@ def _fields(schema: dict[str, Any]) -> list[dict[str, Any]]:
                     or any(not isinstance(name, str) for name in siblings)
                 ):
                     raise ValueError("Conditional requirements must name sibling inputs")
+                if siblings is not None and any(name not in names for name in siblings):
+                    raise ValueError(
+                        f"{field['name']}: conditional requirement names an unknown input"
+                    )
     return raw
 
 

@@ -363,10 +363,11 @@ def test_malformed_fields_fail_consistently_before_sdk_dispatch(fields):
 
 @pytest.mark.parametrize("condition", ["ifDefined", "ifNotDefined"])
 @pytest.mark.parametrize("sibling", ["missing", "", " "])
-def test_unknown_conditional_siblings_fail_closed(condition, sibling):
+def test_unknown_siblings_render_but_fail_closed_before_dispatch(condition, sibling):
     fields = [{"name": "dependent", "type": "file", "required": {condition: {sibling: {}}}}]
-    with pytest.raises(ValueError, match="unknown input"):
-        parse_schema(SimpleNamespace(parameters=fields, ui_config={}))
+    parsed = parse_schema(SimpleNamespace(parameters=fields, ui_config={}))
+    assert parsed.by_name("dependent") is not None
+    assert validate(parsed.specs, {}, parsed.one_of) == []
     with pytest.raises(ValueError, match="unknown input"):
         prepare_run("base", {"parameters": fields}, {})
     with SDKAdapter(
@@ -376,6 +377,23 @@ def test_unknown_conditional_siblings_fail_closed(condition, sibling):
     ) as adapter:
         with pytest.raises(ValueError, match="unknown input"):
             adapter.estimate_model({"id": "base", "type": "custom", "inputs": fields}, {})
+
+
+@pytest.mark.parametrize("condition", ["ifDefined", "ifNotDefined"])
+def test_ui_parser_keeps_known_requirements_alongside_unknown_siblings(condition):
+    fields = [
+        {
+            "name": "dependent",
+            "type": "file",
+            "required": {condition: {"known": {}, "missing": {}}},
+        },
+        {"name": "known", "type": "file"},
+    ]
+    parsed = parse_schema(SimpleNamespace(parameters=fields, ui_config={}))
+    invalid = {"known": "asset"} if condition == "ifDefined" else {}
+    assert validate(parsed.specs, invalid, parsed.one_of)
+    assert validate(parsed.specs, {"dependent": "asset"}, parsed.one_of) == []
+    assert all("missing" not in group for group in parsed.one_of)
 
 
 @pytest.mark.parametrize("condition,trigger", [("ifDefined", True), ("ifNotDefined", None)])

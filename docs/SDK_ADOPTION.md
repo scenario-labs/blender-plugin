@@ -188,6 +188,11 @@ before SDK dispatch, without coercion. Captured custom-model fixtures exercise
 this shared path, including Minimax frame dependencies and Rodin prompt/image
 alternatives.
 
+The native panel parser remains tolerant of unknown conditional sibling names so
+model descriptions can still render. Strict form preparation and SDK estimation
+reject those schemas before dispatch; known sibling relationships remain enforced
+in both paths.
+
 The pure LoRA/composition routing helper retains required base-model wiring and
 existing scale alignment behavior. Its sanitized remote-MCP projection and
 synthetic composition tests do not establish REST routing, universal strength

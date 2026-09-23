@@ -1,7 +1,7 @@
 {
   "version": 1,
   "index": "docs/index.md",
-  "base_revision": "62f40e9c577cbe66aa916db8fef3e63a6191c018",
+  "base_revision": "d9ff9b96f53e4571921b4a8a2ddbed0ba771aca7",
   "documents": [
     {
       "path": ".claude/rules/blender-glue.md",
@@ -28,7 +28,7 @@
       "limits": "Canonical instructions consolidated from the existing rulebook; normative requirements do not imply runtime acceptance.",
       "sources": {
         ".codex/config.toml": "3ce4a01cd0ed404ad5ceb8d1b4c25e0e10bc6339ab1d94fd9936f8543c1b87f2",
-        "scripts/agents/validate-skills.py": "2c4af4ac32ec96e6bec65e060a88943154280000334c84dab2bf2189e2a1afa0"
+        "scripts/agents/validate-skills.py": "82822cf1ed96c67c2b5d25e9d666171b37dc071427dd84ceda096e70697c7f3f"
       }
     },
     {
@@ -293,9 +293,12 @@
       "reviewed_at": "2026-09-23",
       "limits": "Canonical instructions consolidated from the existing rulebook; normative requirements do not imply runtime acceptance.",
       "sources": {
-        "scripts/agents/validate-skills.py": "2c4af4ac32ec96e6bec65e060a88943154280000334c84dab2bf2189e2a1afa0",
+        "scripts/agents/validate-skills.py": "82822cf1ed96c67c2b5d25e9d666171b37dc071427dd84ceda096e70697c7f3f",
         ".codex/config.toml": "3ce4a01cd0ed404ad5ceb8d1b4c25e0e10bc6339ab1d94fd9936f8543c1b87f2",
-        ".github/workflows/agent-skills.yml": "9887630341a228a61394945c72415f492cff88127b84765d88b892efc5ea3890"
+        ".github/workflows/agent-skills.yml": "9887630341a228a61394945c72415f492cff88127b84765d88b892efc5ea3890",
+        "scripts/agents/test_validate_skills.py": "79b2a06ed10947a46e9256a6c517910353aeef5e0f1bee5388af8aab0ad885d1",
+        ".agents/skills/blender-download-artifacts/SKILL.md": "b0e4af736cfecee0f1d68fc64d5df71c903a1f57daf7b49ef3b1ce4a36e8aa19",
+        ".agents/skills/blender-download-artifacts/agents/openai.yaml": "262db51275889505f44ce9f2b7470be44f53fdd6da5d1a315d59065589d0c212"
       }
     },
     {

@@ -20,8 +20,11 @@ Keep canonical skills in regular `.agents/skills/<name>/SKILL.md` files, with va
 `name` and `description` frontmatter. Native skill directories link from
 `.claude/skills/`. Command skills use `metadata.claude-command` or
 `metadata.cursor-command` to retain existing command names; compatibility paths
-are links. Claude-specific frontmatter, when needed, lives in
-`agents/claude-command.md` beside the canonical skill and delegates to it.
+are relative symlinks directly to the canonical `SKILL.md`. Edit the original in
+`.agents/skills/` (plural), never a separate command copy. Keep Claude argument
+hints and invocation guards in the canonical frontmatter; keep Codex picker and
+invocation policy in the adjacent `agents/openai.yaml`. No forwarding wrapper is
+needed.
 
 | Codex skill | Claude command | Purpose |
 | --- | --- | --- |
@@ -35,9 +38,12 @@ Each command includes a Codex picker description and starting prompt in
 Run `uv run --no-project --python 3.12 scripts/agents/validate-skills.py --sync` after adding or
 renaming a skill. Without `--sync`, the same command checks all skills with the
 pinned Agent Skills reference validator and verifies the rulebook and command
-links without writing. CI runs this check on every pull request.
+links without writing. Registered local maintainer commands additionally allow
+`argument-hint` and `disable-model-invocation`, checked against their command
+contracts; native skills retain strict reference validation. CI runs this check
+on every pull request.
 
-CI also checks Claude command adapters, argument hints, Codex picker metadata,
+CI also checks direct command links, argument hints, Codex picker metadata,
 explicit invocation guards on both agents, and the Codex instruction byte limit.
 Run the regression suite with
 `uv run --no-project --python 3.12 scripts/agents/validate-skills.py --test`.

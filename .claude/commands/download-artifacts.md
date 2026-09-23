@@ -1,1 +1,1 @@
-../../.agents/skills/blender-download-artifacts/agents/claude-command.md
+../../.agents/skills/blender-download-artifacts/SKILL.md

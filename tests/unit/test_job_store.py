@@ -339,3 +339,24 @@ def test_missing_fields_cannot_reset_inflight_state_to_prepared(store, tmp_path,
 def test_invalid_service_scope_is_rejected(service):
     with pytest.raises(ValueError):
         JobScope(service, "account")
+
+
+@pytest.mark.parametrize("terminal", [JobState.SUCCEEDED, JobState.FAILED, JobState.CANCELED])
+def test_cancel_claim_never_returns_to_dispatchable_remote(store, tmp_path, intent, terminal):
+    remote = advance(
+        store,
+        advance(store, store.create(intent), JobState.SUBMITTING),
+        JobState.REMOTE,
+        remote_job_id="remote-one",
+    )
+    claimed = advance(store, remote, JobState.CANCEL_REQUESTED)
+    assert JobStore(tmp_path / "jobs.sqlite3", intent.scope).get(intent.request_id) == claimed
+    for forbidden in (
+        JobState.CANCEL_REQUESTED,
+        JobState.REMOTE,
+        JobState.PREPARED,
+        JobState.SUBMITTING,
+    ):
+        with pytest.raises(ValueError):
+            advance(store, claimed, forbidden)
+    assert advance(store, claimed, terminal).remote_job_id == "remote-one"

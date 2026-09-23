@@ -11,11 +11,12 @@ import urllib.request
 from helpers import submodule
 
 
-def post(url, token, payload, method="POST"):
+def post(url, token, payload, method="POST", extra_headers=None):
     data = json.dumps(payload).encode() if payload is not None else None
     headers = {"Content-Type": "application/json", "Accept": "application/json, text/event-stream"}
     if token:
         headers["Authorization"] = f"Bearer {token}"
+    headers.update(extra_headers or {})
     req = urllib.request.Request(url, data=data, method=method, headers=headers)
     try:
         with urllib.request.urlopen(req, timeout=10) as resp:
@@ -117,3 +118,58 @@ class McpServerTests(unittest.TestCase):
         )
         self.assertEqual(status, 200)
         self.assertEqual(body["error"]["code"], -32000)
+
+    def test_origin_header_is_validated(self):
+        ping = {"jsonrpc": "2.0", "id": 1, "method": "ping"}
+        for method in ("POST", "GET", "DELETE"):
+            for origin in ("https://evil.example", "null", "http://[::1"):
+                with self.subTest(method=method, origin=origin):
+                    self.assertEqual(
+                        post(
+                            self.url,
+                            "tok",
+                            ping if method == "POST" else None,
+                            method=method,
+                            extra_headers={"Origin": origin},
+                        )[0],
+                        403,
+                    )
+        self.assertEqual(
+            post(self.url, "tok", ping, extra_headers={"Origin": "http://127.0.0.1:39876"})[0], 200
+        )
+        self.assertEqual(post(self.url, "tok", ping)[0], 200)
+        self.assertEqual(post(self.url, "tök", ping)[0], 401)
+        self.assertEqual(
+            post(
+                self.url.replace("/mcp", "/health"),
+                None,
+                None,
+                method="GET",
+                extra_headers={"Origin": "https://evil.example"},
+            )[0],
+            403,
+        )
+        self.assertEqual(post(self.url, "tok", None, method="OPTIONS")[0], 403)
+
+    def test_duplicate_security_headers_are_rejected_without_cors(self):
+        import http.client
+        from urllib.parse import urlsplit
+
+        address = urlsplit(self.url)
+        for headers, status in [
+            ([("Origin", "http://localhost"), ("Origin", "https://evil.example")], 403),
+            ([("Authorization", "Bearer tok"), ("Authorization", "Bearer wrong")], 401),
+        ]:
+            connection = http.client.HTTPConnection(address.hostname, address.port, timeout=5)
+            try:
+                connection.putrequest("POST", "/mcp")
+                for key, value in headers:
+                    connection.putheader(key, value)
+                connection.putheader("Content-Length", "0")
+                connection.endheaders()
+                response = connection.getresponse()
+                self.assertEqual(response.status, status)
+                self.assertIsNone(response.getheader("Access-Control-Allow-Origin"))
+                response.read()
+            finally:
+                connection.close()

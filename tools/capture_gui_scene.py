@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Blender-side offline fixture for capture_gui.py; never submits service operations."""
 
+import base64
 import datetime
 import importlib
 import json
@@ -9,6 +10,7 @@ import os
 import platform
 import subprocess
 import sys
+import tempfile
 import traceback
 from pathlib import Path
 
@@ -145,6 +147,27 @@ def capture_x11(destination):
     )
 
 
+def verify_mcp_captures():
+    """Exercise installed capture handlers in the real GUI without service calls."""
+    name = next(n for n in bpy.context.preferences.addons.keys() if n.endswith(".scenario"))
+    tools = importlib.import_module(name + ".mcp.tools_blender")
+    before = set(Path(tempfile.gettempdir()).glob("scenario-mcp-*"))
+    results = {}
+    for label, handler, arguments in (
+        ("screenshot", tools.screenshot_viewport, {}),
+        ("render", tools.render_still, {"source": "VIEWPORT", "width": 320, "height": 180}),
+    ):
+        content = handler(arguments)
+        raw = base64.b64decode(content["_image"], validate=True)
+        if content["mimeType"] != "image/png" or not raw.startswith(b"\x89PNG\r\n\x1a\n"):
+            raise RuntimeError(f"MCP {label} did not return a PNG")
+        if set(Path(tempfile.gettempdir()).glob("scenario-mcp-*")) != before:
+            raise RuntimeError(f"MCP {label} left a temporary capture directory")
+        (OUTPUT / f"mcp-{label}.png").write_bytes(raw)
+        results[label] = {"bytes": len(raw), "temporary_directory_removed": True}
+    return results
+
+
 def capture():
     window, area, region = view3d()
     if bpy.app.online_access:
@@ -179,6 +202,7 @@ def capture():
             raise RuntimeError("Screenshot is blank; check the display/window manager")
     finally:
         bpy.data.images.remove(shot)
+    mcp_captures = verify_mcp_captures()
     (OUTPUT / "gui.json").write_text(
         json.dumps(
             {
@@ -199,6 +223,7 @@ def capture():
                 "gpu_backend": gpu.platform.backend_type_get(),
                 "gpu_renderer": gpu.platform.renderer_get(),
                 "distinct_rgb_samples": len(samples),
+                "mcp_captures": mcp_captures,
             },
             indent=2,
         )

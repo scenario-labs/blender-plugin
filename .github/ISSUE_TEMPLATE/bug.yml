@@ -1,0 +1,135 @@
+name: Bug report
+description: The plugin, a generation, or an MCP tool behaves wrong
+labels: ["bug"]
+type: Bug
+projects: ["scenario-labs/31"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        This issue is public and permanent. Before you submit, remove your API key and secret, the MCP bearer token from the Agents (MCP) panel, signed asset URLs, e-mail addresses, local paths with your username, and any prompt or artwork you do not want published. Team and project ids identify your account: leave them out.
+
+        Would rather not post in public? Send the same fields to support@scenario.com. Account, billing, credit and security problems always go there or to in-app support at https://app.scenario.com.
+  - type: textarea
+    id: summary
+    attributes:
+      label: What happened
+      description: One or two sentences. The symptom, not the suspected cause.
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Where
+      options:
+        - Plugin panel or composer (UI, settings, import into the scene)
+        - Model or API behaviour (the job ran but the result or cost is wrong)
+        - MCP tools (an agent talking to the local server)
+        - Install or update (ZIP, source build, extension repository)
+        - Documentation
+        - Not sure
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      description: Numbered steps. Name the lane, the model and the settings you changed. Substitute a public prompt for a confidential one and say that you did.
+      placeholder: |
+        1. Open the 3D tab, pick <model>, keep the defaults
+        2. Select the cube, type "<prompt>", press Generate
+        3. Open Generations after the job finishes
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected result
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual result
+      description: The verbatim error text. The (i) button on a red error row opens the full message with a Copy error button. Paste text, not a screenshot, so it is searchable.
+    validations:
+      required: true
+  - type: dropdown
+    id: frequency
+    attributes:
+      label: How often
+      options:
+        - Every time
+        - Intermittent
+        - Once so far
+  - type: input
+    id: blender_version
+    attributes:
+      label: Blender version
+      description: From the splash screen or Blender > About Blender.
+      placeholder: 5.0.1
+    validations:
+      required: true
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating system
+      options:
+        - Windows
+        - macOS
+        - Linux
+    validations:
+      required: true
+  - type: input
+    id: extension_version
+    attributes:
+      label: Extension version
+      description: Shown on the Scenario card in Edit > Preferences > Get Extensions (Installed tab) or Add-ons.
+    validations:
+      required: true
+  - type: dropdown
+    id: install_method
+    attributes:
+      label: Install method
+      options:
+        - Release zip dragged onto Blender
+        - tools/install.py from a clone
+        - Self-hosted extension repository (index.json)
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: console
+    attributes:
+      label: Console output
+      description: "Set Log Level to Debug in Preferences > Add-ons > Scenario, reproduce, then copy the lines prefixed scenario from Blender's system console (Window > Toggle System Console on Windows; the terminal you started Blender from on macOS and Linux). Review the full output and remove keys, tokens, signed URLs and confidential data before posting."
+      render: shell
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Evidence
+      description: "Only IDs you can share publicly: job id (the Details dialog of a generation in the Generations panel shows it with a copy button), asset id, model id and the UTC time. No signed asset URLs, they are credentials. Screenshots welcome."
+      placeholder: |
+        job id: ...
+        model id: ...
+        when: <UTC date and time>
+  - type: dropdown
+    id: mcp
+    attributes:
+      label: MCP server
+      options:
+        - Not used
+        - Running, Python execution off
+        - Running, Python execution on
+  - type: input
+    id: mcp_client
+    attributes:
+      label: MCP client
+      description: Claude Code, Cursor, Claude Desktop, Codex, headless Blender, or none.
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before submitting
+      options:
+        - label: I searched open and closed issues for a duplicate.
+          required: true
+        - label: This report contains no keys, tokens, signed asset URLs or personal data.
+          required: true

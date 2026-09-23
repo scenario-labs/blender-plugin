@@ -59,7 +59,7 @@
       "sources": {
         "scenario/blender/runtime.py": "2afa6267f835569288ae6d1947af5410b05a0bbdcd3bbad985ff30a6dcb8a000",
         "scenario/blender/registry.py": "a34fcb0110b5c991764df22d423546d9de3c949d3183b6dad1c5ca9e05123af2",
-        "scenario/blender_manifest.toml": "7ad91531b81e632aa219d4a1f0f8e1d8b22bf8abac6139935d9953b6acf51b14"
+        "scenario/blender_manifest.toml": "b942bfc79b1ebecab7ae8f2ea16bac4a182d6a13d81dac3a23391dc2ffd16e0f"
       }
     },
     {
@@ -68,7 +68,7 @@
       "reviewed_at": "2026-09-23",
       "limits": "Private reporting and supported-version policy; scope is not a claim that runtime hardening is complete. Repository private-vulnerability reporting was verified enabled through the GitHub API; Security-tab policy appearance requires merge.",
       "sources": {
-        "scenario/blender_manifest.toml": "e36f405fb36e4531ab5c5dd7fcb15f2d9e1c56b3a15c315faeca57c4fc05aea0",
+        "scenario/blender_manifest.toml": "b942bfc79b1ebecab7ae8f2ea16bac4a182d6a13d81dac3a23391dc2ffd16e0f",
         "scenario/prefs.py": "24297fc14575f5e0c3a534516dc85961c28066aab0b0e00741247ed2e376d83b",
         "scenario/mcp/server.py": "d05a27729cd0835aedd023342713cb4b31107738f711026d24ab86f4052cd354",
         "scenario/mcp/tools_blender.py": "fce4b12492465b86691eede9cc6655220aab3087dcb2496a9600a0299abed520",
@@ -264,7 +264,7 @@
       "sources": {
         "scenario/blender/runtime.py": "2afa6267f835569288ae6d1947af5410b05a0bbdcd3bbad985ff30a6dcb8a000",
         "scenario/core/api/sdk_adapter.py": "a5f8a5da9ce1f482dbe1af19b43d00f211b66401781fa03d18c9fd3ef2340467",
-        "scenario/blender_manifest.toml": "7ad91531b81e632aa219d4a1f0f8e1d8b22bf8abac6139935d9953b6acf51b14"
+        "scenario/blender_manifest.toml": "b942bfc79b1ebecab7ae8f2ea16bac4a182d6a13d81dac3a23391dc2ffd16e0f"
       }
     },
     {
@@ -295,8 +295,8 @@
         "scenario/prefs.py": "bfd966d4a6dab2a8505caa3e9ed58d71b71d57b29b673feb5344ad6b8ed72e92",
         "tests/unit/test_config.py": "3d8ea8a6f0bcef70f0bb16146e794346cbbe7d2fc0f26aec1631b108cf6914f3",
         "tests/blender/test_credentials.py": "0767fbe1917c977631dc4243bfcb05dce97d5ed0c0b2c731b8ea4bfdb07e3b45",
-        "scenario/blender_manifest.toml": "7ad91531b81e632aa219d4a1f0f8e1d8b22bf8abac6139935d9953b6acf51b14",
-        "tests/unit/test_manifest.py": "94944321a2c829fe61bbb80ec953060c508af5a4d709e4842145268d331c8054",
+        "scenario/blender_manifest.toml": "b942bfc79b1ebecab7ae8f2ea16bac4a182d6a13d81dac3a23391dc2ffd16e0f",
+        "tests/unit/test_manifest.py": "9bbda999a1f3de9d16571848677d9ed4f7ece1d9e9c045daf57bde8e08827d70",
         "tools/capture_gui_scene.py": "7538cb1e90510a31cdfac22e390d5d595cf2bc73628f1cc3139071b2ef855609",
         "tests/unit/test_gui_capture.py": "beee6cba15adf7da1e7434c18dcb2b948e36f4b459af06fc98a6c850a5fea87c"
       }

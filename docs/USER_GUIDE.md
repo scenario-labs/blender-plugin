@@ -26,6 +26,8 @@ pair never borrows from the other source. Secrets are masked in the preferences;
 Blender saves entered credentials with its preferences, not in an OS keychain.
 The account strip names the selected source when its key or secret is missing.
 
+Expand Scenario under Edit > Preferences > Get Extensions to find its Website link; it opens the project on GitHub, with the user guide and issue tracker.
+
 ### Verify your download
 
 Releases produced by the automated pipeline include `SHA256SUMS` and a build provenance attestation. GitHub Actions builds the ZIP from the release commit with Blender 5.0 and validates the same archive on 5.0, 5.1 and 5.2 before publishing. These checks validate the package format, not runtime compatibility. Historical `v*` releases do not include checksums or attestations.

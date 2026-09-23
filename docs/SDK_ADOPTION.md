@@ -55,7 +55,8 @@ The operation audit uses the published wheel's `resources/uploads.py`,
 `resources/jobs.py`, `resources/workflows.py`, their generated parameter/response
 models and `pagination.py`. The adapter now exposes bounded job discovery as
 described below; inference cancellation is exposed through the coordinator,
-while upload mutations remain dependency contracts.
+and multipart upload metadata commands are mapped in
+[SDK_UPLOADS.md](SDK_UPLOADS.md).
 
 | Operation | Request and response shape |
 | --- | --- |
@@ -163,6 +164,7 @@ with `max_retries=0`; their `with_raw_response` wrappers preserve wire JSON.
 | Public/private workflow catalog | `workflows.list`: SDK REST catalog replaces the need for Studio's public-workflow HTTP bypass; pagination and scope are tested synthetically |
 | Known model-job cancellation | `jobs.trigger_action(action="cancel")` through its public raw-response wrapper: one attempt, selected project, no terminal-state assumption from acknowledgement; coordinator retrieves before and after the action |
 | Scoped job discovery | `jobs.list` through the public raw-response wrapper: optional author/workflow/type/status filters, 1–200 items per page, bounded pagination and explicit errors instead of partial or conflicting history |
+| Multipart upload metadata | `uploads.create/retrieve/trigger_action(action="complete")`: immutable project scope, strict input/receipt identity, retained processing/future fields; no byte transfer, retry or automatic completion |
 | Model/workflow/asset/job records | `models.retrieve`, `workflows.retrieve`, `assets.retrieve`, `jobs.retrieve`: unwrap the named record and retain unknown fields |
 | Custom-model estimate | `generate.run_model(dry_run=True)`: adopted form value validation plus retained conditional/one-of rules; inputs in JSON and dry-run/project in query |
 | Workflow estimate | `workflows.run(dry_run=True)`: normalize workflow fields/defaults and preserve the same query/body boundary |
@@ -180,9 +182,12 @@ Custom-model records must explicitly declare `type=custom`; trained-model
 routing remains unavailable until its REST schema contract is established.
 Studio's pure routing helper/tests are retained, but remote-MCP `run_with`
 metadata is not silently assumed to exist in REST. Upload/job dependency contracts
-are mapped above; upload adapter integration, signed transfers, account/project
-discovery, search/organization and workflow cancellation remain to implement.
-Submission uses the coordinator contract above; live acceptance remains separate.
+are mapped above; multipart metadata commands use the adapter as described in
+[SDK_UPLOADS.md](SDK_UPLOADS.md). Signed result downloads have a standalone
+[transport primitive](RESULT_TRANSFERS.md); upload byte transfer, durable transfer
+recovery, account/project discovery, search/organization and workflow cancellation
+remain to implement. Submission uses the coordinator contract above; live
+acceptance remains separate.
 
 Run the adapter and command contracts offline with:
 

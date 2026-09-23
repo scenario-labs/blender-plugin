@@ -68,9 +68,9 @@ uncertain; do not attach a guessed upload or automatically recreate it.
 
 ## Remaining integration and verification
 
-Signed byte transfer, expiry policy, file identity checks, durable upload state,
-completion/restart reconciliation, server cleanup and UI/MCP wiring remain separate
-work. Storage requests must check destination/online policy and never forward
+A signed PUT primitive is available as described below. File staging/part planning,
+expiry policy, durable upload state, completion/restart reconciliation, server
+cleanup and UI/MCP wiring remain separate work. Storage requests must check destination/online policy and never forward
 Scenario Authorization. No upload-abort method was established in this SDK.
 
 Offline contracts exercise the actual SDK through MockTransport, including
@@ -79,3 +79,48 @@ states, invalid inputs and ambient credential isolation. Installed-ZIP tests use
 the bundled SDK with synthetic responses. These checks do not establish live
 upload acceptance, OAuth transport or successful file import. Live checks require
 their own authorized project and applicable budget.
+
+
+## Signed part byte transfer
+
+[`PartUploader`](../scenario/core/jobs/upload_transfers.py) performs one storage
+PUT attempt for a supplied immutable `bytes` snapshot. SDK upload initialization,
+retrieval and completion remain in the shared adapter. The pinned SDK exposes
+numbered part URLs and expiration metadata; it does not transfer these bytes.
+The primitive introduces no raw Scenario API endpoint or SDK fallback.
+
+The caller must persist the upload identity, original scope, source/part digest
+and transfer claim before calling it. It must bind the chosen URL and part number
+to that SDK upload plan, check expiration, and choose an explicit part-size policy.
+There is no implicit trusted-host list: the caller supplies the same exact HTTPS
+`StoragePolicy` used by downloads. Policy hosts must come from reviewed configuration,
+not from an incoming URL. No method initializes or finalizes an upload here.
+
+Inputs require a positive part number, a nonempty immutable byte snapshot within
+the policy's byte limit, a bare MIME type, and a SHA256 matching the saved part
+identity. Invalid or changed bytes fail before connecting. Large files must be
+staged and split by the application; this primitive never reads the user's source
+path or assembles a whole file in memory. Empty media needs a separately verified
+service contract rather than an invented zero-part upload.
+
+The transport uses verified TLS with bundled certificate authorities and sends
+only PUT, Content-Type, Content-Length and Connection: close (plus HTTP's Host).
+It has no Scenario credentials, cookies, ambient proxy/certificate settings,
+redirect handling, URL logging or automatic retry. Body writes are at most 64 KiB;
+permission and elapsed-time budget are checked between them and before reading
+the response. Blocking DNS/TLS/socket calls retain the existing transfer timeout
+limitations. Revocation cannot retract bytes already sent.
+
+HTTP 200, 201 or 204 yields a URL-free `UploadedPart(number, size, sha256)` receipt.
+This acknowledges this PUT only; it does not establish remote digest validation,
+all-parts completion or successful asset import. Response bodies and ETags are
+neither read nor persisted. The selected SDK completion method does not take ETags.
+
+Failures before the first possible HTTP write raise sanitized `TransferError`.
+After that boundary, transport errors and non-success HTTP statuses raise
+`UploadUncertain`: storage may have accepted bytes. There is no retry or automatic
+completion. The caller must preserve the durable claim and reconcile using the
+known upload identity. Control exceptions propagate after cleanup and likewise
+must leave the caller's persisted claim available for recovery. Ordinary cleanup
+errors do not replace an acknowledged receipt with a failure that could invite
+replay. These are offline transport contracts, not live upload acceptance.

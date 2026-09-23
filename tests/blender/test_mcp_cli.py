@@ -48,6 +48,11 @@ class McpCliTests(unittest.TestCase):
 
     @unittest.skipIf(os.name == "nt", "POSIX signal shutdown; Windows acceptance is separate")
     def test_cli_lists_tools_executes_on_main_thread_and_stops_cleanly(self):
+        for stop_signal in (signal.SIGINT, signal.SIGTERM):
+            with self.subTest(signal=stop_signal):
+                self._exercise_cli(stop_signal)
+
+    def _exercise_cli(self, stop_signal):
         with socket.socket() as reservation:
             reservation.bind(("127.0.0.1", 0))
             port = reservation.getsockname()[1]
@@ -104,13 +109,17 @@ class McpCliTests(unittest.TestCase):
                 scene = request("tools/call", {"name": "scene_summary", "arguments": {}})
                 self.assertNotIn("error", scene)
                 self.assertFalse(scene["result"].get("isError"))
-                process.send_signal(signal.SIGTERM)
+                process.send_signal(stop_signal)
                 returncode = process.wait(timeout=15)
                 log.seek(0)
                 output = log.read()
                 self.assertEqual(returncode, 0, output)
                 self.assertIn("token provided; hidden", output)
                 self.assertNotIn(token, output)
+                self.assertNotIn("not registered", output)
+                with socket.socket() as closed:
+                    closed.settimeout(1)
+                    self.assertNotEqual(closed.connect_ex(("127.0.0.1", port)), 0)
             finally:
                 if process.poll() is None:
                     process.kill()

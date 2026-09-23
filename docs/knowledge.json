@@ -42,7 +42,7 @@
         "tools/dev_config.py": "c3dbb5a4fb5c96a695f17cb436d15992f7b5efd11238c839d9ab44b9e9c7ac52",
         "tools/test_blender.py": "fec317c68c24c49302b456a478e02a0a8352d29aa30c3e9e3cf173d47f0697cd",
         "scenario/mcp/cli.py": "733ec02de0f03a9bfb0a9326a8f94ac32a2b6c33a5c11a09b79694cabd87c156",
-        "tests/blender/test_mcp_cli.py": "aae14f8e23a62cdc3c3e48f8fef45f09c64df9a27fe409fbc673c02491e24383"
+        "tests/blender/test_mcp_cli.py": "689c1984951a4ba813a1404267e62b5026cb0b476215ba283fca34bf14078c1f"
       }
     },
     {
@@ -237,7 +237,7 @@
         "scenario/mcp/tools_blender.py": "d806aab28a9ac7b675cd7370402aa6459da377bea7b251be5945aa6355760294",
         "scenario/mcp/server.py": "e201d006e5189f32742db38c3f2b00879fbcc1b71b665436b45a0930ff696cd0",
         "scenario/mcp/cli.py": "733ec02de0f03a9bfb0a9326a8f94ac32a2b6c33a5c11a09b79694cabd87c156",
-        "tests/blender/test_mcp_cli.py": "aae14f8e23a62cdc3c3e48f8fef45f09c64df9a27fe409fbc673c02491e24383"
+        "tests/blender/test_mcp_cli.py": "689c1984951a4ba813a1404267e62b5026cb0b476215ba283fca34bf14078c1f"
       }
     },
     {
@@ -321,7 +321,7 @@
         "tools/test_blender.py": "fec317c68c24c49302b456a478e02a0a8352d29aa30c3e9e3cf173d47f0697cd",
         "tools/blender_env.py": "2943b2aaf3bf1de923d078f75635fef439119deb1b5d66da952df878e6a8d428",
         "scenario/mcp/cli.py": "733ec02de0f03a9bfb0a9326a8f94ac32a2b6c33a5c11a09b79694cabd87c156",
-        "tests/blender/test_mcp_cli.py": "aae14f8e23a62cdc3c3e48f8fef45f09c64df9a27fe409fbc673c02491e24383"
+        "tests/blender/test_mcp_cli.py": "689c1984951a4ba813a1404267e62b5026cb0b476215ba283fca34bf14078c1f"
       }
     },
     {

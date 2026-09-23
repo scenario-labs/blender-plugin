@@ -7,6 +7,7 @@ new primitive does not mean it is wired into the user interface or local MCP.
 
 ## Architecture and implementation
 
+- [Privacy and data handling](PRIVACY.md)
 - [Runtime map and integration status](architecture/runtime.md)
 - [Blender boundaries and scene application](architecture/blender.md)
 - [SDK adoption and operation contracts](SDK_ADOPTION.md)

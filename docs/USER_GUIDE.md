@@ -153,12 +153,23 @@ Prices are in CU and depend on the model and its cost-marked parameters. Observe
 - **The sidebar and the dialogs do not look like the composer**: they are drawn by Blender with your Blender theme; the composer is custom drawing. Their layout follows the composer (tabs, chips, header rows) but their colours are the theme's.
 - **Where are the logs**: Blender's system console (Window > Toggle System Console on Windows, the terminal on macOS/Linux), messages are prefixed `scenario`.
 
+## What leaves your machine
+
+With online access and credentials enabled, cost previews send your prompt and
+parameters to `https://api.cloud.scenario.com` while you edit, before Generate.
+Generating or using prompt helpers can send reference files, captures and exported
+meshes and spend credits. Catalogs and thumbnails load from Scenario; cloud history
+loads when requested. Saved credentials, prompts, job state and media remain on
+your machine. A connected local agent can read the scene and request paid work.
+See [Privacy and data handling](PRIVACY.md) for destinations, storage, clipboard use
+and the current limits of online-access and agent controls.
+
 ## Files and folders
 
 - Results: your Output Folder (`~/Downloads/Scenario` by default), `<kind>/<YYYYMMDD>/<date>_<model>_<asset id>_<n>.<ext>`.
 - Captures, Prompt Spark stills and Edit 3D exports: the extension cache (`captures/`, `exports/` under Blender's extension user directory), thumbnails of models in `thumbs/`.
-- Job registry, recent models and model cache: the extension state and cache directories; removed when the extension is uninstalled.
-- Your key: Blender's preferences file. Treat it like any credential; rotate it in Scenario if it leaks.
+- Job registry, recent models and model cache: the extension's own user directory under Blender's extensions folder; delete it yourself for a clean removal.
+- Your key: saved as plain text in Blender's `userpref.blend` preferences file. Select Credentials > Environment to use `SCENARIO_API_KEY` and `SCENARIO_API_SECRET` instead; switching sources does not erase saved values. Clear both saved fields and save preferences to remove them; rotate the key in Scenario if it leaks.
 
 ## Known limits
 

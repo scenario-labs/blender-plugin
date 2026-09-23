@@ -121,7 +121,7 @@ The add-on serves the Model Context Protocol on `http://127.0.0.1:9876/mcp` with
 - **Allow connected agents to run Python** gates the `execute_python` tool. It is OFF by default; connected agents keep the other tools: scene summary, object detail, select, set frame, screenshots, quick renders, camera path (any move of the library, a description or waypoints), list models, model schema, cost estimate, generate (every lane, audio included), job status, wait, import result, capture a viewport reference, list generations.
 - Native clients may omit Origin. Browser requests require a valid HTTP(S) loopback Origin (127.0.0.1, localhost or ::1); other origins receive 403 and CORS preflights are refused. The session bearer token remains required for MCP operations.
 - Python execution is refused when Scenario preferences are unavailable, as well as when the toggle is off. Screenshot and render files are created in private temporary directories and removed after encoding, including failure paths.
-- Headless: `blender --background scene.blend --command scenario-mcp --port 9876 --token <token>`.
+- Headless: `blender --background scene.blend --command scenario_blender --port 9876 --token <token>`.
 
 ## The floating composer
 

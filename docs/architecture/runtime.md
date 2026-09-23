@@ -9,7 +9,7 @@ is Blender 5.0; dependency and runtime acceptance have separate gates.
 
 | Responsibility | Source | Current behavior |
 | --- | --- | --- |
-| Registration | [registry.py](../../scenario/blender/registry.py) | Registers properties, panels, operators, composer, pump and local server integration. Headless CLI naming remains #15. |
+| Registration | [registry.py](../../scenario/blender/registry.py) | Registers properties, panels, operators, composer, pump and local server integration. The `scenario_blender` headless command serves local MCP on the main thread. |
 | UI lifetime and state | [runtime.py](../../scenario/blender/runtime.py) | Creates the prototype `ScenarioClient`, `Catalog` and `JobManager`; owns process-wide UI/MCP state. |
 | UI generation | [generation.py](../../scenario/blender/generation.py) | Prepares the current lane and submits through the prototype manager. |
 | Main-thread application | [pump.py](../../scenario/blender/pump.py) | Drains prototype events and applies results to Blender. GUI timer handling differs from headless execution. |

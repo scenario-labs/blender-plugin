@@ -64,7 +64,8 @@
         "scenario/prefs.py": "24297fc14575f5e0c3a534516dc85961c28066aab0b0e00741247ed2e376d83b",
         "scenario/mcp/server.py": "d05a27729cd0835aedd023342713cb4b31107738f711026d24ab86f4052cd354",
         "scenario/mcp/tools_blender.py": "fce4b12492465b86691eede9cc6655220aab3087dcb2496a9600a0299abed520",
-        "scenario/blender/mcp_service.py": "63d3a6e36b0247d9529918957e4f92d08a48b704b28315017d2cf61914fb7ccf"
+        "scenario/blender/mcp_service.py": "63d3a6e36b0247d9529918957e4f92d08a48b704b28315017d2cf61914fb7ccf",
+        "scenario/core/config.py": "93b78f68c5da3c31e191fa3f1a08ac3fdffe8e3f1cac40a20bed4843672f28fe"
       }
     },
     {

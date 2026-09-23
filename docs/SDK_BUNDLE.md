@@ -20,6 +20,8 @@ These are package targets. Passing validation on a platform does not prove
 native execution there. The native CI matrix requires Linux x64 and Windows x64
 runs on Blender 5.0.1, 5.1.2 and 5.2.1. Inspect each run's actual installed-ZIP
 result before claiming acceptance; configuring a leg is not a passing result.
+The native check compares the loaded binary and its Python sources with the same
+exact wheel; platform wheels can have different source line endings.
 macOS execution evidence must be recorded separately. Desktop interaction and
 GPU acceptance remain separate from this headless baseline. No Linux arm64 or
 Windows arm64 binary is included.

@@ -247,7 +247,7 @@
       "sources": {
         "scenario/sdk-wheel-lock.json": "6e2de1e24a3cc2cc6f5d038637e25a1694efa56c9f32588b8120c1e6d47d2d51",
         "tools/wheel_bundle.py": "5189baee1a5381a3be9dd667e0b34357ce6101bd1ea0c7bb03098332ea53c518",
-        "tests/blender/test_sdk_bundle.py": "750e7098f727b4ca188dfb54ddc45484d3e2395a26559486aade4c0de99b7ec0",
+        "tests/blender/test_sdk_bundle.py": "0620461b7530e158ae2c8b332ba3aa05c9586be4d0f658c424d7873ea3e7c70e",
         ".github/workflows/blender-baseline.yml": "c4fabf3cc73eaad72df2da1bd158ce118c4ebab177980819a540b28c8b66cc4d"
       }
     },

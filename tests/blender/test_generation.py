@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 import json
 import unittest
+from ctypes import c_float
 
 import bpy
 from helpers import FIXTURES, isolated_manager, reset_scene, submodule
@@ -107,9 +108,13 @@ class GenerationTests(unittest.TestCase):
     def test_estimate_dirty_timestamp_fits_a_float_property(self):
         props = submodule("blender.props")
         lane = bpy.context.scene.scenario.lane_state("image")
+        before = props.clock()
         props.mark_estimate_dirty(lane)
+        after = props.clock()
         self.assertLess(
             lane.estimate_dirty_at, 1e6
         )  # relative clock, not an epoch (FloatProperty is 32-bit)
-        self.assertGreaterEqual(props.clock() - lane.estimate_dirty_at, 0.0)
+        # Blender stores this property as float32, which can round upward.
+        self.assertGreaterEqual(lane.estimate_dirty_at, c_float(before).value)
+        self.assertLessEqual(lane.estimate_dirty_at, c_float(after).value)
         self.assertEqual(lane.estimate_key, "")

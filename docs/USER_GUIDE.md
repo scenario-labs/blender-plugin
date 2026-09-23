@@ -1,5 +1,7 @@
 # Scenario for Blender: user guide
 
+See the [documentation index](index.md) for current integration boundaries and technical guidance.
+
 Blender 5.0 or newer, a Scenario account with API access (Pro plan or above), an internet connection.
 
 ## What it does
@@ -151,4 +153,4 @@ Prices are in CU and depend on the model and its cost-marked parameters. Observe
 
 ## Known limits
 
-See `BUGS.md`. Notably: the prompt is single-line in the composer (the pencil opens a wider editor), captures need the Blender GUI, team-scoped keys need a project switcher that does not exist yet, MCP `generate` sends parameters as given (the render prompts and Prompt Spark are applied by the panel and composer paths), video-to-motion and speech-to-text models have no lane yet, and skyboxes, LoRAs, Workflows and sign-in with Scenario are still planned.
+See [known limitations](KNOWN_LIMITATIONS.md) for current runtime, authentication, interface and verification boundaries. The [architecture map](architecture/runtime.md) distinguishes existing components from unfinished UI/MCP integration.

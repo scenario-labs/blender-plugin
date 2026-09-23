@@ -1,6 +1,6 @@
 # Scenario for Blender P2 Implementation Plan (Render-to-real + Video lane)
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> Historical implementation plan. Not instructions: process rules are superseded by AGENTS.md; commands and code samples describe the original prototype.
 
 **Goal:** Capture the viewport or the scene camera as stills and playblasts, feed them to Scenario models, and ship the two-step render-to-real flow (concept still, then Seedance video) plus a generic Video lane with match-timeline duration and Blender-input references.
 
@@ -8,7 +8,7 @@
 
 **Tech Stack:** same as P0/P1. `render.opengl` and `gpu` are GUI-only, so headless tests use an injected runner; GUI checks go through `tools/gui_screenshot.py` extended with a capture action.
 
-**Spec:** `docs/superpowers/specs/2026-08-28-scenario-for-blender-design.md` (sections 3.1 `capture.py`/`video.py`, 4 Video and Render-to-real)
+**Spec:** `docs/engineering/design-v1.md` (sections 3.1 `capture.py`/`video.py`, 4 Video and Render-to-real)
 
 ## Global Constraints
 
@@ -16,7 +16,7 @@ Same as the P0 plan, plus:
 - Seedance 2.0 contract (fixture `tests/fixtures/models/model_bytedance-seedance-2-0.json`): `prompt` optional, `referenceVideos` (file_array, max 3), `referenceImages` (file_array, max 9), mutually exclusive with `image` (first frame); `duration` allowed `[-1, 4..15]` where -1 bills the longest reference clip; `resolution` 480p/720p/1080p/4k; `generateAudio`.
 - Playblasts: 1280x720 H.264 MP4, overlays and gizmos hidden, stamps off; duration = scene frame range (preview range wins) clamped to the model's limits; always restore the user's render settings.
 - Captures are written under `paths.cache_dir / "captures"` and uploaded like files; never inside the .blend folder unless the user changes the output folder.
-- Branch `p2-render-to-real-video`, merge `--no-ff` into `main` at the end. Smoke spend for P2: at most one Seedance 2.0 run at 480p / 4 s / no audio, and only if its dry run is at most 150 CU.
+- Branch `p2-render-to-real-video`, merge `--no-ff` into `main` at the end.
 
 ---
 
@@ -401,7 +401,7 @@ Run `./tools/install_dev.sh && make test-blender` (32 tests OK), commit `feat(bl
 
 - [ ] **Step 3: GUI proof of a real capture**
 
-Extend `tools/gui_screenshot.py` with an optional action `capture` (5th argument): when present, `_prepare` calls `capture.capture_playblast(bpy.context, str(out_dir/"gui_playblast.mp4"), frame_start=1, frame_end=12)` and `capture.capture_still(bpy.context, str(out_dir/"gui_still.png"))`, printing file sizes. Run: `blender tools/blank.blend --python tools/gui_screenshot.py -- ~/Developer/scratch/playwright-screenshots/scenario-blender/p2-capture.png video 14 "" capture` and check that both files exist with non-zero size (fix the extension handling if the MP4 landed under a different name).
+Extend `tools/gui_screenshot.py` with an optional action `capture` (5th argument): when present, `_prepare` calls `capture.capture_playblast(bpy.context, str(out_dir/"gui_playblast.mp4"), frame_start=1, frame_end=12)` and `capture.capture_still(bpy.context, str(out_dir/"gui_still.png"))`, printing file sizes. Run: `blender tools/blank.blend --python tools/gui_screenshot.py -- <screenshot dir>/p2-capture.png video 14 "" capture` and check that both files exist with non-zero size (fix the extension handling if the MP4 landed under a different name).
 
 ---
 

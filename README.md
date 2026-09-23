@@ -5,16 +5,16 @@
 **Status: experimental.** A Blender 5.0+ extension that brings [Scenario](https://scenario.com) image, video, 3D and PBR material generation into the viewport, generates audio for the sequencer, renders the scene as a finished still or clip (Render Image / Render Video, with Prompt Spark writing the look and a 20-move camera path library), edits the selected mesh with Scenario's 3D tools (remesh, retexture, UV unwrap, rigging, animate, parts), offers Prompt Spark / Rewrite / Translate next to every prompt and a model picker with Scenario's own taxonomy (no LoRAs), and runs a local MCP server so agents (Claude Code, Cursor, Claude Desktop, Codex) can build and generate in the open scene. Python extension with pinned SDK dependency wheels, GPL-3.0-or-later. You need a Scenario account and an API key (Pro plan or above).
 
 **User guide: [`docs/USER_GUIDE.md`](docs/USER_GUIDE.md)**. Changelog: [`CHANGELOG.md`](CHANGELOG.md).
+See [known limitations](docs/KNOWN_LIMITATIONS.md) and the [documentation index](docs/index.md).
 
-Quick start: download `scenario-<version>.zip` from the releases (or run `uv run --locked --no-env-file python tools/build.py`), drag it onto Blender, paste your key in Preferences > Add-ons > Scenario, press N in the 3D viewport and open the Scenario tab. For automated releases, verify your download with `gh attestation verify scenario-<version>.zip -R scenario-labs/blender-plugin` and check `SHA256SUMS` ([details](docs/USER_GUIDE.md#verify-your-download)). Details, tests and the agent setup are below; the design lives in `docs/superpowers/specs/` and the delivery plans in `docs/superpowers/plans/`.
+Quick start: download `scenario-<version>.zip` from the releases (or run `uv run --locked --no-env-file python tools/build.py`), drag it onto Blender, paste your key in Preferences > Add-ons > Scenario, press N in the 3D viewport and open the Scenario tab. For automated releases, verify your download with `gh attestation verify scenario-<version>.zip -R scenario-labs/blender-plugin` and check `SHA256SUMS` ([details](docs/USER_GUIDE.md#verify-your-download)). See the [documentation index](docs/index.md) for current architecture, development guidance and historical context.
 
 ---
 
 
-**For contributors and coding agents:** read [`.claude/CLAUDE.md`](.claude/CLAUDE.md).
-Root [`AGENTS.md`](AGENTS.md) directs Codex to those shared instructions and adds
-Codex-specific guidance. Claude Code also provides
-`/pr-summary` and `/squash-message` from `.claude/commands/`.
+**For contributors and coding agents:** read [AGENTS.md](AGENTS.md), the canonical
+rulebook shared through `.claude/CLAUDE.md`, and [CONTRIBUTING.md](CONTRIBUTING.md).
+Canonical [agent tools](docs/development/agents.md) describe the shared skills and commands.
 
 ## Why
 
@@ -24,7 +24,7 @@ Bring Scenario's generation into the Blender viewport so creators stay in one to
 
 - `docs/USER_GUIDE.md`, `docs/user-guide.html`, `docs/images/`: the user guide (Markdown, and a self-contained HTML handbook with the cropped panel screenshots embedded).
 - `docs/user-guide.src.html` + `tools/build_docs_html.py`: edit the source, run the script to rebuild `docs/user-guide.html` with the images embedded.
-- `docs/superpowers/specs/2026-08-28-scenario-for-blender-design.md`: the v1 design (architecture, lanes, phases, tests).
+- `docs/engineering/design-v1.md`: the v1 design (architecture, lanes, phases, tests).
 - `docs/MODEL_PAYLOAD_AUDIT.md`, `docs/UI_STYLE.md`: the model-payload audit and the UI style guide.
 - `tests/fixtures/`: recorded model schemas and a real Patina Material job (6 maps) used as test fixtures.
 - `versions/`: previous states of deliverables (v0 = idea-stage README).
@@ -32,7 +32,7 @@ Bring Scenario's generation into the Blender viewport so creators stay in one to
 - `scenario/`: the extension source (`core/` is plain Python, `blender/` is the bpy glue). `blender_manifest.toml` at its root.
 - `tests/unit/` (pytest, no Blender), `tests/blender/` (run inside `blender --background`), `tests/smoke/` (opt-in, spends credits), `tests/fixtures/` (recorded API records and a real Patina job).
 - `tools/build.py`, `tools/install.py`, `tools/record_fixtures.py`, `tools/gui_screenshot.py`, `tools/blank.blend`. `dist/` (ignored) holds built zips.
-- `docs/superpowers/plans/`: P0 and P1 implementation plans (executed task by task).
+- `docs/engineering/plans/`: P0 and P1 implementation plans (executed task by task).
 - `CHANGELOG.md`: what shipped per phase.
 
 ## Run it
@@ -60,9 +60,9 @@ The add-on runs a local MCP server (default `http://127.0.0.1:9876/mcp`, bearer 
 - Claude Code: `claude mcp add --transport http scenario-blender http://127.0.0.1:9876/mcp --header "Authorization: Bearer <token>"`
 - Cursor: paste the `mcp.json` snippet.
 - Claude Desktop: stdio snippet running `scenario/mcp/stdio_shim.py` with Blender's Python.
-- Headless: `blender --background scene.blend --command scenario-mcp --port 9876 --token <token>`.
+- Headless CLI registration needs correction; see [known limitations](docs/KNOWN_LIMITATIONS.md) and #15 before relying on a command example.
 
-Agents get scene tools (summary, object detail, select, set frame, screenshots, quick renders, gated Python) and Scenario tools (models, schema, cost, generate, job status, import into scene, capture a reference from the viewport, history). Verified 2026-08-28: curl from another process listed 16 tools and read the scene.
+Agents get scene tools (summary, object detail, select, set frame, screenshots, quick renders, gated Python) and Scenario tools (models, schema, cost, generate, job status, import into scene, capture a reference from the viewport, history). The current tool definitions are in `scenario/mcp/tools_blender.py` and `scenario/mcp/tools_scenario.py`.
 
 ## Tests
 
@@ -70,9 +70,8 @@ Agents get scene tools (summary, object detail, select, set frame, screenshots, 
 - `make test`: unit tests (pytest, no Blender).
 - `make test-blender`: build, validate and test an exact ZIP in a fresh disposable profile, including imports and authenticated MCP. See the [native test loop](CONTRIBUTING.md#native-blender-test-loop) for coverage, artifacts and binary selection.
 - Paid smoke scripts: see [live commands and authorization](CONTRIBUTING.md#live-commands).
-- GUI check: `blender tools/blank.blend --python tools/gui_screenshot.py -- out.png image 10`, screenshots reviewed under `~/Developer/scratch/playwright-screenshots/scenario-blender/`.
+- GUI checks require an isolated profile and native interaction review; see [validation](docs/development/validation.md).
 
-Credits spent on this project so far: about 207 CU (185 CU of probes and smokes, plus two accidental 11 CU GPT Image 2 jobs on 2026-08-28 triggered by keyboard focus landing in an automated GUI test window; the screenshot tool now disables Generate) (two Patina probes 12 CU, Gemini smoke 9 CU, Patina smoke 6 CU, Seedance smoke 76 CU plus one failed 76 CU attempt on a 0.5 s clip, quality-gate fees), cap agreed about $30.
 
 ## Commit messages and PR titles
 

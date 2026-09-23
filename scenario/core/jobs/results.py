@@ -69,7 +69,10 @@ class ResultCommands:
     def _request(self, method, identifier):
         with self._guard():
             pass
-        return method(identifier)
+        try:
+            return method(identifier)
+        except ValueError:
+            raise ResultError("Scenario result metadata could not be retrieved") from None
 
     def load_manifest(self, request_id, *, expected_revision):
         current = self._current(request_id, expected_revision, {JobState.SUCCEEDED})

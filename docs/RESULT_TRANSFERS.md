@@ -78,3 +78,6 @@ download retries through the SDK. Interrupted-worker reconciliation remains
 separate. Those commands must bind the trusted asset response and
 receipt to the original account/project/job/target. Live signed-storage acceptance
 and supported OS/filesystem behavior remain separate from offline contracts.
+
+SDK identifier-validation failures in result metadata retrieval become sanitized
+`ResultError` exceptions without changing the saved manifest or starting downloads.

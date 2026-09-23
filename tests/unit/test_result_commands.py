@@ -5,6 +5,7 @@
 import hashlib
 import json
 import threading
+from dataclasses import replace
 
 import httpx
 import pytest
@@ -356,4 +357,27 @@ def test_unavailable_result_root_reports_command_error_before_download_claim(set
     with pytest.raises(ResultError, match="prepare private result storage"):
         coordinator.download_results("request", expected_revision=manifest.revision)
     assert store.get("request") == manifest
+    assert not downloader.calls
+
+
+@pytest.mark.parametrize("identity_kind", ["job", "asset"])
+def test_sdk_rejected_result_identity_is_sanitized_without_store_changes(setup, identity_kind):
+    coordinator, store, current, job, _, downloader, calls, _ = setup
+    if identity_kind == "job":
+        current = store.create(replace(current.intent, request_id="invalid-remote"))
+        for state in (JobState.SUBMITTING, JobState.REMOTE, JobState.SUCCEEDED):
+            current = store.transition(
+                current.intent.request_id,
+                expected_revision=current.revision,
+                state=state,
+                remote_job_id="remote%private" if state == JobState.REMOTE else None,
+            )
+    else:
+        job["metadata"]["assetIds"] = ["asset%private"]
+    with pytest.raises(ResultError, match="metadata could not be retrieved") as error:
+        coordinator.load_results(current.intent.request_id, expected_revision=current.revision)
+    assert "private" not in str(error.value)
+    assert error.value.__suppress_context__
+    assert store.get(current.intent.request_id) == current
+    assert len(calls) == (0 if identity_kind == "job" else 1)
     assert not downloader.calls

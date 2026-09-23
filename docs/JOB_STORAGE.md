@@ -23,7 +23,9 @@ still verify the estimate belongs to the current adapter and matches the current
 scope, payload and origin before authorizing dispatch.
 
 Only hashes and exact cost are persisted for payload/quote identity. No prompt,
-credential, raw service response, file path or signed storage URL is stored.
+credential, raw service response, absolute file path or signed storage URL is stored.
+Result manifests retain portable basenames, asset IDs, media types, optional
+expected size/digest and verified download receipts.
 An old stored quote is not reusable spending authorization after restart. The
 store does not itself verify a supplied fingerprint against a live estimate or
 prove ownership of a supplied remote ID; those checks belong to the coordinator.
@@ -38,7 +40,7 @@ private local directory. Newly created directories/database files request 0700/
 Windows ACLs are not changed. Scope separation is application isolation, not
 on-disk encryption or protection from another process with filesystem access.
 
-The database has an application ID and schema version **1**. SQLite transactions
+The database has an application ID and schema version **2**. SQLite transactions
 with `synchronous=FULL` commit the whole change or report `StoreError`; no cached
 in-memory result is reported as saved before commit succeeds. `BEGIN IMMEDIATE`
 serializes writers across threads/processes. Each operation owns a connection,
@@ -75,9 +77,9 @@ actual state rather than declaring a cancellation on request acknowledgement.
 A cancellation command claims `remote → cancel_requested` with the same atomic
 revision check before sending. A second coordinator/process cannot claim it
 again. Restart recovery polls this state even after a crash before sending;
-there is no lease expiry or explicit reset/reattempt command. The SQL schema and
-record fields remain version 1; older readers reject the new state rather than
-turning it into a dispatchable record.
+there is no lease expiry or explicit reset/reattempt command. Schema 2 includes the immutable result manifest and receipts. Version 1 databases
+are preserved and rejected for explicit recovery, never reset or silently migrated.
+Old readers also reject version 2 instead of discarding result recovery metadata.
 
 Opening storage never executes or automatically advances work. At startup, once
 old workers are stopped, the coordinator must treat saved `submitting` as
@@ -85,6 +87,34 @@ uncertain, poll known remote IDs, and surface interrupted downloads/application
 for explicit recovery. In particular, an interrupted Blender application may
 already have changed the scene; do not blindly apply it again. View closure does
 not imply cancellation, and a reopened file/account must not retarget a result.
+
+## Durable result metadata
+
+After observing remote success, `set_results` binds a nonempty tuple of at most
+128 `ResultAsset` entries once. Each entry has an opaque asset ID, portable
+basename, normalized media type and optional expected size/SHA256. Duplicate asset
+IDs and filenames (case-insensitive for portable filesystems) are rejected. The
+caller must obtain metadata from the original scoped SDK job/asset responses;
+the store does not prove provider ownership or follow an incoming URL. Use a
+private result directory unique to the scope/request, so filenames cannot collide
+with another job's output.
+
+The manifest is committed before `downloading` can be claimed. Each successful
+transfer calls `record_download` with its `DownloadedResult`; it must match the
+manifest's name and any expected size/digest. Receipts cannot be replaced.
+Revision checks and SQLite transactions serialize these writes with other job
+updates. A write failure preserves the previous durable record and propagates.
+Partial receipts survive `download_failed` and an explicit retry. `ready` requires
+a receipt for every asset. Neither a manifest nor a receipt is permission to
+spend again or apply to a different origin.
+
+Before using an existing receipt, call `verify_download` from the
+[transfer module](RESULT_TRANSFERS.md). It rehashes the local regular file and
+checks its size, bounded reads and stable file identity. Missing, modified,
+symlinked or non-regular files fail without deletion or network work. Only the
+caller can decide explicit repair; an unreceipted published file is not implicitly
+trusted after a crash. Do not promote an interrupted `applying` record to applied
+or retry it automatically: the scene may already have changed.
 
 ## Validation and remaining integration
 
@@ -94,7 +124,7 @@ rollback, process exit before commit, and corrupt/incompatible databases. An
 installed-ZIP baseline test verifies SQLite and the store inside Blender's Python.
 
 The prototype still uses its existing registry until the shared coordinator is
-wired in. Result/download metadata, UI/MCP integration, live cancellation
+wired in. Result command orchestration, UI/MCP integration, live cancellation
 acceptance and safe main-thread application remain under #65. Cancellation
 claims, coordinator recovery and bounded workers provide foundations without
 completing those integrated acceptance criteria.

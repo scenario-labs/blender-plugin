@@ -21,9 +21,11 @@ from scenario.core.jobs.store import (
     JobScope,
     JobState,
     JobStore,
+    ResultAsset,
     StoreConflict,
     StoreError,
 )
+from scenario.core.jobs.transfers import DownloadedResult
 
 
 @pytest.fixture
@@ -134,6 +136,19 @@ def test_generation_download_and_application_have_separate_states(store, intent)
         JobState.APPLIED,
     ):
         kwargs = {"remote_job_id": "remote-one"} if state == JobState.REMOTE else {}
+        if state == JobState.DOWNLOADING and not record.results:
+            record = store.set_results(
+                record.intent.request_id,
+                (ResultAsset("asset", "result.png", "image/png"),),
+                expected_revision=record.revision,
+            )
+        if state == JobState.READY:
+            record = store.record_download(
+                record.intent.request_id,
+                "asset",
+                DownloadedResult("result.png", 1, "a" * 64),
+                expected_revision=record.revision,
+            )
         record = advance(store, record, state, **kwargs)
         assert store.get(intent.request_id) == record
         assert record.intent == intent

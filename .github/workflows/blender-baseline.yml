@@ -97,6 +97,7 @@ jobs:
             ${{ runner.temp }}/scenario-screenshots/*/plugin.png
             ${{ runner.temp }}/scenario-screenshots/*/mcp-*.png
             ${{ runner.temp }}/scenario-screenshots/*/preferences-*.png
+            ${{ runner.temp }}/scenario-screenshots/*/permissions.png
             ${{ runner.temp }}/scenario-screenshots/*/report.json
             ${{ runner.temp }}/scenario-screenshots/*/gui.json
             ${{ runner.temp }}/scenario-screenshots/*/*.log

@@ -3,6 +3,8 @@
 """Offline handbook output, input failures and filesystem boundaries."""
 
 import base64
+import hashlib
+import json
 
 import pytest
 
@@ -161,10 +163,14 @@ def test_template_requires_known_slots_and_document_metadata(inputs, before, aft
     assert not inputs["output"].exists()
 
 
-def test_source_cannot_leave_unresolved_slots(inputs):
-    inputs["source"].write_text("# Guide\n\n{{missing}}")
-    with pytest.raises(HandbookError, match="unresolved"):
-        build_handbook(**inputs)
+def test_authored_template_syntax_is_preserved_in_prose_code_and_navigation(inputs):
+    inputs["source"].write_text(
+        "# Guide\n\n## {{ heading }}\n\nLiteral {{value}}.\n\n```jinja\n{{ example }}\n```"
+    )
+    text = build_handbook(**inputs).read_text()
+    assert "{{ heading }}</a>" in text
+    assert "Literal {{value}}." in text
+    assert '<code class="language-jinja">{{ example }}' in text
 
 
 @pytest.mark.parametrize("version", ['"1.2"', "123", '"1.2.3<script>"'])
@@ -195,6 +201,104 @@ def test_relative_links_point_to_repository_and_fragments_stay_local(inputs):
     )
     assert 'href="#install"' in text
     assert 'href="https://example.invalid/"' in text
+
+
+def test_relative_directory_links_use_github_tree_urls(inputs):
+    inputs["source"].write_text("[Images](images)\n\n[Repository](..)")
+    text = build_handbook(**inputs).read_text()
+    assert 'href="https://github.com/scenario-labs/blender-plugin/tree/main/docs/images"' in text
+    assert 'href="https://github.com/scenario-labs/blender-plugin/tree/main"' in text
+
+
+@pytest.mark.parametrize("inline", [False, True])
+def test_rerender_removes_only_previously_generated_images(inputs, inline):
+    output = build_handbook(**inputs)
+    unowned = output.parent / "images/unowned.png"
+    unowned.write_bytes(b"unrelated output")
+    inputs["source"].write_text("# Guide\n\nNo screenshot")
+    build_handbook(**inputs, inline_images=inline)
+    assert not (output.parent / "images/panel.png").exists()
+    assert unowned.read_bytes() == b"unrelated output"
+    assert not output.with_name("index.html.assets.json").exists()
+
+
+def test_image_rename_removes_previous_snapshot_and_records_new_one(inputs):
+    output = build_handbook(**inputs)
+    inputs["source"].parent.joinpath("images/new.png").write_bytes(PNG)
+    inputs["source"].write_text("![Renamed panel](images/new.png)")
+    build_handbook(**inputs)
+    assert not (output.parent / "images/panel.png").exists()
+    assert (output.parent / "images/new.png").read_bytes() == PNG
+    assert json.loads(output.with_name("index.html.assets.json").read_text())["files"] == {
+        "images/new.png": hashlib.sha256(PNG).hexdigest()
+    }
+
+
+def test_website_to_inline_removes_owned_image_copies(inputs):
+    output = build_handbook(**inputs)
+    build_handbook(**inputs, inline_images=True)
+    assert "data:image/png;base64," in output.read_text()
+    assert not (output.parent / "images/panel.png").exists()
+    assert not output.with_name("index.html.assets.json").exists()
+
+
+def test_modified_obsolete_asset_fails_before_writing_or_deleting(inputs):
+    output = build_handbook(**inputs)
+    original = output.read_bytes()
+    image = output.parent / "images/panel.png"
+    image.write_bytes(b"user modification")
+    inputs["source"].write_text("# Guide without screenshot")
+    with pytest.raises(HandbookError, match="modified"):
+        build_handbook(**inputs)
+    assert image.read_bytes() == b"user modification"
+    assert output.read_bytes() == original
+
+
+@pytest.mark.parametrize("name", ["../outside.png", "/outside.png", "index.html"])
+def test_asset_record_cannot_delete_outside_output_or_its_html(inputs, name):
+    output = build_handbook(**inputs)
+    record = output.with_name("index.html.assets.json")
+    record.write_text(json.dumps({"version": 1, "files": {name: "0" * 64}}))
+    original = output.read_bytes()
+    with pytest.raises(HandbookError):
+        build_handbook(**inputs)
+    assert output.read_bytes() == original
+
+
+def test_asset_record_symlink_is_rejected(inputs):
+    output = build_handbook(**inputs)
+    record = output.with_name("index.html.assets.json")
+    record.unlink()
+    try:
+        record.symlink_to(inputs["manifest"])
+    except OSError as error:
+        pytest.skip(f"Host cannot create symlinks: {error}")
+    with pytest.raises(HandbookError, match="symlink"):
+        build_handbook(**inputs)
+    assert inputs["manifest"].read_text() == 'version = "1.2.3"\n'
+
+
+def test_parent_symlink_cannot_redirect_cleanup_to_unowned_same_bytes(inputs):
+    output = build_handbook(**inputs)
+    images = output.parent / "images"
+    unowned = output.parent / "user-files"
+    images.rename(unowned)
+    try:
+        images.symlink_to(unowned, target_is_directory=True)
+    except OSError as error:
+        pytest.skip(f"Host cannot create symlinks: {error}")
+    inputs["source"].write_text("# Guide without screenshot")
+    with pytest.raises(HandbookError, match="symlink"):
+        build_handbook(**inputs)
+    assert (unowned / "panel.png").read_bytes() == PNG
+
+
+def test_render_cannot_claim_original_source_images_for_later_cleanup(inputs):
+    inputs["output"] = inputs["source"].parent / "index.html"
+    with pytest.raises(HandbookError, match="overwrite"):
+        build_handbook(**inputs)
+    assert (inputs["source"].parent / "images/panel.png").read_bytes() == PNG
+    assert not inputs["output"].exists()
 
 
 @pytest.mark.parametrize(

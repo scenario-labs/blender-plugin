@@ -8,7 +8,9 @@ The template's Google Fonts stylesheet remains external in both output modes.
 
 import argparse
 import base64
+import hashlib
 import html
+import json
 import re
 import tomllib
 from html.parser import HTMLParser
@@ -98,12 +100,14 @@ class _Page(HTMLParser):
         target = (self.source.parent / decoded).resolve()
         if not target.is_relative_to(self.root) or not target.exists():
             raise HandbookError(f"Missing repository link: {href!r}")
-        path = quote(target.relative_to(self.root).as_posix(), safe="/-._~")
+        relative = target.relative_to(self.root).as_posix()
+        path = "" if relative == "." else "/" + quote(relative, safe="/-._~")
         attrs["href"] = urlunsplit(
             (
                 "https",
                 "github.com",
-                "/scenario-labs/blender-plugin/blob/main/" + path,
+                f"/scenario-labs/blender-plugin/{'tree' if target.is_dir() else 'blob'}/main"
+                + path,
                 url.query,
                 url.fragment,
             )
@@ -162,6 +166,62 @@ class _Page(HTMLParser):
         self.parts.append(f"<!{decl}>")
 
 
+def _asset_destination(directory: Path, relative: Path) -> Path:
+    candidate = directory
+    for part in relative.parts:
+        candidate /= part
+        if candidate.is_symlink():
+            raise HandbookError("Asset destination follows a symlink")
+    return candidate.resolve()
+
+
+def _stale_assets(
+    record: Path, destinations: dict, protected: set[Path], source_directory: Path
+) -> list[Path]:
+    """Only remove unchanged files recorded by this output's previous render."""
+    if record.is_symlink() or record in protected:
+        raise HandbookError("Asset record would overwrite a handbook input or follow a symlink")
+    if not record.exists():
+        return []
+    if record.stat().st_size > 1024 * 1024:
+        raise HandbookError("Handbook asset record is too large")
+    previous = json.loads(record.read_text(encoding="utf-8"))
+    if (
+        not isinstance(previous, dict)
+        or previous.get("version") != 1
+        or not isinstance(previous.get("files"), dict)
+    ):
+        raise HandbookError("Invalid handbook asset record")
+    stale = []
+    for name, digest in previous["files"].items():
+        relative = Path(name)
+        if (
+            not name
+            or "\\" in name
+            or relative.is_absolute()
+            or ".." in relative.parts
+            or not isinstance(digest, str)
+            or not re.fullmatch(r"[a-f0-9]{64}", digest)
+        ):
+            raise HandbookError("Invalid path or digest in handbook asset record")
+        candidate = _asset_destination(record.parent, relative)
+        if (
+            not candidate.is_relative_to(record.parent)
+            or candidate in protected
+            or candidate == record
+            or candidate == (source_directory / relative).resolve()
+        ):
+            raise HandbookError("Recorded asset escapes output or overlaps a handbook input")
+        if candidate in destinations or not candidate.exists():
+            continue
+        if not candidate.is_file() or hashlib.sha256(candidate.read_bytes()).hexdigest() != digest:
+            raise HandbookError(
+                "Previously generated asset was modified; inspect it before cleanup"
+            )
+        stale.append(candidate)
+    return stale
+
+
 def build_handbook(
     source: Path,
     template: Path,
@@ -196,31 +256,41 @@ def build_handbook(
     content = renderer.convert(source.read_text(encoding="utf-8"))
     values = {"content": content, "toc": renderer.toc, "version": html.escape(version)}
     page = SLOT.sub(lambda match: values[match[1].strip()], layout)
-    if SLOT.search(page):
-        raise HandbookError("Rendered page contains unresolved template slots")
     parsed = _Page(source, root, inline_images)
     parsed.feed(page)
     parsed.close()
     if not all((parsed.doctype, parsed.lang, parsed.charset, parsed.viewport, parsed.title)):
         raise HandbookError("Template needs doctype, language, UTF-8, viewport and title metadata")
     destinations = {}
+    record = output.with_name(output.name + ".assets.json")
+    protected = {output, source, template, manifest}
     for relative, data in parsed.assets.items():
-        destination = (output.parent / relative).resolve()
-        if not destination.is_relative_to(output.parent) or destination in (
-            output,
-            source,
-            template,
-            manifest,
+        destination = _asset_destination(output.parent, relative)
+        if (
+            not destination.is_relative_to(output.parent)
+            or destination in protected | {record}
+            or destination == (source.parent / relative).resolve()
         ):
             raise HandbookError(
                 "Image destination would escape output or overwrite a handbook input"
             )
         destinations[destination] = data
+    stale = _stale_assets(record, destinations, protected, source.parent)
     output.parent.mkdir(parents=True, exist_ok=True)
     for destination, data in destinations.items():
         destination.parent.mkdir(parents=True, exist_ok=True)
         destination.write_bytes(data)
     output.write_text("".join(parsed.parts), encoding="utf-8")
+    for candidate in stale:
+        candidate.unlink()
+    if destinations:
+        files = {
+            item.relative_to(output.parent).as_posix(): hashlib.sha256(data).hexdigest()
+            for item, data in destinations.items()
+        }
+        record.write_text(json.dumps({"version": 1, "files": files}, indent=2) + "\n")
+    elif record.exists():
+        record.unlink()
     return output
 
 

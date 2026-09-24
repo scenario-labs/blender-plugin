@@ -1,7 +1,7 @@
 {
   "version": 1,
   "index": "docs/index.md",
-  "base_revision": "408f581a1565f2d462a7b2eb297a382bfaafd706",
+  "base_revision": "f56777680be36b107c15af6749956c0f1539222a",
   "documents": [
     {
       "path": ".claude/rules/blender-glue.md",

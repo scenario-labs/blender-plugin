@@ -86,6 +86,10 @@ printf '%s\n' "feat(ui): my title" | npx --no-install commitlint --config commit
 
 Verified live (2026-08-28): REST Basic auth, model records carry UI schema, `?dryRun=true` cost preview, Patina returns 6 typed map assets, multipart upload flow, GLB asset shape, OAuth dynamic registration on mcp.scenario.com. Assumed: Patina smoothness semantics (pixels suggest dark = rough), normal-map convention. Native runtime compatibility on Blender 5.0, 5.1 and 5.2 must be verified separately from release ZIP validation.
 
+## Security
+
+Report vulnerabilities privately, see [SECURITY.md](SECURITY.md). Never paste API keys, MCP bearer tokens or signed asset URLs into issues or pull requests.
+
 ## Licence and provenance
 
 GPL-3.0-or-later (see `LICENSE`), the licence Blender requires for add-ons that use `bpy`. The extension zip carries a copy of the licence text (`scenario/LICENSE`, identical to the root `LICENSE`). Pinned SDK dependencies and their notices are described in [`docs/SDK_BUNDLE.md`](docs/SDK_BUNDLE.md). The MCP bridge follows the Blender Lab `blender_mcp` protocol shape, rewritten.

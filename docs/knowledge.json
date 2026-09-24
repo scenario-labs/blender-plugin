@@ -475,7 +475,7 @@
       "path": "docs/development/validation.md",
       "coverage": "policy",
       "reviewed_at": "2026-09-24",
-      "limits": "Canonical validation policy with inspected offline unit workflow, coverage reporting and connection-guard contracts; unit-process core/MCP coverage and matrix results do not establish subprocess coverage, native Blender compatibility or live service acceptance. Source-manifest preflight, supplied-ZIP bypass and failure/status preservation reviewed against build/runner code and offline regressions; native runtime and other claims retain prior limits. Reusable CI orchestration and fail-closed aggregate reviewed against all six caller workloads; this does not establish repository required-check settings or live service acceptance.",
+      "limits": "Canonical validation policy with inspected offline unit workflow, coverage reporting and connection-guard contracts; unit-process core/MCP coverage and matrix results do not establish subprocess coverage, native Blender compatibility or live service acceptance. Source-manifest preflight, supplied-ZIP bypass and failure/status preservation reviewed against build/runner code and offline regressions; native runtime and other claims retain prior limits. Reusable CI orchestration and fail-closed aggregate reviewed against all six caller workloads; this does not establish repository required-check settings or live service acceptance. Native update fixture reviewed against isolated profile guards, loopback-only repository configuration, server failure cleanup and exact synthetic installed-byte/enabled-state checks; local Blender 5.0.1 mechanism evidence does not establish production add-on upgrades, hosted publication, GUI controls or arbitrary subprocess socket enforcement. Unrelated evidence fingerprints retain prior review scope.",
       "sources": {
         "Makefile": "c86ffba526a4882788cec66b53924504eceab7114f0b4776ff23ceee1d7a4c8b",
         "pyproject.toml": "c658408a54b6c62b113e2939cb26032352341ca9f4b26b2e839caeb77f4e44ea",
@@ -495,9 +495,12 @@
         ".github/workflows/ci.yml": "9805ee9848f2eed06b0b9f108bcd7054592d61b431f8f4b57d4098f5cf43c344",
         ".github/workflows/python-lint.yml": "083888b456de882bec4d6bf9bf57c2053e0fbf364af748451d3c7dae2dc68d7b",
         ".github/workflows/sdk-contracts.yml": "8c2e0723253e79a74395f7b309731ac0e7ad5b1d7ec027044e211526fff14951",
-        ".github/workflows/blender-baseline.yml": "2688ab0300ef56b0b52f9a8aaf55d87a01616207e47f8a2759e2ebe0d2315a3c",
+        ".github/workflows/blender-baseline.yml": "fc58fcf165c04c6b24a4bb190be92a866f8688bea4ec486a54256518d91905cc",
         ".github/workflows/knowledge.yml": "2719af3dd48cd51d7944c18749e748895d05653a1e8fbc5d46fb852291abd5fb",
-        ".github/workflows/agent-skills.yml": "fa1d68017f1bfffee58c9e66ccea651f1b570a4be7aef56da7376e5bbe13bb98"
+        ".github/workflows/agent-skills.yml": "fa1d68017f1bfffee58c9e66ccea651f1b570a4be7aef56da7376e5bbe13bb98",
+        "tools/test_repository_update.py": "bb777a1f38142e5ebd67e063199675e538d14f94a6c0ac0a231572ab7de25834",
+        "tests/blender/repository_update.py": "99bafb44619bd45da5a973485dd01140370b6e6be076765b6ab91fdfe57d9e28",
+        "tests/unit/test_repository_update_runner.py": "47a5b52d4fa030b04064d69bdaa6cb4601e8bfc542a4e1afe49054d3724328c2"
       }
     },
     {

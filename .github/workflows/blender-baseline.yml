@@ -56,6 +56,10 @@ jobs:
         env:
           BLENDER_VERSION: ${{ matrix.version }}
         run: uv run --locked --no-env-file python tools/test_blender.py --expected-version "$BLENDER_VERSION" --artifacts "$RUNNER_TEMP/scenario-tests"
+      - name: Test native extension install and update on loopback
+        env:
+          BLENDER_VERSION: ${{ matrix.version }}
+        run: uv run --locked --no-env-file python tools/test_repository_update.py --expected-version "$BLENDER_VERSION" --artifacts "$RUNNER_TEMP/scenario-update-tests"
       - name: Install virtual display for offline GUI captures
         run: sudo apt-get install -y --no-install-recommends xvfb xauth openbox libgl1-mesa-dri xdotool imagemagick
       - name: Capture the tested ZIP in both UI views
@@ -110,6 +114,12 @@ jobs:
             ${{ runner.temp }}/scenario-tests/*/result.json
             ${{ runner.temp }}/scenario-tests/*/tests.json
             ${{ runner.temp }}/scenario-tests/*/*.zip
+            ${{ runner.temp }}/scenario-update-tests/*/*.log
+            ${{ runner.temp }}/scenario-update-tests/*/result.json
+            ${{ runner.temp }}/scenario-update-tests/*/update.json
+            ${{ runner.temp }}/scenario-update-tests/*/first/*.zip
+            ${{ runner.temp }}/scenario-update-tests/*/second/*.zip
+            ${{ runner.temp }}/scenario-update-tests/*/repository-*/index.json
 
   blender-windows:
     name: blender-baseline (Windows, ${{ matrix.version }})
@@ -145,6 +155,13 @@ jobs:
         run: |
           uv run --locked --no-env-file python tools/test_blender.py --expected-version $env:BLENDER_VERSION --artifacts "$env:RUNNER_TEMP/scenario-tests"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Test native extension install and update on Windows loopback
+        shell: pwsh
+        env:
+          BLENDER_VERSION: ${{ matrix.version }}
+        run: |
+          uv run --locked --no-env-file python tools/test_repository_update.py --expected-version $env:BLENDER_VERSION --artifacts "$env:RUNNER_TEMP/scenario-update-tests"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Preserve Windows ZIP, reports and logs
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -156,6 +173,12 @@ jobs:
             ${{ runner.temp }}/scenario-tests/*/result.json
             ${{ runner.temp }}/scenario-tests/*/tests.json
             ${{ runner.temp }}/scenario-tests/*/*.zip
+            ${{ runner.temp }}/scenario-update-tests/*/*.log
+            ${{ runner.temp }}/scenario-update-tests/*/result.json
+            ${{ runner.temp }}/scenario-update-tests/*/update.json
+            ${{ runner.temp }}/scenario-update-tests/*/first/*.zip
+            ${{ runner.temp }}/scenario-update-tests/*/second/*.zip
+            ${{ runner.temp }}/scenario-update-tests/*/repository-*/index.json
 
   blender-baseline-ok:
     if: always()

@@ -182,6 +182,8 @@ First-party source headers and the extension manifest declare GPL-3.0-or-later,
 and the extension ZIP includes the same GPL text. Bundled dependencies, adopted
 sources and assets retain their original licences and notices; see the
 [SDK bundle](docs/SDK_BUNDLE.md) and [source adoption](docs/STUDIO_ADOPTION.md).
+The [bundled icon notice](scenario/icons/README.md) records the generator, font
+option and outstanding design-provenance review.
 
 [Blender's licence guidance](https://www.blender.org/about/license/) requires a
 GPL-compatible licence for published add-ons using its Python API. The

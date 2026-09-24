@@ -71,3 +71,15 @@ def test_permission_reasons_follow_manifest_rules():
         assert isinstance(reason, str) and reason and reason == reason.strip()
         assert len(reason) <= 64 and "\n" not in reason and "\r" not in reason
         assert reason[-1] not in ".!?"
+
+
+# The repository is live now; switch to the handbook only after Pages acceptance.
+ALLOWED_WEBSITES = {
+    "https://github.com/scenario-labs/blender-plugin",
+    "https://scenario-labs.github.io/blender-plugin/",
+}
+
+
+def test_manifest_website_points_at_the_project():
+    manifest = tomllib.loads(MANIFEST.read_text(encoding="utf-8"))
+    assert manifest["website"] in ALLOWED_WEBSITES, manifest["website"]

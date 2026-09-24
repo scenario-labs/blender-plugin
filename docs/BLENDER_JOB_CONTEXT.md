@@ -44,8 +44,8 @@ SQLite work only, never HTTP; invalidation may briefly wait for that commit.
 
 The coordinator can apply this same pure revision guard to configured upload
 preparation and mutation claims; see [upload commands](SDK_UPLOADS.md#shared-worker-commands).
-JobSession upload configuration and forwarding are still separate integration
-work. Inspection and explicit upload refresh do not rediscover or rebind targets.
+The optional session upload configuration below uses this boundary. Inspection
+and explicit upload refresh do not rediscover or rebind targets.
 
 File identities are deliberately session-local. Restarted records stay available
 for recovery, but automatic application cannot assume an old file or target is
@@ -158,3 +158,41 @@ original origin once. Scene changes during metadata/estimation reject the quote;
 the caller must recapture inputs and request a new estimate. The quote cannot be
 rebound through the older direct-estimate preparation method. These APIs do not
 authorize paid dispatch or replace the active UI/MCP call sites by themselves.
+
+## Upload references
+
+The session optionally accepts `upload_store`, `upload_sources` and
+`part_uploader`, forwarding the complete configuration to its existing
+coordinator and bounded worker pool. Their scope and explicit storage-host policy
+must satisfy the [upload contracts](SDK_UPLOADS.md#shared-worker-commands).
+There is no default production host allowlist or automatic upload configuration;
+partial configuration raises `TypeError` before starting another worker owner.
+With all three dependencies supplied, a mismatched upload/job scope still raises
+`ValueError`; the existing source and transfer-policy validation also applies.
+
+Capture the scene/target origin with the chosen source before calling
+`prepare_upload(source, origin=..., kind=..., content_type=...)`. Main-thread
+admission checks that origin and completion capacity before queuing staging.
+`initialize_upload`, `transfer_upload_part` and `finalize_upload` load the
+persisted record through public `inspect_upload`, resolve its original target at
+admission, and queue the existing command with the supplied expected revision. The core
+origin guard checks again before intent persistence and mutation claims, so a
+queued command cannot use a stale captured revision. No source read, storage PUT
+or service call runs on Blender's main thread.
+
+`inspect_upload` and `upload_recovery_plan` are synchronous main-thread metadata
+reads. They remain available when completion capacity is full and do not require
+the old scene/target to exist. `refresh_upload` likewise queues an explicit status
+read using the saved origin, allowing recovery after target deletion or restart.
+It never transfers another part, recreates initialization or repeats completion.
+Unknown requests in another account/project are absent, not rebound to the
+current connection or selection.
+
+Upload task outcomes use the normal `drain`/`deliver` path: successful records
+must match the stored scope/origin, and delivery rechecks the current captured
+scene/target before a once-only main-thread callback. A late claimed receipt may
+persist after a file switch, while delivery remains blocked. Restarted origins
+remain unrecognized for automatic application even when status refresh succeeds.
+Callbacks do not by themselves attach a reference or commit a Blender application
+transaction. Active UI/MCP upload controls and explicit recovery/application UX
+remain separate work; account/project identity is still supplied by the caller.

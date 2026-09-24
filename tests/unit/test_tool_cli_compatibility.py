@@ -75,6 +75,15 @@ def test_fetch_missing_or_ambiguous_version_is_usage_error(tools, monkeypatch, a
     assert error.value.code == 2
 
 
+def test_fetch_empty_explicit_version_is_a_clean_validation_failure(tools, monkeypatch, capsys):
+    fetch, _, _ = tools
+    monkeypatch.setattr(fetch.platform, "system", lambda: "Linux")
+    monkeypatch.setattr(fetch.platform, "machine", lambda: "x86_64")
+    monkeypatch.setattr(sys, "argv", ["fetch_blender.py", "--version", ""])
+    assert fetch.main() == 1
+    assert "Download failed: Use a full Blender version" in capsys.readouterr().err
+
+
 @pytest.mark.parametrize("repository", ["none", "default", "explicit"])
 def test_repository_cli_accepts_optional_directory_without_changing_default(
     tools, tmp_path, monkeypatch, repository

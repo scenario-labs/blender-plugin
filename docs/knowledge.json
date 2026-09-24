@@ -52,7 +52,7 @@
         "tests/blender/test_credentials.py": "0767fbe1917c977631dc4243bfcb05dce97d5ed0c0b2c731b8ea4bfdb07e3b45",
         "tools/capture_gui_scene.py": "7538cb1e90510a31cdfac22e390d5d595cf2bc73628f1cc3139071b2ef855609",
         "tests/unit/test_gui_capture.py": "beee6cba15adf7da1e7434c18dcb2b948e36f4b459af06fc98a6c850a5fea87c",
-        "tools/fetch_blender.py": "1f9ef0df5609dc9ac49695945c93a7b0129fce6567a635b83c35caf2656d60b6",
+        "tools/fetch_blender.py": "54779acbe1518c3b57b533311acdef0eac1e4efbb8ed462052192652106f8098",
         "tests/unit/test_portable_tools.py": "2cea13137994d2d09b76abe0f5a6916a36c3c61faa546bcc6fa82e0e660c14c5",
         ".github/actions/setup-blender/action.yml": "276722b203227e8f7a7a98a76a0e7095c566bae2c308b4166dff5e7a3698c105",
         ".github/workflows/blender-baseline.yml": "c4fabf3cc73eaad72df2da1bd158ce118c4ebab177980819a540b28c8b66cc4d",
@@ -82,7 +82,7 @@
         "tests/unit/test_blender_runner.py": "7e5ad48db09c44b00b6573e587c4b4559831c9af0ea66dc4c522f91f2a9e32cc",
         "tests/unit/test_isolated_command.py": "d689271c2f4c45ddbafce0dcec1354d998fba9a441365bb06f5640f1dde742f5",
         "tools/build.py": "162e00bb52f46770d219c5570d3ceccf3bd98e87055026c5a39944aec39f6bdd",
-        "tests/unit/test_tool_cli_compatibility.py": "2a376afaf2e4aeafa2526a3435c5d0d2189e742d006d12c1aed353a771719fa7"
+        "tests/unit/test_tool_cli_compatibility.py": "da434ed4e75aa6e8acd762c902388601845aafcc3d9efd50f3c9ba127c43c877"
       }
     },
     {
@@ -609,8 +609,8 @@
         "tests/unit/test_local_hooks.py": "b826d5dd189abd1071ceb4eb175787348f39d5272331dce5bafcbeb1a2374d3d",
         "tests/blender/run_all.py": "36f0a56a4b443faddb88d1193764c0a6fae29579dc72b73fcb13664656bb2107",
         "tests/unit/test_isolated_command.py": "d689271c2f4c45ddbafce0dcec1354d998fba9a441365bb06f5640f1dde742f5",
-        "tools/fetch_blender.py": "1f9ef0df5609dc9ac49695945c93a7b0129fce6567a635b83c35caf2656d60b6",
-        "tests/unit/test_tool_cli_compatibility.py": "2a376afaf2e4aeafa2526a3435c5d0d2189e742d006d12c1aed353a771719fa7"
+        "tools/fetch_blender.py": "54779acbe1518c3b57b533311acdef0eac1e4efbb8ed462052192652106f8098",
+        "tests/unit/test_tool_cli_compatibility.py": "da434ed4e75aa6e8acd762c902388601845aafcc3d9efd50f3c9ba127c43c877"
       }
     },
     {

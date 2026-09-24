@@ -250,7 +250,8 @@ def main():
             "install Blender and set BLENDER on this platform"
         )
     try:
-        fetch(args.version or args.release, args.cache, args.sha256, platform_name=platform_name)
+        selected_version = args.version if args.version is not None else args.release
+        fetch(selected_version, args.cache, args.sha256, platform_name=platform_name)
         return 0
     except (
         OSError,

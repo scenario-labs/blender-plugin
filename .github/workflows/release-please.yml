@@ -91,7 +91,7 @@ jobs:
           sha256: "8019580ee1b7262e505f4196a00237ccf743c88d205b38d34201510676e60b09"
 
       - name: Install pinned uv
-        uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
+        uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
         with:
           version-file: pyproject.toml
           enable-cache: true

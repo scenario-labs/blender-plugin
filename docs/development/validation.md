@@ -18,7 +18,28 @@ checks that were not run.
 on pinned Python 3.11 and 3.13 interpreters with the same locked dependencies and
 dotenv loading disabled. It needs no credentials. The existing SDK-contract and
 Blender-baseline check names remain available; a combined required-check gate
-and coverage reporting are still tracked in #27 and #45.
+is still tracked in #27 and #45.
+
+Each unit matrix leg measures statement coverage for `scenario/core` and
+`scenario/mcp` using the pinned pytest-cov development dependency and locked
+coverage.py version. The log and Actions summary contain per-file totals;
+`unit-coverage-3.11` and `unit-coverage-3.13` retain XML and browsable HTML reports
+for 14 days, including when tests fail. Coverage is measured without a minimum
+threshold. The reports include unexecuted files in those directories; Blender-only
+MCP modules can therefore show zero coverage. These reports do not measure native
+Blender behavior or subprocess execution and do not prove live service acceptance.
+
+To generate the same XML and HTML reports locally from the repository root:
+
+```sh
+uv run --locked --no-env-file python -m pytest tests/unit -rx \
+  --cov --cov-report=term --cov-report=xml --cov-report=html
+```
+
+Open `htmlcov/index.html` to inspect missing lines. Report paths and `.coverage`
+data are ignored by Git. The coverage source root and report scope live in
+`pyproject.toml`, so `--cov` needs no value; reports store relative source paths
+for portability and preserve distinct `core/` and `mcp/` filenames.
 
 An autouse fixture rejects non-loopback `socket.connect` and `connect_ex` calls
 in each unit test. Loopback TCP and Unix sockets remain available for local MCP

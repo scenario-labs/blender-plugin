@@ -11,6 +11,7 @@ requires-python = ">=3.11"
 dev = [
     "ruff==0.16.7",
     "pytest>=8,<10",
+    "pytest-cov==7.1.0",
     "scenario-sdk==2.1.0",
     "httpx==0.28.1",
 ]
@@ -52,3 +53,11 @@ addopts = "-q --strict-markers"
 markers = [
     "allow_network: explicitly permit non-loopback connections in this test process",
 ]
+
+[tool.coverage.run]
+# One source root keeps core/ and mcp/ filenames distinct in XML reports.
+source = ["scenario"]
+relative_files = true
+
+[tool.coverage.report]
+include = ["scenario/core/*", "scenario/mcp/*"]

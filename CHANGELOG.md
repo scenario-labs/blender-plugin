@@ -205,7 +205,7 @@ First release-candidate pass: a coherent UI and a production-readiness sweep of 
 - Numeric choice parameters (Seedance `duration`: Auto, 4 to 15 s) were edited through the dropdown but read from the integer field, so the request always carried the default (-1, Auto) whatever the dropdown or Match timeline said. The value shown is now the value sent.
 
 ### Removed
-- Render-to-real (two-step concept then Seedance) and the header popover; the code is archived under `archive/0.5.x/`.
+- Render-to-real (two-step concept then Seedance) and the header popover; the old module is at tag v0.5.2 (`scenario/blender/render_to_real.py` and `tests/blender/test_render_to_real.py`).
 
 ## [0.5.2] - 2026-08-28
 

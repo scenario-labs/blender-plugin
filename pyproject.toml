@@ -27,8 +27,8 @@ required-version = "==0.16.7"
 target-version = "py311"
 line-length = 100
 unsafe-fixes = false
-# Retired snapshots are removed separately; never reformat installed packages.
-extend-exclude = ["archive", "versions", ".blender-profile"]
+# Never reformat installed packages inside disposable Blender profiles.
+extend-exclude = [".blender-profile"]
 force-exclude = true
 
 [tool.ruff.lint]

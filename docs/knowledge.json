@@ -1,7 +1,7 @@
 {
   "version": 1,
   "index": "docs/index.md",
-  "base_revision": "81b3a56f3216d8fc04434c955243302b40c76462",
+  "base_revision": "7f395b874b198cddd35c722468ddd8ef5fdeb82e",
   "documents": [
     {
       "path": ".claude/rules/blender-glue.md",
@@ -215,9 +215,9 @@
       "path": "docs/PYTHON_STYLE.md",
       "coverage": "inherited",
       "reviewed_at": "2026-09-24",
-      "limits": "Changed-file CI selection reviewed against the reusable lint workflow and caller, including all-tracked fallback for unavailable previous revisions. Other inherited guide sections retain their prior limits without a fresh claim-by-claim or live verification.",
+      "limits": "Changed-file CI selection reviewed against the reusable lint workflow and caller, including all-tracked fallback for unavailable previous revisions. Other inherited guide sections retain their prior limits without a fresh claim-by-claim or live verification. Retired snapshot exclusions were removed from the reviewed Ruff configuration after their files moved entirely to Git history.",
       "sources": {
-        "pyproject.toml": "28e3115a28f23530662dfe37a5f07328302607b6c2f8c59d8c8f20c79470d5c2",
+        "pyproject.toml": "4e5c1a38241771ac8ccddff1d5e69a02279a52c117c3322ae432c635cd12b1a0",
         ".python-version": "f7401ec58a777fe2a730f8805ab7f63ff80f064930c616b18efe3a475daf57fd",
         ".github/workflows/python-lint.yml": "083888b456de882bec4d6bf9bf57c2053e0fbf364af748451d3c7dae2dc68d7b",
         ".github/workflows/ci.yml": "9805ee9848f2eed06b0b9f108bcd7054592d61b431f8f4b57d4098f5cf43c344"

@@ -80,8 +80,8 @@ the supported Blender minimum.
 - Use narrow suppressions with a reason. The configured `E402` exceptions cover
   standalone scripts that establish their import path before importing the
   package; there is no package-wide exception for Blender modules.
-- Exclude retired `archive/` and `versions/` snapshots and disposable Blender
-  profiles. Do not format third-party dependency sources or generated bundles.
+- Exclude disposable Blender profiles. Do not format third-party dependency
+  sources or generated bundles.
   Add their concrete paths to exclusions when SDK packaging establishes them.
 
 ## Studio adoption transition

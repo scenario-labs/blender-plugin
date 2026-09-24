@@ -268,8 +268,8 @@
     {
       "path": "docs/SDK_UPLOADS.md",
       "coverage": "inherited",
-      "reviewed_at": "2026-09-23",
-      "limits": "Existing guide indexed during this intake, without a fresh claim-by-claim or live verification; consult current integration status and issue acceptance.",
+      "reviewed_at": "2026-09-24",
+      "limits": "Existing guide indexed during this intake, without a fresh claim-by-claim or live verification; consult current integration status and issue acceptance. Windows upload source identity comparisons and their offline regressions were reviewed; other API and integration claims retain their prior limits.",
       "sources": {
         "scenario/core/api/sdk_adapter.py": "a5f8a5da9ce1f482dbe1af19b43d00f211b66401781fa03d18c9fd3ef2340467",
         "tests/unit/test_sdk_uploads.py": "52a3a5d7016289264e7065c3945eec929f9d57feb61b0f7c1436b195fe3e06f6",
@@ -281,10 +281,11 @@
         "tests/blender/test_upload_store.py": "b5bdade91572d9d8a919fbe8dea2a2cb4587a3f53e7b48425e95af5e1cd20a41",
         "scenario/core/jobs/store.py": "0053c3e48ce89ad699bab664f4f5fddc6af89f7cd01c8bbcab8a323c198c01fc",
         "tests/unit/test_job_store.py": "2bc71047d762d63d960ef249a30384ae41d508e5cf2f236e0e08c9caf6aba655",
-        "scenario/core/jobs/upload_sources.py": "76a578fa9dda550391e8c1f31959983b4e7b64cf4bb9a2dafca834e1b99ca9ff",
+        "scenario/core/jobs/upload_sources.py": "d75cd9ced1c578957a587c98526f1522bdbc91e6ce2dba62be099d68ea086623",
         "tests/unit/test_upload_commands.py": "dd0cd1865c9da7b1e0c7a48e1c1e85a1b628664d7a5ce38543d299b517ec5a9c",
         "scenario/core/jobs/uploads.py": "cfbed5605683aea4daeb8267ef63b386830f1779e11987be73c06764e8d73652",
-        "tests/blender/test_upload_commands.py": "496927b98c0774db28bac4da626f568bc147c9fc45f07da9e99a1aba0a0be9f1"
+        "tests/blender/test_upload_commands.py": "496927b98c0774db28bac4da626f568bc147c9fc45f07da9e99a1aba0a0be9f1",
+        "tests/unit/test_upload_sources.py": "f3fdf69efd7426b53d29b2e60716bd2bcb582e6e1b48e79a11365356ee3c7c03"
       }
     },
     {

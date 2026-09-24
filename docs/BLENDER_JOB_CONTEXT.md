@@ -86,7 +86,7 @@ allowing the remaining extension registry cleanup to proceed. Control exceptions
 continue to propagate; a session with live workers retains its ownership.
 
 The actual authentication context, safe online-access snapshot for worker calls,
-UI/MCP activation and durable result application remain separate work.
+UI/MCP activation and application of other result types remain separate work.
 No account ID is guessed and no privileged or live service call is introduced.
 
 ## Recovery inspection and cancellation
@@ -141,9 +141,50 @@ records against the issuing origin/scope. Verification returns a frozen result
 containing a tuple of verified local paths. `deliver` still requires the original
 current scene/target and permits the completion to be used once. Receipt
 verification does not lock file bytes, run an importer or mark a job APPLIED;
-callers must preserve private storage ownership and implement durable application
-separately. Download failures remain `DOWNLOAD_FAILED` for explicit retry, while
+callers must preserve private storage ownership. The explicit World command below
+supplies one application path. Download failures remain `DOWNLOAD_FAILED` for explicit retry, while
 local verification failures do not trigger another download or generation.
+
+## Explicit saved-result World application
+
+`apply_world(completion, asset_id=...)` consumes an owned `verify_results`
+completion on the main thread. The caller explicitly selects one saved asset as
+an equirectangular panorama; neither its name nor its aspect ratio establishes
+that projection. The command requires the original current scene/revision and
+continued membership of any captured target. It never falls back to selection,
+names or another file session. An invalid selection does not consume the outcome.
+
+Immediately before mutation, it consumes the completion and acquires the
+[durable application claim](JOB_COORDINATOR.md#durable-application-claims).
+The [World primitive](WORLD_APPLICATION.md) checks the selected saved receipt
+against the exact decoded bytes. Other results from a multi-asset job remain
+available on disk; this command applies only the selected asset, then marks the
+job APPLIED. It performs no service call, download, generation or blend-file save.
+`AppliedWorldResult` contains the final stored record and the primitive's guarded
+restoration handle as `application`. APPLIED records the completed local scene
+assignment, not a saved file, undo entry or complete generation workflow.
+
+A known parsing/application failure becomes APPLY_FAILED only when the original
+World binding and both World/image allocation sets are unchanged after the
+primitive's cleanup. A fresh verification completion can then support an explicit
+local retry. The consumed completion can never be reused. Stale revisions,
+unavailable origins and interrupted claims do not trigger retries or rebinding.
+
+Unexpected exceptions, failed rollback/allocation cleanup and persistence errors
+raise `WorldResultUncertain`; control exceptions propagate. A durable APPLYING
+claim is never automatically reset. If persistence fails after successful scene
+assignment, the exception retains its `application` restoration handle. The saved
+record may already be APPLIED if its commit succeeded before the error. Inspect
+both scene and record; never repeat or undo the mutation merely because a write
+failed. Guarded restoration is an explicit caller action and does not rewrite
+the durable record. As with all primitive handles, discard it after file load,
+undo or extension shutdown. SQLite and Blender do not share an atomic transaction.
+
+Installed native fixtures cover claim ordering, exact selection, changed bytes,
+safe local retry, original context/ownership, interrupted or uncertain outcomes,
+write acknowledgement loss and guarded restoration. The command is available to
+explicit integrations only; active UI/MCP entry points and recovery UX remain
+separate work.
 
 
 ## Shared asynchronous estimates

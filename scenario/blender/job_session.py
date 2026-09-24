@@ -18,7 +18,9 @@ from bpy.app.handlers import persistent
 from ..core.jobs.coordinator import JobCoordinator, OriginQuote, RemoteSnapshot
 from ..core.jobs.origins import OriginRevisions
 from ..core.jobs.results import VerifiedResults
+from ..core.jobs.store import StoredJob
 from ..core.jobs.workers import JobWorkers
+from .world_application import PanoramaError, WorldApplication, WorldApplicationError, apply_world
 
 _log = logging.getLogger("scenario.jobs")
 _sessions = set()
@@ -35,11 +37,29 @@ class OriginUnavailable(RuntimeError):
     """The result is available for review but cannot be applied automatically."""
 
 
+class WorldResultUncertain(RuntimeError):
+    """Inspect the saved job and scene before acting; never repeat application.
+
+    When available, ``application`` retains the primitive's guarded restoration
+    handle. Restoring it does not resolve or rewrite the saved job state.
+    """
+
+    def __init__(self, application: WorldApplication | None = None):
+        super().__init__("World application outcome is uncertain; inspect the saved job and scene")
+        self.application = application
+
+
 @dataclass(frozen=True, eq=False)
 class JobCompletion:
     origin: object
     result: object = field(default=None, repr=False)
     error: Exception | None = field(default=None, repr=False)
+
+
+@dataclass(frozen=True)
+class AppliedWorldResult:
+    record: StoredJob
+    application: WorldApplication = field(repr=False)
 
 
 class JobSession:
@@ -317,6 +337,67 @@ class JobSession:
         scene, target = self._resolve(completion.origin)
         del self._issued[id(completion)]
         return callback(completion.result, scene, target)
+
+    def apply_world(self, completion, *, asset_id):
+        """Apply one explicitly selected panorama from an owned verification.
+
+        This synchronous main-thread command claims the original job before
+        touching Blender. It neither generates, downloads nor saves a blend file.
+        """
+        _main_thread()
+        if (
+            not isinstance(completion, JobCompletion)
+            or self._issued.get(id(completion)) is not completion
+        ):
+            raise OriginUnavailable("Use an unconsumed completion from this session")
+        if completion.error is not None:
+            raise completion.error
+        verified = completion.result
+        if not isinstance(verified, VerifiedResults):
+            raise OriginUnavailable("Verify the saved results before applying a panorama")
+        selected = [
+            (item, path)
+            for item, path in zip(verified.record.results, verified.paths, strict=True)
+            if item.asset.asset_id == asset_id
+        ]
+        if len(selected) != 1:
+            raise OriginUnavailable("Select one panorama from this job's saved results")
+        item, path = selected[0]
+        scene, _ = self._resolve(completion.origin)
+        previous = scene.world
+        worlds, images = set(bpy.data.worlds), set(bpy.data.images)
+        # Consumption precedes the durable claim: a storage failure can occur
+        # after committing APPLYING. Never reuse this completion to infer safety.
+        del self._issued[id(completion)]
+        claim = self._coordinator.claim_application(verified)
+        try:
+            application = apply_world(scene, path, expected_receipt=item.receipt)
+        except (WorldApplicationError, PanoramaError):
+            try:
+                restored = (
+                    scene in tuple(bpy.data.scenes)
+                    and scene.world == previous
+                    and set(bpy.data.worlds) == worlds
+                    and set(bpy.data.images) == images
+                )
+            except Exception:
+                restored = False
+            if not restored:
+                raise WorldResultUncertain() from None
+            try:
+                self._coordinator.fail_application(claim)
+            except Exception:
+                raise WorldResultUncertain() from None
+            raise
+        except Exception:
+            raise WorldResultUncertain() from None
+        try:
+            record = self._coordinator.complete_application(claim)
+        except Exception:
+            # The World is already applied. Keep its restoration handle, but do
+            # not repeat/undo scene mutation merely because persistence failed.
+            raise WorldResultUncertain(application) from None
+        return AppliedWorldResult(record, application)
 
     def prune_missing_scenes(self):
         """Prune deleted scene/target references and invalidate their captured origins."""

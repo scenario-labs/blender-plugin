@@ -28,6 +28,9 @@ A receipt describes bytes, not authoritative job ownership or a current Blender
 target. The caller must obtain it from the selected scoped job, preserve its
 private storage, and validate the original file/scene/revision before application.
 The optional byte check does not claim a durable application transaction.
+The explicit [JobSession World command](BLENDER_JOB_CONTEXT.md#explicit-saved-result-world-application)
+adds owned verification, original-context checks and a durable claim around this
+primitive for one selected saved result.
 
 - RGB/RGBA PNG with 8- or 16-bit samples. CRCs and chunk boundaries are checked;
   animated PNG and HDR metadata (`cICP`, `mDCV`, `cLLI`) are rejected. A maximum
@@ -90,6 +93,7 @@ thread rejection, corrupt/truncated files, saved-receipt mismatches, source
 replacement after snapshotting and rollback after decode. They make no
 Scenario service calls.
 
-This is a partial slice of #98 and #65. SDK model validation, estimate/confirmation,
-job completion guards, trusted downloads, history/Set as World UI, undo operators,
+This is a partial slice of #98 and #65. Optional JobSession integration now binds
+verified downloads to guarded durable World application. SDK model validation,
+estimate/confirmation, production storage policy, history/Set as World UI, undo operators,
 seam/pole quality and authorized live generation remain separate integration work.

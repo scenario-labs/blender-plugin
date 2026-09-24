@@ -14,6 +14,19 @@ Blender native tests still use Blender's bundled Python and an isolated profile.
 Preserve exit codes when capturing logs, and distinguish passed checks from
 checks that were not run.
 
+[Unit-test CI](../../.github/workflows/unit-tests.yml) runs the complete unit suite
+on pinned Python 3.11 and 3.13 interpreters with the same locked dependencies and
+dotenv loading disabled. It needs no credentials. The existing SDK-contract and
+Blender-baseline check names remain available; a combined required-check gate
+and coverage reporting are still tracked in #27 and #45.
+
+An autouse fixture rejects non-loopback `socket.connect` and `connect_ex` calls
+in each unit test. Loopback TCP and Unix sockets remain available for local MCP
+tests. `@pytest.mark.allow_network` explicitly opts a test out; unknown markers
+fail collection. This catches accidental service connections in the pytest
+process, not DNS lookups, subprocesses or arbitrary network code. Paid/live
+checks belong in their separate opt-in tools, never the default unit suite.
+
 Use the pinned Ruff configuration before further Python development:
 `make format` applies safe fixes and formatting; `make lint` checks both.
 During Studio adoption, scope these commands with `LINT_PATHS` to changed or

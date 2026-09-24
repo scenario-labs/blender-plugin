@@ -1,7 +1,7 @@
 {
   "version": 1,
   "index": "docs/index.md",
-  "base_revision": "d9ff9b96f53e4571921b4a8a2ddbed0ba771aca7",
+  "base_revision": "e87442ad1467b31bf722543f2d10940ea63a8485",
   "documents": [
     {
       "path": ".claude/rules/blender-glue.md",
@@ -414,15 +414,20 @@
     {
       "path": "docs/development/validation.md",
       "coverage": "policy",
-      "reviewed_at": "2026-09-23",
-      "limits": "Canonical instructions consolidated from the existing rulebook; normative requirements do not imply runtime acceptance.",
+      "reviewed_at": "2026-09-24",
+      "limits": "Canonical validation policy with inspected offline unit workflow and connection-guard contracts; unit matrix results do not establish native Blender compatibility or live service acceptance.",
       "sources": {
         "Makefile": "c86ffba526a4882788cec66b53924504eceab7114f0b4776ff23ceee1d7a4c8b",
-        "pyproject.toml": "28e3115a28f23530662dfe37a5f07328302607b6c2f8c59d8c8f20c79470d5c2",
+        "pyproject.toml": "facd964cf4cd0f43b1ddb6c57c3ae9212f9b949a84ed4daf0f6869465d690895",
         "tools/test_blender.py": "fec317c68c24c49302b456a478e02a0a8352d29aa30c3e9e3cf173d47f0697cd",
         "tools/blender_env.py": "0e78f2a51edd2943567226537d8faed6170d41ba10ba84a663118b9b2c2251b8",
         "scenario/mcp/cli.py": "733ec02de0f03a9bfb0a9326a8f94ac32a2b6c33a5c11a09b79694cabd87c156",
-        "tests/blender/test_mcp_cli.py": "69c6b9ad670cd59f4eb2e18f91bda4deb20c487fe1539d69f0825799233adef8"
+        "tests/blender/test_mcp_cli.py": "69c6b9ad670cd59f4eb2e18f91bda4deb20c487fe1539d69f0825799233adef8",
+        ".github/workflows/unit-tests.yml": "3fb79d1aba7710a7e8124a7476a88d0d230d15fccb5a33e50242853892496e30",
+        "tests/unit/conftest.py": "c7f9310469e250fbafa08b63a127221a7ff4af0b00f0646c83ce3361148cc5a5",
+        "tests/unit/test_network_guard.py": "f61276c20c245523f1a3749816fd88bf3d13dfa807d414facd823c7bbff71f1e",
+        "tests/unit/test_dev_config.py": "2dcfd722f08e931acfd2d2eb6ce6989eeb1f70c4c82d351f062a24dedd1a0be5",
+        "tests/unit/test_shared_quotes.py": "eb06294b382dc1b38de6b920ce7ed8fcebc4acc999a41abd560a30c2a506dfee"
       }
     },
     {

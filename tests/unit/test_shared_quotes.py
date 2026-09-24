@@ -3,7 +3,6 @@
 """Scoped metadata and quote ownership through the real SDK and shared workers."""
 
 import json
-import sys
 import threading
 from dataclasses import replace
 from decimal import Decimal
@@ -252,7 +251,9 @@ def test_quote_requires_a_captured_origin_before_any_request(env, origin):
 def test_deep_quote_payload_fails_before_queue_or_network(env, operation):
     payload = {}
     nested = payload
-    for _ in range(sys.getrecursionlimit() + 10):
+    # The C JSON encoder's nesting limit is separate from Python's frame
+    # recursion limit on 3.13. Exceed both supported interpreters' limits.
+    for _ in range(10_000):
         nested["nested"] = {}
         nested = nested["nested"]
     workers = JobWorkers(env.coordinator, workers=1)

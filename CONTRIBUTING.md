@@ -121,6 +121,12 @@ In a file you materially change or create, you may add your own
 `SPDX-FileCopyrightText: <year> <name>` line alongside the existing holder lines;
 never remove an existing notice. The [GPL text](LICENSE) remains unchanged.
 
+The copyright holder in every Scenario notice is `Scenario Inc.`, the legal name
+in [Scenario's Terms and Conditions](https://www.scenario.com/terms-and-conditions):
+`SPDX-FileCopyrightText: <year> Scenario Inc.` in source headers and
+`copyright = ["<year> Scenario Inc."]` in `scenario/blender_manifest.toml`.
+Do not shorten it to `Scenario`.
+
 Adopted compatible source, fonts, icons, assets and SDK dependencies retain their
 original licences and attribution. Identify the source, licence and modifications
 in the PR, including when an agent assisted. The first-party licence policy does
@@ -148,6 +154,16 @@ extension defect, while `known-limit` points to the limitations guide.
 `good first issue` and `help wanted` identify contribution opportunities.
 Maintainers track priority and effort in the Blender Plugin project. Repository
 administration and release authorization remain maintainer responsibilities.
+
+### Sibling integration repositories
+
+New Scenario integration repositories are named lowercase `<host>-plugin`
+(this repository is `blender-plugin`). The extension or package id is `scenario`
+inside the host's namespace: Blender extension id `scenario`, Unity package
+`com.scenarioinc.scenario`. Existing repositories keep their names:
+`Scenario-Unity` is not renamed because its Git URL is embedded in users' Unity
+package manifests. Every integration repository carries a root `LICENSE`,
+`CONTRIBUTING.md`, `CODE_OF_CONDUCT.md` and `SECURITY.md`, and the topic `scenario`.
 
 ## Environment variables
 

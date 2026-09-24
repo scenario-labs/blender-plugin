@@ -11,7 +11,7 @@ import uuid
 from contextlib import contextmanager, nullcontext
 from dataclasses import dataclass, field
 from enum import StrEnum
-from weakref import WeakValueDictionary
+from weakref import WeakKeyDictionary, WeakValueDictionary
 
 from ..api.sdk_adapter import Estimate, SDKAdapter
 from .results import ResultCommands, ResultError
@@ -30,6 +30,15 @@ from .uploads import UploadCommands, UploadError
 
 class QuoteError(ValueError):
     """The current request no longer matches an active, unexpired quote."""
+
+
+@dataclass(frozen=True, eq=False)
+class OriginQuote:
+    """An exact SDK estimate bound to the origin captured before estimation."""
+
+    scope: JobScope
+    origin: JobOrigin
+    estimate: Estimate = field(repr=False)
 
 
 class SubmissionUncertain(RuntimeError):
@@ -154,6 +163,8 @@ class JobCoordinator:
         self._results = ResultCommands(
             adapter, store, self._result_guard, downloader=result_downloader, root=result_root
         )
+        self._quotes = WeakValueDictionary()
+        self._bound_estimates = WeakKeyDictionary()
         self._uploads = None
         if any(value is not None for value in (upload_store, upload_sources, part_uploader)):
             if upload_store is None or upload_store.scope != self.scope:
@@ -218,16 +229,107 @@ class JobCoordinator:
         with self._lock:
             self._active = False
             self._prepared.clear()
+            self._quotes.clear()
 
     def close(self):
         """Release the SDK client after the application owner has joined workers."""
         self.deactivate()
         self._adapter.close()
 
+    @contextmanager
+    def _request_guard(self, origin=None):
+        with self._lock:
+            if not self._active:
+                raise QuoteError("This request context is inactive")
+            if origin is None:
+                yield
+                return
+            if not isinstance(origin, JobOrigin):
+                raise QuoteError("Capture the request origin before estimation")
+            guard = self._origin_guard(origin) if self._origin_guard else nullcontext(True)
+            with guard as current:
+                if not current:
+                    raise QuoteError("Request origin changed; capture inputs and estimate again")
+                yield
+
+    def _read_metadata(self, method, *args, **kwargs):
+        with self._request_guard():
+            pass
+        result = method(*args, **kwargs)
+        with self._request_guard():
+            return result
+
+    def models(self, *, privacy="public", max_pages=100):
+        return self._read_metadata(self._adapter.models, privacy=privacy, max_pages=max_pages)
+
+    def workflows(self, *, privacy="private", max_pages=100):
+        return self._read_metadata(self._adapter.workflows, privacy=privacy, max_pages=max_pages)
+
+    def model(self, identifier):
+        return self._metadata("model", identifier)
+
+    def workflow(self, identifier):
+        return self._metadata("workflow", identifier)
+
+    def _metadata(self, operation, identifier):
+        _identity(identifier)
+        result = self._read_metadata(getattr(self._adapter, operation), identifier)
+        if result.get("id") != identifier:
+            raise QuoteError("Scenario returned another model or workflow identity")
+        return result
+
+    def quote_model(self, identifier, parameters, *, origin):
+        return self._quote("model", identifier, parameters, origin)
+
+    def quote_workflow(self, identifier, parameters, *, origin):
+        return self._quote("workflow", identifier, parameters, origin)
+
+    def _quote(self, operation, identifier, parameters, origin):
+        if not isinstance(origin, JobOrigin):
+            raise QuoteError("Capture the request origin before estimation")
+        snapshot = json.loads(_payload(parameters))
+        with self._request_guard(origin):
+            pass
+        record = self._metadata(operation, identifier)
+        with self._request_guard(origin):
+            pass
+        estimate = getattr(self._adapter, f"estimate_{operation}")(record, snapshot)
+        with self._request_guard(origin):
+            quote = OriginQuote(self.scope, origin, estimate)
+            self._quotes[id(quote)] = quote
+            self._bound_estimates[estimate] = True
+            return quote
+
+    def prepare_quote(self, quote):
+        """Persist one chosen quote without rebinding it to a newer scene revision."""
+        if not isinstance(quote, OriginQuote):
+            raise QuoteError("Use an unchanged quote issued by this context")
+        # Adapter ownership takes its estimate lock. Never acquire it while
+        # holding our lock: submission claims acquire them in the reverse order.
+        if not self._adapter.owns_estimate(quote.estimate):
+            raise QuoteError("Use a quote issued by the current active connection")
+        with self._request_guard(quote.origin):
+            if self._quotes.get(id(quote)) is not quote or quote.scope != self.scope:
+                raise QuoteError("Use an unchanged quote issued by this context")
+            prepared = self._prepare(quote.estimate, quote.origin)
+            del self._quotes[id(quote)]
+            return prepared
+
     def prepare(self, estimate: Estimate, origin: JobOrigin):
-        """Persist an intent after the caller has chosen this quote; do not spend."""
+        """Accept direct SDK estimates; bound quotes must use prepare_quote."""
         if not self._adapter.owns_estimate(estimate):
             raise QuoteError("Use a quote issued by the current active connection")
+        with self._lock:
+            if estimate in self._bound_estimates:
+                raise QuoteError("Use prepare_quote for an estimate bound to an origin")
+            return self._prepare(estimate, origin)
+
+    def _prepare(self, estimate: Estimate, origin: JobOrigin):
+        """Persist after ownership was checked outside the coordinator lock.
+
+        Preparation does not reserve or consume an estimate. Submission rechecks
+        ownership atomically with the durable claim and single-use consumption.
+        """
         with self._lock:
             if not self._active:
                 raise QuoteError("Use a quote issued by the current active connection")

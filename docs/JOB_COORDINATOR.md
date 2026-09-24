@@ -253,3 +253,44 @@ See [upload commands](SDK_UPLOADS.md#shared-worker-commands) for preparation,
 initialization, one-part transfer, finalization and explicit refresh. They do not
 submit generation, create another client/pool, or apply references to Blender.
 The active UI/MCP still needs to adopt these commands and its recovery controls.
+
+
+## Shared catalog and origin-bound quotes
+
+The coordinator and its existing worker queue expose `models`, `model`,
+`workflows` and `workflow` through the same selected SDK adapter. Late metadata
+is rejected after context deactivation. Detail retrieval must return the exact
+requested identity. These commands do not create another catalog client/cache,
+start another pool, or route trained models through an unverified REST path.
+
+`quote_model` and `quote_workflow` take the origin captured with input values
+before estimation. Workers copy finite JSON parameters at admission. Each quote
+retrieves the current detailed SDK schema, applies the shared strict validation
+and defaults, then preserves the exact server estimate. Active scope and origin
+are checked before work, after metadata retrieval and after estimation. A scene
+change during those calls cannot turn a late estimate into a current quote.
+The returned `OriginQuote` holds the original scope/origin and immutable SDK
+estimate; it is ephemeral and does not yet create a durable job intent.
+
+After the user chooses it, `prepare_quote` accepts only that context's unchanged,
+unconsumed quote, checks its origin again and persists one PREPARED intent.
+Copies, changed origins/scopes, expired quotes and previously prepared quotes
+are rejected. The older direct-SDK `prepare` method cannot accept an estimate
+issued through the bound-quote path, even after its wrapper is discarded.
+Submission still requires the current exact payload and the original origin,
+and the existing durable claim before paid SDK dispatch. These methods do not
+supply spending approval or automatically submit anything.
+
+`JobSession.quote_model` / `quote_workflow` admit this work on Blender's main
+thread, and its normal bounded completion queue delivers the result with its
+captured origin. `prepare_quote` resolves that same scene/target before persisting.
+Frame/file/dependency invalidation, view-independent lifetime and shutdown retain
+the existing session rules. Active compact/expanded UI and MCP entry points still
+need to switch from the prototype runtime to these shared commands.
+
+Estimate ownership is checked before acquiring the coordinator/origin locks.
+Preparation keeps quote selection and persistence under the coordinator lock,
+but never acquires the adapter estimate lock there. Submission rechecks and
+consumes the estimate under the adapter lock while committing its durable claim;
+preparation does not reserve spending authorization. This ordering lets a new
+preparation overlap an existing submission without deadlocking either thread.

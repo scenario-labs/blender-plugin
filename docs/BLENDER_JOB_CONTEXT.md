@@ -83,3 +83,17 @@ continue to propagate; a session with live workers retains its ownership.
 The actual authentication context, safe online-access snapshot for worker calls,
 UI/MCP activation and durable result downloads/application remain separate work.
 No account ID is guessed and no privileged or live service call is introduced.
+
+
+## Shared asynchronous estimates
+
+After capturing inputs and origin on the main thread, `quote_model` or
+`quote_workflow` queues metadata retrieval and exact SDK estimation on the same
+session worker pool. Its completion carries an `OriginQuote`, not a stored job;
+no intent is persisted merely to display a price. `drain` checks its scope and
+origin, and `deliver` rechecks the selected captured scene/target as usual.
+`prepare_quote` accepts that unchanged quote after selection and persists its
+original origin once. Scene changes during metadata/estimation reject the quote;
+the caller must recapture inputs and request a new estimate. The quote cannot be
+rebound through the older direct-estimate preparation method. These APIs do not
+authorize paid dispatch or replace the active UI/MCP call sites by themselves.

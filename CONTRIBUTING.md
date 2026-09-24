@@ -120,9 +120,22 @@ uv run --locked --no-env-file python tools/test_blender.py --blender /path/to/bl
 ```
 
 The runner checks `--blender`, then `BLENDER`, then PATH, platform locations and
-local `.blender/` builds. It reports the actual Blender/Python/OS versions and
-rejects binaries below the manifest minimum. An installed Blender 4.x cannot
-provide acceptance evidence for this extension's 5.0+ target.
+local `.blender/` builds. Platform locations include the standard or versioned
+Blender applications under `/Applications` on macOS; `/snap/bin/blender`,
+`/usr/bin/blender` and `/opt/blender*/blender` on Linux; and versioned Blender
+Foundation installations under `C:/Program Files` on Windows. Versioned
+installations and cached builds use numeric version ordering. Cache discovery
+selects only the current platform's executable layout, including the nested
+Linux/Windows archives produced by the fetcher. An explicit selection takes
+precedence and a missing selection is an error.
+
+`uv run --locked --no-env-file python tools/blender_env.py` prints the selected
+executable without launching it. `--manifest-version` (also `--version`) prints
+the extension manifest version and needs no Blender installation; it does not
+report the selected Blender's version. The test runner reports actual
+Blender/Python/OS versions and rejects binaries below the manifest minimum.
+An installed Blender 4.x cannot provide acceptance evidence for this extension's
+5.0+ target. Discovery alone does not prove runtime compatibility.
 
 Build preparation stages the pinned SDK wheels and their original notices in a
 temporary source tree, downloading missing artifacts from PyPI into the ignored
@@ -238,6 +251,12 @@ still cover Linux and Windows only. Scheduled macOS coverage remains tracked in 
 Screenshot probes prepare the blockout form without submitting a design.
 Design/refine operators also respect offline access, missing credentials and
 `SCENARIO_GUI_PROBE=1`. This flag is a development guard, not a paid-test mode.
+
+The optional Pillow-based `tools/make_icons.py` renderer can use Windows Arial
+or DejaVu, Linux system/Blender fonts, or fonts from flat and fetched Linux/Windows
+cache layouts. This only broadens font discovery; it does not regenerate tracked
+icons or add Pillow to the extension. If no usable font is found, the renderer
+keeps its existing geometric fallback.
 
 ### Repeatable GUI screenshots
 

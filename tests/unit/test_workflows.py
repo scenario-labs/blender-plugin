@@ -60,9 +60,12 @@ def pr_sources(root, workflows):
         if path in found:
             continue
         found.add(path)
-        for reference in re.findall(
-            r"^\s*(?:-\s+)?uses:\s+(\./[^\s#]+)", path.read_text(), re.MULTILINE
+        for match in re.finditer(
+            r"""^\s*(?:-\s+)?uses:\s+(?:(['"])(\./[^'"]+)\1|(\./[^\s#]+))""",
+            path.read_text(),
+            re.MULTILINE,
         ):
+            reference = match[2] or match[3]
             dependency = (root / reference).resolve()
             assert dependency.is_relative_to(root.resolve()), (
                 "Local workflow/action escapes checkout"
@@ -122,13 +125,18 @@ def test_pr_policy_rejects_secret_and_permission_escalation(unsafe):
         assert_readonly_source(unsafe)
 
 
-def test_transitive_local_dependencies_are_included(tmp_path):
+@pytest.mark.parametrize("quote", ["", "'", '"'])
+def test_transitive_local_dependencies_are_included(tmp_path, quote):
     caller = tmp_path / "caller.yml"
     child = tmp_path / "child.yml"
     action = tmp_path / "action"
     action.mkdir()
-    caller.write_text("on:\n  pull_request:\njobs:\n  tests:\n    uses: ./child.yml\n")
-    child.write_text("on:\n  workflow_call:\njobs:\n  tests:\n    steps:\n      - uses: ./action\n")
+    caller.write_text(
+        f"on:\n  pull_request:\njobs:\n  tests:\n    uses: {quote}./child.yml{quote}\n"
+    )
+    child.write_text(
+        f"on:\n  workflow_call:\njobs:\n  tests:\n    steps:\n      - uses: {quote}./action{quote}\n"
+    )
     (action / "action.yml").write_text("runs:\n  using: composite\n")
     assert pr_sources(tmp_path, [caller, child]) == {caller, child, action / "action.yml"}
 

@@ -96,9 +96,12 @@ make lint LINT_PATHS="scenario/core/jobs tests/unit/test_manager.py"
 ```
 
 [Python lint CI](../.github/workflows/python-lint.yml) enforces the same rules on
-all added/modified Python files in a PR, including their unchanged lines. This
-temporary scope avoids a mechanical rewrite of prototype code scheduled for
-replacement. Keep this transition visible in [#28](https://github.com/scenario-labs/blender-plugin/issues/28)
+all added/modified Python files in a PR or push to `main`, including their
+unchanged lines. The comparison uses the PR base or previous main revision.
+If that revision is unavailable, including an initial push or an unreachable
+force-push predecessor, CI checks every tracked Python file instead of skipping
+lint. This temporary changed-file scope avoids a mechanical rewrite of prototype
+code scheduled for replacement. Keep this transition visible in [#28](https://github.com/scenario-labs/blender-plugin/issues/28)
 and [#64](https://github.com/scenario-labs/blender-plugin/issues/64).
 
 Normalize adopted Studio code in a dedicated mechanical PR before functional

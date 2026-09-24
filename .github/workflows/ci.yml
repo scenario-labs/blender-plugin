@@ -1,0 +1,56 @@
+# SPDX-FileCopyrightText: 2026 Scenario Inc.
+# SPDX-License-Identifier: GPL-3.0-or-later
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  lint:
+    uses: ./.github/workflows/python-lint.yml
+    with:
+      base-sha: ${{ github.event.pull_request.base.sha || github.event.before }}
+  unit:
+    uses: ./.github/workflows/unit-tests.yml
+  sdk:
+    uses: ./.github/workflows/sdk-contracts.yml
+  blender:
+    uses: ./.github/workflows/blender-baseline.yml
+  knowledge:
+    uses: ./.github/workflows/knowledge.yml
+  agents:
+    uses: ./.github/workflows/agent-skills.yml
+
+  ci-ok:
+    name: ci-ok
+    if: always()
+    needs: [lint, unit, sdk, blender, knowledge, agents]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Require every CI workload to succeed
+        env:
+          LINT_RESULT: ${{ needs.lint.result }}
+          UNIT_RESULT: ${{ needs.unit.result }}
+          SDK_RESULT: ${{ needs.sdk.result }}
+          BLENDER_RESULT: ${{ needs.blender.result }}
+          KNOWLEDGE_RESULT: ${{ needs.knowledge.result }}
+          AGENTS_RESULT: ${{ needs.agents.result }}
+        run: |
+          set -euo pipefail
+          for result in "$LINT_RESULT" "$UNIT_RESULT" "$SDK_RESULT" \
+              "$BLENDER_RESULT" "$KNOWLEDGE_RESULT" "$AGENTS_RESULT"; do
+            if [ "$result" != success ]; then
+              echo "A required CI workload did not succeed: $result"
+              exit 1
+            fi
+          done

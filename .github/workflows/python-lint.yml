@@ -3,7 +3,12 @@
 name: Python lint
 
 on:
-  pull_request:
+  workflow_call:
+    inputs:
+      base-sha:
+        description: PR base or previous main revision for changed-file checks
+        required: true
+        type: string
 
 permissions:
   contents: read
@@ -27,13 +32,20 @@ jobs:
         # Temporary adoption scope (#28/#64): the existing prototype has lint
         # debt. Switch to `make lint` over the full tree after normalization.
         env:
-          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          BASE_SHA: ${{ inputs.base-sha }}
         run: |
           set -euo pipefail
           # This also validates the config and the required Ruff version when
-          # the PR contains no Python changes.
+          # the change contains no Python changes.
           uv run --locked ruff check --show-settings > /dev/null
-          git diff --name-only -z --diff-filter=ACMR "$BASE_SHA" HEAD -- '*.py' '*.pyi' > "$RUNNER_TEMP/python-files"
+          if [[ "$BASE_SHA" =~ ^[0-9a-f]{40}$ ]] && git cat-file -e "${BASE_SHA}^{commit}" 2>/dev/null; then
+            git diff --name-only -z --diff-filter=ACMR "$BASE_SHA" HEAD -- '*.py' '*.pyi' > "$RUNNER_TEMP/python-files"
+          else
+            # Initial pushes and unavailable force-push predecessors cannot
+            # provide a reliable diff. Check all tracked Python files instead.
+            echo "Previous revision unavailable; checking every tracked Python file"
+            git ls-files -z -- '*.py' '*.pyi' > "$RUNNER_TEMP/python-files"
+          fi
           files=()
           while IFS= read -r -d '' file; do
             files+=("$file")

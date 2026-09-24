@@ -14,11 +14,22 @@ Blender native tests still use Blender's bundled Python and an isolated profile.
 Preserve exit codes when capturing logs, and distinguish passed checks from
 checks that were not run.
 
+[CI](../../.github/workflows/ci.yml) runs Python lint, unit tests, SDK contracts,
+the Linux/Windows Blender baseline, knowledge checks and agent-skill validation
+as reusable workflows on pull requests and pushes to `main`. The `ci-ok` job
+waits for all six workloads in that run and passes only when each succeeds;
+failed, cancelled, skipped or missing results fail the gate. PR updates cancel
+older CI runs for that PR. Concurrency belongs to the caller so reusable
+workflows cannot cancel their parent run.
+
+Individual job names can include their caller prefix; artifact names and native
+matrix coverage are unchanged. The separate `pr-title` and `commits` checks
+remain independent. Making `ci-ok` required and configuring repository rules
+remain administrative work under #45; the workflow does not change settings.
+
 [Unit-test CI](../../.github/workflows/unit-tests.yml) runs the complete unit suite
 on pinned Python 3.11 and 3.13 interpreters with the same locked dependencies and
-dotenv loading disabled. It needs no credentials. The existing SDK-contract and
-Blender-baseline check names remain available; a combined required-check gate
-is still tracked in #27 and #45.
+dotenv loading disabled. It needs no credentials.
 
 Each unit matrix leg measures statement coverage for `scenario/core` and
 `scenario/mcp` using the pinned pytest-cov development dependency and locked

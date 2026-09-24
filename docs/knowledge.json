@@ -203,10 +203,10 @@
     {
       "path": "docs/MODEL_PAYLOAD_AUDIT.md",
       "coverage": "historical",
-      "reviewed_at": "2026-09-23",
+      "reviewed_at": "2026-09-24",
       "limits": "Historical context only; examples and recorded service observations are not current instructions or live verification.",
       "sources": {
-        "tools/audit_payloads.py": "c73adaa48772a8a469789ea7ffb06e65cf34b295074c91404e0c6ca6d835a479",
+        "tools/audit_payloads.py": "77120c3495d5bb5540147b8181e71dccb0fa82fa2c0f9060a8c4463934535bcd",
         "scenario/core/schema/params.py": "b26c51fbe84dd3eb71a690c39231ff8a332ef42d937b574e3c1102e97d8cd8e7",
         "scenario/core/schema/forms.py": "5fae21a416ee5e72f444bc2b6d3502b5ace4b728f7790766161d8e7100b64af5"
       }
@@ -598,10 +598,10 @@
     {
       "path": "docs/maintenance/backlog.md",
       "coverage": "source-reviewed",
-      "reviewed_at": "2026-09-23",
+      "reviewed_at": "2026-09-24",
       "limits": "Agent source inspection of the listed files; no live service calls, native runtime rerun or human verification in this review.",
       "sources": {
-        "scenario/core/config.py": "74a45b99fde47d741710dbf2a9d8051f2b31903f10ecae679d061340c62fb1be",
+        "scenario/core/config.py": "3edf71cd58d7d32c300936d4f5de88433514ec9db1d67b0a613bd35b70788731",
         "scenario/blender/runtime.py": "2afa6267f835569288ae6d1947af5410b05a0bbdcd3bbad985ff30a6dcb8a000",
         "scenario/blender/registry.py": "a34fcb0110b5c991764df22d423546d9de3c949d3183b6dad1c5ca9e05123af2",
         "scenario/mcp/tools_scenario.py": "408b0f6dc72b57f90dec7be95383d588dcdaf35c5abbd3f95ab24273c5ca542e",
@@ -621,7 +621,9 @@
         "scenario/blender/composer/modal.py": "5db6dcddc6b8ca2533fcf73f3d7782c0cd3bd47c99ca11eadf3a8c57d68ed632",
         "scenario/blender/composer/draw.py": "52a366ce04766edc3aef343c7b115d7e360e8c88a27688c4446be36ecc78c6e8",
         "scenario/blender/params_ui.py": "12a913ecc68b92bce87f73fa158bfea03ee0dc684f20914a063826b230d6fb0c",
-        "scenario/blender/render_lanes.py": "7e4241d31fb270f5bf6237f13a1bb71e88f7019be398d73e54c54a4a9434fc6d"
+        "scenario/blender/render_lanes.py": "7e4241d31fb270f5bf6237f13a1bb71e88f7019be398d73e54c54a4a9434fc6d",
+        "scenario/core/api/catalog.py": "eeb58620545eb0438efc120fe46d7860f7df16e383f3a4b4c55b3282b7b17df9",
+        "tools/audit_payloads.py": "77120c3495d5bb5540147b8181e71dccb0fa82fa2c0f9060a8c4463934535bcd"
       }
     },
     {

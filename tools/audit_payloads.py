@@ -241,7 +241,7 @@ def main():
     print("## Findings\n")
     for model_id in sorted(findings, key=lambda m: (min(order[s] for s, _, _ in findings[m]), m)):
         rec, schema = schemas[model_id]
-        print(f"### `{model_id}` — {rec.name}  [{', '.join(ids[model_id])}]")
+        print(f"### `{model_id}`: {rec.name}  [{', '.join(ids[model_id])}]")
         for sev, code, msg in sorted(findings[model_id], key=lambda x: order[x[0]]):
             print(f"- **{sev}** `{code}`: {msg}")
         io = ", ".join(

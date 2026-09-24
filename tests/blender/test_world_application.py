@@ -2,12 +2,14 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Offline generated PNG/EXR fixtures applied by the installed extension."""
 
+import hashlib
 import os
 import struct
 import tempfile
 import threading
 import unittest.mock
 import zlib
+from dataclasses import replace
 from pathlib import Path
 
 import bpy
@@ -85,6 +87,85 @@ class WorldApplicationTests(unittest.TestCase):
         self.assertTrue(receipt._image.is_float)
         self.assertGreater(max(receipt._image.pixels), 1.0)
         self.assertTrue(receipt.restore())
+        self.assert_original()
+
+    def download_receipt(self, path):
+        data = path.read_bytes()
+        return self.module.DownloadedResult(path.name, len(data), hashlib.sha256(data).hexdigest())
+
+    def test_saved_download_receipt_accepts_png_and_exr_snapshots(self):
+        for exr in (False, True):
+            with self.subTest(exr=exr):
+                path = self.fixture(exr=exr)
+                expected = self.download_receipt(path)
+                handle = self.module.apply_world(self.scene, path, expected_receipt=expected)
+                self.assertEqual(
+                    hashlib.sha256(handle._image.packed_file.data).hexdigest(), expected.sha256
+                )
+                self.assertTrue(handle.restore())
+                self.assert_original()
+
+    def test_receipt_mismatch_rejects_before_decode_and_preserves_scene(self):
+        path = self.fixture()
+        expected = self.download_receipt(path)
+        for changed in (
+            replace(expected, name="another.png"),
+            replace(expected, size=expected.size + 1),
+            replace(expected, sha256="0" * 64),
+        ):
+            with (
+                self.subTest(receipt=changed),
+                unittest.mock.patch.object(self.module, "_load_image") as decode,
+            ):
+                worlds, images = set(bpy.data.worlds), set(bpy.data.images)
+                with self.assertRaisesRegex(self.module.WorldApplicationError, "download receipt"):
+                    self.module.apply_world(self.scene, path, expected_receipt=changed)
+                decode.assert_not_called()
+                self.assertEqual(set(bpy.data.worlds), worlds)
+                self.assertEqual(set(bpy.data.images), images)
+                self.assert_original()
+
+    def test_changed_download_with_same_length_is_rejected_before_container_parsing(self):
+        path = self.fixture()
+        expected = self.download_receipt(path)
+        data = bytearray(path.read_bytes())
+        data[-1] ^= 1
+        path.write_bytes(data)
+        with unittest.mock.patch.object(self.module, "inspect_panorama") as inspect:
+            with self.assertRaisesRegex(self.module.WorldApplicationError, "download receipt"):
+                self.module.apply_world(self.scene, path, expected_receipt=expected)
+            inspect.assert_not_called()
+        self.assert_original()
+
+    def test_replacement_after_verification_cannot_change_decoded_snapshot(self):
+        path = self.fixture()
+        expected = self.download_receipt(path)
+        load = self.module._load_image
+
+        def replace_source(data, info):
+            path.write_bytes(b"changed after the verified snapshot")
+            return load(data, info)
+
+        with unittest.mock.patch.object(self.module, "_load_image", side_effect=replace_source):
+            handle = self.module.apply_world(self.scene, path, expected_receipt=expected)
+        self.assertNotEqual(hashlib.sha256(path.read_bytes()).hexdigest(), expected.sha256)
+        self.assertEqual(
+            hashlib.sha256(handle._image.packed_file.data).hexdigest(), expected.sha256
+        )
+        self.assertTrue(handle.restore())
+        self.assert_original()
+
+    def test_invalid_receipt_rejected_before_source_access(self):
+        for value in (True, {}, object()):
+            with (
+                self.subTest(value=type(value)),
+                unittest.mock.patch.object(self.module.os, "open") as opened,
+            ):
+                with self.assertRaisesRegex(
+                    self.module.WorldApplicationError, "downloaded-result receipt"
+                ):
+                    self.module.apply_world(self.scene, "unused.png", expected_receipt=value)
+                opened.assert_not_called()
         self.assert_original()
 
     def test_actual_container_wins_over_filename(self):

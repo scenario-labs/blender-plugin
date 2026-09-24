@@ -1,6 +1,6 @@
 # Local panorama World application
 
-`scenario.blender.world_application.apply_world(scene, filepath)` is a synchronous,
+`scenario.blender.world_application.apply_world(scene, filepath, *, expected_receipt=None)` is a synchronous,
 main-thread primitive for an explicitly selected scene. It creates a packed image
 and a separate World with an equirectangular Environment Texture → Background →
 World Output graph. The original World, including its nodes and other scene users,
@@ -14,6 +14,19 @@ checks actual signatures and dimensions before Blender decodes a private snapsho
 of the same bytes. Blender's decoded format and dimensions must agree. The image
 is packed before scene assignment; deleting the source file afterward is safe.
 Temporary copies live under the extension's user directory, not its installation.
+
+For a downloaded result, supply its saved `DownloadedResult` as
+`expected_receipt`. The source basename, byte count and SHA256 must match before
+container parsing, image decoding or World allocation. Verification applies to
+the exact bounded byte snapshot passed to Blender, so replacing the source path
+after that read cannot change the decoded image. Missing, changed or mismatched
+data fails locally and preserves the original World; it never triggers another
+download or generation. Ordinary explicit local-file callers can omit the receipt.
+
+A receipt describes bytes, not authoritative job ownership or a current Blender
+target. The caller must obtain it from the selected scoped job, preserve its
+private storage, and validate the original file/scene/revision before application.
+The optional byte check does not claim a durable application transaction.
 
 - RGB/RGBA PNG with 8- or 16-bit samples. CRCs and chunk boundaries are checked;
   animated PNG and HDR metadata (`cICP`, `mDCV`, `cLLI`) are rejected. A maximum
@@ -31,8 +44,9 @@ Temporary copies live under the extension's user directory, not its installation
 The parser follows the [OpenEXR file layout](https://openexr.com/en/latest/OpenEXRFileLayout.html)
 (version/flags and null-terminated attribute headers) and
 [PNG specification](https://www.w3.org/TR/png-3/) (signature, IHDR, CRC and chunks).
-It checks structural completeness, not compressed-payload integrity or a trusted
-source checksum. It is a preflight, not another image decoder: Blender's decoder remains authoritative.
+The parser checks structural completeness, not compressed-payload integrity; the
+optional receipt check above binds the source bytes separately. This preflight is
+not another image decoder: Blender's decoder remains authoritative.
 The byte/pixel limits bound input and decoded dimensions, not decoder CPU time.
 JPEG, Radiance HDR, tiled/layered/multipart/deep EXR and other formats remain unsupported.
 
@@ -71,7 +85,8 @@ before calling this function; selecting an active scene is not such validation.
 Unit tests exercise bounded malformed-container rejection. Installed-ZIP native
 fixtures generate small PNG and floating EXR files locally and test explicit
 scene application, graph/packing, shared users, restoration, edited/deleted data,
-thread rejection, corrupt/truncated files and rollback after decode. They make no
+thread rejection, corrupt/truncated files, saved-receipt mismatches, source
+replacement after snapshotting and rollback after decode. They make no
 Scenario service calls.
 
 This is a partial slice of #98 and #65. SDK model validation, estimate/confirmation,

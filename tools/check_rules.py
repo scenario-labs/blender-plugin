@@ -20,7 +20,7 @@ _SCALAR = re.compile(r"(?:'([^'\r\n]*)'|\"([^\"\\\r\n]*)\"|([^\s'\"#]+))(?:\s+(#
 _REMOTE = re.compile(r"[\w.-]+/[\w.-]+(?:/[\w./-]+)?@[0-9a-f]{40}", re.ASCII)
 _RELEASE = re.compile(r"#\s*v?\d+\.\d+\.\d+(?:[-+][\w.-]+)?(?:\s|$)", re.ASCII)
 _BLOCK = re.compile(
-    r"^\s*(?:-\s*)?(?:[\w.-]+|'[^']+'|\"[^\"]+\")\s*:\s*"
+    r"^\s*(?:-\s*)?(?P<key>[\w.-]+|'[^']+'|\"[^\"]+\")\s*:\s*"
     r"[|>](?:[1-9][+-]?|[+-][1-9]?)?\s*(?:#.*)?$"
 )
 _FLOW = re.compile(r"^\s*(?:-\s*)?(?:(?:[\w.-]+|'[^']+'|\"[^\"]+\")\s*:\s*)?[\[{]")
@@ -120,8 +120,8 @@ def actions_pinned(files, root):
                         "Write uses on its own line; flow-style action declarations are unsupported",
                     )
                 )
-            elif _BLOCK.search(line):
-                block_indent = indent + (2 if stripped.startswith("- ") else 0)
+            elif block_match := _BLOCK.match(line):
+                block_indent = block_match.start("key")
     return violations
 
 

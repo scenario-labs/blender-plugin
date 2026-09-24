@@ -116,6 +116,28 @@ def test_block_marker_in_a_comment_does_not_hide_nested_actions(tmp_path):
     assert [item.line for item in found] == [6]
 
 
+@pytest.mark.parametrize("dash_spaces", [1, 2, 4])
+def test_block_scalar_with_spaced_list_dash_does_not_hide_sibling_action(tmp_path, dash_spaces):
+    key_column = 7 + dash_spaces
+    path = workflow(
+        tmp_path,
+        "on: pull_request\n"
+        "jobs:\n"
+        "  check:\n"
+        "    runs-on: ubuntu-latest\n"
+        "    steps:\n"
+        + "      -"
+        + " " * dash_spaces
+        + "name: |\n"
+        + " " * (key_column + 2)
+        + "Fixture step\n"
+        + " " * key_column
+        + "uses: actions/checkout@main\n",
+    )
+    found = rules.run(rules.RULES, [path], tmp_path)
+    assert [item.line for item in found] == [8]
+
+
 def test_missing_or_symlink_workflow_fails(tmp_path):
     path = workflow(tmp_path, "name: Original\n")
     path.unlink()

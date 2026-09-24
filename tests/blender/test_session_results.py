@@ -28,7 +28,9 @@ class SessionResultTests(unittest.TestCase):
         # Cleanup must retain the namespace used to access deep Windows results.
         self.temp = tempfile.TemporaryDirectory(dir=self.transfers._root(directory))
         self.addCleanup(self.temp.cleanup)
-        self.root = Path(self.temp.name).resolve()
+        # SQLite uses an ordinary file URI; both spellings name the same directory.
+        self.root = (Path(directory) / Path(self.temp.name).name).resolve()
+        self.assertTrue(self.root.samefile(self.temp.name))
         self.previous = bpy.context.scene
         self.scene = bpy.data.scenes.new("Result session fixture")
         bpy.context.window.scene = self.scene

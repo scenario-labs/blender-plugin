@@ -1,7 +1,7 @@
 {
   "version": 1,
   "index": "docs/index.md",
-  "base_revision": "6174f74d39914a10f983d421e9702f81c8b57932",
+  "base_revision": "2843316b85775cff00521c7e08f2a9b211e77c1f",
   "documents": [
     {
       "path": ".claude/rules/blender-glue.md",
@@ -209,12 +209,13 @@
     {
       "path": "docs/PYTHON_STYLE.md",
       "coverage": "inherited",
-      "reviewed_at": "2026-09-23",
-      "limits": "Existing guide indexed during this intake, without a fresh claim-by-claim or live verification; consult current integration status and issue acceptance.",
+      "reviewed_at": "2026-09-24",
+      "limits": "Changed-file CI selection reviewed against the reusable lint workflow and caller, including all-tracked fallback for unavailable previous revisions. Other inherited guide sections retain their prior limits without a fresh claim-by-claim or live verification.",
       "sources": {
         "pyproject.toml": "28e3115a28f23530662dfe37a5f07328302607b6c2f8c59d8c8f20c79470d5c2",
         ".python-version": "f7401ec58a777fe2a730f8805ab7f63ff80f064930c616b18efe3a475daf57fd",
-        ".github/workflows/python-lint.yml": "22912a7ec6b6497047f3dc2594c3c367686f2fba53e75f3ac6b0a01e11547c29"
+        ".github/workflows/python-lint.yml": "083888b456de882bec4d6bf9bf57c2053e0fbf364af748451d3c7dae2dc68d7b",
+        ".github/workflows/ci.yml": "9805ee9848f2eed06b0b9f108bcd7054592d61b431f8f4b57d4098f5cf43c344"
       }
     },
     {
@@ -472,7 +473,7 @@
       "path": "docs/development/validation.md",
       "coverage": "policy",
       "reviewed_at": "2026-09-24",
-      "limits": "Canonical validation policy with inspected offline unit workflow, coverage reporting and connection-guard contracts; unit-process core/MCP coverage and matrix results do not establish subprocess coverage, native Blender compatibility or live service acceptance. Source-manifest preflight, supplied-ZIP bypass and failure/status preservation reviewed against build/runner code and offline regressions; native runtime and other claims retain prior limits.",
+      "limits": "Canonical validation policy with inspected offline unit workflow, coverage reporting and connection-guard contracts; unit-process core/MCP coverage and matrix results do not establish subprocess coverage, native Blender compatibility or live service acceptance. Source-manifest preflight, supplied-ZIP bypass and failure/status preservation reviewed against build/runner code and offline regressions; native runtime and other claims retain prior limits. Reusable CI orchestration and fail-closed aggregate reviewed against all six caller workloads; this does not establish repository required-check settings or live service acceptance.",
       "sources": {
         "Makefile": "c86ffba526a4882788cec66b53924504eceab7114f0b4776ff23ceee1d7a4c8b",
         "pyproject.toml": "c658408a54b6c62b113e2939cb26032352341ca9f4b26b2e839caeb77f4e44ea",
@@ -480,7 +481,7 @@
         "tools/blender_env.py": "0e78f2a51edd2943567226537d8faed6170d41ba10ba84a663118b9b2c2251b8",
         "scenario/mcp/cli.py": "733ec02de0f03a9bfb0a9326a8f94ac32a2b6c33a5c11a09b79694cabd87c156",
         "tests/blender/test_mcp_cli.py": "69c6b9ad670cd59f4eb2e18f91bda4deb20c487fe1539d69f0825799233adef8",
-        ".github/workflows/unit-tests.yml": "22e38ed268f4ea35ecd473c194be06d18366b2684deac83b0f945c0549a3bed5",
+        ".github/workflows/unit-tests.yml": "a58dbb136e028123210228cc8c739d131045a2cc25aafa4b557d1cf73767e67c",
         "tests/unit/conftest.py": "c7f9310469e250fbafa08b63a127221a7ff4af0b00f0646c83ce3361148cc5a5",
         "tests/unit/test_network_guard.py": "f61276c20c245523f1a3749816fd88bf3d13dfa807d414facd823c7bbff71f1e",
         "tests/unit/test_dev_config.py": "2dcfd722f08e931acfd2d2eb6ce6989eeb1f70c4c82d351f062a24dedd1a0be5",
@@ -488,7 +489,13 @@
         "uv.lock": "9d13c77a0b426ef0062bb7d2a708cd29d94f3c56405126128b73842b6cbd804d",
         "tools/build.py": "77ffb55346dabd2f3864faa0a152a3243e021423ffae456992ecd2360bb79d5c",
         "tests/unit/test_blender_runner.py": "873b2a093bf8715331ab775c93229fd0e114e852a2f8a7f209ac2b8ffd5bc497",
-        "tests/unit/test_portable_tools.py": "c40c4a76f0b80730c957df862590ff60c20a70410f4a80e4bd7027ed9bc128bb"
+        "tests/unit/test_portable_tools.py": "c40c4a76f0b80730c957df862590ff60c20a70410f4a80e4bd7027ed9bc128bb",
+        ".github/workflows/ci.yml": "9805ee9848f2eed06b0b9f108bcd7054592d61b431f8f4b57d4098f5cf43c344",
+        ".github/workflows/python-lint.yml": "083888b456de882bec4d6bf9bf57c2053e0fbf364af748451d3c7dae2dc68d7b",
+        ".github/workflows/sdk-contracts.yml": "8c2e0723253e79a74395f7b309731ac0e7ad5b1d7ec027044e211526fff14951",
+        ".github/workflows/blender-baseline.yml": "2688ab0300ef56b0b52f9a8aaf55d87a01616207e47f8a2759e2ebe0d2315a3c",
+        ".github/workflows/knowledge.yml": "2719af3dd48cd51d7944c18749e748895d05653a1e8fbc5d46fb852291abd5fb",
+        ".github/workflows/agent-skills.yml": "fa1d68017f1bfffee58c9e66ccea651f1b570a4be7aef56da7376e5bbe13bb98"
       }
     },
     {

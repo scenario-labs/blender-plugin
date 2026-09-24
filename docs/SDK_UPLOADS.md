@@ -185,7 +185,11 @@ symlinks, nonregular sources, changed size/timestamps and incomplete copies fail
 File and directory flushes precede intent persistence (directory fsync on POSIX).
 The original path is not stored. Subsequent edits to the original file do not
 alter the snapshot. Each part read rechecks size and its saved digest; initialization
-also verifies the full digest. The application must retain ownership of the
+also verifies the full digest. On Windows, comparing a path with an open file uses
+creation time where available because those APIs can assign different meanings
+to `ctime`. Checks before and after reading the same open file still compare its
+`ctime`, along with identity, size and modification time, to reject changes.
+The application must retain ownership of the
 staging directory and ancestors. Failed intent persistence or deactivation after
 staging may leave a private orphan for explicit retention/cleanup policy; no
 user source is deleted. These are local resource limits, not service guarantees.

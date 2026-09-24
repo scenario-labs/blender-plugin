@@ -13,8 +13,8 @@ from .transfers import TransferError, _root
 from .upload_store import UploadIntent
 
 
-def _stamp(value):
-    return value.st_dev, value.st_ino, value.st_size, value.st_mtime_ns, value.st_ctime_ns
+def _stamp(value, *, timestamp="st_ctime_ns"):
+    return value.st_dev, value.st_ino, value.st_size, value.st_mtime_ns, getattr(value, timestamp)
 
 
 def _open(path):
@@ -28,11 +28,20 @@ def _open(path):
     )
     try:
         info = os.fstat(fd)
-        if (
-            not stat.S_ISREG(info.st_mode)
-            or path.is_symlink()
-            or _stamp(info) != _stamp(path.stat())
-        ):
+        if not stat.S_ISREG(info.st_mode) or path.is_symlink():
+            raise TransferError("Use a regular unchanged upload source")
+        current = path.stat()
+        # Windows Python 3.12+ can report different ctime meanings for a
+        # descriptor and path. Use birthtime only across these APIs; _stamp's
+        # default retains ctime for the before/after descriptor read checks.
+        path_timestamp = (
+            "st_birthtime_ns"
+            if os.name == "nt"
+            and hasattr(info, "st_birthtime_ns")
+            and hasattr(current, "st_birthtime_ns")
+            else "st_ctime_ns"
+        )
+        if _stamp(info, timestamp=path_timestamp) != _stamp(current, timestamp=path_timestamp):
             raise TransferError("Use a regular unchanged upload source")
         return os.fdopen(fd, "rb"), info
     except BaseException:

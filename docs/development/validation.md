@@ -94,8 +94,11 @@ and version ordering.
 | Linux x64 without a display | Locked unit checks, build and isolated headless tests using an installed or explicitly fetched Blender | The official fetcher verifies archives. No GUI capture or input/rendering acceptance is established. |
 | Sandbox without Blender | Locked unit checks, changed-file Ruff, knowledge and agent-skill checks; manifest-version output | Build, native and GUI checks cannot run. State those omissions in the PR so a reviewer or CI can supply the missing evidence. |
 
-Build/install/test/capture commands always own fresh disposable profiles. These
-tools have no normal-profile mode or generic arbitrary Blender-command wrapper.
+Build/install/test/capture commands always own fresh disposable profiles. The
+[isolated command wrapper](../../CONTRIBUTING.md#isolated-blender-commands) also
+owns a fresh profile for trusted local probes, without installing an extension.
+None of these tools has a normal-profile mode. The unmanaged native-suite guard
+exits with status 2 before importing Blender; use `make test-blender` for acceptance.
 Capture artifacts use unique directories rather than overwriting a fixed PNG.
 GUI probes never spend credits; capture requires a desktop session with the
 necessary display access, which may be unavailable to a cloud agent.

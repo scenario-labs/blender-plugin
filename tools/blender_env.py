@@ -4,6 +4,7 @@
 
 import argparse
 import hashlib
+import math
 import os
 import platform
 import re
@@ -11,6 +12,7 @@ import shutil
 import stat
 import subprocess
 import sys
+import tempfile
 import tomllib
 import zipfile
 from pathlib import Path, PurePosixPath
@@ -216,9 +218,47 @@ def run_step(binary, args, *, env, directory, name, timeout):
     return log
 
 
+def run(args, isolated=True, check=True, *, blender=None, artifacts=None, timeout=300):
+    """Run trusted Blender arguments offline in a fresh profile, then remove it.
+
+    This is process/profile isolation, not a security sandbox for Python scripts.
+    Streams stay attached to the caller and relative input paths keep its cwd.
+    """
+    if isolated is not True:
+        raise ValueError("Normal-profile execution is not supported")
+    if isinstance(args, (str, bytes)):
+        raise ValueError("Supply Blender arguments as a sequence of strings")
+    arguments = list(args)
+    if not arguments or not all(isinstance(value, str) for value in arguments):
+        raise ValueError("Supply Blender arguments after run --")
+    blender_arguments = arguments[: arguments.index("--")] if "--" in arguments else arguments
+    if any(value.split("=", 1)[0] == "--online-mode" for value in blender_arguments):
+        raise ValueError("Isolated commands require Blender offline mode")
+    if not math.isfinite(timeout) or timeout <= 0:
+        raise ValueError("Timeout must be finite and positive")
+    binary = find_blender(blender)
+    root = (ROOT / ".blender-profile" if artifacts is None else Path(artifacts)).resolve()
+    if root.is_relative_to(normal_profile_root().resolve()):
+        raise ValueError("Command artifacts must be outside the normal Blender profile")
+    root.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix="command-", dir=root) as directory:
+        profile = Path(directory) / "profile"
+        temporary = Path(directory) / "tmp"
+        profile.mkdir()
+        temporary.mkdir()
+        # subprocess.run waits for child termination on timeout/control failures,
+        # so storage remains alive for the entire child lifetime.
+        return subprocess.run(
+            [str(binary), "--offline-mode", *arguments],
+            env=isolated_environment(profile, temporary),
+            check=check,
+            timeout=timeout,
+        )
+
+
 def main():
     parser = argparse.ArgumentParser(
-        description="Print the selected Blender executable path or extension manifest version."
+        description="Locate Blender, print the extension version, or run an isolated command."
     )
     selection = parser.add_mutually_exclusive_group()
     selection.add_argument(
@@ -231,9 +271,34 @@ def main():
         dest="manifest_version",
         help="Print the extension manifest version without launching Blender",
     )
+    commands = parser.add_subparsers(dest="command")
+    command = commands.add_parser("run", help="Run trusted Blender arguments in a fresh profile")
+    command.add_argument("--blender", dest="run_blender", help="Override Blender discovery")
+    command.add_argument("--artifacts", type=Path, help="Parent for temporary command profiles")
+    command.add_argument("--timeout", type=float, default=300, help="Child timeout in seconds")
+    command.add_argument("arguments", nargs=argparse.REMAINDER, metavar="-- BLENDER_ARGS")
     args = parser.parse_args()
+    if args.command == "run" and args.manifest_version:
+        parser.error("--version cannot be combined with run")
     try:
+        if args.command == "run":
+            arguments = args.arguments[1:] if args.arguments[:1] == ["--"] else args.arguments
+            if not arguments:
+                parser.error("Supply Blender arguments after run --")
+            result = run(
+                arguments,
+                check=False,
+                blender=args.run_blender or args.blender,
+                artifacts=args.artifacts,
+                timeout=args.timeout,
+            )
+            return result.returncode if result.returncode >= 0 else 128 - result.returncode
         value = manifest_version() if args.manifest_version else find_blender(args.blender)
+    except subprocess.TimeoutExpired:
+        print("Isolated Blender command timed out", file=sys.stderr)
+        return 124
+    except KeyboardInterrupt:
+        return 130
     except (OSError, ValueError) as error:
         print(error, file=sys.stderr)
         return 1

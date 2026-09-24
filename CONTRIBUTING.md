@@ -352,7 +352,9 @@ its SHA-256 and JSON runtime/test reports. Blender failures retain their exit co
 a per-process timeout prevents indefinite hangs. Successful profiles and temporary
 files are removed unless `--keep-profile` is given. Failed profiles remain for
 investigation. `--artifacts DIR` changes the parent directory for these unique runs.
-Do not invoke `tests/blender/run_all.py` directly; it refuses unmanaged profiles.
+Do not invoke `tests/blender/run_all.py` directly; missing, malformed or unrelated
+runner ownership records are refused with exit status 2 before importing `bpy`.
+Use `make test-blender` to create the managed profile and exact candidate ZIP.
 
 [Blender baseline CI](.github/workflows/blender-baseline.yml) runs the full offline
 unit suite on Linux and the same native baseline on Linux x64 and Windows x64
@@ -419,6 +421,36 @@ or DejaVu, Linux system/Blender fonts, or fonts from flat and fetched Linux/Wind
 cache layouts. This only broadens font discovery; it does not regenerate tracked
 icons or add Pillow to the extension. If no usable font is found, the renderer
 keeps its existing geometric fallback.
+
+### Isolated Blender commands
+
+Run a trusted local Blender command with its own temporary profile:
+
+```sh
+uv run --locked --no-env-file python tools/blender_env.py run -- \
+  --background --python-exit-code 1 --python /path/to/local-probe.py
+```
+
+The wrapper uses the same discovery and credential/path scrubbing as the other
+tools. `run --blender PATH` selects a binary. Each invocation creates a unique
+`command-*` directory under `.blender-profile/`; `run --artifacts DIR` selects a
+different parent outside the normal Blender profile. It never reuses a profile
+from the shell. Blender starts in offline mode, and an explicit `--online-mode`
+override is rejected. Relative input paths use the caller's working directory;
+child input/output streams remain attached to the terminal.
+
+The profile and temporary files remain until the child stops, then are removed
+on success, failure, timeout or interruption. `run --timeout SECONDS` changes the
+300-second limit, including for GUI commands. The Python `run(args, check=True)`
+helper raises `subprocess.CalledProcessError` for a failed child; `check=False`
+returns its completed-process result. Normal-profile execution is not supported.
+The CLI preserves a child's exit status, reports timeout as 124 and interruption
+as 130; invalid usage is 2 and configuration/launch errors are 1.
+
+This command installs no extension and does not grant native ZIP acceptance.
+Use the dedicated build/install/test/capture tools for those checks. Run only
+trusted scripts: a private profile and Blender's offline flag are not a sandbox
+for arbitrary Python file or socket access.
 
 ### Repeatable GUI screenshots
 

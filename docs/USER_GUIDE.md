@@ -2,22 +2,24 @@
 
 See the [documentation index](index.md) for current integration boundaries and technical guidance.
 
-Blender 5.0 or newer, a Scenario account with API access (Pro plan or above), an internet connection.
+Blender 5.0 or later, a Scenario account with API access (see the [Scenario documentation](https://docs.scenario.com)) and an internet connection are required. This guide follows the current extension implementation; [release notes](../CHANGELOG.md) describe the changes available in each release. The extension remains experimental; check the [known limitations](KNOWN_LIMITATIONS.md).
 
 ## What it does
 
-Scenario for Blender puts Scenario's generation models inside Blender's 3D viewport. From one tab you generate images, videos, 3D models, PBR materials and audio, render your scene as a finished still or clip, and edit the meshes you already have (remesh, retexture, UV unwrap, rigging, animation, parts). The inputs come from your scene (a viewport capture, the scene camera, a playblast of your animation, the selected mesh); the results come back where you work: images as datablocks and textures, meshes at the 3D cursor or next to their original, materials on the selected objects, videos and audio in your output folder (audio also drops on the sequencer). Every generation shows its price in Creative Units (CU) before you press Generate, charged to the Scenario workspace of your API key.
+Scenario for Blender puts Scenario's generation models inside Blender's 3D viewport. From one tab you generate images, videos, 3D models, PBR materials and audio, render your scene as a finished still or clip, and edit the meshes you already have (remesh, retexture, UV unwrap, rigging, animation, parts). The inputs come from your scene (a viewport capture, the scene camera, a playblast of your animation, the selected mesh); the results come back where you work: images as datablocks and textures, meshes at the 3D cursor or next to their original, materials on the selected objects, videos and audio in your output folder (audio also drops on the sequencer). The Generate button displays the available estimate in Creative Units (CU). A "from" amount excludes references uploaded later; see [Costs](#costs). Requests use the credentials selected in the extension preferences.
 
 The add-on also runs a small local MCP server, so an agent such as Claude Code, Cursor or Claude Desktop can read your scene, run tools in Blender (including planning a camera move) and generate with Scenario.
 
-![Image lane with a quote and a result](images/panel-image.png)
+![Image lane in the Scenario sidebar, showing all creation tabs and an offline example form](images/panel-image.png)
+
+*The Image form is an offline illustration, not a live model response or price quote.*
 
 ## Install
 
-1. Download `scenario-<version>.zip` from the [releases page](https://github.com/scenario-labs/blender-plugin/releases) (or build it with `uv run --locked --no-env-file python tools/build.py`). Keep it zipped.
+1. Download `scenario-<version>.zip` from the [releases page](https://github.com/scenario-labs/blender-plugin/releases). Keep it zipped.
 2. Drag the zip onto any Blender window, or use Edit > Preferences > Get Extensions > Install from Disk. Blender installs it into your user extensions and enables it. Updating: install the new zip the same way; Blender replaces the old version. Restart Blender after an update so the new code loads.
-3. Create an API key in Scenario: Team > API Keys, Project or Team scope, role Editor. The secret is shown once.
-4. Edit > Preferences > Add-ons > Scenario: leave Credentials set to **Saved in Blender**, paste the key and the secret, and press Test connection. Pick an Output Folder (default `~/Downloads/Scenario`). Blender's Allow Online Access must be on (System preferences).
+3. In Scenario, open Organization settings > API Keys > Add API Key and obtain the key and its secret. Follow the [API-key quick start](https://docs.scenario.com/get-started/documentation/quick-start-guide/step-1-obtain-your-api-key) for current account and access requirements.
+4. Edit > Preferences > Add-ons > Scenario: leave Credentials set to **Saved in Blender**, paste the key and the secret, and press Test connection. Pick an Output Folder (default `~/Downloads/Scenario`). Blender's **Allow Online Access** must be on under Edit > Preferences > System > Network; network operators refuse to run while it is off.
 
 For automation, select **Credentials > Environment** to use `SCENARIO_API_KEY`
 and `SCENARIO_API_SECRET` from the environment that launched Blender. Both are
@@ -42,9 +44,9 @@ Where things are:
 
 ## The four panels
 
-- **Scenario**: what to generate. Lane tabs with Scenario's modality icons, laid out Image / Video / 3D, Audio / Materials, Render Image / Render Video. Below the tabs, the form of the lane.
+- **Scenario**: what to generate. Lane tabs with Scenario's modality icons, laid out Image / Video / 3D, Audio / Materials, Render Image / Render Video, Blockout. Below the tabs, the form of the lane.
 - **Jobs**: what is running, all lanes together, with a count in the header: "Prompt Spark is writing the look", "uploading and submitting", "rendering 40%".
-- **Generations**: what came back. Each entry has a header (type icon, start of the prompt, price, a collapse arrow), the model, the asset id (click it to copy), a failure marker when something went wrong, the output thumbnail and the actions of its kind (images: View image, Use as reference (3D image to 3D, Image, Video, Render Image style, Render Video style), Remove background, Apply as texture, Add as plane; 3D: Add to scene, Select, Delete; video: Play, Play in Blender; audio: Play, Add to sequencer; materials: Tiling). The refresh button **reloads the parameters**: lane, model, prompt, every setting sent and the references come back into the form, ready to tweak and generate again. Objects a generation created are stamped with its id on import, so Select and Delete find them after renames. The info button opens Details: the full prompt, the settings sent, the references with their asset ids, the result assets, the files, the errors. Collapse an entry to keep only its icon and prompt. Then, with the Project history (cloud) checkbox on, the project's cloud history: generations made on the web app, by agents or on another machine, with Download and open; a cloud generation that also exists on this machine is drawn like a session entry, with the same actions.
+- **Generations**: what came back. Each entry has a header (type icon, start of the prompt, price, a collapse arrow), the model, the asset id (click it to copy), a failure marker when something went wrong, the output thumbnail and the actions of its kind (images: View image, Use as reference (3D image to 3D, Image, Video, Render Image style, Render Video style), Remove background, Apply as texture, Add as plane; 3D: Add to scene, Select, Delete; video: Play, Play in Blender; audio: Play, Add to sequencer; materials: Tiling). The refresh button **reloads the parameters**: lane, model, prompt, every setting sent and the references come back into the form, ready to tweak and generate again. Objects a generation created are stamped with its id on import, so Select and Delete find them after renames. The info button opens Details: the full prompt, the settings sent, the references with their asset ids, the result assets, the files, the errors. Collapse an entry to keep only its icon and prompt. **Collapse all / Expand all** changes every entry from the panel header. A failed entry has a red error control: hover for the message, or click to read and copy the full text. Then, with the Project history (cloud) checkbox on, the project's cloud history: generations made on the web app, by agents or on another machine, with Download and open; a cloud generation that also exists on this machine is drawn like a session entry, with the same actions.
 - **Agents (MCP)**: the local MCP server, its token, one-click client setups, the Python permission.
 
 ![The Jobs, Generations and Agents (MCP) panels below the lane form](images/panel-sections.png)
@@ -57,20 +59,34 @@ Where things are:
 
 From top to bottom:
 
-- **Account strip**: your team and project, a refresh button for the model list, a shortcut to the preferences.
-- **Model**: a button showing the current model. It opens the model picker, laid out like Scenario's "Choose a Model": modality tabs (Image, Video, Audio, 3D) and the web app's category chips (Image: All, Generate, Edit, Expand, Upscale, Vectorize, Remove Background, Tools; Video: All, Generate, Edit, Lipsync, Upscale, Reframe, Remove Background, Tools; Audio: All, Speech, Music, SFX, Tools; 3D: All, Generate, Splat, Remesh, Retexture, UV Unwrap, Rigging, Animate, Parts), a search field, the list with thumbnails and the description of the highlighted model. Scenario's trained LoRAs are not listed anywhere; the lists hold the third-party models and Scenario's tools. Picking a model of another modality switches to that lane. The small arrow next to the button is the plain dropdown.
-- **Prompt**: its own box, like Scenario's. The prompt lives in the field; drag the small size control in the header to make the box taller. Below it, three equal full-width buttons with Scenario's icons: **New** (dice, Prompt Spark writes a prompt for the model), **Rewrite** (sparkles, Prompt Spark improves yours), both up to 3.75 CU with the Scenario LLM stepping in when Prompt Spark has no usable answer, and **Translate** (to English, Scenario LLM, 0.5 CU). They run in the background; the field updates when the answer arrives.
+- **Account strip**: the connection or credential status, a refresh button for the model list and a shortcut to the preferences. Account/project discovery and switching remain subject to the [known limitations](KNOWN_LIMITATIONS.md).
+- **Model**: a button showing the current model. It opens the model picker, laid out like Scenario's "Choose a Model": modality tabs (Image, Video, Audio, 3D) and the web app's category chips (Image: All, Generate, Edit, Expand, Upscale, Vectorize, Remove Background, Tools; Video: All, Generate, Edit, Lipsync, Upscale, Reframe, Remove Background, Tools; Audio: All, Speech, Music, SFX, Tools; 3D: All, Generate, Splat, Remesh, Retexture, UV Unwrap, Rigging, Animate, Parts), a search field, the list with thumbnails and the description of the highlighted model. Availability depends on the selected credentials and the model catalog. See the [known limitations](KNOWN_LIMITATIONS.md) for trained/custom-model integration boundaries. Picking a model of another modality switches to that lane. The small arrow next to the button is the plain dropdown.
+- **Prompt**: its own box, like Scenario's. The prompt lives in the field; drag the small size control in the header to make the box taller. Below it, three equal full-width buttons with Scenario's icons: **New** (dice, Prompt Spark writes a prompt for the model), **Rewrite** (sparkles, Prompt Spark improves yours), and **Translate** (to English). These helpers can spend credits; inspect their controls and tooltips before use. They run in the background; the field updates when the answer arrives. The trash button clears the prompt and is disabled when it is empty.
 - **References**: one box per file input the model accepts (image, video, audio, 3D), with a thumbnail per file. Add offers File, Viewport still, Camera still, Viewport clip, Camera clip and Render Result. Captures happen when you press Generate. Pinned rows are inputs the lane adds itself (the capture, the selected mesh).
 - **Parameters**: built from the model's own schema. A checkbox in front of an optional parameter means "send this value"; unchecked, Scenario uses its default. `(cost)` marks parameters that change the price.
-- **Generate (N CU)**: the exact price of this form, refreshed as you edit (a dry run, free). "from N CU" means the quote excludes references that will only be uploaded at generate time; "Price shown after the upload" means the model needs the mesh or the capture first.
+- **Generate (N CU)**: the current estimate for this form, refreshed as you edit (a dry run, free). "from N CU" means the quote excludes references that will only be uploaded at generate time; "Price shown after the upload" means the model needs the mesh or the capture first.
 
-Results are saved under the Output Folder, one folder per kind and per day, and the file name carries the Scenario asset id: `3d/20260828/20260828_230353_hitem-3d-split_asset_ccpDR7Ga1…_00.glb`.
+Results are saved under the Output Folder, one folder per kind and per day, and the file name carries the Scenario asset id: `3d/<date>/<timestamp>_<model>_<asset-id>_00.glb`.
 
 ![The model picker: Image, Video, Audio and 3D tabs with icons, category chips, search, the model list and the description of GPT Image 2](images/model-picker.png)
 
 *The model picker follows Scenario's "Choose a Model": modality tabs, category chips, search, description.*
 
 ## Lanes
+
+Model names below are examples, not a fixed catalog or an account entitlement.
+Available models, accepted inputs and settings depend on your access and the
+current model schema. Existing screenshots illustrate controls; model choices
+and prices can change.
+
+- **Image**: text and image references to a picture.
+- **Video**: text, images or a scene clip to a video.
+- **3D**: generate a mesh, or edit an exported selection.
+- **Materials**: create a PBR map set for selected meshes.
+- **Audio**: create speech, music or sound effects.
+- **Render Image**: use a scene capture as the layout for an image.
+- **Render Video**: use a playblast as the motion and framing for a clip.
+- **Blockout**: describe a scene layout, then refine or rebuild its primitives.
 
 ### Image
 Text or reference images to images (GPT Image 2, Gemini 3.1, Seedream, Z-Image, FLUX 2, Qwen and any other txt2img / img2img model; video-to-image tools too). Results open in an Image Editor (fitted to the window, whole image visible) and appear in Generations with **View image**, **Use as reference** (3D image to 3D: the 3D tab opens in Image mode with the picture attached, ready to generate a mesh; or the Image, Video, Render Image or Render Video lane), **Remove background** (runs a background removal model, Bria or 851 Labs or Photoroom, the cut-out lands in Generations), **Apply as texture** (a material with the image as Base Color on the active mesh) and **Add as plane** (a view-facing plane at the 3D cursor).
@@ -116,11 +132,11 @@ Speech, music and sound effects: ElevenLabs Music v2, Google Lyria 3, ACE-Step 1
 *Audio lane: ElevenLabs Music v2, 30 s, quoted before generating.*
 
 ### Render Image
-Your view, rendered as a finished still by an image edit model. Everything that shapes the look lives in one collapsible **Rendering Style** box: the look prompt, the Prompt Spark options and the style images (the capture is image 1).
+Your view, rendered as a finished still by an image edit model. Everything that shapes the look lives in the **Rendering Style** section (always open): the look prompt, the Prompt Spark options and the style images (the capture is image 1).
 
 - **Scene to render**: Viewport (what you see) or Scene camera; Grey clay capture if the model should ignore your materials.
 - **Model**: GPT Image 2 by default, then Gemini 3.1, Seedream 5.0 Pro, FLUX 2 (Max / Pro), Reve Remix, Qwen Edit 2511, MAI Image 2.5 Pro Edit, Grok Imagine Image 2.0, Z-Image; any other img2img model through the picker. Inputs and parameters that belong to another use of the model (Gemini's video input and frame rate) are hidden.
-- **Look**: what the render should look like ("weathered steampunk copper, overcast light"). Leave it empty and **Prompt Spark** writes it: a capture of the view is sent to Scenario's prompt writer (0.75 CU), which describes the materials, lighting and mood to render; the look it wrote is shown on the lane and kept with the result.
+- **Look**: what the render should look like ("weathered steampunk copper, overcast light"). Leave it empty and **Prompt Spark** writes it: a capture of the view is sent to Scenario's prompt writer to describe the materials, lighting and mood. This can spend credits; the resulting look is shown on the lane and kept with the result.
 - **Style images**: optional references for palette, materials and lighting. The capture is always image 1.
 - The prompt the model receives states the role of every input: image 1 is the exact scene (every object, its position, the camera, the framing and the perspective are frozen; nothing may be added, moved or removed), the other images are look references only and none of their content may appear. The result lands in Generations and becomes the first frame of Render Video.
 
@@ -129,10 +145,10 @@ Your view, rendered as a finished still by an image edit model. Everything that 
 *Render Image: the capture is pinned as image 1, style images follow.*
 
 ### Render Video
-A playblast of your timeline, rendered as a finished clip by a video model that takes a reference video. The look, the style images (reference frames) and the video first frame live in one collapsible **Rendering Style** box; the model's own first/last-frame inputs are handled there, so only the reference frames are offered.
+A playblast of your timeline, rendered as a finished clip by a video model that takes a reference video. The look, the style images (reference frames) and the video first frame live in the **Rendering Style** section (always open); the model's own first/last-frame inputs are handled there, so only the reference frames are offered.
 
 - **Clip to render**: Viewport clip or Camera clip, frame range and duration, Grey clay capture, Match timeline.
-- **Camera path**: the planner works with editable markers. Type the shot you want ("slow ellipse 2, 8 s, 35mm") and press **Plan**, or pick a move from the library: Orbits (orbit, orbit high, orbit low, spiral in), Ellipses (three variants), Dolly & truck (dolly in / out, truck left / right, pedestal up / down, zoom in), Crane & arcs (crane, arc left / right, top down), Other (pan, flyover). **Place markers** turns the move into numbered `Shot` markers around the subject (small cameras; move them, or select one to set its own focal length and hold time). You can also add markers yourself with **At cursor** and **From view**. Set **Duration (s)**, **Focal (mm)** and the **Start frame**; the resulting frame range is shown. **Closed loop** (on for orbits and ellipses) brings the camera back exactly to its first marker. **Build camera path** creates the `Scenario Shot Camera`, keyframes it through the markers, aims it at the subject and sets the frame range; building over an existing path asks first. **Clear path** removes the camera, target and markers. **Preview** plays it in camera view. Camera clip then records exactly that move.
+- **Camera path**: the planner works with editable markers. Type the shot you want ("slow ellipse 2, 8 s, 35mm") and press **Plan**, or pick a move from the library: Orbits (orbit, orbit high, orbit low, spiral in), Ellipses (three variants), Dolly & truck (dolly in / out, truck left / right, pedestal up / down, zoom in), Crane & arcs (crane, arc left / right, top down), Other (pan, flyover). **Place markers** turns the move into numbered `Shot` markers around the subject (small cameras; move them, or select one to set its own focal length and hold time). End a description with "hold 2 s", "pause 2" or "stay for 3 seconds" to pause on arrival. Select a Shot marker to edit its **Hold at Shot N (s)** field. You can also add markers yourself with **At cursor** and **From view**. Set **Duration (s)**, **Focal (mm)** and the **Start frame**; the resulting frame range is shown. **Closed loop** (on for orbits and ellipses) brings the camera back exactly to its first marker. **Build camera path** creates the `Scenario Shot Camera`, keyframes it through the markers, aims it at the subject and sets the frame range; building over an existing path asks first. **Clear path** removes the camera, target and markers. **Preview** plays it in camera view. Camera clip then records exactly that move.
 - **Model**: Seedance 2.0, Minimax H3, Seedance 2.5 and Mini, Runway Aleph 2, Happy Horse Video Edit, Gemini Omni Edit, Grok Edit Video first; every other video2video model through the picker. These models accept the video plus images, often many.
 - **Look**: as in Render Image; empty means Prompt Spark writes it from a still of the first frame.
 - **First frame**: the latest Render Image result is proposed automatically; the toggle sends it as the first frame (Seedance's `image`, H3's `firstFrameImage`) so the clip starts exactly from your rendered still. Any image result offers **Use as video first frame**.
@@ -144,17 +160,29 @@ A playblast of your timeline, rendered as a finished clip by a video model that 
 *Render Video with an orbit path built and Prompt Spark ready to write the look.*
 
 ### Blockout
+
+![Blockout tab with Scene, Type and Scale controls above a stored example layout and Rebuild, Clear and Refine actions](images/panel-blockout.png)
+
+*This offline example uses a stored sample plan to illustrate the controls; it is not a live generated result.*
+
 Turn a scene description into a greybox layout made of coloured primitives in a
 `Blockout` collection, grouped by the generated plan.
 
 1. Choose **Blockout** in the Scenario sidebar. Describe the scene, choose its
-   type (such as Exterior or Interior) and scale, then press **Design blockout**.
+   **Type** (Exterior, Interior, Game level, Nature or Architecture) and
+   **Scale** (Human, Room, Building or District), then press **Design blockout**.
    Scenario writes a plan and Blender builds it when the response arrives.
 2. To change the plan, describe a change under **Refine** and press **Refine**.
    Design and Refine contact Scenario and can consume credits; they require
    configured credentials and Blender's Allow Online Access.
 3. **Rebuild** recreates the stored plan locally without another Scenario call.
    **Clear** deletes the `Blockout` collection and forgets the stored plan.
+
+The stored plan uses boxes, cylinders, planes, wedges, cones and spheres.
+Groups become subcollections; category colours distinguish Floor, Wall, Structure,
+Prop, Furniture, Vegetation, Vehicle, Water, Light and Other. The summary shows
+element/group counts and category counts. You can use generated 3D assets to
+replace individual blocks as your scene develops.
 
 Design, Refine and Rebuild replace the existing `Blockout` collection. Manual
 edits to its objects are not written back to the plan and will be lost on rebuild;
@@ -184,7 +212,7 @@ see the reference for token configuration and online-access requirements.
 
 ## The floating composer
 
-The pill at the bottom of the viewport shows the current prompt in a field and a Generate button, in the same style as the expanded card. Drag it anywhere in the viewport; a click without moving expands it. The expanded card moves the same way (drag its background), resizes from the grip in its bottom-right corner, and a double-click on its background puts it back in place; the position is remembered in the preferences. Click the pill to expand: lane tabs (Image, Video, 3D, Materials, Render Image, Render Video), the prompt, the model chip (opens the model picker), a **Settings** chip (opens a dialog with the lane's full form: model, prompt, references, parameters) and Generate with the price. The composer is the quick path: it uses the settings of the current lane as they stand in the sidebar or in that dialog. The bottom-right corner resizes the card (a resize cursor appears when the pointer reaches it).
+The pill at the bottom of the viewport shows the current prompt in a field and a Generate button, in the same style as the expanded card. Drag it anywhere in the viewport; a click without moving expands it. The expanded card moves the same way (drag its background), resizes from the grip in its bottom-right corner, and a double-click on its background puts it back in place; the position is remembered in the preferences. Click the pill to expand: lane tabs (Image, Video, 3D, Materials, Render Image, Render Video), the prompt, the model chip (opens the model picker), a **Settings** chip (opens a dialog with the lane's full form: model, prompt, references, parameters) and Generate with the price. Audio, the 3D Edit mode and Blockout live in the sidebar. The composer is the quick path: it uses the settings of the current lane as they stand in the sidebar or in that dialog. The bottom-right corner resizes the card (a resize cursor appears when the pointer reaches it).
 
 Editing the prompt: click to place the caret, drag or Shift+arrows to select, double-click selects a word, Home/End, Ctrl/Cmd+A selects all, Ctrl/Cmd+C copies, Ctrl/Cmd+X cuts, Ctrl/Cmd+V pastes, typing replaces the selection, Enter generates, Esc leaves. The minus button in the top-right corner collapses the card; clicking outside also does. If drawing ever fails repeatedly the composer switches itself off; re-enable it in Preferences (Floating composer in the viewport).
 
@@ -194,7 +222,15 @@ Editing the prompt: click to place the caret, drag or Shift+arrows to select, do
 
 ## Costs
 
-Prices are in CU and depend on the model and its cost-marked parameters. Observed during the build (August 2026): an image 9 to 17 CU, a Patina material 6 to 18 CU, Tripo 3.1 image to 3D 45 CU, Rodin 2.5 80 CU, Meshy 7 text to 3D 240 CU, Seedance 2.0 76 CU for 4 s at 480p and 546 CU for 11 s at 720p, Prompt Spark 0.75 CU for a look (generic) and 3.75 CU for Spark / Rewrite on a model, Translate 0.5 CU. The quote on the Generate button is exact for the form you see; the Prompt Spark call is added when the look is empty.
+Prices are in Creative Units (CU) and depend on the model, parameters and
+references. Read the current estimate instead of relying on prices in screenshots.
+A **Generate (N CU)** quote describes the current form; **from N CU** excludes
+references that have not been uploaded. **Price shown after the upload** means
+required mesh or capture inputs are still missing from the estimate. Prompt
+helpers and Blockout design/refinement are separate paid operations. An empty
+Render Image/Video look can also invoke Prompt Spark; inspect that setting before
+generating. See the [known limitations](KNOWN_LIMITATIONS.md) for current spend
+confirmation and shared-runtime boundaries.
 
 ## Troubleshooting
 
@@ -205,7 +241,6 @@ Prices are in CU and depend on the model and its cost-marked parameters. Observe
 - **The result does not appear**: open Generations. A job that failed shows a warning marker and the reason; Details lists the download errors; use Import into scene to fetch it again. After installing an update, restart Blender so the new version loads.
 - **A 3D model looks untextured**: switch the viewport to Material Preview (the add-on does this on import), and check Details for the imported file name.
 - **The rendered image moved things around**: the prompt already freezes the layout; give the model a cleaner capture (Grey clay capture, a camera view rather than a wide viewport) and fewer style images, and keep the look description about materials and light, not about content.
-- **Nothing generates from Enter or a click**: with `SCENARIO_GUI_PROBE=1` in the environment (used by the automated screenshot tool) all Generate paths are disabled.
 - **The sidebar and the dialogs do not look like the composer**: they are drawn by Blender with your Blender theme; the composer is custom drawing. Their layout follows the composer (tabs, chips, header rows) but their colours are the theme's.
 - **Where are the logs**: Blender's system console (Window > Toggle System Console on Windows, the terminal on macOS/Linux), messages are prefixed `scenario`.
 - **None of this helps**: see [Support](https://github.com/scenario-labs/blender-plugin/blob/main/SUPPORT.md) for where to ask and what to include.

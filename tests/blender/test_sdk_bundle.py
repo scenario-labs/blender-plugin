@@ -24,22 +24,6 @@ class SDKBundleTests(unittest.TestCase):
         installed = Path(addon().__file__).parent
         lock = json.loads((installed / "sdk-wheel-lock.json").read_text())
         local = Path(bpy.utils.resource_path("USER")) / "extensions/.local"
-        versions = {}
-        for wheel in lock["wheels"]:
-            name = wheel["package"]
-            if name in versions:
-                continue
-            distribution = importlib.metadata.distribution(name)
-            self.assertEqual(distribution.version, wheel["version"])
-            site_packages = Path(distribution.locate_file("")).resolve()
-            self.assertTrue(site_packages.is_relative_to(local), name)
-            module = importlib.import_module(name.replace("-", "_"))
-            path = Path(module.__file__).resolve()
-            self.assertTrue(path.is_relative_to(site_packages), name)
-            relative = path.relative_to(site_packages).as_posix()
-            with zipfile.ZipFile(installed / "wheels" / wheel["filename"]) as archive:
-                self.assertEqual(path.read_bytes(), archive.read(relative), name)
-            versions[name] = distribution.version
         binary = Path(importlib.import_module("pydantic_core._pydantic_core").__file__).resolve()
         distribution = importlib.metadata.distribution("pydantic-core")
         relative = binary.relative_to(Path(distribution.locate_file("")).resolve()).as_posix()
@@ -53,6 +37,26 @@ class SDKBundleTests(unittest.TestCase):
                     ):
                         matched.append(wheel["filename"])
         self.assertEqual(len(matched), 1)
+        versions = {}
+        for wheel in lock["wheels"]:
+            name = wheel["package"]
+            # Platform wheels can differ even in Python source line endings.
+            # Compare source and binary against the same exact loaded artifact.
+            if name == "pydantic-core" and wheel["filename"] != matched[0]:
+                continue
+            if name in versions:
+                continue
+            distribution = importlib.metadata.distribution(name)
+            self.assertEqual(distribution.version, wheel["version"])
+            site_packages = Path(distribution.locate_file("")).resolve()
+            self.assertTrue(site_packages.is_relative_to(local), name)
+            module = importlib.import_module(name.replace("-", "_"))
+            path = Path(module.__file__).resolve()
+            self.assertTrue(path.is_relative_to(site_packages), name)
+            relative = path.relative_to(site_packages).as_posix()
+            with zipfile.ZipFile(installed / "wheels" / wheel["filename"]) as archive:
+                self.assertEqual(path.read_bytes(), archive.read(relative), name)
+            versions[name] = distribution.version
         from pydantic import BaseModel
 
         class Record(BaseModel):

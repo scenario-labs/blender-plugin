@@ -1,22 +1,25 @@
 # SPDX-FileCopyrightText: 2026 Scenario Inc.
 # SPDX-License-Identifier: GPL-3.0-or-later
 name: setup-blender
-description: Download a pinned Linux x64 Blender from download.blender.org, verify its SHA-256, cache it and add it to PATH
+description: Download a pinned Linux or Windows x64 Blender from download.blender.org, verify its SHA-256, cache it and add it to PATH
 inputs:
   version:
     description: Full Blender version, for example 5.0.1
     required: true
   sha256:
-    description: SHA-256 of blender-<version>-linux-x64.tar.xz from the .sha256 file next to it on download.blender.org
+    description: SHA-256 of the host platform archive from the official release .sha256 file
     required: true
 runs:
   using: composite
   steps:
     - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
       with:
-        path: ~/blender-cache/*.tar.xz.*
-        key: blender-archive-linux-x64-${{ inputs.version }}-${{ inputs.sha256 }}
-    - shell: bash
+        path: |
+          ~/blender-cache/*.tar.xz.*
+          ~/blender-cache/*.zip.*
+        key: blender-archive-${{ runner.os }}-${{ runner.arch }}-${{ inputs.version }}-${{ inputs.sha256 }}
+    - if: runner.os == 'Linux'
+      shell: bash
       env:
         VERSION: ${{ inputs.version }}
         SHA256: ${{ inputs.sha256 }}
@@ -31,3 +34,21 @@ runs:
         BINARY="$(python3 tools/fetch_blender.py --version "$VERSION" --sha256 "$SHA256" --cache "$HOME/blender-cache")"
         echo "$(dirname "$BINARY")" >> "$GITHUB_PATH"
         "$BINARY" --version
+    - if: runner.os == 'Windows'
+      shell: pwsh
+      env:
+        VERSION: ${{ inputs.version }}
+        SHA256: ${{ inputs.sha256 }}
+      run: |
+        $ErrorActionPreference = 'Stop'
+        $profilePath = Join-Path $env:RUNNER_TEMP ("blender-profile-" + [guid]::NewGuid())
+        New-Item -ItemType Directory -Path $profilePath | Out-Null
+        $env:BLENDER_USER_RESOURCES = $profilePath
+        "BLENDER_USER_RESOURCES=$profilePath" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+        # The Windows job installs pinned uv before this action; use its locked Python.
+        $cachePath = Join-Path $env:USERPROFILE 'blender-cache'
+        $binary = uv run --locked --no-env-file python tools/fetch_blender.py --version $env:VERSION --sha256 $env:SHA256 --cache $cachePath
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+        (Split-Path -Parent $binary) | Out-File -FilePath $env:GITHUB_PATH -Append -Encoding utf8
+        & $binary --version
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

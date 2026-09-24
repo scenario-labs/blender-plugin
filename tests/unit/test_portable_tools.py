@@ -235,3 +235,67 @@ def test_failed_publication_restores_previous_installation(tools, monkeypatch, t
     assert binary.read_bytes() == b"binary"
     assert len(list((tmp_path / "cache").glob("5.0.1-*"))) == 1
     assert not list((tmp_path / "cache").glob("fetch-*"))
+
+
+def test_windows_fetch_verifies_reuses_and_reextracts_zip(tools, monkeypatch, tmp_path):
+    _, fetch = tools
+    source = tmp_path / "source.zip"
+    with zipfile.ZipFile(source, "w") as archive:
+        archive.writestr("blender-5.0.1-windows-x64/blender.exe", b"windows binary")
+    digest = fetch.sha256(source)
+    downloads = []
+
+    def download(url, destination):
+        downloads.append(url)
+        destination.write_bytes(source.read_bytes())
+
+    monkeypatch.setattr(fetch, "download", download)
+    binary = fetch.fetch("5.0.1", tmp_path / "cache", digest, platform_name="windows-x64")
+    assert binary.name == "blender.exe"
+    binary.write_bytes(b"modified")
+    assert (
+        fetch.fetch("5.0.1", tmp_path / "cache", digest, platform_name="windows-x64").read_bytes()
+        == b"windows binary"
+    )
+    assert downloads == [
+        "https://download.blender.org/release/Blender5.0/blender-5.0.1-windows-x64.zip"
+    ]
+
+
+@pytest.mark.parametrize("member", ["../escaped", "/absolute", "C:/absolute", "a\\b", "dir./file"])
+def test_windows_fetch_rejects_unsafe_members(tools, monkeypatch, tmp_path, member):
+    _, fetch = tools
+    source = tmp_path / "source.zip"
+    with zipfile.ZipFile(source, "w") as archive:
+        archive.writestr("blender-5.0.1-windows-x64/blender.exe", b"binary")
+        archive.writestr(member, b"unsafe")
+    monkeypatch.setattr(fetch, "download", lambda url, path: path.write_bytes(source.read_bytes()))
+    with pytest.raises(ValueError, match="Unsafe or ambiguous"):
+        fetch.fetch("5.0.1", tmp_path / "cache", fetch.sha256(source), platform_name="windows-x64")
+    assert not list((tmp_path / "cache").glob("5.0.1-*"))
+    assert not list((tmp_path / "cache").glob("*.lock"))
+
+
+def test_windows_fetch_rejects_case_aliases(tools, monkeypatch, tmp_path):
+    _, fetch = tools
+    source = tmp_path / "source.zip"
+    with zipfile.ZipFile(source, "w") as archive:
+        archive.writestr("blender-5.0.1-windows-x64/blender.exe", b"binary")
+        archive.writestr("blender-5.0.1-windows-x64/BLENDER.EXE", b"different")
+    monkeypatch.setattr(fetch, "download", lambda url, path: path.write_bytes(source.read_bytes()))
+    with pytest.raises(ValueError, match="Unsafe or ambiguous"):
+        fetch.fetch("5.0.1", tmp_path / "cache", fetch.sha256(source), platform_name="windows-x64")
+
+
+def test_windows_missing_executable_preserves_previous_installation(tools, tmp_path):
+    _, fetch = tools
+    installation = tmp_path / "installed"
+    installation.mkdir()
+    (installation / ".scenario-fetch.json").write_text('{"sha256": "fixture"}')
+    (installation / "keep").write_bytes(b"old binary")
+    source = tmp_path / "source.zip"
+    with zipfile.ZipFile(source, "w") as archive:
+        archive.writestr("other-file", b"wrong layout")
+    with pytest.raises(ValueError, match="expected Blender executable"):
+        fetch.install_archive(source, installation, tmp_path, "fixture", "5.0.1", "windows-x64")
+    assert (installation / "keep").read_bytes() == b"old binary"

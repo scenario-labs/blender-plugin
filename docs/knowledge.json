@@ -48,7 +48,11 @@
         "tests/unit/test_config.py": "3d8ea8a6f0bcef70f0bb16146e794346cbbe7d2fc0f26aec1631b108cf6914f3",
         "tests/blender/test_credentials.py": "0767fbe1917c977631dc4243bfcb05dce97d5ed0c0b2c731b8ea4bfdb07e3b45",
         "tools/capture_gui_scene.py": "7538cb1e90510a31cdfac22e390d5d595cf2bc73628f1cc3139071b2ef855609",
-        "tests/unit/test_gui_capture.py": "beee6cba15adf7da1e7434c18dcb2b948e36f4b459af06fc98a6c850a5fea87c"
+        "tests/unit/test_gui_capture.py": "beee6cba15adf7da1e7434c18dcb2b948e36f4b459af06fc98a6c850a5fea87c",
+        "tools/fetch_blender.py": "6ffb40560e1344850f6452ae1aa0de0834d08e9bb7be11647307e5cf8b4ac648",
+        "tests/unit/test_portable_tools.py": "2cea13137994d2d09b76abe0f5a6916a36c3c61faa546bcc6fa82e0e660c14c5",
+        ".github/actions/setup-blender/action.yml": "276722b203227e8f7a7a98a76a0e7095c566bae2c308b4166dff5e7a3698c105",
+        ".github/workflows/blender-baseline.yml": "c4fabf3cc73eaad72df2da1bd158ce118c4ebab177980819a540b28c8b66cc4d"
       }
     },
     {
@@ -123,13 +127,13 @@
     {
       "path": "docs/JOB_STORAGE.md",
       "coverage": "inherited",
-      "reviewed_at": "2026-09-23",
+      "reviewed_at": "2026-09-24",
       "limits": "Existing guide indexed during this intake, without a fresh claim-by-claim or live verification; consult current integration status and issue acceptance.",
       "sources": {
         "scenario/core/jobs/store.py": "0053c3e48ce89ad699bab664f4f5fddc6af89f7cd01c8bbcab8a323c198c01fc",
         "tests/unit/test_job_store.py": "2bc71047d762d63d960ef249a30384ae41d508e5cf2f236e0e08c9caf6aba655",
-        "scenario/core/jobs/transfers.py": "0f02ad2823787816d3c25695f9d0749cab3fe29b26451d279c4ecd56d60a9d17",
-        "tests/unit/test_result_manifest.py": "5e0414f331a07f245d31bc11945351eaebdb1786cd9ddd7648108365468520e8",
+        "scenario/core/jobs/transfers.py": "549e02649dab7061492a5bb1100a836daf1112972a9ad01c2c0d39facb6ac098",
+        "tests/unit/test_result_manifest.py": "e718f316b9f33faefdae53d59bf04c80b48645d52f3dd0bc80a2beae426e5d67",
         "tests/blender/test_job_store.py": "9391c63dd8837345ea383e2a2fa250d9a911c1a3ddda16e07617c66854b2fc65"
       }
     },
@@ -154,7 +158,7 @@
         "scenario/core/api/model_filter.py": "ad728743dae392c8fb14cae621bd6642c9959409e56878336723c17e535e8fbb",
         "scenario/core/api/spark.py": "ec8f1c663a2052d56681a83eab9187101c825f9a370a993eb6e361de68980689",
         "tools/test_blender.py": "fec317c68c24c49302b456a478e02a0a8352d29aa30c3e9e3cf173d47f0697cd",
-        "tools/blender_env.py": "2943b2aaf3bf1de923d078f75635fef439119deb1b5d66da952df878e6a8d428",
+        "tools/blender_env.py": "0e78f2a51edd2943567226537d8faed6170d41ba10ba84a663118b9b2c2251b8",
         "tools/gui_screenshot.py": "f773d0c3457163fb0bef827a98cda38738f12c543f50ea43ba4f885a0fe59666",
         "scenario/blender/composer/modal.py": "5db6dcddc6b8ca2533fcf73f3d7782c0cd3bd47c99ca11eadf3a8c57d68ed632",
         "scenario/blender/composer/draw.py": "52a366ce04766edc3aef343c7b115d7e360e8c88a27688c4446be36ecc78c6e8",
@@ -208,13 +212,13 @@
     {
       "path": "docs/RESULT_TRANSFERS.md",
       "coverage": "inherited",
-      "reviewed_at": "2026-09-23",
+      "reviewed_at": "2026-09-24",
       "limits": "Existing guide indexed during this intake, without a fresh claim-by-claim or live verification; consult current integration status and issue acceptance.",
       "sources": {
-        "scenario/core/jobs/transfers.py": "0f02ad2823787816d3c25695f9d0749cab3fe29b26451d279c4ecd56d60a9d17",
+        "scenario/core/jobs/transfers.py": "549e02649dab7061492a5bb1100a836daf1112972a9ad01c2c0d39facb6ac098",
         "tests/unit/test_result_transfers.py": "494547ee1c4a756f1cc2e3f94084eade4cab746a88431844d6f44b67e925f8ed",
         "scenario/core/jobs/store.py": "0053c3e48ce89ad699bab664f4f5fddc6af89f7cd01c8bbcab8a323c198c01fc",
-        "tests/unit/test_result_manifest.py": "5e0414f331a07f245d31bc11945351eaebdb1786cd9ddd7648108365468520e8",
+        "tests/unit/test_result_manifest.py": "e718f316b9f33faefdae53d59bf04c80b48645d52f3dd0bc80a2beae426e5d67",
         "tests/blender/test_job_store.py": "9391c63dd8837345ea383e2a2fa250d9a911c1a3ddda16e07617c66854b2fc65",
         "scenario/core/jobs/results.py": "6f8735b1fe64f0607ae63c4a5cb43c443904730ede7a2466ceb6439a425d93a2",
         "tests/unit/test_result_commands.py": "3bcba6d1b719ad3016fd5a68e0b740ff5d7eaba1924d59700f0e6d6adbec8009",
@@ -243,7 +247,8 @@
       "sources": {
         "scenario/sdk-wheel-lock.json": "6e2de1e24a3cc2cc6f5d038637e25a1694efa56c9f32588b8120c1e6d47d2d51",
         "tools/wheel_bundle.py": "5189baee1a5381a3be9dd667e0b34357ce6101bd1ea0c7bb03098332ea53c518",
-        "tests/blender/test_sdk_bundle.py": "750e7098f727b4ca188dfb54ddc45484d3e2395a26559486aade4c0de99b7ec0"
+        "tests/blender/test_sdk_bundle.py": "0620461b7530e158ae2c8b332ba3aa05c9586be4d0f658c424d7873ea3e7c70e",
+        ".github/workflows/blender-baseline.yml": "c4fabf3cc73eaad72df2da1bd158ce118c4ebab177980819a540b28c8b66cc4d"
       }
     },
     {
@@ -343,7 +348,7 @@
     {
       "path": "docs/architecture/runtime.md",
       "coverage": "source-reviewed",
-      "reviewed_at": "2026-09-23",
+      "reviewed_at": "2026-09-24",
       "limits": "Agent source inspection of the listed files; no live service calls, native runtime rerun or human verification in this review.",
       "sources": {
         "scenario/blender/runtime.py": "2afa6267f835569288ae6d1947af5410b05a0bbdcd3bbad985ff30a6dcb8a000",
@@ -356,13 +361,13 @@
         "scenario/core/jobs/coordinator.py": "c1d8208cb20f1b4401389704308e7a063f013a63919cf5a7c88f6315eb6d977b",
         "scenario/core/jobs/workers.py": "fc584737c05c28bcb20309220ed6dc99bb40b330339b995075c1392497d3ebed",
         "scenario/blender/job_session.py": "c1d0c91a1a76977691e6690a0e369a6e9282ca430de92d1f9c300acfbe2fd79a",
-        "scenario/core/jobs/transfers.py": "0f02ad2823787816d3c25695f9d0749cab3fe29b26451d279c4ecd56d60a9d17",
+        "scenario/core/jobs/transfers.py": "549e02649dab7061492a5bb1100a836daf1112972a9ad01c2c0d39facb6ac098",
         "scenario/core/schema/forms.py": "5fae21a416ee5e72f444bc2b6d3502b5ace4b728f7790766161d8e7100b64af5",
         "scenario/prefs.py": "bfd966d4a6dab2a8505caa3e9ed58d71b71d57b29b673feb5344ad6b8ed72e92",
         "tests/unit/test_config.py": "3d8ea8a6f0bcef70f0bb16146e794346cbbe7d2fc0f26aec1631b108cf6914f3",
         "tests/blender/test_credentials.py": "0767fbe1917c977631dc4243bfcb05dce97d5ed0c0b2c731b8ea4bfdb07e3b45",
         "scenario/core/jobs/store.py": "0053c3e48ce89ad699bab664f4f5fddc6af89f7cd01c8bbcab8a323c198c01fc",
-        "tests/unit/test_result_manifest.py": "5e0414f331a07f245d31bc11945351eaebdb1786cd9ddd7648108365468520e8",
+        "tests/unit/test_result_manifest.py": "e718f316b9f33faefdae53d59bf04c80b48645d52f3dd0bc80a2beae426e5d67",
         "tests/blender/test_job_store.py": "9391c63dd8837345ea383e2a2fa250d9a911c1a3ddda16e07617c66854b2fc65",
         "scenario/core/jobs/results.py": "6f8735b1fe64f0607ae63c4a5cb43c443904730ede7a2466ceb6439a425d93a2",
         "tests/unit/test_result_commands.py": "3bcba6d1b719ad3016fd5a68e0b740ff5d7eaba1924d59700f0e6d6adbec8009",
@@ -415,7 +420,7 @@
         "Makefile": "c86ffba526a4882788cec66b53924504eceab7114f0b4776ff23ceee1d7a4c8b",
         "pyproject.toml": "28e3115a28f23530662dfe37a5f07328302607b6c2f8c59d8c8f20c79470d5c2",
         "tools/test_blender.py": "fec317c68c24c49302b456a478e02a0a8352d29aa30c3e9e3cf173d47f0697cd",
-        "tools/blender_env.py": "2943b2aaf3bf1de923d078f75635fef439119deb1b5d66da952df878e6a8d428",
+        "tools/blender_env.py": "0e78f2a51edd2943567226537d8faed6170d41ba10ba84a663118b9b2c2251b8",
         "scenario/mcp/cli.py": "733ec02de0f03a9bfb0a9326a8f94ac32a2b6c33a5c11a09b79694cabd87c156",
         "tests/blender/test_mcp_cli.py": "69c6b9ad670cd59f4eb2e18f91bda4deb20c487fe1539d69f0825799233adef8"
       }
@@ -513,7 +518,7 @@
         "scenario/core/api/model_filter.py": "ad728743dae392c8fb14cae621bd6642c9959409e56878336723c17e535e8fbb",
         "scenario/core/api/spark.py": "ec8f1c663a2052d56681a83eab9187101c825f9a370a993eb6e361de68980689",
         "tools/test_blender.py": "fec317c68c24c49302b456a478e02a0a8352d29aa30c3e9e3cf173d47f0697cd",
-        "tools/blender_env.py": "2943b2aaf3bf1de923d078f75635fef439119deb1b5d66da952df878e6a8d428",
+        "tools/blender_env.py": "0e78f2a51edd2943567226537d8faed6170d41ba10ba84a663118b9b2c2251b8",
         "tools/gui_screenshot.py": "f773d0c3457163fb0bef827a98cda38738f12c543f50ea43ba4f885a0fe59666",
         "scenario/blender/composer/modal.py": "5db6dcddc6b8ca2533fcf73f3d7782c0cd3bd47c99ca11eadf3a8c57d68ed632",
         "scenario/blender/composer/draw.py": "52a366ce04766edc3aef343c7b115d7e360e8c88a27688c4446be36ecc78c6e8",

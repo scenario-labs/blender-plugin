@@ -500,7 +500,7 @@
         ".github/workflows/agent-skills.yml": "fa1d68017f1bfffee58c9e66ccea651f1b570a4be7aef56da7376e5bbe13bb98",
         "tools/test_repository_update.py": "bb777a1f38142e5ebd67e063199675e538d14f94a6c0ac0a231572ab7de25834",
         "tests/blender/repository_update.py": "99bafb44619bd45da5a973485dd01140370b6e6be076765b6ab91fdfe57d9e28",
-        "tests/unit/test_repository_update_runner.py": "fdaf92310f95567ed44ec40f3a63e8cbb60fd28b459ea66964693562b5d9a56c"
+        "tests/unit/test_repository_update_runner.py": "47a5b52d4fa030b04064d69bdaa6cb4601e8bfc542a4e1afe49054d3724328c2"
       }
     },
     {

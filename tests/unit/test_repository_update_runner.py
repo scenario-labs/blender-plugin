@@ -42,27 +42,24 @@ def test_fixture_archives_have_exact_replayable_inventory(runner, tmp_path):
     assert first.read_bytes() != second.read_bytes()
 
 
-def test_loopback_server_serves_only_fixture_files_and_stops_on_failure(runner, tmp_path):
+def test_loopback_server_serves_only_fixture_files_and_closes(runner, tmp_path):
     (tmp_path / "index.json").write_bytes(b'{"fixture": true}')
     (tmp_path / "scenario-1.0.0.zip").write_bytes(b"exact bytes")
     (tmp_path / "private").write_bytes(b"must not be served")
-    server = None
     opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
-    with pytest.raises(RuntimeError, match="probe failed"):
-        with runner.serve(tmp_path) as (server, url):
-            assert server.server_address[0] == "127.0.0.1"
-            with opener.open(url + "?blender_version=5.0.1", timeout=2) as response:
-                assert response.read() == b'{"fixture": true}'
-            archive_url = url.removesuffix("index.json") + "scenario-1.0.0.zip"
-            with opener.open(archive_url, timeout=2) as response:
-                assert response.read() == b"exact bytes"
-            for path in ["private", "../private", "%2e%2e/private", ""]:
-                with pytest.raises(urllib.error.HTTPError) as failure:
-                    opener.open(url.removesuffix("index.json") + path, timeout=2)
-                assert failure.value.code == 404
-                failure.value.close()
-            assert server.requests == ["/index.json", "/scenario-1.0.0.zip"]
-            raise RuntimeError("probe failed")
+    with runner.serve(tmp_path) as (server, url):
+        assert server.server_address[0] == "127.0.0.1"
+        with opener.open(url + "?blender_version=5.0.1", timeout=2) as response:
+            assert response.read() == b'{"fixture": true}'
+        archive_url = url.removesuffix("index.json") + "scenario-1.0.0.zip"
+        with opener.open(archive_url, timeout=2) as response:
+            assert response.read() == b"exact bytes"
+        for path in ["private", "../private", "%2e%2e/private", ""]:
+            with pytest.raises(urllib.error.HTTPError) as failure:
+                opener.open(url.removesuffix("index.json") + path, timeout=2)
+            assert failure.value.code == 404
+            failure.value.close()
+        assert server.requests == ["/index.json", "/scenario-1.0.0.zip"]
     assert server.socket.fileno() == -1
 
 
@@ -169,6 +166,9 @@ def test_update_failure_stops_server_and_preserves_only_owned_profile(
             return path
         if name == "update":
             raise subprocess.CalledProcessError(1, name)
+        if name in {"configure", "install"}:
+            return None
+        raise AssertionError("Unexpected native step: " + name)
 
     monkeypatch.setattr(runner, "generate", generate)
     monkeypatch.setattr(runner.Session, "step", step)

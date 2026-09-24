@@ -279,6 +279,8 @@ make test-blender
 uv run --locked --no-env-file python tools/test_blender.py
 # Select a particular Blender executable, including paths containing spaces:
 uv run --locked --no-env-file python tools/test_blender.py --blender /path/to/blender
+# Also keep a combined diagnostic log (the destination must not exist):
+uv run --locked --no-env-file python tools/test_blender.py --log workdir/native-check.log
 ```
 
 The runner checks `--blender`, then `BLENDER`, then PATH, platform locations and
@@ -354,6 +356,12 @@ files, redirects test output into that profile, and compares file metadata in th
 normal Blender profile before/after successful runs. It never reuses or deletes
 a profile supplied through the shell. Avoid changing your normal preferences
 while this check runs, since that would correctly report a profile change.
+
+Native phase output streams to the terminal while each process runs. Optional
+`--log PATH` also writes phase-labelled UTF-8 output to a new file outside the
+normal Blender profile; an existing destination is never overwritten. The file
+closes on success, failure or interruption. Per-phase logs remain available even
+if forwarding output fails; a failing Blender process retains its exit code.
 
 Artifacts in `.blender-profile/run-*` include per-phase logs, the candidate ZIP,
 its SHA-256 and JSON runtime/test reports. Blender failures retain their exit code;
@@ -545,7 +553,9 @@ signed-out UI; `form` supplies a clearly named synthetic model and fake credenti
 in memory, without service requests or an actual quote. The current sidebar hides
 its form while offline; the composer can display the synthetic model and prompt.
 `--lane` selects image,
-video, audio or 3d. Capture runs always use offline mode and the GUI probe guard.
+video, audio or 3d. `make gui-check LANE=video` forwards this choice (`image` by
+default); an explicit `--lane` in `BLENDER_GUI_ARGS` takes precedence. Capture
+runs always use offline mode and the GUI probe guard.
 Inherited Scenario credentials and Blender/Python overrides are removed.
 `--gpu-backend` can select a Blender graphics backend explicitly; the capture
 report records the actual backend and renderer. Blank captures are rejected.

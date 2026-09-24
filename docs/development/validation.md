@@ -148,6 +148,13 @@ archive must have that id/version. Neither mode skips ZIP, licence, SDK bundle o
 installed-byte checks. `--fresh` is a compatibility flag for the runner's existing
 fresh-owned-profile behavior, not permission to clear an inherited profile.
 
+The native runner streams phase output as Blender produces it, while retaining
+complete per-phase files. `--log PATH` also records phase-labelled UTF-8 output
+in a new file outside the normal Blender profile. Existing destinations are
+refused; the file closes on failure or interruption as well as success. A
+forwarding error fails an otherwise successful command without discarding the
+phase log; if Blender itself fails, its exit status takes precedence.
+
 The separate [native update fixture](../../tools/test_repository_update.py) tests
 Blender's repository install and update mechanism with two synthetic extension
 ZIPs. Run it with the selected binary:
@@ -188,6 +195,8 @@ fixture on Blender 5.0, 5.1 and 5.2 and preserves its evidence even on failure.
   under `.blender-profile/run-*`; successful profiles are removed. Use
   `BLENDER_TEST_ARGS="--suite all"` for the full existing integration suite.
 - `make gui-check`: build and capture an exact ZIP in a fresh offline GUI profile.
+  `LANE=video` selects a lane; the default is `image`. An explicit `--lane` in
+  `BLENDER_GUI_ARGS` takes precedence over `LANE`.
   Use `BLENDER_GUI_ARGS="--view composer --lane image --fixture form"` for a
   synthetic form, or `BLENDER_GUI_ARGS="--zip /path/to/scenario.zip"` to capture
   an existing artifact. A desktop display is required. Each capture keeps its

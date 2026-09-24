@@ -5,6 +5,7 @@ BLENDER_BUILD_ARGS ?=
 BLENDER_INSTALL_ARGS ?=
 BLENDER_TEST_ARGS ?=
 BLENDER_GUI_ARGS ?=
+LANE ?= image
 UV ?= uv
 LINT_PATHS ?= .
 
@@ -34,7 +35,7 @@ repo:
 install install-isolated:
 	$(UV) run --locked --no-env-file python tools/install.py $(BLENDER_INSTALL_ARGS)
 gui-check:
-	$(UV) run --locked --no-env-file python tools/capture_gui.py $(BLENDER_GUI_ARGS)
+	$(UV) run --locked --no-env-file python tools/capture_gui.py --lane "$(LANE)" $(BLENDER_GUI_ARGS)
 
 mcp-docs:
 	$(UV) run --locked --no-env-file python tools/gen_mcp_docs.py --write

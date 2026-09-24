@@ -259,7 +259,7 @@
       "path": "docs/SDK_ADOPTION.md",
       "coverage": "inherited",
       "reviewed_at": "2026-09-24",
-      "limits": "This pass inspected the active SDK catalog connection, UI/MCP delivery and offline contracts. Other component claims retain their prior coverage limits; no live service, paid-flow or authoritative account discovery acceptance is claimed.",
+      "limits": "This pass reconciled upload staging, signed-part transfer, durable commands and optional JobSession forwarding with their implementation and tests. Existing active SDK catalog evidence is retained; other component claims retain their prior coverage limits. No active UI/MCP upload wiring, production storage policy, source cleanup, live service, paid-flow or authoritative account/project discovery acceptance is claimed.",
       "sources": {
         "scenario/core/api/sdk_adapter.py": "a18daa427bd16d7b9bfbf0ed322fe4d7c3bdca27f161db8766f28042ec8e5a0b",
         "tests/unit/test_scenario_sdk_contract.py": "69c3e06092104358ac2b48529feacc794a756bbe697705aeff02d6984e593362",
@@ -271,7 +271,15 @@
         "tests/unit/test_sdk_catalog.py": "91d56d6104d56e446a09e6a557bc6c15720c1590a0a5b55983994552e3fd8252",
         "tests/blender/test_offline_runtime.py": "0b6a0ba7517a44df951ba5a78af18896f0a5c981faefb1f95c73c1258804714c",
         "tests/unit/test_catalog_delivery.py": "12ec2fe0420c8363bca0fad22edf9b35a3ff8feb6bf2a13ed04c6befa7404586",
-        "tests/blender/test_generation.py": "5c95b7409d2b20c0a8ce10498ad613dcf8fbd2bd9ab613b541e04754060ee866"
+        "tests/blender/test_generation.py": "5c95b7409d2b20c0a8ce10498ad613dcf8fbd2bd9ab613b541e04754060ee866",
+        "scenario/core/jobs/uploads.py": "73575da4b3f3589dead6a8b71d64feac2edcae789fb97f502b332fb5fe1789cc",
+        "scenario/core/jobs/upload_sources.py": "d75cd9ced1c578957a587c98526f1522bdbc91e6ce2dba62be099d68ea086623",
+        "scenario/core/jobs/upload_transfers.py": "eaf79e69f14dab7ff00a3a5217dd51a70aba04d36e67fb11b204131e25461259",
+        "scenario/blender/job_session.py": "73f0a3e2e892c5535331f1c1a2b812d2e70a77e70f27cd6a33c079317d52ea83",
+        "tests/unit/test_upload_commands.py": "5541ca299891a95ad0a41e4fe7261c74ba08a356261b68332517c20b7076fd76",
+        "tests/unit/test_upload_sources.py": "f3fdf69efd7426b53d29b2e60716bd2bcb582e6e1b48e79a11365356ee3c7c03",
+        "tests/unit/test_upload_transfers.py": "0d26e96c55bb0c895220d0d0f64a4573067d9630ec0e9fc80525a8a126d77d97",
+        "tests/blender/test_session_uploads.py": "de7a64d5c567c172da47b2c9e060bd14d2e1db5f4db896aec6258305501c2dab"
       }
     },
     {

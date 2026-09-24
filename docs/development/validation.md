@@ -27,6 +27,17 @@ matrix coverage are unchanged. The separate `pr-title` and `commits` checks
 remain independent. Making `ci-ok` required and configuring repository rules
 remain administrative work under #45; the workflow does not change settings.
 
+[Workflow contract tests](../../tests/unit/test_workflows.py) follow PR callers
+into their local reusable workflows and composite actions to check the explicit
+read-only/no-secrets convention. They also check distinct declared job contexts
+and run the actual `ci-ok` shell with every workload successful, failed,
+cancelled, skipped, empty or absent. Every workload must appear in the gate's
+dependencies and result inputs. These stdlib checks cover the repository's
+block-style workflow subset and reject unsupported trigger/permission forms;
+they do not replace general YAML/action validation or GitHub's actual scheduling,
+permissions and check-result evidence. The changed-file lint policy remains the
+approved transition under #28/#64.
+
 [Unit-test CI](../../.github/workflows/unit-tests.yml) runs the complete unit suite
 on pinned Python 3.11 and 3.13 interpreters with the same locked dependencies and
 dotenv loading disabled. It needs no credentials.

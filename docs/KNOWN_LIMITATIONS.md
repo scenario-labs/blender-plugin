@@ -11,12 +11,10 @@ boundaries. No paid or live acceptance is implied by this documentation.
   persistence, transfer and origin-guard components need runtime integration
   ([#64](https://github.com/scenario-labs/blender-plugin/issues/64),
   [#65](https://github.com/scenario-labs/blender-plugin/issues/65)).
-- Prototype credential resolution can mix environment values with preferences.
-  The new SDK adapter's isolation does not fix every active entry point.
-  Browser sign-in and explicit account/project selection are tracked in
-  [#67](https://github.com/scenario-labs/blender-plugin/issues/67).
-- The registered headless command still uses the old hyphenated spelling;
-  [#15](https://github.com/scenario-labs/blender-plugin/issues/15) owns its repair.
+- Credentials use one explicitly selected pair (saved Blender preferences by
+  default, environment only when selected). Shared job/account/project scope
+  integration remains #65. Browser sign-in in
+  [#67](https://github.com/scenario-labs/blender-plugin/issues/67) is deferred.
 - Trained/custom-model discovery and routing remain incomplete
   ([#97](https://github.com/scenario-labs/blender-plugin/issues/97)).
 

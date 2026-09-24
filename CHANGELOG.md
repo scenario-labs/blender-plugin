@@ -244,7 +244,7 @@ First release-candidate pass: a coherent UI and a production-readiness sweep of 
 - Local MCP server (Streamable HTTP on 127.0.0.1, per-session bearer token) started with the add-on; tool calls run on Blender's main thread with a 120 s timeout.
 - 16 tools: scene_summary, object_detail, execute_python (preference-gated, quit and factory-reset calls blocked), select_objects, set_frame, screenshot_viewport, render_still, list_models, model_schema, estimate_cost, generate, job_status, wait_for_job, import_result, capture_reference, list_generations.
 - MCP tab: status, masked token, Start/Stop, Python toggle, one-click setup copy for Claude Code, Cursor, Claude Desktop (stdio shim), Codex and a curl test.
-- Headless serving: `blender --background file.blend --command scenario-mcp --port 9876 --token T`.
+- Headless serving: `blender --background file.blend --command scenario-mcp --port 9876 --token T`. (The historical command spelling was not accepted by Blender; use `scenario_blender`.)
 
 ## [0.3.0] - 2026-08-28
 

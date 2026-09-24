@@ -136,6 +136,7 @@ footer{border-top:1px solid var(--line);padding-top:1.2rem;font-size:.88rem;colo
     <li class="sub"><a href="#mcp">Agents (MCP)</a></li>
     <li><a href="#composer">Floating composer</a></li>
     <li><a href="#costs">Costs</a></li>
+    <li><a href="#privacy">What leaves your machine</a></li>
     <li><a href="#files">Files and folders</a></li>
     <li><a href="#trouble">Troubleshooting</a></li>
     <li><a href="#limits">Known limits</a></li>
@@ -385,7 +386,7 @@ footer{border-top:1px solid var(--line);padding-top:1.2rem;font-size:.88rem;colo
         <span>scene_summary</span><span>object_detail</span><span class="gated">execute_python</span><span>select_objects</span><span>set_frame</span><span>screenshot_viewport</span><span>render_still</span><span>camera_path</span><span>list_models</span><span>model_schema</span><span>estimate_cost</span><span>generate</span><span>job_status</span><span>wait_for_job</span><span>import_result</span><span>capture_reference</span><span>list_generations</span>
       </div>
       <p>Headless, without a window:</p>
-      <pre><code>blender --background scene.blend --command scenario-mcp --port 9876 --token &lt;token&gt;</code></pre>
+      <pre><code>blender --background scene.blend --command scenario_blender --port 9876 --token &lt;token&gt;</code></pre>
     </div>
     <figure>
       <img src="{{img:panel-mcp.png}}" alt="Agents (MCP) panel showing the server status, masked token, client setup buttons and the Python toggle">
@@ -430,13 +431,19 @@ footer{border-top:1px solid var(--line);padding-top:1.2rem;font-size:.88rem;colo
   </div>
 </section>
 
+<section id="privacy">
+  <h2>What leaves your machine</h2>
+  <p>With online access and credentials enabled, cost previews send prompts and parameters to <code>https://api.cloud.scenario.com</code> while you edit, before Generate. Generation and prompt helpers can send attached files, captures and exported meshes and spend credits. Catalogs and thumbnails load from Scenario; cloud history loads when requested. Credentials, prompts, job state and media remain on your machine. Connected local agents can read the scene and request paid work.</p>
+  <p>See <a href="https://github.com/scenario-labs/blender-plugin/blob/main/docs/PRIVACY.md">Privacy and data handling</a> for destinations, storage, clipboard use and current limits.</p>
+</section>
+
 <section id="files">
   <h2>Files and folders</h2>
   <dl class="anatomy">
     <dt>Results</dt><dd>Your Output Folder, <code>~/Downloads/Scenario</code> by default, one folder per kind and per day: <code>images/20260828/</code>, <code>videos/20260828/</code>, <code>3d/20260828/</code>, <code>materials/20260828/</code>, <code>audio/20260828/</code>, files named <code>&lt;date&gt;_&lt;model&gt;_&lt;asset id&gt;_&lt;n&gt;.&lt;ext&gt;</code> so a file matches its asset in the web app.</dd>
     <dt>Captures</dt><dd>Stills, playblasts, Prompt Spark stills and Edit 3D exports live in the extension cache (<code>captures/</code>, <code>exports/</code> under Blender's extension user directory); model thumbnails in <code>thumbs/</code>.</dd>
-    <dt>State</dt><dd>The job registry (so unfinished jobs resume after a restart), recent models and the model cache sit in the extension state and cache directories, removed with the extension.</dd>
-    <dt>Your key</dt><dd>Stored in Blender's preferences file. Treat it like any credential and rotate it in Scenario if it leaks.</dd>
+    <dt>State</dt><dd>The job registry (so unfinished jobs resume after a restart), recent models and the model cache sit in the extension's own user directory under Blender's extensions folder; delete it yourself for a clean removal.</dd>
+    <dt>Your key</dt><dd>Saved as plain text in Blender's <code>userpref.blend</code>. Select Credentials &gt; Environment to use <code>SCENARIO_API_KEY</code> and <code>SCENARIO_API_SECRET</code> instead. Switching sources does not erase saved values; clear both saved fields and save preferences to remove them. Rotate the key in Scenario if it leaks.</dd>
   </dl>
 </section>
 

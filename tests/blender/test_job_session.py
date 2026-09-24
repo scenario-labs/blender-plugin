@@ -440,3 +440,61 @@ class JobSessionTests(unittest.TestCase):
             self.session.capture(removed, self.target)
         self.assertEqual(self.session._scenes, {})
         self.assertEqual(self.session._targets, {})
+
+    def test_shared_quote_is_delivered_to_captured_origin_then_prepared_once(self):
+        import httpx
+
+        previous = self.handler
+
+        def respond(request):
+            if request.method == "GET":
+                self.calls.append(request)
+                return httpx.Response(
+                    200, json={"workflow": {"id": "fixture-workflow", "inputs": []}}
+                )
+            return previous(request)
+
+        self.handler = respond
+        origin = self.session.capture(self.scene, self.target)
+        task = self.session.quote_workflow("fixture-workflow", {}, origin=origin)
+        quote = task.result(5)
+        completion = self.session.drain()[0]
+        self.assertIsNone(completion.error)
+        self.assertIs(completion.result, quote)
+        delivered = []
+        self.session.deliver(
+            completion, lambda value, scene, target: delivered.append((value, scene, target))
+        )
+        self.assertEqual(delivered, [(quote, self.scene, self.target)])
+        prepared = self.session.prepare_quote(quote)
+        self.assertEqual(prepared.intent.origin, origin)
+        with self.assertRaises(ValueError):
+            self.session.prepare_quote(quote)
+        self.assertEqual([r.url.params.get("dryRun") for r in self.calls], [None, "true"])
+
+    def test_frame_change_while_fetching_quote_schema_stops_estimation(self):
+        import httpx
+
+        entered, release = threading.Event(), threading.Event()
+
+        def respond(request):
+            self.calls.append(request)
+            entered.set()
+            self.assertTrue(release.wait(5))
+            return httpx.Response(200, json={"workflow": {"id": "fixture-workflow", "inputs": []}})
+
+        self.handler = respond
+        origin = self.session.capture(self.scene, self.target)
+        task = self.session.quote_workflow("fixture-workflow", {}, origin=origin)
+        try:
+            self.assertTrue(entered.wait(5))
+            self.scene.frame_set(self.scene.frame_current + 1)
+        finally:
+            release.set()
+        with self.assertRaises(ValueError):
+            task.result(5)
+        completion = self.session.drain()[0]
+        self.assertIsNotNone(completion.error)
+        self.assertEqual(len(self.calls), 1)
+        self.assertEqual(self.calls[0].method, "GET")
+        self.assertEqual(self.store.records(), ())

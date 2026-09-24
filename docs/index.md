@@ -9,6 +9,7 @@ For questions, bugs or account help, see [Support](../SUPPORT.md).
 
 ## Architecture and implementation
 
+- [Privacy and data handling](PRIVACY.md)
 - [Runtime map and integration status](architecture/runtime.md)
 - [Blender boundaries and scene application](architecture/blender.md)
 - [SDK adoption and operation contracts](SDK_ADOPTION.md)
@@ -24,6 +25,7 @@ For questions, bugs or account help, see [Support](../SUPPORT.md).
 
 ## Development and contributions
 
+- [Private vulnerability reporting and security scope](../SECURITY.md)
 - [Contributor setup and environment](../CONTRIBUTING.md)
 - [Canonical agent instructions](../AGENTS.md)
 - [Python style and linting](PYTHON_STYLE.md)
@@ -36,6 +38,7 @@ For questions, bugs or account help, see [Support](../SUPPORT.md).
 ## Maintenance and historical evidence
 
 - [Knowledge checks and review procedure](maintenance/knowledge.md)
+- [API-key release plan](maintenance/release-plan.md)
 - [Issue disposition and limitations audit](maintenance/backlog.md)
 - [Historical model-payload audit](MODEL_PAYLOAD_AUDIT.md)
 - [Historical engineering design and plans](engineering/README.md)

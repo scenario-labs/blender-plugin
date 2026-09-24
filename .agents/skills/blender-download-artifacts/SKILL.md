@@ -1,6 +1,8 @@
 ---
 name: blender-download-artifacts
 description: "Use when asked to download a PR's current CI artifacts into workdir and create a local review index."
+argument-hint: "<prnumber>"
+disable-model-invocation: true
 metadata:
   claude-command: "download-artifacts"
 ---

@@ -4,10 +4,14 @@
 
 import importlib
 import json
+import runpy
 import subprocess
+import sys
 import zipfile
+from contextlib import nullcontext
 from pathlib import Path
 from types import SimpleNamespace
+from unittest.mock import Mock
 
 import pytest
 
@@ -180,3 +184,84 @@ def test_audio_composer_is_rejected_before_launch(tmp_path):
     assert "composer has no audio lane" in result.stderr
     assert "Traceback" not in result.stderr
     assert not (tmp_path / "captures").exists()
+
+
+@pytest.mark.parametrize("blank", [True, False])
+def test_blank_permissions_capture_cannot_report_success(tmp_path, monkeypatch, blank):
+    bpy = Mock()
+    area = SimpleNamespace(type="PREFERENCES")
+    bpy.context.window_manager.windows = [SimpleNamespace(screen=SimpleNamespace(areas=[area]))]
+    bpy.context.temp_override.side_effect = lambda **_: nullcontext()
+    bpy.ops.screen.screenshot.return_value = {"FINISHED"}
+    pixels = [0, 0, 0, 1, 0, 0, 0, 1] if blank else [0, 0, 0, 1, 1, 1, 1, 1]
+    shot = SimpleNamespace(size=[2, 1], pixels=pixels)
+    bpy.data.images.load.return_value = shot
+    monkeypatch.setitem(sys.modules, "bpy", bpy)
+    monkeypatch.setitem(sys.modules, "gpu", Mock())
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["blender", "--", str(tmp_path), "unused", "sidebar", "image", "8", "form", "blender"],
+    )
+    scene = runpy.run_path(str(Path(__file__).resolve().parents[2] / "tools/capture_gui_scene.py"))
+    assert not (tmp_path / "gui.json").exists()
+    scene["guarded"](lambda: scene["capture_permissions"]({"view": "sidebar"}))()
+    report = json.loads((tmp_path / "gui.json").read_text())
+    assert report["status"] == ("failed" if blank else "captured")
+    if blank:
+        assert "Screenshot is blank" in report["error"]
+    bpy.data.images.load.assert_called_once_with(
+        str(tmp_path / "permissions.png"), check_existing=False
+    )
+    bpy.data.images.remove.assert_called_once_with(shot)
+    bpy.ops.wm.quit_blender.assert_called_once()
+
+
+@pytest.mark.parametrize("failure", [None, "second_screenshot", "missing_file"])
+def test_preferences_complete_only_after_both_files(tmp_path, monkeypatch, failure):
+    timers = []
+    prefs = SimpleNamespace(credential_source="PREFERENCES")
+    runtime = SimpleNamespace(
+        credentials=lambda: SimpleNamespace(valid=prefs.credential_source == "PREFERENCES")
+    )
+    monkeypatch.setitem(sys.modules, "fixture.scenario.blender.runtime", runtime)
+    bpy = Mock()
+    bpy.context.preferences.addons = {"fixture.scenario": SimpleNamespace(preferences=prefs)}
+    bpy.context.temp_override.side_effect = lambda **_: nullcontext()
+    bpy.app.timers.register.side_effect = lambda callback, **_: timers.append(callback)
+
+    def screenshot(*, filepath):
+        path = Path(filepath)
+        if path.name == "preferences-environment.png":
+            if failure == "second_screenshot":
+                raise RuntimeError("fixture screenshot failure")
+            if failure == "missing_file":
+                return {"FINISHED"}
+        path.write_bytes(b"fixture pixels")
+        return {"FINISHED"}
+
+    bpy.ops.screen.screenshot.side_effect = screenshot
+    monkeypatch.setitem(sys.modules, "bpy", bpy)
+    monkeypatch.setitem(sys.modules, "gpu", Mock())
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["blender", "--", str(tmp_path), "unused", "sidebar", "image", "8", "form", "blender"],
+    )
+    scene = runpy.run_path(str(Path(__file__).resolve().parents[2] / "tools/capture_gui_scene.py"))
+    timers.clear()
+    complete = Mock()
+    scene["capture_credential_preferences"](Mock(), Mock(), complete)
+    assert len(timers) == 1
+    complete.assert_not_called()
+    timers.pop(0)()
+    assert (tmp_path / "preferences-preferences.png").is_file()
+    complete.assert_not_called()
+    assert not (tmp_path / "gui.json").exists()
+    timers.pop(0)()
+    if failure:
+        complete.assert_not_called()
+        assert json.loads((tmp_path / "gui.json").read_text())["status"] == "failed"
+    else:
+        complete.assert_called_once_with()
+        assert (tmp_path / "preferences-environment.png").is_file()

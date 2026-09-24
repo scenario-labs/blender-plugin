@@ -25,7 +25,7 @@ private anecdotes or treating old live observations as current service contracts
 | Original subject | Current evidence and disposition |
 | --- | --- |
 | Native tests use real extension state | The current [native runner](../../tools/test_blender.py) and [profile helpers](../../tools/blender_env.py) own disposable profiles and verify installed contents. The original runner claim is superseded; direct ad hoc invocations must still isolate profiles. |
-| Environment overrides preferences | Still present in [resolve_credentials](../../scenario/core/config.py); #67 owns active account integration. The SDK adapter has stronger isolation, but is not yet the active prototype client. |
+| Environment overrides preferences | Resolved by explicit source selection in [resolve_credentials](../../scenario/core/config.py): preferences are the default, environment requires opt-in, and incomplete pairs cannot mix. Shared account/project job scope still belongs to #65; OAuth is deferred. |
 | Slow non-curated schema loading | [generation](../../scenario/blender/generation.py) and [parameter UI](../../scenario/blender/params_ui.py) retain async loading; failure/retry UX belongs with #66. |
 | Single-line prompt editing | Current [composer](../../scenario/blender/composer/modal.py) is a custom editor. Long text and native interaction require #66 acceptance; do not preserve the older editor-button claim as a tested fact. |
 | GUI-only capture | [Capture](../../scenario/blender/capture.py) and [MCP scene tools](../../scenario/mcp/tools_blender.py) use viewport/OpenGL behavior; this limitation remains. |

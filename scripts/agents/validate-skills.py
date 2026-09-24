@@ -20,18 +20,20 @@ import unittest
 from pathlib import Path
 
 import yaml
-from skills_ref import read_properties, validate
+from skills_ref import validate
+from skills_ref.validator import validate_metadata
 
 # Existing command behavior is independent of editable skill metadata: deleting
 # a hint or invocation guard must fail validation rather than redefine it.
 COMMAND_CONTRACTS: dict[str, dict] = {
     "blender-download-artifacts": {
+        "claude-command": "download-artifacts",
         "argument-hint": "<prnumber>",
         "explicit-only": True,
         "codex-interface": True,
     },
-    "blender-pr-summary": {"codex-interface": True},
-    "blender-squash-message": {"codex-interface": True},
+    "blender-pr-summary": {"claude-command": "pr-summary", "codex-interface": True},
+    "blender-squash-message": {"claude-command": "squash-message", "codex-interface": True},
 }
 
 
@@ -77,40 +79,48 @@ def check_codex_policy(folder: Path, *, explicit: bool, required_interface: bool
     return []
 
 
-def check_command_behavior(folder: Path) -> list[str]:
-    """Check adapter arguments and preserve explicit invocation on both agents."""
+def read_frontmatter(folder: Path) -> dict:
+    """Read canonical metadata, retaining YAML types for invocation guards."""
+    content = (folder / "SKILL.md").read_text()
+    parts = content.split("---", 2)
+    if not content.startswith("---\n") or len(parts) != 3:
+        raise ValueError("SKILL.md needs YAML frontmatter")
+    metadata = yaml.safe_load(parts[1])
+    if not isinstance(metadata, dict):
+        raise ValueError("SKILL.md frontmatter must be a mapping")
+    return metadata
+
+
+def check_command_behavior(folder: Path, metadata: dict) -> list[str]:
+    """Preserve canonical command arguments and invocation guards on both agents."""
     contract = COMMAND_CONTRACTS.get(folder.name, {})
-    adapter = folder / "agents/claude-command.md"
     errors: list[str] = []
     explicit = contract.get("explicit-only", False)
+    hint = contract.get("argument-hint")
+    if hint and metadata.get("argument-hint") != hint:
+        errors.append(f"{folder.name}: argument-hint must be {hint}")
+    if "argument-hint" in metadata and not isinstance(metadata["argument-hint"], str):
+        errors.append(f"{folder.name}: argument-hint must be a string")
+    guard = metadata.get("disable-model-invocation", False)
+    if type(guard) is not bool or (explicit and guard is not True):
+        errors.append(f"{folder.name}: invalid disable-model-invocation guard")
+    command_metadata = metadata.get("metadata", {})
+    if not isinstance(command_metadata, dict) or any(
+        not isinstance(key, str) or not isinstance(value, str)
+        for key, value in command_metadata.items()
+    ):
+        return errors + [f"{folder.name}: metadata must map strings to strings"]
+    command = contract.get("claude-command")
+    if command and command_metadata.get("claude-command") != command:
+        errors.append(f"{folder.name}: claude-command must be {command}")
+    adapter = folder / "agents/claude-command.md"
+    if adapter.exists() or adapter.is_symlink():
+        errors.append(f"{folder.name}: move Claude command metadata into canonical SKILL.md")
     try:
-        if contract.get("argument-hint") or explicit or adapter.exists():
-            if adapter.is_symlink() or not adapter.is_file():
-                return [f"{folder.name}: expected a regular Claude command adapter"]
-            content = adapter.read_text()
-            parts = content.split("---", 2)
-            if not content.startswith("---\n") or len(parts) != 3:
-                return [f"{folder.name}: adapter needs YAML frontmatter"]
-            metadata = yaml.safe_load(parts[1])
-            if not isinstance(metadata, dict):
-                return [f"{folder.name}: adapter frontmatter must be a mapping"]
-            description = metadata.get("description")
-            if not isinstance(description, str) or not description.strip():
-                errors.append(f"{folder.name}: adapter needs a description")
-            hint = contract.get("argument-hint")
-            if hint and metadata.get("argument-hint") != hint:
-                errors.append(f"{folder.name}: argument-hint must be {hint}")
-            guard = metadata.get("disable-model-invocation", False)
-            if type(guard) is not bool or (explicit and guard is not True):
-                errors.append(f"{folder.name}: invalid disable-model-invocation guard")
-            explicit = explicit or guard is True
-            reference = f".agents/skills/{folder.name}/SKILL.md"
-            if reference not in parts[2] or "Arguments: $ARGUMENTS" not in parts[2]:
-                errors.append(f"{folder.name}: adapter must forward instructions and arguments")
         errors.extend(
             check_codex_policy(
                 folder,
-                explicit=explicit,
+                explicit=explicit or guard is True,
                 required_interface=contract.get("codex-interface", False),
             )
         )
@@ -119,25 +129,20 @@ def check_command_behavior(folder: Path) -> list[str]:
     return errors
 
 
-def skill_links(root: Path, folder: Path) -> dict[Path, Path]:
-    """Resolve tool entry points from validated skill metadata."""
-    metadata = read_properties(folder).metadata or {}
+def skill_links(root: Path, folder: Path, frontmatter: dict) -> dict[Path, Path]:
+    """Resolve direct tool entry points from validated canonical skill metadata."""
+    metadata = frontmatter.get("metadata", {})
     links: dict[Path, Path] = {}
     for agent in ("claude", "cursor"):
         name = metadata.get(f"{agent}-command")
-        if not name:
+        if name is None:
             continue
         path = Path(name)
         if path.is_absolute() or ".." in path.parts or not name.strip():
             message = f"{folder.name}: invalid {agent}-command path"
             raise ValueError(message)
         target = root / f".{agent}/commands/{name}.md"
-        adapter = folder / "agents/claude-command.md"
-        links[target] = adapter if agent == "claude" and adapter.is_file() else folder / "SKILL.md"
-    if metadata.get("claude-command") and metadata.get("cursor-command"):
-        links[root / f".cursor/commands/{metadata['cursor-command']}.md"] = (
-            root / f".claude/commands/{metadata['claude-command']}.md"
-        )
+        links[target] = folder / "SKILL.md"
     return links or {root / ".claude/skills" / folder.name: folder}
 
 
@@ -152,18 +157,39 @@ def collect_links(root: Path) -> tuple[dict[Path, Path], list[str]]:
         errors.append("AGENTS.md must be a regular canonical file")
     expected = {claude: rulebook}
     skills = root / ".agents/skills"
+    errors.extend(
+        f"{name}: missing canonical command"
+        for name in COMMAND_CONTRACTS
+        if not (skills / name).is_dir()
+    )
     for folder in sorted(skills.iterdir()) if skills.is_dir() else []:
         entry = folder / "SKILL.md"
         if folder.is_symlink() or not folder.is_dir() or entry.is_symlink() or not entry.is_file():
             errors.append(f"{folder.name}: expected a real skill directory and SKILL.md")
             continue
-        problems = validate(folder)
-        problems.extend(check_command_behavior(folder))
+        try:
+            metadata = read_frontmatter(folder)
+        except (OSError, ValueError, yaml.YAMLError) as error:
+            errors.append(f"{folder.name}: {error}")
+            continue
+        if folder.name in COMMAND_CONTRACTS:
+            # Local maintainer commands share Claude frontmatter with Codex.
+            # Validate standard fields with the pinned reference implementation;
+            # validate these two extensions separately, without relaxing natives.
+            standard = {
+                key: value
+                for key, value in metadata.items()
+                if key not in {"argument-hint", "disable-model-invocation"}
+            }
+            problems = validate_metadata(standard, folder)
+        else:
+            problems = validate(folder)
+        problems.extend(check_command_behavior(folder, metadata))
         errors.extend(f"{folder.name}: {problem}" for problem in problems)
         if problems:
             continue
         try:
-            links = skill_links(root, folder)
+            links = skill_links(root, folder, metadata)
         except ValueError as error:
             errors.append(str(error))
             continue

@@ -60,9 +60,18 @@ The add-on runs a local MCP server (default `http://127.0.0.1:9876/mcp`, bearer 
 - Claude Code: `claude mcp add --transport http scenario-blender http://127.0.0.1:9876/mcp --header "Authorization: Bearer <token>"`
 - Cursor: paste the `mcp.json` snippet.
 - Claude Desktop: stdio snippet running `scenario/mcp/stdio_shim.py` with Blender's Python.
-- Headless CLI registration needs correction; see [known limitations](docs/KNOWN_LIMITATIONS.md) and #15 before relying on a command example.
+- Headless: `blender --background scene.blend --command scenario_blender --port 9876`. Supply the local bearer token through `SCENARIO_BLENDER_TOKEN` or `--token`; see [authentication details](CONTRIBUTING.md#environment-variables).
 
 Agents get scene tools (summary, object detail, select, set frame, screenshots, quick renders, gated Python) and Scenario tools (models, schema, cost, generate, job status, import into scene, capture a reference from the viewport, history). The current tool definitions are in `scenario/mcp/tools_blender.py` and `scenario/mcp/tools_scenario.py`.
+
+## What leaves your machine
+
+Cost previews send prompts and parameters to `https://api.cloud.scenario.com` while you edit, before Generate.
+Generation and prompt tools can upload attached files, scene captures or exported meshes and spend credits.
+Catalogs and thumbnails load from Scenario; cloud history loads when requested.
+Saved keys, prompts, job state and media remain in Blender preferences, extension storage or output files.
+Connected local agents can read your scene and request paid work using your account.
+Read [Privacy and data handling](docs/PRIVACY.md) for destinations, storage, clipboard use and current limits.
 
 ## Tests
 
@@ -92,6 +101,10 @@ Read the [user guide](docs/USER_GUIDE.md) first. [SUPPORT.md](SUPPORT.md) says
 where to ask a question, how to file a bug and what to include. Account, billing,
 credit and security matters go to [support@scenario.com](mailto:support@scenario.com),
 never to a public issue.
+
+## Security
+
+Report vulnerabilities privately, see [SECURITY.md](SECURITY.md). Never paste API keys, MCP bearer tokens or signed asset URLs into issues or pull requests.
 
 ## Licence and provenance
 

@@ -46,8 +46,13 @@ publication in the same filesystem. A filesystem without hard-link support fails
 closed. Directory metadata durability after sudden power loss is not guaranteed.
 
 An optional expected byte count and SHA256 are checked before publication. The
-returned immutable `DownloadedResult(name, size, sha256)` contains no URL. A
-caller can persist this receipt and rehash the file before Blender application.
+returned immutable `DownloadedResult(name, size, sha256)` contains no URL. The
+[job store](JOB_STORAGE.md) can persist this receipt; `verify_download` rehashes it
+before explicit recovery or Blender application. Verification accepts only a
+regular nonsymlink file with the saved size/digest, enforces a byte cap and checks
+for changes during reading. It does not repair files or make service calls.
+The caller must retain exclusive ownership of the private directory through
+application; verification does not lock the file against later replacement.
 A computed hash without a trusted expected digest proves local consistency, not
 remote content authenticity. Existing files and symlinks are never replaced,
 including competing publication from another worker.
@@ -66,8 +71,13 @@ explicit file verification and reconciliation by the caller.
 ## Integration still required
 
 This change supplies the independently testable transport. It does not configure
-production storage hosts, persist result manifests, transition job download states,
-refresh expired URLs, implement multipart uploads, wire UI/MCP commands or import
-results into Blender. Those commands must bind the trusted asset response and
+production storage hosts, implement multipart uploads, wire UI/MCP commands or
+import results into Blender. The [coordinator](JOB_COORDINATOR.md#result-retrieval-and-download-commands)
+now orchestrates saved manifests/receipts and retrieves fresh URLs for explicit
+download retries through the SDK. Interrupted-worker reconciliation remains
+separate. Those commands must bind the trusted asset response and
 receipt to the original account/project/job/target. Live signed-storage acceptance
 and supported OS/filesystem behavior remain separate from offline contracts.
+
+SDK identifier-validation failures in result metadata retrieval become sanitized
+`ResultError` exceptions without changing the saved manifest or starting downloads.

@@ -15,7 +15,7 @@ from weakref import WeakValueDictionary
 import bpy
 from bpy.app.handlers import persistent
 
-from ..core.jobs.coordinator import JobCoordinator, RemoteSnapshot
+from ..core.jobs.coordinator import JobCoordinator, OriginQuote, RemoteSnapshot
 from ..core.jobs.origins import OriginRevisions
 from ..core.jobs.workers import JobWorkers
 
@@ -104,6 +104,27 @@ class JobSession:
             self._target_scenes.setdefault(target_id, set()).add(scene_id)
         return self._origins.capture(scene_id, target_id)
 
+    def quote_model(self, identifier, parameters, *, origin):
+        return self._quote("model", identifier, parameters, origin)
+
+    def quote_workflow(self, identifier, parameters, *, origin):
+        return self._quote("workflow", identifier, parameters, origin)
+
+    def _quote(self, operation, identifier, parameters, origin):
+        _main_thread()
+        self._check_capacity()
+        self._resolve(origin)
+        task = getattr(self._workers, f"quote_{operation}")(identifier, parameters, origin=origin)
+        self._pending.append((task, origin))
+        return task
+
+    def prepare_quote(self, quote):
+        _main_thread()
+        if not isinstance(quote, OriginQuote):
+            raise OriginUnavailable("Use a quote from this session")
+        self._resolve(quote.origin)
+        return self._coordinator.prepare_quote(quote)
+
     def prepare(self, estimate, *, origin):
         """Use the origin captured with inputs before requesting the estimate."""
         _main_thread()
@@ -154,7 +175,11 @@ class JobSession:
             try:
                 result = task.result()
                 record = result.record if isinstance(result, RemoteSnapshot) else result
-                if record.intent.origin != origin or record.intent.scope != self.scope:
+                if isinstance(record, OriginQuote):
+                    matches = record.origin == origin and record.scope == self.scope
+                else:
+                    matches = record.intent.origin == origin and record.intent.scope == self.scope
+                if not matches:
                     raise OriginUnavailable("Worker returned a different job origin or scope")
             except Exception as exc:
                 completion = JobCompletion(origin, error=exc)

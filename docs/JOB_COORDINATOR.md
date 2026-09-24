@@ -69,8 +69,8 @@ submission ordering and single-use consumption are tested with the actual SDK,
 including racing callers and late responses. Installed-Blender tests verify the
 same ordering against the bundled SDK and SQLite.
 
-Result/download persistence, main-thread application and UI/MCP wiring remain
-separate integration work. The low-level adapter hook orders persistence but cannot enforce correct
+The store persists result manifests and receipts; connecting download commands,
+main-thread application and UI/MCP remains separate integration work. The low-level adapter hook orders persistence but cannot enforce correct
 behavior by arbitrary callers; product code must use the shared coordinator.
 
 ## Restart inspection and known-job refresh
@@ -190,3 +190,107 @@ joins this work before closing the SDK. General workflow cancellation, live
 service acceptance, and the UI/MCP cancellation controls remain outstanding
 under #65; rejecting a workflow approval node is not a substitute. Captured job
 types and offline tests do not establish live cancellation acceptance.
+
+
+## Result retrieval and download commands
+
+`load_results(request_id, expected_revision=...)` rechecks the saved successful
+job through public SDK `jobs.retrieve`, then reads every asset through
+`assets.retrieve`, always under the original immutable project scope. Only a
+matching successful job with a nonempty unique `metadata.assetIds` list (up to
+128) is supported. Each retrieved asset must match its ID and declare success,
+a valid MIME type and an integral nonnegative `properties.size`. Unsupported
+non-asset outputs and malformed/changed metadata fail explicitly. No result list
+is inferred from a similar job or current selection.
+
+The entire URL-free manifest is committed once after metadata validation. Local
+basenames derive from index, asset-ID digest and MIME extension; provider paths
+and filenames never choose local directories. Signed URLs remain in memory.
+These contracts come from the pinned SDK's job/asset response models plus the
+captured model-job asset list; they still need live provider acceptance.
+
+Configure the coordinator with `result_downloader=ResultDownloader(policy, ...)`
+and an existing absolute private `result_root` from Blender's extension user
+data. There is no implicit storage-host allowlist. The root is split by hashes
+of the full account/team/project/service scope and local request identity, so
+identical asset names in separate requests cannot overwrite each other.
+
+`download_results` loads a missing manifest, durably claims `downloading`, and
+retrieves each unfinished asset again for a fresh signed URL. Identity, MIME and
+size must still match the manifest. The bounded downloader publishes without
+overwriting files; its verification uses the same configured byte cap. Each
+receipt commits before advancing to another asset. Existing receipts are
+rehash-verified instead of redownloaded. All receipts must exist before `ready`.
+
+A transfer, metadata or verification failure saves `download_failed` and reports
+a sanitized error. A persistence failure propagates and can leave `downloading`
+for explicit recovery inspection; it never claims an uncommitted state was saved.
+An explicit retry accepts only `succeeded` or `download_failed`, refreshes missing
+URLs and preserves completed receipts. It never deletes/replaces a suspect file,
+resumes an interrupted worker automatically or calls generation. An unreceipted
+published file after a crash requires separate explicit reconciliation.
+
+`verify_results` returns the unchanged scoped/origin-bound record and verified
+local paths for `ready`, `apply_failed` or `applied`. It performs no service call
+or scene mutation and rejects a changed job revision. These paths are not an
+application authorization: the Blender owner must recheck origin/target and
+atomically claim application before changing the scene. Interrupted `applying`
+is deliberately rejected; a prior scene mutation may already have occurred.
+
+All three methods are available through `JobWorkers` using the same bounded pool,
+SDK lifetime and main-thread polling interface. Deactivation stops subsequent
+asset work; a transfer already in flight can save its receipt to the old scope.
+Closing a view must not deactivate these application-owned workers. Runtime
+registration, production host configuration, interrupted-download reconciliation,
+application recovery and UI/MCP controls remain integration work under #65.
+
+
+## Reference upload commands
+
+Optional upload storage, source staging and signed PUT configuration attach to
+this same coordinator and worker queue. Their scope must match the job store.
+See [upload commands](SDK_UPLOADS.md#shared-worker-commands) for preparation,
+initialization, one-part transfer, finalization and explicit refresh. They do not
+submit generation, create another client/pool, or apply references to Blender.
+The active UI/MCP still needs to adopt these commands and its recovery controls.
+
+
+## Shared catalog and origin-bound quotes
+
+The coordinator and its existing worker queue expose `models`, `model`,
+`workflows` and `workflow` through the same selected SDK adapter. Late metadata
+is rejected after context deactivation. Detail retrieval must return the exact
+requested identity. These commands do not create another catalog client/cache,
+start another pool, or route trained models through an unverified REST path.
+
+`quote_model` and `quote_workflow` take the origin captured with input values
+before estimation. Workers copy finite JSON parameters at admission. Each quote
+retrieves the current detailed SDK schema, applies the shared strict validation
+and defaults, then preserves the exact server estimate. Active scope and origin
+are checked before work, after metadata retrieval and after estimation. A scene
+change during those calls cannot turn a late estimate into a current quote.
+The returned `OriginQuote` holds the original scope/origin and immutable SDK
+estimate; it is ephemeral and does not yet create a durable job intent.
+
+After the user chooses it, `prepare_quote` accepts only that context's unchanged,
+unconsumed quote, checks its origin again and persists one PREPARED intent.
+Copies, changed origins/scopes, expired quotes and previously prepared quotes
+are rejected. The older direct-SDK `prepare` method cannot accept an estimate
+issued through the bound-quote path, even after its wrapper is discarded.
+Submission still requires the current exact payload and the original origin,
+and the existing durable claim before paid SDK dispatch. These methods do not
+supply spending approval or automatically submit anything.
+
+`JobSession.quote_model` / `quote_workflow` admit this work on Blender's main
+thread, and its normal bounded completion queue delivers the result with its
+captured origin. `prepare_quote` resolves that same scene/target before persisting.
+Frame/file/dependency invalidation, view-independent lifetime and shutdown retain
+the existing session rules. Active compact/expanded UI and MCP entry points still
+need to switch from the prototype runtime to these shared commands.
+
+Estimate ownership is checked before acquiring the coordinator/origin locks.
+Preparation keeps quote selection and persistence under the coordinator lock,
+but never acquires the adapter estimate lock there. Submission rechecks and
+consumes the estimate under the adapter lock while committing its durable claim;
+preparation does not reserve spending authorization. This ordering lets a new
+preparation overlap an existing submission without deadlocking either thread.

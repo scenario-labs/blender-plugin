@@ -1,6 +1,7 @@
 # SPDX-FileCopyrightText: 2026 Scenario Inc.
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Process-wide singletons shared by panels, operators and the pump (main thread only)."""
+
 import logging
 import os
 import pathlib
@@ -24,8 +25,8 @@ class RuntimeState:
     def __init__(self):
         self.manager = None
         self.catalog = None
-        self.records = {}          # model_id -> ModelRecord (detailed)
-        self.lane_models = {}      # lane -> list[ModelRecord]
+        self.records = {}  # model_id -> ModelRecord (detailed)
+        self.lane_models = {}  # lane -> list[ModelRecord]
         self.catalog_loaded = False
         self.catalog_loading = False
         self.catalog_error = ""
@@ -33,9 +34,9 @@ class RuntimeState:
         self.account_label = ""
         self.last_message = ""
         self.message_at = 0.0
-        self.enum_cache = {}       # key -> list of (id, name, desc) tuples kept alive for EnumProperty
-        self.previews = None       # bpy.utils.previews collection, created lazily
-        self.jobs_view = []        # JobRecord list shown in the panel (active + recent)
+        self.enum_cache = {}  # key -> list of (id, name, desc) tuples kept alive for EnumProperty
+        self.previews = None  # bpy.utils.previews collection, created lazily
+        self.jobs_view = []  # JobRecord list shown in the panel (active + recent)
         self.history = []
         self.history_token = None
         self.mcp = None
@@ -45,7 +46,15 @@ class RuntimeState:
         self.composer = None
         self.composer_modal_running = False
 
-    SESSION_ATTRS = ("mcp", "mcp_token", "mcp_error", "cli_handle", "composer", "composer_modal_running", "previews")
+    SESSION_ATTRS = (
+        "mcp",
+        "mcp_token",
+        "mcp_error",
+        "cli_handle",
+        "composer",
+        "composer_modal_running",
+        "previews",
+    )
 
     def reset(self):
         """Forget catalog, jobs and history; keep process-level services (MCP server, composer, previews)."""
@@ -77,13 +86,17 @@ def paths():
 
 def credentials():
     p = prefs()
-    return config.resolve_credentials(p.api_key if p else "", p.api_secret if p else "")
+    return config.resolve_credentials(
+        p.api_key if p else "",
+        p.api_secret if p else "",
+        source=p.credential_source if p else "PREFERENCES",
+    )
 
 
 def make_client():
     creds = credentials()
     if not creds.valid:
-        raise ScenarioError(0, "Add your Scenario API key and secret in Preferences")
+        raise ScenarioError(0, "Complete the selected credential source in Scenario Preferences")
     return ScenarioClient(creds.key, creds.secret)
 
 

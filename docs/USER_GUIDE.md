@@ -17,7 +17,14 @@ The add-on also runs a small local MCP server, so an agent such as Claude Code, 
 1. Download `scenario-<version>.zip` from the [releases page](https://github.com/scenario-labs/blender-plugin/releases) (or build it with `uv run --locked --no-env-file python tools/build.py`). Keep it zipped.
 2. Drag the zip onto any Blender window, or use Edit > Preferences > Get Extensions > Install from Disk. Blender installs it into your user extensions and enables it. Updating: install the new zip the same way; Blender replaces the old version. Restart Blender after an update so the new code loads.
 3. Create an API key in Scenario: Team > API Keys, Project or Team scope, role Editor. The secret is shown once.
-4. Edit > Preferences > Add-ons > Scenario: paste the key and the secret, press Test connection. Pick an Output Folder (default `~/Downloads/Scenario`). Blender's Allow Online Access must be on (System preferences).
+4. Edit > Preferences > Add-ons > Scenario: leave Credentials set to **Saved in Blender**, paste the key and the secret, and press Test connection. Pick an Output Folder (default `~/Downloads/Scenario`). Blender's Allow Online Access must be on (System preferences).
+
+For automation, select **Credentials > Environment** to use `SCENARIO_API_KEY`
+and `SCENARIO_API_SECRET` from the environment that launched Blender. Both are
+required. Environment values never override **Saved in Blender**, and an incomplete
+pair never borrows from the other source. Secrets are masked in the preferences;
+Blender saves entered credentials with its preferences, not in an OS keychain.
+The account strip names the selected source when its key or secret is missing.
 
 ### Verify your download
 
@@ -117,9 +124,11 @@ The add-on serves the Model Context Protocol on `http://127.0.0.1:9876/mcp` with
 
 ![MCP panel](images/panel-mcp.png)
 
-- Pick a client and press its button: the setup is copied to the clipboard (Claude Code command, Cursor `mcp.json`, Claude Desktop stdio snippet, Codex command, or a curl test).
+- Pick a client and press its button: the setup is copied to the clipboard (the snippet includes this session's token): Claude Code command, Cursor `mcp.json`, Claude Desktop stdio snippet, Codex command, or a curl test.
 - **Allow connected agents to run Python** gates the `execute_python` tool. It is OFF by default; connected agents keep the other tools: scene summary, object detail, select, set frame, screenshots, quick renders, camera path (any move of the library, a description or waypoints), list models, model schema, cost estimate, generate (every lane, audio included), job status, wait, import result, capture a viewport reference, list generations.
-- Headless: `blender --background scene.blend --command scenario-mcp --port 9876 --token <token>`.
+- Native clients may omit Origin. Browser requests require a valid HTTP(S) loopback Origin (127.0.0.1, localhost or ::1); other origins receive 403 and CORS preflights are refused. The session bearer token remains required for MCP operations.
+- Python execution is refused when Scenario preferences are unavailable, as well as when the toggle is off. Screenshot and render files are created in private temporary directories and removed after encoding, including failure paths.
+- Headless: `blender --background scene.blend --command scenario_blender --port 9876 --token <token>`.
 
 ## The floating composer
 
@@ -143,15 +152,25 @@ Prices are in CU and depend on the model and its cost-marked parameters. Observe
 - **Nothing generates from Enter or a click**: with `SCENARIO_GUI_PROBE=1` in the environment (used by the automated screenshot tool) all Generate paths are disabled.
 - **The sidebar and the dialogs do not look like the composer**: they are drawn by Blender with your Blender theme; the composer is custom drawing. Their layout follows the composer (tabs, chips, header rows) but their colours are the theme's.
 - **Where are the logs**: Blender's system console (Window > Toggle System Console on Windows, the terminal on macOS/Linux), messages are prefixed `scenario`.
-
 - **None of this helps**: see [Support](https://github.com/scenario-labs/blender-plugin/blob/main/SUPPORT.md) for where to ask and what to include.
+
+## What leaves your machine
+
+With online access and credentials enabled, cost previews send your prompt and
+parameters to `https://api.cloud.scenario.com` while you edit, before Generate.
+Generating or using prompt helpers can send reference files, captures and exported
+meshes and spend credits. Catalogs and thumbnails load from Scenario; cloud history
+loads when requested. Saved credentials, prompts, job state and media remain on
+your machine. A connected local agent can read the scene and request paid work.
+See [Privacy and data handling](PRIVACY.md) for destinations, storage, clipboard use
+and the current limits of online-access and agent controls.
 
 ## Files and folders
 
 - Results: your Output Folder (`~/Downloads/Scenario` by default), `<kind>/<YYYYMMDD>/<date>_<model>_<asset id>_<n>.<ext>`.
 - Captures, Prompt Spark stills and Edit 3D exports: the extension cache (`captures/`, `exports/` under Blender's extension user directory), thumbnails of models in `thumbs/`.
-- Job registry, recent models and model cache: the extension state and cache directories; removed when the extension is uninstalled.
-- Your key: Blender's preferences file. Treat it like any credential; rotate it in Scenario if it leaks.
+- Job registry, recent models and model cache: the extension's own user directory under Blender's extensions folder; delete it yourself for a clean removal.
+- Your key: saved as plain text in Blender's `userpref.blend` preferences file. Select Credentials > Environment to use `SCENARIO_API_KEY` and `SCENARIO_API_SECRET` instead; switching sources does not erase saved values. Clear both saved fields and save preferences to remove them; rotate the key in Scenario if it leaks.
 
 ## Known limits
 

@@ -52,7 +52,7 @@ def test_reference_matches_code():
                     and re.fullmatch(r"SCENARIO_[A-Z_]+", key.value)
                 ):
                     reads.add(key.value)
-    assert documented_variables() - {"SCENARIO_BLENDER_TOKEN"} == reads
+    assert documented_variables() == reads
 
 
 def test_env_example_keys_are_documented_and_empty():

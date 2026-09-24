@@ -1,7 +1,7 @@
 {
   "version": 1,
   "index": "docs/index.md",
-  "base_revision": "b94e8603e2249c0046b88b9dc8023209830e36d3",
+  "base_revision": "d9ff9b96f53e4571921b4a8a2ddbed0ba771aca7",
   "documents": [
     {
       "path": ".claude/rules/blender-glue.md",
@@ -9,7 +9,7 @@
       "reviewed_at": "2026-09-23",
       "limits": "Canonical instructions consolidated from the existing rulebook; normative requirements do not imply runtime acceptance.",
       "sources": {
-        "AGENTS.md": "6719140cfbb457a8c99cc34853153a3e65efb8f11fe32ce995c06f27d9e17f5c"
+        "AGENTS.md": "6a9781d3c0b8b7d1b48635e4ab22fc6a4089c9f39317a49f884aac4b715b28be"
       }
     },
     {
@@ -18,7 +18,7 @@
       "reviewed_at": "2026-09-23",
       "limits": "Canonical instructions consolidated from the existing rulebook; normative requirements do not imply runtime acceptance.",
       "sources": {
-        "AGENTS.md": "6719140cfbb457a8c99cc34853153a3e65efb8f11fe32ce995c06f27d9e17f5c"
+        "AGENTS.md": "6a9781d3c0b8b7d1b48635e4ab22fc6a4089c9f39317a49f884aac4b715b28be"
       }
     },
     {
@@ -28,7 +28,7 @@
       "limits": "Canonical instructions consolidated from the existing rulebook; normative requirements do not imply runtime acceptance.",
       "sources": {
         ".codex/config.toml": "3ce4a01cd0ed404ad5ceb8d1b4c25e0e10bc6339ab1d94fd9936f8543c1b87f2",
-        "scripts/agents/validate-skills.py": "2c4af4ac32ec96e6bec65e060a88943154280000334c84dab2bf2189e2a1afa0"
+        "scripts/agents/validate-skills.py": "82822cf1ed96c67c2b5d25e9d666171b37dc071427dd84ceda096e70697c7f3f"
       }
     },
     {
@@ -40,7 +40,15 @@
         "Makefile": "c86ffba526a4882788cec66b53924504eceab7114f0b4776ff23ceee1d7a4c8b",
         "pyproject.toml": "28e3115a28f23530662dfe37a5f07328302607b6c2f8c59d8c8f20c79470d5c2",
         "tools/dev_config.py": "c3dbb5a4fb5c96a695f17cb436d15992f7b5efd11238c839d9ab44b9e9c7ac52",
-        "tools/test_blender.py": "fec317c68c24c49302b456a478e02a0a8352d29aa30c3e9e3cf173d47f0697cd"
+        "tools/test_blender.py": "fec317c68c24c49302b456a478e02a0a8352d29aa30c3e9e3cf173d47f0697cd",
+        "scenario/mcp/cli.py": "733ec02de0f03a9bfb0a9326a8f94ac32a2b6c33a5c11a09b79694cabd87c156",
+        "tests/blender/test_mcp_cli.py": "69c6b9ad670cd59f4eb2e18f91bda4deb20c487fe1539d69f0825799233adef8",
+        "scenario/core/config.py": "74a45b99fde47d741710dbf2a9d8051f2b31903f10ecae679d061340c62fb1be",
+        "scenario/prefs.py": "bfd966d4a6dab2a8505caa3e9ed58d71b71d57b29b673feb5344ad6b8ed72e92",
+        "tests/unit/test_config.py": "3d8ea8a6f0bcef70f0bb16146e794346cbbe7d2fc0f26aec1631b108cf6914f3",
+        "tests/blender/test_credentials.py": "0767fbe1917c977631dc4243bfcb05dce97d5ed0c0b2c731b8ea4bfdb07e3b45",
+        "tools/capture_gui_scene.py": "7538cb1e90510a31cdfac22e390d5d595cf2bc73628f1cc3139071b2ef855609",
+        "tests/unit/test_gui_capture.py": "beee6cba15adf7da1e7434c18dcb2b948e36f4b459af06fc98a6c850a5fea87c"
       }
     },
     {
@@ -49,9 +57,23 @@
       "reviewed_at": "2026-09-23",
       "limits": "Existing guide indexed during this intake, without a fresh claim-by-claim or live verification; consult current integration status and issue acceptance.",
       "sources": {
-        "scenario/blender/runtime.py": "63ecd2fb0fc6966897d59241e0a93fbb558e777dbfa52b28b3bf853b16787e63",
-        "scenario/blender/registry.py": "326cc50843ee65053091e35e0141ba0fab1fa64632dc214850222d6f1abd3626",
-        "scenario/blender_manifest.toml": "e36f405fb36e4531ab5c5dd7fcb15f2d9e1c56b3a15c315faeca57c4fc05aea0"
+        "scenario/blender/runtime.py": "2afa6267f835569288ae6d1947af5410b05a0bbdcd3bbad985ff30a6dcb8a000",
+        "scenario/blender/registry.py": "a34fcb0110b5c991764df22d423546d9de3c949d3183b6dad1c5ca9e05123af2",
+        "scenario/blender_manifest.toml": "7ad91531b81e632aa219d4a1f0f8e1d8b22bf8abac6139935d9953b6acf51b14"
+      }
+    },
+    {
+      "path": "SECURITY.md",
+      "coverage": "policy",
+      "reviewed_at": "2026-09-23",
+      "limits": "Private reporting and supported-version policy; scope is not a claim that runtime hardening is complete. Repository private-vulnerability reporting was verified enabled through the GitHub API; Security-tab policy appearance requires merge.",
+      "sources": {
+        "scenario/blender_manifest.toml": "e36f405fb36e4531ab5c5dd7fcb15f2d9e1c56b3a15c315faeca57c4fc05aea0",
+        "scenario/prefs.py": "24297fc14575f5e0c3a534516dc85961c28066aab0b0e00741247ed2e376d83b",
+        "scenario/mcp/server.py": "d05a27729cd0835aedd023342713cb4b31107738f711026d24ab86f4052cd354",
+        "scenario/mcp/tools_blender.py": "fce4b12492465b86691eede9cc6655220aab3087dcb2496a9600a0299abed520",
+        "scenario/blender/mcp_service.py": "63d3a6e36b0247d9529918957e4f92d08a48b704b28315017d2cf61914fb7ccf",
+        "scenario/core/config.py": "93b78f68c5da3c31e191fa3f1a08ac3fdffe8e3f1cac40a20bed4843672f28fe"
       }
     },
     {
@@ -72,9 +94,10 @@
       "reviewed_at": "2026-09-23",
       "limits": "Existing guide indexed during this intake, without a fresh claim-by-claim or live verification; consult current integration status and issue acceptance.",
       "sources": {
-        "scenario/blender/job_session.py": "bcdb33e1e2f01bb2f1a455ede78a4cdbd755af7f313d82777aaf4d9c4120ed20",
+        "scenario/blender/job_session.py": "c1d0c91a1a76977691e6690a0e369a6e9282ca430de92d1f9c300acfbe2fd79a",
         "scenario/core/jobs/origins.py": "d1282d67aacdfe2444a776cf1338667bea9ee67392ff3f473db581a0f8059977",
-        "tests/blender/test_job_session.py": "392861c4f3d89591f58c0933975de50613f4bc361b799e4777fcba8086cd2b0c"
+        "tests/blender/test_job_session.py": "9013928c41cd78b0848761c99fe9750b2bdbcd2b3a330c45fc95207da5e17bb5",
+        "tests/unit/test_shared_quotes.py": "2f824c1999c1d9ed83e1c23960bfedaf09ed921c73f87252a68389976f290133"
       }
     },
     {
@@ -83,10 +106,18 @@
       "reviewed_at": "2026-09-23",
       "limits": "Existing guide indexed during this intake, without a fresh claim-by-claim or live verification; consult current integration status and issue acceptance.",
       "sources": {
-        "scenario/core/jobs/coordinator.py": "3de95647d5bf8c229210ed8000c14cceaf5779b1386d3cb238347707a89032c6",
-        "scenario/core/jobs/workers.py": "c2f79e9a905e9b7a6df474750d16cf20b247457cfadcb1fb90d784ab9e23835b",
+        "scenario/core/jobs/coordinator.py": "c1d8208cb20f1b4401389704308e7a063f013a63919cf5a7c88f6315eb6d977b",
+        "scenario/core/jobs/workers.py": "fc584737c05c28bcb20309220ed6dc99bb40b330339b995075c1392497d3ebed",
         "tests/unit/test_job_coordinator.py": "ac8d3ac91dfee6df7fa00029d05324588bcff807cf34eaa48acaa82449fee5e0",
-        "tests/unit/test_job_cancellation.py": "0d26f5fdd7896e86c9730cf64a9dad3a23ac58caf7f04f365809cbdedd186732"
+        "tests/unit/test_job_cancellation.py": "0d26f5fdd7896e86c9730cf64a9dad3a23ac58caf7f04f365809cbdedd186732",
+        "scenario/core/jobs/results.py": "6f8735b1fe64f0607ae63c4a5cb43c443904730ede7a2466ceb6439a425d93a2",
+        "tests/unit/test_result_commands.py": "3bcba6d1b719ad3016fd5a68e0b740ff5d7eaba1924d59700f0e6d6adbec8009",
+        "tests/blender/test_result_commands.py": "bcb919c9a8dfcd3498959492b5bb49a3f1395b6923282f38182cc9b12c68089e",
+        "scenario/core/jobs/upload_sources.py": "76a578fa9dda550391e8c1f31959983b4e7b64cf4bb9a2dafca834e1b99ca9ff",
+        "tests/unit/test_upload_commands.py": "dd0cd1865c9da7b1e0c7a48e1c1e85a1b628664d7a5ce38543d299b517ec5a9c",
+        "tests/blender/test_upload_commands.py": "496927b98c0774db28bac4da626f568bc147c9fc45f07da9e99a1aba0a0be9f1",
+        "scenario/core/jobs/uploads.py": "cfbed5605683aea4daeb8267ef63b386830f1779e11987be73c06764e8d73652",
+        "tests/unit/test_shared_quotes.py": "2f824c1999c1d9ed83e1c23960bfedaf09ed921c73f87252a68389976f290133"
       }
     },
     {
@@ -95,8 +126,11 @@
       "reviewed_at": "2026-09-23",
       "limits": "Existing guide indexed during this intake, without a fresh claim-by-claim or live verification; consult current integration status and issue acceptance.",
       "sources": {
-        "scenario/core/jobs/store.py": "f20e858dd6e8ef447847e0e46f7b3ebe75fe72d13fa29e565d513e405f5c031c",
-        "tests/unit/test_job_store.py": "f6cd915d0cf710134feb31b27c26c070692044e12eed49ca4e51b9530493bb43"
+        "scenario/core/jobs/store.py": "0053c3e48ce89ad699bab664f4f5fddc6af89f7cd01c8bbcab8a323c198c01fc",
+        "tests/unit/test_job_store.py": "2bc71047d762d63d960ef249a30384ae41d508e5cf2f236e0e08c9caf6aba655",
+        "scenario/core/jobs/transfers.py": "0f02ad2823787816d3c25695f9d0749cab3fe29b26451d279c4ecd56d60a9d17",
+        "tests/unit/test_result_manifest.py": "5e0414f331a07f245d31bc11945351eaebdb1786cd9ddd7648108365468520e8",
+        "tests/blender/test_job_store.py": "9391c63dd8837345ea383e2a2fa250d9a911c1a3ddda16e07617c66854b2fc65"
       }
     },
     {
@@ -105,9 +139,9 @@
       "reviewed_at": "2026-09-23",
       "limits": "Agent source inspection of the listed files; no live service calls, native runtime rerun or human verification in this review.",
       "sources": {
-        "scenario/core/config.py": "93b78f68c5da3c31e191fa3f1a08ac3fdffe8e3f1cac40a20bed4843672f28fe",
-        "scenario/blender/runtime.py": "63ecd2fb0fc6966897d59241e0a93fbb558e777dbfa52b28b3bf853b16787e63",
-        "scenario/blender/registry.py": "326cc50843ee65053091e35e0141ba0fab1fa64632dc214850222d6f1abd3626",
+        "scenario/core/config.py": "74a45b99fde47d741710dbf2a9d8051f2b31903f10ecae679d061340c62fb1be",
+        "scenario/blender/runtime.py": "2afa6267f835569288ae6d1947af5410b05a0bbdcd3bbad985ff30a6dcb8a000",
+        "scenario/blender/registry.py": "a34fcb0110b5c991764df22d423546d9de3c949d3183b6dad1c5ca9e05123af2",
         "scenario/mcp/tools_scenario.py": "408b0f6dc72b57f90dec7be95383d588dcdaf35c5abbd3f95ab24273c5ca542e",
         "scenario/blender/prompt_tools.py": "c240d5e4d346fa69a46f33c7bc8d78755b0b00063f86f5eaf44aacf4d7bc0584",
         "scenario/blender/mesh_export.py": "09361e88cf12290d4d8559355eab17cba196ceb2650ffc67739112c6448de509",
@@ -177,8 +211,14 @@
       "reviewed_at": "2026-09-23",
       "limits": "Existing guide indexed during this intake, without a fresh claim-by-claim or live verification; consult current integration status and issue acceptance.",
       "sources": {
-        "scenario/core/jobs/transfers.py": "d8d75fd2f5285bba7eebb41341bdb9fc3fe45c9f92d6309b192e9b842756da65",
-        "tests/unit/test_result_transfers.py": "494547ee1c4a756f1cc2e3f94084eade4cab746a88431844d6f44b67e925f8ed"
+        "scenario/core/jobs/transfers.py": "0f02ad2823787816d3c25695f9d0749cab3fe29b26451d279c4ecd56d60a9d17",
+        "tests/unit/test_result_transfers.py": "494547ee1c4a756f1cc2e3f94084eade4cab746a88431844d6f44b67e925f8ed",
+        "scenario/core/jobs/store.py": "0053c3e48ce89ad699bab664f4f5fddc6af89f7cd01c8bbcab8a323c198c01fc",
+        "tests/unit/test_result_manifest.py": "5e0414f331a07f245d31bc11945351eaebdb1786cd9ddd7648108365468520e8",
+        "tests/blender/test_job_store.py": "9391c63dd8837345ea383e2a2fa250d9a911c1a3ddda16e07617c66854b2fc65",
+        "scenario/core/jobs/results.py": "6f8735b1fe64f0607ae63c4a5cb43c443904730ede7a2466ceb6439a425d93a2",
+        "tests/unit/test_result_commands.py": "3bcba6d1b719ad3016fd5a68e0b740ff5d7eaba1924d59700f0e6d6adbec8009",
+        "tests/blender/test_result_commands.py": "bcb919c9a8dfcd3498959492b5bb49a3f1395b6923282f38182cc9b12c68089e"
       }
     },
     {
@@ -189,7 +229,10 @@
       "sources": {
         "scenario/core/api/sdk_adapter.py": "a5f8a5da9ce1f482dbe1af19b43d00f211b66401781fa03d18c9fd3ef2340467",
         "tests/unit/test_scenario_sdk_contract.py": "69c3e06092104358ac2b48529feacc794a756bbe697705aeff02d6984e593362",
-        "tests/unit/test_sdk_adapter.py": "94af37a52b3fb048b95cfe4fd73f9d2d8a307dd84167a63a50c266fe6a212ae1"
+        "tests/unit/test_sdk_adapter.py": "94af37a52b3fb048b95cfe4fd73f9d2d8a307dd84167a63a50c266fe6a212ae1",
+        "scenario/core/jobs/results.py": "6f8735b1fe64f0607ae63c4a5cb43c443904730ede7a2466ceb6439a425d93a2",
+        "tests/unit/test_result_commands.py": "3bcba6d1b719ad3016fd5a68e0b740ff5d7eaba1924d59700f0e6d6adbec8009",
+        "tests/blender/test_result_commands.py": "bcb919c9a8dfcd3498959492b5bb49a3f1395b6923282f38182cc9b12c68089e"
       }
     },
     {
@@ -210,7 +253,19 @@
       "limits": "Existing guide indexed during this intake, without a fresh claim-by-claim or live verification; consult current integration status and issue acceptance.",
       "sources": {
         "scenario/core/api/sdk_adapter.py": "a5f8a5da9ce1f482dbe1af19b43d00f211b66401781fa03d18c9fd3ef2340467",
-        "tests/unit/test_sdk_uploads.py": "52a3a5d7016289264e7065c3945eec929f9d57feb61b0f7c1436b195fe3e06f6"
+        "tests/unit/test_sdk_uploads.py": "52a3a5d7016289264e7065c3945eec929f9d57feb61b0f7c1436b195fe3e06f6",
+        "scenario/core/jobs/upload_transfers.py": "eaf79e69f14dab7ff00a3a5217dd51a70aba04d36e67fb11b204131e25461259",
+        "tests/unit/test_upload_transfers.py": "0d26e96c55bb0c895220d0d0f64a4573067d9630ec0e9fc80525a8a126d77d97",
+        "tests/blender/test_upload_transfers.py": "f6847d8595f363b66b00bcbc7d5634b5212221e7b8cda49e2eefd8eebfdd0b4e",
+        "scenario/core/jobs/upload_store.py": "e53e44059fba806e5284f75327277fc7dcfceb7cd8a5f77e7a57696ce6372cf8",
+        "tests/unit/test_upload_store.py": "499172c31e93300bbe3e7b0ad870bdb9e27b2ee99163317ff1c04e0f48061a35",
+        "tests/blender/test_upload_store.py": "b5bdade91572d9d8a919fbe8dea2a2cb4587a3f53e7b48425e95af5e1cd20a41",
+        "scenario/core/jobs/store.py": "0053c3e48ce89ad699bab664f4f5fddc6af89f7cd01c8bbcab8a323c198c01fc",
+        "tests/unit/test_job_store.py": "2bc71047d762d63d960ef249a30384ae41d508e5cf2f236e0e08c9caf6aba655",
+        "scenario/core/jobs/upload_sources.py": "76a578fa9dda550391e8c1f31959983b4e7b64cf4bb9a2dafca834e1b99ca9ff",
+        "tests/unit/test_upload_commands.py": "dd0cd1865c9da7b1e0c7a48e1c1e85a1b628664d7a5ce38543d299b517ec5a9c",
+        "scenario/core/jobs/uploads.py": "cfbed5605683aea4daeb8267ef63b386830f1779e11987be73c06764e8d73652",
+        "tests/blender/test_upload_commands.py": "496927b98c0774db28bac4da626f568bc147c9fc45f07da9e99a1aba0a0be9f1"
       }
     },
     {
@@ -219,9 +274,9 @@
       "reviewed_at": "2026-09-23",
       "limits": "Existing guide indexed during this intake, without a fresh claim-by-claim or live verification; consult current integration status and issue acceptance.",
       "sources": {
-        "scenario/blender/runtime.py": "63ecd2fb0fc6966897d59241e0a93fbb558e777dbfa52b28b3bf853b16787e63",
+        "scenario/blender/runtime.py": "2afa6267f835569288ae6d1947af5410b05a0bbdcd3bbad985ff30a6dcb8a000",
         "scenario/core/api/sdk_adapter.py": "a5f8a5da9ce1f482dbe1af19b43d00f211b66401781fa03d18c9fd3ef2340467",
-        "scenario/blender_manifest.toml": "e36f405fb36e4531ab5c5dd7fcb15f2d9e1c56b3a15c315faeca57c4fc05aea0"
+        "scenario/blender_manifest.toml": "7ad91531b81e632aa219d4a1f0f8e1d8b22bf8abac6139935d9953b6acf51b14"
       }
     },
     {
@@ -232,7 +287,7 @@
       "sources": {
         "scenario/blender/composer/draw.py": "52a366ce04766edc3aef343c7b115d7e360e8c88a27688c4446be36ecc78c6e8",
         "scenario/blender/composer/modal.py": "5db6dcddc6b8ca2533fcf73f3d7782c0cd3bd47c99ca11eadf3a8c57d68ed632",
-        "scenario/blender/panels.py": "9c1001ed64038813141d42bccb1f1091058f4b4c10702949097a405e02958756"
+        "scenario/blender/panels.py": "5fbdc508c0d05c3472aa1ad489dfd366487ff39e3e32eef4fa9d79475ff64f0c"
       }
     },
     {
@@ -241,9 +296,21 @@
       "reviewed_at": "2026-09-23",
       "limits": "Existing guide indexed during this intake, without a fresh claim-by-claim or live verification; consult current integration status and issue acceptance.",
       "sources": {
-        "scenario/blender/panels.py": "9c1001ed64038813141d42bccb1f1091058f4b4c10702949097a405e02958756",
+        "scenario/blender/panels.py": "5fbdc508c0d05c3472aa1ad489dfd366487ff39e3e32eef4fa9d79475ff64f0c",
         "scenario/blender/composer/draw.py": "52a366ce04766edc3aef343c7b115d7e360e8c88a27688c4446be36ecc78c6e8",
-        "scenario/blender/registry.py": "326cc50843ee65053091e35e0141ba0fab1fa64632dc214850222d6f1abd3626"
+        "scenario/blender/registry.py": "a34fcb0110b5c991764df22d423546d9de3c949d3183b6dad1c5ca9e05123af2",
+        "scenario/mcp/tools_blender.py": "d806aab28a9ac7b675cd7370402aa6459da377bea7b251be5945aa6355760294",
+        "scenario/mcp/server.py": "e201d006e5189f32742db38c3f2b00879fbcc1b71b665436b45a0930ff696cd0",
+        "scenario/mcp/cli.py": "733ec02de0f03a9bfb0a9326a8f94ac32a2b6c33a5c11a09b79694cabd87c156",
+        "tests/blender/test_mcp_cli.py": "69c6b9ad670cd59f4eb2e18f91bda4deb20c487fe1539d69f0825799233adef8",
+        "scenario/core/config.py": "74a45b99fde47d741710dbf2a9d8051f2b31903f10ecae679d061340c62fb1be",
+        "scenario/prefs.py": "bfd966d4a6dab2a8505caa3e9ed58d71b71d57b29b673feb5344ad6b8ed72e92",
+        "tests/unit/test_config.py": "3d8ea8a6f0bcef70f0bb16146e794346cbbe7d2fc0f26aec1631b108cf6914f3",
+        "tests/blender/test_credentials.py": "0767fbe1917c977631dc4243bfcb05dce97d5ed0c0b2c731b8ea4bfdb07e3b45",
+        "scenario/blender_manifest.toml": "7ad91531b81e632aa219d4a1f0f8e1d8b22bf8abac6139935d9953b6acf51b14",
+        "tests/unit/test_manifest.py": "94944321a2c829fe61bbb80ec953060c508af5a4d709e4842145268d331c8054",
+        "tools/capture_gui_scene.py": "7538cb1e90510a31cdfac22e390d5d595cf2bc73628f1cc3139071b2ef855609",
+        "tests/unit/test_gui_capture.py": "beee6cba15adf7da1e7434c18dcb2b948e36f4b459af06fc98a6c850a5fea87c"
       }
     },
     {
@@ -264,8 +331,8 @@
       "limits": "Agent source inspection of the listed files; no live service calls, native runtime rerun or human verification in this review.",
       "sources": {
         "scenario/blender/pump.py": "f3b5718c778bb3906f4d07a18a3a87e856812b1aea4a889b533124f9812140bb",
-        "scenario/blender/mcp_service.py": "63d3a6e36b0247d9529918957e4f92d08a48b704b28315017d2cf61914fb7ccf",
-        "scenario/blender/job_session.py": "bcdb33e1e2f01bb2f1a455ede78a4cdbd755af7f313d82777aaf4d9c4120ed20",
+        "scenario/blender/mcp_service.py": "ec45907c26301d5c0c2e48fe2eab09136cd52aadb00c6be5401d23ec7d868715",
+        "scenario/blender/job_session.py": "c1d0c91a1a76977691e6690a0e369a6e9282ca430de92d1f9c300acfbe2fd79a",
         "scenario/blender/mesh_application.py": "8ec54ba9e782c0cfc0f0f46092f28e4995f5c42d1d96065f4a0dbe99d1e8ea62",
         "scenario/blender/world_application.py": "e7c4bd284dcdbb0c17417e1db8e583a2dfe31109905047f6d703ebd5a725b952",
         "scenario/core/scene/placement.py": "7f2568b5e3804b01929376dd6a2c879d2191e626368f6b1c89b3c275cc96aa5c",
@@ -279,18 +346,38 @@
       "reviewed_at": "2026-09-23",
       "limits": "Agent source inspection of the listed files; no live service calls, native runtime rerun or human verification in this review.",
       "sources": {
-        "scenario/blender/runtime.py": "63ecd2fb0fc6966897d59241e0a93fbb558e777dbfa52b28b3bf853b16787e63",
+        "scenario/blender/runtime.py": "2afa6267f835569288ae6d1947af5410b05a0bbdcd3bbad985ff30a6dcb8a000",
         "scenario/blender/generation.py": "8a3b2cc6b1992f3094e47e2ab5bd5af1f7babeb6dae86d7710ec91a1fd65895b",
         "scenario/blender/pump.py": "f3b5718c778bb3906f4d07a18a3a87e856812b1aea4a889b533124f9812140bb",
-        "scenario/blender/registry.py": "326cc50843ee65053091e35e0141ba0fab1fa64632dc214850222d6f1abd3626",
+        "scenario/blender/registry.py": "a34fcb0110b5c991764df22d423546d9de3c949d3183b6dad1c5ca9e05123af2",
         "scenario/mcp/tools_scenario.py": "408b0f6dc72b57f90dec7be95383d588dcdaf35c5abbd3f95ab24273c5ca542e",
-        "scenario/core/config.py": "93b78f68c5da3c31e191fa3f1a08ac3fdffe8e3f1cac40a20bed4843672f28fe",
+        "scenario/core/config.py": "74a45b99fde47d741710dbf2a9d8051f2b31903f10ecae679d061340c62fb1be",
         "scenario/core/api/sdk_adapter.py": "a5f8a5da9ce1f482dbe1af19b43d00f211b66401781fa03d18c9fd3ef2340467",
-        "scenario/core/jobs/coordinator.py": "3de95647d5bf8c229210ed8000c14cceaf5779b1386d3cb238347707a89032c6",
-        "scenario/core/jobs/workers.py": "c2f79e9a905e9b7a6df474750d16cf20b247457cfadcb1fb90d784ab9e23835b",
-        "scenario/blender/job_session.py": "bcdb33e1e2f01bb2f1a455ede78a4cdbd755af7f313d82777aaf4d9c4120ed20",
-        "scenario/core/jobs/transfers.py": "d8d75fd2f5285bba7eebb41341bdb9fc3fe45c9f92d6309b192e9b842756da65",
-        "scenario/core/schema/forms.py": "5fae21a416ee5e72f444bc2b6d3502b5ace4b728f7790766161d8e7100b64af5"
+        "scenario/core/jobs/coordinator.py": "c1d8208cb20f1b4401389704308e7a063f013a63919cf5a7c88f6315eb6d977b",
+        "scenario/core/jobs/workers.py": "fc584737c05c28bcb20309220ed6dc99bb40b330339b995075c1392497d3ebed",
+        "scenario/blender/job_session.py": "c1d0c91a1a76977691e6690a0e369a6e9282ca430de92d1f9c300acfbe2fd79a",
+        "scenario/core/jobs/transfers.py": "0f02ad2823787816d3c25695f9d0749cab3fe29b26451d279c4ecd56d60a9d17",
+        "scenario/core/schema/forms.py": "5fae21a416ee5e72f444bc2b6d3502b5ace4b728f7790766161d8e7100b64af5",
+        "scenario/prefs.py": "bfd966d4a6dab2a8505caa3e9ed58d71b71d57b29b673feb5344ad6b8ed72e92",
+        "tests/unit/test_config.py": "3d8ea8a6f0bcef70f0bb16146e794346cbbe7d2fc0f26aec1631b108cf6914f3",
+        "tests/blender/test_credentials.py": "0767fbe1917c977631dc4243bfcb05dce97d5ed0c0b2c731b8ea4bfdb07e3b45",
+        "scenario/core/jobs/store.py": "0053c3e48ce89ad699bab664f4f5fddc6af89f7cd01c8bbcab8a323c198c01fc",
+        "tests/unit/test_result_manifest.py": "5e0414f331a07f245d31bc11945351eaebdb1786cd9ddd7648108365468520e8",
+        "tests/blender/test_job_store.py": "9391c63dd8837345ea383e2a2fa250d9a911c1a3ddda16e07617c66854b2fc65",
+        "scenario/core/jobs/results.py": "6f8735b1fe64f0607ae63c4a5cb43c443904730ede7a2466ceb6439a425d93a2",
+        "tests/unit/test_result_commands.py": "3bcba6d1b719ad3016fd5a68e0b740ff5d7eaba1924d59700f0e6d6adbec8009",
+        "tests/blender/test_result_commands.py": "bcb919c9a8dfcd3498959492b5bb49a3f1395b6923282f38182cc9b12c68089e",
+        "scenario/core/jobs/upload_transfers.py": "eaf79e69f14dab7ff00a3a5217dd51a70aba04d36e67fb11b204131e25461259",
+        "tests/unit/test_upload_transfers.py": "0d26e96c55bb0c895220d0d0f64a4573067d9630ec0e9fc80525a8a126d77d97",
+        "tests/blender/test_upload_transfers.py": "f6847d8595f363b66b00bcbc7d5634b5212221e7b8cda49e2eefd8eebfdd0b4e",
+        "scenario/core/jobs/upload_store.py": "e53e44059fba806e5284f75327277fc7dcfceb7cd8a5f77e7a57696ce6372cf8",
+        "tests/unit/test_upload_store.py": "499172c31e93300bbe3e7b0ad870bdb9e27b2ee99163317ff1c04e0f48061a35",
+        "tests/blender/test_upload_store.py": "b5bdade91572d9d8a919fbe8dea2a2cb4587a3f53e7b48425e95af5e1cd20a41",
+        "scenario/core/jobs/upload_sources.py": "76a578fa9dda550391e8c1f31959983b4e7b64cf4bb9a2dafca834e1b99ca9ff",
+        "tests/unit/test_upload_commands.py": "dd0cd1865c9da7b1e0c7a48e1c1e85a1b628664d7a5ce38543d299b517ec5a9c",
+        "tests/blender/test_upload_commands.py": "496927b98c0774db28bac4da626f568bc147c9fc45f07da9e99a1aba0a0be9f1",
+        "scenario/core/jobs/uploads.py": "cfbed5605683aea4daeb8267ef63b386830f1779e11987be73c06764e8d73652",
+        "tests/unit/test_shared_quotes.py": "2f824c1999c1d9ed83e1c23960bfedaf09ed921c73f87252a68389976f290133"
       }
     },
     {
@@ -299,9 +386,12 @@
       "reviewed_at": "2026-09-23",
       "limits": "Canonical instructions consolidated from the existing rulebook; normative requirements do not imply runtime acceptance.",
       "sources": {
-        "scripts/agents/validate-skills.py": "2c4af4ac32ec96e6bec65e060a88943154280000334c84dab2bf2189e2a1afa0",
+        "scripts/agents/validate-skills.py": "82822cf1ed96c67c2b5d25e9d666171b37dc071427dd84ceda096e70697c7f3f",
         ".codex/config.toml": "3ce4a01cd0ed404ad5ceb8d1b4c25e0e10bc6339ab1d94fd9936f8543c1b87f2",
-        ".github/workflows/agent-skills.yml": "9887630341a228a61394945c72415f492cff88127b84765d88b892efc5ea3890"
+        ".github/workflows/agent-skills.yml": "9887630341a228a61394945c72415f492cff88127b84765d88b892efc5ea3890",
+        "scripts/agents/test_validate_skills.py": "79b2a06ed10947a46e9256a6c517910353aeef5e0f1bee5388af8aab0ad885d1",
+        ".agents/skills/blender-download-artifacts/SKILL.md": "b0e4af736cfecee0f1d68fc64d5df71c903a1f57daf7b49ef3b1ce4a36e8aa19",
+        ".agents/skills/blender-download-artifacts/agents/openai.yaml": "262db51275889505f44ce9f2b7470be44f53fdd6da5d1a315d59065589d0c212"
       }
     },
     {
@@ -325,7 +415,9 @@
         "Makefile": "c86ffba526a4882788cec66b53924504eceab7114f0b4776ff23ceee1d7a4c8b",
         "pyproject.toml": "28e3115a28f23530662dfe37a5f07328302607b6c2f8c59d8c8f20c79470d5c2",
         "tools/test_blender.py": "fec317c68c24c49302b456a478e02a0a8352d29aa30c3e9e3cf173d47f0697cd",
-        "tools/blender_env.py": "2943b2aaf3bf1de923d078f75635fef439119deb1b5d66da952df878e6a8d428"
+        "tools/blender_env.py": "2943b2aaf3bf1de923d078f75635fef439119deb1b5d66da952df878e6a8d428",
+        "scenario/mcp/cli.py": "733ec02de0f03a9bfb0a9326a8f94ac32a2b6c33a5c11a09b79694cabd87c156",
+        "tests/blender/test_mcp_cli.py": "69c6b9ad670cd59f4eb2e18f91bda4deb20c487fe1539d69f0825799233adef8"
       }
     },
     {
@@ -334,7 +426,7 @@
       "reviewed_at": "2026-09-23",
       "limits": "Historical context only; examples and recorded service observations are not current instructions or live verification.",
       "sources": {
-        "AGENTS.md": "6719140cfbb457a8c99cc34853153a3e65efb8f11fe32ce995c06f27d9e17f5c"
+        "AGENTS.md": "6a9781d3c0b8b7d1b48635e4ab22fc6a4089c9f39317a49f884aac4b715b28be"
       }
     },
     {
@@ -343,7 +435,7 @@
       "reviewed_at": "2026-09-23",
       "limits": "Historical context only; examples and recorded service observations are not current instructions or live verification.",
       "sources": {
-        "AGENTS.md": "6719140cfbb457a8c99cc34853153a3e65efb8f11fe32ce995c06f27d9e17f5c"
+        "AGENTS.md": "6a9781d3c0b8b7d1b48635e4ab22fc6a4089c9f39317a49f884aac4b715b28be"
       }
     },
     {
@@ -352,7 +444,7 @@
       "reviewed_at": "2026-09-23",
       "limits": "Historical context only; examples and recorded service observations are not current instructions or live verification.",
       "sources": {
-        "AGENTS.md": "6719140cfbb457a8c99cc34853153a3e65efb8f11fe32ce995c06f27d9e17f5c"
+        "AGENTS.md": "6a9781d3c0b8b7d1b48635e4ab22fc6a4089c9f39317a49f884aac4b715b28be"
       }
     },
     {
@@ -361,7 +453,7 @@
       "reviewed_at": "2026-09-23",
       "limits": "Historical context only; examples and recorded service observations are not current instructions or live verification.",
       "sources": {
-        "AGENTS.md": "6719140cfbb457a8c99cc34853153a3e65efb8f11fe32ce995c06f27d9e17f5c"
+        "AGENTS.md": "6a9781d3c0b8b7d1b48635e4ab22fc6a4089c9f39317a49f884aac4b715b28be"
       }
     },
     {
@@ -370,7 +462,7 @@
       "reviewed_at": "2026-09-23",
       "limits": "Historical context only; examples and recorded service observations are not current instructions or live verification.",
       "sources": {
-        "AGENTS.md": "6719140cfbb457a8c99cc34853153a3e65efb8f11fe32ce995c06f27d9e17f5c"
+        "AGENTS.md": "6a9781d3c0b8b7d1b48635e4ab22fc6a4089c9f39317a49f884aac4b715b28be"
       }
     },
     {
@@ -379,7 +471,7 @@
       "reviewed_at": "2026-09-23",
       "limits": "Historical context only; examples and recorded service observations are not current instructions or live verification.",
       "sources": {
-        "AGENTS.md": "6719140cfbb457a8c99cc34853153a3e65efb8f11fe32ce995c06f27d9e17f5c"
+        "AGENTS.md": "6a9781d3c0b8b7d1b48635e4ab22fc6a4089c9f39317a49f884aac4b715b28be"
       }
     },
     {
@@ -388,7 +480,7 @@
       "reviewed_at": "2026-09-23",
       "limits": "Historical context only; examples and recorded service observations are not current instructions or live verification.",
       "sources": {
-        "AGENTS.md": "6719140cfbb457a8c99cc34853153a3e65efb8f11fe32ce995c06f27d9e17f5c"
+        "AGENTS.md": "6a9781d3c0b8b7d1b48635e4ab22fc6a4089c9f39317a49f884aac4b715b28be"
       }
     },
     {
@@ -406,9 +498,9 @@
       "reviewed_at": "2026-09-23",
       "limits": "Agent source inspection of the listed files; no live service calls, native runtime rerun or human verification in this review.",
       "sources": {
-        "scenario/core/config.py": "93b78f68c5da3c31e191fa3f1a08ac3fdffe8e3f1cac40a20bed4843672f28fe",
-        "scenario/blender/runtime.py": "63ecd2fb0fc6966897d59241e0a93fbb558e777dbfa52b28b3bf853b16787e63",
-        "scenario/blender/registry.py": "326cc50843ee65053091e35e0141ba0fab1fa64632dc214850222d6f1abd3626",
+        "scenario/core/config.py": "74a45b99fde47d741710dbf2a9d8051f2b31903f10ecae679d061340c62fb1be",
+        "scenario/blender/runtime.py": "2afa6267f835569288ae6d1947af5410b05a0bbdcd3bbad985ff30a6dcb8a000",
+        "scenario/blender/registry.py": "a34fcb0110b5c991764df22d423546d9de3c949d3183b6dad1c5ca9e05123af2",
         "scenario/mcp/tools_scenario.py": "408b0f6dc72b57f90dec7be95383d588dcdaf35c5abbd3f95ab24273c5ca542e",
         "scenario/blender/prompt_tools.py": "c240d5e4d346fa69a46f33c7bc8d78755b0b00063f86f5eaf44aacf4d7bc0584",
         "scenario/blender/mesh_export.py": "09361e88cf12290d4d8559355eab17cba196ceb2650ffc67739112c6448de509",
@@ -438,6 +530,42 @@
         "tools/check_knowledge.py": "9a000a610ece0164888d9ba2f603fb5fd5a851c41409e87917f7caf906496454",
         "tests/unit/test_knowledge.py": "03422fe1c97d3204d0c5ac89390717961888014b57d52de2981c88678388bcce",
         ".github/workflows/knowledge.yml": "8606852814ef8ff2588a7f7f0311e032fb6e34d64ec56ef080ed2470bb285160"
+      }
+    },
+    {
+      "path": "docs/maintenance/release-plan.md",
+      "coverage": "policy",
+      "reviewed_at": "2026-09-23",
+      "limits": "Current maintainer release direction and acceptance plan; no completed runtime or release acceptance is implied.",
+      "sources": {
+        "AGENTS.md": "6a9781d3c0b8b7d1b48635e4ab22fc6a4089c9f39317a49f884aac4b715b28be",
+        "scenario/blender/runtime.py": "2afa6267f835569288ae6d1947af5410b05a0bbdcd3bbad985ff30a6dcb8a000",
+        ".github/workflows/release-please.yml": "8f879d0d9aa9e63d67a18cade277dd7ef081024a9975f983e3c547e3412d659f"
+      }
+    },
+    {
+      "path": "docs/PRIVACY.md",
+      "coverage": "source-reviewed",
+      "reviewed_at": "2026-09-23",
+      "limits": "Discloses the active prototype and explicit credential source in this checkout, including known online-access and MCP quote-approval gaps. Separate replacement components are not active-runtime acceptance. No live service call or legal-policy audit; native synthetic preference-storage tests verify local persistence.",
+      "sources": {
+        "scenario/prefs.py": "bfd966d4a6dab2a8505caa3e9ed58d71b71d57b29b673feb5344ad6b8ed72e92",
+        "scenario/core/config.py": "74a45b99fde47d741710dbf2a9d8051f2b31903f10ecae679d061340c62fb1be",
+        "scenario/core/api/client.py": "4473ecf5dbd7522efe358b99bafda0fd4fdd01c26a678e81fc82acd97bf9632d",
+        "scenario/core/api/assets.py": "e29354c81f994d4e77b61be45b218d00df7a7372ff20ad0fd64f2e86992ab2e2",
+        "scenario/core/jobs/records.py": "afe8476e1232d525de1039a43bc68e8c28c1680fee8fadcacde12285e4c67125",
+        "scenario/blender/runtime.py": "2afa6267f835569288ae6d1947af5410b05a0bbdcd3bbad985ff30a6dcb8a000",
+        "scenario/blender/generation.py": "8a3b2cc6b1992f3094e47e2ab5bd5af1f7babeb6dae86d7710ec91a1fd65895b",
+        "scenario/blender/pump.py": "f3b5718c778bb3906f4d07a18a3a87e856812b1aea4a889b533124f9812140bb",
+        "scenario/blender/model_picker.py": "d5e9a5ddd15899aac0d0e35b03754687430bc80e3e85a77ffb0cfbe2620a2fb0",
+        "scenario/blender/registry.py": "a34fcb0110b5c991764df22d423546d9de3c949d3183b6dad1c5ca9e05123af2",
+        "scenario/blender/operators.py": "0cb4bb2c0566a7a30462ebaf158a8a954dcc9a14b305dc4a13e4cbc4655c6473",
+        "scenario/blender/mcp_service.py": "ec45907c26301d5c0c2e48fe2eab09136cd52aadb00c6be5401d23ec7d868715",
+        "scenario/mcp/server.py": "e201d006e5189f32742db38c3f2b00879fbcc1b71b665436b45a0930ff696cd0",
+        "scenario/mcp/tools_scenario.py": "408b0f6dc72b57f90dec7be95383d588dcdaf35c5abbd3f95ab24273c5ca542e",
+        "scenario/blender/composer/modal.py": "5db6dcddc6b8ca2533fcf73f3d7782c0cd3bd47c99ca11eadf3a8c57d68ed632",
+        "tests/unit/test_privacy_docs.py": "d9f3ee2f403400da1758381f4ec0d3a643d83d189190f6c3201a5b3c60328526",
+        "tests/blender/test_credentials.py": "0767fbe1917c977631dc4243bfcb05dce97d5ed0c0b2c731b8ea4bfdb07e3b45"
       }
     }
   ]

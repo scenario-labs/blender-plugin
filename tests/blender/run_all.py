@@ -21,6 +21,11 @@ sys.path.insert(0, str(HERE))
 from blender_env import inspect_zip, sha256, verify_installed  # noqa: E402
 
 BASELINE = (
+    "test_upload_transfers",
+    "test_upload_store",
+    "test_credentials",
+    "test_result_commands",
+    "test_upload_commands",
     "test_register",
     "test_generation",
     "test_apply_image",
@@ -28,6 +33,8 @@ BASELINE = (
     "test_apply_3d",
     "test_mesh_application",
     "test_mcp_server",
+    "test_mcp_security",
+    "test_mcp_cli",
     "test_installed_contract",
     "test_helpers",
     "test_history",

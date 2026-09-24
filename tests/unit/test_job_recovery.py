@@ -16,9 +16,11 @@ from scenario.core.jobs.store import (
     JobScope,
     JobState,
     JobStore,
+    ResultAsset,
     StoreConflict,
     StoreError,
 )
+from scenario.core.jobs.transfers import DownloadedResult
 
 SCOPE = JobScope("https://service.example.invalid/v1", "account", "project")
 INTENT = JobIntent(
@@ -174,6 +176,19 @@ def test_restart_plan_has_no_network_or_state_changes(setup, states, action):
     _, store, calls = setup()
     record = store.create(INTENT)
     for state in states:
+        if state == JobState.DOWNLOADING and not record.results:
+            record = store.set_results(
+                record.intent.request_id,
+                (ResultAsset("asset", "result.png", "image/png"),),
+                expected_revision=record.revision,
+            )
+        if state == JobState.READY:
+            record = store.record_download(
+                record.intent.request_id,
+                "asset",
+                DownloadedResult("result.png", 1, "a" * 64),
+                expected_revision=record.revision,
+            )
         record = advance(store, record, state)
     reopened, other_store, other_calls = setup()
     plan = reopened.recovery_plan()

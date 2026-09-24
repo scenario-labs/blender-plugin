@@ -8,6 +8,7 @@ import math
 import os
 import re
 import ssl
+import stat
 import tempfile
 import time
 from contextlib import ExitStack
@@ -105,6 +106,13 @@ class DownloadedResult:
     size: int
     sha256: str
 
+    def __post_init__(self):
+        validate_result_name(self.name)
+        if type(self.size) is not int or not 0 <= self.size <= 2**63 - 1:
+            raise TransferError("Invalid downloaded result size")
+        if not isinstance(self.sha256, str) or not re.fullmatch(r"[a-f0-9]{64}", self.sha256):
+            raise TransferError("Invalid downloaded result digest")
+
 
 def _root(root):
     path = Path(root)
@@ -120,7 +128,7 @@ def _root(root):
     return path
 
 
-def _name(name):
+def validate_result_name(name):
     # Portable basename only, including Windows reserved-name protection.
     if (
         not isinstance(name, str)
@@ -164,6 +172,10 @@ class ResultDownloader:
         self._policy = policy
         self._online_access = online_access
 
+    def verify(self, root, receipt):
+        """Verify local bytes with the same size bound as this transfer policy."""
+        return verify_download(root, receipt, max_bytes=self._policy.max_bytes)
+
     def download(self, url, *, root, name, expected_size=None, expected_sha256=None):
         """Publish complete verified bytes atomically without replacing a result.
 
@@ -193,7 +205,7 @@ class ResultDownloader:
         connection = None
         try:
             root = _root(root)
-            destination = root / _name(name)
+            destination = root / validate_result_name(name)
             if destination.exists() or destination.is_symlink():
                 raise TransferError("Result filename already exists")
             if not self._online_access():
@@ -283,3 +295,65 @@ class ResultDownloader:
         finally:
             if connection is not None:
                 _cleanup(connection.close)
+
+
+def verify_download(root, receipt, *, max_bytes=256 * 1024 * 1024):
+    """Rehash a private local file before explicit recovery/application.
+
+    No network, repair, deletion or scene mutation. The caller continues owning
+    the private directory and must prevent file replacement through application.
+    A receipt proves local consistency, not authenticity of provider content.
+    """
+    if not isinstance(receipt, DownloadedResult):
+        raise TransferError("A verified download receipt is required")
+    if type(max_bytes) is not int or max_bytes < 1 or receipt.size > max_bytes:
+        raise TransferError("Result verification exceeds the byte limit")
+    try:
+        path = _root(root) / validate_result_name(receipt.name)
+        if not stat.S_ISREG(path.lstat().st_mode):
+            raise TransferError("Result must be a regular local file")
+        flags = (
+            os.O_RDONLY
+            | getattr(os, "O_NOFOLLOW", 0)
+            | getattr(os, "O_NONBLOCK", 0)
+            | getattr(os, "O_BINARY", 0)
+        )
+        descriptor = os.open(path, flags)
+        with os.fdopen(descriptor, "rb") as source:
+            before = os.fstat(source.fileno())
+            if not stat.S_ISREG(before.st_mode) or before.st_size != receipt.size:
+                raise TransferError("Result size does not match its receipt")
+            digest, size = hashlib.sha256(), 0
+            while True:
+                chunk = source.read(min(65536, receipt.size - size + 1))
+                if not chunk:
+                    break
+                size += len(chunk)
+                if size > receipt.size:
+                    raise TransferError("Result changed during verification")
+                digest.update(chunk)
+            after = os.fstat(source.fileno())
+            current = path.lstat()
+
+            def identity(value):
+                return (
+                    value.st_dev,
+                    value.st_ino,
+                    value.st_size,
+                    value.st_mtime_ns,
+                    value.st_ctime_ns,
+                    value.st_mode,
+                )
+
+            if (
+                size != receipt.size
+                or digest.hexdigest() != receipt.sha256
+                or identity(before) != identity(after)
+                or identity(after) != identity(current)
+            ):
+                raise TransferError("Result does not match its receipt")
+        return path
+    except TransferError:
+        raise
+    except (OSError, ValueError, RuntimeError):
+        raise TransferError("Local result verification failed") from None

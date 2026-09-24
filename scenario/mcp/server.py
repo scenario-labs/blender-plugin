@@ -2,17 +2,52 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Local MCP server over Streamable HTTP. The HTTP thread never touches bpy: tool handlers run on the
 main thread through process_pending(), called by the pump (GUI) or serve_blocking() (headless)."""
+
+import hmac
 import http.server
 import json
 import logging
 import queue
 import threading
 import time
+from urllib.parse import urlsplit
 
 from . import protocol
 
 log = logging.getLogger("scenario.mcp")
 MAX_BODY = 10 * 1024 * 1024
+LOOPBACK_HOSTS = frozenset({"127.0.0.1", "localhost", "::1"})
+
+
+def origin_allowed(origin):
+    """Native clients omit Origin; browser origins must be HTTP(S) loopback."""
+    if origin is None:
+        return True
+    if not isinstance(origin, str) or not origin or any(c.isspace() for c in origin):
+        return False
+    try:
+        parsed = urlsplit(origin)
+        _ = parsed.port  # Validate malformed and out-of-range ports too.
+        return (
+            parsed.scheme in {"http", "https"}
+            and parsed.hostname in LOOPBACK_HOSTS
+            and parsed.username is None
+            and parsed.password is None
+            and not parsed.path
+            and not parsed.query
+            and not parsed.fragment
+        )
+    except ValueError:
+        return False
+
+
+def token_matches(header, token):
+    """Compare only explicit nonempty bearer credentials without timing leaks."""
+    if not isinstance(header, str) or not isinstance(token, str) or not token:
+        return False
+    if not header.startswith("Bearer "):
+        return False
+    return hmac.compare_digest(header[7:].strip().encode("utf-8"), token.encode("utf-8"))
 
 
 class _Pending:
@@ -26,6 +61,8 @@ class _Pending:
 
 class McpServer:
     def __init__(self, host, port, token, registry, server_info, timeout=120.0, blender_version=""):
+        if not isinstance(token, str) or not token.strip():
+            raise ValueError("A nonempty local MCP bearer token is required")
         self.host, self.port, self.token = host, int(port), token
         self.registry, self.server_info, self.timeout = registry, server_info, timeout
         self.blender_version = blender_version
@@ -55,7 +92,12 @@ class McpServer:
                 last_error = err
         if self._httpd is None:
             raise OSError(f"no free port from {self.port}: {last_error}")
-        self._thread = threading.Thread(target=self._httpd.serve_forever, kwargs={"poll_interval": 0.25}, daemon=True, name="scenario-mcp-http")
+        self._thread = threading.Thread(
+            target=self._httpd.serve_forever,
+            kwargs={"poll_interval": 0.25},
+            daemon=True,
+            name="scenario-mcp-http",
+        )
         self._thread.start()
         log.info("MCP server listening on %s", self.url)
         return self.host, self.port
@@ -71,7 +113,9 @@ class McpServer:
         pending = _Pending(handler, arguments)
         self._queue.put(pending)
         if not pending.event.wait(self.timeout):
-            raise protocol.ToolTimeout(f"no response from Blender's main thread within {self.timeout:g} s")
+            raise protocol.ToolTimeout(
+                f"no response from Blender's main thread within {self.timeout:g} s"
+            )
         if pending.error is not None:
             raise pending.error
         return pending.result
@@ -98,7 +142,9 @@ class McpServer:
                 time.sleep(interval)
 
     def handle(self, message):
-        response = protocol.handle_message(message, self.registry, self.server_info, executor=self.executor)
+        response = protocol.handle_message(
+            message, self.registry, self.server_info, executor=self.executor
+        )
         if isinstance(message, dict) and message.get("method") == "tools/call":
             self.calls_served += 1
         return response
@@ -123,20 +169,43 @@ def _make_handler(server):
                 self.wfile.write(raw)
 
         def _authorized(self):
-            header = self.headers.get("Authorization", "")
-            return header.startswith("Bearer ") and header[7:].strip() == server.token
+            headers = self.headers.get_all("Authorization", [])
+            return len(headers) == 1 and token_matches(headers[0], server.token)
+
+        def _origin_ok(self):
+            origins = self.headers.get_all("Origin", [])
+            if len(origins) > 1 or not origin_allowed(origins[0] if origins else None):
+                self.close_connection = True
+                self._send(403, {"error": "forbidden origin"})
+                return False
+            return True
+
+        def do_OPTIONS(self):
+            self.close_connection = True
+            self._send(403, {"error": "forbidden origin"})
 
         def do_GET(self):
+            if not self._origin_ok():
+                return
             if self.path.rstrip("/") == "/health":
-                return self._send(200, {"ok": True, "blender": server.blender_version, "server": server.server_info})
+                return self._send(
+                    200,
+                    {"ok": True, "blender": server.blender_version, "server": server.server_info},
+                )
             if not self._authorized():
                 return self._send(401, {"error": "unauthorized"}, {"WWW-Authenticate": "Bearer"})
-            self._send(405, {"error": "SSE streams are not offered; use POST"}, {"Allow": "POST, DELETE"})
+            self._send(
+                405, {"error": "SSE streams are not offered; use POST"}, {"Allow": "POST, DELETE"}
+            )
 
         def do_DELETE(self):
+            if not self._origin_ok():
+                return
             self._send(200 if self._authorized() else 401, {})
 
         def do_POST(self):
+            if not self._origin_ok():
+                return
             if self.path.rstrip("/") != "/mcp":
                 return self._send(404, {"error": "not found"})
             if not self._authorized():

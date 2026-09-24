@@ -51,6 +51,63 @@ class JobStoreTests(unittest.TestCase):
             self.assertIsNone(other.get(intent.request_id))
             self.assertEqual(other.records(), ())
 
+    def test_installed_result_manifest_and_verified_file_recover_after_reopen(self):
+        import hashlib
+
+        module = submodule("core.jobs.store")
+        transfers = submodule("core.jobs.transfers")
+        scope = module.JobScope("https://service.example.invalid/v1", "fixture-account")
+        intent = module.JobIntent(
+            "result-request",
+            scope,
+            module.JobOrigin("file", "scene", "revision"),
+            "model",
+            "model",
+            "a" * 64,
+            "b" * 64,
+            "1.0",
+        )
+        with tempfile.TemporaryDirectory(dir=bpy.utils.resource_path("USER")) as directory:
+            root = Path(directory).resolve()
+            store = module.JobStore(root / "jobs.sqlite3", scope)
+            record = store.create(intent)
+            for state in (
+                module.JobState.SUBMITTING,
+                module.JobState.REMOTE,
+                module.JobState.SUCCEEDED,
+            ):
+                record = store.transition(
+                    "result-request",
+                    expected_revision=record.revision,
+                    state=state,
+                    remote_job_id="remote" if state == module.JobState.REMOTE else None,
+                )
+            content = b"offline result receipt"
+            digest = hashlib.sha256(content).hexdigest()
+            asset = module.ResultAsset("asset", "result.png", "image/png", len(content), digest)
+            record = store.set_results(
+                "result-request", (asset,), expected_revision=record.revision
+            )
+            record = store.transition(
+                "result-request",
+                expected_revision=record.revision,
+                state=module.JobState.DOWNLOADING,
+            )
+            (root / asset.name).write_bytes(content)
+            receipt = transfers.DownloadedResult(asset.name, len(content), digest)
+            record = store.record_download(
+                "result-request", "asset", receipt, expected_revision=record.revision
+            )
+            reopened = module.JobStore(root / "jobs.sqlite3", scope)
+            self.assertEqual(reopened.get("result-request"), record)
+            self.assertEqual(
+                transfers.verify_download(root, record.results[0].receipt), root / asset.name
+            )
+            (root / asset.name).write_bytes(b"corrupt")
+            with self.assertRaises(transfers.TransferError):
+                transfers.verify_download(root, record.results[0].receipt)
+            self.assertEqual(reopened.get("result-request"), record)
+
     def test_installed_coordinator_persists_before_sdk_dispatch(self):
         import httpx
 

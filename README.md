@@ -111,3 +111,5 @@ Report vulnerabilities privately, see [SECURITY.md](SECURITY.md). Never paste AP
 ## Licence and provenance
 
 GPL-3.0-or-later (see `LICENSE`), the licence Blender requires for add-ons that use `bpy`. The extension zip carries a copy of the licence text (`scenario/LICENSE`, identical to the root `LICENSE`). Pinned SDK dependencies and their notices are described in [`docs/SDK_BUNDLE.md`](docs/SDK_BUNDLE.md). The MCP bridge follows the Blender Lab `blender_mcp` protocol shape, rewritten.
+
+The GPL grants no trademark rights: "Scenario" and the Scenario logo belong to Scenario Inc., and Blender is a registered trademark of the Blender Foundation; this extension is not affiliated with or endorsed by the Blender Foundation. See [TRADEMARKS.md](TRADEMARKS.md).

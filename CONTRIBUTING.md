@@ -19,6 +19,13 @@ and limitations; human review can remain pending when an agent opens the PR.
 Release automation owns version fields and changelog updates. See the
 [release procedure](docs/RELEASING.md) for current publication behavior.
 
+## Naming and trademarks
+
+The manifest `name` stays `Scenario` and the `id` stays `scenario`; do not add the
+Blender logo as extension branding in icons, docs or listings (see
+[TRADEMARKS.md](TRADEMARKS.md)). Forks that ship a modified build must pick their
+own extension id and name, unless they have written permission from Scenario Inc.
+
 ## Environment variables
 
 The extension reads its runtime API key and secret from the process environment;

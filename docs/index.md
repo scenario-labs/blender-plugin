@@ -28,6 +28,7 @@ For questions, bugs or account help, see [Support](../SUPPORT.md).
 ## Development and contributions
 
 - [Private vulnerability reporting and security scope](../SECURITY.md)
+- [Trademarks and official builds](../TRADEMARKS.md)
 - [Contributor setup and environment](../CONTRIBUTING.md)
 - [Canonical agent instructions](../AGENTS.md)
 - [Python style and linting](PYTHON_STYLE.md)

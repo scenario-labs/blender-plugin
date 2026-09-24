@@ -1,7 +1,7 @@
 {
   "version": 1,
   "index": "docs/index.md",
-  "base_revision": "81b3a56f3216d8fc04434c955243302b40c76462",
+  "base_revision": "7f395b874b198cddd35c722468ddd8ef5fdeb82e",
   "documents": [
     {
       "path": ".claude/rules/blender-glue.md",
@@ -58,7 +58,8 @@
         "tools/build_docs_html.py": "40e8c099acc77be8b3d57edd31f1e2a0ade323d9932e1c822aee98320c01f4a2",
         "docs/handbook-template.html": "f2a14d1356fa1f9f2c28edf251c6c8372d2302b46131215db0b9095e3913061c",
         "tests/unit/test_docs_html.py": "4f13fa6738f636c0034a5eb07c773961efd4396dcf806862695612f20f5762da",
-        "tests/unit/test_fetch_blender_macos.py": "3b0658d06b571b336b42379acc7b47de3eab3590b5f4c65754cf2435601a6568"
+        "tests/unit/test_fetch_blender_macos.py": "3b0658d06b571b336b42379acc7b47de3eab3590b5f4c65754cf2435601a6568",
+        "TRADEMARKS.md": "b2b788ae8d4e646f69bdd8597e272e0aa8a4de98b54d944bc1d7f0f61b466c7d"
       }
     },
     {
@@ -70,10 +71,11 @@
         "scenario/blender/runtime.py": "2afa6267f835569288ae6d1947af5410b05a0bbdcd3bbad985ff30a6dcb8a000",
         "scenario/blender/registry.py": "a34fcb0110b5c991764df22d423546d9de3c949d3183b6dad1c5ca9e05123af2",
         "scenario/blender_manifest.toml": "b942bfc79b1ebecab7ae8f2ea16bac4a182d6a13d81dac3a23391dc2ffd16e0f",
-        "CONTRIBUTING.md": "7e6d53652d198c2a83a1d383d4623899f409e502406dfc27b2a5f6681ae4822b",
+        "CONTRIBUTING.md": "1e80abd96a2c2b28185255829ba835c30dfd9e006728a17eeb6c9a21d9095f76",
         "docs/MCP.md": "fb6f2c0a82536d3d1af3a9a7787df2a67b7ebe7fb5eb66f7462d737c48f71f64",
         "tools/build_docs_html.py": "40e8c099acc77be8b3d57edd31f1e2a0ade323d9932e1c822aee98320c01f4a2",
-        "docs/handbook-template.html": "f2a14d1356fa1f9f2c28edf251c6c8372d2302b46131215db0b9095e3913061c"
+        "docs/handbook-template.html": "f2a14d1356fa1f9f2c28edf251c6c8372d2302b46131215db0b9095e3913061c",
+        "TRADEMARKS.md": "b2b788ae8d4e646f69bdd8597e272e0aa8a4de98b54d944bc1d7f0f61b466c7d"
       }
     },
     {
@@ -378,7 +380,8 @@
         "tools/build_docs_html.py": "40e8c099acc77be8b3d57edd31f1e2a0ade323d9932e1c822aee98320c01f4a2",
         "docs/handbook-template.html": "f2a14d1356fa1f9f2c28edf251c6c8372d2302b46131215db0b9095e3913061c",
         "tests/unit/test_docs_html.py": "4f13fa6738f636c0034a5eb07c773961efd4396dcf806862695612f20f5762da",
-        "tests/unit/test_privacy_docs.py": "0f9aa79f92e25f5768ba456ce228951b2d9f66a8021e2699e2d116a801485dcd"
+        "tests/unit/test_privacy_docs.py": "0f9aa79f92e25f5768ba456ce228951b2d9f66a8021e2699e2d116a801485dcd",
+        "TRADEMARKS.md": "b2b788ae8d4e646f69bdd8597e272e0aa8a4de98b54d944bc1d7f0f61b466c7d"
       }
     },
     {
@@ -590,10 +593,11 @@
     {
       "path": "docs/index.md",
       "coverage": "navigation",
-      "reviewed_at": "2026-09-23",
+      "reviewed_at": "2026-09-24",
       "limits": "Navigation and maintenance contract; structural validation does not certify prose or product behavior.",
       "sources": {
-        "tools/check_knowledge.py": "9a000a610ece0164888d9ba2f603fb5fd5a851c41409e87917f7caf906496454"
+        "tools/check_knowledge.py": "9a000a610ece0164888d9ba2f603fb5fd5a851c41409e87917f7caf906496454",
+        "TRADEMARKS.md": "b2b788ae8d4e646f69bdd8597e272e0aa8a4de98b54d944bc1d7f0f61b466c7d"
       }
     },
     {
@@ -708,6 +712,18 @@
         "tests/unit/test_dev_config.py": "f0726f9d8fc867b92f1f718ddeb77a4dd7c875243ba362a93a43f7fc3a006ea2",
         "tests/fixtures/patina-copper-512/manifest.json": "9261b63e72bfbe7f6eea5f94c692246904d944529fa1bfb2645f39d098e879f3",
         "tests/smoke/smoke_video.py": "6210522ef3821d33d58b83cb4be2d0d15ade0d6d6e1a42fe50f8d66a2ffbd585"
+      }
+    },
+    {
+      "path": "TRADEMARKS.md",
+      "coverage": "policy",
+      "reviewed_at": "2026-09-24",
+      "limits": "Proposed repository trademark wording and linked third-party policy; not a trademark-registration search or legal approval record. Maintainer wording review is tracked in the PR. Third-party component licences remain separate.",
+      "sources": {
+        "LICENSE": "3972dc9744f6499f0f9b2dbf76696f2ae7ad8af9b23dde66d6af86c9dfb36986",
+        "scenario/blender_manifest.toml": "7ac4a84b0856f6a7c5ada8182e1c343f097347a25cf5785d81d72b28ec10f444",
+        "tests/unit/test_trademarks.py": "3881a95483e918233f8946ce1ee5eaba758a0de5f8acdb45244a963c55768539",
+        "docs/SDK_BUNDLE.md": "161627add3fd5b146643fddc2c496a48023406383748e96b6fbdbbed75960ddb"
       }
     }
   ]

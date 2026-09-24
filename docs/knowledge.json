@@ -35,7 +35,7 @@
       "path": "CONTRIBUTING.md",
       "coverage": "inherited",
       "reviewed_at": "2026-09-24",
-      "limits": "Existing guide indexed during this intake, without a fresh claim-by-claim or live verification; consult current integration status and issue acceptance. Contribution-guide cross-reference reviewed after the Actions update guidance; other source fingerprints retain their prior evidence. Markdown handbook renderer, template slots, copied/inline images, metadata validation and external-font disclosure reviewed. This does not refresh inherited product claims or screenshot acceptance, publish the site or attach release assets. Repeat-build asset ownership/cleanup, literal template examples and directory-link handling reviewed with regression tests; desktop and narrow renderer presentation inspected separately in isolated browser profiles. macOS arm64 downloader section inspected against verified-DMG extraction, private mount cleanup and offline failure tests; local native proof does not establish scheduled macOS CI or complete cross-platform compatibility. Portable discovery order, numeric versions, manifest-version CLI and optional icon-font search inspected against implementation and offline layout tests; other inherited guide claims and native platform acceptance remain outside this focused review.",
+      "limits": "Existing guide indexed during this intake, without a fresh claim-by-claim or live verification; consult current integration status and issue acceptance. Contribution-guide cross-reference reviewed after the Actions update guidance; other source fingerprints retain their prior evidence. Markdown handbook renderer, template slots, copied/inline images, metadata validation and external-font disclosure reviewed. This does not refresh inherited product claims or screenshot acceptance, publish the site or attach release assets. Repeat-build asset ownership/cleanup, literal template examples and directory-link handling reviewed with regression tests; desktop and narrow renderer presentation inspected separately in isolated browser profiles. macOS arm64 downloader section inspected against verified-DMG extraction, private mount cleanup and offline failure tests; local native proof does not establish scheduled macOS CI or complete cross-platform compatibility. Portable discovery order, numeric versions, manifest-version CLI and optional icon-font search inspected against implementation and offline layout tests; other inherited guide claims and native platform acceptance remain outside this focused review. Contributor policy, licensing and navigation reviewed against canonical instructions; inherited runtime evidence retains its existing limits.",
       "sources": {
         "Makefile": "4971a39a042367df0c4cd151ee46e6f6c00df518e36b46faf00a52d0846f1e2a",
         "pyproject.toml": "8806419c64dc00323f2da6bf43986dcb0ce792e6dad1c237fda95627dd354333",
@@ -62,7 +62,11 @@
         "TRADEMARKS.md": "067b66d55a6eb8540081535388d9e8a8a7f69018824b4c16625ea70f7c4d92b2",
         "tools/blender_env.py": "97df605cb987ceed368fe77fe2a591c0f84eb9c4d63fd1f028b79dbf56e116f4",
         "tools/make_icons.py": "439a7dfde04f7d931e8476c644bb19592818ceacceff09c657692071f1ba3d75",
-        "tests/unit/test_tool_discovery.py": "b2f6788edb4b2311eaff88f05d1a28dc5b66779ab9fdb53e821b61d4f582ee14"
+        "tests/unit/test_tool_discovery.py": "b2f6788edb4b2311eaff88f05d1a28dc5b66779ab9fdb53e821b61d4f582ee14",
+        "AGENTS.md": "6a9781d3c0b8b7d1b48635e4ab22fc6a4089c9f39317a49f884aac4b715b28be",
+        "LICENSE": "3972dc9744f6499f0f9b2dbf76696f2ae7ad8af9b23dde66d6af86c9dfb36986",
+        "docs/development/validation.md": "016d31042856ab62eca00ca4477b031cbdbe45d77cb0577b8f437a2117fce138",
+        "docs/RELEASING.md": "a4937aac0e28fdb4693630e016cca7a010413fe10c021370b5ae4eddc224ced6"
       }
     },
     {
@@ -74,11 +78,12 @@
         "scenario/blender/runtime.py": "2afa6267f835569288ae6d1947af5410b05a0bbdcd3bbad985ff30a6dcb8a000",
         "scenario/blender/registry.py": "a34fcb0110b5c991764df22d423546d9de3c949d3183b6dad1c5ca9e05123af2",
         "scenario/blender_manifest.toml": "b942bfc79b1ebecab7ae8f2ea16bac4a182d6a13d81dac3a23391dc2ffd16e0f",
-        "CONTRIBUTING.md": "1e80abd96a2c2b28185255829ba835c30dfd9e006728a17eeb6c9a21d9095f76",
+        "CONTRIBUTING.md": "0543da10895065dca60f546ae83a6146264884a44d4b845c49ffebb1d3151219",
         "docs/MCP.md": "fb6f2c0a82536d3d1af3a9a7787df2a67b7ebe7fb5eb66f7462d737c48f71f64",
         "tools/build_docs_html.py": "40e8c099acc77be8b3d57edd31f1e2a0ade323d9932e1c822aee98320c01f4a2",
         "docs/handbook-template.html": "f2a14d1356fa1f9f2c28edf251c6c8372d2302b46131215db0b9095e3913061c",
-        "TRADEMARKS.md": "067b66d55a6eb8540081535388d9e8a8a7f69018824b4c16625ea70f7c4d92b2"
+        "TRADEMARKS.md": "067b66d55a6eb8540081535388d9e8a8a7f69018824b4c16625ea70f7c4d92b2",
+        "docs/RELEASING.md": "a4937aac0e28fdb4693630e016cca7a010413fe10c021370b5ae4eddc224ced6"
       }
     },
     {
@@ -236,7 +241,7 @@
       "path": "docs/RELEASING.md",
       "coverage": "inherited",
       "reviewed_at": "2026-09-24",
-      "limits": "Offline repository snapshot section reviewed against exact-inventory validation and failure tests; synthetic and packaged SDK archive generation checked with Blender 5.0.1. Offline release selection and retention reviewed against numeric matrix selection, strict candidate verification and failure tests; selected synthetic archives passed native repository generation and identical replay with Blender 5.0.1. Existing release/publication sections remain inherited, without a fresh claim-by-claim or live verification. These tools do not establish published-release provenance, snapshot completeness, hosting or native update acceptance. Extension-id decision and offline metadata guard section reviewed against manifest tests and runtime storage paths; native validation remains authoritative. Unrelated source fingerprints retain their prior evidence.",
+      "limits": "Offline repository snapshot section reviewed against exact-inventory validation and failure tests; synthetic and packaged SDK archive generation checked with Blender 5.0.1. Offline release selection and retention reviewed against numeric matrix selection, strict candidate verification and failure tests; selected synthetic archives passed native repository generation and identical replay with Blender 5.0.1. Existing release/publication sections remain inherited, without a fresh claim-by-claim or live verification. These tools do not establish published-release provenance, snapshot completeness, hosting or native update acceptance. Extension-id decision and offline metadata guard section reviewed against manifest tests and runtime storage paths; native validation remains authoritative. Unrelated source fingerprints retain their prior evidence. Version rules inspected against the release configuration; upstream footer/override controls documented without exercising publication.",
       "sources": {
         ".github/workflows/release-please.yml": "8f879d0d9aa9e63d67a18cade277dd7ef081024a9975f983e3c547e3412d659f",
         "release-please-config.json": "f7192922c196556279e00e54b82a8ec82a5fe516481f35771e1ad73c0b00adc9",
@@ -652,7 +657,9 @@
         "scenario/blender/params_ui.py": "12a913ecc68b92bce87f73fa158bfea03ee0dc684f20914a063826b230d6fb0c",
         "scenario/blender/render_lanes.py": "7e4241d31fb270f5bf6237f13a1bb71e88f7019be398d73e54c54a4a9434fc6d",
         "scenario/core/api/catalog.py": "eeb58620545eb0438efc120fe46d7860f7df16e383f3a4b4c55b3282b7b17df9",
-        "tools/audit_payloads.py": "77120c3495d5bb5540147b8181e71dccb0fa82fa2c0f9060a8c4463934535bcd"
+        "tools/audit_payloads.py": "77120c3495d5bb5540147b8181e71dccb0fa82fa2c0f9060a8c4463934535bcd",
+        "CONTRIBUTING.md": "0543da10895065dca60f546ae83a6146264884a44d4b845c49ffebb1d3151219",
+        "docs/RELEASING.md": "a4937aac0e28fdb4693630e016cca7a010413fe10c021370b5ae4eddc224ced6"
       }
     },
     {

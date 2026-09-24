@@ -10,6 +10,33 @@ is `scenario-X.Y.Z.zip`. Preserve historical `v*` tags and releases. Let
 release-please update the changelog, release manifest and package version fields.
 Do not manually bump them in unrelated work. The extension remains experimental.
 
+The [release configuration](../release-please-config.json) uses semantic versions.
+Before 1.0, fixes increase the patch version, features increase the minor version,
+and breaking changes increase the minor version. After 1.0, breaking changes
+increase the major version. Mark a breaking change with `!` or a
+`BREAKING CHANGE` footer; review the proposed version before merging the release PR.
+
+1.0.0 is a deliberate maintainer decision, not an automatic bump: use a
+`Release-As: 1.0.0` footer on the squash commit of an ordinary PR whose description
+explains why the extension is considered stable. This policy documents the
+mechanism; it does not authorize a stability declaration or publication.
+
+## Correcting a version or release note
+
+For an intentional version override, the maintainer places a
+`Release-As: X.Y.Z` footer in the ordinary PR's squash body. Preserve attribution
+and issue references. Review the next generated release PR to confirm the
+requested version; do not edit the manifest, package version or changelog by hand.
+See [release-please's version override](https://github.com/googleapis/release-please#how-do-i-change-the-version-number).
+
+Retitle a wrongly typed PR before merging it. For a squash-merged PR whose
+unreleased note needs correction, maintainers can add a `BEGIN_COMMIT_OVERRIDE`
+and `END_COMMIT_OVERRIDE` block to that merged PR's body with the corrected
+Conventional Commit message. Keep required trailers in the replacement and
+inspect the refreshed release PR before publication. Follow the
+[upstream override format](https://github.com/googleapis/release-please#how-can-i-fix-release-notes).
+This does not rewrite Git history or authorize editing published release assets.
+
 ## Extension id
 
 The extension id is `scenario` and it is final. Blender scopes extension modules

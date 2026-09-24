@@ -66,11 +66,16 @@ def run(args):
         )
         report.update(environment)
         print(json.dumps(environment), flush=True)
-        manifest = tomllib.loads((ROOT / "scenario/blender_manifest.toml").read_text())
         if args.expected_version and tuple(environment["version"]) != tuple(
             int(part) for part in args.expected_version.split(".")
         ):
             raise ValueError("Blender binary does not match --expected-version")
+        if not args.zip:
+            step(
+                "validate-source",
+                ["--offline-mode", "--command", "extension", "validate", str(ROOT / "scenario")],
+            )
+        manifest = tomllib.loads((ROOT / "scenario/blender_manifest.toml").read_text())
         candidate = directory / f"{manifest['id']}-{manifest['version']}.zip"
         if args.zip:
             shutil.copyfile(args.zip, candidate)

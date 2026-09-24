@@ -213,7 +213,60 @@ def test_expected_version_checks_numeric_release_not_lts_label(
         zip=None,
     )
     assert runner.run(args) == exit_code
-    assert steps == (["probe", "build"] if exit_code == 7 else ["probe"])
+    assert steps == (["probe", "validate-source"] if exit_code == 7 else ["probe"])
+
+
+@pytest.mark.parametrize("manifest", ["not TOML", 'name = "Missing identity"\n'])
+def test_invalid_source_stops_runner_before_staging_and_keeps_validator_status(
+    tmp_path, monkeypatch, runner, manifest
+):
+    checkout = tmp_path / "checkout"
+    (checkout / "scenario").mkdir(parents=True)
+    (checkout / "scenario/blender_manifest.toml").write_text(manifest)
+    monkeypatch.setattr(runner, "ROOT", checkout)
+    monkeypatch.setattr(runner, "find_blender", lambda _: Path("blender"))
+    monkeypatch.setattr(runner, "normal_profile_root", lambda: tmp_path / "normal")
+    monkeypatch.setattr(
+        runner, "prepare_source", lambda *args: pytest.fail("Must not stage wheels")
+    )
+    steps = []
+
+    def step(binary, command, **kwargs):
+        name = kwargs["name"]
+        steps.append(name)
+        log = kwargs["directory"] / f"{name}.log"
+        if name == "probe":
+            log.write_text("SCENARIO_ENV=" + json.dumps({"blender": "5.0.1", "version": [5, 0, 1]}))
+            return log
+        assert command == [
+            "--offline-mode",
+            "--command",
+            "extension",
+            "validate",
+            str(checkout / "scenario"),
+        ]
+        log.write_text("Invalid manifest fixture")
+        raise subprocess.CalledProcessError(19, command)
+
+    monkeypatch.setattr(runner, "run_step", step)
+    args = SimpleNamespace(
+        blender=None,
+        artifacts=tmp_path / "artifacts",
+        suite="baseline",
+        timeout=2,
+        keep_profile=False,
+        expected_version=None,
+        zip=None,
+    )
+    assert runner.run(args) == 19
+    assert steps == ["probe", "validate-source"]
+    directory = next(args.artifacts.glob("run-*"))
+    report = json.loads((directory / "result.json").read_text())
+    assert report["status"] == "failed" and "exited 19" in report["error"]
+    assert (directory / "validate-source.log").read_text() == "Invalid manifest fixture"
+    assert list((directory / "tmp").iterdir()) == []
+    assert not list(directory.glob("*.zip"))
+    assert not (tmp_path / "normal").exists()
 
 
 @pytest.mark.parametrize("supplied", [False, True])
@@ -254,6 +307,8 @@ def test_candidate_minimum_is_checked_before_validation(
             log = tmp_path / "probe.log"
             log.write_text("SCENARIO_ENV=" + json.dumps({"blender": "5.0.1", "version": [5, 0, 1]}))
             return log
+        if name == "validate-source":
+            return tmp_path / "validate-source.log"
         if name == "build":
             candidate(Path(command[command.index("--output-filepath") + 1]))
             return tmp_path / "build.log"
@@ -270,7 +325,7 @@ def test_candidate_minimum_is_checked_before_validation(
         zip=supplied_zip if supplied else None,
     )
     assert runner.run(args) == expected_exit
-    assert steps == ["probe"] + ([] if supplied else ["build"]) + (
+    assert steps == ["probe"] + ([] if supplied else ["validate-source", "build"]) + (
         ["validate"] if expected_exit == 7 else []
     )
     if expected_exit == 1:

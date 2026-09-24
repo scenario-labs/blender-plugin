@@ -34,7 +34,7 @@
     {
       "path": "CONTRIBUTING.md",
       "coverage": "inherited",
-      "reviewed_at": "2026-09-23",
+      "reviewed_at": "2026-09-24",
       "limits": "Existing guide indexed during this intake, without a fresh claim-by-claim or live verification; consult current integration status and issue acceptance.",
       "sources": {
         "Makefile": "c86ffba526a4882788cec66b53924504eceab7114f0b4776ff23ceee1d7a4c8b",
@@ -52,18 +52,21 @@
         "tools/fetch_blender.py": "6ffb40560e1344850f6452ae1aa0de0834d08e9bb7be11647307e5cf8b4ac648",
         "tests/unit/test_portable_tools.py": "2cea13137994d2d09b76abe0f5a6916a36c3c61faa546bcc6fa82e0e660c14c5",
         ".github/actions/setup-blender/action.yml": "276722b203227e8f7a7a98a76a0e7095c566bae2c308b4166dff5e7a3698c105",
-        ".github/workflows/blender-baseline.yml": "c4fabf3cc73eaad72df2da1bd158ce118c4ebab177980819a540b28c8b66cc4d"
+        ".github/workflows/blender-baseline.yml": "c4fabf3cc73eaad72df2da1bd158ce118c4ebab177980819a540b28c8b66cc4d",
+        "docs/development/contributions.md": "fb21b6689738e5d8c6008a6b8c6883b3a8f8a80f23330e51e5c91693910046c2",
+        ".github/pull_request_template.md": "7d899d2b14da42ce0a4708a840acfda73e7d66da5aa435cd9296115d4e8330c7"
       }
     },
     {
       "path": "README.md",
       "coverage": "inherited",
-      "reviewed_at": "2026-09-23",
+      "reviewed_at": "2026-09-24",
       "limits": "Existing guide indexed during this intake, without a fresh claim-by-claim or live verification; consult current integration status and issue acceptance.",
       "sources": {
         "scenario/blender/runtime.py": "2afa6267f835569288ae6d1947af5410b05a0bbdcd3bbad985ff30a6dcb8a000",
         "scenario/blender/registry.py": "a34fcb0110b5c991764df22d423546d9de3c949d3183b6dad1c5ca9e05123af2",
-        "scenario/blender_manifest.toml": "b942bfc79b1ebecab7ae8f2ea16bac4a182d6a13d81dac3a23391dc2ffd16e0f"
+        "scenario/blender_manifest.toml": "b942bfc79b1ebecab7ae8f2ea16bac4a182d6a13d81dac3a23391dc2ffd16e0f",
+        "CONTRIBUTING.md": "8cb64179bee9a2ba3824e5bb6a7ab96add2fb2c78234cc1dcd34cee9191ff600"
       }
     },
     {
@@ -402,13 +405,15 @@
     {
       "path": "docs/development/contributions.md",
       "coverage": "policy",
-      "reviewed_at": "2026-09-23",
+      "reviewed_at": "2026-09-24",
       "limits": "Canonical instructions consolidated from the existing rulebook; normative requirements do not imply runtime acceptance.",
       "sources": {
         "commitlint.config.ts": "a3f4eb2798279d823aee2523592781ba1b328295e7d9528875f8682f6bb56881",
         ".github/workflows/pr-name.yml": "bd74c9610aede13faf37498230cc907a8178f45f3eb515c5188cacc65ed516fe",
         ".github/workflows/commitlint.yml": "4e6dd4c1ed6273042316d55696de7108c0409ab0cac9774cb6e6fa163fe5ad80",
-        "release-please-config.json": "f7192922c196556279e00e54b82a8ec82a5fe516481f35771e1ad73c0b00adc9"
+        "release-please-config.json": "f7192922c196556279e00e54b82a8ec82a5fe516481f35771e1ad73c0b00adc9",
+        ".github/pull_request_template.md": "7d899d2b14da42ce0a4708a840acfda73e7d66da5aa435cd9296115d4e8330c7",
+        "tests/unit/test_conventions_docs.py": "b07164b35c741484b3c726d5fe263c974219045f30c43f3e1065885c993613b4"
       }
     },
     {

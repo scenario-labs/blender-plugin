@@ -6,7 +6,9 @@ complete PR diff and dependencies. Preserve unrelated work in other branches.
 
 `commitlint.config.ts` is authoritative for Conventional Commit types, scopes,
 the 120-character header limit and the no-em-dash rule. Choose the type from the
-final diff, not the inherited title:
+final diff, not the inherited title. Write `type(scope): summary` with an imperative
+summary and no trailing period. For example,
+`fix(blender): preserve the current frame after a viewport capture`.
 
 | Type                   | Change                                                    |
 | ---------------------- | --------------------------------------------------------- |
@@ -18,9 +20,48 @@ final diff, not the inherited title:
 | ci                     | Workflows and automation                                  |
 | style / chore / revert | Formatting, maintenance or a revert                       |
 
-Scopes: core, api, jobs, scene, schema, blender, ui, composer, mcp, tests, tools,
-docs, ci, deps, release, agents, repo. Squash merges use the PR title as the
-commit header. Keep branch commits conventional too: current CI checks them.
+Squash merges use the PR title as the commit header. Keep branch commits
+conventional too: current CI checks them. A missing scope is a warning; when a
+scope fits, choose it from the map below. Every accepted type can appear in the
+generated release notes; see [release behavior](../RELEASING.md#included-commit-types).
+
+Mark a breaking change with `!` before the colon, such as
+`feat(mcp)!: rename a tool`, or a `BREAKING CHANGE:` footer. Describe the behavior
+consumers must adapt to. Split unrelated changes into separate PRs so a squash
+commit describes one concern. Preserve contributor trailers in the squash body.
+
+## Scopes
+
+The ordered scope list follows [commitlint.config.ts](../../commitlint.config.ts).
+Tests for a product area keep that area's scope; `tests` names harness changes.
+
+| Scope | Responsibility |
+| --- | --- |
+| `core` | Cross-cutting `scenario/core` behavior, including configuration and history |
+| `api` | `scenario/core/api`: SDK adapter, service operations and catalog |
+| `jobs` | `scenario/core/jobs`: durable jobs, workers, transfers and records |
+| `scene` | `scenario/core/scene`: captures, materials, placement and scene planning |
+| `schema` | `scenario/core/schema`: forms and model parameter validation |
+| `blender` | `scenario/blender` glue and `scenario/prefs.py`: operators, application and lifecycle |
+| `ui` | Panels, forms, popovers, model picker, prompt tools, icons and `docs/UI_STYLE.md` |
+| `composer` | `scenario/blender/composer` and `scenario/core/ui/composer_layout.py` |
+| `mcp` | `scenario/mcp` and `scenario/blender/mcp_service.py` |
+| `tests` | Shared test harnesses, fakes and fixture recording |
+| `tools` | `tools/` and the Makefile |
+| `docs` | README, documentation and the user guide |
+| `ci` | Workflows, rulesets and hooks |
+| `deps` | Dependency, Blender and action version pins |
+| `release` | Release configuration, version fields and changelog automation |
+| `agents` | Agent instructions, skills, commands and configuration |
+| `repo` | Licenses, community policies, templates and ownership files |
+
+## PR descriptions and review
+
+Complete the [PR template](../../.github/pull_request_template.md). Mark applicable
+checks and explain omitted validation. A pending human review is not approval:
+agents may submit a reviewable PR, but must not mark that review complete.
+Original contributions use the repository's GPL-3.0-or-later license. Adopted
+sources retain their original compatible licenses, notices and attribution.
 
 Lead PR descriptions with the problem and resulting behavior. Include relevant
 validation and limitations; do not invent passing counts, approvals or authorship.
@@ -33,6 +74,9 @@ branch; recheck stacked PRs after retargeting. Carry verified references into th
 squash message and check issue state after an authorized merge. Generated release
 notes and historical keywords are not evidence that an issue is complete.
 Preserve actual contributor attribution. Keep issue references in commit footers.
+For Codex-assisted commits, follow the accurate model attribution or fallback
+trailer in [AGENTS.md](../../AGENTS.md#codex-commit-attribution). Name any other
+contributing harness and preserve its contributor trailers too.
 Write multiline PR bodies/messages to files and use `--body-file` or `-F`,
 with proper shell quoting.
 

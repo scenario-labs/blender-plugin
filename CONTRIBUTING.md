@@ -1,7 +1,23 @@
 # Contributing to Scenario for Blender
 
-Read the [shared repository conventions](.claude/CLAUDE.md) and
+Read the [canonical repository instructions](AGENTS.md) and
 [Python tooling guide](docs/PYTHON_STYLE.md) before making changes.
+
+## Commits, branches and pull requests
+
+Work on a short-lived `type/issue-description` branch and target `main`.
+Keep one concern per pull request. PRs are squash-merged: the title becomes the
+commit header, so use `type(scope): summary`, an imperative summary without a
+trailing period, and at most 120 characters. Both PR titles and branch commits
+are checked with [commitlint.config.ts](commitlint.config.ts).
+
+Use the [canonical contribution guide](docs/development/contributions.md) for
+the type definitions, [scope-to-path map](docs/development/contributions.md#scopes),
+breaking changes, attribution and review follow-up. Complete the
+[PR template](.github/pull_request_template.md) with actual validation evidence
+and limitations; human review can remain pending when an agent opens the PR.
+Release automation owns version fields and changelog updates. See the
+[release procedure](docs/RELEASING.md) for current publication behavior.
 
 ## Environment variables
 

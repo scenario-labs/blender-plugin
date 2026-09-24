@@ -120,16 +120,21 @@ def cli_arguments():
     return [
         "--repository",
         REPOSITORY,
-        "--os",
-        "windows-latest",
         "--version",
         "5.1.2",
-        "--run-url",
-        f"https://github.com/{REPOSITORY}/actions/runs/42",
+        "--run-id",
+        "42",
+        "--run-attempt",
+        "2",
     ]
 
 
 def test_cli_builds_scoped_tracking_issue(monkeypatch):
+    monkeypatch.setattr(
+        reporter,
+        "matrix_outcomes",
+        lambda *args: {"macos-latest": ("success", 1, 2), "windows-latest": ("failure", 2, 2)},
+    )
     captured = []
     monkeypatch.setattr(
         reporter, "report_failure", lambda *args: captured.append(args) or "created"
@@ -144,10 +149,17 @@ def test_cli_builds_scoped_tracking_issue(monkeypatch):
 
 
 @pytest.mark.parametrize(
-    "flag,value", [("--version", "5.1"), ("--run-url", "https://other.invalid")]
+    "flag,value",
+    [
+        ("--version", "5.1"),
+        ("--repository", "../other"),
+        ("--run-id", "0"),
+        ("--run-attempt", "-1"),
+    ],
 )
 def test_cli_rejects_invalid_context_before_reporting(monkeypatch, flag, value):
     calls = []
+    monkeypatch.setattr(reporter, "github", lambda *args, **kwargs: calls.append(args))
     monkeypatch.setattr(reporter, "report_failure", lambda *args: calls.append(args))
     arguments = cli_arguments()
     arguments[arguments.index(flag) + 1] = value
@@ -157,6 +169,10 @@ def test_cli_rejects_invalid_context_before_reporting(monkeypatch, flag, value):
 
 
 def test_cli_does_not_print_github_error_content(monkeypatch, capsys):
+    monkeypatch.setattr(
+        reporter, "matrix_outcomes", lambda *args: {"windows-latest": ("failure", 2, 2)}
+    )
+
     def report(*args):
         raise subprocess.CalledProcessError(1, "gh", stderr="private response fixture")
 
@@ -165,6 +181,114 @@ def test_cli_does_not_print_github_error_content(monkeypatch, capsys):
     output = capsys.readouterr()
     assert "CalledProcessError" in output.err
     assert "private response fixture" not in output.err + output.out
+
+
+def matrix_job(platform, conclusion="success", **changes):
+    return {
+        "id": 1 if platform == "macos-latest" else 2,
+        "name": f"blender 5.1.2 ({platform})",
+        "run_id": 42,
+        "run_attempt": 2,
+        "status": "completed",
+        "conclusion": conclusion,
+        **changes,
+    }
+
+
+@pytest.mark.parametrize("conclusion", ["success", "failure", "timed_out", "cancelled", "skipped"])
+def test_current_attempt_outcomes_are_read_before_reporting(monkeypatch, conclusion):
+    calls = []
+    writes = []
+
+    def github(endpoint, *args, **kwargs):
+        calls.append((endpoint, args))
+        return [
+            {
+                "jobs": [
+                    {"name": "report-native-failures", "status": "in_progress"},
+                    matrix_job("macos-latest"),
+                ]
+            },
+            {"jobs": [matrix_job("windows-latest", conclusion)]},
+        ]
+
+    monkeypatch.setattr(reporter, "github", github)
+    monkeypatch.setattr(reporter, "report_failure", lambda *args: writes.append(args) or "created")
+    assert reporter.main(cli_arguments()) == 0
+    assert calls[0][0] == f"repos/{REPOSITORY}/actions/runs/42/jobs"
+    assert "--paginate" in calls[0][1] and "--slurp" in calls[0][1]
+    assert "filter=latest" in calls[0][1]
+    assert len(writes) == (conclusion != "success")
+    if writes:
+        assert f"job conclusion: `{conclusion}`" in writes[0][2]
+        assert "setup, native tests, timeout and artifact preservation" in writes[0][2]
+        assert "actions/runs/42/job/2" in writes[0][2]
+
+
+@pytest.mark.parametrize(
+    "bad",
+    [
+        None,
+        [],
+        {},
+        [{"jobs": None}],
+        [{"jobs": [None]}],
+        [{"jobs": []}],
+        [{"jobs": [matrix_job("macos-latest")]}],
+        [
+            {
+                "jobs": [
+                    matrix_job("macos-latest"),
+                    matrix_job("macos-latest"),
+                    matrix_job("windows-latest"),
+                ]
+            }
+        ],
+        *[
+            {"change": change}
+            for change in [
+                {"run_id": 41},
+                {"run_attempt": 3},
+                {"run_attempt": 0},
+                {"run_attempt": True},
+                {"id": True},
+                {"id": 0},
+                {"id": 1},
+                {"status": "in_progress"},
+                {"conclusion": None},
+                {"conclusion": "unexpected"},
+                {"name": 42},
+                {"name": "blender 5.2.1 (windows-latest)"},
+            ]
+        ],
+    ],
+)
+def test_missing_ambiguous_or_foreign_matrix_results_never_write(monkeypatch, bad):
+    if isinstance(bad, dict) and "change" in bad:
+        bad = [
+            {
+                "jobs": [
+                    matrix_job("macos-latest", "failure"),
+                    matrix_job("windows-latest", **bad["change"]),
+                ]
+            }
+        ]
+    writes = []
+    monkeypatch.setattr(reporter, "github", lambda *args, **kwargs: bad)
+    monkeypatch.setattr(reporter, "report_failure", lambda *args: writes.append(args))
+    assert reporter.main(cli_arguments()) == 1
+    assert not writes
+
+
+def test_failed_only_rerun_retains_prior_success_without_duplicate_failure(monkeypatch):
+    jobs = [matrix_job("macos-latest", run_attempt=1), matrix_job("windows-latest", "timed_out")]
+    monkeypatch.setattr(reporter, "github", lambda *args, **kwargs: [{"jobs": jobs}])
+    writes = []
+    monkeypatch.setattr(reporter, "report_failure", lambda *args: writes.append(args))
+    assert reporter.main(cli_arguments()) == 0
+    assert len(writes) == 1
+    assert "windows-latest" in writes[0][1]
+    assert "job attempt 2" in writes[0][2]
 
 
 def workflow_script(name):

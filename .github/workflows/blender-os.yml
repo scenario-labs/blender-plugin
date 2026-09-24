@@ -23,9 +23,6 @@ jobs:
     if: github.repository == 'scenario-labs/blender-plugin'
     runs-on: ${{ matrix.os }}
     timeout-minutes: 30
-    permissions:
-      contents: read
-      issues: write
     strategy:
       fail-fast: false
       matrix:
@@ -79,15 +76,31 @@ jobs:
             ${{ runner.temp }}/scenario-tests/*/result.json
             ${{ runner.temp }}/scenario-tests/*/tests.json
             ${{ runner.temp }}/scenario-tests/*/*.zip
-      - name: File or update the OS tracking issue
-        if: failure()
+
+  report:
+    name: report-native-failures
+    needs: headless
+    # A timed-out OS runner cannot report its own failure. Whole-workflow
+    # cancellation is deliberate and does not create tracking issues.
+    if: ${{ always() && !cancelled() && github.repository == 'scenario-labs/blender-plugin' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      actions: read
+      issues: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+        with:
+          version-file: pyproject.toml
+          enable-cache: false
+      - name: Inspect this run attempt and report failed OS jobs
         env:
           GH_TOKEN: ${{ github.token }}
-          TEST_OS: ${{ matrix.os }}
-          BLENDER_VERSION: ${{ matrix.version }}
-          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
-          # The stdlib reporter must also work after development dependency setup fails.
           uv run --no-project --no-env-file python tools/report_ci_failure.py \
-            --repository "$GITHUB_REPOSITORY" --os "$TEST_OS" \
-            --version "$BLENDER_VERSION" --run-url "$RUN_URL"
+            --repository "$GITHUB_REPOSITORY" --version 5.1.2 \
+            --run-id "$GITHUB_RUN_ID" --run-attempt "$GITHUB_RUN_ATTEMPT"

@@ -385,19 +385,29 @@ runner as local development, with no Actions download cache.
 Update each `version` and `sha256` together after checking that the official
 `Blender<series>/blender-<version>.sha256` lists both archives:
 `blender-5.1.2-macos-arm64.dmg` and `blender-5.1.2-windows-x64.zip` for the initial
-matrix. Confirm that `macos-latest` still supplies Apple silicon and
+matrix. Update the reporting job's `--version` to match the matrix. Confirm that
+`macos-latest` still supplies Apple silicon and
 `windows-latest` supplies x64 in the [runner image inventory](https://github.com/actions/runner-images#available-images).
 Then dispatch `gh workflow run blender-os.yml`, watch the run and inspect both
 runtime versions, native results and retained artifacts before claiming support.
 
 Each leg retains download/test logs, the candidate ZIP and JSON reports for
-14 days. Failures create or comment on an exact-title open issue labelled
-`area:ci` and the OS/Blender series. Workflow concurrency serializes reporting;
-the reporter reads every issue page and refuses ambiguous duplicates. It uses
-only the job's GitHub token, never Scenario credentials. The stdlib reporter uses
-`uv run --no-project --no-env-file` so a failed development dependency sync does
-not prevent reporting. A runner outage, cancellation or unavailable checkout/tool
-can still prevent the reporting step; inspect the Actions run directly then.
+14 days. A separate Ubuntu job reads this run's latest per-job results after both
+OS jobs finish, including failures during setup, native tests or artifact upload
+and job timeouts. It validates both expected matrix identities before creating
+or commenting on an exact-title open issue labelled `area:ci` and the OS/Blender
+series. Failed-jobs-only reruns may retain an earlier successful leg; future
+attempts, missing results and ambiguous results are rejected before writing.
+Deliberate whole-workflow cancellation does not create issues.
+
+Workflow concurrency serializes reporting; the reporter reads every issue page
+and refuses ambiguous duplicates. Only the reporting job receives `actions: read`
+and `issues: write`, using its GitHub token rather than Scenario credentials.
+The stdlib reporter uses `uv run --no-project --no-env-file` so a failed native
+job's dependency sync does not prevent reporting. An unavailable reporting runner,
+checkout, tool or GitHub API can still prevent the report; inspect Actions directly
+then. The issue records the workflow failure and job conclusion, without claiming
+that setup or artifact failures are native test failures.
 Do not loosen tests to make a platform pass. Triage real incompatibilities into
 focused bugs, and close a workflow-error tracking issue after its fix is verified.
 GitHub may disable scheduled workflows after 60 days without repository activity;

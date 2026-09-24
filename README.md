@@ -79,7 +79,7 @@ The [user guide](docs/USER_GUIDE.md) describes each lane and its controls.
 - [Audio](docs/USER_GUIDE.md#audio): generate speech, music or sound effects and add results to the sequencer.
 - [Render Image](docs/USER_GUIDE.md#render-image): use a scene capture and look references to produce a still.
 - [Render Video](docs/USER_GUIDE.md#render-video): work with timeline captures, a camera path planner and style references.
-- [Blockout](docs/USER_GUIDE.md#lanes): turn a scene description into a greybox layout, then refine or rebuild it.
+- [Blockout](docs/USER_GUIDE.md#blockout): turn a scene description into a greybox layout, then refine or rebuild it.
 - [Prompt tools and model picker](docs/USER_GUIDE.md#the-form): browse models and prepare prompts; prompt helpers can spend credits.
 - [Floating composer](docs/USER_GUIDE.md#the-floating-composer): access the current lane from the viewport.
 - [Generations](docs/USER_GUIDE.md#generations): inspect local results and available project history.

@@ -143,6 +143,24 @@ A playblast of your timeline, rendered as a finished clip by a video model that 
 
 *Render Video with an orbit path built and Prompt Spark ready to write the look.*
 
+### Blockout
+Turn a scene description into a greybox layout made of coloured primitives in a
+`Blockout` collection, grouped by the generated plan.
+
+1. Choose **Blockout** in the Scenario sidebar. Describe the scene, choose its
+   type (such as Exterior or Interior) and scale, then press **Design blockout**.
+   Scenario writes a plan and Blender builds it when the response arrives.
+2. To change the plan, describe a change under **Refine** and press **Refine**.
+   Design and Refine contact Scenario and can consume credits; they require
+   configured credentials and Blender's Allow Online Access.
+3. **Rebuild** recreates the stored plan locally without another Scenario call.
+   **Clear** deletes the `Blockout` collection and forgets the stored plan.
+
+Design, Refine and Rebuild replace the existing `Blockout` collection. Manual
+edits to its objects are not written back to the plan and will be lost on rebuild;
+move work you want to retain outside that collection and its subcollections,
+unlinking it from Blockout first.
+
 ### Generations
 This session's results (collapsible entries with the asset id and a Details dialog), then the project's cloud history: prompt, kind, price, status, asset id. **Import into scene** brings a result into Blender (downloading it if needed), also for generations made on the web app or by an agent. **Load older** pages back in time. This is also the recovery path when a download failed: the job is still there, import it again.
 

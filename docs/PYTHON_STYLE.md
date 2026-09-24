@@ -107,5 +107,7 @@ and [#64](https://github.com/scenario-labs/blender-plugin/issues/64).
 Normalize adopted Studio code in a dedicated mechanical PR before functional
 changes. Preserve provenance and licenses, run the appropriate tests, then
 switch CI to full-tree `make lint`. Record the merged formatting commit in
-`.git-blame-ignore-revs` after its final squash SHA exists. Optional pre-commit
-hooks remain tracked in #30 and must use the same Ruff pin and configuration.
+`.git-blame-ignore-revs` after its final squash SHA exists. The
+[optional pre-commit hooks](../CONTRIBUTING.md#optional-local-hooks) run the same
+locked Ruff executable on staged Python files. They have no separate Ruff pin
+and do not normalize unchanged prototype files.

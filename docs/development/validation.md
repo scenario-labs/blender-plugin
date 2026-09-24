@@ -65,8 +65,9 @@ During Studio adoption, scope these commands with `LINT_PATHS` to changed or
 adopted files. CI checks whole changed Python files; full-tree findings remain
 tracked in #28 until the dedicated mechanical normalization. Do not reformat
 obsolete prototypes as unrelated cleanup. Follow `docs/PYTHON_STYLE.md`,
-including Blender registration/annotation cautions, and keep any eventual
-pre-commit hook version aligned with the required Ruff version.
+including Blender registration/annotation cautions. The optional pre-commit hooks
+use this same locked Ruff executable on staged files. Install with `make hooks`
+or the [portable uv command](../../CONTRIBUTING.md#optional-local-hooks).
 
 `make check-rules` runs the currently implemented offline house rules. Its
 `actions-pinned` rule checks remote workflow and composite-action references;

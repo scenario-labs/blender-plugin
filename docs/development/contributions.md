@@ -98,6 +98,38 @@ Read the actual release workflow/configuration before describing release behavio
 New release tags use `blender-plugin-vX.Y.Z`; package versions stay `X.Y.Z` and
 release ZIPs stay `scenario-X.Y.Z.zip`. Preserve historical `v*` tags and releases.
 
+## Local hook maintenance
+
+[Optional hooks](../../.pre-commit-config.yaml) use local commands from the locked
+uv development group: pre-commit, its standard file-hygiene hooks,
+conventional-pre-commit and Ruff. Update their exact development pins with
+`uv add --dev PACKAGE==VERSION`, review `uv.lock`, and run the hook regression
+tests. `pre-commit autoupdate` does not update these local uv-managed tools.
+No Ruff hook version can drift from CI because both invoke the same dependency.
+
+The commit-msg hook checks accepted types and allows ordinary merge/fixup
+messages. CI remains authoritative for scopes, header length and the complete
+commit policy. The branch hook rejects direct commits on `main`; these optional
+local checks do not change repository protection settings.
+
+The [secret guard](../../tools/check_secrets.py) checks forbidden paths and added
+lines from the Git index, so an unstaged edit cannot hide staged content. Run it
+directly with `uv run --locked --no-env-file python tools/check_secrets.py`; filenames
+after `--` restrict the scan. It reports file, line and pattern, never the matched
+line or value. It recognizes common credential/token/signed-URL shapes and rejects
+environment files except `.env.example`, private keys, local state and build
+artifacts. It is not a full security scan. Existing unchanged content, binary/media
+content, its own source and unit-test module, and deliberately marked `secrets-allow`
+lines are outside the content scan; review any exception carefully. Only
+`tools/blank.blend` is permitted among Blender scenes, and job-registry fixtures
+must remain under `tests/fixtures/`.
+
+Tests run the actual hook framework in disposable Git repositories, covering
+staging, redaction, commit-message rejection, changed-file formatting and fixture
+preservation. No hooks are installed into a contributor's checkout by CI or
+the unit suite. Hooks are a local convenience; the repository's CI remains the
+review gate, and whole-tree normalization remains #28.
+
 ## GitHub Actions updates
 
 [Dependabot](../../.github/dependabot.yml) checks GitHub Actions weekly and groups

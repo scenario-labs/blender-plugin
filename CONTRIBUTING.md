@@ -165,6 +165,28 @@ inside the host's namespace: Blender extension id `scenario`, Unity package
 package manifests. Every integration repository carries a root `LICENSE`,
 `CONTRIBUTING.md`, `CODE_OF_CONDUCT.md` and `SECURITY.md`, and the topic `scenario`.
 
+## Optional local hooks
+
+After `uv sync --locked`, run `make hooks` once in each checkout to install the
+pre-commit and commit-msg hooks. The equivalent command works without Make:
+
+```sh
+uv run --locked --no-env-file pre-commit install --hook-type pre-commit --hook-type commit-msg
+```
+
+The hooks run Ruff on staged Python files, check file hygiene and house rules,
+guard added staged lines against common secrets, and check the Conventional Commit
+type. All tools use the pinned uv development group; no separate hook environment
+or Node installation is required. Review and re-stage any formatting changes.
+The full commitlint scope/header policy remains in CI.
+
+Run `uv run --locked --no-env-file pre-commit run` to check staged files manually.
+`--all-files` also visits existing prototype lint/format debt tracked in #28;
+it is not the changed-file CI acceptance scope. Recorded fixtures are excluded
+from newline/whitespace rewriting. Hooks are optional and do not replace CI or
+review. See [hook maintenance and secret-check limits](docs/development/contributions.md#local-hook-maintenance).
+
+
 ## Environment variables
 
 The extension uses saved Blender credentials by default and reads the runtime

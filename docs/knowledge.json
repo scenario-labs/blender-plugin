@@ -1,7 +1,7 @@
 {
   "version": 1,
   "index": "docs/index.md",
-  "base_revision": "340fec3678b9dc30c531d193eeeded88b4875ecf",
+  "base_revision": "81b3a56f3216d8fc04434c955243302b40c76462",
   "documents": [
     {
       "path": ".claude/rules/blender-glue.md",
@@ -24,21 +24,24 @@
     {
       "path": "AGENTS.md",
       "coverage": "policy",
-      "reviewed_at": "2026-09-23",
-      "limits": "Canonical instructions consolidated from the existing rulebook; normative requirements do not imply runtime acceptance.",
+      "reviewed_at": "2026-09-24",
+      "limits": "Canonical instructions consolidated from the existing rulebook; normative requirements do not imply runtime acceptance. Optional uv-managed hooks and staged secret/path guard inspected with disposable Git regression coverage; full-tree prototype normalization, complete secret detection and repository protection remain separate.",
       "sources": {
         ".codex/config.toml": "3ce4a01cd0ed404ad5ceb8d1b4c25e0e10bc6339ab1d94fd9936f8543c1b87f2",
-        "scripts/agents/validate-skills.py": "82822cf1ed96c67c2b5d25e9d666171b37dc071427dd84ceda096e70697c7f3f"
+        "scripts/agents/validate-skills.py": "82822cf1ed96c67c2b5d25e9d666171b37dc071427dd84ceda096e70697c7f3f",
+        ".pre-commit-config.yaml": "680ea251ccacb8b228e41c104abec8d7400b732f7c4f21d9ee7c427b234fd7fd",
+        "Makefile": "9c2ea7471da8c010f628fd4a85cd1ec4cdd5f21a0da1769125eae1cb6f0db486",
+        "CONTRIBUTING.md": "ef691e96e2c3c057fbd3677aaab9fe505d40752e026c84f827c5d188c5ace48c"
       }
     },
     {
       "path": "CONTRIBUTING.md",
       "coverage": "inherited",
       "reviewed_at": "2026-09-24",
-      "limits": "Existing guide indexed during this intake, without a fresh claim-by-claim or live verification; consult current integration status and issue acceptance. Contribution-guide cross-reference reviewed after the Actions update guidance; other source fingerprints retain their prior evidence. Markdown handbook renderer, template slots, copied/inline images, metadata validation and external-font disclosure reviewed. This does not refresh inherited product claims or screenshot acceptance, publish the site or attach release assets. Repeat-build asset ownership/cleanup, literal template examples and directory-link handling reviewed with regression tests; desktop and narrow renderer presentation inspected separately in isolated browser profiles. macOS arm64 downloader section inspected against verified-DMG extraction, private mount cleanup and offline failure tests; local native proof does not establish scheduled macOS CI or complete cross-platform compatibility. Portable discovery order, numeric versions, manifest-version CLI and optional icon-font search inspected against implementation and offline layout tests; other inherited guide claims and native platform acceptance remain outside this focused review. Contributor policy, licensing and navigation reviewed against canonical instructions; inherited runtime evidence retains its existing limits. Integration naming and holder policy records the approved repository convention, not completed sibling repository administration. The two adopted first-party form-header holder spellings are aligned to Scenario Inc. without changing licence or executable contents.",
+      "limits": "Existing guide indexed during this intake, without a fresh claim-by-claim or live verification; consult current integration status and issue acceptance. Contribution-guide cross-reference reviewed after the Actions update guidance; other source fingerprints retain their prior evidence. Markdown handbook renderer, template slots, copied/inline images, metadata validation and external-font disclosure reviewed. This does not refresh inherited product claims or screenshot acceptance, publish the site or attach release assets. Repeat-build asset ownership/cleanup, literal template examples and directory-link handling reviewed with regression tests; desktop and narrow renderer presentation inspected separately in isolated browser profiles. macOS arm64 downloader section inspected against verified-DMG extraction, private mount cleanup and offline failure tests; local native proof does not establish scheduled macOS CI or complete cross-platform compatibility. Portable discovery order, numeric versions, manifest-version CLI and optional icon-font search inspected against implementation and offline layout tests; other inherited guide claims and native platform acceptance remain outside this focused review. Contributor policy, licensing and navigation reviewed against canonical instructions; inherited runtime evidence retains its existing limits. Integration naming and holder policy records the approved repository convention, not completed sibling repository administration. The two adopted first-party form-header holder spellings are aligned to Scenario Inc. without changing licence or executable contents. Optional uv-managed hooks and staged secret/path guard inspected with disposable Git regression coverage; full-tree prototype normalization, complete secret detection and repository protection remain separate.",
       "sources": {
-        "Makefile": "4971a39a042367df0c4cd151ee46e6f6c00df518e36b46faf00a52d0846f1e2a",
-        "pyproject.toml": "8806419c64dc00323f2da6bf43986dcb0ce792e6dad1c237fda95627dd354333",
+        "Makefile": "9c2ea7471da8c010f628fd4a85cd1ec4cdd5f21a0da1769125eae1cb6f0db486",
+        "pyproject.toml": "935ebd2ed291624ecbbb333966f138b24a6f9977ba80fc1b69e5262dfa4dec05",
         "tools/dev_config.py": "c3dbb5a4fb5c96a695f17cb436d15992f7b5efd11238c839d9ab44b9e9c7ac52",
         "tools/test_blender.py": "fec317c68c24c49302b456a478e02a0a8352d29aa30c3e9e3cf173d47f0697cd",
         "scenario/mcp/cli.py": "733ec02de0f03a9bfb0a9326a8f94ac32a2b6c33a5c11a09b79694cabd87c156",
@@ -53,7 +56,7 @@
         "tests/unit/test_portable_tools.py": "2cea13137994d2d09b76abe0f5a6916a36c3c61faa546bcc6fa82e0e660c14c5",
         ".github/actions/setup-blender/action.yml": "276722b203227e8f7a7a98a76a0e7095c566bae2c308b4166dff5e7a3698c105",
         ".github/workflows/blender-baseline.yml": "c4fabf3cc73eaad72df2da1bd158ce118c4ebab177980819a540b28c8b66cc4d",
-        "docs/development/contributions.md": "36f45c8706620e634618595c09ef5922d9c425a40f84f16b4509a6abf1f2fa07",
+        "docs/development/contributions.md": "e1487f78786df3b058e1a8dd1a65d2725092e31c34be76e044b729ae529b03cb",
         ".github/pull_request_template.md": "7d899d2b14da42ce0a4708a840acfda73e7d66da5aa435cd9296115d4e8330c7",
         "tools/build_docs_html.py": "40e8c099acc77be8b3d57edd31f1e2a0ade323d9932e1c822aee98320c01f4a2",
         "docs/handbook-template.html": "f2a14d1356fa1f9f2c28edf251c6c8372d2302b46131215db0b9095e3913061c",
@@ -69,14 +72,19 @@
         "docs/RELEASING.md": "a4937aac0e28fdb4693630e016cca7a010413fe10c021370b5ae4eddc224ced6",
         "scenario/blender_manifest.toml": "7ac4a84b0856f6a7c5ada8182e1c343f097347a25cf5785d81d72b28ec10f444",
         "scenario/core/schema/forms.py": "f13c662733ae8badc4a16c21f32b545e93c55d8f1dee2c8816cfce8b940df33a",
-        "tests/unit/test_forms.py": "7ec691dade30efd6e0ef3aab0f86bf1ae536b5c8abec8d7e4984c64d57228b06"
+        "tests/unit/test_forms.py": "7ec691dade30efd6e0ef3aab0f86bf1ae536b5c8abec8d7e4984c64d57228b06",
+        ".pre-commit-config.yaml": "680ea251ccacb8b228e41c104abec8d7400b732f7c4f21d9ee7c427b234fd7fd",
+        "tools/check_secrets.py": "ad3512229bac1b614ccbdf19480a405454d68d0f46201324c2bbcdb85657c163",
+        "tests/unit/test_check_secrets.py": "e82dc05180051f550d068908f9ececae9888e8e8409e0c8b67cc605028bcd192",
+        "tests/unit/test_local_hooks.py": "b826d5dd189abd1071ceb4eb175787348f39d5272331dce5bafcbeb1a2374d3d",
+        "uv.lock": "818e60fbedee798145c4f228a35b30847bba0b5827a77aa8aaa0210407b69c9b"
       }
     },
     {
       "path": "README.md",
       "coverage": "inherited",
       "reviewed_at": "2026-09-24",
-      "limits": "Existing guide indexed during this intake, without a fresh claim-by-claim or live verification; consult current integration status and issue acceptance. MCP overview and reference links reviewed; remaining product guidance still inherits its stated verification limits. Markdown handbook renderer, template slots, copied/inline images, metadata validation and external-font disclosure reviewed. This does not refresh inherited product claims or screenshot acceptance, publish the site or attach release assets. Repeat-build asset ownership/cleanup, literal template examples and directory-link handling reviewed with regression tests; desktop and narrow renderer presentation inspected separately in isolated browser profiles. Sibling links/licence labels checked against their public repositories; no future Blender skill availability claimed.",
+      "limits": "Existing guide indexed during this intake, without a fresh claim-by-claim or live verification; consult current integration status and issue acceptance. MCP overview and reference links reviewed; remaining product guidance still inherits its stated verification limits. Markdown handbook renderer, template slots, copied/inline images, metadata validation and external-font disclosure reviewed. This does not refresh inherited product claims or screenshot acceptance, publish the site or attach release assets. Repeat-build asset ownership/cleanup, literal template examples and directory-link handling reviewed with regression tests; desktop and narrow renderer presentation inspected separately in isolated browser profiles. Sibling links/licence labels checked against their public repositories; no future Blender skill availability claimed. Optional uv-managed hooks and staged secret/path guard inspected with disposable Git regression coverage; full-tree prototype normalization, complete secret detection and repository protection remain separate.",
       "sources": {
         "scenario/blender/runtime.py": "2afa6267f835569288ae6d1947af5410b05a0bbdcd3bbad985ff30a6dcb8a000",
         "scenario/blender/registry.py": "a34fcb0110b5c991764df22d423546d9de3c949d3183b6dad1c5ca9e05123af2",
@@ -86,7 +94,8 @@
         "tools/build_docs_html.py": "40e8c099acc77be8b3d57edd31f1e2a0ade323d9932e1c822aee98320c01f4a2",
         "docs/handbook-template.html": "f2a14d1356fa1f9f2c28edf251c6c8372d2302b46131215db0b9095e3913061c",
         "TRADEMARKS.md": "067b66d55a6eb8540081535388d9e8a8a7f69018824b4c16625ea70f7c4d92b2",
-        "docs/RELEASING.md": "a4937aac0e28fdb4693630e016cca7a010413fe10c021370b5ae4eddc224ced6"
+        "docs/RELEASING.md": "a4937aac0e28fdb4693630e016cca7a010413fe10c021370b5ae4eddc224ced6",
+        "Makefile": "9c2ea7471da8c010f628fd4a85cd1ec4cdd5f21a0da1769125eae1cb6f0db486"
       }
     },
     {
@@ -232,12 +241,13 @@
       "path": "docs/PYTHON_STYLE.md",
       "coverage": "inherited",
       "reviewed_at": "2026-09-24",
-      "limits": "Changed-file CI selection reviewed against the reusable lint workflow and caller, including all-tracked fallback for unavailable previous revisions. Other inherited guide sections retain their prior limits without a fresh claim-by-claim or live verification. Retired snapshot exclusions were removed from the reviewed Ruff configuration after their files moved entirely to Git history.",
+      "limits": "Changed-file CI selection reviewed against the reusable lint workflow and caller, including all-tracked fallback for unavailable previous revisions. Other inherited guide sections retain their prior limits without a fresh claim-by-claim or live verification. Retired snapshot exclusions were removed from the reviewed Ruff configuration after their files moved entirely to Git history. Optional uv-managed hooks and staged secret/path guard inspected with disposable Git regression coverage; full-tree prototype normalization, complete secret detection and repository protection remain separate.",
       "sources": {
         "pyproject.toml": "4e5c1a38241771ac8ccddff1d5e69a02279a52c117c3322ae432c635cd12b1a0",
         ".python-version": "f7401ec58a777fe2a730f8805ab7f63ff80f064930c616b18efe3a475daf57fd",
         ".github/workflows/python-lint.yml": "083888b456de882bec4d6bf9bf57c2053e0fbf364af748451d3c7dae2dc68d7b",
-        ".github/workflows/ci.yml": "9805ee9848f2eed06b0b9f108bcd7054592d61b431f8f4b57d4098f5cf43c344"
+        ".github/workflows/ci.yml": "9805ee9848f2eed06b0b9f108bcd7054592d61b431f8f4b57d4098f5cf43c344",
+        ".pre-commit-config.yaml": "680ea251ccacb8b228e41c104abec8d7400b732f7c4f21d9ee7c427b234fd7fd"
       }
     },
     {
@@ -508,7 +518,7 @@
       "path": "docs/development/contributions.md",
       "coverage": "policy",
       "reviewed_at": "2026-09-24",
-      "limits": "Canonical contribution policy, including inspected Actions-only Dependabot configuration and commit-title compatibility; configuration does not prove live update delivery or administrative action-pin enforcement. Inspected the actions-pinned house-rule implementation, CLI and failure tests; this scoped offline convention check does not establish general YAML validity, release tag provenance, other house rules, REUSE coverage or administrative settings.",
+      "limits": "Canonical contribution policy, including inspected Actions-only Dependabot configuration and commit-title compatibility; configuration does not prove live update delivery or administrative action-pin enforcement. Inspected the actions-pinned house-rule implementation, CLI and failure tests; this scoped offline convention check does not establish general YAML validity, release tag provenance, other house rules, REUSE coverage or administrative settings. Optional uv-managed hooks and staged secret/path guard inspected with disposable Git regression coverage; full-tree prototype normalization, complete secret detection and repository protection remain separate.",
       "sources": {
         "commitlint.config.ts": "a3f4eb2798279d823aee2523592781ba1b328295e7d9528875f8682f6bb56881",
         ".github/workflows/pr-name.yml": "0e315b620212b21f3058eae7d173813190ab81fd929b5d1178772c2fdbbc79d6",
@@ -519,14 +529,20 @@
         ".github/dependabot.yml": "2d1ef5df890197205268c05d1fe1f54943f0b1d6984a2f7eb064f364c2c438d2",
         "tools/check_rules.py": "537a72a9fd58bc5eaccd0072d5b163eb7c0f2231de30ba52ce8cd84f703c3872",
         "tests/unit/test_house_rules.py": "7eb4bf47fd5b93c89e4a4e2e43dc27eff3f273554a46b10756448deff14e3288",
-        "Makefile": "773688bf06385ec825197e66ae81bd0ea67526dcb6adbaa6bf26e9eb0d338115"
+        "Makefile": "773688bf06385ec825197e66ae81bd0ea67526dcb6adbaa6bf26e9eb0d338115",
+        ".pre-commit-config.yaml": "680ea251ccacb8b228e41c104abec8d7400b732f7c4f21d9ee7c427b234fd7fd",
+        "tools/check_secrets.py": "ad3512229bac1b614ccbdf19480a405454d68d0f46201324c2bbcdb85657c163",
+        "tests/unit/test_check_secrets.py": "e82dc05180051f550d068908f9ececae9888e8e8409e0c8b67cc605028bcd192",
+        "tests/unit/test_local_hooks.py": "b826d5dd189abd1071ceb4eb175787348f39d5272331dce5bafcbeb1a2374d3d",
+        "pyproject.toml": "935ebd2ed291624ecbbb333966f138b24a6f9977ba80fc1b69e5262dfa4dec05",
+        "uv.lock": "818e60fbedee798145c4f228a35b30847bba0b5827a77aa8aaa0210407b69c9b"
       }
     },
     {
       "path": "docs/development/validation.md",
       "coverage": "policy",
       "reviewed_at": "2026-09-24",
-      "limits": "Canonical validation policy with inspected offline unit workflow, coverage reporting and connection-guard contracts; unit-process core/MCP coverage and matrix results do not establish subprocess coverage, native Blender compatibility or live service acceptance. Source-manifest preflight, supplied-ZIP bypass and failure/status preservation reviewed against build/runner code and offline regressions; native runtime and other claims retain prior limits. Reusable CI orchestration and fail-closed aggregate reviewed against all six caller workloads; this does not establish repository required-check settings or live service acceptance. Native update fixture reviewed against isolated profile guards, loopback-only repository configuration, server failure cleanup and exact synthetic installed-byte/enabled-state checks; local Blender 5.0.1 mechanism evidence does not establish production add-on upgrades, hosted publication, GUI controls or arbitrary subprocess socket enforcement. Unrelated evidence fingerprints retain prior review scope. Locator CLI, GUI make alias and existing offline capture artifact/profile behavior inspected; no new supported-platform GUI compatibility or live service acceptance is implied. Manifest-version CLI and documented environment boundaries inspected against discovery and offline tests; simulated platform locations do not establish native acceptance on those platforms. Inspected the actions-pinned house-rule implementation, CLI and failure tests; this scoped offline convention check does not establish general YAML validity, release tag provenance, other house rules, REUSE coverage or administrative settings.",
+      "limits": "Canonical validation policy with inspected offline unit workflow, coverage reporting and connection-guard contracts; unit-process core/MCP coverage and matrix results do not establish subprocess coverage, native Blender compatibility or live service acceptance. Source-manifest preflight, supplied-ZIP bypass and failure/status preservation reviewed against build/runner code and offline regressions; native runtime and other claims retain prior limits. Reusable CI orchestration and fail-closed aggregate reviewed against all six caller workloads; this does not establish repository required-check settings or live service acceptance. Native update fixture reviewed against isolated profile guards, loopback-only repository configuration, server failure cleanup and exact synthetic installed-byte/enabled-state checks; local Blender 5.0.1 mechanism evidence does not establish production add-on upgrades, hosted publication, GUI controls or arbitrary subprocess socket enforcement. Unrelated evidence fingerprints retain prior review scope. Locator CLI, GUI make alias and existing offline capture artifact/profile behavior inspected; no new supported-platform GUI compatibility or live service acceptance is implied. Manifest-version CLI and documented environment boundaries inspected against discovery and offline tests; simulated platform locations do not establish native acceptance on those platforms. Inspected the actions-pinned house-rule implementation, CLI and failure tests; this scoped offline convention check does not establish general YAML validity, release tag provenance, other house rules, REUSE coverage or administrative settings. Optional uv-managed hooks and staged secret/path guard inspected with disposable Git regression coverage; full-tree prototype normalization, complete secret detection and repository protection remain separate.",
       "sources": {
         "Makefile": "773688bf06385ec825197e66ae81bd0ea67526dcb6adbaa6bf26e9eb0d338115",
         "pyproject.toml": "4e5c1a38241771ac8ccddff1d5e69a02279a52c117c3322ae432c635cd12b1a0",
@@ -539,7 +555,7 @@
         "tests/unit/test_network_guard.py": "f61276c20c245523f1a3749816fd88bf3d13dfa807d414facd823c7bbff71f1e",
         "tests/unit/test_dev_config.py": "2dcfd722f08e931acfd2d2eb6ce6989eeb1f70c4c82d351f062a24dedd1a0be5",
         "tests/unit/test_shared_quotes.py": "eb06294b382dc1b38de6b920ce7ed8fcebc4acc999a41abd560a30c2a506dfee",
-        "uv.lock": "9d13c77a0b426ef0062bb7d2a708cd29d94f3c56405126128b73842b6cbd804d",
+        "uv.lock": "818e60fbedee798145c4f228a35b30847bba0b5827a77aa8aaa0210407b69c9b",
         "tools/build.py": "77ffb55346dabd2f3864faa0a152a3243e021423ffae456992ecd2360bb79d5c",
         "tests/unit/test_blender_runner.py": "684d37b7834559d3351db98f79dd889317b1d68785df9c586ff8783259b3d34b",
         "tests/unit/test_portable_tools.py": "c40c4a76f0b80730c957df862590ff60c20a70410f4a80e4bd7027ed9bc128bb",
@@ -556,7 +572,11 @@
         "tests/unit/test_gui_capture.py": "beee6cba15adf7da1e7434c18dcb2b948e36f4b459af06fc98a6c850a5fea87c",
         "tests/unit/test_tool_discovery.py": "b2f6788edb4b2311eaff88f05d1a28dc5b66779ab9fdb53e821b61d4f582ee14",
         "tools/check_rules.py": "537a72a9fd58bc5eaccd0072d5b163eb7c0f2231de30ba52ce8cd84f703c3872",
-        "tests/unit/test_house_rules.py": "7eb4bf47fd5b93c89e4a4e2e43dc27eff3f273554a46b10756448deff14e3288"
+        "tests/unit/test_house_rules.py": "7eb4bf47fd5b93c89e4a4e2e43dc27eff3f273554a46b10756448deff14e3288",
+        ".pre-commit-config.yaml": "680ea251ccacb8b228e41c104abec8d7400b732f7c4f21d9ee7c427b234fd7fd",
+        "tools/check_secrets.py": "ad3512229bac1b614ccbdf19480a405454d68d0f46201324c2bbcdb85657c163",
+        "tests/unit/test_check_secrets.py": "e82dc05180051f550d068908f9ececae9888e8e8409e0c8b67cc605028bcd192",
+        "tests/unit/test_local_hooks.py": "b826d5dd189abd1071ceb4eb175787348f39d5272331dce5bafcbeb1a2374d3d"
       }
     },
     {

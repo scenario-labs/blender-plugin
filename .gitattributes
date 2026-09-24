@@ -1,0 +1,22 @@
+# SPDX-FileCopyrightText: 2026 Scenario Inc.
+# SPDX-License-Identifier: GPL-3.0-or-later
+
+# Keep text LF in the repository and working trees, including Windows checkouts.
+*        text=auto eol=lf
+*.sh     text eol=lf
+Makefile text eol=lf
+
+# Binary assets must not be normalized or diffed as text.
+*.png   binary
+*.blend binary
+*.mp4   binary
+*.zip   binary
+
+# Keep documentation and recorded fixtures out of GitHub language statistics.
+docs/**           linguist-documentation
+tests/fixtures/** linguist-vendored
+
+# Hide the generated handbook in diffs while it remains tracked; remove with #37.
+docs/user-guide.html linguist-generated
+# Exclude historical snapshots until #5 removes them and this rule.
+versions/** linguist-vendored

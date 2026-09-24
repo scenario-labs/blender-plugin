@@ -156,6 +156,171 @@ class JobSessionTests(unittest.TestCase):
             second, operation="workflow", target_id="fixture-workflow", payload={}
         ).result(5)
 
+    def test_local_cancel_bypasses_full_queue_and_prevents_queued_spend(self):
+        storage = submodule("core.jobs.store")
+        self.session._completion_limit = 2
+        self.session._workers._limit = 1
+        first, second = self.prepare(), self.prepare()
+        entered, release = threading.Event(), threading.Event()
+        original = self.handler
+
+        def blocked(request):
+            entered.set()
+            self.assertTrue(release.wait(5), "Fixture did not release claimed request")
+            return original(request)
+
+        self.handler = blocked
+        running = self.session.submit(
+            first, operation="workflow", target_id="fixture-workflow", payload={}
+        )
+        try:
+            self.assertTrue(entered.wait(5))
+            queued = self.session.submit(
+                second, operation="workflow", target_id="fixture-workflow", payload={}
+            )
+            self.assertEqual(len(self.session._pending), self.session._completion_limit)
+            self.assertEqual(len(self.session._workers._pending), self.session._workers._limit)
+            canceled = self.session.cancel_prepared(second.intent.request_id, expected_revision=0)
+            self.assertEqual(canceled.state, storage.JobState.CANCELED)
+            release.set()
+            self.assertEqual(running.result(5).state, storage.JobState.REMOTE)
+            with self.assertRaises(storage.StoreConflict):
+                queued.result(5)
+            self.assertEqual(self.store.get(second.intent.request_id), canceled)
+            self.assertEqual(len(self.calls), 3)  # Two estimates; only the already-claimed spend.
+            completions = self.session.drain()
+            self.assertEqual(len(completions), 2)
+            self.assertIsInstance(completions[1].error, storage.StoreConflict)
+        finally:
+            release.set()
+
+    def remote_model(self):
+        origin = self.session.capture(self.scene, self.target)
+        estimate = self.session._coordinator._adapter.estimate_model(
+            {"id": "fixture-model", "type": "custom", "inputs": []}, {}
+        )
+        prepared = self.session.prepare(estimate, origin=origin)
+        record = self.session.submit(
+            prepared, operation="model", target_id="fixture-model", payload={}
+        ).result(5)
+        self.session.drain()
+        return record
+
+    def cancellation_response(self, *, lose_action=False):
+        import httpx
+
+        calls = []
+
+        def respond(request):
+            calls.append((request, threading.current_thread()))
+            if request.method == "POST":
+                if lose_action:
+                    raise httpx.ReadTimeout("fixture lost response", request=request)
+                return httpx.Response(
+                    200, json={"job": {"jobId": "fixture-remote", "status": "canceled"}}
+                )
+            return httpx.Response(
+                200,
+                json={
+                    "job": {"jobId": "fixture-remote", "jobType": "custom", "status": "in-progress"}
+                },
+            )
+
+        self.handler = respond
+        return calls
+
+    def test_remote_cancel_retains_origin_after_target_deletion_and_uses_poll_evidence(self):
+        storage = submodule("core.jobs.store")
+        record = self.remote_model()
+        bpy.data.objects.remove(self.target, do_unlink=True)
+        self.target = None
+        calls = self.cancellation_response()
+        task = self.session.cancel_remote(
+            record.intent.request_id, expected_revision=record.revision
+        )
+        snapshot = task.result(5)
+        self.assertEqual(snapshot.record.state, storage.JobState.CANCEL_REQUESTED)
+        self.assertEqual([request.method for request, _ in calls], ["GET", "POST", "GET"])
+        self.assertTrue(all(thread is not threading.main_thread() for _, thread in calls))
+        completion = self.session.drain()[0]
+        self.assertEqual(completion.origin, record.intent.origin)
+        self.assertEqual(completion.result, snapshot)
+        with self.assertRaises(self.module.OriginUnavailable):
+            self.session.deliver(completion, lambda *args: self.fail("Applied to a missing target"))
+        item = self.session.recovery_plan()[0]
+        self.assertEqual(item.record, snapshot.record)
+        self.assertEqual(item.action.value, "poll_remote")
+
+    def test_restarted_session_recovers_uncertain_cancel_without_repeating_action(self):
+        import httpx
+
+        commands = submodule("core.jobs.coordinator")
+        storage = submodule("core.jobs.store")
+        record = self.remote_model()
+        calls = self.cancellation_response(lose_action=True)
+        task = self.session.cancel_remote(
+            record.intent.request_id, expected_revision=record.revision
+        )
+        with self.assertRaises(commands.CancellationUncertain):
+            task.result(5)
+        self.assertIsInstance(self.session.drain()[0].error, commands.CancellationUncertain)
+        self.session.shutdown()
+        adapter = self.api.SDKAdapter(
+            self.api.Credentials("key", "secret"),
+            online=lambda: True,
+            account_id=self.scope.account_id,
+            base_url=self.scope.service,
+            transport=httpx.MockTransport(lambda request: self.handler(request)),
+        )
+        self.session = self.module.JobSession(adapter, self.store, workers=1)
+        recovered = self.session.recovery_plan()[0].record
+        self.assertEqual(recovered.state, storage.JobState.CANCEL_REQUESTED)
+        self.assertEqual(recovered.intent.origin, record.intent.origin)
+        retried = self.session.cancel_remote(
+            recovered.intent.request_id, expected_revision=recovered.revision
+        )
+        with self.assertRaises(storage.StoreConflict):
+            retried.result(5)
+        self.session.drain()
+        snapshot = self.session.refresh_remote(
+            recovered.intent.request_id, expected_revision=recovered.revision
+        ).result(5)
+        self.assertEqual(snapshot.record.state, storage.JobState.CANCEL_REQUESTED)
+        self.assertEqual(sum(request.method == "POST" for request, _ in calls), 1)
+        completion = self.session.drain()[0]
+        with self.assertRaises(self.module.OriginUnavailable):
+            self.session.deliver(
+                completion, lambda *args: self.fail("Recovered target was rebound")
+            )
+
+    def test_cancellation_and_recovery_commands_reject_worker_thread_calls(self):
+        prepared = self.prepare()
+        with ThreadPoolExecutor(max_workers=1) as pool:
+            for method in (
+                self.session.cancel_prepared,
+                self.session.cancel_remote,
+                self.session.refresh_remote,
+            ):
+                future = pool.submit(method, prepared.intent.request_id, expected_revision=0)
+                with self.assertRaisesRegex(RuntimeError, "main thread"):
+                    future.result(5)
+            with self.assertRaisesRegex(RuntimeError, "main thread"):
+                pool.submit(self.session.recovery_plan).result(5)
+
+    def test_missing_or_stale_cancellation_cannot_dispatch(self):
+        storage = submodule("core.jobs.store")
+        record = self.remote_model()
+        calls = self.cancellation_response()
+        with self.assertRaises(self.module.OriginUnavailable):
+            self.session.cancel_remote("another-scope-record", expected_revision=record.revision)
+        task = self.session.cancel_remote(
+            record.intent.request_id, expected_revision=record.revision - 1
+        )
+        with self.assertRaises(storage.StoreConflict):
+            task.result(5)
+        self.assertEqual(calls, [])
+        self.assertEqual(self.store.get(record.intent.request_id), record)
+
     def test_retired_owner_is_reaped_without_waiting_for_network(self):
         self.completion()
         self.session.deactivate()

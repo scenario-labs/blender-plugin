@@ -152,15 +152,32 @@ class JobSession:
         return task
 
     def refresh_remote(self, request_id, *, expected_revision):
+        return self._record_command("refresh_remote", request_id, expected_revision)
+
+    def recovery_plan(self):
+        """Inspect this connection's saved jobs without resolving old Blender targets."""
+        _main_thread()
+        return self._coordinator.recovery_plan()
+
+    def cancel_prepared(self, request_id, *, expected_revision):
+        """Persist local cancellation now, even while the command queue is full."""
+        _main_thread()
+        return self._workers.cancel_prepared(request_id, expected_revision=expected_revision)
+
+    def cancel_remote(self, request_id, *, expected_revision):
+        """Queue explicit known model-job cancellation under its original scope."""
+        return self._record_command("cancel_remote", request_id, expected_revision)
+
+    def _record_command(self, command, request_id, expected_revision):
         _main_thread()
         self._check_capacity()
-        records = self._coordinator.recovery_plan()
+        records = self.recovery_plan()
         record = next(
             (item.record for item in records if item.record.intent.request_id == request_id), None
         )
         if record is None:
             raise OriginUnavailable("The job is not in this connection's store")
-        task = self._workers.refresh_remote(request_id, expected_revision=expected_revision)
+        task = getattr(self._workers, command)(request_id, expected_revision=expected_revision)
         self._pending.append((task, record.intent.origin))
         return task
 

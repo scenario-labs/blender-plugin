@@ -1,7 +1,7 @@
 {
   "version": 1,
   "index": "docs/index.md",
-  "base_revision": "d9ff9b96f53e4571921b4a8a2ddbed0ba771aca7",
+  "base_revision": "e87442ad1467b31bf722543f2d10940ea63a8485",
   "documents": [
     {
       "path": ".claude/rules/blender-glue.md",
@@ -91,13 +91,15 @@
     {
       "path": "docs/BLENDER_JOB_CONTEXT.md",
       "coverage": "inherited",
-      "reviewed_at": "2026-09-23",
-      "limits": "Existing guide indexed during this intake, without a fresh claim-by-claim or live verification; consult current integration status and issue acceptance.",
+      "reviewed_at": "2026-09-24",
+      "limits": "Session cancellation/recovery facade and its listed source/tests were inspected; no active UI/MCP control, authoritative account discovery or live/paid operation acceptance is claimed. Other documented origin and lifecycle behavior retains prior evidence.",
       "sources": {
-        "scenario/blender/job_session.py": "c1d0c91a1a76977691e6690a0e369a6e9282ca430de92d1f9c300acfbe2fd79a",
+        "scenario/blender/job_session.py": "c35623d431652a690b5811212b9df7f5f3eaf12373aecbfc11a1d196a509efbc",
         "scenario/core/jobs/origins.py": "d1282d67aacdfe2444a776cf1338667bea9ee67392ff3f473db581a0f8059977",
-        "tests/blender/test_job_session.py": "9013928c41cd78b0848761c99fe9750b2bdbcd2b3a330c45fc95207da5e17bb5",
-        "tests/unit/test_shared_quotes.py": "2f824c1999c1d9ed83e1c23960bfedaf09ed921c73f87252a68389976f290133"
+        "tests/blender/test_job_session.py": "c82d1561183d031e6f423e72c5994e405accec2d9dd821dffa83eda471a1c376",
+        "tests/unit/test_shared_quotes.py": "2f824c1999c1d9ed83e1c23960bfedaf09ed921c73f87252a68389976f290133",
+        "scenario/core/jobs/coordinator.py": "c1d8208cb20f1b4401389704308e7a063f013a63919cf5a7c88f6315eb6d977b",
+        "scenario/core/jobs/workers.py": "fc584737c05c28bcb20309220ed6dc99bb40b330339b995075c1392497d3ebed"
       }
     },
     {

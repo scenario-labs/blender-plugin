@@ -49,7 +49,7 @@ integration work; matching a scene or object name is insufficient.
 
 ## Results and lifecycle
 
-`submit` and `refresh_remote` return task handles. `drain()` returns completed
+`submit`, `refresh_remote` and `cancel_remote` return task handles. `drain()` returns completed
 outcomes on the main thread without waiting for network work. Per-task errors
 for invalid worker origin/scope or malformed results do not drop successful
 neighbors from the same drain. Undrained outcomes count against a separate
@@ -83,6 +83,35 @@ continue to propagate; a session with live workers retains its ownership.
 The actual authentication context, safe online-access snapshot for worker calls,
 UI/MCP activation and durable result downloads/application remain separate work.
 No account ID is guessed and no privileged or live service call is introduced.
+
+## Recovery inspection and cancellation
+
+`recovery_plan()` is a main-thread, read-only view of the selected connection's
+saved jobs and suggested actions. It does not rediscover Blender targets, change
+records or submit requests. Restarted records retain their original origins.
+
+`cancel_prepared(request_id, expected_revision=...)` durably cancels an unclaimed
+local intent immediately on the main thread. It bypasses the worker queue and
+completion-admission limit, so a full queue cannot delay cancellation until after
+a queued submission spends. The queued submission subsequently fails its stored
+state check. An already claimed request or stale revision fails explicitly; local
+cancellation does not promise remote cancellation.
+
+`cancel_remote(request_id, expected_revision=...)` uses the same bounded pool and
+completion queue as refresh/submission. Its original origin is loaded from this
+connection's scoped store, never captured from the currently selected scene.
+The [coordinator's model-job cancellation contract](JOB_COORDINATOR.md#known-model-job-cancellation)
+still governs eligibility, the durable single-action claim and authoritative
+status polling. A canceled acknowledgement alone cannot report terminal success;
+an uncertain response remains recoverable by refreshing the known ID without
+replaying the action. General workflow cancellation is unsupported.
+
+Cancellation, refresh and recovery inspection deliberately do not require the
+old scene/target to remain available. This allows explicit cancellation and
+reconciliation after deletion or restart. Their completions still carry the
+original stored origin; `deliver` continues to reject unavailable, stale or
+unrecognized origins before Blender application. These session methods do not
+add active UI/MCP controls or solve authoritative account/project discovery.
 
 
 ## Shared asynchronous estimates

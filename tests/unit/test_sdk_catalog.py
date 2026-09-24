@@ -57,9 +57,11 @@ def test_catalog_pagination_and_normalization_preserve_selected_credentials(monk
     assert requests[1].url.params["paginationToken"] == "page-two"
     auth = "Basic " + base64.b64encode(b"selected-key:selected-secret").decode()
     assert all(request.headers["Authorization"] == auth for request in requests)
-    assert len(pools) == 1 and pools[0]._closed
+    assert len(pools) == 1 and not pools[0]._closed
     records[0].raw["name"] = "Changed by caller"
     assert context.load_list_cached()[0].name == "First"
+    context.close()
+    assert pools[0]._closed
 
 
 def test_detail_cache_isolated_between_connections_and_defensive_copies():
@@ -78,10 +80,13 @@ def test_detail_cache_isolated_between_connections_and_defensive_copies():
     assert len(requests) == 1
     context.get("fixture", refresh=True)
     assert len(requests) == 2
-    assert all(pool._closed for pool in pools)
+    assert len(pools) == 1 and not pools[0]._closed
     other, _ = catalog(respond)
     assert other.load_cached("fixture") is None
     assert other.load_list_cached() is None
+    context.close()
+    other.close()
+    assert pools[0]._closed
 
 
 def test_private_model_list_preserves_sdk_trained_filter():
@@ -95,6 +100,7 @@ def test_private_model_list_preserves_sdk_trained_filter():
     assert context.fetch_list("private") == []
     assert requests[0].url.params["privacy"] == "private"
     assert requests[0].url.params["status"] == "trained"
+    context.close()
 
 
 def test_permission_revocation_stops_next_page_and_does_not_cache_partial_list():
@@ -112,6 +118,8 @@ def test_permission_revocation_stops_next_page_and_does_not_cache_partial_list()
         context.fetch_list()
     assert len(requests) == 1
     assert context.load_list_cached() is None
+    assert not pools[0]._closed
+    context.close()
     assert pools[0]._closed
 
 
@@ -155,4 +163,36 @@ def test_failed_reads_are_safe_and_leave_no_cached_record(response):
         context.get("fixture")
     assert "private service details" not in str(error.value)
     assert context.load_cached("fixture") is None
-    assert len(pools) == 1 and pools[0]._closed
+    assert len(pools) == 1 and not pools[0]._closed
+    context.close()
+    assert pools[0]._closed
+
+
+def test_concurrent_reads_reuse_pool_and_retirement_closes_after_last_reader():
+    entered = {name: threading.Event() for name in ("first", "second")}
+    release = {name: threading.Event() for name in entered}
+
+    def respond(request):
+        name = request.url.path.rsplit("/", 1)[-1]
+        entered[name].set()
+        assert release[name].wait(5)
+        return httpx.Response(200, json={"model": {"id": name}})
+
+    context, pools = catalog(respond)
+    with ThreadPoolExecutor(max_workers=2) as workers:
+        reads = {name: workers.submit(context.get, name) for name in entered}
+        try:
+            assert all(event.wait(5) for event in entered.values())
+            assert len(pools) == 1
+            context.close()
+            assert not pools[0]._closed
+            release["first"].set()
+            with pytest.raises(ScenarioError, match="connection changed"):
+                reads["first"].result(5)
+            assert not pools[0]._closed and not context.closed
+        finally:
+            for event in release.values():
+                event.set()
+        with pytest.raises(ScenarioError, match="connection changed"):
+            reads["second"].result(5)
+    assert pools[0]._closed and context.closed

@@ -198,8 +198,54 @@ class OfflineRuntimeTests(unittest.TestCase):
             self.assertEqual(self.runtime.state.catalog_error, "")
             self.assertTrue(self.runtime.state.catalog_loaded)
             self.assertEqual(self.runtime.state.records["fixture"].name, "Current")
-            self.assertTrue(all(pool._closed for pool in pools))
+            self.assertTrue(pools[0]._closed)
+            self.assertFalse(pools[1]._closed)
             self.assertEqual(sum(first for first, _ in calls), 1)
+
+    def test_catalog_reset_returns_before_blocked_read_and_worker_closes_its_pool(self):
+        catalog_module = submodule("core.api.sdk_catalog")
+        adapter = submodule("core.api.sdk_adapter")
+        entered, release, reset_returned = (threading.Event(), threading.Event(), threading.Event())
+        pools, returned_promptly = [], []
+
+        def respond(request):
+            entered.set()
+            self.assertTrue(release.wait(5))
+            return httpx.Response(200, json={"models": []})
+
+        def factory(credentials, **kwargs):
+            result = adapter.SDKAdapter(
+                credentials, transport=httpx.MockTransport(respond), **kwargs
+            )
+            pools.append(result)
+            return result
+
+        def release_after_reset():
+            returned_promptly.append(reset_returned.wait(2))
+            release.set()
+
+        self.enterContext(patch.object(catalog_module, "SDKAdapter", side_effect=factory))
+        with online_access(True):
+            self.assertTrue(self.generation.request_catalog())
+            context = self.runtime.state.catalog
+            self.assertTrue(entered.wait(5))
+            releaser = threading.Thread(target=release_after_reset)
+            releaser.start()
+            try:
+                self.runtime.state.reset()
+                self.assertFalse(context.closed)
+                self.assertFalse(pools[0]._closed)
+            finally:
+                reset_returned.set()
+                release.set()
+                releaser.join(5)
+                self.manager.join(5)
+        self.assertEqual(returned_promptly, [True])
+        self.assertFalse(self.manager.has_active())
+        self.assertTrue(context.closed)
+        self.assertTrue(pools[0]._closed)
+        self.assertIsNone(self.runtime.state.catalog)
+        self.assertFalse(self.runtime.state.catalog_loaded)
 
     def test_online_permission_snapshot_is_updated_on_main_thread(self):
         model, calls = self.catalog_client()

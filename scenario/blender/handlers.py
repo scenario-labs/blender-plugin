@@ -46,7 +46,9 @@ def dispatch(event):
         runtime.state.catalog_error = str(payload)
         runtime.set_message(f"Could not load models: {payload}")
     elif name == "models":
-        generation.set_models(payload["detailed"], payload["failed"])
+        generation.set_models(
+            payload["detailed"], payload["failed"], mark_dirty=payload.get("mark_dirty", True)
+        )
     elif name == "estimate":
         _on_estimate(payload)
     elif name in ("job", "job_done", "job_failed"):

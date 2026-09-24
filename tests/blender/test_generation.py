@@ -44,6 +44,19 @@ class GenerationTests(unittest.TestCase):
         self.assertEqual(lane.model_id, "model_google-gemini-3-1-flash")
         self.assertIn("resolution", [p.name for p in lane.params])
 
+    def test_progressive_schema_warmup_preserves_visible_estimate(self):
+        lane = bpy.context.scene.scenario.lane_state("image")
+        record = self.runtime.state.records[lane.model_id]
+        lane.estimate_key, lane.estimate_state = "selected-quote", "READY"
+        lane.estimate_cu = 13.25
+        self.handlers.dispatch(
+            ("models", {"detailed": [record], "failed": {}, "mark_dirty": False})
+        )
+        self.assertEqual(lane.estimate_key, "selected-quote")
+        self.assertEqual(lane.estimate_state, "READY")
+        self.assertAlmostEqual(lane.estimate_cu, 13.25)
+        self.assertIn("resolution", [p.name for p in lane.params])
+
     def test_enum_param_choices_survive_a_cache_miss(self):
         # after a .blend reload the params persist but the in-memory enum cache is empty; the dropdown must rebuild
         # its choices from the schema instead of showing "Loading..." forever (the Minimax H3 Resolution bug)

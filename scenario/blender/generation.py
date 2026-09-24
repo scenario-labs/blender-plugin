@@ -145,7 +145,7 @@ def restore_model_key(lane_state):
         lane_state.model_id = key
 
 
-def set_models(detailed, failed):
+def set_models(detailed, failed, *, mark_dirty=True):
     for rec in detailed:
         runtime.state.records[rec.id] = rec
         _schemas.pop(rec.id, None)
@@ -156,7 +156,7 @@ def set_models(detailed, failed):
         for lane in props.GENERATION_LANES:
             lane_state = scene.scenario.lane_state(lane)
             if lane_state.model_id in [r.id for r in detailed]:
-                on_model_changed(bpy.context, lane_state)
+                on_model_changed(bpy.context, lane_state, mark_dirty=mark_dirty)
 
 
 _pending_models = set()

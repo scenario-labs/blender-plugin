@@ -62,7 +62,7 @@ class RuntimeState:
         """Forget catalog, jobs and history; keep process-level services (MCP server, composer, previews)."""
         for catalog in [self.catalog, *self.retired_catalogs]:
             if catalog is not None:
-                catalog.close(wait=True)
+                catalog.close()
         kept = {name: getattr(self, name) for name in self.SESSION_ATTRS}
         self.__init__()
         for name, value in kept.items():

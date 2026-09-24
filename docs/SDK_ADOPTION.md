@@ -54,9 +54,11 @@ acceptance, complete schemas, remote cancellation or successful generation.
 
 The active catalog captures the selected credentials on Blender's main thread,
 uses the adapter's environment-isolated configuration and mirrors online
-permission for workers. Each read closes its own HTTP pool; in-flight reads are
-retired without closing their pool early, and their late results cannot populate
-the replacement connection. Cache entries are in memory per connection until an
+permission for workers. Reads reuse one HTTP pool per catalog connection;
+retirement returns without waiting for network I/O, and the final reader closes
+the pool. Late results cannot populate the replacement connection. Listing and
+successful schema details are delivered progressively, so startup does not wait
+for all curated schemas before exposing the catalog. Cache entries are in memory per connection until an
 authoritative account/project identity contract enables scoped persistence.
 [Runtime integration status](architecture/runtime.md#active-sdk-catalog) records
 the remaining shared-job and paid-flow boundaries. The original raw `Catalog`

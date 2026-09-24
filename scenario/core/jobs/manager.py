@@ -298,12 +298,37 @@ class JobManager:
                 ("catalog_failed", {"catalog": catalog, "error": str(getattr(err, "reason", err))})
             )
             return
+        # Publish choices before warming schemas: one slow default must not hold
+        # the catalog or an independently requested selected model hostage.
+        self.catalog_events.put(
+            (
+                "catalog",
+                {"catalog": catalog, "privacy": privacy, "records": records, "detailed": []},
+            )
+        )
         detailed = []
         for model_id in model_ids:
+            if self._stop.is_set():
+                return
             try:
-                detailed.append(catalog.get(model_id))
+                record = catalog.get(model_id)
             except (ScenarioError, OSError) as err:
                 log.warning("model %s: %s", model_id, err)
+            else:
+                detailed.append(record)
+                self.catalog_events.put(
+                    (
+                        "models",
+                        {
+                            "catalog": catalog,
+                            "detailed": [record],
+                            "failed": {},
+                            "mark_dirty": False,
+                        },
+                    )
+                )
+        # Rebuild derived lane choices with all available details as before;
+        # neither the list nor earlier schemas wait for this final warmup event.
         self.catalog_events.put(
             (
                 "catalog",

@@ -25,9 +25,10 @@ exception to the mandatory SDK policy in [AGENTS.md](../../AGENTS.md).
 [SDKCatalog](../../scenario/core/api/sdk_catalog.py) binds model list/detail
 reads to the explicitly selected API-key pair. The application owns this context;
 opening or closing a panel does not replace it. The existing manager dispatches
-reads off the main thread, and each read owns and closes its SDK adapter/HTTP
-pool. Retirement disables later requests while an in-flight read keeps its pool
-until cleanup finishes. Extension teardown waits for that cleanup.
+reads off the main thread through one reusable SDK adapter/HTTP pool per catalog
+connection. Retirement disables later requests immediately; the last active
+reader closes the pool. Extension teardown does not wait for catalog network I/O
+or close a pool underneath an in-flight request.
 
 The GUI pump and main-thread MCP catalog/schema calls deliver the same queued
 completions. Credential changes retire the context, discard its model/schema
@@ -35,6 +36,13 @@ caches and visible quotes, and reject late success/error events from the old
 context. Main-thread entry points and GUI ticks mirror Blender's online-access
 permission into a thread-safe event; each SDK request, including subsequent
 catalog pages, checks that snapshot. Workers never read `bpy`.
+
+The list is delivered before the curated model schemas finish warming. Each
+successful detail becomes available independently; the final catalog event
+rebuilds derived lane choices with the available details. One failed detail does
+not hide the list or successful neighbors. Warmup events preserve existing
+visible estimates, and a selected model can still use the existing independent
+schema-fetch path. All events retain the credential-context identity check.
 
 Caches are connection-local and in memory. The active path does not reuse the
 prototype's unscoped disk model cache. Restart therefore requires a catalog

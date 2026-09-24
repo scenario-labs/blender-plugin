@@ -14,8 +14,8 @@ from .sdk_adapter import AdapterError, SDKAdapter
 class SDKCatalog:
     """One application catalog context, independent of the view that requested it.
 
-    Reads own their HTTP pools until completion. Retirement disables subsequent
-    requests and discards cached results without closing a pool under a worker.
+    Reads share this connection's HTTP pool until retirement. Retirement disables
+    subsequent requests and closes the pool only after the final reader exits.
     Cache entries live only in this connection: an authoritative account identity
     is required before persistent shared account/project caching can be enabled.
     """
@@ -28,6 +28,7 @@ class SDKCatalog:
         self._condition = threading.Condition()
         self._active = True
         self._readers = 0
+        self._adapter = None
         self._lists = {}
         self._records = {}
         self.update_online(online)
@@ -51,8 +52,15 @@ class SDKCatalog:
             self._permission.clear()
             self._lists.clear()
             self._records.clear()
+            self._close_idle_adapter()
             if wait:
                 self._condition.wait_for(lambda: not self._readers)
+
+    def _close_idle_adapter(self):
+        """Called under the condition; no network request can own this pool now."""
+        if not self._active and not self._readers and self._adapter is not None:
+            adapter, self._adapter = self._adapter, None
+            adapter.close()
 
     def _check_active(self):
         if not self._active:
@@ -60,22 +68,28 @@ class SDKCatalog:
 
     @contextmanager
     def _read(self):
-        with self._condition:
-            self._check_active()
-            self._readers += 1
         try:
-            with self._adapter_factory(
-                self._credentials, online=self._permission.is_set
-            ) as adapter:
+            with self._condition:
+                self._check_active()
+                if self._adapter is None:
+                    self._adapter = self._adapter_factory(
+                        self._credentials, online=self._permission.is_set
+                    )
+                adapter = self._adapter
+                self._readers += 1
+            try:
                 yield adapter
+            finally:
+                with self._condition:
+                    self._readers -= 1
+                    try:
+                        self._close_idle_adapter()
+                    finally:
+                        self._condition.notify_all()
         except AdapterError as error:
             raise ScenarioError(0, str(error)) from None
         except ValueError:
             raise ScenarioError(0, "The catalog request is invalid") from None
-        finally:
-            with self._condition:
-                self._readers -= 1
-                self._condition.notify_all()
 
     def fetch_list(self, privacy="public"):
         with self._read() as adapter:

@@ -4,10 +4,11 @@ endif
 BLENDER_BUILD_ARGS ?=
 BLENDER_INSTALL_ARGS ?=
 BLENDER_TEST_ARGS ?=
+BLENDER_GUI_ARGS ?=
 UV ?= uv
 LINT_PATHS ?= .
 
-.PHONY: sync test test-blender build install lint format knowledge mcp-docs docs
+.PHONY: sync test test-blender build install gui-check lint format knowledge mcp-docs docs
 knowledge:
 	$(UV) run --locked --no-env-file python tools/check_knowledge.py
 sync:
@@ -28,6 +29,8 @@ build:
 	$(UV) run --locked --no-env-file python tools/build.py $(BLENDER_BUILD_ARGS)
 install:
 	$(UV) run --locked --no-env-file python tools/install.py $(BLENDER_INSTALL_ARGS)
+gui-check:
+	$(UV) run --locked --no-env-file python tools/capture_gui.py $(BLENDER_GUI_ARGS)
 
 mcp-docs:
 	$(UV) run --locked --no-env-file python tools/gen_mcp_docs.py --write

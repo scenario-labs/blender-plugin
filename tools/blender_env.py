@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Portable Blender discovery and exact installed-package verification (stdlib only)."""
 
+import argparse
 import hashlib
 import os
 import platform
@@ -9,6 +10,7 @@ import re
 import shutil
 import stat
 import subprocess
+import sys
 import tomllib
 import zipfile
 from pathlib import Path, PurePosixPath
@@ -27,7 +29,7 @@ def find_blender(explicit=None):
         candidate = shutil.which(selected) or str(Path(selected).expanduser())
         if Path(candidate).is_file() and os.access(candidate, os.X_OK):
             return Path(candidate).resolve()
-        raise ValueError("Blender not found: set BLENDER to an executable or use --blender PATH")
+        raise ValueError("Blender not found: set BLENDER=/path/to/blender or use --blender PATH")
     found = shutil.which("blender")
     if found:
         return Path(found).resolve()
@@ -56,7 +58,7 @@ def find_blender(explicit=None):
     for candidate in candidates:
         if candidate.is_file() and os.access(candidate, os.X_OK):
             return candidate.resolve()
-    raise ValueError("Blender not found: set BLENDER to an executable or use --blender PATH")
+    raise ValueError("Blender not found: set BLENDER=/path/to/blender or use --blender PATH")
 
 
 def isolated_environment(profile, temporary, environ=None):
@@ -174,3 +176,22 @@ def run_step(binary, args, *, env, directory, name, timeout):
     if result.returncode:
         raise subprocess.CalledProcessError(result.returncode, name)
     return log
+
+
+def main():
+    parser = argparse.ArgumentParser(description="Print the selected Blender executable path.")
+    parser.add_argument(
+        "--blender", help="Executable path or command; defaults to BLENDER/discovery"
+    )
+    args = parser.parse_args()
+    try:
+        binary = find_blender(args.blender)
+    except (OSError, ValueError) as error:
+        print(error, file=sys.stderr)
+        return 1
+    print(binary)
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

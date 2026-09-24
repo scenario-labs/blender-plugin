@@ -6,6 +6,7 @@
 `POST /generate/custom/model_scenario-llm` with `instruction`, optional `textInputs`, `images` (asset ids), `numOutputs`
 and `model` (default gemini-3.5-flash-lite). The job costs 0.5 CU (dry run, 2026-08-28) and its output is a text asset
 whose content sits in `asset.metadata.preview`, the same place the Generations panel reads archived prompts from."""
+
 import time
 
 from . import assets as assets_api
@@ -15,8 +16,10 @@ from .errors import ScenarioError
 
 MODEL_ID = "model_scenario-llm"
 DEFAULT_MODEL = "gemini-3.5-flash-lite"
-TRANSLATE_INSTRUCTION = ("Translate the text to {target}. Translate faithfully, keep the line breaks and the formatting, "
-                         "keep proper nouns and technical terms, do not add comments or quotes: return only the translation.")
+TRANSLATE_INSTRUCTION = (
+    "Translate the text to {target}. Translate faithfully, keep the line breaks and the formatting, "
+    "keep proper nouns and technical terms, do not add comments or quotes: return only the translation."
+)
 
 
 def _body(instruction, text_inputs=(), images=(), model=None):
@@ -42,20 +45,29 @@ def text_from_job(client, job):
         meta = asset.get("metadata") or {}
         preview = meta.get("preview")
         # the preview is capped (~1024 chars); when the text is longer, hasFullPreview is False, so fetch the full
-        # content from the asset URL (a long JSON blockout was being cut off mid-element and failing to parse)
+        # content from the asset URL; refused URLs and oversized text fall back to the preview.
         if not meta.get("hasFullPreview", True) and asset.get("url"):
             try:
                 full = assets_api.fetch_url_text(asset["url"])
                 if full.strip():
                     return full.strip()
-            except (OSError, ValueError):
+            except (OSError, ValueError, ScenarioError):
                 pass  # fall back to the (possibly truncated) preview
         if isinstance(preview, str) and preview.strip():
             return preview.strip()
     raise ValueError("The Scenario LLM returned no text")
 
 
-def run_text(client, instruction, text_inputs=(), images=(), model=None, poll_interval=1.5, max_polls=60, sleep=time.sleep):
+def run_text(
+    client,
+    instruction,
+    text_inputs=(),
+    images=(),
+    model=None,
+    poll_interval=1.5,
+    max_polls=60,
+    sleep=time.sleep,
+):
     """Submit an instruction to the Scenario LLM, wait for the job, return its text (spends credits)."""
     job = generate_api.submit(client, MODEL_ID, _body(instruction, text_inputs, images, model))
     job_id = job.get("jobId")
@@ -73,10 +85,16 @@ def run_text(client, instruction, text_inputs=(), images=(), model=None, poll_in
 
 def translate(client, text, target="English", **kwargs):
     """Translate `text` to `target` (0.5 CU)."""
-    return run_text(client, TRANSLATE_INSTRUCTION.format(target=target), text_inputs=[text], **kwargs)
+    return run_text(
+        client, TRANSLATE_INSTRUCTION.format(target=target), text_inputs=[text], **kwargs
+    )
 
 
 def estimate_text(client, instruction, text_inputs=(), images=(), model=None):
     """Dry run: the CU price of one LLM call (dryRun must be the query parameter, never a body flag)."""
-    data = client.post(f"/generate/custom/{MODEL_ID}", query={"dryRun": "true"}, json_body=_body(instruction, text_inputs, images, model))
+    data = client.post(
+        f"/generate/custom/{MODEL_ID}",
+        query={"dryRun": "true"},
+        json_body=_body(instruction, text_inputs, images, model),
+    )
     return float(data.get("creativeUnitsCost") or 0.0)

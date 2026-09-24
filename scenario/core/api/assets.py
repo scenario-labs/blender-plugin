@@ -1,11 +1,14 @@
 # SPDX-FileCopyrightText: 2026 Scenario Inc.
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Assets: read, download, upload (base64 or multipart)."""
+
 import base64
+import http.client
 import math
 import pathlib
 import shutil
 import time
+import urllib.parse
 import urllib.request
 
 from . import jobs
@@ -14,14 +17,33 @@ from .errors import NetworkError, ScenarioError
 
 BASE64_LIMIT = 3_500_000  # bytes; the gateway body cap is 10 MB, 4.4 MB raw PNGs verified to pass
 PART_SIZE = 32 * 1024 * 1024
+MAX_TEXT_BYTES = 16 * 1024 * 1024
 
 _EXT_MIME = {
-    ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".webp": "image/webp", ".gif": "image/gif",
-    ".avif": "image/avif", ".tif": "image/tiff", ".tiff": "image/tiff", ".heic": "image/heic", ".svg": "image/svg+xml",
-    ".mp4": "video/mp4", ".webm": "video/webm", ".mov": "video/quicktime",
-    ".mp3": "audio/mpeg", ".wav": "audio/wav", ".ogg": "audio/ogg", ".m4a": "audio/mp4",
-    ".glb": "model/gltf-binary", ".gltf": "model/gltf+json", ".fbx": "model/x-fbx", ".obj": "model/obj",
-    ".stl": "model/stl", ".ply": "model/ply", ".vox": "model/x-3d-vox",
+    ".png": "image/png",
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".webp": "image/webp",
+    ".gif": "image/gif",
+    ".avif": "image/avif",
+    ".tif": "image/tiff",
+    ".tiff": "image/tiff",
+    ".heic": "image/heic",
+    ".svg": "image/svg+xml",
+    ".mp4": "video/mp4",
+    ".webm": "video/webm",
+    ".mov": "video/quicktime",
+    ".mp3": "audio/mpeg",
+    ".wav": "audio/wav",
+    ".ogg": "audio/ogg",
+    ".m4a": "audio/mp4",
+    ".glb": "model/gltf-binary",
+    ".gltf": "model/gltf+json",
+    ".fbx": "model/x-fbx",
+    ".obj": "model/obj",
+    ".stl": "model/stl",
+    ".ply": "model/ply",
+    ".vox": "model/x-3d-vox",
 }
 
 
@@ -49,11 +71,63 @@ def asset_type(asset):
     return ((asset or {}).get("metadata") or {}).get("type") or ""
 
 
-def fetch_url_text(url, timeout=60):
-    """Download a text asset's full content from its signed URL (the asset preview is capped, this is not)."""
+def _check_url(url):
+    """Reject non-HTTPS, missing-host and malformed asset destinations before I/O."""
+    try:
+        parts = urllib.parse.urlsplit(url)
+        valid = (
+            isinstance(url, str)
+            and not any(ord(char) <= 32 or ord(char) == 127 for char in url)
+            and parts.scheme == "https"
+            and bool(parts.hostname)
+            and parts.username is None
+            and parts.password is None
+            and parts.port != 0
+        )
+    except (TypeError, ValueError, AttributeError):
+        valid = False
+    if not valid:
+        raise ScenarioError(0, "refusing non-https asset URL") from None
+
+
+def _safe_url(url):
+    """Omit signed query strings and fragments from validated URL diagnostics."""
+    return urllib.parse.urlsplit(url)._replace(query="", fragment="").geturl()
+
+
+def fetch_url_text(url, timeout=60, max_bytes=MAX_TEXT_BYTES):
+    """Validate the initial HTTPS URL and reject oversized or incomplete text."""
+    _check_url(url)
+    if type(max_bytes) is not int or max_bytes < 1:
+        raise ValueError("max_bytes must be a positive integer")
     req = urllib.request.Request(url, headers={"User-Agent": user_agent_string()})
+    chunks, total = [], 0
     with urllib.request.urlopen(req, timeout=timeout) as resp:
-        return resp.read().decode("utf-8", errors="replace")
+        length = resp.getheader("Content-Length")
+        if resp.getheader("Transfer-Encoding", "").lower() == "chunked":
+            length = None  # HTTP chunk framing takes precedence over Content-Length.
+        try:
+            length = int(length) if length is not None else None
+            if length is not None and length < 0:
+                raise ValueError
+        except ValueError:
+            raise ScenarioError(0, "invalid text asset Content-Length") from None
+        while True:
+            try:
+                chunk = resp.read(min(64 * 1024, max_bytes - total + 1))
+            except http.client.IncompleteRead:
+                raise ScenarioError(0, f"incomplete text asset: {_safe_url(url)}") from None
+            if not chunk:
+                break
+            total += len(chunk)
+            if total > max_bytes:
+                raise ScenarioError(
+                    0, f"text asset larger than {max_bytes} bytes: {_safe_url(url)}"
+                )
+            chunks.append(chunk)
+        if length is not None and total != length:
+            raise ScenarioError(0, f"incomplete text asset: {_safe_url(url)}")
+    return b"".join(chunks).decode("utf-8", errors="replace")
 
 
 def download_file(url, dest, transport=None, timeout=300, retries=3, sleep=time.sleep):
@@ -61,6 +135,7 @@ def download_file(url, dest, transport=None, timeout=300, retries=3, sleep=time.
 
     Large 3D bundles (a Meshy OBJ is 200+ MB) have seen the CDN close the connection mid-transfer;
     one retry with a short backoff recovers it. The query string is never altered (it carries the signature)."""
+    _check_url(url)
     dest = pathlib.Path(dest)
     dest.parent.mkdir(parents=True, exist_ok=True)
     tmp = dest.with_suffix(dest.suffix + ".part")
@@ -71,7 +146,7 @@ def download_file(url, dest, transport=None, timeout=300, retries=3, sleep=time.
             if transport is not None:
                 status, _headers, raw = transport.request("GET", url, {}, None, timeout)
                 if status >= 400:
-                    raise ScenarioError(status, f"download failed ({status}) for {url[:80]}")
+                    raise ScenarioError(status, f"download failed ({status}) for {_safe_url(url)}")
                 tmp.write_bytes(raw)
             else:
                 req = urllib.request.Request(url, headers={"User-Agent": user_agent_string()})
@@ -95,26 +170,50 @@ def upload_image_base64(client, path, name=None):
     path = pathlib.Path(path)
     mime = mime_for_path(path)
     encoded = base64.b64encode(path.read_bytes()).decode("ascii")
-    data = client.post("/assets", json_body={"image": f"data:{mime};base64,{encoded}", "name": name or path.name})
+    data = client.post(
+        "/assets", json_body={"image": f"data:{mime};base64,{encoded}", "name": name or path.name}
+    )
     asset = data.get("asset") or data
     return asset["id"]
 
 
-def upload_multipart(client, path, kind, content_type=None, transport=None, sleep=time.sleep, poll_interval=1.5, max_polls=120):
+def upload_multipart(
+    client,
+    path,
+    kind,
+    content_type=None,
+    transport=None,
+    sleep=time.sleep,
+    poll_interval=1.5,
+    max_polls=120,
+):
     path = pathlib.Path(path)
     transport = transport or client.transport
     content_type = content_type or mime_for_path(path)
     size = path.stat().st_size
     parts = max(1, math.ceil(size / PART_SIZE))
-    created = client.post("/uploads", json_body={"fileName": path.name, "fileSize": size, "contentType": content_type, "kind": kind, "parts": parts})
+    created = client.post(
+        "/uploads",
+        json_body={
+            "fileName": path.name,
+            "fileSize": size,
+            "contentType": content_type,
+            "kind": kind,
+            "parts": parts,
+        },
+    )
     upload = created.get("upload") or created
     upload_id, job_id = upload["id"], upload.get("jobId")
     with path.open("rb") as handle:
         for part in sorted(upload.get("parts") or [], key=lambda p: p.get("number", 0)):
             chunk = handle.read(PART_SIZE)
-            status, _h, raw = transport.request("PUT", part["url"], {"Content-Type": content_type}, chunk, 600)
+            status, _h, raw = transport.request(
+                "PUT", part["url"], {"Content-Type": content_type}, chunk, 600
+            )
             if status >= 400:
-                raise ScenarioError(status, f"part {part.get('number')} upload failed: {raw[:200]!r}")
+                raise ScenarioError(
+                    status, f"part {part.get('number')} upload failed: {raw[:200]!r}"
+                )
     client.post(f"/uploads/{upload_id}/action", json_body={"action": "complete"})
     for _ in range(max_polls):
         job = jobs.get_job(client, job_id)

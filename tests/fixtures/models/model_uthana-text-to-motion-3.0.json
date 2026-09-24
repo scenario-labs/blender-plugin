@@ -1,9 +1,9 @@
 {
   "model": {
     "id": "model_uthana-text-to-motion-3.0",
-    "userId": "c452b44467bd7f9d443c631491b6948b",
-    "authorId": "c452b44467bd7f9d443c631491b6948b",
-    "ownerId": "bftve3VtQgmpXxwAPUFWTQ",
+    "userId": "apiu_FIXTURE0000000000000000",
+    "authorId": "apiu_FIXTURE0000000000000000",
+    "ownerId": "proj_FIXTURE00000000000000000",
     "createdAt": "2026-06-22T09:15:59.661Z",
     "updatedAt": "2026-06-28T14:04:10.683Z",
     "name": "Uthana Text to Motion 3.0",

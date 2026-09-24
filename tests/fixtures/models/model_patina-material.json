@@ -1,9 +1,9 @@
 {
  "model": {
   "id": "model_patina-material",
-  "userId": "c452b44467bd7f9d443c631491b6948b",
-  "authorId": "c452b44467bd7f9d443c631491b6948b",
-  "ownerId": "bftve3VtQgmpXxwAPUFWTQ",
+  "userId": "apiu_FIXTURE0000000000000000",
+  "authorId": "apiu_FIXTURE0000000000000000",
+  "ownerId": "proj_FIXTURE00000000000000000",
   "createdAt": "2026-08-21T11:43:04.227Z",
   "updatedAt": "2026-08-21T17:13:55.834Z",
   "name": "PATINA Material",

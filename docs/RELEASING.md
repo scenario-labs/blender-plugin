@@ -73,6 +73,70 @@ Release-App credentials, installation and bypass configuration should be checked
 only when evidence points to an access failure. They are not routine setup steps
 for each release.
 
+## Offline extension repository snapshots
+
+[repository.py](../tools/repository.py) prepares a new local repository directory
+from an explicit inventory of already-built archives. It uses Blender's native
+`extension validate` and `extension server-generate` commands in a fresh isolated
+profile with online access disabled. It never rebuilds a ZIP or changes a manifest.
+The helper is a partial implementation of
+[#37](https://github.com/scenario-labs/blender-plugin/issues/37); release discovery,
+automatic retention selection, the site builder, Pages deployment and native
+setup/update controls remain separate integration work. Successful local generation
+does not prove that an archive was published, attested or accepted at runtime.
+
+Before using this for a published repository, verify each selected stable release
+and its downloaded assets using the publication checks above. Exclude drafts and
+prereleases. Create `inventory.json` next to the exact downloaded ZIP files with
+this structure, replacing the illustrative version, filename, checksum and size
+with the verified values:
+
+```json
+{
+  "schema_version": 1,
+  "extension_id": "scenario",
+  "archives": [
+    {
+      "file": "scenario-1.0.0.zip",
+      "version": "1.0.0",
+      "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "size": 12345
+    }
+  ]
+}
+```
+
+Choose the stable archives needed for the supported Blender/platform matrix;
+do not supply every historical release. All supplied entries are retained,
+including older versions needed by a different compatibility range. Entries
+with overlapping Blender ranges on any common platform are rejected, even if
+their release versions or Python wheel tags differ. A missing maximum means no
+upper bound; a maximum is exclusive. Missing platforms means all platforms.
+Adjacent Blender ranges and disjoint platform sets are allowed. The tool never
+silently chooses a winner or alters old manifests to make overlapping releases fit.
+
+```sh
+uv run --locked --no-env-file python tools/repository.py \
+  --blender /path/to/blender \
+  --inventory /path/to/verified-assets/inventory.json \
+  --output dist/repository-snapshot
+```
+
+The output directory must not exist. The helper checks each archive's identity,
+stable three-component version, size, SHA-256, safe ZIP layout and own SDK bundle
+lock, then validates it with Blender. It cross-checks every generated index entry
+against its archive, including Blender/platform/Python compatibility, hash, size
+and a relative URL resolving to the exact file. Missing, extra or inconsistent
+entries fail. ZIP filenames must be plain ASCII filenames; symlinks are rejected.
+
+The completed snapshot contains the unchanged ZIPs, sorted `index.json`, an HTML
+listing and normalized `inventory.json`. Replaying that inventory with the same
+Blender executable produces identical file contents. Generation failures leave
+no partial output and preserve existing snapshots; native logs remain under
+`.blender-profile` (or `--artifacts`). Keep generated snapshots untracked. The
+existing `tools/build.py --repo` remains a local current-source build convenience;
+it does not verify a retained release inventory.
+
 ## Included commit types
 
 [release-please-config.json](../release-please-config.json) includes every type

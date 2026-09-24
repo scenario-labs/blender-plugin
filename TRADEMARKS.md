@@ -5,10 +5,11 @@ explains what the licence of this repository does and does not grant for them.
 
 ## Code and marks are separate
 
-The first-party code and assets of Scenario for Blender are licensed under the
-GNU General Public License, version 3 or (at your option) any later version
-(see [LICENSE](LICENSE)). Third-party components retain their own licences and
-notices; see the [dependency bundle guide](docs/SDK_BUNDLE.md).
+The extension code of Scenario for Blender is licensed under the GNU General
+Public License, version 3 or (at your option) any later version
+(see [LICENSE](LICENSE)). Assets and bundled components retain their listed
+licences and notices; this policy does not relicense them. See the
+[dependency bundle guide](docs/SDK_BUNDLE.md).
 The code licence grants no rights under trademark law. Section 7(e) of the GPL
 allows a licensor to decline such rights, and Scenario Inc. does so here.
 

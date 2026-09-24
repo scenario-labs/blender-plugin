@@ -1,7 +1,7 @@
 {
   "version": 1,
   "index": "docs/index.md",
-  "base_revision": "33625a09c51da30030951ea86182ef2b6acb5908",
+  "base_revision": "db4122b95dbee83aef86bed166f2ea72df8c3188",
   "documents": [
     {
       "path": ".claude/rules/blender-glue.md",
@@ -84,18 +84,29 @@
       "path": "README.md",
       "coverage": "inherited",
       "reviewed_at": "2026-09-24",
-      "limits": "Existing guide indexed during this intake, without a fresh claim-by-claim or live verification; consult current integration status and issue acceptance. MCP overview and reference links reviewed; remaining product guidance still inherits its stated verification limits. Markdown handbook renderer, template slots, copied/inline images, metadata validation and external-font disclosure reviewed. This does not refresh inherited product claims or screenshot acceptance, publish the site or attach release assets. Repeat-build asset ownership/cleanup, literal template examples and directory-link handling reviewed with regression tests; desktop and narrow renderer presentation inspected separately in isolated browser profiles. Sibling links/licence labels checked against their public repositories; no future Blender skill availability claimed. Optional uv-managed hooks and staged secret/path guard inspected with disposable Git regression coverage; full-tree prototype normalization, complete secret detection and repository protection remain separate.",
+      "limits": "Public entry points, supported minimum, explicit credential selection, SDK bundle, privacy and contributor links reviewed against listed sources. Product lane summaries inherit the user guide and known runtime limitations; no new live generation, platform compatibility, hosted update, or native UI acceptance is claimed. Logo bytes and original MIT notice retained from the official skills repository. Sibling links retain their prior review. Browser-rendered GitHub landing page review remains separate. Markdown handbook renderer, template slots, copied/inline images, metadata validation and external-font disclosure reviewed. This does not refresh inherited product claims or screenshot acceptance, publish the site or attach release assets. Repeat-build asset ownership/cleanup, literal template examples and directory-link handling reviewed with regression tests; desktop and narrow renderer presentation inspected separately in isolated browser profiles. Optional uv-managed hooks and staged secret/path guard inspected with disposable Git regression coverage; full-tree prototype normalization, complete secret detection and repository protection remain separate. Blockout link and lane instructions reviewed against its current controls and stored-plan behavior.",
       "sources": {
         "scenario/blender/runtime.py": "2afa6267f835569288ae6d1947af5410b05a0bbdcd3bbad985ff30a6dcb8a000",
         "scenario/blender/registry.py": "a34fcb0110b5c991764df22d423546d9de3c949d3183b6dad1c5ca9e05123af2",
-        "scenario/blender_manifest.toml": "b942bfc79b1ebecab7ae8f2ea16bac4a182d6a13d81dac3a23391dc2ffd16e0f",
+        "scenario/blender_manifest.toml": "7ac4a84b0856f6a7c5ada8182e1c343f097347a25cf5785d81d72b28ec10f444",
         "CONTRIBUTING.md": "25839bfe4aab90635b4eca573a9136d8ad090a221a8c49d0017f580d9df045b5",
         "docs/MCP.md": "fb6f2c0a82536d3d1af3a9a7787df2a67b7ebe7fb5eb66f7462d737c48f71f64",
         "tools/build_docs_html.py": "40e8c099acc77be8b3d57edd31f1e2a0ade323d9932e1c822aee98320c01f4a2",
         "docs/handbook-template.html": "f2a14d1356fa1f9f2c28edf251c6c8372d2302b46131215db0b9095e3913061c",
         "TRADEMARKS.md": "067b66d55a6eb8540081535388d9e8a8a7f69018824b4c16625ea70f7c4d92b2",
         "docs/RELEASING.md": "a4937aac0e28fdb4693630e016cca7a010413fe10c021370b5ae4eddc224ced6",
-        "Makefile": "0b43d0c8a2615e14ba2970d0d686beef22050611fcb92c32296b868618e69c5e"
+        "Makefile": "0b43d0c8a2615e14ba2970d0d686beef22050611fcb92c32296b868618e69c5e",
+        "scenario/prefs.py": "a96da37fa23ed9ffb6be31c11cc6d519b15e3103555c84e7e14a60d2adcaf6bf",
+        "scenario/core/config.py": "74a45b99fde47d741710dbf2a9d8051f2b31903f10ecae679d061340c62fb1be",
+        "docs/USER_GUIDE.md": "406649d4686e95fc3e73098fd919fda6a16db31200d2a795f263810590c8c9a9",
+        "docs/KNOWN_LIMITATIONS.md": "ccc7710a7fab8d3a2b845f71e541e6c55a88f5a455c14f63596c225ea74480ab",
+        "docs/PRIVACY.md": "6393c8c193a907a99d34284fb0338c62437bab4754812de453171a7fc49a4e49",
+        "docs/SDK_BUNDLE.md": "161627add3fd5b146643fddc2c496a48023406383748e96b6fbdbbed75960ddb",
+        "docs/STUDIO_ADOPTION.md": "7e338a3b605f1f6348489bb6df53ab501a6c9484646e1b61f3f739491ab6a355",
+        "SUPPORT.md": "1f3986c4b45b59de785580635bc3b2efb177300823ffd36053bcd95a10f0e5c7",
+        "SECURITY.md": "5709200451769d58d1417aefad386b404ee0f03a2a3187756b51e0252cd1f40d",
+        "docs/images/scenario-logo.png": "5815cf03eaa5e9eaa3b32ee38878d9d00ddf31763f0e7ccbfd2a6c77b03ba3cc",
+        "docs/images/scenario-logo.LICENSE": "1f5802b8f96b536d570dcbffe6fc509c48deb01d06289022c12f55e1c37e8627"
       }
     },
     {
@@ -382,7 +393,7 @@
       "path": "docs/USER_GUIDE.md",
       "coverage": "inherited",
       "reviewed_at": "2026-09-24",
-      "limits": "Existing guide indexed during this intake, without a fresh claim-by-claim or live verification; consult current integration status and issue acceptance. MCP overview and reference links reviewed; remaining product guidance still inherits its stated verification limits. MCP panel screenshot captured from the exact ZIP in isolated Blender 5.0.1 with synthetic local token and Python disabled; other screenshots retain inherited limits. Markdown handbook renderer, template slots, copied/inline images, metadata validation and external-font disclosure reviewed. This does not refresh inherited product claims or screenshot acceptance, publish the site or attach release assets. Repeat-build asset ownership/cleanup, literal template examples and directory-link handling reviewed with regression tests; desktop and narrow renderer presentation inspected separately in isolated browser profiles.",
+      "limits": "Existing guide indexed during this intake, without a fresh claim-by-claim or live verification; consult current integration status and issue acceptance. MCP overview and reference links reviewed; remaining product guidance still inherits its stated verification limits. MCP panel screenshot captured from the exact ZIP in isolated Blender 5.0.1 with synthetic local token and Python disabled; other screenshots retain inherited limits. Markdown handbook renderer, template slots, copied/inline images, metadata validation and external-font disclosure reviewed. This does not refresh inherited product claims or screenshot acceptance, publish the site or attach release assets. Repeat-build asset ownership/cleanup, literal template examples and directory-link handling reviewed with regression tests; desktop and narrow renderer presentation inspected separately in isolated browser profiles. Blockout instructions reviewed against current design/refine/rebuild/clear controls and plan storage; no live paid design or new native acceptance is claimed.",
       "sources": {
         "scenario/blender/panels.py": "5fbdc508c0d05c3472aa1ad489dfd366487ff39e3e32eef4fa9d79475ff64f0c",
         "scenario/blender/composer/draw.py": "52a366ce04766edc3aef343c7b115d7e360e8c88a27688c4446be36ecc78c6e8",
@@ -405,7 +416,10 @@
         "docs/handbook-template.html": "f2a14d1356fa1f9f2c28edf251c6c8372d2302b46131215db0b9095e3913061c",
         "tests/unit/test_docs_html.py": "4f13fa6738f636c0034a5eb07c773961efd4396dcf806862695612f20f5762da",
         "tests/unit/test_privacy_docs.py": "0f9aa79f92e25f5768ba456ce228951b2d9f66a8021e2699e2d116a801485dcd",
-        "TRADEMARKS.md": "067b66d55a6eb8540081535388d9e8a8a7f69018824b4c16625ea70f7c4d92b2"
+        "TRADEMARKS.md": "067b66d55a6eb8540081535388d9e8a8a7f69018824b4c16625ea70f7c4d92b2",
+        "scenario/blender/blockout.py": "804e8a5d0fbe5d0bc1d4a3f1bc21c7b697a53c1fbf2424f834fae40dc0ba462b",
+        "scenario/core/scene/blockout.py": "7f7f29344125da98b11006fed3ce4a9a957f3fdfdea3d5b9ce49d3c5cb53931b",
+        "scenario/blender/props.py": "0cac5c223860ed7e3709fda2a415ed1a7847c990d26d42ede0a0ce7def10ac21"
       }
     },
     {
@@ -778,7 +792,7 @@
         "scenario/blender_manifest.toml": "7ac4a84b0856f6a7c5ada8182e1c343f097347a25cf5785d81d72b28ec10f444",
         "tests/unit/test_trademarks.py": "3881a95483e918233f8946ce1ee5eaba758a0de5f8acdb45244a963c55768539",
         "docs/SDK_BUNDLE.md": "161627add3fd5b146643fddc2c496a48023406383748e96b6fbdbbed75960ddb",
-        "docs/USER_GUIDE.md": "7c5430305a4bd192ed3f0816c5afbe498074f991a6cf63036df23b8f46d7df04",
+        "docs/USER_GUIDE.md": "406649d4686e95fc3e73098fd919fda6a16db31200d2a795f263810590c8c9a9",
         "tools/build_docs_html.py": "40e8c099acc77be8b3d57edd31f1e2a0ade323d9932e1c822aee98320c01f4a2",
         "docs/handbook-template.html": "f2a14d1356fa1f9f2c28edf251c6c8372d2302b46131215db0b9095e3913061c"
       }

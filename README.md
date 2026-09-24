@@ -1,116 +1,161 @@
-# Scenario for Blender
+<p align="center">
+  <a href="https://scenario.com"><img src="docs/images/scenario-logo.png" height="84" alt="Scenario"></a>
+</p>
+<h1 align="center">Scenario for Blender</h1>
+<p align="center">
+  <a href="https://github.com/scenario-labs/blender-plugin/releases"><img alt="Latest release" src="https://img.shields.io/github/v/release/scenario-labs/blender-plugin"></a>
+  <a href="LICENSE"><img alt="Licence GPL-3.0-or-later" src="https://img.shields.io/badge/license-GPL--3.0--or--later-blue"></a>
+  <img alt="Blender 5.0 and later" src="https://img.shields.io/badge/Blender-5.0%2B-orange">
+  <a href="https://docs.scenario.com"><img alt="API documentation" src="https://img.shields.io/badge/documentation-api-black.svg"></a>
+  <a href="https://help.scenario.com"><img alt="App documentation" src="https://img.shields.io/badge/documentation-app-black.svg"></a>
+  <a href="https://mcp.scenario.com/docs"><img alt="MCP documentation" src="https://img.shields.io/badge/documentation-mcp-black.svg"></a>
+</p>
 
-[![Release](https://img.shields.io/github/v/release/scenario-labs/blender-plugin)](https://github.com/scenario-labs/blender-plugin/releases)
+**Experimental.** Bring Scenario image, video, 3D, PBR material and audio generation
+into Blender. Use scene captures and selected meshes as inputs, explore camera
+moves, and turn a written scene description into a greybox layout with Blockout.
+A compact composer, sidebar and local MCP server provide access from your scene.
+This is a Python extension with pinned SDK dependency wheels, licensed
+GPL-3.0-or-later. Read the [known limitations](docs/KNOWN_LIMITATIONS.md) before
+relying on a workflow; shared runtime and interface adoption remain in progress.
 
-**Status: experimental.** A Blender 5.0+ extension that brings [Scenario](https://scenario.com) image, video, 3D and PBR material generation into the viewport, generates audio for the sequencer, renders the scene as a finished still or clip (Render Image / Render Video, with Prompt Spark writing the look and a 20-move camera path library), edits the selected mesh with Scenario's 3D tools (remesh, retexture, UV unwrap, rigging, animate, parts), offers Prompt Spark / Rewrite / Translate next to every prompt and a model picker with Scenario's own taxonomy (no LoRAs), and runs a local MCP server so agents (Claude Code, Cursor, Claude Desktop, Codex) can build and generate in the open scene. Python extension with pinned SDK dependency wheels, GPL-3.0-or-later. You need a Scenario account and an API key (Pro plan or above).
+![The Scenario tab in the 3D viewport sidebar: Image lane with a price estimate](docs/images/panel-image.png)
 
-**User guide: [`docs/USER_GUIDE.md`](docs/USER_GUIDE.md)**. Changelog: [`CHANGELOG.md`](CHANGELOG.md).
-See [known limitations](docs/KNOWN_LIMITATIONS.md) and the [documentation index](docs/index.md).
+## Requirements
 
-Quick start: download `scenario-<version>.zip` from the releases (or run `uv run --locked --no-env-file python tools/build.py`), drag it onto Blender, paste your key in Preferences > Add-ons > Scenario, press N in the 3D viewport and open the Scenario tab. For automated releases, verify your download with `gh attestation verify scenario-<version>.zip -R scenario-labs/blender-plugin` and check `SHA256SUMS` ([details](docs/USER_GUIDE.md#verify-your-download)). See the [documentation index](docs/index.md) for current architecture, development guidance and historical context.
+- Blender 5.0 or later, as declared in the [extension manifest](scenario/blender_manifest.toml).
+- A Scenario account with API access, an API key and its secret. See
+  [Obtain your API key](https://docs.scenario.com/get-started/documentation/quick-start-guide/step-1-obtain-your-api-key)
+  and [Scenario help](https://help.scenario.com) for current account requirements.
+- An internet connection and Blender's **Allow Online Access** setting enabled
+  under Edit > Preferences > System > Network before contacting Scenario.
+- Scenario generations and prompt helpers consume Creative Units (CU). Review
+  the displayed estimate before Generate; models, parameters and references
+  affect the cost. See [costs](docs/USER_GUIDE.md#costs) and the limitations above.
 
----
+## Install
 
+1. Download `scenario-<version>.zip` from the
+   [releases page](https://github.com/scenario-labs/blender-plugin/releases). Keep it zipped.
+   [Verify the download](docs/USER_GUIDE.md#verify-your-download) when checksums and
+   attestations are supplied with that release.
+2. Drag the ZIP onto a Blender window, or use Edit > Preferences > Get Extensions
+   > Install from Disk. The extension appears as "Scenario" in Blender's Add-ons list.
+3. In Scenario, open Organization settings > API Keys > Add API Key and follow
+   the instructions to obtain the key and secret.
+4. Open Edit > Preferences > Add-ons > Scenario. Leave **Credentials** set to
+   **Saved in Blender**, paste the key and secret, then press **Test connection**.
+   Choose an Output Folder for generated files.
 
-**For contributors and coding agents:** read [AGENTS.md](AGENTS.md), the canonical
-rulebook shared through `.claude/CLAUDE.md`, and [CONTRIBUTING.md](CONTRIBUTING.md).
-See [commits, branches and pull requests](CONTRIBUTING.md#commits-branches-and-pull-requests)
-for the review workflow and PR checklist.
-Canonical [agent tools](docs/development/agents.md) describe the shared skills and commands.
-See [Support](SUPPORT.md), [Security](SECURITY.md) and the
-[Code of Conduct](CODE_OF_CONDUCT.md) before sharing reports or contributions.
-Releases are produced by release-please from `main`; the
-[release procedure](docs/RELEASING.md) documents the maintainer's publication checks.
+### Updates
 
-## Why
+A ZIP installed from disk uses Blender's local repository and does not receive
+automatic updates from Scenario. Install a newer release ZIP the same way and
+restart Blender. An official hosted extension repository and its native update
+controls are still [in development](https://github.com/scenario-labs/blender-plugin/issues/37).
 
-Bring Scenario's generation into the Blender viewport so creators stay in one tool. Decisions taken 2026-08-28: API key + secret first (OAuth later, feasible via mcp.scenario.com dynamic client registration), v1 extras = render-to-real + Patina materials, native N-panel plus a floating composer, skyboxes and the Scenario-only 3D utilities (retopo, retexture, rigging, motion) in v2.
+### Why not extensions.blender.org
 
-## Files
+The [Blender Extensions terms](https://extensions.blender.org/terms-of-service/)
+restrict extensions whose functionality depends on external registration, keys
+or payments, including access to external services. Scenario requires an account
+and API credentials, so this extension is distributed through GitHub releases.
+Its manifest declares the permissions it uses and their reasons.
 
-- `docs/USER_GUIDE.md` and `docs/images/`: the maintained user guide and screenshots.
-- `docs/handbook-template.html` and `tools/build_docs_html.py`: render that Markdown with `make docs`; see [documentation builds](CONTRIBUTING.md#documentation-builds) for website and single-file outputs.
-- `docs/engineering/design-v1.md`: the v1 design (architecture, lanes, phases, tests).
-- `docs/MODEL_PAYLOAD_AUDIT.md`, `docs/UI_STYLE.md`: the model-payload audit and the UI style guide.
-- `tests/fixtures/`: recorded model schemas and a real Patina Material job (6 maps) used as test fixtures.
-- [`.env.example`](.env.example) and [developer environment setup](CONTRIBUTING.md#environment-variables): explicit test credentials for live tools.
-- `scenario/`: the extension source (`core/` is plain Python, `blender/` is the bpy glue). `blender_manifest.toml` at its root.
-- `tests/unit/` (pytest, no Blender), `tests/blender/` (run inside `blender --background`), `tests/smoke/` (opt-in, spends credits), `tests/fixtures/` (recorded API records and a real Patina job).
-- `tools/build.py`, `tools/install.py`, `tools/record_fixtures.py`, `tools/gui_screenshot.py`, `tools/blank.blend`. `dist/` (ignored) holds built zips.
-- `docs/engineering/plans/`: P0 and P1 implementation plans (executed task by task).
-- `CHANGELOG.md`: what shipped per phase.
+## Quick start
 
-## Run it
+In the 3D viewport, press **N** and open **Scenario**, or use the Scenario button
+in the viewport header. Pick a lane and model, enter a prompt, add any required
+reference and inspect the estimate before Generate. Results appear in Generations
+and your Output Folder, with actions for viewing or importing supported media.
+The [user guide](docs/USER_GUIDE.md) describes each lane and its controls.
 
-1. `uv run --locked --no-env-file python tools/install.py --launch` builds, validates and opens the extension in a fresh isolated development profile. For normal use, install the release ZIP through Blender.
-2. Blender > Edit > Preferences > Add-ons > Scenario: paste an API key and secret (Scenario portal > Team > API Keys, Project or Team scope), press Test connection.
-3. In the 3D viewport press N, open the Scenario tab (or the Scenario button in the viewport header), pick a model, type a prompt, read the CU price on Generate, generate.
+## Features
 
-## 3D results: one mesh per job
-
-Providers return several variants of one result (Meshy: GLB + OBJ + texture PNGs; Rodin with `material=All`: a shaded GLB and a PBR GLB). The add-on imports one primary mesh (glTF first, then the variant with the most PBR textures), switches the viewport to Material Preview so textures show, and lists the other mesh files in Generations with an Add button (plus Add to scene and Select for the primary mesh). Rodin defaults to `PBR`. Root causes and the fix are in `CHANGELOG.md` 0.5.1.
-
-## Floating composer
-
-A pill at the bottom of every 3D viewport shows the current prompt and a Generate button; click it to expand lane tabs (Image, Video, 3D, Materials, Render Img, Render Vid), an editable prompt with real text selection (click, drag, Shift+arrows, double-click, Ctrl/Cmd+A/C/X/V; Enter generates, Esc blurs), the model chip (opens the model picker), a Settings chip (opens the sidebar) and the live CU quote. The composer is the quick path; every setting lives in the sidebar, which the header "Scenario" button opens. The sidebar tab has four panels: Scenario (lane tabs), Jobs, Generations, Agents (MCP). If drawing ever fails repeatedly the composer switches itself off; re-enable it in Preferences.
-
-## Install from a repository (updates through Blender)
-
-`uv run --locked --no-env-file python tools/build.py --repo` builds `dist/repo/` (index.json, the zip, an HTML listing). Host that folder on any static HTTPS server, then in Blender: Preferences > Get Extensions > Repositories > add the `index.json` URL (requires Allow Online Access). Updates then appear in Blender's own updater. The Extensions store itself is not an option for an account-gated add-on (ToS 3.10 / 4.3), see the spec.
+- [Image](docs/USER_GUIDE.md#image): generate from text or reference images and use results as textures or references.
+- [Video](docs/USER_GUIDE.md#video): generate from prompts, images or scene playblasts.
+- [3D](docs/USER_GUIDE.md#3d): generate meshes or apply provider edit tasks to an exported selection. Safe in-place editing remains incomplete.
+- [Materials](docs/USER_GUIDE.md#materials): generate PBR maps for selected meshes.
+- [Audio](docs/USER_GUIDE.md#audio): generate speech, music or sound effects and add results to the sequencer.
+- [Render Image](docs/USER_GUIDE.md#render-image): use a scene capture and look references to produce a still.
+- [Render Video](docs/USER_GUIDE.md#render-video): work with timeline captures, a camera path planner and style references.
+- [Blockout](docs/USER_GUIDE.md#blockout): turn a scene description into a greybox layout, then refine or rebuild it.
+- [Prompt tools and model picker](docs/USER_GUIDE.md#the-form): browse models and prepare prompts; prompt helpers can spend credits.
+- [Floating composer](docs/USER_GUIDE.md#the-floating-composer): access the current lane from the viewport.
+- [Generations](docs/USER_GUIDE.md#generations): inspect local results and available project history.
 
 ## Agents (MCP)
 
 The local `scenario-blender` server connects an authorized agent to the open
-scene and generation into it. The hosted `mcp.scenario.com` server provides
-platform-wide collections, training, workflows and usage; connect both when
-needed. Copy client setup from **Scenario > Agents (MCP)**, and use the
-[MCP reference](docs/MCP.md) for tool contracts, complete client examples,
-headless setup, token handling and the security model.
-For headless use, run `blender --background scene.blend --command scenario_blender`;
-see the reference for token configuration and online-access requirements.
+scene and generation into it. The hosted [mcp.scenario.com](https://mcp.scenario.com)
+server provides platform-wide collections, training, workflows and usage without
+requiring Blender; connect both when needed.
+
+The default local endpoint is `http://127.0.0.1:9876/mcp`. **Agents (MCP)** shows
+its status and bearer token and provides client setup for Claude Code, Cursor,
+Claude Desktop and Codex under the name `scenario-blender`. Treat the token and
+copied setup as secrets. Connected agents can read the scene and request paid
+work; arbitrary Python execution is a separate opt-in permission, disabled by default.
+
+Use the [MCP reference](docs/MCP.md) for complete client setup, tool contracts,
+security controls and headless configuration. The headless entry point is:
+
+```sh
+blender --background scene.blend --command scenario_blender
+```
+
+### Authentication
+
+Scenario API requests use an API key and secret. Saved Blender credentials are
+the default; **Credentials > Environment** explicitly selects an environment
+pair instead. The extension does not provide browser OAuth sign-in. The hosted
+Scenario MCP service has its own authentication, described in its linked docs.
+Blender stores saved credentials in its preferences, not an OS keychain.
 
 ## What leaves your machine
 
-Cost previews send prompts and parameters to `https://api.cloud.scenario.com` while you edit, before Generate.
-Generation and prompt tools can upload attached files, scene captures or exported meshes and spend credits.
-Catalogs and thumbnails load from Scenario; cloud history loads when requested.
-Saved keys, prompts, job state and media remain in Blender preferences, extension storage or output files.
-Connected local agents can read your scene and request paid work using your account.
-Read [Privacy and data handling](docs/PRIVACY.md) for destinations, storage, clipboard use and current limits.
+Cost previews send prompts and parameters to `https://api.cloud.scenario.com`
+while you edit, before Generate. Generation and prompt tools can upload files,
+scene captures or exported meshes and spend credits. Catalogs and thumbnails
+load from Scenario; cloud history loads when requested. Saved keys, prompts,
+job state and media remain in Blender preferences, extension storage or output
+files. Connected local agents can read your scene and request paid work using
+your account. Read [Privacy and data handling](docs/PRIVACY.md) for destinations,
+storage, clipboard use and current limits.
 
-## Tests
+## Documentation
 
-- Python environment, linting and formatting: [`docs/PYTHON_STYLE.md`](docs/PYTHON_STYLE.md), `uv sync --locked`, `make lint` and `make format`.
-- Optional local hooks: after setup, run `make hooks`; see [installation and scope](CONTRIBUTING.md#optional-local-hooks).
-- `make test`: unit tests (pytest, no Blender).
-- `make test-blender`: build, validate and test an exact ZIP in a fresh disposable profile, including imports and authenticated MCP. See the [native test loop](CONTRIBUTING.md#native-blender-test-loop) for coverage, artifacts and binary selection.
-- Paid smoke scripts: see [live commands and authorization](CONTRIBUTING.md#live-commands).
-- GUI checks require an isolated profile and native interaction review; see [validation](docs/development/validation.md).
+Start with the [user guide](docs/USER_GUIDE.md), [known limitations](docs/KNOWN_LIMITATIONS.md)
+and [changelog](CHANGELOG.md). The [documentation index](docs/index.md) links
+architecture, integration status and developer references. A public HTML handbook
+URL will be added when its hosting is available. Build HTML from the maintained
+Markdown with `make docs`; see [documentation builds](CONTRIBUTING.md#documentation-builds)
+for website and single-file outputs.
 
+## Staying up to date
 
-## Commit messages and PR titles
-
-Every change lands by a squash-merged pull request, so the PR title becomes the commit header on `main`. Titles and commit messages follow [Conventional Commits](https://www.conventionalcommits.org): `type(scope): summary`, imperative, at most 120 characters, no em dashes. `commitlint.config.ts` is the single source of truth (types from `@commitlint/config-conventional`, the scope list, the no-em-dash rule). CI lints the PR title with it (`pr-title`, in `.github/workflows/pr-name.yml`) and the branch commits (`commits`, in `.github/workflows/commitlint.yml`). Node is not part of the checkout; to run the same check locally:
-
-```
-npm install --no-save --no-package-lock --no-audit --no-fund @commitlint/cli@21 @commitlint/config-conventional@21 @commitlint/types@21
-printf '%s\n' "feat(ui): my title" | npx --no-install commitlint --config commitlint.config.ts --verbose
-```
-
-## Verified vs assumed
-
-Verified live (2026-08-28): REST Basic auth, model records carry UI schema, `?dryRun=true` cost preview, Patina returns 6 typed map assets, multipart upload flow, GLB asset shape, OAuth dynamic registration on mcp.scenario.com. Assumed: Patina smoothness semantics (pixels suggest dark = rough), normal-map convention. Native runtime compatibility on Blender 5.0, 5.1 and 5.2 must be verified separately from release ZIP validation.
+Follow [releases](https://github.com/scenario-labs/blender-plugin/releases), or
+choose **Watch > Custom > Releases** on GitHub for release notifications.
 
 ## Support
 
-Read the [user guide](docs/USER_GUIDE.md) first. [SUPPORT.md](SUPPORT.md) says
-where to ask a question, how to file a bug and what to include. Account, billing,
-credit and security matters go to [support@scenario.com](mailto:support@scenario.com),
-never to a public issue.
+Use [Support](SUPPORT.md) for bug reports, feature requests and the information
+to include. Account, billing and API-key questions go to support@scenario.com
+or Scenario's in-app support. Never post credentials, bearer tokens or signed
+asset URLs in a public issue.
 
-## Security
+Report vulnerabilities privately through **Security > Report a vulnerability**
+or the contact in [Security](SECURITY.md); do not open a public issue.
 
-Report vulnerabilities privately, see [SECURITY.md](SECURITY.md). Never paste API keys, MCP bearer tokens or signed asset URLs into issues or pull requests.
+## Development
+
+Read [Contributing](CONTRIBUTING.md) for the pinned environment, local checks,
+portable tools and isolated Blender test loop. [AGENTS.md](AGENTS.md) is the
+canonical conventions contract for humans and agents; [agent tools](docs/development/agents.md)
+describes the shared commands. Follow the [Code of Conduct](CODE_OF_CONDUCT.md).
+Optional local hooks are installed with `make hooks`; see [installation and scope](CONTRIBUTING.md#optional-local-hooks).
+Offline tests need no Scenario account. Live smoke tests spend credits and
+require explicit authorization; they are outside the default checks.
 
 ## Sibling integrations
 
@@ -122,8 +167,20 @@ channel (support@scenario.com), not necessarily the same licence.
 - [Scenario skills for agents](https://github.com/scenario-labs/skills) (MIT).
 - The [Scenario MCP server](https://mcp.scenario.com) provides Scenario tools outside Blender. The [MCP guide](docs/MCP.md#local-server-and-mcpscenariocom) explains how it relates to this extension's local server.
 
-## Licence and provenance
+## Licence
 
-GPL-3.0-or-later (see `LICENSE`), the licence Blender requires for add-ons that use `bpy`. The extension zip carries a copy of the licence text (`scenario/LICENSE`, identical to the root `LICENSE`). Pinned SDK dependencies and their notices are described in [`docs/SDK_BUNDLE.md`](docs/SDK_BUNDLE.md). The MCP bridge follows the Blender Lab `blender_mcp` protocol shape, rewritten.
+First-party extension code is GPL-3.0-or-later; see [LICENSE](LICENSE). Blender
+requires a GPL-compatible licence for add-ons using `bpy`. The extension ZIP
+includes the same GPL text. Bundled dependencies and adopted sources retain
+their original notices; see [SDK bundle](docs/SDK_BUNDLE.md) and
+[source adoption](docs/STUDIO_ADOPTION.md).
 
 The GPL grants no trademark rights: "Scenario" and the Scenario logo belong to Scenario Inc., and Blender is a registered trademark of the Blender Foundation; this extension is not affiliated with or endorsed by the Blender Foundation. See [TRADEMARKS.md](TRADEMARKS.md).
+
+The local MCP design acknowledges [Blender Lab's blender_mcp project](https://projects.blender.org/lab/blender_mcp)
+as an inspiration. This extension implements authenticated loopback HTTP,
+main-thread tool dispatch and an opt-in Python gate; the acknowledgement does
+not assert identical transports or relicense third-party source.
+
+The Scenario logo comes from the [official skills repository](https://github.com/scenario-labs/skills/blob/main/resources/scenario-logo.png);
+its [original source licence](docs/images/scenario-logo.LICENSE) is retained.

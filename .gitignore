@@ -44,3 +44,7 @@ CLAUDE.local.md
 
 # Downloaded Blender builds for native verification
 .blender/
+
+# Generated documentation
+/site/
+/docs/user-guide.html

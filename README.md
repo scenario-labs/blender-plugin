@@ -24,8 +24,8 @@ Bring Scenario's generation into the Blender viewport so creators stay in one to
 
 ## Files
 
-- `docs/USER_GUIDE.md`, `docs/user-guide.html`, `docs/images/`: the user guide (Markdown, and a self-contained HTML handbook with the cropped panel screenshots embedded).
-- `docs/user-guide.src.html` + `tools/build_docs_html.py`: edit the source, run the script to rebuild `docs/user-guide.html` with the images embedded.
+- `docs/USER_GUIDE.md` and `docs/images/`: the maintained user guide and screenshots.
+- `docs/handbook-template.html` and `tools/build_docs_html.py`: render that Markdown with `make docs`; see [documentation builds](CONTRIBUTING.md#documentation-builds) for website and single-file outputs.
 - `docs/engineering/design-v1.md`: the v1 design (architecture, lanes, phases, tests).
 - `docs/MODEL_PAYLOAD_AUDIT.md`, `docs/UI_STYLE.md`: the model-payload audit and the UI style guide.
 - `tests/fixtures/`: recorded model schemas and a real Patina Material job (6 maps) used as test fixtures.

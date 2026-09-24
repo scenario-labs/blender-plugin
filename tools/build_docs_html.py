@@ -1,21 +1,246 @@
-"""Build docs/user-guide.html from docs/user-guide.src.html, embedding docs/images/*.png as data URIs.
+# SPDX-FileCopyrightText: 2026 Scenario Inc.
+# SPDX-License-Identifier: GPL-3.0-or-later
+"""Render the Markdown guide as a website page or a single-file handbook.
 
-Usage: python3 tools/build_docs_html.py
+Python-Markdown is a development dependency, never part of the extension bundle.
+The template's Google Fonts stylesheet remains external in both output modes.
 """
-import base64, pathlib, re
 
-ROOT = pathlib.Path(__file__).resolve().parent.parent
-IMG = ROOT / "docs" / "images"
-SRC = ROOT / "docs" / "user-guide.src.html"
-OUT = ROOT / "docs" / "user-guide.html"
+import argparse
+import base64
+import html
+import re
+import tomllib
+from html.parser import HTMLParser
+from pathlib import Path
+from urllib.parse import quote, unquote, urlsplit, urlunsplit
+
+import markdown
+
+ROOT = Path(__file__).resolve().parents[1]
+SLOT = re.compile(r"{{\s*([^{}]+?)\s*}}")
+IMAGE_TYPES = {
+    ".png": "image/png",
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".gif": "image/gif",
+    ".webp": "image/webp",
+    ".svg": "image/svg+xml",
+}
 
 
-def main() -> None:
-    html = SRC.read_text()
-    out = re.sub(r"\{\{img:([^}]+)\}\}", lambda m: "data:image/png;base64," + base64.b64encode((IMG / m.group(1)).read_bytes()).decode(), html)
-    OUT.write_text(out)
-    print(f"{OUT.name}: {len(out) // 1024} KB")
+class HandbookError(ValueError):
+    """An input cannot produce a complete, locally reproducible handbook."""
+
+
+class _Page(HTMLParser):
+    def __init__(self, source: Path, root: Path, inline_images: bool):
+        super().__init__(convert_charrefs=False)
+        self.source = source
+        self.root = root
+        self.inline_images = inline_images
+        self.parts: list[str] = []
+        self.assets: dict[Path, bytes] = {}
+        self.lang = False
+        self.charset = False
+        self.viewport = False
+        self.title = False
+        self.in_title = False
+        self.doctype = False
+
+    def _image(self, attrs: dict[str, str | None]) -> None:
+        if not (attrs.get("alt") or "").strip():
+            raise HandbookError("Every image needs descriptive, nonempty alt text")
+        src = attrs.get("src") or ""
+        url = urlsplit(src)
+        decoded = unquote(url.path)
+        relative = Path(decoded)
+        if (
+            not decoded
+            or url.scheme
+            or url.netloc
+            or url.query
+            or url.fragment
+            or "\\" in decoded
+            or relative.is_absolute()
+            or ".." in relative.parts
+        ):
+            raise HandbookError(f"Image must use a local relative path: {src!r}")
+        image = (self.source.parent / relative).resolve()
+        if not image.is_relative_to(self.source.parent.resolve()) or not image.is_file():
+            raise HandbookError(f"Missing image or path outside the guide directory: {src!r}")
+        mime = IMAGE_TYPES.get(image.suffix.lower())
+        if mime is None:
+            raise HandbookError(f"Unsupported image type: {src!r}")
+        data = image.read_bytes()
+        if not data:
+            raise HandbookError(f"Empty image: {src!r}")
+        if self.inline_images:
+            attrs["src"] = f"data:{mime};base64,{base64.b64encode(data).decode('ascii')}"
+        else:
+            self.assets[relative] = data
+            attrs["src"] = quote(relative.as_posix(), safe="/-._~")
+        if "srcset" in attrs:
+            raise HandbookError("Image srcset is unsupported; use one explicit local image")
+
+    def _link(self, attrs: dict[str, str | None]) -> None:
+        href = attrs.get("href") or ""
+        url = urlsplit(href)
+        if url.scheme or url.netloc:
+            if url.scheme not in ("https", "http", "mailto"):
+                raise HandbookError(f"Unsupported link protocol: {href!r}")
+            return
+        if not url.path:
+            return
+        decoded = unquote(url.path)
+        if "\\" in decoded or Path(decoded).is_absolute():
+            raise HandbookError(f"Link must be repository-relative: {href!r}")
+        target = (self.source.parent / decoded).resolve()
+        if not target.is_relative_to(self.root) or not target.exists():
+            raise HandbookError(f"Missing repository link: {href!r}")
+        path = quote(target.relative_to(self.root).as_posix(), safe="/-._~")
+        attrs["href"] = urlunsplit(
+            (
+                "https",
+                "github.com",
+                "/scenario-labs/blender-plugin/blob/main/" + path,
+                url.query,
+                url.fragment,
+            )
+        )
+
+    def _tag(self, tag: str, pairs: list[tuple[str, str | None]], *, closed: bool) -> None:
+        attrs = dict(pairs)
+        if len(attrs) != len(pairs):
+            raise HandbookError(f"Duplicate attributes on <{tag}>")
+        if tag == "img":
+            self._image(attrs)
+        elif tag == "a":
+            self._link(attrs)
+        elif tag == "html":
+            self.lang = bool((attrs.get("lang") or "").strip())
+        elif tag == "meta":
+            self.charset |= (attrs.get("charset") or "").lower() == "utf-8"
+            self.viewport |= attrs.get("name") == "viewport" and "width=device-width" in (
+                attrs.get("content") or ""
+            )
+        elif tag == "title":
+            self.in_title = True
+        fields = "".join(
+            f' {key}="{html.escape(value, quote=True)}"' if value is not None else f" {key}"
+            for key, value in attrs.items()
+        )
+        self.parts.append(f"<{tag}{fields}{' /' if closed else ''}>")
+
+    def handle_starttag(self, tag, attrs):
+        self._tag(tag, attrs, closed=False)
+
+    def handle_startendtag(self, tag, attrs):
+        self._tag(tag, attrs, closed=True)
+
+    def handle_endtag(self, tag):
+        if tag == "title":
+            self.in_title = False
+        self.parts.append(f"</{tag}>")
+
+    def handle_data(self, data):
+        if self.in_title and data.strip():
+            self.title = True
+        self.parts.append(data)
+
+    def handle_entityref(self, name):
+        self.parts.append(f"&{name};")
+
+    def handle_charref(self, name):
+        self.parts.append(f"&#{name};")
+
+    def handle_comment(self, data):
+        self.parts.append(f"<!--{data}-->")
+
+    def handle_decl(self, decl):
+        self.doctype |= decl.lower() == "doctype html"
+        self.parts.append(f"<!{decl}>")
+
+
+def build_handbook(
+    source: Path,
+    template: Path,
+    manifest: Path,
+    output: Path,
+    *,
+    inline_images: bool = False,
+    root: Path = ROOT,
+) -> Path:
+    """Validate all inputs before writing HTML and referenced image snapshots."""
+    source, template, manifest, output, root = (
+        path.resolve() for path in (source, template, manifest, output, root)
+    )
+    if output in (source, template, manifest):
+        raise HandbookError("Output would overwrite a handbook input")
+    layout = template.read_text(encoding="utf-8")
+    slots = SLOT.findall(layout)
+    if slots.count("content") != 1 or slots.count("toc") != 1 or "version" not in slots:
+        raise HandbookError("Template needs one content slot, one toc slot and a version slot")
+    if set(slots) - {"content", "toc", "version"}:
+        raise HandbookError("Template contains unknown slots")
+    version = tomllib.loads(manifest.read_text(encoding="utf-8")).get("version")
+    if not isinstance(version, str) or not re.fullmatch(
+        r"\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?", version
+    ):
+        raise HandbookError("Manifest must contain a three-part release version")
+    renderer = markdown.Markdown(
+        extensions=["fenced_code", "tables", "toc"],
+        extension_configs={"toc": {"marker": "", "toc_depth": "2-3"}},
+        output_format="html",
+    )
+    content = renderer.convert(source.read_text(encoding="utf-8"))
+    values = {"content": content, "toc": renderer.toc, "version": html.escape(version)}
+    page = SLOT.sub(lambda match: values[match[1].strip()], layout)
+    if SLOT.search(page):
+        raise HandbookError("Rendered page contains unresolved template slots")
+    parsed = _Page(source, root, inline_images)
+    parsed.feed(page)
+    parsed.close()
+    if not all((parsed.doctype, parsed.lang, parsed.charset, parsed.viewport, parsed.title)):
+        raise HandbookError("Template needs doctype, language, UTF-8, viewport and title metadata")
+    destinations = {}
+    for relative, data in parsed.assets.items():
+        destination = (output.parent / relative).resolve()
+        if not destination.is_relative_to(output.parent) or destination in (
+            output,
+            source,
+            template,
+            manifest,
+        ):
+            raise HandbookError(
+                "Image destination would escape output or overwrite a handbook input"
+            )
+        destinations[destination] = data
+    output.parent.mkdir(parents=True, exist_ok=True)
+    for destination, data in destinations.items():
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        destination.write_bytes(data)
+    output.write_text("".join(parsed.parts), encoding="utf-8")
+    return output
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--source", type=Path, default=ROOT / "docs/USER_GUIDE.md")
+    parser.add_argument("--template", type=Path, default=ROOT / "docs/handbook-template.html")
+    parser.add_argument("--manifest", type=Path, default=ROOT / "scenario/blender_manifest.toml")
+    parser.add_argument("--output", type=Path, default=ROOT / "site/index.html")
+    parser.add_argument("--inline-images", action="store_true")
+    args = parser.parse_args(argv)
+    try:
+        output = build_handbook(
+            args.source, args.template, args.manifest, args.output, inline_images=args.inline_images
+        )
+    except (OSError, ValueError) as error:
+        parser.exit(1, f"Handbook error: {error}\n")
+    print(f"Wrote {output}")
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

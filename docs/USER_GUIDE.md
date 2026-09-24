@@ -35,6 +35,7 @@ Releases produced by the automated pipeline include `SHA256SUMS` and a build pro
 For automated releases, download the ZIP and `SHA256SUMS` into the same directory. Check the ZIP with `sha256sum -c SHA256SUMS` (macOS: `shasum -a 256 -c SHA256SUMS`) and, with the GitHub CLI, `gh attestation verify scenario-<version>.zip -R scenario-labs/blender-plugin`.
 
 Where things are:
+
 - The **Scenario tab** in the 3D viewport sidebar (press `N`, pick the Scenario tab). It holds four panels: Scenario, Jobs, Generations, Agents (MCP).
 - The **Scenario button** in the viewport header opens that sidebar tab.
 - The **floating composer**, a pill at the bottom of every 3D viewport: the quick path (prompt and Generate with the current lane's settings).
@@ -46,11 +47,16 @@ Where things are:
 - **Generations**: what came back. Each entry has a header (type icon, start of the prompt, price, a collapse arrow), the model, the asset id (click it to copy), a failure marker when something went wrong, the output thumbnail and the actions of its kind (images: View image, Use as reference (3D image to 3D, Image, Video, Render Image style, Render Video style), Remove background, Apply as texture, Add as plane; 3D: Add to scene, Select, Delete; video: Play, Play in Blender; audio: Play, Add to sequencer; materials: Tiling). The refresh button **reloads the parameters**: lane, model, prompt, every setting sent and the references come back into the form, ready to tweak and generate again. Objects a generation created are stamped with its id on import, so Select and Delete find them after renames. The info button opens Details: the full prompt, the settings sent, the references with their asset ids, the result assets, the files, the errors. Collapse an entry to keep only its icon and prompt. Then, with the Project history (cloud) checkbox on, the project's cloud history: generations made on the web app, by agents or on another machine, with Download and open; a cloud generation that also exists on this machine is drawn like a session entry, with the same actions.
 - **Agents (MCP)**: the local MCP server, its token, one-click client setups, the Python permission.
 
+![The Jobs, Generations and Agents (MCP) panels below the lane form](images/panel-sections.png)
+
+*Jobs, Generations (session results, then cloud history) and Agents.*
+
 ## The form
 
 ![Floating composer](images/composer.png)
 
 From top to bottom:
+
 - **Account strip**: your team and project, a refresh button for the model list, a shortcut to the preferences.
 - **Model**: a button showing the current model. It opens the model picker, laid out like Scenario's "Choose a Model": modality tabs (Image, Video, Audio, 3D) and the web app's category chips (Image: All, Generate, Edit, Expand, Upscale, Vectorize, Remove Background, Tools; Video: All, Generate, Edit, Lipsync, Upscale, Reframe, Remove Background, Tools; Audio: All, Speech, Music, SFX, Tools; 3D: All, Generate, Splat, Remesh, Retexture, UV Unwrap, Rigging, Animate, Parts), a search field, the list with thumbnails and the description of the highlighted model. Scenario's trained LoRAs are not listed anywhere; the lists hold the third-party models and Scenario's tools. Picking a model of another modality switches to that lane. The small arrow next to the button is the plain dropdown.
 - **Prompt**: its own box, like Scenario's. The prompt lives in the field; drag the small size control in the header to make the box taller. Below it, three equal full-width buttons with Scenario's icons: **New** (dice, Prompt Spark writes a prompt for the model), **Rewrite** (sparkles, Prompt Spark improves yours), both up to 3.75 CU with the Scenario LLM stepping in when Prompt Spark has no usable answer, and **Translate** (to English, Scenario LLM, 0.5 CU). They run in the background; the field updates when the answer arrives.
@@ -59,6 +65,10 @@ From top to bottom:
 - **Generate (N CU)**: the exact price of this form, refreshed as you edit (a dry run, free). "from N CU" means the quote excludes references that will only be uploaded at generate time; "Price shown after the upload" means the model needs the mesh or the capture first.
 
 Results are saved under the Output Folder, one folder per kind and per day, and the file name carries the Scenario asset id: `3d/20260828/20260828_230353_hitem-3d-split_asset_ccpDR7Ga1…_00.glb`.
+
+![The model picker: Image, Video, Audio and 3D tabs with icons, category chips, search, the model list and the description of GPT Image 2](images/model-picker.png)
+
+*The model picker follows Scenario's "Choose a Model": modality tabs, category chips, search, description.*
 
 ## Lanes
 
@@ -82,9 +92,14 @@ Four modes: **Text**, **Image** (one picture), **Multi-view** (several views of 
 Generate: Meshy 7 and Rodin Gen-2.5 for text; Tripo 3.1, Tripo P1, Meshy 7, Hunyuan 3.1 Pro, Rodin 2.5 for images; Meshy 7 Multi Image, Tripo 3.1 Multi View, Hunyuan 3.1 Pro Multiview and Rodin for multi-view; worlds (Marble, HY World, TripoSplat) through the picker. Worlds come back as Gaussian splats (`.spz`, millions of splats): Blender cannot render splats, so the add-on loads them as a coloured point cloud (splat centres with their colours, sized points through a Geometry Nodes modifier, one million points kept for interactivity). The result is imported at the 3D cursor into a "Scenario" collection and the viewport switches to Material Preview so the textures show. Providers return several variants of one result (Meshy: GLB, OBJ and texture PNGs; Rodin with `material=All`: a shaded and a PBR mesh): the add-on imports one primary mesh (the textured GLB) and lists the other files in Generations with an **Add** button. Rodin defaults to PBR. **Add to scene** imports the primary mesh again at the cursor; **Select** selects the objects the job created.
 
 Edit mode:
+
 1. Select the mesh (or several) in the viewport.
 2. Pick the task: **Remesh** (Tripo Retopology, Meshy Remesh, Hunyuan Polygen), **Retexture** (Meshy 7 Retexture, Tripo Texturing, Trellis 2 Retexture, Tencent Texture Edit, Rodin Hyper3D Bang!, Tripo Stylization, Hitem3D Multicolor), **UV Unwrap** (Meshy, Tencent), **Rigging** (Meshy, Tripo 2.5, Cartwheel), **Animate** (Meshy Animation, Cartwheel Text to Motion), **Parts** (Tripo Segmentation, Hunyuan 3D Part, Hitem3D Split, Rodin Bang), or **All**.
 3. Fill the model's own parameters and Generate. The selection is exported as a GLB at generate time (modifiers applied, materials embedded) and uploaded; the result is imported next to the original, bottoms aligned, named after it.
+
+![3D tab in Edit mode: the selected mesh, task tabs Remesh, Retexture, UV Unwrap, Rigging, Animate, Parts, Meshy 7 Retexture and its parameters](images/panel-3d-edit.png)
+
+*3D tab, Edit mode: the selected mesh is pinned as the model input; task tabs pick the tool.*
 
 ### Materials
 Patina turns a prompt (or a photo) into a seamless PBR set: base color, normal, roughness, metalness, height.
@@ -96,6 +111,10 @@ Select the meshes to texture, describe the material, choose the maps and size, G
 ### Audio
 Speech, music and sound effects: ElevenLabs Music v2, Google Lyria 3, ACE-Step 1.5, Minimax Music 3.0, ElevenLabs 3 (speech), Gemini 3.1 Flash TTS, ElevenLabs Sound Effects 2, Sonilo (text or video to SFX and music), and every other text-to-audio, audio-to-audio or video-to-audio model through the picker. Results go to `audio/<date>/` in the output folder; in Generations, **Play** opens them with the system player and **Add to sequencer** drops a sound strip at the current frame on a free channel.
 
+![Audio lane with ElevenLabs Music v2, a prompt with the Spark, Rewrite and Translate buttons, duration and format settings](images/panel-audio.png)
+
+*Audio lane: ElevenLabs Music v2, 30 s, quoted before generating.*
+
 ### Render Image
 Your view, rendered as a finished still by an image edit model. Everything that shapes the look lives in one collapsible **Rendering Style** box: the look prompt, the Prompt Spark options and the style images (the capture is image 1).
 
@@ -104,6 +123,10 @@ Your view, rendered as a finished still by an image edit model. Everything that 
 - **Look**: what the render should look like ("weathered steampunk copper, overcast light"). Leave it empty and **Prompt Spark** writes it: a capture of the view is sent to Scenario's prompt writer (0.75 CU), which describes the materials, lighting and mood to render; the look it wrote is shown on the lane and kept with the result.
 - **Style images**: optional references for palette, materials and lighting. The capture is always image 1.
 - The prompt the model receives states the role of every input: image 1 is the exact scene (every object, its position, the camera, the framing and the perspective are frozen; nothing may be added, moved or removed), the other images are look references only and none of their content may appear. The result lands in Generations and becomes the first frame of Render Video.
+
+![Render Image lane: Scene to render, model Gemini 3.1, the Look field, style images with the pinned capture row, parameters and Generate](images/panel-render-image.png)
+
+*Render Image: the capture is pinned as image 1, style images follow.*
 
 ### Render Video
 A playblast of your timeline, rendered as a finished clip by a video model that takes a reference video. The look, the style images (reference frames) and the video first frame live in one collapsible **Rendering Style** box; the model's own first/last-frame inputs are handled there, so only the reference frames are offered.
@@ -115,6 +138,10 @@ A playblast of your timeline, rendered as a finished clip by a video model that 
 - **First frame**: the latest Render Image result is proposed automatically; the toggle sends it as the first frame (Seedance's `image`, H3's `firstFrameImage`) so the clip starts exactly from your rendered still. Any image result offers **Use as video first frame**.
 - **Style images**: extra look references.
 - The prompt names the playblast as the exact scene, camera move and timing to reproduce, the first frame as the look to match through the whole clip, and the other images as style only (with `@video1` / `@image1` tags for Seedance, plain words for the others).
+
+![Render Video lane: Clip to render, the Camera path planner with an orbit built, Seedance 2.0, the Look field with Prompt Spark, the first frame row and style images](images/panel-render-video.png)
+
+*Render Video with an orbit path built and Prompt Spark ready to write the look.*
 
 ### Generations
 This session's results (collapsible entries with the asset id and a Details dialog), then the project's cloud history: prompt, kind, price, status, asset id. **Import into scene** brings a result into Blender (downloading it if needed), also for generations made on the web app or by an agent. **Load older** pages back in time. This is also the recovery path when a download failed: the job is still there, import it again.
@@ -143,6 +170,10 @@ The pill at the bottom of the viewport shows the current prompt in a field and a
 
 Editing the prompt: click to place the caret, drag or Shift+arrows to select, double-click selects a word, Home/End, Ctrl/Cmd+A selects all, Ctrl/Cmd+C copies, Ctrl/Cmd+X cuts, Ctrl/Cmd+V pastes, typing replaces the selection, Enter generates, Esc leaves. The minus button in the top-right corner collapses the card; clicking outside also does. If drawing ever fails repeatedly the composer switches itself off; re-enable it in Preferences (Floating composer in the viewport).
 
+![The collapsed composer: the prompt field and a Generate button in the card's style](images/composer-collapsed.png)
+
+*Collapsed: the same field and button, ready for the next prompt.*
+
 ## Costs
 
 Prices are in CU and depend on the model and its cost-marked parameters. Observed during the build (August 2026): an image 9 to 17 CU, a Patina material 6 to 18 CU, Tripo 3.1 image to 3D 45 CU, Rodin 2.5 80 CU, Meshy 7 text to 3D 240 CU, Seedance 2.0 76 CU for 4 s at 480p and 546 CU for 11 s at 720p, Prompt Spark 0.75 CU for a look (generic) and 3.75 CU for Spark / Rewrite on a model, Translate 0.5 CU. The quote on the Generate button is exact for the form you see; the Prompt Spark call is added when the look is empty.
@@ -151,7 +182,7 @@ Prices are in CU and depend on the model and its cost-marked parameters. Observe
 
 - **"Loading models..." does not end**: check the key and secret in Preferences (Test connection), and Blender's Allow Online Access. A Retry button appears when the catalog request failed.
 - **"Prompt is required" / "Add a reference to see the cost"**: the quote needs a valid form; fill the prompt or add the required reference.
-- **"Select the mesh to edit"**: the 3D tab in Edit mode needs a mesh object selected (or active) in the viewport.
+- **"Select the mesh to edit" / "Price shown after the upload"**: the 3D tab in Edit mode needs a mesh object selected (or active) in the viewport.
 - **"This model takes no image/video input"**: the picked model cannot receive the capture; choose another one in the Render lane.
 - **The result does not appear**: open Generations. A job that failed shows a warning marker and the reason; Details lists the download errors; use Import into scene to fetch it again. After installing an update, restart Blender so the new version loads.
 - **A 3D model looks untextured**: switch the viewport to Material Preview (the add-on does this on import), and check Details for the imported file name.

@@ -87,7 +87,7 @@
       "path": "README.md",
       "coverage": "inherited",
       "reviewed_at": "2026-09-24",
-      "limits": "Public entry points, supported minimum, explicit credential selection, SDK bundle, privacy and contributor links reviewed against listed sources. Product lane summaries inherit the user guide and known runtime limitations; no new live generation, platform compatibility, hosted update, or native UI acceptance is claimed. Logo bytes and original MIT notice retained from the official skills repository. Sibling links retain their prior review. Browser-rendered GitHub landing page review remains separate. Markdown handbook renderer, template slots, copied/inline images, metadata validation and external-font disclosure reviewed. This does not refresh inherited product claims or screenshot acceptance, publish the site or attach release assets. Repeat-build asset ownership/cleanup, literal template examples and directory-link handling reviewed with regression tests; desktop and narrow renderer presentation inspected separately in isolated browser profiles. Optional uv-managed hooks and staged secret/path guard inspected with disposable Git regression coverage; full-tree prototype normalization, complete secret detection and repository protection remain separate. Blockout link and lane instructions reviewed against its current controls and stored-plan behavior.",
+      "limits": "Public entry points, supported minimum, explicit credential selection, SDK bundle, privacy and contributor links reviewed against listed sources. Product lane summaries inherit the user guide and known runtime limitations; no new live generation, platform compatibility, hosted update, or native UI acceptance is claimed. Logo bytes and original MIT notice retained from the official skills repository. Sibling links retain their prior review. Browser-rendered GitHub landing page review remains separate. Markdown handbook renderer, template slots, copied/inline images, metadata validation and external-font disclosure reviewed. This does not refresh inherited product claims or screenshot acceptance, publish the site or attach release assets. Repeat-build asset ownership/cleanup, literal template examples and directory-link handling reviewed with regression tests; desktop and narrow renderer presentation inspected separately in isolated browser profiles. Optional uv-managed hooks and staged secret/path guard inspected with disposable Git regression coverage; full-tree prototype normalization, complete secret detection and repository protection remain separate. Blockout link and lane instructions reviewed against its current controls and stored-plan behavior. Hero alt text describes the new labelled offline Image fixture, without implying a price quote or generated result.",
       "sources": {
         "scenario/blender/runtime.py": "2afa6267f835569288ae6d1947af5410b05a0bbdcd3bbad985ff30a6dcb8a000",
         "scenario/blender/registry.py": "a34fcb0110b5c991764df22d423546d9de3c949d3183b6dad1c5ca9e05123af2",
@@ -101,7 +101,7 @@
         "Makefile": "0b43d0c8a2615e14ba2970d0d686beef22050611fcb92c32296b868618e69c5e",
         "scenario/prefs.py": "a96da37fa23ed9ffb6be31c11cc6d519b15e3103555c84e7e14a60d2adcaf6bf",
         "scenario/core/config.py": "74a45b99fde47d741710dbf2a9d8051f2b31903f10ecae679d061340c62fb1be",
-        "docs/USER_GUIDE.md": "406649d4686e95fc3e73098fd919fda6a16db31200d2a795f263810590c8c9a9",
+        "docs/USER_GUIDE.md": "dfb4868fcce8fa514a620b105678788bc77a1c76719d63d16aa45138ddac934d",
         "docs/KNOWN_LIMITATIONS.md": "ccc7710a7fab8d3a2b845f71e541e6c55a88f5a455c14f63596c225ea74480ab",
         "docs/PRIVACY.md": "6393c8c193a907a99d34284fb0338c62437bab4754812de453171a7fc49a4e49",
         "docs/SDK_BUNDLE.md": "161627add3fd5b146643fddc2c496a48023406383748e96b6fbdbbed75960ddb",
@@ -109,7 +109,8 @@
         "SUPPORT.md": "1f3986c4b45b59de785580635bc3b2efb177300823ffd36053bcd95a10f0e5c7",
         "SECURITY.md": "5709200451769d58d1417aefad386b404ee0f03a2a3187756b51e0252cd1f40d",
         "docs/images/scenario-logo.png": "5815cf03eaa5e9eaa3b32ee38878d9d00ddf31763f0e7ccbfd2a6c77b03ba3cc",
-        "docs/images/scenario-logo.LICENSE": "1f5802b8f96b536d570dcbffe6fc509c48deb01d06289022c12f55e1c37e8627"
+        "docs/images/scenario-logo.LICENSE": "1f5802b8f96b536d570dcbffe6fc509c48deb01d06289022c12f55e1c37e8627",
+        "docs/images/panel-image.png": "9e5141afd264c545bfe88198d6ccdd90dea3247f3199c618bd9a7904caba7453"
       }
     },
     {
@@ -396,7 +397,7 @@
       "path": "docs/USER_GUIDE.md",
       "coverage": "inherited",
       "reviewed_at": "2026-09-24",
-      "limits": "Existing guide indexed during this intake, without a fresh claim-by-claim or live verification; consult current integration status and issue acceptance. MCP overview and reference links reviewed; remaining product guidance still inherits its stated verification limits. MCP panel screenshot captured from the exact ZIP in isolated Blender 5.0.1 with synthetic local token and Python disabled; other screenshots retain inherited limits. Markdown handbook renderer, template slots, copied/inline images, metadata validation and external-font disclosure reviewed. This does not refresh inherited product claims or screenshot acceptance, publish the site or attach release assets. Repeat-build asset ownership/cleanup, literal template examples and directory-link handling reviewed with regression tests; desktop and narrow renderer presentation inspected separately in isolated browser profiles. Blockout instructions reviewed against current design/refine/rebuild/clear controls and plan storage; no live paid design or new native acceptance is claimed.",
+      "limits": "Existing guide indexed during this intake, without a fresh claim-by-claim or live verification; consult current integration status and issue acceptance. MCP overview and reference links reviewed; remaining product guidance still inherits its stated verification limits. MCP panel screenshot captured from the exact ZIP in isolated Blender 5.0.1 with synthetic local token and Python disabled; other screenshots retain inherited limits. Markdown handbook renderer, template slots, copied/inline images, metadata validation and external-font disclosure reviewed. This does not refresh inherited product claims or screenshot acceptance, publish the site or attach release assets. Repeat-build asset ownership/cleanup, literal template examples and directory-link handling reviewed with regression tests; desktop and narrow renderer presentation inspected separately in isolated browser profiles. Blockout instructions reviewed against current design/refine/rebuild/clear controls and plan storage; no live paid design or new native acceptance is claimed. Current guide wording reconciled with registered lanes, credential selection, visible controls, local Blockout plan operations and shot hold parsing. Historic account-plan, fixed-price and blanket custom-model claims removed. Native Image/Blockout illustrations use labelled offline fixtures with no credentials, socket connections blocked and installed-ZIP/profile checks; they are not live model, price, platform-wide or paid-workflow acceptance.",
       "sources": {
         "scenario/blender/panels.py": "5fbdc508c0d05c3472aa1ad489dfd366487ff39e3e32eef4fa9d79475ff64f0c",
         "scenario/blender/composer/draw.py": "52a366ce04766edc3aef343c7b115d7e360e8c88a27688c4446be36ecc78c6e8",
@@ -409,7 +410,7 @@
         "scenario/prefs.py": "bfd966d4a6dab2a8505caa3e9ed58d71b71d57b29b673feb5344ad6b8ed72e92",
         "tests/unit/test_config.py": "3d8ea8a6f0bcef70f0bb16146e794346cbbe7d2fc0f26aec1631b108cf6914f3",
         "tests/blender/test_credentials.py": "0767fbe1917c977631dc4243bfcb05dce97d5ed0c0b2c731b8ea4bfdb07e3b45",
-        "scenario/blender_manifest.toml": "b942bfc79b1ebecab7ae8f2ea16bac4a182d6a13d81dac3a23391dc2ffd16e0f",
+        "scenario/blender_manifest.toml": "7ac4a84b0856f6a7c5ada8182e1c343f097347a25cf5785d81d72b28ec10f444",
         "tests/unit/test_manifest.py": "9bbda999a1f3de9d16571848677d9ed4f7ece1d9e9c045daf57bde8e08827d70",
         "tools/capture_gui_scene.py": "7538cb1e90510a31cdfac22e390d5d595cf2bc73628f1cc3139071b2ef855609",
         "tests/unit/test_gui_capture.py": "beee6cba15adf7da1e7434c18dcb2b948e36f4b459af06fc98a6c850a5fea87c",
@@ -422,7 +423,17 @@
         "TRADEMARKS.md": "067b66d55a6eb8540081535388d9e8a8a7f69018824b4c16625ea70f7c4d92b2",
         "scenario/blender/blockout.py": "804e8a5d0fbe5d0bc1d4a3f1bc21c7b697a53c1fbf2424f834fae40dc0ba462b",
         "scenario/core/scene/blockout.py": "7f7f29344125da98b11006fed3ce4a9a957f3fdfdea3d5b9ce49d3c5cb53931b",
-        "scenario/blender/props.py": "0cac5c223860ed7e3709fda2a415ed1a7847c990d26d42ede0a0ce7def10ac21"
+        "scenario/blender/props.py": "0cac5c223860ed7e3709fda2a415ed1a7847c990d26d42ede0a0ce7def10ac21",
+        "scenario/blender/prompt_tools.py": "c240d5e4d346fa69a46f33c7bc8d78755b0b00063f86f5eaf44aacf4d7bc0584",
+        "scenario/blender/shot_planner.py": "ad19bc1d32a0e737aaf24a8b95c1ef0f320f08cd4834c1f4c3e3fcf9d08d51fb",
+        "scenario/core/scene/shot_plan.py": "7b09966a82ec778ca4beeede4c72afeca32726f22538f0a559759c7261fa9f2a",
+        "scenario/blender/runtime.py": "e2aea444fd9ed8568038d709d3e0948a411dd26ba94994bb09efb55a0a2c7e31",
+        "scenario/blender/render_lanes.py": "7e4241d31fb270f5bf6237f13a1bb71e88f7019be398d73e54c54a4a9434fc6d",
+        "tests/unit/test_docs.py": "a8352a16f4caa43264cd87e1ea6cb616ab16c222bd760086f7594a6589184fb8",
+        "tools/capture_gui.py": "c80adcf7aeff8d8b1e39e56fd192a66735e1e52fe8f36da99a00a413473d8d91",
+        "tools/gui_screenshot.py": "f773d0c3457163fb0bef827a98cda38738f12c543f50ea43ba4f885a0fe59666",
+        "docs/images/panel-image.png": "9e5141afd264c545bfe88198d6ccdd90dea3247f3199c618bd9a7904caba7453",
+        "docs/images/panel-blockout.png": "d63974be4bc4609afe790049ae3ace64f109719bebadebc5dfe13571f60c6323"
       }
     },
     {
@@ -797,7 +808,7 @@
         "scenario/blender_manifest.toml": "7ac4a84b0856f6a7c5ada8182e1c343f097347a25cf5785d81d72b28ec10f444",
         "tests/unit/test_trademarks.py": "3881a95483e918233f8946ce1ee5eaba758a0de5f8acdb45244a963c55768539",
         "docs/SDK_BUNDLE.md": "161627add3fd5b146643fddc2c496a48023406383748e96b6fbdbbed75960ddb",
-        "docs/USER_GUIDE.md": "406649d4686e95fc3e73098fd919fda6a16db31200d2a795f263810590c8c9a9",
+        "docs/USER_GUIDE.md": "dfb4868fcce8fa514a620b105678788bc77a1c76719d63d16aa45138ddac934d",
         "tools/build_docs_html.py": "40e8c099acc77be8b3d57edd31f1e2a0ade323d9932e1c822aee98320c01f4a2",
         "docs/handbook-template.html": "f2a14d1356fa1f9f2c28edf251c6c8372d2302b46131215db0b9095e3913061c"
       }

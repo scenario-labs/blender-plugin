@@ -19,7 +19,7 @@ This is a Python extension with pinned SDK dependency wheels, licensed
 GPL-3.0-or-later. Read the [known limitations](docs/KNOWN_LIMITATIONS.md) before
 relying on a workflow; shared runtime and interface adoption remain in progress.
 
-![The Scenario tab in the 3D viewport sidebar: Image lane with a price estimate](docs/images/panel-image.png)
+![The Scenario sidebar with all creation tabs and a clearly labelled offline Image example](docs/images/panel-image.png)
 
 ## Requirements
 

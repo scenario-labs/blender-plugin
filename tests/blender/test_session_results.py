@@ -25,7 +25,8 @@ class SessionResultTests(unittest.TestCase):
         directory = bpy.utils.extension_path_user(
             addon_name(), path="test-session-results", create=True
         )
-        self.temp = tempfile.TemporaryDirectory(dir=directory)
+        # Cleanup must retain the namespace used to access deep Windows results.
+        self.temp = tempfile.TemporaryDirectory(dir=self.transfers._root(directory))
         self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name).resolve()
         self.previous = bpy.context.scene

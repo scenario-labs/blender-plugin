@@ -254,6 +254,13 @@ initialization, one-part transfer, finalization and explicit refresh. They do no
 submit generation, create another client/pool, or apply references to Blender.
 The active UI/MCP still needs to adopt these commands and its recovery controls.
 
+`inspect_upload(request_id)` and `upload_recovery_plan()` provide read-only,
+scope-bound persisted state without exposing the private store. Their immutable
+snapshots preserve original scope/origin and any uncertain claims; conservative
+suggestions do not grant permission to dispatch or retry. See
+[upload inspection](SDK_UPLOADS.md#scoped-inspection-and-recovery-visibility) for
+the state mapping and lifecycle boundaries.
+
 
 ## Shared catalog and origin-bound quotes
 

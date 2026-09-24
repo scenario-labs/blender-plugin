@@ -1,7 +1,7 @@
 {
   "version": 1,
   "index": "docs/index.md",
-  "base_revision": "08b909094ed31a5ed52e2698d2914a8f12c743e7",
+  "base_revision": "408f581a1565f2d462a7b2eb297a382bfaafd706",
   "documents": [
     {
       "path": ".claude/rules/blender-glue.md",
@@ -105,12 +105,12 @@
         "scenario/blender/job_session.py": "a1b2e0f83456de335802ea703d51d5a92d1137a2819a2ab5c63fed7499016f42",
         "scenario/core/jobs/origins.py": "d1282d67aacdfe2444a776cf1338667bea9ee67392ff3f473db581a0f8059977",
         "tests/blender/test_job_session.py": "c82d1561183d031e6f423e72c5994e405accec2d9dd821dffa83eda471a1c376",
-        "tests/unit/test_shared_quotes.py": "2f824c1999c1d9ed83e1c23960bfedaf09ed921c73f87252a68389976f290133",
+        "tests/unit/test_shared_quotes.py": "eb06294b382dc1b38de6b920ce7ed8fcebc4acc999a41abd560a30c2a506dfee",
         "scenario/core/jobs/coordinator.py": "c1d8208cb20f1b4401389704308e7a063f013a63919cf5a7c88f6315eb6d977b",
         "scenario/core/jobs/workers.py": "fc584737c05c28bcb20309220ed6dc99bb40b330339b995075c1392497d3ebed",
         "tests/blender/test_session_results.py": "760c1a66f8d814e3fd1d40f0d8a63bf012171815ad61fa0b2493a0a413e7082b",
         "scenario/core/jobs/results.py": "6f8735b1fe64f0607ae63c4a5cb43c443904730ede7a2466ceb6439a425d93a2",
-        "scenario/core/jobs/transfers.py": "0f02ad2823787816d3c25695f9d0749cab3fe29b26451d279c4ecd56d60a9d17"
+        "scenario/core/jobs/transfers.py": "ca3aafdd915d908be78db5b0a7f3a535f0274e6f3ccc7e0cef7c2d88a90f212d"
       }
     },
     {

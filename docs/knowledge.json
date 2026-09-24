@@ -599,7 +599,7 @@
         "scenario/blender/operators.py": "0cb4bb2c0566a7a30462ebaf158a8a954dcc9a14b305dc4a13e4cbc4655c6473",
         "scenario/blender/mcp_service.py": "ec45907c26301d5c0c2e48fe2eab09136cd52aadb00c6be5401d23ec7d868715",
         "scenario/mcp/server.py": "e201d006e5189f32742db38c3f2b00879fbcc1b71b665436b45a0930ff696cd0",
-        "scenario/mcp/tools_scenario.py": "f02c1c51e42668868a0c8b46af257b805dfc4a19511b71d5a2d887fa6a893f28",
+        "scenario/mcp/tools_scenario.py": "66e90694c9bc89878cec3ed2c133ac017492c9ebec866e1c850c07baf4b29543",
         "scenario/blender/composer/modal.py": "5db6dcddc6b8ca2533fcf73f3d7782c0cd3bd47c99ca11eadf3a8c57d68ed632",
         "tests/unit/test_privacy_docs.py": "d9f3ee2f403400da1758381f4ec0d3a643d83d189190f6c3201a5b3c60328526",
         "tests/blender/test_credentials.py": "0767fbe1917c977631dc4243bfcb05dce97d5ed0c0b2c731b8ea4bfdb07e3b45",
@@ -613,7 +613,7 @@
       "limits": "Tool table generated without importing Blender and compared with the installed native registry. Local setup/security claims inspected against active code. Exact-ZIP isolated Blender 5.0.1 macOS arm64 checks passed, including GUI authenticated tools/list with synthetic local credentials, Python disabled and external sockets blocked. Hosted tool mapping and Codex configuration checked against their official references. No paid generation, live provider, complete client/platform compatibility or shared-runtime acceptance is claimed.",
       "sources": {
         "scenario/mcp/tools_blender.py": "e80a60e846adae80dbf520cf969c1d14a11a03f4292b20b3394806ee5e4d0e4f",
-        "scenario/mcp/tools_scenario.py": "f02c1c51e42668868a0c8b46af257b805dfc4a19511b71d5a2d887fa6a893f28",
+        "scenario/mcp/tools_scenario.py": "66e90694c9bc89878cec3ed2c133ac017492c9ebec866e1c850c07baf4b29543",
         "scenario/mcp/protocol.py": "62b2fbfa2f3e4bcb6f8084f3b67798d97fe11c01a4ba38b062ddf52c8c68413b",
         "scenario/mcp/cli.py": "733ec02de0f03a9bfb0a9326a8f94ac32a2b6c33a5c11a09b79694cabd87c156",
         "scenario/mcp/server.py": "e201d006e5189f32742db38c3f2b00879fbcc1b71b665436b45a0930ff696cd0",

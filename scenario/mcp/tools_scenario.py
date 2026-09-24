@@ -1,17 +1,17 @@
 # SPDX-FileCopyrightText: 2026 Scenario Inc.
 # SPDX-License-Identifier: GPL-3.0-or-later
 """MCP tools that talk to Scenario through the add-on: catalog, cost, generate, results into the scene."""
+
 import time
 
 import bpy
 
-from .protocol import ToolSpec
 from ..blender import generation, runtime
 from ..core.api import generate as generate_api
+from ..core.api.catalog import GENERATION_LANES as LANES
 from ..core.api.catalog import LANE_KIND as KIND
 from ..core.schema.params import build_body, validate
-
-from ..core.api.catalog import GENERATION_LANES as LANES
+from .protocol import ToolSpec
 
 
 def _catalog_ready():
@@ -29,7 +29,9 @@ def list_models(args):
     records = runtime.state.lane_models.get(lane, [])
     if lane == "3d":
         everything = list(runtime.state.records.values())
-        records = generation.three_d_models('TEXT', everything) + generation.three_d_models('IMAGE', everything)
+        records = generation.three_d_models("TEXT", everything) + generation.three_d_models(
+            "IMAGE", everything
+        )
     out, seen = [], set()
     for rec in records:
         if rec.id in seen:
@@ -37,7 +39,14 @@ def list_models(args):
         seen.add(rec.id)
         if query and query not in (rec.name + " " + rec.short_description + " " + rec.id).lower():
             continue
-        out.append({"id": rec.id, "name": rec.name, "description": rec.short_description, "capabilities": list(rec.capabilities)})
+        out.append(
+            {
+                "id": rec.id,
+                "name": rec.name,
+                "description": rec.short_description,
+                "capabilities": list(rec.capabilities),
+            }
+        )
     return {"lane": lane, "models": out[:40]}
 
 
@@ -46,7 +55,13 @@ def model_schema(args):
     schema = generation.schema_for(record.id)
     params = []
     for spec in schema.specs:
-        item = {"name": spec.name, "type": spec.ptype, "label": spec.label, "required": spec.required_always, "cost_impact": spec.cost_impact}
+        item = {
+            "name": spec.name,
+            "type": spec.ptype,
+            "label": spec.label,
+            "required": spec.required_always,
+            "cost_impact": spec.cost_impact,
+        }
         if spec.default is not None:
             item["default"] = spec.default
         if spec.allowed_values:
@@ -55,11 +70,18 @@ def model_schema(args):
             item["range"] = [spec.min, spec.max]
         if spec.is_file:
             item["file_kind"] = spec.kind or "image"
-            item["note"] = "pass a Scenario asset id (capture_reference creates one from the viewport)"
+            item["note"] = (
+                "pass a Scenario asset id (capture_reference creates one from the viewport)"
+            )
         if spec.description:
             item["description"] = spec.description
         params.append(item)
-    return {"model_id": record.id, "name": record.name, "prompt_parameter": schema.prompt_name, "parameters": params}
+    return {
+        "model_id": record.id,
+        "name": record.name,
+        "prompt_parameter": schema.prompt_name,
+        "parameters": params,
+    }
 
 
 def _body_for(model_id, parameters):
@@ -94,12 +116,31 @@ def generate(args):
         raise ValueError(f"lane must be one of {LANES}")
     record, body = _body_for(args["model_id"], args.get("parameters"))
     manager = runtime.ensure_manager()
-    meta = {"prompt": str(body.get("prompt") or ""), "model_name": record.name, "source": "mcp",
-            "target_objects": [o.name for o in bpy.context.selected_objects if o.type == 'MESH']}
+    meta = {
+        "prompt": str(body.get("prompt") or ""),
+        "model_name": record.name,
+        "source": "mcp",
+        "target_objects": [o.name for o in bpy.context.selected_objects if o.type == "MESH"],
+    }
     rec = manager.submit(lane, KIND[lane], record.id, body, meta=meta)
     runtime.state.jobs_view.insert(0, rec)
-    return {"local_id": rec.local_id, "status": rec.status, "lane": lane, "model_id": record.id,
-            "note": "Poll job_status or wait_for_job; on success the result lands in the scene automatically (image datablock, material on the selection, 3D at the cursor, video file)."}
+    return {
+        "local_id": rec.local_id,
+        "status": rec.status,
+        "lane": lane,
+        "model_id": record.id,
+        "note": "Poll job_status or wait_for_job; on success the result lands in the scene automatically (image datablock, material on the selection, 3D at the cursor, video file).",
+    }
+
+
+def _job_ref(args):
+    """Prefer the platform spelling while retaining the original local alias."""
+    ref = args.get("job_id") or args.get("id")
+    if not isinstance(ref, str) or not ref.strip():
+        raise ValueError(
+            "Provide job_id (or id): the local_id returned by generate or a Scenario job id"
+        )
+    return ref
 
 
 def _find(local_or_job_id):
@@ -111,31 +152,40 @@ def _find(local_or_job_id):
 
 
 def _status(rec):
-    return {"local_id": rec.local_id, "job_id": rec.job_id, "status": rec.status, "progress": rec.progress, "cu_cost": rec.cu_cost,
-            "files": list(rec.files), "error": rec.error, "kind": rec.kind}
+    return {
+        "local_id": rec.local_id,
+        "job_id": rec.job_id,
+        "status": rec.status,
+        "progress": rec.progress,
+        "cu_cost": rec.cu_cost,
+        "files": list(rec.files),
+        "error": rec.error,
+        "kind": rec.kind,
+    }
 
 
 def job_status(args):
-    return _status(_find(args["id"]))
+    return _status(_find(_job_ref(args)))
 
 
 def wait_for_job(args):
+    ref = _job_ref(args)
     deadline = time.time() + float(args.get("timeout", 170))
     while time.time() < deadline:
-        rec = _find(args["id"])
+        rec = _find(ref)
         if rec.is_terminal:
             return _status(rec)
         time.sleep(1.5)
-    return dict(_status(_find(args["id"])), note="still running, call again")
+    return dict(_status(_find(ref)), note="still running, call again")
 
 
 def import_result(args):
     from ..blender import handlers
 
-    rec = _find(args["id"])
+    rec = _find(_job_ref(args))
     if not rec.files:
         raise ValueError("This job has no downloaded files yet")
-    rec.meta["target_objects"] = [o.name for o in bpy.context.selected_objects if o.type == 'MESH']
+    rec.meta["target_objects"] = [o.name for o in bpy.context.selected_objects if o.type == "MESH"]
     handlers.dispatch(("job_done", rec))
     return {"applied": rec.kind, "files": list(rec.files)}
 
@@ -144,7 +194,7 @@ def capture_reference(args):
     from ..blender import capture
     from ..core.api import assets
 
-    source = args.get("source") or 'VIEWPORT'
+    source = args.get("source") or "VIEWPORT"
     path = capture.new_capture_path("mcp_ref", "png")
     capture.capture_still(bpy.context, path, source=source, width=1280, height=720)
     asset_id = assets.upload_file(runtime.make_client(), path, kind="image")
@@ -158,23 +208,184 @@ def list_generations(args):
         history.refresh()
         return {"generations": [], "note": "history requested, call again in a few seconds"}
     limit = int(args.get("limit", 20))
-    return {"generations": [{"job_id": e.job_id, "kind": e.kind, "model_id": e.model_id, "prompt": e.prompt, "status": e.status, "cu_cost": e.cu_cost,
-                             "local_files": e.local_files} for e in runtime.state.history[:limit]]}
+    return {
+        "generations": [
+            {
+                "job_id": e.job_id,
+                "kind": e.kind,
+                "model_id": e.model_id,
+                "prompt": e.prompt,
+                "status": e.status,
+                "cu_cost": e.cu_cost,
+                "local_files": e.local_files,
+            }
+            for e in runtime.state.history[:limit]
+        ]
+    }
 
 
 def _schema(props, required=()):
     return {"type": "object", "properties": props, "required": list(required)}
 
 
+_JOB_REF = {
+    "job_id": {
+        "type": "string",
+        "description": "Scenario job id (job_...) or the local_id returned by generate",
+    },
+    "id": {"type": "string", "description": "Same as job_id, kept for compatibility"},
+}
+
+
 SPECS = (
-    ToolSpec("list_models", "Scenario models usable in a lane (image, video, 3d, material), curated first.", _schema({"lane": {"type": "string", "enum": list(LANES)}, "query": {"type": "string"}}), list_models, {"readOnlyHint": True}),
-    ToolSpec("model_schema", "Parameters a model accepts (names, types, defaults, allowed values, which ones affect cost).", _schema({"model_id": {"type": "string"}}, ["model_id"]), model_schema, {"readOnlyHint": True}),
-    ToolSpec("estimate_cost", "Exact CU price of a generation without running it (dry run).", _schema({"model_id": {"type": "string"}, "parameters": {"type": "object"}}, ["model_id"]), estimate_cost, {"readOnlyHint": True}),  # touches bpy (prefs, catalog): must run on the main thread
-    ToolSpec("generate", "Submit a Scenario generation; the result is placed in the scene when done. Spends the user's credits.",
-             _schema({"lane": {"type": "string", "enum": list(LANES)}, "model_id": {"type": "string"}, "parameters": {"type": "object", "description": "Model parameters; file parameters take Scenario asset ids"}}, ["lane", "model_id"]), generate),
-    ToolSpec("job_status", "Status, progress, cost and files of a generation.", _schema({"id": {"type": "string", "description": "local_id or job_id"}}, ["id"]), job_status, {"readOnlyHint": True}),
-    ToolSpec("wait_for_job", "Block up to timeout seconds until a generation finishes.", _schema({"id": {"type": "string"}, "timeout": {"type": "number"}}, ["id"]), wait_for_job, {"readOnlyHint": True}),  # touches bpy (paths, manager): main thread
-    ToolSpec("import_result", "Bring a finished generation into the scene again (image, material on the selection, 3D at the cursor).", _schema({"id": {"type": "string"}}, ["id"]), import_result),
-    ToolSpec("capture_reference", "Capture the viewport or the scene camera as a still and upload it; returns an asset id to use as a reference parameter.", _schema({"source": {"type": "string", "enum": ["VIEWPORT", "CAMERA"]}}), capture_reference),
-    ToolSpec("list_generations", "Recent generations of this project (cloud history).", _schema({"limit": {"type": "integer"}}), list_generations, {"readOnlyHint": True}),
+    ToolSpec(
+        "list_models",
+        (
+            "List the loaded lane catalog, with curated models first and at most 40 matches.\n"
+            "Args:\n"
+            "  - lane: optional string, default image; image, video, 3d, material, audio, render_image, render_video or edit3d.\n"
+            "  - query: optional string, substring of the model name, description or id.\n"
+            "Returns: lane, models[] with id, name, description and capabilities. Retry after catalog loading completes.\n"
+            'Example: {"lane": "material", "query": "patina"}.\n'
+            "Prefer model_schema before choosing generation parameters; this is not the full platform catalog.\n"
+            "Platform equivalent: models_list, recommend."
+        ),
+        _schema({"lane": {"type": "string", "enum": list(LANES)}, "query": {"type": "string"}}),
+        list_models,
+        {"readOnlyHint": True},
+    ),
+    ToolSpec(
+        "model_schema",
+        (
+            "Read the model's current form parameters for this Blender extension.\n"
+            "Args:\n"
+            "  - model_id: required string, the exact model identifier from list_models.\n"
+            "Returns: model_id, name, prompt_parameter, parameters[] with name, type, label, required, default, allowed_values, range, cost_impact and file_kind when present. File parameters take Scenario asset ids.\n"
+            'Example: {"model_id": "model_example"}.\n'
+            "Prefer this before estimate_cost; do not guess parameter names or supported inputs.\n"
+            "Platform equivalent: model_schema_get."
+        ),
+        _schema({"model_id": {"type": "string"}}, ["model_id"]),
+        model_schema,
+        {"readOnlyHint": True},
+    ),
+    ToolSpec(
+        "estimate_cost",
+        (
+            "Get the exact CU cost with a dry run that spends no credits.\n"
+            "Args:\n"
+            "  - model_id: required string, the model identifier.\n"
+            "  - parameters: optional object, model parameters including Scenario asset ids for file inputs.\n"
+            "Returns: model_id, cu_cost and details from the server estimate.\n"
+            'Example: {"model_id": "model_example", "parameters": {"prompt": "a wooden crate"}}.\n'
+            "Call before generate and show the cost to the user; an estimate does not authorize spending.\n"
+            "Platform equivalent: model_run with dry_run."
+        ),
+        _schema({"model_id": {"type": "string"}, "parameters": {"type": "object"}}, ["model_id"]),
+        estimate_cost,
+        {"readOnlyHint": True},
+    ),  # touches bpy (prefs, catalog): must run on the main thread
+    ToolSpec(
+        "generate",
+        (
+            "Submit a generation that spends the user's credits and automatically places its result in Blender.\n"
+            "Args:\n"
+            "  - lane: required string; image, video, 3d, material, audio, render_image, render_video or edit3d.\n"
+            "  - model_id: required string, the exact model to run.\n"
+            "  - parameters: optional object, model parameters; file inputs take Scenario asset ids.\n"
+            "Returns: local_id, status, lane, model_id and note. Poll job_status for the Scenario job_id after acceptance. Results become image datablocks, materials on the captured meshes, 3D objects at the cursor, or video/audio files.\n"
+            'Example: {"lane": "image", "model_id": "model_example", "parameters": {"prompt": "a wooden crate"}}.\n'
+            "Do not call before estimate_cost and explicit spending approval. Do not repeat a timed-out submission. import_result is only for an intentional additional application.\n"
+            "Platform equivalent: model_run."
+        ),
+        _schema(
+            {
+                "lane": {"type": "string", "enum": list(LANES)},
+                "model_id": {"type": "string"},
+                "parameters": {
+                    "type": "object",
+                    "description": "Model parameters; file parameters take Scenario asset ids",
+                },
+            },
+            ["lane", "model_id"],
+        ),
+        generate,
+    ),
+    ToolSpec(
+        "job_status",
+        (
+            "Read one local generation's status, cost and downloaded files without spending credits.\n"
+            "Args:\n"
+            "  - job_id: optional string, a Scenario job id or the local_id returned by generate.\n"
+            "  - id: optional string, compatibility alias; provide job_id or id. job_id takes precedence if both are supplied.\n"
+            "Returns: local_id, job_id, status, progress, cu_cost, files, error and kind. Unknown jobs raise ValueError.\n"
+            'Example: {"job_id": "job_example"}.\n'
+            "Prefer this for one status check; it only knows jobs tracked by this Blender runtime.\n"
+            "Platform equivalent: job_get."
+        ),
+        _schema({**_JOB_REF}),
+        job_status,
+        {"readOnlyHint": True},
+    ),
+    ToolSpec(
+        "wait_for_job",
+        (
+            "Wait for one tracked generation using a client-side status loop in Blender.\n"
+            "Args:\n"
+            "  - job_id: optional string, a Scenario job id or local_id returned by generate.\n"
+            "  - id: optional string, compatibility alias; provide job_id or id. job_id takes precedence.\n"
+            "  - timeout: optional number of seconds, default 170.\n"
+            "Returns: local_id, job_id, status, progress, cu_cost, files, error and kind; on timeout, also note: still running, call again.\n"
+            'Example: {"job_id": "job_example", "timeout": 30}.\n'
+            "Prefer job_status for a quick check. This blocks Blender's main thread while waiting; it does not wait for multiple jobs or retry generation.\n"
+            "Platform equivalent: jobs_wait."
+        ),
+        _schema({**_JOB_REF, "timeout": {"type": "number"}}),
+        wait_for_job,
+        {"readOnlyHint": True},
+    ),  # touches bpy (paths, manager): main thread
+    ToolSpec(
+        "import_result",
+        (
+            "Apply an already downloaded generation again to the current Blender scene and selection.\n"
+            "Args:\n"
+            "  - job_id: optional string, a Scenario job id or local_id returned by generate.\n"
+            "  - id: optional string, compatibility alias; provide job_id or id. job_id takes precedence.\n"
+            "Returns: applied (result kind), files. Raises ValueError if no downloaded files exist.\n"
+            'Example: {"job_id": "job_example"}.\n'
+            "Do not use for the initial automatic application. Use only when the user wants another copy or to apply a material to the current mesh selection.\n"
+            "No platform equivalent."
+        ),
+        _schema({**_JOB_REF}),
+        import_result,
+    ),
+    ToolSpec(
+        "capture_reference",
+        (
+            "Capture a 1280x720 viewport or camera still and upload it as a Scenario reference asset.\n"
+            "Args:\n"
+            "  - source: optional string, VIEWPORT (default) or CAMERA.\n"
+            "Returns: asset_id for a model file parameter, and the local capture path.\n"
+            'Example: {"source": "CAMERA"}.\n'
+            "Do not use in background mode: capture needs the Blender GUI and a 3D viewport. This sends the captured scene image to Scenario; use it only for an authorized reference upload.\n"
+            "Platform equivalent: upload_asset then upload_asset_complete."
+        ),
+        _schema({"source": {"type": "string", "enum": ["VIEWPORT", "CAMERA"]}}),
+        capture_reference,
+    ),
+    ToolSpec(
+        "list_generations",
+        (
+            "List recent cloud generations using this Blender runtime's loaded history.\n"
+            "Args:\n"
+            "  - limit: optional integer, default 20, maximum number of rows to return.\n"
+            "Returns: generations[] with job_id, kind, model_id, prompt, status, cu_cost and local_files. The first call may return an empty list and a note while history loads; call again after loading.\n"
+            'Example: {"limit": 10}.\n'
+            "Prefer job_status for a tracked active generation; this is not a fresh platform-wide history query on every call.\n"
+            "Platform equivalent: jobs_list."
+        ),
+        _schema({"limit": {"type": "integer"}}),
+        list_generations,
+        {"readOnlyHint": True},
+    ),
 )

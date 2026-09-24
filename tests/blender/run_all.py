@@ -33,6 +33,7 @@ BASELINE = (
     "test_apply_3d",
     "test_mesh_application",
     "test_mcp_server",
+    "test_mcp_contracts",
     "test_mcp_security",
     "test_mcp_cli",
     "test_installed_contract",

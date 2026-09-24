@@ -212,7 +212,7 @@
       "path": "docs/RELEASING.md",
       "coverage": "inherited",
       "reviewed_at": "2026-09-24",
-      "limits": "Offline repository snapshot section reviewed against exact-inventory validation and failure tests; synthetic and packaged SDK archive generation checked with Blender 5.0.1. Existing release/publication sections remain inherited, without a fresh claim-by-claim or live verification. This tool does not establish published-release provenance, retention selection, hosting or native update acceptance.",
+      "limits": "Offline repository snapshot section reviewed against exact-inventory validation and failure tests; synthetic and packaged SDK archive generation checked with Blender 5.0.1. Existing release/publication sections remain inherited, without a fresh claim-by-claim or live verification. This tool does not establish published-release provenance, retention selection, hosting or native update acceptance. Extension-id decision and offline metadata guard section reviewed against manifest tests and runtime storage paths; native validation remains authoritative.",
       "sources": {
         ".github/workflows/release-please.yml": "8f879d0d9aa9e63d67a18cade277dd7ef081024a9975f983e3c547e3412d659f",
         "release-please-config.json": "f7192922c196556279e00e54b82a8ec82a5fe516481f35771e1ad73c0b00adc9",
@@ -220,7 +220,10 @@
         "tools/repository.py": "3b8de862484ed4c7ae7d5250cc466274ef7318acf492120abe17fcde681bfee9",
         "tests/unit/test_repository.py": "b6dee9da59ed8bfdec2c9a202f927c6fada49312f3ccb18cfff74f4c80fc9a7b",
         "tools/blender_env.py": "2943b2aaf3bf1de923d078f75635fef439119deb1b5d66da952df878e6a8d428",
-        "tools/wheel_bundle.py": "5189baee1a5381a3be9dd667e0b34357ce6101bd1ea0c7bb03098332ea53c518"
+        "tools/wheel_bundle.py": "5189baee1a5381a3be9dd667e0b34357ce6101bd1ea0c7bb03098332ea53c518",
+        "scenario/blender_manifest.toml": "7ac4a84b0856f6a7c5ada8182e1c343f097347a25cf5785d81d72b28ec10f444",
+        "tests/unit/test_manifest.py": "8f2ad7e74d0af9619cd59b99bb90bc487e9deef8bb7e80bbe0c2fb600131cab2",
+        "scenario/blender/runtime.py": "e2aea444fd9ed8568038d709d3e0948a411dd26ba94994bb09efb55a0a2c7e31"
       }
     },
     {

@@ -10,6 +10,24 @@ is `scenario-X.Y.Z.zip`. Preserve historical `v*` tags and releases. Let
 release-please update the changelog, release manifest and package version fields.
 Do not manually bump them in unrelated work. The extension remains experimental.
 
+## Extension id
+
+The extension id is `scenario` and it is final. Blender scopes extension modules
+per repository (`bl_ext.<repository_module_name>.scenario`), so the module
+namespace also identifies the configured repository. The updater matches the id
+against that repository's `index.json`; it also contributes to the per-user state
+and cache paths returned by `bpy.utils.extension_path_user` in
+[runtime.py](../scenario/blender/runtime.py). Renaming it would break update
+matching and leave existing user state behind.
+
+Distribution uses GitHub release assets; the planned hosted extension repository
+is tracked in #37. Publishing there does not require a globally unique id on
+extensions.blender.org. Keep the id unique within our own repository.
+[Manifest tests](../tests/unit/test_manifest.py) enforce this decision and the
+approved Blender 5.0 floor alongside metadata, tags, GPL and permission rules.
+The offline tests are a scoped early check; native ZIP validation and supported
+Blender runtime acceptance remain separate requirements.
+
 ## Pipeline
 
 [release-please.yml](../.github/workflows/release-please.yml) runs on pushes to

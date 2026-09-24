@@ -102,7 +102,7 @@ Only connect agents you authorize to perform those actions.
 Arbitrary Python execution is disabled by default. Enabling it gives a connected
 agent code execution in Blender with your user's permissions. That switch is not
 a sandbox for Python or for the other scene and generation tools. The
-[user guide](USER_GUIDE.md#agents-mcp) describes connection setup.
+[MCP reference](MCP.md#security-model) describes access controls and connection setup.
 
 ## Terms
 

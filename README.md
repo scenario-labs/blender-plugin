@@ -57,14 +57,14 @@ A pill at the bottom of every 3D viewport shows the current prompt and a Generat
 
 ## Agents (MCP)
 
-The add-on runs a local MCP server (default `http://127.0.0.1:9876/mcp`, bearer token shown in the MCP tab, new token per Blender session). Copy a setup from the MCP tab:
-
-- Claude Code: `claude mcp add --transport http scenario-blender http://127.0.0.1:9876/mcp --header "Authorization: Bearer <token>"`
-- Cursor: paste the `mcp.json` snippet.
-- Claude Desktop: stdio snippet running `scenario/mcp/stdio_shim.py` with Blender's Python.
-- Headless: `blender --background scene.blend --command scenario_blender --port 9876`. Supply the local bearer token through `SCENARIO_BLENDER_TOKEN` or `--token`; see [authentication details](CONTRIBUTING.md#environment-variables).
-
-Agents get scene tools (summary, object detail, select, set frame, screenshots, quick renders, gated Python) and Scenario tools (models, schema, cost, generate, job status, import into scene, capture a reference from the viewport, history). The current tool definitions are in `scenario/mcp/tools_blender.py` and `scenario/mcp/tools_scenario.py`.
+The local `scenario-blender` server connects an authorized agent to the open
+scene and generation into it. The hosted `mcp.scenario.com` server provides
+platform-wide collections, training, workflows and usage; connect both when
+needed. Copy client setup from **Scenario > Agents (MCP)**, and use the
+[MCP reference](docs/MCP.md) for tool contracts, complete client examples,
+headless setup, token handling and the security model.
+For headless use, run `blender --background scene.blend --command scenario_blender`;
+see the reference for token configuration and online-access requirements.
 
 ## What leaves your machine
 

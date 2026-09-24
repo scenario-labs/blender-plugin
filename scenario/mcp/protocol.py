@@ -1,14 +1,25 @@
 # SPDX-FileCopyrightText: 2026 Scenario Inc.
 # SPDX-License-Identifier: GPL-3.0-or-later
 """JSON-RPC 2.0 + MCP method handling. No bpy, no sockets: pure functions over dicts."""
+
 import json
 import traceback
 from dataclasses import dataclass, field
 
 PROTOCOL_VERSIONS = ("2025-06-18", "2025-03-26", "2024-11-05")
-PARSE_ERROR, INVALID_REQUEST, METHOD_NOT_FOUND, INVALID_PARAMS, INTERNAL_ERROR, TOOL_TIMEOUT = -32700, -32600, -32601, -32602, -32603, -32000
-INSTRUCTIONS = ("Blender is open on the user's machine. Start with scene_summary, prefer the specific tools over execute_python, "
-                "quote the CU cost (estimate_cost) before generating, and place results where the user is working.")
+PARSE_ERROR, INVALID_REQUEST, METHOD_NOT_FOUND, INVALID_PARAMS, INTERNAL_ERROR, TOOL_TIMEOUT = (
+    -32700,
+    -32600,
+    -32601,
+    -32602,
+    -32603,
+    -32000,
+)
+INSTRUCTIONS = (
+    "Blender is open on the user's machine. Start with scene_summary, prefer the specific tools over execute_python, "
+    "quote the CU cost (estimate_cost) before generating, and place results where the user is working. "
+    "For platform-wide work (collections, training, workflows, usage) use the mcp.scenario.com server when it is connected."
+)
 
 
 class ToolTimeout(Exception):
@@ -42,7 +53,11 @@ class Registry:
     def list_payload(self):
         out = []
         for spec in self._tools.values():
-            item = {"name": spec.name, "description": spec.description, "inputSchema": spec.input_schema}
+            item = {
+                "name": spec.name,
+                "description": spec.description,
+                "inputSchema": spec.input_schema,
+            }
             if spec.annotations:
                 item["annotations"] = spec.annotations
             out.append(item)
@@ -62,8 +77,18 @@ def _result(msg_id, result):
 
 def to_content(value):
     if isinstance(value, dict) and "_image" in value:
-        return [{"type": "image", "data": value["_image"], "mimeType": value.get("mimeType", "image/png")}]
-    if isinstance(value, list) and value and all(isinstance(v, dict) and "type" in v for v in value):
+        return [
+            {
+                "type": "image",
+                "data": value["_image"],
+                "mimeType": value.get("mimeType", "image/png"),
+            }
+        ]
+    if (
+        isinstance(value, list)
+        and value
+        and all(isinstance(v, dict) and "type" in v for v in value)
+    ):
         return value
     if isinstance(value, str):
         return [{"type": "text", "text": value}]
@@ -72,14 +97,26 @@ def to_content(value):
 
 def handle_message(message, registry, server_info, executor=None):
     if not isinstance(message, dict) or "method" not in message:
-        return _error(message.get("id") if isinstance(message, dict) else None, INVALID_REQUEST, "Invalid JSON-RPC request")
+        return _error(
+            message.get("id") if isinstance(message, dict) else None,
+            INVALID_REQUEST,
+            "Invalid JSON-RPC request",
+        )
     method, msg_id, params = message["method"], message.get("id"), message.get("params") or {}
     if msg_id is None:  # notification
         return None
     if method == "initialize":
         wanted = params.get("protocolVersion")
         version = wanted if wanted in PROTOCOL_VERSIONS else PROTOCOL_VERSIONS[0]
-        return _result(msg_id, {"protocolVersion": version, "capabilities": {"tools": {"listChanged": False}}, "serverInfo": dict(server_info), "instructions": INSTRUCTIONS})
+        return _result(
+            msg_id,
+            {
+                "protocolVersion": version,
+                "capabilities": {"tools": {"listChanged": False}},
+                "serverInfo": dict(server_info),
+                "instructions": INSTRUCTIONS,
+            },
+        )
     if method == "ping":
         return _result(msg_id, {})
     if method == "tools/list":

@@ -122,15 +122,20 @@ This session's results (collapsible entries with the asset id and a Details dial
 ![Generations](images/panel-generations.png)
 
 ### Agents (MCP)
-The add-on serves the Model Context Protocol on `http://127.0.0.1:9876/mcp` with a token that changes every Blender session.
+The local `scenario-blender` server connects agents to the open scene and
+generation into it. The hosted `mcp.scenario.com` server provides platform-wide
+collections, training, workflows and usage; connect both when needed.
 
-![MCP panel](images/panel-mcp.png)
+Copy the client setup from the Agents panel. The copied snippet contains the
+live session bearer token; keep it out of screenshots, shared logs and source
+control. **Allow connected agents to run
+Python** is off by default; other authorized scene and generation actions remain
+available. The [MCP reference](MCP.md) documents tools, complete client examples,
+headless setup, token handling and the security model.
+For headless use, run `blender --background scene.blend --command scenario_blender`;
+see the reference for token configuration and online-access requirements.
 
-- Pick a client and press its button: the setup is copied to the clipboard (the snippet includes this session's token): Claude Code command, Cursor `mcp.json`, Claude Desktop stdio snippet, Codex command, or a curl test.
-- **Allow connected agents to run Python** gates the `execute_python` tool. It is OFF by default; connected agents keep the other tools: scene summary, object detail, select, set frame, screenshots, quick renders, camera path (any move of the library, a description or waypoints), list models, model schema, cost estimate, generate (every lane, audio included), job status, wait, import result, capture a viewport reference, list generations.
-- Native clients may omit Origin. Browser requests require a valid HTTP(S) loopback Origin (127.0.0.1, localhost or ::1); other origins receive 403 and CORS preflights are refused. The session bearer token remains required for MCP operations.
-- Python execution is refused when Scenario preferences are unavailable, as well as when the toggle is off. Screenshot and render files are created in private temporary directories and removed after encoding, including failure paths.
-- Headless: `blender --background scene.blend --command scenario_blender --port 9876 --token <token>`.
+![Agents panel in Blender 5.0 with the local server running and Python execution disabled](images/panel-mcp.png)
 
 ## The floating composer
 

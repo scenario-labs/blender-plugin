@@ -126,7 +126,9 @@ The local `scenario-blender` server connects agents to the open scene and
 generation into it. The hosted `mcp.scenario.com` server provides platform-wide
 collections, training, workflows and usage; connect both when needed.
 
-Copy the client setup from the Agents panel. **Allow connected agents to run
+Copy the client setup from the Agents panel. The copied snippet contains the
+live session bearer token; keep it out of screenshots, shared logs and source
+control. **Allow connected agents to run
 Python** is off by default; other authorized scene and generation actions remain
 available. The [MCP reference](MCP.md) documents tools, complete client examples,
 headless setup, token handling and the security model.

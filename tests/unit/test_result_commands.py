@@ -307,6 +307,25 @@ def test_verification_detects_stale_record_without_claiming_application(setup, m
     assert store.get("request").state == JobState.APPLYING
 
 
+@pytest.mark.parametrize("error_type", [OSError, ResultError])
+def test_local_verification_errors_remain_sanitized_without_side_effects(
+    setup, monkeypatch, error_type
+):
+    coordinator, store, current, _, _, downloader, calls, _ = setup
+    ready = coordinator.download_results("request", expected_revision=current.revision)
+    before = len(calls), len(downloader.calls)
+
+    def fail(*args, **kwargs):
+        raise error_type("private path or transfer detail")
+
+    monkeypatch.setattr(downloader, "verify", fail)
+    with pytest.raises(ResultError, match="^Saved result files could not be verified$") as error:
+        coordinator.verify_results("request", expected_revision=ready.revision)
+    assert error.value.__suppress_context__
+    assert store.get("request") == ready
+    assert (len(calls), len(downloader.calls)) == before
+
+
 def test_two_requests_never_reuse_the_same_local_result_names(setup):
     coordinator, store, current, _, _, _, _, _ = setup
     first = coordinator.download_results("request", expected_revision=current.revision)

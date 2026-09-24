@@ -108,9 +108,10 @@
         "tests/unit/test_shared_quotes.py": "eb06294b382dc1b38de6b920ce7ed8fcebc4acc999a41abd560a30c2a506dfee",
         "scenario/core/jobs/coordinator.py": "c1d8208cb20f1b4401389704308e7a063f013a63919cf5a7c88f6315eb6d977b",
         "scenario/core/jobs/workers.py": "fc584737c05c28bcb20309220ed6dc99bb40b330339b995075c1392497d3ebed",
-        "tests/blender/test_session_results.py": "0304d309d0d389c0653df3963a15ae4808306e44211c0990dec212a55396a66c",
-        "scenario/core/jobs/results.py": "6f8735b1fe64f0607ae63c4a5cb43c443904730ede7a2466ceb6439a425d93a2",
-        "scenario/core/jobs/transfers.py": "ca3aafdd915d908be78db5b0a7f3a535f0274e6f3ccc7e0cef7c2d88a90f212d"
+        "tests/blender/test_session_results.py": "b20bfba41a2c25d6f7edbdd9dbee4f5a18aae736e7a88f3bf648c24455c045ba",
+        "scenario/core/jobs/results.py": "90c8cfcf779316d027d095076c36707e1c2918dd697d27e03b2f3c1ee4f655f0",
+        "scenario/core/jobs/transfers.py": "ca3aafdd915d908be78db5b0a7f3a535f0274e6f3ccc7e0cef7c2d88a90f212d",
+        "tests/unit/test_result_commands.py": "53f6ce3795bee2835be7a7004757a45f513e365dc166d4d49b5c18cd0bf41530"
       }
     },
     {

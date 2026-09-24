@@ -258,3 +258,19 @@ class SessionResultTests(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     self.module.JobSession(adapter, self.store, **options)
         self.assertEqual(set(threading.enumerate()), before)
+
+    def test_reopened_ready_job_reports_missing_storage_without_changing_record(self):
+        ready = self.ready()
+        self.session.shutdown()
+        self.store = self.storage.JobStore(self.root / "jobs.sqlite3", self.scope)
+        self.session = self.module.JobSession(self.new_adapter(), self.store, workers=1)
+        before = len(self.calls), len(self.downloads)
+        task = self.session.verify_results("request", expected_revision=ready.revision)
+        with self.assertRaisesRegex(self.results.ResultError, "storage has not been configured"):
+            task.result(5)
+        completion = self.session.drain()[0]
+        self.assertIsInstance(completion.error, self.results.ResultError)
+        self.assertEqual(str(completion.error), "Result storage has not been configured")
+        self.assertEqual(self.store.get("request"), ready)
+        self.assertEqual(self.store.get("request").revision, ready.revision)
+        self.assertEqual((len(self.calls), len(self.downloads)), before)

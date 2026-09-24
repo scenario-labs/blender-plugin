@@ -121,6 +121,8 @@ coordinator. Supply both together; incomplete configuration fails before workers
 start. The application owner must choose trusted storage hosts, provide a
 thread-safe online-access snapshot and retain the private directory through
 application. No default production host policy is selected by the session.
+Without storage configuration, download and verification report a configuration
+error without changing the stored job, including a reopened READY record.
 
 On the main thread, `load_results`, `download_results` and `verify_results` queue
 the corresponding [coordinator commands](JOB_COORDINATOR.md#result-retrieval-and-download-commands)

@@ -182,6 +182,8 @@ class ResultCommands:
         current = self._current(
             request_id, expected_revision, {JobState.READY, JobState.APPLY_FAILED, JobState.APPLIED}
         )
+        if self._downloader is None:
+            raise ResultError("Result storage has not been configured")
         try:
             directory = self._directory(current, create=False)
             paths = []

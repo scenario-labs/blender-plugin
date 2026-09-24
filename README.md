@@ -17,6 +17,10 @@ rulebook shared through `.claude/CLAUDE.md`, and [CONTRIBUTING.md](CONTRIBUTING.
 See [commits, branches and pull requests](CONTRIBUTING.md#commits-branches-and-pull-requests)
 for the review workflow and PR checklist.
 Canonical [agent tools](docs/development/agents.md) describe the shared skills and commands.
+See [Support](SUPPORT.md), [Security](SECURITY.md) and the
+[Code of Conduct](CODE_OF_CONDUCT.md) before sharing reports or contributions.
+Releases are produced by release-please from `main`; the
+[release procedure](docs/RELEASING.md) documents the maintainer's publication checks.
 
 ## Why
 

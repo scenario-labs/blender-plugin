@@ -1,7 +1,67 @@
 # Contributing to Scenario for Blender
 
-Read the [canonical repository instructions](AGENTS.md) and
+This guide covers the mechanics of a good contribution.
+[AGENTS.md](AGENTS.md) is the conventions contract for humans and agents and
+takes precedence where the guides overlap. Read the
 [Python tooling guide](docs/PYTHON_STYLE.md) before making changes.
+
+## Before you start
+
+Open an [issue](https://github.com/scenario-labs/blender-plugin/issues/new/choose)
+before work beyond a typo so maintainers can agree on the scope. Follow the
+[Code of Conduct](CODE_OF_CONDUCT.md). Account, billing and credit questions go
+through [Support](SUPPORT.md); report vulnerabilities through
+[Security](SECURITY.md), never in a public issue. Current account requirements
+belong in the [Scenario documentation](https://docs.scenario.com).
+
+This repository is public and permanent. Keep issue text, PR text, commits and
+artifacts publicly shareable: no credentials or MCP bearer tokens, signed asset
+URLs, private account/project/workspace identifiers, internal repositories or
+hostnames, personal paths, agent session IDs or spend anecdotes. Review generated
+fixtures, screenshots and logs before sharing them.
+
+## Set up
+
+Fork the repository if you are not a member, then clone your fork. Install the
+pinned uv version from the [Python tooling guide](docs/PYTHON_STYLE.md) and run
+`uv sync --locked` from the repository root. uv selects the locked development
+interpreter; avoid a separate pip-managed environment.
+
+Blender 5.0 is the extension minimum. Native compatibility is checked separately
+on the supported 5.0, 5.1 and 5.2 builds; a system Python test run does not prove
+Blender compatibility. On Windows, call the Python tools directly or use Make
+from a compatible shell. The [portable tools](#portable-build-install-and-download-tools)
+describe binary discovery and explicit `--blender` overrides for every platform.
+No Scenario account or credentials are needed for offline unit tests, building
+the extension or native tests. Build preparation can download pinned SDK wheels;
+the native test processes themselves forbid external network access.
+
+## Run the checks
+
+| Command | Purpose |
+| --- | --- |
+| `make test` | Locked offline unit tests; Blender is not needed. |
+| `make lint LINT_PATHS="path/to/changed.py"` | Check changed Python files with pinned Ruff. |
+| `make knowledge` | Validate documentation navigation, local links and evidence metadata. |
+| `make build` | Build and validate the exact extension ZIP. |
+| `make test-blender` | Build, install and test in a disposable Blender profile. |
+| `make install` | Install into a new disposable profile for manual checks. |
+
+The [validation guide](docs/development/validation.md) defines additional checks
+for each kind of change and the implemented CI matrices. Test the exact candidate
+ZIP, not a previously installed copy. Never use a normal Blender profile for
+development builds. UI changes need native input, focus and viewport checks as
+well as before/after images; follow [UI style](docs/UI_STYLE.md) and the
+[capture procedure](#repeatable-gui-screenshots). A screenshot alone is not
+interaction proof. Local hooks are separate tooling under
+[#30](https://github.com/scenario-labs/blender-plugin/issues/30); use their
+documented install command only when that configuration is present.
+
+Pull requests run offline checks. A fork workflow can wait for a maintainer's
+approval to run. Paid/live tools are opt-in and never required PR checks; the
+[live-command section](#live-commands) states their authorization boundary.
+Follow the current PR check results rather than assuming that a planned
+aggregate check or repository protection setting already exists.
 
 ## Commits, branches and pull requests
 
@@ -26,10 +86,74 @@ Blender logo as extension branding in icons, docs or listings (see
 [TRADEMARKS.md](TRADEMARKS.md)). Forks that ship a modified build must pick their
 own extension id and name, unless they have written permission from Scenario Inc.
 
+## Coding and documentation rules
+
+Follow the canonical [repository rules](AGENTS.md), [Python style](docs/PYTHON_STYLE.md)
+and [Blender boundaries](docs/architecture/blender.md). Scenario service operations
+use the shared official SDK adapter; an exception needs a reproduced SDK gap,
+tracking issue and narrow adapter fallback. Keep `bpy` out of `scenario/core`,
+Blender operations on the main thread and property writes out of `draw()`.
+Use the exact server estimate before spending; REST `dryRun` is a query parameter.
+Do not introduce em dashes into maintained text or code.
+
+History lives in Git. Recover older states with `git show <tag>:<path>` or the
+release ZIP. Do not preserve retired code or copies of earlier deliverables in
+the working tree. [Engineering history](docs/engineering/README.md) is context,
+not a current implementation recipe.
+
+Review the [knowledge-maintenance guide](docs/maintenance/knowledge.md) for every
+documentation change. Keep current user-facing limits in
+[Known limitations](docs/KNOWN_LIMITATIONS.md). Existing canonical guides retain
+their names; engineering notes use lowercase filenames and historical plans
+retain their date prefix. Follow the [documentation index](docs/index.md) rather
+than adding a second copy of a maintained policy.
+
+## Licensing of contributions
+
+By submitting an original contribution you agree that it is licensed under
+GPL-3.0-or-later, the licence of this repository (inbound = outbound).
+You keep the copyright in your work: there is no copyright assignment, no CLA and no DCO sign-off.
+Existing history is not re-signed.
+
+First-party source files carry the SPDX copyright and GPL-3.0-or-later lines
+from [scenario/__init__.py](scenario/__init__.py), after a shebang when present.
+In a file you materially change or create, you may add your own
+`SPDX-FileCopyrightText: <year> <name>` line alongside the existing holder lines;
+never remove an existing notice. The [GPL text](LICENSE) remains unchanged.
+
+Adopted compatible source, fonts, icons, assets and SDK dependencies retain their
+original licences and attribution. Identify the source, licence and modifications
+in the PR, including when an agent assisted. The first-party licence policy does
+not replace third-party notices. Blender's
+[licensing guidance](https://www.blender.org/about/license/) requires published
+scripts using its Python API to be GPL-compatible; this extension chooses
+GPL-3.0-or-later.
+
+## AI-agent contributors
+
+Agents follow the same contribution and licensing rules. Name the contributing
+harness in the PR, preserve existing authors and retain accurate co-author
+trailers using [the attribution rule](AGENTS.md#codex-commit-attribution), including
+in the squash message. A human reviews the complete diff before merge; an agent
+may open a reviewable PR with that review explicitly pending. Automated bot
+reviews do not constitute human approval.
+
+## How issues are triaged
+
+Maintainers choose the issue type and one primary area, using labels such as
+`bug`, `enhancement`, `documentation`, `question` and `area:*`. For defects, include
+the observed Blender and OS versions; `needs-repro` or `needs-info` requests
+missing evidence. `model-behaviour` distinguishes provider behavior from an
+extension defect, while `known-limit` points to the limitations guide.
+`good first issue` and `help wanted` identify contribution opportunities.
+Maintainers track priority and effort in the Blender Plugin project. Repository
+administration and release authorization remain maintainer responsibilities.
+
 ## Environment variables
 
-The extension reads its runtime API key and secret from the process environment;
-the development tools use a separate test credential pair. Copy
+The extension uses saved Blender credentials by default and reads the runtime
+API key and secret from the process environment only when that source is
+explicitly selected. Development tools use a separate test credential pair. Copy
 [`.env.example`](.env.example) to `.env.local` (git-ignored) for live tools.
 Load it explicitly with `uv run --locked --env-file .env.local`; exported process
 variables take precedence, including empty values. uv is the only dotenv loader;

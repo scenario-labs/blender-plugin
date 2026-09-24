@@ -154,6 +154,7 @@ Prices are in CU and depend on the model and its cost-marked parameters. Observe
 - **Nothing generates from Enter or a click**: with `SCENARIO_GUI_PROBE=1` in the environment (used by the automated screenshot tool) all Generate paths are disabled.
 - **The sidebar and the dialogs do not look like the composer**: they are drawn by Blender with your Blender theme; the composer is custom drawing. Their layout follows the composer (tabs, chips, header rows) but their colours are the theme's.
 - **Where are the logs**: Blender's system console (Window > Toggle System Console on Windows, the terminal on macOS/Linux), messages are prefixed `scenario`.
+- **None of this helps**: see [Support](https://github.com/scenario-labs/blender-plugin/blob/main/SUPPORT.md) for where to ask and what to include.
 
 ## What leaves your machine
 

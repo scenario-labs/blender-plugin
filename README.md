@@ -95,6 +95,13 @@ printf '%s\n' "feat(ui): my title" | npx --no-install commitlint --config commit
 
 Verified live (2026-08-28): REST Basic auth, model records carry UI schema, `?dryRun=true` cost preview, Patina returns 6 typed map assets, multipart upload flow, GLB asset shape, OAuth dynamic registration on mcp.scenario.com. Assumed: Patina smoothness semantics (pixels suggest dark = rough), normal-map convention. Native runtime compatibility on Blender 5.0, 5.1 and 5.2 must be verified separately from release ZIP validation.
 
+## Support
+
+Read the [user guide](docs/USER_GUIDE.md) first. [SUPPORT.md](SUPPORT.md) says
+where to ask a question, how to file a bug and what to include. Account, billing,
+credit and security matters go to [support@scenario.com](mailto:support@scenario.com),
+never to a public issue.
+
 ## Security
 
 Report vulnerabilities privately, see [SECURITY.md](SECURITY.md). Never paste API keys, MCP bearer tokens or signed asset URLs into issues or pull requests.

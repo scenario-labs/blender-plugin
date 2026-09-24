@@ -5,6 +5,8 @@ Start with the [repository overview](../README.md), [user guide](USER_GUIDE.md) 
 workflow. The [changelog](../CHANGELOG.md) records releases. Documentation of a
 new primitive does not mean it is wired into the user interface or local MCP.
 
+For questions, bugs or account help, see [Support](../SUPPORT.md).
+
 ## Architecture and implementation
 
 - [Privacy and data handling](PRIVACY.md)

@@ -1,5 +1,6 @@
 schema_version = "1.0.0"
 
+# Final, never rename: see docs/RELEASING.md, "Extension id".
 id = "scenario"
 version = "0.9.9"
 name = "Scenario"

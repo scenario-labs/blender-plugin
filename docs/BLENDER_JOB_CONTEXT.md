@@ -42,6 +42,11 @@ and persist to its originating scope. The optional `origin_guard` context-manage
 `JobCoordinator` must be thread-safe and must never access Blender. The guard covers local
 SQLite work only, never HTTP; invalidation may briefly wait for that commit.
 
+The coordinator can apply this same pure revision guard to configured upload
+preparation and mutation claims; see [upload commands](SDK_UPLOADS.md#shared-worker-commands).
+JobSession upload configuration and forwarding are still separate integration
+work. Inspection and explicit upload refresh do not rediscover or rebind targets.
+
 File identities are deliberately session-local. Restarted records stay available
 for recovery, but automatic application cannot assume an old file or target is
 unchanged. Persistent target selection and explicit recovery/application UI remain

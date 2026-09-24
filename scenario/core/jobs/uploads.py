@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from enum import StrEnum
 
-from .store import StoreConflict, StoreError
+from .store import JobOrigin, StoreConflict, StoreError
 from .upload_sources import UploadSources
 from .upload_store import StoredUpload, UploadState, UploadStore
 from .upload_transfers import PartUploader
@@ -116,7 +116,9 @@ class UploadCommands:
         # SDK model uploads produce model identities, not asset references.
         if kind == "model":
             raise UploadError("Model import needs its own result lifecycle")
-        with self._guard():
+        if not isinstance(origin, JobOrigin):
+            raise UploadError("Capture the upload origin before staging its source")
+        with self._guard(origin):
             pass
         try:
             intent = self._sources.stage(
@@ -129,16 +131,18 @@ class UploadCommands:
             )
         except Exception:
             raise UploadError("Could not prepare a stable upload source") from None
-        with self._guard():
+        with self._guard(origin):
             return self._store.create(intent)
 
     def initialize(self, request_id, *, expected_revision):
         current = self._current(request_id, expected_revision, {UploadState.PREPARED})
+        with self._guard(current.intent.origin):
+            pass
         try:
             self._sources.verify(current.intent)
         except Exception:
             raise UploadError("Staged upload is unavailable or changed") from None
-        with self._guard():
+        with self._guard(current.intent.origin):
             current = self._transition(current, UploadState.INITIALIZING)
         try:
             intent = current.intent
@@ -202,6 +206,8 @@ class UploadCommands:
             current.intent.part_sha256
         ):
             raise StoreConflict("No unclaimed upload part is available")
+        with self._guard(current.intent.origin):
+            pass
         number = len(current.receipts) + 1
         try:
             response = self._adapter.upload(current.upload_id)
@@ -209,7 +215,7 @@ class UploadCommands:
             url = self._part_url(current, response, number)
         except Exception:
             raise UploadError("Could not verify the next upload part; no bytes sent") from None
-        with self._guard():
+        with self._guard(current.intent.origin):
             current = self._store.claim_part(request_id, expected_revision=current.revision)
         try:
             receipt = self._uploader.upload(
@@ -229,7 +235,7 @@ class UploadCommands:
 
     def finalize(self, request_id, *, expected_revision):
         current = self._current(request_id, expected_revision, {UploadState.UPLOADING})
-        with self._guard():
+        with self._guard(current.intent.origin):
             current = self._transition(current, UploadState.FINALIZING)
         try:
             response = self._adapter.complete_upload(current.upload_id)

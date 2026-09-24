@@ -73,6 +73,10 @@ sequence, including probes. It strips inherited credentials and Blender/Python p
 overrides, verifies installed ZIP contents and reports actual runtime versions.
 See [the native test loop](../../CONTRIBUTING.md#native-blender-test-loop). Use `BLENDER`
 or `--blender` to select a supported binary; discovery does not prove compatibility.
+`uv run --locked --no-env-file python tools/blender_env.py` prints the selected
+executable without launching it. Pass `--blender PATH` to override `BLENDER`;
+an invalid explicit selection exits with status 1 and a diagnostic rather than
+falling back to another installation.
 
 The portable build/install tools also create fresh isolated profiles and scrub
 inherited credentials and path overrides. For every direct Blender invocation outside these tools,
@@ -129,6 +133,13 @@ fixture on Blender 5.0, 5.1 and 5.2 and preserves its evidence even on failure.
   baseline in a new profile. No prior installation is needed. Logs and ZIP remain
   under `.blender-profile/run-*`; successful profiles are removed. Use
   `BLENDER_TEST_ARGS="--suite all"` for the full existing integration suite.
+- `make gui-check`: build and capture an exact ZIP in a fresh offline GUI profile.
+  Use `BLENDER_GUI_ARGS="--view composer --lane image --fixture form"` for a
+  synthetic form, or `BLENDER_GUI_ARGS="--zip /path/to/scenario.zip"` to capture
+  an existing artifact. A desktop display is required. Each capture keeps its
+  PNG, ZIP, report and logs in a unique directory under `workdir/screenshots/`;
+  successful disposable profiles are removed. Inspect the PNG before claiming
+  visual acceptance. GUI probes never spend credits.
 - For package changes, inspect the resulting ZIP, validate it and check its
   license content. Keep root `LICENSE` and `scenario/LICENSE` identical.
 - For UI changes, exercise native behavior and inspect captured screenshots.

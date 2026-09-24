@@ -495,12 +495,12 @@
       "path": "docs/development/validation.md",
       "coverage": "policy",
       "reviewed_at": "2026-09-24",
-      "limits": "Canonical validation policy with inspected offline unit workflow, coverage reporting and connection-guard contracts; unit-process core/MCP coverage and matrix results do not establish subprocess coverage, native Blender compatibility or live service acceptance. Source-manifest preflight, supplied-ZIP bypass and failure/status preservation reviewed against build/runner code and offline regressions; native runtime and other claims retain prior limits. Reusable CI orchestration and fail-closed aggregate reviewed against all six caller workloads; this does not establish repository required-check settings or live service acceptance. Native update fixture reviewed against isolated profile guards, loopback-only repository configuration, server failure cleanup and exact synthetic installed-byte/enabled-state checks; local Blender 5.0.1 mechanism evidence does not establish production add-on upgrades, hosted publication, GUI controls or arbitrary subprocess socket enforcement. Unrelated evidence fingerprints retain prior review scope.",
+      "limits": "Canonical validation policy with inspected offline unit workflow, coverage reporting and connection-guard contracts; unit-process core/MCP coverage and matrix results do not establish subprocess coverage, native Blender compatibility or live service acceptance. Source-manifest preflight, supplied-ZIP bypass and failure/status preservation reviewed against build/runner code and offline regressions; native runtime and other claims retain prior limits. Reusable CI orchestration and fail-closed aggregate reviewed against all six caller workloads; this does not establish repository required-check settings or live service acceptance. Native update fixture reviewed against isolated profile guards, loopback-only repository configuration, server failure cleanup and exact synthetic installed-byte/enabled-state checks; local Blender 5.0.1 mechanism evidence does not establish production add-on upgrades, hosted publication, GUI controls or arbitrary subprocess socket enforcement. Unrelated evidence fingerprints retain prior review scope. Locator CLI, GUI make alias and existing offline capture artifact/profile behavior inspected; no new supported-platform GUI compatibility or live service acceptance is implied.",
       "sources": {
-        "Makefile": "c86ffba526a4882788cec66b53924504eceab7114f0b4776ff23ceee1d7a4c8b",
+        "Makefile": "aa48fc0a30fa0a7ad525915aa914c27044088bbe30444c47a22cae11da8f6788",
         "pyproject.toml": "c658408a54b6c62b113e2939cb26032352341ca9f4b26b2e839caeb77f4e44ea",
         "tools/test_blender.py": "9691af406f5bd661d7cabd9d6cbe870dfeff2706fbc46416310b2d9e6fe90a26",
-        "tools/blender_env.py": "0e78f2a51edd2943567226537d8faed6170d41ba10ba84a663118b9b2c2251b8",
+        "tools/blender_env.py": "ca5b749cd44c76ad633386e5c692a5a9053aa1e2d408203732bff91545db9ae5",
         "scenario/mcp/cli.py": "733ec02de0f03a9bfb0a9326a8f94ac32a2b6c33a5c11a09b79694cabd87c156",
         "tests/blender/test_mcp_cli.py": "69c6b9ad670cd59f4eb2e18f91bda4deb20c487fe1539d69f0825799233adef8",
         ".github/workflows/unit-tests.yml": "a58dbb136e028123210228cc8c739d131045a2cc25aafa4b557d1cf73767e67c",
@@ -510,7 +510,7 @@
         "tests/unit/test_shared_quotes.py": "eb06294b382dc1b38de6b920ce7ed8fcebc4acc999a41abd560a30c2a506dfee",
         "uv.lock": "9d13c77a0b426ef0062bb7d2a708cd29d94f3c56405126128b73842b6cbd804d",
         "tools/build.py": "77ffb55346dabd2f3864faa0a152a3243e021423ffae456992ecd2360bb79d5c",
-        "tests/unit/test_blender_runner.py": "873b2a093bf8715331ab775c93229fd0e114e852a2f8a7f209ac2b8ffd5bc497",
+        "tests/unit/test_blender_runner.py": "684d37b7834559d3351db98f79dd889317b1d68785df9c586ff8783259b3d34b",
         "tests/unit/test_portable_tools.py": "c40c4a76f0b80730c957df862590ff60c20a70410f4a80e4bd7027ed9bc128bb",
         ".github/workflows/ci.yml": "9805ee9848f2eed06b0b9f108bcd7054592d61b431f8f4b57d4098f5cf43c344",
         ".github/workflows/python-lint.yml": "083888b456de882bec4d6bf9bf57c2053e0fbf364af748451d3c7dae2dc68d7b",
@@ -520,7 +520,9 @@
         ".github/workflows/agent-skills.yml": "fa1d68017f1bfffee58c9e66ccea651f1b570a4be7aef56da7376e5bbe13bb98",
         "tools/test_repository_update.py": "bb777a1f38142e5ebd67e063199675e538d14f94a6c0ac0a231572ab7de25834",
         "tests/blender/repository_update.py": "99bafb44619bd45da5a973485dd01140370b6e6be076765b6ab91fdfe57d9e28",
-        "tests/unit/test_repository_update_runner.py": "47a5b52d4fa030b04064d69bdaa6cb4601e8bfc542a4e1afe49054d3724328c2"
+        "tests/unit/test_repository_update_runner.py": "47a5b52d4fa030b04064d69bdaa6cb4601e8bfc542a4e1afe49054d3724328c2",
+        "tools/capture_gui.py": "c80adcf7aeff8d8b1e39e56fd192a66735e1e52fe8f36da99a00a413473d8d91",
+        "tests/unit/test_gui_capture.py": "beee6cba15adf7da1e7434c18dcb2b948e36f4b459af06fc98a6c850a5fea87c"
       }
     },
     {

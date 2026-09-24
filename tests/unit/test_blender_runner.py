@@ -57,6 +57,58 @@ def test_explicit_blender_is_authoritative(tmp_path, monkeypatch):
         blender_env.find_blender(str(tmp_path / "missing"))
 
 
+@pytest.mark.parametrize("selection", ["argument", "environment", "argument_overrides_environment"])
+def test_locator_cli_prints_selected_path_without_executing_it(tmp_path, selection):
+    binary = tmp_path / "Blender with spaces"
+    # Not an executable program: discovery must inspect the path without running it.
+    binary.write_text("fixture")
+    binary.chmod(0o755)
+    env = dict(os.environ, BLENDER=str(tmp_path / "missing"))
+    args = []
+    if selection == "environment":
+        env["BLENDER"] = str(binary)
+    else:
+        args = ["--blender", str(binary)]
+        if selection == "argument":
+            env.pop("BLENDER")
+    result = subprocess.run(
+        [sys.executable, str(ROOT / "tools/blender_env.py"), *args],
+        env=env,
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip() == str(binary.resolve())
+    assert result.stderr == ""
+
+
+@pytest.mark.parametrize("selection", ["argument", "environment"])
+def test_locator_cli_missing_selected_binary_fails_without_fallback(tmp_path, selection):
+    args = ["--blender", str(tmp_path / "missing")] if selection == "argument" else []
+    env = dict(os.environ, BLENDER=sys.executable if args else str(tmp_path / "missing"))
+    result = subprocess.run(
+        [sys.executable, str(ROOT / "tools/blender_env.py"), *args],
+        env=env,
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 1
+    assert result.stdout == ""
+    assert "Blender not found: set BLENDER=" in result.stderr
+    assert "Traceback" not in result.stderr
+
+
+def test_locator_cli_help_does_not_require_blender(tmp_path):
+    result = subprocess.run(
+        [sys.executable, str(ROOT / "tools/blender_env.py"), "--help"],
+        env=dict(os.environ, BLENDER=str(tmp_path / "missing")),
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, result.stderr
+    assert "--blender" in result.stdout
+
+
 @pytest.mark.parametrize("change", ["modified", "missing", "extra", "symlink"])
 def test_installed_files_must_match_candidate(tmp_path, change):
     zip_path = archive(tmp_path / "candidate.zip")

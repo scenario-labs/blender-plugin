@@ -111,9 +111,29 @@ the release version in a trailing comment, for example
 changes together, including upstream release notes, workflow permissions and CI
 results. Dependabot update PRs follow the ordinary review and merge process.
 
+[The offline house-rule checker](../../tools/check_rules.py) currently implements
+`actions-pinned` for workflow YAML and local composite-action manifests. Run
+`make check-rules`, or use `uv run --locked --no-env-file python tools/check_rules.py`
+with explicit file paths and optional `--rule actions-pinned`. `--list` reports
+only implemented rules. The unit suite checks the repository and exercises
+failure cases, so ordinary unit CI also enforces the convention.
+The default scan includes tracked files and new files that Git does not ignore,
+so a proposed workflow is checked before it is staged.
+
+Write `uses` on its own line with a plain, single-quoted or double-quoted value.
+Remote actions and reusable workflows need a lowercase 40-character SHA and a
+trailing full release-version comment such as `# v1.2.3`. Local `./` references
+use the caller checkout; `docker://` references remain outside this rule.
+Multiline values, aliases and flow-style action declarations fail with a request
+to use the supported form. Script block contents and comments are not action
+declarations. This is a line-oriented convention check, not a general YAML
+validator; it does not resolve tags or prove a comment matches its SHA. Review
+upstream release identity and use workflow validation for those separate checks.
+
 This configuration covers GitHub Actions only. Python/SDK updates still require
 the [dependency bundle procedure](../SDK_BUNDLE.md); adding automatic updates for
 them requires coordinating development pins with the exact packaged wheel bundle.
-The remaining action-pin sweep, local enforcement, repository settings and first
-successful Dependabot update remain tracked in #39. A configuration file alone
-does not prove GitHub has run it or that those administrative gates are enabled.
+Repository settings and live Dependabot acceptance remain tracked in #39. Other
+house rules, approved-dependency enforcement and REUSE coverage remain under #29;
+the checker does not claim they are implemented. Local checks do not prove that
+GitHub's administrative gates are enabled.

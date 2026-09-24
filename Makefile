@@ -8,7 +8,9 @@ BLENDER_GUI_ARGS ?=
 UV ?= uv
 LINT_PATHS ?= .
 
-.PHONY: sync test test-blender build install gui-check lint format knowledge mcp-docs docs
+.PHONY: sync test test-blender build install gui-check lint format knowledge mcp-docs check-rules docs
+check-rules:
+	$(UV) run --locked --no-env-file python tools/check_rules.py
 knowledge:
 	$(UV) run --locked --no-env-file python tools/check_knowledge.py
 sync:

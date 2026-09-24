@@ -166,7 +166,9 @@ def main(argv=None, *, root=None):
                 continue
             if path not in staged or path in _SELF or relative.suffix.lower() in _MEDIA:
                 continue
-            content = _git(root, "show", f":{path}")
+            # Specify stage zero so a leading "0:" in a filename is not parsed
+            # as Git's optional index-stage selector.
+            content = _git(root, "show", f":0:{path}")
             if b"\0" in content[:8192]:
                 continue
             diff = _git(

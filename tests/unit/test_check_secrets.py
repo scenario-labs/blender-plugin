@@ -179,6 +179,20 @@ def test_literal_special_paths_and_explicit_selection(repo, capsys):
         assert "x" * 26 not in output
 
 
+@pytest.mark.skipif(os.name == "nt", reason="Windows filenames cannot contain a colon")
+@pytest.mark.parametrize("prefix", ["0", "1", "2", "3"])
+def test_stage_like_filename_reads_its_own_index_blob(repo, capsys, prefix):
+    stage(repo, "notes.txt", b"\0binary counterpart\n")
+    name = f"{prefix}:notes.txt"
+    value = "fake_staged_credential_123"
+    file = stage(repo, name, "SCENARIO_API_KEY=" + value + "\n")
+    file.write_text("clean working tree\n")
+    assert checker.main([], root=repo) == 1
+    output = capsys.readouterr().out
+    assert f"{name!r}:1 scenario-key" in output
+    assert value not in output
+
+
 def test_rename_to_forbidden_path_and_explicit_unstaged_probe(repo, capsys):
     stage(repo, "source.txt", "clean\n")
     git(repo, "commit", "-m", "test: baseline")

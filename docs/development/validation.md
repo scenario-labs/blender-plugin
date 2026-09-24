@@ -68,6 +68,12 @@ obsolete prototypes as unrelated cleanup. Follow `docs/PYTHON_STYLE.md`,
 including Blender registration/annotation cautions, and keep any eventual
 pre-commit hook version aligned with the required Ruff version.
 
+`make check-rules` runs the currently implemented offline house rules. Its
+`actions-pinned` rule checks remote workflow and composite-action references;
+the unit suite exercises failures and checks the repository, so no extra CI
+job is needed. See [the contribution guide](contributions.md#github-actions-updates)
+for supported declaration syntax, explicit file selection and remaining scope.
+
 `make test-blender` owns fresh disposable profiles for its entire build/install/test
 sequence, including probes. It strips inherited credentials and Blender/Python path
 overrides, verifies installed ZIP contents and reports actual runtime versions.

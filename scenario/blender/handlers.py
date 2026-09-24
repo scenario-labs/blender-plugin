@@ -39,7 +39,9 @@ def dispatch(event):
         if payload["catalog"] is not runtime.state.catalog:
             return
     if name == "catalog":
-        generation.set_catalog(payload["records"], payload["detailed"])
+        generation.set_catalog(
+            payload["records"], payload["detailed"], warmup=payload.get("warmup", False)
+        )
     elif name == "catalog_failed":
         payload = payload["error"] if isinstance(payload, dict) else payload
         runtime.state.catalog_loading = False

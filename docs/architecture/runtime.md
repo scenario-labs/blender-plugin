@@ -41,8 +41,13 @@ The list is delivered before the curated model schemas finish warming. Each
 successful detail becomes available independently; the final catalog event
 rebuilds derived lane choices with the available details. One failed detail does
 not hide the list or successful neighbors. Warmup events preserve existing
-visible estimates, and a selected model can still use the existing independent
-schema-fetch path. All events retain the credential-context identity check.
+visible estimates, including the derived 3D/Edit 3D lanes. The provisional list
+does not start a second bulk schema warmup. A selected model can still request its
+detail independently; concurrent reads of the same model share one request. An
+explicit selection or mode/task change invalidates its quote immediately, and
+schema completion re-arms pricing if the estimate timer observed a missing schema.
+Restoring a dynamic enum's index to the same stable model id does not count as a
+new selection. All events retain the credential-context identity check.
 
 Caches are connection-local and in memory. The active path does not reuse the
 prototype's unscoped disk model cache. Restart therefore requires a catalog

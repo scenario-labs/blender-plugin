@@ -75,9 +75,9 @@ class JobManager:
     def fetch_catalog(self, catalog, privacy="public", model_ids=()):
         self._spawn(self._run_catalog, catalog, privacy, tuple(model_ids))
 
-    def fetch_models(self, catalog, model_ids):
+    def fetch_models(self, catalog, model_ids, *, mark_dirty=True):
         """Fetch detailed records for a few models without re-fetching the list."""
-        self._spawn(self._run_models, catalog, tuple(model_ids))
+        self._spawn(self._run_models, catalog, tuple(model_ids), mark_dirty)
 
     def track(self, rec, client=None):
         """Poll a job that is already submitted (resume, import from Generations)."""
@@ -303,7 +303,13 @@ class JobManager:
         self.catalog_events.put(
             (
                 "catalog",
-                {"catalog": catalog, "privacy": privacy, "records": records, "detailed": []},
+                {
+                    "catalog": catalog,
+                    "privacy": privacy,
+                    "records": records,
+                    "detailed": [],
+                    "warmup": True,
+                },
             )
         )
         detailed = []
@@ -336,7 +342,7 @@ class JobManager:
             )
         )
 
-    def _run_models(self, catalog, model_ids):
+    def _run_models(self, catalog, model_ids, mark_dirty=True):
         detailed, failed = [], {}
         for model_id in model_ids:
             try:
@@ -344,5 +350,13 @@ class JobManager:
             except (ScenarioError, OSError) as err:
                 failed[model_id] = str(getattr(err, "reason", err))
         self.catalog_events.put(
-            ("models", {"catalog": catalog, "detailed": detailed, "failed": failed})
+            (
+                "models",
+                {
+                    "catalog": catalog,
+                    "detailed": detailed,
+                    "failed": failed,
+                    "mark_dirty": mark_dirty,
+                },
+            )
         )

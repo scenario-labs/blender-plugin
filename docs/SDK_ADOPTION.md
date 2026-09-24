@@ -58,8 +58,12 @@ permission for workers. Reads reuse one HTTP pool per catalog connection;
 retirement returns without waiting for network I/O, and the final reader closes
 the pool. Late results cannot populate the replacement connection. Listing and
 successful schema details are delivered progressively, so startup does not wait
-for all curated schemas before exposing the catalog. Cache entries are in memory per connection until an
-authoritative account/project identity contract enables scoped persistence.
+for all curated schemas before exposing the catalog. Concurrent reads of the
+same model share one request; a different selected model can finish independently.
+Background delivery preserves unchanged quotes, while explicit model/mode/task
+changes invalidate and re-arm pricing even if their schema is still loading.
+Cache entries are in memory per connection until an authoritative account/project
+identity contract enables scoped persistence.
 [Runtime integration status](architecture/runtime.md#active-sdk-catalog) records
 the remaining shared-job and paid-flow boundaries. The original raw `Catalog`
 class remains used by historical smoke scripts; the active Blender path no

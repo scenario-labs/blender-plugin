@@ -4,7 +4,7 @@
 
 import base64
 import threading
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import Future, ThreadPoolExecutor
 
 import httpx
 import pytest
@@ -196,3 +196,81 @@ def test_concurrent_reads_reuse_pool_and_retirement_closes_after_last_reader():
         with pytest.raises(ScenarioError, match="connection changed"):
             reads["second"].result(5)
     assert pools[0]._closed and context.closed
+
+
+def test_same_model_read_is_shared_while_other_selected_model_can_finish():
+    entered, release = threading.Event(), threading.Event()
+    requests = []
+
+    def respond(request):
+        name = request.url.path.rsplit("/", 1)[-1]
+        requests.append(name)
+        if name == "warming":
+            entered.set()
+            assert release.wait(5)
+        return httpx.Response(200, json={"model": {"id": name, "name": "Original"}})
+
+    context, pools = catalog(respond)
+    with ThreadPoolExecutor(max_workers=3) as workers:
+        warmup = workers.submit(context.get, "warming")
+        try:
+            assert entered.wait(5)
+            repeated = workers.submit(context.get, "warming", refresh=True)
+            selected = workers.submit(context.get, "selected", refresh=True)
+            assert selected.result(5).id == "selected"
+            assert not warmup.done()
+            assert not repeated.done()
+        finally:
+            release.set()
+        first, second = warmup.result(5), repeated.result(5)
+        first.raw["name"] = "Caller changed"
+        assert second.raw["name"] == "Original"
+    assert requests.count("warming") == 1
+    assert len(pools) == 1
+    context.close()
+
+
+@pytest.mark.parametrize("retire", [False, True])
+def test_shared_failed_read_releases_waiters_and_allows_retry(monkeypatch, retire):
+    entered, release, waiting = threading.Event(), threading.Event(), threading.Event()
+    requests = []
+
+    class ObservedFuture(Future):
+        def result(self, timeout=None):
+            waiting.set()
+            return super().result(timeout)
+
+    monkeypatch.setattr("scenario.core.api.sdk_catalog.Future", ObservedFuture)
+
+    def respond(request):
+        requests.append(request)
+        if len(requests) == 1:
+            entered.set()
+            assert release.wait(5)
+            return httpx.Response(503, text="private failure")
+        return httpx.Response(200, json={"model": {"id": "fixture"}})
+
+    context, pools = catalog(respond)
+    with ThreadPoolExecutor(max_workers=2) as workers:
+        leader = workers.submit(context.get, "fixture")
+        try:
+            assert entered.wait(5)
+            waiter = workers.submit(context.get, "fixture", refresh=True)
+            assert waiting.wait(5)
+            if retire:
+                context.close()
+                assert not pools[0]._closed
+        finally:
+            release.set()
+        for read in (leader, waiter):
+            with pytest.raises(ScenarioError) as error:
+                read.result(5)
+            assert "private failure" not in str(error.value)
+    assert len(requests) == 1
+    assert context._model_reads == {}
+    if retire:
+        assert context.closed and pools[0]._closed
+    else:
+        assert context.get("fixture").id == "fixture"
+        assert len(requests) == 2
+        context.close()

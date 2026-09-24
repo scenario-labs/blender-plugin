@@ -25,6 +25,7 @@ from . import params_ui, props, runtime
 log = logging.getLogger("scenario.generation")
 
 _schemas = {}
+_restoring_models = set()
 
 
 def schema_for(model_id):
@@ -68,6 +69,7 @@ def clear_catalog():
     """Drop every form/cache tied to retired credentials on the main thread."""
     _schemas.clear()
     _pending_models.clear()
+    _pending_dirty_models.clear()
     runtime.state.records.clear()
     runtime.state.lane_models.clear()
     runtime.state.enum_cache.clear()
@@ -109,7 +111,7 @@ def process_catalog_events():
     return False
 
 
-def set_catalog(records, detailed):
+def set_catalog(records, detailed, *, warmup=False):
     for rec in detailed:
         runtime.state.records[rec.id] = rec
         _schemas.pop(rec.id, None)
@@ -131,8 +133,8 @@ def set_catalog(records, detailed):
             # a catalog refresh must not re-price forms that are already quoted
             on_model_changed(bpy.context, lane_state, mark_dirty=False)
     if bpy.context.scene is not None:
-        refresh_3d_models(bpy.context)
-        refresh_edit3d_models(bpy.context)
+        refresh_3d_models(bpy.context, mark_dirty=False, prefetch=not warmup)
+        refresh_edit3d_models(bpy.context, mark_dirty=False, prefetch=not warmup)
 
 
 def restore_model_key(lane_state):
@@ -142,7 +144,15 @@ def restore_model_key(lane_state):
         return
     valid = [item[0] for item in runtime.enum_items(("models", props.lane_of(lane_state)))]
     if key in valid and lane_state.model_id != key:
-        lane_state.model_id = key
+        # Rebuilding a dynamic enum can change its numeric index while the
+        # stable chosen id is unchanged. This RNA callback is restoration, not
+        # a new selection; the caller applies its own dirty intent afterwards.
+        pointer = lane_state.as_pointer()
+        _restoring_models.add(pointer)
+        try:
+            lane_state.model_id = key
+        finally:
+            _restoring_models.discard(pointer)
 
 
 def set_models(detailed, failed, *, mark_dirty=True):
@@ -151,18 +161,26 @@ def set_models(detailed, failed, *, mark_dirty=True):
         _schemas.pop(rec.id, None)
     for model_id, reason in failed.items():
         runtime.set_message(f"{model_id}: {reason}")
-    _pending_models.difference_update([r.id for r in detailed] + list(failed))
+    completed = {r.id for r in detailed} | set(failed)
+    dirty_models = _pending_dirty_models & completed
+    _pending_dirty_models.difference_update(completed)
+    _pending_models.difference_update(completed)
     for scene in bpy.data.scenes:
         for lane in props.GENERATION_LANES:
             lane_state = scene.scenario.lane_state(lane)
             if lane_state.model_id in [r.id for r in detailed]:
-                on_model_changed(bpy.context, lane_state, mark_dirty=mark_dirty)
+                on_model_changed(
+                    bpy.context,
+                    lane_state,
+                    mark_dirty=mark_dirty or lane_state.model_id in dirty_models,
+                )
 
 
 _pending_models = set()
+_pending_dirty_models = set()
 
 
-def request_model(model_id):
+def request_model(model_id, *, mark_dirty=True):
     """Fetch a model record in the background; the 'models' event finishes the job."""
     runtime.sync_catalog_context()
     if model_id in _pending_models or not runtime.online():
@@ -174,7 +192,7 @@ def request_model(model_id):
         runtime.set_message(err.reason)
         return
     _pending_models.add(model_id)
-    manager.fetch_models(catalog, [model_id])
+    manager.fetch_models(catalog, [model_id], mark_dirty=mark_dirty)
 
 
 def _image_inputs(record):
@@ -227,7 +245,7 @@ def three_d_models(mode, records):
     return models_for_lane("3d", out)
 
 
-def refresh_3d_models(context=None):
+def refresh_3d_models(context=None, *, mark_dirty=True, prefetch=True):
     scene = getattr(context, "scene", None) or bpy.context.scene
     if scene is None:
         return
@@ -236,14 +254,14 @@ def refresh_3d_models(context=None):
     runtime.set_enum_items(("models", "3d"), [(r.id, r.name, r.short_description) for r in records])
     lane_state = scene.scenario.lane_state("3d")
     restore_model_key(lane_state)
-    on_model_changed(context or bpy.context, lane_state)
+    on_model_changed(context or bpy.context, lane_state, mark_dirty=mark_dirty)
     # models known only from the list get their schema in the background so the form and the quote work
     missing = [r.id for r in records if not r.parameters and r.id not in _pending_models][:12]
-    if missing:
-        request_models(missing)
+    if prefetch and missing:
+        request_models(missing, mark_dirty=mark_dirty)
 
 
-def refresh_edit3d_models(context=None):
+def refresh_edit3d_models(context=None, *, mark_dirty=True, prefetch=True):
     """The Edit 3D model list follows the task tabs (Retexture, Retopology, Rigging...)."""
     scene = getattr(context, "scene", None) or bpy.context.scene
     if scene is None:
@@ -258,13 +276,13 @@ def refresh_edit3d_models(context=None):
     if lane_state.model_id == "NONE" or lane_state.model_id not in [r.id for r in records]:
         if records:
             lane_state.model_id = records[0].id
-    on_model_changed(context or bpy.context, lane_state)
+    on_model_changed(context or bpy.context, lane_state, mark_dirty=mark_dirty)
     missing = [r.id for r in records if not r.parameters and r.id not in _pending_models][:12]
-    if missing:
-        request_models(missing)
+    if prefetch and missing:
+        request_models(missing, mark_dirty=mark_dirty)
 
 
-def request_models(model_ids):
+def request_models(model_ids, *, mark_dirty=True):
     runtime.sync_catalog_context()
     if not runtime.online():
         return
@@ -275,10 +293,10 @@ def request_models(model_ids):
         runtime.set_message(err.reason)
         return
     _pending_models.update(model_ids)
-    manager.fetch_models(catalog, list(model_ids))
+    manager.fetch_models(catalog, list(model_ids), mark_dirty=mark_dirty)
 
 
-def ensure_record(model_id):
+def ensure_record(model_id, *, mark_dirty=True):
     """Read the selected connection's cache or queue a description for UI/MCP.
 
     Both entry points run on the main thread and retry after asynchronous delivery.
@@ -293,7 +311,7 @@ def ensure_record(model_id):
         runtime.state.records[model_id] = cached
         _schemas.pop(model_id, None)
         return cached
-    request_model(model_id)
+    request_model(model_id, mark_dirty=mark_dirty)
     raise ScenarioError(0, "Loading the model description")
 
 
@@ -301,17 +319,27 @@ def on_model_changed(context, lane_state, mark_dirty=True):
     model_id = lane_state.model_id
     if not model_id or model_id == "NONE":
         return
+    mark_dirty = mark_dirty and lane_state.as_pointer() not in _restoring_models
+    # User intent invalidates the old quote even while a background schema read
+    # is pending. Its later background completion must not resurrect that quote.
+    if mark_dirty:
+        props.mark_estimate_dirty(lane_state)
     try:
-        ensure_record(model_id)
+        ensure_record(model_id, mark_dirty=mark_dirty)
     except ScenarioError as err:
-        lane_state.last_error = "" if err.reason.startswith("Loading") else err.reason
+        loading = err.reason.startswith("Loading")
+        if loading and mark_dirty:
+            # The estimate debounce may observe the missing schema before its
+            # background completion. Re-arm pricing when that detail arrives.
+            _pending_dirty_models.add(model_id)
+        lane_state.last_error = "" if loading else err.reason
         return
     lane_state.last_error = ""
     schema = schema_for(model_id)
     if schema is None:
         return
     params_ui.sync_params(lane_state, schema, model_id)
-    if mark_dirty or lane_state.estimate_state == "IDLE":
+    if lane_state.estimate_state == "IDLE":
         props.mark_estimate_dirty(lane_state)
 
 

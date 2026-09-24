@@ -30,6 +30,7 @@ def test_catalog_and_completed_schema_are_published_before_slow_detail():
         available = manager.drain_catalog()
         assert [name for name, _ in available] == ["catalog", "models"]
         assert available[0][1]["records"] == ["listed-model"]
+        assert available[0][1]["warmup"] is True
         assert available[1][1]["detailed"] == ["first"]
         assert available[1][1]["mark_dirty"] is False
         assert all(payload["catalog"] is context for _, payload in available)
@@ -38,6 +39,7 @@ def test_catalog_and_completed_schema_are_published_before_slow_detail():
         name, selected = manager.catalog_events.get(timeout=5)
         assert name == "models" and selected["detailed"] == ["selected"]
         assert selected["catalog"] is context
+        assert selected["mark_dirty"] is True
         assert not release.is_set()
     finally:
         release.set()
@@ -47,6 +49,7 @@ def test_catalog_and_completed_schema_are_published_before_slow_detail():
     assert [name for name, _ in later] == ["models", "catalog"]
     assert later[0][1]["detailed"] == ["last"]
     assert later[1][1]["detailed"] == ["first", "last"]
+    assert not later[1][1].get("warmup", False)
     assert all(payload["catalog"] is context for _, payload in later)
 
 
@@ -74,3 +77,18 @@ def test_shutdown_stops_schema_warmup_after_current_request():
         manager.join(5)
     assert requested == ["first"]
     assert not manager.has_active()
+
+
+def test_background_schema_request_keeps_its_quote_intent():
+    class Catalog:
+        def get(self, model_id, refresh=False):
+            return model_id
+
+    manager = JobManager(None, None, None)
+    manager.fetch_models(Catalog(), ["background"], mark_dirty=False)
+    manager.join(5)
+    assert not manager.has_active()
+    name, payload = manager.catalog_events.get(timeout=5)
+    assert name == "models"
+    assert payload["detailed"] == ["background"]
+    assert payload["mark_dirty"] is False

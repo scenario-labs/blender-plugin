@@ -4,6 +4,7 @@
 
 import copy
 import threading
+from concurrent.futures import Future
 from contextlib import contextmanager
 
 from .catalog import ModelRecord
@@ -31,6 +32,7 @@ class SDKCatalog:
         self._adapter = None
         self._lists = {}
         self._records = {}
+        self._model_reads = {}
         self.update_online(online)
 
     def update_online(self, enabled):
@@ -112,10 +114,32 @@ class SDKCatalog:
         return None if row is None else ModelRecord.from_api(row)
 
     def get(self, model_id, refresh=False):
-        if not refresh:
-            cached = self.load_cached(model_id)
-            if cached is not None:
-                return cached
+        with self._condition:
+            self._check_active()
+            if not refresh and model_id in self._records:
+                return ModelRecord.from_api(copy.deepcopy(self._records[model_id]))
+            pending = self._model_reads.get(model_id)
+            owner = pending is None
+            if owner:
+                pending = self._model_reads[model_id] = Future()
+        if not owner:
+            row = pending.result()
+            with self._condition:
+                self._check_active()
+            return ModelRecord.from_api(copy.deepcopy(row))
+        try:
+            row = self._fetch_model(model_id)
+            record = ModelRecord.from_api(row)
+            pending.set_result(copy.deepcopy(row))
+            return record
+        except BaseException as error:
+            pending.set_exception(error)
+            raise
+        finally:
+            with self._condition:
+                del self._model_reads[model_id]
+
+    def _fetch_model(self, model_id):
         with self._read() as adapter:
             row = adapter.model(model_id)
             if row.get("id") != model_id:
@@ -123,4 +147,4 @@ class SDKCatalog:
             with self._condition:
                 self._check_active()
                 self._records[model_id] = copy.deepcopy(row)
-        return ModelRecord.from_api(row)
+        return row

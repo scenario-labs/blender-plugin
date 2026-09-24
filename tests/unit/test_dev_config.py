@@ -69,6 +69,7 @@ def test_entry_points_reject_missing_credentials_before_client_creation(script, 
         if name.startswith("SCENARIO_"):
             monkeypatch.delenv(name)
     monkeypatch.setenv("SCENARIO_SMOKE", "1")
+    monkeypatch.setattr("sys.argv", [script])
     with pytest.raises(SystemExit, match="no test credentials"):
         runpy.run_path(str(ROOT / script), run_name="__main__")
 
@@ -145,7 +146,8 @@ def test_live_tools_pass_selected_pair_explicitly(script, project, monkeypatch):
     else:
         monkeypatch.setenv("SCENARIO_TEST_PROJECT_ID", project)
     monkeypatch.setenv("SCENARIO_SMOKE", "1")
-    monkeypatch.setattr("sys.argv", [script, "synthetic-image.png"])
+    argv = [script] if script == "tools/record_fixtures.py" else [script, "synthetic-image.png"]
+    monkeypatch.setattr("sys.argv", argv)
     monkeypatch.setenv("SCENARIO_API_KEY", "unrelated-key")
     monkeypatch.setenv("SCENARIO_API_SECRET", "unrelated-secret")
     with pytest.raises(ClientReached):

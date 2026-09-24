@@ -1,9 +1,9 @@
 {
  "model": {
   "id": "model_openai-gpt-image-2",
-  "userId": "c452b44467bd7f9d443c631491b6948b",
-  "authorId": "c452b44467bd7f9d443c631491b6948b",
-  "ownerId": "bftve3VtQgmpXxwAPUFWTQ",
+  "userId": "apiu_FIXTURE0000000000000000",
+  "authorId": "apiu_FIXTURE0000000000000000",
+  "ownerId": "proj_FIXTURE00000000000000000",
   "createdAt": "2026-04-22T08:57:03.106Z",
   "updatedAt": "2026-08-21T16:57:39.268Z",
   "name": "GPT Image 2",

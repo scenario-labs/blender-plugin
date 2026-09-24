@@ -33,6 +33,7 @@ For questions, bugs or account help, see [Support](../SUPPORT.md).
 - [Python style and linting](PYTHON_STYLE.md)
 - [UI style and native interaction](UI_STYLE.md)
 - [Validation and local commands](development/validation.md)
+- [Recorded fixture inventory and offline hygiene](../tests/fixtures/README.md)
 - [Commits, PRs and review follow-up](development/contributions.md)
 - [Agent skills and command adapters](development/agents.md)
 - [Release procedure](RELEASING.md)

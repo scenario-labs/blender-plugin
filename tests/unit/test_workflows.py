@@ -78,7 +78,7 @@ def pr_sources(root, workflows):
 
 
 def assert_readonly_source(text):
-    assert not re.search(r"\bsecrets\s*(?:\.|\[|:)", text), "PR workloads must not use secrets"
+    assert not re.search(r"\bsecrets\b", text, re.IGNORECASE), "PR workloads must not use secrets"
     for match in re.finditer(r"""^( *)(["']?permissions["']?)\s*:(.*)$""", text, re.MULTILINE):
         inline = match[3].split("#", 1)[0].strip()
         assert inline in ("", "{}"), "Keep PR permissions in explicit read/none blocks"
@@ -113,6 +113,9 @@ def test_all_pr_workflows_and_local_dependencies_are_readonly_and_secret_free():
     [
         "env:\n  TOKEN: ${{ secrets.EXAMPLE }}\n",
         "env:\n  TOKEN: ${{ secrets['EXAMPLE'] }}\n",
+        "env:\n  DUMP: ${{ toJSON(secrets) }}\n",
+        "env:\n  DUMP: ${{ secrets }}\n",
+        "env:\n  TOKEN: ${{ SeCrEtS.EXAMPLE }}\n",
         "jobs:\n  child:\n    secrets: inherit\n",
         "permissions:\n  issues: write\n",
         'permissions:\n  "issues": write\n',

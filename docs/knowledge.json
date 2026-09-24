@@ -620,7 +620,7 @@
         "tests/unit/test_isolated_command.py": "d689271c2f4c45ddbafce0dcec1354d998fba9a441365bb06f5640f1dde742f5",
         "tools/fetch_blender.py": "54779acbe1518c3b57b533311acdef0eac1e4efbb8ed462052192652106f8098",
         "tests/unit/test_tool_cli_compatibility.py": "da434ed4e75aa6e8acd762c902388601845aafcc3d9efd50f3c9ba127c43c877",
-        "tests/unit/test_workflows.py": "09e3fd97c5cecb08db7c83c4b6c2a8a6dab6983ca15c20aa63e3a68486f9a561",
+        "tests/unit/test_workflows.py": "e07201cf3a6adaaf728f52711ddda933676ea30f43a9357b227d6d24e9d3b451",
         ".github/workflows/commitlint.yml": "b80890944a6acd659312d9f1eced37582b21da64f163849900ae8154005b29a2",
         ".github/workflows/pr-name.yml": "0e315b620212b21f3058eae7d173813190ab81fd929b5d1178772c2fdbbc79d6",
         ".github/workflows/release-please.yml": "72a2af0eae492c029031fa8e1e8cf5fdf64cf84c3b8474953c270f127ad79047",

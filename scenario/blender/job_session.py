@@ -60,6 +60,9 @@ class JobSession:
         completion_limit=128,
         result_downloader=None,
         result_root=None,
+        upload_store=None,
+        upload_sources=None,
+        part_uploader=None,
     ):
         _main_thread()
         if not _registered:
@@ -80,6 +83,9 @@ class JobSession:
             origin_guard=self._origins.guard,
             result_downloader=result_downloader,
             result_root=result_root,
+            upload_store=upload_store,
+            upload_sources=upload_sources,
+            part_uploader=part_uploader,
         )
         self._workers = JobWorkers(self._coordinator, workers=workers, pending_limit=pending_limit)
         with _sessions_lock:
@@ -196,6 +202,50 @@ class JobSession:
     def verify_results(self, request_id, *, expected_revision):
         """Queue local receipt verification; this does not authorize application."""
         return self._record_command("verify_results", request_id, expected_revision)
+
+    def prepare_upload(self, source, *, origin, kind, content_type):
+        """Stage a reference for the origin captured with its source, off the main thread."""
+        _main_thread()
+        self._check_capacity()
+        self._resolve(origin)
+        task = self._workers.prepare_upload(
+            source, origin=origin, kind=kind, content_type=content_type
+        )
+        self._pending.append((task, origin))
+        return task
+
+    def inspect_upload(self, request_id):
+        """Read scoped saved metadata without resolving an old Blender target."""
+        _main_thread()
+        return self._coordinator.inspect_upload(request_id)
+
+    def upload_recovery_plan(self):
+        _main_thread()
+        return self._coordinator.upload_recovery_plan()
+
+    def initialize_upload(self, request_id, *, expected_revision):
+        return self._upload_command("initialize_upload", request_id, expected_revision)
+
+    def transfer_upload_part(self, request_id, *, expected_revision):
+        return self._upload_command("transfer_upload_part", request_id, expected_revision)
+
+    def finalize_upload(self, request_id, *, expected_revision):
+        return self._upload_command("finalize_upload", request_id, expected_revision)
+
+    def refresh_upload(self, request_id, *, expected_revision):
+        return self._upload_command("refresh_upload", request_id, expected_revision, recover=True)
+
+    def _upload_command(self, command, request_id, expected_revision, *, recover=False):
+        _main_thread()
+        self._check_capacity()
+        record = self.inspect_upload(request_id)
+        if record is None:
+            raise OriginUnavailable("The upload is not in this connection's store")
+        if not recover:
+            self._resolve(record.intent.origin)
+        task = getattr(self._workers, command)(request_id, expected_revision=expected_revision)
+        self._pending.append((task, record.intent.origin))
+        return task
 
     def _record_command(self, command, request_id, expected_revision):
         _main_thread()

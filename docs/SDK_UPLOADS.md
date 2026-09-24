@@ -268,5 +268,7 @@ claim reset. An in-flight worker may still finish after inspection or context
 deactivation; its receipt stays in the original scope. Earlier snapshots remain
 unchanged, and subsequent commands must still pass their revision/state guards.
 After restart, a newly configured owner reads the same claims without assuming
-that a previous worker is dead. JobSession forwarding and UI/MCP recovery controls
-remain separate integration work.
+that a previous worker is dead. The optional
+[JobSession upload facade](BLENDER_JOB_CONTEXT.md#upload-references) forwards these
+commands through its existing workers and guarded main-thread delivery. Active
+UI/MCP recovery controls remain separate integration work.

@@ -1,7 +1,7 @@
 {
   "version": 1,
   "index": "docs/index.md",
-  "base_revision": "e013a26d7208f472b0d5d6fee1534763e2632f22",
+  "base_revision": "cdc8775a4a074a4997eca84cec2699e0dbb16e8c",
   "documents": [
     {
       "path": ".claude/rules/blender-glue.md",
@@ -92,7 +92,7 @@
       "path": "README.md",
       "coverage": "inherited",
       "reviewed_at": "2026-09-24",
-      "limits": "Public entry points, supported minimum, explicit credential selection, SDK bundle, privacy and contributor links reviewed against listed sources. Product lane summaries inherit the user guide and known runtime limitations; no new live generation, platform compatibility, hosted update, or native UI acceptance is claimed. Logo bytes and original MIT notice retained from the official skills repository. Sibling links retain their prior review. Browser-rendered GitHub landing page review remains separate. Markdown handbook renderer, template slots, copied/inline images, metadata validation and external-font disclosure reviewed. This does not refresh inherited product claims or screenshot acceptance, publish the site or attach release assets. Repeat-build asset ownership/cleanup, literal template examples and directory-link handling reviewed with regression tests; desktop and narrow renderer presentation inspected separately in isolated browser profiles. Optional uv-managed hooks and staged secret/path guard inspected with disposable Git regression coverage; full-tree prototype normalization, complete secret detection and repository protection remain separate. Blockout link and lane instructions reviewed against its current controls and stored-plan behavior. Hero alt text describes the new labelled offline Image fixture, without implying a price quote or generated result. Licence wording and scoped MCP/SPZ acknowledgements reviewed against source headers, upstream transport documentation and Blender licence guidance. This preserves existing licences and source notices; it does not decide relicensing or certify asset rights. Weekly macOS/Windows workflow and exact-title failure reporting inspected with offline pagination, failure and actual shell exit-status regressions; hosted dispatch, platform runtime and real issue deduplication remain separate acceptance evidence. Downstream current-run matrix reporting, bounded attempt identity, failed-only reruns and setup/timeout/artifact failure wording reviewed with offline regressions; intentional workflow cancellation remains excluded and hosted timeout reporting awaits execution.",
+      "limits": "Public entry points, supported minimum, explicit credential selection, SDK bundle, privacy and contributor links reviewed against listed sources. Product lane summaries inherit the user guide and known runtime limitations; no new live generation, platform compatibility, hosted update, or native UI acceptance is claimed. Logo bytes and original MIT notice retained from the official skills repository. Sibling links retain their prior review. Browser-rendered GitHub landing page review remains separate. Markdown handbook renderer, template slots, copied/inline images, metadata validation and external-font disclosure reviewed. This does not refresh inherited product claims or screenshot acceptance, publish the site or attach release assets. Repeat-build asset ownership/cleanup, literal template examples and directory-link handling reviewed with regression tests; desktop and narrow renderer presentation inspected separately in isolated browser profiles. Optional uv-managed hooks and staged secret/path guard inspected with disposable Git regression coverage; full-tree prototype normalization, complete secret detection and repository protection remain separate. Blockout link and lane instructions reviewed against its current controls and stored-plan behavior. Hero alt text describes the new labelled offline Image fixture, without implying a price quote or generated result. Licence wording and scoped MCP/SPZ acknowledgements reviewed against source headers, upstream transport documentation and Blender licence guidance. This preserves existing licences and source notices; it does not decide relicensing or certify asset rights. Weekly macOS/Windows workflow and exact-title failure reporting inspected with offline pagination, failure and actual shell exit-status regressions; hosted dispatch, platform runtime and real issue deduplication remain separate acceptance evidence. Downstream current-run matrix reporting, bounded attempt identity, failed-only reruns and setup/timeout/artifact failure wording reviewed with offline regressions; intentional workflow cancellation remains excluded and hosted timeout reporting awaits execution. Scorecard workflow, publication restrictions and triage guidance inspected against the pinned upstream action documentation; public score, badge, SARIF publication and hosted acceptance require a successful default-branch run. Existing product and security claims retain their prior evidence.",
       "sources": {
         "scenario/blender/runtime.py": "2afa6267f835569288ae6d1947af5410b05a0bbdcd3bbad985ff30a6dcb8a000",
         "scenario/blender/registry.py": "a34fcb0110b5c991764df22d423546d9de3c949d3183b6dad1c5ca9e05123af2",
@@ -112,7 +112,7 @@
         "docs/SDK_BUNDLE.md": "161627add3fd5b146643fddc2c496a48023406383748e96b6fbdbbed75960ddb",
         "docs/STUDIO_ADOPTION.md": "7e338a3b605f1f6348489bb6df53ab501a6c9484646e1b61f3f739491ab6a355",
         "SUPPORT.md": "1f3986c4b45b59de785580635bc3b2efb177300823ffd36053bcd95a10f0e5c7",
-        "SECURITY.md": "5709200451769d58d1417aefad386b404ee0f03a2a3187756b51e0252cd1f40d",
+        "SECURITY.md": "ff4ecc7a64ad377dec6fed957b2f36239105491e9e9033b5c2b3093e18feaed9",
         "docs/images/scenario-logo.png": "5815cf03eaa5e9eaa3b32ee38878d9d00ddf31763f0e7ccbfd2a6c77b03ba3cc",
         "docs/images/scenario-logo.LICENSE": "1f5802b8f96b536d570dcbffe6fc509c48deb01d06289022c12f55e1c37e8627",
         "docs/images/panel-image.png": "9e5141afd264c545bfe88198d6ccdd90dea3247f3199c618bd9a7904caba7453",
@@ -124,21 +124,23 @@
         ".github/workflows/blender-os.yml": "2a4303266ca0aacb374d1ec40c6e0b21a80acd7dae18d7b3956a3c42619412b1",
         "tools/report_ci_failure.py": "65171061567a48cd611a50a576782cafb353b80de252ef54d284851ad21780cb",
         "tests/unit/test_ci_failure.py": "7025a2956f419582420cd2f45ac16e7f0b9220d13ee5852cde260fa94359913c",
-        ".github/workflows/blender-baseline.yml": "fc58fcf165c04c6b24a4bb190be92a866f8688bea4ec486a54256518d91905cc"
+        ".github/workflows/blender-baseline.yml": "fc58fcf165c04c6b24a4bb190be92a866f8688bea4ec486a54256518d91905cc",
+        ".github/workflows/scorecard.yml": "3180f2d6860237bba70f189846d1aa3ad2e226f5d7476aca3c15887cb53a949c"
       }
     },
     {
       "path": "SECURITY.md",
       "coverage": "policy",
-      "reviewed_at": "2026-09-23",
-      "limits": "Private reporting and supported-version policy; scope is not a claim that runtime hardening is complete. Repository private-vulnerability reporting was verified enabled through the GitHub API; Security-tab policy appearance requires merge.",
+      "reviewed_at": "2026-09-24",
+      "limits": "Private reporting and supported-version policy; scope is not a claim that runtime hardening is complete. Repository private-vulnerability reporting was verified enabled through the GitHub API; Security-tab policy appearance requires merge. Scorecard workflow, publication restrictions and triage guidance inspected against the pinned upstream action documentation; public score, badge, SARIF publication and hosted acceptance require a successful default-branch run. Existing product and security claims retain their prior evidence.",
       "sources": {
         "scenario/blender_manifest.toml": "b942bfc79b1ebecab7ae8f2ea16bac4a182d6a13d81dac3a23391dc2ffd16e0f",
         "scenario/prefs.py": "24297fc14575f5e0c3a534516dc85961c28066aab0b0e00741247ed2e376d83b",
         "scenario/mcp/server.py": "d05a27729cd0835aedd023342713cb4b31107738f711026d24ab86f4052cd354",
         "scenario/mcp/tools_blender.py": "fce4b12492465b86691eede9cc6655220aab3087dcb2496a9600a0299abed520",
         "scenario/blender/mcp_service.py": "63d3a6e36b0247d9529918957e4f92d08a48b704b28315017d2cf61914fb7ccf",
-        "scenario/core/config.py": "93b78f68c5da3c31e191fa3f1a08ac3fdffe8e3f1cac40a20bed4843672f28fe"
+        "scenario/core/config.py": "93b78f68c5da3c31e191fa3f1a08ac3fdffe8e3f1cac40a20bed4843672f28fe",
+        ".github/workflows/scorecard.yml": "3180f2d6860237bba70f189846d1aa3ad2e226f5d7476aca3c15887cb53a949c"
       }
     },
     {
@@ -564,7 +566,7 @@
       "path": "docs/development/contributions.md",
       "coverage": "policy",
       "reviewed_at": "2026-09-24",
-      "limits": "Canonical contribution policy, including inspected Actions-only Dependabot configuration and commit-title compatibility; configuration does not prove live update delivery or administrative action-pin enforcement. Inspected the actions-pinned house-rule implementation, CLI and failure tests; this scoped offline convention check does not establish general YAML validity, release tag provenance, other house rules, REUSE coverage or administrative settings. Optional uv-managed hooks and staged secret/path guard inspected with disposable Git regression coverage; full-tree prototype normalization, complete secret detection and repository protection remain separate.",
+      "limits": "Canonical contribution policy, including inspected Actions-only Dependabot configuration and commit-title compatibility; configuration does not prove live update delivery or administrative action-pin enforcement. Inspected the actions-pinned house-rule implementation, CLI and failure tests; this scoped offline convention check does not establish general YAML validity, release tag provenance, other house rules, REUSE coverage or administrative settings. Optional uv-managed hooks and staged secret/path guard inspected with disposable Git regression coverage; full-tree prototype normalization, complete secret detection and repository protection remain separate. Scorecard workflow, publication restrictions and triage guidance inspected against the pinned upstream action documentation; public score, badge, SARIF publication and hosted acceptance require a successful default-branch run. Existing product and security claims retain their prior evidence.",
       "sources": {
         "commitlint.config.ts": "a3f4eb2798279d823aee2523592781ba1b328295e7d9528875f8682f6bb56881",
         ".github/workflows/pr-name.yml": "0e315b620212b21f3058eae7d173813190ab81fd929b5d1178772c2fdbbc79d6",
@@ -581,7 +583,8 @@
         "tests/unit/test_check_secrets.py": "2ad38e5b6d50171c91f9e47f90b6c9109f5b79e85fb220b685cb2bee9918bee7",
         "tests/unit/test_local_hooks.py": "b826d5dd189abd1071ceb4eb175787348f39d5272331dce5bafcbeb1a2374d3d",
         "pyproject.toml": "d16f4ecf29355a77a2bcf3c9f519b59a875c6919cec2e7a41f883553f127f807",
-        "uv.lock": "818e60fbedee798145c4f228a35b30847bba0b5827a77aa8aaa0210407b69c9b"
+        "uv.lock": "818e60fbedee798145c4f228a35b30847bba0b5827a77aa8aaa0210407b69c9b",
+        ".github/workflows/scorecard.yml": "3180f2d6860237bba70f189846d1aa3ad2e226f5d7476aca3c15887cb53a949c"
       }
     },
     {

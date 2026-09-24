@@ -44,6 +44,12 @@ or the remote server at `mcp.scenario.com` use the same private channels above,
 not this repository's public issue tracker. This scope describes reportable
 problems; it does not certify the current implementation or its pending fixes.
 
+The repository's [OpenSSF Scorecard result](https://scorecard.dev/viewer/?uri=github.com/scenario-labs/blender-plugin)
+is published by [Scorecard CI](.github/workflows/scorecard.yml) after pushes to
+`main` and weekly. A lower score is a maintainer triage signal, not a release
+blocker. See the [maintenance procedure](docs/development/contributions.md#scorecard-triage)
+for publication checks and limitations; the badge needs a successful run on `main`.
+
 ## Supported versions
 
 Security fixes target the [latest release](https://github.com/scenario-labs/blender-plugin/releases).

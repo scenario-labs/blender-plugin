@@ -111,6 +111,16 @@ never to a public issue.
 
 Report vulnerabilities privately, see [SECURITY.md](SECURITY.md). Never paste API keys, MCP bearer tokens or signed asset URLs into issues or pull requests.
 
+## Sibling integrations
+
+Scenario for Blender is one of several Scenario integrations. The plugins share
+the Scenario name, the id `scenario` inside each host's namespace and the support
+channel (support@scenario.com), not necessarily the same licence.
+
+- [Scenario for Unity](https://github.com/scenario-labs/Scenario-Unity), Unity package `com.scenarioinc.scenario`. Scenario for Unity is MIT-licensed; this extension is GPL-3.0-or-later because Blender add-ons that import bpy must be GPL-compatible.
+- [Scenario skills for agents](https://github.com/scenario-labs/skills) (MIT).
+- The [Scenario MCP server](https://mcp.scenario.com) provides Scenario tools outside Blender. The [MCP guide](docs/MCP.md#local-server-and-mcpscenariocom) explains how it relates to this extension's local server.
+
 ## Licence and provenance
 
 GPL-3.0-or-later (see `LICENSE`), the licence Blender requires for add-ons that use `bpy`. The extension zip carries a copy of the licence text (`scenario/LICENSE`, identical to the root `LICENSE`). Pinned SDK dependencies and their notices are described in [`docs/SDK_BUNDLE.md`](docs/SDK_BUNDLE.md). The MCP bridge follows the Blender Lab `blender_mcp` protocol shape, rewritten.

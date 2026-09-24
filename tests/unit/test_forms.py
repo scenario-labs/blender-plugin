@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: 2026 Scenario
+# SPDX-FileCopyrightText: 2026 Scenario Inc.
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Contracts for dynamic Scenario forms, including routing and reference types."""
 

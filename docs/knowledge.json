@@ -35,7 +35,7 @@
       "path": "CONTRIBUTING.md",
       "coverage": "inherited",
       "reviewed_at": "2026-09-24",
-      "limits": "Existing guide indexed during this intake, without a fresh claim-by-claim or live verification; consult current integration status and issue acceptance. Contribution-guide cross-reference reviewed after the Actions update guidance; other source fingerprints retain their prior evidence. Markdown handbook renderer, template slots, copied/inline images, metadata validation and external-font disclosure reviewed. This does not refresh inherited product claims or screenshot acceptance, publish the site or attach release assets. Repeat-build asset ownership/cleanup, literal template examples and directory-link handling reviewed with regression tests; desktop and narrow renderer presentation inspected separately in isolated browser profiles. macOS arm64 downloader section inspected against verified-DMG extraction, private mount cleanup and offline failure tests; local native proof does not establish scheduled macOS CI or complete cross-platform compatibility. Portable discovery order, numeric versions, manifest-version CLI and optional icon-font search inspected against implementation and offline layout tests; other inherited guide claims and native platform acceptance remain outside this focused review. Contributor policy, licensing and navigation reviewed against canonical instructions; inherited runtime evidence retains its existing limits.",
+      "limits": "Existing guide indexed during this intake, without a fresh claim-by-claim or live verification; consult current integration status and issue acceptance. Contribution-guide cross-reference reviewed after the Actions update guidance; other source fingerprints retain their prior evidence. Markdown handbook renderer, template slots, copied/inline images, metadata validation and external-font disclosure reviewed. This does not refresh inherited product claims or screenshot acceptance, publish the site or attach release assets. Repeat-build asset ownership/cleanup, literal template examples and directory-link handling reviewed with regression tests; desktop and narrow renderer presentation inspected separately in isolated browser profiles. macOS arm64 downloader section inspected against verified-DMG extraction, private mount cleanup and offline failure tests; local native proof does not establish scheduled macOS CI or complete cross-platform compatibility. Portable discovery order, numeric versions, manifest-version CLI and optional icon-font search inspected against implementation and offline layout tests; other inherited guide claims and native platform acceptance remain outside this focused review. Contributor policy, licensing and navigation reviewed against canonical instructions; inherited runtime evidence retains its existing limits. Integration naming and holder policy records the approved repository convention, not completed sibling repository administration. The two adopted first-party form-header holder spellings are aligned to Scenario Inc. without changing licence or executable contents.",
       "sources": {
         "Makefile": "4971a39a042367df0c4cd151ee46e6f6c00df518e36b46faf00a52d0846f1e2a",
         "pyproject.toml": "8806419c64dc00323f2da6bf43986dcb0ce792e6dad1c237fda95627dd354333",
@@ -66,19 +66,22 @@
         "AGENTS.md": "6a9781d3c0b8b7d1b48635e4ab22fc6a4089c9f39317a49f884aac4b715b28be",
         "LICENSE": "3972dc9744f6499f0f9b2dbf76696f2ae7ad8af9b23dde66d6af86c9dfb36986",
         "docs/development/validation.md": "016d31042856ab62eca00ca4477b031cbdbe45d77cb0577b8f437a2117fce138",
-        "docs/RELEASING.md": "a4937aac0e28fdb4693630e016cca7a010413fe10c021370b5ae4eddc224ced6"
+        "docs/RELEASING.md": "a4937aac0e28fdb4693630e016cca7a010413fe10c021370b5ae4eddc224ced6",
+        "scenario/blender_manifest.toml": "7ac4a84b0856f6a7c5ada8182e1c343f097347a25cf5785d81d72b28ec10f444",
+        "scenario/core/schema/forms.py": "f13c662733ae8badc4a16c21f32b545e93c55d8f1dee2c8816cfce8b940df33a",
+        "tests/unit/test_forms.py": "7ec691dade30efd6e0ef3aab0f86bf1ae536b5c8abec8d7e4984c64d57228b06"
       }
     },
     {
       "path": "README.md",
       "coverage": "inherited",
       "reviewed_at": "2026-09-24",
-      "limits": "Existing guide indexed during this intake, without a fresh claim-by-claim or live verification; consult current integration status and issue acceptance. MCP overview and reference links reviewed; remaining product guidance still inherits its stated verification limits. Markdown handbook renderer, template slots, copied/inline images, metadata validation and external-font disclosure reviewed. This does not refresh inherited product claims or screenshot acceptance, publish the site or attach release assets. Repeat-build asset ownership/cleanup, literal template examples and directory-link handling reviewed with regression tests; desktop and narrow renderer presentation inspected separately in isolated browser profiles.",
+      "limits": "Existing guide indexed during this intake, without a fresh claim-by-claim or live verification; consult current integration status and issue acceptance. MCP overview and reference links reviewed; remaining product guidance still inherits its stated verification limits. Markdown handbook renderer, template slots, copied/inline images, metadata validation and external-font disclosure reviewed. This does not refresh inherited product claims or screenshot acceptance, publish the site or attach release assets. Repeat-build asset ownership/cleanup, literal template examples and directory-link handling reviewed with regression tests; desktop and narrow renderer presentation inspected separately in isolated browser profiles. Sibling links/licence labels checked against their public repositories; no future Blender skill availability claimed.",
       "sources": {
         "scenario/blender/runtime.py": "2afa6267f835569288ae6d1947af5410b05a0bbdcd3bbad985ff30a6dcb8a000",
         "scenario/blender/registry.py": "a34fcb0110b5c991764df22d423546d9de3c949d3183b6dad1c5ca9e05123af2",
         "scenario/blender_manifest.toml": "b942bfc79b1ebecab7ae8f2ea16bac4a182d6a13d81dac3a23391dc2ffd16e0f",
-        "CONTRIBUTING.md": "0543da10895065dca60f546ae83a6146264884a44d4b845c49ffebb1d3151219",
+        "CONTRIBUTING.md": "1a7b487b8067c34203fef75da2ce6f709c2b0a8529955f770dc491eca77ca07a",
         "docs/MCP.md": "fb6f2c0a82536d3d1af3a9a7787df2a67b7ebe7fb5eb66f7462d737c48f71f64",
         "tools/build_docs_html.py": "40e8c099acc77be8b3d57edd31f1e2a0ade323d9932e1c822aee98320c01f4a2",
         "docs/handbook-template.html": "f2a14d1356fa1f9f2c28edf251c6c8372d2302b46131215db0b9095e3913061c",

@@ -41,4 +41,18 @@ jobs:
       - name: Sync the locked development environment
         run: uv sync --locked --python "$PYTHON_VERSION"
       - name: Run every offline unit test
-        run: uv run --locked --no-env-file --python "$PYTHON_VERSION" python -m pytest tests/unit -rx
+        id: tests
+        run: |
+          uv run --locked --no-env-file --python "$PYTHON_VERSION" python -m pytest tests/unit -rx \
+            --cov --cov-report=term --cov-report=xml --cov-report=html \
+            --cov-report="markdown-append:$GITHUB_STEP_SUMMARY"
+      - name: Retain unit coverage reports
+        if: ${{ !cancelled() && steps.tests.outcome != 'skipped' }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: unit-coverage-${{ matrix.python }}
+          path: |
+            coverage.xml
+            htmlcov/
+          if-no-files-found: error
+          retention-days: 14

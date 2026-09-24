@@ -32,8 +32,9 @@ edited target pass.
 
 [World application](../WORLD_APPLICATION.md) preflights supported image formats,
 loads and packs the image, and installs a new World on an explicit scene.
-Its restoration checks protect later user changes. It does not implement the
-panorama generation, history or async delivery interface.
+Its restoration checks protect later user changes. The explicit JobSession World
+command wraps one verified saved asset with original-context checks and a durable
+application claim. Panorama generation, history and active UI/MCP wiring remain.
 
 Existing [image](../../scenario/blender/apply_image.py),
 [3D import](../../scenario/blender/apply_3d.py),

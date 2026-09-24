@@ -7,7 +7,7 @@ import io
 import logging
 import ssl
 from dataclasses import asdict
-from pathlib import Path
+from pathlib import Path, PurePosixPath, PureWindowsPath
 from unittest.mock import Mock
 
 import pytest
@@ -16,6 +16,32 @@ from scenario.core.jobs import transfers
 
 URL = "https://storage.example.invalid/result?signature=private-fixture"
 DATA = b"offline result bytes"
+
+
+@pytest.mark.parametrize(
+    "root, expected",
+    [
+        (r"C:\private\results", r"\\?\C:\private\results"),
+        (r"\\server\share\results", r"\\?\UNC\server\share\results"),
+        (r"\\?\C:\private\results", r"\\?\C:\private\results"),
+        (r"\\?\UNC\server\share\results", r"\\?\UNC\server\share\results"),
+    ],
+)
+def test_windows_private_roots_preserve_drive_or_unc_identity(root, expected):
+    path = PureWindowsPath(root)
+    converted = transfers._windows_storage_path(path)
+    assert converted == PureWindowsPath(expected)
+    assert transfers._windows_storage_path(converted) == converted
+
+
+def test_posix_private_root_is_not_reinterpreted_as_a_windows_drive():
+    path = PurePosixPath("/private/results")
+    assert transfers._windows_storage_path(path) is path
+
+
+def test_windows_device_path_is_not_reinterpreted_as_a_unc_root():
+    with pytest.raises(transfers.TransferError):
+        transfers._windows_storage_path(PureWindowsPath(r"\\.\C:\private"))
 
 
 class Response(io.BytesIO):

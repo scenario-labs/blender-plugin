@@ -40,7 +40,15 @@ The root must already exist, be an absolute path without symlink components, and
 remain privately owned with trusted ancestors for the whole operation. Blender
 integration must create it under `bpy.utils.extension_path_user`; the primitive
 never chooses an installed-extension or shared temporary directory. Names are
-portable basenames, not paths. Staging uses a private temporary subdirectory and
+portable basenames, not paths. After validating the original root, Windows storage
+operations use its extended-length drive or UNC path so scoped directories and
+staging files can exceed legacy Win32 path limits. Verification can return that
+extended path; this does not establish compatibility with a later Blender importer.
+The directory layout and receipt names are unchanged.
+The supplied root must already be accessible in its supplied path notation;
+conversion protects descendants and does not repair an inaccessible root.
+Win32 device paths are rejected instead of being reinterpreted as UNC roots.
+Staging uses a private temporary subdirectory and
 0600 file; completed bytes are fsynced before atomic, non-overwriting hard-link
 publication in the same filesystem. A filesystem without hard-link support fails
 closed. Directory metadata durability after sudden power loss is not guaranteed.

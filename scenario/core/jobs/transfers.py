@@ -114,6 +114,20 @@ class DownloadedResult:
             raise TransferError("Invalid downloaded result digest")
 
 
+def _windows_storage_path(path):
+    """Namespace an already validated absolute root for deep private descendants."""
+    value = str(path)
+    if value.startswith("\\\\.\\"):
+        raise TransferError("Use an absolute drive or UNC result directory")
+    if not path.drive or value.startswith("\\\\?\\"):
+        return path
+    if path.drive.startswith("\\\\"):
+        value = "\\\\?\\UNC\\" + value[2:]
+    else:
+        value = "\\\\?\\" + value
+    return type(path)(value)
+
+
 def _root(root):
     path = Path(root)
     # The caller owns this private directory and its ancestors for the entire
@@ -125,7 +139,10 @@ def _root(root):
         valid = False
     if not valid:
         raise TransferError("Use an existing absolute private result directory")
-    return path
+    # Blender's Windows process need not opt into long Win32 paths. Keep the
+    # canonical/symlink check above, then use the same root's extended namespace
+    # before adding scope directories, result names or transfer staging files.
+    return _windows_storage_path(path) if os.name == "nt" else path
 
 
 def validate_result_name(name):

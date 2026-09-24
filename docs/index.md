@@ -9,6 +9,8 @@ For questions, bugs or account help, see [Support](../SUPPORT.md).
 
 ## Architecture and implementation
 
+- [Local MCP tools, setup and security](MCP.md)
+
 - [Privacy and data handling](PRIVACY.md)
 - [Runtime map and integration status](architecture/runtime.md)
 - [Blender boundaries and scene application](architecture/blender.md)

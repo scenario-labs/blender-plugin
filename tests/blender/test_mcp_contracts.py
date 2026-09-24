@@ -106,3 +106,10 @@ class McpContractTests(unittest.TestCase):
                     self.assertEqual(tool["inputSchema"]["required"], [])
         finally:
             server.stop()
+
+    def test_installed_registry_matches_generated_reference(self):
+        from gen_mcp_docs import GROUPS, ROOT, parse_specs
+
+        expected = {tool["name"] for _, path in GROUPS for tool in parse_specs(ROOT / path)}
+        service = submodule("blender.mcp_service")
+        self.assertEqual(set(service.build_registry().names()), expected)

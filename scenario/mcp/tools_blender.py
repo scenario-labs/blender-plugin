@@ -304,21 +304,44 @@ def _schema(props, required=()):
 SPECS = (
     ToolSpec(
         "scene_summary",
-        "Objects, cameras, frame range, fps, selection and cursor of the open Blender scene.",
+        (
+            "Inspect the open Blender scene before choosing a scene operation.\n"
+            "Args: none.\n"
+            "Returns: file, objects[] (name, type, location, dimensions, parent, collections, materials, hidden), active, selected, cameras, scene_camera, frame_range, frame_current, fps, resolution, unit_system, cursor and blender version.\n"
+            "Example: {}.\n"
+            "Prefer object_detail for one object's geometry or modifiers; this does not return mesh vertex data.\n"
+            "No platform equivalent."
+        ),
         _schema({}),
         scene_summary,
         {"readOnlyHint": True},
     ),
     ToolSpec(
         "object_detail",
-        "Transform, mesh statistics, materials and custom properties of one object.",
+        (
+            "Inspect one named Blender object's transform, geometry summary and custom properties.\n"
+            "Args:\n"
+            "  - name: required string, exact object name.\n"
+            "Returns: name, type, location, rotation_euler, scale, dimensions, parent, modifiers and custom_properties. Meshes also return vertices, faces, uv_layers and materials; cameras return lens_mm, sensor_width and clip. An unknown name raises ValueError.\n"
+            'Example: {"name": "Cube"}.\n'
+            "Prefer scene_summary to discover names first; this does not change the object.\n"
+            "No platform equivalent."
+        ),
         _schema({"name": {"type": "string"}}, ["name"]),
         object_detail,
         {"readOnlyHint": True},
     ),
     ToolSpec(
         "execute_python",
-        "Run Python with bpy in this Blender (main thread). Fill the result dict to return data; stdout and stderr are captured. Disabled when the user turned it off in preferences.",
+        (
+            "Run arbitrary Python with bpy on Blender's main thread, only when explicitly enabled in preferences.\n"
+            "Args:\n"
+            "  - code: required string, Python source; bpy and a result dict are preloaded.\n"
+            "Returns: result, stdout and stderr; failures also include error. Disabled by default unless the user enables Allow connected agents to run Python. Common quit, factory-reset, preference-reload and file-deletion call spellings are blocked; this is not a security sandbox.\n"
+            'Example: {"code": "result[\'objects\'] = len(bpy.data.objects)"}.\n'
+            "Check blender_api_help first and prefer specific tools instead of arbitrary code.\n"
+            "No platform equivalent."
+        ),
         _schema(
             {
                 "code": {
@@ -333,26 +356,62 @@ SPECS = (
     ),
     ToolSpec(
         "select_objects",
-        "Select the named objects and make the first one active.",
+        (
+            "Replace the selection in the current view layer with the named Blender objects.\n"
+            "Args:\n"
+            "  - names: required array of strings, object names to select; an empty array clears selection.\n"
+            "Returns: selected and missing name lists. A matching object becomes active; do not rely on array order to choose it.\n"
+            'Example: {"names": ["Cube"]}.\n'
+            "Prefer scene_summary to verify names and the existing selection before changing it.\n"
+            "No platform equivalent."
+        ),
         _schema({"names": {"type": "array", "items": {"type": "string"}}}, ["names"]),
         select_objects,
     ),
     ToolSpec(
         "set_frame",
-        "Jump the timeline to a frame.",
+        (
+            "Move Blender's timeline to a frame and evaluate the scene there.\n"
+            "Args:\n"
+            "  - frame: required integer, the desired frame number.\n"
+            "Returns: frame_current, the scene's resulting frame.\n"
+            'Example: {"frame": 42}.\n'
+            "Prefer scene_summary to check the frame range first; this changes the current scene state and may invalidate a pending generation estimate.\n"
+            "No platform equivalent."
+        ),
         _schema({"frame": {"type": "integer"}}, ["frame"]),
         set_frame,
     ),
     ToolSpec(
         "screenshot_viewport",
-        "PNG screenshot of the 3D viewport area as the user sees it (GUI only).",
+        (
+            "Capture the visible 3D viewport area as a PNG image, including its UI overlays.\n"
+            "Args: none.\n"
+            "Returns: PNG image content for the MCP client, not a permanent file path.\n"
+            "Example: {}.\n"
+            "Do not use in background mode or without a 3D viewport: it raises RuntimeError. Prefer render_still for a camera or viewport still at a chosen size. Temporary capture files are cleaned up.\n"
+            "No platform equivalent."
+        ),
         _schema({}),
         screenshot_viewport,
         {"readOnlyHint": True},
     ),
     ToolSpec(
         "camera_path",
-        "Animate a camera around the scene for Render Video: a preset (orbit, push_in, pull_back, crane, pan, flyover) around the subject, a free-text description, or explicit waypoints.",
+        (
+            "Build an animated scene camera from a preset, description or explicit waypoints for Render Video.\n"
+            "Args:\n"
+            "  - preset: optional string from shot_plan.PRESETS or PRESET_ALIASES, such as orbit or push_in.\n"
+            "  - description: optional free text, such as slow orbit, 8 s, 35mm; parsed values override preset, duration and focal.\n"
+            "  - duration: optional number of seconds.\n"
+            "  - focal: optional number of millimetres.\n"
+            "  - aim_at_subject: optional boolean.\n"
+            "  - waypoints: optional array of objects, each requiring position [x, y, z]; rotation_euler [x, y, z], focal and hold are optional. Explicit waypoints replace existing markers.\n"
+            "Returns: camera, keyframes, frame_start, frame_end, preset, duration, focal, markers and note.\n"
+            'Example: {"preset": "orbit", "duration": 8, "focal": 35}.\n'
+            "Prefer scene_summary first; this changes the scene camera and animation, it does not generate a cloud video.\n"
+            "No platform equivalent."
+        ),
         _schema(
             {
                 "preset": {"type": "string"},
@@ -378,7 +437,17 @@ SPECS = (
     ),
     ToolSpec(
         "render_still",
-        "Quick OpenGL still of the scene camera (or the viewport) as PNG, default 1280x720 (GUI only).",
+        (
+            "Capture a quick OpenGL camera or viewport still as a PNG at the requested size.\n"
+            "Args:\n"
+            "  - source: optional string, CAMERA (default) or VIEWPORT.\n"
+            "  - width: optional integer, default 1280 pixels.\n"
+            "  - height: optional integer, default 720 pixels.\n"
+            "Returns: PNG image content, with temporary capture files cleaned up.\n"
+            'Example: {"source": "CAMERA", "width": 1280, "height": 720}.\n'
+            "Do not use in background mode: capture needs the GUI and a 3D viewport or raises RuntimeError. Prefer screenshot_viewport to inspect the visible viewport UI.\n"
+            "No platform equivalent."
+        ),
         _schema(
             {
                 "source": {"type": "string", "enum": ["CAMERA", "VIEWPORT"]},
@@ -391,7 +460,15 @@ SPECS = (
     ),
     ToolSpec(
         "blender_api_help",
-        "Look up a bpy path (operator, type or collection) and return its docstring and properties, to check the real API before running execute_python.",
+        (
+            "Inspect Blender's running Python API before writing a script.\n"
+            "Args:\n"
+            "  - path: required string, a bpy operator, type or collection path.\n"
+            "Returns: path, type, doc when available, properties[] or members[] when exposed; invalid or missing paths return error.\n"
+            'Example: {"path": "bpy.ops.mesh.primitive_cube_add"}.\n'
+            "Prefer this to guessing API signatures, and use specific scene tools instead of execute_python where possible. This is introspection, not execution of the named operator.\n"
+            "No platform equivalent."
+        ),
         _schema(
             {
                 "path": {
@@ -406,7 +483,14 @@ SPECS = (
     ),
     ToolSpec(
         "datablocks_summary",
-        "Counts of the data-blocks in the open .blend (objects, meshes, materials, images, collections...) and the file path.",
+        (
+            "Summarize the datablocks in the open Blender file.\n"
+            "Args: none.\n"
+            "Returns: filepath, counts (objects, meshes, materials, images, collections, cameras, lights, armatures, curves, node_groups, textures, actions, worlds, scenes when available) and up to 40 collection names.\n"
+            "Example: {}.\n"
+            "Prefer scene_summary for selection and object transforms, or object_detail for a named object; counts alone do not establish what is visible.\n"
+            "No platform equivalent."
+        ),
         _schema({}),
         datablocks_summary,
         {"readOnlyHint": True},

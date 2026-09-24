@@ -166,8 +166,11 @@ class JobCoordinator:
         self._quotes = WeakValueDictionary()
         self._bound_estimates = WeakKeyDictionary()
         self._uploads = None
-        if any(value is not None for value in (upload_store, upload_sources, part_uploader)):
-            if upload_store is None or upload_store.scope != self.scope:
+        upload_config = (upload_store, upload_sources, part_uploader)
+        if any(value is not None for value in upload_config):
+            if any(value is None for value in upload_config):
+                raise TypeError("Configure upload store, sources and part uploader together")
+            if upload_store.scope != self.scope:
                 raise ValueError("Upload and job scopes must match")
             self._uploads = UploadCommands(
                 adapter, upload_store, upload_sources, part_uploader, self._upload_guard

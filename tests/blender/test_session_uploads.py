@@ -311,11 +311,37 @@ class SessionUploadTests(unittest.TestCase):
 
     def test_incomplete_configuration_fails_before_registering_another_owner(self):
         before = set(self.module._sessions)
+        threads = set(threading.enumerate())
         adapter = self.new_adapter()
+        options = {
+            "upload_store": self.upload_store,
+            "upload_sources": self.sources,
+            "part_uploader": self.uploader,
+        }
         try:
-            with self.assertRaises(TypeError):
-                self.module.JobSession(adapter, self.store, upload_store=self.upload_store)
+            for names in (
+                ("upload_store",),
+                ("upload_sources",),
+                ("part_uploader",),
+                ("upload_store", "upload_sources"),
+                ("upload_store", "part_uploader"),
+                ("upload_sources", "part_uploader"),
+            ):
+                with self.subTest(names=names):
+                    with self.assertRaisesRegex(TypeError, "Configure.*together"):
+                        self.module.JobSession(
+                            adapter, self.store, **{name: options[name] for name in names}
+                        )
+                    self.assertEqual(self.module._sessions, before)
+                    self.assertEqual(set(threading.enumerate()), threads)
+            foreign = replace(self.scope, project_id="other-project")
+            options["upload_store"] = self.uploads.UploadStore(
+                self.root / "foreign.sqlite3", foreign
+            )
+            with self.assertRaisesRegex(ValueError, "Upload and job scopes must match"):
+                self.module.JobSession(adapter, self.store, **options)
             self.assertEqual(self.module._sessions, before)
+            self.assertEqual(set(threading.enumerate()), threads)
         finally:
             adapter.close()
 

@@ -166,7 +166,9 @@ The session optionally accepts `upload_store`, `upload_sources` and
 coordinator and bounded worker pool. Their scope and explicit storage-host policy
 must satisfy the [upload contracts](SDK_UPLOADS.md#shared-worker-commands).
 There is no default production host allowlist or automatic upload configuration;
-partial configuration fails before starting another worker owner.
+partial configuration raises `TypeError` before starting another worker owner.
+With all three dependencies supplied, a mismatched upload/job scope still raises
+`ValueError`; the existing source and transfer-policy validation also applies.
 
 Capture the scene/target origin with the chosen source before calling
 `prepare_upload(source, origin=..., kind=..., content_type=...)`. Main-thread

@@ -106,7 +106,7 @@
         "scenario/core/jobs/origins.py": "d1282d67aacdfe2444a776cf1338667bea9ee67392ff3f473db581a0f8059977",
         "tests/blender/test_job_session.py": "c82d1561183d031e6f423e72c5994e405accec2d9dd821dffa83eda471a1c376",
         "tests/unit/test_shared_quotes.py": "eb06294b382dc1b38de6b920ce7ed8fcebc4acc999a41abd560a30c2a506dfee",
-        "scenario/core/jobs/coordinator.py": "c07c2c30925a8ed58b0872f80e682e1096475fd077197eaecc7ba70a98672b19",
+        "scenario/core/jobs/coordinator.py": "91f19b82ddca3b5fadfcdcc6f2af78d807d659d13b441e4d22fc095db4637e7a",
         "scenario/core/jobs/workers.py": "fc584737c05c28bcb20309220ed6dc99bb40b330339b995075c1392497d3ebed",
         "tests/blender/test_session_results.py": "b20bfba41a2c25d6f7edbdd9dbee4f5a18aae736e7a88f3bf648c24455c045ba",
         "scenario/core/jobs/results.py": "90c8cfcf779316d027d095076c36707e1c2918dd697d27e03b2f3c1ee4f655f0",
@@ -115,7 +115,7 @@
         "scenario/core/jobs/uploads.py": "73575da4b3f3589dead6a8b71d64feac2edcae789fb97f502b332fb5fe1789cc",
         "tests/unit/test_upload_commands.py": "5541ca299891a95ad0a41e4fe7261c74ba08a356261b68332517c20b7076fd76",
         "tests/unit/test_job_origins.py": "06cc03625e3504999732c7526dca1c0b1732da62aa967c4e1a30071b3b3b9e0b",
-        "tests/blender/test_session_uploads.py": "19d96834bc39dfe9a26e71e814cfdb0cf3dc2c49e8c6f57b93e2e18eb1e14111",
+        "tests/blender/test_session_uploads.py": "de7a64d5c567c172da47b2c9e060bd14d2e1db5f4db896aec6258305501c2dab",
         "tests/blender/run_all.py": "62227b217a8dd9999b7b7500ead7f4dd9da01dbb8488452cefe71e7997bd47f3"
       }
     },
@@ -123,9 +123,9 @@
       "path": "docs/JOB_COORDINATOR.md",
       "coverage": "inherited",
       "reviewed_at": "2026-09-24",
-      "limits": "Existing guide indexed during this intake, without a fresh claim-by-claim or live verification; consult current integration status and issue acceptance. Scoped upload inspection, conservative recovery mapping and their offline regressions were reviewed in this pass; active runtime adoption and other claims retain their prior limits. Optional upload origin guards and their offline claim/race regressions were inspected; no JobSession upload forwarding or live acceptance is implied.",
+      "limits": "Scoped upload inspection, conservative recovery mapping, origin guards and complete upload configuration diagnostics were inspected with the listed source/tests. Other API and runtime integration claims retain their prior evidence rather than a fresh claim-by-claim verification; no active UI/MCP adoption or live/paid operation acceptance is claimed.",
       "sources": {
-        "scenario/core/jobs/coordinator.py": "c07c2c30925a8ed58b0872f80e682e1096475fd077197eaecc7ba70a98672b19",
+        "scenario/core/jobs/coordinator.py": "91f19b82ddca3b5fadfcdcc6f2af78d807d659d13b441e4d22fc095db4637e7a",
         "scenario/core/jobs/workers.py": "fc584737c05c28bcb20309220ed6dc99bb40b330339b995075c1392497d3ebed",
         "tests/unit/test_job_coordinator.py": "ac8d3ac91dfee6df7fa00029d05324588bcff807cf34eaa48acaa82449fee5e0",
         "tests/unit/test_job_cancellation.py": "0d26f5fdd7896e86c9730cf64a9dad3a23ac58caf7f04f365809cbdedd186732",
@@ -304,12 +304,12 @@
         "scenario/core/jobs/uploads.py": "73575da4b3f3589dead6a8b71d64feac2edcae789fb97f502b332fb5fe1789cc",
         "tests/blender/test_upload_commands.py": "496927b98c0774db28bac4da626f568bc147c9fc45f07da9e99a1aba0a0be9f1",
         "tests/unit/test_upload_sources.py": "f3fdf69efd7426b53d29b2e60716bd2bcb582e6e1b48e79a11365356ee3c7c03",
-        "scenario/core/jobs/coordinator.py": "c07c2c30925a8ed58b0872f80e682e1096475fd077197eaecc7ba70a98672b19",
+        "scenario/core/jobs/coordinator.py": "91f19b82ddca3b5fadfcdcc6f2af78d807d659d13b441e4d22fc095db4637e7a",
         "tests/unit/test_upload_inspection.py": "91a94ade8fbbb4f603273056b8db9b2bb8fbada3cbf910869b9e5b67a73044bd",
         "scenario/core/jobs/origins.py": "d1282d67aacdfe2444a776cf1338667bea9ee67392ff3f473db581a0f8059977",
         "tests/unit/test_job_origins.py": "06cc03625e3504999732c7526dca1c0b1732da62aa967c4e1a30071b3b3b9e0b",
         "scenario/blender/job_session.py": "73f0a3e2e892c5535331f1c1a2b812d2e70a77e70f27cd6a33c079317d52ea83",
-        "tests/blender/test_session_uploads.py": "19d96834bc39dfe9a26e71e814cfdb0cf3dc2c49e8c6f57b93e2e18eb1e14111",
+        "tests/blender/test_session_uploads.py": "de7a64d5c567c172da47b2c9e060bd14d2e1db5f4db896aec6258305501c2dab",
         "tests/blender/run_all.py": "62227b217a8dd9999b7b7500ead7f4dd9da01dbb8488452cefe71e7997bd47f3"
       }
     },
@@ -400,7 +400,7 @@
         "scenario/mcp/tools_scenario.py": "66e90694c9bc89878cec3ed2c133ac017492c9ebec866e1c850c07baf4b29543",
         "scenario/core/config.py": "74a45b99fde47d741710dbf2a9d8051f2b31903f10ecae679d061340c62fb1be",
         "scenario/core/api/sdk_adapter.py": "a18daa427bd16d7b9bfbf0ed322fe4d7c3bdca27f161db8766f28042ec8e5a0b",
-        "scenario/core/jobs/coordinator.py": "c07c2c30925a8ed58b0872f80e682e1096475fd077197eaecc7ba70a98672b19",
+        "scenario/core/jobs/coordinator.py": "91f19b82ddca3b5fadfcdcc6f2af78d807d659d13b441e4d22fc095db4637e7a",
         "scenario/core/jobs/workers.py": "fc584737c05c28bcb20309220ed6dc99bb40b330339b995075c1392497d3ebed",
         "scenario/blender/job_session.py": "73f0a3e2e892c5535331f1c1a2b812d2e70a77e70f27cd6a33c079317d52ea83",
         "scenario/core/jobs/transfers.py": "549e02649dab7061492a5bb1100a836daf1112972a9ad01c2c0d39facb6ac098",
@@ -435,7 +435,7 @@
         "tests/unit/test_upload_inspection.py": "91a94ade8fbbb4f603273056b8db9b2bb8fbada3cbf910869b9e5b67a73044bd",
         "scenario/core/jobs/origins.py": "d1282d67aacdfe2444a776cf1338667bea9ee67392ff3f473db581a0f8059977",
         "tests/unit/test_job_origins.py": "06cc03625e3504999732c7526dca1c0b1732da62aa967c4e1a30071b3b3b9e0b",
-        "tests/blender/test_session_uploads.py": "19d96834bc39dfe9a26e71e814cfdb0cf3dc2c49e8c6f57b93e2e18eb1e14111",
+        "tests/blender/test_session_uploads.py": "de7a64d5c567c172da47b2c9e060bd14d2e1db5f4db896aec6258305501c2dab",
         "tests/blender/run_all.py": "62227b217a8dd9999b7b7500ead7f4dd9da01dbb8488452cefe71e7997bd47f3"
       }
     },

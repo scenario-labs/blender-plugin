@@ -20,7 +20,7 @@ Coverage: **68 surfaced models, 68 schemas fetched, 0 failures** after the id fi
 
 ## Findings and fixes
 
-### 1. Rodin Bang — conditional-required file (the reported bug) — FIXED
+### 1. Rodin Bang: conditional-required file (the reported bug), fixed
 
 Bang's schema marks both `model` (the mesh) and `image` (the reference) as `required: true`, but the descriptions
 make `image` and `prompt` mutually alternative:
@@ -38,7 +38,7 @@ one** of the group and, if neither is present, shows one friendly line: "Provide
 Prompt". This affects exactly Bang today and will auto-handle any future model phrased the same way. Covered by
 `tests/unit/test_params.py::test_conditional_required_file_becomes_either_or` and `::test_either_or_validation`.
 
-### 2. Three curated ids that no longer resolve — FIXED
+### 2. Three curated ids that no longer resolve, fixed
 
 `DEFAULT_MODELS` named three models that 404 on the live catalog, so they silently never appeared. Replaced with the
 current ids (verified against the catalog):

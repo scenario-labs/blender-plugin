@@ -1,70 +1,198 @@
 # SPDX-FileCopyrightText: 2026 Scenario Inc.
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Model catalog: fetch, cache on disk, filter by lane, curated ordering."""
+
 import json
 import pathlib
 from dataclasses import dataclass, field
 
 PAGE_TOKEN_PARAM = "paginationToken"
 
-GENERATION_LANES = ("image", "video", "3d", "material", "audio", "render_image", "render_video", "edit3d")
+GENERATION_LANES = (
+    "image",
+    "video",
+    "3d",
+    "material",
+    "audio",
+    "render_image",
+    "render_video",
+    "edit3d",
+)
 LANE_CAPS = {
     "image": {"txt2img", "img2img", "video2img"},
     "video": {"txt2video", "img2video", "video2video", "audio2video"},
     "3d": {"txt23d", "img23d"},
     "audio": {"txt2audio", "audio2audio", "video2audio"},
-    "render_image": {"img2img"},      # a viewport capture plus style images to a finished still
+    "render_image": {"img2img"},  # a viewport capture plus style images to a finished still
     "render_video": {"video2video"},  # a playblast plus images to a finished clip
-    "edit3d": {"3d23d"},              # a mesh from the scene to a retextured / remeshed / rigged / animated mesh
+    "edit3d": {
+        "3d23d"
+    },  # a mesh from the scene to a retextured / remeshed / rigged / animated mesh
 }
 PATINA_MODELS = ("model_patina-material", "model_patina", "model_patina-material-extract")
 DEFAULT_MODELS = {
-    "image": ["model_openai-gpt-image-2", "model_google-gemini-3-1-flash", "model_bytedance-seedream-5-0-pro", "model_bytedance-seedream-5-0-lite", "model_z-image"],
-    "video": ["model_bytedance-seedance-2-0", "model_bytedance-seedance-2-5", "model_veo3-1", "model_kling-v3-omni-video"],
-    "3d": ["model_meshy-7-txt23d", "model_rodin-hyper3d-v2-5-text-to-3d", "model_tripo-v3-1-image-to-3d", "model_meshy-7-img23d", "model_hunyuan-3d-pro-3-1-i23d",
-           "model_rodin-hyper3d-v2-5", "model_tripo-p1-image-to-3d", "model_meshy-7-multi-image-to-3d", "model_tripo-v3-1-multiview-to-3d", "model_hunyuan-3d-pro-3-1-multiview"],
+    "image": [
+        "model_openai-gpt-image-2",
+        "model_google-gemini-3-1-flash",
+        "model_bytedance-seedream-5-0-pro",
+        "model_bytedance-seedream-5-0-lite",
+        "model_z-image",
+    ],
+    "video": [
+        "model_bytedance-seedance-2-0",
+        "model_bytedance-seedance-2-5",
+        "model_veo3-1",
+        "model_kling-v3-omni-video",
+    ],
+    "3d": [
+        "model_meshy-7-txt23d",
+        "model_rodin-hyper3d-v2-5-text-to-3d",
+        "model_tripo-v3-1-image-to-3d",
+        "model_meshy-7-img23d",
+        "model_hunyuan-3d-pro-3-1-i23d",
+        "model_rodin-hyper3d-v2-5",
+        "model_tripo-p1-image-to-3d",
+        "model_meshy-7-multi-image-to-3d",
+        "model_tripo-v3-1-multiview-to-3d",
+        "model_hunyuan-3d-pro-3-1-multiview",
+    ],
     "material": list(PATINA_MODELS),
-    "audio": ["model_elevenlabs-music-v2", "model_lyria-3-pro", "model_ace-step-1-5-quality-text-to-music", "model_minimax-music-3-0", "model_elevenlabs-tts-v3",
-              "model_google-gemini-3-1-flash-tts", "model_elevenlabs-sound-effects-v2", "model_sonilo-v1-1-text-to-sound-effects", "model_sonilo-v1-1-video-to-sound-effects"],
-    # the ten image edit models that take a reference image and a look prompt (catalog 2026-08-28); GPT Image 2 first (Emmanuel)
-    "render_image": ["model_openai-gpt-image-2", "model_google-gemini-3-1-flash", "model_bytedance-seedream-5-0-pro", "model_bfl-flux-2-max-editing", "model_bfl-flux-2-pro-editing",
-                     "model_reve-remix", "model_qwen-image-edit-2511", "model_microsoft-mai-image-2-5-pro-edit", "model_xai-grok-imagine-image-2-0", "model_z-image"],
+    "audio": [
+        "model_elevenlabs-music-v2",
+        "model_lyria-3-pro",
+        "model_ace-step-1-5-quality-text-to-music",
+        "model_minimax-music-3-0",
+        "model_elevenlabs-tts-v3",
+        "model_google-gemini-3-1-flash-tts",
+        "model_elevenlabs-sound-effects-v2",
+        "model_sonilo-v1-1-text-to-sound-effects",
+        "model_sonilo-v1-1-video-to-sound-effects",
+    ],
+    # The image edit models take a reference image and a look prompt; GPT Image 2 comes first (product decision).
+    "render_image": [
+        "model_openai-gpt-image-2",
+        "model_google-gemini-3-1-flash",
+        "model_bytedance-seedream-5-0-pro",
+        "model_bfl-flux-2-max-editing",
+        "model_bfl-flux-2-pro-editing",
+        "model_reve-remix",
+        "model_qwen-image-edit-2511",
+        "model_microsoft-mai-image-2-5-pro-edit",
+        "model_xai-grok-imagine-image-2-0",
+        "model_z-image",
+    ],
     # the ten video models that accept a reference video (and images) to re-render
-    "render_video": ["model_bytedance-seedance-2-0", "model_minimax-h3", "model_bytedance-seedance-2-5", "model_bytedance-seedance-2-0-mini", "model_runway-aleph-2",
-                     "model_alibaba-happy-horse-video-editing", "model_google-omni-1-1-flash-edit", "model_google-omni-flash-edit", "model_xai-grok-edit-video", "model_bfl-flux-3-extend"],
-    "edit3d": ["model_meshy-7-retexture", "model_tripo-retopology", "model_meshy-rigging", "model_meshy-animation", "model_meshy-uv-unwrap", "model_tripo-segmentation-v2"],
+    "render_video": [
+        "model_bytedance-seedance-2-0",
+        "model_minimax-h3",
+        "model_bytedance-seedance-2-5",
+        "model_bytedance-seedance-2-0-mini",
+        "model_runway-aleph-2",
+        "model_alibaba-happy-horse-video-editing",
+        "model_google-omni-1-1-flash-edit",
+        "model_google-omni-flash-edit",
+        "model_xai-grok-edit-video",
+        "model_bfl-flux-3-extend",
+    ],
+    "edit3d": [
+        "model_meshy-7-retexture",
+        "model_tripo-retopology",
+        "model_meshy-rigging",
+        "model_meshy-animation",
+        "model_meshy-uv-unwrap",
+        "model_tripo-segmentation-v2",
+    ],
 }
 RENDER_LANES = ("render_image", "render_video")
 # The kind of asset each lane produces (image / video / 3d / material / audio). One source of truth.
-LANE_KIND = {"image": "image", "video": "video", "3d": "3d", "material": "material", "audio": "audio",
-             "render_image": "image", "render_video": "video", "edit3d": "3d"}
+LANE_KIND = {
+    "image": "image",
+    "video": "video",
+    "3d": "3d",
+    "material": "material",
+    "audio": "audio",
+    "render_image": "image",
+    "render_video": "video",
+    "edit3d": "3d",
+}
 
 
 def lane_kind(lane):
     return LANE_KIND.get(lane, "image")
+
+
 # Video models that address their inputs as @video1 / @image1 in the prompt (Seedance family). The others take plain words.
 TAGGED_VIDEO_MODELS = ("seedance",)
 
 # What a mesh from the scene can become, named like Scenario's 3D categories. Each task lists the models that do it,
 # best first; a model can serve two tasks (Rodin Bang splits into parts and retextures); "ALL" shows every 3d23d model.
 EDIT3D_TASKS = (
-    ("REMESH", "Remesh", "Clean quad or triangle topology at a target polycount",
-     ("model_tripo-retopology", "model_meshy-remesh", "model_tencent-smarttopology")),
-    ("RETEXTURE", "Retexture", "New textures and materials for the mesh, from a prompt or a style image",
-     ("model_meshy-7-retexture", "model_tripo-v3-0-texturing", "model_trellis-2-retexture", "model_tencent-texture-edit", "model_rodin-hyper3d-bang",
-      "model_tripo-stylization", "model_hitem-3d-multicolor", "model_meshy-retexture")),
-    ("UV", "UV Unwrap", "New UV layout",
-     ("model_meshy-uv-unwrap", "model_tencent-uv-unwrapping")),
-    ("RIG", "Rigging", "A skeleton and skin weights for a character",
-     ("model_meshy-rigging", "model_tripo-rigging-v2-5", "model_tripo-rigging-v1", "model_cartwheel-character-rigging")),
-    ("ANIMATE", "Animate", "An animated version of a rigged character",
-     ("model_meshy-animation", "model_cartwheel-text-to-motion")),
-    ("PARTS", "Parts", "Split the mesh into semantic parts",
-     ("model_tripo-segmentation-v2", "model_tripo-segmentation-v1", "model_hunyuan-3d-part", "model_hitem-3d-split", "model_rodin-hyper3d-bang")),
+    (
+        "REMESH",
+        "Remesh",
+        "Clean quad or triangle topology at a target polycount",
+        ("model_tripo-retopology", "model_meshy-remesh", "model_tencent-smarttopology"),
+    ),
+    (
+        "RETEXTURE",
+        "Retexture",
+        "New textures and materials for the mesh, from a prompt or a style image",
+        (
+            "model_meshy-7-retexture",
+            "model_tripo-v3-0-texturing",
+            "model_trellis-2-retexture",
+            "model_tencent-texture-edit",
+            "model_rodin-hyper3d-bang",
+            "model_tripo-stylization",
+            "model_hitem-3d-multicolor",
+            "model_meshy-retexture",
+        ),
+    ),
+    ("UV", "UV Unwrap", "New UV layout", ("model_meshy-uv-unwrap", "model_tencent-uv-unwrapping")),
+    (
+        "RIG",
+        "Rigging",
+        "A skeleton and skin weights for a character",
+        (
+            "model_meshy-rigging",
+            "model_tripo-rigging-v2-5",
+            "model_tripo-rigging-v1",
+            "model_cartwheel-character-rigging",
+        ),
+    ),
+    (
+        "ANIMATE",
+        "Animate",
+        "An animated version of a rigged character",
+        ("model_meshy-animation", "model_cartwheel-text-to-motion"),
+    ),
+    (
+        "PARTS",
+        "Parts",
+        "Split the mesh into semantic parts",
+        (
+            "model_tripo-segmentation-v2",
+            "model_tripo-segmentation-v1",
+            "model_hunyuan-3d-part",
+            "model_hitem-3d-split",
+            "model_rodin-hyper3d-bang",
+        ),
+    ),
     ("ALL", "All", "Every model that takes a mesh as input", ()),
 )
 # Names that mark utilities rather than renderers; kept out of the Render Image list (they still show in Image).
-UTILITY_HINTS = ("remove background", "background remov", "upscal", "vectoriz", "reframe", "pixelate", "blur", "color lut", "layerize", "image sequence")
+UTILITY_HINTS = (
+    "remove background",
+    "background remov",
+    "upscal",
+    "vectoriz",
+    "reframe",
+    "pixelate",
+    "blur",
+    "color lut",
+    "layerize",
+    "image sequence",
+)
 
 
 # Schema defaults that produce surprising results in Blender. Applied when the value is among the allowed ones.
@@ -100,7 +228,10 @@ class ModelRecord:
             id=data.get("id", ""),
             name=data.get("name") or data.get("id", ""),
             short_description=data.get("shortDescription") or "",
-            capabilities=tuple(c if isinstance(c, str) else c.get("type", "") for c in data.get("capabilities") or ()),
+            capabilities=tuple(
+                c if isinstance(c, str) else c.get("type", "")
+                for c in data.get("capabilities") or ()
+            ),
             tags=tuple(data.get("tags") or ()),
             type=data.get("type") or "",
             status=data.get("status") or "",
@@ -143,7 +274,7 @@ def is_utility(record):
 
 def is_lora(record):
     """Scenario's trained models (Flux LoRAs, compositions, Kontext LoRAs) and anything trained on a parent model.
-    They are style presets for the web app, not tools a Blender user picks by name: kept out of every lane (Emmanuel, 2026-08-28)."""
+    They are style presets for the web app, not tools a Blender user picks by name: kept out of every lane (product decision)."""
     raw = record.raw
     if record.type and record.type != "custom":
         return True
@@ -154,7 +285,14 @@ def models_for_lane(lane, records):
     """Filter records usable in `lane`, LoRAs and deprecated models removed, curated models first."""
     curated = DEFAULT_MODELS.get(lane, [])
     rank = {model_id: index for index, model_id in enumerate(curated)}
-    usable = [r for r in records if lane in r.lanes and r.deprecated_successor is None and r.status in ("", "trained") and not is_lora(r)]
+    usable = [
+        r
+        for r in records
+        if lane in r.lanes
+        and r.deprecated_successor is None
+        and r.status in ("", "trained")
+        and not is_lora(r)
+    ]
     if lane == "material":
         usable = [r for r in usable if r.id in PATINA_MODELS]
     elif lane == "render_image":

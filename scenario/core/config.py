@@ -104,7 +104,7 @@ def slug(text, limit=40):
 
 def output_filename(kind, model_id, job_id, index, ext, when=None, asset_id=None):
     """`20260828_230353_hitem-3d-split_asset_ccpDR7Ga1…_00.glb`: the Scenario asset id sits in the name so a file
-    on disk can be matched to its asset in the web app (Emmanuel, 2026-08-28). Without an asset id, the short job id."""
+    on disk can be matched to its asset in the web app (product decision). Without an asset id, the short job id."""
     when = when or dt.datetime.now()
     tag = asset_id if asset_id else (job_id or "job")[-9:]
     return f"{when:%Y%m%d_%H%M%S}_{slug(model_id)}_{tag}_{index:02d}.{ext}"

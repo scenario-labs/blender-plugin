@@ -100,9 +100,10 @@ class JobStoreTests(unittest.TestCase):
             )
             reopened = module.JobStore(root / "jobs.sqlite3", scope)
             self.assertEqual(reopened.get("result-request"), record)
-            self.assertEqual(
-                transfers.verify_download(root, record.results[0].receipt), root / asset.name
-            )
+            verified = transfers.verify_download(root, record.results[0].receipt)
+            self.assertEqual(verified.name, asset.name)
+            self.assertTrue(verified.parent.samefile(root))
+            self.assertTrue(verified.samefile(root / asset.name))
             (root / asset.name).write_bytes(b"corrupt")
             with self.assertRaises(transfers.TransferError):
                 transfers.verify_download(root, record.results[0].receipt)

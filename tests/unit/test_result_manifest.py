@@ -245,7 +245,10 @@ def test_previous_schema_is_preserved_without_silent_reset(setup, tmp_path):
 def test_verified_file_is_rehashed_and_changes_fail_without_repair(tmp_path):
     path = tmp_path / ASSET.name
     path.write_bytes(DATA)
-    assert verify_download(tmp_path, RECEIPT) == path
+    verified = verify_download(tmp_path, RECEIPT)
+    assert verified.name == path.name
+    assert verified.parent.samefile(path.parent)
+    assert verified.samefile(path)
     path.write_bytes(b"x" * len(DATA))
     with pytest.raises(TransferError, match="receipt"):
         verify_download(tmp_path, RECEIPT)
@@ -292,9 +295,14 @@ def test_windows_verification_compares_consistent_times_without_hiding_changes(
     windows_os.fstat = lambda descriptor: next(snapshots)
     monkeypatch.setattr(transfers, "os", windows_os)
     lstat = type(path).lstat
-    monkeypatch.setattr(type(path), "lstat", lambda self: current if self == path else lstat(self))
+    monkeypatch.setattr(
+        type(path), "lstat", lambda self: current if self.samefile(path) else lstat(self)
+    )
     if change is None:
-        assert verify_download(tmp_path, RECEIPT) == path
+        verified = verify_download(tmp_path, RECEIPT)
+        assert verified.name == path.name
+        assert verified.parent.samefile(path.parent)
+        assert verified.samefile(path)
     else:
         with pytest.raises(TransferError, match="receipt"):
             verify_download(tmp_path, RECEIPT)

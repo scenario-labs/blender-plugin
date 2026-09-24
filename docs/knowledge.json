@@ -49,7 +49,7 @@
         "tests/blender/test_credentials.py": "0767fbe1917c977631dc4243bfcb05dce97d5ed0c0b2c731b8ea4bfdb07e3b45",
         "tools/capture_gui_scene.py": "7538cb1e90510a31cdfac22e390d5d595cf2bc73628f1cc3139071b2ef855609",
         "tests/unit/test_gui_capture.py": "beee6cba15adf7da1e7434c18dcb2b948e36f4b459af06fc98a6c850a5fea87c",
-        "tools/fetch_blender.py": "c432b2cfbc8428216309739dee10699d5eb703d4961ef75bac76ea12f8a9747b",
+        "tools/fetch_blender.py": "3a712dd385f0f030be6161eda7d8de28a7570b8b367d37c50f50514e15ff3326",
         "tests/unit/test_portable_tools.py": "2cea13137994d2d09b76abe0f5a6916a36c3c61faa546bcc6fa82e0e660c14c5",
         ".github/actions/setup-blender/action.yml": "276722b203227e8f7a7a98a76a0e7095c566bae2c308b4166dff5e7a3698c105",
         ".github/workflows/blender-baseline.yml": "c4fabf3cc73eaad72df2da1bd158ce118c4ebab177980819a540b28c8b66cc4d",
@@ -58,7 +58,7 @@
         "tools/build_docs_html.py": "40e8c099acc77be8b3d57edd31f1e2a0ade323d9932e1c822aee98320c01f4a2",
         "docs/handbook-template.html": "f2a14d1356fa1f9f2c28edf251c6c8372d2302b46131215db0b9095e3913061c",
         "tests/unit/test_docs_html.py": "4f13fa6738f636c0034a5eb07c773961efd4396dcf806862695612f20f5762da",
-        "tests/unit/test_fetch_blender_macos.py": "dc79bb9326d33fd20dbed2413981965a581c67f75676cd4bb5cf89fdd4dba82d"
+        "tests/unit/test_fetch_blender_macos.py": "3b0658d06b571b336b42379acc7b47de3eab3590b5f4c65754cf2435601a6568"
       }
     },
     {

@@ -71,51 +71,69 @@ def extract_windows(archive, staged):
         bundle.extractall(staged)
 
 
+def error_message(error):
+    """Keep primary and cleanup diagnostics together in the CLI's plain output."""
+    return "\n".join([str(error), *getattr(error, "__notes__", [])])
+
+
+def disk_command(*arguments):
+    """Preserve captured disk-tool diagnostics on command failure or timeout."""
+    try:
+        subprocess.run(
+            ["/usr/bin/hdiutil", *arguments], check=True, capture_output=True, timeout=120
+        )
+    except subprocess.SubprocessError as error:
+        diagnostic = getattr(error, "stderr", None)
+        if diagnostic:
+            if isinstance(diagnostic, bytes):
+                diagnostic = diagnostic.decode("utf-8", errors="replace")
+            error.add_note(f"hdiutil: {diagnostic.strip()}")
+        raise
+
+
 def extract_macos(archive, staged):
     """Copy Blender.app from a private read-only mount, detaching before publication."""
     # Keep the mount outside the installation TemporaryDirectory: if the OS
     # refuses both detach attempts, cleanup must never walk a mounted volume.
     mount = Path(tempfile.mkdtemp(prefix="scenario-blender-dmg-"))
     attached = False
+    primary_error = None
     try:
-        subprocess.run(
-            [
-                "/usr/bin/hdiutil",
-                "attach",
-                "-readonly",
-                "-nobrowse",
-                "-noautoopen",
-                "-mountpoint",
-                str(mount),
-                str(archive),
-            ],
-            check=True,
-            capture_output=True,
-            timeout=120,
+        disk_command(
+            "attach",
+            "-readonly",
+            "-nobrowse",
+            "-noautoopen",
+            "-mountpoint",
+            str(mount),
+            str(archive),
         )
         attached = True
         app = mount / "Blender.app"
         if app.is_symlink() or not app.is_dir():
             raise ValueError("Official disk image did not contain Blender.app")
         shutil.copytree(app, staged / "Blender.app", symlinks=True)
+    except BaseException as error:
+        # Re-raise interrupts too, after cleanup, without replacing their cause.
+        primary_error = error
+        raise
     finally:
-        if attached or mount.is_mount():
-            try:
-                subprocess.run(
-                    ["/usr/bin/hdiutil", "detach", str(mount)],
-                    check=True,
-                    capture_output=True,
-                    timeout=120,
-                )
-            except (OSError, subprocess.SubprocessError):
-                # Only this invocation's private read-only mount is targeted.
-                subprocess.run(
-                    ["/usr/bin/hdiutil", "detach", "-force", str(mount)],
-                    check=True,
-                    capture_output=True,
-                    timeout=120,
-                )
-        mount.rmdir()
+        try:
+            if attached or mount.is_mount():
+                try:
+                    disk_command("detach", str(mount))
+                except (OSError, subprocess.SubprocessError) as first_error:
+                    try:
+                        # Only this invocation's private read-only mount is targeted.
+                        disk_command("detach", "-force", str(mount))
+                    except (OSError, subprocess.SubprocessError) as force_error:
+                        force_error.add_note(f"Initial detach failed: {error_message(first_error)}")
+                        raise
+            mount.rmdir()
+        except (OSError, subprocess.SubprocessError) as cleanup_error:
+            if primary_error is None:
+                raise
+            primary_error.add_note(f"Disk image cleanup failed: {error_message(cleanup_error)}")
 
 
 def install_archive(archive, installation, temporary, expected, version, platform_name="linux-x64"):
@@ -229,7 +247,7 @@ def main():
         zipfile.BadZipFile,
         subprocess.SubprocessError,
     ) as error:
-        print(f"Download failed: {error}", file=sys.stderr)
+        print(f"Download failed: {error_message(error)}", file=sys.stderr)
         return 1
 
 

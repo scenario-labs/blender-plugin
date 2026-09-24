@@ -62,7 +62,8 @@ def dmg(monkeypatch, tmp_path):
             assert mount == state.mounts[-1]
             if state.detach_errors:
                 state.detach_errors -= 1
-                raise subprocess.CalledProcessError(1, command)
+                diagnostic = b"forced detach refused" if "-force" in command else b"resource busy"
+                raise subprocess.CalledProcessError(1, command, stderr=diagnostic)
             # A real detach reveals the empty directory below the mounted volume.
             for child in mount.iterdir():
                 if child.is_symlink() or not child.is_dir():
@@ -194,6 +195,85 @@ def test_os_refusing_detach_cannot_publish_or_recursively_clean_mounted_volume(d
     assert (mount / "Blender.app/Contents/MacOS/Blender").read_bytes() == b"official binary"
     assert not list(cache.glob("5.1.2-*"))
     assert not list(cache.glob("fetch-*"))
+
+
+@pytest.mark.parametrize("failure", ["copy", "missing-app", "partial-attach", "interrupt"])
+def test_cleanup_failure_preserves_original_error_and_disk_diagnostics(
+    dmg, tmp_path, monkeypatch, failure
+):
+    dmg.detach_errors = 2
+    expected = OSError("copy ran out of space")
+    if failure == "missing-app":
+        dmg.populate = lambda mount: None
+        error_type = ValueError
+    elif failure == "partial-attach":
+        original_run = dmg.fetch.subprocess.run
+
+        def run(command, **kwargs):
+            result = original_run(command, **kwargs)
+            if command[1] == "attach":
+                raise subprocess.CalledProcessError(7, command, stderr=b"attachment interrupted")
+            return result
+
+        monkeypatch.setattr(dmg.fetch.subprocess, "run", run)
+        monkeypatch.setattr(Path, "is_mount", lambda path: path in dmg.mounts)
+        error_type = subprocess.CalledProcessError
+    else:
+        if failure == "interrupt":
+            expected = KeyboardInterrupt("copy interrupted")
+
+        def fail_copy(*args, **kwargs):
+            raise expected
+
+        monkeypatch.setattr(dmg.fetch.shutil, "copytree", fail_copy)
+        error_type = type(expected)
+    cache = tmp_path / "cache"
+    with pytest.raises(error_type) as caught:
+        dmg.fetch.fetch("5.1.2", cache, dmg.digest, platform_name="macos-arm64")
+    if failure in {"copy", "interrupt"}:
+        assert caught.value is expected
+    elif failure == "partial-attach":
+        assert caught.value.returncode == 7
+    else:
+        assert "did not contain Blender.app" in str(caught.value)
+    message = dmg.fetch.error_message(caught.value)
+    assert "Disk image cleanup failed:" in message
+    assert "resource busy" in message
+    assert "forced detach refused" in message
+    assert str(dmg.mounts[0]) in message
+    assert dmg.mounts[0].exists()
+    assert not list(cache.glob("5.1.2-*"))
+    assert not list(cache.glob("fetch-*"))
+
+
+@pytest.mark.parametrize("failure", ["attach", "detach", "timeout"])
+def test_cli_includes_captured_hdiutil_diagnostics(dmg, tmp_path, monkeypatch, capsys, failure):
+    monkeypatch.setattr(dmg.fetch.platform, "system", lambda: "Darwin")
+    monkeypatch.setattr(dmg.fetch.platform, "machine", lambda: "arm64")
+    monkeypatch.setattr(
+        sys, "argv", ["fetch_blender.py", "--version", "5.1.2", "--cache", str(tmp_path / "cache")]
+    )
+    if failure == "detach":
+        dmg.detach_errors = 2
+        diagnostic = "forced detach refused"
+    else:
+        diagnostic = "image not recognized" if failure == "attach" else "attachment stalled"
+
+        def run(command, **kwargs):
+            dmg.mounts.append(Path(command[command.index("-mountpoint") + 1]))
+            if failure == "timeout":
+                raise subprocess.TimeoutExpired(command, 120, stderr=diagnostic.encode())
+            raise subprocess.CalledProcessError(1, command, stderr=diagnostic.encode())
+
+        monkeypatch.setattr(dmg.fetch.subprocess, "run", run)
+    assert dmg.fetch.main() == 1
+    result = capsys.readouterr()
+    assert result.out == ""
+    assert "Download failed:" in result.err
+    assert diagnostic in result.err
+    if failure == "detach":
+        assert "resource busy" in result.err
+    assert "Traceback" not in result.err
 
 
 @pytest.mark.parametrize(

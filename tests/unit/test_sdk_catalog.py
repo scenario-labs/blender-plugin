@@ -1,0 +1,158 @@
+# SPDX-FileCopyrightText: 2026 Scenario Inc.
+# SPDX-License-Identifier: GPL-3.0-or-later
+"""Active catalog reads use real SDK serialization without service connections."""
+
+import base64
+import threading
+from concurrent.futures import ThreadPoolExecutor
+
+import httpx
+import pytest
+
+from scenario.core.api.errors import ScenarioError
+from scenario.core.api.sdk_adapter import Credentials, SDKAdapter
+from scenario.core.api.sdk_catalog import SDKCatalog
+
+
+def catalog(handler, **options):
+    pools = []
+
+    def factory(credentials, **kwargs):
+        adapter = SDKAdapter(credentials, transport=httpx.MockTransport(handler), **kwargs)
+        pools.append(adapter)
+        return adapter
+
+    return SDKCatalog(
+        Credentials("selected-key", "selected-secret"),
+        online=True,
+        adapter_factory=factory,
+        **options,
+    ), pools
+
+
+def test_catalog_pagination_and_normalization_preserve_selected_credentials(monkeypatch):
+    monkeypatch.setenv("SCENARIO_CUSTOM_HEADERS", "Authorization: Bearer wrong")
+    requests = []
+
+    def respond(request):
+        requests.append(request)
+        if "paginationToken" not in request.url.params:
+            return httpx.Response(
+                200,
+                json={
+                    "models": [
+                        {"id": "first", "name": "First", "capabilities": [{"type": "txt2img"}]}
+                    ],
+                    "nextPaginationToken": "page-two",
+                },
+            )
+        return httpx.Response(200, json={"models": [{"id": "second"}]})
+
+    context, pools = catalog(respond)
+    records = context.fetch_list()
+    assert [record.id for record in records] == ["first", "second"]
+    assert records[0].capabilities == ("txt2img",)
+    assert requests[0].url.params["privacy"] == "public"
+    assert "status" not in requests[0].url.params
+    assert requests[1].url.params["paginationToken"] == "page-two"
+    auth = "Basic " + base64.b64encode(b"selected-key:selected-secret").decode()
+    assert all(request.headers["Authorization"] == auth for request in requests)
+    assert len(pools) == 1 and pools[0]._closed
+    records[0].raw["name"] = "Changed by caller"
+    assert context.load_list_cached()[0].name == "First"
+
+
+def test_detail_cache_isolated_between_connections_and_defensive_copies():
+    requests = []
+
+    def respond(request):
+        requests.append(request)
+        return httpx.Response(
+            200, json={"model": {"id": "fixture", "inputs": [{"name": "prompt", "type": "string"}]}}
+        )
+
+    context, pools = catalog(respond)
+    record = context.get("fixture")
+    record.raw["inputs"][0]["name"] = "changed"
+    assert context.get("fixture").parameters[0]["name"] == "prompt"
+    assert len(requests) == 1
+    context.get("fixture", refresh=True)
+    assert len(requests) == 2
+    assert all(pool._closed for pool in pools)
+    other, _ = catalog(respond)
+    assert other.load_cached("fixture") is None
+    assert other.load_list_cached() is None
+
+
+def test_private_model_list_preserves_sdk_trained_filter():
+    requests = []
+
+    def respond(request):
+        requests.append(request)
+        return httpx.Response(200, json={"models": []})
+
+    context, _ = catalog(respond)
+    assert context.fetch_list("private") == []
+    assert requests[0].url.params["privacy"] == "private"
+    assert requests[0].url.params["status"] == "trained"
+
+
+def test_permission_revocation_stops_next_page_and_does_not_cache_partial_list():
+    requests = []
+
+    def respond(request):
+        requests.append(request)
+        context.update_online(False)
+        return httpx.Response(
+            200, json={"models": [{"id": "first"}], "nextPaginationToken": "next"}
+        )
+
+    context, pools = catalog(respond)
+    with pytest.raises(ScenarioError, match="Online access is disabled"):
+        context.fetch_list()
+    assert len(requests) == 1
+    assert context.load_list_cached() is None
+    assert pools[0]._closed
+
+
+def test_retirement_waits_for_read_cleanup_without_closing_pool_under_worker():
+    started, release = threading.Event(), threading.Event()
+
+    def respond(request):
+        started.set()
+        assert release.wait(5)
+        return httpx.Response(200, json={"model": {"id": "fixture"}})
+
+    context, pools = catalog(respond)
+    with ThreadPoolExecutor(max_workers=2) as workers:
+        read = workers.submit(context.get, "fixture")
+        try:
+            assert started.wait(5)
+            context.close()
+            assert not context.closed and not pools[0]._closed
+            closing = workers.submit(context.close, wait=True)
+            assert not closing.done()
+        finally:
+            release.set()
+        with pytest.raises(ScenarioError, match="connection changed"):
+            read.result(5)
+        closing.result(5)
+    assert context.closed and pools[0]._closed
+    with pytest.raises(ScenarioError, match="connection changed"):
+        context.get("fixture")
+
+
+@pytest.mark.parametrize(
+    "response",
+    [
+        httpx.Response(200, json={"model": {"id": "other"}}),
+        httpx.Response(503, text="private service details"),
+    ],
+)
+def test_failed_reads_are_safe_and_leave_no_cached_record(response):
+    context, pools = catalog(lambda request: response)
+    with pytest.raises(ScenarioError) as error:
+        context.get("fixture")
+    assert "private service details" not in str(error.value)
+    assert context.load_cached("fixture") is None
+    assert len(pools) == 1 and pools[0]._closed

@@ -11,8 +11,10 @@ client, `httpx==0.28.1`; [uv.lock](../uv.lock) pins their transitive dependencie
 This is a prerequisite for [Studio adoption](https://github.com/scenario-labs/blender-plugin/issues/64).
 The SDK is pinned for development and packaged as a runtime dependency. The
 [shared read/estimate adapter](../scenario/core/api/sdk_adapter.py) now uses it;
-the existing UI and local MCP still use the prototype client pending shared-job
-integration. See [SDK_BUNDLE.md](SDK_BUNDLE.md) for exact artifact/notice pinning,
+the active UI and local MCP now share SDK model listing/detail reads through
+[SDKCatalog](../scenario/core/api/sdk_catalog.py). Their other service operations
+still use the prototype client pending shared-job integration. See
+[SDK_BUNDLE.md](SDK_BUNDLE.md) for exact artifact/notice pinning,
 supported wheel targets, staging and installed-runtime verification.
 
 ## Executable contracts
@@ -37,6 +39,7 @@ using the locked environment.
 | Workflow estimate and submission | `workflows.run`: PUT, unchanged workflow-specific body, `dryRun` and `projectId` in the query |
 | Exact quote preservation | `generate.with_raw_response.run_model` retains JSON bytes for decimal parsing; this is a public SDK wrapper, not a custom endpoint call |
 | Model, asset and job retrieval | `models.retrieve`, `assets.retrieve`, `jobs.retrieve`: project query and response wrappers, including unrecognized fields |
+| Active UI/MCP model catalog | `models.with_raw_response.list/retrieve`: public privacy, opaque pagination cursor and original response fields; `status=trained` is used only for private model lists, as documented in the published wheel's `resources/models/models.py` |
 | Multipart upload lifecycle | `uploads.create/retrieve/trigger_action`: project query, asset-option aliases, part URLs and processing/result fields; creation does not transfer bytes |
 | Job discovery | `jobs.list`: `jobs` page wrapper, filters, comma-separated `types`, opaque cursor and project/filter preservation on the next page |
 | Workflow approval rejection | `workflows.user_approval(action="reject")`: workflow, job and node identity; this is not general workflow cancellation |
@@ -48,6 +51,18 @@ using the locked environment.
 Synthetic responses intentionally cover partial and extended records. Passing
 these tests proves serialization and parsing of those fixtures, not live endpoint
 acceptance, complete schemas, remote cancellation or successful generation.
+
+The active catalog captures the selected credentials on Blender's main thread,
+uses the adapter's environment-isolated configuration and mirrors online
+permission for workers. Each read closes its own HTTP pool; in-flight reads are
+retired without closing their pool early, and their late results cannot populate
+the replacement connection. Cache entries are in memory per connection until an
+authoritative account/project identity contract enables scoped persistence.
+[Runtime integration status](architecture/runtime.md#active-sdk-catalog) records
+the remaining shared-job and paid-flow boundaries. The original raw `Catalog`
+class remains used by historical smoke scripts; the active Blender path no
+longer constructs it. This partial adoption does not approve those remaining
+prototype API operations as SDK exceptions.
 
 ## Upload and job operation boundaries
 

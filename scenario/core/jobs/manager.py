@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Threaded job manager. Workers never touch bpy; results flow through a queue
 that the Blender pump drains on the main thread."""
+
 import datetime as dt
 import logging
 import queue
@@ -27,8 +28,17 @@ class EstimateResult:
 
 
 class JobManager:
-    def __init__(self, client_factory, registry, paths, *, poll_interval=2.5, sleep=time.sleep,
-                 downloader=assets_api.download_file, uploader=None):
+    def __init__(
+        self,
+        client_factory,
+        registry,
+        paths,
+        *,
+        poll_interval=2.5,
+        sleep=time.sleep,
+        downloader=assets_api.download_file,
+        uploader=None,
+    ):
         self.client_factory = client_factory
         self.registry = registry
         self.paths = paths
@@ -37,15 +47,20 @@ class JobManager:
         self.downloader = downloader
         self.uploader = uploader or assets_api.upload_file
         self.events = queue.Queue()
+        self.catalog_events = queue.Queue()
         self._threads = []
         self._stop = threading.Event()
         self.resume_pending = []
 
     # -- public API (main thread) -----------------------------------------
-    def submit(self, lane, kind, model_id, body, files=None, array_params=(), meta=None, prepare=None):
+    def submit(
+        self, lane, kind, model_id, body, files=None, array_params=(), meta=None, prepare=None
+    ):
         """Queue a generation. `prepare(client, rec)`, when given, runs first on the worker (no bpy) and may rewrite
         `rec.body`: the render lanes use it to ask Prompt Spark for the look before the job is submitted."""
-        client = self.client_factory()  # resolved on the calling (main) thread; workers never touch bpy
+        client = (
+            self.client_factory()
+        )  # resolved on the calling (main) thread; workers never touch bpy
         rec = JobRecord.new(lane=lane, kind=kind, model_id=model_id, body=body, meta=meta)
         if prepare is not None:
             rec.status = "preparing"
@@ -70,7 +85,7 @@ class JobManager:
 
     def resume(self, records=None):
         pending = []
-        for rec in (records if records is not None else self.registry.active()):
+        for rec in records if records is not None else self.registry.active():
             if rec.job_id:
                 pending.append(rec)
             else:
@@ -100,6 +115,15 @@ class JobManager:
             except queue.Empty:
                 return out
 
+    def drain_catalog(self):
+        """Catalog reads are also drained by the main-thread headless MCP calls."""
+        out = []
+        while True:
+            try:
+                out.append(self.catalog_events.get_nowait())
+            except queue.Empty:
+                return out
+
     def has_active(self):
         return any(t.is_alive() for t in self._threads)
 
@@ -115,7 +139,12 @@ class JobManager:
 
     # -- workers ------------------------------------------------------------
     def _spawn(self, target, *args):
-        thread = threading.Thread(target=self._guard, args=(target,) + args, daemon=True, name=f"scenario-{target.__name__}")
+        thread = threading.Thread(
+            target=self._guard,
+            args=(target,) + args,
+            daemon=True,
+            name=f"scenario-{target.__name__}",
+        )
         self._threads.append(thread)
         thread.start()
         return thread
@@ -184,7 +213,15 @@ class JobManager:
                 self._fail(rec, jobs_api.error_text(job) or rec.status)
             return
 
-    MESH_MIMES = ("model/gltf-binary", "model/gltf+json", "model/x-fbx", "model/obj", "model/spz", "model/ply", "application/x-ply")
+    MESH_MIMES = (
+        "model/gltf-binary",
+        "model/gltf+json",
+        "model/x-fbx",
+        "model/obj",
+        "model/spz",
+        "model/ply",
+        "application/x-ply",
+    )
 
     def _download_results(self, client, rec):
         """Fetch every asset record, then download meshes first. For 3D jobs a failed alternate or texture
@@ -198,11 +235,18 @@ class JobManager:
             rec.asset_types[asset_id] = assets_api.asset_type(asset)
             records.append((index, asset_id, asset))
         if rec.kind == "3d":
-            records.sort(key=lambda item: (0 if (item[2].get("mimeType") or "") in self.MESH_MIMES else 1, item[0]))
+            records.sort(
+                key=lambda item: (
+                    0 if (item[2].get("mimeType") or "") in self.MESH_MIMES else 1,
+                    item[0],
+                )
+            )
         errors = {}
         for index, asset_id, asset in records:
             ext = config.ext_for_mime(asset.get("mimeType"))
-            dest = out_dir / config.output_filename(rec.kind, rec.model_id, rec.job_id, index, ext, when=now, asset_id=asset_id)
+            dest = out_dir / config.output_filename(
+                rec.kind, rec.model_id, rec.job_id, index, ext, when=now, asset_id=asset_id
+            )
             url = asset.get("url")
             if not url:
                 errors[asset_id] = "no url"
@@ -250,7 +294,9 @@ class JobManager:
         try:
             records = catalog.fetch_list(privacy=privacy)
         except (ScenarioError, OSError) as err:
-            self.events.put(("catalog_failed", str(getattr(err, "reason", err))))
+            self.catalog_events.put(
+                ("catalog_failed", {"catalog": catalog, "error": str(getattr(err, "reason", err))})
+            )
             return
         detailed = []
         for model_id in model_ids:
@@ -258,7 +304,12 @@ class JobManager:
                 detailed.append(catalog.get(model_id))
             except (ScenarioError, OSError) as err:
                 log.warning("model %s: %s", model_id, err)
-        self.events.put(("catalog", {"privacy": privacy, "records": records, "detailed": detailed}))
+        self.catalog_events.put(
+            (
+                "catalog",
+                {"catalog": catalog, "privacy": privacy, "records": records, "detailed": detailed},
+            )
+        )
 
     def _run_models(self, catalog, model_ids):
         detailed, failed = [], {}
@@ -267,4 +318,6 @@ class JobManager:
                 detailed.append(catalog.get(model_id, refresh=True))
             except (ScenarioError, OSError) as err:
                 failed[model_id] = str(getattr(err, "reason", err))
-        self.events.put(("models", {"detailed": detailed, "failed": failed}))
+        self.catalog_events.put(
+            ("models", {"catalog": catalog, "detailed": detailed, "failed": failed})
+        )

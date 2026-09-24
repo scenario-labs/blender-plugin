@@ -12,6 +12,7 @@ def credentials_changed(self, context):
     from .blender import runtime
 
     runtime.state.account_label = ""
+    runtime.sync_catalog_context()
 
 
 class ScenarioPreferences(bpy.types.AddonPreferences):

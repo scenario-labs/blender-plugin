@@ -15,6 +15,7 @@ from .protocol import ToolSpec
 
 
 def _catalog_ready():
+    generation.process_catalog_events()
     if not runtime.state.catalog_loaded:
         generation.request_catalog()
         raise RuntimeError("The model catalog is still loading; call again in a few seconds")

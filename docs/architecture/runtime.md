@@ -10,22 +10,48 @@ is Blender 5.0; dependency and runtime acceptance have separate gates.
 | Responsibility | Source | Current behavior |
 | --- | --- | --- |
 | Registration | [registry.py](../../scenario/blender/registry.py) | Registers properties, panels, operators, composer, pump and local server integration. The `scenario_blender` headless command serves local MCP on the main thread. |
-| UI lifetime and state | [runtime.py](../../scenario/blender/runtime.py) | Creates the prototype `ScenarioClient`, `Catalog` and `JobManager`; owns process-wide UI/MCP state. |
+| UI lifetime and state | [runtime.py](../../scenario/blender/runtime.py) | Owns the credential-bound SDK catalog and process-wide UI/MCP state; generation still uses the prototype `ScenarioClient` and `JobManager`. |
 | UI generation | [generation.py](../../scenario/blender/generation.py) | Prepares the current lane and submits through the prototype manager. |
 | Main-thread application | [pump.py](../../scenario/blender/pump.py) | Drains prototype events and applies results to Blender. GUI timer handling differs from headless execution. |
-| Local MCP | [server.py](../../scenario/mcp/server.py), [tools_scenario.py](../../scenario/mcp/tools_scenario.py), [mcp_service.py](../../scenario/blender/mcp_service.py) | Queues scene tools for main-thread execution; service tools still call the prototype runtime. |
+| Local MCP | [server.py](../../scenario/mcp/server.py), [tools_scenario.py](../../scenario/mcp/tools_scenario.py), [mcp_service.py](../../scenario/blender/mcp_service.py) | Queues scene tools for main-thread execution; model listing/schema use the same SDK catalog as the UI, while other service tools still call the prototype runtime. |
 | Credentials | [config.py](../../scenario/core/config.py), [prefs.py](../../scenario/prefs.py) | Credentials default to the saved Blender pair; environment credentials require explicit selection and cannot mix with preferences. OAuth is deferred; shared runtime scope/project integration remains #65. |
 
 These are source-inspection findings. Do not infer UI/MCP parity from the shared
 adapter's test coverage, or promote prototype transport usage into an approved
 exception to the mandatory SDK policy in [AGENTS.md](../../AGENTS.md).
 
+## Active SDK catalog
+
+[SDKCatalog](../../scenario/core/api/sdk_catalog.py) binds model list/detail
+reads to the explicitly selected API-key pair. The application owns this context;
+opening or closing a panel does not replace it. The existing manager dispatches
+reads off the main thread, and each read owns and closes its SDK adapter/HTTP
+pool. Retirement disables later requests while an in-flight read keeps its pool
+until cleanup finishes. Extension teardown waits for that cleanup.
+
+The GUI pump and main-thread MCP catalog/schema calls deliver the same queued
+completions. Credential changes retire the context, discard its model/schema
+caches and visible quotes, and reject late success/error events from the old
+context. Main-thread entry points and GUI ticks mirror Blender's online-access
+permission into a thread-safe event; each SDK request, including subsequent
+catalog pages, checks that snapshot. Workers never read `bpy`.
+
+Caches are connection-local and in memory. The active path does not reuse the
+prototype's unscoped disk model cache. Restart therefore requires a catalog
+refresh. Authoritative account/project discovery remains blocked by
+[SDK issue #29](https://github.com/scenario-labs/scenario-sdk-python/issues/29);
+no account identity is derived from credentials and no shared `JobSession` or
+durable account store is activated by catalog reads. Quotes, submission,
+uploads, history and result application still need active SDK adoption under
+#65. Invalidating a visible quote does not establish safe migration of those
+prototype paid jobs or their late callbacks.
+
 ## Replacement components already present
 
 | Component | Source and contract | Integration still required |
 | --- | --- | --- |
 | Scoped SDK commands | [sdk_adapter.py](../../scenario/core/api/sdk_adapter.py), [SDK guide](../SDK_ADOPTION.md) | Route every adopted service operation through the adapter; establish live authentication and provider contracts. |
-| Shared catalog and quotes | [coordinator.py](../../scenario/core/jobs/coordinator.py), [workers.py](../../scenario/core/jobs/workers.py), [job guide](../JOB_COORDINATOR.md#shared-catalog-and-origin-bound-quotes) | Current-schema reads and exact origin-bound quotes use the shared queue; active UI/MCP call sites remain to adopt them. |
+| Shared catalog and quotes | [coordinator.py](../../scenario/core/jobs/coordinator.py), [workers.py](../../scenario/core/jobs/workers.py), [job guide](../JOB_COORDINATOR.md#shared-catalog-and-origin-bound-quotes) | Scoped current-schema reads and exact origin-bound quotes use the shared queue. Active UI/MCP catalog reads now use the SDK adapter, but their adoption of this durable coordinator/quote path still requires authoritative identity. |
 | Durable intent and coordination | [store.py](../../scenario/core/jobs/store.py), [coordinator.py](../../scenario/core/jobs/coordinator.py), [job guide](../JOB_COORDINATOR.md) | Replace view/prototype-owned jobs with one application runtime for UI and MCP; complete recovery UX. |
 | Worker ownership | [workers.py](../../scenario/core/jobs/workers.py) | Attach lifecycle to the application context, not a panel; integrate shutdown and delivery. |
 | Origin and stale-result protection | [job_session.py](../../scenario/blender/job_session.py), [context guide](../BLENDER_JOB_CONTEXT.md) | Bind actual entry points to the selected account, scene and targets, including explicit restart recovery. |

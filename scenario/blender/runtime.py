@@ -11,9 +11,10 @@ import bpy
 
 from .. import prefs as prefs_module
 from ..core import config
-from ..core.api.catalog import Catalog
 from ..core.api.client import ScenarioClient
 from ..core.api.errors import ScenarioError
+from ..core.api.sdk_adapter import Credentials as SDKCredentials
+from ..core.api.sdk_catalog import SDKCatalog
 from ..core.jobs.manager import JobManager
 from ..core.jobs.records import JobRegistry
 
@@ -31,6 +32,7 @@ class RuntimeState:
         self.catalog_loading = False
         self.catalog_error = ""
         self.catalog_credentials = None
+        self.retired_catalogs = []
         self.account_label = ""
         self.last_message = ""
         self.message_at = 0.0
@@ -58,6 +60,9 @@ class RuntimeState:
 
     def reset(self):
         """Forget catalog, jobs and history; keep process-level services (MCP server, composer, previews)."""
+        for catalog in [self.catalog, *self.retired_catalogs]:
+            if catalog is not None:
+                catalog.close(wait=True)
         kept = {name: getattr(self, name) for name in self.SESSION_ATTRS}
         self.__init__()
         for name, value in kept.items():
@@ -120,11 +125,41 @@ def ensure_manager():
 
 
 def ensure_catalog():
+    sync_catalog_context()
     creds = credentials()
-    if state.catalog is None or state.catalog_credentials != (creds.key, creds.secret):
-        state.catalog = Catalog(make_client(), paths().cache_dir)
-        state.catalog_credentials = (creds.key, creds.secret)
+    if state.catalog is None:
+        if not creds.valid:
+            raise ScenarioError(
+                0, "Complete the selected credential source in Scenario Preferences"
+            )
+        try:
+            state.catalog = SDKCatalog(SDKCredentials(creds.key, creds.secret), online=online())
+        except ValueError:
+            raise ScenarioError(
+                0, "The selected credentials are not a valid API key and secret"
+            ) from None
+        state.catalog_credentials = creds
     return state.catalog
+
+
+def sync_catalog_context():
+    """Refresh the worker-safe permission snapshot and retire changed credentials."""
+    if not on_main_thread():
+        raise RuntimeError("Catalog context must be refreshed on Blender's main thread")
+    if state.catalog is not None:
+        if state.catalog_credentials != credentials():
+            from . import generation
+
+            state.catalog.close()
+            state.retired_catalogs.append(state.catalog)
+            state.catalog = None
+            state.catalog_credentials = None
+            generation.clear_catalog()
+        else:
+            state.catalog.update_online(online())
+    state.retired_catalogs[:] = [
+        catalog for catalog in state.retired_catalogs if not catalog.closed
+    ]
 
 
 def enum_items(key):

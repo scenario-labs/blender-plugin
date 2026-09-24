@@ -1,23 +1,47 @@
 # SPDX-FileCopyrightText: 2026 Scenario Inc.
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Applies job-manager events on the main thread."""
+
 import logging
 
 import bpy
 
-from . import apply_3d, apply_audio, apply_image, apply_material, apply_video, generation, props, runtime
+from . import (
+    apply_3d,
+    apply_audio,
+    apply_image,
+    apply_material,
+    apply_video,
+    generation,
+    props,
+    runtime,
+)
 
 log = logging.getLogger("scenario.handlers")
 
-RESULT_HANDLERS = {"image": apply_image.on_image_result, "material": apply_material.on_material_result, "3d": apply_3d.on_3d_result, "video": apply_video.on_video_result,
-                   "audio": apply_audio.on_audio_result}
+RESULT_HANDLERS = {
+    "image": apply_image.on_image_result,
+    "material": apply_material.on_material_result,
+    "3d": apply_3d.on_3d_result,
+    "video": apply_video.on_video_result,
+    "audio": apply_audio.on_audio_result,
+}
 
 
 def dispatch(event):
     name, payload = event
+    if (
+        name in {"catalog", "catalog_failed", "models"}
+        and isinstance(payload, dict)
+        and "catalog" in payload
+    ):
+        runtime.sync_catalog_context()
+        if payload["catalog"] is not runtime.state.catalog:
+            return
     if name == "catalog":
         generation.set_catalog(payload["records"], payload["detailed"])
     elif name == "catalog_failed":
+        payload = payload["error"] if isinstance(payload, dict) else payload
         runtime.state.catalog_loading = False
         runtime.state.catalog_error = str(payload)
         runtime.set_message(f"Could not load models: {payload}")
@@ -54,10 +78,10 @@ def _on_estimate(result):
             if lane_state.estimate_key != result.key:
                 continue
             if result.error:
-                lane_state.estimate_state = 'ERROR'
+                lane_state.estimate_state = "ERROR"
                 lane_state.estimate_error = result.error
             else:
-                lane_state.estimate_state = 'READY'
+                lane_state.estimate_state = "READY"
                 lane_state.estimate_cu = float(result.cu_cost or 0.0)
                 lane_state.estimate_error = ""
 
@@ -73,7 +97,9 @@ def _on_job(name, rec):
         render_lanes.on_result(rec)
         handler = RESULT_HANDLERS.get(rec.kind)
         if handler is None:
-            runtime.set_message(f"{rec.kind} result ready in {rec.files[0] if rec.files else 'the output folder'}")
+            runtime.set_message(
+                f"{rec.kind} result ready in {rec.files[0] if rec.files else 'the output folder'}"
+            )
             return
         try:
             handler(rec)

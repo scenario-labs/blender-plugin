@@ -215,3 +215,37 @@ Offline tests exercise the actual SDK with synthetic HTTP responses and mocked
 storage connections, including the installed extension and shared worker queue.
 No live source is uploaded by these tests. Active UI/MCP wiring, authoritative
 account discovery, production storage policy and user-facing recovery remain #65.
+
+## Scoped inspection and recovery visibility
+
+`JobCoordinator.inspect_upload(request_id)` returns the immutable `StoredUpload`
+for that coordinator's service/account/team/project scope, or `None` when no
+matching local request exists. `upload_recovery_plan()` lists that scope's saved
+records in local request-ID order, each wrapped in a frozen `UploadRecoveryItem`.
+These public methods use the configured upload owner; callers do not need access
+to its private store. The existing upload store, source staging and transfer
+policy configuration is still required. Inactive owners reject inspection.
+
+The snapshot retains the original scope, Blender origin, revision, source
+identity, remote upload/asset IDs and durable part claims/receipts. It contains
+no signed transfer URLs, credentials or original source paths. It is saved
+metadata, not proof that the staged file still exists or that a Blender target
+can receive a reference. No file verification, network request or recovery write
+occurs during inspection. Invalid persisted records raise `StoreError` without
+resetting the evidence or returning a partial recovery list.
+
+| Saved progress | Suggested `UploadRecoveryAction` | Meaning |
+| --- | --- | --- |
+| Prepared | `REVIEW_SOURCE` | Review the staged source before any explicit initialization |
+| Initializing or initialization uncertain, without an upload ID | `RECONCILE_UNKNOWN` | Preserve uncertainty; do not guess an ID or recreate the upload |
+| Uploading, without an active part claim | `REVIEW_TRANSFER` | Review saved receipts and remaining parts or completion |
+| Uploading with an active part claim, part uncertain, finalizing, finalization uncertain, or processing | `POLL_REMOTE` | A known upload can be retrieved explicitly; pending status does not release a claim |
+| Imported, failed or canceled | `FINISHED` | No further upload recovery is suggested; import alone does not apply a Blender reference |
+
+Suggestions never authorize initialization, transfer, completion, retry or a
+claim reset. An in-flight worker may still finish after inspection or context
+deactivation; its receipt stays in the original scope. Earlier snapshots remain
+unchanged, and subsequent commands must still pass their revision/state guards.
+After restart, a newly configured owner reads the same claims without assuming
+that a previous worker is dead. JobSession forwarding and UI/MCP recovery controls
+remain separate integration work.

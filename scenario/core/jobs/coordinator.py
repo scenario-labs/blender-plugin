@@ -190,6 +190,14 @@ class JobCoordinator:
             source, origin=origin, kind=kind, content_type=content_type
         )
 
+    def inspect_upload(self, request_id):
+        """Read this active scope's saved upload without remote or source access."""
+        return self._upload_commands().inspect(request_id)
+
+    def upload_recovery_plan(self):
+        """Return immutable recovery suggestions, never authorization to retry."""
+        return self._upload_commands().recovery_plan()
+
     def initialize_upload(self, request_id, *, expected_revision):
         return self._upload_commands().initialize(request_id, expected_revision=expected_revision)
 

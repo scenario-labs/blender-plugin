@@ -116,8 +116,12 @@ step on every Linux/Windows Blender CI version. A validation failure stops
 packaging and installation and preserves its exit status and diagnostic logs.
 The finished ZIP is still validated separately. When `tools/test_blender.py`
 receives `--zip`, it validates that exact supplied artifact without checking
-the source directory with this new preflight. Its existing checkout identity
-check still applies.
+the source directory with this new preflight. The archive's extension id must
+still match the checkout. `--no-build` uses the same validation path after selecting
+only the exact `dist/ID-VERSION.zip` named by the checkout manifest; the copied
+archive must have that id/version. Neither mode skips ZIP, licence, SDK bundle or
+installed-byte checks. `--fresh` is a compatibility flag for the runner's existing
+fresh-owned-profile behavior, not permission to clear an inherited profile.
 
 The separate [native update fixture](../../tools/test_repository_update.py) tests
 Blender's repository install and update mechanism with two synthetic extension

@@ -102,7 +102,7 @@ class McpContractTests(unittest.TestCase):
                 self.assertIn("Args:", tool["description"])
                 self.assertIn("Returns:", tool["description"])
                 if tool["name"] in {"job_status", "wait_for_job", "import_result"}:
-                    self.assertTrue({"job_id", "id"} <= tool["inputSchema"]["properties"].keys())
+                    self.assertLessEqual({"job_id", "id"}, set(tool["inputSchema"]["properties"]))
                     self.assertEqual(tool["inputSchema"]["required"], [])
         finally:
             server.stop()

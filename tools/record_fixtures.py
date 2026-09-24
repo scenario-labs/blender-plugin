@@ -8,16 +8,19 @@ Offline: uv run --locked --no-env-file python tools/record_fixtures.py --scrub-e
 """
 
 import argparse
+import datetime as dt
 import json
+import os
 import pathlib
 import sys
+import tempfile
+from importlib.metadata import version
 from urllib.parse import parse_qsl
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from scenario.core.api.client import ScenarioClient
-from scenario.core.api.errors import ScenarioError
+from scenario.core.api.sdk_adapter import AdapterError, Credentials, SDKAdapter
 from tools.dev_config import live_settings
 
 FIXTURES = ROOT / "tests" / "fixtures"
@@ -35,15 +38,24 @@ SIGNED_QUERY_KEYS = frozenset(
 SIGNED_URL_PLACEHOLDER = "https://cdn.example/FIXTURE"
 
 MODEL_IDS = [
-    "model_patina-material",
-    "model_patina",
-    "model_patina-material-extract",
-    "model_openai-gpt-image-2",
-    "model_google-gemini-3-1-flash",
     "model_bytedance-seedance-2-0",
+    "model_cartwheel-text-to-motion",
+    "model_google-gemini-3-1-flash",
     "model_meshy-7-img23d",
+    "model_meshy-7-retexture",
     "model_meshy-7-txt23d",
+    "model_meshy-rigging",
+    "model_minimax-h3",
+    "model_openai-gpt-image-2",
+    "model_patina",
+    "model_patina-material",
+    "model_patina-material-extract",
+    "model_rodin-hyper3d-bang",
+    "model_runway-aleph-2",
+    "model_scenario-llm",
+    "model_tripo-retopology",
     "model_tripo-v3-1-image-to-3d",
+    "model_uthana-text-to-motion-3.0",
 ]
 
 
@@ -127,35 +139,66 @@ def main(argv=None):
     if args.scrub_existing:
         scrub_existing()
         return
+    try:
+        record()
+    except (AdapterError, ValueError):
+        # Keep unexpected response and configuration text out of the terminal.
+        print("Fixture recording failed; no successful refresh is recorded.", file=sys.stderr)
+        return 1
+    except OSError:
+        print("Could not write fixtures; no successful refresh is recorded.", file=sys.stderr)
+        return 1
+    return 0
+
+
+def record():
+    """Fetch the complete requested set before replacing any committed fixture."""
+    paths = [f"models/{model_id}.json" for model_id in MODEL_IDS]
+    paths += ["models_list_page1.json", "PROVENANCE.json"]
+    for relative in paths:
+        path = FIXTURES / relative
+        if path.is_symlink() or not path.resolve().is_relative_to(FIXTURES.resolve()):
+            raise ValueError("Fixture output must stay inside its directory")
     settings = live_settings()
-    client = ScenarioClient(
-        settings.credentials.key, settings.credentials.secret, project_id=settings.project_id
-    )
-    out = ROOT / "tests" / "fixtures" / "models"
-    out.mkdir(parents=True, exist_ok=True)
-    for model_id in MODEL_IDS:
-        try:
-            data = client.get(f"/models/{model_id}")
-        except ScenarioError as err:
-            print("MISSING", model_id, err.status)
-            continue
-        write_fixture(out / f"{model_id}.json", data)
-        print("saved", model_id)
-    page1 = client.get("/models", query={"privacy": "public", "pageSize": 5})
-    write_fixture(FIXTURES / "models_list_page1.json", page1)
-    token = page1.get("nextPaginationToken")
-    page2 = client.get(
-        "/models", query={"privacy": "public", "pageSize": 5, "paginationToken": token}
-    )
-    first1 = page1["models"][0]["id"]
-    first2 = page2["models"][0]["id"] if page2.get("models") else None
-    print("pagination param 'paginationToken' works:", first1 != first2)
-    if first1 == first2:
-        page2b = client.get(
-            "/models", query={"privacy": "public", "pageSize": 5, "pageToken": token}
-        )
-        print("fallback 'pageToken' works:", page2b["models"][0]["id"] != first1)
+    credentials = Credentials(settings.credentials.key, settings.credentials.secret)
+    records, endpoints = {}, {}
+    # This standalone, explicitly invoked read tool has no Blender permission
+    # state. It never estimates, generates, downloads media or discovers identity.
+    with SDKAdapter(credentials, project_id=settings.project_id, online=lambda: True) as client:
+        for model_id in MODEL_IDS:
+            relative = f"models/{model_id}.json"
+            model = client.model(model_id)
+            if model.get("id") != model_id:
+                raise AdapterError("Scenario returned a different model identity")
+            records[relative] = {"model": model}
+            endpoints[relative] = f"GET /models/{model_id}"
+        records["models_list_page1.json"] = client.model_page(privacy="public", page_size=5)
+        endpoints["models_list_page1.json"] = "GET /models?privacy=public&pageSize=5"
+    records["PROVENANCE.json"] = {
+        "recordedAt": dt.datetime.now(dt.UTC).date().isoformat(),
+        "recorder": "tools/record_fixtures.py",
+        "sdkVersion": version("scenario-sdk"),
+        "scrub": "Known account fields use synthetic placeholders; signed URLs are replaced.",
+        "files": endpoints,
+    }
+    FIXTURES.mkdir(parents=True, exist_ok=True)
+    # Stage every sanitized output first. Publish provenance last and remove
+    # an older run's claim before any replacements; an interrupted write cannot
+    # make a partially refreshed set look like a completed recording run.
+    with tempfile.TemporaryDirectory(prefix=".recording-", dir=FIXTURES) as temp:
+        staged = pathlib.Path(temp)
+        for relative, data in records.items():
+            target = staged / relative
+            target.parent.mkdir(parents=True, exist_ok=True)
+            write_fixture(target, data)
+        (FIXTURES / "PROVENANCE.json").unlink(missing_ok=True)
+        for relative in records:
+            destination = FIXTURES / relative
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            os.replace(staged / relative, destination)
+    for relative in records:
+        print("saved", relative)
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

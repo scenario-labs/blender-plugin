@@ -125,6 +125,33 @@ class SDKBundleTests(unittest.TestCase):
         self.assertEqual(json.loads(requests[-1].content), {"prompt": "synthetic"})
         self.assertTrue(client.owns_estimate(quote))
 
+    def test_single_model_page_preserves_wrapper_and_scope_in_bundled_sdk(self):
+        import httpx
+
+        requests = []
+        page = {
+            "models": [{"id": "fixture-model", "future": True}],
+            "nextPaginationToken": "opaque+/= cursor",
+            "futurePage": 42,
+        }
+
+        def respond(request):
+            requests.append(request)
+            return httpx.Response(200, json=page)
+
+        client = self.adapter(respond, project="fixture-project")
+        module = submodule("core.api.sdk_adapter")
+        with online_access(False), self.assertRaises(module.AdapterError):
+            client.model_page(page_size=5)
+        self.assertEqual(requests, [])
+        with online_access(True):
+            self.assertEqual(client.model_page(page_size=5), page)
+        self.assertEqual(len(requests), 1)
+        self.assertEqual(
+            dict(requests[0].url.params),
+            {"privacy": "public", "pageSize": "5", "projectId": "fixture-project"},
+        )
+
     def test_bearer_scope_overrides_ambient_sdk_auth_in_blender(self):
         import httpx
 

@@ -51,10 +51,30 @@ uv run --locked --no-env-file python tools/record_fixtures.py --scrub-existing
 
 It preserves compact versus indented JSON and a final newline where present;
 unchanged files are not rewritten. Invalid JSON stops cleanup before any file is
-written. The normal recorder also sanitizes each fixture write, but still uses
-the prototype transport and its existing partial model list. Migration to the
-shared SDK adapter, complete recording coverage and truthful recording metadata
-are separate remaining work under #9. The cleanup command does not refresh API records or download media.
+written. The cleanup command does not refresh API records or download media.
+
+The normal recorder uses the shared SDK adapter and the pinned SDK's public
+`models.with_raw_response.retrieve/list` methods. It reads all eighteen model
+records named in `MODEL_IDS` and one public page of five models, using the
+explicit test credential pair and optional project from the environment. It
+reconstructs each detail's `model` wrapper around the adapter's complete model
+record; unrelated top-level detail metadata is not recorded. The list page
+retains its wrapper, unknown fields and next-page cursor. No speculative
+pagination parameter, generation request or media download is performed.
+
+Every required read must succeed before local files change. A missing or failed
+model stops the run rather than silently retaining a stale record. Sanitized
+files are staged, then replaced individually; `PROVENANCE.json` is published
+last with the UTC recording date, SDK version, recorder path, scrub policy and
+written-file/endpoint map. It records no account identity or ownership assertion.
+A failed publication may leave some complete new fixtures, but removes the prior
+provenance first so it cannot claim the partial set is a successful refresh.
+Inspect the diff and retry the explicit read command if needed. Temporary staging
+is cleaned when the process exits normally, including handled failures; an abrupt
+process kill can leave a `.recording-*` directory to inspect and remove.
+
+No fixture refresh or provenance file is included in this change. Real endpoint
+acceptance and maintainer confirmation of media rights remain under #9.
 
 Live recording requires explicitly selected test credentials and authorization;
 see [contributor configuration](../../CONTRIBUTING.md#environment-variables).

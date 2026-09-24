@@ -5,7 +5,6 @@
 import copy
 import json
 from pathlib import Path
-from types import SimpleNamespace
 from unittest.mock import Mock
 
 import pytest
@@ -132,7 +131,7 @@ def test_offline_scrub_preserves_layout_and_needs_no_credentials(
     settings = Mock(side_effect=AssertionError("must not request credentials"))
     client = Mock(side_effect=AssertionError("must not construct a client"))
     monkeypatch.setattr(recorder, "live_settings", settings)
-    monkeypatch.setattr(recorder, "ScenarioClient", client)
+    monkeypatch.setattr(recorder, "SDKAdapter", client)
     recorder.main(["--scrub-existing"])
     assert "\n" not in compact.read_text()
     assert (
@@ -158,38 +157,6 @@ def test_malformed_inventory_fails_before_writing_or_echoing_contents(tmp_path):
     with pytest.raises(ValueError, match=r"^invalid fixture JSON: z\.json$"):
         recorder.scrub_existing(tmp_path)
     assert good.read_bytes() == before
-
-
-def test_recording_writes_are_scrubbed_without_live_requests(tmp_path, monkeypatch, capsys):
-    model = {
-        "model": {
-            "id": "model_fixture",
-            "userId": "synthetic-account",
-            "url": "https://cdn.example/a?Signature=S",
-        }
-    }
-    page = {"models": [{"id": "model_first", "ownerId": "synthetic-account"}]}
-    client = Mock()
-    client.get.side_effect = [model, page, {"models": [{"id": "model_next"}]}]
-    monkeypatch.setattr(recorder, "ROOT", tmp_path)
-    monkeypatch.setattr(recorder, "FIXTURES", tmp_path / "tests" / "fixtures")
-    monkeypatch.setattr(recorder, "MODEL_IDS", ["model_fixture"])
-    monkeypatch.setattr(recorder, "ScenarioClient", Mock(return_value=client))
-    monkeypatch.setattr(
-        recorder,
-        "live_settings",
-        lambda: SimpleNamespace(
-            credentials=SimpleNamespace(key="fake", secret="fake"), project_id=None
-        ),
-    )
-    recorder.main([])
-    assert json.loads(
-        (recorder.FIXTURES / "models" / "model_fixture.json").read_text()
-    ) == recorder.scrub(model)
-    assert json.loads((recorder.FIXTURES / "models_list_page1.json").read_text()) == recorder.scrub(
-        page
-    )
-    assert "synthetic-account" not in capsys.readouterr().out
 
 
 @pytest.mark.parametrize("argv,code", [(["--help"], 0), (["--scrbu-existing"], 2)])

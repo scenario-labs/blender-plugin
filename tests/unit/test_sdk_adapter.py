@@ -509,3 +509,66 @@ def test_job_discovery_rejects_a_closed_client(adapter):
     client.close()
     with pytest.raises(AdapterError, match="closed"):
         client.jobs()
+
+
+@pytest.mark.parametrize("privacy", ["public", "private"])
+def test_model_page_preserves_wrapper_and_exact_cursor_without_auto_pagination(adapter, privacy):
+    requests = []
+    page = {
+        "models": [{"id": "one", "unknown": True}],
+        "nextPaginationToken": "next",
+        "extension": [1],
+    }
+
+    def handle(request):
+        requests.append(request)
+        return httpx.Response(200, json=page)
+
+    client = adapter(handle, project_id="fixture-project")
+    assert (
+        client.model_page(privacy=privacy, page_size=5, pagination_token="opaque+/= cursor") == page
+    )
+    assert len(requests) == 1
+    expected = {
+        "privacy": privacy,
+        "pageSize": "5",
+        "projectId": "fixture-project",
+        "paginationToken": "opaque+/= cursor",
+    }
+    if privacy == "private":
+        expected["status"] = "trained"
+    assert dict(requests[0].url.params) == expected
+
+
+@pytest.mark.parametrize(
+    "options",
+    [
+        {"privacy": "unlisted"},
+        {"page_size": 0},
+        {"page_size": 501},
+        {"page_size": True},
+        {"page_size": 2.5},
+        {"pagination_token": ""},
+        {"pagination_token": 1},
+    ],
+)
+def test_model_page_rejects_invalid_options_before_dispatch(adapter, options):
+    client = adapter(lambda request: pytest.fail("invalid options must not dispatch"))
+    with pytest.raises(ValueError):
+        client.model_page(**options)
+
+
+@pytest.mark.parametrize(
+    "page",
+    [
+        {},
+        {"models": None},
+        {"models": [None]},
+        {"models": [{"id": ""}]},
+        {"models": [], "nextPaginationToken": 1},
+    ],
+)
+def test_model_page_rejects_malformed_records_and_cursor(adapter, page):
+    client = adapter(lambda request: httpx.Response(200, json=page))
+    with pytest.raises(AdapterError):
+        client.model_page()

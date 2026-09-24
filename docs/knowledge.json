@@ -540,7 +540,7 @@
         "scenario/prefs.py": "bfd966d4a6dab2a8505caa3e9ed58d71b71d57b29b673feb5344ad6b8ed72e92",
         "scenario/core/config.py": "74a45b99fde47d741710dbf2a9d8051f2b31903f10ecae679d061340c62fb1be",
         "scenario/core/api/client.py": "4473ecf5dbd7522efe358b99bafda0fd4fdd01c26a678e81fc82acd97bf9632d",
-        "scenario/core/api/assets.py": "9bbbb7054a9dd5a33587a787440cd76261ca873281ada9bb5152079d263fff4d",
+        "scenario/core/api/assets.py": "f450202822d63f3caec36bb88c5e8c6aeb744e3a6ead66626578791a94b81f78",
         "scenario/core/jobs/records.py": "afe8476e1232d525de1039a43bc68e8c28c1680fee8fadcacde12285e4c67125",
         "scenario/blender/runtime.py": "2afa6267f835569288ae6d1947af5410b05a0bbdcd3bbad985ff30a6dcb8a000",
         "scenario/blender/generation.py": "8a3b2cc6b1992f3094e47e2ab5bd5af1f7babeb6dae86d7710ec91a1fd65895b",

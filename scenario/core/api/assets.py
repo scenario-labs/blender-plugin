@@ -3,6 +3,7 @@
 """Assets: read, download, upload (base64 or multipart)."""
 
 import base64
+import http.client
 import math
 import pathlib
 import shutil
@@ -95,15 +96,27 @@ def _safe_url(url):
 
 
 def fetch_url_text(url, timeout=60, max_bytes=MAX_TEXT_BYTES):
-    """Read an HTTPS text asset up to a byte limit, rejecting oversized bodies."""
+    """Validate the initial HTTPS URL and reject oversized or incomplete text."""
     _check_url(url)
     if type(max_bytes) is not int or max_bytes < 1:
         raise ValueError("max_bytes must be a positive integer")
     req = urllib.request.Request(url, headers={"User-Agent": user_agent_string()})
     chunks, total = [], 0
     with urllib.request.urlopen(req, timeout=timeout) as resp:
+        length = resp.getheader("Content-Length")
+        if resp.getheader("Transfer-Encoding", "").lower() == "chunked":
+            length = None  # HTTP chunk framing takes precedence over Content-Length.
+        try:
+            length = int(length) if length is not None else None
+            if length is not None and length < 0:
+                raise ValueError
+        except ValueError:
+            raise ScenarioError(0, "invalid text asset Content-Length") from None
         while True:
-            chunk = resp.read(min(64 * 1024, max_bytes - total + 1))
+            try:
+                chunk = resp.read(min(64 * 1024, max_bytes - total + 1))
+            except http.client.IncompleteRead:
+                raise ScenarioError(0, f"incomplete text asset: {_safe_url(url)}") from None
             if not chunk:
                 break
             total += len(chunk)
@@ -112,6 +125,8 @@ def fetch_url_text(url, timeout=60, max_bytes=MAX_TEXT_BYTES):
                     0, f"text asset larger than {max_bytes} bytes: {_safe_url(url)}"
                 )
             chunks.append(chunk)
+        if length is not None and total != length:
+            raise ScenarioError(0, f"incomplete text asset: {_safe_url(url)}")
     return b"".join(chunks).decode("utf-8", errors="replace")
 
 

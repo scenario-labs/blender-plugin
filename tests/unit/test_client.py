@@ -129,6 +129,9 @@ def test_asset_helpers_send_the_same_user_agent(monkeypatch, tmp_path):
         def __init__(self, payload):
             self._payload = payload
 
+        def getheader(self, name, default=None):
+            return default
+
         def read(self, *args):
             out, self._payload = self._payload, b""
             return out

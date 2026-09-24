@@ -157,6 +157,11 @@ Optional local hooks are installed with `make hooks`; see [installation and scop
 Offline tests need no Scenario account. Live smoke tests spend credits and
 require explicit authorization; they are outside the default checks.
 
+Native CI covers Blender 5.0.1, 5.1.2 and 5.2.1 on Linux and Windows for pull
+requests. A separate informational workflow schedules Blender 5.1.2 checks on
+macOS Apple silicon and Windows x64 weekly; see [run evidence and maintenance](CONTRIBUTING.md#bumping-the-blender-matrix)
+for its first hosted acceptance and failure tracking.
+
 ## Sibling integrations
 
 Scenario for Blender is one of several Scenario integrations. The plugins share

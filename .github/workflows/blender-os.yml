@@ -1,0 +1,106 @@
+# SPDX-FileCopyrightText: 2026 Scenario Inc.
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Informational only: do not add these legs to ci-ok or required checks.
+# GitHub can disable schedules after 60 days of repository inactivity.
+name: blender-os
+
+on:
+  schedule:
+    - cron: "17 4 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Serialize both scheduled and manual runs so failure issues cannot race.
+concurrency:
+  group: blender-os
+  cancel-in-progress: false
+
+jobs:
+  headless:
+    name: blender ${{ matrix.version }} (${{ matrix.os }})
+    if: github.repository == 'scenario-labs/blender-plugin'
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            version: "5.1.2"
+            sha256: "f104ffee2ba6aee32328e5c203b7e4608d8a1745f7bbcf2766f3b9777e8fbe17"
+          - os: windows-latest
+            version: "5.1.2"
+            sha256: "345bedea7b0acf7cc9666423d8553f9129622aea34ded65c23e8cb70f83f14ff"
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+        with:
+          version-file: pyproject.toml
+          enable-cache: false
+      - run: uv sync --locked
+      - name: Fetch the pinned official Blender archive
+        env:
+          BLENDER_VERSION: ${{ matrix.version }}
+          BLENDER_SHA256: ${{ matrix.sha256 }}
+        run: |
+          uv run --locked --no-env-file python tools/fetch_blender.py \
+            --version "$BLENDER_VERSION" --sha256 "$BLENDER_SHA256" \
+            --cache "$RUNNER_TEMP/blender-download" \
+            > "$RUNNER_TEMP/blender-path.txt" 2> "$RUNNER_TEMP/blender-download.log"
+          echo "BLENDER=$(cat "$RUNNER_TEMP/blender-path.txt")" >> "$GITHUB_ENV"
+      - name: Test the exact ZIP in a new profile
+        env:
+          BLENDER_VERSION: ${{ matrix.version }}
+        run: |
+          uv run --locked --no-env-file python tools/test_blender.py \
+            --expected-version "$BLENDER_VERSION" --suite all \
+            --artifacts "$RUNNER_TEMP/scenario-tests" 2>&1 | tee "$RUNNER_TEMP/blender-tests.log"
+      - name: Preserve download logs, ZIP, reports and native logs
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: blender-tests-${{ matrix.os }}
+          retention-days: 14
+          if-no-files-found: warn
+          path: |
+            ${{ runner.temp }}/blender-download.log
+            ${{ runner.temp }}/blender-tests.log
+            ${{ runner.temp }}/scenario-tests/*/*.log
+            ${{ runner.temp }}/scenario-tests/*/result.json
+            ${{ runner.temp }}/scenario-tests/*/tests.json
+            ${{ runner.temp }}/scenario-tests/*/*.zip
+
+  report:
+    name: report-native-failures
+    needs: headless
+    # A timed-out OS runner cannot report its own failure. Whole-workflow
+    # cancellation is deliberate and does not create tracking issues.
+    if: ${{ always() && !cancelled() && github.repository == 'scenario-labs/blender-plugin' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      actions: read
+      issues: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+        with:
+          version-file: pyproject.toml
+          enable-cache: false
+      - name: Inspect this run attempt and report failed OS jobs
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          uv run --no-project --no-env-file python tools/report_ci_failure.py \
+            --repository "$GITHUB_REPOSITORY" --version 5.1.2 \
+            --run-id "$GITHUB_RUN_ID" --run-attempt "$GITHUB_RUN_ATTEMPT"

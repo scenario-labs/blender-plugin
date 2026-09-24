@@ -14,6 +14,8 @@ Quick start: download `scenario-<version>.zip` from the releases (or run `uv run
 
 **For contributors and coding agents:** read [AGENTS.md](AGENTS.md), the canonical
 rulebook shared through `.claude/CLAUDE.md`, and [CONTRIBUTING.md](CONTRIBUTING.md).
+See [commits, branches and pull requests](CONTRIBUTING.md#commits-branches-and-pull-requests)
+for the review workflow and PR checklist.
 Canonical [agent tools](docs/development/agents.md) describe the shared skills and commands.
 
 ## Why

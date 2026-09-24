@@ -100,18 +100,27 @@ transfer or upload-abort method. The generated completion parameter is
 the literal's serialization; service acceptance of that action remains to verify.
 Do not silently substitute the docstring value or invent an abort endpoint.
 
-Before enabling file transfer, define a separate storage transport that checks
-online permission and destination policy, sends no Scenario Authorization header,
-does not follow redirects implicitly, and keeps signed URL queries out of logs
-and persistent records. Expiry, part transfer failure, completion uncertainty and
-server-side cleanup still need implementation and verification. An upload
+The [upload components](SDK_UPLOADS.md#shared-worker-commands) now stage private
+source snapshots, check signed destinations and expiry, persist mutation claims
+and send bounded parts through a separate storage transport. That transport checks
+online permission, sends no Scenario Authorization header and never follows
+redirects or retries implicitly. Saved records contain no signed transfer URLs.
+Durable claims preserve evidence after failure or interruption; explicit retrieval
+of a known upload can observe its status without replaying a mutation. An upload
 completion acknowledgement alone does not establish that an asset is imported.
+
+The optional [JobSession facade](BLENDER_JOB_CONTEXT.md#upload-references) forwards
+these commands through the shared workers with captured-origin admission and
+main-thread delivery guards. Active UI/MCP controls, authoritative account/project
+discovery, production storage-host policy, staged-source retention/cleanup and
+user-facing recovery remain separate work. Server-side cleanup and live service
+acceptance remain unverified; no SDK upload-abort method was established.
 
 The [signed result transport](RESULT_TRANSFERS.md) implements the download
 primitive with explicit trusted-host configuration, bounded reads and atomic
 non-overwriting output. The coordinator now connects scoped SDK job/asset metadata to persisted download
 state and explicit retries with fresh URLs. Production host selection, interrupted
-worker reconciliation, UI wiring and upload-part transfers remain separate work.
+worker reconciliation and UI wiring remain separate work.
 
 ### Reconciliation and cancellation
 
@@ -224,10 +233,11 @@ bounds, catalog discovery, model selection UI or paid execution. Remote-MCP
 `run_with` metadata is not silently assumed to exist in REST. Upload/job dependency contracts
 are mapped above; multipart metadata commands use the adapter as described in
 [SDK_UPLOADS.md](SDK_UPLOADS.md). Signed result downloads have a standalone
-[transport primitive](RESULT_TRANSFERS.md); upload byte transfer, durable transfer
-recovery, account/project discovery, search/organization and workflow cancellation
-remain to implement. Submission uses the coordinator contract above; live
-acceptance remains separate.
+[transport primitive](RESULT_TRANSFERS.md). Upload byte transfer, durable claims,
+scoped inspection and explicit known-upload status refresh are implemented as
+described above. User-facing transfer recovery, authoritative account/project
+discovery, search/organization and workflow cancellation remain integration work.
+Submission uses the coordinator contract above; live acceptance remains separate.
 
 Run the adapter and command contracts offline with:
 

@@ -5,6 +5,7 @@
 import os
 import runpy
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -81,7 +82,9 @@ def test_uv_dotenv_precedence_and_no_file_loading(tmp_path):
         if not k.startswith(("SCENARIO_", "UV_ENV", "UV_NO_ENV"))
     }
     env["SCENARIO_TEST_API_KEY"] = "process-key"
-    command = ["uv", "run", "--locked", "--offline"]
+    # Keep alternate-interpreter runs from replacing the active test environment
+    # with the default .python-version interpreter while pytest is still using it.
+    command = ["uv", "run", "--locked", "--offline", "--python", sys.executable]
     code = (
         "from tools.dev_config import live_settings; s=live_settings(); "
         "assert s.credentials.key == 'process-key'; "

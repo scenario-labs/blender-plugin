@@ -48,4 +48,7 @@ line-ending = "lf"
 
 [tool.pytest.ini_options]
 testpaths = ["tests/unit"]
-addopts = "-q"
+addopts = "-q --strict-markers"
+markers = [
+    "allow_network: explicitly permit non-loopback connections in this test process",
+]

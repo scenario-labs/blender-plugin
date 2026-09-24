@@ -287,7 +287,7 @@
       "path": "docs/SDK_UPLOADS.md",
       "coverage": "inherited",
       "reviewed_at": "2026-09-24",
-      "limits": "Existing guide indexed during this intake, without a fresh claim-by-claim or live verification; consult current integration status and issue acceptance. Windows upload source identity comparisons and their offline regressions were reviewed; other API and integration claims retain their prior limits. Scoped upload inspection, conservative recovery mapping and their offline regressions were reviewed in this pass; active runtime adoption and other claims retain their prior limits. Optional upload origin guards and their offline claim/race regressions were inspected; no JobSession upload forwarding or live acceptance is implied. Optional JobSession upload forwarding and installed-native origin/delivery regressions were inspected; active UI/MCP, production host policy and identity discovery remain separate.",
+      "limits": "Windows upload source identity, public scoped inspection, conservative recovery mapping, optional core origin guards and JobSession forwarding were inspected with their listed offline and installed-native regressions. Other API and integration claims retain prior evidence rather than a fresh claim-by-claim verification. Active UI/MCP controls, production storage-host policy and authoritative account/project identity discovery remain separate; no live/paid operation acceptance is claimed.",
       "sources": {
         "scenario/core/api/sdk_adapter.py": "a5f8a5da9ce1f482dbe1af19b43d00f211b66401781fa03d18c9fd3ef2340467",
         "tests/unit/test_sdk_uploads.py": "52a3a5d7016289264e7065c3945eec929f9d57feb61b0f7c1436b195fe3e06f6",
@@ -391,7 +391,7 @@
       "path": "docs/architecture/runtime.md",
       "coverage": "source-reviewed",
       "reviewed_at": "2026-09-24",
-      "limits": "This pass inspected the active SDK catalog connection, UI/MCP delivery and offline contracts. Other component claims retain their prior coverage limits; no live service, paid-flow or authoritative account discovery acceptance is claimed. Scoped upload inspection, conservative recovery mapping and their offline regressions were reviewed in this pass; active runtime adoption and other claims retain their prior limits. Optional upload origin guards and their offline claim/race regressions were inspected; no JobSession upload forwarding or live acceptance is implied. Optional JobSession upload forwarding and installed-native origin/delivery regressions were inspected; active UI/MCP, production host policy and identity discovery remain separate.",
+      "limits": "The active SDK catalog connection, catalog UI/MCP delivery and offline contracts were inspected. Upload inspection, conservative recovery mapping, core origin guards and optional JobSession forwarding were inspected with their listed offline and installed-native regressions. Other component claims retain prior coverage limits. Active upload UI/MCP controls, production storage-host policy and authoritative account/project identity discovery remain separate; no live service or paid-flow acceptance is claimed.",
       "sources": {
         "scenario/blender/runtime.py": "e2aea444fd9ed8568038d709d3e0948a411dd26ba94994bb09efb55a0a2c7e31",
         "scenario/blender/generation.py": "68958e267939eeb096d1e682252ffc0f88a1a944591495a55436d01382f77c8d",

@@ -97,15 +97,63 @@ for each release.
 from an explicit inventory of already-built archives. It uses Blender's native
 `extension validate` and `extension server-generate` commands in a fresh isolated
 profile with online access disabled. It never rebuilds a ZIP or changes a manifest.
-The helper is a partial implementation of
-[#37](https://github.com/scenario-labs/blender-plugin/issues/37); release discovery,
-automatic retention selection, the site builder, Pages deployment and native
-setup/update controls remain separate integration work. Successful local generation
+The helpers are a partial implementation of
+[#37](https://github.com/scenario-labs/blender-plugin/issues/37); network discovery,
+the site builder, Pages deployment and native setup/update controls remain
+separate integration work. Successful local generation
 does not prove that an archive was published, attested or accepted at runtime.
+
+### Select retained releases offline
+
+[release_inventory.py](../tools/release_inventory.py) selects exact downloaded
+archives from a complete, recent paginated GitHub release snapshot. Export that
+snapshot with this read-only command:
+
+```sh
+gh api repos/scenario-labs/blender-plugin/releases --paginate --slurp > releases.json
+```
+
+Keep each release's downloaded `scenario-X.Y.Z.zip` and `SHA256SUMS` together in
+`downloaded-assets/blender-plugin-vX.Y.Z/`. Verify their provenance using the
+publication checks above. The selector itself makes no network requests and does
+not verify attestations, tag commit identity, snapshot completeness or current
+publication state. A metadata file and matching checksum are not provenance.
+
+Supply the supported matrix explicitly. This example selects for Blender 5.0,
+5.1 and 5.2 and the extension's four declared platforms:
+
+```sh
+uv run --locked --no-env-file python tools/release_inventory.py \
+  --releases releases.json --assets downloaded-assets --output selected-assets \
+  --blender-version 5.0.0 --blender-version 5.1.0 --blender-version 5.2.0 \
+  --platform linux-x64 --platform windows-x64 \
+  --platform macos-arm64 --platform macos-x64
+```
+
+For each Blender/platform pair, selection chooses the highest numeric stable
+version whose manifest covers it, regardless of release dates or snapshot order.
+It retains the union of those choices, including an older release needed for a
+different compatibility range. Drafts, prereleases and historical tags outside
+`blender-plugin-vX.Y.Z` are excluded. All remaining candidates must have exact
+tag/archive/manifest version and extension identity, canonical release asset
+URLs, bounded sizes, matching checksums, safe ZIP layouts and valid SDK bundles.
+A damaged newer candidate fails the run instead of silently downgrading.
+
+Uncovered matrix cells and overlapping retained Blender/platform ranges fail.
+The selector never changes a manifest to resolve overlap, rewrites an archive,
+or invents compatibility. Selection uses declared Blender/platform ranges;
+Python wheel support and runtime acceptance still need native validation. The
+new output directory contains only the unchanged selected ZIPs and an inventory
+accepted by `repository.py`. Existing output is preserved and failed preparation
+leaves no partial snapshot. Keep the inputs and output untracked. Empty adopted
+release channels fail; prototype releases are not substitutes.
+
+### Validate and generate the repository
 
 Before using this for a published repository, verify each selected stable release
 and its downloaded assets using the publication checks above. Exclude drafts and
-prereleases. Create `inventory.json` next to the exact downloaded ZIP files with
+prereleases. Use the selector's output, or create `inventory.json` manually next
+to the exact downloaded ZIP files with
 this structure, replacing the illustrative version, filename, checksum and size
 with the verified values:
 

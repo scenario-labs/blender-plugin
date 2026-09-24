@@ -373,6 +373,40 @@ To change a pinned version, verify each platform archive checksum in the officia
 [Blender download directory](https://download.blender.org/release/), update the
 matrix version and hash together, and inspect the actual runtime report from CI.
 
+### Bumping the Blender matrix
+
+The separate [weekly OS workflow](.github/workflows/blender-os.yml) builds and runs
+the full native suite on Blender **5.1.2**, macOS Apple silicon and Windows x64.
+It is scheduled for Monday 04:17 UTC and supports manual dispatch. It has no
+pull-request trigger, is outside `ci-ok`, and must not become a required check.
+The workflow uses the same checksum-verifying fetcher and disposable-profile
+runner as local development, with no Actions download cache.
+
+Update each `version` and `sha256` together after checking that the official
+`Blender<series>/blender-<version>.sha256` lists both archives:
+`blender-5.1.2-macos-arm64.dmg` and `blender-5.1.2-windows-x64.zip` for the initial
+matrix. Confirm that `macos-latest` still supplies Apple silicon and
+`windows-latest` supplies x64 in the [runner image inventory](https://github.com/actions/runner-images#available-images).
+Then dispatch `gh workflow run blender-os.yml`, watch the run and inspect both
+runtime versions, native results and retained artifacts before claiming support.
+
+Each leg retains download/test logs, the candidate ZIP and JSON reports for
+14 days. Failures create or comment on an exact-title open issue labelled
+`area:ci` and the OS/Blender series. Workflow concurrency serializes reporting;
+the reporter reads every issue page and refuses ambiguous duplicates. It uses
+only the job's GitHub token, never Scenario credentials. The stdlib reporter uses
+`uv run --no-project --no-env-file` so a failed development dependency sync does
+not prevent reporting. A runner outage, cancellation or unavailable checkout/tool
+can still prevent the reporting step; inspect the Actions run directly then.
+Do not loosen tests to make a platform pass. Triage real incompatibilities into
+focused bugs, and close a workflow-error tracking issue after its fix is verified.
+GitHub may disable scheduled workflows after 60 days without repository activity;
+re-enable from the Actions tab when needed.
+
+The workflow definition and offline reporting tests do not establish hosted
+macOS acceptance. The first default-branch dispatch and repeated-failure issue
+deduplication remain acceptance checks under #42.
+
 
 ### Portable build, install and download tools
 
@@ -427,8 +461,9 @@ Blender executable. Older builds from the previous tool may leave randomly named
 version directories; remove those manually when no longer in use.
 Other platforms require a separately installed Blender selected with `BLENDER`.
 No download happens implicitly during build, install or tests.
-The macOS downloader is available locally; the setup action and native CI matrix
-still cover Linux and Windows only. Scheduled macOS coverage remains tracked in #42.
+The reusable setup action and pull-request native matrix cover Linux and Windows.
+The separate weekly workflow adds macOS; its actual hosted acceptance is tracked
+in #42 as described above.
 
 Screenshot probes prepare the blockout form without submitting a design.
 Design/refine operators also respect offline access, missing credentials and

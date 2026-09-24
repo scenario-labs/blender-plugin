@@ -1,7 +1,7 @@
 {
   "version": 1,
   "index": "docs/index.md",
-  "base_revision": "e013a26d7208f472b0d5d6fee1534763e2632f22",
+  "base_revision": "cdc8775a4a074a4997eca84cec2699e0dbb16e8c",
   "documents": [
     {
       "path": ".claude/rules/blender-glue.md",
@@ -92,7 +92,7 @@
       "path": "README.md",
       "coverage": "inherited",
       "reviewed_at": "2026-09-24",
-      "limits": "Public entry points, supported minimum, explicit credential selection, SDK bundle, privacy and contributor links reviewed against listed sources. Product lane summaries inherit the user guide and known runtime limitations; no new live generation, platform compatibility, hosted update, or native UI acceptance is claimed. Logo bytes and original MIT notice retained from the official skills repository. Sibling links retain their prior review. Browser-rendered GitHub landing page review remains separate. Markdown handbook renderer, template slots, copied/inline images, metadata validation and external-font disclosure reviewed. This does not refresh inherited product claims or screenshot acceptance, publish the site or attach release assets. Repeat-build asset ownership/cleanup, literal template examples and directory-link handling reviewed with regression tests; desktop and narrow renderer presentation inspected separately in isolated browser profiles. Optional uv-managed hooks and staged secret/path guard inspected with disposable Git regression coverage; full-tree prototype normalization, complete secret detection and repository protection remain separate. Blockout link and lane instructions reviewed against its current controls and stored-plan behavior. Hero alt text describes the new labelled offline Image fixture, without implying a price quote or generated result. Licence wording and scoped MCP/SPZ acknowledgements reviewed against source headers, upstream transport documentation and Blender licence guidance. This preserves existing licences and source notices; it does not decide relicensing or certify asset rights. Weekly macOS/Windows workflow and exact-title failure reporting inspected with offline pagination, failure and actual shell exit-status regressions; hosted dispatch, platform runtime and real issue deduplication remain separate acceptance evidence. Downstream current-run matrix reporting, bounded attempt identity, failed-only reruns and setup/timeout/artifact failure wording reviewed with offline regressions; intentional workflow cancellation remains excluded and hosted timeout reporting awaits execution.",
+      "limits": "Public entry points, supported minimum, explicit credential selection, SDK bundle, privacy and contributor links reviewed against listed sources. Product lane summaries inherit the user guide and known runtime limitations; no new live generation, platform compatibility, hosted update, or native UI acceptance is claimed. Logo bytes and original MIT notice retained from the official skills repository. Sibling links retain their prior review. Browser-rendered GitHub landing page review remains separate. Markdown handbook renderer, template slots, copied/inline images, metadata validation and external-font disclosure reviewed. This does not refresh inherited product claims or screenshot acceptance, publish the site or attach release assets. Repeat-build asset ownership/cleanup, literal template examples and directory-link handling reviewed with regression tests; desktop and narrow renderer presentation inspected separately in isolated browser profiles. Optional uv-managed hooks and staged secret/path guard inspected with disposable Git regression coverage; full-tree prototype normalization, complete secret detection and repository protection remain separate. Blockout link and lane instructions reviewed against its current controls and stored-plan behavior. Hero alt text describes the new labelled offline Image fixture, without implying a price quote or generated result. Licence wording and scoped MCP/SPZ acknowledgements reviewed against source headers, upstream transport documentation and Blender licence guidance. This preserves existing licences and source notices; it does not decide relicensing or certify asset rights. Weekly macOS/Windows workflow and exact-title failure reporting inspected with offline pagination, failure and actual shell exit-status regressions; hosted dispatch, platform runtime and real issue deduplication remain separate acceptance evidence. Downstream current-run matrix reporting, bounded attempt identity, failed-only reruns and setup/timeout/artifact failure wording reviewed with offline regressions; intentional workflow cancellation remains excluded and hosted timeout reporting awaits execution. Known-limit navigation retained after scoped follow-up triage; no new product acceptance is claimed.",
       "sources": {
         "scenario/blender/runtime.py": "2afa6267f835569288ae6d1947af5410b05a0bbdcd3bbad985ff30a6dcb8a000",
         "scenario/blender/registry.py": "a34fcb0110b5c991764df22d423546d9de3c949d3183b6dad1c5ca9e05123af2",
@@ -107,7 +107,7 @@
         "scenario/prefs.py": "a96da37fa23ed9ffb6be31c11cc6d519b15e3103555c84e7e14a60d2adcaf6bf",
         "scenario/core/config.py": "74a45b99fde47d741710dbf2a9d8051f2b31903f10ecae679d061340c62fb1be",
         "docs/USER_GUIDE.md": "f7a4e478caa7dcbc9702b5dba49fd989f67282f0430e2fc8295e3e07209ac618",
-        "docs/KNOWN_LIMITATIONS.md": "ccc7710a7fab8d3a2b845f71e541e6c55a88f5a455c14f63596c225ea74480ab",
+        "docs/KNOWN_LIMITATIONS.md": "c958a6b234223c140931ab13d9175b020388ed00807d34e64f8268232fa0761d",
         "docs/PRIVACY.md": "6393c8c193a907a99d34284fb0338c62437bab4754812de453171a7fc49a4e49",
         "docs/SDK_BUNDLE.md": "161627add3fd5b146643fddc2c496a48023406383748e96b6fbdbbed75960ddb",
         "docs/STUDIO_ADOPTION.md": "7e338a3b605f1f6348489bb6df53ab501a6c9484646e1b61f3f739491ab6a355",
@@ -219,13 +219,13 @@
     {
       "path": "docs/KNOWN_LIMITATIONS.md",
       "coverage": "source-reviewed",
-      "reviewed_at": "2026-09-23",
-      "limits": "Agent source inspection of the listed files; no live service calls, native runtime rerun or human verification in this review.",
+      "reviewed_at": "2026-09-24",
+      "limits": "Agent source inspection of the listed files; no live service calls, native runtime rerun or human verification in this review. Legacy follow-up disposition reconciled with current credential, prompt, model-loading, audio and lane source. Public issue scopes/types and project Priority/Effort were read back after triage; this records tracking, not implementation or live/native acceptance.",
       "sources": {
-        "scenario/core/config.py": "74a45b99fde47d741710dbf2a9d8051f2b31903f10ecae679d061340c62fb1be",
+        "scenario/core/config.py": "3edf71cd58d7d32c300936d4f5de88433514ec9db1d67b0a613bd35b70788731",
         "scenario/blender/runtime.py": "2afa6267f835569288ae6d1947af5410b05a0bbdcd3bbad985ff30a6dcb8a000",
         "scenario/blender/registry.py": "a34fcb0110b5c991764df22d423546d9de3c949d3183b6dad1c5ca9e05123af2",
-        "scenario/mcp/tools_scenario.py": "408b0f6dc72b57f90dec7be95383d588dcdaf35c5abbd3f95ab24273c5ca542e",
+        "scenario/mcp/tools_scenario.py": "66e90694c9bc89878cec3ed2c133ac017492c9ebec866e1c850c07baf4b29543",
         "scenario/blender/prompt_tools.py": "c240d5e4d346fa69a46f33c7bc8d78755b0b00063f86f5eaf44aacf4d7bc0584",
         "scenario/blender/mesh_export.py": "09361e88cf12290d4d8559355eab17cba196ceb2650ffc67739112c6448de509",
         "scenario/blender/capture.py": "b8c2caae26103f45ea2bd619578360db3b464faf9f21a2938f033d630975016e",
@@ -242,7 +242,8 @@
         "scenario/blender/composer/modal.py": "5db6dcddc6b8ca2533fcf73f3d7782c0cd3bd47c99ca11eadf3a8c57d68ed632",
         "scenario/blender/composer/draw.py": "52a366ce04766edc3aef343c7b115d7e360e8c88a27688c4446be36ecc78c6e8",
         "scenario/blender/params_ui.py": "12a913ecc68b92bce87f73fa158bfea03ee0dc684f20914a063826b230d6fb0c",
-        "scenario/blender/render_lanes.py": "7e4241d31fb270f5bf6237f13a1bb71e88f7019be398d73e54c54a4a9434fc6d"
+        "scenario/blender/render_lanes.py": "7e4241d31fb270f5bf6237f13a1bb71e88f7019be398d73e54c54a4a9434fc6d",
+        "scenario/blender/panels.py": "5fbdc508c0d05c3472aa1ad489dfd366487ff39e3e32eef4fa9d79475ff64f0c"
       }
     },
     {
@@ -719,12 +720,12 @@
       "path": "docs/maintenance/backlog.md",
       "coverage": "source-reviewed",
       "reviewed_at": "2026-09-24",
-      "limits": "Agent source inspection of the listed files; no live service calls, native runtime rerun or human verification in this review.",
+      "limits": "Agent source inspection of the listed files; no live service calls, native runtime rerun or human verification in this review. Legacy follow-up disposition reconciled with current credential, prompt, model-loading, audio and lane source. Public issue scopes/types and project Priority/Effort were read back after triage; this records tracking, not implementation or live/native acceptance.",
       "sources": {
         "scenario/core/config.py": "3edf71cd58d7d32c300936d4f5de88433514ec9db1d67b0a613bd35b70788731",
         "scenario/blender/runtime.py": "2afa6267f835569288ae6d1947af5410b05a0bbdcd3bbad985ff30a6dcb8a000",
         "scenario/blender/registry.py": "a34fcb0110b5c991764df22d423546d9de3c949d3183b6dad1c5ca9e05123af2",
-        "scenario/mcp/tools_scenario.py": "408b0f6dc72b57f90dec7be95383d588dcdaf35c5abbd3f95ab24273c5ca542e",
+        "scenario/mcp/tools_scenario.py": "66e90694c9bc89878cec3ed2c133ac017492c9ebec866e1c850c07baf4b29543",
         "scenario/blender/prompt_tools.py": "c240d5e4d346fa69a46f33c7bc8d78755b0b00063f86f5eaf44aacf4d7bc0584",
         "scenario/blender/mesh_export.py": "09361e88cf12290d4d8559355eab17cba196ceb2650ffc67739112c6448de509",
         "scenario/blender/capture.py": "b8c2caae26103f45ea2bd619578360db3b464faf9f21a2938f033d630975016e",
@@ -745,7 +746,8 @@
         "scenario/core/api/catalog.py": "eeb58620545eb0438efc120fe46d7860f7df16e383f3a4b4c55b3282b7b17df9",
         "tools/audit_payloads.py": "77120c3495d5bb5540147b8181e71dccb0fa82fa2c0f9060a8c4463934535bcd",
         "CONTRIBUTING.md": "0543da10895065dca60f546ae83a6146264884a44d4b845c49ffebb1d3151219",
-        "docs/RELEASING.md": "a4937aac0e28fdb4693630e016cca7a010413fe10c021370b5ae4eddc224ced6"
+        "docs/RELEASING.md": "a4937aac0e28fdb4693630e016cca7a010413fe10c021370b5ae4eddc224ced6",
+        "scenario/blender/panels.py": "5fbdc508c0d05c3472aa1ad489dfd366487ff39e3e32eef4fa9d79475ff64f0c"
       }
     },
     {

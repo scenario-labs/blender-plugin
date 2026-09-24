@@ -74,4 +74,5 @@ def test_malformed_markers_fail_instead_of_rewriting_unrelated_text(document):
 def test_initialize_guidance_identifies_hosted_platform_boundary():
     from scenario.mcp.protocol import INSTRUCTIONS
 
-    assert "mcp.scenario.com" in INSTRUCTIONS
+    # This is explanatory prose, not a URL validation boundary.
+    assert any(word == "mcp.scenario.com" for word in INSTRUCTIONS.split())

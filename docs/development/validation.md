@@ -90,6 +90,37 @@ receives `--zip`, it validates that exact supplied artifact without checking
 the source directory with this new preflight. Its existing checkout identity
 check still applies.
 
+The separate [native update fixture](../../tools/test_repository_update.py) tests
+Blender's repository install and update mechanism with two synthetic extension
+ZIPs. Run it with the selected binary:
+
+```sh
+uv run --locked --no-env-file python tools/test_repository_update.py \
+  --blender /path/to/blender --expected-version 5.0.1
+```
+
+It validates and generates both repositories through the existing exact-inventory
+helper, installs the first ZIP, and uses native refresh/update operators to load
+the second version in the same Blender process while preserving enabled state.
+Installed bytes must match each exact artifact. This tests the native mechanism;
+it does not certify a published Scenario release, hosted repository, UI controls,
+or production add-on upgrade behavior.
+
+The fixture serves only its generated index and ZIP filenames on `127.0.0.1`.
+Its disposable profile contains only that repository; Scenario credential variables,
+Blender/Python path overrides and proxies are removed. Native network operations
+use `--online-mode` for this loopback repository, without changing the normal
+profile's online-access setting. This is configured loopback isolation, not a
+sandbox policing arbitrary subprocess sockets. Do not add external destinations
+to the fixture. The runner checks that the normal profile's file metadata is
+unchanged and refuses artifact directories inside that profile.
+
+The loopback server stops on success and failure. Successful profiles and
+temporary files are removed; failed profiles remain with logs for diagnosis.
+Reports, synthetic ZIPs and native logs stay under `.blender-profile/update-*`
+(or `--artifacts`). The Linux and Windows baseline matrix runs this separate
+fixture on Blender 5.0, 5.1 and 5.2 and preserves its evidence even on failure.
+
 - `make build`: build and validate the extension ZIP; use
   `BLENDER_BUILD_ARGS="--repo"` to also generate a local extension repository.
 - `make install`: build and install into a new isolated profile; use

@@ -456,7 +456,7 @@ class SDKAdapter:
             raise ValueError("Page limit must be a positive integer")
         result, identifiers, tokens = [], set(), set()
         options = {"privacy": privacy, "page_size": 100}
-        if resource == "models":
+        if resource == "models" and privacy == "private":
             options["status"] = "trained"
         method = getattr(self._sdk, resource).with_raw_response.list
         for _ in range(max_pages):

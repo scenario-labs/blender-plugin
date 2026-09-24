@@ -231,15 +231,20 @@
     {
       "path": "docs/SDK_ADOPTION.md",
       "coverage": "inherited",
-      "reviewed_at": "2026-09-23",
-      "limits": "Existing guide indexed during this intake, without a fresh claim-by-claim or live verification; consult current integration status and issue acceptance.",
+      "reviewed_at": "2026-09-24",
+      "limits": "This pass inspected the active SDK catalog connection, UI/MCP delivery and offline contracts. Other component claims retain their prior coverage limits; no live service, paid-flow or authoritative account discovery acceptance is claimed.",
       "sources": {
-        "scenario/core/api/sdk_adapter.py": "a5f8a5da9ce1f482dbe1af19b43d00f211b66401781fa03d18c9fd3ef2340467",
+        "scenario/core/api/sdk_adapter.py": "a18daa427bd16d7b9bfbf0ed322fe4d7c3bdca27f161db8766f28042ec8e5a0b",
         "tests/unit/test_scenario_sdk_contract.py": "69c3e06092104358ac2b48529feacc794a756bbe697705aeff02d6984e593362",
         "tests/unit/test_sdk_adapter.py": "94af37a52b3fb048b95cfe4fd73f9d2d8a307dd84167a63a50c266fe6a212ae1",
         "scenario/core/jobs/results.py": "6f8735b1fe64f0607ae63c4a5cb43c443904730ede7a2466ceb6439a425d93a2",
         "tests/unit/test_result_commands.py": "3bcba6d1b719ad3016fd5a68e0b740ff5d7eaba1924d59700f0e6d6adbec8009",
-        "tests/blender/test_result_commands.py": "bcb919c9a8dfcd3498959492b5bb49a3f1395b6923282f38182cc9b12c68089e"
+        "tests/blender/test_result_commands.py": "bcb919c9a8dfcd3498959492b5bb49a3f1395b6923282f38182cc9b12c68089e",
+        "scenario/core/api/sdk_catalog.py": "cfb68f28ec1c3ebe57ed9121998dce9eb2a20517e97cff0fc5ec652bb78a4b92",
+        "tests/unit/test_sdk_catalog.py": "91d56d6104d56e446a09e6a557bc6c15720c1590a0a5b55983994552e3fd8252",
+        "tests/blender/test_offline_runtime.py": "0b6a0ba7517a44df951ba5a78af18896f0a5c981faefb1f95c73c1258804714c",
+        "tests/unit/test_catalog_delivery.py": "12ec2fe0420c8363bca0fad22edf9b35a3ff8feb6bf2a13ed04c6befa7404586",
+        "tests/blender/test_generation.py": "5c95b7409d2b20c0a8ce10498ad613dcf8fbd2bd9ab613b541e04754060ee866"
       }
     },
     {
@@ -352,21 +357,21 @@
       "path": "docs/architecture/runtime.md",
       "coverage": "source-reviewed",
       "reviewed_at": "2026-09-24",
-      "limits": "Agent source inspection of the listed files; no live service calls, native runtime rerun or human verification in this review.",
+      "limits": "This pass inspected the active SDK catalog connection, UI/MCP delivery and offline contracts. Other component claims retain their prior coverage limits; no live service, paid-flow or authoritative account discovery acceptance is claimed.",
       "sources": {
-        "scenario/blender/runtime.py": "2afa6267f835569288ae6d1947af5410b05a0bbdcd3bbad985ff30a6dcb8a000",
-        "scenario/blender/generation.py": "8a3b2cc6b1992f3094e47e2ab5bd5af1f7babeb6dae86d7710ec91a1fd65895b",
-        "scenario/blender/pump.py": "f3b5718c778bb3906f4d07a18a3a87e856812b1aea4a889b533124f9812140bb",
+        "scenario/blender/runtime.py": "e2aea444fd9ed8568038d709d3e0948a411dd26ba94994bb09efb55a0a2c7e31",
+        "scenario/blender/generation.py": "68958e267939eeb096d1e682252ffc0f88a1a944591495a55436d01382f77c8d",
+        "scenario/blender/pump.py": "c2d3f42c15ef7c01abec6cb7e67b95b9c8085bf9b66aced9f00dfaa2f0a7f599",
         "scenario/blender/registry.py": "a34fcb0110b5c991764df22d423546d9de3c949d3183b6dad1c5ca9e05123af2",
-        "scenario/mcp/tools_scenario.py": "408b0f6dc72b57f90dec7be95383d588dcdaf35c5abbd3f95ab24273c5ca542e",
+        "scenario/mcp/tools_scenario.py": "66e90694c9bc89878cec3ed2c133ac017492c9ebec866e1c850c07baf4b29543",
         "scenario/core/config.py": "74a45b99fde47d741710dbf2a9d8051f2b31903f10ecae679d061340c62fb1be",
-        "scenario/core/api/sdk_adapter.py": "a5f8a5da9ce1f482dbe1af19b43d00f211b66401781fa03d18c9fd3ef2340467",
+        "scenario/core/api/sdk_adapter.py": "a18daa427bd16d7b9bfbf0ed322fe4d7c3bdca27f161db8766f28042ec8e5a0b",
         "scenario/core/jobs/coordinator.py": "c1d8208cb20f1b4401389704308e7a063f013a63919cf5a7c88f6315eb6d977b",
         "scenario/core/jobs/workers.py": "fc584737c05c28bcb20309220ed6dc99bb40b330339b995075c1392497d3ebed",
         "scenario/blender/job_session.py": "c1d0c91a1a76977691e6690a0e369a6e9282ca430de92d1f9c300acfbe2fd79a",
         "scenario/core/jobs/transfers.py": "549e02649dab7061492a5bb1100a836daf1112972a9ad01c2c0d39facb6ac098",
         "scenario/core/schema/forms.py": "5fae21a416ee5e72f444bc2b6d3502b5ace4b728f7790766161d8e7100b64af5",
-        "scenario/prefs.py": "bfd966d4a6dab2a8505caa3e9ed58d71b71d57b29b673feb5344ad6b8ed72e92",
+        "scenario/prefs.py": "a96da37fa23ed9ffb6be31c11cc6d519b15e3103555c84e7e14a60d2adcaf6bf",
         "tests/unit/test_config.py": "3d8ea8a6f0bcef70f0bb16146e794346cbbe7d2fc0f26aec1631b108cf6914f3",
         "tests/blender/test_credentials.py": "0767fbe1917c977631dc4243bfcb05dce97d5ed0c0b2c731b8ea4bfdb07e3b45",
         "scenario/core/jobs/store.py": "0053c3e48ce89ad699bab664f4f5fddc6af89f7cd01c8bbcab8a323c198c01fc",
@@ -385,7 +390,14 @@
         "tests/unit/test_upload_commands.py": "dd0cd1865c9da7b1e0c7a48e1c1e85a1b628664d7a5ce38543d299b517ec5a9c",
         "tests/blender/test_upload_commands.py": "496927b98c0774db28bac4da626f568bc147c9fc45f07da9e99a1aba0a0be9f1",
         "scenario/core/jobs/uploads.py": "cfbed5605683aea4daeb8267ef63b386830f1779e11987be73c06764e8d73652",
-        "tests/unit/test_shared_quotes.py": "2f824c1999c1d9ed83e1c23960bfedaf09ed921c73f87252a68389976f290133"
+        "tests/unit/test_shared_quotes.py": "2f824c1999c1d9ed83e1c23960bfedaf09ed921c73f87252a68389976f290133",
+        "scenario/blender/handlers.py": "ec2e79cb3da360c296d2a5abfb9e5120a8f78637a2e1940ea4661250464ef965",
+        "scenario/core/api/sdk_catalog.py": "cfb68f28ec1c3ebe57ed9121998dce9eb2a20517e97cff0fc5ec652bb78a4b92",
+        "scenario/core/jobs/manager.py": "00e9d6c9bc9971a63afca06a45761acf0a676cec7ade783bd215a64c4ff103b4",
+        "tests/unit/test_sdk_catalog.py": "91d56d6104d56e446a09e6a557bc6c15720c1590a0a5b55983994552e3fd8252",
+        "tests/blender/test_offline_runtime.py": "0b6a0ba7517a44df951ba5a78af18896f0a5c981faefb1f95c73c1258804714c",
+        "tests/unit/test_catalog_delivery.py": "12ec2fe0420c8363bca0fad22edf9b35a3ff8feb6bf2a13ed04c6befa7404586",
+        "tests/blender/test_generation.py": "5c95b7409d2b20c0a8ce10498ad613dcf8fbd2bd9ab613b541e04754060ee866"
       }
     },
     {

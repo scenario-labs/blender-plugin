@@ -1,6 +1,7 @@
 # SPDX-FileCopyrightText: 2026 Scenario Inc.
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Main-thread pump: drains the job manager's event queue from a bpy.app.timers callback."""
+
 import logging
 
 import bpy
@@ -44,9 +45,9 @@ def _tick():
 def _process():
     from . import mcp_service
 
+    changed = generation.process_catalog_events()
     mcp_service.process_pending()
     manager = runtime.state.manager
-    changed = False
     if manager is not None:
         for event in manager.drain():
             changed = True
@@ -56,7 +57,12 @@ def _process():
                 log.exception("event %s failed", event[0] if event else event)
         if manager.resume_pending and runtime.credentials().valid and runtime.online():
             manager.retry_resume()
-    if not runtime.state.catalog_loaded and not runtime.state.catalog_loading and not runtime.state.catalog_error and runtime.credentials().valid:
+    if (
+        not runtime.state.catalog_loaded
+        and not runtime.state.catalog_loading
+        and not runtime.state.catalog_error
+        and runtime.credentials().valid
+    ):
         generation.request_catalog()
     now = props.clock()
     for scene in bpy.data.scenes:
@@ -65,7 +71,11 @@ def _process():
             if lane != visible:
                 continue  # only the visible lane is priced; the others are quoted when shown
             lane_state = scene.scenario.lane_state(lane)
-            if lane_state.estimate_state == 'PENDING' and lane_state.estimate_dirty_at and now - lane_state.estimate_dirty_at >= ESTIMATE_DEBOUNCE:
+            if (
+                lane_state.estimate_state == "PENDING"
+                and lane_state.estimate_dirty_at
+                and now - lane_state.estimate_dirty_at >= ESTIMATE_DEBOUNCE
+            ):
                 lane_state.estimate_dirty_at = 0.0
                 if runtime.credentials().valid and runtime.online():
                     generation.request_estimate(scene, lane)
@@ -80,7 +90,7 @@ def redraw():
         return
     for window in wm.windows:
         for area in window.screen.areas:
-            if area.type in ('VIEW_3D', 'PREFERENCES'):
+            if area.type in ("VIEW_3D", "PREFERENCES"):
                 for region in area.regions:
-                    if region.type in ('UI', 'HEADER', 'WINDOW'):
+                    if region.type in ("UI", "HEADER", "WINDOW"):
                         region.tag_redraw()

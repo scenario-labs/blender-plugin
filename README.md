@@ -81,6 +81,7 @@ Read [Privacy and data handling](docs/PRIVACY.md) for destinations, storage, cli
 ## Tests
 
 - Python environment, linting and formatting: [`docs/PYTHON_STYLE.md`](docs/PYTHON_STYLE.md), `uv sync --locked`, `make lint` and `make format`.
+- Optional local hooks: after setup, run `make hooks`; see [installation and scope](CONTRIBUTING.md#optional-local-hooks).
 - `make test`: unit tests (pytest, no Blender).
 - `make test-blender`: build, validate and test an exact ZIP in a fresh disposable profile, including imports and authenticated MCP. See the [native test loop](CONTRIBUTING.md#native-blender-test-loop) for coverage, artifacts and binary selection.
 - Paid smoke scripts: see [live commands and authorization](CONTRIBUTING.md#live-commands).

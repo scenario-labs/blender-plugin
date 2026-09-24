@@ -142,7 +142,10 @@ final squash message so attribution survives the repository's squash workflow.
 
 ## Essential validation and contribution rules
 
-Use the pinned uv environment and changed-file Ruff checks. Run checks appropriate
+Use the pinned uv environment and changed-file Ruff checks. Optional local hooks
+install explicitly with `make hooks`; see
+[hook scope and maintenance](CONTRIBUTING.md#optional-local-hooks). They use the
+same locked uv tools and do not replace CI or review. Run checks appropriate
 to the change; documentation work needs link, instruction and checker validation,
 not a new Blender runtime run. Native acceptance uses the exact packaged ZIP in
 an isolated profile. Never run development builds in the user's normal profile.

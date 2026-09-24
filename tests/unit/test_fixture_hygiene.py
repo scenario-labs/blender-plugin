@@ -60,7 +60,7 @@ def test_scrub_preserves_semantics_and_input():
             "exampleAssetIds": ["asset_fixture"],
             "collectionIds": ["collection_fixture"],
             "inputs": [{"name": "ownerId", "type": "string"}],
-            "url": "https://cdn.example/a.png?Key-Pair-Id=K&Policy=P&Signature=S",
+            "url": "https://cdn.example/a.png?Key-Pair-Id=K&Policy=P&Signature=S",  # secrets-allow: synthetic fixture
             "docs": "https://example.com/page?tab=1",
             "job": {"id": "job_fixture", "status": "success"},
             "schema": {"ownerId": {"type": "string"}, "teamId": None, "createdBy": 42},
@@ -85,11 +85,11 @@ def test_mutating_scrubbed_containers_cannot_change_input():
 @pytest.mark.parametrize(
     "url",
     [
-        "https://cdn.example/a?Key-Pair-Id=K",
+        "https://cdn.example/a?Key-Pair-Id=K",  # secrets-allow: synthetic fixture
         "http://cdn.example/a?Policy=P",
         "https://cdn.example/a?Signature=S",
-        "HTTPS://cdn.example/a?X-Amz-Signature=S",
-        "https://cdn.example/a?X-Amz-Credential=C",
+        "HTTPS://cdn.example/a?X-Amz-Signature=S",  # secrets-allow: synthetic fixture
+        "https://cdn.example/a?X-Amz-Credential=C",  # secrets-allow: synthetic fixture
         "https://cdn.example/a?%53ignature=S",
         "https://cdn.example/a?sIgNaTuRe=",
         "https://[invalid-host/a?Signature=S",

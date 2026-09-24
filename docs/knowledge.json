@@ -35,10 +35,10 @@
       "path": "CONTRIBUTING.md",
       "coverage": "inherited",
       "reviewed_at": "2026-09-24",
-      "limits": "Existing guide indexed during this intake, without a fresh claim-by-claim or live verification; consult current integration status and issue acceptance. Contribution-guide cross-reference reviewed after the Actions update guidance; other source fingerprints retain their prior evidence.",
+      "limits": "Existing guide indexed during this intake, without a fresh claim-by-claim or live verification; consult current integration status and issue acceptance. Contribution-guide cross-reference reviewed after the Actions update guidance; other source fingerprints retain their prior evidence. Markdown handbook renderer, template slots, copied/inline images, metadata validation and external-font disclosure reviewed. This does not refresh inherited product claims or screenshot acceptance, publish the site or attach release assets. Repeat-build asset ownership/cleanup, literal template examples and directory-link handling reviewed with regression tests; desktop and narrow renderer presentation inspected separately in isolated browser profiles.",
       "sources": {
-        "Makefile": "c86ffba526a4882788cec66b53924504eceab7114f0b4776ff23ceee1d7a4c8b",
-        "pyproject.toml": "28e3115a28f23530662dfe37a5f07328302607b6c2f8c59d8c8f20c79470d5c2",
+        "Makefile": "4971a39a042367df0c4cd151ee46e6f6c00df518e36b46faf00a52d0846f1e2a",
+        "pyproject.toml": "8806419c64dc00323f2da6bf43986dcb0ce792e6dad1c237fda95627dd354333",
         "tools/dev_config.py": "c3dbb5a4fb5c96a695f17cb436d15992f7b5efd11238c839d9ab44b9e9c7ac52",
         "tools/test_blender.py": "fec317c68c24c49302b456a478e02a0a8352d29aa30c3e9e3cf173d47f0697cd",
         "scenario/mcp/cli.py": "733ec02de0f03a9bfb0a9326a8f94ac32a2b6c33a5c11a09b79694cabd87c156",
@@ -54,20 +54,25 @@
         ".github/actions/setup-blender/action.yml": "276722b203227e8f7a7a98a76a0e7095c566bae2c308b4166dff5e7a3698c105",
         ".github/workflows/blender-baseline.yml": "c4fabf3cc73eaad72df2da1bd158ce118c4ebab177980819a540b28c8b66cc4d",
         "docs/development/contributions.md": "36f45c8706620e634618595c09ef5922d9c425a40f84f16b4509a6abf1f2fa07",
-        ".github/pull_request_template.md": "7d899d2b14da42ce0a4708a840acfda73e7d66da5aa435cd9296115d4e8330c7"
+        ".github/pull_request_template.md": "7d899d2b14da42ce0a4708a840acfda73e7d66da5aa435cd9296115d4e8330c7",
+        "tools/build_docs_html.py": "40e8c099acc77be8b3d57edd31f1e2a0ade323d9932e1c822aee98320c01f4a2",
+        "docs/handbook-template.html": "f2a14d1356fa1f9f2c28edf251c6c8372d2302b46131215db0b9095e3913061c",
+        "tests/unit/test_docs_html.py": "4f13fa6738f636c0034a5eb07c773961efd4396dcf806862695612f20f5762da"
       }
     },
     {
       "path": "README.md",
       "coverage": "inherited",
       "reviewed_at": "2026-09-24",
-      "limits": "Existing guide indexed during this intake, without a fresh claim-by-claim or live verification; consult current integration status and issue acceptance. MCP overview and reference links reviewed; remaining product guidance still inherits its stated verification limits.",
+      "limits": "Existing guide indexed during this intake, without a fresh claim-by-claim or live verification; consult current integration status and issue acceptance. MCP overview and reference links reviewed; remaining product guidance still inherits its stated verification limits. Markdown handbook renderer, template slots, copied/inline images, metadata validation and external-font disclosure reviewed. This does not refresh inherited product claims or screenshot acceptance, publish the site or attach release assets. Repeat-build asset ownership/cleanup, literal template examples and directory-link handling reviewed with regression tests; desktop and narrow renderer presentation inspected separately in isolated browser profiles.",
       "sources": {
         "scenario/blender/runtime.py": "2afa6267f835569288ae6d1947af5410b05a0bbdcd3bbad985ff30a6dcb8a000",
         "scenario/blender/registry.py": "a34fcb0110b5c991764df22d423546d9de3c949d3183b6dad1c5ca9e05123af2",
         "scenario/blender_manifest.toml": "b942bfc79b1ebecab7ae8f2ea16bac4a182d6a13d81dac3a23391dc2ffd16e0f",
-        "CONTRIBUTING.md": "8cb64179bee9a2ba3824e5bb6a7ab96add2fb2c78234cc1dcd34cee9191ff600",
-        "docs/MCP.md": "fb6f2c0a82536d3d1af3a9a7787df2a67b7ebe7fb5eb66f7462d737c48f71f64"
+        "CONTRIBUTING.md": "7e6d53652d198c2a83a1d383d4623899f409e502406dfc27b2a5f6681ae4822b",
+        "docs/MCP.md": "fb6f2c0a82536d3d1af3a9a7787df2a67b7ebe7fb5eb66f7462d737c48f71f64",
+        "tools/build_docs_html.py": "40e8c099acc77be8b3d57edd31f1e2a0ade323d9932e1c822aee98320c01f4a2",
+        "docs/handbook-template.html": "f2a14d1356fa1f9f2c28edf251c6c8372d2302b46131215db0b9095e3913061c"
       }
     },
     {
@@ -342,7 +347,7 @@
       "path": "docs/USER_GUIDE.md",
       "coverage": "inherited",
       "reviewed_at": "2026-09-24",
-      "limits": "Existing guide indexed during this intake, without a fresh claim-by-claim or live verification; consult current integration status and issue acceptance. MCP overview and reference links reviewed; remaining product guidance still inherits its stated verification limits. MCP panel screenshot captured from the exact ZIP in isolated Blender 5.0.1 with synthetic local token and Python disabled; other screenshots retain inherited limits.",
+      "limits": "Existing guide indexed during this intake, without a fresh claim-by-claim or live verification; consult current integration status and issue acceptance. MCP overview and reference links reviewed; remaining product guidance still inherits its stated verification limits. MCP panel screenshot captured from the exact ZIP in isolated Blender 5.0.1 with synthetic local token and Python disabled; other screenshots retain inherited limits. Markdown handbook renderer, template slots, copied/inline images, metadata validation and external-font disclosure reviewed. This does not refresh inherited product claims or screenshot acceptance, publish the site or attach release assets. Repeat-build asset ownership/cleanup, literal template examples and directory-link handling reviewed with regression tests; desktop and narrow renderer presentation inspected separately in isolated browser profiles.",
       "sources": {
         "scenario/blender/panels.py": "5fbdc508c0d05c3472aa1ad489dfd366487ff39e3e32eef4fa9d79475ff64f0c",
         "scenario/blender/composer/draw.py": "52a366ce04766edc3aef343c7b115d7e360e8c88a27688c4446be36ecc78c6e8",
@@ -360,7 +365,11 @@
         "tools/capture_gui_scene.py": "7538cb1e90510a31cdfac22e390d5d595cf2bc73628f1cc3139071b2ef855609",
         "tests/unit/test_gui_capture.py": "beee6cba15adf7da1e7434c18dcb2b948e36f4b459af06fc98a6c850a5fea87c",
         "docs/MCP.md": "fb6f2c0a82536d3d1af3a9a7787df2a67b7ebe7fb5eb66f7462d737c48f71f64",
-        "docs/images/panel-mcp.png": "47adb6ff4f4e3176f916a9ed172980925e530de6eb0647e7326745db68aea128"
+        "docs/images/panel-mcp.png": "47adb6ff4f4e3176f916a9ed172980925e530de6eb0647e7326745db68aea128",
+        "tools/build_docs_html.py": "40e8c099acc77be8b3d57edd31f1e2a0ade323d9932e1c822aee98320c01f4a2",
+        "docs/handbook-template.html": "f2a14d1356fa1f9f2c28edf251c6c8372d2302b46131215db0b9095e3913061c",
+        "tests/unit/test_docs_html.py": "4f13fa6738f636c0034a5eb07c773961efd4396dcf806862695612f20f5762da",
+        "tests/unit/test_privacy_docs.py": "0f9aa79f92e25f5768ba456ce228951b2d9f66a8021e2699e2d116a801485dcd"
       }
     },
     {
@@ -445,15 +454,18 @@
     {
       "path": "docs/development/agents.md",
       "coverage": "policy",
-      "reviewed_at": "2026-09-23",
-      "limits": "Canonical instructions consolidated from the existing rulebook; normative requirements do not imply runtime acceptance.",
+      "reviewed_at": "2026-09-24",
+      "limits": "Canonical instructions consolidated from the existing rulebook; normative requirements do not imply runtime acceptance. Markdown handbook renderer, template slots, copied/inline images, metadata validation and external-font disclosure reviewed. This does not refresh inherited product claims or screenshot acceptance, publish the site or attach release assets. Repeat-build asset ownership/cleanup, literal template examples and directory-link handling reviewed with regression tests; desktop and narrow renderer presentation inspected separately in isolated browser profiles.",
       "sources": {
         "scripts/agents/validate-skills.py": "82822cf1ed96c67c2b5d25e9d666171b37dc071427dd84ceda096e70697c7f3f",
         ".codex/config.toml": "3ce4a01cd0ed404ad5ceb8d1b4c25e0e10bc6339ab1d94fd9936f8543c1b87f2",
         ".github/workflows/agent-skills.yml": "9887630341a228a61394945c72415f492cff88127b84765d88b892efc5ea3890",
         "scripts/agents/test_validate_skills.py": "79b2a06ed10947a46e9256a6c517910353aeef5e0f1bee5388af8aab0ad885d1",
         ".agents/skills/blender-download-artifacts/SKILL.md": "b0e4af736cfecee0f1d68fc64d5df71c903a1f57daf7b49ef3b1ce4a36e8aa19",
-        ".agents/skills/blender-download-artifacts/agents/openai.yaml": "262db51275889505f44ce9f2b7470be44f53fdd6da5d1a315d59065589d0c212"
+        ".agents/skills/blender-download-artifacts/agents/openai.yaml": "262db51275889505f44ce9f2b7470be44f53fdd6da5d1a315d59065589d0c212",
+        "tools/build_docs_html.py": "40e8c099acc77be8b3d57edd31f1e2a0ade323d9932e1c822aee98320c01f4a2",
+        "docs/handbook-template.html": "f2a14d1356fa1f9f2c28edf251c6c8372d2302b46131215db0b9095e3913061c",
+        "CONTRIBUTING.md": "7e6d53652d198c2a83a1d383d4623899f409e502406dfc27b2a5f6681ae4822b"
       }
     },
     {

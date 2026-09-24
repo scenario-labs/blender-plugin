@@ -7,7 +7,7 @@ BLENDER_TEST_ARGS ?=
 UV ?= uv
 LINT_PATHS ?= .
 
-.PHONY: sync test test-blender build install lint format knowledge mcp-docs
+.PHONY: sync test test-blender build install lint format knowledge mcp-docs docs
 knowledge:
 	$(UV) run --locked --no-env-file python tools/check_knowledge.py
 sync:
@@ -31,3 +31,6 @@ install:
 
 mcp-docs:
 	$(UV) run --locked --no-env-file python tools/gen_mcp_docs.py --write
+
+docs:
+	$(UV) run --locked --no-env-file python tools/build_docs_html.py

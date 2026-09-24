@@ -7,6 +7,8 @@ import re
 from pathlib import Path
 from urllib.parse import urlsplit
 
+from tools.build_docs_html import build_handbook
+
 ROOT = Path(__file__).resolve().parents[2]
 
 
@@ -58,10 +60,16 @@ def test_privacy_entry_points_and_critical_storage_disclosures():
     assert "Select Environment to use SCENARIO_API_KEY + SCENARIO_API_SECRET" in prefs
 
 
-def test_standalone_guide_preserves_disclosures():
-    for name in ("user-guide.src.html", "user-guide.html"):
-        text = (ROOT / "docs" / name).read_text()
-        assert "What leaves your machine" in text
-        assert "PRIVACY.md" in text
-        assert "userpref.blend" in text
-        assert "removed with the extension" not in text
+def test_standalone_guide_preserves_disclosures(tmp_path):
+    output = build_handbook(
+        ROOT / "docs/USER_GUIDE.md",
+        ROOT / "docs/handbook-template.html",
+        ROOT / "scenario/blender_manifest.toml",
+        tmp_path / "handbook.html",
+        inline_images=True,
+    )
+    text = output.read_text()
+    assert "What leaves your machine" in text
+    assert "PRIVACY.md" in text
+    assert "userpref.blend" in text
+    assert "removed with the extension" not in text

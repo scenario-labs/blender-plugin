@@ -289,3 +289,39 @@ blend files are excluded from uploads. A capture failure fails that matrix leg.
 Download and inspect these artifacts during review: software-rendered Linux
 images complement local native GUI checks and do not replace input testing or
 other OS/GPU acceptance.
+
+
+## Documentation builds
+
+Edit [the Markdown guide](docs/USER_GUIDE.md) for all guide prose. The
+[handbook template](docs/handbook-template.html) contains presentation, navigation
+and version slots only. `make docs` renders the guide to ignored `site/index.html`
+and copies just its referenced images beside it. A neighboring `.assets.json`
+record lets repeat builds remove unchanged image copies that the guide no longer
+uses, including when switching the same output to inline mode. Unrecorded files
+are retained; modified old copies and symlinked destinations stop the build for
+inspection. Keep that record with a website output directory between builds.
+The version comes from the
+extension manifest. Python-Markdown is pinned in the development environment;
+it is not included in the extension ZIP or imported by Blender tooling.
+
+For a single HTML file containing the content and images:
+
+```sh
+uv run --locked --no-env-file python tools/build_docs_html.py \
+  --inline-images --output dist/scenario-handbook.html
+```
+
+Both modes retain the template's `fonts.googleapis.com` stylesheet, which loads
+fonts from Google when viewed online. Single-file output does not mean fully
+offline typography; system fonts remain available without that connection.
+Relative documentation links point to their repository files or directories on GitHub.
+The renderer rejects missing/empty images, empty alt text, image paths outside
+the guide directory, incomplete document metadata and unknown template slots.
+Authored `{{...}}` examples in Markdown remain literal guide content.
+It accepts `--source`, `--template`, `--manifest` and `--output` paths; images are
+relative to the Markdown source, and relative links must resolve in this repository.
+Review the rendered page at wide and narrow widths after presentation changes.
+Generated HTML and `site/` are ignored; do not commit them or copy old guides into
+snapshot directories. Hosting, release attachment and the native update controls
+remain separate work under #37. Screenshot/content acceptance remains #13/#14.

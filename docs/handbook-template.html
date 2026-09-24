@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<!-- SPDX-FileCopyrightText: 2026 Scenario Inc. -->
+<!-- SPDX-License-Identifier: GPL-3.0-or-later -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Scenario for Blender: user guide</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+:root{
+  --ground:#F3F4F8; --surface:#FFFFFF; --surface-2:#EAEDF4; --ink:#171A21; --muted:#5A6272; --line:#D9DDE6;
+  --accent:#3B6CE8; --accent-ink:#FFFFFF; --accent-soft:#E4EBFC; --accent-text:#2A52B8;
+  --warn-soft:#FBF0DA; --warn-text:#7A5200; --ok-soft:#E1F3E8; --ok-text:#1F6B3A;
+  --shadow:0 1px 2px rgba(23,26,33,.06),0 8px 24px rgba(23,26,33,.06);
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --ground:#1C1E23; --surface:#25282F; --surface-2:#2D3139; --ink:#E8EAEF; --muted:#9AA3B2; --line:#353943;
+    --accent:#7FA3FF; --accent-ink:#0F1730; --accent-soft:#26324D; --accent-text:#A9C0FF;
+    --warn-soft:#3A2F16; --warn-text:#F1C777; --ok-soft:#1D3327; --ok-text:#8DD6A8;
+    --shadow:0 1px 2px rgba(0,0,0,.4),0 8px 24px rgba(0,0,0,.35);
+  }
+}
+:root[data-theme="dark"]{
+  --ground:#1C1E23; --surface:#25282F; --surface-2:#2D3139; --ink:#E8EAEF; --muted:#9AA3B2; --line:#353943;
+  --accent:#7FA3FF; --accent-ink:#0F1730; --accent-soft:#26324D; --accent-text:#A9C0FF;
+  --warn-soft:#3A2F16; --warn-text:#F1C777; --ok-soft:#1D3327; --ok-text:#8DD6A8;
+  --shadow:0 1px 2px rgba(0,0,0,.4),0 8px 24px rgba(0,0,0,.35);
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+@media (prefers-reduced-motion: reduce){html{scroll-behavior:auto}}
+body{margin:0;background:var(--ground);color:var(--ink);font-family:"IBM Plex Sans",system-ui,-apple-system,"Segoe UI",sans-serif;font-size:16px;line-height:1.6;-webkit-font-smoothing:antialiased}
+a{color:var(--accent-text);text-decoration-thickness:1px;text-underline-offset:3px}
+a:focus-visible,button:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:3px}
+h1,h2,h3{font-family:"Bricolage Grotesque","IBM Plex Sans",system-ui,sans-serif;text-wrap:balance;margin:0;line-height:1.1;letter-spacing:-.01em}
+h1{font-size:clamp(2.2rem,4.5vw,3.4rem);font-weight:700}
+h2{font-size:1.75rem;font-weight:700;padding-top:.5rem}
+h3{font-size:1.2rem;font-weight:700;font-family:"IBM Plex Sans",system-ui,sans-serif;letter-spacing:0}
+p,li{max-width:68ch}
+code,kbd,.mono{font-family:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,monospace;font-size:.9em}
+code{background:var(--surface-2);padding:.1em .4em;border-radius:4px}
+pre{background:var(--surface-2);border:1px solid var(--line);border-radius:6px;padding:.9rem 1rem;overflow-x:auto;margin:0}
+pre code{background:none;padding:0;font-size:.85rem}
+kbd{background:var(--surface);border:1px solid var(--line);border-bottom-width:2px;border-radius:4px;padding:0 .4em}
+.eyebrow{font-size:.75rem;text-transform:uppercase;letter-spacing:.12em;color:var(--muted);font-weight:600}
+
+.shell{display:grid;grid-template-columns:240px minmax(0,1fr);gap:3rem;max-width:1180px;margin:0 auto;padding:2.5rem 2rem 5rem}
+@media (max-width:900px){.shell{grid-template-columns:1fr;gap:1.5rem;padding:1.5rem 1.1rem 4rem}}
+nav.toc{position:sticky;top:1.5rem;align-self:start;font-size:.92rem}
+@media (max-width:900px){nav.toc{position:static}}
+nav.toc ol{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:.15rem}
+nav.toc a{display:block;padding:.3rem .6rem;border-radius:5px;color:var(--muted);text-decoration:none}
+nav.toc a:hover{background:var(--surface-2);color:var(--ink)}
+nav.toc .sub a{padding-left:1.4rem;font-size:.86rem}
+nav.toc .toc-head{padding:.3rem .6rem .6rem;display:flex;flex-direction:column;gap:.1rem}
+.version{font-family:"IBM Plex Mono",monospace;font-size:.8rem;color:var(--muted)}
+
+main{display:flex;flex-direction:column;gap:3.5rem;min-width:0}
+section{display:flex;flex-direction:column;gap:1.1rem}
+header.hero{display:flex;flex-direction:column;gap:1.2rem;padding-bottom:1rem;border-bottom:1px solid var(--line)}
+.lede{font-size:1.15rem;color:var(--muted);max-width:60ch}
+.facts{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:.75rem;margin-top:.4rem}
+.fact{background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:.7rem .9rem;display:flex;flex-direction:column;gap:.15rem}
+.fact b{font-size:.98rem;font-weight:600}
+.fact span{font-size:.8rem;color:var(--muted)}
+
+.split{display:grid;grid-template-columns:minmax(0,1fr) 300px;gap:2rem;align-items:start}
+.split.wide{grid-template-columns:minmax(0,1fr) 380px}
+@media (max-width:900px){.split,.split.wide{grid-template-columns:1fr}}
+.split figure{position:sticky;top:1.5rem}
+@media (max-width:900px){.split figure{position:static}}
+figure{margin:0;display:flex;flex-direction:column;gap:.5rem}
+figure img{display:block;max-width:100%;height:auto;border:1px solid var(--line);border-radius:8px;box-shadow:var(--shadow);background:var(--surface-2)}
+figcaption{font-size:.8rem;color:var(--muted);line-height:1.45}
+figure.strip img{width:100%}
+
+.stack{display:flex;flex-direction:column;gap:.75rem}
+ol.steps{margin:0;padding-left:1.3rem;display:flex;flex-direction:column;gap:.6rem}
+ul.plain{margin:0;padding-left:1.2rem;display:flex;flex-direction:column;gap:.45rem}
+dl.anatomy{margin:0;display:grid;grid-template-columns:max-content minmax(0,1fr);gap:.55rem 1.2rem}
+dl.anatomy dt{font-weight:600;white-space:nowrap}
+dl.anatomy dd{margin:0;color:var(--ink)}
+@media (max-width:600px){dl.anatomy{grid-template-columns:1fr}dl.anatomy dd{margin-bottom:.4rem}}
+
+.note{background:var(--accent-soft);color:var(--ink);border-radius:8px;padding:.8rem 1rem;font-size:.95rem;display:flex;gap:.7rem;align-items:baseline}
+.note .tag,.warn .tag{font-size:.72rem;text-transform:uppercase;letter-spacing:.1em;font-weight:600;color:var(--accent-text);white-space:nowrap}
+.warn{background:var(--warn-soft);color:var(--ink);border-radius:8px;padding:.8rem 1rem;font-size:.95rem;display:flex;gap:.7rem;align-items:baseline}
+.warn .tag{color:var(--warn-text)}
+
+.lane-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:.75rem}
+.lane{background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:.85rem 1rem;display:flex;flex-direction:column;gap:.3rem}
+.lane b{font-weight:600}
+.lane span{font-size:.88rem;color:var(--muted)}
+.lane a{text-decoration:none;color:inherit}
+.lane:hover{border-color:var(--accent)}
+.lane.panel{background:var(--surface-2)}
+
+.tablewrap{overflow-x:auto;border:1px solid var(--line);border-radius:8px;background:var(--surface)}
+table{border-collapse:collapse;width:100%;font-size:.93rem}
+th,td{text-align:left;padding:.6rem .9rem;border-bottom:1px solid var(--line);vertical-align:top}
+th{font-size:.75rem;text-transform:uppercase;letter-spacing:.1em;color:var(--muted);font-weight:600}
+tr:last-child td{border-bottom:0}
+td.num{font-family:"IBM Plex Mono",monospace;font-variant-numeric:tabular-nums;white-space:nowrap}
+
+.faq{display:flex;flex-direction:column;gap:.5rem}
+details{background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:.1rem 1rem}
+summary{cursor:pointer;padding:.65rem 0;font-weight:600;list-style:none;display:flex;justify-content:space-between;gap:1rem}
+summary::-webkit-details-marker{display:none}
+summary::after{content:"+";color:var(--muted);font-family:"IBM Plex Mono",monospace}
+details[open] summary::after{content:"\2212"}
+details p{margin:0 0 .8rem;color:var(--ink)}
+
+.tools{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:.4rem .8rem;font-family:"IBM Plex Mono",monospace;font-size:.82rem}
+.tools span{padding:.25rem .5rem;background:var(--surface);border:1px solid var(--line);border-radius:5px}
+.tools span.gated{border-style:dashed}
+footer{border-top:1px solid var(--line);padding-top:1.2rem;font-size:.88rem;color:var(--muted);display:flex;flex-wrap:wrap;gap:.4rem 1.5rem}
+
+/* Markdown owns all guide prose; the template controls only presentation. */
+nav.toc ul{list-style:none;padding-left:0;margin:0}
+nav.toc ul ul{padding-left:1rem}
+.handbook{min-width:0}
+.handbook h1{margin-bottom:1.5rem}
+.handbook h2{margin-top:3rem;scroll-margin-top:1rem}
+.handbook h3{margin-top:2rem;scroll-margin-top:1rem}
+.handbook p,.handbook li{max-width:72ch}
+.handbook img{display:block;max-width:100%;height:auto;border:1px solid var(--line);border-radius:8px;box-shadow:var(--shadow);margin:1rem 0}
+.handbook pre{margin:1rem 0}
+.skip{position:absolute;left:-10000px}
+.skip:focus{left:1rem;top:1rem;z-index:2;background:var(--surface);padding:.5rem}
+</style>
+</head>
+<body>
+<a class="skip" href="#guide">Skip to guide</a>
+<div class="shell">
+<nav class="toc" aria-label="Contents">
+  <div class="toc-head"><span class="eyebrow">Handbook</span><span class="version">{{version}}</span></div>
+  {{toc}}
+</nav>
+<main id="guide">
+<article class="handbook">
+{{content}}
+</article>
+<footer>
+  <span>Scenario for Blender {{version}}</span>
+  <a href="https://github.com/scenario-labs/blender-plugin">Source on GitHub</a>
+  <a href="https://github.com/scenario-labs/blender-plugin/blob/main/CHANGELOG.md">Changelog</a>
+  <a href="https://github.com/scenario-labs/blender-plugin/blob/main/docs/USER_GUIDE.md">Markdown guide</a>
+  <span>GPL-3.0-or-later</span>
+</footer>
+</main>
+</div>
+</body>
+</html>

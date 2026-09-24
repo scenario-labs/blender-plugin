@@ -1,7 +1,7 @@
 {
   "version": 1,
   "index": "docs/index.md",
-  "base_revision": "47da9de8be8ce70b3bc1317eef7018bcd806d194",
+  "base_revision": "15f3b07a9071aa729c1cd0055c13fb1946bed8a9",
   "documents": [
     {
       "path": ".claude/rules/blender-glue.md",
@@ -35,7 +35,7 @@
       "path": "CONTRIBUTING.md",
       "coverage": "inherited",
       "reviewed_at": "2026-09-24",
-      "limits": "Existing guide indexed during this intake, without a fresh claim-by-claim or live verification; consult current integration status and issue acceptance.",
+      "limits": "Existing guide indexed during this intake, without a fresh claim-by-claim or live verification; consult current integration status and issue acceptance. Contribution-guide cross-reference reviewed after the Actions update guidance; other source fingerprints retain their prior evidence.",
       "sources": {
         "Makefile": "c86ffba526a4882788cec66b53924504eceab7114f0b4776ff23ceee1d7a4c8b",
         "pyproject.toml": "28e3115a28f23530662dfe37a5f07328302607b6c2f8c59d8c8f20c79470d5c2",
@@ -53,7 +53,7 @@
         "tests/unit/test_portable_tools.py": "2cea13137994d2d09b76abe0f5a6916a36c3c61faa546bcc6fa82e0e660c14c5",
         ".github/actions/setup-blender/action.yml": "276722b203227e8f7a7a98a76a0e7095c566bae2c308b4166dff5e7a3698c105",
         ".github/workflows/blender-baseline.yml": "c4fabf3cc73eaad72df2da1bd158ce118c4ebab177980819a540b28c8b66cc4d",
-        "docs/development/contributions.md": "fb21b6689738e5d8c6008a6b8c6883b3a8f8a80f23330e51e5c91693910046c2",
+        "docs/development/contributions.md": "36f45c8706620e634618595c09ef5922d9c425a40f84f16b4509a6abf1f2fa07",
         ".github/pull_request_template.md": "7d899d2b14da42ce0a4708a840acfda73e7d66da5aa435cd9296115d4e8330c7"
       }
     },
@@ -457,14 +457,15 @@
       "path": "docs/development/contributions.md",
       "coverage": "policy",
       "reviewed_at": "2026-09-24",
-      "limits": "Canonical instructions consolidated from the existing rulebook; normative requirements do not imply runtime acceptance.",
+      "limits": "Canonical contribution policy, including inspected Actions-only Dependabot configuration and commit-title compatibility; configuration does not prove live update delivery or administrative action-pin enforcement.",
       "sources": {
         "commitlint.config.ts": "a3f4eb2798279d823aee2523592781ba1b328295e7d9528875f8682f6bb56881",
         ".github/workflows/pr-name.yml": "bd74c9610aede13faf37498230cc907a8178f45f3eb515c5188cacc65ed516fe",
         ".github/workflows/commitlint.yml": "4e6dd4c1ed6273042316d55696de7108c0409ab0cac9774cb6e6fa163fe5ad80",
         "release-please-config.json": "f7192922c196556279e00e54b82a8ec82a5fe516481f35771e1ad73c0b00adc9",
         ".github/pull_request_template.md": "7d899d2b14da42ce0a4708a840acfda73e7d66da5aa435cd9296115d4e8330c7",
-        "tests/unit/test_conventions_docs.py": "b07164b35c741484b3c726d5fe263c974219045f30c43f3e1065885c993613b4"
+        "tests/unit/test_conventions_docs.py": "b07164b35c741484b3c726d5fe263c974219045f30c43f3e1065885c993613b4",
+        ".github/dependabot.yml": "2d1ef5df890197205268c05d1fe1f54943f0b1d6984a2f7eb064f364c2c438d2"
       }
     },
     {

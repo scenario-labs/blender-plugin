@@ -97,3 +97,23 @@ Do not manually bump package versions or edit release notes in an unrelated PR.
 Read the actual release workflow/configuration before describing release behavior.
 New release tags use `blender-plugin-vX.Y.Z`; package versions stay `X.Y.Z` and
 release ZIPs stay `scenario-X.Y.Z.zip`. Preserve historical `v*` tags and releases.
+
+## GitHub Actions updates
+
+[Dependabot](../../.github/dependabot.yml) checks GitHub Actions weekly and groups
+version updates into one `actions` PR with the `dependencies` and `area:ci` labels.
+The `ci(deps)` commit prefix produces Conventional Commit titles; do not add
+`include: scope`, which would append a second dependency scope.
+
+Keep third-party action references pinned to a full 40-character commit SHA with
+the release version in a trailing comment, for example
+`uses: actions/checkout@<sha> # vX.Y.Z`. Review generated SHA and version-comment
+changes together, including upstream release notes, workflow permissions and CI
+results. Dependabot update PRs follow the ordinary review and merge process.
+
+This configuration covers GitHub Actions only. Python/SDK updates still require
+the [dependency bundle procedure](../SDK_BUNDLE.md); adding automatic updates for
+them requires coordinating development pins with the exact packaged wheel bundle.
+The remaining action-pin sweep, local enforcement, repository settings and first
+successful Dependabot update remain tracked in #39. A configuration file alone
+does not prove GitHub has run it or that those administrative gates are enabled.

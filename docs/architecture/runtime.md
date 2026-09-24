@@ -46,6 +46,9 @@ does not start a second bulk schema warmup. A selected model can still request i
 detail independently; concurrent reads of the same model share one request. An
 explicit selection or mode/task change invalidates its quote immediately, and
 schema completion re-arms pricing if the estimate timer observed a missing schema.
+That intent survives failed detail reads until a successful retry; switching
+models does not re-price the new selection, and credential retirement or active
+runtime reset clears retained intent and schema caches.
 Restoring a dynamic enum's index to the same stable model id does not count as a
 new selection. All events retain the credential-context identity check.
 

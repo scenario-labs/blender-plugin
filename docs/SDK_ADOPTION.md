@@ -61,7 +61,9 @@ successful schema details are delivered progressively, so startup does not wait
 for all curated schemas before exposing the catalog. Concurrent reads of the
 same model share one request; a different selected model can finish independently.
 Background delivery preserves unchanged quotes, while explicit model/mode/task
-changes invalidate and re-arm pricing even if their schema is still loading.
+changes invalidate and re-arm pricing even if their schema is still loading or
+requires a retry. Retiring credentials or resetting the active runtime clears
+that pending intent along with the form caches.
 Cache entries are in memory per connection until an authoritative account/project
 identity contract enables scoped persistence.
 [Runtime integration status](architecture/runtime.md#active-sdk-catalog) records

@@ -63,6 +63,10 @@ class RuntimeState:
         for catalog in [self.catalog, *self.retired_catalogs]:
             if catalog is not None:
                 catalog.close()
+        if self is state:
+            from . import generation
+
+            generation.clear_catalog()
         kept = {name: getattr(self, name) for name in self.SESSION_ATTRS}
         self.__init__()
         for name, value in kept.items():

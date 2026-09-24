@@ -198,9 +198,16 @@ def test_concurrent_reads_reuse_pool_and_retirement_closes_after_last_reader():
     assert pools[0]._closed and context.closed
 
 
-def test_same_model_read_is_shared_while_other_selected_model_can_finish():
-    entered, release = threading.Event(), threading.Event()
+def test_same_model_read_is_shared_while_other_selected_model_can_finish(monkeypatch):
+    entered, release, waiting = threading.Event(), threading.Event(), threading.Event()
     requests = []
+
+    class ObservedFuture(Future):
+        def result(self, timeout=None):
+            waiting.set()
+            return super().result(timeout)
+
+    monkeypatch.setattr("scenario.core.api.sdk_catalog.Future", ObservedFuture)
 
     def respond(request):
         name = request.url.path.rsplit("/", 1)[-1]
@@ -216,6 +223,7 @@ def test_same_model_read_is_shared_while_other_selected_model_can_finish():
         try:
             assert entered.wait(5)
             repeated = workers.submit(context.get, "warming", refresh=True)
+            assert waiting.wait(5)
             selected = workers.submit(context.get, "selected", refresh=True)
             assert selected.result(5).id == "selected"
             assert not warmup.done()

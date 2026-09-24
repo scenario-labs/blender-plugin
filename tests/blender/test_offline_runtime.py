@@ -182,10 +182,12 @@ class OfflineRuntimeTests(unittest.TestCase):
                 self.assertTrue(started.wait(5))
                 lane = bpy.context.scene.scenario.lane_state("image")
                 lane.estimate_key, lane.estimate_state = "old-quote", "READY"
+                self.generation._pending_dirty_models.add(model["id"])
                 self.prefs.api_secret = "other-secret"
                 self.assertIsNone(self.runtime.state.catalog)
                 self.assertEqual(lane.estimate_key, "")
                 self.assertEqual(lane.estimate_state, "IDLE")
+                self.assertFalse(self.generation._pending_dirty_models)
                 self.assertFalse(old.closed)
                 self.assertFalse(pools[0]._closed)
                 self.assertTrue(self.generation.request_catalog())
@@ -232,7 +234,16 @@ class OfflineRuntimeTests(unittest.TestCase):
             releaser = threading.Thread(target=release_after_reset)
             releaser.start()
             try:
+                self.generation._schemas["fixture"] = object()
+                self.generation._pending_models.add("fixture")
+                self.generation._pending_dirty_models.add("fixture")
+                # Resetting an unrelated state cannot clear the active singleton.
+                self.runtime.RuntimeState().reset()
+                self.assertIn("fixture", self.generation._pending_dirty_models)
                 self.runtime.state.reset()
+                self.assertFalse(self.generation._schemas)
+                self.assertFalse(self.generation._pending_models)
+                self.assertFalse(self.generation._pending_dirty_models)
                 self.assertFalse(context.closed)
                 self.assertFalse(pools[0]._closed)
             finally:

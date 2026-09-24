@@ -161,10 +161,12 @@ def set_models(detailed, failed, *, mark_dirty=True):
         _schemas.pop(rec.id, None)
     for model_id, reason in failed.items():
         runtime.set_message(f"{model_id}: {reason}")
-    completed = {r.id for r in detailed} | set(failed)
-    dirty_models = _pending_dirty_models & completed
-    _pending_dirty_models.difference_update(completed)
-    _pending_models.difference_update(completed)
+    succeeded = {r.id for r in detailed}
+    dirty_models = _pending_dirty_models & succeeded
+    # A transient failure ends this request, not the user's pending selection.
+    # Its eventual background retry still needs to re-arm the estimate timer.
+    _pending_dirty_models.difference_update(succeeded)
+    _pending_models.difference_update(succeeded | set(failed))
     for scene in bpy.data.scenes:
         for lane in props.GENERATION_LANES:
             lane_state = scene.scenario.lane_state(lane)

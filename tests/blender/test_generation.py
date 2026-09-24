@@ -126,6 +126,15 @@ class GenerationTests(unittest.TestCase):
             self.assertEqual(lane.estimate_key, "")
 
     def test_explicit_selection_invalidates_quote_while_background_schema_is_pending(self):
+        self.check_pending_selection_rearms_quote(retry=False)
+
+    def test_failed_schema_preserves_pending_selection_until_background_retry_succeeds(self):
+        self.check_pending_selection_rearms_quote(retry=True)
+
+    def test_failed_schema_retry_does_not_reprice_a_different_selected_model(self):
+        self.check_pending_selection_rearms_quote(retry=True, switch_away=True)
+
+    def check_pending_selection_rearms_quote(self, *, retry, switch_away=False):
         lane = bpy.context.scene.scenario.lane_state("image")
         model_id = "model_patina-material"
         detailed = self.runtime.state.records[model_id]
@@ -151,12 +160,34 @@ class GenerationTests(unittest.TestCase):
             self.assertEqual(lane.estimate_state, "UNAVAILABLE")
             self.assertEqual(lane.estimate_error, "Model not loaded yet")
             lane.estimate_dirty_at = 0.0
+            if retry:
+                self.handlers.dispatch(
+                    (
+                        "models",
+                        {
+                            "detailed": [],
+                            "failed": {model_id: "Temporary outage"},
+                            "mark_dirty": False,
+                        },
+                    )
+                )
+                self.assertEqual(lane.estimate_state, "UNAVAILABLE")
+                self.generation.request_model(model_id, mark_dirty=False)
+                self.assertEqual(fetch.call_count, 2)
+                self.assertEqual(fetch.call_args.kwargs, {"mark_dirty": False})
+        if switch_away:
+            lane.model_id = "model_google-gemini-3-1-flash"
+            lane.estimate_key, lane.estimate_state = "current-model-quote", "READY"
         self.handlers.dispatch(
             ("models", {"detailed": [detailed], "failed": {}, "mark_dirty": False})
         )
-        self.assertEqual(lane.estimate_state, "PENDING")
-        self.assertEqual(lane.estimate_key, "")
-        self.assertGreater(lane.estimate_dirty_at, 0.0)
+        if switch_away:
+            self.assertEqual(lane.estimate_state, "READY")
+            self.assertEqual(lane.estimate_key, "current-model-quote")
+        else:
+            self.assertEqual(lane.estimate_state, "PENDING")
+            self.assertEqual(lane.estimate_key, "")
+            self.assertGreater(lane.estimate_dirty_at, 0.0)
         self.assertIsNotNone(self.generation.schema_for(model_id))
 
     def test_enum_param_choices_survive_a_cache_miss(self):

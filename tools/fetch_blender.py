@@ -1,6 +1,6 @@
 # SPDX-FileCopyrightText: 2026 Scenario Inc.
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""Fetch an official, SHA-256-verified Linux or Windows x64 Blender into a local cache."""
+"""Fetch a SHA-256-verified Linux/Windows x64 or macOS arm64 Blender into a local cache."""
 
 import argparse
 import json
@@ -8,6 +8,7 @@ import platform
 import re
 import shutil
 import stat
+import subprocess
 import sys
 import tarfile
 import tempfile
@@ -70,6 +71,71 @@ def extract_windows(archive, staged):
         bundle.extractall(staged)
 
 
+def error_message(error):
+    """Keep primary and cleanup diagnostics together in the CLI's plain output."""
+    return "\n".join([str(error), *getattr(error, "__notes__", [])])
+
+
+def disk_command(*arguments):
+    """Preserve captured disk-tool diagnostics on command failure or timeout."""
+    try:
+        subprocess.run(
+            ["/usr/bin/hdiutil", *arguments], check=True, capture_output=True, timeout=120
+        )
+    except subprocess.SubprocessError as error:
+        diagnostic = getattr(error, "stderr", None)
+        if diagnostic:
+            if isinstance(diagnostic, bytes):
+                diagnostic = diagnostic.decode("utf-8", errors="replace")
+            error.add_note(f"hdiutil: {diagnostic.strip()}")
+        raise
+
+
+def extract_macos(archive, staged):
+    """Copy Blender.app from a private read-only mount, detaching before publication."""
+    # Keep the mount outside the installation TemporaryDirectory: if the OS
+    # refuses both detach attempts, cleanup must never walk a mounted volume.
+    mount = Path(tempfile.mkdtemp(prefix="scenario-blender-dmg-"))
+    attached = False
+    primary_error = None
+    try:
+        disk_command(
+            "attach",
+            "-readonly",
+            "-nobrowse",
+            "-noautoopen",
+            "-mountpoint",
+            str(mount),
+            str(archive),
+        )
+        attached = True
+        app = mount / "Blender.app"
+        if app.is_symlink() or not app.is_dir():
+            raise ValueError("Official disk image did not contain Blender.app")
+        shutil.copytree(app, staged / "Blender.app", symlinks=True)
+    except BaseException as error:
+        # Re-raise interrupts too, after cleanup, without replacing their cause.
+        primary_error = error
+        raise
+    finally:
+        try:
+            if attached or mount.is_mount():
+                try:
+                    disk_command("detach", str(mount))
+                except (OSError, subprocess.SubprocessError) as first_error:
+                    try:
+                        # Only this invocation's private read-only mount is targeted.
+                        disk_command("detach", "-force", str(mount))
+                    except (OSError, subprocess.SubprocessError) as force_error:
+                        force_error.add_note(f"Initial detach failed: {error_message(first_error)}")
+                        raise
+            mount.rmdir()
+        except (OSError, subprocess.SubprocessError) as cleanup_error:
+            if primary_error is None:
+                raise
+            primary_error.add_note(f"Disk image cleanup failed: {error_message(cleanup_error)}")
+
+
 def install_archive(archive, installation, temporary, expected, version, platform_name="linux-x64"):
     """Publish a verified extraction in one owned slot; preserve the old one on failure."""
     marker = installation / ".scenario-fetch.json"
@@ -87,13 +153,16 @@ def install_archive(archive, installation, temporary, expected, version, platfor
     staged.mkdir()
     if platform_name == "windows-x64":
         extract_windows(archive, staged)
-        executable = "blender.exe"
+        relative_binary = Path(f"blender-{version}-{platform_name}") / "blender.exe"
+    elif platform_name == "macos-arm64":
+        extract_macos(archive, staged)
+        relative_binary = Path("Blender.app/Contents/MacOS/Blender")
     else:
         with tarfile.open(archive, "r:xz") as bundle:
             bundle.extractall(staged, filter="data")
-        executable = "blender"
-    relative_binary = Path(f"blender-{version}-{platform_name}") / executable
-    if not (staged / relative_binary).is_file():
+        relative_binary = Path(f"blender-{version}-{platform_name}") / "blender"
+    binary = staged / relative_binary
+    if not binary.is_file() or not binary.resolve().is_relative_to(staged.resolve()):
         raise ValueError("Official archive did not contain the expected Blender executable")
     (staged / marker.name).write_text(json.dumps(ownership))
     previous = temporary / "previous-installation"
@@ -114,9 +183,10 @@ def fetch(version, cache, expected=None, *, platform_name="linux-x64"):
     expected = expected or None
     if expected and not re.fullmatch(r"[a-fA-F0-9]{64}", expected):
         raise ValueError("--sha256 must contain 64 hexadecimal characters")
-    if platform_name not in {"linux-x64", "windows-x64"}:
-        raise ValueError("Automatic download supports Linux x64 and Windows x64")
-    suffix = "zip" if platform_name == "windows-x64" else "tar.xz"
+    suffixes = {"linux-x64": "tar.xz", "windows-x64": "zip", "macos-arm64": "dmg"}
+    if platform_name not in suffixes:
+        raise ValueError("Automatic download supports Linux/Windows x64 and macOS arm64")
+    suffix = suffixes[platform_name]
     filename = f"blender-{version}-{platform_name}.{suffix}"
     slot = version if platform_name == "linux-x64" else f"{version}-{platform_name}"
     series = version.rsplit(".", 1)[0]
@@ -157,16 +227,27 @@ def main():
     )
     parser.add_argument("--cache", type=Path, default=ROOT / ".blender")
     args = parser.parse_args()
-    system = platform.system()
-    if system not in {"Linux", "Windows"} or platform.machine().lower() not in {"x86_64", "amd64"}:
+    system, machine = platform.system(), platform.machine().lower()
+    if system in {"Linux", "Windows"} and machine in {"x86_64", "amd64"}:
+        platform_name = f"{system.lower()}-x64"
+    elif system == "Darwin" and machine in {"arm64", "aarch64"}:
+        platform_name = "macos-arm64"
+    else:
         parser.error(
-            "Automatic download supports Linux/Windows x64; install Blender and set BLENDER on this platform"
+            "Automatic download supports Linux/Windows x64 and macOS arm64; "
+            "install Blender and set BLENDER on this platform"
         )
     try:
-        fetch(args.version, args.cache, args.sha256, platform_name=f"{system.lower()}-x64")
+        fetch(args.version, args.cache, args.sha256, platform_name=platform_name)
         return 0
-    except (OSError, ValueError, tarfile.TarError, zipfile.BadZipFile) as error:
-        print(f"Download failed: {error}", file=sys.stderr)
+    except (
+        OSError,
+        ValueError,
+        tarfile.TarError,
+        zipfile.BadZipFile,
+        subprocess.SubprocessError,
+    ) as error:
+        print(f"Download failed: {error_message(error)}", file=sys.stderr)
         return 1
 
 

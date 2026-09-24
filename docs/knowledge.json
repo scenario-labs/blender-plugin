@@ -35,7 +35,7 @@
       "path": "CONTRIBUTING.md",
       "coverage": "inherited",
       "reviewed_at": "2026-09-24",
-      "limits": "Existing guide indexed during this intake, without a fresh claim-by-claim or live verification; consult current integration status and issue acceptance. Contribution-guide cross-reference reviewed after the Actions update guidance; other source fingerprints retain their prior evidence. Markdown handbook renderer, template slots, copied/inline images, metadata validation and external-font disclosure reviewed. This does not refresh inherited product claims or screenshot acceptance, publish the site or attach release assets. Repeat-build asset ownership/cleanup, literal template examples and directory-link handling reviewed with regression tests; desktop and narrow renderer presentation inspected separately in isolated browser profiles.",
+      "limits": "Existing guide indexed during this intake, without a fresh claim-by-claim or live verification; consult current integration status and issue acceptance. Contribution-guide cross-reference reviewed after the Actions update guidance; other source fingerprints retain their prior evidence. Markdown handbook renderer, template slots, copied/inline images, metadata validation and external-font disclosure reviewed. This does not refresh inherited product claims or screenshot acceptance, publish the site or attach release assets. Repeat-build asset ownership/cleanup, literal template examples and directory-link handling reviewed with regression tests; desktop and narrow renderer presentation inspected separately in isolated browser profiles. macOS arm64 downloader section inspected against verified-DMG extraction, private mount cleanup and offline failure tests; local native proof does not establish scheduled macOS CI or complete cross-platform compatibility.",
       "sources": {
         "Makefile": "4971a39a042367df0c4cd151ee46e6f6c00df518e36b46faf00a52d0846f1e2a",
         "pyproject.toml": "8806419c64dc00323f2da6bf43986dcb0ce792e6dad1c237fda95627dd354333",
@@ -49,7 +49,7 @@
         "tests/blender/test_credentials.py": "0767fbe1917c977631dc4243bfcb05dce97d5ed0c0b2c731b8ea4bfdb07e3b45",
         "tools/capture_gui_scene.py": "7538cb1e90510a31cdfac22e390d5d595cf2bc73628f1cc3139071b2ef855609",
         "tests/unit/test_gui_capture.py": "beee6cba15adf7da1e7434c18dcb2b948e36f4b459af06fc98a6c850a5fea87c",
-        "tools/fetch_blender.py": "6ffb40560e1344850f6452ae1aa0de0834d08e9bb7be11647307e5cf8b4ac648",
+        "tools/fetch_blender.py": "3a712dd385f0f030be6161eda7d8de28a7570b8b367d37c50f50514e15ff3326",
         "tests/unit/test_portable_tools.py": "2cea13137994d2d09b76abe0f5a6916a36c3c61faa546bcc6fa82e0e660c14c5",
         ".github/actions/setup-blender/action.yml": "276722b203227e8f7a7a98a76a0e7095c566bae2c308b4166dff5e7a3698c105",
         ".github/workflows/blender-baseline.yml": "c4fabf3cc73eaad72df2da1bd158ce118c4ebab177980819a540b28c8b66cc4d",
@@ -57,7 +57,8 @@
         ".github/pull_request_template.md": "7d899d2b14da42ce0a4708a840acfda73e7d66da5aa435cd9296115d4e8330c7",
         "tools/build_docs_html.py": "40e8c099acc77be8b3d57edd31f1e2a0ade323d9932e1c822aee98320c01f4a2",
         "docs/handbook-template.html": "f2a14d1356fa1f9f2c28edf251c6c8372d2302b46131215db0b9095e3913061c",
-        "tests/unit/test_docs_html.py": "4f13fa6738f636c0034a5eb07c773961efd4396dcf806862695612f20f5762da"
+        "tests/unit/test_docs_html.py": "4f13fa6738f636c0034a5eb07c773961efd4396dcf806862695612f20f5762da",
+        "tests/unit/test_fetch_blender_macos.py": "3b0658d06b571b336b42379acc7b47de3eab3590b5f4c65754cf2435601a6568"
       }
     },
     {

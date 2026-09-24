@@ -204,7 +204,7 @@ An existing shell profile is never reused. Remove the printed `tools-*` director
 when finished with it and after closing Blender. `make build` and `make install`
 accept `BLENDER_BUILD_ARGS` and `BLENDER_INSTALL_ARGS`, respectively.
 
-On Linux x64 or Windows x64, fetch an official Blender release with:
+On Linux x64, Windows x64 or macOS Apple silicon, fetch an official Blender release with:
 
 ```sh
 uv run --locked --no-env-file python tools/fetch_blender.py --version 5.0.1
@@ -215,11 +215,18 @@ extraction and prints the executable path to use with `BLENDER`. CI supplies
 `--sha256` to pin the expected digest. Archives are cached under `.blender/`;
 every invocation re-extracts the verified archive into the same managed slot for
 that platform, version and checksum. Successful replacement removes the previous extraction;
-a failed extraction leaves it intact. Do not fetch a build while using that cached
+a failed extraction leaves it intact. On macOS, the verified DMG is mounted read-only
+at a private temporary path; only `Blender.app` is copied. The tool detaches that
+mount before publishing the installation, retrying a busy mount once with forced
+detach. If macOS refuses both attempts, the command fails and leaves the private
+mount named in the error for manual cleanup, without traversing its contents.
+Do not fetch a build while using that cached
 Blender executable. Older builds from the previous tool may leave randomly named
 version directories; remove those manually when no longer in use.
 Other platforms require a separately installed Blender selected with `BLENDER`.
 No download happens implicitly during build, install or tests.
+The macOS downloader is available locally; the setup action and native CI matrix
+still cover Linux and Windows only. Scheduled macOS coverage remains tracked in #42.
 
 Screenshot probes prepare the blockout form without submitting a design.
 Design/refine operators also respect offline access, missing credentials and

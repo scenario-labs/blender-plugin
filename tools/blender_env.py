@@ -206,6 +206,7 @@ def profile_snapshot(root):
 
 def _forward_log(path, stopped, destinations, errors):
     """Tail the owned regular log, so child stdout never depends on a pipe reader."""
+    destinations = list(destinations)
     decoder = io.IncrementalNewlineDecoder(
         codecs.getincrementaldecoder("utf-8")("replace"), translate=True
     )
@@ -219,9 +220,13 @@ def _forward_log(path, stopped, destinations, errors):
                 finished = not chunk and completed
                 text = decoder.decode(chunk, final=finished)
                 if text:
-                    for destination in destinations:
-                        destination.write(text)
-                        destination.flush()
+                    for destination in tuple(destinations):
+                        try:
+                            destination.write(text)
+                            destination.flush()
+                        except Exception as error:
+                            errors.append(error)
+                            destinations.remove(destination)
                 if finished:
                     return
                 if not chunk:

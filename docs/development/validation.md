@@ -153,7 +153,13 @@ complete per-phase files. `--log PATH` also records phase-labelled UTF-8 output
 in a new file outside the normal Blender profile. Existing destinations are
 refused; the file closes on failure or interruption as well as success. A
 forwarding error fails an otherwise successful command without discarding the
-phase log; if Blender itself fails, its exit status takes precedence.
+phase log; healthy destinations continue after another destination fails. If
+Blender itself fails, its exit status takes precedence. Failure to open or write
+the requested log before a phase prevents that phase from starting; a log-close
+failure also fails the command because the requested evidence is incomplete.
+`--timeout` bounds each Blender child process, not the runner's total wall-clock
+time: terminal and filesystem I/O can block. The runner waits for its forwarding
+thread before closing the log, so it does not leave a writer using closed storage.
 
 The separate [native update fixture](../../tools/test_repository_update.py) tests
 Blender's repository install and update mechanism with two synthetic extension

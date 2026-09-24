@@ -95,6 +95,45 @@ def test_completion_between_temporary_eof_and_event_check_retains_final_bytes():
     assert errors == []
 
 
+@pytest.mark.parametrize("operation", ["write", "flush"])
+@pytest.mark.parametrize("broken_first", [False, True])
+def test_failed_destination_does_not_stop_healthy_destinations(operation, broken_first):
+    stopped, errors = threading.Event(), []
+    stopped.set()
+
+    class Source(io.BytesIO):
+        def read(self, size):
+            # Force several forwarding chunks after the first sink failure.
+            return super().read(min(size, 4))
+
+    class LogPath:
+        def open(self, mode):
+            assert mode == "rb"
+            return Source(b"complete terminal output\n")
+
+    class BrokenSink(io.StringIO):
+        attempts = 0
+
+        def write(self, text):
+            if operation == "write":
+                self.attempts += 1
+                raise OSError("fixture write failure")
+            return super().write(text)
+
+        def flush(self):
+            self.attempts += 1
+            raise OSError("fixture flush failure")
+
+    healthy, broken = io.StringIO(), BrokenSink()
+    destinations = [broken, healthy] if broken_first else [healthy, broken]
+    blender_env._forward_log(LogPath(), stopped, destinations, errors)
+    assert healthy.getvalue() == "complete terminal output\n"
+    assert broken.attempts == 1
+    assert len(errors) == 1
+    assert isinstance(errors[0], OSError)
+    assert len(destinations) == 2  # The caller's collection is not mutated.
+
+
 def test_failed_child_keeps_its_status_and_full_diagnostics(tmp_path, capsys):
     combined = io.StringIO()
     with pytest.raises(subprocess.CalledProcessError) as error:
@@ -149,6 +188,19 @@ def test_forwarding_error_keeps_phase_log_and_does_not_hide_child_failure(tmp_pa
     assert (tmp_path / "probe.log").read_text() == "retained detail\n"
 
 
+def test_requested_log_header_failure_prevents_child_admission(tmp_path, monkeypatch):
+    class BrokenSink:
+        def write(self, text):
+            raise OSError("fixture log header failure")
+
+    monkeypatch.setattr(
+        blender_env.subprocess, "run", lambda *a, **kw: pytest.fail("must not start child")
+    )
+    with pytest.raises(OSError, match="header failure"):
+        step(tmp_path, "print('must not run')", log_output=BrokenSink())
+    assert not (tmp_path / "probe.log").exists()
+
+
 @pytest.fixture
 def runner(monkeypatch, tmp_path):
     monkeypatch.syspath_prepend(str(Path(__file__).resolve().parents[2] / "tools"))
@@ -171,6 +223,21 @@ def test_log_cli_closes_file_and_preserves_failure_status(runner, tmp_path, monk
     assert runner.main() == 7
     assert destination.read_text() == "native diagnostic\n"
     assert opened[0].closed
+
+
+def test_requested_log_close_failure_is_not_reported_as_success(runner, tmp_path, monkeypatch):
+    class BrokenClose(io.StringIO):
+        def close(self):
+            super().close()
+            raise OSError("fixture log close failure")
+
+    destination = tmp_path / "native.log"
+    opened = BrokenClose()
+    monkeypatch.setattr(sys, "argv", ["test_blender.py", "--log", str(destination)])
+    monkeypatch.setattr(Path, "open", lambda *a, **kw: opened)
+    monkeypatch.setattr(runner, "run", lambda args: 0)
+    assert runner.main() == 1
+    assert opened.closed
 
 
 @pytest.mark.parametrize("location", ["existing", "normal-profile"])

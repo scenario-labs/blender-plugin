@@ -76,7 +76,22 @@ or `--blender` to select a supported binary; discovery does not prove compatibil
 `uv run --locked --no-env-file python tools/blender_env.py` prints the selected
 executable without launching it. Pass `--blender PATH` to override `BLENDER`;
 an invalid explicit selection exits with status 1 and a diagnostic rather than
-falling back to another installation.
+falling back to another installation. `--manifest-version` (also `--version`)
+prints the extension version without requiring Blender. See the
+[discovery reference](../../CONTRIBUTING.md#native-blender-test-loop) for locations
+and version ordering.
+
+| Environment | Available checks | Limits |
+| --- | --- | --- |
+| Desktop with supported Blender on macOS, Linux or Windows | Locked unit checks, exact-ZIP build/validation, isolated headless tests, GUI capture | A working desktop session is required for capture; inspect its PNG and record actual OS/Blender versions. Discovery is not compatibility proof. |
+| Linux x64 without a display | Locked unit checks, build and isolated headless tests using an installed or explicitly fetched Blender | The official fetcher verifies archives. No GUI capture or input/rendering acceptance is established. |
+| Sandbox without Blender | Locked unit checks, changed-file Ruff, knowledge and agent-skill checks; manifest-version output | Build, native and GUI checks cannot run. State those omissions in the PR so a reviewer or CI can supply the missing evidence. |
+
+Build/install/test/capture commands always own fresh disposable profiles. These
+tools have no normal-profile mode or generic arbitrary Blender-command wrapper.
+Capture artifacts use unique directories rather than overwriting a fixed PNG.
+GUI probes never spend credits; capture requires a desktop session with the
+necessary display access, which may be unavailable to a cloud agent.
 
 The portable build/install tools also create fresh isolated profiles and scrub
 inherited credentials and path overrides. For every direct Blender invocation outside these tools,

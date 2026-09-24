@@ -23,6 +23,24 @@ else:
 ROOT = Path(__file__).resolve().parents[1]
 
 
+def _version_key(path):
+    """Sort versioned installation paths numerically, including multi-digit releases."""
+    for part in reversed(path.parts):
+        match = re.search(r"(?<!\d)(\d+)\.(\d+)(?:\.(\d+))?", part)
+        if match:
+            return tuple(int(value or 0) for value in match.groups()), str(path)
+    return (0, 0, 0), str(path)
+
+
+def manifest_version():
+    """Read the extension version without discovering or launching Blender."""
+    manifest = tomllib.loads((ROOT / "scenario/blender_manifest.toml").read_text())
+    version = manifest.get("version")
+    if not isinstance(version, str) or not version:
+        raise ValueError("The extension manifest must contain a version string")
+    return version
+
+
 def find_blender(explicit=None):
     selected = explicit or os.environ.get("BLENDER")
     if selected:
@@ -34,27 +52,47 @@ def find_blender(explicit=None):
     if found:
         return Path(found).resolve()
     candidates = []
-    if platform.system() == "Darwin":
-        candidates = [Path("/Applications/Blender.app/Contents/MacOS/Blender")]
-    elif platform.system() == "Windows":
+    system = platform.system()
+    if system == "Darwin":
+        candidates = [
+            Path("/Applications/Blender.app/Contents/MacOS/Blender"),
+            *sorted(
+                [
+                    *Path("/Applications").glob("Blender*.app/Contents/MacOS/Blender"),
+                    *Path("/Applications").glob("Blender*/Blender.app/Contents/MacOS/Blender"),
+                ],
+                key=_version_key,
+                reverse=True,
+            ),
+        ]
+    elif system == "Windows":
         candidates = sorted(
-            Path("C:/Program Files/Blender Foundation").glob("Blender*/blender.exe"), reverse=True
+            Path("C:/Program Files/Blender Foundation").glob("Blender*/blender.exe"),
+            key=_version_key,
+            reverse=True,
         )
     else:
         candidates = [
             Path("/snap/bin/blender"),
-            *sorted(Path("/opt").glob("blender*/blender"), reverse=True),
+            Path("/usr/bin/blender"),
+            *sorted(Path("/opt").glob("blender*/blender"), key=_version_key, reverse=True),
         ]
-    for folder in sorted((ROOT / ".blender").glob("*"), reverse=True):
-        candidates.extend(
-            [
-                folder / "blender",
-                *sorted(folder.glob("blender-*-linux-x64/blender")),
-                folder / "blender.exe",
-                *sorted(folder.glob("blender-*-windows-x64/blender.exe")),
-                folder / "Blender.app/Contents/MacOS/Blender",
-            ]
-        )
+    for folder in sorted((ROOT / ".blender").glob("*"), key=_version_key, reverse=True):
+        if not folder.is_dir():
+            continue
+        if system == "Darwin":
+            candidates.append(folder / "Blender.app/Contents/MacOS/Blender")
+        elif system == "Windows":
+            candidates.extend(
+                [folder / "blender.exe", *folder.glob("blender-*-windows-x64/blender.exe")]
+            )
+        else:
+            candidates.extend(
+                [
+                    folder / "blender",
+                    *folder.glob("blender-*-linux-x64/blender"),
+                ]
+            )
     for candidate in candidates:
         if candidate.is_file() and os.access(candidate, os.X_OK):
             return candidate.resolve()
@@ -179,17 +217,27 @@ def run_step(binary, args, *, env, directory, name, timeout):
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Print the selected Blender executable path.")
-    parser.add_argument(
+    parser = argparse.ArgumentParser(
+        description="Print the selected Blender executable path or extension manifest version."
+    )
+    selection = parser.add_mutually_exclusive_group()
+    selection.add_argument(
         "--blender", help="Executable path or command; defaults to BLENDER/discovery"
+    )
+    selection.add_argument(
+        "--version",
+        "--manifest-version",
+        action="store_true",
+        dest="manifest_version",
+        help="Print the extension manifest version without launching Blender",
     )
     args = parser.parse_args()
     try:
-        binary = find_blender(args.blender)
+        value = manifest_version() if args.manifest_version else find_blender(args.blender)
     except (OSError, ValueError) as error:
         print(error, file=sys.stderr)
         return 1
-    print(binary)
+    print(value)
     return 0
 
 

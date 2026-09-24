@@ -1,7 +1,7 @@
 {
   "version": 1,
   "index": "docs/index.md",
-  "base_revision": "7f395b874b198cddd35c722468ddd8ef5fdeb82e",
+  "base_revision": "ed535a351ee0e25d29f58d13a37805a35b098728",
   "documents": [
     {
       "path": ".claude/rules/blender-glue.md",
@@ -35,7 +35,7 @@
       "path": "CONTRIBUTING.md",
       "coverage": "inherited",
       "reviewed_at": "2026-09-24",
-      "limits": "Existing guide indexed during this intake, without a fresh claim-by-claim or live verification; consult current integration status and issue acceptance. Contribution-guide cross-reference reviewed after the Actions update guidance; other source fingerprints retain their prior evidence. Markdown handbook renderer, template slots, copied/inline images, metadata validation and external-font disclosure reviewed. This does not refresh inherited product claims or screenshot acceptance, publish the site or attach release assets. Repeat-build asset ownership/cleanup, literal template examples and directory-link handling reviewed with regression tests; desktop and narrow renderer presentation inspected separately in isolated browser profiles. macOS arm64 downloader section inspected against verified-DMG extraction, private mount cleanup and offline failure tests; local native proof does not establish scheduled macOS CI or complete cross-platform compatibility.",
+      "limits": "Existing guide indexed during this intake, without a fresh claim-by-claim or live verification; consult current integration status and issue acceptance. Contribution-guide cross-reference reviewed after the Actions update guidance; other source fingerprints retain their prior evidence. Markdown handbook renderer, template slots, copied/inline images, metadata validation and external-font disclosure reviewed. This does not refresh inherited product claims or screenshot acceptance, publish the site or attach release assets. Repeat-build asset ownership/cleanup, literal template examples and directory-link handling reviewed with regression tests; desktop and narrow renderer presentation inspected separately in isolated browser profiles. macOS arm64 downloader section inspected against verified-DMG extraction, private mount cleanup and offline failure tests; local native proof does not establish scheduled macOS CI or complete cross-platform compatibility. Portable discovery order, numeric versions, manifest-version CLI and optional icon-font search inspected against implementation and offline layout tests; other inherited guide claims and native platform acceptance remain outside this focused review.",
       "sources": {
         "Makefile": "4971a39a042367df0c4cd151ee46e6f6c00df518e36b46faf00a52d0846f1e2a",
         "pyproject.toml": "8806419c64dc00323f2da6bf43986dcb0ce792e6dad1c237fda95627dd354333",
@@ -59,7 +59,10 @@
         "docs/handbook-template.html": "f2a14d1356fa1f9f2c28edf251c6c8372d2302b46131215db0b9095e3913061c",
         "tests/unit/test_docs_html.py": "4f13fa6738f636c0034a5eb07c773961efd4396dcf806862695612f20f5762da",
         "tests/unit/test_fetch_blender_macos.py": "3b0658d06b571b336b42379acc7b47de3eab3590b5f4c65754cf2435601a6568",
-        "TRADEMARKS.md": "067b66d55a6eb8540081535388d9e8a8a7f69018824b4c16625ea70f7c4d92b2"
+        "TRADEMARKS.md": "067b66d55a6eb8540081535388d9e8a8a7f69018824b4c16625ea70f7c4d92b2",
+        "tools/blender_env.py": "97df605cb987ceed368fe77fe2a591c0f84eb9c4d63fd1f028b79dbf56e116f4",
+        "tools/make_icons.py": "439a7dfde04f7d931e8476c644bb19592818ceacceff09c657692071f1ba3d75",
+        "tests/unit/test_tool_discovery.py": "b2f6788edb4b2311eaff88f05d1a28dc5b66779ab9fdb53e821b61d4f582ee14"
       }
     },
     {
@@ -499,12 +502,12 @@
       "path": "docs/development/validation.md",
       "coverage": "policy",
       "reviewed_at": "2026-09-24",
-      "limits": "Canonical validation policy with inspected offline unit workflow, coverage reporting and connection-guard contracts; unit-process core/MCP coverage and matrix results do not establish subprocess coverage, native Blender compatibility or live service acceptance. Source-manifest preflight, supplied-ZIP bypass and failure/status preservation reviewed against build/runner code and offline regressions; native runtime and other claims retain prior limits. Reusable CI orchestration and fail-closed aggregate reviewed against all six caller workloads; this does not establish repository required-check settings or live service acceptance. Native update fixture reviewed against isolated profile guards, loopback-only repository configuration, server failure cleanup and exact synthetic installed-byte/enabled-state checks; local Blender 5.0.1 mechanism evidence does not establish production add-on upgrades, hosted publication, GUI controls or arbitrary subprocess socket enforcement. Unrelated evidence fingerprints retain prior review scope. Locator CLI, GUI make alias and existing offline capture artifact/profile behavior inspected; no new supported-platform GUI compatibility or live service acceptance is implied.",
+      "limits": "Canonical validation policy with inspected offline unit workflow, coverage reporting and connection-guard contracts; unit-process core/MCP coverage and matrix results do not establish subprocess coverage, native Blender compatibility or live service acceptance. Source-manifest preflight, supplied-ZIP bypass and failure/status preservation reviewed against build/runner code and offline regressions; native runtime and other claims retain prior limits. Reusable CI orchestration and fail-closed aggregate reviewed against all six caller workloads; this does not establish repository required-check settings or live service acceptance. Native update fixture reviewed against isolated profile guards, loopback-only repository configuration, server failure cleanup and exact synthetic installed-byte/enabled-state checks; local Blender 5.0.1 mechanism evidence does not establish production add-on upgrades, hosted publication, GUI controls or arbitrary subprocess socket enforcement. Unrelated evidence fingerprints retain prior review scope. Locator CLI, GUI make alias and existing offline capture artifact/profile behavior inspected; no new supported-platform GUI compatibility or live service acceptance is implied. Manifest-version CLI and documented environment boundaries inspected against discovery and offline tests; simulated platform locations do not establish native acceptance on those platforms.",
       "sources": {
         "Makefile": "aa48fc0a30fa0a7ad525915aa914c27044088bbe30444c47a22cae11da8f6788",
         "pyproject.toml": "c658408a54b6c62b113e2939cb26032352341ca9f4b26b2e839caeb77f4e44ea",
         "tools/test_blender.py": "9691af406f5bd661d7cabd9d6cbe870dfeff2706fbc46416310b2d9e6fe90a26",
-        "tools/blender_env.py": "ca5b749cd44c76ad633386e5c692a5a9053aa1e2d408203732bff91545db9ae5",
+        "tools/blender_env.py": "97df605cb987ceed368fe77fe2a591c0f84eb9c4d63fd1f028b79dbf56e116f4",
         "scenario/mcp/cli.py": "733ec02de0f03a9bfb0a9326a8f94ac32a2b6c33a5c11a09b79694cabd87c156",
         "tests/blender/test_mcp_cli.py": "69c6b9ad670cd59f4eb2e18f91bda4deb20c487fe1539d69f0825799233adef8",
         ".github/workflows/unit-tests.yml": "a58dbb136e028123210228cc8c739d131045a2cc25aafa4b557d1cf73767e67c",
@@ -526,7 +529,8 @@
         "tests/blender/repository_update.py": "99bafb44619bd45da5a973485dd01140370b6e6be076765b6ab91fdfe57d9e28",
         "tests/unit/test_repository_update_runner.py": "47a5b52d4fa030b04064d69bdaa6cb4601e8bfc542a4e1afe49054d3724328c2",
         "tools/capture_gui.py": "c80adcf7aeff8d8b1e39e56fd192a66735e1e52fe8f36da99a00a413473d8d91",
-        "tests/unit/test_gui_capture.py": "beee6cba15adf7da1e7434c18dcb2b948e36f4b459af06fc98a6c850a5fea87c"
+        "tests/unit/test_gui_capture.py": "beee6cba15adf7da1e7434c18dcb2b948e36f4b459af06fc98a6c850a5fea87c",
+        "tests/unit/test_tool_discovery.py": "b2f6788edb4b2311eaff88f05d1a28dc5b66779ab9fdb53e821b61d4f582ee14"
       }
     },
     {

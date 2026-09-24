@@ -36,6 +36,7 @@ W = STROKE * U
 # proportional fonts first; Blender's bundled DejaVu is the monospaced one in recent releases, its A is condensed
 FONT_CANDIDATES = [
     str(pathlib.Path(os.environ.get("WINDIR", "C:/Windows")) / "Fonts/arial.ttf"),
+    str(pathlib.Path(os.environ.get("WINDIR", "C:/Windows")) / "Fonts/DejaVuSans.ttf"),
     "/usr/share/fonts/truetype/liberation2/LiberationSans-Regular.ttf",
     "/usr/share/fonts/TTF/DejaVuSans.ttf",
     "/System/Library/Fonts/DejaVuSans.ttf",
@@ -58,6 +59,10 @@ FONT_CANDIDATES = [
             "/Applications/Blender*.app/Contents/Resources/*/datafiles/fonts/DejaVuSans*.woff2"
         )
     ),
+    *sorted(glob.glob("/usr/share/blender/*/datafiles/fonts/*.woff2")),
+    # Keep both manually unpacked and current fetch_blender.py archive layouts.
+    *sorted(glob.glob(str(ROOT / ".blender/*/*/datafiles/fonts/*.woff2"))),
+    *sorted(glob.glob(str(ROOT / ".blender/*/*/*/datafiles/fonts/*.woff2"))),
 ]
 
 

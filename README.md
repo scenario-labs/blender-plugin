@@ -169,18 +169,37 @@ channel (support@scenario.com), not necessarily the same licence.
 
 ## Licence
 
-First-party extension code is GPL-3.0-or-later; see [LICENSE](LICENSE). Blender
-requires a GPL-compatible licence for add-ons using `bpy`. The extension ZIP
-includes the same GPL text. Bundled dependencies and adopted sources retain
-their original notices; see [SDK bundle](docs/SDK_BUNDLE.md) and
-[source adoption](docs/STUDIO_ADOPTION.md).
+Copyright 2026 Scenario Inc. First-party extension code is free software: you
+can redistribute it and/or modify it under the terms of the GNU General Public
+License as published by the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
+It is distributed WITHOUT ANY WARRANTY; see [LICENSE](LICENSE) for the full text.
+First-party source headers and the extension manifest declare GPL-3.0-or-later,
+and the extension ZIP includes the same GPL text. Bundled dependencies, adopted
+sources and assets retain their original licences and notices; see the
+[SDK bundle](docs/SDK_BUNDLE.md) and [source adoption](docs/STUDIO_ADOPTION.md).
+
+[Blender's licence guidance](https://www.blender.org/about/license/) requires a
+GPL-compatible licence for published add-ons using its Python API. The
+[Blender Extensions Platform](https://docs.blender.org/manual/en/latest/advanced/extensions/licenses.html)
+requires GPL-3.0-or-later for add-ons it hosts. This project distributes outside
+that platform and uses GPL-3.0-or-later for its first-party extension code.
 
 The GPL grants no trademark rights: "Scenario" and the Scenario logo belong to Scenario Inc., and Blender is a registered trademark of the Blender Foundation; this extension is not affiliated with or endorsed by the Blender Foundation. See [TRADEMARKS.md](TRADEMARKS.md).
 
-The local MCP design acknowledges [Blender Lab's blender_mcp project](https://projects.blender.org/lab/blender_mcp)
-as an inspiration. This extension implements authenticated loopback HTTP,
-main-thread tool dispatch and an opt-in Python gate; the acknowledgement does
-not assert identical transports or relicense third-party source.
+### Acknowledgements
+
+The local MCP design acknowledges
+[Blender Lab's blender_mcp project](https://projects.blender.org/lab/blender_mcp)
+(GPL-3.0-or-later, Blender Authors) as a design reference.
+Its [project page](https://www.blender.org/lab/mcp-server/) describes
+the upstream implementation, which uses a separate stdio MCP server and TCP
+connection to its Blender add-on. This extension implements authenticated
+loopback HTTP, main-thread tool dispatch and an opt-in Python gate.
+
+The [SPZ reader](scenario/core/scene/spz.py) reads
+[Niantic's SPZ Gaussian splat format](https://github.com/nianticlabs/spz).
+The [MCP protocol module](scenario/mcp/protocol.py) supports protocol revisions
+2025-06-18, 2025-03-26 and 2024-11-05.
 
 The Scenario logo comes from the [official skills repository](https://github.com/scenario-labs/skills/blob/main/resources/scenario-logo.png);
 its [original source licence](docs/images/scenario-logo.LICENSE) is retained.

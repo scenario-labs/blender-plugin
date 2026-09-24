@@ -267,4 +267,13 @@ and the current limits of online-access and agent controls.
 
 See [known limitations](KNOWN_LIMITATIONS.md) for current runtime, authentication, interface and verification boundaries. The [architecture map](architecture/runtime.md) distinguishes existing components from unfinished UI/MCP integration.
 
+## Licence
+
+Scenario for Blender's first-party extension code is free software under the
+GNU General Public License, version 3 or (at your option) any later version
+(GPL-3.0-or-later), without any warranty. The full text is in
+[LICENSE](https://github.com/scenario-labs/blender-plugin/blob/main/LICENSE).
+Bundled dependencies, adopted sources and assets retain their original licences
+and notices; see the [repository licence notice](https://github.com/scenario-labs/blender-plugin#licence).
+
 Blender is a registered trademark of the Blender Foundation. Scenario for Blender is an independent extension, not published by or affiliated with the Blender Foundation. Trademark notes: https://github.com/scenario-labs/blender-plugin/blob/main/TRADEMARKS.md

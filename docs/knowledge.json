@@ -1,7 +1,7 @@
 {
   "version": 1,
   "index": "docs/index.md",
-  "base_revision": "83381ab1b5b47178972f61b920005e4eb4762318",
+  "base_revision": "c932fb07d280744904caa71836810b5e9e367e8d",
   "documents": [
     {
       "path": ".claude/rules/blender-glue.md",
@@ -87,7 +87,7 @@
       "path": "README.md",
       "coverage": "inherited",
       "reviewed_at": "2026-09-24",
-      "limits": "Public entry points, supported minimum, explicit credential selection, SDK bundle, privacy and contributor links reviewed against listed sources. Product lane summaries inherit the user guide and known runtime limitations; no new live generation, platform compatibility, hosted update, or native UI acceptance is claimed. Logo bytes and original MIT notice retained from the official skills repository. Sibling links retain their prior review. Browser-rendered GitHub landing page review remains separate. Markdown handbook renderer, template slots, copied/inline images, metadata validation and external-font disclosure reviewed. This does not refresh inherited product claims or screenshot acceptance, publish the site or attach release assets. Repeat-build asset ownership/cleanup, literal template examples and directory-link handling reviewed with regression tests; desktop and narrow renderer presentation inspected separately in isolated browser profiles. Optional uv-managed hooks and staged secret/path guard inspected with disposable Git regression coverage; full-tree prototype normalization, complete secret detection and repository protection remain separate. Blockout link and lane instructions reviewed against its current controls and stored-plan behavior. Hero alt text describes the new labelled offline Image fixture, without implying a price quote or generated result.",
+      "limits": "Public entry points, supported minimum, explicit credential selection, SDK bundle, privacy and contributor links reviewed against listed sources. Product lane summaries inherit the user guide and known runtime limitations; no new live generation, platform compatibility, hosted update, or native UI acceptance is claimed. Logo bytes and original MIT notice retained from the official skills repository. Sibling links retain their prior review. Browser-rendered GitHub landing page review remains separate. Markdown handbook renderer, template slots, copied/inline images, metadata validation and external-font disclosure reviewed. This does not refresh inherited product claims or screenshot acceptance, publish the site or attach release assets. Repeat-build asset ownership/cleanup, literal template examples and directory-link handling reviewed with regression tests; desktop and narrow renderer presentation inspected separately in isolated browser profiles. Optional uv-managed hooks and staged secret/path guard inspected with disposable Git regression coverage; full-tree prototype normalization, complete secret detection and repository protection remain separate. Blockout link and lane instructions reviewed against its current controls and stored-plan behavior. Hero alt text describes the new labelled offline Image fixture, without implying a price quote or generated result. Licence wording and scoped MCP/SPZ acknowledgements reviewed against source headers, upstream transport documentation and Blender licence guidance. This preserves existing licences and source notices; it does not decide relicensing or certify asset rights.",
       "sources": {
         "scenario/blender/runtime.py": "2afa6267f835569288ae6d1947af5410b05a0bbdcd3bbad985ff30a6dcb8a000",
         "scenario/blender/registry.py": "a34fcb0110b5c991764df22d423546d9de3c949d3183b6dad1c5ca9e05123af2",
@@ -101,7 +101,7 @@
         "Makefile": "0b43d0c8a2615e14ba2970d0d686beef22050611fcb92c32296b868618e69c5e",
         "scenario/prefs.py": "a96da37fa23ed9ffb6be31c11cc6d519b15e3103555c84e7e14a60d2adcaf6bf",
         "scenario/core/config.py": "74a45b99fde47d741710dbf2a9d8051f2b31903f10ecae679d061340c62fb1be",
-        "docs/USER_GUIDE.md": "dfb4868fcce8fa514a620b105678788bc77a1c76719d63d16aa45138ddac934d",
+        "docs/USER_GUIDE.md": "f7a4e478caa7dcbc9702b5dba49fd989f67282f0430e2fc8295e3e07209ac618",
         "docs/KNOWN_LIMITATIONS.md": "ccc7710a7fab8d3a2b845f71e541e6c55a88f5a455c14f63596c225ea74480ab",
         "docs/PRIVACY.md": "6393c8c193a907a99d34284fb0338c62437bab4754812de453171a7fc49a4e49",
         "docs/SDK_BUNDLE.md": "161627add3fd5b146643fddc2c496a48023406383748e96b6fbdbbed75960ddb",
@@ -110,7 +110,12 @@
         "SECURITY.md": "5709200451769d58d1417aefad386b404ee0f03a2a3187756b51e0252cd1f40d",
         "docs/images/scenario-logo.png": "5815cf03eaa5e9eaa3b32ee38878d9d00ddf31763f0e7ccbfd2a6c77b03ba3cc",
         "docs/images/scenario-logo.LICENSE": "1f5802b8f96b536d570dcbffe6fc509c48deb01d06289022c12f55e1c37e8627",
-        "docs/images/panel-image.png": "9e5141afd264c545bfe88198d6ccdd90dea3247f3199c618bd9a7904caba7453"
+        "docs/images/panel-image.png": "9e5141afd264c545bfe88198d6ccdd90dea3247f3199c618bd9a7904caba7453",
+        "LICENSE": "3972dc9744f6499f0f9b2dbf76696f2ae7ad8af9b23dde66d6af86c9dfb36986",
+        "scenario/LICENSE": "3972dc9744f6499f0f9b2dbf76696f2ae7ad8af9b23dde66d6af86c9dfb36986",
+        "scenario/mcp/sandbox.py": "2f3423a7cfdc897c7860f220616c232a1f853332bf235b4f7f110eb5a39bd684",
+        "scenario/mcp/protocol.py": "62b2fbfa2f3e4bcb6f8084f3b67798d97fe11c01a4ba38b062ddf52c8c68413b",
+        "scenario/core/scene/spz.py": "94af65046a8943629f6dce789e860a1f14208c91f21c56edfe1fa6490fba3789"
       }
     },
     {
@@ -397,7 +402,7 @@
       "path": "docs/USER_GUIDE.md",
       "coverage": "inherited",
       "reviewed_at": "2026-09-24",
-      "limits": "Existing guide indexed during this intake, without a fresh claim-by-claim or live verification; consult current integration status and issue acceptance. MCP overview and reference links reviewed; remaining product guidance still inherits its stated verification limits. MCP panel screenshot captured from the exact ZIP in isolated Blender 5.0.1 with synthetic local token and Python disabled; other screenshots retain inherited limits. Markdown handbook renderer, template slots, copied/inline images, metadata validation and external-font disclosure reviewed. This does not refresh inherited product claims or screenshot acceptance, publish the site or attach release assets. Repeat-build asset ownership/cleanup, literal template examples and directory-link handling reviewed with regression tests; desktop and narrow renderer presentation inspected separately in isolated browser profiles. Blockout instructions reviewed against current design/refine/rebuild/clear controls and plan storage; no live paid design or new native acceptance is claimed. Current guide wording reconciled with registered lanes, credential selection, visible controls, local Blockout plan operations and shot hold parsing. Historic account-plan, fixed-price and blanket custom-model claims removed. Native Image/Blockout illustrations use labelled offline fixtures with no credentials, socket connections blocked and installed-ZIP/profile checks; they are not live model, price, platform-wide or paid-workflow acceptance.",
+      "limits": "Existing guide indexed during this intake, without a fresh claim-by-claim or live verification; consult current integration status and issue acceptance. MCP overview and reference links reviewed; remaining product guidance still inherits its stated verification limits. MCP panel screenshot captured from the exact ZIP in isolated Blender 5.0.1 with synthetic local token and Python disabled; other screenshots retain inherited limits. Markdown handbook renderer, template slots, copied/inline images, metadata validation and external-font disclosure reviewed. This does not refresh inherited product claims or screenshot acceptance, publish the site or attach release assets. Repeat-build asset ownership/cleanup, literal template examples and directory-link handling reviewed with regression tests; desktop and narrow renderer presentation inspected separately in isolated browser profiles. Blockout instructions reviewed against current design/refine/rebuild/clear controls and plan storage; no live paid design or new native acceptance is claimed. Current guide wording reconciled with registered lanes, credential selection, visible controls, local Blockout plan operations and shot hold parsing. Historic account-plan, fixed-price and blanket custom-model claims removed. Native Image/Blockout illustrations use labelled offline fixtures with no credentials, socket connections blocked and installed-ZIP/profile checks; they are not live model, price, platform-wide or paid-workflow acceptance. Licence section reviewed against the unchanged GPL text, package declaration and third-party notice policy; other inherited product claims are unchanged.",
       "sources": {
         "scenario/blender/panels.py": "5fbdc508c0d05c3472aa1ad489dfd366487ff39e3e32eef4fa9d79475ff64f0c",
         "scenario/blender/composer/draw.py": "52a366ce04766edc3aef343c7b115d7e360e8c88a27688c4446be36ecc78c6e8",
@@ -433,7 +438,11 @@
         "tools/capture_gui.py": "c80adcf7aeff8d8b1e39e56fd192a66735e1e52fe8f36da99a00a413473d8d91",
         "tools/gui_screenshot.py": "f773d0c3457163fb0bef827a98cda38738f12c543f50ea43ba4f885a0fe59666",
         "docs/images/panel-image.png": "9e5141afd264c545bfe88198d6ccdd90dea3247f3199c618bd9a7904caba7453",
-        "docs/images/panel-blockout.png": "d63974be4bc4609afe790049ae3ace64f109719bebadebc5dfe13571f60c6323"
+        "docs/images/panel-blockout.png": "d63974be4bc4609afe790049ae3ace64f109719bebadebc5dfe13571f60c6323",
+        "LICENSE": "3972dc9744f6499f0f9b2dbf76696f2ae7ad8af9b23dde66d6af86c9dfb36986",
+        "scenario/LICENSE": "3972dc9744f6499f0f9b2dbf76696f2ae7ad8af9b23dde66d6af86c9dfb36986",
+        "README.md": "dfc68899f60cc492c3a1cee03d2efb3f16447a417036e6fac5490ae7d527091b",
+        "docs/SDK_BUNDLE.md": "161627add3fd5b146643fddc2c496a48023406383748e96b6fbdbbed75960ddb"
       }
     },
     {
@@ -621,10 +630,14 @@
     {
       "path": "docs/engineering/design-v1.md",
       "coverage": "historical",
-      "reviewed_at": "2026-09-23",
-      "limits": "Historical context only; examples and recorded service observations are not current instructions or live verification.",
+      "reviewed_at": "2026-09-24",
+      "limits": "Historical context only; examples and recorded service observations are not current instructions or live verification. Historical licence/provenance correction identifies the MCP design reference accurately and preserves the current adopted-source notice policy; other prototype decisions remain historical.",
       "sources": {
-        "AGENTS.md": "6a9781d3c0b8b7d1b48635e4ab22fc6a4089c9f39317a49f884aac4b715b28be"
+        "AGENTS.md": "6a9781d3c0b8b7d1b48635e4ab22fc6a4089c9f39317a49f884aac4b715b28be",
+        "README.md": "dfc68899f60cc492c3a1cee03d2efb3f16447a417036e6fac5490ae7d527091b",
+        "scenario/mcp/sandbox.py": "2f3423a7cfdc897c7860f220616c232a1f853332bf235b4f7f110eb5a39bd684",
+        "docs/STUDIO_ADOPTION.md": "7e338a3b605f1f6348489bb6df53ab501a6c9484646e1b61f3f739491ab6a355",
+        "LICENSE": "3972dc9744f6499f0f9b2dbf76696f2ae7ad8af9b23dde66d6af86c9dfb36986"
       }
     },
     {
@@ -767,7 +780,7 @@
       "path": "docs/MCP.md",
       "coverage": "source-reviewed",
       "reviewed_at": "2026-09-24",
-      "limits": "Tool table generated without importing Blender and compared with the installed native registry. Local setup/security claims inspected against active code. Exact-ZIP isolated Blender 5.0.1 macOS arm64 checks passed, including GUI authenticated tools/list with synthetic local credentials, Python disabled and external sockets blocked. Hosted tool mapping and Codex configuration checked against their official references. No paid generation, live provider, complete client/platform compatibility or shared-runtime acceptance is claimed.",
+      "limits": "Tool table generated without importing Blender and compared with the installed native registry. Local setup/security claims inspected against active code. Exact-ZIP isolated Blender 5.0.1 macOS arm64 checks passed, including GUI authenticated tools/list with synthetic local credentials, Python disabled and external sockets blocked. Hosted tool mapping and Codex configuration checked against their official references. No paid generation, live provider, complete client/platform compatibility or shared-runtime acceptance is claimed. Sandbox provenance docstring and required formatting reviewed; executable AST is unchanged, with no new runtime acceptance claimed.",
       "sources": {
         "scenario/mcp/tools_blender.py": "e80a60e846adae80dbf520cf969c1d14a11a03f4292b20b3394806ee5e4d0e4f",
         "scenario/mcp/tools_scenario.py": "66e90694c9bc89878cec3ed2c133ac017492c9ebec866e1c850c07baf4b29543",
@@ -775,7 +788,7 @@
         "scenario/mcp/cli.py": "733ec02de0f03a9bfb0a9326a8f94ac32a2b6c33a5c11a09b79694cabd87c156",
         "scenario/mcp/server.py": "e201d006e5189f32742db38c3f2b00879fbcc1b71b665436b45a0930ff696cd0",
         "scenario/mcp/stdio_shim.py": "93d3091ffc43ef479953b0a72c359ac1ff3efa6a2d59d7d93f73e8ac8ebc0690",
-        "scenario/mcp/sandbox.py": "1b959bb12ef029232256dbfed8d7393b2c5dc330f61605b29c9daa15d90ba21f",
+        "scenario/mcp/sandbox.py": "2f3423a7cfdc897c7860f220616c232a1f853332bf235b4f7f110eb5a39bd684",
         "scenario/blender/mcp_service.py": "ec45907c26301d5c0c2e48fe2eab09136cd52aadb00c6be5401d23ec7d868715",
         "scenario/prefs.py": "bfd966d4a6dab2a8505caa3e9ed58d71b71d57b29b673feb5344ad6b8ed72e92",
         "tools/gen_mcp_docs.py": "405471c39482b9a84853b4950d251ab159b1f0de9f45117f2405e40ee1822b0e",
@@ -802,13 +815,13 @@
       "path": "TRADEMARKS.md",
       "coverage": "policy",
       "reviewed_at": "2026-09-24",
-      "limits": "Proposed repository trademark wording and linked third-party policy; not a trademark-registration search or legal approval record. Maintainer wording review is tracked in the PR. Third-party component licences remain separate. The Blender/non-affiliation disclosure remains in the Markdown handbook and is included by the current renderer; obsolete handwritten HTML sources were removed by the renderer migration.",
+      "limits": "Proposed repository trademark wording and linked third-party policy; not a trademark-registration search or legal approval record. Maintainer wording review is tracked in the PR. Third-party component licences remain separate. The Blender/non-affiliation disclosure remains in the Markdown handbook and is included by the current renderer; obsolete handwritten HTML sources were removed by the renderer migration. Handbook licence addition inspected; existing trademark disclosure is unchanged.",
       "sources": {
         "LICENSE": "3972dc9744f6499f0f9b2dbf76696f2ae7ad8af9b23dde66d6af86c9dfb36986",
         "scenario/blender_manifest.toml": "7ac4a84b0856f6a7c5ada8182e1c343f097347a25cf5785d81d72b28ec10f444",
         "tests/unit/test_trademarks.py": "3881a95483e918233f8946ce1ee5eaba758a0de5f8acdb45244a963c55768539",
         "docs/SDK_BUNDLE.md": "161627add3fd5b146643fddc2c496a48023406383748e96b6fbdbbed75960ddb",
-        "docs/USER_GUIDE.md": "dfb4868fcce8fa514a620b105678788bc77a1c76719d63d16aa45138ddac934d",
+        "docs/USER_GUIDE.md": "f7a4e478caa7dcbc9702b5dba49fd989f67282f0430e2fc8295e3e07209ac618",
         "tools/build_docs_html.py": "40e8c099acc77be8b3d57edd31f1e2a0ade323d9932e1c822aee98320c01f4a2",
         "docs/handbook-template.html": "f2a14d1356fa1f9f2c28edf251c6c8372d2302b46131215db0b9095e3913061c"
       }

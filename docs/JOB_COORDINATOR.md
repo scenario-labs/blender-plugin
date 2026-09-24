@@ -261,6 +261,12 @@ suggestions do not grant permission to dispatch or retry. See
 [upload inspection](SDK_UPLOADS.md#scoped-inspection-and-recovery-visibility) for
 the state mapping and lifecycle boundaries.
 
+The optional thread-safe `origin_guard` also protects upload preparation and each
+durable initialization/part/finalization claim. Source reads and network calls
+remain outside the revision lock; inspection and explicit refresh preserve access
+to old-origin records. The [upload guide](SDK_UPLOADS.md#shared-worker-commands)
+describes rejected staging and already-claimed response behavior.
+
 
 ## Shared catalog and origin-bound quotes
 

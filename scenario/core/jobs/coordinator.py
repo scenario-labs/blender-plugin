@@ -174,11 +174,18 @@ class JobCoordinator:
             )
 
     @contextmanager
-    def _upload_guard(self):
+    def _upload_guard(self, origin=None):
         with self._lock:
             if not self._active:
                 raise UploadError("This upload context is inactive")
-            yield
+            if origin is None:
+                yield
+                return
+            guard = self._origin_guard(origin) if self._origin_guard else nullcontext(True)
+            with guard as current:
+                if not current:
+                    raise UploadError("Upload origin changed; review the saved request")
+                yield
 
     def _upload_commands(self):
         if self._uploads is None:

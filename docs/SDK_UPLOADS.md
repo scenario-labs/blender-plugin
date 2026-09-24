@@ -211,6 +211,27 @@ in-flight claim intact. A known upload's `complete`, `validating` or `validated`
 status means processing, not imported. Only `imported` with a valid `entityId`
 binds an asset; pending status does not release uncertain claims.
 
+Preparation requires a captured `JobOrigin` before reading the source. When the
+coordinator has an `origin_guard`, preparation checks that revision before staging
+and again while persisting the intent. Initialization and part transfer check it
+before preflight; initialization, each part and finalization hold the same pure
+revision guard through their durable mutation claim. Invalidation cannot slip
+between that check and the committed claim. The guard must be thread-safe and
+must not access `bpy`; the shared `OriginRevisions` registry supplies that boundary.
+File staging/verification and HTTP remain outside the guard. An unrelated scene's
+revision does not invalidate the captured origin.
+
+If the origin changes during staging, no upload intent is saved or dispatched.
+The completed private snapshot can remain as an orphan for explicit retention
+and cleanup, matching failed persistence or deactivation after staging. There is
+no public ownership-safe discard operation yet, and this check deletes neither
+the user's source nor arbitrary staging directories. A request already durably
+claimed may finish and save its receipt under the original scope/origin. Inspection
+and explicit remote refresh intentionally do not require a current origin, so a
+missing scene or a new file session does not erase recovery evidence. They never
+rebind it, release a claim or repeat a mutation. Callers without an `origin_guard`
+remain responsible for establishing their own current-origin policy.
+
 Offline tests exercise the actual SDK with synthetic HTTP responses and mocked
 storage connections, including the installed extension and shared worker queue.
 No live source is uploaded by these tests. Active UI/MCP wiring, authoritative

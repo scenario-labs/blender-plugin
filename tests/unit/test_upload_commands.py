@@ -6,6 +6,8 @@ import copy
 import hashlib
 import json
 import sqlite3
+import threading
+from contextlib import contextmanager
 from types import SimpleNamespace
 from unittest.mock import Mock
 
@@ -14,7 +16,8 @@ import pytest
 
 from scenario.core.api.sdk_adapter import Credentials, SDKAdapter
 from scenario.core.jobs.coordinator import JobCoordinator
-from scenario.core.jobs.store import JobOrigin, JobScope, JobStore, StoreConflict, StoreError
+from scenario.core.jobs.origins import OriginRevisions
+from scenario.core.jobs.store import JobScope, JobStore, StoreConflict, StoreError
 from scenario.core.jobs.transfers import StoragePolicy, TransferError
 from scenario.core.jobs.upload_sources import UploadSources
 from scenario.core.jobs.upload_store import UploadState, UploadStore
@@ -26,7 +29,8 @@ from scenario.core.jobs.workers import JobWorkers
 @pytest.fixture
 def env(tmp_path):
     scope = JobScope("https://service.example.invalid/v1", "account-one", "project-one")
-    origin = JobOrigin("file", "scene", "revision", "object")
+    origins = OriginRevisions()
+    origin = origins.capture("scene", "object")
     root = tmp_path / "sources"
     root.mkdir()
     source = tmp_path / "reference.png"
@@ -43,6 +47,8 @@ def env(tmp_path):
         requests=[],
         fail=None,
         online=True,
+        origins=origins,
+        origin_held=False,
     )
     env.remote = {
         "id": "remote-one",
@@ -64,6 +70,7 @@ def env(tmp_path):
     }
 
     def handler(request):
+        assert not env.origin_held, "Origin invalidation must not wait for HTTP"
         env.requests.append(request)
         operation = (
             "complete"
@@ -93,6 +100,7 @@ def env(tmp_path):
     )
 
     def put(url, data, *, number, content_type, expected_sha256):
+        assert not env.origin_held, "Origin invalidation must not wait for storage PUT"
         record = store.records()[0]
         assert record.active_part == number
         assert record.state == UploadState.UPLOADING
@@ -100,12 +108,23 @@ def env(tmp_path):
         return UploadedPart(number, len(data), expected_sha256)
 
     uploader.upload = Mock(side_effect=put)
+
+    @contextmanager
+    def guard(value):
+        with origins.guard(value) as current:
+            env.origin_held = True
+            try:
+                yield current
+            finally:
+                env.origin_held = False
+
     coordinator = JobCoordinator(
         adapter,
         JobStore(tmp_path / "jobs.sqlite3", scope),
         upload_store=store,
         upload_sources=sources,
         part_uploader=uploader,
+        origin_guard=guard,
     )
     env.coordinator, env.uploader = coordinator, uploader
     yield env
@@ -456,3 +475,200 @@ def test_failed_snapshot_flush_leaves_no_intent_or_partial_file(env, monkeypatch
     assert env.store.records() == ()
     assert list(env.root.iterdir()) == []
     assert env.source.read_bytes() == b"abcde"
+
+
+@pytest.mark.parametrize("origin", [None, "scene", object()])
+def test_prepare_requires_captured_origin_before_reading_source(env, origin, monkeypatch):
+    stage = Mock(side_effect=AssertionError("Invalid origin must not stage a source"))
+    monkeypatch.setattr(env.sources, "stage", stage)
+    with pytest.raises(UploadError, match="Capture the upload origin"):
+        env.coordinator.prepare_upload(
+            env.source, origin=origin, kind="image", content_type="image/png"
+        )
+    stage.assert_not_called()
+    assert env.store.records() == ()
+    assert env.requests == []
+
+
+@pytest.mark.parametrize("change", ["scene", "file", "other-scene"])
+def test_stale_origin_is_rejected_before_staging_but_other_scene_is_independent(env, change):
+    if change == "file":
+        env.origins.reset()
+    else:
+        env.origins.invalidate(change)
+    if change == "other-scene":
+        assert prepare(env).intent.origin == env.origin
+        assert len(env.store.records()) == 1
+    else:
+        with pytest.raises(UploadError, match="origin changed"):
+            prepare(env)
+        assert env.store.records() == ()
+        assert list(env.root.iterdir()) == []
+    assert env.source.read_bytes() == b"abcde"
+    assert env.requests == []
+
+
+def test_invalidation_during_staging_retains_only_owned_orphan_and_original_source(
+    env, monkeypatch
+):
+    original = env.sources.stage
+
+    def stage(*args, **kwargs):
+        assert not env.origin_held
+        staged = original(*args, **kwargs)
+        env.origins.invalidate(env.origin.scene_id)
+        return staged
+
+    monkeypatch.setattr(env.sources, "stage", stage)
+    with pytest.raises(UploadError, match="origin changed"):
+        prepare(env)
+    assert env.store.records() == ()
+    assert env.requests == []
+    assert env.source.read_bytes() == b"abcde"
+    snapshots = tuple(env.root.glob("*/source.bin"))
+    assert len(snapshots) == 1
+    assert snapshots[0].read_bytes() == b"abcde"
+
+
+@pytest.mark.parametrize(
+    "command", ["prepare_upload", "initialize_upload", "transfer_upload_part", "finalize_upload"]
+)
+def test_queued_upload_rechecks_origin_before_staging_or_mutation(env, command, monkeypatch):
+    record = (
+        initialized(env)
+        if command == "transfer_upload_part"
+        else transferred(env)
+        if command == "finalize_upload"
+        else prepare(env)
+    )
+    previous_calls = len(env.requests), env.uploader.upload.call_count
+    entered, release = threading.Event(), threading.Event()
+    stage = env.sources.stage
+
+    def blocked(*args, **kwargs):
+        entered.set()
+        assert release.wait(5)
+        return stage(*args, **kwargs)
+
+    monkeypatch.setattr(env.sources, "stage", blocked)
+    workers = JobWorkers(env.coordinator, workers=1)
+    try:
+        running = workers.prepare_upload(
+            env.source,
+            origin=env.origins.capture("other-scene"),
+            kind="image",
+            content_type="image/png",
+        )
+        assert entered.wait(5)
+        queued = (
+            workers.prepare_upload(
+                env.source, origin=env.origin, kind="image", content_type="image/png"
+            )
+            if command == "prepare_upload"
+            else getattr(workers, command)(
+                record.intent.request_id, expected_revision=record.revision
+            )
+        )
+        env.origins.invalidate(env.origin.scene_id)
+        release.set()
+        assert running.result(5).intent.origin.scene_id == "other-scene"
+        with pytest.raises(UploadError, match="origin changed"):
+            queued.result(5)
+        assert env.store.get(record.intent.request_id) == record
+        assert len(env.store.records()) == 2
+        assert (len(env.requests), env.uploader.upload.call_count) == previous_calls
+    finally:
+        release.set()
+        workers.shutdown()
+
+
+@pytest.mark.parametrize(
+    "command,preflight", [("initialize_upload", "verify"), ("transfer_upload_part", "part")]
+)
+def test_origin_change_during_preflight_prevents_the_durable_claim(
+    env, command, preflight, monkeypatch
+):
+    record = prepare(env) if command == "initialize_upload" else initialized(env)
+    original = getattr(env.sources, preflight)
+    mutation_count = sum(request.method == "POST" for request in env.requests)
+
+    def changed(*args):
+        assert not env.origin_held
+        result = original(*args)
+        env.origins.invalidate(env.origin.scene_id)
+        return result
+
+    monkeypatch.setattr(env.sources, preflight, changed)
+    with pytest.raises(UploadError, match="origin changed"):
+        invoke(env, command, record)
+    assert env.store.get(record.intent.request_id) == record
+    assert sum(request.method == "POST" for request in env.requests) == mutation_count
+    env.uploader.upload.assert_not_called()
+
+
+def test_upload_origin_guard_covers_intent_and_mutation_claims_but_not_receipts(env, monkeypatch):
+    writes = []
+    for method in ("create", "transition", "claim_part", "record_part"):
+        original = getattr(env.store, method)
+
+        def record_write(*args, _method=method, _original=original, **kwargs):
+            writes.append((kwargs.get("state", _method), env.origin_held))
+            return _original(*args, **kwargs)
+
+        monkeypatch.setattr(env.store, method, record_write)
+    result = invoke(env, "finalize_upload", transferred(env))
+    assert result.state == UploadState.PROCESSING
+    assert writes == [
+        ("create", True),
+        (UploadState.INITIALIZING, True),
+        (UploadState.UPLOADING, False),
+        ("claim_part", True),
+        ("record_part", False),
+        ("claim_part", True),
+        ("record_part", False),
+        (UploadState.FINALIZING, True),
+        (UploadState.PROCESSING, False),
+    ]
+
+
+@pytest.mark.parametrize(
+    "command", ["initialize_upload", "transfer_upload_part", "finalize_upload"]
+)
+def test_claimed_upload_finishes_after_origin_change_and_explicit_refresh_stays_available(
+    env, command, monkeypatch
+):
+    record = (
+        prepare(env)
+        if command == "initialize_upload"
+        else initialized(env)
+        if command == "transfer_upload_part"
+        else transferred(env)
+    )
+    if command == "transfer_upload_part":
+        original = env.uploader.upload.side_effect
+    else:
+        method = "create_upload" if command == "initialize_upload" else "complete_upload"
+        original = getattr(env.coordinator._adapter, method)
+
+    def changed(*args, **kwargs):
+        assert not env.origin_held
+        result = original(*args, **kwargs)
+        env.origins.invalidate(env.origin.scene_id)
+        return result
+
+    if command == "transfer_upload_part":
+        env.uploader.upload.side_effect = changed
+    else:
+        monkeypatch.setattr(env.coordinator._adapter, method, changed)
+    current = invoke(env, command, record)
+    assert current.intent.scope == env.scope
+    assert current.intent.origin == env.origin
+    assert not env.origins.current(env.origin)
+    assert env.coordinator.inspect_upload(record.intent.request_id) == current
+    assert env.coordinator.upload_recovery_plan()[0].record == current
+    env.remote.update(status="imported", entityId="asset-one")
+    calls = len(env.requests)
+    imported = invoke(env, "refresh_upload", current)
+    assert imported.state == UploadState.IMPORTED
+    assert imported.intent.origin == env.origin
+    assert [request.method for request in env.requests[calls:]] == ["GET"]

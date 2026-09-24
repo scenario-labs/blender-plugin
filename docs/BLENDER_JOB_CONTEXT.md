@@ -81,7 +81,7 @@ allowing the remaining extension registry cleanup to proceed. Control exceptions
 continue to propagate; a session with live workers retains its ownership.
 
 The actual authentication context, safe online-access snapshot for worker calls,
-UI/MCP activation and durable result downloads/application remain separate work.
+UI/MCP activation and durable result application remain separate work.
 No account ID is guessed and no privileged or live service call is introduced.
 
 ## Recovery inspection and cancellation
@@ -112,6 +112,33 @@ reconciliation after deletion or restart. Their completions still carry the
 original stored origin; `deliver` continues to reject unavailable, stale or
 unrecognized origins before Blender application. These session methods do not
 add active UI/MCP controls or solve authoritative account/project discovery.
+
+## Stored result retrieval and verification
+
+The optional `result_downloader` and `result_root` constructor arguments forward
+an explicit [storage policy and private root](RESULT_TRANSFERS.md) to the shared
+coordinator. Supply both together; incomplete configuration fails before workers
+start. The application owner must choose trusted storage hosts, provide a
+thread-safe online-access snapshot and retain the private directory through
+application. No default production host policy is selected by the session.
+Without storage configuration, download and verification report a configuration
+error without changing the stored job, including a reopened READY record.
+
+On the main thread, `load_results`, `download_results` and `verify_results` queue
+the corresponding [coordinator commands](JOB_COORDINATOR.md#result-retrieval-and-download-commands)
+with the original stored origin and expected record revision. Metadata and signed
+transfer work run on the existing pool. Like refresh and cancellation, these
+commands remain available after a scene switch, target deletion or restart;
+retrieval does not grant permission to apply into a new Blender context.
+
+`drain` validates both the record inside `VerifiedResults` and ordinary result
+records against the issuing origin/scope. Verification returns a frozen result
+containing a tuple of verified local paths. `deliver` still requires the original
+current scene/target and permits the completion to be used once. Receipt
+verification does not lock file bytes, run an importer or mark a job APPLIED;
+callers must preserve private storage ownership and implement durable application
+separately. Download failures remain `DOWNLOAD_FAILED` for explicit retry, while
+local verification failures do not trigger another download or generation.
 
 
 ## Shared asynchronous estimates

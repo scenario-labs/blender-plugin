@@ -17,6 +17,7 @@ from bpy.app.handlers import persistent
 
 from ..core.jobs.coordinator import JobCoordinator, OriginQuote, RemoteSnapshot
 from ..core.jobs.origins import OriginRevisions
+from ..core.jobs.results import VerifiedResults
 from ..core.jobs.workers import JobWorkers
 
 _log = logging.getLogger("scenario.jobs")
@@ -49,7 +50,17 @@ class JobSession:
     an origin guard, not a durable import transaction or an OAuth identity source.
     """
 
-    def __init__(self, adapter, store, *, workers=2, pending_limit=16, completion_limit=128):
+    def __init__(
+        self,
+        adapter,
+        store,
+        *,
+        workers=2,
+        pending_limit=16,
+        completion_limit=128,
+        result_downloader=None,
+        result_root=None,
+    ):
         _main_thread()
         if not _registered:
             raise RuntimeError("Register Blender lifecycle hooks before creating a session")
@@ -63,7 +74,13 @@ class JobSession:
         self._pending = []
         self._issued = WeakValueDictionary()
         self._active = True
-        self._coordinator = JobCoordinator(adapter, store, origin_guard=self._origins.guard)
+        self._coordinator = JobCoordinator(
+            adapter,
+            store,
+            origin_guard=self._origins.guard,
+            result_downloader=result_downloader,
+            result_root=result_root,
+        )
         self._workers = JobWorkers(self._coordinator, workers=workers, pending_limit=pending_limit)
         with _sessions_lock:
             _sessions.add(self)
@@ -168,6 +185,18 @@ class JobSession:
         """Queue explicit known model-job cancellation under its original scope."""
         return self._record_command("cancel_remote", request_id, expected_revision)
 
+    def load_results(self, request_id, *, expected_revision):
+        """Queue SDK metadata retrieval into the original job's durable manifest."""
+        return self._record_command("load_results", request_id, expected_revision)
+
+    def download_results(self, request_id, *, expected_revision):
+        """Queue an explicit download using the configured private storage policy."""
+        return self._record_command("download_results", request_id, expected_revision)
+
+    def verify_results(self, request_id, *, expected_revision):
+        """Queue local receipt verification; this does not authorize application."""
+        return self._record_command("verify_results", request_id, expected_revision)
+
     def _record_command(self, command, request_id, expected_revision):
         _main_thread()
         self._check_capacity()
@@ -191,7 +220,11 @@ class JobSession:
             self._pending.remove((task, origin))
             try:
                 result = task.result()
-                record = result.record if isinstance(result, RemoteSnapshot) else result
+                record = (
+                    result.record
+                    if isinstance(result, (RemoteSnapshot, VerifiedResults))
+                    else result
+                )
                 if isinstance(record, OriginQuote):
                     matches = record.origin == origin and record.scope == self.scope
                 else:

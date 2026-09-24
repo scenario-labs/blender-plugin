@@ -64,6 +64,15 @@ The add-on runs a local MCP server (default `http://127.0.0.1:9876/mcp`, bearer 
 
 Agents get scene tools (summary, object detail, select, set frame, screenshots, quick renders, gated Python) and Scenario tools (models, schema, cost, generate, job status, import into scene, capture a reference from the viewport, history). The current tool definitions are in `scenario/mcp/tools_blender.py` and `scenario/mcp/tools_scenario.py`.
 
+## What leaves your machine
+
+Cost previews send prompts and parameters to `https://api.cloud.scenario.com` while you edit, before Generate.
+Generation and prompt tools can upload attached files, scene captures or exported meshes and spend credits.
+Catalogs and thumbnails load from Scenario; cloud history loads when requested.
+Saved keys, prompts, job state and media remain in Blender preferences, extension storage or output files.
+Connected local agents can read your scene and request paid work using your account.
+Read [Privacy and data handling](docs/PRIVACY.md) for destinations, storage, clipboard use and current limits.
+
 ## Tests
 
 - Python environment, linting and formatting: [`docs/PYTHON_STYLE.md`](docs/PYTHON_STYLE.md), `uv sync --locked`, `make lint` and `make format`.

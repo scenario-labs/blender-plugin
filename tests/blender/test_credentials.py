@@ -4,8 +4,10 @@
 
 import os
 import unittest
+from pathlib import Path
 from unittest.mock import Mock, patch
 
+import bpy
 from helpers import submodule
 
 
@@ -70,3 +72,36 @@ class CredentialTests(unittest.TestCase):
         self.assertEqual(properties["credential_source"].default, "PREFERENCES")
         for field in ("api_key", "api_secret"):
             self.assertEqual(properties[field].subtype, "PASSWORD")
+
+    def test_saved_password_values_are_plain_text_in_isolated_preferences(self):
+        prefs = submodule("blender.runtime").prefs()
+        saved = prefs.credential_source, prefs.api_key, prefs.api_secret
+        key, secret = "privacy-fixture-key-unique", "privacy-fixture-secret-unique"
+        try:
+            prefs.credential_source = "PREFERENCES"
+            prefs.api_key, prefs.api_secret = key, secret
+            bpy.ops.wm.save_userpref()
+            raw = (Path(bpy.utils.user_resource("CONFIG")) / "userpref.blend").read_bytes()
+            self.assertIn(key.encode(), raw)
+            self.assertIn(secret.encode(), raw)
+        finally:
+            prefs.credential_source, prefs.api_key, prefs.api_secret = saved
+            bpy.ops.wm.save_userpref()
+
+    def test_environment_pair_is_not_copied_into_saved_preferences(self):
+        runtime = submodule("blender.runtime")
+        prefs = runtime.prefs()
+        saved = prefs.credential_source, prefs.api_key, prefs.api_secret
+        key, secret = "privacy-env-key-unique", "privacy-env-secret-unique"
+        try:
+            prefs.credential_source = "ENVIRONMENT"
+            prefs.api_key = prefs.api_secret = ""
+            with patch.dict(os.environ, {"SCENARIO_API_KEY": key, "SCENARIO_API_SECRET": secret}):
+                self.assertEqual(runtime.credentials().key, key)
+                bpy.ops.wm.save_userpref()
+            raw = (Path(bpy.utils.user_resource("CONFIG")) / "userpref.blend").read_bytes()
+            self.assertNotIn(key.encode(), raw)
+            self.assertNotIn(secret.encode(), raw)
+        finally:
+            prefs.credential_source, prefs.api_key, prefs.api_secret = saved
+            bpy.ops.wm.save_userpref()

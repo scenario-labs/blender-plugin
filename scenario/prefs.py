@@ -96,6 +96,8 @@ class ScenarioPreferences(bpy.types.AddonPreferences):
         if self.credential_source == "PREFERENCES":
             box.prop(self, "api_key")
             box.prop(self, "api_secret")
+            box.label(text="Saved as plain text in userpref.blend", icon="INFO")
+            box.label(text="Select Environment to use SCENARIO_API_KEY + SCENARIO_API_SECRET")
         else:
             box.label(text="SCENARIO_API_KEY + SCENARIO_API_SECRET", icon="CONSOLE")
             box.label(text="From the environment used to launch Blender")

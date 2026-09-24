@@ -15,6 +15,3 @@ Makefile text eol=lf
 # Keep documentation and recorded fixtures out of GitHub language statistics.
 docs/**           linguist-documentation
 tests/fixtures/** linguist-vendored
-
-# Exclude historical snapshots until #5 removes them and this rule.
-versions/** linguist-vendored

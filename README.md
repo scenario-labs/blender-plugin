@@ -29,7 +29,6 @@ Bring Scenario's generation into the Blender viewport so creators stay in one to
 - `docs/engineering/design-v1.md`: the v1 design (architecture, lanes, phases, tests).
 - `docs/MODEL_PAYLOAD_AUDIT.md`, `docs/UI_STYLE.md`: the model-payload audit and the UI style guide.
 - `tests/fixtures/`: recorded model schemas and a real Patina Material job (6 maps) used as test fixtures.
-- `versions/`: previous states of deliverables (v0 = idea-stage README).
 - [`.env.example`](.env.example) and [developer environment setup](CONTRIBUTING.md#environment-variables): explicit test credentials for live tools.
 - `scenario/`: the extension source (`core/` is plain Python, `blender/` is the bpy glue). `blender_manifest.toml` at its root.
 - `tests/unit/` (pytest, no Blender), `tests/blender/` (run inside `blender --background`), `tests/smoke/` (opt-in, spends credits), `tests/fixtures/` (recorded API records and a real Patina job).

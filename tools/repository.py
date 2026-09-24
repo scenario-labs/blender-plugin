@@ -140,6 +140,27 @@ def reject_overlaps(manifests):
                 )
 
 
+def read_archive(path, archive, identifier):
+    """Verify exact bytes and return the compatibility used by native generation."""
+    verify_bytes(path, archive)
+    manifest, _ = inspect_zip(path)
+    if manifest["id"] != identifier or manifest["version"] != archive["version"]:
+        raise ValueError("Archive identity or version differs from inventory")
+    build = manifest.get("build", {})
+    if not isinstance(build, dict):
+        raise ValueError("Manifest build must be a table")
+    generated = build.get("generated", {})
+    if not isinstance(generated, dict):
+        raise ValueError("Manifest build.generated must be a table")
+    # The native generator applies these overrides for split archives.
+    for field in ("platforms", "wheels"):
+        if field in generated:
+            manifest[field] = generated[field]
+    compatibility(manifest)
+    validate_bundle(path)
+    return manifest
+
+
 def verify_index(repository, inventory, manifests):
     index = json.loads((repository / "index.json").read_text(encoding="utf-8"))
     if not isinstance(index, dict) or index.get("version") != "v1" or index.get("blocklist") != []:
@@ -228,25 +249,7 @@ def generate(session, inventory_path, output):
             verify_bytes(source, archive)
             candidate = repository / archive["file"]
             shutil.copyfile(source, candidate)
-            verify_bytes(candidate, archive)
-            manifest, _ = inspect_zip(candidate)
-            if (
-                manifest["id"] != inventory["extension_id"]
-                or manifest["version"] != archive["version"]
-            ):
-                raise ValueError("Archive identity or version differs from inventory")
-            # The native generator applies these overrides for split archives.
-            build = manifest.get("build", {})
-            if not isinstance(build, dict):
-                raise ValueError("Manifest build must be a table")
-            generated = build.get("generated", {})
-            if not isinstance(generated, dict):
-                raise ValueError("Manifest build.generated must be a table")
-            for field in ("platforms", "wheels"):
-                if field in generated:
-                    manifest[field] = generated[field]
-            compatibility(manifest)
-            validate_bundle(candidate)
+            manifest = read_archive(candidate, archive, inventory["extension_id"])
             session.step(
                 f"validate-{number:03}",
                 ["--offline-mode", "--command", "extension", "validate", str(candidate)],

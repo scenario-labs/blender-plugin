@@ -203,8 +203,8 @@
         ".github/workflows/release-please.yml": "8f879d0d9aa9e63d67a18cade277dd7ef081024a9975f983e3c547e3412d659f",
         "release-please-config.json": "f7192922c196556279e00e54b82a8ec82a5fe516481f35771e1ad73c0b00adc9",
         "tools/build.py": "fbbf244b96c4b6ff8f7b4582a00e0c5f0eebbd762acbf9148df7479f23987d9c",
-        "tools/repository.py": "bc24802d168f0df175163a4dee9d783424c353b7a0c627dc3df64add6bfb4bec",
-        "tests/unit/test_repository.py": "7e8ce20b204e60b4fad7afb16b6f1c15a9aed6fee85c3356a548bc5d1f5fca4b",
+        "tools/repository.py": "3b8de862484ed4c7ae7d5250cc466274ef7318acf492120abe17fcde681bfee9",
+        "tests/unit/test_repository.py": "b6dee9da59ed8bfdec2c9a202f927c6fada49312f3ccb18cfff74f4c80fc9a7b",
         "tools/blender_env.py": "2943b2aaf3bf1de923d078f75635fef439119deb1b5d66da952df878e6a8d428",
         "tools/wheel_bundle.py": "5189baee1a5381a3be9dd667e0b34357ce6101bd1ea0c7bb03098332ea53c518"
       }

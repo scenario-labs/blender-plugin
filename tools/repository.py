@@ -236,7 +236,12 @@ def generate(session, inventory_path, output):
             ):
                 raise ValueError("Archive identity or version differs from inventory")
             # The native generator applies these overrides for split archives.
-            generated = manifest.get("build", {}).get("generated", {})
+            build = manifest.get("build", {})
+            if not isinstance(build, dict):
+                raise ValueError("Manifest build must be a table")
+            generated = build.get("generated", {})
+            if not isinstance(generated, dict):
+                raise ValueError("Manifest build.generated must be a table")
             for field in ("platforms", "wheels"):
                 if field in generated:
                     manifest[field] = generated[field]

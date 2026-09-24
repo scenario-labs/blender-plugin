@@ -203,6 +203,37 @@ def test_unverified_sdk_bundle_rejected_before_native_work(repository, tmp_path)
     assert not (tmp_path / "output").exists()
 
 
+@pytest.mark.parametrize("field", ["build", "build.generated"])
+@pytest.mark.parametrize("value", ['"invalid"', "1", "[]"])
+def test_malformed_build_metadata_fails_cleanly(
+    repository, tmp_path, monkeypatch, capsys, field, value
+):
+    path = archive(tmp_path)
+    with zipfile.ZipFile(path) as bundle:
+        contents = {name: bundle.read(name) for name in bundle.namelist()}
+    contents["blender_manifest.toml"] += f"{field} = {value}\n".encode()
+    with zipfile.ZipFile(path, "w") as bundle:
+        for name, content in contents.items():
+            bundle.writestr(name, content)
+    selected = inventory(repository, tmp_path, [path])
+    output = tmp_path / "output"
+    session = NativeSession()
+    monkeypatch.setattr(repository, "Session", lambda *_: session)
+    monkeypatch.setattr(repository, "find_blender", lambda _: "unused-blender")
+    monkeypatch.setattr(
+        repository.sys,
+        "argv",
+        ["repository.py", "--inventory", str(selected), "--output", str(output)],
+    )
+    assert repository.main() == 1
+    assert capsys.readouterr().err == (
+        f"Repository generation failed: Manifest {field} must be a table\n"
+    )
+    assert session.calls == []
+    assert not output.exists()
+    assert not list(tmp_path.glob(".repository-*"))
+
+
 @pytest.mark.parametrize(
     "field,value",
     [

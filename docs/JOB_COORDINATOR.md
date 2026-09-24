@@ -245,6 +245,55 @@ registration, production host configuration, interrupted-download reconciliation
 application recovery and UI/MCP controls remain integration work under #65.
 
 
+## Durable application claims
+
+The coordinator registers each successful `verify_results` response as an
+ephemeral verification ticket. `claim_application(verified)` accepts only that
+exact object from this active owner, an unchanged saved `ready` or `apply_failed`
+record, and a configured thread-safe `origin_guard` that still recognizes the
+original origin. Copying public fields, selecting a new scene or reopening the
+store cannot recreate this authority. `applied` results can still be verified
+for inspection but cannot be claimed again.
+
+The origin guard and coordinator lock cover the atomic `applying` write. The
+verification ticket is consumed before that write is attempted, because a write
+failure can be uncertain. A successful claim returns an immutable
+`ApplicationClaim(record, paths)` belonging to that owner. The stored revision
+rejects another owner racing for the same result. The claim reads no result bytes
+and calls neither Blender nor the network. These synchronous methods are
+not worker commands; the Blender integration must claim immediately before its
+main-thread mutation, after resolving the captured target.
+
+Verified paths do not freeze file bytes. The application must check the exact
+snapshot it decodes against the saved download receipt and must preserve private
+storage. A claim alone does not validate image/mesh semantics, apply anything to
+Blender, or authorize a different asset/target.
+
+After confirmed success, `complete_application(claim)` saves `applied` once.
+`fail_application(claim)` saves `apply_failed` only when the caller has confirmed
+that no mutation occurred or every change was rolled back. Unexpected exceptions,
+interruption or uncertain rollback must leave `applying` unchanged. Neither
+method catches a Blender callback or interprets an exception as successful rollback.
+An explicit retry after confirmed failure requires a new verification ticket and
+the same original still-current origin; it cannot rebind a restarted record.
+
+Both receipt methods require the exact unfinished claim and its unchanged saved
+revision. They remain available after origin invalidation or owner deactivation,
+because application itself can change the scene revision; the receipt still goes
+only to the original scope. Persistence failure propagates without claiming an
+unsaved outcome. The caller may retry an uncommitted local receipt write using
+the same claim, but must never repeat its Blender mutation as part of that retry.
+A write that committed before losing acknowledgement causes a subsequent revision
+conflict and requires saved-state inspection.
+
+`recovery_plan()` continues to inspect without writes. An abandoned or restarted
+`applying` record remains `REVIEW_APPLICATION`: no expiry, reset, automatic
+completion or retry is provided. The SQLite record is durable; verification
+tickets and application claims are owner-local and are never reconstructed from
+names, paths or stored metadata. No schema change or active UI/MCP wiring is
+introduced by this boundary.
+
+
 ## Reference upload commands
 
 Optional upload storage, source staging and signed PUT configuration attach to

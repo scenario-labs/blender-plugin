@@ -11,10 +11,11 @@ import uuid
 from contextlib import contextmanager, nullcontext
 from dataclasses import dataclass, field
 from enum import StrEnum
+from pathlib import Path
 from weakref import WeakKeyDictionary, WeakValueDictionary
 
 from ..api.sdk_adapter import Estimate, SDKAdapter
-from .results import ResultCommands, ResultError
+from .results import ResultCommands, ResultError, VerifiedResults
 from .store import (
     JobIntent,
     JobOrigin,
@@ -58,6 +59,18 @@ class RecoveryError(RuntimeError):
 
 class CancellationUncertain(RecoveryError):
     """Cancellation was claimed; poll the known ID instead of replaying it."""
+
+
+class ApplicationError(RuntimeError):
+    """Application admission failed; preserve the result for explicit review."""
+
+
+@dataclass(frozen=True, eq=False)
+class ApplicationClaim:
+    """An owner-issued durable claim, not a Blender mutation or frozen file bytes."""
+
+    record: StoredJob
+    paths: tuple[Path, ...]
 
 
 class RecoveryAction(StrEnum):
@@ -165,6 +178,8 @@ class JobCoordinator:
         )
         self._quotes = WeakValueDictionary()
         self._bound_estimates = WeakKeyDictionary()
+        self._verified_results = WeakValueDictionary()
+        self._application_claims = WeakValueDictionary()
         self._uploads = None
         upload_config = (upload_store, upload_sources, part_uploader)
         if any(value is not None for value in upload_config):
@@ -240,7 +255,71 @@ class JobCoordinator:
         return self._results.download(request_id, expected_revision=expected_revision)
 
     def verify_results(self, request_id, *, expected_revision):
-        return self._results.verify_ready(request_id, expected_revision=expected_revision)
+        verified = self._results.verify_ready(request_id, expected_revision=expected_revision)
+        with self._result_guard():
+            self._verified_results[id(verified)] = verified
+        return verified
+
+    def claim_application(self, verified: VerifiedResults):
+        """Claim verified results before a caller mutates the captured Blender target.
+
+        File verification happens earlier, outside this lock. The application
+        must bind the bytes it actually reads to the saved download receipts.
+        """
+        with self._lock:
+            if (
+                not self._active
+                or not isinstance(verified, VerifiedResults)
+                or self._verified_results.get(id(verified)) is not verified
+            ):
+                raise ApplicationError("Use current verified results from this owner")
+            if self._origin_guard is None:
+                raise ApplicationError("Configure an origin guard before applying results")
+            record = verified.record
+            if record.state not in {JobState.READY, JobState.APPLY_FAILED}:
+                raise ApplicationError("This result is not eligible for application")
+            with self._origin_guard(record.intent.origin) as current:
+                if not current:
+                    raise ApplicationError("Application origin changed; review the saved result")
+                if self._store.get(record.intent.request_id) != record:
+                    raise StoreConflict("Application result changed; verify it again")
+                # A failed durable write can be uncertain. Never reuse this
+                # verification ticket to infer that the claim did not commit.
+                del self._verified_results[id(verified)]
+                claimed = self._store.transition(
+                    record.intent.request_id,
+                    expected_revision=record.revision,
+                    state=JobState.APPLYING,
+                )
+                claim = ApplicationClaim(claimed, verified.paths)
+                self._application_claims[id(claim)] = claim
+                return claim
+
+    def complete_application(self, claim: ApplicationClaim):
+        """Persist a successful application once, even after origin invalidation."""
+        return self._finish_application(claim, JobState.APPLIED)
+
+    def fail_application(self, claim: ApplicationClaim):
+        """Record only confirmed no-change/full rollback, never an uncertain mutation."""
+        return self._finish_application(claim, JobState.APPLY_FAILED)
+
+    def _finish_application(self, claim, state):
+        with self._lock:
+            if (
+                not isinstance(claim, ApplicationClaim)
+                or self._application_claims.get(id(claim)) is not claim
+            ):
+                raise ApplicationError("Use an unfinished application claim from this owner")
+            record = claim.record
+            if self._store.get(record.intent.request_id) != record:
+                raise StoreConflict("Application claim changed; inspect saved state")
+            # Application itself may invalidate its origin or deactivate its
+            # context. Its receipt still belongs only to the original store.
+            finished = self._store.transition(
+                record.intent.request_id, expected_revision=record.revision, state=state
+            )
+            del self._application_claims[id(claim)]
+            return finished
 
     def deactivate(self):
         """Invalidate queued quotes without waiting for in-flight network calls."""
@@ -248,6 +327,7 @@ class JobCoordinator:
             self._active = False
             self._prepared.clear()
             self._quotes.clear()
+            self._verified_results.clear()
 
     def close(self):
         """Release the SDK client after the application owner has joined workers."""

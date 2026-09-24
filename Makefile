@@ -8,7 +8,7 @@ BLENDER_GUI_ARGS ?=
 UV ?= uv
 LINT_PATHS ?= .
 
-.PHONY: sync test test-blender build install gui-check lint format knowledge mcp-docs check-rules docs hooks
+.PHONY: sync test test-blender build repo install install-isolated gui-check lint format knowledge mcp-docs check-rules docs hooks
 check-rules:
 	$(UV) run --locked --no-env-file python tools/check_rules.py
 knowledge:
@@ -29,7 +29,9 @@ test-blender:
 	$(UV) run --locked --no-env-file python tools/test_blender.py $(BLENDER_TEST_ARGS)
 build:
 	$(UV) run --locked --no-env-file python tools/build.py $(BLENDER_BUILD_ARGS)
-install:
+repo:
+	$(UV) run --locked --no-env-file python tools/build.py --repo $(BLENDER_BUILD_ARGS)
+install install-isolated:
 	$(UV) run --locked --no-env-file python tools/install.py $(BLENDER_INSTALL_ARGS)
 gui-check:
 	$(UV) run --locked --no-env-file python tools/capture_gui.py $(BLENDER_GUI_ARGS)

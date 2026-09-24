@@ -100,7 +100,14 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     arguments(parser)
     parser.add_argument("--output", type=Path, default=ROOT / "dist", help="ZIP output directory")
-    parser.add_argument("--repo", action="store_true", help="Also generate OUTPUT/repo/index.json")
+    parser.add_argument(
+        "--repo",
+        nargs="?",
+        const=True,
+        type=Path,
+        metavar="DIR",
+        help="Also generate a repository in DIR (default: OUTPUT/repo)",
+    )
     args = parser.parse_args()
     if args.timeout <= 0:
         parser.error("--timeout must be positive")
@@ -108,7 +115,9 @@ def main():
         session = Session(find_blender(args.blender), args.artifacts, args.timeout)
         candidate = build(session, args.output)
         if args.repo:
-            repository = args.output.resolve() / "repo"
+            repository = (
+                args.output.resolve() / "repo" if args.repo is True else args.repo.resolve()
+            )
             repository.mkdir(parents=True, exist_ok=True)
             shutil.copyfile(candidate, repository / candidate.name)
             session.step(

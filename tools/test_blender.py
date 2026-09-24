@@ -4,6 +4,7 @@
 
 import argparse
 import json
+import re
 import shutil
 import subprocess
 import sys
@@ -25,6 +26,23 @@ from blender_env import (
 from wheel_bundle import prepare_source, validate_bundle
 
 PROBE = "import bpy,json,platform,sys; print('SCENARIO_ENV='+json.dumps(dict(blender=bpy.app.version_string,version=list(bpy.app.version),python=sys.version,os=platform.platform())))"
+
+
+def existing_manifest_zip():
+    """Select only the named manifest build, never the newest archive in dist."""
+    manifest = tomllib.loads((ROOT / "scenario/blender_manifest.toml").read_text())
+    identity, version = manifest.get("id"), manifest.get("version")
+    if not (
+        isinstance(identity, str)
+        and re.fullmatch(r"[a-z][a-z0-9_]*", identity)
+        and isinstance(version, str)
+        and re.fullmatch(r"\d+\.\d+\.\d+", version)
+    ):
+        raise ValueError("The checkout manifest must contain a valid extension id and version")
+    candidate = ROOT / "dist" / f"{identity}-{version}.zip"
+    if not candidate.is_file():
+        raise ValueError("The manifest ZIP is missing: run make build first or use --zip PATH")
+    return candidate
 
 
 def run(args):
@@ -96,6 +114,11 @@ def run(args):
         candidate_manifest, candidate_files = inspect_zip(candidate)
         if candidate_manifest["id"] != manifest["id"]:
             raise ValueError("Candidate ZIP is for a different extension")
+        if (
+            getattr(args, "no_build", False)
+            and candidate_manifest["version"] != manifest["version"]
+        ):
+            raise ValueError("The --no-build ZIP version does not match the checkout manifest")
         minimum_text = candidate_manifest["blender_version_min"]
         minimum = tuple(int(part) for part in minimum_text.split("."))
         if tuple(environment["version"]) < minimum:
@@ -180,8 +203,19 @@ def main():
         "--blender", help="Executable path or command; defaults to BLENDER, then discovery"
     )
     parser.add_argument("--expected-version", help="Require this exact Blender version (CI)")
-    parser.add_argument(
+    source = parser.add_mutually_exclusive_group()
+    source.add_argument(
         "--zip", type=Path, help="Test an existing ZIP instead of building the checkout"
+    )
+    source.add_argument(
+        "--no-build",
+        action="store_true",
+        help="Test dist/ID-VERSION.zip from the checkout manifest",
+    )
+    parser.add_argument(
+        "--fresh",
+        action="store_true",
+        help="Compatibility flag: every run already owns a fresh profile",
     )
     parser.add_argument(
         "--artifacts",
@@ -202,6 +236,8 @@ def main():
     if args.timeout <= 0:
         parser.error("--timeout must be positive")
     try:
+        if args.no_build:
+            args.zip = existing_manifest_zip()
         return run(args)
     except (OSError, ValueError) as error:
         print(error, file=sys.stderr)

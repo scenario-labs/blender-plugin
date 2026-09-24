@@ -309,6 +309,14 @@ ZIP filename, validates that file, installs it in a fresh profile and checks all
 installed files against the ZIP. Missing, changed and extra files fail the run;
 source-checkout imports are forbidden. Supplying `--zip /path/to/candidate.zip`
 tests a copied snapshot of an existing artifact instead of rebuilding.
+`--no-build` selects only `dist/<manifest-id>-<manifest-version>.zip` and checks
+the copied archive's id/version against the checkout manifest. It fails when that
+exact file is absent; it never picks a newer-looking ZIP. Build it first with
+`make build`. Both reuse modes retain ZIP, licence, SDK bundle and installed-byte
+validation and report the tested SHA256; neither rebuilds the source checkout.
+`--zip` and `--no-build` are mutually exclusive. `--fresh` is accepted for command
+compatibility: every invocation already owns a fresh profile, so it never deletes
+or reuses a shell-selected profile.
 
 The default **baseline** covers registration defaults and paths,
 fixture-driven generation events, image/material/GLB import, installed core/MCP
@@ -376,23 +384,33 @@ Scenario credentials and Blender/Python path overrides, and retain per-phase log
 ```sh
 uv run --locked --no-env-file python tools/build.py --output dist
 uv run --locked --no-env-file python tools/build.py --repo
+uv run --locked --no-env-file python tools/build.py --repo /path/to/repository
 uv run --locked --no-env-file python tools/install.py --zip dist/scenario-<version>.zip --launch
 ```
 
 `build.py` builds the manifest's exact ZIP, checks its GPL text and validates it
-before copying it to the output directory. `--repo` generates `OUTPUT/repo/`.
+before copying it to the output directory. Bare `--repo` generates `OUTPUT/repo/`;
+`--repo DIR` selects an explicit repository directory. Validation is always required.
 Successful build profiles are removed; failures retain their profiles and logs.
 `install.py` builds when `--zip` is absent, verifies installed files against that
 ZIP and retains its new profile. `--launch` opens that profile for manual testing.
 An existing shell profile is never reused. Remove the printed `tools-*` directory
 when finished with it and after closing Blender. `make build` and `make install`
 accept `BLENDER_BUILD_ARGS` and `BLENDER_INSTALL_ARGS`, respectively.
+`make repo` forwards the build arguments and adds `--repo`; `make install-isolated`
+is an alias for the already isolated `make install` command.
 
 On Linux x64, Windows x64 or macOS Apple silicon, fetch an official Blender release with:
 
 ```sh
 uv run --locked --no-env-file python tools/fetch_blender.py --version 5.0.1
 ```
+
+The equivalent positional form is `tools/fetch_blender.py 5.0.1`. Use either
+version form, not both. `--dest DIR` aliases `--cache DIR`; both choose the parent
+for the same verified, managed cache slots. The Python `series()` and `url_for()`
+helpers only construct official release paths; they perform no download or
+runtime compatibility check.
 
 The fetcher reads the official checksum file, verifies the archive before
 extraction and prints the executable path to use with `BLENDER`. CI supplies

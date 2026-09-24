@@ -20,6 +20,23 @@ from pathlib import Path, PurePosixPath
 from blender_env import ROOT, sha256
 
 
+def series(version):
+    """Return the official release directory without downloading anything."""
+    if not re.fullmatch(r"\d+\.\d+\.\d+", version):
+        raise ValueError("Use a full Blender version, for example 5.0.1")
+    return f"Blender{version.rsplit('.', 1)[0]}"
+
+
+def url_for(version, *, platform_name="linux-x64"):
+    """Return official archive/checksum URLs for the selected release and platform."""
+    base = f"https://download.blender.org/release/{series(version)}"
+    suffixes = {"linux-x64": "tar.xz", "windows-x64": "zip", "macos-arm64": "dmg"}
+    if platform_name not in suffixes:
+        raise ValueError("Automatic download supports Linux/Windows x64 and macOS arm64")
+    filename = f"blender-{version}-{platform_name}.{suffixes[platform_name]}"
+    return f"{base}/{filename}", f"{base}/blender-{version}.sha256"
+
+
 def download(url, destination):
     request = urllib.request.Request(url, headers={"User-Agent": "scenario-blender-tools/1.0"})
     with urllib.request.urlopen(request, timeout=120) as response, destination.open("wb") as output:
@@ -178,19 +195,12 @@ def install_archive(archive, installation, temporary, expected, version, platfor
 
 
 def fetch(version, cache, expected=None, *, platform_name="linux-x64"):
-    if not re.fullmatch(r"\d+\.\d+\.\d+", version):
-        raise ValueError("Use a full Blender version, for example 5.0.1")
+    archive_url, checksum_url = url_for(version, platform_name=platform_name)
     expected = expected or None
     if expected and not re.fullmatch(r"[a-fA-F0-9]{64}", expected):
         raise ValueError("--sha256 must contain 64 hexadecimal characters")
-    suffixes = {"linux-x64": "tar.xz", "windows-x64": "zip", "macos-arm64": "dmg"}
-    if platform_name not in suffixes:
-        raise ValueError("Automatic download supports Linux/Windows x64 and macOS arm64")
-    suffix = suffixes[platform_name]
-    filename = f"blender-{version}-{platform_name}.{suffix}"
+    filename = archive_url.rsplit("/", 1)[1]
     slot = version if platform_name == "linux-x64" else f"{version}-{platform_name}"
-    series = version.rsplit(".", 1)[0]
-    base = f"https://download.blender.org/release/Blender{series}"
     cache = cache.resolve()
     cache.mkdir(parents=True, exist_ok=True)
     with (
@@ -200,13 +210,13 @@ def fetch(version, cache, expected=None, *, platform_name="linux-x64"):
         temporary = Path(temporary)
         if expected is None:
             sums = temporary / "checksums"
-            download(f"{base}/blender-{version}.sha256", sums)
+            download(checksum_url, sums)
             expected = checksum(sums.read_text(), filename)
         expected = expected.lower()
         archive = cache / f"{filename}.{expected}"
         if not archive.exists() or sha256(archive) != expected:
             candidate = temporary / filename
-            download(f"{base}/{filename}", candidate)
+            download(archive_url, candidate)
             if sha256(candidate) != expected:
                 raise ValueError("Blender archive SHA-256 mismatch")
             candidate.replace(archive)
@@ -221,11 +231,13 @@ def fetch(version, cache, expected=None, *, platform_name="linux-x64"):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--version", required=True)
+    version = parser.add_mutually_exclusive_group(required=True)
+    version.add_argument("release", nargs="?", help="Full Blender release version")
+    version.add_argument("--version", help="Full Blender release version")
     parser.add_argument(
         "--sha256", help="Pinned archive digest; otherwise read the official checksum file"
     )
-    parser.add_argument("--cache", type=Path, default=ROOT / ".blender")
+    parser.add_argument("--cache", "--dest", type=Path, default=ROOT / ".blender")
     args = parser.parse_args()
     system, machine = platform.system(), platform.machine().lower()
     if system in {"Linux", "Windows"} and machine in {"x86_64", "amd64"}:
@@ -238,7 +250,7 @@ def main():
             "install Blender and set BLENDER on this platform"
         )
     try:
-        fetch(args.version, args.cache, args.sha256, platform_name=platform_name)
+        fetch(args.version or args.release, args.cache, args.sha256, platform_name=platform_name)
         return 0
     except (
         OSError,

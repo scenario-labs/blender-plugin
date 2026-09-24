@@ -1,0 +1,30 @@
+# SPDX-FileCopyrightText: 2026 Scenario Inc.
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Code owners
+#
+# Request reviews for release files, repository automation, licence and security
+# texts. Ownership of scenario/ as a whole would request owners on every change.
+# Both owners must be on the same line; paths are root-anchored, last match wins.
+#
+# This file defines requested reviewers, not permissions or required approvals.
+# The main - review ruleset currently does not require code-owner approval.
+# Changing that policy or team access is a separate repository-admin decision.
+# Requests use the CODEOWNERS file on the PR base branch; drafts request owners
+# when marked ready for review.
+
+# Release version and changelog files (release-please owns release updates)
+/CHANGELOG.md                    @hervenivon @scenario-labs/platform
+/.release-please-manifest.json   @hervenivon @scenario-labs/platform
+/scenario/blender_manifest.toml  @hervenivon @scenario-labs/platform
+/scenario/__init__.py            @hervenivon @scenario-labs/platform
+
+# Release machinery and repository automation
+/release-please-config.json      @hervenivon @scenario-labs/platform
+/.github/workflows/              @hervenivon @scenario-labs/platform
+/.github/dependabot.yml          @hervenivon @scenario-labs/platform
+/.github/CODEOWNERS              @hervenivon @scenario-labs/platform
+
+# Licence and security texts
+/LICENSE                        @hervenivon @scenario-labs/platform
+/scenario/LICENSE               @hervenivon @scenario-labs/platform
+/SECURITY.md                     @hervenivon @scenario-labs/platform

@@ -95,11 +95,17 @@ def main():
     # No real-profile opt-out: contributors should always use the runner.
     raw_profile = os.environ.get("BLENDER_USER_RESOURCES")
     if not raw_profile:
-        raise SystemExit("Refusing real-profile tests: use make test-blender")
+        print("Refusing real-profile tests: use make test-blender", file=sys.stderr)
+        raise SystemExit(2)
     profile = pathlib.Path(raw_profile).resolve()
     marker = profile.parent / "runner.json"
-    if not marker.is_file() or json.loads(marker.read_text()).get("profile") != str(profile):
-        raise SystemExit("Refusing unmanaged profile: use make test-blender")
+    try:
+        ownership = json.loads(marker.read_text())
+    except (OSError, ValueError):
+        ownership = None
+    if not isinstance(ownership, dict) or ownership.get("profile") != str(profile):
+        print("Refusing unmanaged profile: use make test-blender", file=sys.stderr)
+        raise SystemExit(2)
     parser = argparse.ArgumentParser()
     parser.add_argument("--zip", type=pathlib.Path, required=True)
     parser.add_argument("--sha256", required=True)

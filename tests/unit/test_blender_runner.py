@@ -141,15 +141,21 @@ def test_duplicate_zip_members_are_rejected(tmp_path):
         blender_env.inspect_zip(path)
 
 
-def test_unmanaged_test_execution_is_refused_without_blender_import():
+@pytest.mark.parametrize("profile", ["absent", "unmanaged", "corrupt", "array", "different"])
+def test_unmanaged_test_execution_is_refused_without_blender_import(tmp_path, profile):
     env = {k: v for k, v in os.environ.items() if not k.startswith("BLENDER_")}
+    if profile != "absent":
+        env["BLENDER_USER_RESOURCES"] = str(tmp_path / "profile")
+    if profile in {"corrupt", "array", "different"}:
+        content = {"corrupt": "{", "array": "[]", "different": '{"profile":"other"}'}[profile]
+        (tmp_path / "runner.json").write_text(content)
     result = subprocess.run(
         [sys.executable, str(ROOT / "tests/blender/run_all.py")],
         env=env,
         capture_output=True,
         text=True,
     )
-    assert result.returncode != 0
+    assert result.returncode == 2
     assert "use make test-blender" in result.stderr
     assert "No module named 'bpy'" not in result.stderr
 

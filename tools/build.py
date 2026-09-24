@@ -61,6 +61,10 @@ def validate(session, candidate):
 
 
 def build(session, output):
+    session.step(
+        "validate-source",
+        ["--offline-mode", "--command", "extension", "validate", str(ROOT / "scenario")],
+    )
     manifest = tomllib.loads((ROOT / "scenario/blender_manifest.toml").read_text())
     candidate = session.directory / f"{manifest['id']}-{manifest['version']}.zip"
     source = prepare_source(ROOT / "scenario", session.temporary / "source")

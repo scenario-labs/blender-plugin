@@ -4,6 +4,7 @@
 
 import importlib
 import io
+import subprocess
 import tarfile
 import zipfile
 from pathlib import Path
@@ -47,6 +48,10 @@ def test_build_selects_manifest_zip_and_does_not_copy_a_stale_newer_zip(
     session.step = step
     candidate = build.build(session, output)
     assert candidate != stale
+    assert steps[0] == (
+        "validate-source",
+        ["--offline-mode", "--command", "extension", "validate", str(build.ROOT / "scenario")],
+    )
     assert steps[-1] == (
         "validate",
         ["--command", "extension", "validate", str(session.directory / candidate.name)],
@@ -58,6 +63,39 @@ def test_build_selects_manifest_zip_and_does_not_copy_a_stale_newer_zip(
     assert not session.profile.exists()
     assert not session.temporary.exists()
     assert (session.directory / candidate.name).is_file()
+
+
+@pytest.mark.parametrize("manifest", ["not TOML", 'name = "Missing identity"\n'])
+def test_invalid_source_stops_build_before_staging_or_publication(
+    tools, tmp_path, monkeypatch, manifest
+):
+    build, _ = tools
+    checkout = tmp_path / "checkout"
+    (checkout / "scenario").mkdir(parents=True)
+    (checkout / "scenario/blender_manifest.toml").write_text(manifest)
+    monkeypatch.setattr(build, "ROOT", checkout)
+    output = tmp_path / "output"
+    session = build.Session(Path("blender"), tmp_path / "artifacts")
+
+    def invalid(name, args):
+        assert name == "validate-source"
+        assert args == [
+            "--offline-mode",
+            "--command",
+            "extension",
+            "validate",
+            str(build.ROOT / "scenario"),
+        ]
+        raise subprocess.CalledProcessError(7, args)
+
+    monkeypatch.setattr(session, "step", invalid)
+    monkeypatch.setattr(build, "prepare_source", lambda *args: pytest.fail("Must not stage wheels"))
+    with pytest.raises(subprocess.CalledProcessError) as error:
+        build.build(session, output)
+    assert error.value.returncode == 7
+    assert not output.exists()
+    assert list(session.temporary.iterdir()) == []
+    assert session.profile.is_dir()
 
 
 def test_sessions_never_reuse_inherited_profiles(tools, monkeypatch, tmp_path):

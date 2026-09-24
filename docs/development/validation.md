@@ -69,6 +69,16 @@ including probes, export an absolute disposable profile:
 `export BLENDER_USER_RESOURCES="$PWD/.blender-profile"`.
 Never install development builds into the user's normal profile.
 
+Source builds run Blender's `extension validate` against `scenario/` before
+staging dependencies or building an archive. The isolated runner records this
+as `validate-source.log`, so malformed manifest metadata fails at a distinct
+step on every Linux/Windows Blender CI version. A validation failure stops
+packaging and installation and preserves its exit status and diagnostic logs.
+The finished ZIP is still validated separately. When `tools/test_blender.py`
+receives `--zip`, it validates that exact supplied artifact without checking
+the source directory with this new preflight. Its existing checkout identity
+check still applies.
+
 - `make build`: build and validate the extension ZIP; use
   `BLENDER_BUILD_ARGS="--repo"` to also generate a local extension repository.
 - `make install`: build and install into a new isolated profile; use

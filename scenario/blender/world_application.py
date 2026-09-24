@@ -12,6 +12,7 @@ from pathlib import Path
 
 import bpy
 
+from ..core.jobs.transfers import DownloadedResult
 from ..core.scene.panorama import MAX_FILE_BYTES, PanoramaError, PanoramaInfo, inspect_panorama
 
 
@@ -236,15 +237,18 @@ def _load_image(data, info):
         raise
 
 
-def apply_world(scene, filepath):
+def apply_world(scene, filepath, *, expected_receipt=None):
     """Apply a local supported 2:1 panorama to exactly this scene, on main thread.
 
     The caller explicitly selects an equirectangular panorama. Aspect ratio does
     not prove projection, seams, poles or high dynamic range. Async integrations
-    must validate their captured file/scene/revision before calling this function.
+    must validate their captured file/scene/revision before calling this function
+    and supply the saved download receipt to bind the decoded snapshot's bytes.
     """
     _main_thread()
     _scene(scene)
+    if expected_receipt is not None and not isinstance(expected_receipt, DownloadedResult):
+        raise WorldApplicationError("Use a downloaded-result receipt for panorama verification")
     previous, world, image = scene.world, None, None
     try:
         path = Path(filepath)
@@ -256,6 +260,14 @@ def apply_world(scene, filepath):
             if not stat.S_ISREG(os.fstat(source.fileno()).st_mode):
                 raise WorldApplicationError("Select a regular local panorama file")
             data = source.read(MAX_FILE_BYTES + 1)
+        if len(data) > MAX_FILE_BYTES:
+            raise PanoramaError("Panorama file exceeds the byte limit")
+        if expected_receipt is not None and (
+            path.name != expected_receipt.name
+            or len(data) != expected_receipt.size
+            or hashlib.sha256(data).hexdigest() != expected_receipt.sha256
+        ):
+            raise WorldApplicationError("The panorama no longer matches its download receipt")
         info = inspect_panorama(data)
         image = _load_image(data, info)
         world = bpy.data.worlds.new("Scenario Panorama")

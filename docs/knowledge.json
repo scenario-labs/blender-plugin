@@ -509,8 +509,8 @@
         ".github/pull_request_template.md": "7d899d2b14da42ce0a4708a840acfda73e7d66da5aa435cd9296115d4e8330c7",
         "tests/unit/test_conventions_docs.py": "b07164b35c741484b3c726d5fe263c974219045f30c43f3e1065885c993613b4",
         ".github/dependabot.yml": "2d1ef5df890197205268c05d1fe1f54943f0b1d6984a2f7eb064f364c2c438d2",
-        "tools/check_rules.py": "894d909c25716174fd8b8bad870eb6d550372177b2381bd9c9b6a42370f58ab0",
-        "tests/unit/test_house_rules.py": "84ef4bc8930fad1357d9f91209983d10fd33721f6b71f94ddcc9b1f229c9aca1",
+        "tools/check_rules.py": "86eed65ed28447da3f1f7e943d960e0a7781896da3af589ef982ef242752b7b4",
+        "tests/unit/test_house_rules.py": "9b0410eac0a27a829cb09a3a15c6dff516a9171f05228ba1ad8f1134f40c1267",
         "Makefile": "a149a50f2a5e63c83d31d60f629521308ae625bd7c655957e1a1acc4193eb88c"
       }
     },
@@ -547,8 +547,8 @@
         "tools/capture_gui.py": "c80adcf7aeff8d8b1e39e56fd192a66735e1e52fe8f36da99a00a413473d8d91",
         "tests/unit/test_gui_capture.py": "beee6cba15adf7da1e7434c18dcb2b948e36f4b459af06fc98a6c850a5fea87c",
         "tests/unit/test_tool_discovery.py": "b2f6788edb4b2311eaff88f05d1a28dc5b66779ab9fdb53e821b61d4f582ee14",
-        "tools/check_rules.py": "894d909c25716174fd8b8bad870eb6d550372177b2381bd9c9b6a42370f58ab0",
-        "tests/unit/test_house_rules.py": "84ef4bc8930fad1357d9f91209983d10fd33721f6b71f94ddcc9b1f229c9aca1"
+        "tools/check_rules.py": "86eed65ed28447da3f1f7e943d960e0a7781896da3af589ef982ef242752b7b4",
+        "tests/unit/test_house_rules.py": "9b0410eac0a27a829cb09a3a15c6dff516a9171f05228ba1ad8f1134f40c1267"
       }
     },
     {

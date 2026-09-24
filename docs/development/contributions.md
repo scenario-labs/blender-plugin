@@ -117,6 +117,8 @@ results. Dependabot update PRs follow the ordinary review and merge process.
 with explicit file paths and optional `--rule actions-pinned`. `--list` reports
 only implemented rules. The unit suite checks the repository and exercises
 failure cases, so ordinary unit CI also enforces the convention.
+The default scan includes tracked files and new files that Git does not ignore,
+so a proposed workflow is checked before it is staged.
 
 Write `uses` on its own line with a plain, single-quoted or double-quoted value.
 Remote actions and reusable workflows need a lowercase 40-character SHA and a

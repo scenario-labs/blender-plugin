@@ -1,6 +1,10 @@
 # SPDX-FileCopyrightText: 2026 Scenario Inc.
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""Run the implemented offline house rules; this is not a general YAML validator."""
+"""Run the implemented offline house rules.
+
+Default Git scans include tracked and nonignored proposed files.
+This is not a general YAML validator.
+"""
 
 import argparse
 import os
@@ -15,8 +19,11 @@ _USES = re.compile(r"^\s*(?:-\s*)?(?:uses|'uses'|\"uses\")\s*:\s*(.*)$")
 _SCALAR = re.compile(r"(?:'([^'\r\n]*)'|\"([^\"\\\r\n]*)\"|([^\s'\"#]+))(?:\s+(#.*))?\s*$")
 _REMOTE = re.compile(r"[\w.-]+/[\w.-]+(?:/[\w./-]+)?@[0-9a-f]{40}", re.ASCII)
 _RELEASE = re.compile(r"#\s*v?\d+\.\d+\.\d+(?:[-+][\w.-]+)?(?:\s|$)", re.ASCII)
-_BLOCK = re.compile(r":\s*[|>](?:[1-9][+-]?|[+-][1-9]?)?\s*(?:#.*)?$")
-_FLOW = re.compile(r"^\s*(?:-\s*)?(?:(?:[\w.-]+|'[^']+'|\"[^\"]+\"):\s*)?[\[{]")
+_BLOCK = re.compile(
+    r"^\s*(?:-\s*)?(?:[\w.-]+|'[^']+'|\"[^\"]+\")\s*:\s*"
+    r"[|>](?:[1-9][+-]?|[+-][1-9]?)?\s*(?:#.*)?$"
+)
+_FLOW = re.compile(r"^\s*(?:-\s*)?(?:(?:[\w.-]+|'[^']+'|\"[^\"]+\")\s*:\s*)?[\[{]")
 _FLOW_USES = re.compile(r"(?:^|[{,])\s*(?:uses|'uses'|\"uses\")\s*:")
 
 
@@ -32,10 +39,13 @@ class Violation:
 
 
 def tracked_files(root):
-    """Use Git's NUL-delimited inventory, with an archive-checkout fallback."""
+    """Include tracked and nonignored proposed files, with an archive-checkout fallback."""
     try:
         result = subprocess.run(
-            ["git", "ls-files", "-z"], cwd=root, check=True, capture_output=True
+            ["git", "ls-files", "-z", "--cached", "--others", "--exclude-standard"],
+            cwd=root,
+            check=True,
+            capture_output=True,
         )
     except (FileNotFoundError, subprocess.CalledProcessError):
         skipped = {".git", ".venv", "__pycache__", ".blender-profile", "dist", "workdir"}

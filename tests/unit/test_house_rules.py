@@ -49,14 +49,15 @@ def test_supported_quoted_references_and_keys(tmp_path, quote, suffix):
     assert rules.run(rules.RULES, [path], tmp_path) == []
 
 
-def test_local_reusable_actions_docker_comments_and_script_literals_are_not_remote(tmp_path):
+@pytest.mark.parametrize("block", ["run: |", "run : |"])
+def test_local_reusable_actions_docker_comments_and_script_literals_are_not_remote(tmp_path, block):
     path = workflow(
         tmp_path,
         "# uses: actions/checkout@v7\n"
         "  - uses: './.github/actions/local'\n"
         '    uses: "./.github/workflows/local.yml"\n'
         "  - uses: docker://alpine:3\n"
-        "  - run: |\n"
+        f"  - {block}\n"
         "      uses: literal script content\n"
         "      # A script comment does not end its block\n"
         "      uses: another script literal\n"
@@ -84,6 +85,7 @@ def test_local_reusable_actions_docker_comments_and_script_literals_are_not_remo
         "{name: example, uses: owner/repo@main}",
         'steps: [{"uses": owner/repo@main}]',
         '"steps": [{"uses": owner/repo@main}]',
+        'steps : [{"uses": owner/repo@main}]',
     ],
 )
 def test_mutable_or_unsupported_declarations_fail_instead_of_being_skipped(tmp_path, declaration):
@@ -100,6 +102,20 @@ def test_composite_actions_are_checked_but_unrelated_yaml_is_not(tmp_path):
     assert [item.path for item in found] == [".github/actions/a/action.yaml"]
 
 
+def test_block_marker_in_a_comment_does_not_hide_nested_actions(tmp_path):
+    path = workflow(
+        tmp_path,
+        "on: pull_request\n"
+        "jobs:\n"
+        "  check:\n"
+        "    runs-on: ubuntu-latest\n"
+        "    steps: # A shell example could contain run: |\n"
+        "      - uses: owner/repo@main\n",
+    )
+    found = rules.run(rules.RULES, [path], tmp_path)
+    assert [item.line for item in found] == [6]
+
+
 def test_missing_or_symlink_workflow_fails(tmp_path):
     path = workflow(tmp_path, "name: Original\n")
     path.unlink()
@@ -113,6 +129,22 @@ def test_git_inventory_retains_spaces_and_newlines(tmp_path):
     path = workflow(tmp_path, "name: Fixture\n", ".github/workflows/spaces and\nnewline.yml")
     subprocess.run(["git", "-C", str(tmp_path), "add", "."], check=True)
     assert rules.tracked_files(tmp_path) == [path]
+
+
+def test_default_scan_includes_proposed_actions_but_not_ignored_files(
+    tmp_path, monkeypatch, capsys
+):
+    subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
+    tracked = workflow(tmp_path, f"uses: owner/repo@{SHA} # v1.2.3\n")
+    subprocess.run(["git", "-C", str(tmp_path), "add", "."], check=True)
+    proposed = workflow(tmp_path, "uses: owner/repo@main\n", ".github/actions/new/action.yml")
+    ignored = workflow(tmp_path, "uses: ignored/repo@main\n", ".github/workflows/ignored.yml")
+    (tmp_path / ".gitignore").write_text("ignored.yml\n", encoding="utf-8")
+    files = rules.tracked_files(tmp_path)
+    assert tracked in files and proposed in files and ignored not in files
+    monkeypatch.setattr(rules, "ROOT", tmp_path)
+    assert rules.main([]) == 1
+    assert ".github/actions/new/action.yml:1: actions-pinned:" in capsys.readouterr().out
 
 
 def test_archive_inventory_fallback_omits_generated_directories(tmp_path):

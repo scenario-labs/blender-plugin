@@ -628,3 +628,31 @@ Generated HTML and `site/` are ignored; do not commit them or copy old guides in
 snapshot directories. Hosting, release attachment and the native update controls
 remain separate work under #37. The current guide refresh in #13 is merged; screenshot optimization and orphan
 cleanup remain under #14.
+
+
+
+### Screenshots
+
+Keep screenshots in `docs/images` as PNG files and inspect them at their intended
+reading size. Reference each one from the guide or another document with alt text
+of at least eight words describing the visible controls or result, not a lane
+label or filename. Do not show credentials, account identifiers or private data.
+Clearly label offline examples and distinguish them from live-provider evidence.
+
+Before committing screenshots, run `make images`. It requires
+[pngquant](https://pngquant.org) (`brew install pngquant` or
+`apt-get install pngquant`) and palette-quantizes screenshots in place with a
+70–90 quality target and no dithering. Compare the result with the original before committing;
+small text must stay legible. Exit 98 means a file would not shrink; exit 99 leaves
+a file unchanged because it cannot meet the minimum quality and prints its name.
+Reshoot it or document a justified exception in `TRUECOLOUR_OK` in
+[the image checks](tests/unit/test_docs_images.py). Other failures stop the target.
+
+The original `scenario-logo.png` is deliberately excluded: its unchanged upstream
+bytes and separate licence record are preserved. The image checks permit that
+one provenance exception; they still reject missing images, unused screenshots,
+truecolour screenshots and short Markdown alt text. The social card, when present,
+has an explicit unused-image exception because GitHub repository settings host it.
+Optional lossless compression with ZopfliPNG can reduce large captures further;
+check that the optimized file remains palette-based. Generated website and
+handbook output remain untracked.

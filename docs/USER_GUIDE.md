@@ -14,6 +14,10 @@ The add-on also runs a small local MCP server, so an agent such as Claude Code, 
 
 *The Image form is an offline illustration, not a live model response or price quote.*
 
+Other lane images illustrate existing workflows and may show earlier layouts.
+Use the control descriptions below for current behavior; visible prices are examples,
+not current quotes.
+
 ## Install
 
 1. Download `scenario-<version>.zip` from the [releases page](https://github.com/scenario-labs/blender-plugin/releases). Keep it zipped.
@@ -55,7 +59,7 @@ Where things are:
 
 ## The form
 
-![Floating composer](images/composer.png)
+![The expanded floating composer with six lane tabs, a prompt caret, model, Settings and Generate controls](images/composer.png)
 
 From top to bottom:
 
@@ -94,7 +98,7 @@ Text or reference images to images (GPT Image 2, Gemini 3.1, Seedream, Z-Image, 
 ### Video
 Text, images or your Blender scene to video (Seedance 2.0 and 2.5, Kling, Veo, Wan, LTX and the other video models, including audio-to-video).
 
-![Video lane](images/panel-video.png)
+![Video lane with Seedance parameters, frame references, Match timeline and Generate controls](images/panel-video.png)
 
 - **Viewport clip** / **Camera clip** references playblast your timeline at 1280x720 (overlays hidden) when you press Generate; a camera clip is captured through the viewport in camera view, so your Material Preview or Rendered shading comes along. **Grey clay capture** forces solid single-colour shading so the model reads motion rather than materials.
 - **Match timeline** keeps the clip and the video the same length: the model's duration follows your frame range (a choice list such as Seedance's 4 to 15 s picks the first value that fits; a numeric range such as Minimax H3's 5 to 15 s takes the clip length rounded up and clamped), the duration field is locked while it drives, the box states "Video duration 6 s, same as the clip" or the padding or trimming applied, and the playblast is padded or cut to that exact duration. Seedance prompts get their `@video1` / `@image1` mentions automatically.
@@ -103,7 +107,7 @@ Text, images or your Blender scene to video (Seedance 2.0 and 2.5, Kling, Veo, W
 ### 3D
 Four modes: **Text**, **Image** (one picture), **Multi-view** (several views of the same object, first one is the front) and **Edit** (Scenario's 3D tools on the selected mesh).
 
-![3D lane](images/panel-3d.png)
+![3D lane in Text mode with Meshy selected, texture options and a target polygon count](images/panel-3d.png)
 
 Generate: Meshy 7 and Rodin Gen-2.5 for text; Tripo 3.1, Tripo P1, Meshy 7, Hunyuan 3.1 Pro, Rodin 2.5 for images; Meshy 7 Multi Image, Tripo 3.1 Multi View, Hunyuan 3.1 Pro Multiview and Rodin for multi-view; worlds (Marble, HY World, TripoSplat) through the picker. Worlds come back as Gaussian splats (`.spz`, millions of splats): Blender cannot render splats, so the add-on loads them as a coloured point cloud (splat centres with their colours, sized points through a Geometry Nodes modifier, one million points kept for interactivity). The result is imported at the 3D cursor into a "Scenario" collection and the viewport switches to Material Preview so the textures show. Providers return several variants of one result (Meshy: GLB, OBJ and texture PNGs; Rodin with `material=All`: a shaded and a PBR mesh): the add-on imports one primary mesh (the textured GLB) and lists the other files in Generations with an **Add** button. Rodin defaults to PBR. **Add to scene** imports the primary mesh again at the cursor; **Select** selects the objects the job created.
 
@@ -120,7 +124,7 @@ Edit mode:
 ### Materials
 Patina turns a prompt (or a photo) into a seamless PBR set: base color, normal, roughness, metalness, height.
 
-![Materials lane](images/panel-materials.png)
+![Materials lane with a copper prompt, texture map choices and settings for the selected mesh](images/panel-materials.png)
 
 Select the meshes to texture, describe the material, choose the maps and size, Generate. The material arrives as a Principled BSDF with UV mapping and displacement and is applied to the meshes you had selected. **Tiling** in Generations scales the mapping. Three models: PATINA Material (prompt, with variation and inpainting), PATINA Image to Maps (a flat texture or photo to maps), PATINA Material Extract (isolate one material from a photo).
 
@@ -192,7 +196,7 @@ unlinking it from Blockout first.
 ### Generations
 This session's results (collapsible entries with the asset id and a Details dialog), then the project's cloud history: prompt, kind, price, status, asset id. **Import into scene** brings a result into Blender (downloading it if needed), also for generations made on the web app or by an agent. **Load older** pages back in time. This is also the recovery path when a download failed: the job is still there, import it again.
 
-![Generations](images/panel-generations.png)
+![Generations list with result prompts, credit amounts and Import into scene buttons](images/panel-generations.png)
 
 ### Agents (MCP)
 The local `scenario-blender` server connects agents to the open scene and

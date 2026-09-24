@@ -221,11 +221,11 @@
       "path": "docs/MODEL_PAYLOAD_AUDIT.md",
       "coverage": "historical",
       "reviewed_at": "2026-09-24",
-      "limits": "Historical context only; examples and recorded service observations are not current instructions or live verification.",
+      "limits": "Historical context only; examples and recorded service observations are not current instructions or live verification. Form-source fingerprint reviewed after the copyright-holder spelling correction; implementation bytes and prior coverage limits are unchanged.",
       "sources": {
         "tools/audit_payloads.py": "77120c3495d5bb5540147b8181e71dccb0fa82fa2c0f9060a8c4463934535bcd",
         "scenario/core/schema/params.py": "b26c51fbe84dd3eb71a690c39231ff8a332ef42d937b574e3c1102e97d8cd8e7",
-        "scenario/core/schema/forms.py": "5fae21a416ee5e72f444bc2b6d3502b5ace4b728f7790766161d8e7100b64af5"
+        "scenario/core/schema/forms.py": "f13c662733ae8badc4a16c21f32b545e93c55d8f1dee2c8816cfce8b940df33a"
       }
     },
     {
@@ -436,7 +436,7 @@
       "path": "docs/architecture/runtime.md",
       "coverage": "source-reviewed",
       "reviewed_at": "2026-09-24",
-      "limits": "Explicit JobSession World application was reviewed against owned verification, original-context checks, core claims, exact receipt-bound decoding and installed native failure/rollback/persistence cases. Other lifecycle, component, format and restoration claims retain prior evidence. One selected asset completes the job; there is no per-asset journal or atomic blend-file save. Active UI/MCP, authoritative account/project discovery, production storage policy, undo/recovery UX and live acceptance remain separate; no human approval is implied.",
+      "limits": "Explicit JobSession World application was reviewed against owned verification, original-context checks, core claims, exact receipt-bound decoding and installed native failure/rollback/persistence cases. Other lifecycle, component, format and restoration claims retain prior evidence. One selected asset completes the job; there is no per-asset journal or atomic blend-file save. Active UI/MCP, authoritative account/project discovery, production storage policy, undo/recovery UX and live acceptance remain separate; no human approval is implied. Form-source fingerprint reviewed after the copyright-holder spelling correction; implementation bytes and prior coverage limits are unchanged.",
       "sources": {
         "scenario/blender/runtime.py": "e2aea444fd9ed8568038d709d3e0948a411dd26ba94994bb09efb55a0a2c7e31",
         "scenario/blender/generation.py": "68958e267939eeb096d1e682252ffc0f88a1a944591495a55436d01382f77c8d",
@@ -449,7 +449,7 @@
         "scenario/core/jobs/workers.py": "fc584737c05c28bcb20309220ed6dc99bb40b330339b995075c1392497d3ebed",
         "scenario/blender/job_session.py": "d717347e944a4a6f6add3f5af140a51a111e729a522e511c3a66f16df40336b6",
         "scenario/core/jobs/transfers.py": "549e02649dab7061492a5bb1100a836daf1112972a9ad01c2c0d39facb6ac098",
-        "scenario/core/schema/forms.py": "5fae21a416ee5e72f444bc2b6d3502b5ace4b728f7790766161d8e7100b64af5",
+        "scenario/core/schema/forms.py": "f13c662733ae8badc4a16c21f32b545e93c55d8f1dee2c8816cfce8b940df33a",
         "scenario/prefs.py": "a96da37fa23ed9ffb6be31c11cc6d519b15e3103555c84e7e14a60d2adcaf6bf",
         "tests/unit/test_config.py": "3d8ea8a6f0bcef70f0bb16146e794346cbbe7d2fc0f26aec1631b108cf6914f3",
         "tests/blender/test_credentials.py": "0767fbe1917c977631dc4243bfcb05dce97d5ed0c0b2c731b8ea4bfdb07e3b45",

@@ -260,6 +260,8 @@ def apply_world(scene, filepath, *, expected_receipt=None):
             if not stat.S_ISREG(os.fstat(source.fileno()).st_mode):
                 raise WorldApplicationError("Select a regular local panorama file")
             data = source.read(MAX_FILE_BYTES + 1)
+        if len(data) > MAX_FILE_BYTES:
+            raise PanoramaError("Panorama file exceeds the byte limit")
         if expected_receipt is not None and (
             path.name != expected_receipt.name
             or len(data) != expected_receipt.size

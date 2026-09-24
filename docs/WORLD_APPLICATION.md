@@ -17,8 +17,9 @@ Temporary copies live under the extension's user directory, not its installation
 
 For a downloaded result, supply its saved `DownloadedResult` as
 `expected_receipt`. The source basename, byte count and SHA256 must match before
-container parsing, image decoding or World allocation. Verification applies to
-the exact bounded byte snapshot passed to Blender, so replacing the source path
+container parsing, image decoding or World allocation. Larger files report the
+panorama byte limit before receipt comparison. Verification applies to the exact
+bounded byte snapshot passed to Blender, so replacing the source path
 after that read cannot change the decoded image. Missing, changed or mismatched
 data fails locally and preserves the original World; it never triggers another
 download or generation. Ordinary explicit local-file callers can omit the receipt.

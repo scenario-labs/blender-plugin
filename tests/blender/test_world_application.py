@@ -168,6 +168,24 @@ class WorldApplicationTests(unittest.TestCase):
                 opened.assert_not_called()
         self.assert_original()
 
+    def test_oversized_snapshot_reports_byte_limit_before_receipt_mismatch(self):
+        path = self.fixture()
+        expected = self.download_receipt(path)
+        before = set(bpy.data.worlds), set(bpy.data.images)
+        for receipt in (expected, None):
+            with (
+                self.subTest(receipt=receipt),
+                unittest.mock.patch.object(self.module, "MAX_FILE_BYTES", 32),
+                unittest.mock.patch.object(self.module, "inspect_panorama") as inspect,
+                unittest.mock.patch.object(self.module, "_load_image") as decode,
+            ):
+                with self.assertRaisesRegex(self.module.PanoramaError, "byte limit"):
+                    self.module.apply_world(self.scene, path, expected_receipt=receipt)
+                inspect.assert_not_called()
+                decode.assert_not_called()
+        self.assertEqual((set(bpy.data.worlds), set(bpy.data.images)), before)
+        self.assert_original()
+
     def test_actual_container_wins_over_filename(self):
         path = self.fixture()
         renamed = path.with_suffix(".exr")

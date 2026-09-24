@@ -366,9 +366,9 @@
       "reviewed_at": "2026-09-24",
       "limits": "Optional saved-download receipt checks were reviewed against exact snapshot decoding and the listed native regression cases. Other format, restoration, threading and application claims retain their prior evidence. Authoritative job/origin ownership, durable application, active UI/MCP and live acceptance remain separate; no human approval is implied.",
       "sources": {
-        "scenario/blender/world_application.py": "f1ccdfe32f9440ec445d88b4d97149e6ff542230d7254c928d9d1feddc17069b",
+        "scenario/blender/world_application.py": "95a10cae5b1ec3fdc758a18dcb4e70a50ffe10961c1ab38e0c5bb9ea6dbe8934",
         "scenario/core/scene/panorama.py": "75c9388accf09c2e131c9fb58cb31e69ba4374f9649ea29a4da8c0f475e95883",
-        "tests/blender/test_world_application.py": "eb6df26215e3906312b0b84e1078855bbc08c0a65c8e50e5f972575ac8f3c5ef"
+        "tests/blender/test_world_application.py": "f8fddd0ddf5d5e4612c9109585f95db64a51d9a3aac4a050d59a7a8b66ba796b"
       }
     },
     {
@@ -381,10 +381,10 @@
         "scenario/blender/mcp_service.py": "ec45907c26301d5c0c2e48fe2eab09136cd52aadb00c6be5401d23ec7d868715",
         "scenario/blender/job_session.py": "73f0a3e2e892c5535331f1c1a2b812d2e70a77e70f27cd6a33c079317d52ea83",
         "scenario/blender/mesh_application.py": "8ec54ba9e782c0cfc0f0f46092f28e4995f5c42d1d96065f4a0dbe99d1e8ea62",
-        "scenario/blender/world_application.py": "f1ccdfe32f9440ec445d88b4d97149e6ff542230d7254c928d9d1feddc17069b",
+        "scenario/blender/world_application.py": "95a10cae5b1ec3fdc758a18dcb4e70a50ffe10961c1ab38e0c5bb9ea6dbe8934",
         "scenario/core/scene/placement.py": "7f2568b5e3804b01929376dd6a2c879d2191e626368f6b1c89b3c275cc96aa5c",
         "tests/blender/test_mesh_application.py": "dd3e6277fc9ef0fe529b70cd6cefb9c365a3ec01d66f6a2f1dc4164d6576c396",
-        "tests/blender/test_world_application.py": "eb6df26215e3906312b0b84e1078855bbc08c0a65c8e50e5f972575ac8f3c5ef"
+        "tests/blender/test_world_application.py": "f8fddd0ddf5d5e4612c9109585f95db64a51d9a3aac4a050d59a7a8b66ba796b"
       }
     },
     {

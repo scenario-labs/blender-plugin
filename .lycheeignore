@@ -1,0 +1,11 @@
+# The web app rejects automated clients; REST endpoints require credentials.
+^https://app\.scenario\.com/
+^https://api\.cloud\.scenario\.com/
+# The attribution destination requires a browser challenge for automated GETs.
+^https://projects\.blender\.org/
+# Reserved placeholder hosts used in examples (RFC 2606).
+^https?://[^/]*\.example(/|$)
+# These exact repository forms redirect to GitHub login when unauthenticated.
+^https://github\.com/scenario-labs/blender-plugin/(issues/new/choose|security/advisories/new)$
+# Issue references in these internal repositories require organization access.
+^https://github\.com/scenario-labs/(roadmap|scenario-sdk-python)/issues/[0-9]+(#.*)?$

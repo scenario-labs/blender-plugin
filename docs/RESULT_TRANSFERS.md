@@ -51,6 +51,10 @@ returned immutable `DownloadedResult(name, size, sha256)` contains no URL. The
 before explicit recovery or Blender application. Verification accepts only a
 regular nonsymlink file with the saved size/digest, enforces a byte cap and checks
 for changes during reading. It does not repair files or make service calls.
+On Windows Python 3.12+, descriptor and path queries can give `ctime` different
+meanings. Verification compares their creation timestamps while retaining the
+descriptor's before/after metadata-change check, identity, size, mode and digest
+checks. Other platforms retain their metadata-change timestamp comparison.
 The caller must retain exclusive ownership of the private directory through
 application; verification does not lock the file against later replacement.
 A computed hash without a trusted expected digest proves local consistency, not

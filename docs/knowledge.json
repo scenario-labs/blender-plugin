@@ -127,13 +127,13 @@
     {
       "path": "docs/JOB_STORAGE.md",
       "coverage": "inherited",
-      "reviewed_at": "2026-09-23",
+      "reviewed_at": "2026-09-24",
       "limits": "Existing guide indexed during this intake, without a fresh claim-by-claim or live verification; consult current integration status and issue acceptance.",
       "sources": {
         "scenario/core/jobs/store.py": "0053c3e48ce89ad699bab664f4f5fddc6af89f7cd01c8bbcab8a323c198c01fc",
         "tests/unit/test_job_store.py": "2bc71047d762d63d960ef249a30384ae41d508e5cf2f236e0e08c9caf6aba655",
-        "scenario/core/jobs/transfers.py": "0f02ad2823787816d3c25695f9d0749cab3fe29b26451d279c4ecd56d60a9d17",
-        "tests/unit/test_result_manifest.py": "5e0414f331a07f245d31bc11945351eaebdb1786cd9ddd7648108365468520e8",
+        "scenario/core/jobs/transfers.py": "549e02649dab7061492a5bb1100a836daf1112972a9ad01c2c0d39facb6ac098",
+        "tests/unit/test_result_manifest.py": "e718f316b9f33faefdae53d59bf04c80b48645d52f3dd0bc80a2beae426e5d67",
         "tests/blender/test_job_store.py": "9391c63dd8837345ea383e2a2fa250d9a911c1a3ddda16e07617c66854b2fc65"
       }
     },
@@ -212,13 +212,13 @@
     {
       "path": "docs/RESULT_TRANSFERS.md",
       "coverage": "inherited",
-      "reviewed_at": "2026-09-23",
+      "reviewed_at": "2026-09-24",
       "limits": "Existing guide indexed during this intake, without a fresh claim-by-claim or live verification; consult current integration status and issue acceptance.",
       "sources": {
-        "scenario/core/jobs/transfers.py": "0f02ad2823787816d3c25695f9d0749cab3fe29b26451d279c4ecd56d60a9d17",
+        "scenario/core/jobs/transfers.py": "549e02649dab7061492a5bb1100a836daf1112972a9ad01c2c0d39facb6ac098",
         "tests/unit/test_result_transfers.py": "494547ee1c4a756f1cc2e3f94084eade4cab746a88431844d6f44b67e925f8ed",
         "scenario/core/jobs/store.py": "0053c3e48ce89ad699bab664f4f5fddc6af89f7cd01c8bbcab8a323c198c01fc",
-        "tests/unit/test_result_manifest.py": "5e0414f331a07f245d31bc11945351eaebdb1786cd9ddd7648108365468520e8",
+        "tests/unit/test_result_manifest.py": "e718f316b9f33faefdae53d59bf04c80b48645d52f3dd0bc80a2beae426e5d67",
         "tests/blender/test_job_store.py": "9391c63dd8837345ea383e2a2fa250d9a911c1a3ddda16e07617c66854b2fc65",
         "scenario/core/jobs/results.py": "6f8735b1fe64f0607ae63c4a5cb43c443904730ede7a2466ceb6439a425d93a2",
         "tests/unit/test_result_commands.py": "3bcba6d1b719ad3016fd5a68e0b740ff5d7eaba1924d59700f0e6d6adbec8009",
@@ -348,7 +348,7 @@
     {
       "path": "docs/architecture/runtime.md",
       "coverage": "source-reviewed",
-      "reviewed_at": "2026-09-23",
+      "reviewed_at": "2026-09-24",
       "limits": "Agent source inspection of the listed files; no live service calls, native runtime rerun or human verification in this review.",
       "sources": {
         "scenario/blender/runtime.py": "2afa6267f835569288ae6d1947af5410b05a0bbdcd3bbad985ff30a6dcb8a000",
@@ -361,13 +361,13 @@
         "scenario/core/jobs/coordinator.py": "c1d8208cb20f1b4401389704308e7a063f013a63919cf5a7c88f6315eb6d977b",
         "scenario/core/jobs/workers.py": "fc584737c05c28bcb20309220ed6dc99bb40b330339b995075c1392497d3ebed",
         "scenario/blender/job_session.py": "c1d0c91a1a76977691e6690a0e369a6e9282ca430de92d1f9c300acfbe2fd79a",
-        "scenario/core/jobs/transfers.py": "0f02ad2823787816d3c25695f9d0749cab3fe29b26451d279c4ecd56d60a9d17",
+        "scenario/core/jobs/transfers.py": "549e02649dab7061492a5bb1100a836daf1112972a9ad01c2c0d39facb6ac098",
         "scenario/core/schema/forms.py": "5fae21a416ee5e72f444bc2b6d3502b5ace4b728f7790766161d8e7100b64af5",
         "scenario/prefs.py": "bfd966d4a6dab2a8505caa3e9ed58d71b71d57b29b673feb5344ad6b8ed72e92",
         "tests/unit/test_config.py": "3d8ea8a6f0bcef70f0bb16146e794346cbbe7d2fc0f26aec1631b108cf6914f3",
         "tests/blender/test_credentials.py": "0767fbe1917c977631dc4243bfcb05dce97d5ed0c0b2c731b8ea4bfdb07e3b45",
         "scenario/core/jobs/store.py": "0053c3e48ce89ad699bab664f4f5fddc6af89f7cd01c8bbcab8a323c198c01fc",
-        "tests/unit/test_result_manifest.py": "5e0414f331a07f245d31bc11945351eaebdb1786cd9ddd7648108365468520e8",
+        "tests/unit/test_result_manifest.py": "e718f316b9f33faefdae53d59bf04c80b48645d52f3dd0bc80a2beae426e5d67",
         "tests/blender/test_job_store.py": "9391c63dd8837345ea383e2a2fa250d9a911c1a3ddda16e07617c66854b2fc65",
         "scenario/core/jobs/results.py": "6f8735b1fe64f0607ae63c4a5cb43c443904730ede7a2466ceb6439a425d93a2",
         "tests/unit/test_result_commands.py": "3bcba6d1b719ad3016fd5a68e0b740ff5d7eaba1924d59700f0e6d6adbec8009",

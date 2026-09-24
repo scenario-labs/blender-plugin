@@ -9,6 +9,7 @@ import sqlite3
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
 from threading import Barrier
+from types import SimpleNamespace
 
 import pytest
 
@@ -252,6 +253,51 @@ def test_verified_file_is_rehashed_and_changes_fail_without_repair(tmp_path):
     path.unlink()
     with pytest.raises(TransferError):
         verify_download(tmp_path, RECEIPT)
+
+
+@pytest.mark.parametrize(
+    "change",
+    [None, "descriptor-ctime", "path-inode", "path-birthtime", "path-mtime", "path-mode"],
+)
+def test_windows_verification_compares_consistent_times_without_hiding_changes(
+    tmp_path, monkeypatch, change
+):
+    from scenario.core.jobs import transfers
+
+    path = tmp_path / ASSET.name
+    path.write_bytes(DATA)
+    original = path.stat()
+    attributes = ("st_dev", "st_ino", "st_size", "st_mtime_ns", "st_ctime_ns", "st_mode")
+
+    def snapshot(**overrides):
+        values = {name: getattr(original, name) for name in attributes}
+        values.update(st_ctime_ns=200, st_birthtime_ns=100)
+        values.update(overrides)
+        return SimpleNamespace(**values)
+
+    before, after, current = snapshot(), snapshot(), snapshot(st_ctime_ns=100)
+    if change == "descriptor-ctime":
+        after.st_ctime_ns += 1
+    elif change is not None:
+        attribute = {
+            "path-inode": "st_ino",
+            "path-birthtime": "st_birthtime_ns",
+            "path-mtime": "st_mtime_ns",
+            "path-mode": "st_mode",
+        }[change]
+        setattr(current, attribute, getattr(current, attribute) + 1)
+    windows_os = SimpleNamespace(**vars(os))
+    windows_os.name = "nt"
+    snapshots = iter((before, after))
+    windows_os.fstat = lambda descriptor: next(snapshots)
+    monkeypatch.setattr(transfers, "os", windows_os)
+    lstat = type(path).lstat
+    monkeypatch.setattr(type(path), "lstat", lambda self: current if self == path else lstat(self))
+    if change is None:
+        assert verify_download(tmp_path, RECEIPT) == path
+    else:
+        with pytest.raises(TransferError, match="receipt"):
+            verify_download(tmp_path, RECEIPT)
 
 
 def test_symlinks_directories_and_over_limit_files_are_not_verified(tmp_path):

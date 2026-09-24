@@ -335,21 +335,30 @@ def verify_download(root, receipt, *, max_bytes=256 * 1024 * 1024):
             after = os.fstat(source.fileno())
             current = path.lstat()
 
-            def identity(value):
+            def identity(value, *, timestamp="st_ctime_ns"):
                 return (
                     value.st_dev,
                     value.st_ino,
                     value.st_size,
                     value.st_mtime_ns,
-                    value.st_ctime_ns,
+                    getattr(value, timestamp),
                     value.st_mode,
                 )
 
+            # Windows Python 3.12+ can report metadata-change ctime for a
+            # descriptor and creation ctime for a path. Compare birthtime
+            # across those APIs, while retaining the descriptor ctime check.
+            path_timestamp = (
+                "st_birthtime_ns"
+                if os.name == "nt" and hasattr(after, "st_birthtime_ns")
+                else "st_ctime_ns"
+            )
             if (
                 size != receipt.size
                 or digest.hexdigest() != receipt.sha256
                 or identity(before) != identity(after)
-                or identity(after) != identity(current)
+                or identity(after, timestamp=path_timestamp)
+                != identity(current, timestamp=path_timestamp)
             ):
                 raise TransferError("Result does not match its receipt")
         return path

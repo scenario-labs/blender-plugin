@@ -24,7 +24,7 @@ The entries below, 0.1.0 to 0.9.9, were written by hand in [Keep a Changelog](ht
 ### Added
 - **Blockout from prompt** (3D tab): describe a scene and the Scenario LLM lays out a rough greybox as grey boxes in a "Blockout" collection, to refine by hand or replace with generated 3D assets one box at a time. About 0.5 CU. The layout is sanitised (sizes and coordinates clamped) so a bad answer never places a runaway cube.
 - **Camera-path holds**: a shot can pause. Write "hold 2 s" (or "pause", "stay for 3 seconds") in the description and the camera holds on arrival; or select a Shot marker and set its "Hold (s)" field. The move steals the remaining time, so a held path still fits its duration.
-- **Two MCP tools** for agents building scenes: `blender_api_help` (look up a bpy operator/type/collection's docstring and properties before writing Python) and `datablocks_summary` (counts of the objects, meshes, materials, etc. in the open file). Inspired by Blender's own blender_mcp project (GPL-3.0), written fresh.
+- **Two MCP tools** for agents building scenes: `blender_api_help` (look up a bpy operator/type/collection's docstring and properties before writing Python) and `datablocks_summary` (counts of the objects, meshes, materials, etc. in the open file). The local MCP design acknowledges Blender Lab's blender_mcp project (https://projects.blender.org/lab/blender_mcp, GPL-3.0-or-later, Blender Authors) as a design reference. The upstream stdio/TCP transport differs from this extension's loopback HTTP server.
 
 ## [0.9.6] - 2026-08-29
 

@@ -678,7 +678,7 @@
       "limits": "Offline sanitizer, recorder write paths and JSON inventory inspected and tested with synthetic inputs. Existing account values are replaced without refreshing fixtures or changing response semantics. Account/media ownership and redistribution rights remain unconfirmed; SDK recorder migration and complete recording metadata remain under issue9. No live API call or ownership assertion.",
       "sources": {
         "tools/record_fixtures.py": "18cfe4f7b7f4d4450e75d9a4044b01a6b01b3753818d8314e3ed370474c9976a",
-        "tests/unit/test_fixture_hygiene.py": "011895bf8f35e52b2051302c56c4b37c04fcf7ce5caa7203a5fb3c1a8e85ee2c",
+        "tests/unit/test_fixture_hygiene.py": "f65f31fcf361fa6c814f7031b7f7cfd6577c6fe388981104f4eed720e95906a7",
         "tests/unit/test_dev_config.py": "f0726f9d8fc867b92f1f718ddeb77a4dd7c875243ba362a93a43f7fc3a006ea2",
         "tests/fixtures/patina-copper-512/manifest.json": "9261b63e72bfbe7f6eea5f94c692246904d944529fa1bfb2645f39d098e879f3",
         "tests/smoke/smoke_video.py": "6210522ef3821d33d58b83cb4be2d0d15ade0d6d6e1a42fe50f8d66a2ffbd585"

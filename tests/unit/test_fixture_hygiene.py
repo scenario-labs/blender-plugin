@@ -73,8 +73,13 @@ def test_scrub_preserves_semantics_and_input():
     expected["model"]["url"] = recorder.SIGNED_URL_PLACEHOLDER
     assert clean == expected
     assert data == original
-    clean["model"]["exampleAssetIds"].append("asset_other")
-    assert data == original
+
+
+def test_mutating_scrubbed_containers_cannot_change_input():
+    data = {"models": [{"exampleAssetIds": ["asset_fixture"]}]}
+    clean = recorder.scrub(data)
+    clean["models"][0]["exampleAssetIds"].append("asset_other")
+    assert data == {"models": [{"exampleAssetIds": ["asset_fixture"]}]}
 
 
 @pytest.mark.parametrize(

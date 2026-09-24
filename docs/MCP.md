@@ -188,6 +188,14 @@ may omit Origin; a supplied Origin must be an HTTP(S) loopback origin. Other
 origins and browser CORS preflights are refused. This is local access control,
 not a promise that a token-holding program is safe.
 
+Early POST and Origin rejections send the complete HTTP error with
+`Connection: close`, then close the socket's write side before discarding a
+bounded pending body. Only an unambiguous declared length within the existing
+10 MiB body limit can be discarded, in chunks under a one-second total deadline.
+Rejected bytes are never parsed or dispatched. This staged teardown reduces the
+risk of a TCP reset hiding the error from clients still sending their body;
+malformed, chunked or oversized requests close without reading their declared body.
+
 **Allow connected agents to run Python** is off by default and fails closed if
 preferences are unavailable. With it off, an authorized agent can still read
 and change the scene, capture/upload a reference and request paid generation.

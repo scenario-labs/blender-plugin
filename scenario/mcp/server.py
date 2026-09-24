@@ -8,6 +8,7 @@ import http.server
 import json
 import logging
 import queue
+import socket
 import threading
 import time
 from urllib.parse import urlsplit
@@ -16,6 +17,7 @@ from . import protocol
 
 log = logging.getLogger("scenario.mcp")
 MAX_BODY = 10 * 1024 * 1024
+REJECT_DRAIN_TIMEOUT = 1.0
 LOOPBACK_HOSTS = frozenset({"127.0.0.1", "localhost", "::1"})
 
 
@@ -172,17 +174,52 @@ def _make_handler(server):
             headers = self.headers.get_all("Authorization", [])
             return len(headers) == 1 and token_matches(headers[0], server.token)
 
+        def _content_length(self):
+            lengths = self.headers.get_all("Content-Length", [])
+            if self.headers.get_all("Transfer-Encoding") or len(lengths) > 1:
+                return None
+            if not lengths:
+                return 0
+            value = lengths[0].strip()
+            if not value.isascii() or not value.isdecimal() or len(value) > 20:
+                return None
+            return int(value)
+
+        def _reject(self, status, body, headers=None):
+            # RFC 9112 section 9.6: closing with unread request bytes can reset
+            # the connection before the peer receives the error response.
+            self.close_connection = True
+            self._send(status, body, {**(headers or {}), "Connection": "close"})
+            self.wfile.flush()
+            try:
+                self.connection.shutdown(socket.SHUT_WR)
+                remaining = self._content_length()
+                if remaining is None or remaining > MAX_BODY:
+                    return
+                deadline = time.monotonic() + REJECT_DRAIN_TIMEOUT
+                while remaining:
+                    timeout = deadline - time.monotonic()
+                    if timeout <= 0:
+                        break
+                    self.connection.settimeout(timeout)
+                    data = self.rfile.read1(min(remaining, 65536))
+                    if not data:
+                        break
+                    remaining -= len(data)
+            except OSError:
+                # The response was already sent. Timeout/reset only ends drain;
+                # rejected bytes are never parsed, queued or retried.
+                pass
+
         def _origin_ok(self):
             origins = self.headers.get_all("Origin", [])
             if len(origins) > 1 or not origin_allowed(origins[0] if origins else None):
-                self.close_connection = True
-                self._send(403, {"error": "forbidden origin"})
+                self._reject(403, {"error": "forbidden origin"})
                 return False
             return True
 
         def do_OPTIONS(self):
-            self.close_connection = True
-            self._send(403, {"error": "forbidden origin"})
+            self._reject(403, {"error": "forbidden origin"})
 
         def do_GET(self):
             if not self._origin_ok():
@@ -207,12 +244,14 @@ def _make_handler(server):
             if not self._origin_ok():
                 return
             if self.path.rstrip("/") != "/mcp":
-                return self._send(404, {"error": "not found"})
+                return self._reject(404, {"error": "not found"})
             if not self._authorized():
-                return self._send(401, {"error": "unauthorized"}, {"WWW-Authenticate": "Bearer"})
-            length = int(self.headers.get("Content-Length") or 0)
+                return self._reject(401, {"error": "unauthorized"}, {"WWW-Authenticate": "Bearer"})
+            length = self._content_length()
+            if length is None:
+                return self._reject(400, {"error": "invalid request framing"})
             if length > MAX_BODY:
-                return self._send(413, {"error": "request too large"})
+                return self._reject(413, {"error": "request too large"})
             raw = self.rfile.read(length) if length else b""
             message, parse_error = protocol.parse_body(raw)
             if parse_error:

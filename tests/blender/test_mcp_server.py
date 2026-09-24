@@ -1,5 +1,6 @@
 # SPDX-FileCopyrightText: 2026 Scenario Inc.
 # SPDX-License-Identifier: GPL-3.0-or-later
+import http.client
 import json
 import socket
 import threading
@@ -7,6 +8,7 @@ import time
 import unittest
 import urllib.error
 import urllib.request
+from unittest.mock import patch
 
 from helpers import submodule
 
@@ -150,6 +152,38 @@ class McpServerTests(unittest.TestCase):
             403,
         )
         self.assertEqual(post(self.url, "tok", None, method="OPTIONS")[0], 403)
+
+    def test_origin_rejection_sends_response_before_draining_delayed_body(self):
+        finished = threading.Event()
+        handler_class = self.server._httpd.RequestHandlerClass
+        finish = handler_class.finish
+
+        def observed_finish(handler):
+            try:
+                finish(handler)
+            finally:
+                finished.set()
+
+        with (
+            patch.object(handler_class, "finish", observed_finish),
+            patch.object(self.server, "handle") as dispatch,
+            socket.create_connection(("127.0.0.1", self.server.port), timeout=2) as client,
+        ):
+            client.sendall(
+                b"POST /mcp HTTP/1.1\r\nHost: localhost\r\n"
+                b"Authorization: Bearer tok\r\nOrigin: https://evil.example\r\n"
+                b"Content-Length: 5\r\n\r\n"
+            )
+            response = http.client.HTTPResponse(client)
+            response.begin()
+            self.assertEqual(response.status, 403)
+            self.assertEqual(response.getheader("Connection"), "close")
+            self.assertIsNone(response.getheader("Access-Control-Allow-Origin"))
+            self.assertEqual(json.loads(response.read()), {"error": "forbidden origin"})
+            self.assertFalse(finished.wait(0.05))
+            client.sendall(b"abcde")
+            self.assertTrue(finished.wait(2))
+            dispatch.assert_not_called()
 
     def test_duplicate_security_headers_are_rejected_without_cors(self):
         import http.client

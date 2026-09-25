@@ -9,6 +9,7 @@ import re
 import subprocess
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -87,6 +88,38 @@ def test_valid_and_read_only(repo):
     assert audit(repo)["errors"] == []
     assert audit(repo)["warnings"] == []
     assert (repo[0] / "docs/knowledge.json").read_bytes() == before
+
+
+@pytest.mark.parametrize("local_offset,utc_hour", [(-12, 0), (14, 23)])
+def test_default_clock_uses_utc_across_local_midnight(repo, monkeypatch, local_offset, utc_hour):
+    root, profile = repo
+    instant = dt.datetime.combine(TODAY, dt.time(utc_hour, 30), tzinfo=dt.UTC)
+    local_zone = dt.timezone(dt.timedelta(hours=local_offset))
+    assert instant.astimezone(local_zone).date() != TODAY
+
+    class LocalDate(dt.date):
+        @classmethod
+        def today(cls):
+            return instant.astimezone(local_zone).date()
+
+    class Clock(dt.datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return instant.astimezone(tz or local_zone)
+
+    monkeypatch.setattr(
+        knowledge, "dt", SimpleNamespace(date=LocalDate, datetime=Clock, UTC=dt.UTC)
+    )
+    assert knowledge.audit(root)["errors"] == []
+    profile["documents"][0]["reviewed_at"] = (TODAY + dt.timedelta(days=1)).isoformat()
+    save(root, profile)
+    assert any("reviewed_at is in the future" in error for error in knowledge.audit(root)["errors"])
+    profile["documents"][0]["reviewed_at"] = (TODAY - dt.timedelta(days=45)).isoformat()
+    save(root, profile)
+    assert knowledge.audit(root)["warnings"] == []
+    profile["documents"][0]["reviewed_at"] = (TODAY - dt.timedelta(days=46)).isoformat()
+    save(root, profile)
+    assert any("older than 45 days" in warning for warning in knowledge.audit(root)["warnings"])
 
 
 @pytest.mark.parametrize("squashed", [False, True])

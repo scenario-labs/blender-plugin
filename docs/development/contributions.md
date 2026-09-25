@@ -175,6 +175,8 @@ GitHub's administrative gates are enabled.
 [The read-only link workflow](../../.github/workflows/links.yml) checks Markdown
 changes on pull requests. [Its scheduled caller](../../.github/workflows/links-scheduled.yml)
 runs each Monday and on manual dispatch; only that caller can file issues.
+New PR pushes cancel superseded scans for the same PR; the scheduled caller
+retains its separate serialized queue.
 Neither workflow belongs in `ci-ok` or the required checks because external
 sites can fail independently of a code change.
 
@@ -182,7 +184,7 @@ Lychee 0.24.2 treats redirects as failures. Write the final destination URL,
 for example `https://www.scenario.com/`. The
 [input selector](../../tools/link_inventory.py) includes tracked and nonignored
 proposed Markdown, deduplicates instruction adapters through their in-repository
-targets, and excludes historical `docs/engineering/` documents. Ignored private
+Markdown targets, and excludes historical `docs/engineering/` documents. Ignored private
 notes and generated reports are not scanned. The existing knowledge checker
 continues to check local links and fragments offline.
 

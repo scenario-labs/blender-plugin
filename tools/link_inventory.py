@@ -27,6 +27,8 @@ def markdown_inputs(root):
         target = path.resolve(strict=True)
         if not target.is_relative_to(root) or target not in inventory or not target.is_file():
             raise ValueError(f"Markdown target is outside the proposed file inventory: {relative}")
+        if target.suffix.lower() != ".md":
+            raise ValueError(f"Markdown adapter target is not Markdown: {relative}")
         relative = target.relative_to(root)
         if relative.parts[:2] == ("docs", "engineering"):
             continue

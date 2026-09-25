@@ -56,7 +56,7 @@
         "tests/unit/test_portable_tools.py": "2cea13137994d2d09b76abe0f5a6916a36c3c61faa546bcc6fa82e0e660c14c5",
         ".github/actions/setup-blender/action.yml": "276722b203227e8f7a7a98a76a0e7095c566bae2c308b4166dff5e7a3698c105",
         ".github/workflows/blender-baseline.yml": "c4fabf3cc73eaad72df2da1bd158ce118c4ebab177980819a540b28c8b66cc4d",
-        "docs/development/contributions.md": "2105b72a499617e22a85b5a4e9b57595a2aed0f168c21f28b0d2cf199fb0746f",
+        "docs/development/contributions.md": "7fddfe54ea16da02174a2ceddbfca261f3fc471dbdb187beb5b67ea4c8248d06",
         ".github/pull_request_template.md": "7d899d2b14da42ce0a4708a840acfda73e7d66da5aa435cd9296115d4e8330c7",
         "tools/build_docs_html.py": "40e8c099acc77be8b3d57edd31f1e2a0ade323d9932e1c822aee98320c01f4a2",
         "docs/handbook-template.html": "f2a14d1356fa1f9f2c28edf251c6c8372d2302b46131215db0b9095e3913061c",
@@ -583,13 +583,13 @@
         "tests/unit/test_local_hooks.py": "b826d5dd189abd1071ceb4eb175787348f39d5272331dce5bafcbeb1a2374d3d",
         "pyproject.toml": "d16f4ecf29355a77a2bcf3c9f519b59a875c6919cec2e7a41f883553f127f807",
         "uv.lock": "818e60fbedee798145c4f228a35b30847bba0b5827a77aa8aaa0210407b69c9b",
-        ".github/workflows/links.yml": "f4c7f863fdb8a72cdf71bace7a87e9f6ce84e780164bcef19165de1087e344e3",
+        ".github/workflows/links.yml": "2fc780cf855f68de99af2ff6bc8de0b67cee4aa72948613a34c4326caff99f31",
         ".github/workflows/links-scheduled.yml": "e8a420c754bf829d64629d360de94f260fe20c0b1bdeb0a6f12fd4c2a7340081",
         ".lycheeignore": "a860fa08b8198498ae713922890241dc6ce62ca09df1ef817f66c6a0b7ccf0f6",
-        "tools/link_inventory.py": "40c5116415e1ef4bd350c09583c179565de8c3d8447358d9c6b8e60c68634156",
+        "tools/link_inventory.py": "7945ec7c5eb6258bf6683f26b0d95d842e4128a0be84158a4ab127cf7fa4079d",
         "tools/report_link_failure.py": "8034aa3b95acafa2085a6c27cc72fe0f65f24ebdf46a2fd1afbf7075a2d18585",
-        "tools/report_ci_failure.py": "21e6259f14a5a491d5ee1ad903bdcdc74b19c138491760fe6b40272b44b9d3c6",
-        "tests/unit/test_links.py": "d1b2c30286f30c8090597c3c5c6658d816076f84ebecf8b6c2860355f2ec06a1"
+        "tools/report_ci_failure.py": "ee37f34c4ecebee0513f4f4053f004b5ad6401cb60fc1b943abd045cd69fd0b0",
+        "tests/unit/test_links.py": "784deb6d4c92290ada25d3154acafd9715e9f1f84143ce0bd1add4c3078317b9"
       }
     },
     {

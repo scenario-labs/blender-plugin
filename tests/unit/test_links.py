@@ -63,6 +63,16 @@ def test_inventory_rejects_missing_tracked_input(tmp_path):
         link_inventory.markdown_inputs(root)
 
 
+def test_inventory_rejects_markdown_adapter_to_non_markdown_file(tmp_path):
+    root = repository(tmp_path)
+    target = root / "settings.toml"
+    target.write_text('url = "https://example.org/service"\n')
+    symlink(root / "adapter.md", target.name)
+    subprocess.run(["git", "add", "settings.toml", "adapter.md"], cwd=root, check=True)
+    with pytest.raises(ValueError, match="target is not Markdown"):
+        link_inventory.markdown_inputs(root)
+
+
 def test_inventory_rejects_empty_checkout(tmp_path):
     with pytest.raises(ValueError, match="No Markdown inputs"):
         link_inventory.markdown_inputs(repository(tmp_path))

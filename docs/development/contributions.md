@@ -223,10 +223,15 @@ retains its separate serialized queue.
 Neither workflow belongs in `ci-ok` or the required checks because external
 sites can fail independently of a code change.
 
-Lychee 0.24.2 treats redirects as failures. The scanner limits each host to two
-concurrent requests, spaces requests by at least 500 ms and waits at least five
-seconds before retries. This reduces rate-limit noise without accepting 429s or
-following redirects. Write the final destination URL,
+Lychee 0.24.2 treats redirects as failures. The scanner defaults to two
+concurrent requests per host, spaces requests by at least 500 ms and waits at least
+five seconds before retries. [The shared configuration](../../lychee.toml)
+limits `www.gnu.org` to one concurrent request with at least 10 seconds between
+requests because the default pacing still encountered HTTP 429 responses.
+CI and local scans use the same settings and report per-host statistics. These
+limits apply within each scan, not across independent runners; persistent 429s
+can still reflect server or shared-IP limits. Rate-limit responses remain failures,
+and redirects remain rejected. Write the final destination URL,
 for example `https://www.scenario.com/`. The
 [input selector](../../tools/link_inventory.py) includes tracked and nonignored
 proposed Markdown and deduplicates instruction adapters through their
@@ -249,7 +254,7 @@ then run from the repository root:
 ```sh
 uv run --locked --no-env-file python tools/link_inventory.py --output workdir/link-check/inputs.txt
 lychee --no-progress --max-redirects 0 --exclude-loopback \
-  --host-concurrency 2 --host-request-interval 500ms --retry-wait-time 5 \
+  --config lychee.toml --host-stats \
   --files-from workdir/link-check/inputs.txt
 ```
 

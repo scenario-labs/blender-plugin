@@ -187,8 +187,10 @@ proposed Markdown, deduplicates instruction adapters through their in-repository
 Markdown targets, and excludes historical `docs/engineering/` documents. The
 root `CHANGELOG.md` is also excluded: release-please owns that generated file and
 can emit `/issues/` links for pull requests that GitHub redirects to `/pull/`.
-Review generated notes through the [release procedure](../RELEASING.md); this
-exception does not verify their destinations. Authored Markdown, including nested
+This whole-file exception includes its retained authored preamble and hand-written
+history; their links are not checked automatically by this workflow. Review the
+file through the [release procedure](../RELEASING.md); this exception does not
+verify any of its destinations. All other authored Markdown, including nested
 changelogs, still rejects redirects. Adapters resolve through the same inventory
 safety checks before the generated-file exception applies. Ignored private
 notes and generated reports are not scanned. The existing knowledge checker

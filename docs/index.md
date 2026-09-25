@@ -41,6 +41,7 @@ For questions, bugs or account help, see [Support](../SUPPORT.md).
 
 ## Maintenance and historical evidence
 
+- [Repository baseline and pending administration](MAINTAINERS.md)
 - [Knowledge checks and review procedure](maintenance/knowledge.md)
 - [API-key release plan](maintenance/release-plan.md)
 - [Issue disposition and limitations audit](maintenance/backlog.md)

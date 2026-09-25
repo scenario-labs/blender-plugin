@@ -1,7 +1,7 @@
 {
   "version": 1,
   "index": "docs/index.md",
-  "base_revision": "e013a26d7208f472b0d5d6fee1534763e2632f22",
+  "base_revision": "cdc8775a4a074a4997eca84cec2699e0dbb16e8c",
   "documents": [
     {
       "path": ".claude/rules/blender-glue.md",
@@ -708,11 +708,12 @@
     {
       "path": "docs/index.md",
       "coverage": "navigation",
-      "reviewed_at": "2026-09-24",
-      "limits": "Navigation and maintenance contract; structural validation does not certify prose or product behavior.",
+      "reviewed_at": "2026-09-25",
+      "limits": "Navigation and maintenance contract; structural validation does not certify prose or product behavior. Maintainer-baseline navigation inspected; remote settings and pending admin decisions retain the new guide's explicit limits.",
       "sources": {
         "tools/check_knowledge.py": "9a000a610ece0164888d9ba2f603fb5fd5a851c41409e87917f7caf906496454",
-        "TRADEMARKS.md": "067b66d55a6eb8540081535388d9e8a8a7f69018824b4c16625ea70f7c4d92b2"
+        "TRADEMARKS.md": "067b66d55a6eb8540081535388d9e8a8a7f69018824b4c16625ea70f7c4d92b2",
+        "docs/MAINTAINERS.md": "128d12a536fe3db60dec5733091336e63c70d6a155407b9d4083b157b045c358"
       }
     },
     {
@@ -846,6 +847,24 @@
         "docs/USER_GUIDE.md": "f7a4e478caa7dcbc9702b5dba49fd989f67282f0430e2fc8295e3e07209ac618",
         "tools/build_docs_html.py": "40e8c099acc77be8b3d57edd31f1e2a0ade323d9932e1c822aee98320c01f4a2",
         "docs/handbook-template.html": "f2a14d1356fa1f9f2c28edf251c6c8372d2302b46131215db0b9095e3913061c"
+      }
+    },
+    {
+      "path": "docs/MAINTAINERS.md",
+      "coverage": "policy",
+      "reviewed_at": "2026-09-25",
+      "limits": "Scoped repository policy and read-only GitHub settings read-back, with actual state distinguished from pending owner/admin decisions. Public source fingerprints cover the linked local contracts; live API evidence is recorded in the PR and must be read back before an administrative action. No settings, token scopes, grants, visibility, release publication or hosted acceptance were changed or inferred.",
+      "sources": {
+        "AGENTS.md": "ab4603ba140e0571d7aa952255779674d8fcc79a0df5b0a15064761b2ceabd3a",
+        "CONTRIBUTING.md": "7cc37fc9869fec3adc20a6fd302760559f9c5c1db2ae4ecbfb11fa3b3cedfdc5",
+        "docs/RELEASING.md": "a4937aac0e28fdb4693630e016cca7a010413fe10c021370b5ae4eddc224ced6",
+        "docs/development/contributions.md": "e1487f78786df3b058e1a8dd1a65d2725092e31c34be76e044b729ae529b03cb",
+        ".github/workflows/ci.yml": "9805ee9848f2eed06b0b9f108bcd7054592d61b431f8f4b57d4098f5cf43c344",
+        ".github/workflows/release-please.yml": "72a2af0eae492c029031fa8e1e8cf5fdf64cf84c3b8474953c270f127ad79047",
+        ".github/dependabot.yml": "2d1ef5df890197205268c05d1fe1f54943f0b1d6984a2f7eb064f364c2c438d2",
+        ".github/CODEOWNERS": "6195d5d3ae33bda4050af6370b0231928507d52952ad5bd31f04f1a0a739bdc8",
+        "scenario/blender_manifest.toml": "7ac4a84b0856f6a7c5ada8182e1c343f097347a25cf5785d81d72b28ec10f444",
+        "docs/SDK_BUNDLE.md": "161627add3fd5b146643fddc2c496a48023406383748e96b6fbdbbed75960ddb"
       }
     }
   ]

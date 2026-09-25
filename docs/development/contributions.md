@@ -228,6 +228,9 @@ concurrent requests per host, spaces requests by at least 500 ms and waits at le
 five seconds before retries. [The shared configuration](../../lychee.toml)
 limits `www.gnu.org` to one concurrent request with at least 10 seconds between
 requests because the default pacing still encountered HTTP 429 responses.
+GNU.org also receives an explicit `Scenario-Blender-LinkCheck` User-Agent with
+the repository URL: controlled requests returned 429 for the generic Lychee
+identity and 200 for this identified checker in single-request probes.
 CI and local scans use the same settings and report per-host statistics. These
 limits apply within each scan, not across independent runners; persistent 429s
 can still reflect server or shared-IP limits. Rate-limit responses remain failures,

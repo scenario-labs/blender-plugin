@@ -6,7 +6,9 @@ host_concurrency = 2
 host_request_interval = "500ms"
 retry_wait_time = 5
 
-# GNU.org still returns 429 with the default pacing. Serialize and slow its checks.
+# GNU.org returns 429 for the generic Lychee User-Agent even with slow checks.
+# Identify this repository's checker explicitly and keep conservative pacing.
 [hosts."www.gnu.org"]
 concurrency = 1
 request_interval = "10s"
+headers = { "User-Agent" = "Scenario-Blender-LinkCheck/1.0 (+https://github.com/scenario-labs/blender-plugin)" }

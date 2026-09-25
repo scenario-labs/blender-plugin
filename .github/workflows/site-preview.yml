@@ -1,0 +1,93 @@
+# SPDX-FileCopyrightText: 2026 Scenario Inc.
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Review artifacts only. Synthetic archives must never populate the published repository.
+name: Site preview
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/site-preview.yml"
+      - "tools/build_site.py"
+      - "tools/build_docs_html.py"
+      - "tools/repository.py"
+      - "tools/release_inventory.py"
+      - "tests/unit/test_site.py"
+      - "tests/unit/test_release_inventory.py"
+      - "docs/USER_GUIDE.md"
+      - "docs/handbook-template.html"
+      - "docs/images/**"
+      - "Makefile"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: site-preview-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  preview:
+    name: site-preview
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+        with:
+          version-file: pyproject.toml
+          enable-cache: true
+      - run: uv sync --locked
+      - uses: ./.github/actions/setup-blender
+        with:
+          version: "5.0.1"
+          sha256: "8019580ee1b7262e505f4196a00237ccf743c88d205b38d34201510676e60b09"
+      - name: Prepare synthetic retained releases
+        run: |
+          uv run --locked --no-env-file python - <<'PY'
+          import os
+          import sys
+          from pathlib import Path
+          sys.path.insert(0, str(Path("tools").resolve()))
+          import release_inventory
+          from tests.unit.test_release_inventory import Releases
+
+          root = Path(os.environ["RUNNER_TEMP"]) / "site-fixtures"
+          root.mkdir()
+          releases = Releases(root)
+          releases.add("1.0.0", maximum="5.1.0")
+          releases.add("2.0.0", minimum="5.1.0")
+          releases.prepare(release_inventory, root / "selected")
+          PY
+      - name: Build the complete site with native Blender
+        run: |
+          make site SITE_ARGS="--inventory $RUNNER_TEMP/site-fixtures/selected/inventory.json --output $RUNNER_TEMP/site-demo/site --artifacts $RUNNER_TEMP/site-logs"
+      - name: Render PDF previews
+        run: |
+          for page in guide repository; do
+            path=index.html
+            if [[ "$page" == repository ]]; then path=repo/index.html; fi
+            google-chrome --headless --no-sandbox --disable-gpu \
+              --no-first-run --no-default-browser-check \
+              --user-data-dir="$RUNNER_TEMP/chrome-$page" \
+              --host-resolver-rules="MAP * ~NOTFOUND" \
+              --no-pdf-header-footer \
+              --print-to-pdf="$RUNNER_TEMP/site-demo/$page.pdf" \
+              "file://$RUNNER_TEMP/site-demo/site/$path"
+            test -s "$RUNNER_TEMP/site-demo/$page.pdf"
+          done
+          cat > "$RUNNER_TEMP/site-demo/README.txt" <<'EOF'
+          LOCAL REVIEW DEMO ONLY
+          Open guide.pdf and repository.pdf, or site/index.html in a browser.
+          Repository versions 1.0.0 and 2.0.0 are synthetic test fixtures.
+          Do not install or publish these archives. No release is deployed by this job.
+          The guide version comes from the checkout manifest.
+          EOF
+      - name: Retain the demo PDFs and complete local site
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: site-demo
+          path: ${{ runner.temp }}/site-demo/
+          retention-days: 14
+          if-no-files-found: error

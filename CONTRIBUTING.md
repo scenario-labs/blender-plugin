@@ -683,6 +683,14 @@ update controls remain separate gates under #37. See the
 [release procedure](docs/RELEASING.md#offline-extension-repository-snapshots)
 for retention and publication requirements.
 
+The read-only [Site preview workflow](.github/workflows/site-preview.yml) runs on
+PRs changing the builder or handbook. Its `site-demo` artifact retains PDF previews
+and the complete local site for 14 days. It uses synthetic versions covering two
+Blender compatibility ranges, validated and indexed with Blender 5.0.1. These are
+review fixtures, not releases: do not install or publish them. The PDFs use system
+fonts without external font requests. This job needs no service credentials or
+deployment permissions and does not change the publishing gate.
+
 
 
 ### Screenshots

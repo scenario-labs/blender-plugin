@@ -223,7 +223,10 @@ retains its separate serialized queue.
 Neither workflow belongs in `ci-ok` or the required checks because external
 sites can fail independently of a code change.
 
-Lychee 0.24.2 treats redirects as failures. Write the final destination URL,
+Lychee 0.24.2 treats redirects as failures. The scanner limits each host to two
+concurrent requests, spaces requests by at least 500 ms and waits at least five
+seconds before retries. This reduces rate-limit noise without accepting 429s or
+following redirects. Write the final destination URL,
 for example `https://www.scenario.com/`. The
 [input selector](../../tools/link_inventory.py) includes tracked and nonignored
 proposed Markdown and deduplicates instruction adapters through their
@@ -245,7 +248,9 @@ then run from the repository root:
 
 ```sh
 uv run --locked --no-env-file python tools/link_inventory.py --output workdir/link-check/inputs.txt
-lychee --no-progress --max-redirects 0 --exclude-loopback --files-from workdir/link-check/inputs.txt
+lychee --no-progress --max-redirects 0 --exclude-loopback \
+  --host-concurrency 2 --host-request-interval 500ms --retry-wait-time 5 \
+  --files-from workdir/link-check/inputs.txt
 ```
 
 Pages requiring authentication or blocking automated clients belong in

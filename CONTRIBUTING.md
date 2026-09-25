@@ -746,7 +746,3 @@ A committed PNG does not configure GitHub's sharing image. Verify the repository
 `usesCustomOpenGraphImage` and `openGraphImageUrl` after upload, then check a share
 preview in the intended client. Actual upload and client acceptance remain #19;
 this generator neither changes repository settings nor sends a share message.
-
-<!-- Temporary hosted acceptance probes for #47; removed after the negative checks. -->
-[Redirect probe: transferred repository](https://github.com/edemaistre/scenario-for-blender/releases)
-[Redirect probe: canonical website](https://scenario.com)

@@ -509,12 +509,17 @@ def draw_result(layout, rec):
                 "scenario.play_video_blender", text="Play in Blender", icon="BLENDER"
             ).filepath = path
     elif rec.kind == "audio":
+        from . import audio_preview
+
         for path in [p for p in rec.files if p.lower().endswith(AUDIO_EXTS)][:4] or rec.files[:2]:
             row = box.row(align=True)
             row.operator("scenario.play_video", text="Play", icon="PLAY").filepath = path
             row.operator(
                 "scenario.add_sound_strip", text="Add to sequencer", icon="SEQUENCE"
             ).filepath = path
+            preview = box.operator("scenario.preview_audio", text="Preview waveform", icon="SOUND")
+            preview.local_id, preview.file_index = rec.local_id, rec.files.index(path)
+            audio_preview.draw(box, rec, rec.files.index(path))
     elif rec.kind == "material":
         mat_name = (
             rec.meta.get("material_name")

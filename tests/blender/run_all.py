@@ -30,6 +30,7 @@ BASELINE = (
     "test_icons",
     "test_model_picker",
     "test_generation",
+    "test_audio_preview",
     "test_apply_image",
     "test_apply_material",
     "test_apply_3d",

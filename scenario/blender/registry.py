@@ -16,6 +16,7 @@ _log_handler = None
 
 def _modules():
     from . import (
+        audio_preview,
         blockout,
         composer,
         model_picker,
@@ -29,6 +30,7 @@ def _modules():
 
     modules = [
         props,
+        audio_preview,
         shot_planner,
         operators,
         prompt_tools,

@@ -204,15 +204,15 @@ the default unit-test collection and are not added to PR workflows.
 
 | Variable | Read in | Effect | Set by |
 | --- | --- | --- | --- |
-| `SCENARIO_TEST_API_KEY`, `SCENARIO_TEST_API_SECRET` | `tools/dev_config.py`: `live_settings` | Required pair for smoke scripts, fixture recording and payload audit; passed explicitly to the client, with no fallback to runtime credentials | Developer or CI secrets |
+| `SCENARIO_TEST_API_KEY`, `SCENARIO_TEST_API_SECRET` | `tools/dev_config.py`: `live_settings` | Required pair for smoke scripts, fixture recording and live payload audit; passed explicitly to the client, with no fallback to runtime credentials | Developer or CI secrets |
 | `SCENARIO_TEST_PROJECT_ID` | `tools/dev_config.py`: `live_settings` | Optional; unset/blank omits project selection. When supplied, sent as `projectId` in live-tool request queries | Developer or project-specific fixture |
 | `SCENARIO_API_KEY`, `SCENARIO_API_SECRET` | `scenario/core/config.py`: `resolve_credentials` | Used only when **Credentials > Environment** is explicitly selected in Scenario Preferences. Both values must come from that source; saved Blender credentials are the default. Not used by live-tool credential selection | Developer launching Blender |
-| `SCENARIO_API_BASE` | `tools/audit_payloads.py`: `main` | Audit-only REST base URL; default `https://api.cloud.scenario.com/v1` | Developer |
+| `SCENARIO_API_BASE` | `tools/audit_payloads.py`: `run` | Audit-only REST base URL; default `https://api.cloud.scenario.com/v1` | Developer |
 | `SCENARIO_SMOKE` | `tests/smoke/*.py` | `=1` allows a paid smoke to run; keep this out of dotenv files | Developer, on the command line after authorization |
 | `SCENARIO_GUI_PROBE` | `scenario/blender/operators.py`: `probe_mode`; `scenario/mcp/tools_scenario.py`: `generate`; `tools/gui_screenshot.py`; `tools/capture_gui.py`; `tools/capture_gui_scene.py` | `=1` gates panel Generate and MCP generation during screenshots; it is not a general network or spending sandbox | Screenshot tool |
 | `SCENARIO_PROBE_MODEL` | `tools/gui_screenshot.py` | Selects a model for 3D-tab screenshots | Test tools |
 | `SCENARIO_SHOT_SOURCE` | `tests/blender/test_shot_planner.py` | `=1` loads the shot planner from source rather than the installed extension; unsuitable as evidence of ZIP acceptance | Test tools |
-| `SCHEMA_CACHE` | `tools/audit_payloads.py` | Cached schema root; default `<tempdir>/scenario-schema-cache`, with separate hashed subdirectories for credentials, project and API base URL | Developer |
+| `SCHEMA_CACHE` | `tools/audit_payloads.py` | Optional private persistent schema-cache root; otherwise each run uses a new temporary cache. Live subdirectories are partitioned by credentials, project and API base URL | Developer |
 
 `SCENARIO_BLENDER_TOKEN` supplies the local MCP bearer token to the headless
 `scenario_blender` command and the generated Codex client snippet. An explicit
@@ -245,8 +245,12 @@ uv run --locked --env-file .env.local python tools/record_fixtures.py
 If CI or your shell already supplies the test pair, omit `--env-file .env.local`;
 use `--no-env-file` to explicitly disable file loading. Missing/blank credentials
 produce one actionable error before a service call. Neither script submits a
-generation. The older audit/record scripts still use the prototype REST client: SDK migration and verified
-non-spending service contracts remain tracked in #64 and #41.
+generation. The payload audit uses `SDKAdapter.model` and the pinned SDK's public
+model-retrieve method. Its [offline mode and threshold/report options](docs/MODEL_PAYLOAD_AUDIT.md)
+need no credentials; `--offline --cache tests/fixtures/models --models MODEL_ID`
+reads only that explicit fixture directory. Live caches remain scoped to the
+selected credentials, project and API base. Weekly automation and real service
+acceptance remain #41. Fixture recording and provenance are tracked in #9.
 
 `tools.check_sdk` uses the shared SDK read/estimate adapter and always sends
 estimates with `dryRun=true` in the query. It prints counts and the exact cost,

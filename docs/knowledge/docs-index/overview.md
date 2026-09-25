@@ -11,10 +11,12 @@
     "limits": "Navigation and maintenance contract; structural validation does not certify prose or product behavior. Navigation and topic-evidence discovery inspected against the checker and canonical maintenance guide. This is structural source inspection, not human approval or product acceptance.",
     "sources": {
       "TRADEMARKS.md": "067b66d55a6eb8540081535388d9e8a8a7f69018824b4c16625ea70f7c4d92b2",
+      "docs/MODEL_PAYLOAD_AUDIT.md": "f11541aa9db65e6fefb02a61fa574208d41d70e72afd9a2e84aa3add0a8f6094",
+      "docs/index.md": "e7d1e6e0c5663777049f5694c1f398a837fe39f8623274d3984e8eb8f2dccf56",
       "tools/check_knowledge.py": "4e534293d192b52c8580f0c4216a1f11407565a565e77ab8ccd1b2ab2ba76b08"
     },
     "scope": "overview",
-    "base_revision": "0e2debd9ab58977782fa1f673d7028b1da1ea69f"
+    "base_revision": "cdc8775a4a074a4997eca84cec2699e0dbb16e8c"
   }
 }
 ---

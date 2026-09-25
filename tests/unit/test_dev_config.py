@@ -58,7 +58,9 @@ def test_missing_credentials_fail_without_disclosing_values(key, secret):
         *[str(p.relative_to(ROOT)) for p in sorted((ROOT / "tests/smoke").glob("*.py"))],
     ],
 )
-def test_entry_points_reject_missing_credentials_before_client_creation(script, monkeypatch):
+def test_entry_points_reject_missing_credentials_before_client_creation(
+    script, monkeypatch, capsys
+):
     from scenario.core.api import client, sdk_adapter
 
     def forbidden(*args, **kwargs):
@@ -71,8 +73,14 @@ def test_entry_points_reject_missing_credentials_before_client_creation(script, 
             monkeypatch.delenv(name)
     monkeypatch.setenv("SCENARIO_SMOKE", "1")
     monkeypatch.setattr("sys.argv", [script])
-    with pytest.raises(SystemExit, match="no test credentials"):
-        runpy.run_path(str(ROOT / script), run_name="__main__")
+    if script == "tools/audit_payloads.py":
+        with pytest.raises(SystemExit) as error:
+            runpy.run_path(str(ROOT / script), run_name="__main__")
+        assert error.value.code == 2
+        assert capsys.readouterr().err.startswith("no test credentials:")
+    else:
+        with pytest.raises(SystemExit, match="no test credentials"):
+            runpy.run_path(str(ROOT / script), run_name="__main__")
 
 
 def test_uv_dotenv_precedence_and_no_file_loading(tmp_path):
@@ -128,7 +136,7 @@ def test_uv_dotenv_precedence_and_no_file_loading(tmp_path):
         *[str(p.relative_to(ROOT)) for p in sorted((ROOT / "tests/smoke").glob("*.py"))],
     ],
 )
-def test_live_tools_pass_selected_pair_explicitly(script, project, monkeypatch):
+def test_live_tools_pass_selected_pair_explicitly(script, project, monkeypatch, tmp_path):
     from scenario.core.api import client, sdk_adapter
 
     class ClientReached(Exception):
@@ -153,6 +161,8 @@ def test_live_tools_pass_selected_pair_explicitly(script, project, monkeypatch):
         monkeypatch.setenv("SCENARIO_TEST_PROJECT_ID", project)
     monkeypatch.setenv("SCENARIO_SMOKE", "1")
     argv = [script] if script == "tools/record_fixtures.py" else [script, "synthetic-image.png"]
+    if script == "tools/audit_payloads.py":
+        argv = [script, "--cache", str(tmp_path), "--models", "model_fixture"]
     monkeypatch.setattr("sys.argv", argv)
     monkeypatch.setenv("SCENARIO_API_KEY", "unrelated-key")
     monkeypatch.setenv("SCENARIO_API_SECRET", "unrelated-secret")
@@ -167,22 +177,19 @@ def test_smokes_require_opt_in_before_reading_credentials(script, monkeypatch):
         runpy.run_path(str(script), run_name="__main__")
 
 
-def test_schema_cache_isolated_by_selected_scope(tmp_path, monkeypatch):
+def test_schema_cache_isolated_by_selected_scope(tmp_path):
     from scenario.core.config import Credentials
     from tools import audit_payloads
     from tools.dev_config import LiveSettings
-
-    monkeypatch.setattr(audit_payloads, "CACHE", tmp_path)
-    monkeypatch.setattr(audit_payloads.time, "sleep", lambda _: None)
 
     class Client:
         def __init__(self, label):
             self.label = label
             self.calls = 0
 
-        def get(self, path):
+        def model(self, identifier):
             self.calls += 1
-            return {"model": {"name": self.label}}
+            return {"id": identifier, "name": self.label}
 
     settings = [
         (LiveSettings(Credentials("key", "secret")), "https://one.invalid"),
@@ -193,10 +200,10 @@ def test_schema_cache_isolated_by_selected_scope(tmp_path, monkeypatch):
     ]
     for index, (selected, base_url) in enumerate(settings):
         client = Client(str(index))
-        cache_dir = audit_payloads.schema_cache_dir(selected, base_url)
+        cache_dir = audit_payloads.schema_cache_dir(selected, base_url, tmp_path)
         for _ in range(2):
-            assert audit_payloads.fetch(client, "model_x", cache_dir) == (
-                {"name": str(index)},
+            assert audit_payloads.fetch(client, "model_x", cache_dir, live_root=tmp_path) == (
+                {"id": "model_x", "name": str(index)},
                 None,
             )
         assert client.calls == 1

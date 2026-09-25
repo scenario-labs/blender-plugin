@@ -6,6 +6,8 @@ import datetime as dt
 import hashlib
 import json
 import subprocess
+import sys
+from pathlib import Path
 
 import pytest
 
@@ -84,6 +86,91 @@ def test_valid_and_read_only(repo):
     assert audit(repo)["errors"] == []
     assert audit(repo)["warnings"] == []
     assert (repo[0] / "docs/knowledge.json").read_bytes() == before
+
+
+@pytest.mark.parametrize("squashed", [False, True])
+def test_comparison_rejects_cached_pr_base_before_and_after_squash(repo, squashed):
+    root, profile = repo
+    git(root, "checkout", "-qb", "parent")
+    write(root, "source.py", "value = 2\n")
+    git(root, "add", "source.py")
+    git(root, "commit", "-qm", "test: parent change")
+    parent = git(root, "rev-parse", "HEAD")
+    if squashed:
+        git(root, "checkout", "main")
+        git(root, "merge", "--squash", "parent")
+        git(root, "commit", "-qm", "test: squash parent")
+        git(root, "branch", "-D", "parent")
+    git(root, "update-ref", "refs/remotes/origin/main", git(root, "rev-parse", "main"))
+    profile["base_revision"] = parent
+    save(root, profile)
+
+    # Existence alone passes even after the branch disappears; the PR commit is
+    # not part of the durable main history fetched by fresh checkouts.
+    assert git(root, "cat-file", "-t", parent) == "commit"
+    assert audit(repo)["errors"] == []
+    result = subprocess.run(
+        [
+            sys.executable,
+            str(Path(knowledge.__file__).resolve()),
+            "--root",
+            str(root),
+            "--base",
+            "origin/main",
+            "--json",
+        ],
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 1
+    assert len(json.loads(result.stdout)["errors"]) == 1
+    assert "base_revision must be reachable from comparison base 'origin/main'" in result.stdout
+
+
+def test_durable_base_allows_stacked_source_evidence_in_detached_checkout(repo):
+    root, profile = repo
+    main = git(root, "rev-parse", "main")
+    git(root, "update-ref", "refs/remotes/origin/main", main)
+    git(root, "checkout", "-qb", "parent")
+    write(root, "source.py", "value = 2\n")
+    git(root, "add", "source.py")
+    git(root, "commit", "-qm", "test: parent change")
+    git(root, "checkout", "-qb", "child")
+    write(root, "source.py", "value = 3\n")
+    profile["base_revision"] = main
+    for entry in profile["documents"]:
+        entry["sources"]["source.py"] = hashlib.sha256(
+            (root / "source.py").read_bytes()
+        ).hexdigest()
+    save(root, profile)
+    git(root, "add", ".")
+    git(root, "commit", "-qm", "docs: inspect stacked source")
+    git(root, "checkout", "--detach")
+    before = (
+        git(root, "show-ref"),
+        git(root, "status", "--porcelain"),
+        (root / "docs/knowledge.json").read_bytes(),
+    )
+
+    # Only local objects/refs are needed: no configured remote or credentials.
+    assert git(root, "remote") == ""
+    report = knowledge.audit(root, base="origin/main", today=TODAY)
+    assert report["errors"] == []
+    assert report["warnings"] == []
+    assert set(report["changed"]) == {"source.py", "docs/knowledge.json"}
+    assert set(report["impacted"]) == {entry["path"] for entry in profile["documents"]}
+    assert (
+        git(root, "show-ref"),
+        git(root, "status", "--porcelain"),
+        (root / "docs/knowledge.json").read_bytes(),
+    ) == before
+
+
+def test_missing_comparison_ref_fails_without_changing_standalone_behavior(repo):
+    assert audit(repo)["errors"] == []
+    errors = knowledge.audit(repo[0], base="origin/missing", today=TODAY)["errors"]
+    assert len(errors) == 1
+    assert "origin/missing" in errors[0]
 
 
 def test_drift_warns_without_refreshing_evidence(repo):

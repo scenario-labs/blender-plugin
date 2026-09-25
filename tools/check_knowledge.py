@@ -178,6 +178,24 @@ def audit(root, base=None, today=None):
         if not COMMIT.fullmatch(str(profile.get("base_revision", ""))):
             raise ValueError("base_revision must be a full Git commit")
         git(root, "cat-file", "-e", profile["base_revision"] + "^{commit}")
+        if base is not None:
+            comparison = git(root, "rev-parse", "--verify", "--end-of-options", base + "^{commit}")
+            try:
+                git(
+                    root,
+                    "merge-base",
+                    "--is-ancestor",
+                    profile["base_revision"],
+                    comparison.strip(),
+                )
+            except subprocess.CalledProcessError as exc:
+                if exc.returncode != 1:
+                    raise
+                raise ValueError(
+                    f"base_revision must be reachable from comparison base {base!r}; "
+                    "record a durable main review base, not an unmerged or pre-squash PR commit"
+                ) from exc
+            base = comparison.strip()
         entries = profile.get("documents")
         if not isinstance(entries, list):
             raise ValueError("documents must be a list")
@@ -261,7 +279,10 @@ def audit(root, base=None, today=None):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--root", type=Path, default=Path(__file__).resolve().parents[1])
-    parser.add_argument("--base", help="compare branch/worktree impact against the merge base")
+    parser.add_argument(
+        "--base",
+        help="require registry-base ancestry and compare branch/worktree impact against this ref",
+    )
     parser.add_argument("--json", action="store_true", help="emit a machine-readable report")
     args = parser.parse_args()
     try:

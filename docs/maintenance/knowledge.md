@@ -18,8 +18,11 @@ uv run --locked --no-env-file python -m pytest tests/unit/test_knowledge.py
 [The checker](../../tools/check_knowledge.py) uses Python's standard library and
 Git. It reads tracked and nonignored proposed files, follows no external URLs,
 executes no documentation examples and performs no model or service calls.
-[CI](../../.github/workflows/knowledge.yml) runs structure checks and regression
-tests on PRs and main. It prints freshness warnings in the job summary.
+[CI](../../.github/workflows/knowledge.yml) runs structure checks with
+`--base origin/main` and regression tests on PRs and main. The existing full-history
+checkout supplies that comparison ref, including in fork PRs; the checker needs
+no network calls, credentials or write permissions. It prints freshness warnings
+in the job summary.
 
 Structural errors fail: malformed metadata, absent sources, files outside the
 repository, ignored file links, unregistered documents, broken local links or
@@ -39,6 +42,13 @@ optional impact report compares against Git's merge base and includes committed,
 staged, unstaged, deleted and nonignored new files. It is a file-level signal,
 not a dependency analysis of all runtime consumers.
 
+With `--base REF`, the registry's `base_revision` must also be reachable from
+that comparison commit. A missing ref or an unmerged/pre-squash PR commit fails,
+even when the latter still exists in the local Git object cache. This prevents
+metadata that passes in an author's checkout but breaks in a fresh clone after
+a squash merge. Without `--base`, the existing standalone check only requires
+the recorded commit to exist locally; `make knowledge` retains that behavior.
+
 ## Evidence fields
 
 The registry has version, index, base_revision and documents fields. Each document
@@ -51,7 +61,10 @@ repository-relative source paths to SHA256 fingerprints.
 - `inherited`: existing content indexed without a fresh claim-by-claim audit.
 - `historical`: superseded design or recorded evidence, not current instructions.
 
-`base_revision` identifies the Git base used for this review batch. Fingerprints
+`base_revision` identifies the durable main commit used as the base for this
+review batch. For stacked PRs, keep a main ancestor here and record the exact
+temporary parent in the PR description; a parent's branch SHA can disappear
+after its squash merge. Fingerprints
 identify the exact local source contents inspected, including changes proposed
 in the same PR; do not claim every fingerprint is the content at that base commit.
 The merged PR preserves the review diff. `reviewed_at` records this evidence pass,

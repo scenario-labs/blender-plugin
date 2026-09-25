@@ -340,7 +340,7 @@ def test_overlapping_lists_share_all_pages_but_not_privacy_scopes(monkeypatch):
     context.close()
 
 
-@pytest.mark.parametrize("outcome", ["failure", "retired", "offline"])
+@pytest.mark.parametrize("outcome", ["failure", "retired", "offline", "invalid-record"])
 def test_shared_list_failure_releases_waiters_without_publishing_partial_data(monkeypatch, outcome):
     entered, release, waiting = (threading.Event() for _ in range(3))
     calls = []
@@ -361,6 +361,8 @@ def test_shared_list_failure_releases_waiters_without_publishing_partial_data(mo
         assert release.wait(5)
         if outcome == "failure":
             return httpx.Response(503, text="private service failure")
+        if outcome == "invalid-record" and "paginationToken" in request.url.params:
+            return httpx.Response(200, json={"models": [{"id": "invalid", "capabilities": [None]}]})
         return httpx.Response(
             200, json={"models": [{"id": "partial"}], "nextPaginationToken": "next"}
         )
@@ -385,7 +387,8 @@ def test_shared_list_failure_releases_waiters_without_publishing_partial_data(mo
             with pytest.raises(ScenarioError) as error:
                 read.result(5)
             assert "private service failure" not in str(error.value)
-    assert len(calls) == 2
+    expected_calls = 3 if outcome == "invalid-record" else 2
+    assert len(calls) == expected_calls
     assert context._list_reads == {}
     if outcome == "retired":
         assert context.closed and pools[0]._closed
@@ -396,7 +399,7 @@ def test_shared_list_failure_releases_waiters_without_publishing_partial_data(mo
         refreshed = False
         context.update_online(True)
         assert [record.id for record in context.fetch_list()] == ["saved"]
-        assert len(calls) == 3
+        assert len(calls) == expected_calls + 1
         context.close()
 
 

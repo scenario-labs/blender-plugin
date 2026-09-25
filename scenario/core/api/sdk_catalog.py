@@ -110,8 +110,7 @@ class SDKCatalog:
                 self._check_active()
             return [ModelRecord.from_api(copy.deepcopy(row)) for row in rows]
         try:
-            rows = self._fetch_list(privacy)
-            records = [ModelRecord.from_api(row) for row in rows]
+            rows, records = self._fetch_list(privacy)
             pending.set_result(copy.deepcopy(rows))
             return records
         except BaseException as error:
@@ -124,10 +123,14 @@ class SDKCatalog:
     def _fetch_list(self, privacy):
         with self._read() as adapter:
             rows = adapter.models(privacy=privacy)
+            try:
+                records = [ModelRecord.from_api(row) for row in rows]
+            except (AttributeError, TypeError, ValueError):
+                raise ScenarioError(0, "Scenario returned an invalid model catalog") from None
             with self._condition:
                 self._check_active()
                 self._lists[privacy] = copy.deepcopy(rows)
-        return rows
+        return rows, records
 
     def load_list_cached(self, privacy="public"):
         with self._condition:

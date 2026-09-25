@@ -206,3 +206,50 @@ Scorecard's Signed-Releases check looks for attached signature or provenance
 files; the repository attestation store alone does not satisfy that check.
 Investigate findings against the actual [release procedure](../RELEASING.md)
 and repository settings before changing them merely to improve a score.
+
+## Link check
+
+[The read-only link workflow](../../.github/workflows/links.yml) checks Markdown
+changes on pull requests. [Its scheduled caller](../../.github/workflows/links-scheduled.yml)
+runs each Monday and on manual dispatch; only that caller can file issues.
+New PR pushes cancel superseded scans for the same PR; the scheduled caller
+retains its separate serialized queue.
+Neither workflow belongs in `ci-ok` or the required checks because external
+sites can fail independently of a code change.
+
+Lychee 0.24.2 treats redirects as failures. Write the final destination URL,
+for example `https://www.scenario.com/`. The
+[input selector](../../tools/link_inventory.py) includes tracked and nonignored
+proposed Markdown, deduplicates instruction adapters through their in-repository
+Markdown targets, and excludes historical `docs/engineering/` documents. Ignored private
+notes and generated reports are not scanned. The existing knowledge checker
+continues to check local links and fragments offline.
+
+Install the pinned lychee binary from its
+[official release](https://github.com/lycheeverse/lychee/releases/tag/lychee-v0.24.2),
+then run from the repository root:
+
+```sh
+uv run --locked --no-env-file python tools/link_inventory.py --output workdir/link-check/inputs.txt
+lychee --no-progress --max-redirects 0 --exclude-loopback --files-from workdir/link-check/inputs.txt
+```
+
+Pages requiring authentication or blocking automated clients belong in
+[.lycheeignore](../../.lycheeignore) with a precise pattern and reason. In addition
+to Scenario service endpoints, Blender's browser challenge and reserved examples,
+the current exceptions cover the repository's exact login forms and issue links
+in two internal repositories. These exclusions do not verify those destinations.
+Do not silence a new redirect by excluding an entire public host.
+
+The scheduled caller creates or comments on the exact open issue
+`docs: broken or redirected links`, labeled `documentation` and `area:docs`.
+Serialized runs and paginated title matching avoid search-index lag and duplicate
+reports. Fix the links or investigate the scan failure, then close the issue.
+The `links-report` artifact retains the inventory and report for 14 days; setup
+failures without a report still link to the failing run. API or runner outages
+can prevent reporting and must be checked in Actions.
+
+After merge, verify a successful dispatch on `main`. A deliberately broken-link
+PR must fail, and two authorized failing manual dispatches must update one
+tracking issue before the hosted acceptance is complete. Local scans and mocked
+reporting tests do not establish that hosted delivery.

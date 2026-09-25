@@ -21,7 +21,7 @@ jobs:
         shell: bash
         run: |
           set -o pipefail
-          uv run --locked --no-env-file python tools/check_knowledge.py | tee knowledge-report.txt
+          uv run --locked --no-env-file python tools/check_knowledge.py --base origin/main | tee knowledge-report.txt
       - name: Summarize structure and freshness
         if: always()
         shell: bash

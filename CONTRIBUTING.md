@@ -99,16 +99,16 @@ Use the exact server estimate before spending; REST `dryRun` is a query paramete
 Do not introduce em dashes into maintained text or code.
 
 History lives in Git. Recover older states with `git show <tag>:<path>` or the
-release ZIP. Do not preserve retired code or copies of earlier deliverables in
-the working tree. [Engineering history](docs/engineering/README.md) is context,
-not a current implementation recipe.
+release ZIP. Do not preserve retired code, prototype plans or copies of earlier
+deliverables in the working tree. Keep useful architectural rationale in the
+maintained guides linked from the [documentation index](docs/index.md).
 
 Review the [knowledge-maintenance guide](docs/maintenance/knowledge.md) for every
 documentation change. Keep current user-facing limits in
 [Known limitations](docs/KNOWN_LIMITATIONS.md). Existing canonical guides retain
-their names; engineering notes use lowercase filenames and historical plans
-retain their date prefix. Follow the [documentation index](docs/index.md) rather
-than adding a second copy of a maintained policy.
+their names; new engineering and maintenance guides use lowercase filenames.
+Follow the documentation index rather than adding a second copy of a maintained
+policy.
 
 ## Licensing of contributions
 

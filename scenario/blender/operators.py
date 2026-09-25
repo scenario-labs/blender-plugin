@@ -15,31 +15,15 @@ from . import apply_image, generation, params_ui, props, runtime
 class SCENARIO_OT_test_connection(bpy.types.Operator):
     bl_idname = "scenario.test_connection"
     bl_label = "Test Scenario connection"
-    bl_description = (
-        "Check the API key against Scenario and show the team and project it belongs to"
-    )
+    bl_description = "Check Scenario model access with the selected credentials"
 
     def execute(self, context):
-        if not runtime.online():
-            self.report({"ERROR"}, "Allow Online Access is disabled in Blender's preferences")
-            return {"CANCELLED"}
         try:
-            data = runtime.make_client().get("/teams", timeout=15)
+            runtime.request_connection_check()
         except ScenarioError as err:
             runtime.state.account_label = ""
             self.report({"ERROR"}, f"Scenario: {err.reason}")
             return {"CANCELLED"}
-        teams = data.get("teams") or []
-        if not teams:
-            runtime.state.account_label = "Connected (no team visible)"
-        else:
-            team = teams[0]
-            projects = team.get("projects") or []
-            project = projects[0]["name"] if projects else "?"
-            runtime.state.account_label = (
-                f"{team.get('name', 'team')} / {project} ({team.get('plan', '')})"
-            )
-        runtime.state.catalog_loaded = False
         self.report({"INFO"}, runtime.state.account_label)
         return {"FINISHED"}
 

@@ -90,6 +90,15 @@ class remains used by historical smoke scripts; the active Blender path no
 longer constructs it. This partial adoption does not approve those remaining
 prototype API operations as SDK exceptions.
 
+The active **Test connection** operator also uses `SDKCatalog` and the adapter's
+`models.with_raw_response.list` wrapper. It requests one fresh page with
+`page_size=1`, without following a cursor or replacing the model cache. A worker
+performs the read; the main-thread event handler accepts only the current
+credential context and pending request. Concurrent clicks share that pending
+check, and failures use sanitized SDK errors with no automatic retry. Success
+proves only model access, including a valid empty list. It does not establish
+account/project identity or resolve SDK issue #29.
+
 Active cost previews use `generate.with_raw_response.run_model(dry_run=True)`
 after the existing strict model-form preparation. They share the selected
 connection's cached schema, credentials, HTTP pool and online-access gate. UI

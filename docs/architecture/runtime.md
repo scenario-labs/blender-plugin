@@ -72,6 +72,13 @@ uploads and result application still need active SDK adoption under
 #65. Invalidating a visible quote does not establish safe migration of those
 prototype paid jobs or their late callbacks.
 
+**Test connection** uses the same SDK context for one fresh model-list page of
+size one. It runs on a worker, leaves cached models intact, and shares a pending
+check across repeated clicks. The GUI/headless completion queue updates status
+only for the current connection and request. Credential changes and runtime reset
+discard late success and failure. The result confirms model access; it does not
+derive account/project identity or activate durable jobs.
+
 ## Active SDK cost previews
 
 UI and MCP cost previews use the same connection and cached schema as catalog

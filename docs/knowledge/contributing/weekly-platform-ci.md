@@ -12,7 +12,8 @@
     "sources": {
       ".github/workflows/blender-os.yml": "2a4303266ca0aacb374d1ec40c6e0b21a80acd7dae18d7b3956a3c42619412b1",
       "tests/unit/test_ci_failure.py": "7457b7e5a04c9e37816226594d86a27049bf6c4dffc967206a9f6d476ee7b672",
-      "tools/report_ci_failure.py": "2e0cc31745a8897e7ca72a622642dbd9f76bf5a902cf0a8e7bc87195da30568e"
+      "tools/report_ci_failure.py": "2e0cc31745a8897e7ca72a622642dbd9f76bf5a902cf0a8e7bc87195da30568e",
+      "tools/test_blender.py": "d472a89da726f08bb7c88002a400846325997adfdb07afd06f4075eca9a1423f"
     },
     "scope": "weekly-platform-ci",
     "base_revision": "0e2debd9ab58977782fa1f673d7028b1da1ea69f"

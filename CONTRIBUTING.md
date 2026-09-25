@@ -435,9 +435,23 @@ focused bugs, and close a workflow-error tracking issue after its fix is verifie
 GitHub may disable scheduled workflows after 60 days without repository activity;
 re-enable from the Actions tab when needed.
 
-The workflow definition and offline reporting tests do not establish hosted
-macOS acceptance. The first default-branch dispatch and repeated-failure issue
-deduplication remain acceptance checks under #42.
+Hosted acceptance evidence is tracked in [#42](https://github.com/scenario-labs/blender-plugin/issues/42).
+The [default-branch dispatch](https://github.com/scenario-labs/blender-plugin/actions/runs/36137526586)
+on `5d1f5a2` passed the full 341-test suite on both operating systems with Blender
+5.1.2 and Python 3.13, no failures or network violations, and unchanged normal
+profiles. Windows skipped two platform-specific tests. Downloaded artifacts were
+checked for the exact ZIP and installed-bundle evidence. These are separate
+builds of one source revision, not a combined release candidate or native
+desktop, GPU/audio or live-service acceptance. Recheck both jobs and issue
+delivery when changing the workflow; offline reporter tests alone cannot prove
+hosted delivery.
+
+Controlled branch-only failures in [run 36139299591](https://github.com/scenario-labs/blender-plugin/actions/runs/36139299591)
+and [run 36139443654](https://github.com/scenario-labs/blender-plugin/actions/runs/36139443654)
+exercised both OS reporters. Each OS kept one tracking issue; the second run
+commented on the existing issue. Both reporting jobs succeeded while the failed
+OS jobs and workflows remained failed. The temporary probes were removed;
+they did not change `main` or establish a product regression.
 
 
 ### Portable build, install and download tools

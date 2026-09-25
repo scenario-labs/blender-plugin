@@ -1,5 +1,5 @@
 <p align="center">
-  <a href="https://scenario.com"><img src="docs/images/scenario-logo.png" height="84" alt="Scenario"></a>
+  <a href="https://www.scenario.com/"><img src="docs/images/scenario-logo.png" height="84" alt="Scenario"></a>
 </p>
 <h1 align="center">Scenario for Blender</h1>
 <p align="center">
@@ -156,6 +156,11 @@ describes the shared commands. Follow the [Code of Conduct](CODE_OF_CONDUCT.md).
 Optional local hooks are installed with `make hooks`; see [installation and scope](CONTRIBUTING.md#optional-local-hooks).
 Offline tests need no Scenario account. Live smoke tests spend credits and
 require explicit authorization; they are outside the default checks.
+
+Native CI covers Blender 5.0.1, 5.1.2 and 5.2.1 on Linux and Windows for pull
+requests. A separate informational workflow schedules Blender 5.1.2 checks on
+macOS Apple silicon and Windows x64 weekly; see [run evidence and maintenance](CONTRIBUTING.md#bumping-the-blender-matrix)
+for its first hosted acceptance and failure tracking.
 
 ## Sibling integrations
 

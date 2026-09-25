@@ -1,0 +1,40 @@
+SPDX-License-Identifier: GPL-3.0-or-later
+
+AI-generated promotional illustration created with OpenAI's built-in image
+generator for this repository's sharing card, then palette-compressed with
+pngquant. This is illustrative 3D artwork, not a Blender capture, a Scenario
+service result, or evidence of an accepted plugin workflow. The original
+Scenario mark is a separate asset with its own existing MIT notice.
+
+The environment revision edits the source artwork from commit c91f1812 using
+the built-in image generator. That commit retains the original generation
+prompt and sculpture-focused source; the current source widens the setting to
+show the gallery courtyard, terraces, water and receding architecture.
+
+Environment revision prompt:
+Use case: precise-object-edit.
+Asset type: 2:1 promotional artwork behind a Blender extension social sharing card.
+Input image 1 is the edit target: the existing stone-and-copper sculpture gallery
+artwork.
+Primary request: pull the camera well back and turn this into a complete, visibly
+three-dimensional architectural environment. Preserve the same polished cinematic art
+direction, ivory travertine, dark basalt and oxidized copper materials. The environment
+should now be the main subject.
+Scene: a spacious sculptural gallery courtyard with a clear foreground terrace, shallow
+reflecting pools, broad steps, repeated tall stone arches receding into a second
+courtyard, and a glimpse of a softly lit garden beyond. Strong perspective, layered
+foreground/midground/background, coherent physically plausible architecture and material
+detail. Keep the existing knot sculpture as a smaller focal point on a plinth in the
+middle-right courtyard, fully visible with generous breathing room; it should occupy
+only about one quarter of the total image height, rather than filling the frame.
+Composition: wide 2:1 landscape, at least 1280 x 640. The left 43 percent must remain
+almost-black, low-detail negative space for the existing typeset title. The visible
+environment fills the right 57 percent from edge to edge, with depth leading diagonally
+toward the upper-right. Keep the focal sculpture and brightest architectural detail
+safely right of the text zone.
+Lighting: preserve warm cinematic afternoon light, cool teal shadows, grounded contact
+shadows and restrained reflective water; crisp readable environment at social thumbnail
+size.
+Constraints: no text, no logos, no UI, no buttons, no watermark, no people. This is an
+AI-generated promotional illustration of a 3D environment. Preserve image aspect ratio
+and left text-safe area.

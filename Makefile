@@ -49,7 +49,7 @@ hooks:
 images:
 	@command -v pngquant >/dev/null 2>&1 || { echo "pngquant not found: brew install pngquant, apt-get install pngquant, or https://pngquant.org"; exit 1; }
 	@for image in docs/images/*.png; do \
-		case "$$image" in docs/images/scenario-logo.png) continue ;; esac; \
+		case "$$image" in docs/images/scenario-logo.png|docs/images/social-preview.png) continue ;; esac; \
 		pngquant --quality=70-90 --nofs --strip --skip-if-larger --ext .png --force "$$image"; result=$$?; \
 		case $$result in \
 			0|98) ;; \

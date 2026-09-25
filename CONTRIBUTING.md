@@ -656,3 +656,41 @@ has an explicit unused-image exception because GitHub repository settings host i
 Optional lossless compression with ZopfliPNG can reduce large captures further;
 check that the optimized file remains palette-based. Generated website and
 handbook output remain untracked.
+
+
+### Repository sharing card
+
+Regenerate `docs/images/social-preview.png` after changing its source artwork,
+the logo or the manifest tagline:
+
+```sh
+uv run --locked --no-env-file python tools/make_social_preview.py
+```
+
+The generator uses pinned development-only Pillow and its bundled default font;
+Pillow is not in the extension's SDK wheel bundle. The generated card is a
+1280 by 640 palette PNG below one megabyte. `make images` leaves this generated
+file alone. Regeneration is byte-identical in the verified environment; inspect
+rendering differences when switching platforms.
+The tagline comes from the extension manifest. The original logo and its separate
+licence remain unchanged; the black background matches that upstream asset.
+
+The checked-in [source artwork](tools/assets/social-preview-artwork.png) shows
+an ivory stone and oxidized copper sculpture in a dark architectural environment.
+It is AI-generated promotional illustration, not a screenshot or proof of a
+Scenario generation. Its [source note and prompt](tools/assets/social-preview-artwork.LICENSE)
+record that distinction. It is independent of the guide's screenshots.
+
+For a replacement, pass `--artwork PATH`: use a 2:1 image of at least 1280 by 640
+pixels, with the subject on the right and a dark left area for the title.
+The generator adds a black fade behind the typography and keeps the original
+logo's opaque background seamless. `--font PATH` accepts an optional font and
+`--output PATH` writes a review copy. Inspect the whole card at thumbnail size
+for legibility, trademarks and private account details before uploading.
+
+After the image PR merges, an authorized repository admin uploads the merged
+`docs/images/social-preview.png` under Settings > General > Social preview.
+A committed PNG does not configure GitHub's sharing image. Verify the repository's
+`usesCustomOpenGraphImage` and `openGraphImageUrl` after upload, then check a share
+preview in the intended client. Actual upload and client acceptance remain #19;
+this generator neither changes repository settings nor sends a share message.

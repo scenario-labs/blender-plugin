@@ -43,6 +43,8 @@ the native test processes themselves forbid external network access.
 | `make test` | Locked offline unit tests; Blender is not needed. |
 | `make lint LINT_PATHS="path/to/changed.py"` | Check changed Python files with pinned Ruff. |
 | `make knowledge` | Validate documentation navigation, local links and evidence metadata. |
+| `make images-check` | Check documentation image references, alternatives and PNG policy. |
+| `make images` | Optimize new documentation screenshots with the shared asset command. |
 | `make build` | Build and validate the exact extension ZIP. |
 | `make test-blender` | Build, install and test in a disposable Blender profile. |
 | `make install` | Install into a new disposable profile for manual checks. |
@@ -639,24 +641,64 @@ of at least eight words describing the visible controls or result, not a lane
 label or filename. Do not show credentials, account identifiers or private data.
 Clearly label offline examples and distinguish them from live-provider evidence.
 
-Before committing screenshots, run `make images`. It requires
-[pngquant](https://pngquant.org) (`brew install pngquant` or
-`apt-get install pngquant`) and palette-quantizes screenshots in place with a
-70–90 quality target and no dithering. Compare the result with the original before committing;
-small text must stay legible. Exit 98 means a file would not shrink; exit 99 leaves
-a file unchanged because it cannot meet the minimum quality and prints its name.
-Reshoot it or document a justified exception in `TRUECOLOUR_OK` in
-[the image checks](tests/unit/test_docs_images.py). Other failures stop the target.
+The repository CLI owns image selection, optimization and checks. From the
+repository root, discover commands and check the current assets with:
+
+```sh
+uv run --locked --no-env-file python -m tools --help
+uv run --locked --no-env-file python -m tools assets check
+```
+
+The default selection is every PNG directly inside this checkout's `docs/images`.
+There is no output path to choose. Preview eligible files, optimize them, or name
+one screenshot using its basename:
+
+```sh
+uv run --locked --no-env-file python -m tools assets optimize --dry-run
+uv run --locked --no-env-file python -m tools assets optimize
+uv run --locked --no-env-file python -m tools assets optimize panel-image.png
+```
+
+`make images` and `make images-check` call these same optimize/check commands.
+The module entry point is repository tooling, not an installed global command.
+Asset discovery uses its checkout location rather than the caller's working
+directory. Explicit selections accept PNG basenames in their exact stored spelling;
+missing files, directories, symlinks, animated PNGs and paths outside the image
+folder fail before optimization.
+
+Optimization requires [pngquant](https://pngquant.org) (`brew install pngquant` or
+`apt-get install pngquant`) only when a non-palette screenshot needs work. It uses
+the shared 70-90 quality target without dithering and leaves existing palette
+PNGs alone, so repeat runs do not accumulate lossy changes. Dry runs validate and
+report eligible inputs without requiring or invoking the optimizer or changing
+files; they do not predict the resulting quality or savings.
+
+Each optimizer process has a 30-second deadline. A temporary candidate must have
+valid PNG chunk structure/checksums, the original dimensions, palette colour and
+fewer bytes before it atomically replaces that one file. Source changes detected
+during optimization reject the replacement. Failures clean up temporary outputs
+and preserve the affected original; files completed earlier in a batch remain
+optimized. Structural checks are not a complete PNG pixel decoder. Compare the
+result with the original before committing; small text must stay legible.
+
+After optimization, the command checks the whole documentation image inventory.
+Exit 0 means no policy problems remain. Exit 1 reports image-policy problems or
+pending dry-run work; exit 2 reports an invalid input, missing tool or optimizer
+failure. pngquant statuses 98 (would not shrink) and 99 (minimum quality unmet)
+retain the original and print the reason. An unchanged truecolour screenshot
+still fails readiness; reshoot it or review a justified exception in
+[the shared image policy](tools/docs_images.py), rather than changing a test alone.
 
 The original `scenario-logo.png` is deliberately excluded: its unchanged upstream
 bytes and separate licence record are preserved. The image checks permit that
-one provenance exception; they still reject missing images, unused screenshots,
-truecolour screenshots and short Markdown alt text. The social card, when present,
+one provenance exception; the CLI and unit suite share checks for missing images,
+unused screenshots, truecolour screenshots and short Markdown alt text. Evidence
+frontmatter cannot keep an unused image alive. The social card, when present,
 has an explicit unused-image exception because GitHub repository settings host it.
-Optional lossless compression with ZopfliPNG can reduce large captures further;
-check that the optimized file remains palette-based. Generated website and
-handbook output remain untracked.
-
+Optimization also preserves this generated card; use its dedicated generator
+below to rebuild it. An invalid non-palette card still fails the shared checks.
+Generated website and handbook output remain untracked. Optimization does not
+generate alt text, remove unused files or establish native UI acceptance.
 
 ### Repository sharing card
 

@@ -9,7 +9,7 @@ LANE ?= image
 UV ?= uv
 LINT_PATHS ?= .
 
-.PHONY: sync test test-blender build repo install install-isolated gui-check lint format knowledge mcp-docs check-rules docs hooks images
+.PHONY: sync test test-blender build repo install install-isolated gui-check lint format knowledge mcp-docs check-rules docs hooks images images-check
 check-rules:
 	$(UV) run --locked --no-env-file python tools/check_rules.py
 knowledge:
@@ -47,13 +47,7 @@ hooks:
 	$(UV) run --locked --no-env-file pre-commit install --hook-type pre-commit --hook-type commit-msg
 
 images:
-	@command -v pngquant >/dev/null 2>&1 || { echo "pngquant not found: brew install pngquant, apt-get install pngquant, or https://pngquant.org"; exit 1; }
-	@for image in docs/images/*.png; do \
-		case "$$image" in docs/images/scenario-logo.png|docs/images/social-preview.png) continue ;; esac; \
-		pngquant --quality=70-90 --nofs --strip --skip-if-larger --ext .png --force "$$image"; result=$$?; \
-		case $$result in \
-			0|98) ;; \
-			99) echo "$$image could not reach quality 70 and was left unchanged; inspect it before adding a documented TRUECOLOUR_OK exception" ;; \
-			*) exit $$result ;; \
-		esac; \
-	done
+	$(UV) run --locked --no-env-file python -m tools assets optimize
+
+images-check:
+	$(UV) run --locked --no-env-file python -m tools assets check

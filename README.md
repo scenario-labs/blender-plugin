@@ -158,6 +158,11 @@ Optional local hooks are installed with `make hooks`; see [installation and scop
 Offline tests need no Scenario account. Live smoke tests spend credits and
 require explicit authorization; they are outside the default checks.
 
+Discover repository maintenance commands with
+`uv run --locked --no-env-file python -m tools --help` from the repository root.
+The `assets check` and `assets optimize` commands share the
+[documentation image policy](CONTRIBUTING.md#screenshots) with the unit suite.
+
 Native CI covers Blender 5.0.1, 5.1.2 and 5.2.1 on Linux and Windows for pull
 requests. A separate informational workflow schedules Blender 5.1.2 checks on
 macOS Apple silicon and Windows x64 weekly; see [run evidence and maintenance](CONTRIBUTING.md#bumping-the-blender-matrix)

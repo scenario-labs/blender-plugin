@@ -30,6 +30,16 @@ connection. Retirement disables later requests immediately; the last active
 reader closes the pool. Extension teardown does not wait for catalog network I/O
 or close a pool underneath an in-flight request.
 
+Overlapping list refreshes share one complete paginated SDK read for the same
+connection and privacy scope. Public and private lists can progress independently;
+each caller receives its own records. Failed or interrupted pagination preserves
+the previous complete cache, releases all waiting callers and permits an explicit
+retry. A later refresh still reads the service. Retiring credentials rejects the
+pending result and clears both privacy caches.
+List records are converted before publishing the cache. Malformed-record
+conversion failures preserve the previous list and reach every overlapping caller
+as a sanitized `ScenarioError`, keeping failures on the catalog event queue.
+
 The GUI pump and main-thread MCP catalog/schema calls deliver the same queued
 completions. Credential changes retire the context, discard its model/schema
 caches and visible quotes, and reject late success/error events from the old

@@ -10,10 +10,16 @@ Mark applicable checks below; explain checks that do not apply or were not run.
 Do not claim human review, test results or authorization that has not happened.
 -->
 
-## What and why
+## What does this PR change?
 
-<!-- Explain the problem and resulting behavior. Use Closes #n only for complete
-issue acceptance; use Refs #n for partial work and describe what remains. -->
+<!-- Lead with the problem and the resulting behavior for users or maintainers.
+For a behavior change, give a concrete before/after example when useful. For
+internal work, explain its maintenance benefit. Name any action needed to use or
+validate the change and any material limits. Keep the detail proportional to the
+change; a file inventory alone does not explain its effect.
+
+Use Closes #n only for complete issue acceptance; use Refs #n for partial work
+and describe what remains. -->
 
 ## Validation
 

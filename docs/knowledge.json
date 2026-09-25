@@ -711,7 +711,7 @@
       "reviewed_at": "2026-09-25",
       "limits": "Navigation and maintenance contract; structural validation does not certify prose or product behavior.",
       "sources": {
-        "tools/check_knowledge.py": "f196edc4189729ffa60f7e789e6f6b0e325960216a761abda140816d7bdb81a7",
+        "tools/check_knowledge.py": "97193302035e5c871dca3e45db15ca961d0d805e486a72359f0e25facc4c9a6b",
         "TRADEMARKS.md": "067b66d55a6eb8540081535388d9e8a8a7f69018824b4c16625ea70f7c4d92b2"
       }
     },
@@ -752,10 +752,10 @@
       "path": "docs/maintenance/knowledge.md",
       "coverage": "navigation",
       "reviewed_at": "2026-09-25",
-      "limits": "Navigation and maintenance contract; structural validation does not certify prose or product behavior. Conditional comparison-base ancestry, durable-main evidence and standalone existence-only semantics inspected with real Git pre-squash, cached squash and detached stacked-source regressions; this remains structural evidence, not human approval or prose verification.",
+      "limits": "Navigation and maintenance contract; structural validation does not certify prose or product behavior. Conditional comparison-base ancestry, durable-main evidence and standalone existence-only semantics inspected with real Git pre-squash, cached squash and detached stacked-source regressions; this remains structural evidence, not human approval or prose verification. Local comparison authority and stale fork refs are caller-selected; explicit canonical-remote preparation and a real Git current-upstream regression reviewed without automatic fetching or relaxed ancestry.",
       "sources": {
-        "tools/check_knowledge.py": "f196edc4189729ffa60f7e789e6f6b0e325960216a761abda140816d7bdb81a7",
-        "tests/unit/test_knowledge.py": "216107011af63c9d4e3bd604ecd318f36595996d2edf915b666d2821ab551328",
+        "tools/check_knowledge.py": "97193302035e5c871dca3e45db15ca961d0d805e486a72359f0e25facc4c9a6b",
+        "tests/unit/test_knowledge.py": "72113e6b112d5f5719ccb88019da7680d8a50e93c0258b022b6478ba6262ea02",
         ".github/workflows/knowledge.yml": "77f35cf5e79128c673ada2391aedfa11a430e764668b20bd9a7f33533c7da344"
       }
     },

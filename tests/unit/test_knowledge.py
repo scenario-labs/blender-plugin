@@ -173,6 +173,28 @@ def test_missing_comparison_ref_fails_without_changing_standalone_behavior(repo)
     assert "origin/missing" in errors[0]
 
 
+def test_stale_fork_ref_rejects_but_selected_current_upstream_ref_passes(repo):
+    root, profile = repo
+    git(root, "update-ref", "refs/remotes/origin/main", git(root, "rev-parse", "main"))
+    write(root, "upstream.py", "new = True\n")
+    git(root, "add", "upstream.py")
+    git(root, "commit", "-qm", "test: advance canonical main")
+    current = git(root, "rev-parse", "HEAD")
+    git(root, "update-ref", "refs/remotes/upstream/main", current)
+    git(root, "checkout", "-qb", "feature")
+    profile["base_revision"] = current
+    save(root, profile)
+
+    stale = knowledge.audit(root, base="origin/main", today=TODAY)
+    assert len(stale["errors"]) == 1
+    assert "refresh/select the canonical repository's main ref" in stale["errors"][0]
+    current_report = knowledge.audit(root, base="upstream/main", today=TODAY)
+    assert current_report["errors"] == []
+    assert current_report["warnings"] == []
+    assert current_report["changed"] == ["docs/knowledge.json"]
+    assert git(root, "rev-parse", "origin/main") != current
+
+
 def test_drift_warns_without_refreshing_evidence(repo):
     root, _ = repo
     write(root, "source.py", "value = 2\n")

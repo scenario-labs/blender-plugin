@@ -11,9 +11,19 @@ From the repository root, run:
 
 ```sh
 make knowledge
+git fetch origin main
 uv run --locked --no-env-file python tools/check_knowledge.py --base origin/main --json
 uv run --locked --no-env-file python -m pytest tests/unit/test_knowledge.py
 ```
+
+The example assumes `origin` is the canonical `scenario-labs/blender-plugin`
+repository. Check `git remote -v` first. In a fork clone, refresh the remote that
+tracks the canonical repository (commonly `git fetch upstream main`) and pass
+`--base upstream/main` instead. The checker does not fetch, identify an authoritative
+remote or infer freshness: you select the comparison ref. A stale fork or local
+ref can reject a valid newer review base; refresh/select the canonical main ref
+before changing registry evidence. The fetch is an explicit online preparation
+step, separate from the offline checks.
 
 [The checker](../../tools/check_knowledge.py) uses Python's standard library and
 Git. It reads tracked and nonignored proposed files, follows no external URLs,

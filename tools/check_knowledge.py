@@ -193,7 +193,8 @@ def audit(root, base=None, today=None):
                     raise
                 raise ValueError(
                     f"base_revision must be reachable from comparison base {base!r}; "
-                    "record a durable main review base, not an unmerged or pre-squash PR commit"
+                    "refresh/select the canonical repository's main ref, then record a durable "
+                    "main review base, not an unmerged or pre-squash PR commit"
                 ) from exc
             base = comparison.strip()
         entries = profile.get("documents")

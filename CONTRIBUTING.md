@@ -401,7 +401,9 @@ attempts, missing results and ambiguous results are rejected before writing.
 Deliberate whole-workflow cancellation does not create issues.
 
 Workflow concurrency serializes reporting; the reporter reads every issue page
-and refuses ambiguous duplicates. Only the reporting job receives `actions: read`
+and refuses ambiguous duplicates. A failed issue report does not suppress the
+other OS report; the reporting job still fails if either report could not be sent.
+Only the reporting job receives `actions: read`
 and `issues: write`, using its GitHub token rather than Scenario credentials.
 The stdlib reporter uses `uv run --no-project --no-env-file` so a failed native
 job's dependency sync does not prevent reporting. An unavailable reporting runner,

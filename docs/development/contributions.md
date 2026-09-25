@@ -63,8 +63,14 @@ agents may submit a reviewable PR, but must not mark that review complete.
 Original contributions use the repository's GPL-3.0-or-later license. Adopted
 sources retain their original compatible licenses, notices and attribution.
 
-Lead PR descriptions with the problem and resulting behavior. Include relevant
-validation and limitations; do not invent passing counts, approvals or authorship.
+Start PR descriptions with `## What does this PR change?` from the template.
+Explain the problem and resulting behavior for users or maintainers. For behavior
+changes, use a concrete before/after example when helpful; for internal work,
+explain the maintenance benefit. State any action needed to use or validate the
+change and material limitations. Keep the detail proportional to the change;
+a file inventory alone does not explain its effect. Automated summaries follow
+the same structure and describe the final diff, including after a scope change.
+Include relevant validation; do not invent passing counts, approvals or authorship.
 Use `Closes` only for fully completed issues and `Refs` for partial work.
 Before creating or updating a PR, read related issues and check their current
 acceptance criteria against the final diff and verified evidence. Add missing

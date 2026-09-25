@@ -47,8 +47,9 @@ For questions, bugs or account help, see [Support](../SUPPORT.md).
 - [Issue disposition and limitations audit](maintenance/backlog.md)
 - [Historical model-payload audit](MODEL_PAYLOAD_AUDIT.md)
 - [Historical engineering design and plans](engineering/README.md)
-- [Machine-readable evidence registry](knowledge.json)
+- [Evidence discovery configuration](knowledge.json)
+- [Topic evidence concepts](knowledge/)
 
-The registry records source inspection and fingerprints, not human approval or
+The topic records describe source inspection and fingerprints, not human approval or
 live service acceptance. It includes inherited guides with explicit coverage
 limits; their presence here does not certify every historical claim.

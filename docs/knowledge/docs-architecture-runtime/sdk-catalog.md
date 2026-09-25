@@ -7,16 +7,16 @@
   "evidence": {
     "path": "docs/architecture/runtime.md",
     "coverage": "source-reviewed",
-    "reviewed_at": "2026-09-24",
-    "limits": "Explicit JobSession World application was reviewed against owned verification, original-context checks, core claims, exact receipt-bound decoding and installed native failure/rollback/persistence cases. Other lifecycle, component, format and restoration claims retain prior evidence. One selected asset completes the job; there is no per-asset journal or atomic blend-file save. Active UI/MCP, authoritative account/project discovery, production storage policy, undo/recovery UX and live acceptance remain separate; no human approval is implied. Form-source fingerprint reviewed after the copyright-holder spelling correction; implementation bytes and prior coverage limits are unchanged.",
+    "reviewed_at": "2026-09-25",
+    "limits": "Explicit JobSession World application was reviewed against owned verification, original-context checks, core claims, exact receipt-bound decoding and installed native failure/rollback/persistence cases. Other lifecycle, component, format and restoration claims retain prior evidence. One selected asset completes the job; there is no per-asset journal or atomic blend-file save. Active UI/MCP, authoritative account/project discovery, production storage policy, undo/recovery UX and live acceptance remain separate; no human approval is implied. Form-source fingerprint reviewed after the copyright-holder spelling correction; implementation bytes and prior coverage limits are unchanged. Overlapping full-list refreshes now share one SDK pagination operation per privacy scope within the credential context. Offline contracts cover independent public/private reads, defensive copies, service failures, permission revocation, retirement and explicit retry while retaining the last complete cache. This does not establish live service or account/project identity acceptance. Malformed list-record conversion now completes before cache publication and maps AttributeError, TypeError and ValueError to a sanitized ScenarioError. Regression tests reproduce bad capabilities and tags on later pages with overlapping public/private callers, preserve the prior complete list, verify catalog_failed delivery rather than generic worker errors, and permit explicit retry. This scoped fix does not change model-detail normalization, API methods, credentials, SDK dependencies or live acceptance.",
     "sources": {
-      "scenario/core/api/sdk_catalog.py": "cfb68f28ec1c3ebe57ed9121998dce9eb2a20517e97cff0fc5ec652bb78a4b92",
+      "scenario/core/api/sdk_catalog.py": "b3c1e5c418fc9beba2cb3fa222621ffb0474ac0ddbaca650402a22cde1430345",
       "tests/blender/test_offline_runtime.py": "0b6a0ba7517a44df951ba5a78af18896f0a5c981faefb1f95c73c1258804714c",
-      "tests/unit/test_catalog_delivery.py": "12ec2fe0420c8363bca0fad22edf9b35a3ff8feb6bf2a13ed04c6befa7404586",
-      "tests/unit/test_sdk_catalog.py": "91d56d6104d56e446a09e6a557bc6c15720c1590a0a5b55983994552e3fd8252"
+      "tests/unit/test_catalog_delivery.py": "68964dab7ec3b0d35dae1d0e33cc7911b2e8d385639a653d513935fd64ba1891",
+      "tests/unit/test_sdk_catalog.py": "943b512fd1555e4515231558333ffe68bf6c4bb7d00a2761b13a1bab68e7354c"
     },
     "scope": "sdk-catalog",
-    "base_revision": "cdc8775a4a074a4997eca84cec2699e0dbb16e8c"
+    "base_revision": "1ee01d1a8a1568c333290d7476f3a2d9bc066240"
   }
 }
 ---

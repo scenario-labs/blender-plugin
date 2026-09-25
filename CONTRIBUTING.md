@@ -631,7 +631,7 @@ are retained; modified old copies and symlinked destinations stop the build for
 inspection. Keep that record with a website output directory between builds.
 The version comes from the
 extension manifest. Python-Markdown is pinned in the development environment;
-it is not included in the extension ZIP or imported by Blender tooling.
+it is not included in the extension ZIP or imported by shared build/install tools.
 
 For a single HTML file containing the content and images:
 
@@ -654,6 +654,56 @@ Generated HTML and `site/` are ignored; do not commit them or copy old guides in
 snapshot directories. Hosting, release attachment and the native update controls
 remain separate work under #37. The current guide refresh in #13 is merged; screenshot optimization and orphan
 cleanup remain under #14.
+
+### Complete site snapshots
+
+`make site` combines the same website renderer with the validated native repository
+generator. First [select the retained release inventory](docs/RELEASING.md#select-retained-releases-offline)
+from verified downloaded assets for the supported Blender/platform matrix, then run:
+
+```sh
+make site SITE_ARGS="--inventory selected-assets/inventory.json"
+```
+
+The default output is `site/`, containing the guide at `index.html`, referenced
+images as files, and `repo/` with the native `index.json`, HTML listing, normalized
+inventory and every selected ZIP. The handbook version comes from the checkout's
+manifest; offered versions and compatibility come from the retained archives.
+The inventory's extension identity must match that manifest. No archive is rebuilt
+or rewritten, and no release is dropped by this command. Reuse the complete
+selected inventory for a docs-only rebuild, including older releases needed by
+the supported matrix.
+
+The output directory must be new. If `make docs` or an earlier site build already
+created `site/`, choose a fresh ignored output such as
+`SITE_ARGS="--inventory selected-assets/inventory.json --output dist/site-preview"`.
+Existing output is preserved. Both builders run in a temporary sibling directory;
+a failed renderer, archive validation or repository generation leaves no partial
+site. Guide image paths cannot occupy the reserved `repo/` directory. Replaying
+the same inputs with the same Blender executable produces identical site files.
+
+`tools/build_site.py` accepts `--source`, `--template` and `--manifest`, plus the
+shared `--blender`, `--artifacts` and `--timeout` options. `BLENDER` discovery works
+as for other native tools. Blender validates the exact archives and generates the
+repository in a fresh isolated profile with online access disabled; successful
+profiles are cleaned, and logs remain outside the site under `.blender-profile`
+(or `--artifacts`). The command makes no downloads and needs no publishing
+credentials. Offline tests use synthetic archives and a fake native command
+boundary; they do not establish native runtime or update acceptance.
+
+This builds a local snapshot only. Provenance verification, inventory freshness
+before deployment, release handbook attachment, Pages publishing and native
+update controls remain separate gates under #37. See the
+[release procedure](docs/RELEASING.md#offline-extension-repository-snapshots)
+for retention and publication requirements.
+
+The read-only [Site preview workflow](.github/workflows/site-preview.yml) runs on
+PRs changing the builder or handbook. Its `site-demo` artifact retains PDF previews
+and the complete local site for 14 days. It uses synthetic versions covering two
+Blender compatibility ranges, validated and indexed with Blender 5.0.1. These are
+review fixtures, not releases: do not install or publish them. The PDFs use system
+fonts without external font requests. This job needs no service credentials or
+deployment permissions and does not change the publishing gate.
 
 
 

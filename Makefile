@@ -5,11 +5,12 @@ BLENDER_BUILD_ARGS ?=
 BLENDER_INSTALL_ARGS ?=
 BLENDER_TEST_ARGS ?=
 BLENDER_GUI_ARGS ?=
+SITE_ARGS ?=
 LANE ?= image
 UV ?= uv
 LINT_PATHS ?= .
 
-.PHONY: sync test test-blender build repo install install-isolated gui-check lint format knowledge mcp-docs check-rules docs hooks images images-check
+.PHONY: sync test test-blender build repo install install-isolated gui-check lint format knowledge mcp-docs check-rules docs site hooks images images-check
 check-rules:
 	$(UV) run --locked --no-env-file python tools/check_rules.py
 knowledge:
@@ -42,6 +43,9 @@ mcp-docs:
 
 docs:
 	$(UV) run --locked --no-env-file python tools/build_docs_html.py
+
+site:
+	$(UV) run --locked --no-env-file python tools/build_site.py $(SITE_ARGS)
 
 hooks:
 	$(UV) run --locked --no-env-file pre-commit install --hook-type pre-commit --hook-type commit-msg

@@ -282,3 +282,131 @@ def test_shared_failed_read_releases_waiters_and_allows_retry(monkeypatch, retir
         assert context.get("fixture").id == "fixture"
         assert len(requests) == 2
         context.close()
+
+
+def test_overlapping_lists_share_all_pages_but_not_privacy_scopes(monkeypatch):
+    entered, release, waiting = (threading.Event() for _ in range(3))
+    requests = []
+
+    class ObservedFuture(Future):
+        def result(self, timeout=None):
+            waiting.set()
+            return super().result(timeout)
+
+    monkeypatch.setattr("scenario.core.api.sdk_catalog.Future", ObservedFuture)
+
+    def respond(request):
+        privacy = request.url.params["privacy"]
+        cursor = request.url.params.get("paginationToken")
+        requests.append((privacy, cursor))
+        if privacy == "public" and cursor is None:
+            entered.set()
+            assert release.wait(5)
+            return httpx.Response(
+                200,
+                json={
+                    "models": [{"id": "first", "name": "First"}],
+                    "nextPaginationToken": "second-page",
+                },
+            )
+        return httpx.Response(200, json={"models": [{"id": privacy}]})
+
+    context, pools = catalog(respond)
+    with ThreadPoolExecutor(max_workers=3) as workers:
+        leader = workers.submit(context.fetch_list)
+        try:
+            assert entered.wait(5)
+            waiter = workers.submit(context.fetch_list)
+            assert waiting.wait(5)
+            private = workers.submit(context.fetch_list, "private")
+            assert [record.id for record in private.result(5)] == ["private"]
+            assert not leader.done() and not waiter.done()
+        finally:
+            release.set()
+        first, second = leader.result(5), waiter.result(5)
+        assert [record.id for record in first] == ["first", "public"]
+        assert [record.id for record in second] == ["first", "public"]
+        first[0].raw["name"] = "Changed"
+        assert second[0].raw["name"] == "First"
+        second[0].raw["name"] = "Changed again"
+        assert context.load_list_cached()[0].name == "First"
+    assert requests.count(("public", None)) == 1
+    assert requests.count(("public", "second-page")) == 1
+    assert requests.count(("private", None)) == 1
+    assert len(pools) == 1
+    # A later explicit refresh still goes to the service.
+    context.fetch_list()
+    assert requests.count(("public", None)) == 2
+    context.close()
+
+
+@pytest.mark.parametrize("outcome", ["failure", "retired", "offline", "invalid-record"])
+def test_shared_list_failure_releases_waiters_without_publishing_partial_data(monkeypatch, outcome):
+    entered, release, waiting = (threading.Event() for _ in range(3))
+    calls = []
+    refreshed = False
+
+    class ObservedFuture(Future):
+        def result(self, timeout=None):
+            waiting.set()
+            return super().result(timeout)
+
+    monkeypatch.setattr("scenario.core.api.sdk_catalog.Future", ObservedFuture)
+
+    def respond(request):
+        calls.append(request)
+        if not refreshed:
+            return httpx.Response(200, json={"models": [{"id": "saved"}]})
+        entered.set()
+        assert release.wait(5)
+        if outcome == "failure":
+            return httpx.Response(503, text="private service failure")
+        if outcome == "invalid-record" and "paginationToken" in request.url.params:
+            return httpx.Response(200, json={"models": [{"id": "invalid", "capabilities": [None]}]})
+        return httpx.Response(
+            200, json={"models": [{"id": "partial"}], "nextPaginationToken": "next"}
+        )
+
+    context, pools = catalog(respond)
+    context.fetch_list()
+    refreshed = True
+    with ThreadPoolExecutor(max_workers=2) as workers:
+        leader = workers.submit(context.fetch_list)
+        try:
+            assert entered.wait(5)
+            waiter = workers.submit(context.fetch_list)
+            assert waiting.wait(5)
+            if outcome == "retired":
+                context.close()
+                assert not pools[0]._closed
+            elif outcome == "offline":
+                context.update_online(False)
+        finally:
+            release.set()
+        for read in (leader, waiter):
+            with pytest.raises(ScenarioError) as error:
+                read.result(5)
+            assert "private service failure" not in str(error.value)
+    expected_calls = 3 if outcome == "invalid-record" else 2
+    assert len(calls) == expected_calls
+    assert context._list_reads == {}
+    if outcome == "retired":
+        assert context.closed and pools[0]._closed
+        with pytest.raises(ScenarioError, match="connection changed"):
+            context.load_list_cached()
+    else:
+        assert [record.id for record in context.load_list_cached()] == ["saved"]
+        refreshed = False
+        context.update_online(True)
+        assert [record.id for record in context.fetch_list()] == ["saved"]
+        assert len(calls) == expected_calls + 1
+        context.close()
+
+
+@pytest.mark.parametrize("privacy", ["all", None, [], {}, True])
+def test_invalid_privacy_fails_before_opening_an_sdk_pool(privacy):
+    context, pools = catalog(lambda request: pytest.fail("Unexpected request"))
+    with pytest.raises(ScenarioError, match="request is invalid"):
+        context.fetch_list(privacy)
+    assert not pools
+    context.close()

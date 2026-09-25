@@ -31,6 +31,7 @@ class SDKCatalog:
         self._readers = 0
         self._adapter = None
         self._lists = {}
+        self._list_reads = {}
         self._records = {}
         self._model_reads = {}
         self.update_online(online)
@@ -94,12 +95,42 @@ class SDKCatalog:
             raise ScenarioError(0, "The catalog request is invalid") from None
 
     def fetch_list(self, privacy="public"):
+        """Refresh once for overlapping readers of this connection/privacy scope."""
+        with self._condition:
+            self._check_active()
+            if privacy not in ("public", "private"):
+                raise ScenarioError(0, "The catalog request is invalid")
+            pending = self._list_reads.get(privacy)
+            owner = pending is None
+            if owner:
+                pending = self._list_reads[privacy] = Future()
+        if not owner:
+            rows = pending.result()
+            with self._condition:
+                self._check_active()
+            return [ModelRecord.from_api(copy.deepcopy(row)) for row in rows]
+        try:
+            rows, records = self._fetch_list(privacy)
+            pending.set_result(copy.deepcopy(rows))
+            return records
+        except BaseException as error:
+            pending.set_exception(error)
+            raise
+        finally:
+            with self._condition:
+                del self._list_reads[privacy]
+
+    def _fetch_list(self, privacy):
         with self._read() as adapter:
             rows = adapter.models(privacy=privacy)
+            try:
+                records = [ModelRecord.from_api(row) for row in rows]
+            except (AttributeError, TypeError, ValueError):
+                raise ScenarioError(0, "Scenario returned an invalid model catalog") from None
             with self._condition:
                 self._check_active()
                 self._lists[privacy] = copy.deepcopy(rows)
-        return [ModelRecord.from_api(row) for row in rows]
+        return rows, records
 
     def load_list_cached(self, privacy="public"):
         with self._condition:

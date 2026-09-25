@@ -129,6 +129,23 @@ gh api repos/scenario-labs/blender-plugin/immutable-releases
 
 ## Features and metadata
 
+### Supply-chain report
+
+[Scorecard CI](../.github/workflows/scorecard.yml) publishes after pushes to
+`main` and each Monday. The [public report](https://scorecard.dev/viewer/?uri=github.com/scenario-labs/blender-plugin)
+and README badge reported **6.4** for `5d1f5a2` on 2026-09-25. The
+[default-branch run](https://github.com/scenario-labs/blender-plugin/actions/runs/36132873905)
+succeeded, and its Scorecard SARIF analysis appears alongside CodeQL without an
+upload error or a finding against the Scorecard workflow itself. Scorecard is
+informational and is not a required check. This is a dated publication check,
+not a claim that its findings are resolved or that the extension is accepted.
+
+Use the [triage procedure](development/contributions.md#scorecard-triage) for
+current results. Paginate code-scanning analyses: frequent CodeQL uploads can
+push the latest Scorecard result beyond the first API page.
+
+### Repository presentation
+
 Issues and projects are on; wiki and Discussions are off. Keep documentation in
 this repository, and route questions through [SUPPORT.md](../SUPPORT.md), the
 issue forms or `support@scenario.com`. The approved direction keeps Discussions

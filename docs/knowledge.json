@@ -125,7 +125,7 @@
         "tools/report_ci_failure.py": "ee37f34c4ecebee0513f4f4053f004b5ad6401cb60fc1b943abd045cd69fd0b0",
         "tests/unit/test_ci_failure.py": "7025a2956f419582420cd2f45ac16e7f0b9220d13ee5852cde260fa94359913c",
         ".github/workflows/blender-baseline.yml": "fc58fcf165c04c6b24a4bb190be92a866f8688bea4ec486a54256518d91905cc",
-        ".lycheeignore": "a860fa08b8198498ae713922890241dc6ce62ca09df1ef817f66c6a0b7ccf0f6"
+        ".lycheeignore": "aa1227d651f3195fd44eccd4c9a87bc303dc622b89787de2bc6ad4b22c92effb"
       }
     },
     {
@@ -585,7 +585,7 @@
         "uv.lock": "818e60fbedee798145c4f228a35b30847bba0b5827a77aa8aaa0210407b69c9b",
         ".github/workflows/links.yml": "2fc780cf855f68de99af2ff6bc8de0b67cee4aa72948613a34c4326caff99f31",
         ".github/workflows/links-scheduled.yml": "e8a420c754bf829d64629d360de94f260fe20c0b1bdeb0a6f12fd4c2a7340081",
-        ".lycheeignore": "a860fa08b8198498ae713922890241dc6ce62ca09df1ef817f66c6a0b7ccf0f6",
+        ".lycheeignore": "aa1227d651f3195fd44eccd4c9a87bc303dc622b89787de2bc6ad4b22c92effb",
         "tools/link_inventory.py": "7945ec7c5eb6258bf6683f26b0d95d842e4128a0be84158a4ab127cf7fa4079d",
         "tools/report_link_failure.py": "8034aa3b95acafa2085a6c27cc72fe0f65f24ebdf46a2fd1afbf7075a2d18585",
         "tools/report_ci_failure.py": "ee37f34c4ecebee0513f4f4053f004b5ad6401cb60fc1b943abd045cd69fd0b0",

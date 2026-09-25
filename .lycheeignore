@@ -5,6 +5,7 @@
 ^https://projects\.blender\.org/
 # Reserved placeholder hosts used in examples (RFC 2606).
 ^https?://[^/]*\.example(/|$)
+(?i)^https?://(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.)*example\.(?:com|org|net)\.?(?::[0-9]+)?(?:[/?#]|$)
 # These exact repository forms redirect to GitHub login when unauthenticated.
 ^https://github\.com/scenario-labs/blender-plugin/(issues/new/choose|security/advisories/new)$
 # Issue references in these internal repositories require organization access.

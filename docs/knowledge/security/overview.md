@@ -7,9 +7,10 @@
   "evidence": {
     "path": "SECURITY.md",
     "coverage": "policy",
-    "reviewed_at": "2026-09-23",
-    "limits": "Private reporting and supported-version policy; scope is not a claim that runtime hardening is complete. Repository private-vulnerability reporting was verified enabled through the GitHub API; Security-tab policy appearance requires merge.",
+    "reviewed_at": "2026-09-24",
+    "limits": "Private reporting and supported-version policy; scope is not a claim that runtime hardening is complete. Repository private-vulnerability reporting was verified enabled through the GitHub API; Security-tab policy appearance requires merge. Scorecard workflow, publication restrictions and triage guidance inspected against the pinned upstream action documentation; public score, badge, SARIF publication and hosted acceptance require a successful default-branch run. Existing product and security claims retain their prior evidence.",
     "sources": {
+      ".github/workflows/scorecard.yml": "3180f2d6860237bba70f189846d1aa3ad2e226f5d7476aca3c15887cb53a949c",
       "scenario/blender/mcp_service.py": "63d3a6e36b0247d9529918957e4f92d08a48b704b28315017d2cf61914fb7ccf",
       "scenario/blender_manifest.toml": "b942bfc79b1ebecab7ae8f2ea16bac4a182d6a13d81dac3a23391dc2ffd16e0f",
       "scenario/core/config.py": "93b78f68c5da3c31e191fa3f1a08ac3fdffe8e3f1cac40a20bed4843672f28fe",

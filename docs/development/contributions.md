@@ -170,6 +170,43 @@ house rules, approved-dependency enforcement and REUSE coverage remain under #29
 the checker does not claim they are implemented. Local checks do not prove that
 GitHub's administrative gates are enabled.
 
+## Scorecard triage
+
+[Scorecard CI](../../.github/workflows/scorecard.yml) runs on pushes to `main` and
+each Monday. It publishes the repository's supply-chain posture to the
+[public Scorecard viewer](https://scorecard.dev/viewer/?uri=github.com/scenario-labs/blender-plugin),
+uploads SARIF to the Security tab alongside CodeQL, and retains a public
+`scorecard-sarif` workflow artifact for five days. A low score is a triage signal,
+not a release blocker; never add `scorecard` to the required checks.
+
+After the first default-branch run, verify its success, the numeric `score` at
+`https://api.scorecard.dev/projects/github.com/scenario-labs/blender-plugin`,
+the README badge, and both CodeQL and Scorecard in code-scanning analyses.
+Inspect alerts with:
+
+```sh
+gh api 'repos/scenario-labs/blender-plugin/code-scanning/analyses' --jq '[.[].tool.name] | unique'
+gh api 'repos/scenario-labs/blender-plugin/code-scanning/alerts?tool_name=Scorecard&state=open'
+```
+
+Check that the workflow does not report its own permissions as a finding. Local
+workflow validation cannot establish publication, badge availability or a score.
+The artifact is public; code-scanning access follows GitHub's repository roles.
+Schedules on public repositories can be disabled after 60 days without activity;
+a maintainer can re-enable the workflow in Actions.
+
+Preserve the [upstream publication restrictions](https://github.com/ossf/scorecard-action/blob/v2.4.4/README.md#workflow-restrictions)
+when updating this workflow. Publishing uses the job's OIDC permission and the
+default GitHub token; rulesets do not require an additional PAT. Keep write
+permissions inside the publishing job and its steps restricted to the approved
+actions. If the repository switches to a selected-actions allow-list, include
+`ossf/scorecard-action@*` through the separately authorized administration process.
+
+Scorecard's Signed-Releases check looks for attached signature or provenance
+files; the repository attestation store alone does not satisfy that check.
+Investigate findings against the actual [release procedure](../RELEASING.md)
+and repository settings before changing them merely to improve a score.
+
 ## Link check
 
 [The read-only link workflow](../../.github/workflows/links.yml) checks Markdown

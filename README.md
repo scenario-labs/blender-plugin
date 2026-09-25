@@ -9,6 +9,7 @@
   <a href="https://docs.scenario.com"><img alt="API documentation" src="https://img.shields.io/badge/documentation-api-black.svg"></a>
   <a href="https://help.scenario.com"><img alt="App documentation" src="https://img.shields.io/badge/documentation-app-black.svg"></a>
   <a href="https://mcp.scenario.com/docs"><img alt="MCP documentation" src="https://img.shields.io/badge/documentation-mcp-black.svg"></a>
+  <a href="https://scorecard.dev/viewer/?uri=github.com/scenario-labs/blender-plugin"><img alt="OpenSSF Scorecard" src="https://img.shields.io/ossf-scorecard/github.com/scenario-labs/blender-plugin?label=openssf+scorecard&style=flat"></a>
 </p>
 
 **Experimental.** Bring Scenario image, video, 3D, PBR material and audio generation

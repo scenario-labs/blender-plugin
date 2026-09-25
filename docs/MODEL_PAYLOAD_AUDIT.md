@@ -1,86 +1,134 @@
-# Model payload audit (2026-08-29)
+# Model payload audit
 
-Triggered by a real bug: **Rodin Hyper3D Bang** in the Retexture / Parts tasks refused to generate with
-"Reference Image is required" even when a texture prompt was written, and the texture prompt looked missing.
+[The audit tool](../tools/audit_payloads.py) checks the extension's schema parser
+against selected model records. It can read an explicit offline fixture directory
+or fetch missing records through the shared Scenario SDK adapter. It never
+estimates, submits a generation or downloads media. A passing report covers these
+schema heuristics; it does not prove live generation, UI reachability or complete
+JSON Schema validation.
 
-## What was checked
+## What it checks
 
-`tools/audit_payloads.py` fetches the live schema (`GET /models/{id}`, free, no generation) for **every model the
-plugin can put in front of a user**: the eight curated lane lists in `DEFAULT_MODELS`, every model in the six
-`EDIT3D_TASKS`, and the Patina material models. It parses each one with the plugin's own `parse_schema` and checks:
+The default inventory combines the curated creation lanes, Edit 3D task models
+and Patina models. It is not the whole service catalog or every trained model.
+The checks flag:
 
-- a file marked `required: true` whose own description reads conditional ("... if no prompt is provided");
-- more than one required file input at once (the user would have to supply them all);
-- a prompt that is really an alternative to a required file;
-- edit3d / 3d models with no detectable mesh input (`kind: 3d`);
-- required flags dropped by the parser;
-- empty schemas.
+- Required files whose descriptions make them conditional, unless the parser
+  already represents the relationship as a one-of group.
+- Multiple required file inputs, for review rather than automatic rejection.
+- Prompts described as alternatives to a still-required file.
+- Edit 3D models without a detectable mesh input.
+- Prompts that the Edit 3D schema fails to select for drawing.
+- Required flags lost during parsing, and empty schemas.
 
-Coverage: **68 surfaced models, 68 schemas fetched, 0 failures** after the id fixes below.
+The implementation retains the existing heuristics. It does not automatically
+repair schemas or loosen requirements. A finding needs investigation; for example,
+a model may correctly require both a mesh and a reference image.
 
-## Findings and fixes
+## Run offline
 
-### 1. Rodin Bang: conditional-required file (the reported bug), fixed
+Use reviewed fixture files without credentials or network access:
 
-Bang's schema marks both `model` (the mesh) and `image` (the reference) as `required: true`, but the descriptions
-make `image` and `prompt` mutually alternative:
-
-- `image`: "Provide a reference image for generating model textures **if no prompt is provided**."
-- `prompt` (label "Texture Prompt"): "Optional reference prompt to guide splitting **if no reference image is provided**."
-
-The plugin was faithfully turning `required: true` into a hard requirement, so the valid prompt-only path was
-blocked, and the block made the Texture Prompt look pointless.
-
-Fix (general, self-maintaining from the schema, `core/schema/params.py`): a required file whose own description
-reads conditional (`if no`, `if not`, `when no`, `unless`, `if none`) **and** which sits next to a prompt is relaxed
-to optional, and the two are recorded as an either/or group (`Schema.one_of`). `validate` then requires **at least
-one** of the group and, if neither is present, shows one friendly line: "Provide one of: Reference Image or Texture
-Prompt". This affects exactly Bang today and will auto-handle any future model phrased the same way. Covered by
-`tests/unit/test_params.py::test_conditional_required_file_becomes_either_or` and `::test_either_or_validation`.
-
-### 2. Three curated ids that no longer resolve, fixed
-
-`DEFAULT_MODELS` named three models that 404 on the live catalog, so they silently never appeared. Replaced with the
-current ids (verified against the catalog):
-
-- `model_bytedance-seedream-5-0` -> `model_bytedance-seedream-5-0-lite` (the non-Pro tier; Pro was already listed)
-- `model_google-veo-3-1` -> `model_veo3-1`
-- `model_kling-3-0` -> `model_kling-v3-omni-video` (the current Kling V3 flagship, txt2video + img2video)
-
-### 3. Correct by design (no change)
-
-- **Trellis 2 Retexture** requires a mesh **and** a style image and has no text prompt: it is image-guided retexture,
-  so requiring the style image is right. In the edit3d flow the mesh is auto-supplied and the user adds the image.
-- **Meshy 7 Image-to-3D**'s required `image` is the source image ("Upload one image to convert into 3D"); its
-  `texturePrompt` pairs with the optional `textureImage`, not with the required source. Correct as is.
-
-## 3D mesh-input reachability (2026-08-29, v0.9.4)
-
-A follow-up review after "Uthana Text to Motion ignored my selected mesh". The plugin only auto-attached the
-selected scene mesh in the **3D Edit** lane. Models that take a mesh but live in another lane (text-to-motion,
-image-to-3D with an optional character mesh) never received it: a `txt23d` model like Uthana Text to Motion carries
-an optional `characterFile` (kind 3d, "Character 3D model") and sits in **3D > Generate/Text**, where nothing
-offered the selection.
-
-Checked every public 3D-capable model (capabilities in txt23d / img23d / 3d23d / video23d), non-LoRA, non-deprecated:
-
-- **74 models** in scope.
-- **45** have no mesh input (pure text/image -> 3D). Correct.
-- **27** have a mesh input (a kind-3d file). All now **reachable**: the Edit lane auto-attaches the selection; the
-  3D Generate lane now offers **Selected mesh** on any kind-3d input (`draw_references` uses `props.addable_sources_for`).
-- **2** have a mesh input but **no lane at all**: `model_uthana-video-to-motion-2.1` and `model_cartwheel-video-to-motion`,
-  both `video23d` (a video in, a retargeted mesh out). `video23d` is not in `LANE_CAPS`, so they surface nowhere. This
-  is a pre-existing gap (it needs a video-input motion lane), tracked separately, not fixed in 0.9.4.
-
-The fix: a file input's kind decides its add sources (a 3D input -> Selected mesh / Upload, never an image capture);
-a `MESH` reference exports the selection as GLB at generate time in any lane; and `required: {ifNotDefined: {...}}`
-either/or inputs (Cartwheel: 3D mesh or reference image) are parsed into the one-of check.
-
-## How to re-run
-
-```
-python3 tools/audit_payloads.py
+```sh
+uv run --locked --no-env-file python tools/audit_payloads.py \
+  --offline --cache tests/fixtures/models \
+  --models model_rodin-hyper3d-bang model_meshy-7-retexture \
+  --fail-on HIGH --report audit.md
 ```
 
-Raw schemas cache under the system temp dir (override with `SCHEMA_CACHE`), so re-runs are offline. Delete a cached `<model_id>.json` to refetch it.
-Run it whenever the curated lists or the catalog change; a new HIGH finding means a model's payload needs attention.
+`--offline` requires an explicit `--cache` directory. It accepts both raw model
+objects and recorded `{"model": {...}}` wrappers, verifies the requested model
+identity and leaves the files unchanged. A missing, malformed, mismatched or
+symlinked cache entry is reported as a failure; it never falls back to a service
+call. The tool does not read credential files. `uv --no-env-file` also prevents
+uv from loading them.
+
+## Run with selected test credentials
+
+After selecting the test account and optional project through the
+[developer configuration](../CONTRIBUTING.md#environment-variables), run:
+
+```sh
+uv run --locked --env-file .env.local python tools/audit_payloads.py \
+  --fail-on HIGH --report audit.md
+```
+
+Live mode requires the explicit `SCENARIO_TEST_API_KEY` and
+`SCENARIO_TEST_API_SECRET` pair, even when all selected schemas are already
+cached, so the cache remains bound to that account selection. The optional
+`SCENARIO_TEST_PROJECT_ID` is sent as `projectId`. Runtime credentials and ambient
+SDK credentials do not override that selection.
+
+By default, each live run gets a new private temporary cache, removed when the
+run exits; there is no cross-run reuse. `SCHEMA_CACHE` or `--cache DIR` selects
+a persistent cache, with the flag taking precedence. Its parent must already
+exist. Live records reside in separate hashed subdirectories for the selected
+credentials, project and API base URL. The hash partitions local cache files;
+it is not authoritative account identity. The SDK client is created only for
+the first cache miss and is closed after the run. Complete new cache files
+replace entries atomically. Remove an entry from a persistent scoped directory
+to request a fresh read. Cache hits have no expiry and do not establish current
+service behavior. Keep raw caches private and inspect reports before sharing them.
+
+Live cache roots and scoped directories must be real directories, not symlinks
+or Windows reparse points. On POSIX they must belong to the current user and
+have no group/other permission bits. Resolved parents must belong to that user
+or root and have no group/other write bits, except trusted-owner sticky directories
+such as `/tmp`. Parent aliases such as macOS `/var` are resolved before use.
+Existing permissions are never changed. Missing persistent cache/scoped directories
+are created privately only after a successful model read. Extended ACLs and Windows
+ownership are not inspected by these standard-library checks: choose a parent and cache
+accessible only to the intended user and trusted administrators. The checks
+do not defend against other software running as that user or authenticate
+cached schema contents.
+
+An explicitly supplied offline directory has no implicit account selection.
+To examine a saved live cache offline, pass its exact hashed subdirectory with
+`--offline --cache`, rather than its root. Offline fixture directories remain
+read-only inputs and do not need live-cache ownership or private permissions.
+
+## Reports and exits
+
+`--models ID [ID ...]` selects a subset; omitted IDs use the curated inventory.
+Duplicate IDs are checked once. `--report PATH` writes Markdown to an existing
+parent directory; otherwise the report is printed. Reports include the UTC run
+date, cache mode, chosen threshold, checked-schema count, failures and findings.
+They omit SDK exception bodies and URL content in finding descriptions. No
+report or cache is committed by the tool.
+
+| Exit | Meaning |
+| --- | --- |
+| `0` | No failures/findings at the selected threshold, or report-only mode when `--fail-on` is omitted |
+| `1` | With `--fail-on HIGH`, `MED` or `LOW`: at least one finding at that severity or higher, or any fetch/schema/cache failure |
+| `2` | Invalid command usage, missing live credentials, unsafe/inaccessible live-cache configuration, invalid SDK setup, an unwritable report or temporary-cache cleanup failure |
+
+Temporary-cache cleanup failures produce a fixed diagnostic without exposing
+filesystem details. A completed audit report is still written, preserving its
+findings and fetch failures, while the process returns `2` for the cleanup failure.
+
+An empty schema is a HIGH finding. Invalid response identities and schemas that
+cannot be parsed are failures. The report-only default preserves the previous
+non-gating behavior; automated callers must select `--fail-on`.
+
+## SDK operation and remaining automation
+
+The exact pinned SDK release and bundle are documented in
+[SDK_ADOPTION.md](SDK_ADOPTION.md) and [SDK_BUNDLE.md](SDK_BUNDLE.md). The audit uses
+`SDKAdapter.model`, which calls SDK 2.1.0's public
+`models.with_raw_response.retrieve(model_id, project_id=...)` method for
+`GET /models/{id}`. It retains the complete model object for the existing parser.
+No raw API fallback, low-level SDK verb or dependency change is introduced.
+The shared adapter disables automatic retries and isolates ambient credentials.
+
+The [public API documentation](https://docs.scenario.com/) and
+[official Python SDK release](https://pypi.org/project/scenario-sdk/2.1.0/)
+describe service contracts. This audit does not invoke any paid endpoint or
+`dryRun` operation. Offline MockTransport checks verify the selected SDK mapping;
+actual service acceptance must be recorded separately.
+
+The weekly workflow, report artifact retention, scoped CI credentials and
+failure-issue deduplication remain tracked in
+[#41](https://github.com/scenario-labs/blender-plugin/issues/41). This CLI change
+does not schedule or enable a live audit. The old live investigation and fixes
+remain in [the changelog](../CHANGELOG.md) under versions 0.9.3 and 0.9.4; their
+historical observations are not fresh service results.

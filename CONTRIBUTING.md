@@ -251,8 +251,14 @@ generation. The payload audit uses `SDKAdapter.model` and the pinned SDK's publi
 model-retrieve method. Its [offline mode and threshold/report options](docs/MODEL_PAYLOAD_AUDIT.md)
 need no credentials; `--offline --cache tests/fixtures/models --models MODEL_ID`
 reads only that explicit fixture directory. Live caches remain scoped to the
-selected credentials, project and API base. Weekly automation and real service
-acceptance remain #41. Fixture recording and provenance are tracked in #9.
+selected credentials, project and API base. The separate
+[weekly API contract workflow](.github/workflows/api-contract.yml) uses dedicated
+repository test secrets only on canonical `main`, with issue-writing permission
+confined to its downstream reporter. It cannot run on PRs or forks. Maintainers
+can dispatch it from Actions after configuring the intended test scope; actual
+live and issue-deduplication acceptance remain #41. See
+[reports and rerun boundaries](docs/MODEL_PAYLOAD_AUDIT.md#weekly-workflow-and-retained-results).
+Fixture recording and provenance are tracked in #9.
 
 `tools.check_sdk` uses the shared SDK read/estimate adapter and always sends
 estimates with `dryRun=true` in the query. It prints counts and the exact cost,

@@ -110,7 +110,54 @@ An empty schema is a HIGH finding. Invalid response identities and schemas that
 cannot be parsed are failures. The report-only default preserves the previous
 non-gating behavior; automated callers must select `--fail-on`.
 
-## SDK operation and remaining automation
+## Weekly workflow and retained results
+
+The separate [API contract workflow](../.github/workflows/api-contract.yml) is
+scheduled for Monday at 06:00 UTC and supports manual dispatch. Both jobs require
+the canonical repository and `main`; PRs and forks never receive its credentials.
+The main audit job has read-only repository permissions. It uses the locked uv
+environment, a new temporary cache for every invocation and `--fail-on HIGH`.
+Raw schema caches are not uploaded. Optional manual `models` input is split on
+whitespace and validated as model IDs before argument construction; it cannot
+inject shell commands or other CLI options.
+
+Maintainers configure the dedicated repository secrets `SCENARIO_TEST_API_KEY`
+and `SCENARIO_TEST_API_SECRET`, plus optional `SCENARIO_TEST_PROJECT_ID` for the
+selected test project. This configuration is separate from protected paid-smoke
+environments. The workflow only reads model schemas through the SDK; it never
+estimates or submits generation. Missing credentials fail rather than silently
+switching to fixtures or another account.
+
+Results belong in the [workflow runs](https://github.com/scenario-labs/blender-plugin/actions/workflows/api-contract.yml),
+not a dated snapshot in this guide. Each audit attempt uploads `audit.md` as
+`model-payload-audit-ATTEMPT` for 90 days, even after audit failure when the file
+exists. The upload's immutable artifact ID is passed through the audit job's
+outputs. The reporter downloads and links that exact artifact, including when
+only the reporter is rerun and the audit result is retained from an earlier
+attempt. It does not guess an artifact name from the reporter's attempt number.
+If the upload recorded no ID, downloading is skipped and the issue states that
+no artifact was recorded. A failed download is never read, even if extraction
+left a partial file; a recorded artifact can later expire or be deleted.
+
+A separate downstream job owns issue-writing permission and creates or comments
+on the exact open title `api: model schema drift detected by the weekly contract check`,
+with `bug`, `feature:API`, `quality` and `area:ci` labels. Workflow concurrency
+serializes reporting; paginated exact-title lookup rejects ambiguous duplicates
+and does not retry an uncertain write. Reports are bounded literal excerpts,
+not executable or rendered schema instructions. The issue distinguishes an
+audit exit of 1 from configuration/report/cleanup errors, missing completion/timeout,
+or a clean audit followed by an artifact failure. Deliberate whole-workflow cancellation
+does not create an issue. Reporting never makes the failed audit job green.
+
+Default-branch activation, credential configuration, a clean live dispatch and
+two real deduplicated failure reports still require maintainer acceptance under
+[#41](https://github.com/scenario-labs/blender-plugin/issues/41). Offline tests
+and a configured workflow do not establish those outcomes. Do not run a live
+dispatch merely to validate this repository change. GitHub can disable schedules
+after 60 days without repository activity; maintainers can re-enable them from
+Actions after checking the configured test scope.
+
+## SDK operation
 
 The exact pinned SDK release and bundle are documented in
 [SDK_ADOPTION.md](SDK_ADOPTION.md) and [SDK_BUNDLE.md](SDK_BUNDLE.md). The audit uses
@@ -126,9 +173,6 @@ describe service contracts. This audit does not invoke any paid endpoint or
 `dryRun` operation. Offline MockTransport checks verify the selected SDK mapping;
 actual service acceptance must be recorded separately.
 
-The weekly workflow, report artifact retention, scoped CI credentials and
-failure-issue deduplication remain tracked in
-[#41](https://github.com/scenario-labs/blender-plugin/issues/41). This CLI change
-does not schedule or enable a live audit. The old live investigation and fixes
+The old live investigation and fixes
 remain in [the changelog](../CHANGELOG.md) under versions 0.9.3 and 0.9.4; their
 historical observations are not fresh service results.

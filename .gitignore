@@ -18,6 +18,9 @@ venv/
 dist/
 *.zip
 
+# Interrupted fixture recordings are private staging, never published fixtures
+/tests/fixtures/.recording-*/
+
 # Per-machine files
 .DS_Store
 scenario_output/

@@ -98,6 +98,10 @@ def scrub_existing(fixtures=None):
     fixtures = FIXTURES if fixtures is None else fixtures
     updates = []
     for path in sorted(fixtures.rglob("*.json")):
+        # An abruptly killed recording can leave private staging behind. It is
+        # not part of the published inventory and must remain untouched.
+        if any(part.startswith(".") for part in path.relative_to(fixtures).parts[:-1]):
+            continue
         if path.is_symlink():
             raise ValueError(f"fixture must not be a symlink: {path.relative_to(fixtures)}")
         try:

@@ -52,6 +52,8 @@ uv run --locked --no-env-file python tools/record_fixtures.py --scrub-existing
 It preserves compact versus indented JSON and a final newline where present;
 unchanged files are not rewritten. Invalid JSON stops cleanup before any file is
 written. The cleanup command does not refresh API records or download media.
+It skips dot-prefixed directories, including private recorder staging left by an
+interrupted process; those files are not part of the published fixture inventory.
 
 The normal recorder uses the shared SDK adapter and the pinned SDK's public
 `models.with_raw_response.retrieve/list` methods. It reads all eighteen model
@@ -71,7 +73,9 @@ A failed publication may leave some complete new fixtures, but removes the prior
 provenance first so it cannot claim the partial set is a successful refresh.
 Inspect the diff and retry the explicit read command if needed. Temporary staging
 is cleaned when the process exits normally, including handled failures; an abrupt
-process kill can leave a `.recording-*` directory to inspect and remove.
+process kill can leave a `.recording-*` directory to inspect and remove. These
+staging directories are ignored by Git and excluded from offline cleanup and
+fixture hygiene checks; a later cleanup cannot publish or legitimize their files.
 
 No fixture refresh or provenance file is included in this change. Real endpoint
 acceptance and maintainer confirmation of media rights remain under #9.

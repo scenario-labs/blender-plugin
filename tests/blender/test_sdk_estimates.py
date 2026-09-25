@@ -27,7 +27,7 @@ class SDKEstimateTests(unittest.TestCase):
         self.manager = self.enterContext(isolated_manager())
         self.addCleanup(self.runtime.state.reset)
         self.calls = []
-        self.response = b'{"creativeUnitsCost":1.1234567890123456789,"costDetails":{"base":1}}'
+        self.response = b'{"creativeUnitsCost":1.1234567890123456789,"costDetails":{"base":1.25,"nested":{"parts":[0.5,2]}}}'
         self.model = {
             "id": "fixture-price",
             "name": "Fixture",
@@ -105,7 +105,9 @@ class SDKEstimateTests(unittest.TestCase):
         self.assertEqual(quote.response_json, self.response)
         result = self.mcp_estimate()
         self.assertEqual(result["cu_cost_exact"], str(quote.cost))
-        self.assertEqual(result["details"], {"base": 1})
+        self.assertEqual(result["details"], {"base": 1.25, "nested": {"parts": [0.5, 2]}})
+        self.assertIsInstance(result["details"]["base"], float)
+        self.assertEqual(quote.details["costDetails"]["base"], Decimal("1.25"))
         self.assertIs(self.runtime.state.catalog, self.catalog)
         posts = [call for call in self.calls if call.method == "POST"]
         self.assertEqual(len(posts), 2)

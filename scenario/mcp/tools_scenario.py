@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """MCP tools that talk to Scenario through the add-on: catalog, cost, generate, results into the scene."""
 
+import json
 import time
 
 import bpy
@@ -113,7 +114,7 @@ def estimate_cost(args):
             "model_id": record.id,
             "cu_cost": float(quote.cost),
             "cu_cost_exact": str(quote.cost),
-            "details": quote.details.get("costDetails") or {},
+            "details": json.loads(quote.response_json).get("costDetails") or {},
         }
 
     return DeferredTool(lambda: catalog.estimate(record.id, body), finish)

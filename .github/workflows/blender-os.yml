@@ -37,6 +37,11 @@ jobs:
       run:
         shell: bash
     steps:
+      - name: Deliberate hosted reporting acceptance failure
+        if: matrix.os == 'macos-latest'
+        run: |
+          echo "Intentional acceptance probe for issue 42; not a product regression."
+          exit 1
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false

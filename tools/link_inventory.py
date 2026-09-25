@@ -22,7 +22,7 @@ def markdown_inputs(root):
     inputs = set()
     for path in inventory:
         relative = path.relative_to(root)
-        if path.suffix.lower() != ".md" or relative.parts[:2] == ("docs", "engineering"):
+        if path.suffix.lower() != ".md":
             continue
         target = path.resolve(strict=True)
         if not target.is_relative_to(root) or target not in inventory or not target.is_file():
@@ -32,7 +32,7 @@ def markdown_inputs(root):
         relative = target.relative_to(root)
         # Release automation owns root CHANGELOG.md, including GitHub issue/PR
         # links that redirect by design. Do not weaken authored-link checks.
-        if relative == Path("CHANGELOG.md") or relative.parts[:2] == ("docs", "engineering"):
+        if relative == Path("CHANGELOG.md"):
             continue
         name = relative.as_posix()
         if "\n" in name or "\r" in name:

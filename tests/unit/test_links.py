@@ -26,18 +26,22 @@ def symlink(link, target):
         pytest.skip("Symlinks unavailable on this host")
 
 
-def test_inventory_deduplicates_adapters_and_excludes_private_and_history(tmp_path):
+def test_inventory_deduplicates_adapters_and_excludes_only_private_content(tmp_path):
     root = repository(tmp_path)
     (root / "README.md").write_text("[public](https://example.org)")
     (root / "draft with spaces.md").write_text("proposed doc")
     (root / "workdir").mkdir()
     (root / "workdir/private.md").write_text("private content")
     (root / "docs/engineering").mkdir(parents=True)
-    (root / "docs/engineering/history.md").write_text("historical")
+    (root / "docs/engineering/current-guide.md").write_text("proposed current guide")
     (root / ".claude").mkdir()
     symlink(root / ".claude/CLAUDE.md", "../README.md")
     subprocess.run(["git", "add", "README.md", ".claude", "docs"], cwd=root, check=True)
-    assert link_inventory.markdown_inputs(root) == ["./README.md", "./draft with spaces.md"]
+    assert link_inventory.markdown_inputs(root) == [
+        "./README.md",
+        "./docs/engineering/current-guide.md",
+        "./draft with spaces.md",
+    ]
 
 
 @pytest.mark.parametrize("destination", ["outside", "ignored"])

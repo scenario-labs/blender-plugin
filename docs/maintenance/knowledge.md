@@ -90,7 +90,7 @@ Each record has `type: "Evidence"`, a unique `id`, and an `evidence` object:
 | `path` | Canonical Markdown document supported by this record. |
 | `scope` | Stable topic name, unique within that document. |
 | `coverage` | One of the classifications below. |
-| `reviewed_at` | Actual evidence review or inherited intake date, `YYYY-MM-DD`. |
+| `reviewed_at` | Actual evidence review or inherited intake date in UTC, `YYYY-MM-DD`. |
 | `base_revision` | Full SHA of the durable main commit used for the review. |
 | `limits` | Explicit claim, inspection and acceptance boundaries. |
 | `sources` | Nonempty map of exact repository-relative source paths to SHA256 fingerprints. |
@@ -116,6 +116,13 @@ its squash merge. Fingerprints identify the exact local source contents inspecte
 including proposed changes; they need not match bytes at the review base.
 Neither `reviewed_at` nor a passing structural check implies human approval.
 Do not invent OKF `verified` attestations.
+
+Use the UTC calendar date when recording a new review. The checker uses UTC for
+both future-date rejection and the 45-day warning, so local and hosted checks
+agree around midnight. For example, obtain the date with
+`uv run --locked --no-env-file python -c "from datetime import datetime, UTC; print(datetime.now(UTC).date())"`.
+Your local calendar may be a day ahead or behind. Do not advance an existing
+review date merely to clear a warning or while moving evidence between topics.
 
 Source lists are explicit. Cover relevant tests and entry points, not just an
 implementation filename. Newly relevant sources cannot be discovered from byte

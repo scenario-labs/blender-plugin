@@ -48,6 +48,7 @@ jobs:
           lycheeVersion: v0.24.2
           args: >-
             --verbose --no-progress --max-redirects 0 --exclude-loopback
+            --host-concurrency 2 --host-request-interval 500ms --retry-wait-time 5
             --files-from workdir/link-check/inputs.txt
           output: workdir/link-check/report.md
           fail: ${{ github.event_name == 'pull_request' }}

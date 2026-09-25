@@ -11,6 +11,7 @@ import sys
 import tempfile
 import tomllib
 import zipfile
+from contextlib import ExitStack
 from pathlib import Path
 
 from blender_env import (
@@ -63,7 +64,14 @@ def run(args):
 
         def step(name, command):
             return run_step(
-                binary, command, env=env, directory=directory, name=name, timeout=args.timeout
+                binary,
+                command,
+                env=env,
+                directory=directory,
+                name=name,
+                timeout=args.timeout,
+                stream=True,
+                log_output=getattr(args, "log_output", None),
             )
 
         probe_log = step(
@@ -225,6 +233,9 @@ def main():
     )
     parser.add_argument("--suite", choices=("baseline", "all"), default="baseline")
     parser.add_argument(
+        "--log", type=Path, help="Also stream phase output into a new UTF-8 log file"
+    )
+    parser.add_argument(
         "--timeout", type=float, default=300, help="Maximum seconds per Blender process"
     )
     parser.add_argument(
@@ -238,7 +249,16 @@ def main():
     try:
         if args.no_build:
             args.zip = existing_manifest_zip()
-        return run(args)
+        with ExitStack() as stack:
+            args.log_output = None
+            if args.log:
+                destination = args.log.resolve()
+                if destination.is_relative_to(normal_profile_root().resolve()):
+                    raise ValueError("The log must be outside the normal Blender profile")
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                args.log_output = stack.enter_context(destination.open("x", encoding="utf-8"))
+            return run(args)
+
     except (OSError, ValueError) as error:
         print(error, file=sys.stderr)
         return 1

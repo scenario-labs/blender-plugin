@@ -3,7 +3,9 @@
 """Portable Blender discovery and exact installed-package verification (stdlib only)."""
 
 import argparse
+import codecs
 import hashlib
+import io
 import math
 import os
 import platform
@@ -13,6 +15,7 @@ import stat
 import subprocess
 import sys
 import tempfile
+import threading
 import tomllib
 import zipfile
 from pathlib import Path, PurePosixPath
@@ -201,20 +204,78 @@ def profile_snapshot(root):
     return result
 
 
-def run_step(binary, args, *, env, directory, name, timeout):
+def _forward_log(path, stopped, destinations, errors):
+    """Tail the owned regular log, so child stdout never depends on a pipe reader."""
+    destinations = list(destinations)
+    decoder = io.IncrementalNewlineDecoder(
+        codecs.getincrementaldecoder("utf-8")("replace"), translate=True
+    )
+    try:
+        with path.open("rb") as source:
+            while True:
+                # Only an empty read started after child completion proves EOF.
+                # The child may append between a temporary EOF and the event read.
+                completed = stopped.is_set()
+                chunk = source.read(65536)
+                finished = not chunk and completed
+                text = decoder.decode(chunk, final=finished)
+                if text:
+                    for destination in tuple(destinations):
+                        try:
+                            destination.write(text)
+                            destination.flush()
+                        except Exception as error:
+                            errors.append(error)
+                            destinations.remove(destination)
+                if finished:
+                    return
+                if not chunk:
+                    stopped.wait(0.025)
+    except Exception as error:
+        errors.append(error)
+
+
+def run_step(binary, args, *, env, directory, name, timeout, stream=False, log_output=None):
     log = directory / f"{name}.log"
     print(f"{name}: {log}", flush=True)
+    destinations = ([sys.stdout] if stream else []) + (
+        [log_output] if log_output is not None else []
+    )
+    if log_output is not None:
+        log_output.write(f"\n[{name}]\n")
+        log_output.flush()
+    stopped, errors = threading.Event(), []
     with log.open("w", encoding="utf-8") as output:
-        result = subprocess.run(
-            [str(binary), *args],
-            cwd=directory,
-            env=env,
-            stdout=output,
-            stderr=subprocess.STDOUT,
-            timeout=timeout,
-        )
+        reader = None
+        if destinations:
+            reader = threading.Thread(
+                target=_forward_log,
+                args=(log, stopped, destinations, errors),
+                name=f"blender-output-{name}",
+                daemon=True,
+            )
+            reader.start()
+        try:
+            result = subprocess.run(
+                [str(binary), *args],
+                cwd=directory,
+                env=env,
+                stdout=output,
+                stderr=subprocess.STDOUT,
+                timeout=timeout,
+            )
+        finally:
+            # subprocess.run reaps a timed-out/interrupted child before returning.
+            # Drain the final log bytes before any caller closes its combined log.
+            stopped.set()
+            if reader is not None:
+                reader.join()
     if result.returncode:
         raise subprocess.CalledProcessError(result.returncode, name)
+    if errors:
+        raise OSError(f"Could not forward Blender output; phase log retained at {log}") from errors[
+            0
+        ]
     return log
 
 

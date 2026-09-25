@@ -5,7 +5,6 @@
 import copy
 import json
 from pathlib import Path
-from types import SimpleNamespace
 from unittest.mock import Mock
 
 import pytest
@@ -28,6 +27,8 @@ def fields(data):
 
 def documents():
     for path in sorted(FIXTURES.rglob("*.json")):
+        if any(part.startswith(".") for part in path.relative_to(FIXTURES).parts[:-1]):
+            continue
         yield path.relative_to(FIXTURES), json.loads(path.read_text(encoding="utf-8"))
 
 
@@ -132,7 +133,7 @@ def test_offline_scrub_preserves_layout_and_needs_no_credentials(
     settings = Mock(side_effect=AssertionError("must not request credentials"))
     client = Mock(side_effect=AssertionError("must not construct a client"))
     monkeypatch.setattr(recorder, "live_settings", settings)
-    monkeypatch.setattr(recorder, "ScenarioClient", client)
+    monkeypatch.setattr(recorder, "SDKAdapter", client)
     recorder.main(["--scrub-existing"])
     assert "\n" not in compact.read_text()
     assert (
@@ -160,36 +161,24 @@ def test_malformed_inventory_fails_before_writing_or_echoing_contents(tmp_path):
     assert good.read_bytes() == before
 
 
-def test_recording_writes_are_scrubbed_without_live_requests(tmp_path, monkeypatch, capsys):
-    model = {
-        "model": {
-            "id": "model_fixture",
-            "userId": "synthetic-account",
-            "url": "https://cdn.example/a?Signature=S",
-        }
-    }
-    page = {"models": [{"id": "model_first", "ownerId": "synthetic-account"}]}
-    client = Mock()
-    client.get.side_effect = [model, page, {"models": [{"id": "model_next"}]}]
-    monkeypatch.setattr(recorder, "ROOT", tmp_path)
-    monkeypatch.setattr(recorder, "FIXTURES", tmp_path / "tests" / "fixtures")
-    monkeypatch.setattr(recorder, "MODEL_IDS", ["model_fixture"])
-    monkeypatch.setattr(recorder, "ScenarioClient", Mock(return_value=client))
-    monkeypatch.setattr(
-        recorder,
-        "live_settings",
-        lambda: SimpleNamespace(
-            credentials=SimpleNamespace(key="fake", secret="fake"), project_id=None
-        ),
-    )
-    recorder.main([])
-    assert json.loads(
-        (recorder.FIXTURES / "models" / "model_fixture.json").read_text()
-    ) == recorder.scrub(model)
-    assert json.loads((recorder.FIXTURES / "models_list_page1.json").read_text()) == recorder.scrub(
-        page
-    )
-    assert "synthetic-account" not in capsys.readouterr().out
+@pytest.mark.parametrize("private_dir", [".recording-interrupted/models", "models/.private"])
+def test_offline_scrub_leaves_private_staging_untouched(tmp_path, capsys, private_dir):
+    visible = tmp_path / "models/visible.json"
+    visible.parent.mkdir()
+    visible.write_text('{"ownerId":"synthetic-account"}', encoding="utf-8")
+    private = tmp_path / private_dir
+    private.mkdir(parents=True)
+    pending = private / "pending.json"
+    pending.write_text('{"ownerId":"synthetic-account"}', encoding="utf-8")
+    incomplete = private / "incomplete.json"
+    incomplete.write_text('{"ownerId":', encoding="utf-8")
+    original = {path: path.read_bytes() for path in private.iterdir()}
+
+    recorder.scrub_existing(tmp_path)
+
+    assert json.loads(visible.read_text())["ownerId"] == recorder.PLACEHOLDERS["ownerId"]
+    assert {path: path.read_bytes() for path in private.iterdir()} == original
+    assert capsys.readouterr().out.splitlines() == ["scrubbed models/visible.json"]
 
 
 @pytest.mark.parametrize("argv,code", [(["--help"], 0), (["--scrbu-existing"], 2)])

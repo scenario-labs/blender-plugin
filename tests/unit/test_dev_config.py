@@ -59,12 +59,13 @@ def test_missing_credentials_fail_without_disclosing_values(key, secret):
     ],
 )
 def test_entry_points_reject_missing_credentials_before_client_creation(script, monkeypatch):
-    from scenario.core.api import client
+    from scenario.core.api import client, sdk_adapter
 
     def forbidden(*args, **kwargs):
         pytest.fail("must validate credentials before constructing a client")
 
     monkeypatch.setattr(client, "ScenarioClient", forbidden)
+    monkeypatch.setattr(sdk_adapter, "SDKAdapter", forbidden)
     for name in os.environ:
         if name.startswith("SCENARIO_"):
             monkeypatch.delenv(name)
@@ -128,7 +129,7 @@ def test_uv_dotenv_precedence_and_no_file_loading(tmp_path):
     ],
 )
 def test_live_tools_pass_selected_pair_explicitly(script, project, monkeypatch):
-    from scenario.core.api import client
+    from scenario.core.api import client, sdk_adapter
 
     class ClientReached(Exception):
         pass
@@ -138,7 +139,12 @@ def test_live_tools_pass_selected_pair_explicitly(script, project, monkeypatch):
         assert kwargs["project_id"] == ((project or "").strip() or None)
         raise ClientReached
 
+    def selected_sdk(credentials, **kwargs):
+        assert kwargs["online"]()
+        selected(credentials.api_key, credentials.api_secret, **kwargs)
+
     monkeypatch.setattr(client, "ScenarioClient", selected)
+    monkeypatch.setattr(sdk_adapter, "SDKAdapter", selected_sdk)
     monkeypatch.setenv("SCENARIO_TEST_API_KEY", "selected-key")
     monkeypatch.setenv("SCENARIO_TEST_API_SECRET", "selected-secret")
     if project is None:

@@ -17,6 +17,15 @@ still use the prototype client pending shared-job integration. See
 [SDK_BUNDLE.md](SDK_BUNDLE.md) for exact artifact/notice pinning,
 supported wheel targets, staging and installed-runtime verification.
 
+The development fixture recorder also uses this adapter for the eighteen selected
+model detail reads and one bounded public model-list page. `SDKAdapter.model_page`
+returns a single validated response wrapper without exhausting its cursor; the
+recorder retains that wrapper and reconstructs the detail `model` wrapper from
+the adapter's record. Offline transport tests cover exact credentials/project,
+page parameters, sanitization and failed-refresh behavior. This does not establish
+live recording acceptance or ownership of existing fixture media; see the
+[fixture inventory](../tests/fixtures/README.md).
+
 ## Executable contracts
 
 Run the tests with:

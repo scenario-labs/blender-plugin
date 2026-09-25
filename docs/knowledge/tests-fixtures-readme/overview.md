@@ -8,16 +8,22 @@
     "path": "tests/fixtures/README.md",
     "coverage": "source-reviewed",
     "reviewed_at": "2026-09-24",
-    "limits": "Offline sanitizer, recorder write paths and JSON inventory inspected and tested with synthetic inputs. Existing account values are replaced without refreshing fixtures or changing response semantics. Account/media ownership and redistribution rights remain unconfirmed; SDK recorder migration and complete recording metadata remain under issue9. No live API call or ownership assertion.",
+    "limits": "Offline sanitizer and all selected recorder paths inspected with synthetic transport and local file failure tests. The recorder now uses the shared pinned SDK adapter for eighteen model details and a single list page, with sanitized UTC recording metadata. Current committed API/media fixtures are unchanged. No live recording, ownership assertion or media-redistribution approval; those remain under issue9. Exact packaged Blender 5.0.1 macOS arm64 baseline passed, including the new single-page SDK contract; broader hosted platform checks are separate. Interrupted private staging is ignored by Git and excluded from offline cleanup and fixture hygiene; synthetic valid and truncated staged files remain untouched.",
     "sources": {
+      ".gitignore": "4ed96dcd0ee0b3f50d0250929543ff5622e3bcc79bb48a9ea1533dd89fd0e342",
+      "scenario/core/api/sdk_adapter.py": "c6e89405e668a38a0d68237c9cab183cfcb8ef289fc8396595979dbf44c71b80",
+      "tests/blender/test_sdk_bundle.py": "0b1b83f6b8cb728ab8c341982d24375129dbaf26a0b2ac4112d1613bab73db72",
       "tests/fixtures/patina-copper-512/manifest.json": "9261b63e72bfbe7f6eea5f94c692246904d944529fa1bfb2645f39d098e879f3",
       "tests/smoke/smoke_video.py": "6210522ef3821d33d58b83cb4be2d0d15ade0d6d6e1a42fe50f8d66a2ffbd585",
-      "tests/unit/test_dev_config.py": "f0726f9d8fc867b92f1f718ddeb77a4dd7c875243ba362a93a43f7fc3a006ea2",
-      "tests/unit/test_fixture_hygiene.py": "9201747609de1e0ead08b7e0962d79f4f3dd23962a844d891b8d438f575bcf19",
-      "tools/record_fixtures.py": "18cfe4f7b7f4d4450e75d9a4044b01a6b01b3753818d8314e3ed370474c9976a"
+      "tests/unit/test_dev_config.py": "bd067a0cf353ffa7dead3dea3b2a57c30e755ecac435f068950aa7a1b13b4f18",
+      "tests/unit/test_fixture_hygiene.py": "8e97a06f5805289a73ec456f8ccc536dd233372d5736c817eebb6c6253f97492",
+      "tests/unit/test_fixture_recording.py": "71d3242c85f842db704df775a07ae1d3c4ced5273fc46d2510249d404acfe4cd",
+      "tests/unit/test_scenario_sdk_contract.py": "69c3e06092104358ac2b48529feacc794a756bbe697705aeff02d6984e593362",
+      "tests/unit/test_sdk_adapter.py": "0adceb2f6b7566ee6203ed4779d3373bb39df3971673f5853e40d5fc56497fd0",
+      "tools/record_fixtures.py": "8a8afcee21fe4ab44be34186d22ed7a825167e6461231d29846bfca4d71840f2"
     },
     "scope": "overview",
-    "base_revision": "cdc8775a4a074a4997eca84cec2699e0dbb16e8c"
+    "base_revision": "e013a26d7208f472b0d5d6fee1534763e2632f22"
   }
 }
 ---

@@ -479,6 +479,33 @@ class SDKAdapter:
             options["pagination_token"] = token
         raise AdapterError("Scenario catalog exceeded the page limit")
 
+    def model_page(self, *, privacy="public", page_size=100, pagination_token=None):
+        """Read one bounded model page, preserving the response wrapper and cursor."""
+        if privacy not in {"public", "private"}:
+            raise ValueError("Choose public or private catalog visibility")
+        if type(page_size) is not int or not 1 <= page_size <= 500:
+            raise ValueError("Model page size must be an integer from 1 to 500")
+        options = {"privacy": privacy, "page_size": page_size}
+        if pagination_token is not None:
+            if not isinstance(pagination_token, str) or not pagination_token:
+                raise ValueError("Model cursor must be a nonempty string")
+            options["pagination_token"] = pagination_token
+        if privacy == "private":
+            options["status"] = "trained"
+        page = _json(self._request(self._sdk.models.with_raw_response.list, **options))
+        rows = page.get("models")
+        if not isinstance(rows, list):
+            raise AdapterError("Scenario returned an invalid catalog page")
+        if any(
+            not isinstance(row, dict) or not isinstance(row.get("id"), str) or not row["id"]
+            for row in rows
+        ):
+            raise AdapterError("Scenario returned an invalid catalog record")
+        token = page.get("nextPaginationToken")
+        if token is not None and not isinstance(token, str):
+            raise AdapterError("Scenario returned an invalid catalog cursor")
+        return page
+
     def models(self, *, privacy="public", max_pages=100):
         return self._catalog("models", privacy, max_pages)
 

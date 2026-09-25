@@ -268,7 +268,9 @@ The `links-report` artifact retains the inventory and report for 14 days; setup
 failures without a report still link to the failing run. API or runner outages
 can prevent reporting and must be checked in Actions.
 
-After merge, verify a successful dispatch on `main`. A deliberately broken-link
-PR must fail, and two authorized failing manual dispatches must update one
-tracking issue before the hosted acceptance is complete. Local scans and mocked
-reporting tests do not establish that hosted delivery.
+When changing scan/report delivery, verify a clean dispatch on `main`, a
+deliberately broken-link PR rejection and two authorized failing manual dispatches
+updating one tracking issue. Inspect the report and reporter job, not just the
+workflow conclusion: a scheduled scan can finish green after reporting bad links.
+Hosted acceptance evidence is recorded in [#47](https://github.com/scenario-labs/blender-plugin/issues/47).
+Local scans and mocked reporting tests do not establish hosted delivery.

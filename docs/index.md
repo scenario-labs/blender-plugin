@@ -45,6 +45,7 @@ For questions, bugs or account help, see [Support](../SUPPORT.md).
 - [Repository baseline and pending administration](MAINTAINERS.md)
 - [Knowledge checks and review procedure](maintenance/knowledge.md)
 - [API-key release plan](maintenance/release-plan.md)
+- [Licence alternatives awaiting a decision](maintenance/licence-options.md)
 - [Issue disposition and limitations audit](maintenance/backlog.md)
 - [Evidence discovery configuration](knowledge.json)
 - [Topic evidence concepts](knowledge/)

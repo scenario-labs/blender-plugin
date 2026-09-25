@@ -25,6 +25,15 @@ statement remain tracked in [#9](https://github.com/scenario-labs/blender-plugin
 Do not infer an assignment or change an existing licence from this inventory.
 No `PROVENANCE.json` has been generated for a new recording run.
 
+## Generated audio fixtures
+
+Audio waveform tests generate their own PCM sample bytes at runtime in
+`tests/unit/test_audio_waveform.py` and `tests/blender/test_audio_preview.py`.
+Those synthetic signals contain no provider output, recording or third-party
+media; they are first-party GPL test code and leave no committed audio files.
+They cover 8/16/24/32-bit mono/stereo and malformed, missing, oversized and
+unsupported input. Human listening acceptance remains separate under #68.
+
 ## Identifiers and URLs
 
 The recorder replaces string-valued account fields `userId`, `authorId`,

@@ -131,6 +131,20 @@ Select the meshes to texture, describe the material, choose the maps and size, G
 ### Audio
 Speech, music and sound effects: ElevenLabs Music v2, Google Lyria 3, ACE-Step 1.5, Minimax Music 3.0, ElevenLabs 3 (speech), Gemini 3.1 Flash TTS, ElevenLabs Sound Effects 2, Sonilo (text or video to SFX and music), and every other text-to-audio, audio-to-audio or video-to-audio model through the picker. Results go to `audio/<date>/` in the output folder; in Generations, **Play** opens them with the system player and **Add to sequencer** drops a sound strip at the current frame on a free channel.
 
+For a downloaded result, **Preview waveform** shows a local snapshot without
+playing or submitting anything. Select another result to replace the preview;
+**Cancel** stops a loading preview without changing the file or the Play/Add
+actions. The preview scales with the sidebar and shows separate channels for
+stereo audio. Select Preview again to capture a file that changed on disk.
+Loading times out after 30 seconds. Try another file after a timeout. If the error
+says readers remain occupied, retry when the storage responds or restart Blender;
+Cancel cannot interrupt a stuck operating-system file read.
+
+Preview supports uncompressed integer PCM WAV: 8, 16, 24 or 32-bit mono/stereo,
+up to 32 MiB, ten million frames, ten minutes and 192 kHz. Missing, corrupt,
+compressed or unsupported audio shows an error; Play and Add remain available
+for formats supported by their respective players.
+
 ![Audio lane with ElevenLabs Music v2, a prompt with the Spark, Rewrite and Translate buttons, duration and format settings](images/panel-audio.png)
 
 *Audio lane: ElevenLabs Music v2, 30 s, quoted before generating.*

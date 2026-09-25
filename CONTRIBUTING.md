@@ -626,4 +626,5 @@ relative to the Markdown source, and relative links must resolve in this reposit
 Review the rendered page at wide and narrow widths after presentation changes.
 Generated HTML and `site/` are ignored; do not commit them or copy old guides into
 snapshot directories. Hosting, release attachment and the native update controls
-remain separate work under #37. Screenshot/content acceptance remains #13/#14.
+remain separate work under #37. The current guide refresh in #13 is merged; screenshot optimization and orphan
+cleanup remain under #14.

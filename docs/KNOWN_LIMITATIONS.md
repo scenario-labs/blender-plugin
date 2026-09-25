@@ -7,7 +7,7 @@ boundaries. No paid or live acceptance is implied by this documentation.
 
 ## Runtime and authentication
 
-- The UI and local MCP still use the prototype client and manager. Shared SDK,
+- UI and local MCP paid generation still use the prototype client and manager. Shared SDK,
   persistence, transfer and origin-guard components need runtime integration
   ([#64](https://github.com/scenario-labs/blender-plugin/issues/64),
   [#65](https://github.com/scenario-labs/blender-plugin/issues/65)).
@@ -30,6 +30,9 @@ boundaries. No paid or live acceptance is implied by this documentation.
   editing needs separate acceptance under #99.
 - Prompt helpers can make paid calls, including an LLM fallback when Prompt
   Spark yields no usable text. Historical price figures are not current quotes.
+- Video-to-motion and speech-to-text workflows remain an explicit capability
+  request in [#190](https://github.com/scenario-labs/blender-plugin/issues/190);
+  model tags alone do not establish supported input and result handling.
 
 ## Interface and capture
 
@@ -38,7 +41,11 @@ boundaries. No paid or live acceptance is implied by this documentation.
   acceptance in [#66](https://github.com/scenario-labs/blender-plugin/issues/66).
 - Viewport screenshots and OpenGL capture require a GUI. Automated GUI probes
   can take keyboard focus; follow the isolated-profile validation procedure.
-- Audio preview lacks a waveform display. Capture timing follows scene settings;
+- Audio preview lacks a waveform display
+  ([#189](https://github.com/scenario-labs/blender-plugin/issues/189)). Prompt
+  helpers lack an explicit generic/model-contextual Spark preference
+  ([#188](https://github.com/scenario-labs/blender-plugin/issues/188)).
+  Capture timing follows scene settings;
   native dialogs use Blender's theme rather than the custom composer drawing.
   These are existing interface boundaries, not claims that new controls exist.
 

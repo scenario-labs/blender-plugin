@@ -7,10 +7,10 @@
   "evidence": {
     "path": "docs/KNOWN_LIMITATIONS.md",
     "coverage": "source-reviewed",
-    "reviewed_at": "2026-09-23",
-    "limits": "Agent source inspection of the listed files; no live service calls, native runtime rerun or human verification in this review.",
+    "reviewed_at": "2026-09-24",
+    "limits": "Agent source inspection of the listed files; no live service calls, native runtime rerun or human verification in this review. Legacy follow-up disposition reconciled with current credential, prompt, model-loading, audio and lane source. Public issue scopes/types and project Priority/Effort were read back after triage; this records tracking, not implementation or live/native acceptance.",
     "sources": {
-      "scenario/core/config.py": "74a45b99fde47d741710dbf2a9d8051f2b31903f10ecae679d061340c62fb1be"
+      "scenario/core/config.py": "3edf71cd58d7d32c300936d4f5de88433514ec9db1d67b0a613bd35b70788731"
     },
     "scope": "credentials",
     "base_revision": "cdc8775a4a074a4997eca84cec2699e0dbb16e8c"

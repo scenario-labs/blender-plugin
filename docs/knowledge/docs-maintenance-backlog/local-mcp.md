@@ -8,9 +8,9 @@
     "path": "docs/maintenance/backlog.md",
     "coverage": "source-reviewed",
     "reviewed_at": "2026-09-24",
-    "limits": "Agent source inspection of the listed files; no live service calls, native runtime rerun or human verification in this review.",
+    "limits": "Agent source inspection of the listed files; no live service calls, native runtime rerun or human verification in this review. Legacy follow-up disposition reconciled with current credential, prompt, model-loading, audio and lane source. Public issue scopes/types and project Priority/Effort were read back after triage; this records tracking, not implementation or live/native acceptance.",
     "sources": {
-      "scenario/mcp/tools_scenario.py": "408b0f6dc72b57f90dec7be95383d588dcdaf35c5abbd3f95ab24273c5ca542e"
+      "scenario/mcp/tools_scenario.py": "66e90694c9bc89878cec3ed2c133ac017492c9ebec866e1c850c07baf4b29543"
     },
     "scope": "local-mcp",
     "base_revision": "cdc8775a4a074a4997eca84cec2699e0dbb16e8c"

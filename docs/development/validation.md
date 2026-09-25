@@ -50,7 +50,9 @@ exact-title, paginated issue lookup; a second failure comments on the same open 
 issue. Reporting does not turn a failed job green.
 See [matrix maintenance and first-run acceptance](../../CONTRIBUTING.md#bumping-the-blender-matrix).
 Local shell/API-fake tests establish failure propagation and deduplication logic;
-actual hosted execution and issue creation/commenting require post-merge proof.
+hosted execution and real issue delivery require separate evidence. The recorded
+default-branch macOS/Windows run is linked from the contributor guide and #42;
+it does not establish desktop interaction or integrated release acceptance.
 
 [Unit-test CI](../../.github/workflows/unit-tests.yml) runs the complete unit suite
 on pinned Python 3.11 and 3.13 interpreters with the same locked dependencies and

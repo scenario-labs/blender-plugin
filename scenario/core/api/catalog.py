@@ -75,7 +75,6 @@ DEFAULT_MODELS = {
         "model_bytedance-seedream-5-0-pro",
         "model_bfl-flux-2-max-editing",
         "model_bfl-flux-2-pro-editing",
-        "model_reve-remix",
         "model_qwen-image-edit-2511",
         "model_microsoft-mai-image-2-5-pro-edit",
         "model_xai-grok-imagine-image-2-0",

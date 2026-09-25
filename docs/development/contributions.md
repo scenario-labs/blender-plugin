@@ -184,7 +184,13 @@ Lychee 0.24.2 treats redirects as failures. Write the final destination URL,
 for example `https://www.scenario.com/`. The
 [input selector](../../tools/link_inventory.py) includes tracked and nonignored
 proposed Markdown, deduplicates instruction adapters through their in-repository
-Markdown targets, and excludes historical `docs/engineering/` documents. Ignored private
+Markdown targets, and excludes historical `docs/engineering/` documents. The
+root `CHANGELOG.md` is also excluded: release-please owns that generated file and
+can emit `/issues/` links for pull requests that GitHub redirects to `/pull/`.
+Review generated notes through the [release procedure](../RELEASING.md); this
+exception does not verify their destinations. Authored Markdown, including nested
+changelogs, still rejects redirects. Adapters resolve through the same inventory
+safety checks before the generated-file exception applies. Ignored private
 notes and generated reports are not scanned. The existing knowledge checker
 continues to check local links and fragments offline.
 

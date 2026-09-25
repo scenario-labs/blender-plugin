@@ -53,6 +53,37 @@ def test_inventory_rejects_adapter_to_unowned_content(tmp_path, destination):
         link_inventory.markdown_inputs(root)
 
 
+@pytest.mark.parametrize("adapter", [False, True])
+def test_inventory_excludes_only_root_generated_changelog_and_its_adapters(tmp_path, adapter):
+    root = repository(tmp_path)
+    (root / "README.md").write_text("authored docs")
+    generated = root / "CHANGELOG.md"
+    generated.write_text("[generated](https://github.com/example/repo/issues/42)")
+    (root / "docs").mkdir()
+    (root / "docs/CHANGELOG.md").write_text("authored change history")
+    if adapter:
+        symlink(root / "release-notes.md", "CHANGELOG.md")
+    subprocess.run(["git", "add", "."], cwd=root, check=True)
+    assert link_inventory.markdown_inputs(root) == ["./README.md", "./docs/CHANGELOG.md"]
+    assert generated.read_text() == "[generated](https://github.com/example/repo/issues/42)"
+
+
+def test_generated_changelog_name_does_not_bypass_adapter_safety(tmp_path):
+    root = repository(tmp_path / "repo")
+    outside = tmp_path / "outside.md"
+    outside.write_text("must not scan")
+    symlink(root / "CHANGELOG.md", outside)
+    with pytest.raises(ValueError, match="outside the proposed file inventory"):
+        link_inventory.markdown_inputs(root)
+
+
+def test_generated_changelog_name_does_not_exempt_an_authored_adapter_target(tmp_path):
+    root = repository(tmp_path)
+    (root / "README.md").write_text("authored docs")
+    symlink(root / "CHANGELOG.md", "README.md")
+    assert link_inventory.markdown_inputs(root) == ["./README.md"]
+
+
 def test_inventory_rejects_missing_tracked_input(tmp_path):
     root = repository(tmp_path)
     source = root / "README.md"

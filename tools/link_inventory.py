@@ -1,6 +1,6 @@
 # SPDX-FileCopyrightText: 2026 Scenario Inc.
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""Write a lychee input list from tracked and nonignored proposed Markdown."""
+"""Write a lychee input list from tracked and nonignored authored Markdown."""
 
 import argparse
 import os
@@ -30,7 +30,9 @@ def markdown_inputs(root):
         if target.suffix.lower() != ".md":
             raise ValueError(f"Markdown adapter target is not Markdown: {relative}")
         relative = target.relative_to(root)
-        if relative.parts[:2] == ("docs", "engineering"):
+        # Release automation owns root CHANGELOG.md, including GitHub issue/PR
+        # links that redirect by design. Do not weaken authored-link checks.
+        if relative == Path("CHANGELOG.md") or relative.parts[:2] == ("docs", "engineering"):
             continue
         name = relative.as_posix()
         if "\n" in name or "\r" in name:

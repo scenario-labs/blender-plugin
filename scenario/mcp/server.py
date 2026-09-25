@@ -56,7 +56,8 @@ class _Pending:
     def __init__(self, handler, arguments, timeout):
         self.handler, self.arguments = handler, arguments
         self.event = threading.Event()
-        self.result, self.error = None, None
+        self.result = None
+        self.error: Exception | None = None
         self.deadline = time.monotonic() + timeout
         self._lock = threading.Lock()
         self._state = "queued"
@@ -82,7 +83,7 @@ class _Pending:
             self._state = "running"
             return True
 
-    def finish(self, result=None, error=None):
+    def finish(self, result=None, error: Exception | None = None):
         with self._lock:
             self.result, self.error = result, error
             self._state = "done"
@@ -98,8 +99,9 @@ class _Pending:
                     "the tool started but has not finished; its outcome is unknown. "
                     "Inspect the operation before retrying; do not resubmit automatically"
                 )
-            if self.error is not None:
-                raise self.error
+            error = self.error
+            if error is not None:
+                raise error
             return self.result
 
 

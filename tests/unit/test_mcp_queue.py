@@ -8,14 +8,14 @@ from concurrent.futures import ThreadPoolExecutor
 
 import pytest
 
+import scenario.mcp.server as mcp_server
 from scenario.mcp.protocol import Registry, ToolSpec, ToolTimeout
-from scenario.mcp.server import McpServer
 
 
 def server(handler, timeout=0.03):
     registry = Registry()
     registry.add(ToolSpec("mutate", "Fixture mutation", {}, handler))
-    return McpServer("127.0.0.1", 0, "fixture-token", registry, {}, timeout=timeout)
+    return mcp_server.McpServer("127.0.0.1", 0, "fixture-token", registry, {}, timeout=timeout)
 
 
 def message():
@@ -44,10 +44,8 @@ def test_timed_out_mutation_does_not_execute_when_blender_resumes():
 def test_expired_request_is_rejected_by_pump_even_before_waiter_wakes(monkeypatch):
     # Delay the caller after Event.wait reaches its deadline, exposing the race
     # where Blender resumes before the HTTP thread can mark the request expired.
-    import scenario.mcp.server as module
-
     expired, release = threading.Event(), threading.Event()
-    original = module._Pending
+    original = mcp_server._Pending
 
     class DelayedWaiter(original):
         def outcome(self):
@@ -55,7 +53,7 @@ def test_expired_request_is_rejected_by_pump_even_before_waiter_wakes(monkeypatc
             assert release.wait(5)
             return super().outcome()
 
-    monkeypatch.setattr(module, "_Pending", DelayedWaiter)
+    monkeypatch.setattr(mcp_server, "_Pending", DelayedWaiter)
     mutations = []
     target = server(lambda args: mutations.append(args))
     with ThreadPoolExecutor(max_workers=1) as worker:
@@ -112,10 +110,8 @@ def test_started_timeout_reports_uncertainty_without_replaying_or_interrupting()
 
 
 def test_completed_result_wins_timeout_observation_race(monkeypatch):
-    import scenario.mcp.server as module
-
     observing, release, finish = (threading.Event() for _ in range(3))
-    original = module._Pending
+    original = mcp_server._Pending
 
     class DelayedObserver(original):
         def outcome(self):
@@ -123,7 +119,7 @@ def test_completed_result_wins_timeout_observation_race(monkeypatch):
             assert release.wait(5)
             return super().outcome()
 
-    monkeypatch.setattr(module, "_Pending", DelayedObserver)
+    monkeypatch.setattr(mcp_server, "_Pending", DelayedObserver)
 
     def mutate(args):
         assert finish.wait(5)

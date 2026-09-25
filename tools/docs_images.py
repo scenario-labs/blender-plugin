@@ -188,8 +188,13 @@ def check(root=ROOT):
         for alt, target in MD_IMAGE.findall(text):
             url = urlsplit(target)
             if not url.scheme and not url.netloc:
-                image = document.parent / unquote(url.path)
-                if not image.is_file():
+                path = unquote(url.path)
+                if path.startswith("/"):
+                    messages.append(
+                        f"{document.relative_to(root)}: root-relative image {target}; "
+                        "use a path relative to the document"
+                    )
+                elif not (document.parent / path).is_file():
                     messages.append(f"{document.relative_to(root)}: missing image {target}")
             if document.suffix == ".md" and (
                 len(alt.split()) < MIN_ALT_WORDS

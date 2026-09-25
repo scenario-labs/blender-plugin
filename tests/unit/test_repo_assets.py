@@ -131,6 +131,18 @@ def test_policy_accepts_palette_and_named_exceptions_without_optimizer(repositor
     assert main(["assets", "check"], root=repository) == 0
 
 
+@pytest.mark.parametrize("document", ["README.md", "docs/USER_GUIDE.md"])
+@pytest.mark.parametrize("prefix", ["/", "%2F"])
+def test_root_relative_image_reports_document_path_policy(repository, document, prefix, capsys):
+    target = f"{prefix}docs/images/capture.png"
+    (repository / document).write_text(f"![{ALT}]({target})\n", encoding="utf-8")
+    assert main(["assets", "check"], root=repository) == 1
+    output = capsys.readouterr().out
+    assert f"{document}: root-relative image {target}" in output
+    assert "use a path relative to the document" in output
+    assert "missing image" not in output
+
+
 @pytest.mark.parametrize("colour_type,expected", [(3, 0), (2, 1)])
 def test_generated_social_card_is_preserved_but_still_checked(
     repository, monkeypatch, colour_type, expected

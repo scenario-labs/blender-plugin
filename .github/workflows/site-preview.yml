@@ -63,7 +63,7 @@ jobs:
       - name: Build the complete site with native Blender
         run: |
           make site SITE_ARGS="--inventory $RUNNER_TEMP/site-fixtures/selected/inventory.json --output $RUNNER_TEMP/site-demo/site --artifacts $RUNNER_TEMP/site-logs"
-      - name: Render PDF previews
+      - name: Capture the site and render a two-page PDF demo
         run: |
           for page in guide repository; do
             path=index.html
@@ -72,14 +72,41 @@ jobs:
               --no-first-run --no-default-browser-check \
               --user-data-dir="$RUNNER_TEMP/chrome-$page" \
               --host-resolver-rules="MAP * ~NOTFOUND" \
-              --no-pdf-header-footer \
-              --print-to-pdf="$RUNNER_TEMP/site-demo/$page.pdf" \
+              --window-size=1440,1000 --force-device-scale-factor=1 \
+              --screenshot="$RUNNER_TEMP/site-demo/$page.png" \
               "file://$RUNNER_TEMP/site-demo/site/$path"
-            test -s "$RUNNER_TEMP/site-demo/$page.pdf"
+            test -s "$RUNNER_TEMP/site-demo/$page.png"
           done
+          uv run --locked --no-env-file python - <<'PY'
+          import os
+          from pathlib import Path
+          output = Path(os.environ["RUNNER_TEMP"]) / "site-demo"
+          pages = []
+          for name, title in [("guide", "The generated handbook"),
+                              ("repository", "The native extension repository")]:
+              pages.append(f'<section><h1>{title}</h1><p>Local review demo only. '
+                           'Repository versions 1.0.0 and 2.0.0 are synthetic fixtures; '
+                           'do not install or publish them.</p>'
+                           f'<img src="{name}.png" alt="{title}"></section>')
+          output.joinpath("demo.html").write_text(
+              '<!doctype html><html lang="en"><meta charset="utf-8">'
+              '<title>Scenario site demo</title><style>'
+              '@page{size:1440px 1140px;margin:0}body{margin:0;font-family:Arial,sans-serif}'
+              'section{box-sizing:border-box;height:1140px;padding:28px;break-after:page}'
+              'section:last-child{break-after:auto}h1{font-size:30px;margin:0 0 12px}'
+              'p{font-size:18px;margin:0 0 18px}img{width:1384px;height:auto}'
+              '</style><body>' + ''.join(pages) + '</body></html>', encoding="utf-8")
+          PY
+          google-chrome --headless --no-sandbox --disable-gpu \
+            --no-first-run --no-default-browser-check \
+            --user-data-dir="$RUNNER_TEMP/chrome-pdf" \
+            --host-resolver-rules="MAP * ~NOTFOUND" --no-pdf-header-footer \
+            --print-to-pdf="$RUNNER_TEMP/site-demo/site-demo.pdf" \
+            "file://$RUNNER_TEMP/site-demo/demo.html"
+          test -s "$RUNNER_TEMP/site-demo/site-demo.pdf"
           cat > "$RUNNER_TEMP/site-demo/README.txt" <<'EOF'
           LOCAL REVIEW DEMO ONLY
-          Open guide.pdf and repository.pdf, or site/index.html in a browser.
+          Open site-demo.pdf for a two-page visual demo, or site/index.html in a browser.
           Repository versions 1.0.0 and 2.0.0 are synthetic test fixtures.
           Do not install or publish these archives. No release is deployed by this job.
           The guide version comes from the checkout manifest.

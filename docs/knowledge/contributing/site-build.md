@@ -21,7 +21,7 @@
       "tests/unit/test_docs_html.py": "4f13fa6738f636c0034a5eb07c773961efd4396dcf806862695612f20f5762da",
       "tests/unit/test_repository.py": "b6dee9da59ed8bfdec2c9a202f927c6fada49312f3ccb18cfff74f4c80fc9a7b",
       "tests/unit/test_release_inventory.py": "5a5bbffe19bbe34bc4eb1ad23faaa889888eb04b47a76f380e98f884f27b6ce5",
-      ".github/workflows/site-preview.yml": "36987933e53959c886bb34e0658f71ccd60852ae1167bdc4c5c29b665440c6ef",
+      ".github/workflows/site-preview.yml": "a7ad8e2e5f1fb43fe83cc05d8711d3f0d40391da92b9c1152bac8da3d5978c54",
       "tests/unit/test_workflows.py": "e07201cf3a6adaaf728f52711ddda933676ea30f43a9357b227d6d24e9d3b451",
       "tests/unit/test_house_rules.py": "7eb4bf47fd5b93c89e4a4e2e43dc27eff3f273554a46b10756448deff14e3288"
     }

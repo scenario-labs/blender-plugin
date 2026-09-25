@@ -25,7 +25,7 @@ def github(*arguments, payload=None):
     return json.loads(result.stdout)
 
 
-def report_failure(repository, title, body, labels):
+def report_failure(repository, title, body, labels, *, scope_label="area:ci"):
     """Match exact open issue titles across all pages, without search-index lag.
 
     The calling workflow serializes runs. Ambiguous or malformed listing results
@@ -35,6 +35,8 @@ def report_failure(repository, title, body, labels):
         part in {".", ".."} for part in repository.split("/")
     ):
         raise ValueError("Expected an owner/repository name")
+    if scope_label not in labels or not re.fullmatch(r"[A-Za-z0-9:_-]+", scope_label):
+        raise ValueError("Expected a scope label included in the report labels")
     endpoint = f"repos/{repository}/issues"
     pages = github(
         endpoint,
@@ -45,7 +47,7 @@ def report_failure(repository, title, body, labels):
         "-f",
         "state=open",
         "-f",
-        "labels=area:ci",
+        f"labels={scope_label}",
         "-f",
         "per_page=100",
     )

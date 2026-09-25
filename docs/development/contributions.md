@@ -191,7 +191,7 @@ the README badge, and both CodeQL and Scorecard in code-scanning analyses.
 Inspect alerts with:
 
 ```sh
-gh api 'repos/scenario-labs/blender-plugin/code-scanning/analyses' --jq '[.[].tool.name] | unique'
+gh api 'repos/scenario-labs/blender-plugin/code-scanning/analyses' --paginate --slurp --jq '[.[][] | .tool.name] | unique'
 gh api 'repos/scenario-labs/blender-plugin/code-scanning/alerts?tool_name=Scorecard&state=open'
 ```
 

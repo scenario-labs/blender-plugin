@@ -1,11 +1,11 @@
 ---
 {
   "type": "Evidence",
-  "id": "docs-development-contributions.scorecard",
-  "title": "docs/development/contributions.md: scorecard",
-  "description": "Repository evidence for the named source family and canonical document.",
+  "id": "docs-maintainers.scorecard",
+  "title": "Maintainer Scorecard publication evidence",
+  "description": "Dated hosted publication and ongoing triage boundaries.",
   "evidence": {
-    "path": "docs/development/contributions.md",
+    "path": "docs/MAINTAINERS.md",
     "coverage": "policy",
     "reviewed_at": "2026-09-25",
     "limits": "Scorecard workflow and triage guidance inspected. Hosted run 36132873905 on the recorded main revision succeeded; the public API and badge both reported 6.4, and the matching Scorecard analysis had no upload errors or warnings. Existing Scorecard alerts did not name its own workflow. Main integrity does not require Scorecard. The analysis-list command paginates so frequent CodeQL uploads cannot hide another tool beyond the first page. This dated evidence proves publication only, not resolution of findings, release acceptance or future service availability.",
@@ -18,11 +18,6 @@
 }
 ---
 
-# docs/development/contributions.md: scorecard
+# Scorecard publication
 
-Evidence for [the canonical document](../../development/contributions.md).
-
-Source families separate independent maintenance work. The review date, coverage,
-source fingerprints and document-wide limitations were preserved during the split.
-Grouping sources does not renew the review or attribute every inherited claim to
-this subset. Review and narrow this topic's limits when its evidence changes.
+Evidence for [the maintainer report](../../MAINTAINERS.md#supply-chain-report).

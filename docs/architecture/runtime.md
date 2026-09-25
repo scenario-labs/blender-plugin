@@ -92,6 +92,20 @@ scope and origin, and treats transport uncertainty as recoverable uncertainty.
 A timeout does not authorize another paid request. Follow each component guide
 for its actual state machine and tested boundaries.
 
+## Local MCP queue lifetime
+
+The main-thread executor in [server.py](../../scenario/mcp/server.py) admits each
+queued request once before its monotonic deadline. Expiry and shutdown cancel
+requests that have not started; a later GUI/headless pump or server restart cannot
+execute them. Queue admission, start and shutdown are synchronized, while handlers
+run without holding the admission lock. Shutdown therefore releases queued callers
+without waiting for an unrelated tool to finish.
+
+A timeout after the handler starts reports an unknown outcome. The executor neither
+interrupts nor replays the handler, and a completed result wins a concurrent timeout
+observation. This local boundary does not replace durable request identity or remote
+job recovery, and does not make the prototype paid runtime accepted.
+
 ## Where to make a change
 
 - Pure request, schema, persistence and scene-planning logic belongs under

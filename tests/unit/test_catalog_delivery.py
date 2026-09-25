@@ -4,6 +4,8 @@
 
 import threading
 from concurrent.futures import Future
+from decimal import Decimal
+from types import SimpleNamespace
 
 import httpx
 import pytest
@@ -11,6 +13,38 @@ import pytest
 from scenario.core.api.errors import ScenarioError
 from scenario.core.jobs.manager import JobManager
 from tests.unit.test_sdk_catalog import catalog
+
+
+def test_cost_preview_captures_nested_inputs_and_returns_exact_quote_without_legacy_client():
+    entered, release = threading.Event(), threading.Event()
+    quote = SimpleNamespace(cost=Decimal("1.1234567890123456789"))
+    bodies = []
+
+    class Catalog:
+        def estimate(self, model_id, body):
+            entered.set()
+            assert release.wait(5)
+            bodies.append((model_id, body))
+            return quote
+
+    def no_legacy_client():
+        raise AssertionError("Legacy client must not be constructed")
+
+    context = Catalog()
+    manager = JobManager(no_legacy_client, None, None)
+    body = {"images": ["asset-original"]}
+    manager.preview_cost(context, "quote", "fixture", body)
+    try:
+        assert entered.wait(5)
+        body["images"].append("asset-late")
+    finally:
+        release.set()
+        manager.join(5)
+    assert bodies == [("fixture", {"images": ["asset-original"]})]
+    [(name, result)] = manager.drain()
+    assert name == "estimate"
+    assert result.catalog is context and result.quote is quote
+    assert result.cu_cost == quote.cost and result.error is None
 
 
 @pytest.mark.parametrize("privacy", ["public", "private"])

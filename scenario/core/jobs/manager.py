@@ -3,6 +3,7 @@
 """Threaded job manager. Workers never touch bpy; results flow through a queue
 that the Blender pump drains on the main thread."""
 
+import copy
 import datetime as dt
 import logging
 import queue
@@ -25,6 +26,8 @@ class EstimateResult:
     key: str
     cu_cost: float = None
     error: str = None
+    catalog: object = None
+    quote: object = None
 
 
 class JobManager:
@@ -71,6 +74,10 @@ class JobManager:
 
     def estimate(self, key, model_id, body):
         self._spawn(self._run_estimate, self.client_factory(), key, model_id, dict(body))
+
+    def preview_cost(self, catalog, key, model_id, body):
+        """Active UI pricing uses its captured SDK context, never client_factory."""
+        self._spawn(self._run_cost_preview, catalog, key, model_id, copy.deepcopy(body))
 
     def fetch_catalog(self, catalog, privacy="public", model_ids=()):
         self._spawn(self._run_catalog, catalog, privacy, tuple(model_ids))
@@ -289,6 +296,17 @@ class JobManager:
             self.events.put(("estimate", EstimateResult(key=key, cu_cost=est.cu_cost)))
         except ScenarioError as err:
             self.events.put(("estimate", EstimateResult(key=key, error=err.reason)))
+
+    def _run_cost_preview(self, catalog, key, model_id, body):
+        result = EstimateResult(key=key, catalog=catalog)
+        try:
+            result.quote = catalog.estimate(model_id, body)
+            result.cu_cost = result.quote.cost
+        except ScenarioError as err:
+            result.error = err.reason
+        except Exception:
+            result.error = "Could not estimate this model"
+        self.events.put(("estimate", result))
 
     def _run_catalog(self, catalog, privacy, model_ids):
         try:

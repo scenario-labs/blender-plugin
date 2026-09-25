@@ -7,11 +7,11 @@ import time
 import bpy
 
 from ..blender import generation, runtime
-from ..core.api import generate as generate_api
 from ..core.api.catalog import GENERATION_LANES as LANES
 from ..core.api.catalog import LANE_KIND as KIND
+from ..core.api.errors import ScenarioError
 from ..core.schema.params import build_body, validate
-from .protocol import ToolSpec
+from .protocol import DeferredTool, ToolSpec
 
 
 def _catalog_ready():
@@ -103,8 +103,20 @@ def _body_for(model_id, parameters):
 
 def estimate_cost(args):
     record, body = _body_for(args["model_id"], args.get("parameters"))
-    quote = generate_api.estimate(runtime.make_client(), record.id, body)
-    return {"model_id": record.id, "cu_cost": quote.cu_cost, "details": quote.details}
+    catalog = runtime.ensure_catalog()
+
+    def finish(quote):
+        runtime.sync_catalog_context()
+        if catalog is not runtime.state.catalog:
+            raise ScenarioError(0, "The selected catalog connection changed")
+        return {
+            "model_id": record.id,
+            "cu_cost": float(quote.cost),
+            "cu_cost_exact": str(quote.cost),
+            "details": quote.details.get("costDetails") or {},
+        }
+
+    return DeferredTool(lambda: catalog.estimate(record.id, body), finish)
 
 
 def generate(args):
@@ -277,7 +289,7 @@ SPECS = (
             "Args:\n"
             "  - model_id: required string, the model identifier.\n"
             "  - parameters: optional object, model parameters including Scenario asset ids for file inputs.\n"
-            "Returns: model_id, cu_cost and details from the server estimate.\n"
+            "Returns: model_id, cu_cost, cu_cost_exact (decimal string) and details from the server estimate.\n"
             'Example: {"model_id": "model_example", "parameters": {"prompt": "a wooden crate"}}.\n'
             "Call before generate and show the cost to the user; an estimate does not authorize spending.\n"
             "Platform equivalent: model_run with dry_run."

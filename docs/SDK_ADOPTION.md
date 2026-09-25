@@ -11,8 +11,8 @@ client, `httpx==0.28.1`; [uv.lock](../uv.lock) pins their transitive dependencie
 This is a prerequisite for [Studio adoption](https://github.com/scenario-labs/blender-plugin/issues/64).
 The SDK is pinned for development and packaged as a runtime dependency. The
 [shared read/estimate adapter](../scenario/core/api/sdk_adapter.py) now uses it;
-the active UI and local MCP now share SDK model listing/detail reads through
-[SDKCatalog](../scenario/core/api/sdk_catalog.py). Their other service operations
+the active UI and local MCP now share SDK model listing/detail reads and model
+cost previews through [SDKCatalog](../scenario/core/api/sdk_catalog.py). Their other service operations
 still use the prototype client pending shared-job integration. See
 [SDK_BUNDLE.md](SDK_BUNDLE.md) for exact artifact/notice pinning,
 supported wheel targets, staging and installed-runtime verification.
@@ -88,6 +88,18 @@ the remaining shared-job and paid-flow boundaries. The original raw `Catalog`
 class remains used by historical smoke scripts; the active Blender path no
 longer constructs it. This partial adoption does not approve those remaining
 prototype API operations as SDK exceptions.
+
+Active cost previews use `generate.with_raw_response.run_model(dry_run=True)`
+after the existing strict model-form preparation. They share the selected
+connection's cached schema, credentials, HTTP pool and online-access gate. UI
+workers snapshot nested inputs and deliver exact `Estimate` objects only to the
+matching current form and connection. MCP performs the network read off Blender's
+main thread and rechecks the connection on main-thread delivery; `cu_cost_exact`
+preserves the decimal string. Missing/invalid cost data is an error, while an
+explicit zero remains valid. These are in-memory previews, not durable job quotes
+or authorization for the prototype submission path. Reference uploads, partial
+preview labels, authoritative account/project identity and paid integration retain
+their existing boundaries.
 
 ## Upload and job operation boundaries
 

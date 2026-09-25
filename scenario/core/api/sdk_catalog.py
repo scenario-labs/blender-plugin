@@ -144,6 +144,16 @@ class SDKCatalog:
             row = copy.deepcopy(self._records.get(model_id))
         return None if row is None else ModelRecord.from_api(row)
 
+    def estimate(self, model_id, parameters):
+        """Price validated inputs on this connection; never submit or upload files."""
+        parameters = copy.deepcopy(parameters)
+        model = self.get(model_id).raw
+        with self._read() as adapter:
+            quote = adapter.estimate_model(model, parameters)
+            with self._condition:
+                self._check_active()
+            return quote
+
     def get(self, model_id, refresh=False):
         with self._condition:
             self._check_active()

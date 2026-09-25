@@ -75,19 +75,37 @@ def dispatch(event):
 
 
 def _on_estimate(result):
+    runtime.sync_catalog_context()
+    if result.catalog is None or result.catalog is not runtime.state.catalog:
+        return
+    origin = runtime.state.estimate_origins.pop(result.key, None)
+    if origin is None:
+        return
     log.info("estimate result %s cu=%s error=%s", result.key, result.cu_cost, result.error)
-    for scene in bpy.data.scenes:
-        for lane in props.GENERATION_LANES:
-            lane_state = scene.scenario.lane_state(lane)
-            if lane_state.estimate_key != result.key:
-                continue
-            if result.error:
-                lane_state.estimate_state = "ERROR"
-                lane_state.estimate_error = result.error
-            else:
-                lane_state.estimate_state = "READY"
-                lane_state.estimate_cu = float(result.cu_cost or 0.0)
-                lane_state.estimate_error = ""
+    scene, lane = origin
+    try:
+        lane_state = scene.scenario.lane_state(lane)
+        if lane_state.estimate_key != result.key:
+            return
+        if result.error:
+            runtime.state.estimates.pop(result.key, None)
+            lane_state.estimate_state = "ERROR"
+            lane_state.estimate_error = result.error
+        else:
+            lane_state.estimate_state = "READY"
+            lane_state.estimate_cu = float(result.cu_cost)
+            lane_state.estimate_error = ""
+            runtime.state.estimates[result.key] = result.quote
+    except ReferenceError:
+        return  # The originating scene was deleted or replaced by a file load.
+    current_keys = {
+        scene.scenario.lane_state(lane).estimate_key
+        for scene in bpy.data.scenes
+        for lane in props.GENERATION_LANES
+    }
+    for key in list(runtime.state.estimates):
+        if key not in current_keys:
+            del runtime.state.estimates[key]
 
 
 def _on_job(name, rec):

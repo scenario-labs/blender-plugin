@@ -10,3 +10,7 @@
 ^https://github\.com/scenario-labs/blender-plugin/(issues/new/choose|security/advisories/new)$
 # Issue references in these internal repositories require organization access.
 ^https://github\.com/scenario-labs/(roadmap|scenario-sdk-python)/issues/[0-9]+(#.*)?$
+# This exact organization project is private and returns 404 without access.
+^https://github\.com/orgs/scenario-labs/projects/31$
+# The internal roadmap repository root also requires organization access.
+^https://github\.com/scenario-labs/roadmap$

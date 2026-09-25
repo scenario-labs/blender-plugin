@@ -82,6 +82,9 @@ class JobManager:
     def fetch_catalog(self, catalog, privacy="public", model_ids=()):
         self._spawn(self._run_catalog, catalog, privacy, tuple(model_ids))
 
+    def fetch_history(self, catalog, key, token=None, *, append=False):
+        self._spawn(self._run_history, catalog, key, token, append)
+
     def fetch_models(self, catalog, model_ids, *, mark_dirty=True):
         """Fetch detailed records for a few models without re-fetching the list."""
         self._spawn(self._run_models, catalog, tuple(model_ids), mark_dirty)
@@ -307,6 +310,17 @@ class JobManager:
         except Exception:
             result.error = "Could not estimate this model"
         self.events.put(("estimate", result))
+
+    def _run_history(self, catalog, key, token, append):
+        payload = {"catalog": catalog, "key": key, "cursor": token, "append": append}
+        try:
+            page = catalog.history_page(token)
+            payload.update(jobs=page["jobs"], token=page.get("nextPaginationToken"))
+        except ScenarioError as err:
+            payload["error"] = err.reason
+        except Exception:
+            payload["error"] = "Could not read Scenario history"
+        self.catalog_events.put(("history", payload))
 
     def _run_catalog(self, catalog, privacy, model_ids):
         try:

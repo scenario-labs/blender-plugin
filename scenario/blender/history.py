@@ -1,67 +1,90 @@
 # SPDX-FileCopyrightText: 2026 Scenario Inc.
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""Generations panel data: cloud job pages merged with local records."""
-from . import runtime
+"""Credential-bound cloud history delivery for UI and local MCP."""
+
+import uuid
+
 from ..core import history as core_history
-from ..core.api import assets as assets_api
-from ..core.api import jobs as jobs_api
-from ..core.api.errors import ScenarioError
-
-MAX_PROMPT_LOOKUPS = 30
-_prompt_texts = {}  # asset_id -> prompt text, lives for the session
-
 from ..core.api.catalog import LANE_KIND as KIND_BY_LANE
+from . import runtime
 
 
 def _kinds():
-    """model_id -> kind, most specific lane first so Patina (also txt2img) reads as material."""
+    """model_id -> kind, most specific lane first so Patina reads as material."""
     kinds = {}
-    for lane in ("material", "3d", "edit3d", "audio", "video", "render_video", "image", "render_image"):
+    for lane in (
+        "material",
+        "3d",
+        "edit3d",
+        "audio",
+        "video",
+        "render_video",
+        "image",
+        "render_image",
+    ):
         kind = KIND_BY_LANE.get(lane)
         for record in runtime.state.lane_models.get(lane, []):
             kinds.setdefault(record.id, kind)
     return kinds
 
 
-def _fetch(manager, client, token, append):
-    try:
-        rows, next_token = jobs_api.list_jobs(client, page_size=50, token=token)
-        for asset_id in core_history.prompt_asset_ids(rows)[:MAX_PROMPT_LOOKUPS]:
-            if asset_id in _prompt_texts:
-                continue
-            try:
-                asset = assets_api.get_asset(client, asset_id)
-                _prompt_texts[asset_id] = str((asset.get("metadata") or {}).get("preview") or "")
-            except ScenarioError:
-                _prompt_texts[asset_id] = ""
-        core_history.resolve_prompts(rows, _prompt_texts)
-    except ScenarioError as err:
-        manager.events.put(("error", f"history: {err.reason}"))
-        return
-    manager.events.put(("history", {"jobs": rows, "token": next_token, "append": append}))
-
-
-def refresh():
+def _request(catalog, token, append):
     manager = runtime.ensure_manager()
-    manager._spawn(_fetch, manager, runtime.make_client(), None, False)
+    key = uuid.uuid4().hex
+    runtime.state.history_request = key
+    runtime.state.history_loading = True
+    runtime.state.history_error = ""
+    manager.fetch_history(catalog, key, token, append=append)
     return manager
 
 
+def refresh():
+    return _request(runtime.ensure_catalog(), None, False)
+
+
 def older():
+    catalog = runtime.ensure_catalog()
     token = runtime.state.history_token
-    if not token:
+    if not token or runtime.state.history_loading:
         return False
-    manager = runtime.ensure_manager()
-    manager._spawn(_fetch, manager, runtime.make_client(), token, True)
+    _request(catalog, token, True)
     return True
 
 
 def on_history_event(payload):
-    manager = runtime.ensure_manager()
-    entries = core_history.entries_from_jobs(payload["jobs"], manager.registry.all(), kinds=_kinds())
+    runtime.sync_catalog_context()
+    if (
+        payload.get("catalog") is not runtime.state.catalog
+        or runtime.state.catalog is None
+        or payload.get("key") != runtime.state.history_request
+    ):
+        return
+    runtime.state.history_request = None
+    runtime.state.history_loading = False
+    error = payload.get("error")
+    cursors = set(runtime.state.history_cursors) if payload.get("append") else set()
+    if payload.get("cursor"):
+        cursors.add(payload["cursor"])
+    if payload.get("token") in cursors:
+        error = "Scenario repeated a history cursor; refresh history"
+    if not error:
+        try:
+            manager = runtime.ensure_manager()
+            entries = core_history.entries_from_jobs(
+                payload["jobs"], manager.registry.all(), kinds=_kinds()
+            )
+        except (AttributeError, TypeError, ValueError, KeyError):
+            error = "Scenario returned an invalid history page"
+    if error:
+        runtime.state.history_error = error
+        runtime.set_message(f"Could not load history: {error}")
+        return
     if payload.get("append"):
         known = {e.job_id for e in runtime.state.history}
         runtime.state.history.extend(e for e in entries if e.job_id not in known)
     else:
         runtime.state.history = entries
     runtime.state.history_token = payload.get("token")
+    runtime.state.history_cursors = cursors
+    runtime.state.history_loaded = True
+    runtime.state.history_error = ""

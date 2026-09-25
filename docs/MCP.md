@@ -183,7 +183,7 @@ Do not edit this block by hand; run `make mcp-docs`. An asterisk marks a require
 | `wait_for_job` | Wait for one tracked generation using a client-side status loop in Blender. | `job_id`: string; Scenario job id (job_...) or the local_id returned by generate<br>`id`: string; Same as job_id, kept for compatibility<br>`timeout`: number | read-only annotation |
 | `import_result` | Apply an already downloaded generation again to the current Blender scene and selection. | `job_id`: string; Scenario job id (job_...) or the local_id returned by generate<br>`id`: string; Same as job_id, kept for compatibility | - |
 | `capture_reference` | Capture a 1280x720 viewport or camera still and upload it as a Scenario reference asset. | `source`: string (['VIEWPORT', 'CAMERA']) | GUI required |
-| `list_generations` | List recent cloud generations using this Blender runtime's loaded history. | `limit`: integer | read-only annotation |
+| `list_generations` | List recent cloud generations using this Blender runtime's loaded history. | `limit`: integer<br>`refresh`: boolean | read-only annotation |
 <!-- tools:end -->
 
 ## Security model

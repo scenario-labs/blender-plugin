@@ -43,6 +43,11 @@ class RuntimeState:
         self.jobs_view = []  # JobRecord list shown in the panel (active + recent)
         self.history = []
         self.history_token = None
+        self.history_request = None
+        self.history_loading = False
+        self.history_loaded = False
+        self.history_error = ""
+        self.history_cursors = set()
         self.mcp = None
         self.mcp_token = ""
         self.mcp_error = ""
@@ -160,6 +165,13 @@ def sync_catalog_context():
             state.retired_catalogs.append(state.catalog)
             state.catalog = None
             state.catalog_credentials = None
+            state.history = []
+            state.history_token = None
+            state.history_request = None
+            state.history_loading = False
+            state.history_loaded = False
+            state.history_error = ""
+            state.history_cursors.clear()
             generation.clear_catalog()
         else:
             state.catalog.update_online(online())

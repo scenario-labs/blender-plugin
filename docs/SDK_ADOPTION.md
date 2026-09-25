@@ -12,7 +12,8 @@ This is a prerequisite for [Studio adoption](https://github.com/scenario-labs/bl
 The SDK is pinned for development and packaged as a runtime dependency. The
 [shared read/estimate adapter](../scenario/core/api/sdk_adapter.py) now uses it;
 the active UI and local MCP now share SDK model listing/detail reads and model
-cost previews through [SDKCatalog](../scenario/core/api/sdk_catalog.py). Their other service operations
+cost previews through [SDKCatalog](../scenario/core/api/sdk_catalog.py). Cloud
+history also uses this connection as described below. The remaining service operations
 still use the prototype client pending shared-job integration. See
 [SDK_BUNDLE.md](SDK_BUNDLE.md) for exact artifact/notice pinning,
 supported wheel targets, staging and installed-runtime verification.
@@ -100,6 +101,24 @@ explicit zero remains valid. These are in-memory previews, not durable job quote
 or authorization for the prototype submission path. Reference uploads, partial
 preview labels, authoritative account/project identity and paid integration retain
 their existing boundaries.
+
+## Active history reads
+
+UI refresh/load-older and MCP `list_generations` use the same connection and
+worker queue. `SDKAdapter.job_page` calls the pinned SDK's
+`jobs.with_raw_response.list` once with `hide_results=False`, a bounded page size
+and the opaque cursor; its response preserves unknown fields while validating
+job IDs and the next cursor. The existing adapter supplies selected credentials,
+project context when configured and online permission. There is no raw fallback.
+
+Prompt previews use `assets.with_raw_response.retrieve` on the captured connection,
+bounded to 30 per page. Failed lookups and explicitly incomplete previews stay
+unresolved, and no prompt cache crosses requests or connections. Main-thread
+delivery rejects stale credentials, superseded requests and cursor cycles before
+changing the visible history. MCP can explicitly retry with `refresh=true`.
+These reads do not activate durable recovery, project-selection UI, downloads,
+submission or result application. See the
+[runtime history boundary](architecture/runtime.md#active-sdk-history).
 
 ## Upload and job operation boundaries
 

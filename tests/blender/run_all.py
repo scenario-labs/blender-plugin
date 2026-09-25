@@ -43,6 +43,7 @@ BASELINE = (
     "test_installed_contract",
     "test_helpers",
     "test_history",
+    "test_sdk_history",
     "test_render_lanes",
     "test_prompt_tools",
     "test_offline_runtime",

@@ -28,10 +28,29 @@ class HistoryTests(unittest.TestCase):
                 },
             }
         ]
-        handlers.dispatch(("history", {"jobs": jobs, "token": "tok2", "append": False}))
+        catalog = runtime.ensure_catalog()
+        runtime.state.history_request = "first"
+        handlers.dispatch(
+            (
+                "history",
+                {
+                    "catalog": catalog,
+                    "key": "first",
+                    "jobs": jobs,
+                    "token": "tok2",
+                    "append": False,
+                },
+            )
+        )
         self.assertEqual([e.job_id for e in runtime.state.history], ["job_h"])
         self.assertEqual(runtime.state.history_token, "tok2")
-        handlers.dispatch(("history", {"jobs": jobs, "token": None, "append": True}))
+        runtime.state.history_request = "second"
+        handlers.dispatch(
+            (
+                "history",
+                {"catalog": catalog, "key": "second", "jobs": jobs, "token": None, "append": True},
+            )
+        )
         self.assertEqual(len(runtime.state.history), 1)
 
 

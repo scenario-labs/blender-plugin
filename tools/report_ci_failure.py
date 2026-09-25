@@ -147,35 +147,45 @@ def main(argv=None):
         parser.error("--run-id and --run-attempt must be positive")
     try:
         outcomes = matrix_outcomes(args.repository, args.run_id, args.run_attempt, args.version)
-        for platform, (conclusion, number, job_attempt) in outcomes.items():
-            if conclusion == "success":
-                continue
-            url = f"https://github.com/{args.repository}/actions/runs/{args.run_id}/job/{number}"
-            title = f"ci: weekly headless run failed on {platform}"
-            body = (
-                f"Weekly headless workflow failed on {platform} with Blender {args.version}: {url}.\n\n"
-                f"Workflow attempt {args.run_attempt}; job attempt {job_attempt}; "
-                f"job conclusion: `{conclusion}`. "
-                "Inspect the job log to distinguish setup, native tests, timeout and artifact "
-                f"preservation failures. The `blender-tests-{platform}` artifact contains "
-                "download logs, the exact candidate ZIP and runtime/test reports when available. "
-                "The workflow remains informational; triage without loosening tests."
-            )
-            labels = [
-                "bug",
-                "area:ci",
-                f"os:{platform.removesuffix('-latest')}",
-                f"blender:{args.version.rsplit('.', 1)[0]}",
-            ]
-            outcome = report_failure(args.repository, title, body, labels)
-            print(f"Tracking issue {outcome} for {platform}.")
     except (OSError, ValueError, subprocess.SubprocessError) as error:
         # CLI output may contain credentials or API response content; do not echo it.
         print(
             f"Failure reporting failed ({type(error).__name__}); inspect this run.", file=sys.stderr
         )
         return 1
-    return 0
+    status = 0
+    for platform, (conclusion, number, job_attempt) in outcomes.items():
+        if conclusion == "success":
+            continue
+        url = f"https://github.com/{args.repository}/actions/runs/{args.run_id}/job/{number}"
+        title = f"ci: weekly headless run failed on {platform}"
+        body = (
+            f"Weekly headless workflow failed on {platform} with Blender {args.version}: {url}.\n\n"
+            f"Workflow attempt {args.run_attempt}; job attempt {job_attempt}; "
+            f"job conclusion: `{conclusion}`. "
+            "Inspect the job log to distinguish setup, native tests, timeout and artifact "
+            f"preservation failures. The `blender-tests-{platform}` artifact contains "
+            "download logs, the exact candidate ZIP and runtime/test reports when available. "
+            "The workflow remains informational; triage without loosening tests."
+        )
+        labels = [
+            "bug",
+            "area:ci",
+            f"os:{platform.removesuffix('-latest')}",
+            f"blender:{args.version.rsplit('.', 1)[0]}",
+        ]
+        try:
+            outcome = report_failure(args.repository, title, body, labels)
+        except (OSError, ValueError, subprocess.SubprocessError) as error:
+            print(
+                f"Failure reporting failed for {platform} ({type(error).__name__}); "
+                "inspect this run.",
+                file=sys.stderr,
+            )
+            status = 1
+            continue
+        print(f"Tracking issue {outcome} for {platform}.")
+    return status
 
 
 if __name__ == "__main__":

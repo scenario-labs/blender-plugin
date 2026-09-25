@@ -291,6 +291,42 @@ def test_failed_only_rerun_retains_prior_success_without_duplicate_failure(monke
     assert "job attempt 2" in writes[0][2]
 
 
+@pytest.mark.parametrize("first_failure", ["ambiguous", "write"])
+def test_one_platform_report_failure_does_not_suppress_the_other(
+    monkeypatch, capsys, first_failure
+):
+    writes = []
+
+    def github(endpoint, *args, payload=None):
+        if endpoint.endswith("/jobs"):
+            return [
+                {
+                    "jobs": [
+                        matrix_job(platform, "failure")
+                        for platform in ("macos-latest", "windows-latest")
+                    ]
+                }
+            ]
+        if payload is None:
+            issues = [{"number": 7, "title": TITLE}]
+            if first_failure == "ambiguous":
+                issues.append({"number": 8, "title": TITLE})
+            return [issues]
+        writes.append((endpoint, payload))
+        if endpoint.endswith("/7/comments"):
+            raise subprocess.CalledProcessError(1, "gh", stderr="private response")
+        return {"number": 9}
+
+    monkeypatch.setattr(reporter, "github", github)
+    assert reporter.main(cli_arguments()) == 1
+    assert len(writes) == (1 if first_failure == "ambiguous" else 2)
+    assert writes[-1][1]["title"] == "ci: weekly headless run failed on windows-latest"
+    output = capsys.readouterr()
+    assert "failed for macos-latest" in output.err
+    assert "created for windows-latest" in output.out
+    assert "private response" not in output.err + output.out
+
+
 def workflow_script(name):
     """Extract one named literal run block; shell behavior is tested below."""
     workflow = (ROOT / ".github/workflows/blender-os.yml").read_text()

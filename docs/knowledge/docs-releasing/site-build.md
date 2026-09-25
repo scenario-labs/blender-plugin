@@ -17,7 +17,7 @@
       "tools/build_docs_html.py": "40e8c099acc77be8b3d57edd31f1e2a0ade323d9932e1c822aee98320c01f4a2",
       "tools/repository.py": "c41d4cd4964f78acb5fff9d0a20de976d0dcab94e7a14ca24d24e2073e6d191b",
       "tools/release_inventory.py": "44dfc7c3eec4320e0abb0c818ec021468576071183b2ca696e85da0110ac7d51",
-      "tests/unit/test_site.py": "511ec0ae91eb87633ad27c1fe0bd80f0b6ed73b45d3527b395fe33b0095498d8",
+      "tests/unit/test_site.py": "b1d97e957d6cb150fa1ecbdd71565e53049aa8ebec2a9530a87eb5e6162c9bfe",
       "tests/unit/test_docs_html.py": "4f13fa6738f636c0034a5eb07c773961efd4396dcf806862695612f20f5762da",
       "tests/unit/test_repository.py": "b6dee9da59ed8bfdec2c9a202f927c6fada49312f3ccb18cfff74f4c80fc9a7b",
       "tests/unit/test_release_inventory.py": "5a5bbffe19bbe34bc4eb1ad23faaa889888eb04b47a76f380e98f884f27b6ce5"

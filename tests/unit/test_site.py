@@ -260,6 +260,7 @@ def test_make_site_uses_locked_environment_and_forwards_arguments():
     result = subprocess.run(
         [
             "make",
+            "--no-print-directory",
             "-n",
             "site",
             "UV=uv",

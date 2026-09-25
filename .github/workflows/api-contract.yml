@@ -1,0 +1,128 @@
+# SPDX-FileCopyrightText: 2026 Scenario Inc.
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Separate from PR CI: this job reads dedicated repository test credentials.
+# GitHub can disable schedules after 60 days of repository inactivity.
+name: API contract
+
+on:
+  schedule:
+    - cron: "0 6 * * 1"
+  workflow_dispatch:
+    inputs:
+      models:
+        description: Space-separated model IDs (empty means every curated model)
+        required: false
+        default: ""
+        type: string
+
+permissions:
+  contents: read
+
+# Serialize scheduled/manual reporting so exact-title issue creation cannot race.
+concurrency:
+  group: api-contract
+  cancel-in-progress: false
+
+jobs:
+  audit:
+    if: github.repository == 'scenario-labs/blender-plugin' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    outputs:
+      exit_code: ${{ steps.audit.outputs.exit_code }}
+      artifact_id: ${{ steps.upload.outputs.artifact-id }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+        with:
+          version-file: pyproject.toml
+          enable-cache: false
+      - run: uv sync --locked
+      - name: Audit current model schemas
+        id: audit
+        shell: bash
+        env:
+          SCENARIO_TEST_API_KEY: ${{ secrets.SCENARIO_TEST_API_KEY }}
+          SCENARIO_TEST_API_SECRET: ${{ secrets.SCENARIO_TEST_API_SECRET }}
+          SCENARIO_TEST_PROJECT_ID: ${{ secrets.SCENARIO_TEST_PROJECT_ID }}
+          AUDIT_MODELS: ${{ inputs.models }}
+        run: |
+          SCHEMA_CACHE="$(mktemp -d "$RUNNER_TEMP/schema-cache.XXXXXX")"
+          export SCHEMA_CACHE
+          set +e
+          uv run --locked --no-env-file python - <<'PY'
+          import os
+          import sys
+          from tools import audit_payloads as audit
+
+          models = os.environ.get("AUDIT_MODELS", "").split()
+          if any(not audit.MODEL_ID.fullmatch(model) for model in models):
+              print("Invalid model IDs in workflow input", file=sys.stderr)
+              raise SystemExit(2)
+          args = ["--cache", os.environ["SCHEMA_CACHE"], "--fail-on", "HIGH",
+                  "--report", os.path.join(os.environ["RUNNER_TEMP"], "audit.md")]
+          if models:
+              args.extend(["--models", *models])
+          raise SystemExit(audit.run(args))
+          PY
+          status=$?
+          printf 'exit_code=%s\n' "$status" >> "$GITHUB_OUTPUT"
+          exit "$status"
+      - name: Preserve the model audit report
+        id: upload
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: model-payload-audit-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/audit.md
+          retention-days: 90
+          if-no-files-found: warn
+
+  report:
+    needs: audit
+    # A timed-out audit runner cannot report itself. Deliberate workflow
+    # cancellation is excluded; setup/audit/artifact failures remain visible.
+    if: ${{ always() && !cancelled() && github.repository == 'scenario-labs/blender-plugin' && github.ref == 'refs/heads/main' && (needs.audit.result != 'success' || needs.audit.outputs.exit_code != '0') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      actions: read
+      issues: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+        with:
+          version-file: pyproject.toml
+          enable-cache: false
+      - name: Download the report when available
+        id: download
+        if: needs.audit.outputs.artifact_id != ''
+        continue-on-error: true
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          artifact-ids: ${{ needs.audit.outputs.artifact_id }}
+          path: workdir/api-contract/
+      - name: Create or update the API tracking issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+          AUDIT_RESULT: ${{ needs.audit.result }}
+          AUDIT_EXIT_CODE: ${{ needs.audit.outputs.exit_code }}
+          AUDIT_ARTIFACT_ID: ${{ needs.audit.outputs.artifact_id }}
+          REPORT_DOWNLOAD: ${{ steps.download.outcome }}
+        run: |
+          report_args=()
+          if [[ -n "$AUDIT_ARTIFACT_ID" ]]; then
+            report_args+=(--artifact-id "$AUDIT_ARTIFACT_ID")
+          fi
+          if [[ "$REPORT_DOWNLOAD" == "success" && -n "$AUDIT_ARTIFACT_ID" ]]; then
+            report_args+=(--report workdir/api-contract/audit.md)
+          fi
+          uv run --no-project --no-env-file python -m tools.report_api_failure \
+            --repository "$GITHUB_REPOSITORY" --run-id "$GITHUB_RUN_ID" \
+            --run-attempt "$GITHUB_RUN_ATTEMPT" --job-result "$AUDIT_RESULT" \
+            --audit-exit-code "$AUDIT_EXIT_CODE" "${report_args[@]}"

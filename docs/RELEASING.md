@@ -185,6 +185,49 @@ accepted by `repository.py`. Existing output is preserved and failed preparation
 leaves no partial snapshot. Keep the inputs and output untracked. Empty adopted
 release channels fail; prototype releases are not substitutes.
 
+### Verify selected release provenance
+
+After selecting downloaded archives, [verify_release_inventory.py](../tools/verify_release_inventory.py)
+checks each selected release against GitHub and stages the exact verified ZIPs
+in a new directory:
+
+```sh
+uv run --locked --no-env-file python tools/verify_release_inventory.py \
+  --inventory selected-assets/inventory.json --output verified-assets
+```
+
+This is an explicit online, read-only command using an authenticated `gh` CLI.
+It needs GitHub access, not Scenario credentials. The CLI must support the
+[attestation verification flags](https://cli.github.com/manual/gh_attestation_verify)
+used by the tool. It reads current published stable release metadata, resolves
+the tag to a commit, and retrieves only the small `SHA256SUMS` asset. The local
+archive must match that checksum, its published size and its own validated
+manifest/SDK bundle. Prototype tags, drafts and prereleases cannot authorize an
+adopted archive.
+
+Both checksum and ZIP attestations must pass GitHub CLI verification for this
+repository, `.github/workflows/release-please.yml`, SLSA provenance v1, the
+resolved source/signer commit and `refs/heads/main`, with self-hosted runners
+rejected. `main` is intentional: the release workflow runs from the release
+commit on `main` before publishing its tag. No unchecked predicate field is used
+as a substitute for GitHub CLI's certificate policy.
+
+The tool rechecks the entire selected set's release/asset identities and tag
+commits after attestation verification. A withdrawal, replacement, changed tag,
+failed command or byte mismatch leaves no partial output. Existing destinations
+are preserved. The completed directory contains unchanged ZIPs, `inventory.json`
+and a dated `provenance.json` summary. Pass that inventory to the repository or
+site builder. The summary is a local inspection record, not a signed credential
+or an offline substitute for rerunning verification.
+
+This verifies only the supplied selection; it does not discover omitted/newer
+releases, prove the supported matrix, make remote reads atomic, download/rebuild
+ZIPs or publish anything. Refresh the complete release snapshot and verify again
+at the publication gate. An empty adopted release channel remains unavailable;
+synthetic tests and old prototype releases are not accepted release provenance.
+GitHub commands have individual timeouts and parsed-output size limits; those
+limits do not sandbox the CLI or bound its temporary output while it executes.
+
 ### Validate and generate the repository
 
 Before using this for a published repository, verify each selected stable release

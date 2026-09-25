@@ -73,6 +73,11 @@ Background delivery preserves unchanged quotes, while explicit model/mode/task
 changes invalidate and re-arm pricing even if their schema is still loading or
 requires a retry. Retiring credentials or resetting the active runtime clears
 that pending intent along with the form caches.
+Overlapping list refreshes also share one paginated read per connection and
+privacy scope, with defensive copies for each caller. Failures release all
+waiters without replacing the last complete cache; later explicit refreshes still
+read the service. Public/private reads remain separate, and retirement rejects
+old results. No persistent or cross-credential cache is introduced.
 Cache entries are in memory per connection until an authoritative account/project
 identity contract enables scoped persistence.
 [Runtime integration status](architecture/runtime.md#active-sdk-catalog) records

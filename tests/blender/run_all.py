@@ -38,6 +38,7 @@ BASELINE = (
     "test_mesh_application",
     "test_mcp_server",
     "test_mcp_contracts",
+    "test_mcp_wait",
     "test_mcp_security",
     "test_mcp_cli",
     "test_installed_contract",

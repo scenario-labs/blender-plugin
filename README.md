@@ -1,5 +1,5 @@
 <p align="center">
-  <a href="https://scenario.com"><img src="docs/images/scenario-logo.png" height="84" alt="Scenario"></a>
+  <a href="https://www.scenario.com/"><img src="docs/images/scenario-logo.png" height="84" alt="Scenario"></a>
 </p>
 <h1 align="center">Scenario for Blender</h1>
 <p align="center">

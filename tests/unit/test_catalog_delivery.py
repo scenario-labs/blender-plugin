@@ -3,9 +3,81 @@
 """Catalog choices and each schema become available before slow warmup completes."""
 
 import threading
+from concurrent.futures import Future
+
+import httpx
+import pytest
 
 from scenario.core.api.errors import ScenarioError
 from scenario.core.jobs.manager import JobManager
+from tests.unit.test_sdk_catalog import catalog
+
+
+@pytest.mark.parametrize("privacy", ["public", "private"])
+@pytest.mark.parametrize("malformed", [{"capabilities": [17]}, {"tags": 17}])
+def test_malformed_shared_refresh_preserves_cache_and_delivers_catalog_failures(
+    monkeypatch, privacy, malformed
+):
+    entered, release, waiting = (threading.Event() for _ in range(3))
+    calls = []
+    refresh = False
+
+    class ObservedFuture(Future):
+        def result(self, timeout=None):
+            waiting.set()
+            return super().result(timeout)
+
+    monkeypatch.setattr("scenario.core.api.sdk_catalog.Future", ObservedFuture)
+
+    def respond(request):
+        calls.append(request)
+        if not refresh:
+            return httpx.Response(200, json={"models": [{"id": "saved"}]})
+        if "paginationToken" not in request.url.params:
+            entered.set()
+            assert release.wait(5)
+            return httpx.Response(
+                200, json={"models": [{"id": "partial"}], "nextPaginationToken": "next"}
+            )
+        return httpx.Response(200, json={"models": [{"id": "invalid", **malformed}]})
+
+    context, _ = catalog(respond)
+    manager = JobManager(None, None, None)
+    try:
+        context.fetch_list(privacy)
+        refresh = True
+        manager.fetch_catalog(context, privacy)
+        try:
+            assert entered.wait(5)
+            manager.fetch_catalog(context, privacy)
+            assert waiting.wait(5)
+        finally:
+            release.set()
+            manager.join(5)
+        assert not manager.has_active()
+        assert [record.id for record in context.load_list_cached(privacy)] == ["saved"]
+        assert manager.drain() == []
+        assert (
+            manager.drain_catalog()
+            == [
+                (
+                    "catalog_failed",
+                    {"catalog": context, "error": "Scenario returned an invalid model catalog"},
+                )
+            ]
+            * 2
+        )
+        assert len(calls) == 3
+        refresh = False
+        manager.fetch_catalog(context, privacy)
+        manager.join(5)
+        assert not manager.has_active()
+        assert [name for name, _ in manager.drain_catalog()] == ["catalog", "catalog"]
+        assert len(calls) == 4
+    finally:
+        release.set()
+        manager.join(5)
+        context.close()
 
 
 def test_catalog_and_completed_schema_are_published_before_slow_detail():

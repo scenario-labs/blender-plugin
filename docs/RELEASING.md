@@ -126,9 +126,19 @@ from an explicit inventory of already-built archives. It uses Blender's native
 profile with online access disabled. It never rebuilds a ZIP or changes a manifest.
 The helpers are a partial implementation of
 [#37](https://github.com/scenario-labs/blender-plugin/issues/37); network discovery,
-the site builder, Pages deployment and native setup/update controls remain
+Pages deployment and native setup/update controls remain
 separate integration work. Successful local generation
 does not prove that an archive was published, attested or accepted at runtime.
+
+[`make site`](../CONTRIBUTING.md#complete-site-snapshots) combines this generator
+with the handbook renderer in one new output directory. Supply the retained
+inventory below with `SITE_ARGS="--inventory selected-assets/inventory.json"`.
+The site retains every selected archive byte-for-byte beneath `repo/`; docs-only
+rebuilds must reuse that complete inventory. The complete guide and repository
+are staged before exposing the output, and existing output is never replaced.
+This command does not discover releases, verify attestations or deploy Pages.
+Publication remains a separate gate requiring a fresh verified inventory so a
+stale docs build cannot roll the hosted repository back.
 
 ### Select retained releases offline
 

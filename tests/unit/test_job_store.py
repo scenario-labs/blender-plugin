@@ -447,3 +447,44 @@ def test_result_transfer_lock_rejects_nonprivate_paths(store, tmp_path, kind):
         with store.result_transfer_lock("request-one"):
             pytest.fail("Accepted unsafe lock")
     assert outside.read_bytes() == b"x"
+
+
+def test_parent_alias_shares_database_and_lock_and_cannot_retarget_open_store(
+    store, tmp_path, intent
+):
+    alias = tmp_path / "alias"
+    alias.symlink_to(tmp_path, target_is_directory=True)
+    opened = JobStore(alias / "jobs.sqlite3", store.scope)
+    record = opened.create(intent)
+    assert store.get(intent.request_id) == record
+    with store.result_transfer_lock(intent.request_id):
+        with pytest.raises(StoreConflict):
+            with opened.result_transfer_lock(intent.request_id):
+                pytest.fail("Alias bypassed the original database's lock")
+    replacement = tmp_path / "replacement"
+    replacement.mkdir()
+    replacement_store = JobStore(replacement / "jobs.sqlite3", store.scope)
+    alias.unlink()
+    alias.symlink_to(replacement, target_is_directory=True)
+    assert opened.get(intent.request_id) == record
+    assert replacement_store.get(intent.request_id) is None
+    with store.result_transfer_lock(intent.request_id):
+        with pytest.raises(StoreConflict):
+            with opened.result_transfer_lock(intent.request_id):
+                pytest.fail("Retargeted alias changed an existing owner's lock")
+
+
+@pytest.mark.parametrize("exists", [True, False])
+def test_resolving_parent_never_accepts_a_symlinked_database(tmp_path, intent, exists):
+    actual = tmp_path / "actual"
+    actual.mkdir()
+    alias = tmp_path / "alias"
+    alias.symlink_to(actual, target_is_directory=True)
+    target = actual / "target.sqlite3"
+    if exists:
+        JobStore(target, intent.scope).create(intent)
+    (actual / "jobs.sqlite3").symlink_to(target)
+    before = target.read_bytes() if exists else None
+    with pytest.raises(StoreError, match="regular local file"):
+        JobStore(alias / "jobs.sqlite3", intent.scope)
+    assert (target.read_bytes() if target.exists() else None) == before

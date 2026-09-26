@@ -104,6 +104,10 @@ not hold a SQLite transaction during network work.
 Sidecar lock files remain beside the database in a private directory. Never
 unlink them while any owner may be active: a replacement inode could admit two
 owners. Symlinked/nonregular/multiply-linked lock files are rejected. The parent
+directory is resolved once when opening the store, so aliases such as macOS
+`/tmp` share the database and lock location; retargeting an alias cannot redirect
+an already opened store. The database filename itself is never resolved through
+a symlink and symlinked database files remain rejected. The resolved parent
 must remain privately owned and all owners must use the same canonical database
 path on a local filesystem that supports these locks. This is a cooperating
 writer protocol, not protection from arbitrary disk access or direct store calls.

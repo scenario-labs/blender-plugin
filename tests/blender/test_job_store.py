@@ -12,6 +12,20 @@ from helpers import submodule
 
 
 class JobStoreTests(unittest.TestCase):
+    def test_installed_store_parent_alias_shares_transfer_lock(self):
+        module = submodule("core.jobs.store")
+        scope = module.JobScope("https://service.example.invalid/v1", "fixture-account")
+        with tempfile.TemporaryDirectory(dir=bpy.utils.resource_path("USER")) as directory:
+            root = Path(directory).resolve()
+            alias = module.JobStore(root / "nested" / ".." / "jobs.sqlite3", scope)
+            canonical = module.JobStore(root / "jobs.sqlite3", scope)
+            with canonical.result_transfer_lock("fixture-request"):
+                with self.assertRaises(module.StoreConflict):
+                    with alias.result_transfer_lock("fixture-request"):
+                        self.fail("Parent alias bypassed the canonical database lock")
+            with alias.result_transfer_lock("fixture-request"):
+                self.assertEqual(alias.records(), canonical.records())
+
     def test_installed_store_preserves_scope_and_uncertain_intent(self):
         module = submodule("core.jobs.store")
         scope = module.JobScope("https://service.example.invalid/v1", "fixture-account")

@@ -599,3 +599,23 @@ def test_recovery_sanitizes_verifier_errors_without_altering_files(setup, monkey
     assert error.value.__suppress_context__
     assert store.get("request") == interrupted
     assert len(calls) == count
+
+
+@pytest.mark.parametrize("recover", [False, True])
+def test_result_commands_accept_a_database_parent_alias(setup, monkeypatch, tmp_path, recover):
+    coordinator, store, current, _, _, downloader, calls, root = setup
+    if recover:
+        current = interrupt_download(setup, monkeypatch, "complete")
+    alias = tmp_path / "database-alias"
+    alias.symlink_to(tmp_path, target_is_directory=True)
+    aliased_store = JobStore(alias / "jobs.sqlite3", store.scope)
+    owner = JobCoordinator(
+        coordinator._adapter, aliased_store, result_root=root, result_downloader=downloader
+    )
+    before = len(calls)
+    command = owner.recover_downloads if recover else owner.download_results
+    ready = command("request", expected_revision=current.revision)
+    assert ready.state == JobState.READY
+    assert store.get("request") == ready
+    if recover:
+        assert len(calls) == before

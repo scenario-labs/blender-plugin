@@ -352,6 +352,9 @@ class JobStore:
         self._key = hashlib.sha256(_json(asdict(scope)).encode()).hexdigest()
         try:
             self._path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+            # Pin parent aliases once so SQL and transfer locks keep one identity.
+            # Do not resolve the leaf: a symlinked database must still be rejected.
+            self._path = self._path.parent.resolve(strict=True) / self._path.name
             if self._path.is_symlink():
                 raise StoreError("The job database must be a regular local file")
             try:

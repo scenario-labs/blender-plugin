@@ -180,7 +180,7 @@ Do not edit this block by hand; run `make mcp-docs`. An asterisk marks a require
 | `estimate_cost` | Get the exact CU cost with a dry run that spends no credits. | `model_id`*: string<br>`parameters`: object | read-only annotation |
 | `generate` | Submit a generation that spends the user's credits and automatically places its result in Blender. | `lane`*: string (enum: see tools/list)<br>`model_id`*: string<br>`parameters`: object; Model parameters; file parameters take Scenario asset ids | spends credits |
 | `job_status` | Read one local generation's status, cost and downloaded files without spending credits. | `job_id`: string; Scenario job id (job_...) or the local_id returned by generate<br>`id`: string; Same as job_id, kept for compatibility | read-only annotation |
-| `wait_for_job` | Wait for one tracked generation using a client-side status loop in Blender. | `job_id`: string; Scenario job id (job_...) or the local_id returned by generate<br>`id`: string; Same as job_id, kept for compatibility<br>`timeout`: number | read-only annotation |
+| `wait_for_job` | Wait for one tracked generation while Blender remains responsive. | `job_id`: string; Scenario job id (job_...) or the local_id returned by generate<br>`id`: string; Same as job_id, kept for compatibility<br>`timeout`: number | read-only annotation |
 | `import_result` | Apply an already downloaded generation again to the current Blender scene and selection. | `job_id`: string; Scenario job id (job_...) or the local_id returned by generate<br>`id`: string; Same as job_id, kept for compatibility | - |
 | `capture_reference` | Capture a 1280x720 viewport or camera still and upload it as a Scenario reference asset. | `source`: string (['VIEWPORT', 'CAMERA']) | GUI required |
 | `list_generations` | List recent cloud generations using this Blender runtime's loaded history. | `limit`: integer<br>`refresh`: boolean | read-only annotation |
@@ -242,7 +242,7 @@ behavior interchangeable. Remote names below were checked against the
 | Price without generating | `estimate_cost(model_id, parameters)` | `model_run` with `dry_run=true` |
 | Generate | `generate(lane, model_id, parameters)`, automatic scene application | `model_run` |
 | Job status | `job_status(job_id or id)` | `job_get` |
-| Wait | `wait_for_job(job_id or id, timeout)`, one job in a blocking local loop | `jobs_wait` |
+| Wait | `wait_for_job(job_id or id, timeout)`, one job without blocking Blender | `jobs_wait` |
 | Reference upload | `capture_reference(source)`, captures the scene first | `upload_asset`, `upload_asset_complete` for an existing file |
 | History | `list_generations(limit)` | `jobs_list` |
 | Apply an existing result | `import_result(job_id or id)` | No Blender scene access |
@@ -255,6 +255,15 @@ behavior interchangeable. Remote names below were checked against the
 Connect both when needed: use the local setup above for Blender and the
 [hosted server setup](https://mcp.scenario.com/docs) for Scenario-wide work.
 Some platform operations are discovered through its tool catalog.
+
+`wait_for_job` accepts a finite timeout from 0 to 170 seconds (default 170).
+A zero timeout reads status immediately. Other waits observe the captured local
+record on the HTTP thread; they do not submit, retry, cancel or poll the remote
+service. The main thread prepares the wait and returns its final status. Runtime
+shutdown and server stop interrupt waiting; a changed credential context, manager
+or record rejects the old completion. This does not establish account-scoped
+persistence for the prototype job registry or guarantee that automatic scene
+application has finished when a remote job reaches a terminal status.
 
 ## Troubleshooting
 
@@ -270,7 +279,8 @@ Some platform operations are discovered through its tool catalog.
   local MCP bearer token.
 - **Call times out:** a modal dialog or long-running main-thread tool can delay
   other requests. Check status before repeating any action that may spend credits
-  or modify the scene. Prefer short status polls to a long blocking wait.
+  or modify the scene. `wait_for_job` leaves the main thread available while
+  waiting, but its preparation and final status delivery still require that thread.
 
 Maintainers: run `make mcp-docs` after changing tool definitions and
 `uv run --locked --no-env-file python tools/gen_mcp_docs.py --check` to detect drift.

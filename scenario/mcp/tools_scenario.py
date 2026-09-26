@@ -184,13 +184,49 @@ def job_status(args):
 
 def wait_for_job(args):
     ref = _job_ref(args)
-    deadline = time.time() + float(args.get("timeout", 170))
-    while time.time() < deadline:
-        rec = _find(ref)
-        if rec.is_terminal:
-            return _status(rec)
-        time.sleep(1.5)
-    return dict(_status(_find(ref)), note="still running, call again")
+    timeout = args.get("timeout", 170)
+    if (
+        isinstance(timeout, bool)
+        or not isinstance(timeout, (int, float))
+        or not 0 <= timeout <= 170
+    ):
+        raise ValueError("timeout must be a finite number from 0 to 170 seconds")
+    rec = _find(ref)
+    if rec.is_terminal:
+        return _status(rec)
+    if timeout == 0:
+        return dict(_status(rec), note="still running, call again")
+    manager, state = runtime.state.manager, runtime.state
+    credentials = runtime.credentials()
+    server = state.mcp
+    deadline = time.monotonic() + timeout
+
+    def run():
+        # Only captured Python objects are read here, never Blender state or bpy.
+        while not rec.is_terminal:
+            if manager._stop.is_set() or (server is not None and not server.running):
+                raise RuntimeError("The job wait stopped; generation was not cancelled")
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                break
+            manager._stop.wait(min(0.1, remaining))
+
+    def finish(_):
+        if (
+            runtime.state is not state
+            or runtime.state.manager is not manager
+            or runtime.credentials() != credentials
+            or manager._stop.is_set()
+            or (server is not None and (state.mcp is not server or not server.running))
+            or manager.registry.by_local_id(rec.local_id) is not rec
+        ):
+            raise RuntimeError("The job context changed while waiting; query its status again")
+        result = _status(rec)
+        if not rec.is_terminal:
+            result["note"] = "still running, call again"
+        return result
+
+    return DeferredTool(run, finish)
 
 
 def import_result(args):
@@ -357,17 +393,17 @@ SPECS = (
     ToolSpec(
         "wait_for_job",
         (
-            "Wait for one tracked generation using a client-side status loop in Blender.\n"
+            "Wait for one tracked generation while Blender remains responsive.\n"
             "Args:\n"
             "  - job_id: optional string, a Scenario job id or local_id returned by generate.\n"
             "  - id: optional string, compatibility alias; provide job_id or id. job_id takes precedence.\n"
-            "  - timeout: optional number of seconds, default 170.\n"
+            "  - timeout: optional finite number of seconds from 0 to 170, default 170.\n"
             "Returns: local_id, job_id, status, progress, cu_cost, files, error and kind; on timeout, also note: still running, call again.\n"
             'Example: {"job_id": "job_example", "timeout": 30}.\n'
-            "Prefer job_status for a quick check. This blocks Blender's main thread while waiting; it does not wait for multiple jobs or retry generation.\n"
+            "Prefer job_status for a quick check. Waiting runs off the main thread; it does not cancel, retry or submit generation. Context changes require a fresh status query.\n"
             "Platform equivalent: jobs_wait."
         ),
-        _schema({**_JOB_REF, "timeout": {"type": "number"}}),
+        _schema({**_JOB_REF, "timeout": {"type": "number", "minimum": 0, "maximum": 170}}),
         wait_for_job,
         {"readOnlyHint": True},
     ),  # touches bpy (paths, manager): main thread

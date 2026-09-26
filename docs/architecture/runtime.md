@@ -90,6 +90,12 @@ becoming zero. These reads do not upload references, persist jobs, approve spend
 or establish UI/MCP paid-submission parity. The legacy manager estimate method
 remains only for historical smoke scripts.
 
+Local MCP `wait_for_job` captures a local record on the main thread and waits
+on the HTTP thread. Other scene tools and the GUI pump remain available. Its
+completion rechecks the manager, credentials and record identity; shutdown
+interrupts the wait without cancelling or resubmitting the generation. This
+responsive read does not migrate prototype jobs into the durable scoped runtime.
+
 ## Replacement components already present
 
 | Component | Source and contract | Integration still required |

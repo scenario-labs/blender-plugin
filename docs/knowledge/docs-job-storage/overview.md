@@ -7,17 +7,23 @@
   "evidence": {
     "path": "docs/JOB_STORAGE.md",
     "coverage": "inherited",
-    "reviewed_at": "2026-09-24",
-    "limits": "Existing guide indexed during this intake, without a fresh claim-by-claim or live verification; consult current integration status and issue acceptance.",
+    "reviewed_at": "2026-09-26",
+    "limits": "Existing guide indexed during this intake, without a fresh claim-by-claim or live verification; consult current integration status and issue acceptance. Explicit interrupted-download recovery and cooperative OS locking reviewed against scoped revision checks, receipt verification, process-exit exclusion tests and the JobSession restart test. No active UI/MCP wiring, older-writer compatibility, orphan-file adoption, scene recovery or live storage acceptance is established.",
     "sources": {
-      "scenario/core/jobs/store.py": "0053c3e48ce89ad699bab664f4f5fddc6af89f7cd01c8bbcab8a323c198c01fc",
+      "scenario/core/jobs/store.py": "1b0c78ab5c0c67926f59ae1c9a4ae16c91a014a86daf856554487757cc959b7e",
       "scenario/core/jobs/transfers.py": "549e02649dab7061492a5bb1100a836daf1112972a9ad01c2c0d39facb6ac098",
       "tests/blender/test_job_store.py": "9391c63dd8837345ea383e2a2fa250d9a911c1a3ddda16e07617c66854b2fc65",
-      "tests/unit/test_job_store.py": "2bc71047d762d63d960ef249a30384ae41d508e5cf2f236e0e08c9caf6aba655",
-      "tests/unit/test_result_manifest.py": "e718f316b9f33faefdae53d59bf04c80b48645d52f3dd0bc80a2beae426e5d67"
+      "tests/unit/test_job_store.py": "7bd44215aad56c98d0003c65d1aa9a2303d430fd49d06f94832ebfe7c8b1ed98",
+      "tests/unit/test_result_manifest.py": "e718f316b9f33faefdae53d59bf04c80b48645d52f3dd0bc80a2beae426e5d67",
+      "scenario/core/jobs/results.py": "0ee36347a8c5be6ff84a36ae2dd54e9c64461de0a83bff513f29ac0bd7712889",
+      "scenario/core/jobs/coordinator.py": "6841e0cf2ceb85c28552f635a85b84ae269e0c7497ce3bea2c37abbbeee7c028",
+      "scenario/core/jobs/workers.py": "81c2939dc51bbf6a8e7f96573fb95d200d3667476f621834f61239c26f37883d",
+      "scenario/blender/job_session.py": "2c3556f02febd16087d03a9ca85dcc92b8be562065fcb811b7cdf0c20050102c",
+      "tests/unit/test_result_commands.py": "8923e28146cef91c3e9f6c73577fd43ed14abbbe9530f047df99106e74b076ab",
+      "tests/blender/test_session_results.py": "53f5a82cd68593b5e12d8fda48aa376a2eaa64c75481daec5da3296fe139b9c6"
     },
     "scope": "overview",
-    "base_revision": "cdc8775a4a074a4997eca84cec2699e0dbb16e8c"
+    "base_revision": "42883c40e1071c15f163f87102668b20d8bdf982"
   }
 }
 ---

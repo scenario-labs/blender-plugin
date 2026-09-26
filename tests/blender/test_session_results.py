@@ -166,6 +166,41 @@ class SessionResultTests(unittest.TestCase):
     def ready(self):
         return self.command("download_results", self.record)[0]
 
+    def test_restarted_session_recovers_committed_download_without_rebinding_scene(self):
+        transition = self.store.transition
+
+        def fail_ready(*args, **kwargs):
+            if kwargs.get("state") == self.storage.JobState.READY:
+                raise self.storage.StoreError("interrupted final receipt")
+            return transition(*args, **kwargs)
+
+        with patch.object(self.store, "transition", fail_ready):
+            task = self.session.download_results("request", expected_revision=self.record.revision)
+            with self.assertRaises(self.storage.StoreError):
+                task.result(5)
+        self.session.drain()
+        interrupted = self.store.get("request")
+        self.assertEqual(interrupted.state, self.storage.JobState.DOWNLOADING)
+        self.session.shutdown()
+        self.session = self.new_session()
+        before = len(self.calls), len(self.downloads), set(bpy.data.objects)
+        recovered, completion = self.command("recover_downloads", interrupted)
+        self.assertEqual(recovered.state, self.storage.JobState.READY)
+        self.assertEqual(recovered.results, interrupted.results)
+        self.assertEqual(recovered.intent, interrupted.intent)
+        self.assertEqual((len(self.calls), len(self.downloads), set(bpy.data.objects)), before)
+        with self.assertRaises(self.module.OriginUnavailable):
+            self.session.deliver(completion, lambda *args: self.fail("Rebound a restarted scene"))
+
+    def test_recovery_session_rejects_live_transfer_owner(self):
+        with self.store.result_transfer_lock("request"):
+            task = self.session.recover_downloads("request", expected_revision=self.record.revision)
+            with self.assertRaises(self.storage.StoreConflict):
+                task.result(5)
+        self.assertEqual(self.store.get("request"), self.record)
+        self.assertFalse(self.calls)
+        self.assertFalse(self.downloads)
+
     def test_manifest_download_and_verified_paths_deliver_to_original_target_once(self):
         manifest, _ = self.command("load_results", self.record)
         self.assertEqual(len(manifest.results), 1)

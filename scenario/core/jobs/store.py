@@ -19,7 +19,7 @@ from enum import StrEnum
 from pathlib import Path
 from urllib.parse import urlsplit
 
-from .transfers import DownloadedResult, TransferError, validate_result_name
+from .transfers import DownloadedResult, TransferError, _root, validate_result_name
 
 _VERSION = 2
 _APPLICATION_ID = 0x53434A42
@@ -382,6 +382,67 @@ class JobStore:
     @property
     def scope(self):
         return self._scope
+
+    @contextmanager
+    def result_transfer_lock(self, request_id):
+        """Exclude live download/recovery commands, including other Blender processes.
+
+        Keep lock files: unlinking one can give competing owners different inodes.
+        The OS releases ownership on close/process exit; elapsed time never does.
+        All writers must use this protocol and the same privately owned database.
+        """
+        _identity(request_id)
+        descriptor = None
+        try:
+            parent = _root(self._path.parent)
+            directory = parent / ".scenario-result-locks"
+            directory.mkdir(mode=0o700, exist_ok=True)
+            directory = _root(directory)
+            # One digest retains all identities without long concatenated paths.
+            # Case aliases identify the same database on Windows.
+            key = _json([os.path.normcase(self._path.name), self._key, request_id])
+            path = directory / (hashlib.sha256(key.encode()).hexdigest() + ".lock")
+            if path.is_symlink():
+                raise StoreError("Result lock must be a regular private file")
+            descriptor = os.open(path, os.O_RDWR | os.O_CREAT | getattr(os, "O_NOFOLLOW", 0), 0o600)
+            info = os.fstat(descriptor)
+            if (
+                not stat.S_ISREG(info.st_mode)
+                or info.st_nlink != 1
+                or info.st_size > 1
+                or (info.st_dev, info.st_ino) != (path.lstat().st_dev, path.lstat().st_ino)
+            ):
+                raise StoreError("Result lock must be a regular private file")
+            if info.st_size == 0:
+                os.write(descriptor, b"\0")
+            os.lseek(descriptor, 0, os.SEEK_SET)
+            try:
+                if os.name == "nt":
+                    import msvcrt
+
+                    msvcrt.locking(descriptor, msvcrt.LK_NBLCK, 1)
+                elif os.name == "posix":
+                    import fcntl
+
+                    fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                else:
+                    raise StoreError("Result transfer locking is unsupported on this platform")
+            except OSError:
+                raise StoreConflict(
+                    "Result transfer is busy or cannot be locked; retry later"
+                ) from None
+        except (OSError, ValueError, TransferError):
+            if descriptor is not None:
+                os.close(descriptor)
+            raise StoreError("Could not lock private result storage") from None
+        except BaseException:
+            if descriptor is not None:
+                os.close(descriptor)
+            raise
+        try:
+            yield
+        finally:
+            os.close(descriptor)
 
     @staticmethod
     def _check_version(connection):

@@ -91,6 +91,31 @@ for explicit recovery. In particular, an interrupted Blender application may
 already have changed the scene; do not blindly apply it again. View closure does
 not imply cancellation, and a reopened file/account must not retarget a result.
 
+
+## Result transfer ownership
+
+`result_transfer_lock(request_id)` holds a nonblocking OS file lock keyed by the
+private database filename, full scope hash and request hash. Result download and
+recovery commands use this same lock. POSIX uses `flock`; Windows locks byte zero
+with `msvcrt.locking`. Other platforms fail closed. Locks release when their
+file descriptor closes or the process exits. They have no timeout lease and do
+not hold a SQLite transaction during network work.
+
+Sidecar lock files remain beside the database in a private directory. Never
+unlink them while any owner may be active: a replacement inode could admit two
+owners. Symlinked/nonregular/multiply-linked lock files are rejected. The parent
+must remain privately owned and all owners must use the same canonical database
+path on a local filesystem that supports these locks. This is a cooperating
+writer protocol, not protection from arbitrary disk access or direct store calls.
+Stop all older extension processes that do not use this protocol before running
+recovery; the unchanged schema version does not establish lock compatibility.
+
+The coordinator's explicit `recover_downloads` command rechecks receipts under
+this lock before moving an interrupted `downloading` record to `ready` or
+`download_failed`. It never resets a submission or uncertain application, adopts
+unreceipted bytes, deletes files or performs network work. See the
+[recovery command](JOB_COORDINATOR.md#explicit-interrupted-download-recovery).
+
 ## Durable result metadata
 
 After observing remote success, `set_results` binds a nonempty tuple of at most

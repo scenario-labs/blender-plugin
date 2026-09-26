@@ -312,7 +312,23 @@ only to the original scope. Persistence failure propagates without claiming an
 unsaved outcome. The caller may retry an uncommitted local receipt write using
 the same claim, but must never repeat its Blender mutation as part of that retry.
 A write that committed before losing acknowledgement causes a subsequent revision
-conflict and requires saved-state inspection.
+conflict through these ordinary receipt methods.
+
+`retry_application_receipt(claim)` explicitly retries the outcome already reported
+by that exact claim to its original owner. The owner remembers the first attempted
+outcome before reading/writing storage; a failed receipt cannot switch from
+successful application to rollback or vice versa. If storage still matches the
+claimed record, retry writes that same outcome. If it matches the complete expected
+successor (including revision, intent and results), retry acknowledges the saved
+commit without another write. Any other state fails closed. Repeated acknowledgement
+is read-only. The command performs no Blender, file-verification or network work
+and remains available after origin invalidation or owner deactivation.
+
+Receipt evidence uses weak references to caller-held claims. Copies, foreign
+owners, claims with no attempted receipt and claims reconstructed after restart
+are rejected. Dropping a claim loses this local retry authority; it does not change
+the saved job. A retry records the previously confirmed outcome, not the current
+state of a scene after later edits or explicit restoration.
 
 `recovery_plan()` continues to inspect without writes. An abandoned or restarted
 `applying` record remains `REVIEW_APPLICATION`: no expiry, reset, automatic

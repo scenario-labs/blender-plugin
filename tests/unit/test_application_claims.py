@@ -391,3 +391,109 @@ def test_retirement_during_verification_does_not_issue_a_late_application_ticket
         verified(env)
     assert not env.coordinator._verified_results
     assert env.store.get("request") == env.ready
+
+
+@pytest.mark.parametrize("method", ["complete_application", "fail_application"])
+@pytest.mark.parametrize("after_commit", [False, True])
+def test_explicit_receipt_retry_reconciles_only_the_original_outcome(
+    env, monkeypatch, method, after_commit
+):
+    owner = env.coordinator
+    claim = owner.claim_application(verified(env))
+    transition = owner._store.transition
+
+    def fail(*args, **kwargs):
+        if after_commit:
+            transition(*args, **kwargs)
+        raise StoreError("synthetic acknowledgement loss")
+
+    monkeypatch.setattr(owner._store, "transition", fail)
+    with pytest.raises(StoreError):
+        getattr(owner, method)(claim)
+    monkeypatch.setattr(owner._store, "transition", transition)
+    owner.deactivate()
+    saved = owner.retry_application_receipt(claim)
+    assert saved.state == (
+        JobState.APPLIED if method == "complete_application" else JobState.APPLY_FAILED
+    )
+    assert saved.revision == claim.record.revision + 1
+    with monkeypatch.context() as patcher:
+        patcher.setattr(
+            owner._store, "transition", lambda *a, **kw: pytest.fail("Repeated receipt write")
+        )
+        assert owner.retry_application_receipt(claim) == saved
+    assert env.store.get("request") == saved
+
+
+def test_receipt_retry_requires_an_attempt_from_the_issuing_owner(env):
+    owner = env.coordinator
+    claim = owner.claim_application(verified(env))
+    with pytest.raises(ApplicationError):
+        owner.retry_application_receipt(claim)
+    saved = owner.complete_application(claim)
+    for other, token in ((owner, replace(claim)), (owner, None), (env.owner(), claim)):
+        with pytest.raises(ApplicationError):
+            other.retry_application_receipt(token)
+    assert owner.retry_application_receipt(claim) == saved
+
+
+def test_uncertain_receipt_cannot_change_its_reported_outcome(env, monkeypatch):
+    owner = env.coordinator
+    claim = owner.claim_application(verified(env))
+    with monkeypatch.context() as patcher:
+
+        def fail(*args, **kwargs):
+            raise StoreError("synthetic write failure")
+
+        patcher.setattr(owner._store, "transition", fail)
+        with pytest.raises(StoreError):
+            owner.complete_application(claim)
+    with pytest.raises(ApplicationError):
+        owner.fail_application(claim)
+    assert env.store.get("request") == claim.record
+    assert owner.retry_application_receipt(claim).state == JobState.APPLIED
+
+
+@pytest.mark.parametrize("change", ["opposite", "later-revision", "results"])
+def test_receipt_retry_rejects_changed_saved_evidence(env, monkeypatch, change):
+    owner = env.coordinator
+    claim = owner.claim_application(verified(env))
+    saved = owner.fail_application(claim)
+    changed = {
+        "opposite": replace(saved, state=JobState.APPLIED),
+        "later-revision": replace(saved, revision=saved.revision + 1),
+        "results": replace(saved, results=()),
+    }[change]
+    monkeypatch.setattr(owner._store, "get", lambda request: changed)
+    monkeypatch.setattr(
+        owner._store, "transition", lambda *a, **kw: pytest.fail("Overwrote changed state")
+    )
+    with pytest.raises(StoreConflict):
+        owner.retry_application_receipt(claim)
+    assert env.store.get("request") == saved
+
+
+def test_receipt_read_failure_preserves_reported_outcome(env, monkeypatch):
+    owner = env.coordinator
+    claim = owner.claim_application(verified(env))
+    with monkeypatch.context() as patcher:
+
+        def fail(request_id):
+            raise StoreError("synthetic receipt read failure")
+
+        patcher.setattr(owner._store, "get", fail)
+        with pytest.raises(StoreError):
+            owner.complete_application(claim)
+    assert owner.retry_application_receipt(claim).state == JobState.APPLIED
+
+
+def test_receipt_retry_evidence_does_not_retain_abandoned_claims(env):
+    owner = env.coordinator
+    claim = owner.claim_application(verified(env))
+    saved = owner.complete_application(claim)
+    reference = weakref.ref(claim)
+    del claim
+    gc.collect()
+    assert reference() is None
+    assert not owner._application_receipts
+    assert env.store.get("request") == saved

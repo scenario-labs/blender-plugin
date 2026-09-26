@@ -10,7 +10,7 @@ import logging
 import threading
 import uuid
 from dataclasses import dataclass, field
-from weakref import WeakValueDictionary
+from weakref import WeakKeyDictionary, WeakValueDictionary
 
 import bpy
 from bpy.app.handlers import persistent
@@ -96,6 +96,7 @@ class JobSession:
         self._target_scenes = {}
         self._pending = []
         self._issued = WeakValueDictionary()
+        self._world_receipts = WeakKeyDictionary()
         self._active = True
         self._coordinator = JobCoordinator(
             adapter,
@@ -400,7 +401,22 @@ class JobSession:
         except Exception:
             # The World is already applied. Keep its restoration handle, but do
             # not repeat/undo scene mutation merely because persistence failed.
-            raise WorldResultUncertain(application) from None
+            outcome = WorldResultUncertain(application)
+            self._world_receipts[outcome] = (claim, application)
+            raise outcome from None
+        return AppliedWorldResult(record, application)
+
+    def retry_world_receipt(self, outcome):
+        """Save a known completed World assignment without reading or changing Blender."""
+        _main_thread()
+        if not isinstance(outcome, WorldResultUncertain) or outcome not in self._world_receipts:
+            raise OriginUnavailable("Use a pending World receipt from this session")
+        claim, application = self._world_receipts[outcome]
+        try:
+            record = self._coordinator.retry_application_receipt(claim)
+        except Exception:
+            raise outcome from None
+        del self._world_receipts[outcome]
         return AppliedWorldResult(record, application)
 
     def prune_missing_scenes(self):
@@ -458,6 +474,7 @@ class JobSession:
             if self._workers.stopped:
                 self._pending.clear()
                 self._issued.clear()
+                self._world_receipts.clear()
                 with _sessions_lock:
                     _sessions.discard(self)
 

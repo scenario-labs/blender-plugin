@@ -63,7 +63,16 @@ opens Blender's native manager, where you choose whether to install or update.
 Blender displays download errors there and filters releases for your Blender
 version and platform. If no compatible release appears, keep your installed
 version and inspect the release notes. Retry a failed check after connectivity
-returns. Restart Blender when requested after an update.
+returns. A failed refresh can leave the previous listing visible; that cached list
+does not confirm that you are up to date. Restart Blender when requested after an
+update.
+
+If Scenario's Updates controls disappear after disabling its repository,
+open Edit > Preferences > Get Extensions > **Repositories** and enable the
+existing Scenario repository again. Disabling a repository unloads its extensions;
+Scenario cannot re-enable its own repository while unloaded. Re-enable the
+existing entry to recover its saved settings, then check for updates. Do not
+remove the repository or install a second copy as a recovery step.
 
 For a fresh native installation, add the repository URL through Get Extensions >
 Repositories > Add Remote Repository, then find and install Scenario. Updates to

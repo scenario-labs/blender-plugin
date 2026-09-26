@@ -180,13 +180,17 @@ appeared during the build. The standalone preparer remains strict unless passed
 it redownloads and verifies published assets without rebuilding or changing them.
 The standalone release handbook is generated only by the release asset job.
 
-For a local read-only preparation, run:
+After the first adopted release is published, prepare its inventory locally with:
 
 ```sh
 uv run --locked --no-env-file python tools/prepare_site_release.py --output workdir/verified-releases
 ```
 
 Use a fresh output directory. Then pass its `inventory.json` to `make site`.
+Before that release, add `--allow-bootstrap` to the preparation command. A permitted
+bootstrap produces only `publication.json`, without an inventory; build its preview
+with `uv run --locked --no-env-file python tools/build_site.py --pending-repository
+--output dist/handbook-preview` instead of passing an inventory to `make site`.
 Offline orchestration tests cover publication races and retry byte preservation;
 actual HTTPS delivery, positive release attestations and desktop update/state
 preservation must still be recorded in #37 and #68 before closing acceptance.

@@ -75,7 +75,10 @@ prototype paid jobs or their late callbacks.
 **Test connection** uses the same SDK context for one fresh model-list page of
 size one. It runs on a worker, leaves cached models intact, and shares a pending
 check across repeated clicks. The GUI/headless completion queue updates status
-only for the current connection and request. Credential changes and runtime reset
+only for the current connection and request. In background mode, the operator
+waits for its connection worker and drains that queue without a GUI timer. The
+account strip shows pending, error or success independently of cached models.
+Credential changes and runtime reset
 discard late success and failure. The result confirms model access; it does not
 derive account/project identity or activate durable jobs.
 

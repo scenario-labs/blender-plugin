@@ -37,6 +37,8 @@ class RuntimeState:
         self.retired_catalogs = []
         self.account_label = ""
         self.connection_request = None
+        self.connection_worker = None
+        self.connection_status = ""
         self.last_message = ""
         self.message_at = 0.0
         self.enum_cache = {}  # key -> list of (id, name, desc) tuples kept alive for EnumProperty
@@ -160,17 +162,21 @@ def request_connection_check():
         raise ScenarioError(0, "Allow Online Access is disabled in Blender's preferences")
     catalog = ensure_catalog()
     if state.connection_request is not None:
-        return
+        return state.connection_worker
     manager = ensure_manager()
     key = object()
     state.connection_request = key
     state.account_label = "Checking Scenario connection..."
+    state.connection_status = "pending"
     try:
-        manager.check_connection(catalog, key)
+        state.connection_worker = manager.check_connection(catalog, key)
     except Exception:
         state.connection_request = None
+        state.connection_worker = None
+        state.connection_status = ""
         state.account_label = ""
         raise ScenarioError(0, "Could not start the Scenario connection check") from None
+    return state.connection_worker
 
 
 def sync_catalog_context():
@@ -193,6 +199,8 @@ def sync_catalog_context():
             state.history_error = ""
             state.history_cursors.clear()
             state.connection_request = None
+            state.connection_worker = None
+            state.connection_status = ""
             state.account_label = ""
             generation.clear_catalog()
         else:

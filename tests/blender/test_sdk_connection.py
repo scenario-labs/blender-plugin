@@ -5,7 +5,7 @@
 import os
 import threading
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 import bpy
 import httpx
@@ -61,13 +61,13 @@ class SDKConnectionTests(unittest.TestCase):
 
     def test_operator_returns_while_network_is_pending_and_repeated_clicks_share_check(self):
         self.release.clear()
-        self.assertEqual(bpy.ops.scenario.test_connection(), {"FINISHED"})
+        self.assertIsNotNone(self.runtime.request_connection_check())
         try:
             self.assertTrue(self.entered.wait(5))
             self.assertIn("Checking", self.runtime.state.account_label)
             key = self.runtime.state.connection_request
             self.assertIsNotNone(key)
-            self.assertEqual(bpy.ops.scenario.test_connection(), {"FINISHED"})
+            self.assertIsNotNone(self.runtime.request_connection_check())
             self.assertIs(self.runtime.state.connection_request, key)
             self.assertEqual(len(self.calls), 1)
         finally:
@@ -81,13 +81,13 @@ class SDKConnectionTests(unittest.TestCase):
 
     def test_failed_credentials_are_visible_without_private_response_details(self):
         self.status = 403
-        bpy.ops.scenario.test_connection()
+        self.runtime.request_connection_check()
         self.deliver()
         self.assertIn("Connection failed", self.runtime.state.account_label)
         self.assertIn("403", self.runtime.state.account_label)
         self.assertNotIn("do-not-expose", self.runtime.state.account_label)
         self.status = 200
-        bpy.ops.scenario.test_connection()
+        self.runtime.request_connection_check()
         self.deliver()
         self.assertIn("verified", self.runtime.state.account_label)
 
@@ -95,7 +95,7 @@ class SDKConnectionTests(unittest.TestCase):
         for status in (200, 403):
             with self.subTest(status=status):
                 self.status = status
-                bpy.ops.scenario.test_connection()
+                self.runtime.request_connection_check()
                 queued = self.completed()
                 self.prefs.api_secret = f"replacement-{status}"
                 self.runtime.state.account_label = "replacement label"
@@ -112,7 +112,7 @@ class SDKConnectionTests(unittest.TestCase):
                 {"SCENARIO_API_KEY": "launch-key", "SCENARIO_API_SECRET": "launch-secret"},
             ):
                 self.prefs.credential_source = "ENVIRONMENT"
-                bpy.ops.scenario.test_connection()
+                self.runtime.request_connection_check()
                 self.deliver()
                 self.assertIn("verified", self.runtime.state.account_label)
                 os.environ["SCENARIO_API_SECRET"] = "other-secret"
@@ -122,7 +122,7 @@ class SDKConnectionTests(unittest.TestCase):
             self.prefs.credential_source = saved
 
     def test_runtime_reset_rejects_a_queued_connection_result(self):
-        bpy.ops.scenario.test_connection()
+        self.runtime.request_connection_check()
         queued = self.completed()
         self.runtime.state.reset()
         for event in queued:
@@ -153,9 +153,34 @@ class SDKConnectionTests(unittest.TestCase):
         catalog = self.runtime.ensure_catalog()
         self.runtime.state.catalog_loaded = True
         self.runtime.state.records["fixture-model"] = object()
-        bpy.ops.scenario.test_connection()
+        self.runtime.request_connection_check()
         self.manager.join(5)
         self.generation.process_catalog_events()
         self.assertIs(self.runtime.state.catalog, catalog)
         self.assertTrue(self.runtime.state.catalog_loaded)
         self.assertIn("fixture-model", self.runtime.state.records)
+
+    def test_background_operator_delivers_success_and_error_without_a_gui_pump(self):
+        self.assertTrue(bpy.app.background)
+        for status, expected in ((200, "verified"), (403, "Connection failed")):
+            with self.subTest(status=status):
+                self.status = status
+                self.assertEqual(bpy.ops.scenario.test_connection(), {"FINISHED"})
+                self.assertIn(expected, self.runtime.state.account_label)
+                self.assertIsNone(self.runtime.state.connection_request)
+                self.assertIsNone(self.runtime.state.connection_worker)
+                self.assertFalse(self.manager.has_active())
+
+    def test_account_icon_tracks_check_state_even_with_a_loaded_catalog(self):
+        self.runtime.state.catalog_loaded = True
+        panels = submodule("blender.panels")
+        for status, expected in (
+            ("pending", "SORTTIME"),
+            ("error", "ERROR"),
+            ("success", "CHECKMARK"),
+        ):
+            with self.subTest(status=status):
+                self.runtime.state.connection_status = status
+                layout = Mock()
+                self.assertTrue(panels.draw_account_strip(layout, bpy.context))
+                self.assertEqual(layout.row.return_value.label.call_args.kwargs["icon"], expected)

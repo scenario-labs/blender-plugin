@@ -86,7 +86,7 @@ class JobManager:
         self._spawn(self._run_history, catalog, key, token, append)
 
     def check_connection(self, catalog, key):
-        self._spawn(self._run_connection_check, catalog, key)
+        return self._spawn(self._run_connection_check, catalog, key)
 
     def fetch_models(self, catalog, model_ids, *, mark_dirty=True):
         """Fetch detailed records for a few models without re-fetching the list."""

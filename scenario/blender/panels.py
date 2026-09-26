@@ -61,7 +61,11 @@ def draw_account_strip(layout, context):
     label = runtime.state.account_label or (
         "Connected" if runtime.state.catalog_loaded else "Connecting..."
     )
-    row.label(text=label, icon="CHECKMARK" if runtime.state.catalog_loaded else "SORTTIME")
+    icon = {"pending": "SORTTIME", "error": "ERROR", "success": "CHECKMARK"}.get(
+        runtime.state.connection_status,
+        "CHECKMARK" if runtime.state.catalog_loaded else "SORTTIME",
+    )
+    row.label(text=label, icon=icon)
     row.operator("scenario.refresh_catalog", text="", icon="FILE_REFRESH")
     row.operator("preferences.addon_show", text="", icon="PREFERENCES").module = runtime.PACKAGE
     return True

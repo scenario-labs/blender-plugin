@@ -19,7 +19,10 @@ class SCENARIO_OT_test_connection(bpy.types.Operator):
 
     def execute(self, context):
         try:
-            runtime.request_connection_check()
+            worker = runtime.request_connection_check()
+            if bpy.app.background and worker is not None:
+                worker.join()
+                generation.process_catalog_events()
         except ScenarioError as err:
             runtime.state.account_label = ""
             self.report({"ERROR"}, f"Scenario: {err.reason}")

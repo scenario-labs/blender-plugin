@@ -42,7 +42,9 @@ def dispatch(event):
         if payload.get("key") is not runtime.state.connection_request:
             return
         runtime.state.connection_request = None
+        runtime.state.connection_worker = None
         error = payload.get("error")
+        runtime.state.connection_status = "error" if error else "success"
         runtime.state.account_label = (
             f"Connection failed: {error}"
             if error

@@ -137,7 +137,7 @@ class JobStoreTests(unittest.TestCase):
 
             def respond(request):
                 calls.append(request)
-                if request.url.params["dryRun"] == "true":
+                if request.url.params.get("dryRun") == "true":
                     return httpx.Response(200, content=b'{"creativeUnitsCost":0.10000000000000001}')
                 self.assertEqual(store.records()[0].state, storage.JobState.SUBMITTING)
                 return httpx.Response(200, json={"job": {"jobId": "fixture-remote"}})

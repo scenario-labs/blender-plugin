@@ -2,7 +2,7 @@
 
 `scenario.core.jobs.transfers` provides a synchronous, bpy-free storage primitive
 for application-owned workers. It does not contact Scenario API endpoints;
-those remain the shared SDK adapter's responsibility. SDK 2.1.0 returns storage
+those remain the shared SDK adapter's responsibility. SDK 2.2.0 returns storage
 URLs but does not transfer their bytes. This module uses Python's HTTPS transport
 and the already bundled certifi certificate authorities, adding no dependency.
 

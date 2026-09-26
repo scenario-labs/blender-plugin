@@ -51,7 +51,7 @@ def env(tmp_path):
             return httpx.Response(200, json={"workflows": [{"id": "workflow-one"}]})
         if request.url.params.get("dryRun") == "true":
             return httpx.Response(200, content=b'{"creativeUnitsCost":0.10000000000000001}')
-        assert request.url.params.get("dryRun") == "false"
+        assert request.method in {"POST", "PUT"} and "dryRun" not in request.url.params
         return httpx.Response(200, json={"job": {"jobId": "remote-one"}})
 
     adapter = SDKAdapter(
@@ -100,7 +100,7 @@ def test_exact_quote_is_bound_before_estimation_then_prepared_and_submitted_once
         assert [request.url.params.get("dryRun") for request in env.calls] == [
             None,
             "true",
-            "false",
+            None,
         ]
         assert all(request.url.params["projectId"] == "project" for request in env.calls)
         assert json.loads(env.calls[1].content) == json.loads(env.calls[2].content)
@@ -139,7 +139,10 @@ def test_origin_changes_never_allow_rebinding_old_quote(env, phase):
                     target_id="model-one",
                     payload=quote.estimate.payload,
                 )
-    assert not any(request.url.params.get("dryRun") == "false" for request in env.calls)
+    assert not any(
+        request.method in {"POST", "PUT"} and "dryRun" not in request.url.params
+        for request in env.calls
+    )
 
 
 @pytest.mark.parametrize("change", ["copy", "origin", "scope"])
@@ -347,4 +350,10 @@ def test_preparation_overlapping_submission_does_not_invert_locks(env, monkeypat
         submitted = pending_submit.result(5)
     assert submitted.state == JobState.REMOTE
     assert env.store.get(next_prepared.intent.request_id).state == JobState.PREPARED
-    assert sum(request.url.params.get("dryRun") == "false" for request in env.calls) == 1
+    assert (
+        sum(
+            request.method in {"POST", "PUT"} and "dryRun" not in request.url.params
+            for request in env.calls
+        )
+        == 1
+    )

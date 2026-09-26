@@ -52,6 +52,11 @@ the UI, jobs, local MCP and supporting tools. Its source and issue tracker are
 1. Inspect the exact selected SDK release, its public methods, supported extension
    parameters, response wrappers and configuration before implementing an operation.
    Do not assume the repository's main branch matches the published artifact.
+   Start with the [Python SDK documentation](https://docs.scenario.com/api/python).
+   When its coverage is insufficient, consult the
+   [Scenario API reference](https://docs.scenario.com/api) for the operation's
+   actual endpoint, authentication, parameters and response contract. A missing
+   generated SDK method is not evidence that the API cannot perform an operation.
 2. Use the SDK through one shared integration adapter. Existing prototype HTTP
    code, convenience or an unfamiliar SDK method is not a reason to bypass it.
    Audit and replace imported API paths during adoption.
@@ -61,6 +66,12 @@ the UI, jobs, local MCP and supporting tools. Its source and issue tracker are
 4. Only then add a narrow raw API fallback for that operation inside the shared
    adapter. Link the SDK issue in the code and PR, test the fallback, and record
    the condition for removing it. Recheck exceptions on SDK upgrades.
+   Follow the [named SDK extension workflow](docs/SDK_ADOPTION.md#sdk-resource-extensions):
+   add a method to the adapter-owned extension layer, reuse its configured SDK
+   client and transport, and preserve credential isolation, permission checks,
+   sanitized errors and retry policy. Do not wait for SDK regeneration when a
+   verified API contract and tracked SDK gap allow this path; do not invent an
+   endpoint when neither documentation nor inspected first-party code establishes it.
 5. Custom endpoint calls through low-level SDK HTTP verbs are fallbacks too.
    A documented endpoint's `with_raw_response` wrapper is still SDK usage.
    Browser authorization, signed storage transfers and update repositories are
@@ -72,6 +83,12 @@ the UI, jobs, local MCP and supporting tools. Its source and issue tracker are
 7. Configure retries explicitly. Use `max_retries=0` for paid submissions unless
    a verified server idempotency contract makes retry safe. A timeout is an
    uncertain submission, not permission to submit again.
+
+API-key requests use the server's credential-bound scope; team/project discovery
+and explicit selection are optional, not prerequisites for generation. Keep local
+jobs and quotes isolated by selected credentials and any project override. Do not
+infer a key's default project or server account identity from the first discovery
+result. OAuth tenant selection is a separate contract.
 
 Before changing the shared SDK adapter or its dependency pin, read
 `docs/SDK_ADOPTION.md` and run

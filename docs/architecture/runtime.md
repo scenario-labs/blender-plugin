@@ -64,10 +64,15 @@ new selection. All events retain the credential-context identity check.
 
 Caches are connection-local and in memory. The active path does not reuse the
 prototype's unscoped disk model cache. Restart therefore requires a catalog
-refresh. Authoritative account/project discovery remains blocked by
-[SDK issue #29](https://github.com/scenario-labs/scenario-sdk-python/issues/29);
-no account identity is derived from credentials and no shared `JobSession` or
-durable account store is activated by catalog reads. Durable quotes, submission,
+refresh. API-key requests use the server's credential-bound scope without requiring
+team/project selection. Missing generated discovery resources in
+[SDK issue #29](https://github.com/scenario-labs/scenario-sdk-python/issues/29)
+are bridged by the adapter's [named extensions](../SDK_ADOPTION.md#sdk-resource-extensions).
+Discovery is optional and does not infer the key's default project from the first
+listed project. No account identity is derived from credentials and no shared
+`JobSession` or durable account store is activated by catalog reads. Credential-bound
+local persistence still needs integration; it does not require waiting for a
+generated SDK discovery method. Durable quotes, submission,
 uploads and result application still need active SDK adoption under
 #65. Invalidating a visible quote does not establish safe migration of those
 prototype paid jobs or their late callbacks.
@@ -111,7 +116,7 @@ responsive read does not migrate prototype jobs into the durable scoped runtime.
 | Component | Source and contract | Integration still required |
 | --- | --- | --- |
 | Scoped SDK commands | [sdk_adapter.py](../../scenario/core/api/sdk_adapter.py), [SDK guide](../SDK_ADOPTION.md) | Route every adopted service operation through the adapter; establish live authentication and provider contracts. |
-| Shared catalog and quotes | [coordinator.py](../../scenario/core/jobs/coordinator.py), [workers.py](../../scenario/core/jobs/workers.py), [job guide](../JOB_COORDINATOR.md#shared-catalog-and-origin-bound-quotes) | Scoped current-schema reads and exact origin-bound quotes use the shared queue. Active UI/MCP catalog reads now use the SDK adapter, but their adoption of this durable coordinator/quote path still requires authoritative identity. |
+| Shared catalog and quotes | [coordinator.py](../../scenario/core/jobs/coordinator.py), [workers.py](../../scenario/core/jobs/workers.py), [job guide](../JOB_COORDINATOR.md#shared-catalog-and-origin-bound-quotes) | Scoped current-schema reads and exact origin-bound quotes use the shared queue. Active UI/MCP catalog reads now use the SDK adapter, but their adoption of this durable coordinator/quote path still requires credential-bound local persistence and origin integration. |
 | Durable intent and coordination | [store.py](../../scenario/core/jobs/store.py), [coordinator.py](../../scenario/core/jobs/coordinator.py), [job guide](../JOB_COORDINATOR.md) | Replace view/prototype-owned jobs with one application runtime for UI and MCP; complete recovery UX. |
 | Worker ownership | [workers.py](../../scenario/core/jobs/workers.py) | Attach lifecycle to the application context, not a panel; integrate shutdown and delivery. |
 | Origin and stale-result protection | [job_session.py](../../scenario/blender/job_session.py), [context guide](../BLENDER_JOB_CONTEXT.md) | Bind actual entry points to the selected account, scene and targets, including explicit restart recovery. |

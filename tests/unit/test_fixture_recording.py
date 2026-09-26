@@ -79,7 +79,7 @@ def test_records_exact_selected_reads_scrubs_and_writes_truthful_provenance(reco
     )
     provenance = json.loads((recording.root / "PROVENANCE.json").read_text())
     assert provenance["recordedAt"] == dt.datetime.now(dt.UTC).date().isoformat()
-    assert provenance["sdkVersion"] == "2.1.0"
+    assert provenance["sdkVersion"] == "2.2.0"
     assert provenance["files"] == {
         "models/model_fixture.json": "GET /models/model_fixture",
         "models_list_page1.json": "GET /models?privacy=public&pageSize=5",

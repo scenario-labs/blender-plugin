@@ -157,7 +157,7 @@ The following paths require deliberate replacement or adaptation:
 - Studio declares Blender 5.2.0. Adapt native APIs to the approved 5.0 minimum
   and test 5.0/5.1/5.2; changing the manifest alone cannot establish compatibility.
 
-The published SDK 2.1.0 remains the selected contract baseline. See
+The published SDK 2.2.0 remains the selected contract baseline. See
 [SDK_ADOPTION.md](SDK_ADOPTION.md) for the exact artifact, executable contracts
 and unresolved authentication issue. Before adapter implementation, map all
 operations above to that artifact's public methods, parameters and wrappers.

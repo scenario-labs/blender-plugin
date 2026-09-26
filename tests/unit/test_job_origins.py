@@ -41,7 +41,7 @@ def test_queued_origin_rechecked_before_paid_dispatch(tmp_path, change):
     store = JobStore(tmp_path / "jobs.sqlite3", scope)
 
     def respond(request):
-        if request.url.params["dryRun"] == "true":
+        if request.url.params.get("dryRun") == "true":
             return httpx.Response(200, json={"creativeUnitsCost": 1})
         paid.append(request)
         entered.set()
@@ -115,7 +115,7 @@ def test_origin_guard_covers_storage_claim_but_not_http(tmp_path, monkeypatch):
 
     def respond(request):
         assert not held, "Origin invalidation must not wait for HTTP"
-        if request.url.params["dryRun"] == "true":
+        if request.url.params.get("dryRun") == "true":
             return httpx.Response(200, json={"creativeUnitsCost": 1})
         return httpx.Response(200, json={"job": {"jobId": "remote"}})
 

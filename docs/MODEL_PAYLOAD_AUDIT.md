@@ -161,14 +161,14 @@ Actions after checking the configured test scope.
 
 The exact pinned SDK release and bundle are documented in
 [SDK_ADOPTION.md](SDK_ADOPTION.md) and [SDK_BUNDLE.md](SDK_BUNDLE.md). The audit uses
-`SDKAdapter.model`, which calls SDK 2.1.0's public
+`SDKAdapter.model`, which calls SDK 2.2.0's public
 `models.with_raw_response.retrieve(model_id, project_id=...)` method for
 `GET /models/{id}`. It retains the complete model object for the existing parser.
 No raw API fallback, low-level SDK verb or dependency change is introduced.
 The shared adapter disables automatic retries and isolates ambient credentials.
 
 The [public API documentation](https://docs.scenario.com/) and
-[official Python SDK release](https://pypi.org/project/scenario-sdk/2.1.0/)
+[official Python SDK release](https://pypi.org/project/scenario-sdk/2.2.0/)
 describe service contracts. This audit does not invoke any paid endpoint or
 `dryRun` operation. Offline MockTransport checks verify the selected SDK mapping;
 actual service acceptance must be recorded separately.

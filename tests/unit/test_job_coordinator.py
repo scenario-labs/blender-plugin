@@ -43,7 +43,7 @@ def setup(tmp_path):
 
         def handler(request):
             requests.append(request)
-            if request.url.params["dryRun"] == "true":
+            if request.url.params.get("dryRun") == "true":
                 return httpx.Response(200, content=QUOTE)
             # Reopen the actual database from the transport boundary. A cached
             # object is not proof that the submission claim committed.
@@ -99,7 +99,7 @@ def test_exact_intent_commits_before_single_scoped_submission(setup, operation):
     assert store.get(prepared.intent.request_id).state == JobState.PREPARED
     result = submit(coordinator, prepared)
     assert len(requests) == 2
-    assert dict(requests[-1].url.params) == {"dryRun": "false", "projectId": "project"}
+    assert dict(requests[-1].url.params) == {"projectId": "project"}
     assert requests[-1].url.path == (
         "/v1/generate/custom/model" if operation == "model" else "/v1/workflows/workflow/run"
     )

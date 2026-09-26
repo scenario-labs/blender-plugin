@@ -192,6 +192,11 @@ class McpServer:
                 result = pending.handler(pending.arguments)
             except Exception as err:  # delivered to the HTTP thread as a tool error
                 pending.finish(error=err)
+            except BaseException:
+                # Preserve main-thread interruption, but release the HTTP caller
+                # with a tool failure rather than a timeout or false success.
+                pending.finish(error=RuntimeError("Tool execution was interrupted"))
+                raise
             else:
                 pending.finish(result=result)
         return done

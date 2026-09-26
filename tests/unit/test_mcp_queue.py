@@ -157,6 +157,23 @@ def test_handler_errors_are_delivered_without_blocking_later_requests():
         assert result.result(1) == 42
 
 
+@pytest.mark.parametrize("interruption", [SystemExit, KeyboardInterrupt, GeneratorExit])
+def test_interrupted_handler_releases_caller_with_error_and_preserves_interrupt(interruption):
+    def fail(args):
+        raise interruption("fixture interruption")
+
+    target = server(fail, timeout=5)
+    with ThreadPoolExecutor(max_workers=1) as worker:
+        result = worker.submit(target.handle, message())
+        queued(target)
+        with pytest.raises(interruption, match="fixture interruption"):
+            target.process_pending()
+        response = result.result(1)
+        assert response["result"]["isError"] is True
+        assert "Tool execution was interrupted" in response["result"]["content"][0]["text"]
+    assert target.process_pending() == 0
+
+
 def test_stopping_multiple_requests_drains_queue_without_late_execution():
     target = server(lambda args: pytest.fail("Stopped request executed"), timeout=5)
     with ThreadPoolExecutor(max_workers=3) as worker:

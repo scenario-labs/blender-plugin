@@ -546,3 +546,24 @@ def test_upload_and_cancel_failures_do_not_replay_mutations(client_factory, oper
         else:
             sdk.jobs.trigger_action("fixture-job", action="cancel", project_id=PROJECT)
     assert len(requests) == 1
+
+
+@pytest.mark.parametrize("resource", ["teams", "projects"])
+def test_discovery_gap_and_low_level_get_contract(client_factory, resource):
+    # Issue #29: remove the adapter fallback after equivalent generated methods
+    # exist in the selected release and pass the discovery scope contracts.
+    requests = []
+    payload = {resource: [{"id": "fixture-id", "futureField": True}]}
+
+    def respond(request):
+        requests.append(request)
+        return httpx.Response(200, json=payload)
+
+    sdk = client_factory(respond)
+    assert not hasattr(sdk, resource), "Review the discovery fallback on SDK upgrade"
+    params = {} if resource == "teams" else {"teamId": "fixture-team"}
+    response = sdk.get(f"/{resource}", cast_to=httpx.Response, options={"params": params})
+    assert json.loads(response.read()) == payload
+    assert len(requests) == 1
+    assert requests[0].url.path == f"/v1/{resource}"
+    assert dict(requests[0].url.params) == params

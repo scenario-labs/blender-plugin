@@ -21,6 +21,7 @@ from weakref import WeakValueDictionary
 
 from ..schema.forms import prepare_run
 from .client import user_agent_string
+from .sdk_extensions import SDKResourceExtensions
 
 API_URL = "https://api.cloud.scenario.com/v1"
 
@@ -214,6 +215,7 @@ class SDKAdapter:
         self._scope = object()
         self._closed = False
         self._sdk = _client(credentials, base_url, timeout, transport)
+        self._extensions = SDKResourceExtensions(self._sdk)
 
     @property
     def project_id(self):
@@ -244,14 +246,17 @@ class SDKAdapter:
         self.close()
 
     def _request(self, method, *args, **kwargs):
+        if self.project_id is not None:
+            kwargs["project_id"] = self.project_id
+        return self._unscoped_request(method, *args, **kwargs)
+
+    def _unscoped_request(self, method, *args, **kwargs):
         from scenario_sdk import APIConnectionError, APIStatusError
 
         if self._closed:
             raise AdapterError("Scenario client is closed")
         if not self._online():
             raise AdapterError("Online access is disabled")
-        if self.project_id is not None:
-            kwargs["project_id"] = self.project_id
         try:
             response = method(*args, **kwargs)
             return response.read()
@@ -259,6 +264,30 @@ class SDKAdapter:
             raise AdapterError(f"Scenario request failed (HTTP {error.status_code})") from None
         except APIConnectionError:
             raise AdapterError("Could not reach Scenario") from None
+
+    def _discovery(self, method, wrapper, *args):
+        value = _json(self._unscoped_request(method, *args))
+        records = value.get(wrapper)
+        if not isinstance(records, list):
+            raise AdapterError(f"Scenario returned no {wrapper} list")
+        for record in records:
+            try:
+                _identifier(record.get("id") if isinstance(record, dict) else None)
+            except ValueError:
+                raise AdapterError(f"Scenario returned an invalid {wrapper} identity") from None
+        return value
+
+    def teams(self):
+        """Return one unscoped discovery response, without selecting a team.
+
+        Optional metadata discovery; API-key operations need no team/project
+        selection. This list does not establish a key's default project.
+        """
+        return self._discovery(self._extensions.teams, "teams")
+
+    def projects(self, team_id):
+        """Return one team's discovery response, ignoring the selected project."""
+        return self._discovery(self._extensions.projects, "projects", _identifier(team_id))
 
     def _retrieve(self, resource, identifier, wrapper):
         method = getattr(self._sdk, resource).with_raw_response.retrieve

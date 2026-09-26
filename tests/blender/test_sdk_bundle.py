@@ -177,6 +177,30 @@ class SDKBundleTests(unittest.TestCase):
         self.assertEqual(requests[0].headers["Host"], "service.example.invalid")
         self.assertNotIn("projectId", requests[0].url.params)
 
+    def test_discovery_extensions_reuse_bundled_sdk_without_project_scope(self):
+        import httpx
+
+        requests = []
+
+        def respond(request):
+            requests.append(request)
+            wrapper = request.url.path.rsplit("/", 1)[-1]
+            return httpx.Response(200, json={wrapper: [{"id": "fixture-id"}]})
+
+        client = self.adapter(respond, project="stale-project")
+        module = submodule("core.api.sdk_adapter")
+        with online_access(False), self.assertRaises(module.AdapterError):
+            client.teams()
+        self.assertEqual(requests, [])
+        with online_access(True):
+            self.assertEqual(client.teams(), {"teams": [{"id": "fixture-id"}]})
+            self.assertEqual(client.projects("fixture-team"), {"projects": [{"id": "fixture-id"}]})
+        self.assertEqual(len(requests), 2)
+        self.assertEqual(dict(requests[0].url.params), {})
+        self.assertEqual(dict(requests[1].url.params), {"teamId": "fixture-team"})
+        self.assertTrue(all(r.headers["Authorization"].startswith("Basic ") for r in requests))
+        self.assertEqual(client.project_id, "stale-project")
+
     def test_failed_estimate_is_single_attempt_and_sanitized(self):
         import httpx
 

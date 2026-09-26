@@ -82,8 +82,9 @@ malformed-record conversion failures become a sanitized `ScenarioError` shared
 by the owner and waiters, so UI/MCP delivery reports `catalog_failed`.
 Public/private reads remain separate, and retirement rejects
 old results. No persistent or cross-credential cache is introduced.
-Cache entries are in memory per connection until an authoritative account/project
-identity contract enables scoped persistence.
+Cache entries are in memory per connection. Credential-bound durable persistence
+is separate integration work; API-key requests do not require explicit tenant
+selection or a generated SDK discovery method.
 [Runtime integration status](architecture/runtime.md#active-sdk-catalog) records
 the remaining shared-job and paid-flow boundaries. The original raw `Catalog`
 class remains used by historical smoke scripts; the active Blender path no
@@ -216,7 +217,58 @@ already `success`; the SDK preserves it without forcing `canceled`. Live support
 remains acceptance work under #65; the coordinator tests completion races and
 known-ID restart polling offline.
 Record a sanitized upstream SDK issue before any fallback for these boundaries;
-this audit introduces no raw calls or fallback and claims no live service failure.
+these upload/job operations introduce no raw calls or fallback and claim no live
+service failure. Discovery uses the separate exception below.
+
+## SDK resource extensions
+
+API-key requests use the server's credential-bound scope. Callers can omit
+`teamId` and `projectId`; discovery and project selection are not prerequisites
+for estimates or submission. OAuth's explicit tenant-selection requirements are
+a separate concern, deferred for this release. Local durable jobs must still be
+isolated when credentials or an optional project override change. A local
+credential identity must not be presented as a server-reported account identity.
+
+The selected SDK 2.1.0 has no generated `teams` or `projects` resource, tracked in
+[SDK issue #29](https://github.com/scenario-labs/scenario-sdk-python/issues/29).
+The API operations already used by Scenario MCP can be exposed without waiting
+for SDK regeneration. [SDKResourceExtensions](../scenario/core/api/sdk_extensions.py)
+holds named methods inside the shared adapter boundary, using the adapter's
+existing SDK client and HTTP pool:
+
+| Adapter method | Narrow SDK fallback | Query contract |
+| --- | --- | --- |
+| `teams()` | `Scenario.get("/teams", cast_to=httpx.Response)` | No team/project query, including when the adapter has a selected project. |
+| `projects(team_id)` | `Scenario.get("/projects", cast_to=httpx.Response)` | Only the explicitly requested `teamId`; never inherit `projectId`. |
+
+These are explicit raw endpoint exceptions, not generated resource methods.
+They retain the SDK's configured credentials, base URL, timeout, zero retries,
+redirect policy and adapter online/lifetime checks and sanitized errors. The
+adapter validates the named list and each record's ID while preserving unknown
+fields and the full response wrapper. Each method returns one response; no
+exhaustive pagination contract is inferred. Neither method selects the first
+project, changes adapter scope, nor claims that listed projects identify the
+key's default project. Nested metadata remains unvalidated service data.
+
+Team discovery is optional. In the OAuth flow the backend may provision a
+personal team/default project for a user without teams during `GET /teams`, so
+do not describe that route as universally side-effect-free or add an automatic
+onboarding probe. These methods are not yet called by the active Blender UI.
+
+To add another missing method, inspect the pinned SDK, reproduce the gap, link
+an upstream issue, then add a named extension with a verified endpoint/body/query
+contract and offline transport tests. Keep generated SDK methods for operations
+already covered. Do not expose an arbitrary-URL bypass to UI, jobs or local MCP.
+Replace each fallback when the selected SDK provides an equivalent method and
+its contract tests pass; the dependency test flags newly available discovery
+resources for that review. No dependency upgrade is required for this layer.
+
+[Extension tests](../tests/unit/test_sdk_extensions.py) cover selected Basic and
+Bearer credentials despite conflicting environment values, stale-project
+discovery, permission/lifetime checks, malformed data and single-attempt errors.
+They also exercise API-key estimate/submission without discovery or tenant IDs.
+These synthetic checks and the installed-bundle test do not claim live service
+acceptance or complete active durable-generation integration under #65.
 
 ## Known authentication failure
 
@@ -245,8 +297,9 @@ The adapter provides reads/estimates and a coordinator-only submission hook.
 The [job coordinator](JOB_COORDINATOR.md) commits a scoped intent before dispatch,
 consumes each issued quote once and preserves uncertain outcomes. Inference
 cancellation is available through the coordinator; product UI/MCP dispatch
-remains unavailable. All calls use public SDK methods
+remains unavailable. Generated operations use public SDK methods
 with `max_retries=0`; their `with_raw_response` wrappers preserve wire JSON.
+The named discovery exceptions also use the same zero-retry SDK client.
 
 | Adapter operation | SDK 2.1.0 method and contract |
 | --- | --- |
@@ -326,7 +379,8 @@ Before the adopted extension is accepted:
   multipart upload/finalization, signed downloads, asset search and collection
   operations. Do not infer coverage from a similar method name.
 - Reproduce each uncovered operation and link an upstream SDK issue before a
-  narrow raw API fallback in the shared adapter. No fallback is introduced here.
+  narrow raw API fallback in the shared adapter. The named discovery extensions
+  above are the current exception, with issue and removal condition recorded.
 - Bind exact quotes to payload/account/project, persist request identity before
   paid dispatch, and preserve an uncertain state after a lost response. SDK
   retry settings alone do not provide application persistence or prevent a

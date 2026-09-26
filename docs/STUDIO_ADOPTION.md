@@ -166,6 +166,20 @@ organization and multipart completion instead of assuming remote-MCP behavior
 is available under a similar SDK method name. Only a reproduced gap and linked
 SDK issue permit a narrow fallback with a removal condition.
 
+### Local video result insertion
+
+The active Generations video result now offers **Add video strip** through
+[apply_video.py](../scenario/blender/apply_video.py). It imports picture frames
+with Blender's native movie-strip API at the current scene frame, on a wholly
+unused channel, skipping locked/muted channels. Existing timeline and scene
+settings remain intact, and failed decoding rolls back the new strip/editor.
+An empty workspace sequencer scene selector is initialized to the destination;
+an existing selection remains unchanged.
+This is a bounded first-party implementation of the retained local media import
+capability. It omits embedded audio and preserves source frame count at the scene
+frame rate. Sequencer editing, automatic retiming, Film and external encoding
+remain separate; this does not complete the media capability inventory.
+
 ## External media tools
 
 Adopt **external, optional ffmpeg** for Studio's PNG-to-MP4 playblast encoding;

@@ -47,6 +47,7 @@ def _scope_key(root, database):
             try:
                 os.link(temporary, path)
             except FileExistsError:
+                # Another process published scope.key; keep it and validate it below.
                 pass
         finally:
             os.unlink(temporary)

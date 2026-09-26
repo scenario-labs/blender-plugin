@@ -104,7 +104,11 @@ class SCENARIO_OT_video_to_sequencer(bpy.types.Operator):
         except (OSError, RuntimeError, ValueError) as error:
             self.report({"ERROR"}, str(error))
             return {"CANCELLED"}
-        runtime.set_message(f"Video strip added at frame {strip.frame_final_start:g}")
+        if context.workspace is not None and context.workspace.sequencer_scene is None:
+            context.workspace.sequencer_scene = context.scene
+        runtime.set_message(
+            f"Video strip added to {context.scene.name} at frame {strip.frame_final_start:g}"
+        )
         return {"FINISHED"}
 
 

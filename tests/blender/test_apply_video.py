@@ -120,14 +120,34 @@ class VideoApplicationTests(unittest.TestCase):
 
     def test_registered_operator_uses_the_explicit_scene_and_selected_file(self):
         original_scene = bpy.context.scene
-        with bpy.context.temp_override(scene=self.scene):
-            self.assertEqual(
-                bpy.ops.scenario.video_to_sequencer(local_id=self.record.local_id), {"FINISHED"}
-            )
+        workspace = bpy.context.workspace
+        previous = workspace.sequencer_scene
+        try:
+            workspace.sequencer_scene = None
+            with bpy.context.temp_override(scene=self.scene):
+                self.assertEqual(
+                    bpy.ops.scenario.video_to_sequencer(local_id=self.record.local_id), {"FINISHED"}
+                )
+            self.assertEqual(workspace.sequencer_scene, self.scene)
+        finally:
+            workspace.sequencer_scene = previous
         self.assertIs(bpy.context.scene, original_scene)
         self.assertEqual(len(self.scene.sequence_editor.strips), 1)
         self.assertIn("Video strip added", self.runtime.state.last_message)
         self.assertEqual(self.record.files, [str(self.path)])
+
+    def test_operator_preserves_an_existing_sequencer_scene_selection(self):
+        workspace = bpy.context.workspace
+        previous = workspace.sequencer_scene
+        original_scene = bpy.context.scene
+        try:
+            workspace.sequencer_scene = original_scene
+            with bpy.context.temp_override(scene=self.scene):
+                bpy.ops.scenario.video_to_sequencer(local_id=self.record.local_id)
+            self.assertEqual(workspace.sequencer_scene, original_scene)
+            self.assertEqual(len(self.scene.sequence_editor.strips), 1)
+        finally:
+            workspace.sequencer_scene = previous
 
     def test_operator_rejects_stale_records_and_indices_without_scene_mutation(self):
         with bpy.context.temp_override(scene=self.scene):

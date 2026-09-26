@@ -110,7 +110,9 @@ Text, images or your Blender scene to video (Seedance 2.0 and 2.5, Kling, Veo, W
   scene frame rate, so a different source rate changes playback speed. Use
   Blender Undo to remove the insertion. Missing or undecodable files and full
   channels report an error without leaving a partial strip. No external ffmpeg
-  executable is needed for this native import.
+  executable is needed for this native import. The action selects the destination
+  in an empty sequencer scene selector. If the sequencer already shows another
+  scene, select the destination scene in its header to see the inserted strip.
 
 ### 3D
 Four modes: **Text**, **Image** (one picture), **Multi-view** (several views of the same object, first one is the front) and **Edit** (Scenario's 3D tools on the selected mesh).

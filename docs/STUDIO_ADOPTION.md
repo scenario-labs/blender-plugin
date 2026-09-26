@@ -173,6 +173,8 @@ The active Generations video result now offers **Add video strip** through
 with Blender's native movie-strip API at the current scene frame, on a wholly
 unused channel, skipping locked/muted channels. Existing timeline and scene
 settings remain intact, and failed decoding rolls back the new strip/editor.
+An empty workspace sequencer scene selector is initialized to the destination;
+an existing selection remains unchanged.
 This is a bounded first-party implementation of the retained local media import
 capability. It omits embedded audio and preserves source frame count at the scene
 frame rate. Sequencer editing, automatic retiming, Film and external encoding

@@ -15,8 +15,10 @@ from ..core.api.client import ScenarioClient
 from ..core.api.errors import ScenarioError
 from ..core.api.sdk_adapter import Credentials as SDKCredentials
 from ..core.api.sdk_catalog import SDKCatalog
+from ..core.jobs.credential_storage import open_credential_store
 from ..core.jobs.manager import JobManager
 from ..core.jobs.records import JobRegistry
+from ..core.jobs.store import StoreError
 
 log = logging.getLogger("scenario")
 PACKAGE = __package__.rsplit(".", 1)[0]  # the extension package, e.g. bl_ext.user_default.scenario
@@ -26,6 +28,7 @@ class RuntimeState:
     def __init__(self):
         self.manager = None
         self.catalog = None
+        self.job_store = None
         self.estimates = {}  # Exact SDK responses for current UI previews, never spend approval.
         self.estimate_origins = {}  # Pending request key -> original scene and lane, main thread only.
         self.records = {}  # model_id -> ModelRecord (detailed)
@@ -147,13 +150,26 @@ def ensure_catalog():
                 0, "Complete the selected credential source in Scenario Preferences"
             )
         try:
-            state.catalog = SDKCatalog(SDKCredentials(creds.key, creds.secret), online=online())
+            selected = SDKCredentials(creds.key, creds.secret)
+            selected.authorization()
         except ValueError:
             raise ScenarioError(
                 0, "The selected credentials are not a valid API key and secret"
             ) from None
+        try:
+            store = open_credential_store(paths().state_dir / "shared-jobs", selected)
+        except StoreError as error:
+            raise ScenarioError(0, str(error)) from None
+        state.catalog = SDKCatalog(selected, online=online(), scope=store.scope)
+        state.job_store = store
         state.catalog_credentials = creds
     return state.catalog
+
+
+def ensure_job_store():
+    """Select local durable jobs through the same context used by UI and MCP reads."""
+    ensure_catalog()
+    return state.job_store
 
 
 def request_connection_check():
@@ -190,6 +206,7 @@ def sync_catalog_context():
             state.catalog.close()
             state.retired_catalogs.append(state.catalog)
             state.catalog = None
+            state.job_store = None
             state.catalog_credentials = None
             state.history = []
             state.history_token = None

@@ -12,8 +12,12 @@ its existing manager until the shared runtime is integrated.
    and optional project. `account_id` is required for the coordinator even though
    read/estimate-only adapters may omit it. Missing identity fails before any
    request; a store with different scope is also rejected.
-   The authentication layer supplies these identities; they are not proof that
-   a token has been accepted by the remote service.
+   For explicit API keys, the active runtime's
+   [credential-bound local store](JOB_STORAGE.md#identity-and-ownership) supplies
+   the same local account pseudonym to the catalog adapter and store. No server
+   identity discovery is needed. These identities are not proof that credentials
+   have been accepted by the remote service. The active runtime does not yet
+   construct this coordinator for paid actions.
 2. Obtain a real estimate through the adapter. Only the actual unchanged object
    issued by that active adapter is accepted; copying its public fields does not
    create another issued quote.

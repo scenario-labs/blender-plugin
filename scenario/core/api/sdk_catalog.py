@@ -8,6 +8,7 @@ from concurrent.futures import Future
 from contextlib import contextmanager
 
 from .. import history
+from ..jobs.store import JobScope
 from .catalog import ModelRecord
 from .errors import ScenarioError
 from .sdk_adapter import AdapterError, SDKAdapter
@@ -18,12 +19,15 @@ class SDKCatalog:
 
     Reads share this connection's HTTP pool until retirement. Retirement disables
     subsequent requests and closes the pool only after the final reader exits.
-    Cache entries live only in this connection: an authoritative account identity
-    is required before persistent shared account/project caching can be enabled.
+    Cache entries live only in this connection. An optional local job scope binds
+    the adapter to credential-isolated storage; it is not a server account claim.
     """
 
-    def __init__(self, credentials, *, online, adapter_factory=None):
+    def __init__(self, credentials, *, online, adapter_factory=None, scope=None):
         credentials.authorization()
+        if scope is not None and not isinstance(scope, JobScope):
+            raise ValueError("Use an explicit job scope")
+        self._scope = scope
         self._credentials = credentials
         self._adapter_factory = adapter_factory or SDKAdapter
         self._permission = threading.Event()
@@ -36,6 +40,10 @@ class SDKCatalog:
         self._records = {}
         self._model_reads = {}
         self.update_online(online)
+
+    @property
+    def scope(self):
+        return self._scope
 
     def update_online(self, enabled):
         """Mirror Blender permission on its main thread; workers read only Event."""
@@ -76,8 +84,18 @@ class SDKCatalog:
             with self._condition:
                 self._check_active()
                 if self._adapter is None:
+                    context = (
+                        dict(
+                            base_url=self._scope.service,
+                            account_id=self._scope.account_id,
+                            project_id=self._scope.project_id,
+                            team_id=self._scope.team_id,
+                        )
+                        if self._scope is not None
+                        else {}
+                    )
                     self._adapter = self._adapter_factory(
-                        self._credentials, online=self._permission.is_set
+                        self._credentials, online=self._permission.is_set, **context
                     )
                 adapter = self._adapter
                 self._readers += 1

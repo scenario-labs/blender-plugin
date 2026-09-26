@@ -8,11 +8,35 @@ dispatch; UI and local MCP must call that same coordinator.
 
 ## Identity and ownership
 
-The caller supplies one immutable `JobScope`: exact API base URL, stable account
-identity, optional team and optional project. These are non-secret identifiers,
+The caller supplies one immutable `JobScope`: exact API base URL, stable local
+account scope, optional team and optional project. These are non-secret identifiers,
 not credentials. Every query and key includes that scope. Switching accounts or
 projects means selecting another store instance; a request ID from another scope
 cannot be read or changed through the current instance.
+
+For explicit API-key credentials,
+[`open_credential_store`](../scenario/core/jobs/credential_storage.py) binds that
+scope to the exact service and selected key/secret pair. A random installation-local
+key signs this input with HMAC-SHA256; only the resulting `local-key-…` pseudonym
+enters `JobScope.account_id`. It is not a server account identifier and is never
+sent to Scenario. No discovery request or team/project selection is required.
+Optional explicit team/project values still partition the store. Changing either
+credential selects different records; switching back to the original pair restores
+access to its records. Credential rotation does not automatically transfer jobs.
+
+The active Blender catalog opens this store in the extension user-data directory
+at `state/shared-jobs/`. `scope.key` must be backed up together with `jobs.sqlite3`.
+The key is published complete without replacing a competing process's key; an
+invalid key or a missing key beside an existing database fails explicitly and
+preserves the files. No raw API credential is written by this binding. The local
+key is not encryption, and losing it prevents recreating the old scope even with
+the original credentials. Different installation keys produce different scopes.
+
+The runtime retires this store selection together with its catalog when credentials
+change. `ensure_job_store()` reopens the selected local history after a runtime
+reset without starting workers or replaying submissions. Storage failure blocks
+creation of the catalog context too. The shared `JobSession`, paid dispatch and
+recovery UI remain separate integration work; prototype records are not imported.
 
 `JobIntent` freezes the local request ID, model/workflow target, payload SHA-256,
 server quote SHA-256, exact quoted cost as a decimal string, and originating

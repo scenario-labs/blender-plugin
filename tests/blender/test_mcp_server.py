@@ -8,6 +8,7 @@ import time
 import unittest
 import urllib.error
 import urllib.request
+from concurrent.futures import ThreadPoolExecutor
 from unittest.mock import patch
 
 from helpers import submodule
@@ -107,6 +108,8 @@ class McpServerTests(unittest.TestCase):
     def test_timeout_when_main_thread_never_processes(self):
         self.stop.set()
         self.pump.join(timeout=1)
+        mutations = []
+        self.server.registry.get("echo").handler = lambda args: mutations.append("executed")
         self.server.timeout = 0.3
         status, body = post(
             self.url,
@@ -120,6 +123,29 @@ class McpServerTests(unittest.TestCase):
         )
         self.assertEqual(status, 200)
         self.assertEqual(body["error"]["code"], -32000)
+        self.assertIn("not executed", body["error"]["message"])
+        self.server.process_pending()
+        self.assertEqual(mutations, [])
+
+    def test_stop_releases_queued_http_request_without_executing_on_restart(self):
+        self.stop.set()
+        self.pump.join(timeout=1)
+        mutations = []
+        self.server.registry.get("echo").handler = lambda args: mutations.append("executed")
+        message = {"id": 1, "method": "tools/call", "params": {"name": "echo"}}
+        with ThreadPoolExecutor(max_workers=1) as worker:
+            response = worker.submit(post, self.url, "tok", message)
+            deadline = time.monotonic() + 5
+            while self.server._queue.empty() and time.monotonic() < deadline:
+                time.sleep(0.001)
+            self.assertFalse(self.server._queue.empty())
+            self.server.stop()
+            status, body = response.result(5)
+        self.assertEqual(status, 200)
+        self.assertIn("not executed", body["error"]["message"])
+        self.server.start()
+        self.server.process_pending()
+        self.assertEqual(mutations, [])
 
     def test_origin_header_is_validated(self):
         ping = {"jsonrpc": "2.0", "id": 1, "method": "ping"}

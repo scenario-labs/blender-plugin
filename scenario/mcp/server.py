@@ -53,12 +53,56 @@ def token_matches(header, token):
 
 
 class _Pending:
-    __slots__ = ("handler", "arguments", "event", "result", "error")
-
-    def __init__(self, handler, arguments):
+    def __init__(self, handler, arguments, timeout):
         self.handler, self.arguments = handler, arguments
         self.event = threading.Event()
-        self.result, self.error = None, None
+        self.result = None
+        self.error: Exception | None = None
+        self.deadline = time.monotonic() + timeout
+        self._lock = threading.Lock()
+        self._state = "queued"
+
+    def _cancel(self, reason):
+        self._state = "cancelled"
+        self.error = protocol.ToolTimeout(reason)
+        self.handler = self.arguments = None
+        self.event.set()
+
+    def cancel(self, reason):
+        with self._lock:
+            if self._state == "queued":
+                self._cancel(reason)
+
+    def begin(self):
+        with self._lock:
+            if self._state != "queued":
+                return False
+            if time.monotonic() >= self.deadline:
+                self._cancel("request expired in Blender's queue; the tool was not executed")
+                return False
+            self._state = "running"
+            return True
+
+    def finish(self, result=None, error: Exception | None = None):
+        with self._lock:
+            self.result, self.error = result, error
+            self._state = "done"
+            self.handler = self.arguments = None
+            self.event.set()
+
+    def outcome(self):
+        with self._lock:
+            if self._state == "queued":
+                self._cancel("request expired in Blender's queue; the tool was not executed")
+            elif self._state == "running":
+                raise protocol.ToolTimeout(
+                    "the tool started but has not finished; its outcome is unknown. "
+                    "Inspect the operation before retrying; do not resubmit automatically"
+                )
+            error = self.error
+            if error is not None:
+                raise error
+            return self.result
 
 
 class McpServer:
@@ -70,6 +114,8 @@ class McpServer:
         self.blender_version = blender_version
         self.calls_served = 0
         self._queue = queue.Queue()
+        self._admission = threading.Lock()
+        self._stopped = False
         self._httpd = None
         self._thread = None
 
@@ -94,6 +140,8 @@ class McpServer:
                 last_error = err
         if self._httpd is None:
             raise OSError(f"no free port from {self.port}: {last_error}")
+        with self._admission:
+            self._stopped = False
         self._thread = threading.Thread(
             target=self._httpd.serve_forever,
             kwargs={"poll_interval": 0.25},
@@ -105,6 +153,14 @@ class McpServer:
         return self.host, self.port
 
     def stop(self):
+        with self._admission:
+            self._stopped = True
+            while True:
+                try:
+                    pending = self._queue.get_nowait()
+                except queue.Empty:
+                    break
+                pending.cancel("MCP server stopped before execution; the tool was not executed")
         if self._httpd is not None:
             self._httpd.shutdown()
             self._httpd.server_close()
@@ -112,30 +168,37 @@ class McpServer:
 
     # -- main-thread executor ---------------------------------------------
     def executor(self, handler, arguments):
-        pending = _Pending(handler, arguments)
-        self._queue.put(pending)
-        if not pending.event.wait(self.timeout):
-            raise protocol.ToolTimeout(
-                f"no response from Blender's main thread within {self.timeout:g} s"
-            )
-        if pending.error is not None:
-            raise pending.error
-        return pending.result
+        pending = _Pending(handler, arguments, self.timeout)
+        with self._admission:
+            if self._stopped:
+                raise protocol.ToolTimeout("MCP server is stopped; the tool was not executed")
+            self._queue.put(pending)
+        pending.event.wait(max(0.0, pending.deadline - time.monotonic()))
+        return pending.outcome()
 
     def process_pending(self, max_items=8):
         done = 0
         while done < max_items:
-            try:
-                pending = self._queue.get_nowait()
-            except queue.Empty:
-                return done
-            try:
-                pending.result = pending.handler(pending.arguments)
-            except Exception as err:  # delivered to the HTTP thread as a tool error
-                pending.error = err
-            finally:
-                pending.event.set()
+            with self._admission:
+                try:
+                    pending = self._queue.get_nowait()
+                except queue.Empty:
+                    return done
+                admitted = not self._stopped and pending.begin()
             done += 1
+            if not admitted:
+                continue
+            try:
+                result = pending.handler(pending.arguments)
+            except Exception as err:  # delivered to the HTTP thread as a tool error
+                pending.finish(error=err)
+            except BaseException:
+                # Preserve main-thread interruption, but release the HTTP caller
+                # with a tool failure rather than a timeout or false success.
+                pending.finish(error=RuntimeError("Tool execution was interrupted"))
+                raise
+            else:
+                pending.finish(result=result)
         return done
 
     def serve_blocking(self, stop_event, interval=0.05):

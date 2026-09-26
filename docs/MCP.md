@@ -210,6 +210,16 @@ Require an estimate and explicit spending approval. If a generation call times
 out, inspect job status; do not submit it again blindly. Client timeouts do not
 prove that queued or remote work was canceled.
 
+The server's own main-thread queue deadline has an explicit execution boundary.
+A request that expires before its handler starts is removed from execution and
+returns `the tool was not executed`; resuming Blender cannot run that old request.
+Stopping the server also rejects new admission and releases queued callers
+without executing their tools, including after a restart. A handler already
+running is not interrupted: its timeout reports an unknown outcome and asks the
+client to inspect the operation before retrying. This does not cancel remote
+jobs or establish whether an HTTP client's independent timeout happened before
+or after dispatch.
+
 With Python enabled, a connected agent can run arbitrary Python with your user's
 permissions. The blocklist in `scenario/mcp/sandbox.py` is a guard rail, not a
 security boundary. The token can be copied into client configuration files and,

@@ -50,10 +50,17 @@ relying on a workflow; shared runtime and interface adoption remain in progress.
 
 ### Updates
 
-A ZIP installed from disk uses Blender's local repository and does not receive
-automatic updates from Scenario. Install a newer release ZIP the same way and
-restart Blender. An official hosted extension repository and its native update
-controls are still [in development](https://github.com/scenario-labs/blender-plugin/issues/37).
+Open **Preferences > Add-ons > Scenario > Updates** for repository setup,
+update checks and Blender's native Get Extensions manager. The official repository
+address is `https://blender.scenario.com/repo/index.json`; it becomes available after
+the first verified adopted-package release. Enable **Allow Online Access** before
+checking. Updates are installed only when you choose them in Blender.
+
+A ZIP installed into Blender's local repository can still be updated with
+**Install from Disk**, followed by a restart. Adding the official repository does
+not migrate that installation's preferences or storage. See the
+[update guide](docs/USER_GUIDE.md#updates) for fresh installs, compatibility and
+manual fallback.
 
 ### Why not extensions.blender.org
 
@@ -128,8 +135,8 @@ storage, clipboard use and current limits.
 
 Start with the [user guide](docs/USER_GUIDE.md), [known limitations](docs/KNOWN_LIMITATIONS.md)
 and [changelog](CHANGELOG.md). The [documentation index](docs/index.md) links
-architecture, integration status and developer references. A public HTML handbook
-URL will be added when its hosting is available. Build HTML from the maintained
+architecture, integration status and developer references. The public HTML handbook address is
+[blender.scenario.com](https://blender.scenario.com/). Build HTML from the maintained
 Markdown with `make docs`; see [documentation builds](CONTRIBUTING.md#documentation-builds)
 for website and single-file outputs.
 

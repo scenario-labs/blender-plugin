@@ -39,11 +39,44 @@ The account strip names the selected source when its key or secret is missing.
 
 Expand Scenario under Edit > Preferences > Get Extensions to find its Website link; it opens the project on GitHub, with the user guide and issue tracker.
 
+### Updates
+
+The public handbook is at [blender.scenario.com](https://blender.scenario.com/).
+The official native repository uses `https://blender.scenario.com/repo/index.json`.
+The repository becomes available after the first verified adopted-package release;
+historical `v*` releases are available only as manual ZIP downloads.
+
+Open Edit > Preferences > Add-ons > Scenario > **Updates** to see the installed
+version and whether the official repository is configured. Enable **Allow Online
+Access** in System preferences, then choose **Set up official repository**.
+Repeating setup reuses the same repository. **Check for updates** refreshes only
+the official repository; it does not install anything. **Open Get Extensions**
+opens Blender's native manager, where you choose whether to install or update.
+Blender displays download errors there and filters releases for your Blender
+version and platform. If no compatible release appears, keep your installed
+version and inspect the release notes. Retry a failed check after connectivity
+returns. Restart Blender when requested after an update.
+
+For a fresh native installation, add the repository URL through Get Extensions >
+Repositories > Add Remote Repository, then find and install Scenario. Updates to
+that installation stay in the same repository and keep its preferences and storage.
+Save Blender preferences if automatic preference saving is disabled.
+
+A copy installed from a manual ZIP belongs to Blender's local repository. Adding
+the official repository does not move that copy, its credentials or its stored
+jobs. Continue updating that copy with **Install from Disk**, selecting the same
+local repository, and restart Blender. Do not install a second copy expecting its
+settings or history to transfer. There is no prototype-data migration.
+
+Native controls target Blender 5.0, 5.1 and 5.2. Production install/update and state
+preservation evidence remains part of the first adopted-release acceptance; a
+local preview or a synthetic update test is not evidence of a published release.
+
 ### Verify your download
 
 Releases produced by the automated pipeline include `SHA256SUMS` and a build provenance attestation. GitHub Actions builds the ZIP from the release commit with Blender 5.0 and validates the same archive on 5.0, 5.1 and 5.2 before publishing. These checks validate the package format, not runtime compatibility. Historical `v*` releases do not include checksums or attestations.
 
-For automated releases, download the ZIP and `SHA256SUMS` into the same directory. Check the ZIP with `sha256sum -c SHA256SUMS` (macOS: `shasum -a 256 -c SHA256SUMS`) and, with the GitHub CLI, `gh attestation verify scenario-<version>.zip -R scenario-labs/blender-plugin`.
+For automated releases, download the ZIP, `scenario-handbook-<version>.html` and `SHA256SUMS` into the same directory. Check the ZIP with `sha256sum -c SHA256SUMS` (macOS: `shasum -a 256 -c SHA256SUMS`) and, with the GitHub CLI, `gh attestation verify scenario-<version>.zip -R scenario-labs/blender-plugin`.
 
 Where things are:
 

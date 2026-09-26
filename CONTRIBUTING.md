@@ -651,11 +651,19 @@ It accepts `--source`, `--template`, `--manifest` and `--output` paths; images a
 relative to the Markdown source, and relative links must resolve in this repository.
 Review the rendered page at wide and narrow widths after presentation changes.
 Generated HTML and `site/` are ignored; do not commit them or copy old guides into
-snapshot directories. Hosting, release attachment and the native update controls
-remain separate work under #37. The current guide refresh in #13 is merged; screenshot optimization and orphan
+snapshot directories. The [publication workflow](docs/RELEASING.md#publish-the-guide-and-repository)
+composes hosting and release attachment; native update controls live in Scenario
+preferences. Production acceptance remains under #37. The current guide refresh in #13 is merged; screenshot optimization and orphan
 cleanup remain under #14.
 
 ### Complete site snapshots
+
+Before the first adopted release, `uv run --locked --no-env-file python tools/build_site.py
+--pending-repository --output dist/handbook-preview` builds the handbook and a
+repository-pending page, with no installable index or ZIPs. The publication workflow
+uses this mode only for the fixed pre-adoption checkout and a nonempty historical
+release snapshot without adopted tags. It is automatically retired by the first
+release version change.
 
 `make site` combines the same website renderer with the validated native repository
 generator. First [select the retained release inventory](docs/RELEASING.md#select-retained-releases-offline)
@@ -691,9 +699,10 @@ profiles are cleaned, and logs remain outside the site under `.blender-profile`
 credentials. Offline tests use synthetic archives and a fake native command
 boundary; they do not establish native runtime or update acceptance.
 
-This builds a local snapshot only. Provenance verification, inventory freshness
-before deployment, release handbook attachment, Pages publishing and native
-update controls remain separate gates under #37. See the
+This builds a local snapshot only. The separate publication workflow handles
+online provenance verification, fresh inventory discovery and Pages deployment.
+Release handbook attachment belongs to the release workflow; production acceptance
+remains under #37. See the
 [release procedure](docs/RELEASING.md#offline-extension-repository-snapshots)
 for retention and publication requirements.
 

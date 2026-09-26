@@ -19,7 +19,13 @@ def test_literal_network_destinations_require_a_disclosure_review():
             if isinstance(node, ast.Constant) and isinstance(node.value, str):
                 for url in re.findall(r"https?://[A-Za-z0-9.:-]+", node.value):
                     hosts.add(urlsplit(url).hostname)
-    assert hosts <= {"api.cloud.scenario.com", "app.scenario.com", "127.0.0.1"}, hosts
+    assert hosts <= {
+        "api.cloud.scenario.com",
+        "app.scenario.com",
+        "127.0.0.1",
+        "blender.scenario.com",
+        "github.com",
+    }, hosts
     note = (ROOT / "docs/PRIVACY.md").read_text()
     assert all(host in note for host in hosts)
     # Dynamic content destinations cannot be established by literal-source scanning.

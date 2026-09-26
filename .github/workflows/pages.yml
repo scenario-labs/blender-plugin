@@ -1,0 +1,91 @@
+# SPDX-FileCopyrightText: 2026 Scenario Inc.
+# SPDX-License-Identifier: GPL-3.0-or-later
+name: Publish guide and extension repository
+
+on:
+  workflow_run:
+    workflows: [release-please]
+    types: [completed]
+    branches: [main]
+  push:
+    branches: [main]
+    paths:
+      - "docs/**"
+      - "tools/**"
+      - "scenario/blender_manifest.toml"
+      - "pyproject.toml"
+      - "uv.lock"
+      - ".github/workflows/pages.yml"
+      - ".github/actions/setup-blender/**"
+  workflow_dispatch:
+
+permissions: {}
+
+# Hold the lock through discovery, build, final freshness check and deployment.
+# A queued docs run always reads current main and current published releases.
+concurrency:
+  group: scenario-pages
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    if: >-
+      github.repository == 'scenario-labs/blender-plugin' &&
+      (github.event_name != 'workflow_run' ||
+       (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push'))
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    permissions:
+      contents: read
+      attestations: read
+      pages: write
+      id-token: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+        with:
+          version-file: pyproject.toml
+          enable-cache: true
+      - name: Discover and verify current published releases
+        id: prepare
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          uv run --locked --no-env-file python tools/prepare_site_release.py --output "$RUNNER_TEMP/verified" --allow-bootstrap
+          if [[ -f "$RUNNER_TEMP/verified/inventory.json" ]]; then
+            echo "repository=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "repository=false" >> "$GITHUB_OUTPUT"
+          fi
+      - uses: ./.github/actions/setup-blender
+        if: steps.prepare.outputs.repository == 'true'
+        with:
+          version: "5.0.1"
+          sha256: "8019580ee1b7262e505f4196a00237ccf743c88d205b38d34201510676e60b09"
+      - name: Build the guide and repository from exact published bytes
+        if: steps.prepare.outputs.repository == 'true'
+        run: >-
+          uv run --locked --no-env-file python tools/build_site.py
+          --inventory "$RUNNER_TEMP/verified/inventory.json"
+          --output "$RUNNER_TEMP/site" --artifacts "$RUNNER_TEMP/native-logs"
+      - name: Publish the handbook before the first adopted release
+        if: steps.prepare.outputs.repository == 'false'
+        run: >-
+          uv run --locked --no-env-file python tools/build_site.py
+          --pending-repository --output "$RUNNER_TEMP/site"
+      - uses: actions/upload-pages-artifact@7b1f4a764d45c48632c6b24a0339c27f5614fb0b # v4.0.0
+        with:
+          path: ${{ runner.temp }}/site
+      - name: Reject a publication race before deploying
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: uv run --locked --no-env-file python tools/prepare_site_release.py --output "$RUNNER_TEMP/verified" --check-current
+      - uses: actions/deploy-pages@d6db90164ac5ed86f2b6aed7e0febac5b3c0c03e # v4.0.5
+        id: deploy

@@ -96,18 +96,20 @@ jobs:
           version-file: pyproject.toml
           enable-cache: true
 
-      - name: Build the pinned SDK bundle with Blender 5.0, validate, checksum
+      - name: Build the exact ZIP and standalone handbook, then checksum
         run: |
           set -euo pipefail
           mkdir -p dist
           ZIP="dist/scenario-${VERSION}.zip"
           uv run --locked --no-env-file python tools/build.py --blender blender --output dist --artifacts "$RUNNER_TEMP/scenario-release"
-          (cd dist && sha256sum "scenario-${VERSION}.zip" > SHA256SUMS && cat SHA256SUMS)
+          uv run --locked --no-env-file python tools/build_docs_html.py --inline-images --output "dist/scenario-handbook-${VERSION}.html"
+          (cd dist && sha256sum "scenario-${VERSION}.zip" "scenario-handbook-${VERSION}.html" > SHA256SUMS && cat SHA256SUMS)
 
       - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
           subject-path: |
             dist/scenario-${{ env.VERSION }}.zip
+            dist/scenario-handbook-${{ env.VERSION }}.html
             dist/SHA256SUMS
 
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -124,7 +126,7 @@ jobs:
           client-id: ${{ secrets.GH_ACTIONS_TOKEN_RETRIEVER_PUBLIC_REPO_CLIENT_ID }}
           private-key: ${{ secrets.GH_ACTIONS_TOKEN_RETRIEVER_PUBLIC_REPO_PRIVATE_KEY }}
 
-      - name: Attach the zip and SHA256SUMS to the draft release
+      - name: Attach the ZIP, handbook and SHA256SUMS to the draft release
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
           GH_REPO: ${{ github.repository }}
@@ -133,7 +135,7 @@ jobs:
           set -euo pipefail
           RELEASE="$(gh release view "$TAG" --json isDraft,targetCommitish)"
           jq -e --arg sha "$RELEASE_SHA" '.isDraft and .targetCommitish == $sha' <<<"$RELEASE" > /dev/null
-          gh release upload "$TAG" "dist/scenario-${VERSION}.zip" dist/SHA256SUMS --clobber
+          gh release upload "$TAG" "dist/scenario-${VERSION}.zip" "dist/scenario-handbook-${VERSION}.html" dist/SHA256SUMS --clobber
 
   # The zip content does not depend on which Blender builds it, so the artefact
   # built above is the file validated here on the other supported LTS lines.
@@ -193,10 +195,11 @@ jobs:
         run: |
           set -euo pipefail
           RELEASE="$(gh release view "$TAG" --json isDraft,targetCommitish,assets)"
-          jq -e --arg sha "$RELEASE_SHA" --arg zip "scenario-${TAG#blender-plugin-v}.zip" '
+          jq -e --arg sha "$RELEASE_SHA" --arg zip "scenario-${TAG#blender-plugin-v}.zip" --arg handbook "scenario-handbook-${TAG#blender-plugin-v}.html" '
             .isDraft and .targetCommitish == $sha and
             any(.assets[]; .name == "SHA256SUMS") and
-            any(.assets[]; .name == $zip)
+            any(.assets[]; .name == $zip) and
+            any(.assets[]; .name == $handbook)
           ' <<<"$RELEASE" > /dev/null
           gh release edit "$TAG" --draft=false
 

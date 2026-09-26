@@ -18,6 +18,13 @@ def publisher(monkeypatch):
     return importlib.import_module("prepare_site_release")
 
 
+@pytest.fixture
+def bootstrap_manifest(tmp_path):
+    manifest = tmp_path / "bootstrap-manifest.toml"
+    manifest.write_text('id = "scenario"\nversion = "0.9.9"\n')
+    return manifest
+
+
 class DiscoveryFixture(GitHubFixture):
     def __init__(self, releases):
         super().__init__(releases)
@@ -63,7 +70,7 @@ def test_discovery_verification_and_final_check_retain_exact_history(publisher, 
                     github.releases.assets / release["tag_name"] / asset["name"]
                 ).read_bytes()
     publisher.check_current(output, github=github)
-    assert github.discoveries == 3
+    assert github.discoveries == 4
     assert len(github.verified) == 8
 
 
@@ -73,6 +80,20 @@ def test_release_published_during_build_prevents_stale_deploy(publisher, tmp_pat
     publisher.prepare_current(output, github=github)
     github.releases.add("3.0.0", minimum="5.1.0")
     with pytest.raises(ValueError, match="changed after"):
+        publisher.check_current(output, github=github)
+
+
+def test_release_published_during_final_provenance_check_prevents_deploy(publisher, tmp_path):
+    github = fixture(tmp_path)
+    output = tmp_path / "verified"
+    publisher.prepare_current(output, github=github)
+
+    def publish(*_):
+        if len(github.releases.rows) == 2:
+            github.releases.add("3.0.0", minimum="5.1.0")
+
+    github.on_verify = publish
+    with pytest.raises(ValueError, match="changed during the final"):
         publisher.check_current(output, github=github)
 
 
@@ -121,22 +142,70 @@ def test_failed_deployment_can_repeat_from_unchanged_release_bytes(publisher, tm
     assert set(github.downloads) == {"scenario-1.0.0.zip", "scenario-2.0.0.zip", "SHA256SUMS"}
 
 
-def test_bootstrap_requires_explicit_opt_in_and_publishes_no_inventory(publisher, tmp_path):
+def test_bootstrap_requires_explicit_opt_in_and_publishes_no_inventory(
+    publisher, tmp_path, bootstrap_manifest
+):
     github = DiscoveryFixture(Releases(tmp_path))
+    github.releases.rows.append({"tag_name": "v0.9.9"})
     output = tmp_path / "verified"
     with pytest.raises(ValueError):
         publisher.prepare_current(output, github=github)
-    assert publisher.prepare_current(output, github=github, allow_bootstrap=True) is None
+    assert (
+        publisher.prepare_current(
+            output, github=github, allow_bootstrap=True, manifest=bootstrap_manifest
+        )
+        is None
+    )
     assert set(p.name for p in output.iterdir()) == {"publication.json"}
     assert not github.downloads
-    publisher.check_current(output, github=github)
+    publisher.check_current(output, github=github, manifest=bootstrap_manifest)
     github.releases.add("1.0.0")
     with pytest.raises(ValueError, match="changed after"):
-        publisher.check_current(output, github=github)
+        publisher.check_current(output, github=github, manifest=bootstrap_manifest)
+
+
+@pytest.mark.parametrize("release_version", ["0.9.10", "0.10.0", "1.0.0"])
+def test_bootstrap_cannot_erase_repository_after_adopted_releases_disappear(
+    publisher, tmp_path, release_version
+):
+    github = DiscoveryFixture(Releases(tmp_path))
+    github.releases.rows.append({"tag_name": "v0.9.9"})
+    manifest = tmp_path / "manifest.toml"
+    manifest.write_text(f'id = "scenario"\nversion = "{release_version}"\n')
+    output = tmp_path / "verified"
+    with pytest.raises(ValueError):
+        publisher.prepare_current(output, github=github, allow_bootstrap=True, manifest=manifest)
+    assert not output.exists()
+
+
+def test_empty_successful_snapshot_cannot_authorize_bootstrap(
+    publisher, tmp_path, bootstrap_manifest
+):
+    github = DiscoveryFixture(Releases(tmp_path))
+    with pytest.raises(ValueError):
+        publisher.prepare_current(
+            tmp_path / "verified", github=github, allow_bootstrap=True, manifest=bootstrap_manifest
+        )
+    assert not (tmp_path / "verified").exists()
+
+
+def test_bootstrap_final_gate_rejects_advanced_checkout(publisher, tmp_path, bootstrap_manifest):
+    github = DiscoveryFixture(Releases(tmp_path))
+    github.releases.rows.append({"tag_name": "v0.9.9"})
+    output = tmp_path / "verified"
+    publisher.prepare_current(
+        output, github=github, allow_bootstrap=True, manifest=bootstrap_manifest
+    )
+    manifest = tmp_path / "manifest.toml"
+    manifest.write_text('id = "scenario"\nversion = "0.10.0"\n')
+    with pytest.raises(ValueError):
+        publisher.check_current(output, github=github, manifest=manifest)
 
 
 @pytest.mark.parametrize("problem", ["draft", "prerelease", "assets"])
-def test_bootstrap_cannot_hide_unready_adopted_releases(publisher, tmp_path, problem):
+def test_bootstrap_cannot_hide_unready_adopted_releases(
+    publisher, tmp_path, bootstrap_manifest, problem
+):
     github = fixture(tmp_path)
     for row in github.releases.rows:
         if problem == "assets":
@@ -144,5 +213,7 @@ def test_bootstrap_cannot_hide_unready_adopted_releases(publisher, tmp_path, pro
         else:
             row[problem] = True
     with pytest.raises(ValueError):
-        publisher.prepare_current(tmp_path / "verified", github=github, allow_bootstrap=True)
+        publisher.prepare_current(
+            tmp_path / "verified", github=github, allow_bootstrap=True, manifest=bootstrap_manifest
+        )
     assert not (tmp_path / "verified").exists()

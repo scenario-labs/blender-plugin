@@ -10,9 +10,11 @@ import argparse
 import json
 import sys
 import tempfile
+import tomllib
 import zipfile
 from pathlib import Path
 
+from blender_env import ROOT
 from release_inventory import (
     MAX_ARCHIVE,
     MAX_METADATA,
@@ -27,6 +29,15 @@ from verify_release_inventory import GitHub, verify
 
 BLENDER_VERSIONS = ("5.0.0", "5.1.0", "5.2.0")
 PLATFORMS = ("linux-x64", "windows-x64", "macos-arm64", "macos-x64")
+# This is the last historical release, not a moving "current version" setting.
+# Release-please advances the checked-out manifest before the first adopted
+# release is published, permanently retiring automatic handbook-only bootstrap.
+HANDBOOK_BOOTSTRAP_VERSION = "0.9.9"
+
+
+def bootstrap_checkout(manifest):
+    value = tomllib.loads(manifest.read_text(encoding="utf-8"))
+    return value.get("id") == "scenario" and value.get("version") == HANDBOOK_BOOTSTRAP_VERSION
 
 
 def discover(github, snapshot, *, allow_bootstrap=False):
@@ -38,8 +49,13 @@ def discover(github, snapshot, *, allow_bootstrap=False):
         if not isinstance(pages, list) or any(not isinstance(page, list) for page in pages):
             raise ValueError("Invalid paginated release snapshot")
         rows = [row for page in pages for row in page]
-        if len(rows) > 1000 or any(
-            not isinstance(row, dict) or not isinstance(row.get("tag_name"), str) for row in rows
+        if (
+            not rows
+            or len(rows) > 1000
+            or any(
+                not isinstance(row, dict) or not isinstance(row.get("tag_name"), str)
+                for row in rows
+            )
         ):
             raise ValueError("Invalid release metadata")
         # Only the initial channel may publish a handbook without a repository.
@@ -85,10 +101,13 @@ def download(github, asset, path):
     path.write_bytes(content)
 
 
-def prepare_current(output, *, github=None, allow_bootstrap=False):
+def prepare_current(
+    output, *, github=None, allow_bootstrap=False, manifest=ROOT / "scenario/blender_manifest.toml"
+):
     if output.exists() or output.is_symlink():
         raise ValueError("Output already exists")
     github = github or GitHub()
+    allow_bootstrap = allow_bootstrap and bootstrap_checkout(manifest)
     output.parent.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix=".site-releases-", dir=output.parent) as temporary:
         root = Path(temporary)
@@ -119,19 +138,24 @@ def prepare_current(output, *, github=None, allow_bootstrap=False):
     return output / "inventory.json" if releases else None
 
 
-def check_current(directory, *, github=None):
+def check_current(directory, *, github=None, manifest=ROOT / "scenario/blender_manifest.toml"):
     """Recheck immediately before deployment, after potentially slow native builds."""
     github = github or GitHub()
     expected = json.loads((directory / "publication.json").read_text())
     with tempfile.TemporaryDirectory(prefix="scenario-site-check-") as temporary:
         _, identity = discover(
-            github, Path(temporary) / "releases.json", allow_bootstrap=not expected
+            github,
+            Path(temporary) / "releases.json",
+            allow_bootstrap=not expected and bootstrap_checkout(manifest),
         )
         if identity != expected:
             raise ValueError("Published releases changed after the site build; rerun deployment")
         # Also recheck tag commits and cryptographic provenance of the exact offered bytes.
         if expected:
             verify(directory / "inventory.json", Path(temporary) / "verified", github=github)
+            _, current = discover(github, Path(temporary) / "after-verification.json")
+            if current != expected:
+                raise ValueError("Published releases changed during the final verification")
 
 
 def main():

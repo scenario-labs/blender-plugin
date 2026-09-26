@@ -661,7 +661,9 @@ cleanup remain under #14.
 Before the first adopted release, `uv run --locked --no-env-file python tools/build_site.py
 --pending-repository --output dist/handbook-preview` builds the handbook and a
 repository-pending page, with no installable index or ZIPs. The publication workflow
-uses this mode only when discovery finds no adopted release tags.
+uses this mode only for the fixed pre-adoption checkout and a nonempty historical
+release snapshot without adopted tags. It is automatically retired by the first
+release version change.
 
 `make site` combines the same website renderer with the validated native repository
 generator. First [select the retained release inventory](docs/RELEASING.md#select-retained-releases-offline)

@@ -168,8 +168,11 @@ rediscovers current releases, so it cannot roll back an already deployed newer
 inventory. A publication after the final check is picked up by the next release
 completion; GitHub's release reads and Pages deployment are not one atomic transaction.
 
-Before any adopted tag exists, the Pages workflow explicitly permits a handbook-only
-bootstrap. It publishes the guide and a native-downloads explanation, without an
+Only the pre-adoption `0.9.9` checkout can bootstrap the handbook, and it requires
+a nonempty release snapshot with no adopted tags. The fixed bootstrap version is
+not advanced with releases: release-please retires this path when it changes the
+manifest for the first adopted release. Later empty or withdrawn channels fail
+instead of replacing the live repository with a placeholder. It publishes the guide and a native-downloads explanation, without an
 `index.json` or ZIPs. A draft, prerelease or invalid adopted release cannot trigger
 that fallback. The final freshness check rejects bootstrap if an adopted release
 appeared during the build. The standalone preparer remains strict unless passed

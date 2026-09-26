@@ -170,6 +170,8 @@ there is no migration or active prototype integration in this component.
 The coordinator optionally owns one `UploadStore`, `UploadSources` and
 `PartUploader` with the same scope as its job store. Its existing `JobWorkers`
 queue exposes five fixed commands; there is no second SDK client or thread pool.
+It also exposes synchronous local cancellation, which does not wait behind queued
+initialization or consume another queue slot.
 
 | Command | Behavior |
 | --- | --- |
@@ -178,6 +180,23 @@ queue exposes five fixed commands; there is no second SDK client or thread pool.
 | `transfer_upload_part` | Retrieve the known upload, verify its metadata/next part destination and immutable bytes, claim and send exactly one part |
 | `finalize_upload` | Require all saved receipts, claim completion, then call the SDK completion action once |
 | `refresh_upload` | Retrieve a known upload and commit recognized processing/imported/failed observations without replay |
+| `cancel_prepared_upload` | Immediately cancel only PREPARED local intent at its expected revision; no source access, deletion or remote request |
+
+Local cancellation requires the active selected scope but does not require the
+old Blender origin or source file to remain available. It works offline and after
+reopening the scoped store. The same SQLite revision check arbitrates cancellation
+against initialization, including independent owners. When cancellation wins, a
+queued or preflighting initializer cannot commit its claim and never dispatches.
+When initialization wins, cancellation refuses; INITIALIZING, uncertain, remote
+and terminal states cannot be reset or reported as remotely aborted. The selected
+SDK still provides no verified upload-abort operation.
+
+The canceled record retains source identity and original scope/origin. Both the
+user's file and staged snapshot remain untouched; source retention/cleanup stays
+separate. Repeated cancellation and stale revisions require reloading saved state.
+A storage error may occur before or after commit: inspect the record rather than
+assuming cancellation succeeded, resetting it or starting another upload. This
+immediate command returns its immutable saved record directly, not a queued task.
 
 Staging defaults to a local 256 MiB file limit and 8 MiB parts, configurable by
 the application. Files are copied with bounded reads into a new private directory;

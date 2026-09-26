@@ -672,3 +672,269 @@ def test_claimed_upload_finishes_after_origin_change_and_explicit_refresh_stays_
     assert imported.state == UploadState.IMPORTED
     assert imported.intent.origin == env.origin
     assert [request.method for request in env.requests[calls:]] == ["GET"]
+
+
+def test_cancel_prepared_upload_is_offline_and_preserves_both_sources(env, monkeypatch):
+    record = prepare(env)
+    staged = env.sources._directory(env.scope, record.intent.request_id) / "source.bin"
+    env.online = False
+    env.origins.reset()
+    monkeypatch.setattr(env.sources, "verify", lambda *a: pytest.fail("Read source to cancel"))
+    canceled = invoke(env, "cancel_prepared_upload", record)
+    assert canceled.state == UploadState.CANCELED
+    assert canceled.intent == record.intent
+    assert canceled.revision == record.revision + 1
+    assert canceled.upload_id is None
+    assert env.source.read_bytes() == staged.read_bytes() == b"abcde"
+    assert env.coordinator.upload_recovery_plan()[0].action.value == "finished"
+    assert env.requests == []
+    env.uploader.upload.assert_not_called()
+    with pytest.raises(StoreConflict):
+        invoke(env, "initialize_upload", canceled)
+
+
+@pytest.mark.parametrize("revision", [True, -1, 1, None])
+def test_cancel_prepared_upload_rejects_stale_or_invalid_revisions(env, revision):
+    record = prepare(env)
+    with pytest.raises(StoreConflict):
+        env.coordinator.cancel_prepared_upload(record.intent.request_id, expected_revision=revision)
+    assert env.store.get(record.intent.request_id) == record
+    assert env.requests == []
+
+
+def test_cancel_prepared_upload_rejects_inactive_and_missing_requests(env):
+    record = prepare(env)
+    with pytest.raises(StoreConflict):
+        env.coordinator.cancel_prepared_upload("missing", expected_revision=0)
+    env.coordinator.deactivate()
+    with pytest.raises(UploadError, match="inactive"):
+        invoke(env, "cancel_prepared_upload", record)
+    assert env.store.get(record.intent.request_id) == record
+    assert env.requests == []
+
+
+@pytest.mark.parametrize("after_commit", [False, True])
+def test_cancel_upload_write_failure_requires_inspection_without_dispatch(
+    env, monkeypatch, after_commit
+):
+    record = prepare(env)
+    transition = env.store.transition
+
+    def fail(*args, **kwargs):
+        if after_commit:
+            transition(*args, **kwargs)
+        raise StoreError("synthetic cancellation write failure")
+
+    monkeypatch.setattr(env.store, "transition", fail)
+    with pytest.raises(StoreError):
+        invoke(env, "cancel_prepared_upload", record)
+    saved = env.store.get(record.intent.request_id)
+    assert saved.state == (UploadState.CANCELED if after_commit else UploadState.PREPARED)
+    assert saved.intent == record.intent
+    assert env.requests == []
+
+
+def test_cancel_upload_wins_during_initialization_preflight(env, monkeypatch):
+    from concurrent.futures import ThreadPoolExecutor
+
+    record = prepare(env)
+    entered, release = threading.Event(), threading.Event()
+    verify = env.sources.verify
+
+    def paused(intent):
+        entered.set()
+        assert release.wait(5)
+        return verify(intent)
+
+    monkeypatch.setattr(env.sources, "verify", paused)
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        pending = pool.submit(invoke, env, "initialize_upload", record)
+        try:
+            assert entered.wait(5)
+            canceled = invoke(env, "cancel_prepared_upload", record)
+        finally:
+            release.set()
+        with pytest.raises(StoreConflict):
+            pending.result(5)
+    assert env.store.get(record.intent.request_id) == canceled
+    assert env.requests == []
+
+
+def test_initialization_claim_wins_before_upload_cancellation(env, monkeypatch):
+    from concurrent.futures import ThreadPoolExecutor
+
+    record = prepare(env)
+    entered, release = threading.Event(), threading.Event()
+    create = env.coordinator._adapter.create_upload
+
+    def paused(**kwargs):
+        entered.set()
+        assert release.wait(5)
+        return create(**kwargs)
+
+    monkeypatch.setattr(env.coordinator._adapter, "create_upload", paused)
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        pending = pool.submit(invoke, env, "initialize_upload", record)
+        try:
+            assert entered.wait(5)
+            claimed = env.store.get(record.intent.request_id)
+            assert claimed.state == UploadState.INITIALIZING
+            with pytest.raises(StoreConflict):
+                invoke(env, "cancel_prepared_upload", claimed)
+        finally:
+            release.set()
+        uploaded = pending.result(5)
+    assert uploaded.state == UploadState.UPLOADING
+    assert len(env.requests) == 1
+
+
+def test_full_worker_queue_does_not_delay_prepared_upload_cancellation(env, monkeypatch):
+    from scenario.core.jobs.workers import WorkerError
+
+    first, second = prepare(env), prepare(env)
+    entered, release = threading.Event(), threading.Event()
+    create = env.coordinator._adapter.create_upload
+
+    def paused(**kwargs):
+        entered.set()
+        assert release.wait(5)
+        return create(**kwargs)
+
+    monkeypatch.setattr(env.coordinator._adapter, "create_upload", paused)
+    workers = JobWorkers(env.coordinator, workers=1, pending_limit=1)
+    try:
+        running = workers.initialize_upload(
+            first.intent.request_id, expected_revision=first.revision
+        )
+        assert entered.wait(5)
+        queued = workers.initialize_upload(
+            second.intent.request_id, expected_revision=second.revision
+        )
+        with pytest.raises(WorkerError, match="full"):
+            workers.initialize_upload(second.intent.request_id, expected_revision=second.revision)
+        canceled = workers.cancel_prepared_upload(
+            second.intent.request_id, expected_revision=second.revision
+        )
+        assert canceled.state == UploadState.CANCELED
+        release.set()
+        running.result(5)
+        with pytest.raises(StoreConflict):
+            queued.result(5)
+        assert len(env.requests) == 1
+        workers.deactivate()
+        with pytest.raises(WorkerError, match="inactive"):
+            workers.cancel_prepared_upload(
+                second.intent.request_id, expected_revision=canceled.revision
+            )
+    finally:
+        release.set()
+        workers.shutdown()
+
+
+@pytest.mark.parametrize(
+    "stage",
+    [
+        "initializing",
+        "uncertain",
+        "uploading",
+        "part_uncertain",
+        "processing",
+        "imported",
+        "canceled",
+    ],
+)
+def test_cancel_prepared_upload_never_aborts_claimed_or_finished_work(env, stage):
+    if stage in {"initializing", "uncertain", "canceled"}:
+        record = prepare(env)
+        record = env.store.transition(
+            record.intent.request_id,
+            expected_revision=record.revision,
+            state=UploadState.CANCELED if stage == "canceled" else UploadState.INITIALIZING,
+        )
+        if stage == "uncertain":
+            record = env.store.transition(
+                record.intent.request_id,
+                expected_revision=record.revision,
+                state=UploadState.INITIALIZATION_UNCERTAIN,
+            )
+    elif stage == "processing":
+        record = invoke(env, "finalize_upload", transferred(env))
+    else:
+        record = initialized(env)
+        if stage == "part_uncertain":
+            env.uploader.upload.side_effect = UploadUncertain("fixture uncertain transfer")
+            with pytest.raises(UploadMutationUncertain):
+                invoke(env, "transfer_upload_part", record)
+            record = env.store.get(record.intent.request_id)
+        elif stage == "imported":
+            env.remote.update(status="imported", entityId="asset-one")
+            record = invoke(env, "refresh_upload", record)
+    calls = len(env.requests)
+    transfers = env.uploader.upload.call_count
+    with pytest.raises(StoreConflict):
+        invoke(env, "cancel_prepared_upload", record)
+    assert env.store.get(record.intent.request_id) == record
+    assert len(env.requests) == calls
+    assert env.uploader.upload.call_count == transfers
+
+
+@pytest.mark.parametrize("component", ["service", "account_id", "project_id", "team_id"])
+def test_upload_cancellation_stays_in_the_selected_scope(env, component):
+    from dataclasses import replace
+
+    record = prepare(env)
+    changed = "https://other.example.invalid/v1" if component == "service" else "other"
+    scope = replace(env.scope, **{component: changed})
+    foreign = UploadStore(env.store._path, scope)
+    same_id = foreign.create(replace(record.intent, scope=scope))
+    foreign_only = foreign.create(replace(record.intent, scope=scope, request_id="foreign-only"))
+    with pytest.raises(StoreConflict):
+        env.coordinator.cancel_prepared_upload("foreign-only", expected_revision=0)
+    invoke(env, "cancel_prepared_upload", record)
+    assert foreign.get(same_id.intent.request_id) == same_id
+    assert foreign.get("foreign-only") == foreign_only
+    assert env.requests == []
+
+
+def test_independent_upload_owners_cannot_both_cancel_and_initialize(env, monkeypatch):
+    from concurrent.futures import ThreadPoolExecutor
+    from contextlib import nullcontext
+
+    from scenario.core.jobs.uploads import UploadCommands
+
+    record = prepare(env)
+    other_store = UploadStore(env.store._path, env.scope)
+    other = UploadCommands(
+        env.coordinator._adapter,
+        other_store,
+        env.sources,
+        env.uploader,
+        lambda origin=None: nullcontext(),
+    )
+    barrier = threading.Barrier(2)
+    for store in (env.store, other_store):
+        transition = store.transition
+
+        def synchronized(*args, _transition=transition, **kwargs):
+            if kwargs.get("state") in {UploadState.INITIALIZING, UploadState.CANCELED}:
+                barrier.wait(5)
+            return _transition(*args, **kwargs)
+
+        monkeypatch.setattr(store, "transition", synchronized)
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        futures = [
+            pool.submit(invoke, env, "cancel_prepared_upload", record),
+            pool.submit(
+                other.initialize, record.intent.request_id, expected_revision=record.revision
+            ),
+        ]
+        results = []
+        for future in futures:
+            try:
+                results.append(future.result(5))
+            except StoreConflict:
+                results.append(None)
+    assert sum(result is not None for result in results) == 1
+    saved = env.store.get(record.intent.request_id)
+    assert saved.state in {UploadState.CANCELED, UploadState.UPLOADING}
+    assert len(env.requests) == (0 if saved.state == UploadState.CANCELED else 1)

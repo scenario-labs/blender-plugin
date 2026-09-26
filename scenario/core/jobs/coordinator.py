@@ -227,6 +227,11 @@ class JobCoordinator:
     def initialize_upload(self, request_id, *, expected_revision):
         return self._upload_commands().initialize(request_id, expected_revision=expected_revision)
 
+    def cancel_prepared_upload(self, request_id, *, expected_revision):
+        return self._upload_commands().cancel_prepared(
+            request_id, expected_revision=expected_revision
+        )
+
     def transfer_upload_part(self, request_id, *, expected_revision):
         return self._upload_commands().transfer_part(
             request_id, expected_revision=expected_revision

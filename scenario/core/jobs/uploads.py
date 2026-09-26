@@ -164,6 +164,14 @@ class UploadCommands:
             ) from None
         return self._observe(current, response)
 
+    def cancel_prepared(self, request_id, *, expected_revision):
+        """Cancel only unclaimed local intent, retaining sources without remote work."""
+        current = self._current(request_id, expected_revision, {UploadState.PREPARED})
+        # Origin loss does not prevent discarding local intent. The active scope
+        # and revision still guard the write against initialization and switches.
+        with self._guard():
+            return self._transition(current, UploadState.CANCELED)
+
     def _part_url(self, current, response, number):
         intent = current.intent
         if (

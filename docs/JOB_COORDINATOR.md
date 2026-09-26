@@ -345,6 +345,9 @@ this same coordinator and worker queue. Their scope must match the job store.
 See [upload commands](SDK_UPLOADS.md#shared-worker-commands) for preparation,
 initialization, one-part transfer, finalization and explicit refresh. They do not
 submit generation, create another client/pool, or apply references to Blender.
+`cancel_prepared_upload` synchronously cancels unclaimed local upload intent,
+including queued initialization, under the original scope and expected revision.
+It does not require a current scene origin, access sources or abort remote work.
 The active UI/MCP still needs to adopt these commands and its recovery controls.
 
 `inspect_upload(request_id)` and `upload_recovery_plan()` provide read-only,

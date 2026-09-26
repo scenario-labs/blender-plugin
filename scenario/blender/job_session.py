@@ -251,6 +251,11 @@ class JobSession:
     def initialize_upload(self, request_id, *, expected_revision):
         return self._upload_command("initialize_upload", request_id, expected_revision)
 
+    def cancel_prepared_upload(self, request_id, *, expected_revision):
+        """Cancel local upload intent even with a full queue or unavailable origin."""
+        _main_thread()
+        return self._workers.cancel_prepared_upload(request_id, expected_revision=expected_revision)
+
     def transfer_upload_part(self, request_id, *, expected_revision):
         return self._upload_command("transfer_upload_part", request_id, expected_revision)
 

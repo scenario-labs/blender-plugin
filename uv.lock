@@ -56,7 +56,7 @@ dev = [
     { name = "pytest", specifier = ">=8,<10" },
     { name = "pytest-cov", specifier = "==7.1.0" },
     { name = "ruff", specifier = "==0.16.7" },
-    { name = "scenario-sdk", specifier = "==2.1.0" },
+    { name = "scenario-sdk", specifier = "==2.2.0" },
 ]
 
 [[package]]
@@ -722,7 +722,7 @@ wheels = [
 
 [[package]]
 name = "scenario-sdk"
-version = "2.1.0"
+version = "2.2.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "anyio" },
@@ -732,9 +732,9 @@ dependencies = [
     { name = "sniffio" },
     { name = "typing-extensions" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/db/2f/fcb3409972b21155be074f81c71601397c643312c7bbf5e174bd15e8eb84/scenario_sdk-2.1.0.tar.gz", hash = "sha256:266225be71630e1bc63f3ac35c519e5fc8f6b77b5a18c59441373bcff5793c21", size = 596829, upload-time = "2026-08-14T12:52:53.584Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/a3/6d/ac3e9818fa1866436f06b27e8f431aa10619481e69ac50d043ecb068976b/scenario_sdk-2.2.0.tar.gz", hash = "sha256:382d2608ef1e63417336fc7608e6b2056fc3180a9121f6a15b538ea8c35334fd", size = 619178, upload-time = "2026-09-17T13:56:52.533Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/89/10/f58b3cde08891f491dff3fa63815b300095ee3fd46979b95a61061e7255a/scenario_sdk-2.1.0-py3-none-any.whl", hash = "sha256:a770cc2b40203d8ac5fa3b613e54e054e1e19c6594a029d2bc61218a831091d2", size = 570422, upload-time = "2026-08-14T12:52:51.848Z" },
+    { url = "https://files.pythonhosted.org/packages/0b/73/89cd23c9337902a27f6f00761bfc37662f0680019bdaea02836ab9df91e0/scenario_sdk-2.2.0-py3-none-any.whl", hash = "sha256:a1058ea5e41b6fadcdc399760ab22590409835ab7e66957fe719215c178779b6", size = 592524, upload-time = "2026-09-17T13:56:50.933Z" },
 ]
 
 [[package]]

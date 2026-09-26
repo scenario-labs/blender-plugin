@@ -169,7 +169,7 @@ def test_api_key_generation_needs_no_discovery_or_explicit_tenant(adapter):
     assert all(request.url.path == "/v1/generate/custom/fixture-model" for request in requests)
     assert [dict(request.url.params) for request in requests] == [
         {"dryRun": "true"},
-        {"dryRun": "false"},
+        {},
     ]
     assert all(request.headers["Authorization"].startswith("Basic ") for request in requests)
 

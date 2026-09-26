@@ -29,7 +29,7 @@ from decimal import Decimal
 
 import httpx
 import pytest
-from scenario_sdk import APIConnectionError, APIStatusError, APITimeoutError, Scenario
+from scenario_sdk import APIConnectionError, APIStatusError, APITimeoutError, Scenario, omit
 
 BASE_URL = "https://api.example.invalid/v1"
 PROJECT = "fixture-project"
@@ -84,7 +84,7 @@ def client_factory():
 
 
 @pytest.mark.parametrize("operation", ["model", "workflow"])
-@pytest.mark.parametrize("dry_run", [True, False])
+@pytest.mark.parametrize("dry_run", ["true", "api", omit])
 def test_generation_keeps_scope_and_dry_run_out_of_payload(client_factory, operation, dry_run):
     requests = []
     payload = {
@@ -113,7 +113,10 @@ def test_generation_keeps_scope_and_dry_run_out_of_payload(client_factory, opera
     assert len(requests) == 1
     request = requests[0]
     assert (request.method, request.url.path) == (method, path)
-    assert dict(request.url.params) == {"dryRun": str(dry_run).lower(), "projectId": PROJECT}
+    assert dict(request.url.params) == {
+        "projectId": PROJECT,
+        **({"dryRun": dry_run} if dry_run is not omit else {}),
+    }
     assert json.loads(request.content) == original
     assert payload == original
     assert result.job.job_id == "fixture-job"
@@ -126,7 +129,7 @@ def test_estimate_wrapper_preserves_exact_decimal_quote(client_factory):
     quote = b'{"creativeUnitsCost":0.10000000000000001,"costDetails":{"generation":0.10000000000000001}}'
     sdk = client_factory(lambda request: httpx.Response(200, content=quote))
     response = sdk.generate.with_raw_response.run_model(
-        "fixture-model", body={"prompt": "fixture"}, dry_run=True, project_id=PROJECT
+        "fixture-model", body={"prompt": "fixture"}, dry_run="true", project_id=PROJECT
     )
     estimate = json.loads(response.read(), parse_float=Decimal)
     assert estimate["creativeUnitsCost"] == Decimal("0.10000000000000001")
@@ -192,9 +195,9 @@ def test_submission_http_errors_never_retry(client_factory, status, operation):
     sdk = client_factory(respond)
     with pytest.raises(APIStatusError) as error:
         if operation == "model":
-            sdk.generate.run_model("fixture-model", body={}, dry_run=False, project_id=PROJECT)
+            sdk.generate.run_model("fixture-model", body={}, project_id=PROJECT)
         else:
-            sdk.workflows.run("fixture-workflow", body={}, dry_run=False, project_id=PROJECT)
+            sdk.workflows.run("fixture-workflow", body={}, project_id=PROJECT)
     assert error.value.status_code == status
     assert len(requests) == 1
 
@@ -217,9 +220,9 @@ def test_submission_transport_failure_never_retries(client_factory, failure, exp
     sdk = client_factory(fail)
     with pytest.raises(expected):
         if operation == "model":
-            sdk.generate.run_model("fixture-model", body={}, dry_run=False, project_id=PROJECT)
+            sdk.generate.run_model("fixture-model", body={}, project_id=PROJECT)
         else:
-            sdk.workflows.run("fixture-workflow", body={}, dry_run=False, project_id=PROJECT)
+            sdk.workflows.run("fixture-workflow", body={}, project_id=PROJECT)
     assert len(requests) == 1
 
 
@@ -232,7 +235,7 @@ def test_redirect_is_not_followed_by_explicit_transport(client_factory):
 
     sdk = client_factory(redirect)
     with pytest.raises(APIStatusError):
-        sdk.generate.run_model("fixture-model", body={}, dry_run=False, project_id=PROJECT)
+        sdk.generate.run_model("fixture-model", body={}, project_id=PROJECT)
     assert len(requests) == 1
     assert requests[0].url.host == "api.example.invalid"
 
@@ -255,7 +258,7 @@ def test_explicit_basic_credentials_override_ambient_basic(client_factory, monke
 @pytest.mark.xfail(
     strict=True,
     raises=AssertionError,
-    reason="SDK 2.1.0 auth precedence: https://github.com/scenario-labs/scenario-sdk-python/issues/26",
+    reason="SDK 2.2.0 auth precedence: https://github.com/scenario-labs/scenario-sdk-python/issues/26",
 )
 def test_explicit_bearer_must_override_ambient_basic(client_factory, monkeypatch):
     monkeypatch.setenv("SCENARIO_SDK_API_KEY", "ambient-key")

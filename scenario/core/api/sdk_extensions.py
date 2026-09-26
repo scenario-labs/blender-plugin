@@ -9,7 +9,7 @@ errors. Add only verified operations with an upstream issue and wire tests.
 
 
 class SDKResourceExtensions:
-    """Temporary resources absent from scenario-sdk 2.1.0.
+    """Temporary resources absent from scenario-sdk 2.2.0.
 
     https://github.com/scenario-labs/scenario-sdk-python/issues/29
     Replace these calls when a selected SDK release has equivalent generated

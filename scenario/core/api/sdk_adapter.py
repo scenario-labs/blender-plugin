@@ -142,7 +142,7 @@ def _client(credentials, base_url, timeout, transport):
     class SelectedAccount(Scenario):
         @property
         def default_headers(self):
-            # Public SDK hook: use only adapter-owned headers. SDK 2.1.0 otherwise
+            # Public SDK hook: use only adapter-owned headers. SDK 2.2.0 otherwise
             # merges SCENARIO_CUSTOM_HEADERS and prefers Basic over Bearer.
             # https://github.com/scenario-labs/scenario-sdk-python/issues/26
             # Remove after upstream offers verified environment-isolated config.
@@ -596,7 +596,7 @@ class SDKAdapter:
             if operation == "model"
             else self._sdk.workflows.with_raw_response.run
         )
-        raw = self._request(method, identifier, body=json.loads(payload_json), dry_run=True)
+        raw = self._request(method, identifier, body=json.loads(payload_json), dry_run="true")
         result = _json(raw, exact=True)
         cost = result.get("creativeUnitsCost")
         if isinstance(cost, bool) or not isinstance(cost, (int, Decimal)) or cost < 0:
@@ -643,7 +643,7 @@ class SDKAdapter:
             if estimate.operation == "model"
             else self._sdk.workflows.with_raw_response.run
         )
-        raw = self._request(method, estimate.target_id, body=estimate.payload, dry_run=False)
+        raw = self._request(method, estimate.target_id, body=estimate.payload)
         job = _json(raw).get("job")
         if not isinstance(job, dict):
             raise AdapterError("Scenario returned no submission receipt")

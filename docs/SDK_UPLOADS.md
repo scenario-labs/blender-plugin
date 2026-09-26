@@ -1,7 +1,7 @@
 # Scoped upload metadata commands
 
 The shared [SDK adapter](../scenario/core/api/sdk_adapter.py) exposes the
-multipart upload metadata lifecycle through the packaged **scenario-sdk 2.1.0**.
+multipart upload metadata lifecycle through the packaged **scenario-sdk 2.2.0**.
 These commands do not read files, transfer bytes, persist signed URLs, start a
 background worker or connect the prototype UI/MCP. They are a foundation for
 [#64](https://github.com/scenario-labs/blender-plugin/issues/64) and
@@ -46,7 +46,7 @@ may contain signed URLs and other sensitive response details.
 
 ## Completion and uncertain responses
 
-The SDK 2.1.0 generated action parameter is `Literal["complete"]`; its docstring
+The SDK 2.2.0 generated action parameter is `Literal["complete"]`; its docstring
 says `"upload-complete"`. The adapter uses the generated literal already covered
 by the dependency contracts. Actual service acceptance remains unverified; do not
 silently substitute another action or invent an abort endpoint.

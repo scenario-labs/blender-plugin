@@ -31,9 +31,10 @@ its existing manager until the shared runtime is integrated.
    `prepared → submitting` using the current stored revision. A failed write,
    stale record, inactive coordinator or expired/mismatched quote stops dispatch.
 6. The adapter consumes the issued quote once and calls public
-   `generate.with_raw_response.run_model(dry_run=False)` or
-   `workflows.with_raw_response.run(dry_run=False)`, with `max_retries=0`.
-   Project and dry-run stay in the query, and the quoted payload is unchanged.
+   `generate.with_raw_response.run_model(...)` or
+   `workflows.with_raw_response.run(...)`, with `max_retries=0`.
+   Submission omits `dry_run`; estimates use `dry_run="true"` in the query.
+   Optional project scope stays in the query, and the quoted payload is unchanged.
 7. A valid remote job ID is committed before the command returns a remote record.
    No result is applied to Blender by this command.
 
@@ -149,7 +150,7 @@ runtime is not replaced or supplemented by a second active runtime here.
 `remote` record with a known ID and a model operation. A fresh `jobs.retrieve`
 observation must identify `jobType=custom` or `jobType=inference`. The sanitized
 [captured model-job fixture](../tests/fixtures/patina-copper-512/job.json) uses
-`custom`; the pinned SDK 2.1.0 enum also includes `inference`. These are model-job
+`custom`; the pinned SDK 2.2.0 enum also includes `inference`. These are model-job
 categories, not a general workflow-cancellation contract. Workflow operations
 and other kinds remain unsupported. A job already observed terminal is committed
 without sending a cancellation.

@@ -1,10 +1,10 @@
 # SDK contracts for Studio adoption
 
 The shared adapter for compact creation, expanded Studio and local MCP must use
-`scenario-sdk`. The adoption baseline is **2.1.0**, inspected from the published
-[PyPI release](https://pypi.org/project/scenario-sdk/2.1.0/). Its wheel is
-`scenario_sdk-2.1.0-py3-none-any.whl`, with SHA256
-`a770cc2b40203d8ac5fa3b613e54e054e1e19c6594a029d2bc61218a831091d2`.
+`scenario-sdk`. The adoption baseline is **2.2.0**, inspected from the published
+[PyPI release](https://pypi.org/project/scenario-sdk/2.2.0/). Its wheel is
+`scenario_sdk-2.2.0-py3-none-any.whl`, with SHA256
+`a1058ea5e41b6fadcdc399760ab22590409835ab7e66957fe719215c178779b6`.
 The development dependency group pins this version and the MockTransport test
 client, `httpx==0.28.1`; [uv.lock](../uv.lock) pins their transitive dependencies.
 
@@ -38,12 +38,11 @@ uv run --locked python -m pytest tests/unit/test_scenario_sdk_contract.py -rx
 
 [The tests](../tests/unit/test_scenario_sdk_contract.py) call public SDK methods
 through `httpx.MockTransport`, with socket connections forbidden. All IDs,
-credentials, payloads and responses are synthetic. Both `dry_run=True` and
-`dry_run=False` are tested without contacting Scenario or spending credits.
+credentials, payloads and responses are synthetic. `dry_run="true"`, `dry_run="api"` and omission for actual submission are tested without contacting Scenario or spending credits.
 [SDK contracts CI](../.github/workflows/sdk-contracts.yml) repeats these checks
 using the locked environment.
 
-| Adapter requirement | SDK 2.1.0 contract exercised |
+| Adapter requirement | SDK 2.2.0 contract exercised |
 | --- | --- |
 | Generic model estimate and submission | `generate.run_model`: POST, unchanged model-specific body, `dryRun` and `projectId` in the query |
 | Workflow estimate and submission | `workflows.run`: PUT, unchanged workflow-specific body, `dryRun` and `projectId` in the query |
@@ -100,7 +99,7 @@ check, and failures use sanitized SDK errors with no automatic retry. Success
 proves only model access, including a valid empty list. It does not establish
 account/project identity or resolve SDK issue #29.
 
-Active cost previews use `generate.with_raw_response.run_model(dry_run=True)`
+Active cost previews use `generate.with_raw_response.run_model(dry_run="true")`
 after the existing strict model-form preparation. They share the selected
 connection's cached schema, credentials, HTTP pool and online-access gate. UI
 workers snapshot nested inputs and deliver exact `Estimate` objects only to the
@@ -222,6 +221,12 @@ service failure. Discovery uses the separate exception below.
 
 ## SDK resource extensions
 
+Start with the [Python SDK documentation](https://docs.scenario.com/api/python)
+and the exact published wheel. When the SDK docs or generated methods do not
+cover an operation, consult the [API reference](https://docs.scenario.com/api)
+and its endpoint details. Confirm the request/response contract before extending
+the adapter; missing SDK coverage does not mean missing API capability.
+
 API-key requests use the server's credential-bound scope. Callers can omit
 `teamId` and `projectId`; discovery and project selection are not prerequisites
 for estimates or submission. OAuth's explicit tenant-selection requirements are
@@ -229,7 +234,7 @@ a separate concern, deferred for this release. Local durable jobs must still be
 isolated when credentials or an optional project override change. A local
 credential identity must not be presented as a server-reported account identity.
 
-The selected SDK 2.1.0 has no generated `teams` or `projects` resource, tracked in
+The selected SDK 2.2.0 has no generated `teams` or `projects` resource, tracked in
 [SDK issue #29](https://github.com/scenario-labs/scenario-sdk-python/issues/29).
 The API operations already used by Scenario MCP can be exposed without waiting
 for SDK regeneration. [SDKResourceExtensions](../scenario/core/api/sdk_extensions.py)
@@ -301,7 +306,7 @@ remains unavailable. Generated operations use public SDK methods
 with `max_retries=0`; their `with_raw_response` wrappers preserve wire JSON.
 The named discovery exceptions also use the same zero-retry SDK client.
 
-| Adapter operation | SDK 2.1.0 method and contract |
+| Adapter operation | SDK 2.2.0 method and contract |
 | --- | --- |
 | Public/private model catalog | `models.list`: explicit page size/status/privacy, `paginationToken`, scope on every page, deduplication and cursor-loop/page-limit failures |
 | Public/private workflow catalog | `workflows.list`: SDK REST catalog replaces the need for Studio's public-workflow HTTP bypass; pagination and scope are tested synthetically |
@@ -309,8 +314,8 @@ The named discovery exceptions also use the same zero-retry SDK client.
 | Scoped job discovery | `jobs.list` through the public raw-response wrapper: optional author/workflow/type/status filters, 1–200 items per page, bounded pagination and explicit errors instead of partial or conflicting history |
 | Multipart upload metadata | `uploads.create/retrieve/trigger_action(action="complete")`: immutable project scope, strict input/receipt identity, retained processing/future fields; no byte transfer, retry or automatic completion |
 | Model/workflow/asset/job records | `models.retrieve`, `workflows.retrieve`, `assets.retrieve`, `jobs.retrieve`: unwrap the named record and retain unknown fields |
-| Custom-model estimate | `generate.run_model(dry_run=True)`: adopted form value validation plus retained conditional/one-of rules; inputs in JSON and dry-run/project in query |
-| Workflow estimate | `workflows.run(dry_run=True)`: normalize workflow fields/defaults and preserve the same query/body boundary |
+| Custom-model estimate | `generate.run_model(dry_run="true")`: adopted form value validation plus retained conditional/one-of rules; inputs in JSON and dry-run/project in query |
+| Workflow estimate | `workflows.run(dry_run="true")`: normalize workflow fields/defaults and preserve the same query/body boundary |
 | Exact estimate record | Keep immutable request/response bytes and a `Decimal` cost, including zero; reject absent, negative, nonnumeric or non-finite costs rather than inventing a free estimate |
 
 Each client owns an immutable selected project and connection scope. Estimates
@@ -360,6 +365,25 @@ The explicit live command is documented in
 tests do not claim live service acceptance or authorize a paid operation.
 
 ## Source baseline and remaining work
+
+### Selected SDK 2.2.0 upgrade
+
+The inspected 2.2.0 wheel retains the same required dependency closure and
+byte-identical MIT notice as 2.1.0. Client/authentication and transport sources
+are unchanged, so both the #26 header workaround and #29 discovery extensions
+remain necessary. Resource/type updates include stricter query annotations and
+additional model/job metadata; raw-response parsing preserves those fields.
+
+Model and workflow `dry_run` now declare `"true"` or `"api"`. The adapter uses
+`"true"` for existing estimates and omits the parameter for actual submissions,
+rather than passing booleans outside the declared type. Dependency contracts
+exercise both estimate values and omission, and verify unchanged payload,
+project-query, zero-retry, pagination, upload and cancellation behavior. The
+optional `ip_detection` preflight is not enabled; its documented dry-run fee
+must not silently become part of a cost preview. Other new SDK operations are
+not automatically adopted by upgrading the bundle.
+
+### Studio source
 
 The selected Studio candidate is
 [`e2b0277064f0c502d46524fba1d006d0ac83f846`](https://github.com/edemaistre/scenario-blender-studio/commit/e2b0277064f0c502d46524fba1d006d0ac83f846),

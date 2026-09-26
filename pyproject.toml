@@ -12,7 +12,7 @@ dev = [
     "ruff==0.16.7",
     "pytest>=8,<10",
     "pytest-cov==7.1.0",
-    "scenario-sdk==2.1.0",
+    "scenario-sdk==2.2.0",
     "httpx==0.28.1",
     "markdown==3.10.3",
     "pre-commit==4.6.2",

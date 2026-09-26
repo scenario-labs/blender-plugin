@@ -113,10 +113,12 @@ def discard(env, record):
 @pytest.mark.parametrize("state", [UploadState.CANCELED, UploadState.FAILED, UploadState.IMPORTED])
 def test_terminal_cleanup_is_offline_idempotent_and_keeps_durable_evidence(env, state):
     record = finish(env, state)
-    assert discard(env, record) == record
+    result = discard(env, record)
+    assert result == record
     assert not env.directory.exists()
     assert env.store.get("request") == record
-    assert discard(env, record) == record
+    repeated = discard(env, record)
+    assert repeated == record
     assert env.coordinator.upload_recovery_plan()[0].record == record
 
 
@@ -209,7 +211,8 @@ def test_partial_cleanup_failure_can_be_explicitly_retried(env, monkeypatch, ope
     assert caught.value.__suppress_context__
     assert env.directory.exists()
     assert env.staged.exists() == (operation == "unlink")
-    assert discard(env, record) == record
+    result = discard(env, record)
+    assert result == record
     assert not env.directory.exists()
 
 
@@ -400,7 +403,8 @@ def test_cleanup_does_not_remove_another_scopes_same_request(env, component):
         content_type="image/png",
     )
     other_path = env.sources._directory(scope, "request") / "source.bin"
-    assert discard(env, record) == record
+    result = discard(env, record)
+    assert result == record
     assert other_path.read_bytes() == b"abcde"
     env.sources.verify(foreign)
 
@@ -425,5 +429,6 @@ def test_control_interruption_preserves_history_and_allows_explicit_cleanup_retr
             discard(env, record)
     assert env.store.get("request") == record
     assert env.staged.exists() != after_unlink
-    assert discard(env, record) == record
+    result = discard(env, record)
+    assert result == record
     assert not env.directory.exists()

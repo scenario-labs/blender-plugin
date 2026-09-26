@@ -18,7 +18,7 @@
       "scenario/core/jobs/coordinator.py": "b0d46de3342bc6e7afcb3acb4bde8fef8b07e6c5c502a4caa992a19b9560621c",
       "scenario/core/jobs/workers.py": "e270b7fc0a6064b110e85d1d67fcd182213d6924ed92193415344ca1b71f22cb",
       "scenario/blender/job_session.py": "e6a5b44eecac192219b50b5d41a5ede2e3bbf3c8f7b0a82ec0eb8b5b876b48f4",
-      "tests/unit/test_upload_cleanup.py": "8fd481da53ff5b7fb404d26c65135bd950c3bffad81bc76164543b9334ec82c1",
+      "tests/unit/test_upload_cleanup.py": "22a02ff89992e6651d074d0b9e820b89802ad2cbcd940da4afa3574f0e7434c8",
       "tests/blender/test_session_uploads.py": "c51bc1488c072f02b6523f9ccc9f1efadfebca18c1ad94afae690dd4237f25f3"
     }
   }

@@ -20,6 +20,12 @@ not current quotes.
 
 ## Install
 
+This handbook follows current development, which can be ahead of downloadable
+releases. Check [native download availability](https://blender.scenario.com/repo/)
+and the release notes before installing. Historical `v*` ZIPs are earlier
+experimental builds: their features, controls and Blender requirements may differ
+from this guide. Use the requirements and instructions attached to that release.
+
 1. Download `scenario-<version>.zip` from the [releases page](https://github.com/scenario-labs/blender-plugin/releases). Keep it zipped.
 2. Drag the zip onto any Blender window, or use Edit > Preferences > Get Extensions > Install from Disk. Blender installs it into your user extensions and enables it. Updating: install the new zip the same way; Blender replaces the old version. Restart Blender after an update so the new code loads.
 3. In Scenario, open Organization settings > API Keys > Add API Key and obtain the key and its secret. Follow the [API-key quick start](https://docs.scenario.com/get-started/documentation/quick-start-guide/step-1-obtain-your-api-key) for current account and access requirements.
@@ -43,8 +49,10 @@ Expand Scenario under Edit > Preferences > Get Extensions to find its Website li
 
 The public handbook is at [blender.scenario.com](https://blender.scenario.com/).
 The official native repository uses `https://blender.scenario.com/repo/index.json`.
-The repository becomes available after the first verified adopted-package release;
-historical `v*` releases are available only as manual ZIP downloads.
+Check the [downloads page](https://blender.scenario.com/repo/) before setting up
+the repository. Until the first verified adopted-package release is published,
+the index is intentionally unavailable and native checks cannot succeed.
+Historical `v*` releases are available only as manual ZIP downloads.
 
 Open Edit > Preferences > Add-ons > Scenario > **Updates** to see the installed
 version and whether the official repository is configured. Enable **Allow Online

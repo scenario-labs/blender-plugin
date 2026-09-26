@@ -457,6 +457,8 @@ class SessionResultTests(unittest.TestCase):
                 self.session.apply_world(completion, asset_id="asset")
         self.assertNotIn("private detail", str(caught.exception))
         self.assertIsNone(caught.exception.application)
+        with self.assertRaises(self.module.OriginUnavailable):
+            self.session.retry_world_receipt(caught.exception)
         self.assertEqual(self.store.get("request").state, self.storage.JobState.APPLYING)
         with self.assertRaises(self.module.OriginUnavailable):
             self.session.apply_world(completion, asset_id="asset")
@@ -526,6 +528,8 @@ class SessionResultTests(unittest.TestCase):
         self.assertEqual(self.scene.world, caught.exception.application._world)
         with self.assertRaises(self.module.OriginUnavailable):
             self.session.apply_world(completion, asset_id="asset")
+        saved = self.store.get("request")
+        self.assertEqual(self.session.retry_world_receipt(caught.exception).record, saved)
         caught.exception.application.restore()
 
     def test_world_failure_write_error_does_not_report_safe_retry(self):
@@ -553,3 +557,97 @@ class SessionResultTests(unittest.TestCase):
             outcome = self.session.apply_world(completion, asset_id="asset")
         self.assertEqual(outcome.record.state, self.storage.JobState.APPLIED)
         outcome.application.restore()
+
+    def pending_world_receipt(self, *, after_commit=False):
+        _, completion = self.world_completion()
+        transition = self.store.transition
+
+        def fail(*args, **kwargs):
+            if kwargs.get("state") == self.storage.JobState.APPLIED:
+                if after_commit:
+                    transition(*args, **kwargs)
+                raise self.storage.StoreError("private persistence detail")
+            return transition(*args, **kwargs)
+
+        with patch.object(self.store, "transition", side_effect=fail):
+            with self.assertRaises(self.module.WorldResultUncertain) as caught:
+                self.session.apply_world(completion, asset_id="asset")
+        return caught.exception
+
+    def test_world_receipt_retry_saves_original_outcome_after_context_change(self):
+        pending = self.pending_world_receipt()
+        applied_world = self.scene.world
+        worlds, images = set(bpy.data.worlds), set(bpy.data.images)
+        calls, downloads = len(self.calls), len(self.downloads)
+        self.session.deactivate()
+        bpy.context.window.scene = self.previous
+        with patch.object(
+            self.module, "apply_world", side_effect=AssertionError("Repeated mutation")
+        ):
+            result = self.session.retry_world_receipt(pending)
+        self.assertEqual(result.record.state, self.storage.JobState.APPLIED)
+        self.assertEqual(result.record.intent, self.record.intent)
+        self.assertIs(result.application, pending.application)
+        self.assertEqual(self.scene.world, applied_world)
+        self.assertEqual(set(bpy.data.worlds), worlds)
+        self.assertEqual(set(bpy.data.images), images)
+        self.assertEqual((len(self.calls), len(self.downloads)), (calls, downloads))
+        with self.assertRaises(self.module.OriginUnavailable):
+            self.session.retry_world_receipt(pending)
+
+    def test_world_receipt_retry_acknowledges_commit_without_another_write(self):
+        pending = self.pending_world_receipt(after_commit=True)
+        saved = self.store.get("request")
+        with patch.object(self.store, "transition", side_effect=AssertionError("Repeated write")):
+            result = self.session.retry_world_receipt(pending)
+        self.assertEqual(result.record, saved)
+        self.assertEqual(saved.state, self.storage.JobState.APPLIED)
+
+    def test_world_receipt_retry_failure_preserves_the_same_pending_handle(self):
+        pending = self.pending_world_receipt()
+        with patch.object(self.store, "get", side_effect=self.storage.StoreError("private detail")):
+            with self.assertRaises(self.module.WorldResultUncertain) as caught:
+                self.session.retry_world_receipt(pending)
+        self.assertIs(caught.exception, pending)
+        self.assertNotIn("private detail", str(pending))
+        self.assertTrue(pending.__suppress_context__)
+        result = self.session.retry_world_receipt(pending)
+        self.assertEqual(result.record.state, self.storage.JobState.APPLIED)
+
+    def test_world_receipt_retry_rejects_fabricated_foreign_and_worker_calls(self):
+        pending = self.pending_world_receipt()
+        other = self.new_session()
+        self.addCleanup(other.shutdown)
+        with self.assertRaises(self.module.OriginUnavailable):
+            other.retry_world_receipt(pending)
+        for fake in (None, self.module.WorldResultUncertain(pending.application)):
+            with self.assertRaises(self.module.OriginUnavailable):
+                self.session.retry_world_receipt(fake)
+        with ThreadPoolExecutor(max_workers=1) as pool:
+            with self.assertRaises(RuntimeError):
+                pool.submit(self.session.retry_world_receipt, pending).result(5)
+        self.assertEqual(self.store.get("request").state, self.storage.JobState.APPLYING)
+        self.assertEqual(
+            self.session.retry_world_receipt(pending).record.state, self.storage.JobState.APPLIED
+        )
+
+    def test_world_receipt_retry_preserves_later_explicit_restoration(self):
+        pending = self.pending_world_receipt()
+        self.assertTrue(pending.application.restore())
+        restored = self.scene.world
+        result = self.session.retry_world_receipt(pending)
+        self.assertEqual(result.record.state, self.storage.JobState.APPLIED)
+        self.assertEqual(self.scene.world, restored)
+
+    def test_world_receipt_retry_rejects_changed_saved_state_and_shutdown(self):
+        pending = self.pending_world_receipt()
+        current = self.store.get("request")
+        changed = self.store.transition(
+            "request", expected_revision=current.revision, state=self.storage.JobState.APPLY_FAILED
+        )
+        with self.assertRaises(self.module.WorldResultUncertain):
+            self.session.retry_world_receipt(pending)
+        self.assertEqual(self.store.get("request"), changed)
+        self.session.shutdown()
+        with self.assertRaises(self.module.OriginUnavailable):
+            self.session.retry_world_receipt(pending)

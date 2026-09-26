@@ -184,6 +184,20 @@ failed. Guarded restoration is an explicit caller action and does not rewrite
 the durable record. As with all primitive handles, discard it after file load,
 undo or extension shutdown. SQLite and Blender do not share an atomic transaction.
 
+When scene assignment completed and only its receipt failed,
+`retry_world_receipt(outcome)` accepts the exact `WorldResultUncertain` raised by
+this session. It retries or acknowledges only the original successful receipt,
+using the coordinator's saved outcome evidence. It never reads or mutates a scene,
+reapplies a World, restores anything, verifies files, downloads or generates.
+It returns `AppliedWorldResult` with the saved record and original restoration
+handle, then consumes the pending outcome. A failed retry raises the same sanitized
+outcome so callers can retain it for another explicit attempt. Fabricated, foreign,
+consumed and shutdown-session outcomes are rejected, as are errors from uncertain
+scene mutations or failed cleanup. The pending handle is caller-owned and is not
+reconstructed after restart. Origin invalidation alone does not block bookkeeping;
+session shutdown discards pending receipts. A later explicit restoration is left
+intact: APPLIED acknowledges the prior assignment, not the current World binding.
+
 Installed native fixtures cover claim ordering, exact selection, changed bytes,
 safe local retry, original context/ownership, interrupted or uncertain outcomes,
 write acknowledgement loss and guarded restoration. The command is available to

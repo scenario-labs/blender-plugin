@@ -9,7 +9,7 @@ import threading
 import time
 import uuid
 from contextlib import contextmanager, nullcontext
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from enum import StrEnum
 from pathlib import Path
 from weakref import WeakKeyDictionary, WeakValueDictionary
@@ -180,6 +180,7 @@ class JobCoordinator:
         self._bound_estimates = WeakKeyDictionary()
         self._verified_results = WeakValueDictionary()
         self._application_claims = WeakValueDictionary()
+        self._application_receipts = WeakKeyDictionary()
         self._uploads = None
         upload_config = (upload_store, upload_sources, part_uploader)
         if any(value is not None for value in upload_config):
@@ -307,6 +308,25 @@ class JobCoordinator:
         """Record only confirmed no-change/full rollback, never an uncertain mutation."""
         return self._finish_application(claim, JobState.APPLY_FAILED)
 
+    def retry_application_receipt(self, claim: ApplicationClaim):
+        """Retry only an already reported outcome; never repeat scene application.
+
+        An exact saved successor acknowledges a commit whose response was lost.
+        Claims and outcome evidence stay owner-local and cannot survive restart.
+        """
+        with self._lock:
+            if not isinstance(claim, ApplicationClaim) or claim not in self._application_receipts:
+                raise ApplicationError("Use an attempted application receipt from this owner")
+            state = self._application_receipts[claim]
+            expected = replace(claim.record, state=state, revision=claim.record.revision + 1)
+            current = self._store.get(claim.record.intent.request_id)
+            if current == expected:
+                self._application_claims.pop(id(claim), None)
+                return current
+            if current != claim.record:
+                raise StoreConflict("Application receipt changed; inspect saved state")
+            return self._finish_application(claim, state)
+
     def _finish_application(self, claim, state):
         with self._lock:
             if (
@@ -314,6 +334,9 @@ class JobCoordinator:
                 or self._application_claims.get(id(claim)) is not claim
             ):
                 raise ApplicationError("Use an unfinished application claim from this owner")
+            if self._application_receipts.get(claim, state) != state:
+                raise ApplicationError("An attempted application outcome cannot be changed")
+            self._application_receipts[claim] = state
             record = claim.record
             if self._store.get(record.intent.request_id) != record:
                 raise StoreConflict("Application claim changed; inspect saved state")

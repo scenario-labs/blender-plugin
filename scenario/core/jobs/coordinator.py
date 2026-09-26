@@ -254,6 +254,10 @@ class JobCoordinator:
     def download_results(self, request_id, *, expected_revision):
         return self._results.download(request_id, expected_revision=expected_revision)
 
+    def recover_downloads(self, request_id, *, expected_revision):
+        """Explicitly reconcile an interrupted download without network or scene work."""
+        return self._results.recover_download(request_id, expected_revision=expected_revision)
+
     def verify_results(self, request_id, *, expected_revision):
         verified = self._results.verify_ready(request_id, expected_revision=expected_revision)
         with self._result_guard():

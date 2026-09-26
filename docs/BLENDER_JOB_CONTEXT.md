@@ -129,7 +129,8 @@ application. No default production host policy is selected by the session.
 Without storage configuration, download and verification report a configuration
 error without changing the stored job, including a reopened READY record.
 
-On the main thread, `load_results`, `download_results` and `verify_results` queue
+On the main thread, `load_results`, `download_results`, `recover_downloads` and
+`verify_results` queue
 the corresponding [coordinator commands](JOB_COORDINATOR.md#result-retrieval-and-download-commands)
 with the original stored origin and expected record revision. Metadata and signed
 transfer work run on the existing pool. Like refresh and cancellation, these
@@ -144,6 +145,9 @@ verification does not lock file bytes, run an importer or mark a job APPLIED;
 callers must preserve private storage ownership. The explicit World command below
 supplies one application path. Download failures remain `DOWNLOAD_FAILED` for explicit retry, while
 local verification failures do not trigger another download or generation.
+Explicit interrupted-download recovery only reconciles verified local receipts
+and durable state under the cross-process transfer lock. A restarted session can
+recover those downloads, but its completion cannot rebind an old scene or target.
 
 ## Explicit saved-result World application
 

@@ -241,8 +241,36 @@ All three methods are available through `JobWorkers` using the same bounded pool
 SDK lifetime and main-thread polling interface. Deactivation stops subsequent
 asset work; a transfer already in flight can save its receipt to the old scope.
 Closing a view must not deactivate these application-owned workers. Runtime
-registration, production host configuration, interrupted-download reconciliation,
-application recovery and UI/MCP controls remain integration work under #65.
+registration, production host configuration, application recovery and UI/MCP
+controls remain integration work under #65.
+
+
+### Explicit interrupted-download recovery
+
+`recover_downloads(request_id, expected_revision=...)` is an explicit offline
+command for a saved `downloading` record. It rehashes every committed receipt.
+If every asset has a verified receipt, it saves `ready`; otherwise it saves
+`download_failed`, retaining all prior receipts. A later explicit
+`download_results` command retries only missing assets using fresh SDK URLs.
+Recovery itself calls neither the SDK nor generation, starts no transfer,
+resolves no Blender target and does not apply results.
+
+A missing or changed receipted file, an unreceipted destination (including a
+symlink), unavailable storage or failed verification leaves the record and files
+unchanged for review. In particular, size alone cannot adopt an orphan file
+published before a receipt commit. Staging cleanup and orphan-file reconciliation
+remain separate. A failed final state write propagates without claiming recovery
+succeeded. Expected revisions, scope and active-owner checks still apply.
+
+Downloads and recovery hold the store's nonblocking per-request OS lock for the
+whole command, including metadata, byte publication and receipt writes. This
+prevents another cooperating owner/process from treating a live download as
+interrupted. Process exit releases the lock; elapsed time does not. The
+[storage lock contract](JOB_STORAGE.md#result-transfer-ownership) requires one
+private database path and cooperating versions; stop older writers before using
+this recovery command. Recovery never resets submitting, uncertain or applying
+records. It is available through the existing `JobWorkers` and `JobSession`
+queues, without activating the prototype UI/MCP runtime.
 
 
 ## Durable application claims

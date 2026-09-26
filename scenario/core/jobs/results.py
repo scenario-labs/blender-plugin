@@ -125,6 +125,10 @@ class ResultCommands:
         return root
 
     def download(self, request_id, *, expected_revision):
+        with self._store.result_transfer_lock(request_id):
+            return self._download(request_id, expected_revision=expected_revision)
+
+    def _download(self, request_id, *, expected_revision):
         current = self._current(
             request_id, expected_revision, {JobState.SUCCEEDED, JobState.DOWNLOAD_FAILED}
         )
@@ -177,6 +181,42 @@ class ResultCommands:
             raise ResultError(
                 "Result download did not complete; review saved files before retrying"
             ) from None
+
+    def recover_download(self, request_id, *, expected_revision):
+        """Inspect an interrupted transfer offline, never retry it or apply a result."""
+        with self._store.result_transfer_lock(request_id):
+            current = self._current(request_id, expected_revision, {JobState.DOWNLOADING})
+            if self._downloader is None:
+                raise ResultError("Result storage has not been configured")
+            try:
+                directory = self._directory(current, create=False)
+                for item in current.results:
+                    with self._guard():
+                        pass
+                    if item.receipt is not None:
+                        self._downloader.verify(directory, item.receipt)
+                    elif (directory / item.asset.name).exists() or (
+                        directory / item.asset.name
+                    ).is_symlink():
+                        # A crash may have published bytes without committing their
+                        # receipt. Size alone is not proof of trusted result content.
+                        raise ResultError("Unreceipted result file requires explicit review")
+            except StoreError:
+                raise
+            except Exception:
+                raise ResultError(
+                    "Interrupted result files need review; missing, changed or unreceipted files "
+                    "cannot be recovered"
+                ) from None
+            state = (
+                JobState.READY
+                if all(item.receipt is not None for item in current.results)
+                else JobState.DOWNLOAD_FAILED
+            )
+            with self._guard():
+                return self._store.transition(
+                    request_id, expected_revision=current.revision, state=state
+                )
 
     def verify_ready(self, request_id, *, expected_revision):
         current = self._current(

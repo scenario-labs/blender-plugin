@@ -243,6 +243,11 @@ class JobCoordinator:
     def refresh_upload(self, request_id, *, expected_revision):
         return self._upload_commands().refresh(request_id, expected_revision=expected_revision)
 
+    def discard_upload_source(self, request_id, *, expected_revision):
+        return self._upload_commands().discard_source(
+            request_id, expected_revision=expected_revision
+        )
+
     @property
     def scope(self):
         return self._store.scope

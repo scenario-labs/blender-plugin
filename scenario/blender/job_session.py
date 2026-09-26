@@ -265,6 +265,12 @@ class JobSession:
     def refresh_upload(self, request_id, *, expected_revision):
         return self._upload_command("refresh_upload", request_id, expected_revision, recover=True)
 
+    def discard_upload_source(self, request_id, *, expected_revision):
+        """Queue explicit cleanup of a finished upload's verified private snapshot."""
+        return self._upload_command(
+            "discard_upload_source", request_id, expected_revision, recover=True
+        )
+
     def _upload_command(self, command, request_id, expected_revision, *, recover=False):
         _main_thread()
         self._check_capacity()

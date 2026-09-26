@@ -5,6 +5,7 @@
 import math
 import time
 import uuid
+from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime
 from enum import StrEnum
@@ -94,6 +95,31 @@ class UploadCommands:
                 )
                 for record in self._store.records()
             )
+
+    def discard_source(self, request_id, *, expected_revision):
+        """Explicitly remove a finished upload's snapshot, retaining durable history."""
+        current = self._current(
+            request_id,
+            expected_revision,
+            {UploadState.CANCELED, UploadState.FAILED, UploadState.IMPORTED},
+        )
+
+        @contextmanager
+        def guard():
+            with self._guard():
+                if self._store.get(request_id) != current:
+                    raise StoreConflict("Upload changed before source cleanup; reload it")
+                yield
+
+        try:
+            self._sources.discard(current.intent, guard=guard)
+        except (StoreError, UploadError):
+            raise
+        except Exception:
+            raise UploadError(
+                "Could not discard the staged upload source; inspect local storage"
+            ) from None
+        return current
 
     def _current(self, request_id, revision, states):
         with self._guard():

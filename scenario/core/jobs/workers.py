@@ -155,6 +155,11 @@ class JobWorkers:
             self._coordinator.refresh_upload, request_id, expected_revision=expected_revision
         )
 
+    def discard_upload_source(self, request_id, *, expected_revision):
+        return self._enqueue(
+            self._coordinator.discard_upload_source, request_id, expected_revision=expected_revision
+        )
+
     def submit(self, prepared, *, origin, operation, target_id, payload):
         """Queue an explicitly chosen paid action using an immutable payload copy."""
         snapshot = _snapshot(payload)

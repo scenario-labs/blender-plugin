@@ -358,6 +358,14 @@ suggestions do not grant permission to dispatch or retry. See
 [upload inspection](SDK_UPLOADS.md#scoped-inspection-and-recovery-visibility) for
 the state mapping and lifecycle boundaries.
 
+`discard_upload_source(request_id, expected_revision=...)` queues explicit local
+cleanup for a saved CANCELED, FAILED or IMPORTED upload. It verifies the staged
+copy and rechecks the active scope/record before removal, preserving the original
+file and durable history. Source hashing runs outside the coordinator lock;
+guarded deletion does not require a current scene origin. See
+[finished-upload cleanup](SDK_UPLOADS.md#explicit-finished-upload-source-cleanup)
+for filesystem ownership, interruption and orphan limits.
+
 The optional thread-safe `origin_guard` also protects upload preparation and each
 durable initialization/part/finalization claim. Source reads and network calls
 remain outside the revision lock; inspection and explicit refresh preserve access

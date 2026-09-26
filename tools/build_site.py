@@ -43,7 +43,10 @@ def build_pending_site(output, *, source, template, manifest, root=ROOT):
             "<p>The official extension repository will become available after the first "
             "verified release. No native update index is published yet.</p>"
             '<p><a href="https://github.com/scenario-labs/blender-plugin/releases">'
-            "Download a release ZIP</a> and install it with Blender’s Install from Disk.</p>"
+            "Browse historical ZIP releases</a>.</p>"
+            "<p>These are earlier experimental builds. Their features, controls and Blender "
+            "requirements may differ from the current handbook. Follow the requirements "
+            "and installation instructions attached to the release you choose.</p>"
             '<p><a href="../">Read the handbook</a></p></main></body></html>',
             encoding="utf-8",
         )

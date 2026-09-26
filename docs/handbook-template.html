@@ -34,7 +34,7 @@ html{scroll-behavior:smooth}
 @media (prefers-reduced-motion: reduce){html{scroll-behavior:auto}}
 body{margin:0;background:var(--ground);color:var(--ink);font-family:"IBM Plex Sans",system-ui,-apple-system,"Segoe UI",sans-serif;font-size:16px;line-height:1.6;-webkit-font-smoothing:antialiased}
 a{color:var(--accent-text);text-decoration-thickness:1px;text-underline-offset:3px}
-a:focus-visible,button:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:3px}
+a:focus-visible,button:focus-visible,summary:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:3px}
 h1,h2,h3{font-family:"Bricolage Grotesque","IBM Plex Sans",system-ui,sans-serif;text-wrap:balance;margin:0;line-height:1.1;letter-spacing:-.01em}
 h1{font-size:clamp(2.2rem,4.5vw,3.4rem);font-weight:700}
 h2{font-size:1.75rem;font-weight:700;padding-top:.5rem}
@@ -137,7 +137,10 @@ nav.toc ul ul{padding-left:1rem}
 <div class="shell">
 <nav class="toc" aria-label="Contents">
   <div class="toc-head"><span class="eyebrow">Handbook</span><span class="version">{{version}}</span></div>
+  <details class="contents" open>
+  <summary>Contents</summary>
   {{toc}}
+  </details>
 </nav>
 <main id="guide">
 <article class="handbook">
@@ -152,5 +155,17 @@ nav.toc ul ul{padding-left:1rem}
 </footer>
 </main>
 </div>
+<script>
+(() => {
+  const contents = document.querySelector("details.contents");
+  const narrow = window.matchMedia("(max-width: 900px)");
+  const resize = () => { contents.open = !narrow.matches; };
+  resize();
+  narrow.addEventListener("change", resize);
+  contents.addEventListener("click", event => {
+    if (narrow.matches && event.target.closest("a[href^='#']")) contents.open = false;
+  });
+})();
+</script>
 </body>
 </html>

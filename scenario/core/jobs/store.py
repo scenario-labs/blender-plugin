@@ -395,14 +395,13 @@ class JobStore:
         descriptor = None
         try:
             parent = _root(self._path.parent)
-            directory = parent / (
-                ".scenario-result-locks-" + hashlib.sha256(self._path.name.encode()).hexdigest()
-            )
+            directory = parent / ".scenario-result-locks"
             directory.mkdir(mode=0o700, exist_ok=True)
             directory = _root(directory)
-            path = directory / (
-                self._key + "-" + hashlib.sha256(request_id.encode()).hexdigest() + ".lock"
-            )
+            # One digest retains all identities without long concatenated paths.
+            # Case aliases identify the same database on Windows.
+            key = _json([os.path.normcase(self._path.name), self._key, request_id])
+            path = directory / (hashlib.sha256(key.encode()).hexdigest() + ".lock")
             if path.is_symlink():
                 raise StoreError("Result lock must be a regular private file")
             descriptor = os.open(path, os.O_RDWR | os.O_CREAT | getattr(os, "O_NOFOLLOW", 0), 0o600)

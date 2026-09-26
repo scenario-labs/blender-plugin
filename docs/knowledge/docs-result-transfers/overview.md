@@ -11,7 +11,7 @@
     "limits": "Existing guide indexed during this intake, without a fresh claim-by-claim or live verification; consult current integration status and issue acceptance. Windows private-storage path handling and its offline/native regression sources were inspected; later importer compatibility and live storage acceptance remain separate. Explicit interrupted-download recovery and cooperative OS locking reviewed against scoped revision checks, receipt verification, process-exit exclusion tests and the JobSession restart test. No active UI/MCP wiring, older-writer compatibility, orphan-file adoption, scene recovery or live storage acceptance is established.",
     "sources": {
       "scenario/core/jobs/results.py": "0ee36347a8c5be6ff84a36ae2dd54e9c64461de0a83bff513f29ac0bd7712889",
-      "scenario/core/jobs/store.py": "e4bf38362a04ac264f5503e20d88730ada4ce7d1788be8f34264c7c4817f5f84",
+      "scenario/core/jobs/store.py": "223e332c536b196140ea3fe0be163bb738330407233d66d2a0e591825c716c7c",
       "scenario/core/jobs/transfers.py": "ca3aafdd915d908be78db5b0a7f3a535f0274e6f3ccc7e0cef7c2d88a90f212d",
       "tests/blender/test_job_store.py": "710fed3f40bd30795d7e2df32264f1780b051c9b4527cc47943997c0f8389133",
       "tests/blender/test_result_commands.py": "bcb919c9a8dfcd3498959492b5bb49a3f1395b6923282f38182cc9b12c68089e",
@@ -22,7 +22,7 @@
       "scenario/core/jobs/coordinator.py": "6841e0cf2ceb85c28552f635a85b84ae269e0c7497ce3bea2c37abbbeee7c028",
       "scenario/core/jobs/workers.py": "81c2939dc51bbf6a8e7f96573fb95d200d3667476f621834f61239c26f37883d",
       "scenario/blender/job_session.py": "2c3556f02febd16087d03a9ca85dcc92b8be562065fcb811b7cdf0c20050102c",
-      "tests/unit/test_job_store.py": "5be0f782a6cf855ac25582f2cac77239601f5252b8eb3cf0f9386f068e24b10f",
+      "tests/unit/test_job_store.py": "7bd44215aad56c98d0003c65d1aa9a2303d430fd49d06f94832ebfe7c8b1ed98",
       "tests/blender/test_session_results.py": "53f5a82cd68593b5e12d8fda48aa376a2eaa64c75481daec5da3296fe139b9c6"
     },
     "scope": "overview",

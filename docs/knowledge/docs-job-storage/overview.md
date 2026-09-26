@@ -10,10 +10,10 @@
     "reviewed_at": "2026-09-26",
     "limits": "Existing guide indexed during this intake, without a fresh claim-by-claim or live verification; consult current integration status and issue acceptance. Explicit interrupted-download recovery and cooperative OS locking reviewed against scoped revision checks, receipt verification, process-exit exclusion tests and the JobSession restart test. No active UI/MCP wiring, older-writer compatibility, orphan-file adoption, scene recovery or live storage acceptance is established.",
     "sources": {
-      "scenario/core/jobs/store.py": "e4bf38362a04ac264f5503e20d88730ada4ce7d1788be8f34264c7c4817f5f84",
+      "scenario/core/jobs/store.py": "223e332c536b196140ea3fe0be163bb738330407233d66d2a0e591825c716c7c",
       "scenario/core/jobs/transfers.py": "549e02649dab7061492a5bb1100a836daf1112972a9ad01c2c0d39facb6ac098",
       "tests/blender/test_job_store.py": "9391c63dd8837345ea383e2a2fa250d9a911c1a3ddda16e07617c66854b2fc65",
-      "tests/unit/test_job_store.py": "5be0f782a6cf855ac25582f2cac77239601f5252b8eb3cf0f9386f068e24b10f",
+      "tests/unit/test_job_store.py": "7bd44215aad56c98d0003c65d1aa9a2303d430fd49d06f94832ebfe7c8b1ed98",
       "tests/unit/test_result_manifest.py": "e718f316b9f33faefdae53d59bf04c80b48645d52f3dd0bc80a2beae426e5d67",
       "scenario/core/jobs/results.py": "0ee36347a8c5be6ff84a36ae2dd54e9c64461de0a83bff513f29ac0bd7712889",
       "scenario/core/jobs/coordinator.py": "6841e0cf2ceb85c28552f635a85b84ae269e0c7497ce3bea2c37abbbeee7c028",

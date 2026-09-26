@@ -402,15 +402,17 @@ except StoreConflict:
     assert result.returncode == 23, result.stderr
     # Abrupt process exit releases the OS lock; its file must remain in place.
     with store.result_transfer_lock("request-one"):
-        locks = list(tmp_path.glob(".scenario-result-locks-*/*.lock"))
+        locks = list(tmp_path.glob(".scenario-result-locks/*.lock"))
         assert len(locks) == 1
         assert locks[0].read_bytes() == b"\0"
+        assert len(str(locks[0].relative_to(tmp_path))) < 100
 
 
 def test_result_transfer_locks_are_scoped_and_shared_by_reopened_stores(store, tmp_path):
     reopened = JobStore(tmp_path / "jobs.sqlite3", store.scope)
     other_scope = replace(store.scope, project_id="other-project")
     other = JobStore(tmp_path / "jobs.sqlite3", other_scope)
+    other_database = JobStore(tmp_path / "other.sqlite3", store.scope)
     with store.result_transfer_lock("request-one"):
         with pytest.raises(StoreConflict):
             with reopened.result_transfer_lock("request-one"):
@@ -418,6 +420,7 @@ def test_result_transfer_locks_are_scoped_and_shared_by_reopened_stores(store, t
         with (
             reopened.result_transfer_lock("request-two"),
             other.result_transfer_lock("request-one"),
+            other_database.result_transfer_lock("request-one"),
         ):
             pass
     with reopened.result_transfer_lock("request-one"):
@@ -428,7 +431,7 @@ def test_result_transfer_locks_are_scoped_and_shared_by_reopened_stores(store, t
 def test_result_transfer_lock_rejects_nonprivate_paths(store, tmp_path, kind):
     with store.result_transfer_lock("request-one"):
         pass
-    path = next(tmp_path.glob(".scenario-result-locks-*/*.lock"))
+    path = next(tmp_path.glob(".scenario-result-locks/*.lock"))
     path.unlink()
     outside = tmp_path / "untouched"
     outside.write_bytes(b"x")

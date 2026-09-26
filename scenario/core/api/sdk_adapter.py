@@ -381,6 +381,33 @@ class SDKAdapter:
             identifier,
         )
 
+    def job_page(self, *, page_size=50, pagination_token=None):
+        """One history page with inputs/results, using an opaque service cursor."""
+        if type(page_size) is not int or not 1 <= page_size <= 200:
+            raise ValueError("Job page size must be between 1 and 200")
+        options = {"page_size": page_size, "hide_results": False}
+        if pagination_token is not None:
+            if not isinstance(pagination_token, str) or not pagination_token:
+                raise ValueError("A nonempty job cursor is required")
+            options["pagination_token"] = pagination_token
+        page = _json(self._request(self._sdk.jobs.with_raw_response.list, **options))
+        rows = page.get("jobs")
+        if not isinstance(rows, list):
+            raise AdapterError("Scenario returned an invalid job page")
+        records = {}
+        for row in rows:
+            try:
+                identifier = _identifier(row.get("jobId") if isinstance(row, dict) else None)
+            except ValueError:
+                raise AdapterError("Scenario returned an invalid job record") from None
+            if identifier in records and records[identifier] != row:
+                raise AdapterError("Scenario returned conflicting job records; refresh history")
+            records[identifier] = row
+        token = page.get("nextPaginationToken")
+        if token not in (None, "") and (not isinstance(token, str) or token == pagination_token):
+            raise AdapterError("Scenario repeated or returned an invalid job cursor")
+        return {**page, "jobs": list(records.values())}
+
     def jobs(
         self,
         *,

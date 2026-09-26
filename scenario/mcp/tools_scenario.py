@@ -218,11 +218,21 @@ def capture_reference(args):
 def list_generations(args):
     from ..blender import history
 
-    if not runtime.state.history:
+    refresh = args.get("refresh", False)
+    if not isinstance(refresh, bool):
+        raise ValueError("refresh must be a boolean")
+    generation.process_catalog_events()
+    if refresh:
         history.refresh()
+        return {"generations": [], "note": "history requested, call again without refresh"}
+    if runtime.state.history_error:
+        raise RuntimeError(f"{runtime.state.history_error}; retry with refresh=true")
+    if not runtime.state.history_loaded:
+        if not runtime.state.history_loading:
+            history.refresh()
         return {"generations": [], "note": "history requested, call again in a few seconds"}
     limit = int(args.get("limit", 20))
-    return {
+    result = {
         "generations": [
             {
                 "job_id": e.job_id,
@@ -236,6 +246,9 @@ def list_generations(args):
             for e in runtime.state.history[:limit]
         ]
     }
+    if runtime.state.history_loading:
+        result["note"] = "showing loaded history while refresh is pending; call again"
+    return result
 
 
 def _schema(props, required=()):
@@ -393,12 +406,13 @@ SPECS = (
             "List recent cloud generations using this Blender runtime's loaded history.\n"
             "Args:\n"
             "  - limit: optional integer, default 20, maximum number of rows to return.\n"
+            "  - refresh: optional boolean, request a new cloud page or retry a failed read; then poll without refresh.\n"
             "Returns: generations[] with job_id, kind, model_id, prompt, status, cu_cost and local_files. The first call may return an empty list and a note while history loads; call again after loading.\n"
             'Example: {"limit": 10}.\n'
             "Prefer job_status for a tracked active generation; this is not a fresh platform-wide history query on every call.\n"
             "Platform equivalent: jobs_list."
         ),
-        _schema({"limit": {"type": "integer"}}),
+        _schema({"limit": {"type": "integer"}, "refresh": {"type": "boolean"}}),
         list_generations,
         {"readOnlyHint": True},
     ),

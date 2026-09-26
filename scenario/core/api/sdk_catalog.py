@@ -7,6 +7,7 @@ import threading
 from concurrent.futures import Future
 from contextlib import contextmanager
 
+from .. import history
 from .catalog import ModelRecord
 from .errors import ScenarioError
 from .sdk_adapter import AdapterError, SDKAdapter
@@ -131,6 +132,26 @@ class SDKCatalog:
                 self._check_active()
                 self._lists[privacy] = copy.deepcopy(rows)
         return rows, records
+
+    def history_page(self, token=None):
+        """Read one cloud page and bounded prompt previews on this connection."""
+        with self._read() as adapter:
+            page = adapter.job_page(pagination_token=token)
+            rows = page["jobs"]
+            texts = {}
+            for identifier in history.prompt_asset_ids(rows)[:30]:
+                try:
+                    asset = adapter.asset(identifier)
+                except (AdapterError, ValueError):
+                    continue  # A missing prompt must not hide the cloud job.
+                metadata = asset.get("metadata") or {}
+                preview = metadata.get("preview") if isinstance(metadata, dict) else None
+                if isinstance(preview, str) and metadata.get("hasFullPreview") is not False:
+                    texts[identifier] = preview
+            history.resolve_prompts(rows, texts)
+            with self._condition:
+                self._check_active()
+            return page
 
     def load_list_cached(self, privacy="public"):
         with self._condition:

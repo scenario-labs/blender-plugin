@@ -68,7 +68,7 @@ refresh. Authoritative account/project discovery remains blocked by
 [SDK issue #29](https://github.com/scenario-labs/scenario-sdk-python/issues/29);
 no account identity is derived from credentials and no shared `JobSession` or
 durable account store is activated by catalog reads. Durable quotes, submission,
-uploads, history and result application still need active SDK adoption under
+uploads and result application still need active SDK adoption under
 #65. Invalidating a visible quote does not establish safe migration of those
 prototype paid jobs or their late callbacks.
 
@@ -123,6 +123,32 @@ A timeout after the handler starts reports an unknown outcome. The executor neit
 interrupts nor replays the handler, and a completed result wins a concurrent timeout
 observation. This local boundary does not replace durable request identity or remote
 job recovery, and does not make the prototype paid runtime accepted.
+
+## Active SDK history
+
+Cloud history uses the selected catalog connection's SDK adapter and HTTP pool.
+`jobs.with_raw_response.list` reads one page at a time with inputs/results visible;
+`assets.with_raw_response.retrieve` resolves at most 30 prompt previews per page.
+Prompt text is local to each read, with no session-wide or cross-credential cache.
+Unavailable or explicitly truncated text previews remain unresolved; an existing
+local job's prompt can still supply the display text. Full text downloads remain
+part of transfer integration.
+
+The existing worker queue delivers pages to both the GUI and headless MCP.
+Connection identity and request keys reject superseded results and errors;
+credential retirement clears visible cloud history and its cursor. A failed read
+preserves the last valid page. Empty successful pages count as loaded, duplicate
+rows are suppressed, and repeated pagination cursors fail without changing the
+visible page. MCP `list_generations(refresh=true)` explicitly refreshes or retries;
+subsequent calls without `refresh` deliver/read the shared result. Repeated UI or
+MCP refresh requests reuse a pending history read instead of starting more workers.
+The MCP `refresh` argument accepts only JSON booleans; other types fail before
+starting or delivering history work.
+
+This is in-memory browsing, not durable history or submission recovery. Local
+files are attached only to jobs returned by the current cloud page. Importing a
+history result and prototype job polling still use their existing paths; this
+change does not establish their credential or application safety.
 
 ## Where to make a change
 

@@ -3,8 +3,10 @@
 """Active catalog reads use real SDK serialization without service connections."""
 
 import base64
+import json
 import threading
 from concurrent.futures import Future, ThreadPoolExecutor
+from decimal import Decimal
 
 import httpx
 import pytest
@@ -28,6 +30,96 @@ def catalog(handler, **options):
         adapter_factory=factory,
         **options,
     ), pools
+
+
+ESTIMATE_MODEL = {
+    "id": "fixture",
+    "type": "custom",
+    "inputs": [{"name": "prompt", "type": "string", "required": True}],
+}
+
+
+def test_estimate_uses_selected_sdk_connection_and_keeps_exact_response():
+    calls = []
+
+    def respond(request):
+        calls.append(request)
+        if request.method == "GET":
+            return httpx.Response(200, json={"model": ESTIMATE_MODEL})
+        assert request.url.path == "/v1/generate/custom/fixture"
+        assert dict(request.url.params) == {"dryRun": "true"}
+        assert json.loads(request.content) == {"prompt": "teapot"}
+        return httpx.Response(269, content=b'{"creativeUnitsCost":1.1234567890123456789}')
+
+    context, pools = catalog(respond)
+    try:
+        quote = context.estimate("fixture", {"prompt": "teapot"})
+        assert quote.cost == Decimal("1.1234567890123456789")
+        assert quote.response_json == b'{"creativeUnitsCost":1.1234567890123456789}'
+        assert quote.payload == {"prompt": "teapot"}
+        assert len(pools) == 1
+        assert pools[0].owns_estimate(quote)
+        assert all(
+            call.headers["Authorization"] == calls[0].headers["Authorization"] for call in calls
+        )
+        context.update_online(False)
+        with pytest.raises(ScenarioError, match="Online access is disabled"):
+            context.estimate("fixture", {"prompt": "offline"})
+        assert len(calls) == 2
+    finally:
+        context.close()
+    assert not pools[0].owns_estimate(quote)
+
+
+@pytest.mark.parametrize(
+    "raw",
+    [
+        b"{}",
+        b'{"creativeUnitsCost":-1}',
+        b'{"creativeUnitsCost":true}',
+        b'{"creativeUnitsCost":"2"}',
+    ],
+)
+def test_invalid_estimate_never_becomes_a_free_quote(raw):
+    def respond(request):
+        if request.method == "GET":
+            return httpx.Response(200, json={"model": ESTIMATE_MODEL})
+        return httpx.Response(269, content=raw)
+
+    context, _ = catalog(respond)
+    try:
+        with pytest.raises(ScenarioError, match="no valid exact estimate"):
+            context.estimate("fixture", {"prompt": "teapot"})
+    finally:
+        context.close()
+
+
+def test_estimate_snapshots_inputs_and_rejects_retirement_during_request():
+    entered, release = threading.Event(), threading.Event()
+    bodies = []
+
+    def respond(request):
+        if request.method == "GET":
+            entered.set()
+            assert release.wait(5)
+            return httpx.Response(200, json={"model": ESTIMATE_MODEL})
+        bodies.append(json.loads(request.content))
+        context.close()
+        return httpx.Response(269, json={"creativeUnitsCost": 0})
+
+    context, pools = catalog(respond)
+    parameters = {"prompt": "original"}
+    with ThreadPoolExecutor(max_workers=1) as worker:
+        result = worker.submit(context.estimate, "fixture", parameters)
+        try:
+            assert entered.wait(5)
+            parameters["prompt"] = "changed"
+        finally:
+            release.set()
+        with pytest.raises(ScenarioError, match="connection changed"):
+            result.result(5)
+    assert bodies == [{"prompt": "original"}]
+    assert context.closed and pools[0]._closed
 
 
 def test_catalog_pagination_and_normalization_preserve_selected_credentials(monkeypatch):

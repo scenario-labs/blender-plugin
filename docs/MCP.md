@@ -137,6 +137,13 @@ in that banner. Stop with Ctrl+C. Scene captures need the GUI; other scene tools
 use the headless main-thread request loop. Development builds and tests use the
 [isolated native runner](../CONTRIBUTING.md#native-blender-test-loop).
 
+Cost estimates use the shared SDK connection. Model preparation and credential
+checks run on Blender's main thread; the dry-run request runs on the MCP request
+thread so Blender can continue processing other work. `estimate_cost` returns
+`cu_cost_exact`, the server cost as a decimal string, alongside the numeric
+`cu_cost` and `details`. An estimate remains a preview: it does not authorize
+spending or bind the prototype `generate` tool to a durable quote.
+
 ## Tools
 
 The table is generated from the same definitions served by `tools/list`. That

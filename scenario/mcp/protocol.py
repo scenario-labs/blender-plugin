@@ -27,6 +27,14 @@ class ToolTimeout(Exception):
 
 
 @dataclass
+class DeferredTool:
+    """Main-thread preparation, HTTP-thread work, then main-thread delivery."""
+
+    run: object
+    finish: object
+
+
+@dataclass
 class ToolSpec:
     name: str
     description: str
@@ -132,6 +140,14 @@ def handle_message(message, registry, server_info, executor=None):
                 value = executor(spec.handler, arguments)
             else:
                 value = spec.handler(arguments)
+            if isinstance(value, DeferredTool):
+                deferred = value
+                completed = deferred.run()
+                value = (
+                    executor(deferred.finish, completed)
+                    if executor is not None
+                    else deferred.finish(completed)
+                )
         except ToolTimeout as err:
             return _error(msg_id, TOOL_TIMEOUT, f"Tool timeout: {err}")
         except Exception as err:  # tool failures are results, not protocol errors

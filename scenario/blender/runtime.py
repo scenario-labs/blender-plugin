@@ -26,6 +26,8 @@ class RuntimeState:
     def __init__(self):
         self.manager = None
         self.catalog = None
+        self.estimates = {}  # Exact SDK responses for current UI previews, never spend approval.
+        self.estimate_origins = {}  # Pending request key -> original scene and lane, main thread only.
         self.records = {}  # model_id -> ModelRecord (detailed)
         self.lane_models = {}  # lane -> list[ModelRecord]
         self.catalog_loaded = False

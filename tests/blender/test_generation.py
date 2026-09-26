@@ -208,16 +208,22 @@ class GenerationTests(unittest.TestCase):
         self.assertEqual(ids, [str(v) for v in enum_spec.allowed_values if str(v) != ""])
 
     def test_estimate_event_updates_lane_state(self):
+        self.runtime.state.catalog = Mock()
+        self.enterContext(patch.object(self.runtime, "sync_catalog_context"))
         lane = bpy.context.scene.scenario.lane_state("image")
         lane.estimate_key = "image:k1"
         lane.estimate_state = "PENDING"
-        est = submodule("core.jobs.manager").EstimateResult(key="image:k1", cu_cost=13.25)
+        est = submodule("core.jobs.manager").EstimateResult(
+            key="image:k1", cu_cost=13.25, catalog=self.runtime.state.catalog, quote=object()
+        )
+        self.runtime.state.estimate_origins[est.key] = (bpy.context.scene, "image")
         self.handlers.dispatch(("estimate", est))
         self.assertEqual(lane.estimate_state, "READY")
         self.assertAlmostEqual(lane.estimate_cu, 13.25)
         bad = submodule("core.jobs.manager").EstimateResult(
-            key="image:k1", error="Input prompt is required"
+            key="image:k1", error="Input prompt is required", catalog=self.runtime.state.catalog
         )
+        self.runtime.state.estimate_origins[bad.key] = (bpy.context.scene, "image")
         self.handlers.dispatch(("estimate", bad))
         self.assertEqual(lane.estimate_state, "ERROR")
         self.assertIn("prompt", lane.estimate_error)

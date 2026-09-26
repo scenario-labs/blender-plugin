@@ -67,10 +67,28 @@ prototype's unscoped disk model cache. Restart therefore requires a catalog
 refresh. Authoritative account/project discovery remains blocked by
 [SDK issue #29](https://github.com/scenario-labs/scenario-sdk-python/issues/29);
 no account identity is derived from credentials and no shared `JobSession` or
-durable account store is activated by catalog reads. Quotes, submission,
+durable account store is activated by catalog reads. Durable quotes, submission,
 uploads, history and result application still need active SDK adoption under
 #65. Invalidating a visible quote does not establish safe migration of those
 prototype paid jobs or their late callbacks.
+
+## Active SDK cost previews
+
+UI and MCP cost previews use the same connection and cached schema as catalog
+reads. The adapter validates model inputs and retains the exact decimal cost,
+payload and response bytes. UI requests capture nested inputs before starting a
+worker; unique request keys distinguish scenes and successive edits. Delivery is
+bound to the original scene object, so copied or deleted scenes cannot receive a
+late preview. Main-thread delivery rejects retired connections and superseded forms. Current previews are
+retained in memory; Blender's float property is only their existing display value.
+
+MCP prepares inputs on the main thread, performs the SDK dry run on its HTTP
+request thread, and queues delivery back to the main thread to recheck credentials.
+The response includes `cu_cost_exact` as a decimal string alongside the existing
+numeric `cu_cost` and cost details. Missing or malformed prices fail instead of
+becoming zero. These reads do not upload references, persist jobs, approve spending
+or establish UI/MCP paid-submission parity. The legacy manager estimate method
+remains only for historical smoke scripts.
 
 ## Replacement components already present
 

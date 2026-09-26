@@ -46,6 +46,7 @@ BASELINE = (
     "test_prompt_tools",
     "test_offline_runtime",
     "test_sdk_bundle",
+    "test_sdk_estimates",
     "test_job_store",
     "test_result_transfers",
     "test_job_session",

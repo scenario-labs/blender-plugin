@@ -4,6 +4,7 @@
 
 import logging
 import time
+import uuid
 from dataclasses import dataclass, field
 
 import bpy
@@ -70,6 +71,8 @@ def clear_catalog():
     _schemas.clear()
     _pending_models.clear()
     _pending_dirty_models.clear()
+    runtime.state.estimates.clear()
+    runtime.state.estimate_origins.clear()
     runtime.state.records.clear()
     runtime.state.lane_models.clear()
     runtime.state.enum_cache.clear()
@@ -692,20 +695,26 @@ def request_meta(context, lane, request=None):
 
 
 def request_estimate(scene, lane):
+    runtime.sync_catalog_context()
     lane_state = scene.scenario.lane_state(lane)
+    runtime.state.estimates.pop(lane_state.estimate_key, None)
+    lane_state.estimate_key = ""
     request = build_request(scene, lane, for_estimate=True)
     if request.errors:
         lane_state.estimate_state = "UNAVAILABLE"
         lane_state.estimate_error = request.errors[0]
         return
-    key = f"{lane}:{request.model_id}:{time.time():.3f}"
+    key = uuid.uuid4().hex
     log.info("estimate requested %s", key)
     lane_state.estimate_key = key
     lane_state.estimate_state = "PENDING"
     lane_state.estimate_partial = request.partial
     try:
-        runtime.ensure_manager().estimate(key, request.model_id, request.body)
+        catalog = runtime.ensure_catalog()
+        runtime.state.estimate_origins[key] = (scene, lane)
+        runtime.ensure_manager().preview_cost(catalog, key, request.model_id, request.body)
     except ScenarioError as err:
+        runtime.state.estimate_origins.pop(key, None)
         lane_state.estimate_state = "ERROR"
         lane_state.estimate_error = err.reason
 

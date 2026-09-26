@@ -131,6 +131,15 @@ class JobWorkers:
             self._coordinator.initialize_upload, request_id, expected_revision=expected_revision
         )
 
+    def cancel_prepared_upload(self, request_id, *, expected_revision):
+        """Persist cancellation immediately, including when initialization is queued."""
+        with self._condition:
+            if not self._accepting:
+                raise WorkerError("This job owner is inactive")
+            return self._coordinator.cancel_prepared_upload(
+                request_id, expected_revision=expected_revision
+            )
+
     def transfer_upload_part(self, request_id, *, expected_revision):
         return self._enqueue(
             self._coordinator.transfer_upload_part, request_id, expected_revision=expected_revision

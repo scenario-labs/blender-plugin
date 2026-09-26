@@ -297,6 +297,7 @@ class SessionUploadTests(unittest.TestCase):
             (getattr(self.session, name), (record.intent.request_id,), {"expected_revision": 0})
             for name in (
                 "initialize_upload",
+                "cancel_prepared_upload",
                 "transfer_upload_part",
                 "finalize_upload",
                 "refresh_upload",
@@ -308,6 +309,47 @@ class SessionUploadTests(unittest.TestCase):
                     with self.assertRaisesRegex(RuntimeError, "main thread"):
                         worker.submit(method, *args, **kwargs).result(5)
         self.assertEqual(self.calls, [])
+
+    def test_cancel_prepared_upload_works_with_full_completion_queue(self):
+        self.session.shutdown()
+        self.session = self.new_session(completion_limit=1)
+        origin = self.session.capture(self.scene, self.target)
+        record = self.session.prepare_upload(
+            self.source, origin=origin, kind="image", content_type="image/png"
+        ).result(5)
+        self.session.invalidate_all()
+        with patch.object(self.sources, "verify", side_effect=AssertionError("Read source")):
+            canceled = self.session.cancel_prepared_upload(
+                record.intent.request_id, expected_revision=record.revision
+            )
+        self.assertEqual(canceled.state, self.uploads.UploadState.CANCELED)
+        self.assertEqual(self.upload_store.get(record.intent.request_id), canceled)
+        self.assertEqual(len(self.session.drain()), 1)
+        self.assertEqual(self.calls, [])
+        self.uploader.upload.assert_not_called()
+
+    def test_restarted_prepared_upload_can_be_canceled_after_target_deletion(self):
+        record, _ = self.prepare()
+        staged = self.sources._directory(self.scope, record.intent.request_id) / "source.bin"
+        self.session.shutdown()
+        bpy.data.objects.remove(self.target, do_unlink=True)
+        self.target = None
+        self.session = self.new_session()
+        canceled = self.session.cancel_prepared_upload(
+            record.intent.request_id, expected_revision=record.revision
+        )
+        self.assertEqual(canceled.intent, record.intent)
+        self.assertEqual(self.session.upload_recovery_plan()[0].action.value, "finished")
+        self.assertEqual(self.source.read_bytes(), b"data")
+        self.assertEqual(staged.read_bytes(), b"data")
+        self.assertEqual(self.calls, [])
+        with self.assertRaises(self.jobs.StoreConflict):
+            self.session.cancel_prepared_upload("foreign-only", expected_revision=0)
+        self.session.deactivate()
+        with self.assertRaises(RuntimeError):
+            self.session.cancel_prepared_upload(
+                record.intent.request_id, expected_revision=canceled.revision
+            )
 
     def test_incomplete_configuration_fails_before_registering_another_owner(self):
         before = set(self.module._sessions)

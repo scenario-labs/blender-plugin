@@ -233,6 +233,16 @@ It never transfers another part, recreates initialization or repeats completion.
 Unknown requests in another account/project are absent, not rebound to the
 current connection or selection.
 
+`cancel_prepared_upload(request_id, expected_revision=...)` is synchronous on the
+main thread and bypasses worker/completion queue capacity. It cancels only local
+PREPARED intent in the active selected scope. Target deletion, origin invalidation
+or restarting the session does not prevent this local bookkeeping. The returned
+record is immediate; no completion is queued and no scene mutation, source read,
+file deletion or service request occurs. Initialization races are decided by the
+durable revision claim: already claimed or uncertain uploads cannot be canceled
+through this command. Inactive sessions reject it. It does not provide remote
+abort or active UI/MCP cancellation controls.
+
 Upload task outcomes use the normal `drain`/`deliver` path: successful records
 must match the stored scope/origin, and delivery rechecks the current captured
 scene/target before a once-only main-thread callback. A late claimed receipt may

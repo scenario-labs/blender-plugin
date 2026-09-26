@@ -375,3 +375,72 @@ def test_cancel_claim_never_returns_to_dispatchable_remote(store, tmp_path, inte
         with pytest.raises(ValueError):
             advance(store, claimed, forbidden)
     assert advance(store, claimed, terminal).remote_job_id == "remote-one"
+
+
+def test_result_transfer_lock_excludes_another_process_and_releases_after_death(store, tmp_path):
+    script = """
+import json, os, sys
+from scenario.core.jobs.store import JobScope, JobStore, StoreConflict
+store = JobStore(sys.argv[1], JobScope(**json.loads(sys.argv[2])))
+try:
+    with store.result_transfer_lock("request-one"):
+        os._exit(23)
+except StoreConflict:
+    sys.exit(22)
+"""
+    args = [
+        sys.executable,
+        "-c",
+        script,
+        str(tmp_path / "jobs.sqlite3"),
+        json.dumps(asdict(store.scope)),
+    ]
+    with store.result_transfer_lock("request-one"):
+        result = subprocess.run(args, timeout=15, capture_output=True, text=True)
+        assert result.returncode == 22, result.stderr
+    result = subprocess.run(args, timeout=15, capture_output=True, text=True)
+    assert result.returncode == 23, result.stderr
+    # Abrupt process exit releases the OS lock; its file must remain in place.
+    with store.result_transfer_lock("request-one"):
+        locks = list(tmp_path.glob(".scenario-result-locks-*/*.lock"))
+        assert len(locks) == 1
+        assert locks[0].read_bytes() == b"\0"
+
+
+def test_result_transfer_locks_are_scoped_and_shared_by_reopened_stores(store, tmp_path):
+    reopened = JobStore(tmp_path / "jobs.sqlite3", store.scope)
+    other_scope = replace(store.scope, project_id="other-project")
+    other = JobStore(tmp_path / "jobs.sqlite3", other_scope)
+    with store.result_transfer_lock("request-one"):
+        with pytest.raises(StoreConflict):
+            with reopened.result_transfer_lock("request-one"):
+                pytest.fail("Two owners acquired the same lock")
+        with (
+            reopened.result_transfer_lock("request-two"),
+            other.result_transfer_lock("request-one"),
+        ):
+            pass
+    with reopened.result_transfer_lock("request-one"):
+        pass
+
+
+@pytest.mark.parametrize("kind", ["symlink", "hardlink", "directory", "oversized"])
+def test_result_transfer_lock_rejects_nonprivate_paths(store, tmp_path, kind):
+    with store.result_transfer_lock("request-one"):
+        pass
+    path = next(tmp_path.glob(".scenario-result-locks-*/*.lock"))
+    path.unlink()
+    outside = tmp_path / "untouched"
+    outside.write_bytes(b"x")
+    if kind == "symlink":
+        path.symlink_to(outside)
+    elif kind == "hardlink":
+        os.link(outside, path)
+    elif kind == "directory":
+        path.mkdir()
+    else:
+        path.write_bytes(b"not a lock")
+    with pytest.raises(StoreError):
+        with store.result_transfer_lock("request-one"):
+            pytest.fail("Accepted unsafe lock")
+    assert outside.read_bytes() == b"x"

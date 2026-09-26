@@ -223,6 +223,10 @@ class JobSession:
         """Queue local receipt verification; this does not authorize application."""
         return self._record_command("verify_results", request_id, expected_revision)
 
+    def recover_downloads(self, request_id, *, expected_revision):
+        """Queue explicit offline reconciliation without resolving or applying old targets."""
+        return self._record_command("recover_downloads", request_id, expected_revision)
+
     def prepare_upload(self, source, *, origin, kind, content_type):
         """Stage a reference for the origin captured with its source, off the main thread."""
         _main_thread()

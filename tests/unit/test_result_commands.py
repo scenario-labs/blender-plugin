@@ -400,3 +400,202 @@ def test_sdk_rejected_result_identity_is_sanitized_without_store_changes(setup, 
     assert store.get(current.intent.request_id) == current
     assert len(calls) == (0 if identity_kind == "job" else 1)
     assert not downloader.calls
+
+
+def interrupt_download(setup, monkeypatch, stage):
+    coordinator, store, current, _, _, downloader, _, _ = setup
+    download = downloader.download
+    transition = store.transition
+
+    def stop_transfer(*args, **kwargs):
+        if stage == "empty" or (stage == "partial" and len(downloader.calls) == 1):
+            raise SystemExit("synthetic process interruption")
+        return download(*args, **kwargs)
+
+    def stop_completion(*args, **kwargs):
+        if stage == "complete" and kwargs.get("state") == JobState.READY:
+            raise StoreError("synthetic final commit failure")
+        return transition(*args, **kwargs)
+
+    with monkeypatch.context() as patch:
+        patch.setattr(downloader, "download", stop_transfer)
+        patch.setattr(store, "transition", stop_completion)
+        with pytest.raises((SystemExit, StoreError)):
+            coordinator.download_results("request", expected_revision=current.revision)
+    interrupted = store.get("request")
+    assert interrupted.state == JobState.DOWNLOADING
+    return interrupted
+
+
+@pytest.mark.parametrize("stage", ["empty", "partial", "complete"])
+def test_reopened_owner_recovers_offline_and_only_explicitly_retries_missing_downloads(
+    setup, monkeypatch, tmp_path, stage
+):
+    coordinator, store, _, _, _, downloader, calls, root = setup
+    interrupted = interrupt_download(setup, monkeypatch, stage)
+    reopened = JobStore(tmp_path / "jobs.sqlite3", store.scope)
+    recovered_owner = JobCoordinator(
+        coordinator._adapter, reopened, result_root=root, result_downloader=downloader
+    )
+    before = len(calls), len(downloader.calls)
+    recovered = recovered_owner.recover_downloads("request", expected_revision=interrupted.revision)
+    assert (len(calls), len(downloader.calls)) == before
+    assert recovered.intent == interrupted.intent
+    assert recovered.results == interrupted.results
+    assert recovered.remote_job_id == interrupted.remote_job_id
+    assert recovered.revision == interrupted.revision + 1
+    expected = JobState.READY if stage == "complete" else JobState.DOWNLOAD_FAILED
+    assert recovered.state == expected
+    if stage != "complete":
+        ready = recovered_owner.download_results("request", expected_revision=recovered.revision)
+        assert ready.state == JobState.READY
+        missing = sum(item.receipt is None for item in interrupted.results)
+        assert len(calls) == before[0] + missing
+        assert len(downloader.calls) == before[1] + missing
+    assert all(request.method == "GET" for request in calls)
+
+
+@pytest.mark.parametrize("damage", ["missing", "changed", "symlink", "orphan", "orphan-symlink"])
+def test_recovery_preserves_untrusted_files_and_record_without_network(setup, monkeypatch, damage):
+    coordinator, store, _, _, _, downloader, calls, _ = setup
+    interrupted = interrupt_download(setup, monkeypatch, "partial")
+    directory = downloader.calls[0][1]
+    item = interrupted.results[1 if damage.startswith("orphan") else 0]
+    path = directory / item.asset.name
+    if damage in {"missing", "symlink"}:
+        path.unlink()
+    if damage in {"changed", "orphan"}:
+        path.write_bytes(b"untrusted bytes")
+    if damage in {"symlink", "orphan-symlink"}:
+        path.symlink_to(directory / "missing-target")
+    before = len(calls), len(downloader.calls)
+    with pytest.raises(ResultError, match="need review"):
+        coordinator.recover_downloads("request", expected_revision=interrupted.revision)
+    assert store.get("request") == interrupted
+    assert (len(calls), len(downloader.calls)) == before
+    if damage != "missing":
+        assert path.is_symlink() or path.read_bytes() == b"untrusted bytes"
+
+
+def test_live_transfer_excludes_recovery_and_another_download(setup):
+    coordinator, store, current, _, _, downloader, _, root = setup
+    competing = JobCoordinator(
+        coordinator._adapter, store, result_root=root, result_downloader=downloader
+    )
+    checks = []
+
+    def during_transfer():
+        active = store.get("request")
+        for command in (competing.recover_downloads, competing.download_results):
+            with pytest.raises(StoreConflict, match="busy"):
+                command("request", expected_revision=active.revision)
+        checks.append(active.revision)
+
+    downloader.after_download = during_transfer
+    assert (
+        coordinator.download_results("request", expected_revision=current.revision).state
+        == JobState.READY
+    )
+    assert len(checks) == 2
+
+
+def test_recovery_rejects_stale_foreign_and_inactive_contexts(setup, monkeypatch, tmp_path):
+    coordinator, store, _, _, _, downloader, calls, root = setup
+    interrupted = interrupt_download(setup, monkeypatch, "partial")
+    count = len(calls)
+    for request, revision in (
+        ("request", -1),
+        ("request", True),
+        ("missing", interrupted.revision),
+    ):
+        with pytest.raises(StoreConflict):
+            coordinator.recover_downloads(request, expected_revision=revision)
+    foreign_store = JobStore(tmp_path / "jobs.sqlite3", replace(store.scope, account_id="other"))
+    with SDKAdapter(
+        Credentials("fixture-key", "fixture-secret"),
+        online=lambda: False,
+        base_url=store.scope.service,
+        account_id="other",
+        project_id="project",
+        team_id="team",
+    ) as adapter:
+        foreign = JobCoordinator(
+            adapter, foreign_store, result_root=root, result_downloader=downloader
+        )
+        with pytest.raises(StoreConflict):
+            foreign.recover_downloads("request", expected_revision=interrupted.revision)
+    coordinator.deactivate()
+    with pytest.raises(ResultError):
+        coordinator.recover_downloads("request", expected_revision=interrupted.revision)
+    assert store.get("request") == interrupted and len(calls) == count
+
+
+def test_recovery_commit_failure_preserves_interruption_and_can_be_explicitly_retried(
+    setup, monkeypatch
+):
+    coordinator, store, _, _, _, _, calls, _ = setup
+    interrupted = interrupt_download(setup, monkeypatch, "complete")
+    count = len(calls)
+    with monkeypatch.context() as patch:
+        patch.setattr(
+            store, "transition", lambda *args, **kwargs: (_ for _ in ()).throw(StoreError("disk"))
+        )
+        with pytest.raises(StoreError):
+            coordinator.recover_downloads("request", expected_revision=interrupted.revision)
+    assert store.get("request") == interrupted
+    assert (
+        coordinator.recover_downloads("request", expected_revision=interrupted.revision).state
+        == JobState.READY
+    )
+    assert len(calls) == count
+
+
+def test_recovery_worker_returns_saved_record_without_network_or_application(setup, monkeypatch):
+    coordinator, store, _, _, _, _, calls, _ = setup
+    interrupted = interrupt_download(setup, monkeypatch, "partial")
+    count = len(calls)
+    workers = JobWorkers(coordinator, workers=1)
+    try:
+        record = workers.recover_downloads(
+            "request", expected_revision=interrupted.revision
+        ).result(5)
+        assert record.state == JobState.DOWNLOAD_FAILED
+        assert record == store.get("request")
+        assert len(calls) == count
+    finally:
+        workers.shutdown()
+
+
+def test_recovery_deactivated_during_verification_never_commits_a_state_change(setup, monkeypatch):
+    coordinator, store, _, _, _, downloader, calls, _ = setup
+    interrupted = interrupt_download(setup, monkeypatch, "partial")
+    verify = downloader.verify
+
+    def retire(root, receipt):
+        result = verify(root, receipt)
+        coordinator.deactivate()
+        return result
+
+    monkeypatch.setattr(downloader, "verify", retire)
+    count = len(calls)
+    with pytest.raises(ResultError):
+        coordinator.recover_downloads("request", expected_revision=interrupted.revision)
+    assert store.get("request") == interrupted
+    assert len(calls) == count
+
+
+def test_recovery_sanitizes_verifier_errors_without_altering_files(setup, monkeypatch):
+    coordinator, store, _, _, _, downloader, calls, _ = setup
+    interrupted = interrupt_download(setup, monkeypatch, "partial")
+
+    def fail(*args):
+        raise ResultError("private-file-path")
+
+    monkeypatch.setattr(downloader, "verify", fail)
+    count = len(calls)
+    with pytest.raises(ResultError, match="need review") as error:
+        coordinator.recover_downloads("request", expected_revision=interrupted.revision)
+    assert "private-file-path" not in str(error.value)
+    assert error.value.__suppress_context__
+    assert store.get("request") == interrupted
+    assert len(calls) == count

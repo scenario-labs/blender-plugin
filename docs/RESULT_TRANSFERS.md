@@ -86,8 +86,9 @@ This change supplies the independently testable transport. It does not configure
 production storage hosts, implement multipart uploads, wire UI/MCP commands or
 import results into Blender. The [coordinator](JOB_COORDINATOR.md#result-retrieval-and-download-commands)
 now orchestrates saved manifests/receipts and retrieves fresh URLs for explicit
-download retries through the SDK. Interrupted-worker reconciliation remains
-separate. Those commands must bind the trusted asset response and
+download retries through the SDK. Explicit interrupted-download recovery now verifies committed receipts under a
+cooperating cross-process lock; unreceipted files and staging cleanup still need
+separate review. Those commands must bind the trusted asset response and
 receipt to the original account/project/job/target. Live signed-storage acceptance
 and supported OS/filesystem behavior remain separate from offline contracts.
 

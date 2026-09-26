@@ -39,7 +39,10 @@ def _request(catalog, token, append):
 
 
 def refresh():
-    return _request(runtime.ensure_catalog(), None, False)
+    catalog = runtime.ensure_catalog()
+    if runtime.state.history_loading:
+        return runtime.state.manager
+    return _request(catalog, None, False)
 
 
 def older():

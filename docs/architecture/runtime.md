@@ -140,7 +140,10 @@ credential retirement clears visible cloud history and its cursor. A failed read
 preserves the last valid page. Empty successful pages count as loaded, duplicate
 rows are suppressed, and repeated pagination cursors fail without changing the
 visible page. MCP `list_generations(refresh=true)` explicitly refreshes or retries;
-subsequent calls without `refresh` deliver/read the shared result.
+subsequent calls without `refresh` deliver/read the shared result. Repeated UI or
+MCP refresh requests reuse a pending history read instead of starting more workers.
+The MCP `refresh` argument accepts only JSON booleans; other types fail before
+starting or delivering history work.
 
 This is in-memory browsing, not durable history or submission recovery. Local
 files are attached only to jobs returned by the current cloud page. Importing a

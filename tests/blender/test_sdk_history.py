@@ -102,15 +102,39 @@ class SDKHistoryTests(unittest.TestCase):
         self.assertIsNone(self.runtime.state.history_token)
         self.assertEqual(self.calls[2].url.params["paginationToken"], "page-two")
 
-    def test_refresh_supersedes_an_older_request_that_finishes_last(self):
+    def test_ui_and_mcp_refresh_share_a_pending_read(self):
+        with patch.object(self.manager, "fetch_history") as fetch:
+            self.history.refresh()
+            key = self.runtime.state.history_request
+            for _ in range(3):
+                self.history.refresh()
+                self.tools.list_generations({"refresh": True})
+            self.assertEqual(fetch.call_count, 1)
+            self.assertEqual(self.runtime.state.history_request, key)
+        self.handlers.dispatch(
+            (
+                "history",
+                {
+                    "catalog": self.runtime.state.catalog,
+                    "key": key,
+                    "jobs": [],
+                    "error": None,
+                },
+            )
+        )
         self.history.refresh()
-        first = self.completed()
-        self.page = {"jobs": [job("job-new", "new prompt")]}
-        self.history.refresh()
-        second = self.completed()
-        for event in second + first:
-            self.handlers.dispatch(event)
-        self.assertEqual([e.job_id for e in self.runtime.state.history], ["job-new"])
+        self.deliver()
+        self.assertEqual(len(self.calls), 2)
+
+    def test_mcp_rejects_non_boolean_refresh_without_reading(self):
+        for value in ("false", "true", 0, 1, None, [], {}):
+            with self.subTest(value=value):
+                with self.assertRaisesRegex(ValueError, "refresh must be a boolean"):
+                    self.tools.list_generations({"refresh": value})
+        self.assertFalse(self.calls)
+        self.assertFalse(self.runtime.state.history_loading)
+        self.runtime.state.history_loaded = True
+        self.assertEqual(self.tools.list_generations({"refresh": False}), {"generations": []})
 
     def test_credentials_clear_visible_history_and_reject_queued_old_results(self):
         self.history.refresh()
@@ -150,6 +174,16 @@ class SDKHistoryTests(unittest.TestCase):
             pending = self.tools.list_generations({})
             self.assertIn("pending", pending["note"])
             self.assertEqual(pending["generations"][0]["job_id"], "job-fixture")
+        self.handlers.dispatch(
+            (
+                "history",
+                {
+                    "catalog": self.runtime.state.catalog,
+                    "key": self.runtime.state.history_request,
+                    "error": "fixture read failed",
+                },
+            )
+        )
         self.status = 503
         self.page = {"private": "response details"}
         self.history.refresh()

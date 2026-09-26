@@ -218,8 +218,11 @@ def capture_reference(args):
 def list_generations(args):
     from ..blender import history
 
+    refresh = args.get("refresh", False)
+    if not isinstance(refresh, bool):
+        raise ValueError("refresh must be a boolean")
     generation.process_catalog_events()
-    if args.get("refresh"):
+    if refresh:
         history.refresh()
         return {"generations": [], "note": "history requested, call again without refresh"}
     if runtime.state.history_error:

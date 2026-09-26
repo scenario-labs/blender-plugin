@@ -70,7 +70,9 @@ uncertain; do not attach a guessed upload or automatically recreate it.
 
 Signed PUT transport, private source staging, durable claims and explicit shared
 worker commands are available as described below. Production host/size policy,
-recovery UI, source retention/cleanup and UI/MCP wiring remain separate work. Storage requests must check destination/online policy and never forward
+recovery UI, orphan retention/cleanup and UI/MCP wiring remain separate work.
+Finished uploads have explicit verified source cleanup as described below.
+Storage requests must check destination/online policy and never forward
 Scenario Authorization. No upload-abort method was established in this SDK.
 
 Offline contracts exercise the actual SDK through MockTransport, including
@@ -169,7 +171,7 @@ there is no migration or active prototype integration in this component.
 
 The coordinator optionally owns one `UploadStore`, `UploadSources` and
 `PartUploader` with the same scope as its job store. Its existing `JobWorkers`
-queue exposes five fixed commands; there is no second SDK client or thread pool.
+queue exposes fixed commands; there is no second SDK client or thread pool.
 It also exposes synchronous local cancellation, which does not wait behind queued
 initialization or consume another queue slot.
 
@@ -181,6 +183,7 @@ initialization or consume another queue slot.
 | `finalize_upload` | Require all saved receipts, claim completion, then call the SDK completion action once |
 | `refresh_upload` | Retrieve a known upload and commit recognized processing/imported/failed observations without replay |
 | `cancel_prepared_upload` | Immediately cancel only PREPARED local intent at its expected revision; no source access, deletion or remote request |
+| `discard_upload_source` | Explicitly remove a verified staged copy for a CANCELED, FAILED or IMPORTED upload; retain its durable record and the user's original file |
 
 Local cancellation requires the active selected scope but does not require the
 old Blender origin or source file to remain available. It works offline and after
@@ -192,8 +195,9 @@ and terminal states cannot be reset or reported as remotely aborted. The selecte
 SDK still provides no verified upload-abort operation.
 
 The canceled record retains source identity and original scope/origin. Both the
-user's file and staged snapshot remain untouched; source retention/cleanup stays
-separate. Repeated cancellation and stale revisions require reloading saved state.
+user's file and staged snapshot remain untouched; explicit source cleanup uses
+the separate command below. Repeated cancellation and stale revisions require
+reloading saved state.
 A storage error may occur before or after commit: inspect the record rather than
 assuming cancellation succeeded, resetting it or starting another upload. This
 immediate command returns its immutable saved record directly, not a queued task.
@@ -242,9 +246,9 @@ revision does not invalidate the captured origin.
 
 If the origin changes during staging, no upload intent is saved or dispatched.
 The completed private snapshot can remain as an orphan for explicit retention
-and cleanup, matching failed persistence or deactivation after staging. There is
-no public ownership-safe discard operation yet, and this check deletes neither
-the user's source nor arbitrary staging directories. A request already durably
+and cleanup, matching failed persistence or deactivation after staging. The
+finished-upload cleanup command requires a saved terminal record; it cannot remove
+these unrecorded orphans or arbitrary staging directories. A request already durably
 claimed may finish and save its receipt under the original scope/origin. Inspection
 and explicit remote refresh intentionally do not require a current origin, so a
 missing scene or a new file session does not erase recovery evidence. They never
@@ -255,6 +259,39 @@ Offline tests exercise the actual SDK with synthetic HTTP responses and mocked
 storage connections, including the installed extension and shared worker queue.
 No live source is uploaded by these tests. Active UI/MCP wiring, authoritative
 account discovery, production storage policy and user-facing recovery remain #65.
+
+## Explicit finished-upload source cleanup
+
+`discard_upload_source(request_id, expected_revision=...)` runs through the existing
+worker queue and accepts only CANCELED, FAILED or IMPORTED records in the active
+selected scope. It needs no current Blender origin or online access. PREPARED,
+in-flight and uncertain uploads retain their sources. Cleanup never cancels an
+upload, calls a service, deletes a remote asset or changes its saved history.
+It returns the same immutable record, including all source hashes and receipts.
+
+The command derives one private staging directory from the saved scope and request
+identity. It accepts only `source.bin` there, verifies its saved whole-file and
+part hashes within the configured byte limits, then rechecks file/directory
+identity and contents immediately before removal. Symlinks, hard-linked or
+nonregular files, changed bytes/metadata and unfamiliar files are preserved with
+an error. It never recursively deletes a directory or reads the user's original
+path. The original source is not stored and remains untouched.
+
+Hash verification happens outside the coordinator lock. The final removal guard
+rechecks active ownership and the exact saved record, so credential retirement
+during verification prevents deletion. File removal and empty-directory removal
+occur under that guard. As with staging and downloads, the application must own
+the private directory and its ancestors: path checks do not establish atomic
+protection against an attacker replacing files between filesystem calls.
+
+An absent snapshot or an empty known staging directory is safe to clean again.
+If interruption or a filesystem error occurs after unlinking the file, the
+remaining empty directory can be removed by a later explicit retry, including
+after restart. The durable terminal record stays unchanged. Concurrent cleanup
+attempts may report an identity/removal conflict and require retry; no command
+recreates a source or hides an unsuccessful filesystem operation. Directory
+metadata durability across sudden power loss is not guaranteed. Corrupt copies,
+unrecorded staging orphans, automatic retention and recovery UI remain separate.
 
 ## Scoped inspection and recovery visibility
 

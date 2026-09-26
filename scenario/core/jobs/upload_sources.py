@@ -5,6 +5,7 @@
 import hashlib
 import os
 import stat
+from contextlib import nullcontext
 from dataclasses import asdict
 from pathlib import Path
 
@@ -204,3 +205,50 @@ class UploadSources:
                 return data
         except OSError:
             raise TransferError("Could not read the staged upload part") from None
+
+    def _discard_state(self, intent):
+        """Inspect only the known staging directory, rejecting foreign contents."""
+        _root(self._root)
+        directory = self._directory(intent.scope, intent.request_id)
+        try:
+            directory_info = directory.lstat()
+        except FileNotFoundError:
+            return directory, None, None
+        _root(directory)
+        with os.scandir(directory) as entries:
+            for entry in entries:
+                if entry.name != "source.bin":
+                    raise TransferError("Staged upload contains unfamiliar files; preserve it")
+        try:
+            info = (directory / "source.bin").lstat()
+        except FileNotFoundError:
+            info = None
+        if info is not None and (not stat.S_ISREG(info.st_mode) or info.st_nlink != 1):
+            raise TransferError("Discard only a regular privately owned upload snapshot")
+        identity = (directory_info.st_dev, directory_info.st_ino)
+        snapshot = (_stamp(info), info.st_mode, info.st_nlink) if info is not None else None
+        return directory, identity, snapshot
+
+    def discard(self, intent, *, guard=nullcontext):
+        """Remove only the unchanged verified snapshot, never the user's source.
+
+        The caller owns terminal-state authorization and the private ancestors.
+        Hashing finishes before the optional final ownership guard is entered.
+        Missing snapshots and empty staging directories support explicit retry.
+        """
+        if not isinstance(intent, UploadIntent):
+            raise TransferError("Use the saved upload source identity")
+        try:
+            before = self._discard_state(intent)
+            directory, identity, snapshot = before
+            if snapshot is not None:
+                self.verify(intent)
+            with guard():
+                if self._discard_state(intent) != before:
+                    raise TransferError("Staged upload changed before removal; preserve it")
+                if snapshot is not None:
+                    (directory / "source.bin").unlink()
+                if identity is not None:
+                    directory.rmdir()
+        except OSError:
+            raise TransferError("Could not discard the staged upload source") from None

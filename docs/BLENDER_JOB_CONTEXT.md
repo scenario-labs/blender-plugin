@@ -257,6 +257,15 @@ durable revision claim: already claimed or uncertain uploads cannot be canceled
 through this command. Inactive sessions reject it. It does not provide remote
 abort or active UI/MCP cancellation controls.
 
+`discard_upload_source(request_id, expected_revision=...)` queues explicit
+[finished-upload source cleanup](SDK_UPLOADS.md#explicit-finished-upload-source-cleanup)
+on the existing workers. Hashing and deletion stay off Blender's main thread.
+Admission still checks the active scope and completion capacity, but needs no
+current old scene/target, including after restart. The command returns the
+unchanged terminal upload record and never changes the scene or deletes the
+user's original file. Cleanup completions retain their original origin; they do
+not authorize delivery into a replacement target. No active cleanup UI is added.
+
 Upload task outcomes use the normal `drain`/`deliver` path: successful records
 must match the stored scope/origin, and delivery rechecks the current captured
 scene/target before a once-only main-thread callback. A late claimed receipt may

@@ -301,6 +301,7 @@ class SessionUploadTests(unittest.TestCase):
                 "transfer_upload_part",
                 "finalize_upload",
                 "refresh_upload",
+                "discard_upload_source",
             )
         )
         with ThreadPoolExecutor(max_workers=1) as worker:
@@ -350,6 +351,87 @@ class SessionUploadTests(unittest.TestCase):
             self.session.cancel_prepared_upload(
                 record.intent.request_id, expected_revision=canceled.revision
             )
+
+    def test_terminal_source_cleanup_runs_on_worker_after_restart_without_scene_delivery(self):
+        record, _ = self.prepare()
+        record = self.upload_store.transition(
+            record.intent.request_id,
+            expected_revision=record.revision,
+            state=self.uploads.UploadState.CANCELED,
+        )
+        directory = self.sources._directory(self.scope, record.intent.request_id)
+        self.session.shutdown()
+        bpy.data.objects.remove(self.target, do_unlink=True)
+        self.target = None
+        self.session = self.new_session()
+        threads = []
+        discard = self.sources.discard
+
+        def observed(*args, **kwargs):
+            threads.append(threading.current_thread())
+            return discard(*args, **kwargs)
+
+        with patch.object(self.sources, "discard", side_effect=observed):
+            unchanged, completion = self.invoke("discard_upload_source", record)
+        self.assertEqual(unchanged, record)
+        self.assertEqual(self.upload_store.get(record.intent.request_id), record)
+        self.assertFalse(directory.exists())
+        self.assertEqual(self.source.read_bytes(), b"data")
+        self.assertTrue(all(thread is not threading.main_thread() for thread in threads))
+        with self.assertRaises(self.module.OriginUnavailable):
+            self.session.deliver(completion, lambda *args: self.fail("Rebound old target"))
+        repeated, _ = self.invoke("discard_upload_source", record)
+        self.assertEqual(repeated, record)
+        self.assertEqual(self.calls, [])
+        self.uploader.upload.assert_not_called()
+
+    def test_source_cleanup_preserves_unfinished_uploads_and_unfamiliar_files(self):
+        record, _ = self.prepare()
+        directory = self.sources._directory(self.scope, record.intent.request_id)
+        task = self.session.discard_upload_source(
+            record.intent.request_id, expected_revision=record.revision
+        )
+        with self.assertRaises(self.jobs.StoreConflict):
+            task.result(5)
+        self.session.drain()
+        record = self.upload_store.transition(
+            record.intent.request_id,
+            expected_revision=record.revision,
+            state=self.uploads.UploadState.CANCELED,
+        )
+        (directory / "keep.txt").write_text("keep")
+        task = self.session.discard_upload_source(
+            record.intent.request_id, expected_revision=record.revision
+        )
+        with self.assertRaises(self.commands.UploadError):
+            task.result(5)
+        self.session.drain()
+        self.assertEqual((directory / "source.bin").read_bytes(), b"data")
+        self.assertEqual((directory / "keep.txt").read_text(), "keep")
+        self.assertEqual(self.upload_store.get(record.intent.request_id), record)
+        self.assertEqual(self.calls, [])
+
+    def test_source_cleanup_respects_completion_capacity(self):
+        self.session.shutdown()
+        self.session = self.new_session(completion_limit=1)
+        origin = self.session.capture(self.scene, self.target)
+        record = self.session.prepare_upload(
+            self.source, origin=origin, kind="image", content_type="image/png"
+        ).result(5)
+        record = self.upload_store.transition(
+            record.intent.request_id,
+            expected_revision=record.revision,
+            state=self.uploads.UploadState.CANCELED,
+        )
+        directory = self.sources._directory(self.scope, record.intent.request_id)
+        with self.assertRaisesRegex(RuntimeError, "Drain completed"):
+            self.session.discard_upload_source(
+                record.intent.request_id, expected_revision=record.revision
+            )
+        self.assertTrue((directory / "source.bin").exists())
+        self.session.drain()
+        self.invoke("discard_upload_source", record)
+        self.assertFalse(directory.exists())
 
     def test_incomplete_configuration_fails_before_registering_another_owner(self):
         before = set(self.module._sessions)

@@ -34,6 +34,20 @@ media; they are first-party GPL test code and leave no committed audio files.
 They cover 8/16/24/32-bit mono/stereo and malformed, missing, oversized and
 unsupported input. Human listening acceptance remains separate under #68.
 
+## Synthetic video fixture
+
+`synthetic/video-six-frames.mp4` is a first-party test clip containing six solid
+32-by-32 blue-gray picture frames at 24 fps, with no audio or provider content.
+It is licensed GPL-3.0-or-later with the test code. Native movie-strip tests use
+it to exercise Blender's bundled decoder without needing an external encoder.
+It was generated locally with this ffmpeg command; the tests do not run it:
+
+```sh
+ffmpeg -f lavfi -i color=c=0x6b88a4:s=32x32:r=24 -frames:v 6 -an \
+  -c:v mpeg4 -q:v 5 -fflags +bitexact -flags:v +bitexact -map_metadata -1 \
+  tests/fixtures/synthetic/video-six-frames.mp4
+```
+
 ## Identifiers and URLs
 
 The recorder replaces string-valued account fields `userId`, `authorId`,

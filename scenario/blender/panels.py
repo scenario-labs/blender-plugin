@@ -502,12 +502,16 @@ def draw_result(layout, rec):
             add = row.operator("scenario.import_mesh_file", text="Add")
             add.filepath, add.local_id = alt, rec.local_id
     elif rec.kind == "video":
-        for path in rec.files[:3]:
+        for index, path in enumerate(rec.files[:3]):
             row = box.row(align=True)
             row.operator("scenario.play_video", text="Play", icon="PLAY").filepath = path
             row.operator(
                 "scenario.play_video_blender", text="Play in Blender", icon="BLENDER"
             ).filepath = path
+            add = box.operator(
+                "scenario.video_to_sequencer", text="Add video strip", icon="SEQUENCE"
+            )
+            add.local_id, add.file_index = rec.local_id, index
     elif rec.kind == "audio":
         from . import audio_preview
 

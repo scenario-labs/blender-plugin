@@ -34,6 +34,7 @@ BASELINE = (
     "test_apply_image",
     "test_apply_material",
     "test_apply_3d",
+    "test_apply_video",
     "test_mesh_application",
     "test_mcp_server",
     "test_mcp_contracts",

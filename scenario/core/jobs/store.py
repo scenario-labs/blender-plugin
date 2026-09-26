@@ -434,12 +434,10 @@ class JobStore:
         except (OSError, ValueError, TransferError):
             if descriptor is not None:
                 os.close(descriptor)
-                descriptor = None
             raise StoreError("Could not lock private result storage") from None
         except BaseException:
             if descriptor is not None:
                 os.close(descriptor)
-                descriptor = None
             raise
         try:
             yield

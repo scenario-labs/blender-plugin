@@ -11,7 +11,7 @@
     "limits": "Existing guide indexed during this intake, without a fresh claim-by-claim or live verification; consult current integration status and issue acceptance. Windows private-storage path handling and its offline/native regression sources were inspected; later importer compatibility and live storage acceptance remain separate. Explicit interrupted-download recovery and cooperative OS locking reviewed against scoped revision checks, receipt verification, process-exit exclusion tests and the JobSession restart test. No active UI/MCP wiring, older-writer compatibility, orphan-file adoption, scene recovery or live storage acceptance is established.",
     "sources": {
       "scenario/core/jobs/results.py": "0ee36347a8c5be6ff84a36ae2dd54e9c64461de0a83bff513f29ac0bd7712889",
-      "scenario/core/jobs/store.py": "223e332c536b196140ea3fe0be163bb738330407233d66d2a0e591825c716c7c",
+      "scenario/core/jobs/store.py": "1b0c78ab5c0c67926f59ae1c9a4ae16c91a014a86daf856554487757cc959b7e",
       "scenario/core/jobs/transfers.py": "ca3aafdd915d908be78db5b0a7f3a535f0274e6f3ccc7e0cef7c2d88a90f212d",
       "tests/blender/test_job_store.py": "710fed3f40bd30795d7e2df32264f1780b051c9b4527cc47943997c0f8389133",
       "tests/blender/test_result_commands.py": "bcb919c9a8dfcd3498959492b5bb49a3f1395b6923282f38182cc9b12c68089e",

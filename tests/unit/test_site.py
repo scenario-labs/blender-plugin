@@ -100,6 +100,18 @@ def test_complete_site_and_inventory_replay_preserve_exact_release_history(build
     assert files(inputs["inventory"].parent) == originals
 
 
+def test_handbook_bootstrap_has_no_installable_index_or_archives(builder, inputs):
+    arguments = {key: value for key, value in inputs.items() if key != "inventory"}
+    output = builder.build_pending_site(**arguments)
+    assert (output / "index.html").is_file()
+    assert 'src="images/panel.png"' in (output / "index.html").read_text()
+    assert "first verified release" in (output / "repo/index.html").read_text()
+    assert not (output / "repo/index.json").exists()
+    assert not list(output.rglob("*.zip"))
+    with pytest.raises(ValueError, match="already exists"):
+        builder.build_pending_site(**arguments)
+
+
 def test_release_selector_feeds_site_without_drafts_or_losing_older_compatibility(builder, inputs):
     selector = importlib.import_module("release_inventory")
     releases = Releases(inputs["root"])

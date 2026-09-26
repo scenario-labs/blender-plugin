@@ -29,6 +29,10 @@ limits of its current controls. It does not replace Scenario's service policies.
 - An agent connected to the local MCP server can request scene information,
   captures, uploads and paid generations on your behalf. Its own service may
   receive what that agent reads from Blender.
+- Set up official repository and Check for updates use Blender's native extension
+  manager to contact the public repository. Blender sends its usual compatibility
+  parameters and network metadata; these actions do not send Scenario credentials,
+  prompts, scene contents or job history. Installing an update is a separate choice.
 
 ## Where it goes
 
@@ -37,6 +41,11 @@ files, full text results and model thumbnails use content URLs returned by the
 service, so content transfers are not limited to the API hostname. The Create a
 key in the portal button opens `https://app.scenario.com/team` in your browser.
 The local agent connection uses loopback HTTP, described below.
+
+The official update repository and handbook use `https://blender.scenario.com/`,
+hosted by GitHub Pages. The Release ZIPs button opens
+`https://github.com/scenario-labs/blender-plugin/releases` in your browser.
+Blender stores the repository configuration and cache through its native manager.
 
 The extension has no telemetry, analytics or automatic crash-reporting service,
 and no independent update-check service. Blender manages configured extension

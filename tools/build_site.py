@@ -25,6 +25,33 @@ def require_new_output(output):
         raise ValueError("Site output already exists; select a new snapshot directory")
 
 
+def build_pending_site(output, *, source, template, manifest, root=ROOT):
+    """Publish a guide while the adopted release channel is still empty."""
+    require_new_output(output)
+    output.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix=".site-", dir=output.parent) as temporary:
+        staged = Path(temporary) / "site"
+        build_handbook(source, template, manifest, staged / "index.html", root=root)
+        if any(path.name.casefold() == "repo" for path in staged.iterdir()):
+            raise ValueError("Handbook assets conflict with the reserved repo directory")
+        (staged / "repo").mkdir()
+        (staged / "repo/index.html").write_text(
+            '<!doctype html><html lang="en"><meta charset="utf-8">'
+            '<meta name="viewport" content="width=device-width, initial-scale=1">'
+            "<title>Scenario for Blender: native downloads</title>"
+            "<body><main><h1>Native downloads are coming</h1>"
+            "<p>The official extension repository will become available after the first "
+            "verified release. No native update index is published yet.</p>"
+            '<p><a href="https://github.com/scenario-labs/blender-plugin/releases">'
+            "Download a release ZIP</a> and install it with Blender’s Install from Disk.</p>"
+            '<p><a href="../">Read the handbook</a></p></main></body></html>',
+            encoding="utf-8",
+        )
+        require_new_output(output)
+        staged.rename(output)
+    return output
+
+
 def build_site(
     session,
     inventory,
@@ -59,7 +86,11 @@ def build_site(
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     arguments(parser)
-    parser.add_argument("--inventory", required=True, type=Path, help="Verified release inventory")
+    mode = parser.add_mutually_exclusive_group(required=True)
+    mode.add_argument("--inventory", type=Path, help="Verified release inventory")
+    mode.add_argument(
+        "--pending-repository", action="store_true", help="Handbook before first release"
+    )
     parser.add_argument("--output", type=Path, default=ROOT / "site", help="New site directory")
     parser.add_argument("--source", type=Path, default=ROOT / "docs/USER_GUIDE.md")
     parser.add_argument("--template", type=Path, default=ROOT / "docs/handbook-template.html")
@@ -69,6 +100,11 @@ def main(argv=None):
         parser.error("--timeout must be positive")
     try:
         require_new_output(args.output)
+        if args.pending_repository:
+            build_pending_site(
+                args.output, source=args.source, template=args.template, manifest=args.manifest
+            )
+            return 0
         if args.artifacts.resolve().is_relative_to(args.output.resolve()):
             raise ValueError("Blender artifacts must be outside the site output")
         session = Session(find_blender(args.blender), args.artifacts, args.timeout)

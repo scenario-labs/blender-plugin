@@ -28,6 +28,7 @@ BASELINE = (
     "test_result_commands",
     "test_upload_commands",
     "test_register",
+    "test_updates",
     "test_icons",
     "test_model_picker",
     "test_generation",

@@ -5,6 +5,8 @@
 import bpy
 from bpy.props import BoolProperty, EnumProperty, FloatProperty, IntProperty, StringProperty
 
+from .blender import updates
+
 PORTAL_KEYS_URL = "https://app.scenario.com/team"
 
 
@@ -129,6 +131,7 @@ class ScenarioPreferences(bpy.types.AddonPreferences):
         box.prop(self, "mcp_port")
         box.prop(self, "mcp_allow_python")
         layout.prop(self, "log_level")
+        updates.draw(layout, context)
 
 
 def get_prefs(context=None):
@@ -137,4 +140,4 @@ def get_prefs(context=None):
     return entry.preferences if entry else None
 
 
-CLASSES = (ScenarioPreferences,)
+CLASSES = (*updates.CLASSES, ScenarioPreferences)

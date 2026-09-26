@@ -63,11 +63,13 @@ Blender runtime acceptance remain separate requirements.
 1. Discover an unfinished draft or create a release draft when a release is due.
 2. Check out its exact commit and require the release SHA, triggering workflow
    SHA and checkout SHA to match.
-3. Build with Blender 5.0.1 on Linux, require `LICENSE`, validate the ZIP, generate
-   `SHA256SUMS` and attest both files. Attach the files to the draft.
+3. Build with Blender 5.0.1 on Linux, require `LICENSE`, validate the ZIP, render the standalone
+   `scenario-handbook-X.Y.Z.html`, generate `SHA256SUMS` for the ZIP and handbook,
+   and attest all three files. Attach them to the draft.
 4. Validate that same ZIP with Blender 5.1.2 and 5.2.1.
 5. Publish only after those jobs succeed. Publication creates the tag through
-   the release App and triggers the separate public-changelog workflow.
+   the release App and triggers the separate public-changelog workflow. Successful completion of the release
+   workflow triggers the Pages workflow on `main`.
 6. Generate/update the next release PR after publication, or when no release
    was due.
 
@@ -90,9 +92,10 @@ Complete these checks when publishing the first automated release:
 
   ```sh
   gh release download blender-plugin-vX.Y.Z -R scenario-labs/blender-plugin \
-    --pattern scenario-X.Y.Z.zip --pattern SHA256SUMS
+    --pattern scenario-X.Y.Z.zip --pattern scenario-handbook-X.Y.Z.html --pattern SHA256SUMS
   shasum -a 256 -c SHA256SUMS
   gh attestation verify scenario-X.Y.Z.zip -R scenario-labs/blender-plugin
+  gh attestation verify scenario-handbook-X.Y.Z.html -R scenario-labs/blender-plugin
   gh attestation verify SHA256SUMS -R scenario-labs/blender-plugin
   ```
 
@@ -125,9 +128,8 @@ from an explicit inventory of already-built archives. It uses Blender's native
 `extension validate` and `extension server-generate` commands in a fresh isolated
 profile with online access disabled. It never rebuilds a ZIP or changes a manifest.
 The helpers are a partial implementation of
-[#37](https://github.com/scenario-labs/blender-plugin/issues/37); network discovery,
-Pages deployment and native setup/update controls remain
-separate integration work. Successful local generation
+[#37](https://github.com/scenario-labs/blender-plugin/issues/37); online discovery and deployment are composed by the publication workflow below.
+Production native install/update acceptance remains separate. Successful local generation
 does not prove that an archive was published, attested or accepted at runtime.
 
 [`make site`](../CONTRIBUTING.md#complete-site-snapshots) combines this generator
@@ -139,6 +141,52 @@ are staged before exposing the output, and existing output is never replaced.
 This command does not discover releases, verify attestations or deploy Pages.
 Publication remains a separate gate requiring a fresh verified inventory so a
 stale docs build cannot roll the hosted repository back.
+
+### Publish the guide and repository
+
+[pages.yml](../.github/workflows/pages.yml) publishes the guide at
+`https://blender.scenario.com/` and the native repository at
+`https://blender.scenario.com/repo/index.json`. GitHub Pages hosts the site;
+the custom domain is configured in repository settings with DNS CNAME `blender`
+pointing to `scenario-labs.github.io`. Actions deployments do not need a committed
+CNAME file. Check DNS, certificate issuance and HTTPS enforcement before acceptance.
+
+The workflow runs on relevant `main` changes, successful release-workflow
+completion and manual dispatch. It always checks out current `main`. The
+`workflow_run` trigger keeps deployments on the default branch, compatible with
+the existing `github-pages` environment restriction, rather than deploying a tag.
+Canonical-repository guards and job-scoped permissions limit publishing.
+
+One concurrency group holds discovery, build and deployment together. The
+[online preparer](../tools/prepare_site_release.py) obtains a complete paginated
+snapshot, downloads the exact ZIP and checksum assets, selects the supported
+matrix with the existing retention policy, and verifies selected provenance.
+It checks the entire stable release snapshot again after preparation and immediately
+before deployment, including another selected-provenance verification. New releases,
+withdrawals or changed assets during those checks fail the run. A queued docs run
+rediscovers current releases, so it cannot roll back an already deployed newer
+inventory. A publication after the final check is picked up by the next release
+completion; GitHub's release reads and Pages deployment are not one atomic transaction.
+
+Before any adopted tag exists, the Pages workflow explicitly permits a handbook-only
+bootstrap. It publishes the guide and a native-downloads explanation, without an
+`index.json` or ZIPs. A draft, prerelease or invalid adopted release cannot trigger
+that fallback. The final freshness check rejects bootstrap if an adopted release
+appeared during the build. The standalone preparer remains strict unless passed
+`--allow-bootstrap`. Neither prototype ZIPs nor synthetic fixtures can seed production. A failed Pages run can be rerun or manually dispatched:
+it redownloads and verifies published assets without rebuilding or changing them.
+The standalone release handbook is generated only by the release asset job.
+
+For a local read-only preparation, run:
+
+```sh
+uv run --locked --no-env-file python tools/prepare_site_release.py --output workdir/verified-releases
+```
+
+Use a fresh output directory. Then pass its `inventory.json` to `make site`.
+Offline orchestration tests cover publication races and retry byte preservation;
+actual HTTPS delivery, positive release attestations and desktop update/state
+preservation must still be recorded in #37 and #68 before closing acceptance.
 
 ### Select retained releases offline
 

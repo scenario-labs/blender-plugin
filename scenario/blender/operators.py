@@ -1,42 +1,34 @@
 # SPDX-FileCopyrightText: 2026 Scenario Inc.
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Operators: connection test, catalog refresh, generate, references, results."""
+
 import os
 import textwrap
 
 import bpy
 from bpy.props import EnumProperty, FloatProperty, IntProperty, StringProperty
 
-from . import apply_image, generation, params_ui, props, runtime
 from ..core.api.errors import ScenarioError
+from . import apply_image, generation, params_ui, props, runtime
 
 
 class SCENARIO_OT_test_connection(bpy.types.Operator):
     bl_idname = "scenario.test_connection"
     bl_label = "Test Scenario connection"
-    bl_description = "Check the API key against Scenario and show the team and project it belongs to"
+    bl_description = "Check Scenario model access with the selected credentials"
 
     def execute(self, context):
-        if not runtime.online():
-            self.report({'ERROR'}, "Allow Online Access is disabled in Blender's preferences")
-            return {'CANCELLED'}
         try:
-            data = runtime.make_client().get("/teams", timeout=15)
+            worker = runtime.request_connection_check()
+            if bpy.app.background and worker is not None:
+                worker.join()
+                generation.process_catalog_events()
         except ScenarioError as err:
             runtime.state.account_label = ""
-            self.report({'ERROR'}, f"Scenario: {err.reason}")
-            return {'CANCELLED'}
-        teams = data.get("teams") or []
-        if not teams:
-            runtime.state.account_label = "Connected (no team visible)"
-        else:
-            team = teams[0]
-            projects = team.get("projects") or []
-            project = projects[0]["name"] if projects else "?"
-            runtime.state.account_label = f"{team.get('name', 'team')} / {project} ({team.get('plan', '')})"
-        runtime.state.catalog_loaded = False
-        self.report({'INFO'}, runtime.state.account_label)
-        return {'FINISHED'}
+            self.report({"ERROR"}, f"Scenario: {err.reason}")
+            return {"CANCELLED"}
+        self.report({"INFO"}, runtime.state.account_label)
+        return {"FINISHED"}
 
 
 class SCENARIO_OT_refresh_catalog(bpy.types.Operator):
@@ -47,10 +39,12 @@ class SCENARIO_OT_refresh_catalog(bpy.types.Operator):
     def execute(self, context):
         runtime.state.catalog_loading = False
         if generation.request_catalog():
-            self.report({'INFO'}, "Refreshing models")
-            return {'FINISHED'}
-        self.report({'WARNING'}, runtime.state.last_message or "Could not refresh (check preferences)")
-        return {'CANCELLED'}
+            self.report({"INFO"}, "Refreshing models")
+            return {"FINISHED"}
+        self.report(
+            {"WARNING"}, runtime.state.last_message or "Could not refresh (check preferences)"
+        )
+        return {"CANCELLED"}
 
 
 class SCENARIO_OT_generate(bpy.types.Operator):
@@ -65,16 +59,16 @@ class SCENARIO_OT_generate(bpy.types.Operator):
 
     def execute(self, context):
         lane = self.lane
-        if lane == "3d" and context.scene.scenario.three_d_mode == 'EDIT':
+        if lane == "3d" and context.scene.scenario.three_d_mode == "EDIT":
             lane = "edit3d"  # the 3D tab in Edit mode drives the edit3d lane
         try:
             rec = generation.submit_generation(context, lane)
         except ScenarioError as err:
             context.scene.scenario.lane_state(lane).last_error = err.reason
-            self.report({'ERROR'}, err.reason)
-            return {'CANCELLED'}
-        self.report({'INFO'}, f"Generating with {rec.meta.get('model_name', rec.model_id)}")
-        return {'FINISHED'}
+            self.report({"ERROR"}, err.reason)
+            return {"CANCELLED"}
+        self.report({"INFO"}, f"Generating with {rec.meta.get('model_name', rec.model_id)}")
+        return {"FINISHED"}
 
 
 def probe_mode():
@@ -92,27 +86,31 @@ class SCENARIO_OT_add_reference(bpy.types.Operator):
     bl_description = "Attach a file, the render result or a viewport capture to this parameter"
     lane: StringProperty()
     param_name: StringProperty()
-    source: EnumProperty(items=props.REFERENCE_SOURCES, default='FILE')  # the UI offers only the kind-appropriate subset
-    filepath: StringProperty(subtype='FILE_PATH')
-    filter_glob: StringProperty(default="*.png;*.jpg;*.jpeg;*.webp;*.mp4;*.mov;*.webm;*.glb;*.fbx;*.obj", options={'HIDDEN'})
+    source: EnumProperty(
+        items=props.REFERENCE_SOURCES, default="FILE"
+    )  # the UI offers only the kind-appropriate subset
+    filepath: StringProperty(subtype="FILE_PATH")
+    filter_glob: StringProperty(
+        default="*.png;*.jpg;*.jpeg;*.webp;*.mp4;*.mov;*.webm;*.glb;*.fbx;*.obj", options={"HIDDEN"}
+    )
 
     def invoke(self, context, event):
-        if self.source == 'FILE':
+        if self.source == "FILE":
             context.window_manager.fileselect_add(self)
-            return {'RUNNING_MODAL'}
+            return {"RUNNING_MODAL"}
         return self.execute(context)
 
     def execute(self, context):
         lane_state = context.scene.scenario.lane_state(self.lane)
         ref = lane_state.references.add()
         ref.param_name, ref.source = self.param_name, self.source
-        if self.source == 'FILE':
+        if self.source == "FILE":
             ref.filepath = self.filepath
             ref.label = os.path.basename(self.filepath)
         else:
             ref.label = {k: v for k, v, _ in props.REFERENCE_SOURCES}[self.source]
         props.mark_estimate_dirty(lane_state)
-        return {'FINISHED'}
+        return {"FINISHED"}
 
 
 class SCENARIO_OT_remove_reference(bpy.types.Operator):
@@ -127,7 +125,7 @@ class SCENARIO_OT_remove_reference(bpy.types.Operator):
         if 0 <= self.index < len(lane_state.references):
             lane_state.references.remove(self.index)
             props.mark_estimate_dirty(lane_state)
-        return {'FINISHED'}
+        return {"FINISHED"}
 
 
 class SCENARIO_OT_toggle_multi(bpy.types.Operator):
@@ -142,7 +140,7 @@ class SCENARIO_OT_toggle_multi(bpy.types.Operator):
         lane_state = context.scene.scenario.lane_state(self.lane)
         index = lane_state.params.find(self.param_name)
         if index < 0:
-            return {'CANCELLED'}
+            return {"CANCELLED"}
         item = lane_state.params[index]
         selected = params_ui.multi_selection(item)
         if self.value in selected:
@@ -151,7 +149,7 @@ class SCENARIO_OT_toggle_multi(bpy.types.Operator):
             selected.append(self.value)
         params_ui.set_multi_selection(item, selected)
         props.mark_estimate_dirty(lane_state)
-        return {'FINISHED'}
+        return {"FINISHED"}
 
 
 class SCENARIO_OT_open_output_folder(bpy.types.Operator):
@@ -163,7 +161,7 @@ class SCENARIO_OT_open_output_folder(bpy.types.Operator):
         path = runtime.paths().output_dir
         path.mkdir(parents=True, exist_ok=True)
         bpy.ops.wm.path_open(filepath=str(path))
-        return {'FINISHED'}
+        return {"FINISHED"}
 
 
 class SCENARIO_OT_show_image(bpy.types.Operator):
@@ -175,46 +173,50 @@ class SCENARIO_OT_show_image(bpy.types.Operator):
     def execute(self, context):
         image = apply_image.load_image(self.filepath)
         apply_image.show_in_image_editor(image)
-        return {'FINISHED'}
+        return {"FINISHED"}
 
 
 class SCENARIO_OT_apply_texture(bpy.types.Operator):
     bl_idname = "scenario.apply_texture"
     bl_label = "Apply as texture"
     bl_description = "Create a material with this image as Base Color on the active mesh"
-    bl_options = {'REGISTER', 'UNDO'}
+    bl_options = {"REGISTER", "UNDO"}
     filepath: StringProperty()
 
     @classmethod
     def poll(cls, context):
-        return context.active_object is not None and context.active_object.type == 'MESH' and context.mode == 'OBJECT'
+        return (
+            context.active_object is not None
+            and context.active_object.type == "MESH"
+            and context.mode == "OBJECT"
+        )
 
     def execute(self, context):
         apply_image.apply_as_texture(context.active_object, apply_image.load_image(self.filepath))
-        return {'FINISHED'}
+        return {"FINISHED"}
 
 
 class SCENARIO_OT_add_plane(bpy.types.Operator):
     bl_idname = "scenario.add_plane"
     bl_label = "Add as plane"
     bl_description = "Add a view-facing plane at the 3D cursor with this image (Object Mode)"
-    bl_options = {'REGISTER', 'UNDO'}
+    bl_options = {"REGISTER", "UNDO"}
     filepath: StringProperty()
 
     @classmethod
     def poll(cls, context):
-        return context.mode == 'OBJECT'
+        return context.mode == "OBJECT"
 
     def execute(self, context):
         apply_image.add_as_plane(context, apply_image.load_image(self.filepath))
-        return {'FINISHED'}
+        return {"FINISHED"}
 
 
 class SCENARIO_OT_retile_material(bpy.types.Operator):
     bl_idname = "scenario.retile_material"
     bl_label = "Set material tiling"
     bl_description = "Scale the UV mapping of a Scenario material"
-    bl_options = {'REGISTER', 'UNDO'}
+    bl_options = {"REGISTER", "UNDO"}
     material_name: StringProperty()
     scale: FloatProperty(name="Tiling", default=1.0, min=0.01, max=100.0)
 
@@ -226,10 +228,10 @@ class SCENARIO_OT_retile_material(bpy.types.Operator):
 
         mat = bpy.data.materials.get(self.material_name)
         if mat is None:
-            self.report({'ERROR'}, "Material not found")
-            return {'CANCELLED'}
+            self.report({"ERROR"}, "Material not found")
+            return {"CANCELLED"}
         apply_material.set_tiling(mat, self.scale)
-        return {'FINISHED'}
+        return {"FINISHED"}
 
 
 class SCENARIO_OT_history_refresh(bpy.types.Operator):
@@ -245,7 +247,7 @@ class SCENARIO_OT_history_refresh(bpy.types.Operator):
         from . import history
 
         history.refresh()
-        return {'FINISHED'}
+        return {"FINISHED"}
 
 
 class SCENARIO_OT_history_older(bpy.types.Operator):
@@ -260,7 +262,7 @@ class SCENARIO_OT_history_older(bpy.types.Operator):
     def execute(self, context):
         from . import history
 
-        return {'FINISHED'} if history.older() else {'CANCELLED'}
+        return {"FINISHED"} if history.older() else {"CANCELLED"}
 
 
 class SCENARIO_OT_import_result(bpy.types.Operator):
@@ -274,31 +276,41 @@ class SCENARIO_OT_import_result(bpy.types.Operator):
 
     @classmethod
     def poll(cls, context):
-        return _network_poll(cls, context) and context.mode == 'OBJECT'
+        return _network_poll(cls, context) and context.mode == "OBJECT"
 
     def execute(self, context):
-        from . import handlers
         from ..core.jobs.records import JobRecord
+        from . import handlers
 
         manager = runtime.ensure_manager()
-        existing = next((r for r in manager.registry.all() if r.job_id == self.job_id and r.files), None)
+        existing = next(
+            (r for r in manager.registry.all() if r.job_id == self.job_id and r.files), None
+        )
         if existing is not None:
-            existing.meta["target_objects"] = [o.name for o in context.selected_objects if o.type == 'MESH']
+            existing.meta["target_objects"] = [
+                o.name for o in context.selected_objects if o.type == "MESH"
+            ]
             handlers.dispatch(("job_done", existing))
-            return {'FINISHED'}
-        rec = JobRecord.new(lane=self.kind, kind=self.kind, model_id=self.model_id, body={}, meta={"prompt": self.prompt, "model_name": self.model_id})
+            return {"FINISHED"}
+        rec = JobRecord.new(
+            lane=self.kind,
+            kind=self.kind,
+            model_id=self.model_id,
+            body={},
+            meta={"prompt": self.prompt, "model_name": self.model_id},
+        )
         rec.job_id, rec.status = self.job_id, "in-progress"
-        rec.meta["target_objects"] = [o.name for o in context.selected_objects if o.type == 'MESH']
+        rec.meta["target_objects"] = [o.name for o in context.selected_objects if o.type == "MESH"]
         manager.registry.add(rec)
         manager.registry.save()
         try:
             manager.track(rec)
         except ScenarioError as err:
-            self.report({'ERROR'}, err.reason)
-            return {'CANCELLED'}
+            self.report({"ERROR"}, err.reason)
+            return {"CANCELLED"}
         runtime.state.jobs_view.insert(0, rec)
-        self.report({'INFO'}, "Downloading generation")
-        return {'FINISHED'}
+        self.report({"INFO"}, "Downloading generation")
+        return {"FINISHED"}
 
 
 class SCENARIO_OT_play_video(bpy.types.Operator):
@@ -311,7 +323,7 @@ class SCENARIO_OT_play_video(bpy.types.Operator):
         from . import apply_video
 
         apply_video.play_with_os(self.filepath)
-        return {'FINISHED'}
+        return {"FINISHED"}
 
 
 class SCENARIO_OT_play_video_blender(bpy.types.Operator):
@@ -324,7 +336,7 @@ class SCENARIO_OT_play_video_blender(bpy.types.Operator):
         from . import apply_video
 
         apply_video.play_with_blender(self.filepath)
-        return {'FINISHED'}
+        return {"FINISHED"}
 
 
 class SCENARIO_OT_clear_first_frame(bpy.types.Operator):
@@ -336,7 +348,7 @@ class SCENARIO_OT_clear_first_frame(bpy.types.Operator):
         lane_state = context.scene.scenario.lane_state("render_video")
         lane_state.first_frame_path = ""
         props.mark_estimate_dirty(lane_state)
-        return {'FINISHED'}
+        return {"FINISHED"}
 
 
 class SCENARIO_OT_copy_text(bpy.types.Operator):
@@ -348,15 +360,15 @@ class SCENARIO_OT_copy_text(bpy.types.Operator):
 
     def execute(self, context):
         context.window_manager.clipboard = self.text
-        self.report({'INFO'}, f"Copied {self.what}")
-        return {'FINISHED'}
+        self.report({"INFO"}, f"Copied {self.what}")
+        return {"FINISHED"}
 
 
 class SCENARIO_OT_toggle_result(bpy.types.Operator):
     bl_idname = "scenario.toggle_result"
     bl_label = "Collapse or expand"
     bl_description = "Collapse or expand this generation"
-    bl_options = {'INTERNAL'}
+    bl_options = {"INTERNAL"}
     local_id: StringProperty()
 
     def execute(self, context):
@@ -364,21 +376,23 @@ class SCENARIO_OT_toggle_result(bpy.types.Operator):
             if rec.local_id == self.local_id:
                 rec.meta["collapsed"] = not rec.meta.get("collapsed", False)
                 break
-        return {'FINISHED'}
+        return {"FINISHED"}
 
 
 class SCENARIO_OT_collapse_results(bpy.types.Operator):
     bl_idname = "scenario.collapse_results"
     bl_label = "Collapse or expand all"
     bl_description = "Collapse or expand every generation in the list"
-    bl_options = {'INTERNAL'}
+    bl_options = {"INTERNAL"}
 
     def execute(self, context):
         terminal = [r for r in runtime.state.jobs_view if r.is_terminal]
-        collapse = any(not r.meta.get("collapsed") for r in terminal)  # any open -> collapse all; all closed -> expand
+        collapse = any(
+            not r.meta.get("collapsed") for r in terminal
+        )  # any open -> collapse all; all closed -> expand
         for rec in terminal:
             rec.meta["collapsed"] = collapse
-        return {'FINISHED'}
+        return {"FINISHED"}
 
 
 class SCENARIO_OT_error_details(bpy.types.Operator):
@@ -390,10 +404,14 @@ class SCENARIO_OT_error_details(bpy.types.Operator):
     @classmethod
     def description(cls, context, properties):
         rec = next((r for r in runtime.state.jobs_view if r.local_id == properties.local_id), None)
-        return (rec.error if rec and rec.error else "Show the full error message")  # hover shows the whole message
+        return (
+            rec.error if rec and rec.error else "Show the full error message"
+        )  # hover shows the whole message
 
     def invoke(self, context, event):
-        return context.window_manager.invoke_props_dialog(self, width=460, title="Generation failed", confirm_text="Close")
+        return context.window_manager.invoke_props_dialog(
+            self, width=460, title="Generation failed", confirm_text="Close"
+        )
 
     def draw(self, context):
         rec = next((r for r in runtime.state.jobs_view if r.local_id == self.local_id), None)
@@ -402,17 +420,19 @@ class SCENARIO_OT_error_details(bpy.types.Operator):
         col = layout.column(align=True)
         for line in textwrap.wrap(text, 66) or [text]:
             col.label(text=line)
-        op = layout.operator("scenario.copy_text", text="Copy error", icon='COPYDOWN')
+        op = layout.operator("scenario.copy_text", text="Copy error", icon="COPYDOWN")
         op.text, op.what = text, "error message"
 
     def execute(self, context):
-        return {'FINISHED'}
+        return {"FINISHED"}
 
 
 class SCENARIO_OT_result_details(bpy.types.Operator):
     bl_idname = "scenario.result_details"
     bl_label = "Generation details"
-    bl_description = "Everything about this generation: model, prompt, settings, references, asset ids, files"
+    bl_description = (
+        "Everything about this generation: model, prompt, settings, references, asset ids, files"
+    )
     local_id: StringProperty()
 
     def _rec(self):
@@ -427,76 +447,92 @@ class SCENARIO_OT_result_details(bpy.types.Operator):
         rec = self._rec()
         layout = self.layout
         if rec is None:
-            layout.label(text="This generation is no longer in the session list", icon='ERROR')
+            layout.label(text="This generation is no longer in the session list", icon="ERROR")
             return
         from . import panels
 
         header = layout.box()
         row = header.row(align=True)
-        row.label(text=panels._short_prompt(rec, 60), icon=panels.KIND_ICON.get(rec.kind, 'FILE'))
+        row.label(text=panels._short_prompt(rec, 60), icon=panels.KIND_ICON.get(rec.kind, "FILE"))
         row.label(text=f"{rec.cu_cost:g} CU" if rec.cu_cost is not None else rec.status)
         row = header.row(align=True)
-        row.label(text=rec.meta.get('model_name') or rec.model_id, icon='NODE_MATERIAL')
-        row.label(text=rec.status, icon='CHECKMARK' if rec.is_success else 'ERROR')
+        row.label(text=rec.meta.get("model_name") or rec.model_id, icon="NODE_MATERIAL")
+        row.label(text=rec.status, icon="CHECKMARK" if rec.is_success else "ERROR")
         if rec.meta.get("prompt"):
-            op = row.operator("scenario.copy_text", text="", icon='COPYDOWN')
+            op = row.operator("scenario.copy_text", text="", icon="COPYDOWN")
             op.text, op.what = rec.meta["prompt"], "prompt"
         col = layout.column(align=True)
         col.label(text=f"Model id: {rec.model_id}")
         if rec.job_id:
             row = col.row(align=True)
             row.label(text=f"Job: {rec.job_id}")
-            op = row.operator("scenario.copy_text", text="", icon='COPYDOWN')
+            op = row.operator("scenario.copy_text", text="", icon="COPYDOWN")
             op.text, op.what = rec.job_id, "job id"
-        for key, label in (("prompt", "Prompt"), ("spark_look", "Prompt Spark look"), ("look", "Look")):
+        for key, label in (
+            ("prompt", "Prompt"),
+            ("spark_look", "Prompt Spark look"),
+            ("look", "Look"),
+        ):
             value = rec.meta.get(key)
             if value:
                 box = layout.box()
-                box.label(text=label, icon='TEXT')
+                box.label(text=label, icon="TEXT")
                 for line in _wrap(str(value), 88):
                     box.label(text=line)
-        settings = {k: v for k, v in rec.body.items() if not (isinstance(v, str) and v.startswith("asset_")) and not (isinstance(v, list) and v and str(v[0]).startswith("asset_"))}
+        settings = {
+            k: v
+            for k, v in rec.body.items()
+            if not (isinstance(v, str) and v.startswith("asset_"))
+            and not (isinstance(v, list) and v and str(v[0]).startswith("asset_"))
+        }
         prompt_keys = {"prompt", "textStylePrompt", "instruction"}
         settings = {k: v for k, v in settings.items() if k not in prompt_keys}
         if settings:
             box = layout.box()
-            box.label(text="Settings sent", icon='PREFERENCES')
+            box.label(text="Settings sent", icon="PREFERENCES")
             for key, value in settings.items():
-                box.label(text=f"{key}: {json.dumps(value) if not isinstance(value, str) else value}"[:96])
-        refs = {k: v for k, v in rec.body.items() if (isinstance(v, str) and v.startswith("asset_")) or (isinstance(v, list) and v and str(v[0]).startswith("asset_"))}
+                box.label(
+                    text=f"{key}: {json.dumps(value) if not isinstance(value, str) else value}"[:96]
+                )
+        refs = {
+            k: v
+            for k, v in rec.body.items()
+            if (isinstance(v, str) and v.startswith("asset_"))
+            or (isinstance(v, list) and v and str(v[0]).startswith("asset_"))
+        }
         inputs = rec.meta.get("inputs") or []
         if refs or inputs:
             box = layout.box()
-            box.label(text="References", icon='IMAGE_REFERENCE')
+            box.label(text="References", icon="IMAGE_REFERENCE")
             for key, value in refs.items():
-                for asset_id in (value if isinstance(value, list) else [value]):
+                for asset_id in value if isinstance(value, list) else [value]:
                     row = box.row(align=True)
                     row.label(text=f"{key}: {asset_id}")
-                    op = row.operator("scenario.copy_text", text="", icon='COPYDOWN')
+                    op = row.operator("scenario.copy_text", text="", icon="COPYDOWN")
                     op.text, op.what = asset_id, "asset id"
             for path in inputs:
-                box.label(text=os.path.basename(path), icon='FILE')
+                box.label(text=os.path.basename(path), icon="FILE")
         if rec.asset_ids:
             box = layout.box()
-            box.label(text="Result assets", icon='OUTLINER_OB_IMAGE')
+            box.label(text="Result assets", icon="OUTLINER_OB_IMAGE")
             for asset_id in rec.asset_ids:
                 row = box.row(align=True)
                 row.label(text=f"{asset_id}  {rec.asset_types.get(asset_id, '')}")
-                op = row.operator("scenario.copy_text", text="", icon='COPYDOWN')
+                op = row.operator("scenario.copy_text", text="", icon="COPYDOWN")
                 op.text, op.what = asset_id, "asset id"
         if rec.files:
             box = layout.box()
-            box.label(text="Files", icon='FILE_FOLDER')
+            box.label(text="Files", icon="FILE_FOLDER")
             for path in rec.files:
                 box.label(text=os.path.basename(path))
         if rec.error:
-            layout.label(text=rec.error[:110], icon='ERROR')
+            layout.label(text=rec.error[:110], icon="ERROR")
         errors = rec.meta.get("download_errors") or {}
         for asset_id, reason in list(errors.items())[:4]:
-            layout.label(text=f"{asset_id}: {str(reason)[:80]}", icon='ERROR')
+            layout.label(text=f"{asset_id}: {str(reason)[:80]}", icon="ERROR")
 
     def execute(self, context):
-        return {'FINISHED'}
+        return {"FINISHED"}
 
 
 def _wrap(text, width):
@@ -533,17 +569,30 @@ def _add_file_reference(context, lane, filepath, param_name=None):
             if lane_state.references[index].param_name == spec.name:
                 lane_state.references.remove(index)  # a single input holds one file
     ref = lane_state.references.add()
-    ref.param_name, ref.source, ref.filepath, ref.label = spec.name, 'FILE', filepath, os.path.basename(filepath)
+    ref.param_name, ref.source, ref.filepath, ref.label = (
+        spec.name,
+        "FILE",
+        filepath,
+        os.path.basename(filepath),
+    )
     props.mark_estimate_dirty(lane_state)
     return spec.name
 
 
 REFERENCE_TARGETS = [
-    ('3d', "3D (image to 3D)", "Open the 3D tab in Image mode with this picture as the reference"),
-    ('image', "Image", "Add this picture to the Image lane's references"),
-    ('video', "Video", "Add this picture to the Video lane's references"),
-    ('render_image', "Render Image (style)", "Add this picture as a style reference of Render Image"),
-    ('render_video', "Render Video (style)", "Add this picture as a style reference of Render Video"),
+    ("3d", "3D (image to 3D)", "Open the 3D tab in Image mode with this picture as the reference"),
+    ("image", "Image", "Add this picture to the Image lane's references"),
+    ("video", "Video", "Add this picture to the Video lane's references"),
+    (
+        "render_image",
+        "Render Image (style)",
+        "Add this picture as a style reference of Render Image",
+    ),
+    (
+        "render_video",
+        "Render Video (style)",
+        "Add this picture as a style reference of Render Video",
+    ),
 ]
 
 
@@ -552,52 +601,65 @@ class SCENARIO_OT_use_as_reference(bpy.types.Operator):
     bl_label = "Use as reference"
     bl_description = "Send this image to another lane as a reference and open that lane"
     filepath: StringProperty()
-    target: EnumProperty(items=REFERENCE_TARGETS, default='3d')
+    target: EnumProperty(items=REFERENCE_TARGETS, default="3d")
 
     def execute(self, context):
         if not os.path.exists(self.filepath):
-            self.report({'ERROR'}, "File not found")
-            return {'CANCELLED'}
+            self.report({"ERROR"}, "File not found")
+            return {"CANCELLED"}
         scene = context.scene
         lane = self.target
         if lane == "3d":
-            scene.scenario.three_d_mode = 'IMAGE'
+            scene.scenario.three_d_mode = "IMAGE"
         scene.scenario.lane = lane
         name = _add_file_reference(context, lane, self.filepath)
         if name is None:
-            self.report({'WARNING'}, "The current model of that lane takes no image; pick another model, the file is not attached")
-            return {'CANCELLED'}
-        self.report({'INFO'}, f"Added to {lane} as {name}")
-        return {'FINISHED'}
+            self.report(
+                {"WARNING"},
+                "The current model of that lane takes no image; pick another model, the file is not attached",
+            )
+            return {"CANCELLED"}
+        self.report({"INFO"}, f"Added to {lane} as {name}")
+        return {"FINISHED"}
 
 
 class SCENARIO_OT_convert_to_3d(bpy.types.Operator):
     bl_idname = "scenario.convert_to_3d"
     bl_label = "Convert to 3D"
-    bl_description = "Open the 3D tab in Image mode with this picture as the reference, ready to generate a mesh"
+    bl_description = (
+        "Open the 3D tab in Image mode with this picture as the reference, ready to generate a mesh"
+    )
 
     filepath: StringProperty()
 
     def execute(self, context):
         if not os.path.exists(self.filepath):
-            self.report({'ERROR'}, "File not found")
-            return {'CANCELLED'}
+            self.report({"ERROR"}, "File not found")
+            return {"CANCELLED"}
         scene = context.scene
-        scene.scenario.three_d_mode = 'IMAGE'
+        scene.scenario.three_d_mode = "IMAGE"
         scene.scenario.lane = "3d"
         lane_state = scene.scenario.lane_state("3d")
         name = _add_file_reference(context, "3d", self.filepath)
         if name is None:
-            self.report({'WARNING'}, "Pick an image-to-3D model first (the current one takes no image)")
-            return {'CANCELLED'}
+            self.report(
+                {"WARNING"}, "Pick an image-to-3D model first (the current one takes no image)"
+            )
+            return {"CANCELLED"}
         if not lane_state.prompt.strip():
             lane_state.prompt = ""
         runtime.set_message("Image attached: choose the model and press Generate to get the mesh")
-        return {'FINISHED'}
+        return {"FINISHED"}
 
 
-BACKGROUND_MODELS = ("model_bria-remove-background", "model_851-labs-background-remover", "model_photoroom-remove-background", "model_ideogram-remove-background",
-                     "model_pixelcut-remove-background", "model_recraft-remove-background")
+BACKGROUND_MODELS = (
+    "model_bria-remove-background",
+    "model_851-labs-background-remover",
+    "model_photoroom-remove-background",
+    "model_ideogram-remove-background",
+    "model_pixelcut-remove-background",
+    "model_recraft-remove-background",
+)
 
 
 class SCENARIO_OT_remove_background(bpy.types.Operator):
@@ -615,40 +677,57 @@ class SCENARIO_OT_remove_background(bpy.types.Operator):
         from ..core.schema.params import build_body
 
         if not os.path.exists(self.filepath):
-            self.report({'ERROR'}, "File not found")
-            return {'CANCELLED'}
+            self.report({"ERROR"}, "File not found")
+            return {"CANCELLED"}
         records = runtime.state.records
         candidates = [records[m] for m in BACKGROUND_MODELS if m in records]
         if not candidates:
-            candidates = [r for r in runtime.state.lane_models.get("image", []) if "remove_background" in categories_of(r) or "remove-background" in (r.name.lower().replace(" ", "-"))]
+            candidates = [
+                r
+                for r in runtime.state.lane_models.get("image", [])
+                if "remove_background" in categories_of(r)
+                or "remove-background" in (r.name.lower().replace(" ", "-"))
+            ]
         if not candidates:
-            self.report({'ERROR'}, "No background removal model in the catalog")
-            return {'CANCELLED'}
+            self.report({"ERROR"}, "No background removal model in the catalog")
+            return {"CANCELLED"}
         record = candidates[0]
         try:
             record = generation.ensure_record(record.id)
         except ScenarioError as err:
-            self.report({'WARNING'}, err.reason + "; try again in a moment")
-            return {'CANCELLED'}
+            self.report({"WARNING"}, err.reason + "; try again in a moment")
+            return {"CANCELLED"}
         schema = generation.schema_for(record.id)
         spec = _first_image_spec(schema) if schema else None
         if spec is None:
-            self.report({'ERROR'}, f"{record.name} takes no image input")
-            return {'CANCELLED'}
+            self.report({"ERROR"}, f"{record.name} takes no image input")
+            return {"CANCELLED"}
         body = build_body(schema.specs, {}, {})
         manager = runtime.ensure_manager()
-        rec = manager.submit("image", "image", record.id, body, files={spec.name: [self.filepath]},
-                             array_params={spec.name} if spec.ptype == "file_array" else set(),
-                             meta={"prompt": f"Background removed: {os.path.basename(self.filepath)}", "model_name": record.name, "inputs": [self.filepath]})
+        rec = manager.submit(
+            "image",
+            "image",
+            record.id,
+            body,
+            files={spec.name: [self.filepath]},
+            array_params={spec.name} if spec.ptype == "file_array" else set(),
+            meta={
+                "prompt": f"Background removed: {os.path.basename(self.filepath)}",
+                "model_name": record.name,
+                "inputs": [self.filepath],
+            },
+        )
         runtime.state.jobs_view.insert(0, rec)
-        self.report({'INFO'}, f"Removing the background with {record.name}")
-        return {'FINISHED'}
+        self.report({"INFO"}, f"Removing the background with {record.name}")
+        return {"FINISHED"}
 
 
 class SCENARIO_OT_reload_generation(bpy.types.Operator):
     bl_idname = "scenario.reload_generation"
     bl_label = "Reload parameters"
-    bl_description = "Put this generation's lane, model, prompt, settings and references back into the form"
+    bl_description = (
+        "Put this generation's lane, model, prompt, settings and references back into the form"
+    )
     local_id: StringProperty()
 
     def execute(self, context):
@@ -656,24 +735,37 @@ class SCENARIO_OT_reload_generation(bpy.types.Operator):
 
         rec = next((r for r in runtime.state.jobs_view if r.local_id == self.local_id), None)
         if rec is None:
-            self.report({'ERROR'}, "This generation is no longer in the session list")
-            return {'CANCELLED'}
+            self.report({"ERROR"}, "This generation is no longer in the session list")
+            return {"CANCELLED"}
         from ..core.api import catalog
 
         scene = context.scene
-        lane = rec.lane if rec.lane in props.GENERATION_LANES else rec.kind if rec.kind in props.GENERATION_LANES else "image"
+        lane = (
+            rec.lane
+            if rec.lane in props.GENERATION_LANES
+            else rec.kind
+            if rec.kind in props.GENERATION_LANES
+            else "image"
+        )
         # The model enum of a 3D lane is gated by a sub-selector (the Edit task, or the Generate input mode). Set it to
         # one that lists this model FIRST, otherwise the model is absent from the enum and cannot be restored.
         if lane == "edit3d":
             scene.scenario.lane = "3d"
-            scene.scenario.three_d_mode = 'EDIT'
-            task = next((t[0] for t in catalog.EDIT3D_TASKS if rec.model_id in (t[3] or ())), 'ALL')
+            scene.scenario.three_d_mode = "EDIT"
+            task = next((t[0] for t in catalog.EDIT3D_TASKS if rec.model_id in (t[3] or ())), "ALL")
             scene.scenario.edit3d_task = task
         else:
             scene.scenario.lane = lane
             if lane == "3d":
                 record = runtime.state.records.get(rec.model_id)
-                mode = next((m for m in ('TEXT', 'IMAGE', 'MULTI') if record is not None and generation.three_d_models(m, [record])), None)
+                mode = next(
+                    (
+                        m
+                        for m in ("TEXT", "IMAGE", "MULTI")
+                        if record is not None and generation.three_d_models(m, [record])
+                    ),
+                    None,
+                )
                 if mode is not None:
                     scene.scenario.three_d_mode = mode
         lane_state = scene.scenario.lane_state(lane)
@@ -683,10 +775,18 @@ class SCENARIO_OT_reload_generation(bpy.types.Operator):
         lane_state.model_key = rec.model_id
         schema = generation.schema_for(rec.model_id)
         look = rec.meta.get("look") if lane in ("render_image", "render_video") else None
-        lane_state.prompt = look if look is not None else str(rec.meta.get("prompt") or rec.body.get(schema.prompt_name if schema else "prompt") or "")
+        lane_state.prompt = (
+            look
+            if look is not None
+            else str(
+                rec.meta.get("prompt")
+                or rec.body.get(schema.prompt_name if schema else "prompt")
+                or ""
+            )
+        )
         if schema is None:
-            self.report({'WARNING'}, "Model schema not loaded yet; lane, model and prompt restored")
-            return {'FINISHED'}
+            self.report({"WARNING"}, "Model schema not loaded yet; lane, model and prompt restored")
+            return {"FINISHED"}
         params_ui.sync_params(lane_state, schema, rec.model_id)
         restored = 0
         for spec in schema.specs:
@@ -704,7 +804,9 @@ class SCENARIO_OT_reload_generation(bpy.types.Operator):
             if spec.ptype == "string_array":
                 params_ui.set_multi_selection(item, value if isinstance(value, list) else [value])
             elif spec.allowed_values:
-                if str(value) in [i[0] for i in runtime.enum_items(("param", rec.model_id, spec.name))]:
+                if str(value) in [
+                    i[0] for i in runtime.enum_items(("param", rec.model_id, spec.name))
+                ]:
                     item.enum_value = str(value)
             elif spec.ptype == "number":
                 if spec.is_integer:
@@ -717,7 +819,9 @@ class SCENARIO_OT_reload_generation(bpy.types.Operator):
                 item.str_value = str(value)
             restored += 1
         lane_state.references.clear()
-        inputs = [p for p in (rec.meta.get("inputs") or []) if isinstance(p, str) and os.path.exists(p)]
+        inputs = [
+            p for p in (rec.meta.get("inputs") or []) if isinstance(p, str) and os.path.exists(p)
+        ]
         for spec in schema.specs:
             if not spec.is_file:
                 continue
@@ -725,33 +829,63 @@ class SCENARIO_OT_reload_generation(bpy.types.Operator):
                 continue  # the mesh comes from the current scene selection, not a stale asset from the old job
             value = rec.body.get(spec.name)
             ids = value if isinstance(value, list) else ([value] if value else [])
-            local = [p for p in inputs if (spec.kind or "image") in ("image", "video", "audio", "3d") and p.lower().endswith(tuple(_EXTS.get(spec.kind or "image", ())))]
+            local = [
+                p
+                for p in inputs
+                if (spec.kind or "image") in ("image", "video", "audio", "3d")
+                and p.lower().endswith(tuple(_EXTS.get(spec.kind or "image", ())))
+            ]
             if local:
-                for path in local[:spec.max_length or len(local)]:
+                for path in local[: spec.max_length or len(local)]:
                     ref = lane_state.references.add()
-                    ref.param_name, ref.source, ref.filepath, ref.label = spec.name, 'FILE', path, os.path.basename(path)
+                    ref.param_name, ref.source, ref.filepath, ref.label = (
+                        spec.name,
+                        "FILE",
+                        path,
+                        os.path.basename(path),
+                    )
                 inputs = [p for p in inputs if p not in local]
             else:
                 for asset_id in ids:
                     if isinstance(asset_id, str) and asset_id.startswith("asset_"):
                         ref = lane_state.references.add()
-                        ref.param_name, ref.source, ref.asset_id, ref.label = spec.name, 'ASSET', asset_id, asset_id
+                        ref.param_name, ref.source, ref.asset_id, ref.label = (
+                            spec.name,
+                            "ASSET",
+                            asset_id,
+                            asset_id,
+                        )
         props.mark_estimate_dirty(lane_state)
-        self.report({'INFO'}, f"Restored {rec.meta.get('model_name') or rec.model_id}: prompt, {restored} setting(s), {len(lane_state.references)} reference(s)")
-        return {'FINISHED'}
+        self.report(
+            {"INFO"},
+            f"Restored {rec.meta.get('model_name') or rec.model_id}: prompt, {restored} setting(s), {len(lane_state.references)} reference(s)",
+        )
+        return {"FINISHED"}
 
 
-_EXTS = {"image": (".png", ".jpg", ".jpeg", ".webp"), "video": (".mp4", ".mov", ".webm"), "audio": (".mp3", ".wav", ".ogg", ".m4a"), "3d": (".glb", ".gltf", ".fbx", ".obj")}
+_EXTS = {
+    "image": (".png", ".jpg", ".jpeg", ".webp"),
+    "video": (".mp4", ".mov", ".webm"),
+    "audio": (".mp3", ".wav", ".ogg", ".m4a"),
+    "3d": (".glb", ".gltf", ".fbx", ".obj"),
+}
 
 
 class SCENARIO_OT_quick_settings(bpy.types.Operator):
     bl_idname = "scenario.quick_settings"
     bl_label = "Generation settings"
-    bl_description = "The settings of the current lane (model, prompt, references, parameters) in a dialog"
+    bl_description = (
+        "The settings of the current lane (model, prompt, references, parameters) in a dialog"
+    )
     lane: StringProperty(default="image")
 
     def invoke(self, context, event):
-        return context.window_manager.invoke_props_dialog(self, width=560, title=f"{dict((i[0], i[1]) for i in props.LANE_ITEMS).get(self.lane, self.lane)} settings", confirm_text="Done")
+        return context.window_manager.invoke_props_dialog(
+            self,
+            width=560,
+            title=f"{dict((i[0], i[1]) for i in props.LANE_ITEMS).get(self.lane, self.lane)} settings",
+            confirm_text="Done",
+        )
 
     def draw(self, context):
         from . import panels, render_lanes
@@ -769,25 +903,25 @@ class SCENARIO_OT_quick_settings(bpy.types.Operator):
             panels.draw_generate_lane(layout, context, lane)
 
     def execute(self, context):
-        return {'FINISHED'}
+        return {"FINISHED"}
 
 
 class SCENARIO_OT_add_sound_strip(bpy.types.Operator):
     bl_idname = "scenario.add_sound_strip"
     bl_label = "Add to sequencer"
     bl_description = "Add this audio file as a sound strip at the current frame"
-    bl_options = {'REGISTER', 'UNDO'}
+    bl_options = {"REGISTER", "UNDO"}
     filepath: StringProperty()
 
     def execute(self, context):
         from . import apply_audio
 
         if not os.path.exists(self.filepath):
-            self.report({'ERROR'}, "File not found")
-            return {'CANCELLED'}
+            self.report({"ERROR"}, "File not found")
+            return {"CANCELLED"}
         strip = apply_audio.add_to_sequencer(context, self.filepath)
-        self.report({'INFO'}, f"Sound strip {strip.name} added on channel {strip.channel}")
-        return {'FINISHED'}
+        self.report({"INFO"}, f"Sound strip {strip.name} added on channel {strip.channel}")
+        return {"FINISHED"}
 
 
 def _job_objects(local_id, names):
@@ -796,7 +930,9 @@ def _job_objects(local_id, names):
 
     found = apply_3d.objects_of_job(local_id) if local_id else []
     if not found:
-        found = [bpy.data.objects[n] for n in (n for n in names.split("|") if n) if n in bpy.data.objects]
+        found = [
+            bpy.data.objects[n] for n in (n for n in names.split("|") if n) if n in bpy.data.objects
+        ]
     return found
 
 
@@ -809,47 +945,57 @@ class SCENARIO_OT_select_result_objects(bpy.types.Operator):
 
     @classmethod
     def poll(cls, context):
-        return context.mode == 'OBJECT'
+        return context.mode == "OBJECT"
 
     def execute(self, context):
         found = _job_objects(self.local_id, self.names)
         if not found:
-            self.report({'WARNING'}, "Those objects are no longer in the file (use Add to scene to import them again)")
-            return {'CANCELLED'}
+            self.report(
+                {"WARNING"},
+                "Those objects are no longer in the file (use Add to scene to import them again)",
+            )
+            return {"CANCELLED"}
         for obj in context.selected_objects:
             obj.select_set(False)
         for obj in found:
             obj.select_set(True)
         context.view_layer.objects.active = found[0]
-        self.report({'INFO'}, f"Selected {len(found)} object(s)")
-        return {'FINISHED'}
+        self.report({"INFO"}, f"Selected {len(found)} object(s)")
+        return {"FINISHED"}
 
 
 class SCENARIO_OT_delete_result_objects(bpy.types.Operator):
     bl_idname = "scenario.delete_result_objects"
     bl_label = "Delete from scene"
-    bl_description = "Delete the objects this generation created (the files stay in the output folder)"
-    bl_options = {'REGISTER', 'UNDO'}
+    bl_description = (
+        "Delete the objects this generation created (the files stay in the output folder)"
+    )
+    bl_options = {"REGISTER", "UNDO"}
     names: StringProperty(description="Object names separated by |")
     local_id: StringProperty()
 
     @classmethod
     def poll(cls, context):
-        return context.mode == 'OBJECT'
+        return context.mode == "OBJECT"
 
     def invoke(self, context, event):
         count = len(_job_objects(self.local_id, self.names))
         if count == 0:
-            self.report({'WARNING'}, "Those objects are no longer in the file")
-            return {'CANCELLED'}
-        return context.window_manager.invoke_confirm(self, event, title=f"Delete {count} object(s) of this generation?", confirm_text="Delete")
+            self.report({"WARNING"}, "Those objects are no longer in the file")
+            return {"CANCELLED"}
+        return context.window_manager.invoke_confirm(
+            self,
+            event,
+            title=f"Delete {count} object(s) of this generation?",
+            confirm_text="Delete",
+        )
 
     def execute(self, context):
         found = _job_objects(self.local_id, self.names)
         for obj in found:
             bpy.data.objects.remove(obj, do_unlink=True)
-        self.report({'INFO'}, f"Deleted {len(found)} object(s)")
-        return {'FINISHED'}
+        self.report({"INFO"}, f"Deleted {len(found)} object(s)")
+        return {"FINISHED"}
 
 
 class SCENARIO_OT_mcp_start(bpy.types.Operator):
@@ -862,10 +1008,10 @@ class SCENARIO_OT_mcp_start(bpy.types.Operator):
 
         server = mcp_service.start()
         if server is None:
-            self.report({'ERROR'}, runtime.state.mcp_error or "Could not start")
-            return {'CANCELLED'}
-        self.report({'INFO'}, f"MCP server on {server.url}")
-        return {'FINISHED'}
+            self.report({"ERROR"}, runtime.state.mcp_error or "Could not start")
+            return {"CANCELLED"}
+        self.report({"INFO"}, f"MCP server on {server.url}")
+        return {"FINISHED"}
 
 
 class SCENARIO_OT_mcp_stop(bpy.types.Operator):
@@ -877,7 +1023,7 @@ class SCENARIO_OT_mcp_stop(bpy.types.Operator):
         from . import mcp_service
 
         mcp_service.stop()
-        return {'FINISHED'}
+        return {"FINISHED"}
 
 
 class SCENARIO_OT_mcp_copy(bpy.types.Operator):
@@ -891,42 +1037,77 @@ class SCENARIO_OT_mcp_copy(bpy.types.Operator):
 
         text = mcp_service.client_configs().get(self.kind, "")
         context.window_manager.clipboard = text
-        self.report({'INFO'}, f"Copied {self.kind.replace('_', ' ')} setup")
-        return {'FINISHED'}
+        self.report({"INFO"}, f"Copied {self.kind.replace('_', ' ')} setup")
+        return {"FINISHED"}
 
 
 class SCENARIO_OT_import_mesh_file(bpy.types.Operator):
     bl_idname = "scenario.import_mesh_file"
     bl_label = "Import mesh file"
     bl_description = "Import this mesh at the 3D cursor"
-    bl_options = {'REGISTER', 'UNDO'}
+    bl_options = {"REGISTER", "UNDO"}
     filepath: StringProperty()
     local_id: StringProperty(description="Generation the objects belong to (for Select and Delete)")
 
     @classmethod
     def poll(cls, context):
-        return context.mode == 'OBJECT'
+        return context.mode == "OBJECT"
 
     def execute(self, context):
         from . import apply_3d
 
         if not os.path.exists(self.filepath):
-            self.report({'ERROR'}, "File not found")
-            return {'CANCELLED'}
-        objects = apply_3d.import_model(context, self.filepath, at_cursor=True, local_id=self.local_id)
+            self.report({"ERROR"}, "File not found")
+            return {"CANCELLED"}
+        objects = apply_3d.import_model(
+            context, self.filepath, at_cursor=True, local_id=self.local_id
+        )
         if self.local_id:
             for rec in runtime.state.jobs_view:
                 if rec.local_id == self.local_id:
-                    rec.meta["objects"] = list(rec.meta.get("objects") or []) + [o.name for o in objects]
-        self.report({'INFO'}, f"Imported {len(objects)} object(s)")
-        return {'FINISHED'}
+                    rec.meta["objects"] = list(rec.meta.get("objects") or []) + [
+                        o.name for o in objects
+                    ]
+        self.report({"INFO"}, f"Imported {len(objects)} object(s)")
+        return {"FINISHED"}
 
 
-CLASSES = (SCENARIO_OT_import_mesh_file, SCENARIO_OT_mcp_start, SCENARIO_OT_mcp_stop, SCENARIO_OT_mcp_copy, SCENARIO_OT_clear_first_frame, SCENARIO_OT_select_result_objects,
-           SCENARIO_OT_copy_text, SCENARIO_OT_toggle_result, SCENARIO_OT_collapse_results, SCENARIO_OT_error_details, SCENARIO_OT_result_details, SCENARIO_OT_add_sound_strip, SCENARIO_OT_delete_result_objects,
-           SCENARIO_OT_use_as_reference, SCENARIO_OT_convert_to_3d, SCENARIO_OT_remove_background, SCENARIO_OT_reload_generation, SCENARIO_OT_quick_settings, SCENARIO_OT_play_video, SCENARIO_OT_play_video_blender, SCENARIO_OT_history_refresh, SCENARIO_OT_history_older, SCENARIO_OT_import_result, SCENARIO_OT_test_connection, SCENARIO_OT_refresh_catalog, SCENARIO_OT_generate, SCENARIO_OT_add_reference,
-           SCENARIO_OT_remove_reference, SCENARIO_OT_toggle_multi, SCENARIO_OT_open_output_folder, SCENARIO_OT_show_image,
-           SCENARIO_OT_apply_texture, SCENARIO_OT_add_plane, SCENARIO_OT_retile_material)
+CLASSES = (
+    SCENARIO_OT_import_mesh_file,
+    SCENARIO_OT_mcp_start,
+    SCENARIO_OT_mcp_stop,
+    SCENARIO_OT_mcp_copy,
+    SCENARIO_OT_clear_first_frame,
+    SCENARIO_OT_select_result_objects,
+    SCENARIO_OT_copy_text,
+    SCENARIO_OT_toggle_result,
+    SCENARIO_OT_collapse_results,
+    SCENARIO_OT_error_details,
+    SCENARIO_OT_result_details,
+    SCENARIO_OT_add_sound_strip,
+    SCENARIO_OT_delete_result_objects,
+    SCENARIO_OT_use_as_reference,
+    SCENARIO_OT_convert_to_3d,
+    SCENARIO_OT_remove_background,
+    SCENARIO_OT_reload_generation,
+    SCENARIO_OT_quick_settings,
+    SCENARIO_OT_play_video,
+    SCENARIO_OT_play_video_blender,
+    SCENARIO_OT_history_refresh,
+    SCENARIO_OT_history_older,
+    SCENARIO_OT_import_result,
+    SCENARIO_OT_test_connection,
+    SCENARIO_OT_refresh_catalog,
+    SCENARIO_OT_generate,
+    SCENARIO_OT_add_reference,
+    SCENARIO_OT_remove_reference,
+    SCENARIO_OT_toggle_multi,
+    SCENARIO_OT_open_output_folder,
+    SCENARIO_OT_show_image,
+    SCENARIO_OT_apply_texture,
+    SCENARIO_OT_add_plane,
+    SCENARIO_OT_retile_material,
+)
 
 
 def register():

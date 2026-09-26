@@ -31,14 +31,27 @@ RESULT_HANDLERS = {
 def dispatch(event):
     name, payload = event
     if (
-        name in {"catalog", "catalog_failed", "models"}
+        name in {"catalog", "catalog_failed", "models", "connection"}
         and isinstance(payload, dict)
         and "catalog" in payload
     ):
         runtime.sync_catalog_context()
         if payload["catalog"] is not runtime.state.catalog:
             return
-    if name == "catalog":
+    if name == "connection":
+        if payload.get("key") is not runtime.state.connection_request:
+            return
+        runtime.state.connection_request = None
+        runtime.state.connection_worker = None
+        error = payload.get("error")
+        runtime.state.connection_status = "error" if error else "success"
+        runtime.state.account_label = (
+            f"Connection failed: {error}"
+            if error
+            else "Connected to Scenario (model access verified)"
+        )
+        runtime.set_message(runtime.state.account_label)
+    elif name == "catalog":
         generation.set_catalog(
             payload["records"], payload["detailed"], warmup=payload.get("warmup", False)
         )

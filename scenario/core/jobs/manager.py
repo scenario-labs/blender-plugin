@@ -85,6 +85,9 @@ class JobManager:
     def fetch_history(self, catalog, key, token=None, *, append=False):
         self._spawn(self._run_history, catalog, key, token, append)
 
+    def check_connection(self, catalog, key):
+        return self._spawn(self._run_connection_check, catalog, key)
+
     def fetch_models(self, catalog, model_ids, *, mark_dirty=True):
         """Fetch detailed records for a few models without re-fetching the list."""
         self._spawn(self._run_models, catalog, tuple(model_ids), mark_dirty)
@@ -321,6 +324,16 @@ class JobManager:
         except Exception:
             payload["error"] = "Could not read Scenario history"
         self.catalog_events.put(("history", payload))
+
+    def _run_connection_check(self, catalog, key):
+        payload = {"catalog": catalog, "key": key, "error": None}
+        try:
+            catalog.check_connection()
+        except ScenarioError as err:
+            payload["error"] = err.reason
+        except Exception:
+            payload["error"] = "Could not check the Scenario connection"
+        self.catalog_events.put(("connection", payload))
 
     def _run_catalog(self, catalog, privacy, model_ids):
         try:

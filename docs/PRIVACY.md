@@ -18,8 +18,9 @@ limits of its current controls. It does not replace Scenario's service policies.
   prompt services. Prompt Spark in Render Image and Render Video also receives a
   still of the view. Prompt helpers can spend credits independently of generation.
 - The model catalog is requested automatically when credentials are available;
-  opening the model picker can download thumbnails. Test connection retrieves team
-  and project information. Refresh cloud and Older in Generations retrieve job
+  opening the model picker can download thumbnails. Test connection requests one
+  public-model list page with at most one model to verify model access; it does
+  not discover account or project identity. Refresh cloud and Older in Generations retrieve job
   history and prompt text; connected agents can request history too.
 - Scenario API requests authenticate with your selected key/secret pair using an
   HTTP Basic `Authorization` header over TLS. They identify the extension with

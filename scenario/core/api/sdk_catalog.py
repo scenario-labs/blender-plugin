@@ -153,6 +153,13 @@ class SDKCatalog:
                 self._check_active()
             return page
 
+    def check_connection(self):
+        """Verify model access with one SDK read, without inferring identity."""
+        with self._read() as adapter:
+            adapter.model_page(page_size=1)
+            with self._condition:
+                self._check_active()
+
     def load_list_cached(self, privacy="public"):
         with self._condition:
             self._check_active()

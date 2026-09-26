@@ -29,6 +29,11 @@ For automation, select **Credentials > Environment** to use `SCENARIO_API_KEY`
 and `SCENARIO_API_SECRET` from the environment that launched Blender. Both are
 required. Environment values never override **Saved in Blender**, and an incomplete
 pair never borrows from the other source. Secrets are masked in the preferences;
+Test connection runs in the background. Its success status verifies model access
+with the selected credentials, including when the model list is empty. It does
+not identify an account or project. Repeated clicks while checking share the same
+request; changing credentials discards the previous check's result.
+
 Blender saves entered credentials with its preferences, not in an OS keychain.
 The account strip names the selected source when its key or secret is missing.
 

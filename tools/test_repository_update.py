@@ -6,6 +6,7 @@ import argparse
 import contextlib
 import http.server
 import json
+import re
 import shutil
 import subprocess
 import sys
@@ -64,6 +65,39 @@ def write_inventory(path, package_version):
         },
     )
     return inventory
+
+
+def fixture_predecessor(directory, candidate):
+    """Make a clearly synthetic predecessor; only version metadata may differ."""
+    manifest, _ = inspect_zip(candidate)
+    current = manifest["version"]
+    if version(current) <= (0, 0, 0):
+        raise ValueError("Test predecessor requires a candidate newer than 0.0.0")
+    directory.mkdir()
+    path = directory / "scenario-0.0.0.zip"
+    replacements = {"blender_manifest.toml": "version", "__init__.py": "__version__"}
+    changed = set()
+    with zipfile.ZipFile(candidate) as source, zipfile.ZipFile(path, "w") as destination:
+        for info in source.infolist():
+            content = source.read(info.filename)
+            if info.filename in replacements:
+                name = replacements[info.filename]
+                content, count = re.subn(
+                    rb"(?m)^("
+                    + name.encode()
+                    + rb"\s*=\s*)([\"'])"
+                    + re.escape(current.encode())
+                    + rb"\2",
+                    rb'\g<1>"0.0.0"',
+                    content,
+                )
+                if count != 1:
+                    raise ValueError("Test predecessor requires one matching version declaration")
+                changed.add(info.filename)
+            destination.writestr(info, content)
+    if changed != set(replacements):
+        raise ValueError("Test predecessor is missing package version metadata")
+    return path, write_inventory(path, "0.0.0"), "0.0.0"
 
 
 def fixture(directory, version):
@@ -151,9 +185,12 @@ def serve(repository, archives=("scenario-1.0.0.zip", "scenario-2.0.0.zip")):
 
 def run(args):
     previous, candidate = getattr(args, "previous_zip", None), getattr(args, "candidate_zip", None)
-    if bool(previous) != bool(candidate):
+    test_predecessor = getattr(args, "test_predecessor", False)
+    if test_predecessor and (previous is not None or candidate is None):
+        raise ValueError("--test-predecessor requires --candidate-zip and excludes --previous-zip")
+    if not test_predecessor and bool(previous) != bool(candidate):
         raise ValueError("Provide both --previous-zip and --candidate-zip")
-    package_mode = previous is not None
+    package_mode = candidate is not None
     normal_profile = normal_profile_root().resolve()
     if args.artifacts.resolve().is_relative_to(normal_profile):
         raise ValueError("Artifacts must be outside the normal Blender profile")
@@ -169,6 +206,7 @@ def run(args):
         "status": "failed",
         "fixture": "scenario-package" if package_mode else "synthetic",
         "repository": REPO,
+        "test_predecessor": test_predecessor,
     }
     server = None
     write_json(session.directory / "repository-update.json", {"profile": str(session.profile)})
@@ -197,11 +235,13 @@ def run(args):
         report.update(environment)
         before_version, after_version = "1.0.0", "2.0.0"
         if package_mode:
-            first, first_inventory, before_version = package_artifact(
-                session.directory / "first", previous
-            )
             second, second_inventory, after_version = package_artifact(
                 session.directory / "second", candidate
+            )
+            first, first_inventory, before_version = (
+                fixture_predecessor(session.directory / "first", second)
+                if test_predecessor
+                else package_artifact(session.directory / "first", previous)
             )
             if version(after_version) <= version(before_version):
                 raise ValueError("Candidate version must be newer than the previous package")
@@ -341,6 +381,11 @@ def main():
     parser.add_argument("--expected-version", help="Require this exact Blender version (CI)")
     parser.add_argument("--previous-zip", type=Path, help="Exact previously adopted Scenario ZIP")
     parser.add_argument("--candidate-zip", type=Path, help="Exact newer Scenario ZIP to accept")
+    parser.add_argument(
+        "--test-predecessor",
+        action="store_true",
+        help="Use test-only version 0.0.0 metadata with candidate code; not release-pair acceptance",
+    )
     args = parser.parse_args()
     if args.timeout <= 0:
         parser.error("--timeout must be positive")

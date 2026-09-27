@@ -287,3 +287,41 @@ def test_equal_version_or_downgrade_stops_before_repository_install(
     assert calls == ["probe"]
     report = json.loads(next(args.artifacts.glob("*/result.json")).read_text())
     assert "newer" in report["error"]
+
+
+def test_test_predecessor_changes_only_matching_version_metadata(runner, tmp_path):
+    import zipfile
+
+    candidate, _ = runner.fixture(tmp_path / "candidate", "1.2.3")
+    clean = tmp_path / "candidate.zip"
+    with zipfile.ZipFile(candidate) as source, zipfile.ZipFile(clean, "w") as target:
+        for name in source.namelist():
+            content = source.read(name)
+            if name == "__init__.py":
+                content = b'__version__ = "1.2.3"  # keep this comment\n'
+            target.writestr(name, content)
+    original = clean.read_bytes()
+    before, inventory, version = runner.fixture_predecessor(tmp_path / "before", clean)
+    assert version == "0.0.0"
+    assert clean.read_bytes() == original
+    with zipfile.ZipFile(clean) as source, zipfile.ZipFile(before) as target:
+        assert source.namelist() == target.namelist()
+        for name in source.namelist():
+            expected = source.read(name)
+            if name in ("blender_manifest.toml", "__init__.py"):
+                expected = expected.replace(b'"1.2.3"', b'"0.0.0"')
+            assert target.read(name) == expected
+    assert json.loads(inventory.read_text())["archives"][0]["sha256"] == runner.sha256(before)
+
+
+def test_test_predecessor_rejects_ambiguous_or_absent_selection(runner, tmp_path):
+    for previous, candidate in [(None, None), (tmp_path / "old.zip", tmp_path / "new.zip")]:
+        with pytest.raises(ValueError, match="excludes"):
+            runner.run(
+                SimpleNamespace(
+                    previous_zip=previous, candidate_zip=candidate, test_predecessor=True
+                )
+            )
+    archive, _ = runner.fixture(tmp_path / "old", "1.2.3")
+    with pytest.raises(ValueError, match="matching version declaration"):
+        runner.fixture_predecessor(tmp_path / "before", archive)

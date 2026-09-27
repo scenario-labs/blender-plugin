@@ -206,12 +206,12 @@ uv run --locked --no-env-file python tools/test_repository_update.py \
   --candidate-zip artifacts/scenario-CANDIDATE.zip
 ```
 
-Both options are required together. The candidate must have a newer stable
+For a selected release pair, both ZIP options are required together. The candidate must have a newer stable
 version and the same `scenario` identity. The runner copies the selected archives
 without rebuilding or rewriting their contents, generates each repository through
 the existing validator, and verifies installed bytes before and after upgrade.
 Only the index and the two explicit archive filenames are served on loopback.
-The default invocation still runs the small synthetic CI fixture above.
+The default invocation still runs the small synthetic fixture above.
 
 The package probe seeds synthetic saved preferences and credentials, six durable
 job states (prepared, uncertain, remote, download failed, ready and applied), a
@@ -234,6 +234,28 @@ prototype migration. A test-only predecessor with altered version metadata can
 exercise lifecycle behavior before two adopted releases exist, but must be named
 as synthetic evidence and cannot prove compatibility between published releases.
 Repeat with verified release artifacts for production update acceptance.
+
+For explicit CI lifecycle testing before a published predecessor exists:
+
+```sh
+uv run --locked --no-env-file python tools/test_repository_update.py \
+  --candidate-zip artifacts/scenario-CANDIDATE.zip --test-predecessor
+```
+
+This mode excludes `--previous-zip`. It derives a synthetic `0.0.0` predecessor
+from the candidate, replacing only its two matching version declarations in the
+manifest and package initializer. All other entry contents remain unchanged;
+the supplied candidate is never rewritten. Missing/mismatched declarations fail.
+The result records `test_predecessor: true` and both artifact hashes. These test
+archives must never become release or public repository inputs.
+
+Each Linux and Windows baseline job now runs both the small fixture and this
+actual-package lifecycle check for Blender 5.0, 5.1 and 5.2. It requires exactly one
+ZIP from that job's successful native run and preserves update/restart reports,
+logs, indices and both test archives on failure as well as success. A failed
+package check fails its matrix job and the existing aggregate gate. Hosted results
+remain evidence for their actual run, platform and archives; this CI mode does
+not establish published release-pair compatibility or public update availability.
 
 - `make build`: build and validate the extension ZIP; use
   `BLENDER_BUILD_ARGS="--repo"` to also generate a local extension repository.

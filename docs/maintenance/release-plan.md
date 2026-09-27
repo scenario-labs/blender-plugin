@@ -23,6 +23,13 @@ candidate evidence. The candidate must demonstrate:
 - A tested installed ZIP, required dependency licenses, truthful user guidance,
   declared native support and Blender-native update discovery/install.
 
+For 0.10.0, the maintainer requires completion of all retained generation lanes
+before release: Image, Video, 3D, Materials, audio, render/edit lanes and Film
+generation paths. Image-only acceptance does not satisfy this gate. Split runtime,
+input preparation and result-application integration into reviewable PRs; keep
+#70 on hold until their combined native and service acceptance is complete.
+This does not expand the scope to a general Film editor.
+
 Film and unaccepted provider/capability paths retain explicit experimental or
 unavailable status. No broad capability acceptance follows from importing a
 schema, helper or upstream source file.

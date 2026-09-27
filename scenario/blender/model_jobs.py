@@ -1,6 +1,6 @@
 # SPDX-FileCopyrightText: 2026 Scenario Inc.
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""Main-thread Image generation commands shared by UI and local MCP."""
+"""Main-thread model generation commands shared by UI and local MCP."""
 
 import json
 import threading
@@ -10,6 +10,7 @@ from dataclasses import dataclass, field
 
 import bpy
 
+from ..core.api.catalog import GENERATION_LANES, LANE_KIND
 from ..core.api.errors import ScenarioError
 from ..core.jobs.records import JobRecord
 from ..core.jobs.store import JobOrigin, JobState, StoredJob
@@ -27,6 +28,7 @@ class ModelQuote:
     scene: object = field(repr=False)
     inputs: str = field(repr=False)
     task: object = field(repr=False)
+    lane: str = "image"
     quote: object = field(default=None, repr=False)
     used: bool = False
 
@@ -58,7 +60,9 @@ class ModelJobs:
         self._application_approvals = {}
         self._application_destinations = {}
 
-    def quote(self, scene, model_id, body):
+    def quote(self, scene, model_id, body, *, lane="image"):
+        if lane not in GENERATION_LANES:
+            raise ScenarioError(0, "Choose a supported generation lane")
         snapshot = _snapshot(body)
         if scene == bpy.context.scene:
             # Operators flush pending dependency updates before execute(). Do
@@ -76,7 +80,7 @@ class ModelJobs:
                 )
         origin = self.session.capture(scene)
         task = self.session.quote_model(model_id, json.loads(snapshot), origin=origin)
-        quote = ModelQuote(uuid.uuid4().hex, model_id, scene, snapshot, task)
+        quote = ModelQuote(uuid.uuid4().hex, model_id, scene, snapshot, task, lane=lane)
         self.quotes[quote.identifier] = quote
         return quote
 
@@ -96,11 +100,12 @@ class ModelJobs:
             raise ScenarioError(0, "Use a fresh, unsubmitted estimate; inspect existing jobs first")
         return ticket
 
-    def submit(self, quote_id, scene, model_id, body, *, approved_cost, meta=None):
+    def submit(self, quote_id, scene, model_id, body, *, approved_cost, meta=None, lane="image"):
         ticket = self.require_quote(quote_id)
         estimate = self.finish_quote(ticket)
         if (
             ticket.scene != scene
+            or ticket.lane != lane
             or ticket.model_id != model_id
             or ticket.inputs != _snapshot(body)
             or approved_cost != str(estimate.cost)
@@ -112,8 +117,8 @@ class ModelJobs:
         prepared = self.session.prepare_quote(ticket.quote)
         view = JobRecord(
             local_id=prepared.intent.request_id,
-            lane="image",
-            kind="image",
+            lane=lane,
+            kind=LANE_KIND[lane],
             model_id=model_id,
             body=estimate.payload,
             status="prepared",
@@ -123,7 +128,8 @@ class ModelJobs:
         )
         self.views[view.local_id] = view
         view.meta["shared_job"] = True
-        self._automatic_application.add(view.local_id)
+        if lane == "image":
+            self._automatic_application.add(view.local_id)
         try:
             task = self.session.submit(
                 prepared, operation="model", target_id=model_id, payload=estimate.payload
@@ -241,7 +247,7 @@ class ModelJobs:
         if request_id not in self.views:
             self.views[request_id] = JobRecord(
                 local_id=request_id,
-                lane="image",
+                lane="model",
                 kind="model",
                 model_id=record.intent.target_id,
                 body={},
@@ -422,6 +428,16 @@ class ModelJobs:
             "files": list(self.views[record.intent.request_id].files)
             if record.intent.request_id in self.views
             else [],
+            "results": [
+                {
+                    "asset_id": item.asset.asset_id,
+                    "name": item.asset.name,
+                    "media_type": item.asset.media_type,
+                    "size": item.asset.expected_size,
+                    "downloaded": item.receipt is not None,
+                }
+                for item in record.results
+            ],
             "delivery_paused": record.intent.request_id in self._paused,
             "actions": self.actions(record),
             "error": self.views[record.intent.request_id].error

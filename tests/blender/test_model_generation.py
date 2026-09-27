@@ -724,6 +724,28 @@ class ModelGenerationTests(unittest.TestCase):
         self.assertNotIn(previous.identifier, owner.quotes)
         self.assertEqual(len(owner.quotes), 1)
 
+    def test_repeated_form_edits_release_only_obsolete_ui_quotes(self):
+        video = self.configure_ui_lane("video")
+        self.configure_ui_lane("audio")
+        self.ui_quote("audio")
+        audio_key = bpy.context.scene.scenario.lane_state("audio").estimate_key
+        audio_ticket = self.runtime.state.estimates[audio_key]
+        mcp = self.mcp_quote()
+        owner = self.runtime.state.model_jobs
+        for index in range(130):
+            video.prompt = f"edited prompt {index}"
+            self.assertEqual(video.estimate_key, "")
+            self.ui_quote("video")
+            self.assertEqual(len(owner.quotes), 3)
+            self.assertEqual(len(self.runtime.state.estimates), 2)
+        self.assertIs(owner.quotes[audio_ticket.identifier], audio_ticket)
+        self.assertIn(mcp["quote_id"], owner.quotes)
+        video.prompt = "unfinished next edit"
+        self.generation.process_model_jobs()
+        self.assertEqual(len(owner.quotes), 2)
+        self.assertEqual(set(self.runtime.state.estimates), {audio_key})
+        self.assertEqual(self.paid, [])
+
     def test_missing_changed_or_unapproved_quote_cannot_spend(self):
         with self.assertRaises((self.request_error, self.origin_error)):
             self.generation.submit_generation(bpy.context, "image")

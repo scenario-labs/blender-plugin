@@ -698,8 +698,23 @@ def request_meta(context, lane, request=None):
     return meta
 
 
+def _prune_ui_estimates():
+    """Property callbacks clear keys before repricing; retire their old UI handles."""
+    jobs = runtime.state.model_jobs
+    for key, ticket in tuple(runtime.state.estimates.items()):
+        try:
+            current = ticket.scene.scenario.lane_state(ticket.lane).estimate_key == key
+        except ReferenceError:
+            current = False
+        if not current:
+            del runtime.state.estimates[key]
+            if jobs is not None and jobs.quotes.get(ticket.identifier) is ticket:
+                jobs.quotes.pop(ticket.identifier)
+
+
 def request_estimate(scene, lane):
     runtime.sync_catalog_context()
+    _prune_ui_estimates()
     lane_state = scene.scenario.lane_state(lane)
     previous = runtime.state.estimates.pop(lane_state.estimate_key, None)
     if previous is not None and runtime.state.model_jobs is not None:
@@ -736,6 +751,7 @@ def process_model_jobs():
     jobs = runtime.state.model_jobs
     if jobs is None:
         return
+    _prune_ui_estimates()
     jobs.poll()
     for key, ticket in tuple(runtime.state.model_previews.items()):
         if not ticket.task.done():
@@ -753,6 +769,7 @@ def process_model_jobs():
             lane_state.estimate_state = "READY"
             lane_state.estimate_error = ""
         except Exception:
+            jobs.quotes.pop(ticket.identifier, None)
             # Source/transport details can contain private inputs. Keep failures
             # actionable without copying arbitrary exception text into the UI.
             try:

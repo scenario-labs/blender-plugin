@@ -2,18 +2,62 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Local API-key storage isolation, without claiming a server account identity."""
 
+import errno
 import hashlib
 import hmac
 import json
 import os
 import stat
 import tempfile
+import time
+from contextlib import contextmanager
 from pathlib import Path
 
 from ..api.sdk_adapter import API_URL, Credentials
 from .store import JobScope, JobStore, StoreError
 
 _HEADER = b"SCENARIO-LOCAL-SCOPE-v1\n"
+
+
+@contextmanager
+def _initialization_lock(root):
+    # Keep this file: unlinking a lock can give competing owners different inodes.
+    path = root / ".scope.lock"
+    if path.is_symlink():
+        raise StoreError("Local scope lock must be a regular private file")
+    flags = os.O_RDWR | os.O_CREAT | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0)
+    descriptor = os.open(path, flags, 0o600)
+    try:
+        info = os.fstat(descriptor)
+        if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1 or info.st_size > 1:
+            raise StoreError("Local scope lock must be a regular private file")
+        if info.st_size == 0:
+            os.write(descriptor, b"\0")
+        os.lseek(descriptor, 0, os.SEEK_SET)
+        deadline = time.monotonic() + 2
+        while True:
+            try:
+                if os.name == "nt":
+                    import msvcrt
+
+                    msvcrt.locking(descriptor, msvcrt.LK_NBLCK, 1)
+                elif os.name == "posix":
+                    import fcntl
+
+                    fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                else:
+                    raise StoreError("Local scope locking is unsupported on this platform")
+                break
+            except OSError as error:
+                # POSIX flock and Windows byte-range locks use these for contention.
+                if error.errno not in (errno.EAGAIN, errno.EACCES):
+                    raise
+                if time.monotonic() >= deadline:
+                    raise StoreError("Local scope initialization is busy; retry later") from None
+                time.sleep(0.01)
+        yield
+    finally:
+        os.close(descriptor)
 
 
 def _read_key(path):
@@ -33,24 +77,26 @@ def _read_key(path):
 
 def _scope_key(root, database):
     path = root / "scope.key"
-    if not os.path.lexists(path):
-        if os.path.lexists(database) and not os.path.lexists(path):
+    if os.path.lexists(path):
+        return _read_key(path)
+    with _initialization_lock(root):
+        if os.path.lexists(path):
+            return _read_key(path)
+        if os.path.lexists(database):
             raise StoreError("Local scope key is missing; preserve existing jobs for recovery")
-        # Publish a complete key without replacing a competing process's key.
-        # mkstemp requests 0600. The temporary name never becomes a job identity.
+        # All creators hold the same lock through this recheck and publication.
+        # Atomic replacement publishes a complete file without requiring hard links.
+        # mkstemp requests 0600; its temporary name never becomes a job identity.
         descriptor, temporary = tempfile.mkstemp(prefix=".scope-", dir=root)
         try:
             with os.fdopen(descriptor, "wb") as output:
                 output.write(_HEADER + os.urandom(32))
                 output.flush()
                 os.fsync(output.fileno())
-            try:
-                os.link(temporary, path)
-            except FileExistsError:
-                # Another process published scope.key; keep it and validate it below.
-                pass
+            os.replace(temporary, path)
         finally:
-            os.unlink(temporary)
+            if os.path.lexists(temporary):
+                os.unlink(temporary)
     return _read_key(path)
 
 

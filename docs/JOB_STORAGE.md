@@ -28,7 +28,13 @@ The active Blender catalog opens this store in the extension user-data directory
 at `state/shared-jobs/`. `scope.key` must be backed up together with `jobs.sqlite3`.
 The key is published complete without replacing a competing process's key; an
 invalid key or a missing key beside an existing database fails explicitly and
-preserves the files. No raw API credential is written by this binding. The local
+preserves the files. First-time creators serialize on the permanent `.scope.lock`
+file, then atomically replace their private temporary file into the still-absent
+key path. This requires no hard-link support. Lock contention waits at most two
+seconds before an explicit retry-later error; OS file locks are released when
+the descriptor or process closes. Do not unlink the lock while Blender is using
+the directory, since competing creators must lock the same file.
+No raw API credential is written by this binding. The local
 key is not encryption, and losing it prevents recreating the old scope even with
 the original credentials. Different installation keys produce different scopes.
 

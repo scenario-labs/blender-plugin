@@ -5,6 +5,7 @@
 import os
 import tempfile
 import unittest
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -49,6 +50,16 @@ class CredentialStorageTests(unittest.TestCase):
         return store.transition(
             "request", expected_revision=record.revision, state=module.JobState.SUBMITTING
         )
+
+    def test_concurrent_creation_without_hard_links_uses_one_scope(self):
+        open_store = submodule("core.jobs.credential_storage").open_credential_store
+        credentials = submodule("core.api.sdk_adapter").Credentials("fixture-key", "fixture-secret")
+        with patch.object(os, "link", side_effect=OSError("Unsupported hard links")):
+            with ThreadPoolExecutor(max_workers=4) as pool:
+                scopes = list(
+                    pool.map(lambda _: open_store(self.root, credentials).scope, range(8))
+                )
+        self.assertEqual(len(set(scopes)), 1)
 
     def test_shared_store_reopens_after_runtime_reset_without_starting_workers(self):
         first = self.runtime.ensure_job_store()

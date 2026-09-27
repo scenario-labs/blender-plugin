@@ -3,8 +3,11 @@
 """Credential-bound local recovery never requires a service call or stores keys."""
 
 import os
+import subprocess
+import sys
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
+from types import SimpleNamespace
 
 import pytest
 
@@ -110,13 +113,78 @@ def test_failed_key_publication_leaves_no_partial_key_or_database(tmp_path, monk
         raise OSError("private filesystem detail")
 
     with monkeypatch.context() as patcher:
-        patcher.setattr(credential_storage.os, "link", fail)
+        patcher.setattr(credential_storage.os, "replace", fail)
         with pytest.raises(StoreError) as caught:
             open_credential_store(tmp_path, CREDS)
     assert "private filesystem detail" not in str(caught.value)
     assert caught.value.__suppress_context__
-    assert list(tmp_path.iterdir()) == []
+    assert {path.name for path in tmp_path.iterdir()} == {".scope.lock"}
     assert open_credential_store(tmp_path, CREDS).scope.project_id is None
+
+
+def test_initialization_does_not_require_hard_links(tmp_path, monkeypatch):
+    def unavailable(*args):
+        raise OSError("hard links are unsupported")
+
+    monkeypatch.setattr(credential_storage.os, "link", unavailable)
+    first = open_credential_store(tmp_path, CREDS)
+    record = uncertain(first)
+    assert open_credential_store(tmp_path, CREDS).get("request") == record
+
+
+def test_competing_processes_keep_one_key(tmp_path):
+    script = """
+import sys
+from scenario.core.api.sdk_adapter import Credentials
+from scenario.core.jobs.credential_storage import open_credential_store
+store = open_credential_store(sys.argv[1], Credentials('synthetic-local-key', 'synthetic-local-secret'))
+print(store.scope.account_id)
+"""
+    children = []
+    try:
+        for _ in range(4):
+            children.append(
+                subprocess.Popen(
+                    [sys.executable, "-c", script, str(tmp_path)],
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    text=True,
+                )
+            )
+        identities = []
+        for child in children:
+            output, errors = child.communicate(timeout=15)
+            assert child.returncode == 0, errors
+            identities.append(output.strip())
+        assert set(identities) == {open_credential_store(tmp_path, CREDS).scope.account_id}
+    finally:
+        for child in children:
+            if child.poll() is None:
+                child.kill()
+            child.wait()
+
+
+def test_contended_lock_times_out_without_creating_a_partial_key(tmp_path, monkeypatch):
+    with credential_storage._initialization_lock(tmp_path):
+        times = iter((0, 3))
+        with monkeypatch.context() as patcher:
+            patcher.setattr(
+                credential_storage,
+                "time",
+                SimpleNamespace(monotonic=lambda: next(times), sleep=lambda _: None),
+            )
+            with pytest.raises(StoreError, match="busy"):
+                open_credential_store(tmp_path, CREDS)
+        assert not (tmp_path / "scope.key").exists()
+        assert not (tmp_path / "jobs.sqlite3").exists()
+    assert open_credential_store(tmp_path, CREDS).scope.project_id is None
+
+
+def test_scope_lock_must_be_regular_and_private(tmp_path):
+    (tmp_path / ".scope.lock").write_bytes(b"not a lock")
+    with pytest.raises(StoreError, match="regular private"):
+        open_credential_store(tmp_path, CREDS)
+    assert not (tmp_path / "scope.key").exists()
 
 
 @pytest.mark.parametrize(

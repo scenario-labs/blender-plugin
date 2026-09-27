@@ -122,6 +122,10 @@ class JobSession:
     def scope(self):
         return self._coordinator.scope
 
+    @property
+    def active(self):
+        return self._active
+
     @staticmethod
     def _identity(records, value):
         for identity, existing in records.items():

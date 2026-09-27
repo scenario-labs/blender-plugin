@@ -29,6 +29,7 @@ class RuntimeJobTests(unittest.TestCase):
         self.addCleanup(setattr, self.prefs, "credential_source", source)
         self.prefs.credential_source = "PREFERENCES"
         root = self.enterContext(tempfile.TemporaryDirectory(dir=bpy.utils.resource_path("USER")))
+        self.root = Path(root)
         self.enterContext(
             patch.object(self.runtime, "paths", return_value=SimpleNamespace(state_dir=Path(root)))
         )
@@ -118,6 +119,26 @@ class RuntimeJobTests(unittest.TestCase):
             )
         self.assertTrue(self.adapters[0]._closed)
 
+    def test_file_load_replaces_retired_session_and_invalidates_context_token(self):
+        _, record = self.seed()
+        old = self.tools.list_local_jobs({})
+        session = self.runtime.state.job_session
+        filepath = str(self.root / "recovery.blend")
+        bpy.ops.wm.save_as_mainfile(filepath=filepath)
+        bpy.ops.wm.open_mainfile(filepath=filepath)
+        self.assertFalse(session.active)
+        new = self.tools.list_local_jobs({})
+        self.assertEqual(old["jobs"], new["jobs"])
+        self.assertNotEqual(old["context_id"], new["context_id"])
+        self.assertIsNot(session, self.runtime.state.job_session)
+        self.assertTrue(self.runtime.state.job_session.active)
+        args = dict(request_id="request", expected_revision=record.revision)
+        with self.assertRaisesRegex(Exception, "context changed"):
+            self.tools.cancel_prepared_job(dict(context_id=old["context_id"], **args))
+        result = self.tools.cancel_prepared_job(dict(context_id=new["context_id"], **args))
+        self.assertEqual(result["state"], "canceled")
+        self.assertEqual(self.requests, [])
+
     def test_credential_change_isolates_records_and_cannot_cancel_same_id(self):
         _, original = self.seed()
         old = self.tools.list_local_jobs({})
@@ -205,7 +226,30 @@ class RuntimeJobTests(unittest.TestCase):
             self.assertFalse(adapter._online())
             release.set()
             task.result(5)
-            submodule("blender.mcp_service").process_pending()
+            service = submodule("blender.mcp_service")
+            server_type = service.McpServer
+            serve = server_type.serve_blocking
+            observed = []
+
+            def serve_once(server, stop_event, *, before_process):
+                self.assertIs(before_process, self.runtime.sync_catalog_context)
+
+                def tick():
+                    before_process()
+                    observed.append(adapter._closed)
+                    stop_event.set()
+
+                serve(server, stop_event, before_process=tick)
+
+            def ephemeral_server(host, port, *args, **kwargs):
+                return server_type(host, 0, *args, **kwargs)
+
+            with (
+                patch.object(server_type, "serve_blocking", serve_once),
+                patch.object(service, "McpServer", side_effect=ephemeral_server),
+            ):
+                self.assertEqual(service.cli(["--token", "synthetic-cli-token"]), 0)
+            self.assertEqual(observed, [True])
             self.assertTrue(adapter._closed)
             self.assertEqual(store.get(prepared.intent.request_id).remote_job_id, "fixture-remote")
             self.assertEqual(self.tools.list_local_jobs({})["jobs"], [])

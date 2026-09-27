@@ -201,10 +201,14 @@ class McpServer:
                 pending.finish(result=result)
         return done
 
-    def serve_blocking(self, stop_event, interval=0.05):
+    def serve_blocking(self, stop_event, interval=0.05, *, before_process=None):
         while not stop_event.is_set():
+            if before_process is not None:
+                before_process()
+            if stop_event.is_set():
+                break
             if not self.process_pending():
-                time.sleep(interval)
+                stop_event.wait(interval)
 
     def handle(self, message):
         response = protocol.handle_message(

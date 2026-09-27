@@ -176,7 +176,7 @@ def cli(argv):
         except OSError as error:
             parser.error(f"Unable to start local MCP: {error}")
         print(cli_banner(server.url, token, generated), flush=True)
-        server.serve_blocking(stop_event)
+        server.serve_blocking(stop_event, before_process=runtime.sync_catalog_context)
     except KeyboardInterrupt:
         stop_event.set()
     finally:

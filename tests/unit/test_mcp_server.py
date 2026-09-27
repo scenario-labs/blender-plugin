@@ -3,11 +3,33 @@
 """Local MCP browser-origin and explicit bearer-token boundaries."""
 
 import ast
+import threading
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
 from scenario.mcp import server
+
+
+def test_idle_blocking_loop_runs_maintenance_on_calling_thread_and_respects_stop():
+    stop = threading.Event()
+    calls = []
+    owner = threading.get_ident()
+
+    def maintain():
+        calls.append(("maintain", threading.get_ident()))
+        if len(calls) == 3:
+            stop.set()
+
+    def process():
+        calls.append(("process", threading.get_ident()))
+        return 0
+
+    server.McpServer.serve_blocking(
+        SimpleNamespace(process_pending=process), stop, interval=0, before_process=maintain
+    )
+    assert calls == [("maintain", owner), ("process", owner), ("maintain", owner)]
 
 
 @pytest.mark.parametrize(

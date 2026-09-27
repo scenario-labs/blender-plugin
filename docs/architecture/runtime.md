@@ -100,6 +100,8 @@ the observed revision and a current-context token. Neither sends service request
 or imports prototype jobs. The session owns a separate SDK pool with the same
 credential scope and online-permission snapshot as the catalog. Credential changes
 and runtime reset stop admission; in-flight receipts keep their original scope.
+File loading retires the selected owner and invalidates its context token; the
+next recovery call creates a fresh session against the same scoped store.
 GUI ticks and the headless MCP loop reap retired sessions after work finishes.
 Paid entry points, remote recovery controls and production transfers remain open.
 

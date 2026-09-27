@@ -240,6 +240,8 @@ def sync_catalog_context():
     """Refresh the worker-safe permission snapshot and retire changed credentials."""
     if not on_main_thread():
         raise RuntimeError("Catalog context must be refreshed on Blender's main thread")
+    if state.job_session is not None and not state.job_session.active:
+        state.retire_jobs()
     if state.catalog is not None:
         if state.catalog_credentials != credentials():
             from . import generation

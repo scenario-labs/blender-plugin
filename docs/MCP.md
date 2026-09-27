@@ -23,7 +23,7 @@ The prototype generation path does not yet require a stored approved quote.
 saved costs, revisions and suggested recovery actions without contacting Scenario.
 It does not import prototype `generate` records or refresh remote jobs.
 `cancel_prepared_job` cancels only an unsubmitted durable intent, using the context
-token and revision from inspection. A reset or credential switch invalidates that
+token and revision from inspection. A reset, file load or credential switch invalidates that
 token. Claimed or uncertain submissions require reconciliation, never blind retry.
 See [job contexts](BLENDER_JOB_CONTEXT.md) for lifetime and remaining integration.
 

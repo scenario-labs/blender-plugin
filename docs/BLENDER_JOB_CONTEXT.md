@@ -19,12 +19,13 @@ Credential changes and runtime reset deactivate the session without waiting for
 network I/O. The existing session registry retains in-flight work so its receipt
 can finish in the original store. GUI timers and the main-thread MCP loop reap
 retired sessions after completion. Closing a panel does not retire the session.
-File loading invalidates origins through the existing lifecycle hooks.
+File loading retires the selected session through the existing lifecycle hooks.
+The next recovery call creates a fresh owner and context token for the same store.
 
 The local MCP tools `list_local_jobs` and `cancel_prepared_job` perform no service
 requests. Inspection returns exact saved costs and recovery suggestions, not new
 spending approval. Cancellation needs the current context token and observed
-record revision, and only accepts an unclaimed prepared intent. Resetting or
+record revision, and only accepts an unclaimed prepared intent. Resetting, loading a file or
 switching credentials invalidates the context token, even if another scope has
 the same request ID. Remote cancellation, uploads, downloads, result application
 and paid entry points still need active integration. These tools do not import

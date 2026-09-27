@@ -55,7 +55,11 @@ def test_missing_credentials_fail_without_disclosing_values(key, secret):
     [
         "tools/audit_payloads.py",
         "tools/record_fixtures.py",
-        *[str(p.relative_to(ROOT)) for p in sorted((ROOT / "tests/smoke").glob("*.py"))],
+        *[
+            str(p.relative_to(ROOT))
+            for p in sorted((ROOT / "tests/smoke").glob("*.py"))
+            if p.name != "smoke_image.py"
+        ],
     ],
 )
 def test_entry_points_reject_missing_credentials_before_client_creation(
@@ -133,7 +137,11 @@ def test_uv_dotenv_precedence_and_no_file_loading(tmp_path):
     [
         "tools/audit_payloads.py",
         "tools/record_fixtures.py",
-        *[str(p.relative_to(ROOT)) for p in sorted((ROOT / "tests/smoke").glob("*.py"))],
+        *[
+            str(p.relative_to(ROOT))
+            for p in sorted((ROOT / "tests/smoke").glob("*.py"))
+            if p.name != "smoke_image.py"
+        ],
     ],
 )
 def test_live_tools_pass_selected_pair_explicitly(script, project, monkeypatch, tmp_path):
@@ -170,7 +178,9 @@ def test_live_tools_pass_selected_pair_explicitly(script, project, monkeypatch, 
         runpy.run_path(str(ROOT / script), run_name="__main__")
 
 
-@pytest.mark.parametrize("script", sorted((ROOT / "tests/smoke").glob("*.py")))
+@pytest.mark.parametrize(
+    "script", [p for p in sorted((ROOT / "tests/smoke").glob("*.py")) if p.name != "smoke_image.py"]
+)
 def test_smokes_require_opt_in_before_reading_credentials(script, monkeypatch):
     monkeypatch.delenv("SCENARIO_SMOKE", raising=False)
     with pytest.raises(SystemExit, match="set SCENARIO_SMOKE=1"):

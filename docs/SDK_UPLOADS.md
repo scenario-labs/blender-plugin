@@ -370,6 +370,13 @@ Status and saved/recovery inspection expose the persisted `kind` and
 `content_type`; these are null in status until staging has persisted the intent.
 All kinds share the same byte limits, origin guards and uncertain-write policy.
 
+Multipart request MIME values follow the public upload contract, including
+`audio/m4a` for M4A and `application/vnd.autodesk.fbx` for FBX. These need not
+match aliases on generated or inspected assets. Before PUT, the saved MIME
+must match the upload record exactly; do not normalize it from a later asset
+response. The saved chosen filename is compared with `originalFileName`;
+response `fileName` identifies the server storage object, not the chosen name.
+
 Preparation snapshots up to 256 MiB into private storage, using 8 MiB parts
 (the final part may be smaller). Metadata replaces basename characters outside
 ASCII letters, digits, dots, underscores and hyphens with underscores; the original

@@ -381,7 +381,8 @@ class ReferenceUploadTests(unittest.TestCase):
         self.fixture.remote.update(
             id=f"upload-{len(self.owner.references)}",
             kind=kind,
-            fileName=path.name,
+            fileName=f"uploads/synthetic-storage/{path.name}",
+            originalFileName=path.name,
             contentType=content_type,
             status="pending",
         )

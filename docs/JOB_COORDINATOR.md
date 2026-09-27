@@ -3,8 +3,8 @@
 [`JobCoordinator`](../scenario/core/jobs/coordinator.py) implements synchronous
 commands for the shared runtime under #65. It connects the scoped
 [SDK adapter](SDK_ADOPTION.md) to the [intent store](JOB_STORAGE.md). It has no
-worker pool, timer, UI ownership or bpy calls. The prototype UI/MCP still uses
-its existing manager until the shared runtime is integrated.
+worker pool, timer, UI ownership or bpy calls. Image UI/MCP quote and submission now use these commands through
+[ModelJobs](../scenario/blender/model_jobs.py); other lanes retain the prototype manager.
 
 ## Prepare, claim, send, acknowledge
 
@@ -16,8 +16,7 @@ its existing manager until the shared runtime is integrated.
    [credential-bound local store](JOB_STORAGE.md#identity-and-ownership) supplies
    the same local account pseudonym to the catalog adapter and store. No server
    identity discovery is needed. These identities are not proof that credentials
-   have been accepted by the remote service. The active runtime does not yet
-   construct this coordinator for paid actions.
+   have been accepted by the remote service. The active runtime constructs it for Image quote-bound submission.
 2. Obtain a real estimate through the adapter. Only the actual unchanged object
    issued by that active adapter is accepted; copying its public fields does not
    create another issued quote.
@@ -407,8 +406,8 @@ supply spending approval or automatically submit anything.
 thread, and its normal bounded completion queue delivers the result with its
 captured origin. `prepare_quote` resolves that same scene/target before persisting.
 Frame/file/dependency invalidation, view-independent lifetime and shutdown retain
-the existing session rules. Active compact/expanded UI and MCP entry points still
-need to switch from the prototype runtime to these shared commands.
+the existing session rules. Image UI/MCP now use these quote/submission commands;
+other lanes and result delivery remain on the integration backlog.
 
 Estimate ownership is checked before acquiring the coordinator/origin locks.
 Preparation keeps quote selection and persistence under the coordinator lock,

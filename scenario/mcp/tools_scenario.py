@@ -104,6 +104,26 @@ def _body_for(model_id, parameters):
 
 def estimate_cost(args):
     record, body = _body_for(args["model_id"], args.get("parameters"))
+    lane = args.get("lane") or "image"
+    if lane not in LANES:
+        raise ValueError(f"lane must be one of {LANES}")
+    if lane == "image":
+        jobs = runtime.ensure_model_jobs()
+        ticket = jobs.quote(bpy.context.scene, record.id, body)
+
+        def finish_model(_):
+            if runtime.ensure_model_jobs() is not jobs:
+                raise ScenarioError(0, "The estimate context changed; estimate again")
+            quote = jobs.finish_quote(ticket)
+            return {
+                "model_id": record.id,
+                "quote_id": ticket.identifier,
+                "cu_cost": float(quote.cost),
+                "cu_cost_exact": str(quote.cost),
+                "details": json.loads(quote.response_json).get("costDetails") or {},
+            }
+
+        return DeferredTool(ticket.task.result, finish_model)
     catalog = runtime.ensure_catalog()
 
     def finish(quote):
@@ -159,14 +179,34 @@ def generate(args):
     lane = args.get("lane") or "image"
     if lane not in LANES:
         raise ValueError(f"lane must be one of {LANES}")
+    if lane == "image":
+        runtime.ensure_model_jobs().require_quote(args.get("quote_id"))
     record, body = _body_for(args["model_id"], args.get("parameters"))
-    manager = runtime.ensure_manager()
     meta = {
         "prompt": str(body.get("prompt") or ""),
         "model_name": record.name,
         "source": "mcp",
         "target_objects": [o.name for o in bpy.context.selected_objects if o.type == "MESH"],
     }
+    if lane == "image":
+        jobs = runtime.ensure_model_jobs()
+        rec = jobs.submit(
+            args.get("quote_id"),
+            bpy.context.scene,
+            record.id,
+            body,
+            approved_cost=args.get("approved_cost"),
+            meta=meta,
+        )
+        runtime.state.jobs_view.insert(0, rec)
+        return {
+            "local_id": rec.local_id,
+            "status": rec.status,
+            "lane": lane,
+            "model_id": record.id,
+            "note": "Submission is saved. Inspect job_status or list_local_jobs; never repeat an uncertain request. Remote refresh and result delivery are not yet connected for this lane.",
+        }
+    manager = runtime.ensure_manager()
     rec = manager.submit(lane, KIND[lane], record.id, body, meta=meta)
     runtime.state.jobs_view.insert(0, rec)
     return {
@@ -209,8 +249,19 @@ def _status(rec):
     }
 
 
+def _saved_status(reference):
+    manager = runtime.state.manager
+    if manager is not None and any(
+        reference in (record.local_id, record.job_id) for record in manager.registry.all()
+    ):
+        return None
+    return runtime.ensure_model_jobs().status(reference)
+
+
 def job_status(args):
-    return _status(_find(_job_ref(args)))
+    reference = _job_ref(args)
+    saved = _saved_status(reference)
+    return saved if saved is not None else _status(_find(reference))
 
 
 def wait_for_job(args):
@@ -222,6 +273,9 @@ def wait_for_job(args):
         or not 0 <= timeout <= 170
     ):
         raise ValueError("timeout must be a finite number from 0 to 170 seconds")
+    saved = _saved_status(ref)
+    if saved is not None:
+        return saved
     rec = _find(ref)
     if rec.is_terminal:
         return _status(rec)
@@ -409,31 +463,43 @@ SPECS = (
             "Args:\n"
             "  - model_id: required string, the model identifier.\n"
             "  - parameters: optional object, model parameters including Scenario asset ids for file inputs.\n"
-            "Returns: model_id, cu_cost, cu_cost_exact (decimal string) and details from the server estimate.\n"
+            "  - lane: optional generation lane, default image. Image estimates issue a single-use quote_id.\n"
+            "Returns: model_id, cu_cost, cu_cost_exact (decimal string), details and, for image, quote_id bound to this scene and credential context.\n"
             'Example: {"model_id": "model_example", "parameters": {"prompt": "a wooden crate"}}.\n'
             "Call before generate and show the cost to the user; an estimate does not authorize spending.\n"
             "Platform equivalent: model_run with dry_run."
         ),
-        _schema({"model_id": {"type": "string"}, "parameters": {"type": "object"}}, ["model_id"]),
+        _schema(
+            {
+                "model_id": {"type": "string"},
+                "parameters": {"type": "object"},
+                "lane": {"type": "string", "enum": list(LANES)},
+            },
+            ["model_id"],
+        ),
         estimate_cost,
         {"readOnlyHint": True},
     ),  # touches bpy (prefs, catalog): must run on the main thread
     ToolSpec(
         "generate",
         (
-            "Submit a generation that spends the user's credits and automatically places its result in Blender.\n"
+            "Submit a generation that spends the user's credits. Image submissions use durable shared jobs.\n"
             "Args:\n"
             "  - lane: required string; image, video, 3d, material, audio, render_image, render_video or edit3d.\n"
             "  - model_id: required string, the exact model to run.\n"
             "  - parameters: optional object, model parameters; file inputs take Scenario asset ids.\n"
-            "Returns: local_id, status, lane, model_id and note. Poll job_status for the Scenario job_id after acceptance. Results become image datablocks, materials on the captured meshes, 3D objects at the cursor, or video/audio files.\n"
-            'Example: {"lane": "image", "model_id": "model_example", "parameters": {"prompt": "a wooden crate"}}.\n'
+            "  - quote_id: required for image, from estimate_cost with the same model, inputs and scene.\n"
+            "  - approved_cost: required for image, the exact cu_cost_exact string explicitly approved by the user.\n"
+            "Returns: local_id, status, lane, model_id and note. Image job_status reads saved submission state; remote refresh and result delivery are not yet connected. Other lanes retain prototype result handling.\n"
+            'Example: {"lane": "image", "model_id": "model_example", "parameters": {"prompt": "a wooden crate"}, "quote_id": "quote_from_estimate", "approved_cost": "1.25"}.\n'
             "Do not call before estimate_cost and explicit spending approval. Do not repeat a timed-out submission. import_result is only for an intentional additional application.\n"
             "Platform equivalent: model_run."
         ),
         _schema(
             {
                 "lane": {"type": "string", "enum": list(LANES)},
+                "quote_id": {"type": "string"},
+                "approved_cost": {"type": "string"},
                 "model_id": {"type": "string"},
                 "parameters": {
                     "type": "object",
@@ -447,7 +513,7 @@ SPECS = (
     ToolSpec(
         "job_status",
         (
-            "Read one local generation's status, cost and downloaded files without spending credits.\n"
+            "Read one local generation's saved status and cost without spending credits. Shared Image jobs include cu_cost_exact and revision; this does not refresh the remote job.\n"
             "Args:\n"
             "  - job_id: optional string, a Scenario job id or the local_id returned by generate.\n"
             "  - id: optional string, compatibility alias; provide job_id or id. job_id takes precedence if both are supplied.\n"
@@ -463,7 +529,7 @@ SPECS = (
     ToolSpec(
         "wait_for_job",
         (
-            "Wait for one tracked generation while Blender remains responsive.\n"
+            "Wait for a prototype generation while Blender remains responsive. Shared Image jobs return current saved submission state immediately; remote waiting is not yet connected.\n"
             "Args:\n"
             "  - job_id: optional string, a Scenario job id or local_id returned by generate.\n"
             "  - id: optional string, compatibility alias; provide job_id or id. job_id takes precedence.\n"

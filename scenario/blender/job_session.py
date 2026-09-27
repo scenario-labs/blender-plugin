@@ -300,12 +300,13 @@ class JobSession:
         self._pending.append((task, record.intent.origin))
         return task
 
-    def drain(self):
+    def drain(self, *, task=None):
         """Return ready outcomes without applying them or waiting for network I/O."""
         _main_thread()
         completions = []
+        selected = task
         for task, origin in tuple(self._pending):
-            if not task.done():
+            if (selected is not None and task is not selected) or not task.done():
                 continue
             self._pending.remove((task, origin))
             try:

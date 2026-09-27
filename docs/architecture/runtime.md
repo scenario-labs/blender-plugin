@@ -10,8 +10,8 @@ is Blender 5.0; dependency and runtime acceptance have separate gates.
 | Responsibility | Source | Current behavior |
 | --- | --- | --- |
 | Registration | [registry.py](../../scenario/blender/registry.py) | Registers properties, panels, operators, composer, pump and local server integration. The `scenario_blender` headless command serves local MCP on the main thread. |
-| UI lifetime and state | [runtime.py](../../scenario/blender/runtime.py) | Owns the credential-bound SDK catalog and process-wide UI/MCP state; generation still uses the prototype `ScenarioClient` and `JobManager`. |
-| UI generation | [generation.py](../../scenario/blender/generation.py) | Prepares the current lane and submits through the prototype manager. |
+| UI lifetime and state | [runtime.py](../../scenario/blender/runtime.py) | Owns the credential-bound SDK catalog and process-wide UI/MCP state; Image quote/submission uses the selected `JobSession`; other generation lanes still use the prototype manager. |
+| UI generation | [generation.py](../../scenario/blender/generation.py) | Image consumes a session-owned quote before durable submission; other lanes use the prototype manager. |
 | Main-thread application | [pump.py](../../scenario/blender/pump.py) | Drains prototype events and applies results to Blender. GUI timer handling differs from headless execution. |
 | Local MCP | [server.py](../../scenario/mcp/server.py), [tools_scenario.py](../../scenario/mcp/tools_scenario.py), [mcp_service.py](../../scenario/blender/mcp_service.py) | Queues scene tools for main-thread execution; model listing/schema use the same SDK catalog as the UI, while other service tools still call the prototype runtime. |
 | Credentials | [config.py](../../scenario/core/config.py), [prefs.py](../../scenario/prefs.py) | Credentials default to the saved Blender pair; environment credentials require explicit selection and cannot mix with preferences. OAuth is deferred; shared runtime scope/project integration remains #65. |
@@ -103,27 +103,42 @@ and runtime reset stop admission; in-flight receipts keep their original scope.
 File loading retires the selected owner and invalidates its context token; the
 next recovery call creates a fresh session against the same scoped store.
 GUI ticks and the headless MCP loop reap retired sessions after work finishes.
-Paid entry points, remote recovery controls and production transfers remain open.
+The Image entry point now uses this session for quote-bound submission, as described below.
+Remote recovery controls and production transfers remain open.
 
-## Active SDK cost previews
+## Active SDK cost previews and Image submission
 
-UI and MCP cost previews use the same connection and cached schema as catalog
-reads. The adapter validates model inputs and retains the exact decimal cost,
-payload and response bytes. UI requests capture nested inputs before starting a
-worker; unique request keys distinguish scenes and successive edits. Delivery is
-bound to the original scene object, so copied or deleted scenes cannot receive a
-late preview. Main-thread delivery rejects retired connections and superseded forms. Current previews are
-retained in memory; Blender's float property is only their existing display value.
+The Image lane uses [ModelJobs](../../scenario/blender/model_jobs.py), a main-thread
+facade over the existing selected `JobSession`, coordinator and worker pool.
+It does not own another executor or persistent registry. UI and MCP prepare the
+same model inputs; each quote captures the scene before a worker retrieves fresh
+SDK model metadata and the exact server estimate. UI cost delivery is keyed to
+the originating scene/form. Only the currently selected scene can receive a
+usable Image quote. Other lanes retain the catalog preview path.
 
-MCP prepares inputs on the main thread, performs the SDK dry run on its HTTP
-request thread, and queues delivery back to the main thread to recheck credentials.
-The response includes `cu_cost_exact` as a decimal string alongside the existing
-numeric `cu_cost` and cost details. Missing or malformed prices fail instead of
-becoming zero. These reads do not upload references, persist jobs, approve spending
-or establish UI/MCP paid-submission parity. The legacy manager estimate method
-remains only for historical smoke scripts.
+Clicking Image **Generate** requires the unchanged ready quote. MCP Image
+`generate` requires its `quote_id` and the explicitly approved `cu_cost_exact`
+string as `approved_cost`. A displayed float is not used to reconstruct the price.
+The facade consumes the handle before preparation; the coordinator persists an
+intent and claims `submitting` before the single SDK request. Repeated clicks,
+reused quote handles, changed inputs, stale origins and failed writes cannot
+repeat that submission. Timeouts retain uncertain saved state without retry.
 
-Local MCP `wait_for_job` captures a local record on the main thread and waits
+GUI and headless main-thread context maintenance drains completed submissions
+and projects their saved state into the existing Jobs view. This projection is
+not registered with the prototype manager. Closing a panel does not stop work;
+credential/file changes retire the owner while in-flight receipts stay in the
+original store. Local MCP status can inspect these records after restart.
+
+This is a pre-release integration slice. Image local-file/capture references
+must be uploaded through the forthcoming shared transfer integration before
+pricing/submission; existing Scenario asset IDs are supported. Image remote
+polling, cancellation, result downloads and scene application are not yet wired.
+Its `job_status` and `wait_for_job` return saved state, without remote refresh.
+Other lanes still use prototype paid dispatch. Do not describe this slice as
+complete generation, supported release acceptance, or completion of #65.
+
+For prototype jobs, local MCP `wait_for_job` captures a local record on the main thread and waits
 on the HTTP thread. Other scene tools and the GUI pump remain available. Its
 completion rechecks the manager, credentials and record identity; shutdown
 interrupts the wait without cancelling or resubmitting the generation. This

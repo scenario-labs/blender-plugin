@@ -45,8 +45,9 @@ change. `ensure_job_store()` reopens the selected local history after a runtime
 reset without starting workers or replaying submissions. Storage failure blocks
 creation of the catalog context too. Explicit local MCP recovery inspection and
 prepared-intent cancellation lazily activate the selected
-[JobSession](BLENDER_JOB_CONTEXT.md). Paid dispatch and recovery UI remain separate
-integration work; prototype records are not imported.
+[JobSession](BLENDER_JOB_CONTEXT.md). Image UI/MCP submission now persists new
+intents through that same session before paid SDK dispatch. Remaining lanes and
+recovery UI need integration; prototype records are not imported.
 
 `JobIntent` freezes the local request ID, model/workflow target, payload SHA-256,
 server quote SHA-256, exact quoted cost as a decimal string, and originating

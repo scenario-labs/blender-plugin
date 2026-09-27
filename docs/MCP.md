@@ -17,11 +17,13 @@ use POST for tool calls; the server does not provide an SSE stream.
 The extension is experimental. The [runtime map](architecture/runtime.md)
 separates implemented helpers from active UI/MCP integration. A tool description
 is guidance for the connected agent, not a server-enforced spending approval.
-The prototype generation path does not yet require a stored approved quote.
+Image generation now requires a session-owned quote; the other lanes
+retain prototype dispatch.
 
 `list_local_jobs` inspects the separate credential-scoped durable store and returns
 saved costs, revisions and suggested recovery actions without contacting Scenario.
-It does not import prototype `generate` records or refresh remote jobs.
+It includes new shared Image submissions but does not import prototype records
+or refresh remote jobs.
 `cancel_prepared_job` cancels only an unsubmitted durable intent, using the context
 token and revision from inspection. A reset, file load or credential switch invalidates that
 token. Claimed or uncertain submissions require reconciliation, never blind retry.
@@ -187,10 +189,10 @@ Do not edit this block by hand; run `make mcp-docs`. An asterisk marks a require
 | `cancel_prepared_job` | Cancel an unsubmitted durable local intent without contacting Scenario. | `context_id`*: string<br>`request_id`*: string<br>`expected_revision`*: integer | destructive annotation |
 | `list_models` | List the loaded lane catalog, with curated models first and at most 40 matches. | `lane`: string (enum: see tools/list)<br>`query`: string | read-only annotation |
 | `model_schema` | Read the model's current form parameters for this Blender extension. | `model_id`*: string | read-only annotation |
-| `estimate_cost` | Get the exact CU cost with a dry run that spends no credits. | `model_id`*: string<br>`parameters`: object | read-only annotation |
-| `generate` | Submit a generation that spends the user's credits and automatically places its result in Blender. | `lane`*: string (enum: see tools/list)<br>`model_id`*: string<br>`parameters`: object; Model parameters; file parameters take Scenario asset ids | spends credits |
-| `job_status` | Read one local generation's status, cost and downloaded files without spending credits. | `job_id`: string; Scenario job id (job_...) or the local_id returned by generate<br>`id`: string; Same as job_id, kept for compatibility | read-only annotation |
-| `wait_for_job` | Wait for one tracked generation while Blender remains responsive. | `job_id`: string; Scenario job id (job_...) or the local_id returned by generate<br>`id`: string; Same as job_id, kept for compatibility<br>`timeout`: number | read-only annotation |
+| `estimate_cost` | Get the exact CU cost with a dry run that spends no credits. | `model_id`*: string<br>`parameters`: object<br>`lane`: string (enum: see tools/list) | read-only annotation |
+| `generate` | Submit a generation that spends the user's credits. Image submissions use durable shared jobs. | `lane`*: string (enum: see tools/list)<br>`quote_id`: string<br>`approved_cost`: string<br>`model_id`*: string<br>`parameters`: object; Model parameters; file parameters take Scenario asset ids | spends credits |
+| `job_status` | Read one local generation's saved status and cost without spending credits. Shared Image jobs include cu_cost_exact and revision; this does not refresh the remote job. | `job_id`: string; Scenario job id (job_...) or the local_id returned by generate<br>`id`: string; Same as job_id, kept for compatibility | read-only annotation |
+| `wait_for_job` | Wait for a prototype generation while Blender remains responsive. Shared Image jobs return current saved submission state immediately; remote waiting is not yet connected. | `job_id`: string; Scenario job id (job_...) or the local_id returned by generate<br>`id`: string; Same as job_id, kept for compatibility<br>`timeout`: number | read-only annotation |
 | `import_result` | Apply an already downloaded generation again to the current Blender scene and selection. | `job_id`: string; Scenario job id (job_...) or the local_id returned by generate<br>`id`: string; Same as job_id, kept for compatibility | - |
 | `capture_reference` | Capture a 1280x720 viewport or camera still and upload it as a Scenario reference asset. | `source`: string (['VIEWPORT', 'CAMERA']) | GUI required |
 | `list_generations` | List recent cloud generations using this Blender runtime's loaded history. | `limit`: integer<br>`refresh`: boolean | read-only annotation |
@@ -295,3 +297,20 @@ application has finished when a remote job reaches a terminal status.
 
 Maintainers: run `make mcp-docs` after changing tool definitions and
 `uv run --locked --no-env-file python tools/gen_mcp_docs.py --check` to detect drift.
+
+## Image quote and submission contract
+
+For `lane: image` (the default), `estimate_cost` returns `quote_id` and
+`cu_cost_exact`. After explicit user approval, pass those values as `quote_id`
+and `approved_cost` to `generate` with the same model and parameters. A changed
+scene, credential context, input or consumed/expired quote requires a fresh
+estimate. An estimate alone does not authorize spending. Failed or timed-out
+submissions must be inspected by their returned local ID, never blindly repeated.
+
+Image submissions persist intent before SDK dispatch. `job_status`,
+`wait_for_job` and `list_local_jobs` expose their saved state across restart.
+For these shared jobs, `wait_for_job` returns immediately and neither status
+command refreshes the remote job. Remote polling, cancellation, downloads and
+application are pending integration; Image results do not yet appear in Blender.
+Other lanes retain their existing prototype behavior; pass their lane explicitly
+to `estimate_cost` to request the corresponding preview path.

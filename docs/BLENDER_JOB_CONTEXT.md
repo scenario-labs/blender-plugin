@@ -5,8 +5,8 @@ connection, scoped store, coordinator and worker pool. Extension registration
 installs file, dependency, frame, undo and redo hooks; it creates no session,
 connection or worker. This is the integration boundary for the shared runtime.
 The active runtime now creates one selected session lazily for local MCP recovery
-inspection and prepared-intent cancellation. Paid UI/MCP generation remains on
-the prototype path.
+inspection, prepared-intent cancellation, and Image UI/MCP quote/submission.
+Other generation lanes remain on the prototype path.
 
 `runtime.ensure_job_session()` binds the session to the catalog's credential-local
 scope and store. The job owner gets a separate SDK HTTP pool using the same
@@ -28,8 +28,8 @@ spending approval. Cancellation needs the current context token and observed
 record revision, and only accepts an unclaimed prepared intent. Resetting, loading a file or
 switching credentials invalidates the context token, even if another scope has
 the same request ID. Remote cancellation, uploads, downloads, result application
-and paid entry points still need active integration. These tools do not import
-prototype jobs or create generation intents.
+and remaining paid entry points still need active integration. These recovery
+tools do not import prototype jobs. Image submission creates new durable intents.
 
 ## Origin and quote lifetime
 
@@ -111,8 +111,8 @@ allowing the remaining extension registry cleanup to proceed. Control exceptions
 continue to propagate; a session with live workers retains its ownership.
 
 The selected API-key context and worker-safe online snapshot are bound by the
-active runtime as described above. Paid UI/MCP activation and application of
-other result types remain separate work. The account scope is a local pseudonym,
+active runtime as described above. Remaining lane activation, remote progress
+and result application remain separate work. The account scope is a local pseudonym,
 not a guessed server account ID.
 
 ## Recovery inspection and cancellation
@@ -300,3 +300,20 @@ remain unrecognized for automatic application even when status refresh succeeds.
 Callbacks do not by themselves attach a reference or commit a Blender application
 transaction. Active UI/MCP upload controls and explicit recovery/application UX
 remain separate work; account/project identity is still supplied by the caller.
+
+## Active Image submission
+
+[ModelJobs](../scenario/blender/model_jobs.py) retains bounded ephemeral quote
+handles and in-memory display projections for the selected session. UI and MCP
+Image generation share its quote and submission commands. Handles bind the
+captured scene, exact input snapshot and session-issued SDK estimate. Submission
+validates the current inputs and exact approved cost before consuming the handle
+and persisting intent. The coordinator still checks origin, ownership and expiry
+at dispatch. No handle is reconstructed from a saved fingerprint after restart.
+
+`drain(task=...)` collects only the requested task, leaving other consumers'
+completions intact. Context maintenance drives Image quote/receipt delivery in
+both the GUI and actual CLI loop. Image status after restart is read from the
+credential-scoped store, without automatically polling or resubmitting remotely.
+Image result transfer/application and local reference upload remain unwired;
+this slice must not be advertised as complete end-to-end generation.

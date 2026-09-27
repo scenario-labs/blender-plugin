@@ -66,7 +66,16 @@ class SDKEstimateTests(unittest.TestCase):
             )
         )
 
+    def wait_quotes(self):
+        for ticket in tuple(self.runtime.state.model_previews.values()):
+            try:
+                ticket.task.result(5)
+            except Exception:
+                pass  # The main-thread delivery reports failed estimates.
+
     def deliver(self):
+        self.wait_quotes()
+        self.runtime.sync_catalog_context()
         self.manager.join(5)
         self.assertFalse(self.manager.has_active())
         for event in self.manager.drain():
@@ -100,7 +109,7 @@ class SDKEstimateTests(unittest.TestCase):
         self.generation.request_estimate(bpy.context.scene, "image")
         self.deliver()
         self.assertEqual(self.lane.estimate_state, "READY", self.lane.estimate_error)
-        quote = self.runtime.state.estimates[self.lane.estimate_key]
+        quote = self.runtime.state.estimates[self.lane.estimate_key].quote.estimate
         self.assertEqual(quote.cost, Decimal("1.1234567890123456789"))
         self.assertEqual(quote.response_json, self.response)
         result = self.mcp_estimate()
@@ -113,7 +122,7 @@ class SDKEstimateTests(unittest.TestCase):
         self.assertEqual(len(posts), 2)
         self.assertEqual(posts[0].content, posts[1].content)
         self.assertEqual(json.loads(posts[0].content), {"prompt": "a teapot"})
-        self.assertEqual(len(self.calls), 3)  # One shared schema read, two dry runs.
+        self.assertEqual(len(self.calls), 4)  # Each origin-bound quote fetches current schema.
 
     def test_missing_price_is_an_error_and_zero_is_a_valid_price(self):
         self.response = b"{}"
@@ -146,7 +155,7 @@ class SDKEstimateTests(unittest.TestCase):
         with ThreadPoolExecutor(max_workers=1) as worker:
             quote = worker.submit(deferred.run).result(5)
         self.prefs.api_secret = "replacement-secret"
-        with self.assertRaisesRegex(Exception, "connection changed"):
+        with self.assertRaisesRegex(Exception, "context changed"):
             deferred.finish(quote)
 
     def test_identical_model_estimates_for_two_scenes_have_distinct_delivery_keys(self):
@@ -160,8 +169,8 @@ class SDKEstimateTests(unittest.TestCase):
         self.assertNotEqual(self.lane.estimate_key, second_lane.estimate_key)
         self.deliver()
         self.assertEqual(self.lane.estimate_state, "READY", self.lane.estimate_error)
-        self.assertEqual(second_lane.estimate_state, "READY")
-        self.assertEqual(len(self.runtime.state.estimates), 2)
+        self.assertEqual(second_lane.estimate_state, "ERROR")
+        self.assertEqual(len(self.runtime.state.estimates), 1)
 
     def test_changed_prompt_discards_queued_price(self):
         self.generation.request_estimate(bpy.context.scene, "image")

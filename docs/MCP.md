@@ -17,15 +17,30 @@ use POST for tool calls; the server does not provide an SSE stream.
 The extension is experimental. The [runtime map](architecture/runtime.md)
 separates implemented helpers from active UI/MCP integration. A tool description
 is guidance for the connected agent, not a server-enforced spending approval.
-The prototype generation path does not yet require a stored approved quote.
+Image generation now requires a session-owned quote; the other lanes
+retain prototype dispatch.
 
 `list_local_jobs` inspects the separate credential-scoped durable store and returns
 saved costs, revisions and suggested recovery actions without contacting Scenario.
-It does not import prototype `generate` records or refresh remote jobs.
+It includes new shared Image submissions but does not import prototype records
+or refresh remote jobs.
 `cancel_prepared_job` cancels only an unsubmitted durable intent, using the context
 token and revision from inspection. A reset, file load or credential switch invalidates that
 token. Claimed or uncertain submissions require reconciliation, never blind retry.
+
+`recover_local_job` uses that token and the observed revision for explicit refresh,
+resume/download, known model-job cancellation, interrupted-download reconciliation
+or pending import-receipt retry. Resuming a restarted job does not import it into
+the current scene. Shared `wait_for_job` waits without blocking Blender's main
+thread and returns when delivery finishes, needs review, or reaches its timeout.
 See [job contexts](BLENDER_JOB_CONTEXT.md) for lifetime and remaining integration.
+
+To import recovered PNG/EXR results, call `prepare_result_application` with the
+current context, request and revision, then show its destination and image list
+to the user. After approval, `apply_result_application` consumes the returned
+handle once. Scene/file changes invalidate it. Verification and the durable
+application claim precede image import; an interrupted import is never retried
+automatically. These commands spend no credits and make no service requests.
 
 ## Token lifecycle
 
@@ -183,14 +198,17 @@ Do not edit this block by hand; run `make mcp-docs`. An asterisk marks a require
 
 | Tool | Description | Arguments | Notes |
 | --- | --- | --- | --- |
+| `prepare_result_application` | Prepare explicit import of downloaded PNG/EXR images from a saved job into the current file. | `context_id`*: string<br>`request_id`*: string<br>`expected_revision`*: integer | read-only annotation |
+| `apply_result_application` | Import and pack saved images after the user approves the prepared destination. | `context_id`*: string<br>`application_id`*: string | destructive annotation |
+| `recover_local_job` | Explicitly recover a saved job without repeating generation or importing into another scene. | `context_id`*: string<br>`request_id`*: string<br>`expected_revision`*: integer<br>`action`*: string (['refresh', 'resume', 'cancel', 'recover_download', 'retry_receipt']) | destructive annotation |
 | `list_local_jobs` | Inspect durable local jobs for the selected API-key pair without network requests. | none | read-only annotation |
 | `cancel_prepared_job` | Cancel an unsubmitted durable local intent without contacting Scenario. | `context_id`*: string<br>`request_id`*: string<br>`expected_revision`*: integer | destructive annotation |
 | `list_models` | List the loaded lane catalog, with curated models first and at most 40 matches. | `lane`: string (enum: see tools/list)<br>`query`: string | read-only annotation |
 | `model_schema` | Read the model's current form parameters for this Blender extension. | `model_id`*: string | read-only annotation |
-| `estimate_cost` | Get the exact CU cost with a dry run that spends no credits. | `model_id`*: string<br>`parameters`: object | read-only annotation |
-| `generate` | Submit a generation that spends the user's credits and automatically places its result in Blender. | `lane`*: string (enum: see tools/list)<br>`model_id`*: string<br>`parameters`: object; Model parameters; file parameters take Scenario asset ids | spends credits |
-| `job_status` | Read one local generation's status, cost and downloaded files without spending credits. | `job_id`: string; Scenario job id (job_...) or the local_id returned by generate<br>`id`: string; Same as job_id, kept for compatibility | read-only annotation |
-| `wait_for_job` | Wait for one tracked generation while Blender remains responsive. | `job_id`: string; Scenario job id (job_...) or the local_id returned by generate<br>`id`: string; Same as job_id, kept for compatibility<br>`timeout`: number | read-only annotation |
+| `estimate_cost` | Get the exact CU cost with a dry run that spends no credits. | `model_id`*: string<br>`parameters`: object<br>`lane`: string (enum: see tools/list) | read-only annotation |
+| `generate` | Submit a generation that spends the user's credits. Image submissions use durable shared jobs. | `lane`*: string (enum: see tools/list)<br>`quote_id`: string<br>`approved_cost`: string<br>`model_id`*: string<br>`parameters`: object; Model parameters; file parameters take Scenario asset ids | spends credits |
+| `job_status` | Read one local generation's status and cost without spending credits. Active Image jobs advance through shared remote polling and verified delivery; restarted jobs remain inspection-only. | `job_id`: string; Scenario job id (job_...) or the local_id returned by generate<br>`id`: string; Same as job_id, kept for compatibility | read-only annotation |
+| `wait_for_job` | Wait for a generation while Blender remains responsive. Shared jobs return when delivery finishes, pauses for review, or the wait expires. Restarted jobs remain inspection-only until explicitly resumed. | `job_id`: string; Scenario job id (job_...) or the local_id returned by generate<br>`id`: string; Same as job_id, kept for compatibility<br>`timeout`: number | read-only annotation |
 | `import_result` | Apply an already downloaded generation again to the current Blender scene and selection. | `job_id`: string; Scenario job id (job_...) or the local_id returned by generate<br>`id`: string; Same as job_id, kept for compatibility | - |
 | `capture_reference` | Capture a 1280x720 viewport or camera still and upload it as a Scenario reference asset. | `source`: string (['VIEWPORT', 'CAMERA']) | GUI required |
 | `list_generations` | List recent cloud generations using this Blender runtime's loaded history. | `limit`: integer<br>`refresh`: boolean | read-only annotation |
@@ -253,6 +271,9 @@ behavior interchangeable. Remote names below were checked against the
 | Generate | `generate(lane, model_id, parameters)`, automatic scene application | `model_run` |
 | Job status | `job_status(job_id or id)` | `job_get` |
 | Durable local recovery | `list_local_jobs`, `cancel_prepared_job` | Local only; no remote polling or cancellation |
+| Saved job actions | `recover_local_job(context_id, request_id, expected_revision, action)` | Scoped job refresh/cancellation, asset retrieval, or local receipt recovery; never a new generation |
+| Review saved Image import | `prepare_result_application(context_id, request_id, expected_revision)` | Local destination capture; show the returned scene and images for approval |
+| Apply approved saved images | `apply_result_application(context_id, application_id)` | Local verified import into the captured destination; no platform call |
 | Wait | `wait_for_job(job_id or id, timeout)`, one job without blocking Blender | `jobs_wait` |
 | Reference upload | `capture_reference(source)`, captures the scene first | `upload_asset`, `upload_asset_complete` for an existing file |
 | History | `list_generations(limit)` | `jobs_list` |
@@ -295,3 +316,20 @@ application has finished when a remote job reaches a terminal status.
 
 Maintainers: run `make mcp-docs` after changing tool definitions and
 `uv run --locked --no-env-file python tools/gen_mcp_docs.py --check` to detect drift.
+
+## Image quote and submission contract
+
+For `lane: image` (the default), `estimate_cost` returns `quote_id` and
+`cu_cost_exact`. After explicit user approval, pass those values as `quote_id`
+and `approved_cost` to `generate` with the same model and parameters. A changed
+scene, credential context, input or consumed/expired quote requires a fresh
+estimate. An estimate alone does not authorize spending. Failed or timed-out
+submissions must be inspected by their returned local ID, never blindly repeated.
+
+Image submissions persist intent before SDK dispatch. `job_status`,
+`wait_for_job` and `list_local_jobs` expose their saved state across restart.
+For these shared jobs, `wait_for_job` returns immediately and neither status
+command refreshes the remote job. Remote polling, cancellation, downloads and
+application are pending integration; Image results do not yet appear in Blender.
+Other lanes retain their existing prototype behavior; pass their lane explicitly
+to `estimate_cost` to request the corresponding preview path.

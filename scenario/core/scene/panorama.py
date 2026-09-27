@@ -23,13 +23,15 @@ class PanoramaInfo:
     hdr_capable: bool
 
 
-def _dimensions(file_format, width, height):
-    if width < 4 or height < 2 or width != height * 2 or width * height > MAX_PIXELS:
+def _dimensions(file_format, width, height, *, panorama=True):
+    if panorama and (width < 4 or height < 2 or width != height * 2 or width * height > MAX_PIXELS):
         raise PanoramaError("Use a 2:1 panorama within the supported pixel limit")
+    if width < 1 or height < 1 or width * height > MAX_PIXELS:
+        raise PanoramaError("Use an image within the supported pixel limit")
     return PanoramaInfo(file_format, width, height, file_format == "OPEN_EXR")
 
 
-def _png(data):
+def _png(data, *, panorama=True):
     offset, info, has_data, ended = 8, None, False, False
     chunks = 0
     while offset + 12 <= len(data):
@@ -61,7 +63,7 @@ def _png(data):
                 or interlace > 1
             ):
                 raise PanoramaError("Use a standard RGB or RGBA PNG panorama")
-            info = _dimensions("PNG", width, height)
+            info = _dimensions("PNG", width, height, panorama=panorama)
         elif kind == b"IHDR":
             raise PanoramaError("PNG has conflicting dimensions")
         elif kind in (b"acTL", b"cICP", b"mDCV", b"cLLI"):
@@ -79,7 +81,7 @@ def _png(data):
     return info
 
 
-def _exr(data):
+def _exr(data, *, panorama=True):
     if len(data) < 9:
         raise PanoramaError("OpenEXR header is incomplete")
     version = struct.unpack_from("<I", data, 4)[0]
@@ -121,7 +123,7 @@ def _exr(data):
     if b"envmap" in attributes and attributes[b"envmap"] != (b"envmap", b"\0"):
         raise PanoramaError("Cubemap OpenEXR images are unsupported")
     x0, y0, x1, y1 = struct.unpack("<iiii", window)
-    info = _dimensions("OPEN_EXR", x1 - x0 + 1, y1 - y0 + 1)
+    info = _dimensions("OPEN_EXR", x1 - x0 + 1, y1 - y0 + 1, panorama=panorama)
     _exr_chunks(data, offset + 1, attributes, info.height, y0)
     return info
 
@@ -181,3 +183,14 @@ def inspect_panorama(data):
     if data.startswith(b"\x76\x2f\x31\x01"):
         return _exr(data)
     raise PanoramaError("Use a supported PNG or OpenEXR panorama")
+
+
+def inspect_image(data):
+    """The same bounded PNG/scanline-EXR preflight, without panorama aspect rules."""
+    if not isinstance(data, bytes) or not data or len(data) > MAX_FILE_BYTES:
+        raise PanoramaError("Image file is empty or exceeds the byte limit")
+    if data.startswith(b"\x89PNG\r\n\x1a\n"):
+        return _png(data, panorama=False)
+    if data.startswith(b"\x76\x2f\x31\x01"):
+        return _exr(data, panorama=False)
+    raise PanoramaError("Automatic application supports RGB/RGBA PNG and scanline OpenEXR images")

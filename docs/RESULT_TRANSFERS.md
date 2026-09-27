@@ -80,11 +80,32 @@ Never infer a finished job from a partial file or resubmit generation to repair
 missing downloads. A crash between publication and receipt persistence requires
 explicit file verification and reconciliation by the caller.
 
+## Active Image delivery
+
+The runtime configures the selected `JobSession` with a private `shared-results`
+directory below extension user state and an exact HTTPS host policy:
+`cdn.cloud.scenario.com`, documented in Scenario's
+[CDN guide](https://docs.scenario.com/get-started/documentation/content-delivery-network-cdn),
+and `cdn.scenario.com`, used by the official
+[asset retrieval guide](https://docs.scenario.com/get-started/content/retrieve-asset-url-by-asset-id).
+The policy never derives hosts from incoming URLs. Download permission uses the
+catalog's worker-safe online-access event, including credential retirement.
+
+Active Image UI/MCP jobs use SDK `jobs.retrieve` and `assets.retrieve` through the
+shared adapter, then this credential-free downloader. The main-thread pump verifies
+receipts before importing supported PNG/OpenEXR snapshots. Transfer and application
+failures stop the pipeline and preserve saved results; they cannot repeat the paid
+submission. Synthetic native tests exercise the real downloader with mocked HTTPS
+bytes, exact saved digests, packed images, stale origins and failed transfers.
+They do not establish live CDN or provider format acceptance.
+
 ## Integration still required
 
-This change supplies the independently testable transport. It does not configure
-production storage hosts, implement multipart uploads, wire UI/MCP commands or
-import results into Blender. The [coordinator](JOB_COORDINATOR.md#result-retrieval-and-download-commands)
+Other generation lanes remain unintegrated. Explicit recovered Image application
+uses a separately approved destination and reverified local receipts.
+Image UI/MCP controls can resume downloads and reconcile interrupted receipts;
+neither action grants permission to import into a restarted scene.
+The [coordinator](JOB_COORDINATOR.md#result-retrieval-and-download-commands)
 now orchestrates saved manifests/receipts and retrieves fresh URLs for explicit
 download retries through the SDK. Explicit interrupted-download recovery now verifies committed receipts under a
 cooperating cross-process lock; unreceipted files and staging cleanup still need

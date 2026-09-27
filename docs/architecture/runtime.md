@@ -10,8 +10,8 @@ is Blender 5.0; dependency and runtime acceptance have separate gates.
 | Responsibility | Source | Current behavior |
 | --- | --- | --- |
 | Registration | [registry.py](../../scenario/blender/registry.py) | Registers properties, panels, operators, composer, pump and local server integration. The `scenario_blender` headless command serves local MCP on the main thread. |
-| UI lifetime and state | [runtime.py](../../scenario/blender/runtime.py) | Owns the credential-bound SDK catalog and process-wide UI/MCP state; generation still uses the prototype `ScenarioClient` and `JobManager`. |
-| UI generation | [generation.py](../../scenario/blender/generation.py) | Prepares the current lane and submits through the prototype manager. |
+| UI lifetime and state | [runtime.py](../../scenario/blender/runtime.py) | Owns the credential-bound SDK catalog and process-wide UI/MCP state; Image quote/submission uses the selected `JobSession`; other generation lanes still use the prototype manager. |
+| UI generation | [generation.py](../../scenario/blender/generation.py) | Image consumes a session-owned quote before durable submission; other lanes use the prototype manager. |
 | Main-thread application | [pump.py](../../scenario/blender/pump.py) | Drains prototype events and applies results to Blender. GUI timer handling differs from headless execution. |
 | Local MCP | [server.py](../../scenario/mcp/server.py), [tools_scenario.py](../../scenario/mcp/tools_scenario.py), [mcp_service.py](../../scenario/blender/mcp_service.py) | Queues scene tools for main-thread execution; model listing/schema use the same SDK catalog as the UI, while other service tools still call the prototype runtime. |
 | Credentials | [config.py](../../scenario/core/config.py), [prefs.py](../../scenario/prefs.py) | Credentials default to the saved Blender pair; environment credentials require explicit selection and cannot mix with preferences. OAuth is deferred; shared runtime scope/project integration remains #65. |
@@ -103,27 +103,67 @@ and runtime reset stop admission; in-flight receipts keep their original scope.
 File loading retires the selected owner and invalidates its context token; the
 next recovery call creates a fresh session against the same scoped store.
 GUI ticks and the headless MCP loop reap retired sessions after work finishes.
-Paid entry points, remote recovery controls and production transfers remain open.
+The Image entry point now uses this session for quote-bound submission, as described below.
+Explicit saved-job controls and active Image transfers use the same session below.
 
-## Active SDK cost previews
+## Active SDK cost previews and Image submission
 
-UI and MCP cost previews use the same connection and cached schema as catalog
-reads. The adapter validates model inputs and retains the exact decimal cost,
-payload and response bytes. UI requests capture nested inputs before starting a
-worker; unique request keys distinguish scenes and successive edits. Delivery is
-bound to the original scene object, so copied or deleted scenes cannot receive a
-late preview. Main-thread delivery rejects retired connections and superseded forms. Current previews are
-retained in memory; Blender's float property is only their existing display value.
+The Image lane uses [ModelJobs](../../scenario/blender/model_jobs.py), a main-thread
+facade over the existing selected `JobSession`, coordinator and worker pool.
+It does not own another executor or persistent registry. UI and MCP prepare the
+same model inputs; each quote captures the scene before a worker retrieves fresh
+SDK model metadata and the exact server estimate. UI cost delivery is keyed to
+the originating scene/form. Only the currently selected scene can receive a
+usable Image quote. Other lanes retain the catalog preview path.
 
-MCP prepares inputs on the main thread, performs the SDK dry run on its HTTP
-request thread, and queues delivery back to the main thread to recheck credentials.
-The response includes `cu_cost_exact` as a decimal string alongside the existing
-numeric `cu_cost` and cost details. Missing or malformed prices fail instead of
-becoming zero. These reads do not upload references, persist jobs, approve spending
-or establish UI/MCP paid-submission parity. The legacy manager estimate method
-remains only for historical smoke scripts.
+Clicking Image **Generate** requires the unchanged ready quote. MCP Image
+`generate` requires its `quote_id` and the explicitly approved `cu_cost_exact`
+string as `approved_cost`. A displayed float is not used to reconstruct the price.
+The facade consumes the handle before preparation; the coordinator persists an
+intent and claims `submitting` before the single SDK request. Repeated clicks,
+reused quote handles, changed inputs, stale origins and failed writes cannot
+repeat that submission. Timeouts retain uncertain saved state without retry.
+An unsuccessful UI attempt clears the ready price and requires explicit repricing;
+it never silently obtains another approval. Retained MCP/UI approvals are not evicted
+to admit new quotes. At capacity, new estimates are rejected until a consumed handle
+can be reclaimed; repricing a UI form explicitly releases its previous approval.
 
-Local MCP `wait_for_job` captures a local record on the main thread and waits
+GUI and headless main-thread context maintenance drains completed submissions,
+polls their known remote IDs at two-second intervals and downloads successful
+results through the coordinator. Saved state is projected into the existing Jobs view. This projection is
+not registered with the prototype manager. Closing a panel does not stop work;
+credential/file changes retire the owner while in-flight receipts stay in the
+original store. Local MCP status can inspect these records after restart.
+
+This is a pre-release integration slice. Image local-file/capture references
+must be uploaded through the forthcoming shared transfer integration before
+pricing/submission; existing Scenario asset IDs are supported. Downloaded images
+are receipt-verified again on the main thread, decoded from private snapshots and
+packed as image datablocks after a durable application claim. Automatic import
+supports bounded RGB/RGBA PNG and scanline OpenEXR; other formats remain saved
+without import. It does not assign textures or replace scene targets. A stale
+origin, read/download error or uncertain application stops automatic delivery
+without another generation. The [transfer policy](../RESULT_TRANSFERS.md#active-image-delivery)
+names the documented CDN hosts. The Jobs panel's **Inspect saved jobs** button
+and MCP `list_local_jobs` provide saved state. UI recovery buttons and
+`recover_local_job` use the current context token and observed revision to refresh,
+resume polling/download, cancel a known model job, reconcile interrupted download
+receipts, or save a pending import receipt. These actions never submit generation.
+Resuming after restart does not approve import into the new scene. **Import saved
+images** captures the selected destination for confirmation. MCP uses
+`prepare_result_application` followed by explicit `apply_result_application`.
+Both reverify local bytes and recheck the approved scene revision before an
+atomic application claim saves the destination separately from the original job
+origin. An interrupted import cannot be claimed again.
+Its `job_status` and `wait_for_job` return the current saved state; active jobs
+advance through the same maintenance pump. `wait_for_job` waits on the HTTP worker
+while the main thread remains available for delivery. It returns at completion,
+review-required state or timeout, and rejects a changed credential context.
+An unresumed restarted record is returned immediately.
+Other lanes still use prototype paid dispatch. Do not describe this slice as
+complete generation, supported release acceptance, or completion of #65.
+
+For prototype jobs, local MCP `wait_for_job` captures a local record on the main thread and waits
 on the HTTP thread. Other scene tools and the GUI pump remain available. Its
 completion rechecks the manager, credentials and record identity; shutdown
 interrupts the wait without cancelling or resubmitting the generation. This
@@ -138,7 +178,7 @@ responsive read does not migrate prototype jobs into the durable scoped runtime.
 | Durable intent and coordination | [store.py](../../scenario/core/jobs/store.py), [coordinator.py](../../scenario/core/jobs/coordinator.py), [job guide](../JOB_COORDINATOR.md) | Replace view/prototype-owned jobs with one application runtime for UI and MCP; complete recovery UX. |
 | Worker ownership | [workers.py](../../scenario/core/jobs/workers.py) | Attach lifecycle to the application context, not a panel; integrate shutdown and delivery. |
 | Origin and stale-result protection | [job_session.py](../../scenario/blender/job_session.py), [context guide](../BLENDER_JOB_CONTEXT.md) | Bind actual entry points to the selected account, scene and targets, including explicit restart recovery. |
-| Bounded result downloads | [transfers.py](../../scenario/core/jobs/transfers.py), [transfer guide](../RESULT_TRANSFERS.md) | Coordinator/worker result commands now fetch SDK metadata, persist manifests/receipts and verify downloads. Explicit interrupted-download recovery verifies saved receipts under a cross-process lock without service calls. Production storage policy, orphan-file reconciliation and UI/application hand-off remain. |
+| Bounded result downloads | [transfers.py](../../scenario/core/jobs/transfers.py), [transfer guide](../RESULT_TRANSFERS.md) | Active Image jobs use configured CDN hosts, persisted receipts and guarded image import. Explicit interrupted-download recovery verifies saved receipts under a cross-process lock without service calls. Recovery controls, orphan-file reconciliation and other lanes remain. |
 | Durable application claims | [application commands](../JOB_COORDINATOR.md#durable-application-claims), [World command](../BLENDER_JOB_CONTEXT.md#explicit-saved-result-world-application) | Owner-issued verification tickets can claim the original result and persist an explicit application outcome. Optional JobSession World application binds one saved asset's decoded bytes and scene assignment to that claim. Explicit receipt retry can save or acknowledge a known completed assignment without repeating scene work; restart reconciliation, other result types, recovery UX and active UI/MCP wiring remain separate. |
 | Upload commands | [upload guide](../SDK_UPLOADS.md) | Private source staging, signed PUT parts and durable SDK upload commands share the coordinator/workers. Public scoped inspection and optional JobSession forwarding preserve captured origins and guarded delivery; production policy, recovery UI and active entry-point wiring remain. |
 | Strict model forms | [forms.py](../../scenario/core/schema/forms.py) | Complete trained/custom-model discovery and verified REST routing under #97. |

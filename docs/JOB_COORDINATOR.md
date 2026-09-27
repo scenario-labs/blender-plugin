@@ -3,8 +3,8 @@
 [`JobCoordinator`](../scenario/core/jobs/coordinator.py) implements synchronous
 commands for the shared runtime under #65. It connects the scoped
 [SDK adapter](SDK_ADOPTION.md) to the [intent store](JOB_STORAGE.md). It has no
-worker pool, timer, UI ownership or bpy calls. The prototype UI/MCP still uses
-its existing manager until the shared runtime is integrated.
+worker pool, timer, UI ownership or bpy calls. Image UI/MCP quote and submission now use these commands through
+[ModelJobs](../scenario/blender/model_jobs.py); other lanes retain the prototype manager.
 
 ## Prepare, claim, send, acknowledge
 
@@ -16,8 +16,7 @@ its existing manager until the shared runtime is integrated.
    [credential-bound local store](JOB_STORAGE.md#identity-and-ownership) supplies
    the same local account pseudonym to the catalog adapter and store. No server
    identity discovery is needed. These identities are not proof that credentials
-   have been accepted by the remote service. The active runtime does not yet
-   construct this coordinator for paid actions.
+   have been accepted by the remote service. The active runtime constructs it for Image quote-bound submission.
 2. Obtain a real estimate through the adapter. Only the actual unchanged object
    issued by that active adapter is accepted; copying its public fields does not
    create another issued quote.
@@ -192,8 +191,9 @@ fail closed on that record instead of silently treating it as dispatchable.
 polling interface. Deactivation before the action is claimed stops dispatch;
 once claimed, late observations stay bound to the original store. Shutdown
 joins this work before closing the SDK. General workflow cancellation, live
-service acceptance, and the UI/MCP cancellation controls remain outstanding
-under #65; rejecting a workflow approval node is not a substitute. Captured job
+service acceptance and other generation lanes remain outstanding under #65.
+The Image facade now exposes these commands through shared UI/MCP saved-job
+controls; rejecting a workflow approval node is not a substitute. Captured job
 types and offline tests do not establish live cancellation acceptance.
 
 
@@ -245,9 +245,9 @@ is deliberately rejected; a prior scene mutation may already have occurred.
 All three methods are available through `JobWorkers` using the same bounded pool,
 SDK lifetime and main-thread polling interface. Deactivation stops subsequent
 asset work; a transfer already in flight can save its receipt to the old scope.
-Closing a view must not deactivate these application-owned workers. Runtime
-registration, production host configuration, application recovery and UI/MCP
-controls remain integration work under #65.
+Closing a view must not deactivate these application-owned workers. Active Image
+delivery configures the CDN policy and exposes shared download/recovery controls.
+Recovered-target application and remaining lanes stay under #65.
 
 
 ### Explicit interrupted-download recovery
@@ -288,6 +288,13 @@ original origin. Copying public fields, selecting a new scene or reopening the
 store cannot recreate this authority. `applied` results can still be verified
 for inspection but cannot be claimed again.
 
+`claim_recovered_application(verified, destination)` is a separate explicit
+command. The caller must capture and obtain approval for a new destination,
+then resolve it before mutation. The same owner, ticket, state and stored-revision
+checks apply, with the origin guard checking the approved destination. The
+atomic claim stores it as `application_origin` while preserving `intent.origin`.
+Downloading or inspecting a job does not authorize this command.
+
 The origin guard and coordinator lock cover the atomic `applying` write. The
 verification ticket is consumed before that write is attempted, because a write
 failure can be uncertain. A successful claim returns an immutable
@@ -307,8 +314,9 @@ After confirmed success, `complete_application(claim)` saves `applied` once.
 that no mutation occurred or every change was rolled back. Unexpected exceptions,
 interruption or uncertain rollback must leave `applying` unchanged. Neither
 method catches a Blender callback or interprets an exception as successful rollback.
-An explicit retry after confirmed failure requires a new verification ticket and
-the same original still-current origin; it cannot rebind a restarted record.
+An explicit retry after confirmed failure requires a new verification ticket.
+The ordinary claim still requires the original current origin; the recovered
+claim requires a freshly approved current destination.
 
 Both receipt methods require the exact unfinished claim and its unchanged saved
 revision. They remain available after origin invalidation or owner deactivation,
@@ -339,8 +347,8 @@ state of a scene after later edits or explicit restoration.
 `applying` record remains `REVIEW_APPLICATION`: no expiry, reset, automatic
 completion or retry is provided. The SQLite record is durable; verification
 tickets and application claims are owner-local and are never reconstructed from
-names, paths or stored metadata. No schema change or active UI/MCP wiring is
-introduced by this boundary.
+names, paths or stored metadata. The active Image facade uses these claims for
+automatic delivery and explicitly approved recovered imports.
 
 
 ## Reference upload commands
@@ -407,8 +415,9 @@ supply spending approval or automatically submit anything.
 thread, and its normal bounded completion queue delivers the result with its
 captured origin. `prepare_quote` resolves that same scene/target before persisting.
 Frame/file/dependency invalidation, view-independent lifetime and shutdown retain
-the existing session rules. Active compact/expanded UI and MCP entry points still
-need to switch from the prototype runtime to these shared commands.
+the existing session rules. Image UI/MCP now use these quote/submission commands,
+result delivery and saved-job controls, including explicit recovered Image
+application; other lanes and reference uploads remain on the integration backlog.
 
 Estimate ownership is checked before acquiring the coordinator/origin locks.
 Preparation keeps quote selection and persistence under the coordinator lock,

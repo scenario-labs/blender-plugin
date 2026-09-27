@@ -20,6 +20,7 @@ from ..core.jobs.credential_storage import open_credential_store
 from ..core.jobs.manager import JobManager
 from ..core.jobs.records import JobRegistry
 from ..core.jobs.store import StoreError
+from ..core.jobs.transfers import ResultDownloader, StoragePolicy
 from .job_session import JobSession, reap_retired
 
 log = logging.getLogger("scenario")
@@ -33,6 +34,8 @@ class RuntimeState:
         self.job_store = None
         self.job_session = None
         self.job_context_id = None
+        self.model_jobs = None
+        self.model_previews = {}
         self.estimates = {}  # Exact SDK responses for current UI previews, never spend approval.
         self.estimate_origins = {}  # Pending request key -> original scene and lane, main thread only.
         self.records = {}  # model_id -> ModelRecord (detailed)
@@ -97,6 +100,13 @@ class RuntimeState:
             self.job_session.deactivate()
             self.job_session = None
         self.job_context_id = None
+        if self.model_jobs is not None:
+            views = tuple(self.model_jobs.views.values())
+            self.jobs_view[:] = [
+                view for view in self.jobs_view if all(view is not v for v in views)
+            ]
+        self.model_jobs = None
+        self.model_previews.clear()
 
 
 state = RuntimeState()
@@ -191,7 +201,17 @@ def ensure_job_session():
     if state.job_session is None:
         adapter = catalog.create_job_adapter()
         try:
-            session = JobSession(adapter, state.job_store)
+            # Exact hosts documented by Scenario's CDN and asset-retrieval guides.
+            # Never derive this allowlist from a service response or signed URL.
+            policy = StoragePolicy(frozenset({"cdn.cloud.scenario.com", "cdn.scenario.com"}))
+            root = paths().state_dir / "shared-results"
+            root.mkdir(mode=0o700, parents=True, exist_ok=True)
+            session = JobSession(
+                adapter,
+                state.job_store,
+                result_downloader=ResultDownloader(policy, online_access=catalog.network_allowed),
+                result_root=root,
+            )
         except BaseException:
             adapter.close()
             raise
@@ -206,11 +226,57 @@ def local_job_recovery():
     return state.job_context_id, session.recovery_plan()
 
 
+def ensure_model_jobs():
+    from .model_jobs import ModelJobs
+
+    session = ensure_job_session()
+    if state.model_jobs is None:
+        state.model_jobs = ModelJobs(session, state.job_store, online=online)
+    return state.model_jobs
+
+
 def cancel_prepared_job(context_id, request_id, expected_revision):
     session = ensure_job_session()
     if context_id != state.job_context_id:
         raise ScenarioError(0, "The selected job context changed; list local jobs again")
     return session.cancel_prepared(request_id, expected_revision=expected_revision)
+
+
+def inspect_model_jobs():
+    jobs = ensure_model_jobs()
+    for view in jobs.inspect():
+        if not any(existing is view for existing in state.jobs_view):
+            state.jobs_view.insert(0, view)
+    return jobs
+
+
+def control_model_job(context_id, request_id, expected_revision, action):
+    jobs = ensure_model_jobs()
+    if context_id != state.job_context_id:
+        raise ScenarioError(0, "The selected job context changed; list local jobs again")
+    task = jobs.control(request_id, expected_revision, action)
+    view = jobs.views[request_id]
+    if not any(existing is view for existing in state.jobs_view):
+        state.jobs_view.insert(0, view)
+    return jobs, task
+
+
+def prepare_image_application(context_id, request_id, expected_revision, scene):
+    jobs = ensure_model_jobs()
+    if context_id != state.job_context_id:
+        raise ScenarioError(0, "The selected job context changed; list local jobs again")
+    return jobs, jobs.prepare_image_application(request_id, expected_revision, scene)
+
+
+def apply_saved_images(context_id, application_id):
+    jobs = ensure_model_jobs()
+    if context_id != state.job_context_id:
+        raise ScenarioError(0, "The selected job context changed; review the import again")
+    request_id, task = jobs.apply_saved_images(application_id)
+    for view in jobs.views.values():
+        if not any(existing is view for existing in state.jobs_view):
+            state.jobs_view.insert(0, view)
+    return jobs, request_id, task
 
 
 def request_connection_check():
@@ -270,6 +336,10 @@ def sync_catalog_context():
         catalog for catalog in state.retired_catalogs if not catalog.closed
     ]
     reap_retired()
+
+    from . import generation
+
+    generation.process_model_jobs()
 
 
 def enum_items(key):

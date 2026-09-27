@@ -281,6 +281,20 @@ class JobCoordinator:
         File verification happens earlier, outside this lock. The application
         must bind the bytes it actually reads to the saved download receipts.
         """
+        return self._claim_application(verified)
+
+    def claim_recovered_application(self, verified: VerifiedResults, destination: JobOrigin):
+        """Claim an explicitly approved destination without rewriting the job origin.
+
+        The caller must capture and approve this destination before verification,
+        then resolve it immediately before mutation. Recovery inspection or result
+        download alone does not authorize this command.
+        """
+        if not isinstance(destination, JobOrigin):
+            raise ApplicationError("Capture and approve a current application destination")
+        return self._claim_application(verified, destination=destination)
+
+    def _claim_application(self, verified, *, destination=None):
         with self._lock:
             if (
                 not self._active
@@ -293,7 +307,8 @@ class JobCoordinator:
             record = verified.record
             if record.state not in {JobState.READY, JobState.APPLY_FAILED}:
                 raise ApplicationError("This result is not eligible for application")
-            with self._origin_guard(record.intent.origin) as current:
+            destination = destination or record.intent.origin
+            with self._origin_guard(destination) as current:
                 if not current:
                     raise ApplicationError("Application origin changed; review the saved result")
                 if self._store.get(record.intent.request_id) != record:
@@ -305,6 +320,7 @@ class JobCoordinator:
                     record.intent.request_id,
                     expected_revision=record.revision,
                     state=JobState.APPLYING,
+                    application_origin=destination,
                 )
                 claim = ApplicationClaim(claimed, verified.paths)
                 self._application_claims[id(claim)] = claim

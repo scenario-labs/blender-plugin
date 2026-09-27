@@ -94,6 +94,32 @@ def test_byte_limit(monkeypatch):
         panorama.inspect_panorama(png())
 
 
+@pytest.mark.parametrize("make", [png, exr])
+@pytest.mark.parametrize("size", [(1, 1), (3, 5), (5, 3)])
+def test_general_image_preflight_accepts_non_panorama_dimensions(make, size):
+    info = panorama.inspect_image(make(*size))
+    assert (info.width, info.height) == size
+    with pytest.raises(panorama.PanoramaError, match="2:1"):
+        panorama.inspect_panorama(make(*size))
+
+
+@pytest.mark.parametrize("make", [png, exr])
+@pytest.mark.parametrize("size", [(0, 2), (16384, 8192)])
+def test_general_image_preflight_keeps_pixel_bounds(make, size):
+    with pytest.raises(panorama.PanoramaError):
+        panorama.inspect_image(make(*size))
+
+
+def test_general_image_preflight_keeps_integrity_and_byte_bounds(monkeypatch):
+    damaged = bytearray(png(3, 5))
+    damaged[20] ^= 1
+    with pytest.raises(panorama.PanoramaError, match="integrity"):
+        panorama.inspect_image(bytes(damaged))
+    monkeypatch.setattr(panorama, "MAX_FILE_BYTES", 8)
+    with pytest.raises(panorama.PanoramaError, match="byte limit"):
+        panorama.inspect_image(png(3, 5))
+
+
 def test_png_crc_corruption_rejected():
     data = bytearray(png())
     data[20] ^= 1

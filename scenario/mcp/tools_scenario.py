@@ -104,6 +104,26 @@ def _body_for(model_id, parameters):
 
 def estimate_cost(args):
     record, body = _body_for(args["model_id"], args.get("parameters"))
+    lane = args.get("lane") or "image"
+    if lane not in LANES:
+        raise ValueError(f"lane must be one of {LANES}")
+    if lane == "image":
+        jobs = runtime.ensure_model_jobs()
+        ticket = jobs.quote(bpy.context.scene, record.id, body)
+
+        def finish_model(_):
+            if runtime.ensure_model_jobs() is not jobs:
+                raise ScenarioError(0, "The estimate context changed; estimate again")
+            quote = jobs.finish_quote(ticket)
+            return {
+                "model_id": record.id,
+                "quote_id": ticket.identifier,
+                "cu_cost": float(quote.cost),
+                "cu_cost_exact": str(quote.cost),
+                "details": json.loads(quote.response_json).get("costDetails") or {},
+            }
+
+        return DeferredTool(ticket.task.result, finish_model)
     catalog = runtime.ensure_catalog()
 
     def finish(quote):
@@ -159,14 +179,34 @@ def generate(args):
     lane = args.get("lane") or "image"
     if lane not in LANES:
         raise ValueError(f"lane must be one of {LANES}")
+    if lane == "image":
+        runtime.ensure_model_jobs().require_quote(args.get("quote_id"))
     record, body = _body_for(args["model_id"], args.get("parameters"))
-    manager = runtime.ensure_manager()
     meta = {
         "prompt": str(body.get("prompt") or ""),
         "model_name": record.name,
         "source": "mcp",
         "target_objects": [o.name for o in bpy.context.selected_objects if o.type == "MESH"],
     }
+    if lane == "image":
+        jobs = runtime.ensure_model_jobs()
+        rec = jobs.submit(
+            args.get("quote_id"),
+            bpy.context.scene,
+            record.id,
+            body,
+            approved_cost=args.get("approved_cost"),
+            meta=meta,
+        )
+        runtime.state.jobs_view.insert(0, rec)
+        return {
+            "local_id": rec.local_id,
+            "status": rec.status,
+            "lane": lane,
+            "model_id": record.id,
+            "note": "Submission is saved. Poll job_status for remote progress and verified image delivery. Paused or restarted jobs require explicit recovery; never repeat an uncertain request.",
+        }
+    manager = runtime.ensure_manager()
     rec = manager.submit(lane, KIND[lane], record.id, body, meta=meta)
     runtime.state.jobs_view.insert(0, rec)
     return {
@@ -209,8 +249,66 @@ def _status(rec):
     }
 
 
+def _saved_status(reference):
+    manager = runtime.state.manager
+    if manager is not None and any(
+        reference in (record.local_id, record.job_id) for record in manager.registry.all()
+    ):
+        return None
+    return runtime.ensure_model_jobs().status(reference)
+
+
 def job_status(args):
-    return _status(_find(_job_ref(args)))
+    reference = _job_ref(args)
+    saved = _saved_status(reference)
+    return saved if saved is not None else _status(_find(reference))
+
+
+def recover_local_job(args):
+    jobs, task = runtime.control_model_job(
+        args["context_id"], args["request_id"], args["expected_revision"], args["action"]
+    )
+    if task is None:
+        return jobs.status(args["request_id"])
+    return _finish_recovery(jobs, task, args["request_id"])
+
+
+def prepare_result_application(args):
+    _, approval = runtime.prepare_image_application(
+        args["context_id"], args["request_id"], args["expected_revision"], bpy.context.scene
+    )
+    return {
+        "context_id": args["context_id"],
+        "application_id": approval.identifier,
+        "request_id": approval.record.intent.request_id,
+        "revision": approval.record.revision,
+        "scene": approval.scene_name,
+        "images": [item.asset.name for item in approval.record.results],
+        "note": "Ask the user to approve importing and packing these images into this file. "
+        "The approval becomes invalid if the destination changes. No images have been imported.",
+    }
+
+
+def apply_result_application(args):
+    jobs, request_id, task = runtime.apply_saved_images(args["context_id"], args["application_id"])
+    return _finish_recovery(jobs, task, request_id)
+
+
+def _finish_recovery(jobs, task, request_id):
+
+    def run():
+        try:
+            task.result()
+        except Exception:
+            pass  # The owned completion supplies sanitized state/error on the main thread.
+
+    def finish(_):
+        runtime.sync_catalog_context()
+        if runtime.state.model_jobs is not jobs or not jobs.session.active:
+            raise ScenarioError(0, "The job context changed during recovery; inspect it again")
+        return jobs.status(request_id)
+
+    return DeferredTool(run, finish)
 
 
 def wait_for_job(args):
@@ -222,6 +320,31 @@ def wait_for_job(args):
         or not 0 <= timeout <= 170
     ):
         raise ValueError("timeout must be a finite number from 0 to 170 seconds")
+    saved = _saved_status(ref)
+    if saved is not None:
+        jobs = runtime.state.model_jobs
+        server = runtime.state.mcp
+        if timeout == 0 or saved["local_id"] not in jobs.views:
+            return saved
+
+        def finish_shared(_):
+            runtime.sync_catalog_context()
+            if (
+                runtime.state.model_jobs is not jobs
+                or not jobs.session.active
+                or (server is not None and (runtime.state.mcp is not server or not server.running))
+            ):
+                raise ScenarioError(0, "The job context changed while waiting; inspect it again")
+            return jobs.status(saved["local_id"])
+
+        return DeferredTool(
+            lambda: jobs.wait(
+                saved["local_id"],
+                timeout,
+                stopped=lambda: server is not None and not server.running,
+            ),
+            finish_shared,
+        )
     rec = _find(ref)
     if rec.is_terminal:
         return _status(rec)
@@ -333,6 +456,78 @@ _JOB_REF = {
 
 SPECS = (
     ToolSpec(
+        "prepare_result_application",
+        (
+            "Prepare explicit import of downloaded PNG/EXR images from a saved job into the current file.\n"
+            "Args:\n"
+            "  - context_id: required string, current context from list_local_jobs.\n"
+            "  - request_id: required string, saved local job identity.\n"
+            "  - expected_revision: required nonnegative integer, observed saved revision.\n"
+            "Returns: context_id, application_id, request_id, revision, scene, images and note.\n"
+            'Example: {"context_id": "from-list", "request_id": "from-list", "expected_revision": 8}.\n'
+            "Show the destination and images to the user before apply_result_application. This makes no network request, spends no credits and imports nothing. Only ready or confirmed rolled-back results qualify.\n"
+            "Platform equivalent: none; this captures a local Blender destination."
+        ),
+        _schema(
+            {
+                "context_id": {"type": "string"},
+                "request_id": {"type": "string"},
+                "expected_revision": {"type": "integer", "minimum": 0},
+            },
+            ["context_id", "request_id", "expected_revision"],
+        ),
+        prepare_result_application,
+        {"readOnlyHint": True},
+    ),
+    ToolSpec(
+        "apply_result_application",
+        (
+            "Import and pack saved images after the user approves the prepared destination.\n"
+            "Args:\n"
+            "  - context_id: required string, context from prepare_result_application.\n"
+            "  - application_id: required string, single-use approval handle from prepare_result_application.\n"
+            "Returns: saved job status, revision, images and any delivery error.\n"
+            'Example: {"context_id": "from-prepare", "application_id": "from-prepare"}.\n'
+            "Call only after explicit destination approval. Verification runs off the main thread; import rechecks the exact captured scene/file revision. Changed contexts or records require fresh review. This performs no generation, downloads, object/material assignment or file save. Never repeat an uncertain import; inspect the saved job.\n"
+            "Platform equivalent: none; this applies saved results locally in Blender."
+        ),
+        _schema(
+            {"context_id": {"type": "string"}, "application_id": {"type": "string"}},
+            ["context_id", "application_id"],
+        ),
+        apply_result_application,
+        {"destructiveHint": True},
+    ),
+    ToolSpec(
+        "recover_local_job",
+        (
+            "Explicitly recover a saved job without repeating generation or importing into another scene.\n"
+            "Args:\n"
+            "  - context_id: required string from list_local_jobs.\n"
+            "  - request_id: required local job identity.\n"
+            "  - expected_revision: required observed integer revision.\n"
+            "  - action: refresh, resume, cancel, recover_download or retry_receipt.\n"
+            "Returns: saved status, revision, available actions and delivery error if any.\n"
+            'Example: {"context_id":"from-list","request_id":"from-list","expected_revision":2,"action":"resume"}.\n'
+            "Refresh reads once; resume polls and downloads without automatic import. Cancel requests known model-job cancellation and observes its actual outcome. recover_download verifies interrupted local receipts without network calls. retry_receipt saves an already completed import without repeating it and requires the same live owner. Stale contexts/revisions and uncertain submissions are rejected.\n"
+            "Platform equivalent: jobs.retrieve, jobs.trigger_action and assets.retrieve through the shared SDK, plus local receipt recovery."
+        ),
+        _schema(
+            {
+                "context_id": {"type": "string"},
+                "request_id": {"type": "string"},
+                "expected_revision": {"type": "integer", "minimum": 0},
+                "action": {
+                    "type": "string",
+                    "enum": ["refresh", "resume", "cancel", "recover_download", "retry_receipt"],
+                },
+            },
+            ["context_id", "request_id", "expected_revision", "action"],
+        ),
+        recover_local_job,
+        {"destructiveHint": True},
+    ),
+    ToolSpec(
         "list_local_jobs",
         (
             "Inspect durable local jobs for the selected API-key pair without network requests.\n"
@@ -409,31 +604,43 @@ SPECS = (
             "Args:\n"
             "  - model_id: required string, the model identifier.\n"
             "  - parameters: optional object, model parameters including Scenario asset ids for file inputs.\n"
-            "Returns: model_id, cu_cost, cu_cost_exact (decimal string) and details from the server estimate.\n"
+            "  - lane: optional generation lane, default image. Image estimates issue a single-use quote_id.\n"
+            "Returns: model_id, cu_cost, cu_cost_exact (decimal string), details and, for image, quote_id bound to this scene and credential context.\n"
             'Example: {"model_id": "model_example", "parameters": {"prompt": "a wooden crate"}}.\n'
             "Call before generate and show the cost to the user; an estimate does not authorize spending.\n"
             "Platform equivalent: model_run with dry_run."
         ),
-        _schema({"model_id": {"type": "string"}, "parameters": {"type": "object"}}, ["model_id"]),
+        _schema(
+            {
+                "model_id": {"type": "string"},
+                "parameters": {"type": "object"},
+                "lane": {"type": "string", "enum": list(LANES)},
+            },
+            ["model_id"],
+        ),
         estimate_cost,
         {"readOnlyHint": True},
     ),  # touches bpy (prefs, catalog): must run on the main thread
     ToolSpec(
         "generate",
         (
-            "Submit a generation that spends the user's credits and automatically places its result in Blender.\n"
+            "Submit a generation that spends the user's credits. Image submissions use durable shared jobs.\n"
             "Args:\n"
             "  - lane: required string; image, video, 3d, material, audio, render_image, render_video or edit3d.\n"
             "  - model_id: required string, the exact model to run.\n"
             "  - parameters: optional object, model parameters; file inputs take Scenario asset ids.\n"
-            "Returns: local_id, status, lane, model_id and note. Poll job_status for the Scenario job_id after acceptance. Results become image datablocks, materials on the captured meshes, 3D objects at the cursor, or video/audio files.\n"
-            'Example: {"lane": "image", "model_id": "model_example", "parameters": {"prompt": "a wooden crate"}}.\n'
+            "  - quote_id: required for image, from estimate_cost with the same model, inputs and scene.\n"
+            "  - approved_cost: required for image, the exact cu_cost_exact string explicitly approved by the user.\n"
+            "Returns: local_id, status, lane, model_id and note. Active Image jobs poll and download through the shared session, then import verified PNG/EXR images only into the unchanged origin. Other lanes retain prototype result handling.\n"
+            'Example: {"lane": "image", "model_id": "model_example", "parameters": {"prompt": "a wooden crate"}, "quote_id": "quote_from_estimate", "approved_cost": "1.25"}.\n'
             "Do not call before estimate_cost and explicit spending approval. Do not repeat a timed-out submission. import_result is only for an intentional additional application.\n"
             "Platform equivalent: model_run."
         ),
         _schema(
             {
                 "lane": {"type": "string", "enum": list(LANES)},
+                "quote_id": {"type": "string"},
+                "approved_cost": {"type": "string"},
                 "model_id": {"type": "string"},
                 "parameters": {
                     "type": "object",
@@ -447,7 +654,7 @@ SPECS = (
     ToolSpec(
         "job_status",
         (
-            "Read one local generation's status, cost and downloaded files without spending credits.\n"
+            "Read one local generation's status and cost without spending credits. Active Image jobs advance through shared remote polling and verified delivery; restarted jobs remain inspection-only.\n"
             "Args:\n"
             "  - job_id: optional string, a Scenario job id or the local_id returned by generate.\n"
             "  - id: optional string, compatibility alias; provide job_id or id. job_id takes precedence if both are supplied.\n"
@@ -463,7 +670,7 @@ SPECS = (
     ToolSpec(
         "wait_for_job",
         (
-            "Wait for one tracked generation while Blender remains responsive.\n"
+            "Wait for a generation while Blender remains responsive. Shared jobs return when delivery finishes, pauses for review, or the wait expires. Restarted jobs remain inspection-only until explicitly resumed.\n"
             "Args:\n"
             "  - job_id: optional string, a Scenario job id or local_id returned by generate.\n"
             "  - id: optional string, compatibility alias; provide job_id or id. job_id takes precedence.\n"

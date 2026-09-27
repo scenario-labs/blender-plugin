@@ -78,6 +78,10 @@ class SDKCatalog:
         if not self._active:
             raise ScenarioError(0, "The selected catalog connection changed")
 
+    def network_allowed(self):
+        """Worker-safe permission shared by SDK requests and signed transfers."""
+        return self._permission.is_set()
+
     def create_job_adapter(self):
         """Give the job owner its own pool with this scope and permission snapshot.
 

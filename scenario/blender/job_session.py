@@ -18,8 +18,9 @@ from bpy.app.handlers import persistent
 from ..core.jobs.coordinator import JobCoordinator, OriginQuote, RemoteSnapshot
 from ..core.jobs.origins import OriginRevisions
 from ..core.jobs.results import VerifiedResults
-from ..core.jobs.store import StoredJob
+from ..core.jobs.store import JobOrigin, StoredJob
 from ..core.jobs.workers import JobWorkers
+from .image_application import ImageApplicationError, apply_images
 from .world_application import PanoramaError, WorldApplication, WorldApplicationError, apply_world
 
 _log = logging.getLogger("scenario.jobs")
@@ -35,6 +36,20 @@ def _main_thread():
 
 class OriginUnavailable(RuntimeError):
     """The result is available for review but cannot be applied automatically."""
+
+
+class ImageResultUncertain(RuntimeError):
+    """Images may already exist; retry only the saved receipt, never the mutation."""
+
+    def __init__(self, images=()):
+        super().__init__("Image application outcome is uncertain; inspect saved job and images")
+        self.images = images
+
+
+@dataclass(frozen=True)
+class AppliedImages:
+    record: StoredJob
+    images: tuple = field(repr=False)
 
 
 class WorldResultUncertain(RuntimeError):
@@ -97,6 +112,7 @@ class JobSession:
         self._pending = []
         self._issued = WeakValueDictionary()
         self._world_receipts = WeakKeyDictionary()
+        self._image_receipts = WeakKeyDictionary()
         self._active = True
         self._coordinator = JobCoordinator(
             adapter,
@@ -300,12 +316,13 @@ class JobSession:
         self._pending.append((task, record.intent.origin))
         return task
 
-    def drain(self):
+    def drain(self, *, task=None):
         """Return ready outcomes without applying them or waiting for network I/O."""
         _main_thread()
         completions = []
+        selected = task
         for task, origin in tuple(self._pending):
-            if not task.done():
+            if (selected is not None and task is not selected) or not task.done():
                 continue
             self._pending.remove((task, origin))
             try:
@@ -357,6 +374,72 @@ class JobSession:
         scene, target = self._resolve(completion.origin)
         del self._issued[id(completion)]
         return callback(completion.result, scene, target)
+
+    def apply_images(self, completion):
+        return self._apply_images(completion)
+
+    def apply_recovered_images(self, completion, *, destination):
+        """Import into an explicitly approved captured destination after recovery."""
+        _main_thread()
+        if not isinstance(destination, JobOrigin):
+            raise OriginUnavailable("Capture and approve the image import destination")
+        return self._apply_images(completion, destination=destination)
+
+    def validate_destination(self, destination):
+        """Check a previously captured application destination without recapturing it."""
+        _main_thread()
+        if not isinstance(destination, JobOrigin):
+            raise OriginUnavailable("Capture and approve the application destination")
+        self._resolve(destination)
+
+    def _apply_images(self, completion, *, destination=None):
+        _main_thread()
+        if self._issued.get(id(completion)) is not completion:
+            raise OriginUnavailable("Use an unconsumed verification from this session")
+        if completion.error is not None:
+            raise completion.error
+        verified = completion.result
+        if not isinstance(verified, VerifiedResults):
+            raise OriginUnavailable("Verify the saved images before applying them")
+        self._resolve(destination or completion.origin)
+        before = set(bpy.data.images)
+        del self._issued[id(completion)]
+        claim = (
+            self._coordinator.claim_application(verified)
+            if destination is None
+            else self._coordinator.claim_recovered_application(verified, destination)
+        )
+        try:
+            images = apply_images(verified)
+        except ImageApplicationError:
+            if set(bpy.data.images) != before:
+                raise ImageResultUncertain() from None
+            try:
+                self._coordinator.fail_application(claim)
+            except Exception:
+                raise ImageResultUncertain() from None
+            raise
+        except Exception:
+            raise ImageResultUncertain() from None
+        try:
+            record = self._coordinator.complete_application(claim)
+        except Exception:
+            outcome = ImageResultUncertain(images)
+            self._image_receipts[outcome] = (claim, images)
+            raise outcome from None
+        return AppliedImages(record, images)
+
+    def retry_image_receipt(self, outcome):
+        _main_thread()
+        if not isinstance(outcome, ImageResultUncertain) or outcome not in self._image_receipts:
+            raise OriginUnavailable("Use a pending image receipt from this session")
+        claim, images = self._image_receipts[outcome]
+        try:
+            record = self._coordinator.retry_application_receipt(claim)
+        except Exception:
+            raise outcome from None
+        del self._image_receipts[outcome]
+        return AppliedImages(record, images)
 
     def apply_world(self, completion, *, asset_id):
         """Apply one explicitly selected panorama from an owned verification.
@@ -490,6 +573,7 @@ class JobSession:
                 self._pending.clear()
                 self._issued.clear()
                 self._world_receipts.clear()
+                self._image_receipts.clear()
                 with _sessions_lock:
                     _sessions.discard(self)
 

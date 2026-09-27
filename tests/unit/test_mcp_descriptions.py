@@ -13,6 +13,9 @@ EXPECTED = {
     "tools_scenario": {
         "list_local_jobs",
         "cancel_prepared_job",
+        "recover_local_job",
+        "prepare_result_application",
+        "apply_result_application",
         "list_models",
         "model_schema",
         "estimate_cost",

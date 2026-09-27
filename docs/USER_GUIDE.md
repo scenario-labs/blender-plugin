@@ -174,11 +174,19 @@ An uncertain upload is preserved without sending its bytes again.
 
 To reuse an imported image after reopening a file or changing a reference, choose
 **Use saved upload** on the reference, or **Saved uploads** on its input. Choose
-**Use this image**, then confirm the displayed scene, model and reference slot.
+**Use this reference**, then confirm the displayed scene, form, model and reference slot.
 Changing the destination while confirmation is open requires another review.
 Attachment requests a fresh price; it does not start generation. Uploaded
 references are bound to the selected credentials, and later edits to the original
 file do not change the uploaded snapshot.
+
+The same **Upload reference** and **Saved uploads** controls support audio,
+video and 3D files wherever a generation form offers a matching input. For
+example, a Video model's audio input accepts an audio file, not a still capture.
+An upload stays attached to its original form when you change tabs. Pending
+uploads must finish or be reviewed before generation can continue. Still captures
+are supported for image inputs; clip capture and automatic mesh preparation
+remain part of the earlier workflow pending integration.
 
 This pre-release path imports supported PNG and scanline OpenEXR results as packed
 image datablocks. Select them in Blender's Image Editor. Saved-job controls can

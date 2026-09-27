@@ -1,6 +1,6 @@
 # SPDX-FileCopyrightText: 2026 Scenario Inc.
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""Explicit Image reference upload controls with guarded main-thread attachment."""
+"""Typed reference upload controls with guarded main-thread attachment."""
 
 import hashlib
 import json
@@ -21,6 +21,8 @@ _MARKER = "_scenario_reference_upload"
 _SCOPE = "_scenario_reference_scope"
 _REQUEST = "_scenario_reference_request"
 _ASSET = "_scenario_reference_asset"
+_KIND = "_scenario_reference_kind"
+_KINDS = {"image", "audio", "video", "3d"}
 
 
 def scope_key(scope):
@@ -29,6 +31,31 @@ def scope_key(scope):
 
 def reference_values(ref):
     return ref.param_name, ref.source, ref.filepath, ref.asset_id
+
+
+def input_kind(lane, param_name):
+    from . import generation
+
+    schema = generation.schema_for(lane.model_id)
+    spec = schema.by_name(param_name) if schema is not None else None
+    kind = (spec.kind or "image").lower() if spec is not None and spec.is_file else None
+    return kind if kind in _KINDS else None
+
+
+def _lane(scene, name):
+    if name not in props.GENERATION_LANES:
+        raise ScenarioError(0, "Choose a generation form for this reference")
+    return scene.scenario.lane_state(name)
+
+
+def _destination_key(scene, name):
+    lane = _lane(scene, name)
+    value = (scene.as_pointer(), name, lane.model_id, _form_snapshot(lane))
+    return hashlib.sha256(json.dumps(value).encode()).hexdigest()
+
+
+def _upload_sources(kind):
+    return {"FILE", "VIEWPORT", "CAMERA", "RENDER"} if kind == "image" else {"FILE"}
 
 
 def _binding(owner, ref):
@@ -60,6 +87,7 @@ def _form_snapshot(lane):
             ref.get(_MARKER),
             ref.get(_SCOPE),
             ref.get(_ASSET),
+            ref.get(_KIND),
         )
         for ref in lane.references
     )
@@ -79,6 +107,7 @@ class AttachmentApproval:
     reference: object
     reference_label: str
     form: tuple
+    lane_name: str
 
 
 def _owner(context_id):
@@ -88,9 +117,22 @@ def _owner(context_id):
     return owner
 
 
-def prepare_attachment(context, context_id, request_id, revision, index, param_name):
+def prepare_attachment(
+    context,
+    context_id,
+    request_id,
+    revision,
+    index,
+    param_name,
+    *,
+    lane_name="image",
+    destination_key="",
+):
     from . import generation
 
+    lane = _lane(context.scene, lane_name)
+    if destination_key and destination_key != _destination_key(context.scene, lane_name):
+        raise ScenarioError(0, "The destination changed; open saved uploads from the form again")
     owner = _owner(context_id)
     if len(owner.attachments) >= 128:
         raise ScenarioError(0, "Close an existing attachment confirmation before opening another")
@@ -99,10 +141,9 @@ def prepare_attachment(context, context_id, request_id, revision, index, param_n
         record is None
         or record.revision != revision
         or record.state != UploadState.IMPORTED
-        or record.intent.kind != "image"
+        or record.intent.kind not in _KINDS
     ):
-        raise ScenarioError(0, "Choose a current imported image upload")
-    lane = context.scene.scenario.lane_state("image")
+        raise ScenarioError(0, "Choose a current imported reference upload")
     ref = None
     if index >= 0:
         if index >= len(lane.references):
@@ -111,8 +152,8 @@ def prepare_attachment(context, context_id, request_id, revision, index, param_n
         param_name = ref.param_name
     schema = generation.schema_for(lane.model_id)
     spec = schema.by_name(param_name) if schema is not None else None
-    if spec is None or not spec.is_file or (spec.kind or "image").lower() != "image":
-        raise ScenarioError(0, "Choose an image input for this saved upload")
+    if input_kind(lane, param_name) != record.intent.kind:
+        raise ScenarioError(0, "Choose a matching input type for this saved upload")
     matching = [item for item in lane.references if item.param_name == param_name]
     if ref is None and spec.ptype == "file" and matching:
         if len(matching) != 1:
@@ -136,6 +177,7 @@ def prepare_attachment(context, context_id, request_id, revision, index, param_n
         if ref is not None
         else "New reference",
         _form_snapshot(lane),
+        lane_name,
     )
     owner.attachments[approval.identifier] = approval
     return owner, approval
@@ -149,14 +191,18 @@ def apply_attachment(context_id, identifier):
     if owner.session.inspect_upload(approval.record.intent.request_id) != approval.record:
         raise ScenarioError(0, "The saved upload changed; review it again")
     owner.session.validate_destination(approval.origin)
-    lane = approval.scene.scenario.lane_state("image")
-    if lane.model_id != approval.model_id or _form_snapshot(lane) != approval.form:
+    lane = _lane(approval.scene, approval.lane_name)
+    if (
+        lane.model_id != approval.model_id
+        or _form_snapshot(lane) != approval.form
+        or input_kind(lane, approval.param_name) != approval.record.intent.kind
+    ):
         raise ScenarioError(0, "The model or references changed; review the destination again")
     ref = approval.reference
     added = ref is None
     if added:
         ref = lane.references.add()
-    marker_keys = (_MARKER, _SCOPE, _REQUEST, _ASSET)
+    marker_keys = (_MARKER, _SCOPE, _REQUEST, _ASSET, _KIND)
     previous = (
         reference_values(ref),
         ref.label,
@@ -171,6 +217,7 @@ def apply_attachment(context_id, identifier):
         ref[_SCOPE] = scope_key(owner.session.scope)
         ref[_REQUEST] = approval.record.intent.request_id
         ref[_ASSET] = approval.record.asset_id
+        ref[_KIND] = approval.record.intent.kind
         ref.asset_id = approval.record.asset_id
         ref.source = "ASSET"
         ref.label = approval.record.intent.file_name + " (uploaded snapshot)"
@@ -202,26 +249,28 @@ class FormUpload:
     ticket: object = None
     error: str = ""
     attached: bool = False
+    lane_name: str = "image"
+    kind: str = "image"
 
     def current(self, token):
         try:
-            lane = self.scene.scenario.lane_state("image")
+            lane = _lane(self.scene, self.lane_name)
             return (
                 lane.model_id == self.model_id
                 and any(ref == self.reference for ref in lane.references)
                 and self.reference.get(_MARKER) == token
                 and reference_values(self.reference) == self.values
+                and input_kind(lane, self.reference.param_name) == self.kind
             )
         except (ReferenceError, RuntimeError):
             return False
 
 
-def start(context, index):
-    from . import generation
+def start(context, index, *, lane_name="image"):
     from .reference_uploads import UploadNotStarted, capture_upload
 
     owner = runtime.ensure_reference_uploads()
-    lane = context.scene.scenario.lane_state("image")
+    lane = _lane(context.scene, lane_name)
     if not 0 <= index < len(lane.references):
         raise ScenarioError(0, "Select a reference to upload")
     ref = lane.references[index]
@@ -234,23 +283,24 @@ def start(context, index):
         raise ScenarioError(0, reason)
     if len(owner.forms) >= 128:
         raise ScenarioError(0, "Reference upload capacity reached; inspect existing uploads")
-    schema = generation.schema_for(lane.model_id)
-    spec = schema.by_name(ref.param_name) if schema is not None else None
-    if spec is None or not spec.is_file or (spec.kind or "image").lower() != "image":
-        raise ScenarioError(0, "Choose an image input before uploading")
-    if ref.source not in {"FILE", "VIEWPORT", "CAMERA", "RENDER"}:
-        raise ScenarioError(0, "Choose a local image, viewport, camera or render result")
+    kind = input_kind(lane, ref.param_name)
+    if kind is None:
+        raise ScenarioError(0, "Choose an image, audio, video or 3D input before uploading")
+    if ref.source not in _upload_sources(kind):
+        raise ScenarioError(0, "Choose a local file or a supported image capture to upload")
     if ref.source == "FILE" and not ref.filepath:
-        raise ScenarioError(0, "Choose an image file first")
+        raise ScenarioError(0, f"Choose a file for this {kind} input first")
     token = uuid.uuid4().hex
     ref[_MARKER] = token
     ref[_SCOPE] = scope_key(owner.session.scope)
-    binding = FormUpload(context.scene, ref, lane.model_id, reference_values(ref))
+    binding = FormUpload(
+        context.scene, ref, lane.model_id, reference_values(ref), lane_name=lane_name, kind=kind
+    )
     owner.forms[token] = binding
     props.mark_estimate_dirty(lane)
     try:
         if ref.source == "FILE":
-            binding.ticket = owner.start(context.scene, bpy.path.abspath(ref.filepath))
+            binding.ticket = owner.start(context.scene, bpy.path.abspath(ref.filepath), kind=kind)
         else:
             binding.ticket = capture_upload(context, source=ref.source, camera=ref.asset_id or None)
     except UploadNotStarted:
@@ -290,7 +340,7 @@ def _deliver_binding(owner, token, binding):
         UploadState.FAILED,
         UploadState.CANCELED,
     }:
-        binding.error = "Upload finished without an image; inspect saved progress"
+        binding.error = "Upload finished without an asset; inspect saved progress"
         return
     if binding.scene != bpy.context.scene:
         return
@@ -306,15 +356,18 @@ def _deliver_binding(owner, token, binding):
     ref = binding.reference
     ref.asset_id = ticket.record.asset_id
     ref[_ASSET] = ticket.record.asset_id
+    ref[_KIND] = binding.kind
     ref.source = "ASSET"
     ref.label = (ref.label or "Reference") + " (uploaded snapshot)"
     binding.attached = True
-    props.mark_estimate_dirty(binding.scene.scenario.lane_state("image"))
+    props.mark_estimate_dirty(_lane(binding.scene, binding.lane_name))
 
 
 def scope_error(lane_state):
     """Persisted uploaded asset IDs may only be quoted in their selected scope."""
     for ref in lane_state.references:
+        if ref.get(_MARKER) and ref.source != "ASSET":
+            return "Finish the reference upload or inspect its saved progress before generating"
         if ref.source != "ASSET" or not ref.get(_SCOPE):
             continue
         store = runtime.state.job_store
@@ -322,33 +375,30 @@ def scope_error(lane_state):
             store is None
             or ref.get(_SCOPE) != scope_key(store.scope)
             or ref.asset_id != ref.get(_ASSET)
+            or input_kind(lane_state, ref.param_name) != ref.get(_KIND, "image")
         ):
             return "This uploaded reference belongs to another connection or was edited; choose it again"
     return None
 
 
 def draw(layout, lane_state, index, ref):
-    if props.lane_of(lane_state) != "image":
+    lane_name = props.lane_of(lane_state)
+    kind = input_kind(lane_state, ref.param_name)
+    if kind is None:
         return
     marker = ref.get(_MARKER)
     if not marker:
-        if ref.source in {"FILE", "VIEWPORT", "CAMERA", "RENDER"}:
-            from . import generation
-
-            schema = generation.schema_for(lane_state.model_id)
-            spec = schema.by_name(ref.param_name) if schema is not None else None
-            if spec is None or (spec.kind or "image").lower() != "image":
-                return
+        if ref.source in _upload_sources(kind):
             op = layout.operator(
-                "scenario.upload_image_reference", text="Upload reference", icon="EXPORT"
+                "scenario.upload_reference", text="Upload reference", icon="EXPORT"
             )
-            op.index = index
+            op.index, op.lane = index, lane_name
         op = layout.operator("scenario.inspect_uploads", text="Use saved upload", icon="VIEWZOOM")
-        op.index = index
+        op.index, op.lane = index, lane_name
         return
     if ref.source == "ASSET":
         op = layout.operator("scenario.inspect_uploads", text="Inspect uploads", icon="VIEWZOOM")
-        op.index = index
+        op.index, op.lane = index, lane_name
         return
     owner = runtime.state.reference_uploads
     binding = _binding(owner, ref)
@@ -360,14 +410,17 @@ def draw(layout, lane_state, index, ref):
     else:
         row.label(text="Uploading reference…", icon="TIME")
     op = row.operator("scenario.inspect_uploads", text="Inspect uploads", icon="VIEWZOOM")
-    op.index = index
+    op.index, op.lane = index, lane_name
 
 
-class SCENARIO_OT_upload_image_reference(bpy.types.Operator):
-    bl_idname = "scenario.upload_image_reference"
+class SCENARIO_OT_upload_reference(bpy.types.Operator):
+    bl_idname = "scenario.upload_reference"
     bl_label = "Upload reference"
-    bl_description = "Upload this image snapshot to Scenario before requesting its generation price"
+    bl_description = (
+        "Upload this reference snapshot to Scenario before requesting its generation price"
+    )
     index: IntProperty(min=0)
+    lane: StringProperty(default="image", options={"HIDDEN"})
 
     @classmethod
     def poll(cls, context):
@@ -377,7 +430,7 @@ class SCENARIO_OT_upload_image_reference(bpy.types.Operator):
 
     def execute(self, context):
         try:
-            start(context, self.index)
+            start(context, self.index, lane_name=self.lane)
         except ScenarioError as error:
             self.report({"ERROR"}, error.reason)
             return {"CANCELLED"}
@@ -394,9 +447,11 @@ class SCENARIO_OT_inspect_uploads(bpy.types.Operator):
     index: IntProperty(default=-1)
     param_name: StringProperty()
     page: IntProperty(default=0, min=0)
+    lane: StringProperty(default="image", options={"HIDDEN"})
 
     def invoke(self, context, event):
         try:
+            self._destination_key = _destination_key(context.scene, self.lane)
             self._owner = runtime.ensure_reference_uploads()
             self._context_id = runtime.state.job_context_id
             self._records = self._owner.inspect_saved()
@@ -431,6 +486,17 @@ class SCENARIO_OT_inspect_uploads(bpy.types.Operator):
             row.enabled = valid and page >= 0 and (page == 0 or page * 6 < len(records))
             op = row.operator("scenario.inspect_uploads", text=label)
             op.page, op.index, op.param_name = max(0, page), self.index, self.param_name
+            op.lane = self.lane
+        lane_state = _lane(context.scene, self.lane)
+        param = self.param_name
+        if 0 <= self.index < len(lane_state.references):
+            param = lane_state.references[self.index].param_name
+        destination_valid = self._destination_key == _destination_key(context.scene, self.lane)
+        kind = input_kind(lane_state, param) if destination_valid else None
+        if not destination_valid:
+            layout.label(
+                text="The destination changed; reopen saved uploads from the form", icon="ERROR"
+            )
         for snapshot in records[self.page * 6 : (self.page + 1) * 6]:
             record = owner.saved.get(snapshot.intent.request_id, snapshot) if valid else snapshot
             box = layout.box()
@@ -460,13 +526,14 @@ class SCENARIO_OT_inspect_uploads(bpy.types.Operator):
                 op.expected_revision, op.action = record.revision, action
             if (
                 record.state == UploadState.IMPORTED
-                and record.intent.kind == "image"
+                and record.intent.kind == kind
                 and (self.index >= 0 or self.param_name)
             ):
                 op = row.operator(
-                    "scenario.attach_saved_upload", text="Use this image", icon="IMAGE_DATA"
+                    "scenario.attach_saved_upload", text="Use this reference", icon="IMPORT"
                 )
                 op.context_id, op.request_id = self._context_id, record.intent.request_id
+                op.lane, op.destination_key = self.lane, self._destination_key
                 op.expected_revision, op.index, op.param_name = (
                     record.revision,
                     self.index,
@@ -514,7 +581,7 @@ class SCENARIO_OT_attach_saved_upload(bpy.types.Operator):
     bl_idname = "scenario.attach_saved_upload"
     bl_label = "Use saved upload"
     bl_description = (
-        "Review this imported image and the selected form destination before attaching it"
+        "Review this imported reference and the selected form destination before attaching it"
     )
     bl_options = {"UNDO"}
     context_id: StringProperty(options={"HIDDEN"})
@@ -523,6 +590,8 @@ class SCENARIO_OT_attach_saved_upload(bpy.types.Operator):
     index: IntProperty(default=-1, options={"HIDDEN"})
     param_name: StringProperty(options={"HIDDEN"})
     approval_id: StringProperty(options={"HIDDEN", "SKIP_SAVE"})
+    lane: StringProperty(default="image", options={"HIDDEN"})
+    destination_key: StringProperty(options={"HIDDEN", "SKIP_SAVE"})
 
     def invoke(self, context, event):
         try:
@@ -533,6 +602,8 @@ class SCENARIO_OT_attach_saved_upload(bpy.types.Operator):
                 self.expected_revision,
                 self.index,
                 self.param_name,
+                lane_name=self.lane,
+                destination_key=self.destination_key,
             )
             self.approval_id = self._approval.identifier
         except Exception:
@@ -547,17 +618,18 @@ class SCENARIO_OT_attach_saved_upload(bpy.types.Operator):
         approval = self._approval
         for text in (
             f"Scene: {approval.scene_name}",
+            f"Form: {approval.lane_name.replace('_', ' ').title()}",
             f"Model: {approval.model_label}",
             f"Input: {approval.input_label}",
             f"Reference: {approval.reference_label}",
-            f"Image: {approval.record.intent.file_name}",
+            f"File: {approval.record.intent.file_name}",
         ):
             for line in textwrap.wrap(text, 65):
                 self.layout.label(text=line)
         self.layout.label(
             text="Replace the selected reference."
             if approval.reference is not None
-            else "Add this image as a new reference."
+            else "Add this file as a new reference."
         )
         self.layout.label(text="The next generation requires a fresh price and approval.")
 
@@ -572,14 +644,14 @@ class SCENARIO_OT_attach_saved_upload(bpy.types.Operator):
         except Exception:
             self.report(
                 {"ERROR"},
-                "Attachment was not completed; review the saved image and destination again",
+                "Attachment was not completed; review the saved reference and destination again",
             )
             return {"CANCELLED"}
         return {"FINISHED"}
 
 
 CLASSES = (
-    SCENARIO_OT_upload_image_reference,
+    SCENARIO_OT_upload_reference,
     SCENARIO_OT_inspect_uploads,
     SCENARIO_OT_recover_upload,
     SCENARIO_OT_attach_saved_upload,

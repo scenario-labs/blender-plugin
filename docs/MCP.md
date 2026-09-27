@@ -55,9 +55,9 @@ in a model estimate. Status, `list_reference_uploads` and recovery return saved
 `kind` and `content_type` metadata; initial staging can report null metadata.
 Only the selected file is sent: no conversion, external-buffer or texture-sidecar
 discovery. Upload approval does not approve generation, and a lost response must
-be reconciled using saved progress instead of starting another upload. GUI capture
-and automatic form attachment remain image-only; non-image form preparation is
-separate integration work.
+be reconciled using saved progress instead of starting another upload. The same uploads and saved-reference recovery are available in generation
+forms for image, audio, video and 3D inputs. Still capture remains image-only;
+clip/mesh preparation and non-image UI generation dispatch are separate work.
 
 ## Token lifecycle
 

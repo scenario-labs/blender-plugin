@@ -322,6 +322,106 @@ class ReferenceFormTests(unittest.TestCase):
         self.assertEqual(self.ref.asset_id, "new-selection")
         self.assertNotIn(approval.identifier, self.owner.attachments)
 
+    def pending_reference(self, index):
+        ref = self.ref if index == 0 else self.lane.references.add()
+        for key in tuple(ref.keys()):
+            del ref[key]
+        ref.param_name, ref.source, ref.asset_id = "image", "FILE", ""
+        ref.filepath = str(self.fixture.fixture.source)
+        self.fixture.fixture.remote["id"] = "upload-two"
+        binding = self.form.start(bpy.context, index)
+        binding.ticket.task.result(5)
+        return ref, binding
+
+    def receipt_during_confirmation(self, index):
+        record = self.saved_upload()
+        ref, binding = self.pending_reference(index)
+        approval = self.approve(record)
+        self.assertNotIn(self.form._REQUEST, ref)
+        with patch.object(self.owner, "_online", return_value=False):
+            self.owner.poll()
+        self.assertEqual(ref[self.form._REQUEST], binding.ticket.record.intent.request_id)
+        self.assertEqual(ref.source, "FILE")
+        self.form.apply_attachment(self.runtime.state.job_context_id, approval.identifier)
+        self.assertEqual(self.ref.asset_id, record.asset_id)
+        self.fixture.fixture.uploader.upload.assert_called_once()
+
+    def test_target_upload_receipt_does_not_invalidate_confirmation(self):
+        self.receipt_during_confirmation(0)
+
+    def test_other_slot_upload_receipt_does_not_invalidate_confirmation(self):
+        self.receipt_during_confirmation(1)
+
+    def test_actual_attachment_during_confirmation_still_requires_new_review(self):
+        record = self.saved_upload()
+        ref, _ = self.pending_reference(1)
+        approval = self.approve(record)
+        self.fixture.settle()
+        self.assertEqual(ref.source, "ASSET")
+        with self.assertRaises(submodule("core.api.errors").ScenarioError):
+            self.form.apply_attachment(self.runtime.state.job_context_id, approval.identifier)
+
+    def test_native_undo_redo_requires_fresh_attachment_without_reupload(self):
+        record = self.saved_upload()
+        ref, binding = self.pending_reference(0)
+        with patch.object(self.owner, "_online", return_value=False):
+            self.owner.poll()
+        marker = ref[self.form._MARKER]
+        fixture = self.fixture.fixture
+        names = self.scene.name, fixture.previous.name, fixture.target.name
+        undo = bpy.context.preferences.edit.use_global_undo
+        bpy.context.preferences.edit.use_global_undo = True
+
+        def restored_references():
+            self.scene = fixture.scene = bpy.data.scenes[names[0]]
+            fixture.previous = bpy.data.scenes[names[1]]
+            fixture.target = bpy.data.objects[names[2]]
+            bpy.context.window.scene = self.scene
+            self.lane = self.scene.scenario.lane_state("image")
+            self.ref = self.lane.references[0]
+
+        try:
+            bpy.ops.ed.undo_push(message="Before saved reference attachment")
+            approval = self.approve(record)
+            self.assertEqual(
+                bpy.ops.scenario.attach_saved_upload(
+                    context_id=self.runtime.state.job_context_id,
+                    approval_id=approval.identifier,
+                ),
+                {"FINISHED"},
+            )
+            self.assertTrue(binding.attached)
+            bpy.ops.ed.undo_push(message="After saved reference attachment")
+            pending = self.approve(record)
+            calls = len(fixture.calls)
+            self.assertEqual(bpy.ops.ed.undo(), {"FINISHED"})
+            restored_references()
+            self.owner.poll()
+            self.assertEqual(self.ref.source, "FILE")
+            self.assertEqual(self.ref[self.form._MARKER], marker)
+            self.assertEqual(self.owner.forms, {})
+            self.assertNotIn(pending.identifier, self.owner.attachments)
+            with self.assertRaises(submodule("core.api.errors").ScenarioError):
+                self.form.start(bpy.context, 0)
+            # Redo restores the already authorized RNA change, not its consumed
+            # approval. Neither history operation replays the network upload.
+            self.assertEqual(bpy.ops.ed.redo(), {"FINISHED"})
+            restored_references()
+            self.owner.poll()
+            self.assertEqual(self.ref.source, "ASSET")
+            self.assertEqual(self.owner.forms, {})
+            self.assertEqual(bpy.ops.ed.undo(), {"FINISHED"})
+            restored_references()
+            approval = self.approve(record)
+            self.form.apply_attachment(self.runtime.state.job_context_id, approval.identifier)
+            self.assertEqual(self.ref.asset_id, record.asset_id)
+            self.assertEqual(self.owner.session.inspect_upload(record.intent.request_id), record)
+            self.assertEqual(len(fixture.calls), calls)
+            self.fixture.fixture.uploader.upload.assert_called_once()
+        finally:
+            restored_references()
+            bpy.context.preferences.edit.use_global_undo = undo
+
     def test_new_slot_and_single_file_replacement_are_explicit(self):
         record = self.saved_upload()
         self.lane.references.clear()

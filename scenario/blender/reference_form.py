@@ -10,6 +10,7 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 
 import bpy
+from bpy.app.handlers import persistent
 from bpy.props import EnumProperty, IntProperty, StringProperty
 
 from ..core.api.errors import ScenarioError
@@ -31,13 +32,14 @@ def reference_values(ref):
 
 
 def _form_snapshot(lane):
+    # The pump may publish a request ID while staging finishes. It is progress
+    # metadata, not a change to the selected source, scope or upload identity.
     return tuple(
         (
             ref.as_pointer(),
             reference_values(ref),
             ref.get(_MARKER),
             ref.get(_SCOPE),
-            ref.get(_REQUEST),
             ref.get(_ASSET),
         )
         for ref in lane.references
@@ -543,11 +545,27 @@ CLASSES = (
 )
 
 
+@persistent
+def _history_post(_):
+    # Undo restores RNA, not these Python bindings or consumed approvals. Keep
+    # durable uploads and restored duplicate guards, then require fresh review.
+    owner = runtime.state.reference_uploads
+    if owner is not None:
+        owner.forms.clear()
+        owner.attachments.clear()
+
+
 def register():
     for cls in CLASSES:
         bpy.utils.register_class(cls)
+    for handlers in (bpy.app.handlers.undo_post, bpy.app.handlers.redo_post):
+        if _history_post not in handlers:
+            handlers.append(_history_post)
 
 
 def unregister():
+    for handlers in (bpy.app.handlers.undo_post, bpy.app.handlers.redo_post):
+        if _history_post in handlers:
+            handlers.remove(_history_post)
     for cls in reversed(CLASSES):
         bpy.utils.unregister_class(cls)

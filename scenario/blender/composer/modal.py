@@ -1,18 +1,25 @@
 # SPDX-FileCopyrightText: 2026 Scenario Inc.
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Modal operator that owns the mouse and keyboard while the pointer is on the composer or the prompt has focus."""
+
 import bpy
 
-from .. import runtime
 from ...core.ui import composer_layout as cl
+from .. import panels, runtime
 
 
 def _layout(context, state):
     from .draw import ui_scale
 
     region = context.region
-    return cl.pill_placement(region.width, region.height, state.expanded, ui_scale(context),
-                             offset=state.offset, width=state.width if state.expanded else None)
+    return cl.pill_placement(
+        region.width,
+        region.height,
+        state.expanded,
+        ui_scale(context),
+        offset=state.offset,
+        width=state.width if state.expanded else None,
+    )
 
 
 def _redraw(context):
@@ -54,28 +61,33 @@ def _save_layout():
 class SCENARIO_OT_composer_modal(bpy.types.Operator):
     bl_idname = "scenario.composer_modal"
     bl_label = "Scenario composer"
-    bl_options = {'INTERNAL'}
+    bl_options = {"INTERNAL"}
 
     @classmethod
     def poll(cls, context):
         prefs = runtime.prefs()
-        return runtime.state.composer is not None and (prefs is None or prefs.composer_enabled) and context.area is not None and context.area.type == 'VIEW_3D'
+        return (
+            runtime.state.composer is not None
+            and (prefs is None or prefs.composer_enabled)
+            and context.area is not None
+            and context.area.type == "VIEW_3D"
+        )
 
     def invoke(self, context, event):
         state = runtime.state.composer
-        if state is None or context.region is None or context.region.type != 'WINDOW':
-            return {'PASS_THROUGH', 'CANCELLED'}
+        if state is None or context.region is None or context.region.type != "WINDOW":
+            return {"PASS_THROUGH", "CANCELLED"}
         layout = _layout(context, state)
         inside = layout.hit(event.mouse_region_x, event.mouse_region_y) is not None
         if not inside and not state.focused:
-            return {'PASS_THROUGH', 'CANCELLED'}
+            return {"PASS_THROUGH", "CANCELLED"}
         if getattr(runtime.state, "composer_modal_running", False):
-            return {'PASS_THROUGH', 'CANCELLED'}
+            return {"PASS_THROUGH", "CANCELLED"}
         runtime.state.composer_modal_running = True
         state.mouse = (event.mouse_region_x, event.mouse_region_y)
         context.window_manager.modal_handler_add(self)
         _redraw(context)
-        return {'RUNNING_MODAL'}
+        return {"RUNNING_MODAL"}
 
     def _finish(self, context):
         runtime.state.composer_modal_running = False
@@ -87,7 +99,7 @@ class SCENARIO_OT_composer_modal(bpy.types.Operator):
                 state.cancel_drag()
                 _cursor(context, None)
         _redraw(context)
-        return {'FINISHED'}
+        return {"FINISHED"}
 
     # -- placement drags -------------------------------------------------------
     def _drag_move(self, context, state, event):
@@ -100,7 +112,7 @@ class SCENARIO_OT_composer_modal(bpy.types.Operator):
             if abs(dx) < cl.DRAG_THRESHOLD * scale and abs(dy) < cl.DRAG_THRESHOLD * scale:
                 return
             state.drag_mode = "move"
-            _cursor(context, 'SCROLL_XY')
+            _cursor(context, "SCROLL_XY")
         state.moved = True
         region = context.region
         if state.drag_mode == "move":
@@ -132,48 +144,54 @@ class SCENARIO_OT_composer_modal(bpy.types.Operator):
         scene = context.scene
         layout = _layout(context, state)
         if state.drag_mode is not None:
-            if event.type == 'MOUSEMOVE':
+            if event.type == "MOUSEMOVE":
                 state.mouse = (event.mouse_region_x, event.mouse_region_y)
                 self._drag_move(context, state, event)
-                return {'RUNNING_MODAL'}
-            if event.type == 'LEFTMOUSE' and event.value == 'RELEASE':
+                return {"RUNNING_MODAL"}
+            if event.type == "LEFTMOUSE" and event.value == "RELEASE":
                 self._drag_release(context, state, scene)
-                return {'RUNNING_MODAL'}
-            if event.type == 'ESC' and event.value == 'PRESS':
+                return {"RUNNING_MODAL"}
+            if event.type == "ESC" and event.value == "PRESS":
                 state.cancel_drag()
                 _cursor(context, None)
                 _redraw(context)
-                return {'RUNNING_MODAL'}
-            return {'RUNNING_MODAL'}
-        if event.type == 'MOUSEMOVE':
+                return {"RUNNING_MODAL"}
+            return {"RUNNING_MODAL"}
+        if event.type == "MOUSEMOVE":
             state.mouse = (event.mouse_region_x, event.mouse_region_y)
             if state.dragging and state.focused and layout.prompt_rect is not None:
-                state.field.caret_at(_caret_index(context, state, layout, event.mouse_region_x), extend=True)
+                state.field.caret_at(
+                    _caret_index(context, state, layout, event.mouse_region_x), extend=True
+                )
                 _redraw(context)
-                return {'RUNNING_MODAL'}
+                return {"RUNNING_MODAL"}
             hit = layout.hit(*state.mouse)
             if hit != state.hover:
                 if hit == ("resize",):
-                    _cursor(context, 'MOVE_X')  # the corner shows a resize cursor instead of a permanent grip
+                    _cursor(
+                        context, "MOVE_X"
+                    )  # the corner shows a resize cursor instead of a permanent grip
                 elif state.hover == ("resize",):
                     _cursor(context, None)
                 state.hover = hit
                 _redraw(context)
             if hit is None and not state.focused:
                 return self._finish(context)
-            return {'PASS_THROUGH'}
-        if event.type == 'LEFTMOUSE' and event.value == 'RELEASE':
+            return {"PASS_THROUGH"}
+        if event.type == "LEFTMOUSE" and event.value == "RELEASE":
             if state.dragging:
                 state.dragging = False
                 _redraw(context)
-                return {'RUNNING_MODAL'}
-            return {'PASS_THROUGH'} if not state.focused else {'RUNNING_MODAL'}
-        if event.type == 'LEFTMOUSE' and event.value == 'DOUBLE_CLICK':
+                return {"RUNNING_MODAL"}
+            return {"PASS_THROUGH"} if not state.focused else {"RUNNING_MODAL"}
+        if event.type == "LEFTMOUSE" and event.value == "DOUBLE_CLICK":
             hit = layout.hit(event.mouse_region_x, event.mouse_region_y)
             if hit == ("prompt",) and state.expanded:
                 state.sync_from_lane(scene)
                 state.focused = True
-                state.field.select_word_at(_caret_index(context, state, layout, event.mouse_region_x))
+                state.field.select_word_at(
+                    _caret_index(context, state, layout, event.mouse_region_x)
+                )
                 state.dragging = False
                 _redraw(context)
             elif hit in (("drag",), ("resize",)):
@@ -182,8 +200,8 @@ class SCENARIO_OT_composer_modal(bpy.types.Operator):
                 state.reset_layout()
                 _save_layout()
                 _redraw(context)
-            return {'RUNNING_MODAL'}
-        if event.type == 'LEFTMOUSE' and event.value == 'PRESS':
+            return {"RUNNING_MODAL"}
+        if event.type == "LEFTMOUSE" and event.value == "PRESS":
             hit = layout.hit(event.mouse_region_x, event.mouse_region_y)
             if hit is None:
                 state.focused = False
@@ -200,7 +218,7 @@ class SCENARIO_OT_composer_modal(bpy.types.Operator):
                 state.begin_drag((event.mouse_region_x, event.mouse_region_y), "drag")
             elif kind == "resize":
                 state.begin_drag((event.mouse_region_x, event.mouse_region_y), "resize")
-                _cursor(context, 'MOVE_X')
+                _cursor(context, "MOVE_X")
             elif kind == "collapse":
                 state.focused = False
                 state.commit_to_lane(scene)
@@ -213,71 +231,77 @@ class SCENARIO_OT_composer_modal(bpy.types.Operator):
                 if not state.focused:
                     state.sync_from_lane(scene)
                 state.focused = True
-                state.field.caret_at(_caret_index(context, state, layout, event.mouse_region_x), extend=event.shift)
+                state.field.caret_at(
+                    _caret_index(context, state, layout, event.mouse_region_x), extend=event.shift
+                )
                 state.dragging = True
             elif kind == "generate":
                 state.commit_to_lane(scene)
                 state.focused = False
-                bpy.ops.scenario.generate(lane=state.lane_for(scene))
+                lane = state.lane_for(scene)
+                if panels.generate_enabled(scene.scenario.lane_state(lane), lane):
+                    bpy.ops.scenario.generate(lane=lane)
             elif kind == "model":
                 # the model chip opens the search dialog; the sidebar shows the rest of the form
                 _open_sidebar(context)
                 try:
-                    bpy.ops.scenario.pick_model('INVOKE_DEFAULT', lane=state.lane_for(scene))
+                    bpy.ops.scenario.pick_model("INVOKE_DEFAULT", lane=state.lane_for(scene))
                 except (RuntimeError, AttributeError):
                     pass
             elif kind == "settings":
                 # the generation settings of the current lane, in a dialog right here
                 try:
-                    bpy.ops.scenario.quick_settings('INVOKE_DEFAULT', lane=state.lane_for(scene))
+                    bpy.ops.scenario.quick_settings("INVOKE_DEFAULT", lane=state.lane_for(scene))
                 except (RuntimeError, AttributeError):
                     _open_sidebar(context)
             _redraw(context)
-            return {'RUNNING_MODAL'}
+            return {"RUNNING_MODAL"}
         if not state.focused:
-            return {'PASS_THROUGH'}
-        if event.value != 'PRESS':
-            return {'RUNNING_MODAL'}
+            return {"PASS_THROUGH"}
+        if event.value != "PRESS":
+            return {"RUNNING_MODAL"}
         field = state.field
         command = event.ctrl or event.oskey
-        if event.type == 'ESC':
+        if event.type == "ESC":
             state.focused = False
             state.dragging = False
             state.commit_to_lane(scene)
             _redraw(context)
-            return {'RUNNING_MODAL'}
-        if event.type in ('RET', 'NUMPAD_ENTER'):
+            return {"RUNNING_MODAL"}
+        if event.type in ("RET", "NUMPAD_ENTER"):
             state.commit_to_lane(scene)
             state.focused = False
-            bpy.ops.scenario.generate(lane=state.lane_for(scene))
+            lane = state.lane_for(scene)
+            if panels.generate_enabled(scene.scenario.lane_state(lane), lane):
+                bpy.ops.scenario.generate(lane=lane)
             _redraw(context)
-            return {'RUNNING_MODAL'}
-        if event.type == 'BACK_SPACE':
+            return {"RUNNING_MODAL"}
+        if event.type == "BACK_SPACE":
             field.backspace()
-        elif event.type == 'DEL':
+        elif event.type == "DEL":
             field.delete()
-        elif event.type == 'LEFT_ARROW':
+        elif event.type == "LEFT_ARROW":
             field.move(-1, extend=event.shift)
-        elif event.type == 'RIGHT_ARROW':
+        elif event.type == "RIGHT_ARROW":
             field.move(1, extend=event.shift)
-        elif event.type == 'HOME':
+        elif event.type == "HOME":
             field.home(extend=event.shift)
-        elif event.type == 'END':
+        elif event.type == "END":
             field.end(extend=event.shift)
-        elif command and event.type == 'V':
+        elif command and event.type == "V":
             field.insert(context.window_manager.clipboard or "")
-        elif command and event.type == 'A':
+        elif command and event.type == "A":
             field.select_all()
-        elif command and event.type == 'C':
+        elif command and event.type == "C":
             context.window_manager.clipboard = field.copy()
             _redraw(context)
-            return {'RUNNING_MODAL'}  # the text did not change
-        elif command and event.type == 'X':
+            return {"RUNNING_MODAL"}  # the text did not change
+        elif command and event.type == "X":
             context.window_manager.clipboard = field.cut()
         elif event.unicode and not (command or event.alt):
             field.insert(event.unicode)
         else:
-            return {'RUNNING_MODAL'}
+            return {"RUNNING_MODAL"}
         state.commit_to_lane(scene)
         _redraw(context)
-        return {'RUNNING_MODAL'}
+        return {"RUNNING_MODAL"}

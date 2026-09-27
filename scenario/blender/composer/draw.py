@@ -1,6 +1,7 @@
 # SPDX-FileCopyrightText: 2026 Scenario Inc.
 # SPDX-License-Identifier: GPL-3.0-or-later
 """gpu/blf drawing of the floating composer. Runs inside a POST_PIXEL draw handler on the main thread; no IO."""
+
 import math
 
 import blf
@@ -8,8 +9,8 @@ import bpy
 import gpu
 from gpu_extras.batch import batch_for_shader
 
-from .. import runtime
 from ...core.ui import composer_layout as cl
+from .. import panels, runtime
 
 _batches = {}
 _shader = None
@@ -29,14 +30,19 @@ PROMPT_INSET = 12  # horizontal text inset inside the prompt field, in unscaled 
 def _shader_get():
     global _shader
     if _shader is None:
-        _shader = gpu.shader.from_builtin('UNIFORM_COLOR')
+        _shader = gpu.shader.from_builtin("UNIFORM_COLOR")
     return _shader
 
 
 def _rounded_verts(w, h, r, segments=6):
     r = max(0.0, min(r, w / 2, h / 2))
     verts = []
-    corners = ((w - r, h - r, 0.0), (r, h - r, math.pi / 2), (r, r, math.pi), (w - r, r, 3 * math.pi / 2))
+    corners = (
+        (w - r, h - r, 0.0),
+        (r, h - r, math.pi / 2),
+        (r, r, math.pi),
+        (w - r, r, 3 * math.pi / 2),
+    )
     for cx, cy, start in corners:
         for i in range(segments + 1):
             a = start + (math.pi / 2) * i / segments
@@ -49,7 +55,7 @@ def _batch(w, h, r):
     batch = _batches.get(key)
     if batch is None:
         verts = _rounded_verts(key[0], key[1], key[2])
-        batch = batch_for_shader(_shader_get(), 'TRI_FAN', {"pos": verts})
+        batch = batch_for_shader(_shader_get(), "TRI_FAN", {"pos": verts})
         if len(_batches) > 64:
             _batches.clear()
         _batches[key] = batch
@@ -113,7 +119,9 @@ def _chip(r, label, scale, font_px, hovered, fill=TAB, color=TEXT, centered=Fals
     blf.size(FONT, font_px)
     tw = blf.dimensions(FONT, label)[0]
     x = r.x + (max(4 * scale, (r.w - tw) / 2) if centered else 10 * scale)
-    text(x, r.y + (r.h - font_px) / 2 + 2 * scale, font_px, label, color, max_width=r.w - 12 * scale)
+    text(
+        x, r.y + (r.h - font_px) / 2 + 2 * scale, font_px, label, color, max_width=r.w - 12 * scale
+    )
 
 
 def _minus_button(cr, scale, hovered):
@@ -131,7 +139,7 @@ def _grip(gr, scale, hovered):
         d = (4 + 4 * i) * scale
         lines.append((gr.right - d, gr.y + 2 * scale))
         lines.append((gr.right - 2 * scale, gr.y + d))
-    batch = batch_for_shader(shader, 'LINES', {"pos": lines})
+    batch = batch_for_shader(shader, "LINES", {"pos": lines})
     gpu.state.line_width_set(max(1.0, 1.5 * scale))
     shader.uniform_float("color", color)
     batch.draw(shader)
@@ -140,7 +148,7 @@ def _grip(gr, scale, hovered):
 
 def status_note(lane_state):
     """The line shown next to the model chip: a quote problem, the lane's error, else the add-on's temporary message."""
-    if lane_state.estimate_state in ('ERROR', 'UNAVAILABLE') and lane_state.estimate_error:
+    if lane_state.estimate_state in ("ERROR", "UNAVAILABLE") and lane_state.estimate_error:
         return lane_state.estimate_error
     if lane_state.last_error:
         return lane_state.last_error
@@ -155,7 +163,14 @@ def _prompt_field(pr, field, focused, lane, scale):
     font_px, start, end, x0 = prompt_metrics(pr, field, scale)
     text_y = pr.y + (pr.h - font_px) / 2 + 2 * scale
     if not field.text:
-        text(x0, text_y, font_px, cl.placeholder_for(lane), MUTED, max_width=pr.w - 2 * PROMPT_INSET * scale)
+        text(
+            x0,
+            text_y,
+            font_px,
+            cl.placeholder_for(lane),
+            MUTED,
+            max_width=pr.w - 2 * PROMPT_INSET * scale,
+        )
         if focused:
             rect(x0, pr.y + 8 * scale, max(1.0, 1.5 * scale), pr.h - 16 * scale, TEXT, 0)
         return
@@ -169,7 +184,9 @@ def _prompt_field(pr, field, focused, lane, scale):
             rect(sx0, pr.y + 6 * scale, sx1 - sx0, pr.h - 12 * scale, SELECTION, 3 * scale)
     text(x0, text_y, font_px, field.text[start:end], TEXT)
     if focused:
-        caret_x = x0 + blf.dimensions(FONT, field.text[start:max(start, min(field.caret, end))])[0]
+        caret_x = (
+            x0 + blf.dimensions(FONT, field.text[start : max(start, min(field.caret, end))])[0]
+        )
         rect(caret_x, pr.y + 8 * scale, max(1.0, 1.5 * scale), pr.h - 16 * scale, TEXT, 0)
 
 
@@ -179,19 +196,34 @@ def draw_composer():
     scene = context.scene
     if region is None or scene is None or not hasattr(scene, "scenario"):
         return
-    if context.space_data is None or context.space_data.type != 'VIEW_3D' or context.space_data.region_3d is None:
+    if (
+        context.space_data is None
+        or context.space_data.type != "VIEW_3D"
+        or context.space_data.region_3d is None
+    ):
         return
     state = runtime.state.composer
     if state is None:
         return
     scale = ui_scale(context)
-    layout = cl.pill_placement(region.width, region.height, state.expanded, scale,
-                               offset=state.offset, width=state.width if state.expanded else None)
+    layout = cl.pill_placement(
+        region.width,
+        region.height,
+        state.expanded,
+        scale,
+        offset=state.offset,
+        width=state.width if state.expanded else None,
+    )
     state.layout = layout
-    lane_state = state.sync_from_lane(scene) if not state.focused else scene.scenario.lane_state(state.lane_for(scene))
+    lane_state = (
+        state.sync_from_lane(scene)
+        if not state.focused
+        else scene.scenario.lane_state(state.lane_for(scene))
+    )
     lane = state.lane_for(scene)
+    enabled = panels.generate_enabled(lane_state, lane)
     font_px = int(12 * scale)
-    gpu.state.blend_set('ALPHA')
+    gpu.state.blend_set("ALPHA")
     try:
         if not state.expanded:
             # the collapsed composer shares the card's language: same fill, same corner radius, same field and button styles
@@ -202,41 +234,93 @@ def draw_composer():
             field_rect = cl.Rect(r.x + inset, r.y + inset, r.w - gen_w - 3 * inset, r.h - 2 * inset)
             rect(field_rect.x, field_rect.y, field_rect.w, field_rect.h, FIELD, 6 * scale)
             label = lane_state.prompt or cl.placeholder_for(lane)
-            text(field_rect.x + 10 * scale, r.y + (r.h - font_px) / 2 + 2 * scale, font_px, label, TEXT if lane_state.prompt else MUTED, max_width=field_rect.w - 20 * scale)
+            text(
+                field_rect.x + 10 * scale,
+                r.y + (r.h - font_px) / 2 + 2 * scale,
+                font_px,
+                label,
+                TEXT if lane_state.prompt else MUTED,
+                max_width=field_rect.w - 20 * scale,
+            )
             gx = r.right - inset - gen_w
-            rect(gx, r.y + inset, gen_w, r.h - 2 * inset, ACCENT if lane_state.prompt else ACCENT_DIM, 6 * scale)
+            rect(
+                gx,
+                r.y + inset,
+                gen_w,
+                r.h - 2 * inset,
+                ACCENT if enabled else TAB,
+                6 * scale,
+            )
             blf.size(FONT, font_px)
-            tw = blf.dimensions(FONT, "Generate")[0]
-            text(gx + max(4 * scale, (gen_w - tw) / 2), r.y + (r.h - font_px) / 2 + 2 * scale, font_px, "Generate", TEXT, max_width=gen_w - 8 * scale)
+            button_text = "Generate" if runtime.online() else "Offline"
+            tw = blf.dimensions(FONT, button_text)[0]
+            text(
+                gx + max(4 * scale, (gen_w - tw) / 2),
+                r.y + (r.h - font_px) / 2 + 2 * scale,
+                font_px,
+                button_text,
+                TEXT if enabled else MUTED,
+                max_width=gen_w - 8 * scale,
+            )
             return
         card = layout.card_rect
         rect(card.x, card.y, card.w, card.h, CARD, 12 * scale)
         for tab_lane, tr in layout.tab_rects.items():
             active = tab_lane == lane
-            _chip(tr, cl.LANE_LABELS[tab_lane], scale, font_px, hovered=(state.hover == ("tab", tab_lane)) and not active,
-                  fill=ACCENT if active else TAB, centered=True)
+            _chip(
+                tr,
+                cl.LANE_LABELS[tab_lane],
+                scale,
+                font_px,
+                hovered=(state.hover == ("tab", tab_lane)) and not active,
+                fill=ACCENT if active else TAB,
+                centered=True,
+            )
         _minus_button(layout.collapse_rect, scale, hovered=(state.hover == ("collapse",)))
         _prompt_field(layout.prompt_rect, state.field, state.focused, lane, scale)
         mr = layout.model_rect
-        record = runtime.state.records.get(lane_state.model_id)
-        model_name = record.name if record else ("Loading models..." if not runtime.state.catalog_loaded else "Pick a model")
+        model_name = panels.model_button_text(lane_state)
         _chip(mr, model_name, scale, font_px, hovered=(state.hover == ("model",)))
         note_x = mr.right + 10 * scale
         if layout.settings_rect is not None:
-            _chip(layout.settings_rect, "Settings", scale, font_px, hovered=(state.hover == ("settings",)), color=MUTED, centered=True)
+            _chip(
+                layout.settings_rect,
+                "Settings",
+                scale,
+                font_px,
+                hovered=(state.hover == ("settings",)),
+                color=MUTED,
+                centered=True,
+            )
             note_x = layout.settings_rect.right + 10 * scale
         gr = layout.generate_rect
-        from .. import panels
-
-        rect(gr.x, gr.y, gr.w, gr.h, ACCENT if lane_state.prompt else ACCENT_DIM, 6 * scale)
+        rect(gr.x, gr.y, gr.w, gr.h, ACCENT if enabled else TAB, 6 * scale)
         label = panels.generate_button_text(lane_state)
         blf.size(FONT, font_px)
         tw = blf.dimensions(FONT, label)[0]
-        text(gr.x + max(8 * scale, (gr.w - tw) / 2), gr.y + (gr.h - font_px) / 2 + 2 * scale, font_px, label, TEXT, max_width=gr.w - 12 * scale)
-        if layout.resize_rect is not None and ((state.hover == ("resize",)) or state.drag_mode == "resize"):
-            _grip(layout.resize_rect, scale, hovered=True)  # the corner only shows itself when the pointer reaches it
+        text(
+            gr.x + max(8 * scale, (gr.w - tw) / 2),
+            gr.y + (gr.h - font_px) / 2 + 2 * scale,
+            font_px,
+            label,
+            TEXT if enabled else MUTED,
+            max_width=gr.w - 12 * scale,
+        )
+        if layout.resize_rect is not None and (
+            (state.hover == ("resize",)) or state.drag_mode == "resize"
+        ):
+            _grip(
+                layout.resize_rect, scale, hovered=True
+            )  # the corner only shows itself when the pointer reaches it
         note = status_note(lane_state)
         if note and gr.x - note_x > 40 * scale:
-            text(note_x, mr.y + (mr.h - font_px) / 2 + 2 * scale, int(11 * scale), note, MUTED, max_width=gr.x - note_x - 10 * scale)
+            text(
+                note_x,
+                mr.y + (mr.h - font_px) / 2 + 2 * scale,
+                int(11 * scale),
+                note,
+                MUTED,
+                max_width=gr.x - note_x - 10 * scale,
+            )
     finally:
-        gpu.state.blend_set('NONE')
+        gpu.state.blend_set("NONE")

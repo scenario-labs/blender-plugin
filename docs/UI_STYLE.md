@@ -21,6 +21,14 @@ Every section header carries an icon so the panel reads as a stack of peers: `Mo
 - Icon-only buttons keep Blender's fixed size; a button that must fill a row carries a short label (Blender never stretches an icon-only button). The three prompt tools are `New`, `Rewrite`, `Translate`.
 - Destructive actions (`Delete`, `Clear path`) ask for confirmation (`invoke_confirm`).
 
+When Blender online access is disabled, the composer shows **Offline** on its
+disabled generation button and **Online access disabled** instead of a loading
+message when no model is available. Pending edits retain their estimate request
+until online access and credentials are available. The Image generation controls
+remain disabled until a ready quote handle exists; the submission path still
+rechecks its exact inputs, origin and approval. A model list is only described as
+loading while a catalog request is active.
+
 ## The model chooser
 
 A `Model` section (a box with a `NODE_MATERIAL` header, like the others) holds a wide button (icon + model name) that opens the picker, with the native dropdown as a small fallback on the right. Its one-line description belongs in the picker, not the panel.

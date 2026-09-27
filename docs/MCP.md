@@ -362,7 +362,9 @@ assignment from their media type. `import_result` accepts prototype records only
 shared jobs reject it with guidance for explicit PNG/EXR application. A cold
 session identifies saved prototype records from the local registry before
 accessing shared jobs, so inspecting or importing an already downloaded
-prototype result does not require Scenario credentials.
+completed prototype result does not require Scenario credentials or create a
+manager that resumes unrelated pending jobs. Non-terminal prototype lookups
+still use the manager-owned record so active waits observe its progress.
 
 Render lanes take the explicit model parameters supplied by the caller. They do
 not run the UI's capture, style decoration or Prompt Spark preparation. Non-image

@@ -59,6 +59,7 @@ BASELINE = (
     "test_session_uploads",
     "test_reference_uploads",
     "test_reference_form",
+    "test_background_removal",
     "test_sdk_uploads",
     "test_model_payload_validation",
     "test_world_application",

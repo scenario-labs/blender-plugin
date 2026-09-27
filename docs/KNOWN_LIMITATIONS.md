@@ -7,13 +7,15 @@ boundaries. No paid or live acceptance is implied by this documentation.
 
 ## Runtime and authentication
 
-- UI and local MCP paid generation still use the prototype client and manager. Shared SDK,
-  persistence, transfer and origin-guard components need runtime integration
+- The Image lane now shares SDK quotes, durable submission, reference uploads
+  and result/recovery commands between UI and local MCP. Other paid generation
+  lanes still use the prototype client and manager. Complete runtime adoption
+  and live/native acceptance remain open
   ([#64](https://github.com/scenario-labs/blender-plugin/issues/64),
   [#65](https://github.com/scenario-labs/blender-plugin/issues/65)).
 - Credentials use one explicitly selected pair (saved Blender preferences by
-  default, environment only when selected). Shared job/account/project scope
-  integration remains #65. Browser sign-in in
+  default, environment only when selected). Image jobs use credential-bound
+  local storage; shared scope integration for other lanes remains #65. Browser sign-in in
   [#67](https://github.com/scenario-labs/blender-plugin/issues/67) is deferred.
 - Trained/custom-model discovery and routing remain incomplete
   ([#97](https://github.com/scenario-labs/blender-plugin/issues/97)).

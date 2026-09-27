@@ -128,6 +128,8 @@ def draw_prompt_row(layout, lane_state, lane, text="", placeholder=None):
 
 
 def draw_reference_row(box, lane_state, index, ref):
+    from . import reference_form
+
     row = box.row(align=True)
     path = bpy.path.abspath(ref.filepath) if ref.filepath else ""
     icon_id = thumbnail(path) if ref.source == "FILE" else 0
@@ -140,6 +142,7 @@ def draw_reference_row(box, lane_state, index, ref):
         )
     remove = row.operator("scenario.remove_reference", text="", icon="X")
     remove.lane, remove.index = props.lane_of(lane_state), index
+    reference_form.draw(box, lane_state, index, ref)
 
 
 def draw_references(
@@ -187,6 +190,9 @@ def draw_references(
         header.label(
             text=f"{label}  {count}" + (f"/{spec.max_length}" if spec.max_length else ""), icon=icon
         )
+        if lane == "image" and kind == "image":
+            op = header.operator("scenario.inspect_uploads", text="Saved uploads", icon="VIEWZOOM")
+            op.param_name = spec.name
         # the Edit lane's required mesh hides its add options; everywhere else offer the kind-appropriate sources
         # (a 3D input: Upload a model to override the selection; image/video: stills or clips) even when auto-pinned.
         if not (spec.ptype == "file" and spec.name in fixed_first and lane == "edit3d"):

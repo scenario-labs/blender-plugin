@@ -5,8 +5,10 @@
 import tempfile
 import time
 import uuid
+from collections import deque
 from dataclasses import dataclass
 from pathlib import Path
+from weakref import WeakSet
 
 import bpy
 
@@ -30,16 +32,21 @@ _IMAGE_TYPES = {
 }
 
 
+class UploadNotStarted(ScenarioError):
+    """Local validation or queue admission failed before any task was accepted."""
+
+
 def capture_upload(context, *, source="VIEWPORT", camera=None):
     """Capture into private temporary storage retained through asynchronous staging."""
     from . import capture, runtime
 
     if source not in {"VIEWPORT", "CAMERA", "RENDER"}:
-        raise ScenarioError(0, "Choose viewport, camera or render result")
+        raise UploadNotStarted(0, "Choose viewport, camera or render result")
     owner = runtime.ensure_reference_uploads()
     if not runtime.online():
-        raise ScenarioError(0, "Allow Online Access before uploading a reference")
+        raise UploadNotStarted(0, "Allow Online Access before uploading a reference")
     directory = tempfile.TemporaryDirectory(prefix="reference-", dir=runtime.paths().state_dir)
+    admitting = False
     try:
         path = Path(directory.name) / "reference.png"
         if source == "RENDER":
@@ -60,9 +67,15 @@ def capture_upload(context, *, source="VIEWPORT", camera=None):
             capture.capture_still(
                 context, path, source=source, camera=camera, width=1280, height=720
             )
+        admitting = True
         return owner.start(context.scene, path, temporary=directory)
-    except BaseException:
+    except BaseException as error:
         directory.cleanup()
+        if not admitting and isinstance(error, Exception):
+            reason = (
+                error.reason if isinstance(error, ScenarioError) else "Could not capture an image"
+            )
+            raise UploadNotStarted(0, reason) from None
         raise
 
 
@@ -70,11 +83,21 @@ def capture_upload(context, *, source="VIEWPORT", camera=None):
 class ReferenceUpload:
     identifier: str
     task: object
+    scene: object
     command: str = "prepare_upload"
     record: object = None
     error: str | None = None
     next_poll: float = 0.0
     retry_admission_at: float = 0.0
+
+
+@dataclass(eq=False)
+class UploadRecovery:
+    request_id: str
+    task: object = None
+    record: object = None
+    error: str | None = None
+    done: bool = False
 
 
 class ReferenceUploads:
@@ -83,10 +106,17 @@ class ReferenceUploads:
     def __init__(self, session, *, online):
         self.session, self._online = session, online
         self.references = {}
-        self._recovering = set()
+        self._recovering = {}
+        self._recoveries = WeakSet()
+        self.saved = {}
+        self.recovery_errors = {}
+        self.forms = {}
+        self.form_errors = deque(maxlen=16)
+        self.attachments = {}
 
     def start(self, scene, path, *, temporary=None):
         """Upload the chosen image once; this action never quotes or generates."""
+        task = None
         try:
             if not self._online():
                 raise ScenarioError(0, "Allow Online Access before uploading a reference")
@@ -107,17 +137,25 @@ class ReferenceUploads:
             )
             if temporary is not None:
                 self.session.retain_upload_capture(task, temporary)
-            ticket = ReferenceUpload(uuid.uuid4().hex, task)
+            ticket = ReferenceUpload(uuid.uuid4().hex, task, scene)
             self.references[ticket.identifier] = ticket
             return ticket
-        except BaseException:
+        except BaseException as error:
             if temporary is not None:
                 temporary.cleanup()
+            if task is None and isinstance(error, Exception):
+                reason = (
+                    error.reason
+                    if isinstance(error, ScenarioError)
+                    else "Upload could not start; check the image and try again"
+                )
+                raise UploadNotStarted(0, reason) from None
             raise
 
     def poll(self):
         if not self.session.active:
             return
+        self._poll_recoveries()
         for ticket in tuple(self.references.values()):
             if ticket.task is not None:
                 if not ticket.task.done():
@@ -134,7 +172,14 @@ class ReferenceUploads:
                         ticket.record = self.session.inspect_upload(ticket.record.intent.request_id)
                 finally:
                     ticket.task = None
+                if ticket.record is not None:
+                    self.saved[ticket.record.intent.request_id] = ticket.record
             if ticket.error or ticket.record is None or not self._online():
+                continue
+            # A timer can run with another window's scene (or no scene). Pause
+            # admission until the origin is selected; unchanged-origin checks
+            # still run in JobSession before any next command.
+            if ticket.scene != bpy.context.scene:
                 continue
             record = ticket.record
             if record.intent.request_id in self._recovering:
@@ -166,6 +211,10 @@ class ReferenceUploads:
                     ticket.error = (
                         "The upload origin changed or work could not start; inspect saved progress"
                     )
+        if self.forms:
+            from .reference_form import deliver
+
+            deliver(self)
 
     def status(self, identifier):
         self.poll()
@@ -194,6 +243,7 @@ class ReferenceUploads:
 
     def observe_saved(self, record):
         """Reflect explicit recovery without authorizing another mutation attempt."""
+        self.saved[record.intent.request_id] = record
         for ticket in self.references.values():
             if ticket.task is None and ticket.record is not None:
                 if ticket.record.intent.request_id == record.intent.request_id:
@@ -202,10 +252,66 @@ class ReferenceUploads:
                         ticket.error = None
                         ticket.next_poll = time.monotonic() + 2.0
 
-    def begin_recovery(self, request_id):
+    def inspect_saved(self):
+        records = tuple(item.record for item in self.session.upload_recovery_plan())
+        self.saved = {record.intent.request_id: record for record in records}
+        return records
+
+    def recover(self, request_id, expected_revision, action):
+        commands = {
+            "refresh": "refresh_upload",
+            "cancel_prepared": "cancel_prepared_upload",
+            "cleanup": "discard_upload_source",
+        }
+        if action not in commands:
+            raise ValueError("Choose refresh, cancel_prepared or cleanup")
+        if type(expected_revision) is not int or expected_revision < 0:
+            raise ValueError("expected_revision must be a nonnegative integer")
         if request_id in self._recovering:
             raise ScenarioError(0, "Recovery is already running for this upload")
-        self._recovering.add(request_id)
+        command = UploadRecovery(request_id)
+        self._recoveries.add(command)
+        self._recovering[request_id] = command
+        self.recovery_errors.pop(request_id, None)
+        try:
+            result = getattr(self.session, commands[action])(
+                request_id, expected_revision=expected_revision
+            )
+            if action == "cancel_prepared":
+                command.record = result
+                self.observe_saved(result)
+                command.done = True
+                del self._recovering[request_id]
+            else:
+                command.task = result
+        except BaseException:
+            del self._recovering[request_id]
+            raise
+        return command
 
-    def end_recovery(self, request_id):
-        self._recovering.discard(request_id)
+    def _poll_recoveries(self):
+        for request_id, command in tuple(self._recovering.items()):
+            if command.task is None or not command.task.done():
+                continue
+            try:
+                completion = self.session.drain(task=command.task)[0]
+                if completion.error is not None:
+                    raise completion.error
+                command.record = self.session.inspect_upload(request_id)
+                self.observe_saved(command.record)
+            except Exception:
+                command.error = "Upload recovery failed; inspect its saved state"
+                self.recovery_errors[request_id] = command.error
+            finally:
+                command.done = True
+                del self._recovering[request_id]
+
+    def recovery_result(self, command):
+        if command not in self._recoveries or not self.session.active:
+            raise ScenarioError(0, "The upload recovery context changed")
+        self._poll_recoveries()
+        if not command.done:
+            raise ScenarioError(0, "Upload recovery is still running")
+        if command.error:
+            raise ScenarioError(0, command.error)
+        return command.record

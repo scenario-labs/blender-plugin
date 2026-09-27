@@ -35,6 +35,24 @@ A file input's add options match its kind (`props.addable_sources_for`): a **3D*
 
 A model's **3D mesh input is fed by the scene selection automatically, in every lane**: `build_request` attaches the selected mesh (exported as GLB at generate time) to that input unless the user uploaded a file for it, and `draw_references` shows it pinned as "Selected mesh: <name>". Deselect for a text-only generation; Upload to override. The Edit lane requires it (an error when nothing is selected); elsewhere it is optional.
 
+In the **Image** lane, attaching a local file or capture source does not send it.
+The separate **Upload reference** button sends an immutable snapshot before a
+final price can be requested. Show upload progress and **Inspect uploads** when
+review is needed. Do not offer automatic retry for uncertain uploads or mutate
+the reference during drawing. The maintenance pump attaches a completed asset
+only to the unchanged original scene, model and reference slot, then invalidates
+the old price. A removed/edited slot must never receive a late upload result.
+Transient timer context without the originating scene pauses attachment. Local
+validation rejected before task admission permits correcting and retrying the input;
+uncertain admitted work retains its duplicate-upload guard.
+
+**Inspect uploads** offers explicit known-status refresh, unclaimed preparation
+cancellation and finished staging cleanup; cancellation/cleanup require confirmation.
+**Use saved upload** and an image input's **Saved uploads** open the same paginated
+view. Attaching an imported image needs a separate confirmation of its scene, model,
+input and reference destination. Recheck that destination on confirmation, keep
+drawing read-only and invalidate the prior generation price after attachment.
+
 ## Generations
 
 Each result collapses on its own; the panel header has a **Collapse all / Expand all** toggle. A failed result shows a red error control in its header whose tooltip is the whole message (with the Error ID) and which opens the full text with a Copy button on click (a `description()`-driven operator, since Blender labels have no per-instance tooltip). Never truncate an error to a single clipped line as the only way to read it. The prompt box carries a trash button that deletes its text, greyed out when empty.

@@ -247,6 +247,48 @@ class ReferenceUploadTests(unittest.TestCase):
         self.assertEqual(sum(r.method == "POST" for r, _ in self.fixture.calls), 2)
         self.fixture.uploader.upload.assert_called_once()
 
+    def test_recovery_completion_is_owned_by_pump_even_without_mcp_finish(self):
+        self.start()
+        self.settle()
+        record = self.tools.list_reference_uploads({})["uploads"][0]
+        args = {
+            "context_id": "fixture-context",
+            "request_id": record["request_id"],
+            "expected_revision": record["revision"],
+            "action": "cleanup",
+        }
+        deferred = self.tools.recover_reference_upload(args)
+        command = self.owner._recovering[record["request_id"]]
+        with self.assertRaises(submodule("core.api.errors").ScenarioError):
+            self.tools.recover_reference_upload(args)
+        deferred.run()
+        # Model a disconnected caller: no delivery callback is required for cleanup.
+        self.owner.poll()
+        self.assertTrue(command.done)
+        self.assertEqual(self.owner._recovering, {})
+        self.assertFalse(any(task is command.task for task, _ in self.fixture.session._pending))
+        self.assertEqual(self.fixture.source.read_bytes(), b"data")
+        self.assertEqual(deferred.finish(None)["state"], "imported")
+
+    def test_failed_recovery_releases_admission_and_preserves_error_for_inspection(self):
+        self.start()
+        self.settle()
+        record = self.tools.list_reference_uploads({})["uploads"][0]
+        with patch.object(self.fixture.sources, "discard", side_effect=OSError("private details")):
+            command = self.owner.recover(record["request_id"], record["revision"], "cleanup")
+            with self.assertRaises(self.fixture.commands.UploadError):
+                command.task.result(5)
+            self.owner.poll()
+        self.assertEqual(self.owner._recovering, {})
+        self.assertIn(record["request_id"], self.owner.recovery_errors)
+        with self.assertRaises(submodule("core.api.errors").ScenarioError):
+            self.owner.recovery_result(command)
+        command = self.owner.recover(record["request_id"], record["revision"], "cleanup")
+        command.task.result(5)
+        self.owner.poll()
+        self.assertIsNone(command.error)
+        self.assertEqual(self.fixture.source.read_bytes(), b"data")
+
     def test_temporary_capture_is_removed_after_staging_and_on_retirement(self):
         for retire in (False, True):
             directory = tempfile.TemporaryDirectory(dir=self.fixture.root)
@@ -269,7 +311,7 @@ class ReferenceUploadTests(unittest.TestCase):
             ),
             patch.object(capture, "capture_still", side_effect=RuntimeError("fixture")),
         ):
-            with self.assertRaises(RuntimeError):
+            with self.assertRaises(self.module.UploadNotStarted):
                 self.tools.capture_reference({"source": "VIEWPORT"})
         self.assertEqual(set(self.fixture.root.iterdir()), before)
         self.assertEqual(self.fixture.calls, [])
@@ -294,7 +336,7 @@ class ReferenceUploadTests(unittest.TestCase):
             )
             with patch.object(self.module, "bpy", fake):
                 if fail:
-                    with self.assertRaises(RuntimeError):
+                    with self.assertRaises(self.module.UploadNotStarted):
                         self.module.capture_upload(bpy.context, source="RENDER")
                     self.assertEqual(set(self.fixture.root.iterdir()), before)
                 else:

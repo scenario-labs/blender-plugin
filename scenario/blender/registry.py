@@ -27,6 +27,7 @@ def _modules():
         popover,
         prompt_tools,
         props,
+        reference_form,
         shot_planner,
     )
 
@@ -37,6 +38,7 @@ def _modules():
         shot_planner,
         operators,
         job_recovery,
+        reference_form,
         prompt_tools,
         blockout,
         model_picker,

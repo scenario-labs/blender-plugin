@@ -364,8 +364,12 @@ class Request:
 
 
 def build_request(scene, lane, for_estimate=False):
+    from .reference_form import scope_error
+
     lane_state = scene.scenario.lane_state(lane)
     model_id = lane_state.model_id
+    if error := scope_error(lane_state):
+        return Request(lane, lane_kind(lane), model_id, {}, errors=[error])
     schema = schema_for(model_id)
     if schema is None:
         return Request(lane, lane_kind(lane), model_id, {}, errors=["Model not loaded yet"])
@@ -401,7 +405,7 @@ def build_request(scene, lane, for_estimate=False):
             elif ref.source == "FILE" and ref.filepath:
                 files.setdefault(spec.name, []).append(bpy.path.abspath(ref.filepath))
             elif ref.source == "RENDER":
-                if for_estimate:
+                if for_estimate or lane == "image":
                     captures.append(
                         {"param": spec.name, "source": "RENDER", "camera": None}
                     )  # quoted like a pending file, no disk write

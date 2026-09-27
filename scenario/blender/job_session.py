@@ -38,6 +38,10 @@ class OriginUnavailable(RuntimeError):
     """The result is available for review but cannot be applied automatically."""
 
 
+class SessionBusy(RuntimeError):
+    """Admission did not queue work because completed outcomes still need draining."""
+
+
 class ImageResultUncertain(RuntimeError):
     """Images may already exist; retry only the saved receipt, never the mutation."""
 
@@ -198,7 +202,7 @@ class JobSession:
 
     def _check_capacity(self):
         if len(self._pending) >= self._completion_limit:
-            raise RuntimeError("Drain completed job outcomes before adding more commands")
+            raise SessionBusy("Drain completed job outcomes before adding more commands")
 
     def submit(self, prepared, *, operation, target_id, payload):
         _main_thread()

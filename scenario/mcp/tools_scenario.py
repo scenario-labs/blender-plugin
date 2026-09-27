@@ -464,21 +464,27 @@ def recover_reference_upload(args):
     result = getattr(owner.session, command)(request_id, expected_revision=revision)
 
     def finish(_):
-        runtime.sync_catalog_context()
-        if runtime.state.reference_uploads is not owner or not owner.session.active:
-            raise ScenarioError(0, "The upload context changed during recovery")
-        if command != "cancel_prepared_upload":
-            completion = owner.session.drain(task=result)[0]
-            if completion.error is not None:
-                raise ScenarioError(0, "Upload recovery failed; inspect its saved state")
-        record = owner.session.inspect_upload(request_id)
-        owner.observe_saved(record)
-        return {
-            "request_id": request_id,
-            "state": record.state.value,
-            "revision": record.revision,
-            "asset_id": record.asset_id,
-        }
+        owner.begin_recovery(request_id)
+        try:
+            # Context maintenance may drain work, but this record cannot advance
+            # automatically until the explicit recovery outcome is observed.
+            runtime.sync_catalog_context()
+            if runtime.state.reference_uploads is not owner or not owner.session.active:
+                raise ScenarioError(0, "The upload context changed during recovery")
+            if command != "cancel_prepared_upload":
+                completion = owner.session.drain(task=result)[0]
+                if completion.error is not None:
+                    raise ScenarioError(0, "Upload recovery failed; inspect its saved state")
+            record = owner.session.inspect_upload(request_id)
+            owner.observe_saved(record)
+            return {
+                "request_id": request_id,
+                "state": record.state.value,
+                "revision": record.revision,
+                "asset_id": record.asset_id,
+            }
+        finally:
+            owner.end_recovery(request_id)
 
     if command == "cancel_prepared_upload":
         return finish(result)

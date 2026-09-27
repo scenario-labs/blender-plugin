@@ -171,6 +171,80 @@ class ReferenceUploadTests(unittest.TestCase):
         with self.assertRaises(submodule("core.api.errors").ScenarioError):
             self.tools.reference_upload_status(result)
 
+    def test_recovery_processing_resumes_only_status_reads(self):
+        original = self.fixture.handler
+
+        def fail(request):
+            if request.url.path.endswith("/action"):
+                self.fixture.remote["status"] = "validating"
+                raise httpx.ReadTimeout("completion loss", request=request)
+            return original(request)
+
+        self.fixture.handler = fail
+        result = self.start()
+        self.settle()
+        record = self.tools.list_reference_uploads({})["uploads"][0]
+        self.assertEqual(record["state"], "finalization_uncertain")
+        args = {
+            "context_id": result["context_id"],
+            "request_id": record["request_id"],
+            "expected_revision": record["revision"],
+            "action": "refresh",
+        }
+        deferred = self.tools.recover_reference_upload(args)
+        self.assertEqual(deferred.finish(deferred.run())["state"], "processing")
+        self.fixture.remote.update(status="imported", entityId="reference-asset")
+        self.settle()
+        self.assertEqual(self.tools.reference_upload_status(result)["state"], "imported")
+        self.fixture.uploader.upload.assert_called_once()
+        self.assertEqual(
+            sum(request.method == "POST" for request, _ in self.fixture.calls), 1
+        )  # The failed completion mock above does not delegate to the request recorder.
+
+    def test_cancel_prepared_observes_new_state_before_automatic_admission(self):
+        ticket = self.owner.start(self.fixture.scene, self.fixture.source)
+        ticket.task.result(5)
+        with patch.object(self.owner, "_online", return_value=False):
+            self.owner.poll()
+        record = ticket.record
+        with patch.object(
+            self.fixture.session, "initialize_upload", wraps=self.fixture.session.initialize_upload
+        ) as initialize:
+            result = self.tools.recover_reference_upload(
+                {
+                    "context_id": "fixture-context",
+                    "request_id": record.intent.request_id,
+                    "expected_revision": record.revision,
+                    "action": "cancel_prepared",
+                }
+            )
+            self.assertEqual(result["state"], "canceled")
+            self.owner.poll()
+            initialize.assert_not_called()
+        self.assertEqual(ticket.record.state.value, "canceled")
+        self.assertIsNone(ticket.task)
+        self.assertEqual(self.fixture.calls, [])
+
+    def test_admission_capacity_miss_is_retried_without_duplicate_requests(self):
+        ticket = self.owner.start(self.fixture.scene, self.fixture.source)
+        ticket.task.result(5)
+        for error in (
+            submodule("core.jobs.workers").WorkerError("queue full"),
+            self.fixture.module.SessionBusy("drain outcomes"),
+        ):
+            ticket.retry_admission_at = 0
+            with patch.object(self.fixture.session, "initialize_upload", side_effect=error):
+                self.owner.poll()
+            self.assertIsNone(ticket.task)
+            self.assertIsNone(ticket.error)
+            self.assertEqual(ticket.record.state.value, "prepared")
+            self.assertEqual(self.fixture.calls, [])
+        ticket.retry_admission_at = 0
+        self.settle()
+        self.assertEqual(ticket.record.state.value, "imported")
+        self.assertEqual(sum(r.method == "POST" for r, _ in self.fixture.calls), 2)
+        self.fixture.uploader.upload.assert_called_once()
+
     def test_temporary_capture_is_removed_after_staging_and_on_retirement(self):
         for retire in (False, True):
             directory = tempfile.TemporaryDirectory(dir=self.fixture.root)

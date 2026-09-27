@@ -12,6 +12,8 @@ import bpy
 
 from ..core.api.errors import ScenarioError
 from ..core.jobs.upload_store import UploadState
+from ..core.jobs.workers import WorkerError
+from .job_session import SessionBusy
 
 _IMAGE_TYPES = {
     ".png": "image/png",
@@ -72,6 +74,7 @@ class ReferenceUpload:
     record: object = None
     error: str | None = None
     next_poll: float = 0.0
+    retry_admission_at: float = 0.0
 
 
 class ReferenceUploads:
@@ -80,6 +83,7 @@ class ReferenceUploads:
     def __init__(self, session, *, online):
         self.session, self._online = session, online
         self.references = {}
+        self._recovering = set()
 
     def start(self, scene, path, *, temporary=None):
         """Upload the chosen image once; this action never quotes or generates."""
@@ -122,7 +126,7 @@ class ReferenceUploads:
                     completion = self.session.drain(task=ticket.task)[0]
                     if completion.error is not None:
                         raise completion.error
-                    ticket.record = completion.result
+                    ticket.record = self.session.inspect_upload(completion.result.intent.request_id)
                     ticket.next_poll = time.monotonic() + 2.0
                 except Exception:
                     ticket.error = "Upload stopped; inspect saved progress before trying again"
@@ -133,6 +137,10 @@ class ReferenceUploads:
             if ticket.error or ticket.record is None or not self._online():
                 continue
             record = ticket.record
+            if record.intent.request_id in self._recovering:
+                continue
+            if time.monotonic() < ticket.retry_admission_at:
+                continue
             command = None
             if record.state == UploadState.PREPARED:
                 command = "initialize_upload"
@@ -150,6 +158,10 @@ class ReferenceUploads:
                         record.intent.request_id, expected_revision=record.revision
                     )
                     ticket.command = command
+                except (WorkerError, SessionBusy):
+                    # This call did not enqueue anything. It is safe to try
+                    # admission later; never use this branch for task failures.
+                    ticket.retry_admission_at = time.monotonic() + 0.25
                 except Exception:
                     ticket.error = (
                         "The upload origin changed or work could not start; inspect saved progress"
@@ -186,5 +198,14 @@ class ReferenceUploads:
             if ticket.task is None and ticket.record is not None:
                 if ticket.record.intent.request_id == record.intent.request_id:
                     ticket.record = record
-                    if record.state == UploadState.IMPORTED:
+                    if record.state in {UploadState.IMPORTED, UploadState.PROCESSING}:
                         ticket.error = None
+                        ticket.next_poll = time.monotonic() + 2.0
+
+    def begin_recovery(self, request_id):
+        if request_id in self._recovering:
+            raise ScenarioError(0, "Recovery is already running for this upload")
+        self._recovering.add(request_id)
+
+    def end_recovery(self, request_id):
+        self._recovering.discard(request_id)

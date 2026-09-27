@@ -356,6 +356,14 @@ each PUT and completion still require durable claims and use one attempt only.
 Known processing uploads are polled at two-second intervals. Uncertain responses
 stop automatic mutation; no later status read releases a part claim or replays
 initialization/completion. The facade retains at most 128 handles per session.
+An admission rejection from a full worker/outcome queue has not started a task;
+the facade waits briefly and retries admission only. It never treats a failed
+task as this safe case. Explicit refresh that confirms `processing` re-enables
+status reads, while uncertain initialization/part/finalization cannot be replayed.
+Recovery delivery suspends automatic admission for its record until the saved
+outcome has been observed; a successful local cancellation cannot schedule
+initialization from a stale in-memory projection. Completed task projections are
+also refreshed from durable storage before selecting their next command.
 
 The [Scenario upload guide](https://docs.scenario.com/get-started/content/uploading-assets)
 documents multipart uploads and signed S3 destinations. The active `S3UploadPolicy`

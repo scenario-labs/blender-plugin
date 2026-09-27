@@ -72,7 +72,7 @@ uncertain; do not attach a guessed upload or automatically recreate it.
 
 Signed PUT transport, private source staging, durable claims and explicit shared
 worker commands are available as described below. The active local MCP path now
-selects a host/size policy and exposes explicit saved-upload recovery. Image form
+selects a host/size policy and exposes explicit saved-upload recovery. Typed form
 attachment and explicit native recovery use the controls below; automatic orphan
 retention and live acceptance remain separate work.
 Finished uploads have explicit verified source cleanup as described below.
@@ -332,7 +332,7 @@ unchanged, and subsequent commands must still pass their revision/state guards.
 After restart, a newly configured owner reads the same claims without assuming
 that a previous worker is dead. The optional
 [JobSession upload facade](BLENDER_JOB_CONTEXT.md#upload-references) forwards these
-commands through its existing workers and guarded main-thread delivery. Image UI
+commands through its existing workers and guarded main-thread delivery. Form UI
 and local MCP recovery controls use these commands as described below.
 
 ## Active reference uploads
@@ -345,10 +345,12 @@ explicit `kind` of `image` (the default), `audio`, `video` or `3d`;
 session-owned handle immediately. Poll `reference_upload_status` until the saved
 state is `imported`, then pass its `asset_id` to the intended model file input
 in a fresh estimate. Uploading
-does not submit generation or approve its cost. The Image form uses the same
-owner through **Upload reference**. It never uploads while drawing or pricing.
-Other generation forms retain their earlier integration; typed MCP uploads do
-not establish their UI preparation or paid-generation acceptance.
+does not submit generation or approve its cost. Generation forms use the same
+owner through **Upload reference** for image, audio, video and 3D files. Image
+inputs also support explicit still captures. It never uploads while drawing or
+pricing. Clip captures, implicit mesh export, render preparation and non-image
+UI paid dispatch retain their earlier integration; typed form uploads do not
+establish their acceptance.
 
 The upload kind and final file extension must match the local format policy.
 An omitted kind remains `image`; a video path does not silently change the kind.
@@ -417,7 +419,7 @@ or shutdown removes it. Filesystem cleanup errors are sanitized and retained for
 a later shutdown attempt. Process crashes can leave temporary or staging orphans;
 automatic orphan retention remains unimplemented. Render-result capture forces
 PNG and restores the scene's output settings. Viewport/camera capture needs a GUI;
-the Image form also offers Render Result capture.
+image inputs in generation forms also offer Render Result capture.
 
 After restart or context change, `list_reference_uploads` reads only the current
 credential scope's saved metadata. `recover_reference_upload` requires its context
@@ -432,10 +434,12 @@ synthetic API/PUT responses, including changed origins, lost responses, restart
 inspection and cleanup. Transport unit tests separately exercise signed PUT and
 host rejection. This is not live S3/import acceptance or GUI interaction proof.
 
-### Image form attachment
+### Typed form attachment
 
 [`reference_form.py`](../scenario/blender/reference_form.py) binds each explicit
-upload to the original scene object, model ID, reference slot and source fields.
+upload to the original scene object, lane, model ID, input kind, reference slot
+and source fields. Supported kinds are image, audio, video and 3D; still captures
+are offered only for image inputs.
 A saved marker blocks a second upload click, including after reopening a blend.
 Local validation or rejected queue admission removes the marker only when no
 task was accepted; the user can correct that input and retry. Asynchronous errors
@@ -446,12 +450,18 @@ The main-thread maintenance pump converts the unchanged slot to a Scenario asset
 only after an imported observation and a fresh origin check. It marks the label
 as an uploaded snapshot and invalidates the form's prior estimate. Generation
 then quotes/submits the immutable asset ID, not the later contents of the original
-file. Pending Render Result references cannot fall through to prototype capture
-during Image request construction.
+file. A marked upload that has not attached blocks request construction in
+every lane, preventing duplicate prototype upload while it is pending or
+uncertain. Unmarked implicit clip/mesh/render preparation remains separate.
+An unloaded or list-only model schema is a temporary state, not an edited input.
+In-flight bindings wait for model inputs before attachment and recheck the kind
+when they load. Saved assets retain their scope checks; request construction
+reports the unloaded model until its schema is available. Saved-reference
+confirmation also requires loaded inputs and a fresh review after loading.
 
 Uploaded references retain their credential-scope fingerprint. Reopening under
-another connection or manually changing that asset ID blocks pricing rather than
-silently using it in another account/project. These local markers are not server
+another connection, changing the input kind or manually changing that asset ID
+blocks pricing rather than silently using it in another account/project. These local markers are not server
 permission checks and contain no credentials. A scene/model/slot change prevents
 late attachment; it does not abort already authorized remote work. No upload
 operation grants generation approval.
@@ -463,11 +473,13 @@ upload's verified private staging copy. Cancellation and cleanup ask for
 confirmation. These actions share MCP recovery ownership, context/revision guards
 and no-replay rules; cleanup preserves the original file.
 
-Automatic attachment handles do not survive restart. **Use saved upload** on an
-image slot or **Saved uploads** on an image input offers imported images from the
-selected scope. **Use this image** opens a separate confirmation naming the scene,
-model, input, reference and image. Confirmation consumes a single-use approval
-and rechecks the stored record, current scope, scene revision and entire reference
+Automatic attachment handles do not survive restart. **Use saved upload** on a
+reference slot or **Saved uploads** on a typed input offers attachment only for
+matching imported media from the selected scope. **Use this reference** opens a
+separate confirmation naming the scene, lane, model, input, reference and file.
+The inspection view captures the destination before opening; a scene, model or
+reference-list change requires reopening it. Confirmation consumes a single-use
+approval and rechecks the stored record, current scope, scene revision and entire reference
 form before adding or replacing a slot. Changed selections require a fresh review.
 Attaching invalidates the previous price and never submits generation. Native
 tests save/reopen an actual blend before explicitly approving the recovered

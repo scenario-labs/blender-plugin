@@ -43,23 +43,27 @@ A file input's add options match its kind (`props.addable_sources_for`): a **3D*
 
 A model's **3D mesh input is fed by the scene selection automatically, in every lane**: `build_request` attaches the selected mesh (exported as GLB at generate time) to that input unless the user uploaded a file for it, and `draw_references` shows it pinned as "Selected mesh: <name>". Deselect for a text-only generation; Upload to override. The Edit lane requires it (an error when nothing is selected); elsewhere it is optional.
 
-In the **Image** lane, attaching a local file or capture source does not send it.
+Across generation forms, attaching a local file does not send it. Image inputs
+also support explicit viewport, camera and Render Result snapshots.
 The separate **Upload reference** button sends an immutable snapshot before a
 final price can be requested. Show upload progress and **Inspect uploads** when
 review is needed. Do not offer automatic retry for uncertain uploads or mutate
 the reference during drawing. The maintenance pump attaches a completed asset
-only to the unchanged original scene, model and reference slot, then invalidates
-the old price. A removed/edited slot must never receive a late upload result.
+only to the unchanged original scene, lane, model, input type and reference slot,
+then invalidates the old price. A removed/edited slot must never receive a late upload result.
 Transient timer context without the originating scene pauses attachment. Local
 validation rejected before task admission permits correcting and retrying the input;
 uncertain admitted work retains its duplicate-upload guard.
 
 **Inspect uploads** offers explicit known-status refresh, unclaimed preparation
 cancellation and finished staging cleanup; cancellation/cleanup require confirmation.
-**Use saved upload** and an image input's **Saved uploads** open the same paginated
-view. Attaching an imported image needs a separate confirmation of its scene, model,
-input and reference destination. Recheck that destination on confirmation, keep
-drawing read-only and invalidate the prior generation price after attachment.
+**Use saved upload** and an input's **Saved uploads** open the same paginated
+view. Offer attachment only for imported uploads matching the input kind
+(image, audio, video or 3D). Attaching one needs a separate confirmation of its
+scene, lane, model, input and reference destination. A changed destination must
+be reviewed again. Pending or uncertain marked uploads block generation so the
+prototype path cannot upload the same file a second time. Recheck that destination
+on confirmation, keep drawing read-only and invalidate the prior generation price after attachment.
 
 ## Generations
 

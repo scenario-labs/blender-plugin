@@ -323,8 +323,9 @@ scene/target before a once-only main-thread callback. A late claimed receipt may
 persist after a file switch, while delivery remains blocked. Restarted origins
 remain unrecognized for automatic application even when status refresh succeeds.
 Callbacks do not by themselves attach a reference or commit a Blender application
-transaction. The [Image form facade](SDK_UPLOADS.md#image-form-attachment) now
-adds guarded attachment after upload, without another worker pool. Explicit
+transaction. The [typed form facade](SDK_UPLOADS.md#typed-form-attachment) now
+adds guarded attachment for image, audio, video and 3D inputs across generation
+lanes after upload, without another worker pool. Explicit
 native reattachment captures a fresh destination, requires separate confirmation
 and rechecks the entire reference form before adding/replacing a slot. Recovery
 tasks are owned and drained by the facade independently of dialog or MCP response

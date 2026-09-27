@@ -1,6 +1,6 @@
 # SPDX-FileCopyrightText: 2026 Scenario Inc.
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""Native Image reference admission/attachment with actual upload session fixtures."""
+"""Native typed reference admission/attachment with actual upload session fixtures."""
 
 import json
 import unittest
@@ -47,7 +47,7 @@ class ReferenceFormTests(unittest.TestCase):
         )
 
     def start(self):
-        self.assertEqual(bpy.ops.scenario.upload_image_reference(index=0), {"FINISHED"})
+        self.assertEqual(bpy.ops.scenario.upload_reference(index=0), {"FINISHED"})
         return list(self.owner.forms.values())[-1]
 
     def test_upload_attaches_snapshot_and_invalidates_price_once(self):
@@ -146,8 +146,8 @@ class ReferenceFormTests(unittest.TestCase):
         self.assertEqual(self.owner.forms, {})
         self.assertEqual(len(self.owner.form_errors), 16)
         self.assertEqual(self.owner.form_errors[-1], "Failure 31")
-        operator = SimpleNamespace()
-        context = SimpleNamespace(window_manager=Mock())
+        operator = SimpleNamespace(lane="image")
+        context = SimpleNamespace(window_manager=Mock(), scene=self.scene)
         self.form.SCENARIO_OT_inspect_uploads.invoke(operator, context, None)
         self.assertEqual(len(operator._errors), 16)
         self.assertEqual(list(self.owner.form_errors), [])
@@ -224,7 +224,7 @@ class ReferenceFormTests(unittest.TestCase):
 
     def test_local_validation_failure_preserves_reason_and_allows_corrected_input(self):
         for source, path, reason in (
-            ("FILE", "", "Choose an image file"),
+            ("FILE", "", "Choose a file for this image input"),
             ("FILE", "unsupported.blend", "supported image reference format"),
             ("RENDER", "", "Render an image"),
         ):
@@ -623,3 +623,222 @@ class ReferenceFormTests(unittest.TestCase):
             self.assertIsNone(self.form.scope_error(self.lane))
         self.assertEqual(len(self.owner.references), 0)
         self.fixture.fixture.uploader.upload.assert_called_once()
+
+    def configure_typed_input(self, lane_name, kind):
+        model = dict(self.model, id=f"fixture-{lane_name}-{kind}")
+        model["inputs"] = [
+            {"name": "prompt", "type": "string", "prompt": True},
+            {"name": "input", "type": "file", "kind": kind},
+        ]
+        record = submodule("core.api.catalog").ModelRecord.from_api(model)
+        base = submodule("core.api.catalog").ModelRecord.from_api(self.model)
+        self.generation.set_catalog([base, record], [base, record])
+        # Form contracts exercise each lane independently of catalog curation.
+        self.runtime.set_enum_items(
+            ("models", lane_name), [(record.id, record.name, ""), ("another-model", "Other", "")]
+        )
+        lane = self.scene.scenario.lane_state(lane_name)
+        lane.model_id = model["id"]
+        lane.references.clear()
+        ref = lane.references.add()
+        ref.param_name, ref.source = "input", "FILE"
+        suffix, mime = {
+            "image": (".png", "image/png"),
+            "audio": (".wav", "audio/wav"),
+            "video": (".mp4", "video/mp4"),
+            "3d": (".glb", "model/gltf-binary"),
+        }[kind]
+        ref.filepath = str(self.fixture.typed_source(kind, suffix, mime))
+        return lane, ref
+
+    def test_typed_uploads_attach_to_originating_lane_after_tab_switch(self):
+        image_refs = len(self.lane.references)
+        for lane_name, kind in (
+            ("video", "image"),
+            ("video", "video"),
+            ("video", "audio"),
+            ("video", "3d"),
+            ("audio", "audio"),
+            ("3d", "image"),
+            ("material", "image"),
+            ("render_image", "image"),
+            ("render_video", "video"),
+            ("edit3d", "3d"),
+        ):
+            with self.subTest(lane=lane_name, kind=kind):
+                lane, ref = self.configure_typed_input(lane_name, kind)
+                lane.estimate_key = "old-approval"
+                self.assertEqual(
+                    bpy.ops.scenario.upload_reference(index=0, lane=lane_name), {"FINISHED"}
+                )
+                self.assertEqual(lane.estimate_key, "")
+                self.assertIsNotNone(self.form.scope_error(lane))
+                self.scene.scenario.lane = "image"
+                self.fixture.settle()
+                self.assertEqual(ref.source, "ASSET")
+                self.assertEqual(ref[self.form._KIND], kind)
+                self.assertIsNone(self.form.scope_error(lane))
+                self.assertEqual(lane.estimate_state, "PENDING")
+                self.assertEqual(len(self.lane.references), image_refs)
+        self.assertEqual(self.fixture.fixture.uploader.upload.call_count, 10)
+
+    def test_pending_typed_upload_blocks_generation_request_without_duplicate_upload(self):
+        lane, ref = self.configure_typed_input("audio", "audio")
+        self.form.start(bpy.context, 0, lane_name="audio")
+        request = self.generation.build_request(self.scene, "audio", for_estimate=True)
+        self.assertTrue(request.errors)
+        self.assertEqual((request.body, request.files, request.captures), ({}, {}, []))
+        self.fixture.settle()
+        request = self.generation.build_request(self.scene, "audio", for_estimate=True)
+        self.assertFalse(request.errors, request.errors)
+        self.assertEqual(request.body["input"], ref.asset_id)
+        self.assertEqual(request.files, {})
+        self.fixture.fixture.uploader.upload.assert_called_once()
+
+    def test_non_image_input_rejects_still_capture_before_admission(self):
+        for kind in ("audio", "video", "3d"):
+            lane, ref = self.configure_typed_input("video", kind)
+            ref.source = "VIEWPORT"
+            with (
+                self.subTest(kind=kind),
+                self.assertRaises(submodule("core.api.errors").ScenarioError),
+            ):
+                self.form.start(bpy.context, 0, lane_name="video")
+            self.assertNotIn(self.form._MARKER, ref)
+        self.assertEqual(self.owner.forms, {})
+        self.assertEqual(self.owner.references, {})
+        self.assertEqual(self.fixture.fixture.calls, [])
+
+    def test_typed_late_result_rejects_changed_model_and_slot(self):
+        for change in ("model", "slot"):
+            lane, ref = self.configure_typed_input("audio", "audio")
+            binding = self.form.start(bpy.context, 0, lane_name="audio")
+            binding.ticket.task.result(5)
+            if change == "model":
+                lane.model_id = "another-model"
+            else:
+                lane.references.remove(0)
+            self.fixture.settle()
+            self.assertFalse(binding.attached)
+            self.assertTrue(binding.error)
+        self.assertEqual(self.lane.references[0].source, "FILE")
+
+    def test_saved_typed_upload_requires_matching_input_and_captured_destination(self):
+        lane, ref = self.configure_typed_input("video", "video")
+        binding = self.form.start(bpy.context, 0, lane_name="video")
+        self.fixture.settle()
+        record = binding.ticket.record
+        lane.references.clear()
+        key = self.form._destination_key(self.scene, "video")
+        args = (
+            bpy.context,
+            self.runtime.state.job_context_id,
+            record.intent.request_id,
+            record.revision,
+            -1,
+            "input",
+        )
+        _, approval = self.form.prepare_attachment(*args, lane_name="video", destination_key=key)
+        self.assertEqual(approval.lane_name, "video")
+        self.scene.scenario.lane = "image"
+        self.form.apply_attachment(self.runtime.state.job_context_id, approval.identifier)
+        self.assertEqual(lane.references[0].asset_id, record.asset_id)
+        self.assertEqual(lane.references[0][self.form._KIND], "video")
+        self.assertEqual(self.lane.references[0].source, "FILE")
+        with self.assertRaises(submodule("core.api.errors").ScenarioError):
+            self.form.prepare_attachment(*args, lane_name="video", destination_key=key)
+        self.configure_typed_input("audio", "audio")
+        with self.assertRaisesRegex(
+            submodule("core.api.errors").ScenarioError, "matching input type"
+        ):
+            self.form.prepare_attachment(*args, lane_name="audio")
+        self.fixture.fixture.uploader.upload.assert_called_once()
+
+    def test_changed_input_kind_rejects_saved_asset_before_quote(self):
+        lane, ref = self.configure_typed_input("audio", "audio")
+        self.form.start(bpy.context, 0, lane_name="audio")
+        self.fixture.settle()
+        with patch.object(self.form, "input_kind", return_value="video"):
+            self.assertIsNotNone(self.form.scope_error(lane))
+            request = self.generation.build_request(self.scene, "audio", for_estimate=True)
+            self.assertTrue(request.errors)
+            self.assertEqual(request.body, {})
+
+    def test_unloaded_schema_does_not_invalidate_uploaded_reference(self):
+        lane, ref = self.configure_typed_input("audio", "audio")
+        self.form.start(bpy.context, 0, lane_name="audio")
+        self.fixture.settle()
+        model_id = lane.model_id
+        listed = submodule("core.api.catalog").ModelRecord.from_api(
+            {"id": model_id, "name": "List-only model"}
+        )
+        for records in ({}, {model_id: listed}):
+            with self.subTest(list_only=bool(records)):
+                self.generation._schemas.clear()
+                with patch.dict(self.runtime.state.records, records, clear=True):
+                    self.assertIsNone(self.form.scope_error(lane))
+                    request = self.generation.build_request(self.scene, "audio", for_estimate=True)
+                    self.assertEqual(request.errors, ["Model not loaded yet"])
+                    self.assertEqual(request.body, {})
+                request = self.generation.build_request(self.scene, "audio", for_estimate=True)
+                self.assertFalse(request.errors, request.errors)
+                self.assertEqual(request.body["input"], ref.asset_id)
+        self.fixture.fixture.uploader.upload.assert_called_once()
+
+    def test_pending_upload_waits_for_schema_then_rechecks_kind(self):
+        for restored_kind in ("audio", "video"):
+            with self.subTest(restored_kind=restored_kind):
+                lane, ref = self.configure_typed_input("audio", "audio")
+                binding = self.form.start(bpy.context, 0, lane_name="audio")
+                marker = ref[self.form._MARKER]
+                with patch.object(self.generation, "schema_for", return_value=None):
+                    self.fixture.settle()
+                    self.assertEqual(binding.ticket.record.state.value, "imported")
+                    self.assertEqual(ref.source, "FILE")
+                    self.assertFalse(binding.error)
+                    self.assertIs(self.owner.forms[marker], binding)
+                with patch.object(self.form, "input_kind", return_value=restored_kind):
+                    self.form.deliver(self.owner)
+                self.assertEqual(binding.attached, restored_kind == "audio")
+                self.assertEqual(bool(binding.error), restored_kind != "audio")
+                self.assertNotIn(marker, self.owner.forms)
+        self.assertEqual(self.fixture.fixture.uploader.upload.call_count, 2)
+
+    def test_saved_confirmation_reports_unloaded_schema_without_attachment(self):
+        record = self.saved_upload()
+        approval = self.approve(record)
+        before = dict(self.ref.items()), self.form.reference_values(self.ref)
+        with patch.object(self.generation, "schema_for", return_value=None):
+            with self.assertRaisesRegex(
+                submodule("core.api.errors").ScenarioError, "Model not loaded"
+            ):
+                self.form.apply_attachment(self.runtime.state.job_context_id, approval.identifier)
+            with self.assertRaisesRegex(
+                submodule("core.api.errors").ScenarioError, "Model not loaded"
+            ):
+                self.approve(record)
+        self.assertEqual(before, (dict(self.ref.items()), self.form.reference_values(self.ref)))
+        approval = self.approve(record)
+        self.form.apply_attachment(self.runtime.state.job_context_id, approval.identifier)
+        self.assertEqual(self.ref.asset_id, record.asset_id)
+        self.fixture.fixture.uploader.upload.assert_called_once()
+
+    def test_typed_controls_carry_lane_and_drawing_is_read_only(self):
+        lane, ref = self.configure_typed_input("video", "audio")
+        operators = []
+        layout = Mock()
+
+        def operator(name, **kwargs):
+            op = SimpleNamespace(name=name)
+            operators.append(op)
+            return op
+
+        layout.operator.side_effect = operator
+        before = dict(ref.items()), self.form.reference_values(ref)
+        self.form.draw(layout, lane, 0, ref)
+        self.assertEqual(
+            [op.name for op in operators], ["scenario.upload_reference", "scenario.inspect_uploads"]
+        )
+        self.assertTrue(all(op.lane == "video" and op.index == 0 for op in operators))
+        self.assertEqual(before, (dict(ref.items()), self.form.reference_values(ref)))
+        self.assertEqual(self.fixture.fixture.calls, [])

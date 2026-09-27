@@ -131,11 +131,11 @@ From top to bottom:
 - **Account strip**: the connection or credential status, a refresh button for the model list and a shortcut to the preferences. Account/project discovery and switching remain subject to the [known limitations](KNOWN_LIMITATIONS.md).
 - **Model**: a button showing the current model. It opens the model picker, laid out like Scenario's "Choose a Model": modality tabs (Image, Video, Audio, 3D) and the web app's category chips (Image: All, Generate, Edit, Expand, Upscale, Vectorize, Remove Background, Tools; Video: All, Generate, Edit, Lipsync, Upscale, Reframe, Remove Background, Tools; Audio: All, Speech, Music, SFX, Tools; 3D: All, Generate, Splat, Remesh, Retexture, UV Unwrap, Rigging, Animate, Parts), a search field, the list with thumbnails and the description of the highlighted model. Availability depends on the selected credentials and the model catalog. See the [known limitations](KNOWN_LIMITATIONS.md) for trained/custom-model integration boundaries. Picking a model of another modality switches to that lane. The small arrow next to the button is the plain dropdown.
 - **Prompt**: its own box, like Scenario's. The prompt lives in the field; drag the small size control in the header to make the box taller. Below it, three equal full-width buttons with Scenario's icons: **New** (dice, Prompt Spark writes a prompt for the model), **Rewrite** (sparkles, Prompt Spark improves yours), and **Translate** (to English). These helpers can spend credits; inspect their controls and tooltips before use. They run in the background; the field updates when the answer arrives. The trash button clears the prompt and is disabled when it is empty.
-- **References**: one box per file input the model accepts (image, video, audio, 3D), with a thumbnail per file. Add offers File, Viewport still, Camera still, Viewport clip, Camera clip and Render Result. Captures happen when you press Generate. Pinned rows are inputs the lane adds itself (the capture, the selected mesh).
+- **References**: one box per file input the model accepts (image, video, audio, 3D), with a thumbnail per file. Add offers File, Viewport still, Camera still, Viewport clip, Camera clip and Render Result. Upload references before requesting a final price. Generate does not implicitly capture or upload. Pinned capture/mesh rows still require shared preparation integration and currently prevent generation.
 - **Parameters**: built from the model's own schema. A checkbox in front of an optional parameter means "send this value"; unchecked, Scenario uses its default. `(cost)` marks parameters that change the price.
-- **Generate (N CU)**: the current estimate for this form, refreshed as you edit (a dry run, free). "from N CU" means the quote excludes references that will only be uploaded at generate time; "Price shown after the upload" means the model needs the mesh or the capture first.
+- **Generate (N CU)**: the current exact server estimate for this form, refreshed as you edit (a dry run, free). Generate consumes that unchanged quote once and saves the submission for recovery. Pending files, captures or Prompt Spark preparation must finish first; a partial price cannot authorize generation.
 
-Results are saved under the Output Folder, one folder per kind and per day, and the file name carries the Scenario asset id: `3d/<date>/<timestamp>_<model>_<asset-id>_00.glb`.
+New form generations appear in the shared saved jobs. Image imports supported PNG/EXR results into its original scene; other lanes retain downloaded results for explicit application. The lane descriptions below also describe retained prototype capabilities whose shared result application is still being integrated. Render captures, mesh export, Prompt Spark preparation and Film acceptance remain release blockers.
 
 ![The model picker: Image, Video, Audio and 3D tabs with icons, category chips, search, the model list and the description of GPT Image 2](images/model-picker.png)
 
@@ -191,7 +191,7 @@ remain part of the earlier workflow pending integration.
 This pre-release path imports supported PNG and scanline OpenEXR results as packed
 image datablocks. Select them in Blender's Image Editor. Saved-job controls can
 refresh/download or explicitly import recovered images into a reviewed destination;
-see the [current runtime limits](architecture/runtime.md#active-sdk-cost-previews-and-image-submission).
+see the [current runtime limits](architecture/runtime.md#active-sdk-cost-previews-and-model-submission).
 Other generation lanes and result actions retain their earlier integration and
 need their own acceptance checks.
 

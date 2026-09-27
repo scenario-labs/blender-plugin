@@ -13,7 +13,7 @@ The SDK is pinned for development and packaged as a runtime dependency. The
 [shared read/estimate adapter](../scenario/core/api/sdk_adapter.py) now uses it;
 the active UI and local MCP now share SDK model listing/detail reads and model
 cost previews through [SDKCatalog](../scenario/core/api/sdk_catalog.py). Cloud
-history also uses this connection as described below. Image UI and all MCP model quote and
+history also uses this connection as described below. UI and MCP model quote and
 submission now use the selected shared JobSession and existing adapter
 `models.retrieve` / `generate.with_raw_response.run_model` contracts. The remaining service operations
 still use the prototype client pending shared-job integration. See
@@ -115,7 +115,7 @@ preserves the decimal string. Missing/invalid cost data is an error, while an
 explicit zero remains valid. These are in-memory previews, not durable job quotes
 or authorization for the prototype submission path. Reference uploads, partial
 preview labels, authoritative account/project identity and paid integration retain
-their existing boundaries. Image UI and all MCP model quotes instead use fresh model metadata and
+their existing boundaries. UI and MCP model quotes instead use fresh model metadata and
 the selected JobSession, preserving the same raw SDK estimate. Explicit shared model
 submission consumes that quote through the coordinator; no endpoint exception,
 new dependency or retry policy is introduced.
@@ -310,14 +310,14 @@ Token serialization does not establish browser OAuth acceptance by REST.
 The adapter provides reads/estimates and a coordinator-only submission hook.
 The [job coordinator](JOB_COORDINATOR.md) commits a scoped intent before dispatch,
 consumes each issued quote once and preserves uncertain outcomes. Inference
-cancellation is available through the coordinator. Image UI and all MCP model submission now
+cancellation is available through the coordinator. UI and MCP model submission now
 consumes session-owned quotes and persists intent before the existing adapter
 hook; its active result path uses `jobs.retrieve` and `assets.retrieve` from the
 same adapter, followed by credential-free CDN transfer. Saved-job UI/MCP controls
 also expose known model-job cancellation and download recovery through the same
 coordinator. Explicit recovered Image application uses verified local receipts
 without service calls. Non-image MCP jobs stop after verified download without
-automatic scene application. Other UI lanes and result application still need integration.
+automatic scene application. Capture/Spark preparation, Film and non-image result application still need integration.
 Generated operations use public SDK methods
 with `max_retries=0`; their `with_raw_response` wrappers preserve wire JSON.
 The named discovery exceptions also use the same zero-retry SDK client.

@@ -702,12 +702,12 @@ def request_estimate(scene, lane):
     runtime.sync_catalog_context()
     lane_state = scene.scenario.lane_state(lane)
     previous = runtime.state.estimates.pop(lane_state.estimate_key, None)
-    if lane == "image" and previous is not None and runtime.state.model_jobs is not None:
+    if previous is not None and runtime.state.model_jobs is not None:
         # Repricing this form explicitly supersedes its former UI approval.
         runtime.state.model_jobs.quotes.pop(previous.identifier, None)
     lane_state.estimate_key = ""
     request = build_request(scene, lane, for_estimate=True)
-    if lane == "image" and (request.files or request.captures or request.spark):
+    if request.files or request.captures or request.spark:
         request.errors.append("Use uploaded Scenario references before requesting a final price")
     if request.errors:
         lane_state.estimate_state = "UNAVAILABLE"
@@ -719,14 +719,9 @@ def request_estimate(scene, lane):
     lane_state.estimate_state = "PENDING"
     lane_state.estimate_partial = request.partial
     try:
-        if lane == "image":
-            jobs = runtime.ensure_model_jobs()
-            ticket = jobs.quote(scene, request.model_id, request.body)
-            runtime.state.model_previews[key] = ticket
-            return
-        catalog = runtime.ensure_catalog()
-        runtime.state.estimate_origins[key] = (scene, lane)
-        runtime.ensure_manager().preview_cost(catalog, key, request.model_id, request.body)
+        jobs = runtime.ensure_model_jobs()
+        ticket = jobs.quote(scene, request.model_id, request.body, lane=lane)
+        runtime.state.model_previews[key] = ticket
     except ScenarioError as err:
         runtime.state.estimate_origins.pop(key, None)
         lane_state.estimate_state = "ERROR"
@@ -747,7 +742,7 @@ def process_model_jobs():
             continue
         del runtime.state.model_previews[key]
         try:
-            lane_state = ticket.scene.scenario.lane_state("image")
+            lane_state = ticket.scene.scenario.lane_state(ticket.lane)
             if lane_state.estimate_key != key:
                 jobs.session.drain(task=ticket.task)
                 jobs.quotes.pop(ticket.identifier, None)
@@ -761,7 +756,7 @@ def process_model_jobs():
             # Source/transport details can contain private inputs. Keep failures
             # actionable without copying arbitrary exception text into the UI.
             try:
-                lane_state = ticket.scene.scenario.lane_state("image")
+                lane_state = ticket.scene.scenario.lane_state(ticket.lane)
                 if lane_state.estimate_key == key:
                     lane_state.estimate_state = "ERROR"
                     lane_state.estimate_error = "Could not confirm this price; estimate again"
@@ -773,77 +768,44 @@ def submit_generation(context, lane):
     runtime.sync_catalog_context()
     scene = context.scene
     lane_state = scene.scenario.lane_state(lane)
-    request = build_request(scene, lane)
+    request = build_request(scene, lane, for_estimate=True)
     if request.errors:
         raise ScenarioError(0, "; ".join(request.errors))
-    if lane == "image":
-        if request.files or request.captures or request.spark:
-            raise ScenarioError(
-                0, "Use uploaded Scenario references before requesting a final price"
-            )
-        ticket = runtime.state.estimates.get(lane_state.estimate_key)
-        if lane_state.estimate_state != "READY" or ticket is None:
-            raise ScenarioError(0, "Wait for a fresh price before generating")
-        # A rejected attempt can consume the handle before storage reports an
-        # error. Never keep that price actionable or automatically reprice it.
-        lane_state.estimate_state = "IDLE"
-        runtime.state.estimates.pop(lane_state.estimate_key, None)
-        try:
-            jobs = runtime.ensure_model_jobs()
-            estimate = jobs.finish_quote(ticket)
-            rec = jobs.submit(
-                ticket.identifier,
-                scene,
-                request.model_id,
-                request.body,
-                approved_cost=str(estimate.cost),
-                meta=request_meta(context, lane, request),
-            )
-        except ScenarioError:
-            lane_state.estimate_state = "ERROR"
-            lane_state.estimate_error = "Inspect saved jobs and request a fresh price"
-            raise
-        except Exception:
-            lane_state.estimate_state = "ERROR"
-            lane_state.estimate_error = "Inspect saved jobs and request a fresh price"
-            raise ScenarioError(
-                0, "Could not submit; inspect saved jobs and request a fresh price"
-            ) from None
-        runtime.state.jobs_view.insert(0, rec)
-        lane_state.estimate_state = "IDLE"
-        lane_state.last_error = ""
-        runtime.set_message("Generation queued; its submission is saved for recovery")
-        return rec
+    if request.files or request.captures or request.spark:
+        raise ScenarioError(0, "Use uploaded Scenario references before requesting a final price")
+    ticket = runtime.state.estimates.get(lane_state.estimate_key)
+    if lane_state.estimate_state != "READY" or ticket is None:
+        raise ScenarioError(0, "Wait for a fresh price before generating")
+    # A rejected attempt can consume the handle before storage reports an
+    # error. Never keep that price actionable or automatically reprice it.
+    lane_state.estimate_state = "IDLE"
+    runtime.state.estimates.pop(lane_state.estimate_key, None)
     try:
-        perform_captures(context, request)
-    except RuntimeError as err:
-        raise ScenarioError(0, str(err)) from err
-    manager = runtime.ensure_manager()
-    prepare = None
-    if request.spark is not None:
-        from . import render_lanes
-
-        prepare = render_lanes.make_prepare(
-            request.spark,
-            request.meta.get("spark_image"),
-            request.meta.get("prompt_name") or "prompt",
+        jobs = runtime.ensure_model_jobs()
+        estimate = jobs.finish_quote(ticket)
+        rec = jobs.submit(
+            ticket.identifier,
+            scene,
+            request.model_id,
+            request.body,
+            approved_cost=str(estimate.cost),
+            lane=lane,
+            meta=request_meta(context, lane, request),
         )
-    rec = manager.submit(
-        lane,
-        request.kind,
-        request.model_id,
-        request.body,
-        files=request.files,
-        array_params=request.array_params,
-        meta=request_meta(context, lane, request),
-        prepare=prepare,
-    )
+    except ScenarioError:
+        lane_state.estimate_state = "ERROR"
+        lane_state.estimate_error = "Inspect saved jobs and request a fresh price"
+        raise
+    except Exception:
+        lane_state.estimate_state = "ERROR"
+        lane_state.estimate_error = "Inspect saved jobs and request a fresh price"
+        raise ScenarioError(
+            0, "Could not submit; inspect saved jobs and request a fresh price"
+        ) from None
     runtime.state.jobs_view.insert(0, rec)
+    lane_state.estimate_state = "IDLE"
     lane_state.last_error = ""
-    runtime.set_message(
-        ("Prompt Spark is writing the look for " if prepare else "Submitted to ")
-        + rec.meta.get("model_name", rec.model_id)
-    )
+    runtime.set_message("Generation queued; its submission is saved for recovery")
     return rec
 
 

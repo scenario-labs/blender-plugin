@@ -24,7 +24,7 @@ Every section header carries an icon so the panel reads as a stack of peers: `Mo
 When Blender online access is disabled, the composer shows **Offline** on its
 disabled generation button and **Online access disabled** instead of a loading
 message when no model is available. Pending edits retain their estimate request
-until online access and credentials are available. The Image generation controls
+until online access and credentials are available. The generation controls
 remain disabled until a ready quote handle exists; the submission path still
 rechecks its exact inputs, origin and approval. A model list is only described as
 loading while a catalog request is active.

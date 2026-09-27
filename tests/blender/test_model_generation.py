@@ -548,12 +548,40 @@ class ModelGenerationTests(unittest.TestCase):
             self.recover(result["local_id"], "retry_receipt")
         self.assertEqual(len(self.paid), 1)
 
-    def ui_quote(self):
-        self.generation.request_estimate(bpy.context.scene, "image")
+    def ui_quote(self, lane="image"):
+        self.generation.request_estimate(bpy.context.scene, lane)
         for ticket in tuple(self.runtime.state.model_previews.values()):
             ticket.task.result(5)
         self.runtime.sync_catalog_context()
-        self.assertEqual(self.lane.estimate_state, "READY", self.lane.estimate_error)
+        state = bpy.context.scene.scenario.lane_state(lane)
+        self.assertEqual(state.estimate_state, "READY", state.estimate_error)
+
+    def configure_ui_lane(self, lane):
+        inputs = [{"name": "prompt", "type": "string", "required": True, "prompt": True}]
+        if lane == "edit3d":
+            inputs.append({"name": "mesh", "type": "file", "kind": "3d", "required": True})
+            bpy.ops.mesh.primitive_cube_add()
+        elif lane in ("render_image", "render_video"):
+            inputs.append(
+                {
+                    "name": "reference",
+                    "type": "file_array",
+                    "kind": "image" if lane == "render_image" else "video",
+                }
+            )
+        self.model["inputs"] = inputs
+        record = submodule("core.api.catalog").ModelRecord.from_api(self.model)
+        self.runtime.state.records[record.id] = record
+        self.generation._schemas.pop(record.id, None)
+        self.runtime.set_enum_items(("models", lane), [(record.id, record.name, "")])
+        state = bpy.context.scene.scenario.lane_state(lane)
+        state.model_id = record.id
+        self.generation.on_model_changed(bpy.context, state)
+        state.prompt = "a teapot"
+        if lane == "edit3d":
+            ref = state.references.add()
+            ref.param_name, ref.source, ref.asset_id = "mesh", "ASSET", "uploaded-mesh"
+        return state
 
     def mcp_quote(self, lane="image"):
         deferred = self.tools.estimate_cost(
@@ -894,4 +922,128 @@ class ModelGenerationTests(unittest.TestCase):
                 self.prefs.api_secret += "-changed"
                 with self.assertRaises(self.request_error):
                     self.mcp_submit(quote)
+        self.assertEqual(self.paid, [])
+
+    def test_ui_lanes_use_exact_shared_quotes_and_match_mcp_payloads(self):
+        panels = submodule("blender.panels")
+        for lane in ("image", "video", "3d", "material", "audio", "edit3d"):
+            with self.subTest(lane=lane):
+                state = self.configure_ui_lane(lane)
+                self.assertFalse(panels.generate_enabled(state, lane))
+                self.ui_quote(lane)
+                self.assertTrue(panels.generate_enabled(state, lane))
+                request = self.generation.build_request(bpy.context.scene, lane, for_estimate=True)
+                ticket = self.runtime.state.estimates[state.estimate_key]
+                self.assertEqual(ticket.lane, lane)
+                self.assertEqual(bpy.ops.scenario.generate(lane=lane), {"FINISHED"})
+                self.assertFalse(panels.generate_enabled(state, lane))
+                self.settle()
+                view = self.runtime.state.jobs_view[0]
+                saved = self.store.get(view.local_id)
+                self.assertEqual(saved.intent.quote_cost, "0.1234567890123456789")
+                self.assertEqual(saved.state, self.storemod.JobState.REMOTE)
+                self.assertEqual(view.lane, lane)
+                ui_payload = self.paid[-1].content
+                with self.assertRaises(self.request_error):
+                    self.generation.submit_generation(bpy.context, lane)
+                args = {"lane": lane, "model_id": self.model["id"], "parameters": request.body}
+                deferred = self.tools.estimate_cost(args)
+                quote = deferred.finish(deferred.run())
+                self.tools.generate(
+                    dict(args, quote_id=quote["quote_id"], approved_cost=quote["cu_cost_exact"])
+                )
+                self.settle()
+                self.assertEqual(self.paid[-1].content, ui_payload)
+        self.assertEqual(len(self.paid), 12)
+        self.assertIsNone(self.runtime.state.manager)
+
+    def test_ui_quote_delivery_stays_in_its_form_after_tab_switch(self):
+        video = self.configure_ui_lane("video")
+        audio = self.configure_ui_lane("audio")
+        for lane in ("video", "audio"):
+            self.generation.request_estimate(bpy.context.scene, lane)
+        for ticket in tuple(self.runtime.state.model_previews.values()):
+            ticket.task.result(5)
+        bpy.context.scene.scenario.lane = "image"
+        self.runtime.sync_catalog_context()
+        self.assertEqual((video.estimate_state, audio.estimate_state), ("READY", "READY"))
+        self.assertNotEqual(video.estimate_key, audio.estimate_key)
+        previous = self.runtime.state.estimates[video.estimate_key]
+        self.ui_quote("video")
+        self.assertNotIn(previous.identifier, self.runtime.state.model_jobs.quotes)
+        self.assertIn(audio.estimate_key, self.runtime.state.estimates)
+        # Copying a ready handle cannot change its original lane.
+        video.estimate_key = audio.estimate_key
+        self.assertFalse(submodule("blender.panels").generate_enabled(video, "video"))
+        with self.assertRaisesRegex(self.request_error, "changed"):
+            self.generation.submit_generation(bpy.context, "video")
+        self.assertEqual(self.paid, [])
+
+    def test_non_image_ui_lost_responses_remain_uncertain_without_resubmission(self):
+        self.lose_response = True
+        references = []
+        for lane in ("video", "3d", "material", "audio", "edit3d"):
+            with self.subTest(lane=lane):
+                self.configure_ui_lane(lane)
+                self.ui_quote(lane)
+                view = self.generation.submit_generation(bpy.context, lane)
+                references.append(view.local_id)
+                self.settle()
+                with self.assertRaisesRegex(self.request_error, "fresh price"):
+                    self.generation.submit_generation(bpy.context, lane)
+        self.runtime.state.reset()
+        for reference in references:
+            self.assertEqual(
+                self.runtime.ensure_model_jobs().status(reference)["status"], "uncertain"
+            )
+        self.assertEqual(len(self.paid), len(references))
+
+    def test_non_image_ui_changed_payload_or_origin_cannot_spend(self):
+        state = self.configure_ui_lane("audio")
+        self.ui_quote("audio")
+        state.prompt = "edited after quote"
+        with self.assertRaises(self.request_error):
+            self.generation.submit_generation(bpy.context, "audio")
+        self.ui_quote("audio")
+        self.runtime.state.job_session.invalidate_scene(bpy.context.scene)
+        with self.assertRaises(self.request_error):
+            self.generation.submit_generation(bpy.context, "audio")
+        self.assertEqual(self.paid, [])
+        self.assertEqual(self.store.records(), ())
+
+    def test_ui_pending_files_captures_and_spark_cannot_quote_or_dispatch(self):
+        for lane in submodule("core.api.catalog").GENERATION_LANES:
+            for pending in ("files", "captures", "spark"):
+                with self.subTest(lane=lane, pending=pending):
+                    state = self.configure_ui_lane(lane)
+                    request = self.generation.Request(
+                        lane, "model", self.model["id"], {"prompt": "a teapot"}
+                    )
+                    setattr(
+                        request,
+                        pending,
+                        {"input": ["fixture"]} if pending != "captures" else [{"source": "MESH"}],
+                    )
+                    with patch.object(self.generation, "build_request", return_value=request):
+                        self.generation.request_estimate(bpy.context.scene, lane)
+                        self.assertEqual(state.estimate_state, "UNAVAILABLE")
+                        with self.assertRaisesRegex(self.request_error, "uploaded"):
+                            self.generation.submit_generation(bpy.context, lane)
+        self.assertEqual(self.calls, [])
+        self.assertEqual(self.store.records(), ())
+
+    def test_render_form_capture_is_not_performed_by_quote_or_submit(self):
+        for lane in ("render_image", "render_video"):
+            with self.subTest(lane=lane):
+                state = self.configure_ui_lane(lane)
+                with patch.object(
+                    self.generation,
+                    "perform_captures",
+                    side_effect=AssertionError("Implicit capture"),
+                ):
+                    self.generation.request_estimate(bpy.context.scene, lane)
+                    self.assertEqual(state.estimate_state, "UNAVAILABLE")
+                    with self.assertRaises(self.request_error):
+                        self.generation.submit_generation(bpy.context, lane)
+        self.assertEqual(self.calls, [])
         self.assertEqual(self.paid, [])

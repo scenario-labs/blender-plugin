@@ -63,6 +63,8 @@ class ReferenceUploadTests(unittest.TestCase):
                     try:
                         ticket.task.result(5)
                     except Exception:
+                        # poll() records the completion error; tests assert the
+                        # resulting ticket error and durable state below.
                         pass
                 ticket.next_poll = 0
             self.owner.poll()

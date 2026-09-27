@@ -493,6 +493,8 @@ def recover_reference_upload(args):
         try:
             result.result()
         except Exception:
+            # finish() checks the owned completion and reports recovery failure
+            # on the main thread; this worker only waits for the task to finish.
             pass
 
     return DeferredTool(run, finish)

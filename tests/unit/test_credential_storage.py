@@ -180,6 +180,15 @@ def test_contended_lock_times_out_without_creating_a_partial_key(tmp_path, monke
     assert open_credential_store(tmp_path, CREDS).scope.project_id is None
 
 
+def test_empty_lock_file_needs_no_write_before_acquisition(tmp_path, monkeypatch):
+    def locked_write(*args):
+        raise PermissionError("Another Windows owner holds the byte range")
+
+    monkeypatch.setattr(credential_storage.os, "write", locked_write)
+    with credential_storage._initialization_lock(tmp_path):
+        assert (tmp_path / ".scope.lock").stat().st_size == 0
+
+
 def test_scope_lock_must_be_regular_and_private(tmp_path):
     (tmp_path / ".scope.lock").write_bytes(b"not a lock")
     with pytest.raises(StoreError, match="regular private"):

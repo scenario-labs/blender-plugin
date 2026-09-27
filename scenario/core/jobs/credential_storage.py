@@ -31,8 +31,8 @@ def _initialization_lock(root):
         info = os.fstat(descriptor)
         if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1 or info.st_size > 1:
             raise StoreError("Local scope lock must be a regular private file")
-        if info.st_size == 0:
-            os.write(descriptor, b"\0")
+        # Windows supports byte-range locks beyond EOF. Keep a new file empty:
+        # writing a sentinel before locking races with another owner's mandatory lock.
         os.lseek(descriptor, 0, os.SEEK_SET)
         deadline = time.monotonic() + 2
         while True:

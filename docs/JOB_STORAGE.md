@@ -33,7 +33,9 @@ file, then atomically replace their private temporary file into the still-absent
 key path. This requires no hard-link support. Lock contention waits at most two
 seconds before an explicit retry-later error; OS file locks are released when
 the descriptor or process closes. Do not unlink the lock while Blender is using
-the directory, since competing creators must lock the same file.
+the directory, since competing creators must lock the same file. New lock files
+remain empty: Windows supports [locking beyond EOF](https://learn.microsoft.com/en-us/cpp/c-runtime-library/reference/locking),
+so no sentinel write can race with another owner's mandatory byte-range lock.
 No raw API credential is written by this binding. The local
 key is not encryption, and losing it prevents recreating the old scope even with
 the original credentials. Different installation keys produce different scopes.

@@ -131,11 +131,11 @@ From top to bottom:
 - **Account strip**: the connection or credential status, a refresh button for the model list and a shortcut to the preferences. Account/project discovery and switching remain subject to the [known limitations](KNOWN_LIMITATIONS.md).
 - **Model**: a button showing the current model. It opens the model picker, laid out like Scenario's "Choose a Model": modality tabs (Image, Video, Audio, 3D) and the web app's category chips (Image: All, Generate, Edit, Expand, Upscale, Vectorize, Remove Background, Tools; Video: All, Generate, Edit, Lipsync, Upscale, Reframe, Remove Background, Tools; Audio: All, Speech, Music, SFX, Tools; 3D: All, Generate, Splat, Remesh, Retexture, UV Unwrap, Rigging, Animate, Parts), a search field, the list with thumbnails and the description of the highlighted model. Availability depends on the selected credentials and the model catalog. See the [known limitations](KNOWN_LIMITATIONS.md) for trained/custom-model integration boundaries. Picking a model of another modality switches to that lane. The small arrow next to the button is the plain dropdown.
 - **Prompt**: its own box, like Scenario's. The prompt lives in the field; drag the small size control in the header to make the box taller. Below it, three equal full-width buttons with Scenario's icons: **New** (dice, Prompt Spark writes a prompt for the model), **Rewrite** (sparkles, Prompt Spark improves yours), and **Translate** (to English). These helpers can spend credits; inspect their controls and tooltips before use. They run in the background; the field updates when the answer arrives. The trash button clears the prompt and is disabled when it is empty.
-- **References**: one box per file input the model accepts (image, video, audio, 3D), with a thumbnail per file. Add offers File, Viewport still, Camera still, Viewport clip, Camera clip and Render Result. Upload references before requesting a final price. Generate does not implicitly capture or upload. Pinned capture/mesh rows still require shared preparation integration and currently prevent generation.
+- **References**: one box per file input the model accepts (image, video, audio, 3D), with a thumbnail per file. Add offers File, Viewport still, Camera still, Viewport clip, Camera clip and Render Result. Choose **Upload reference** to capture and upload a still or clip before pricing. For an empty 3D input, **Upload selected mesh** exports and uploads the current selection. Render-lane pinned capture preparation remains separate integration.
 - **Parameters**: built from the model's own schema. A checkbox in front of an optional parameter means "send this value"; unchecked, Scenario uses its default. `(cost)` marks parameters that change the price.
 - **Generate (N CU)**: the current exact server estimate for this form, refreshed as you edit (a dry run, free). Generate consumes that unchanged quote once and saves the submission for recovery. Pending files, captures or Prompt Spark preparation must finish first; a partial price cannot authorize generation.
 
-New form generations appear in the shared saved jobs. Image imports supported PNG/EXR results into its original scene; other lanes retain downloaded results for explicit application. The lane descriptions below also describe retained prototype capabilities whose shared result application is still being integrated. Render captures, mesh export, Prompt Spark preparation and Film acceptance remain release blockers.
+New form generations appear in the shared saved jobs. Image imports supported PNG/EXR results into its original scene; other lanes retain downloaded results for explicit application. The lane descriptions below also describe retained prototype capabilities whose shared result application is still being integrated. Render pinned captures, Prompt Spark preparation, result application and Film acceptance remain release blockers.
 
 ![The model picker: Image, Video, Audio and 3D tabs with icons, category chips, search, the model list and the description of GPT Image 2](images/model-picker.png)
 
@@ -185,8 +185,9 @@ video and 3D files wherever a generation form offers a matching input. For
 example, a Video model's audio input accepts an audio file, not a still capture.
 An upload stays attached to its original form when you change tabs. Pending
 uploads must finish or be reviewed before generation can continue. Still captures
-are supported for image inputs; clip capture and automatic mesh preparation
-remain part of the earlier workflow pending integration.
+serve image inputs, viewport/camera clips serve video inputs, and **Upload selected
+mesh** creates a GLB snapshot for an empty 3D input. Render-lane pinned capture
+and Prompt Spark preparation remain separate integration.
 
 This pre-release path imports supported PNG and scanline OpenEXR results as packed
 image datablocks. Select them in Blender's Image Editor. Saved-job controls can
@@ -200,8 +201,8 @@ Text, images or your Blender scene to video (Seedance 2.0 and 2.5, Kling, Veo, W
 
 ![Video lane with Seedance parameters, frame references, Match timeline and Generate controls](images/panel-video.png)
 
-- **Viewport clip** / **Camera clip** references playblast your timeline at 1280x720 (overlays hidden) when you press Generate; a camera clip is captured through the viewport in camera view, so your Material Preview or Rendered shading comes along. **Grey clay capture** forces solid single-colour shading so the model reads motion rather than materials.
-- **Match timeline** keeps the clip and the video the same length: the model's duration follows your frame range (a choice list such as Seedance's 4 to 15 s picks the first value that fits; a numeric range such as Minimax H3's 5 to 15 s takes the clip length rounded up and clamped), the duration field is locked while it drives, the box states "Video duration 6 s, same as the clip" or the padding or trimming applied, and the playblast is padded or cut to that exact duration. Seedance prompts get their `@video1` / `@image1` mentions automatically.
+- **Viewport clip** / **Camera clip**: add the reference, then choose **Upload reference**. This captures a silent 1280x720 MP4 over the preview range when enabled, otherwise the scene frame range. A camera clip uses the scene camera through the viewport; viewport shading is retained unless **Grey clay capture** is enabled. The capture restores scene settings and the current frame afterwards.
+- The uploaded clip is an immutable snapshot. It is not trimmed or padded automatically, and later timeline or model-duration changes do not recapture it. Set the intended range before uploading; replace the reference to capture again. Review the model's input and duration requirements before generation. **Match timeline** remains a model-duration aid, not a guarantee that an uploaded clip matches the output duration.
 - Results: **Play** (system player), **Play in Blender**, or **Add video strip**.
   Add video strip inserts the downloaded picture frames at the current frame on
   an unused, unlocked and unmuted sequencer channel. It fits the picture inside
@@ -225,7 +226,7 @@ Edit mode:
 
 1. Select the mesh (or several) in the viewport.
 2. Pick the task: **Remesh** (Tripo Retopology, Meshy Remesh, Hunyuan Polygen), **Retexture** (Meshy 7 Retexture, Tripo Texturing, Trellis 2 Retexture, Tencent Texture Edit, Rodin Hyper3D Bang!, Tripo Stylization, Hitem3D Multicolor), **UV Unwrap** (Meshy, Tencent), **Rigging** (Meshy, Tripo 2.5, Cartwheel), **Animate** (Meshy Animation, Cartwheel Text to Motion), **Parts** (Tripo Segmentation, Hunyuan 3D Part, Hitem3D Split, Rodin Bang), or **All**.
-3. Fill the model's own parameters and Generate. The selection is exported as a GLB at generate time (modifiers applied, materials embedded) and uploaded; the result is imported next to the original, bottoms aligned, named after it.
+3. Choose **Upload selected mesh** to export one GLB snapshot with modifiers applied and materials embedded. Wait for its uploaded asset, fill the model's parameters, review the price and choose Generate. Later scene edits do not alter that snapshot; remove the reference and upload again to replace it. Result placement remains subject to the current generation/application integration.
 
 ![3D tab in Edit mode: the selected mesh, task tabs Remesh, Retexture, UV Unwrap, Rigging, Animate, Parts, Meshy 7 Retexture and its parameters](images/panel-3d-edit.png)
 

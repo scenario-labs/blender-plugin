@@ -153,10 +153,14 @@ def draw_references(
     without a box, for callers that are already inside one (avoids nesting coloured boxes)."""
     from . import mesh_export
 
-    title_for, fixed_first = title_for or {}, fixed_first or {}
+    title_for, fixed_first = title_for or {}, dict(fixed_first or {})
+    for ref in lane_state.references:
+        spec = schema.by_name(ref.param_name)
+        if spec is not None and spec.kind == "3d":
+            fixed_first.pop(ref.param_name, None)
     refs = params_ui.collect_file_refs(lane_state, schema)
     lane = props.lane_of(lane_state)
-    # A 3D input is fed by the scene selection automatically (any lane), so a selected mesh is used without a click.
+    # A selected mesh can be explicitly uploaded to any empty 3D input.
     # Only when the user has attached an explicit file/asset for that input is the selection not shown.
     selected = mesh_export.source_objects(bpy.context)
     if selected and lane != "edit3d":  # the Edit lane passes its own pinned label
@@ -204,6 +208,13 @@ def draw_references(
                     icon=SOURCE_ICON.get(source_id, "ADD"),
                 )
                 op.lane, op.param_name, op.source = lane, spec.name, source_id
+        if (
+            kind == "3d"
+            and selected
+            and not any(ref.param_name == spec.name for ref in lane_state.references)
+        ):
+            op = box.operator("scenario.upload_selected_mesh", icon="EXPORT")
+            op.lane, op.param_name = lane, spec.name
         if spec.name in fixed_first:
             row = box.row(align=True)
             row.enabled = False
@@ -241,9 +252,10 @@ def draw_clip_options(layout, context, lane_state, schema):
     if schema.by_name("duration") is not None:
         box.prop(lane_state, "match_timeline")
         if lane_state.match_timeline:
-            _, value, note = generation.timeline_sync_info(context.scene, lane_state, schema)
-            if note:
-                box.label(text=f"Clip {note} for the model", icon="INFO")
+            _, value, _ = generation.timeline_sync_info(context.scene, lane_state, schema)
+            if value is not None:
+                box.label(text=f"Model output duration: {value:g} s", icon="INFO")
+    box.label(text="Upload captures this range without padding; saved clips stay unchanged")
     box.prop(lane_state, "force_solid")
 
 
@@ -359,7 +371,7 @@ def draw_edit3d_lane(layout, context):
             f" +{len(objects) - 3}" if len(objects) > 3 else ""
         )
         box.label(text=f"Mesh: {names}", icon="MESH_DATA")
-        box.label(text="Exported as GLB at generate time; the result lands next to it", icon="INFO")
+        box.label(text="Upload a GLB snapshot before requesting a generation price", icon="INFO")
     else:
         box.label(text="Select the mesh to edit in the viewport", icon="ERROR")
     tasks = [t[0] for t in props.EDIT3D_TASK_ITEMS]
@@ -387,7 +399,7 @@ def draw_edit3d_lane(layout, context):
         layout,
         lane_state,
         schema,
-        fixed_first={mesh_name: "Selected mesh (exported at generate time)"} if mesh_name else None,
+        fixed_first={mesh_name: "Selected mesh (upload before pricing)"} if mesh_name else None,
     )
     params_ui.draw_params(layout, lane_state, schema)
     draw_generate_row(

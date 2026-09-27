@@ -64,7 +64,11 @@ def _destination_key(scene, name):
 
 
 def _upload_sources(kind):
-    return {"FILE", "VIEWPORT", "CAMERA", "RENDER"} if kind == "image" else {"FILE"}
+    return {
+        "image": {"FILE", "VIEWPORT", "CAMERA", "RENDER"},
+        "video": {"FILE", "VIEWPORT_CLIP", "CAMERA_CLIP"},
+        "3d": {"FILE", "MESH"},
+    }.get(kind, {"FILE"})
 
 
 def _binding(owner, ref):
@@ -301,7 +305,7 @@ def start(context, index, *, lane_name="image"):
     if kind is None:
         raise ScenarioError(0, "Choose an image, audio, video or 3D input before uploading")
     if ref.source not in _upload_sources(kind):
-        raise ScenarioError(0, "Choose a local file or a supported image capture to upload")
+        raise ScenarioError(0, "Choose a local file or a supported snapshot for this input")
     if ref.source == "FILE" and not ref.filepath:
         raise ScenarioError(0, f"Choose a file for this {kind} input first")
     token = uuid.uuid4().hex
@@ -316,7 +320,12 @@ def start(context, index, *, lane_name="image"):
         if ref.source == "FILE":
             binding.ticket = owner.start(context.scene, bpy.path.abspath(ref.filepath), kind=kind)
         else:
-            binding.ticket = capture_upload(context, source=ref.source, camera=ref.asset_id or None)
+            binding.ticket = capture_upload(
+                context,
+                source=ref.source,
+                camera=ref.asset_id or None,
+                force_solid=bool(lane.force_solid),
+            )
     except UploadNotStarted:
         # The typed result proves no task was admitted. Keep uncertain or
         # asynchronous failures marked, even when their receipt is missing.
@@ -457,6 +466,40 @@ class SCENARIO_OT_upload_reference(bpy.types.Operator):
             return {"CANCELLED"}
         except Exception:
             self.report({"ERROR"}, "Upload could not start; inspect saved uploads")
+            return {"CANCELLED"}
+        return {"FINISHED"}
+
+
+class SCENARIO_OT_upload_selected_mesh(bpy.types.Operator):
+    bl_idname = "scenario.upload_selected_mesh"
+    bl_label = "Upload selected mesh"
+    bl_description = "Export the selected meshes as one GLB and upload this snapshot before pricing"
+    lane: StringProperty(default="edit3d", options={"HIDDEN"})
+    param_name: StringProperty(options={"HIDDEN"})
+
+    @classmethod
+    def poll(cls, context):
+        return SCENARIO_OT_upload_reference.poll(context)
+
+    def execute(self, context):
+        lane = _lane(context.scene, self.lane)
+        if input_kind(lane, self.param_name) != "3d" or any(
+            ref.param_name == self.param_name for ref in lane.references
+        ):
+            self.report({"ERROR"}, "Choose an empty 3D input for the selected mesh")
+            return {"CANCELLED"}
+        index = len(lane.references)
+        ref = lane.references.add()
+        ref.param_name, ref.source, ref.label = self.param_name, "MESH", "Selected mesh"
+        try:
+            start(context, index, lane_name=self.lane)
+        except Exception as error:
+            # An unmarked slot proves no upload was admitted. Preserve markers
+            # after uncertain admission so another click cannot duplicate it.
+            if not ref.get(_MARKER):
+                lane.references.remove(index)
+            reason = error.reason if isinstance(error, ScenarioError) else "Inspect saved uploads"
+            self.report({"ERROR"}, reason)
             return {"CANCELLED"}
         return {"FINISHED"}
 
@@ -673,6 +716,7 @@ class SCENARIO_OT_attach_saved_upload(bpy.types.Operator):
 
 CLASSES = (
     SCENARIO_OT_upload_reference,
+    SCENARIO_OT_upload_selected_mesh,
     SCENARIO_OT_inspect_uploads,
     SCENARIO_OT_recover_upload,
     SCENARIO_OT_attach_saved_upload,

@@ -308,7 +308,9 @@ class ReferenceUploadTests(unittest.TestCase):
         before = set(self.fixture.root.iterdir())
         with (
             patch.object(
-                self.module, "bpy", SimpleNamespace(app=SimpleNamespace(background=False))
+                self.module,
+                "bpy",
+                SimpleNamespace(context=bpy.context, app=SimpleNamespace(background=False)),
             ),
             patch.object(capture, "capture_still", side_effect=RuntimeError("fixture")),
         ):
@@ -347,6 +349,92 @@ class ReferenceUploadTests(unittest.TestCase):
                     self.assertEqual(ticket.record.state.value, "imported")
             self.assertEqual(settings.file_format, "OPEN_EXR")
             self.assertEqual(settings.color_depth, "32")
+
+    def test_mesh_capture_stages_real_glb_and_restores_selection(self):
+        bpy.ops.mesh.primitive_cube_add()
+        cube = bpy.context.active_object
+        self.addCleanup(lambda: bpy.data.objects.remove(cube, do_unlink=True))
+        before = set(self.fixture.root.glob("reference-*"))
+        with (
+            patch.object(self.fixture.sources, "_max_bytes", 1024 * 1024),
+            patch.object(self.fixture.sources, "_part_bytes", 1024 * 1024),
+        ):
+            result = self.tools.capture_reference({"source": "MESH"})
+            ticket = self.owner.references[result["reference_id"]]
+            record = ticket.task.result(5)
+        self.assertEqual(record.intent.kind, "3d")
+        self.assertEqual(record.intent.content_type, "model/gltf-binary")
+        staged = list((self.fixture.root / "sources").glob("*/source.bin"))
+        self.assertEqual(staged[0].read_bytes()[:4], b"glTF")
+        self.assertEqual(bpy.context.selected_objects, [cube])
+        self.assertEqual(bpy.context.active_object, cube)
+        self.fixture.session.drain(task=ticket.task)
+        self.assertEqual(set(self.fixture.root.glob("reference-*")), before)
+        self.assertEqual(self.fixture.calls, [])
+
+    def test_clip_capture_uses_preview_range_and_restores_scene(self):
+        capture = submodule("blender.capture")
+        scene = self.fixture.scene
+        scene.frame_start, scene.frame_end = 1, 100
+        scene.use_preview_range = True
+        scene.frame_preview_start, scene.frame_preview_end = 8, 12
+        scene.frame_set(4)
+        original = capture.capture_playblast
+        camera_data = bpy.data.cameras.new("Reference camera")
+        camera = bpy.data.objects.new("Reference camera", camera_data)
+        scene.collection.objects.link(camera)
+        scene.camera = camera
+        self.addCleanup(lambda: bpy.data.cameras.remove(camera_data))
+        self.addCleanup(lambda: bpy.data.objects.remove(camera, do_unlink=True))
+        for source in ("VIEWPORT_CLIP", "CAMERA_CLIP"):
+            for fail in (False, True):
+                with self.subTest(source=source, fail=fail):
+                    before = capture.RenderSettings.snapshot(scene)
+                    directories = set(self.fixture.root.glob("reference-*"))
+                    self.typed_source("video", ".mp4", "video/mp4")
+                    self.fixture.remote.update(originalFileName="reference.mp4")
+
+                    def runner(mode, context, current, fail=fail):
+                        self.assertEqual(mode, "animation")
+                        self.assertEqual((current.frame_start, current.frame_end), (8, 12))
+                        self.assertEqual(current.render.ffmpeg.audio_codec, "NONE")
+                        current.frame_set(12)
+                        if fail:
+                            raise RuntimeError("private capture failure")
+                        Path(current.render.filepath).write_bytes(b"data")
+
+                    def playblast(*args, **kwargs):
+                        return original(*args, **kwargs, runner=runner)
+
+                    with (
+                        patch.object(
+                            self.module,
+                            "bpy",
+                            SimpleNamespace(
+                                context=bpy.context, app=SimpleNamespace(background=False)
+                            ),
+                        ),
+                        patch.object(capture, "capture_playblast", side_effect=playblast),
+                    ):
+                        if fail:
+                            with self.assertRaises(self.module.UploadNotStarted):
+                                self.tools.capture_reference({"source": source})
+                        else:
+                            result = self.tools.capture_reference({"source": source})
+                            self.settle()
+                            status = self.tools.reference_upload_status(result)
+                            self.assertEqual(status["state"], "imported", status)
+                    self.assertEqual(capture.RenderSettings.snapshot(scene), before)
+                    self.assertEqual(set(self.fixture.root.glob("reference-*")), directories)
+
+    def test_capture_preconditions_do_not_send_or_leave_temporary_files(self):
+        for source in ("MESH", "VIEWPORT_CLIP", "CAMERA_CLIP"):
+            with self.subTest(source=source):
+                before = set(self.fixture.root.iterdir())
+                with self.assertRaises(self.module.UploadNotStarted):
+                    self.tools.capture_reference({"source": source})
+                self.assertEqual(set(self.fixture.root.iterdir()), before)
+        self.assertEqual(self.fixture.calls, [])
 
     def test_restart_lists_saved_upload_without_resubmission_and_cleans_only_copy(self):
         self.start()

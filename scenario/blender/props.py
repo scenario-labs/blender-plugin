@@ -1,50 +1,124 @@
 # SPDX-FileCopyrightText: 2026 Scenario Inc.
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Scene-level property groups: one lane state per generation lane, schema-driven parameter values."""
+
 import time
 
 import bpy
-from bpy.props import BoolProperty, CollectionProperty, EnumProperty, FloatProperty, IntProperty, PointerProperty, StringProperty
+from bpy.props import (
+    BoolProperty,
+    CollectionProperty,
+    EnumProperty,
+    FloatProperty,
+    IntProperty,
+    PointerProperty,
+    StringProperty,
+)
 
-from . import runtime
 from ..core.api.catalog import EDIT3D_TASKS
+from . import runtime
 
 # Lane tabs. Edit 3D lives under the 3D tab (its "Edit" mode); Jobs, Generations and Agents are panels, not tabs.
 LANE_ITEMS = [
-    ('image', "Image", "Text and reference images to images"),
-    ('video', "Video", "Text, images or a Blender playblast to video"),
-    ('3d', "3D", "Text or images to 3D models; Edit mode runs Scenario's 3D tools on the selected mesh"),
-    ('material', "Materials", "PBR materials with Patina"),
-    ('audio', "Audio", "Speech, music and sound effects; results can go on the sequencer"),
-    ('render_image', "Render Image", "Render the viewport or the camera view as a finished still: capture + optional style images + look prompt"),
-    ('render_video', "Render Video", "Render a playblast of the timeline as a finished clip: captured video + optional images + look prompt"),
-    ('blockout', "Blockout", "Prompt to Blockout: design a greybox of a whole scene from a description, then refine or replace it with generated 3D assets"),
+    ("image", "Image", "Text and reference images to images"),
+    ("video", "Video", "Text, images or a Blender playblast to video"),
+    (
+        "3d",
+        "3D",
+        "Text or images to 3D models; Edit mode runs Scenario's 3D tools on the selected mesh",
+    ),
+    ("material", "Materials", "PBR materials with Patina"),
+    ("audio", "Audio", "Speech, music and sound effects; results can go on the sequencer"),
+    (
+        "render_image",
+        "Render Image",
+        "Render the viewport or the camera view as a finished still: capture + optional style images + look prompt",
+    ),
+    (
+        "render_video",
+        "Render Video",
+        "Render a playblast of the timeline as a finished clip: captured video + optional images + look prompt",
+    ),
+    (
+        "blockout",
+        "Blockout",
+        "Prompt to Blockout: design a greybox of a whole scene from a description, then refine or replace it with generated 3D assets",
+    ),
 ]
-TAB_ICON = {"image": "image", "video": "video", "3d": "3d", "material": "image", "audio": "audio", "render_image": "image", "render_video": "video", "blockout": "3d"}
+TAB_ICON = {
+    "image": "image",
+    "video": "video",
+    "3d": "3d",
+    "material": "image",
+    "audio": "audio",
+    "render_image": "image",
+    "render_video": "video",
+    "blockout": "3d",
+}
 # Every lane a request can be built for (the tabs plus edit3d, reached through the 3D tab's Edit mode).
-GENERATION_LANES = ("image", "video", "3d", "material", "audio", "render_image", "render_video", "edit3d")
-LANE_ATTR = {"image": "image", "video": "video", "3d": "three_d", "material": "material", "audio": "audio", "render_image": "render_image", "render_video": "render_video", "edit3d": "edit3d"}
+GENERATION_LANES = (
+    "image",
+    "video",
+    "3d",
+    "material",
+    "audio",
+    "render_image",
+    "render_video",
+    "edit3d",
+)
+LANE_ATTR = {
+    "image": "image",
+    "video": "video",
+    "3d": "three_d",
+    "material": "material",
+    "audio": "audio",
+    "render_image": "render_image",
+    "render_video": "render_video",
+    "edit3d": "edit3d",
+}
 ATTR_LANE = {attr: lane for lane, attr in LANE_ATTR.items()}
 REFERENCE_SOURCES = [
-    ('FILE', "File", "An image, video or audio file on disk"),
-    ('VIEWPORT', "Viewport still", "Capture the active 3D viewport as an image at generate time"),
-    ('CAMERA', "Camera still", "Render the scene camera view as an image at generate time"),
-    ('VIEWPORT_CLIP', "Viewport clip", "Playblast the active viewport over the timeline at generate time"),
-    ('CAMERA_CLIP', "Camera clip", "Playblast the scene camera over the timeline at generate time"),
-    ('RENDER', "Render Result", "The latest render result"),
-    ('ASSET', "Scenario asset", "An asset already in your Scenario project"),
-    ('MESH', "Selected mesh", "Export the selected mesh objects as GLB at generate time"),
+    ("FILE", "File", "An image, video, audio or 3D file on disk"),
+    (
+        "VIEWPORT",
+        "Viewport still",
+        "Capture the active 3D viewport as an image when you choose Upload reference",
+    ),
+    (
+        "CAMERA",
+        "Camera still",
+        "Render the scene camera view as an image when you choose Upload reference",
+    ),
+    (
+        "VIEWPORT_CLIP",
+        "Viewport clip",
+        "Playblast the active viewport over the timeline when you choose Upload reference",
+    ),
+    (
+        "CAMERA_CLIP",
+        "Camera clip",
+        "Playblast the scene camera over the timeline when you choose Upload reference",
+    ),
+    ("RENDER", "Render Result", "The latest render result"),
+    ("ASSET", "Scenario asset", "An asset already in your Scenario project"),
+    (
+        "MESH",
+        "Selected mesh",
+        "Export the selected mesh objects as GLB when you choose Upload reference",
+    ),
 ]
-CAPTURE_SOURCES = ('VIEWPORT', 'CAMERA', 'VIEWPORT_CLIP', 'CAMERA_CLIP')
-CLIP_SOURCES = ('VIEWPORT_CLIP', 'CAMERA_CLIP')
-ADDABLE_SOURCES = [item for item in REFERENCE_SOURCES if item[0] not in ('ASSET', 'MESH')]  # asset ids come from the MCP tools, the mesh from the selection
+CAPTURE_SOURCES = ("VIEWPORT", "CAMERA", "VIEWPORT_CLIP", "CAMERA_CLIP")
+CLIP_SOURCES = ("VIEWPORT_CLIP", "CAMERA_CLIP")
+ADDABLE_SOURCES = [
+    item for item in REFERENCE_SOURCES if item[0] not in ("ASSET", "MESH")
+]  # asset ids come from the MCP tools, the mesh from the selection
 # The sources that make sense for a file input, by its kind. A 3D input (a character mesh) takes the selected scene
 # mesh or an uploaded model, never an image capture; an image input takes stills, a video input takes clips.
 _SOURCES_BY_KIND = {
-    "3d": ('FILE',),  # the scene selection is attached automatically; Upload overrides it with a model file
-    "image": ('FILE', 'RENDER', 'VIEWPORT', 'CAMERA'),
-    "video": ('FILE', 'RENDER', 'VIEWPORT_CLIP', 'CAMERA_CLIP'),
-    "audio": ('FILE',),
+    "3d": ("FILE",),  # the selection has its own explicit upload control
+    "image": ("FILE", "RENDER", "VIEWPORT", "CAMERA"),
+    "video": ("FILE", "VIEWPORT_CLIP", "CAMERA_CLIP"),
+    "audio": ("FILE",),
 }
 
 
@@ -53,9 +127,17 @@ def addable_sources_for(kind):
     wanted = _SOURCES_BY_KIND.get((kind or "image").lower(), _SOURCES_BY_KIND["image"])
     by_id = {item[0]: item for item in REFERENCE_SOURCES}
     return [by_id[s] for s in wanted if s in by_id]
-EDIT3D_TASK_ITEMS = [(task_id, label, description) for task_id, label, description, _models in EDIT3D_TASKS]
-THREE_D_MODES = [('TEXT', "Text", "Describe the object"), ('IMAGE', "Image", "One reference image"), ('MULTI', "Multi-view", "Several views of the same object"),
-                 ('EDIT', "Edit", "Remesh, retexture, unwrap, rig, animate or split the selected mesh")]
+
+
+EDIT3D_TASK_ITEMS = [
+    (task_id, label, description) for task_id, label, description, _models in EDIT3D_TASKS
+]
+THREE_D_MODES = [
+    ("TEXT", "Text", "Describe the object"),
+    ("IMAGE", "Image", "One reference image"),
+    ("MULTI", "Multi-view", "Several views of the same object"),
+    ("EDIT", "Edit", "Remesh, retexture, unwrap, rig, animate or split the selected mesh"),
+]
 
 
 _T0 = time.monotonic()
@@ -69,7 +151,7 @@ def clock():
 
 
 def mark_estimate_dirty(lane_state):
-    lane_state.estimate_state = 'PENDING'
+    lane_state.estimate_state = "PENDING"
     lane_state.estimate_dirty_at = clock()
     lane_state.estimate_key = ""  # a quote already in flight belongs to the previous form
 
@@ -87,7 +169,7 @@ def lane_of(lane_state):
 def active_lane(scene):
     """The lane the visible form builds requests for: the 3D tab in Edit mode drives the edit3d lane."""
     lane = scene.scenario.lane
-    if lane == "3d" and scene.scenario.three_d_mode == 'EDIT':
+    if lane == "3d" and scene.scenario.three_d_mode == "EDIT":
         return "edit3d"
     return lane
 
@@ -123,7 +205,11 @@ def _param_items(self, context):
     schema = generation.schema_for(self.model_id)
     spec = schema.by_name(self.name) if schema is not None else None
     if spec is not None and spec.allowed_values and spec.ptype != "string_array":
-        options = [(str(v), spec.label_for(v), spec.description) for v in spec.allowed_values if str(v) != ""]
+        options = [
+            (str(v), spec.label_for(v), spec.description)
+            for v in spec.allowed_values
+            if str(v) != ""
+        ]
         if options:
             runtime.set_enum_items(key, options)
             return runtime.state.enum_cache[key]
@@ -176,8 +262,8 @@ class ScenarioParamValue(bpy.types.PropertyGroup):
 
 class ScenarioReference(bpy.types.PropertyGroup):
     param_name: StringProperty()
-    source: EnumProperty(items=REFERENCE_SOURCES, default='FILE')
-    filepath: StringProperty(subtype='FILE_PATH')
+    source: EnumProperty(items=REFERENCE_SOURCES, default="FILE")
+    filepath: StringProperty(subtype="FILE_PATH")
     asset_id: StringProperty()
     label: StringProperty()
 
@@ -208,7 +294,7 @@ def _on_match_timeline(self, context):
 def _on_mode_change(self, context):
     from . import generation
 
-    if self.three_d_mode == 'EDIT':
+    if self.three_d_mode == "EDIT":
         generation.refresh_edit3d_models(context)
     else:
         generation.refresh_3d_models(context)
@@ -223,28 +309,78 @@ def _on_task_change(self, context):
 class ScenarioLaneState(bpy.types.PropertyGroup):
     lane: StringProperty()
     model_id: EnumProperty(name="Model", items=_model_items, update=_on_model_change)
-    model_key: StringProperty(description="Chosen model id, the source of truth that survives catalog changes")
+    model_key: StringProperty(
+        description="Chosen model id, the source of truth that survives catalog changes"
+    )
     prompt: StringProperty(name="Prompt", description="What to generate", update=_on_prompt_update)
-    prompt_rows: IntProperty(name="Prompt height", description="Drag to make the prompt box taller", default=1, min=1, max=8)
+    prompt_rows: IntProperty(
+        name="Prompt height",
+        description="Drag to make the prompt box taller",
+        default=1,
+        min=1,
+        max=8,
+    )
     params: CollectionProperty(type=ScenarioParamValue)
     references: CollectionProperty(type=ScenarioReference)
-    estimate_state: EnumProperty(items=[('IDLE', "Idle", ""), ('PENDING', "Pending", ""), ('READY', "Ready", ""), ('ERROR', "Error", ""), ('UNAVAILABLE', "Unavailable", "")], default='IDLE')
+    estimate_state: EnumProperty(
+        items=[
+            ("IDLE", "Idle", ""),
+            ("PENDING", "Pending", ""),
+            ("READY", "Ready", ""),
+            ("ERROR", "Error", ""),
+            ("UNAVAILABLE", "Unavailable", ""),
+        ],
+        default="IDLE",
+    )
     estimate_cu: FloatProperty(default=-1.0)
     estimate_dirty_at: FloatProperty(default=0.0)
     estimate_key: StringProperty()
     estimate_error: StringProperty()
-    estimate_partial: BoolProperty(default=False, description="The quote excludes references that are not uploaded yet")
+    estimate_partial: BoolProperty(
+        default=False, description="The quote excludes references that are not uploaded yet"
+    )
     last_error: StringProperty()
-    match_timeline: BoolProperty(name="Match timeline", default=True, description="Capture the clip at the video model output duration, so the motion maps one to one", update=_on_match_timeline)
-    force_solid: BoolProperty(name="Grey clay capture", default=False, description="Capture with solid single-colour shading so the model reads shapes and motion, not materials")
-    capture_source: EnumProperty(name="Source", items=[('VIEWPORT', "Viewport", "The active 3D viewport, as you see it"), ('CAMERA', "Scene camera", "The scene camera view")], default='CAMERA', update=_on_prompt_update)
+    match_timeline: BoolProperty(
+        name="Match timeline",
+        default=True,
+        description="Capture the clip at the video model output duration, so the motion maps one to one",
+        update=_on_match_timeline,
+    )
+    force_solid: BoolProperty(
+        name="Grey clay capture",
+        default=False,
+        description="Capture with solid single-colour shading so the model reads shapes and motion, not materials",
+    )
+    capture_source: EnumProperty(
+        name="Source",
+        items=[
+            ("VIEWPORT", "Viewport", "The active 3D viewport, as you see it"),
+            ("CAMERA", "Scene camera", "The scene camera view"),
+        ],
+        default="CAMERA",
+        update=_on_prompt_update,
+    )
     # Render lanes
-    spark_enabled: BoolProperty(name="Write the look with Prompt Spark", default=True,
-                                description="When the look is empty, a capture of the view is sent to Prompt Spark, which writes the art-direction brief (0.75 CU). Off: a photoreal default look is used")
+    spark_enabled: BoolProperty(
+        name="Write the look with Prompt Spark",
+        default=True,
+        description="When the look is empty, a capture of the view is sent to Prompt Spark, which writes the art-direction brief (0.75 CU). Off: a photoreal default look is used",
+    )
     spark_look: StringProperty(description="The look Prompt Spark wrote for the last generation")
-    render_style_open: BoolProperty(name="Rendering Style", default=True, description="Show the look, style images and first frame")
-    first_frame_path: StringProperty(description="A Render Image result used as the first frame of the video")
-    use_first_frame: BoolProperty(name="Use as first frame", default=True, description="Send the rendered still as the first frame so the clip starts exactly from it", update=_on_prompt_update)
+    render_style_open: BoolProperty(
+        name="Rendering Style",
+        default=True,
+        description="Show the look, style images and first frame",
+    )
+    first_frame_path: StringProperty(
+        description="A Render Image result used as the first frame of the video"
+    )
+    use_first_frame: BoolProperty(
+        name="Use as first frame",
+        default=True,
+        description="Send the rendered still as the first frame so the clip starts exactly from it",
+        update=_on_prompt_update,
+    )
     # Edit 3D
     source_object: StringProperty(description="Name of the mesh object sent to the 3D tool")
     concept_path: StringProperty()  # kept for scenes saved with 0.5.x
@@ -253,8 +389,12 @@ class ScenarioLaneState(bpy.types.PropertyGroup):
 
 class ScenarioSceneProps(bpy.types.PropertyGroup):
     lane: EnumProperty(name="Lane", items=_lane_items)
-    three_d_mode: EnumProperty(name="Input", items=THREE_D_MODES, default='TEXT', update=_on_mode_change)
-    edit3d_task: EnumProperty(name="Task", items=EDIT3D_TASK_ITEMS, default='RETEXTURE', update=_on_task_change)
+    three_d_mode: EnumProperty(
+        name="Input", items=THREE_D_MODES, default="TEXT", update=_on_mode_change
+    )
+    edit3d_task: EnumProperty(
+        name="Task", items=EDIT3D_TASK_ITEMS, default="RETEXTURE", update=_on_task_change
+    )
     image: PointerProperty(type=ScenarioLaneState)
     video: PointerProperty(type=ScenarioLaneState)
     three_d: PointerProperty(type=ScenarioLaneState)
@@ -263,7 +403,11 @@ class ScenarioSceneProps(bpy.types.PropertyGroup):
     render_image: PointerProperty(type=ScenarioLaneState)
     render_video: PointerProperty(type=ScenarioLaneState)
     edit3d: PointerProperty(type=ScenarioLaneState)
-    show_cloud_history: BoolProperty(name="Cloud history", default=True, description="List the project's generations made elsewhere (web app, agents, other machines)")
+    show_cloud_history: BoolProperty(
+        name="Cloud history",
+        default=True,
+        description="List the project's generations made elsewhere (web app, agents, other machines)",
+    )
 
     def lane_state(self, lane=None):
         lane = lane or self.lane
@@ -275,23 +419,43 @@ class ScenarioSceneProps(bpy.types.PropertyGroup):
 
 def _blockout_scene_types(self, context):
     from ..core.scene import blockout
+
     return [(k, label, desc) for k, label, desc in blockout.SCENE_TYPES]
 
 
 def _blockout_scales(self, context):
     from ..core.scene import blockout
+
     return [(k, label, desc) for k, label, desc in blockout.SCALES]
 
 
 class ScenarioBlockoutProps(bpy.types.PropertyGroup):
-    prompt: StringProperty(name="Scene", description="Describe the scene to block out, e.g. 'a medieval market square: a central well, a stone gate, stalls around the edge, a watchtower'")
-    scene_type: EnumProperty(name="Type", items=_blockout_scene_types, description="What kind of scene, to steer the layout")
-    scale: EnumProperty(name="Scale", items=_blockout_scales, description="The overall size, to steer the layout")
-    refine: StringProperty(name="Refine", description="A change to apply to the current blockout, e.g. 'add a second floor', 'make the tower taller', 'more stalls on the left'")
+    prompt: StringProperty(
+        name="Scene",
+        description="Describe the scene to block out, e.g. 'a medieval market square: a central well, a stone gate, stalls around the edge, a watchtower'",
+    )
+    scene_type: EnumProperty(
+        name="Type",
+        items=_blockout_scene_types,
+        description="What kind of scene, to steer the layout",
+    )
+    scale: EnumProperty(
+        name="Scale", items=_blockout_scales, description="The overall size, to steer the layout"
+    )
+    refine: StringProperty(
+        name="Refine",
+        description="A change to apply to the current blockout, e.g. 'add a second floor', 'make the tower taller', 'more stalls on the left'",
+    )
     plan_json: StringProperty(description="The current blockout plan as JSON (internal)")
 
 
-CLASSES = (ScenarioParamValue, ScenarioReference, ScenarioLaneState, ScenarioSceneProps, ScenarioBlockoutProps)
+CLASSES = (
+    ScenarioParamValue,
+    ScenarioReference,
+    ScenarioLaneState,
+    ScenarioSceneProps,
+    ScenarioBlockoutProps,
+)
 
 
 def register():

@@ -39,12 +39,19 @@ The video model's `Duration (cost)` in Settings is the single source of the clip
 
 ## Reference inputs
 
-A file input's add options match its kind (`props.addable_sources_for`): a **3D** input offers only **Upload** (a model file to override); an **image** input offers Upload plus the viewport/camera stills and the render result; a **video** input offers Upload plus the clip captures. Never offer a source that produces the wrong asset type (no image capture on a 3D character input).
+A file input's add options match its kind (`props.addable_sources_for`): a **3D** input offers a model file and **Upload selected mesh** when a mesh is selected; an **image** input offers Upload plus the viewport/camera stills and the render result; a **video** input offers Upload plus the clip captures. Never offer a source that produces the wrong asset type (no image capture on a 3D character input).
 
-A model's **3D mesh input is fed by the scene selection automatically, in every lane**: `build_request` attaches the selected mesh (exported as GLB at generate time) to that input unless the user uploaded a file for it, and `draw_references` shows it pinned as "Selected mesh: <name>". Deselect for a text-only generation; Upload to override. The Edit lane requires it (an error when nothing is selected); elsewhere it is optional.
+A selected mesh appears as a candidate for each empty **3D** input. **Upload
+selected mesh** explicitly exports the selection as one GLB and uploads that
+snapshot. A pending or completed explicit reference replaces the pinned candidate;
+do not offer a second mesh upload into an occupied slot. Edit 3D still requires
+an input mesh. Later scene edits do not change an already uploaded snapshot.
 
 Across generation forms, attaching a local file does not send it. Image inputs
-also support explicit viewport, camera and Render Result snapshots.
+also support explicit viewport, camera and Render Result snapshots. Video inputs
+support viewport/camera clips over the preview range, or scene range when no
+preview is enabled, without implicit padding or audio. Grey clay capture is
+applied when selected. Do not offer an image Render Result for a video input.
 The separate **Upload reference** button sends an immutable snapshot before a
 final price can be requested. Show upload progress and **Inspect uploads** when
 review is needed. Do not offer automatic retry for uncertain uploads or mutate

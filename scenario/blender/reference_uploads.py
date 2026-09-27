@@ -56,20 +56,32 @@ class UploadNotStarted(ScenarioError):
     """Local validation or queue admission failed before any task was accepted."""
 
 
-def capture_upload(context, *, source="VIEWPORT", camera=None):
+def capture_upload(context, *, source="VIEWPORT", camera=None, force_solid=False):
     """Capture into private temporary storage retained through asynchronous staging."""
-    from . import capture, runtime
+    from . import capture, mesh_export, runtime
 
-    if source not in {"VIEWPORT", "CAMERA", "RENDER"}:
-        raise UploadNotStarted(0, "Choose viewport, camera or render result")
+    if source not in {"VIEWPORT", "CAMERA", "RENDER", "MESH", "VIEWPORT_CLIP", "CAMERA_CLIP"}:
+        raise UploadNotStarted(0, "Choose a viewport, camera, render result or selected mesh")
     owner = runtime.ensure_reference_uploads()
     if not runtime.online():
         raise UploadNotStarted(0, "Allow Online Access before uploading a reference")
     directory = tempfile.TemporaryDirectory(prefix="reference-", dir=runtime.paths().state_dir)
     admitting = False
     try:
-        path = Path(directory.name) / "reference.png"
-        if source == "RENDER":
+        kind, suffix = (
+            ("3d", ".glb")
+            if source == "MESH"
+            else ("video", ".mp4")
+            if source.endswith("_CLIP")
+            else ("image", ".png")
+        )
+        path = Path(directory.name) / ("reference" + suffix)
+        if source == "MESH":
+            objects = mesh_export.source_objects(context)
+            if not objects:
+                raise ScenarioError(0, "Select a mesh before uploading its snapshot")
+            mesh_export.export_glb(context, objects, path=str(path))
+        elif source == "RENDER":
             image = bpy.data.images.get("Render Result")
             if image is None or not image.has_data:
                 raise ScenarioError(0, "Render an image before uploading the render result")
@@ -84,16 +96,25 @@ def capture_upload(context, *, source="VIEWPORT", camera=None):
         else:
             if bpy.app.background:
                 raise ScenarioError(0, "Viewport and camera captures require the Blender GUI")
-            capture.capture_still(
-                context, path, source=source, camera=camera, width=1280, height=720
+            capture_fn = capture.capture_playblast if kind == "video" else capture.capture_still
+            capture_fn(
+                context,
+                path,
+                source=source.removesuffix("_CLIP"),
+                camera=camera,
+                width=1280,
+                height=720,
+                force_solid=force_solid,
             )
         admitting = True
-        return owner.start(context.scene, path, temporary=directory)
+        return owner.start(context.scene, path, kind=kind, temporary=directory)
     except BaseException as error:
         directory.cleanup()
         if not admitting and isinstance(error, Exception):
             reason = (
-                error.reason if isinstance(error, ScenarioError) else "Could not capture an image"
+                error.reason
+                if isinstance(error, ScenarioError)
+                else "Could not prepare the reference snapshot"
             )
             raise UploadNotStarted(0, reason) from None
         raise

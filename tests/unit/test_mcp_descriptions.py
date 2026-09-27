@@ -24,6 +24,10 @@ EXPECTED = {
         "wait_for_job",
         "import_result",
         "capture_reference",
+        "upload_reference",
+        "reference_upload_status",
+        "list_reference_uploads",
+        "recover_reference_upload",
         "list_generations",
     },
     "tools_blender": {

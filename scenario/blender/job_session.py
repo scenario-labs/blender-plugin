@@ -38,6 +38,10 @@ class OriginUnavailable(RuntimeError):
     """The result is available for review but cannot be applied automatically."""
 
 
+class SessionBusy(RuntimeError):
+    """Admission did not queue work because completed outcomes still need draining."""
+
+
 class ImageResultUncertain(RuntimeError):
     """Images may already exist; retry only the saved receipt, never the mutation."""
 
@@ -113,6 +117,7 @@ class JobSession:
         self._issued = WeakValueDictionary()
         self._world_receipts = WeakKeyDictionary()
         self._image_receipts = WeakKeyDictionary()
+        self._upload_captures = {}
         self._active = True
         self._coordinator = JobCoordinator(
             adapter,
@@ -197,7 +202,7 @@ class JobSession:
 
     def _check_capacity(self):
         if len(self._pending) >= self._completion_limit:
-            raise RuntimeError("Drain completed job outcomes before adding more commands")
+            raise SessionBusy("Drain completed job outcomes before adding more commands")
 
     def submit(self, prepared, *, operation, target_id, payload):
         _main_thread()
@@ -263,6 +268,23 @@ class JobSession:
         """Read scoped saved metadata without resolving an old Blender target."""
         _main_thread()
         return self._coordinator.inspect_upload(request_id)
+
+    def retain_upload_capture(self, task, temporary):
+        """Keep a private capture alive until staging ends, including retirement."""
+        _main_thread()
+        if not any(pending is task for pending, _ in self._pending):
+            raise OriginUnavailable("Use this session's pending upload preparation")
+        self._upload_captures[task] = temporary
+
+    def _cleanup_upload_capture(self, task):
+        temporary = self._upload_captures.get(task)
+        if temporary is not None:
+            try:
+                temporary.cleanup()
+            except OSError:
+                _log.warning("Scenario upload capture cleanup failed; retained for cleanup")
+            else:
+                del self._upload_captures[task]
 
     def upload_recovery_plan(self):
         _main_thread()
@@ -342,6 +364,8 @@ class JobSession:
                 completion = JobCompletion(origin, error=exc)
             else:
                 completion = JobCompletion(origin, result=result)
+            finally:
+                self._cleanup_upload_capture(task)
             self._issued[id(completion)] = completion
             completions.append(completion)
         return tuple(completions)
@@ -570,6 +594,8 @@ class JobSession:
             # A failed SDK close occurs after joining. Release local ownership
             # then, but retain it if a control exception interrupted live workers.
             if self._workers.stopped:
+                for task in tuple(self._upload_captures):
+                    self._cleanup_upload_capture(task)
                 self._pending.clear()
                 self._issued.clear()
                 self._world_receipts.clear()

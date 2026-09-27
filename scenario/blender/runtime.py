@@ -21,6 +21,9 @@ from ..core.jobs.manager import JobManager
 from ..core.jobs.records import JobRegistry
 from ..core.jobs.store import StoreError
 from ..core.jobs.transfers import ResultDownloader, StoragePolicy
+from ..core.jobs.upload_sources import UploadSources
+from ..core.jobs.upload_store import UploadStore
+from ..core.jobs.upload_transfers import PartUploader, S3UploadPolicy
 from .job_session import JobSession, reap_retired
 
 log = logging.getLogger("scenario")
@@ -35,6 +38,7 @@ class RuntimeState:
         self.job_session = None
         self.job_context_id = None
         self.model_jobs = None
+        self.reference_uploads = None
         self.model_previews = {}
         self.estimates = {}  # Exact SDK responses for current UI previews, never spend approval.
         self.estimate_origins = {}  # Pending request key -> original scene and lane, main thread only.
@@ -106,6 +110,7 @@ class RuntimeState:
                 view for view in self.jobs_view if all(view is not v for v in views)
             ]
         self.model_jobs = None
+        self.reference_uploads = None
         self.model_previews.clear()
 
 
@@ -206,11 +211,18 @@ def ensure_job_session():
             policy = StoragePolicy(frozenset({"cdn.cloud.scenario.com", "cdn.scenario.com"}))
             root = paths().state_dir / "shared-results"
             root.mkdir(mode=0o700, parents=True, exist_ok=True)
+            upload_root = paths().state_dir / "shared-uploads"
+            upload_root.mkdir(mode=0o700, parents=True, exist_ok=True)
+            source_root = upload_root / "sources"
+            source_root.mkdir(mode=0o700, exist_ok=True)
             session = JobSession(
                 adapter,
                 state.job_store,
                 result_downloader=ResultDownloader(policy, online_access=catalog.network_allowed),
                 result_root=root,
+                upload_store=UploadStore(upload_root / "uploads.sqlite3", state.job_store.scope),
+                upload_sources=UploadSources(source_root),
+                part_uploader=PartUploader(S3UploadPolicy(), online_access=catalog.network_allowed),
             )
         except BaseException:
             adapter.close()
@@ -233,6 +245,15 @@ def ensure_model_jobs():
     if state.model_jobs is None:
         state.model_jobs = ModelJobs(session, state.job_store, online=online)
     return state.model_jobs
+
+
+def ensure_reference_uploads():
+    from .reference_uploads import ReferenceUploads
+
+    session = ensure_job_session()
+    if state.reference_uploads is None:
+        state.reference_uploads = ReferenceUploads(session, online=online)
+    return state.reference_uploads
 
 
 def cancel_prepared_job(context_id, request_id, expected_revision):
@@ -340,6 +361,8 @@ def sync_catalog_context():
     from . import generation
 
     generation.process_model_jobs()
+    if state.reference_uploads is not None:
+        state.reference_uploads.poll()
 
 
 def enum_items(key):

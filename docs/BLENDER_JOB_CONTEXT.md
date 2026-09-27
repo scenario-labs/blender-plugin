@@ -266,7 +266,7 @@ The session optionally accepts `upload_store`, `upload_sources` and
 `part_uploader`, forwarding the complete configuration to its existing
 coordinator and bounded worker pool. Their scope and explicit storage-host policy
 must satisfy the [upload contracts](SDK_UPLOADS.md#shared-worker-commands).
-There is no default production host allowlist or automatic upload configuration;
+The session primitive has no default production host allowlist;
 partial configuration raises `TypeError` before starting another worker owner.
 With all three dependencies supplied, a mismatched upload/job scope still raises
 `ValueError`; the existing source and transfer-policy validation also applies.
@@ -297,7 +297,7 @@ record is immediate; no completion is queued and no scene mutation, source read,
 file deletion or service request occurs. Initialization races are decided by the
 durable revision claim: already claimed or uncertain uploads cannot be canceled
 through this command. Inactive sessions reject it. It does not provide remote
-abort or active UI/MCP cancellation controls.
+abort. Local MCP exposes this through `recover_reference_upload`.
 
 `discard_upload_source(request_id, expected_revision=...)` queues explicit
 [finished-upload source cleanup](SDK_UPLOADS.md#explicit-finished-upload-source-cleanup)
@@ -308,14 +308,23 @@ unchanged terminal upload record and never changes the scene or deletes the
 user's original file. Cleanup completions retain their original origin; they do
 not authorize delivery into a replacement target. No active cleanup UI is added.
 
+The active runtime configures all three dependencies with a credential-scoped
+store, private staging and a separate S3 upload policy. The
+[reference facade](SDK_UPLOADS.md#active-reference-uploads) advances authorized
+local MCP uploads on this same pool. GUI ticks and headless MCP maintenance drain
+progress independently of an open panel. Private capture ownership is retained
+by the session until staging ends or retirement joins the workers; cleanup never
+removes a capture underneath a live staging task. Local MCP inspection and
+explicit recovery do not approve reference attachment into a new scene.
+
 Upload task outcomes use the normal `drain`/`deliver` path: successful records
 must match the stored scope/origin, and delivery rechecks the current captured
 scene/target before a once-only main-thread callback. A late claimed receipt may
 persist after a file switch, while delivery remains blocked. Restarted origins
 remain unrecognized for automatic application even when status refresh succeeds.
 Callbacks do not by themselves attach a reference or commit a Blender application
-transaction. Active UI/MCP upload controls and explicit recovery/application UX
-remain separate work; account/project identity is still supplied by the caller.
+transaction. Form upload controls and explicit attachment UX remain separate work;
+the active runtime supplies credential-bound scope without requiring project discovery.
 
 ## Active Image submission
 

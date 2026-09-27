@@ -13,6 +13,25 @@ from scenario.core.jobs.transfers import TransferError
 DATA = b"abcde"
 
 
+def test_upload_metadata_normalizes_name_without_renaming_original(tmp_path):
+    source = tmp_path / "référence (draft).PNG"
+    source.write_bytes(DATA)
+    root = tmp_path / "staged"
+    root.mkdir()
+    sources = upload_sources.UploadSources(root)
+    intent = sources.stage(
+        source,
+        request_id="request",
+        scope=JobScope("https://service.example.invalid/v1", "account", "project"),
+        origin=JobOrigin("file", "scene", "revision", "object"),
+        kind="image",
+        content_type="image/png",
+    )
+    assert intent.file_name == "r_f_rence__draft_.PNG"
+    assert sources.part(intent, 1) == DATA
+    assert source.read_bytes() == DATA
+
+
 def source_operation(tmp_path, phase):
     root = tmp_path / "staged"
     root.mkdir()

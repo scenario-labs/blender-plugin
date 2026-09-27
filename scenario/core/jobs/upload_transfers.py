@@ -11,7 +11,34 @@ from dataclasses import dataclass
 
 import certifi
 
-from .transfers import StoragePolicy, TransferError, _cleanup
+from .transfers import StoragePolicy, TransferError, _cleanup, _host
+
+
+class S3UploadPolicy(StoragePolicy):
+    """S3 REST destinations supplied by the scoped SDK multipart upload plan.
+
+    This policy is for upload parts only, never arbitrary caller URLs or result
+    downloads. The coordinator validates the known upload and source identity
+    before selecting a part URL. See docs/SDK_UPLOADS.md for the trust boundary.
+    """
+
+    def __init__(self, *, max_bytes=8 * 1024 * 1024):
+        super().__init__(frozenset({"s3.amazonaws.com"}), max_bytes=max_bytes)
+
+    def _allows_host(self, host):
+        if not _host(host):
+            return False
+        # Public S3 global/regional REST endpoints, optionally virtual-hosted or
+        # dual-stack. This is not a wildcard for all AWS services or custom CNAMEs.
+        return (
+            re.fullmatch(
+                r"(?:[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]\.)?"
+                r"s3(?:(?:\.dualstack)?[.-][a-z]{2}(?:-[a-z]+){1,2}-[0-9]+)?"
+                r"\.amazonaws\.com",
+                host,
+            )
+            is not None
+        )
 
 
 class UploadUncertain(TransferError):

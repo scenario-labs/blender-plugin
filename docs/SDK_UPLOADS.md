@@ -3,7 +3,9 @@
 The shared [SDK adapter](../scenario/core/api/sdk_adapter.py) exposes the
 multipart upload metadata lifecycle through the packaged **scenario-sdk 2.2.0**.
 These commands do not read files, transfer bytes, persist signed URLs, start a
-background worker or connect the prototype UI/MCP. They are a foundation for
+background worker or connect the prototype UI/MCP by themselves. The active
+[reference integration](#active-reference-uploads) uses them for local MCP uploads.
+They are a foundation for
 [#64](https://github.com/scenario-labs/blender-plugin/issues/64) and
 [#65](https://github.com/scenario-labs/blender-plugin/issues/65).
 
@@ -69,8 +71,9 @@ uncertain; do not attach a guessed upload or automatically recreate it.
 ## Remaining integration and verification
 
 Signed PUT transport, private source staging, durable claims and explicit shared
-worker commands are available as described below. Production host/size policy,
-recovery UI, orphan retention/cleanup and UI/MCP wiring remain separate work.
+worker commands are available as described below. The active local MCP path now
+selects a host/size policy and exposes explicit saved-upload recovery. Form
+attachment controls, orphan retention/cleanup and live acceptance remain separate work.
 Finished uploads have explicit verified source cleanup as described below.
 Storage requests must check destination/online policy and never forward
 Scenario Authorization. No upload-abort method was established in this SDK.
@@ -94,9 +97,11 @@ The primitive introduces no raw Scenario API endpoint or SDK fallback.
 The caller must persist the upload identity, original scope, source/part digest
 and transfer claim before calling it. It must bind the chosen URL and part number
 to that SDK upload plan, check expiration, and choose an explicit part-size policy.
-There is no implicit trusted-host list: the caller supplies the same exact HTTPS
-`StoragePolicy` used by downloads. Policy hosts must come from reviewed configuration,
-not from an incoming URL. No method initializes or finalizes an upload here.
+There is no implicit trusted-host list: the caller supplies an HTTPS storage
+policy. `StoragePolicy` uses exact configured hosts; active reference uploads use
+the separate S3 REST policy described below. Policies must come from reviewed
+configuration, not by copying hosts from incoming URLs. No method initializes or
+finalizes an upload here.
 
 Inputs require a positive part number, a nonempty immutable byte snapshot within
 the policy's byte limit, a bare MIME type, and a SHA256 matching the saved part
@@ -327,4 +332,70 @@ After restart, a newly configured owner reads the same claims without assuming
 that a previous worker is dead. The optional
 [JobSession upload facade](BLENDER_JOB_CONTEXT.md#upload-references) forwards these
 commands through its existing workers and guarded main-thread delivery. Active
-UI/MCP recovery controls remain separate integration work.
+UI recovery controls remain separate integration work. Local MCP controls use
+these commands as described below.
+
+## Active reference uploads
+
+[`ReferenceUploads`](../scenario/blender/reference_uploads.py) is a main-thread
+facade over the selected `JobSession`, scoped upload store and existing workers.
+`upload_reference` starts one explicitly authorized local-image upload;
+`capture_reference` captures a viewport/camera still first. Both return a
+session-owned handle immediately. Poll `reference_upload_status` until the saved
+state is `imported`, then pass its `asset_id` to a fresh Image estimate. Uploading
+does not submit generation or approve its cost. The form's local references still
+need separate attachment controls; they are not uploaded while drawing or pricing.
+
+Preparation snapshots up to 256 MiB into private storage, using 8 MiB parts
+(the final part may be smaller). Metadata replaces basename characters outside
+ASCII letters, digits, dots, underscores and hyphens with underscores; the original
+file is never renamed. Later edits to that file cannot change the staged bytes.
+These are application limits, not a claim that every format/size is accepted by
+every model. Scene revision changes stop further mutation claims. Initialization,
+each PUT and completion still require durable claims and use one attempt only.
+Known processing uploads are polled at two-second intervals. Uncertain responses
+stop automatic mutation; no later status read releases a part claim or replays
+initialization/completion. The facade retains at most 128 handles per session.
+An admission rejection from a full worker/outcome queue has not started a task;
+the facade waits briefly and retries admission only. It never treats a failed
+task as this safe case. Explicit refresh that confirms `processing` re-enables
+status reads, while uncertain initialization/part/finalization cannot be replayed.
+Recovery delivery suspends automatic admission for its record until the saved
+outcome has been observed; a successful local cancellation cannot schedule
+initialization from a stale in-memory projection. Completed task projections are
+also refreshed from durable storage before selecting their next command.
+
+The [Scenario upload guide](https://docs.scenario.com/get-started/content/uploading-assets)
+documents multipart uploads and signed S3 destinations. The active `S3UploadPolicy`
+accepts HTTPS S3 global/regional REST endpoints under `amazonaws.com`, including
+virtual-hosted and dual-stack forms described by the
+[AWS S3 endpoint guide](https://docs.aws.amazon.com/AmazonS3/latest/developerguide/RESTAPI.html).
+It rejects S3 website endpoints, other AWS services, custom CNAMEs, IP literals,
+credentials, fragments and nonstandard ports. It is intentionally broader than
+an exact bucket allowlist: the selected SDK's validated known-upload response is
+trusted to choose the bucket/path. No local caller supplies a transfer URL.
+The coordinator verifies upload/source identity, numbered parts and expiration
+before that URL reaches the transport. Result downloads retain their separate
+exact CDN-host policy. Neither transport sends Scenario credentials, follows
+redirects, uses ambient proxies nor retries a PUT.
+
+Capture files live in a private temporary directory. The session retains that
+directory until staging completes, including while retired workers finish; drain
+or shutdown removes it. Filesystem cleanup errors are sanitized and retained for
+a later shutdown attempt. Process crashes can leave temporary or staging orphans;
+automatic orphan retention remains unimplemented. Render-result capture forces
+PNG and restores the scene's output settings. Viewport/camera capture needs a GUI;
+the Render Result helper is available to future form integration.
+
+After restart or context change, `list_reference_uploads` reads only the current
+credential scope's saved metadata. `recover_reference_upload` requires its context
+token and observed revision. It can refresh a known remote ID, cancel an unclaimed
+local preparation, or delete the verified private source of a finished upload.
+It cannot recreate an unknown upload, resend a part, finalize again or abort
+remotely. Source cleanup never deletes the original file. Inspection/imported
+metadata does not authorize attaching a reference into a different scene.
+
+Offline native tests exercise actual SDK wrappers, SQLite and workers through
+synthetic API/PUT responses, including changed origins, lost responses, restart
+inspection and cleanup. Transport unit tests separately exercise signed PUT and
+host rejection. This is not live S3/import acceptance or GUI interaction proof.

@@ -18,6 +18,54 @@ DATA = b"part" * 40000
 DIGEST = hashlib.sha256(DATA).hexdigest()
 
 
+@pytest.mark.parametrize(
+    "host",
+    [
+        "s3.amazonaws.com",
+        "s3.us-east-1.amazonaws.com",
+        "s3-us-west-2.amazonaws.com",
+        "fixture-bucket.s3.amazonaws.com",
+        "fixture-bucket.s3.eu-west-1.amazonaws.com",
+        "fixture-bucket.s3.dualstack.ap-southeast-2.amazonaws.com",
+    ],
+)
+def test_scoped_s3_policy_accepts_only_supported_rest_destinations(host):
+    url = f"https://{host}/reference?partNumber=1&signature=fixture"
+    assert upload.S3UploadPolicy().destination(url) == (
+        host,
+        "/reference?partNumber=1&signature=fixture",
+    )
+    with pytest.raises(TransferError):
+        StoragePolicy(frozenset({"cdn.cloud.scenario.com"})).destination(url)
+
+
+@pytest.mark.parametrize(
+    "destination",
+    [
+        "s3.amazonaws.com.evil.invalid",
+        "s3.evil.amazonaws.com",
+        "ec2.us-east-1.amazonaws.com",
+        "bucket.s3-website-us-east-1.amazonaws.com",
+        "127.0.0.1",
+        "localhost",
+        "bucket.s3.us-east-1.amazonaws.com@evil.invalid",
+        "user:secret@s3.amazonaws.com",
+        "s3.amazonaws.com:444",
+        "s3.amazonaws.com:443#secret",
+        "S3.amazonaws.com",
+        "bucket..name.s3.us-east-1.amazonaws.com",
+        "cdn.cloud.scenario.com",
+    ],
+)
+def test_s3_upload_rejects_other_services_hosts_and_url_confusion_before_connect(
+    connection, destination
+):
+    client = upload.PartUploader(upload.S3UploadPolicy(), online_access=lambda: True)
+    with pytest.raises(TransferError):
+        send(client, url=f"https://{destination}/reference")
+    connection[1].assert_not_called()
+
+
 @pytest.fixture
 def connection(monkeypatch):
     conn = Mock()

@@ -6,6 +6,7 @@ import logging
 import os
 import pathlib
 import threading
+import uuid
 
 import bpy
 
@@ -19,6 +20,7 @@ from ..core.jobs.credential_storage import open_credential_store
 from ..core.jobs.manager import JobManager
 from ..core.jobs.records import JobRegistry
 from ..core.jobs.store import StoreError
+from .job_session import JobSession, reap_retired
 
 log = logging.getLogger("scenario")
 PACKAGE = __package__.rsplit(".", 1)[0]  # the extension package, e.g. bl_ext.user_default.scenario
@@ -29,6 +31,8 @@ class RuntimeState:
         self.manager = None
         self.catalog = None
         self.job_store = None
+        self.job_session = None
+        self.job_context_id = None
         self.estimates = {}  # Exact SDK responses for current UI previews, never spend approval.
         self.estimate_origins = {}  # Pending request key -> original scene and lane, main thread only.
         self.records = {}  # model_id -> ModelRecord (detailed)
@@ -73,6 +77,7 @@ class RuntimeState:
 
     def reset(self):
         """Forget catalog, jobs and history; keep process-level services (MCP server, composer, previews)."""
+        self.retire_jobs()
         for catalog in [self.catalog, *self.retired_catalogs]:
             if catalog is not None:
                 catalog.close()
@@ -84,6 +89,14 @@ class RuntimeState:
         self.__init__()
         for name, value in kept.items():
             setattr(self, name, value)
+        reap_retired()
+
+    def retire_jobs(self):
+        """Stop admissions; the session registry retains in-flight persistence."""
+        if self.job_session is not None:
+            self.job_session.deactivate()
+            self.job_session = None
+        self.job_context_id = None
 
 
 state = RuntimeState()
@@ -172,6 +185,34 @@ def ensure_job_store():
     return state.job_store
 
 
+def ensure_job_session():
+    """Select one application-owned job session, independent of open panels."""
+    catalog = ensure_catalog()
+    if state.job_session is None:
+        adapter = catalog.create_job_adapter()
+        try:
+            session = JobSession(adapter, state.job_store)
+        except BaseException:
+            adapter.close()
+            raise
+        state.job_session = session
+        state.job_context_id = uuid.uuid4().hex
+    return state.job_session
+
+
+def local_job_recovery():
+    """Inspect only this credential context's durable jobs; never replay work."""
+    session = ensure_job_session()
+    return state.job_context_id, session.recovery_plan()
+
+
+def cancel_prepared_job(context_id, request_id, expected_revision):
+    session = ensure_job_session()
+    if context_id != state.job_context_id:
+        raise ScenarioError(0, "The selected job context changed; list local jobs again")
+    return session.cancel_prepared(request_id, expected_revision=expected_revision)
+
+
 def request_connection_check():
     """Queue a single model-access probe for the current selected credentials."""
     if not online():
@@ -199,10 +240,13 @@ def sync_catalog_context():
     """Refresh the worker-safe permission snapshot and retire changed credentials."""
     if not on_main_thread():
         raise RuntimeError("Catalog context must be refreshed on Blender's main thread")
+    if state.job_session is not None and not state.job_session.active:
+        state.retire_jobs()
     if state.catalog is not None:
         if state.catalog_credentials != credentials():
             from . import generation
 
+            state.retire_jobs()
             state.catalog.close()
             state.retired_catalogs.append(state.catalog)
             state.catalog = None
@@ -225,6 +269,7 @@ def sync_catalog_context():
     state.retired_catalogs[:] = [
         catalog for catalog in state.retired_catalogs if not catalog.closed
     ]
+    reap_retired()
 
 
 def enum_items(key):

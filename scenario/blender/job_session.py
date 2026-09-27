@@ -122,6 +122,10 @@ class JobSession:
     def scope(self):
         return self._coordinator.scope
 
+    @property
+    def active(self):
+        return self._active
+
     @staticmethod
     def _identity(records, value):
         for identity, existing in records.items():
@@ -493,6 +497,11 @@ class JobSession:
 def _session_snapshot():
     with _sessions_lock:
         return tuple(_sessions)
+
+
+def reap_retired():
+    """Service retired owners on main-thread headless loops as well as GUI ticks."""
+    _reap_inactive()
 
 
 def _reap_inactive():

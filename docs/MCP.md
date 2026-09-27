@@ -19,6 +19,14 @@ separates implemented helpers from active UI/MCP integration. A tool description
 is guidance for the connected agent, not a server-enforced spending approval.
 The prototype generation path does not yet require a stored approved quote.
 
+`list_local_jobs` inspects the separate credential-scoped durable store and returns
+saved costs, revisions and suggested recovery actions without contacting Scenario.
+It does not import prototype `generate` records or refresh remote jobs.
+`cancel_prepared_job` cancels only an unsubmitted durable intent, using the context
+token and revision from inspection. A reset, file load or credential switch invalidates that
+token. Claimed or uncertain submissions require reconciliation, never blind retry.
+See [job contexts](BLENDER_JOB_CONTEXT.md) for lifetime and remaining integration.
+
 ## Token lifecycle
 
 GUI startup generates a bearer token the first time the server starts in a
@@ -175,6 +183,8 @@ Do not edit this block by hand; run `make mcp-docs`. An asterisk marks a require
 
 | Tool | Description | Arguments | Notes |
 | --- | --- | --- | --- |
+| `list_local_jobs` | Inspect durable local jobs for the selected API-key pair without network requests. | none | read-only annotation |
+| `cancel_prepared_job` | Cancel an unsubmitted durable local intent without contacting Scenario. | `context_id`*: string<br>`request_id`*: string<br>`expected_revision`*: integer | destructive annotation |
 | `list_models` | List the loaded lane catalog, with curated models first and at most 40 matches. | `lane`: string (enum: see tools/list)<br>`query`: string | read-only annotation |
 | `model_schema` | Read the model's current form parameters for this Blender extension. | `model_id`*: string | read-only annotation |
 | `estimate_cost` | Get the exact CU cost with a dry run that spends no credits. | `model_id`*: string<br>`parameters`: object | read-only annotation |
@@ -242,6 +252,7 @@ behavior interchangeable. Remote names below were checked against the
 | Price without generating | `estimate_cost(model_id, parameters)` | `model_run` with `dry_run=true` |
 | Generate | `generate(lane, model_id, parameters)`, automatic scene application | `model_run` |
 | Job status | `job_status(job_id or id)` | `job_get` |
+| Durable local recovery | `list_local_jobs`, `cancel_prepared_job` | Local only; no remote polling or cancellation |
 | Wait | `wait_for_job(job_id or id, timeout)`, one job without blocking Blender | `jobs_wait` |
 | Reference upload | `capture_reference(source)`, captures the scene first | `upload_asset`, `upload_asset_complete` for an existing file |
 | History | `list_generations(limit)` | `jobs_list` |

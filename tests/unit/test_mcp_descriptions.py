@@ -11,6 +11,8 @@ import pytest
 ROOT = Path(__file__).resolve().parents[2]
 EXPECTED = {
     "tools_scenario": {
+        "list_local_jobs",
+        "cancel_prepared_job",
         "list_models",
         "model_schema",
         "estimate_cost",

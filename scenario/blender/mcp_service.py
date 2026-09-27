@@ -77,6 +77,7 @@ def stop():
 
 
 def process_pending():
+    runtime.sync_catalog_context()
     server = runtime.state.mcp
     if server is not None:
         server.process_pending()
@@ -175,7 +176,7 @@ def cli(argv):
         except OSError as error:
             parser.error(f"Unable to start local MCP: {error}")
         print(cli_banner(server.url, token, generated), flush=True)
-        server.serve_blocking(stop_event)
+        server.serve_blocking(stop_event, before_process=runtime.sync_catalog_context)
     except KeyboardInterrupt:
         stop_event.set()
     finally:

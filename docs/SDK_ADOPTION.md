@@ -368,7 +368,11 @@ are mapped above; multipart metadata commands use the adapter as described in
 scoped inspection and explicit known-upload status refresh are implemented as
 described above. Local MCP reference uploads now use `uploads.with_raw_response`
 `create`, `retrieve` and `trigger_action(action="complete")` through the same
-adapter, followed by credential-free signed S3 PUTs. There is no new Scenario API
+adapter, followed by credential-free signed S3 PUTs. Explicit local reference
+uploads support the published SDK kinds `image`, `audio`, `video` and `3d`,
+with extension-specific MIME metadata. The latter is asset upload, not the SDK
+`model` kind used for model import. Status and recovery retain the saved kind
+and MIME type. Other form/capture preparation remains separate. There is no new Scenario API
 fallback or dependency change. See the [active upload contract](SDK_UPLOADS.md#active-reference-uploads)
 for destination trust, source limits and recovery. Image form upload/attachment
 and native recovery/reattachment use those same commands. Authoritative account/project

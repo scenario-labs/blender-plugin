@@ -55,7 +55,8 @@ def env(tmp_path):
         "status": "pending",
         "source": "multipart",
         "kind": "image",
-        "fileName": "reference.png",
+        "fileName": "uploads/synthetic-storage/reference.png",
+        "originalFileName": "reference.png",
         "contentType": "image/png",
         "fileSize": 5,
         "partsCount": 2,
@@ -241,7 +242,8 @@ def test_lost_mutation_response_is_durable_and_never_retried(env, phase, state):
 @pytest.mark.parametrize(
     "field,value",
     [
-        ("fileName", "other.png"),
+        ("originalFileName", "other.png"),
+        ("originalFileName", None),
         ("fileSize", 6),
         ("partsCount", 3),
         ("kind", "model"),

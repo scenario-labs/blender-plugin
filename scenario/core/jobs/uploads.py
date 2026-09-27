@@ -205,7 +205,7 @@ class UploadCommands:
             or response.get("status") != "pending"
             or response.get("source") != "multipart"
             or response.get("kind") != intent.kind
-            or response.get("fileName") != intent.file_name
+            or response.get("originalFileName") != intent.file_name
             or response.get("contentType") != intent.content_type
             or not _integer(response.get("fileSize"), intent.file_size)
             or not _integer(response.get("partsCount"), len(intent.part_sha256))

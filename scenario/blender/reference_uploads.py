@@ -17,18 +17,38 @@ from ..core.jobs.upload_store import UploadState
 from ..core.jobs.workers import WorkerError
 from .job_session import SessionBusy
 
-_IMAGE_TYPES = {
-    ".png": "image/png",
-    ".jpg": "image/jpeg",
-    ".jpeg": "image/jpeg",
-    ".webp": "image/webp",
-    ".gif": "image/gif",
-    ".avif": "image/avif",
-    ".tif": "image/tiff",
-    ".tiff": "image/tiff",
-    ".heic": "image/heic",
-    ".heif": "image/heif",
-    ".svg": "image/svg+xml",
+# Explicit extension policy follows the Scenario multipart upload guide. It
+# chooses metadata, not a decoder or a claim that every model accepts the file.
+_REFERENCE_TYPES = {
+    "image": {
+        ".png": "image/png",
+        ".jpg": "image/jpeg",
+        ".jpeg": "image/jpeg",
+        ".webp": "image/webp",
+        ".gif": "image/gif",
+        ".avif": "image/avif",
+        ".tif": "image/tiff",
+        ".tiff": "image/tiff",
+        ".heic": "image/heic",
+        ".heif": "image/heif",
+        ".svg": "image/svg+xml",
+    },
+    "audio": {
+        ".mp3": "audio/mpeg",
+        ".wav": "audio/wav",
+        ".ogg": "audio/ogg",
+        ".m4a": "audio/m4a",
+    },
+    "video": {".mp4": "video/mp4", ".webm": "video/webm"},
+    "3d": {
+        ".glb": "model/gltf-binary",
+        ".gltf": "model/gltf+json",
+        ".obj": "model/obj",
+        ".fbx": "application/vnd.autodesk.fbx",
+        ".stl": "model/stl",
+        ".ply": "model/ply",
+        ".vox": "model/x-3d-vox",
+    },
 }
 
 
@@ -114,8 +134,8 @@ class ReferenceUploads:
         self.form_errors = deque(maxlen=16)
         self.attachments = {}
 
-    def start(self, scene, path, *, temporary=None):
-        """Upload the chosen image once; this action never quotes or generates."""
+    def start(self, scene, path, *, kind="image", temporary=None):
+        """Upload the chosen typed reference once; never quote or generate."""
         task = None
         try:
             if not self._online():
@@ -125,15 +145,17 @@ class ReferenceUploads:
                     0, "Reference upload capacity reached; inspect existing uploads"
                 )
             path = Path(path)
-            content_type = _IMAGE_TYPES.get(path.suffix.lower())
+            if not isinstance(kind, str) or kind not in _REFERENCE_TYPES:
+                raise ScenarioError(0, "Choose image, audio, video or 3d as the reference kind")
+            content_type = _REFERENCE_TYPES[kind].get(path.suffix.lower())
             if content_type is None:
-                raise ScenarioError(0, "Choose a supported image reference format")
+                raise ScenarioError(0, f"Choose a supported {kind} reference format")
             if scene != bpy.context.scene:
                 raise ScenarioError(0, "Select the originating scene before uploading")
             bpy.context.view_layer.update()
             origin = self.session.capture(scene)
             task = self.session.prepare_upload(
-                path, origin=origin, kind="image", content_type=content_type
+                path, origin=origin, kind=kind, content_type=content_type
             )
             if temporary is not None:
                 self.session.retain_upload_capture(task, temporary)
@@ -147,7 +169,7 @@ class ReferenceUploads:
                 reason = (
                     error.reason
                     if isinstance(error, ScenarioError)
-                    else "Upload could not start; check the image and try again"
+                    else "Upload could not start; check the reference and try again"
                 )
                 raise UploadNotStarted(0, reason) from None
             raise
@@ -228,6 +250,8 @@ class ReferenceUploads:
             "revision": record.revision if record else None,
             "state": record.state.value if record else "failed" if ticket.error else "staging",
             "asset_id": record.asset_id if record else None,
+            "kind": record.intent.kind if record else None,
+            "content_type": record.intent.content_type if record else None,
             "error": ticket.error,
             "pending": ticket.task is not None,
         }

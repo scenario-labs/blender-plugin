@@ -21,7 +21,7 @@ from urllib.parse import urlsplit
 
 from .transfers import DownloadedResult, TransferError, _root, validate_result_name
 
-_VERSION = 2
+_VERSION = 3
 _APPLICATION_ID = 0x53434A42
 
 
@@ -240,6 +240,7 @@ class StoredJob:
     revision: int = 0
     remote_job_id: str | None = None
     results: tuple[StoredResult, ...] = ()
+    application_origin: JobOrigin | None = None
 
 
 def _json(value):
@@ -248,18 +249,21 @@ def _json(value):
     )
 
 
-def _decode(raw, scope):
+def _decode(raw, scope, *, version=3):
     try:
         value = json.loads(raw)
         # Never let dataclass defaults turn a truncated in-flight record into
         # a fresh prepared request. Versioned records require every stored key.
-        if not isinstance(value, dict) or set(value) != {
+        expected = {
             "intent",
             "state",
             "revision",
             "remote_job_id",
             "results",
-        }:
+        }
+        if version == 3:
+            expected.add("application_origin")
+        if not isinstance(value, dict) or set(value) != expected:
             raise ValueError
         intent = value.pop("intent")
         for fields, cls in (
@@ -271,6 +275,15 @@ def _decode(raw, scope):
                 raise ValueError
         intent["scope"] = JobScope(**intent["scope"])
         intent["origin"] = JobOrigin(**intent["origin"])
+        application = value.pop("application_origin", None)
+        if version == 2 and value["state"] in {"applying", "apply_failed", "applied"}:
+            application = asdict(intent["origin"])
+        if application is not None:
+            if not isinstance(application, dict) or set(application) != set(
+                JobOrigin.__dataclass_fields__
+            ):
+                raise ValueError
+            application = JobOrigin(**application)
         raw_results = value.pop("results")
         if not isinstance(raw_results, list) or len(raw_results) > 128:
             raise ValueError
@@ -288,8 +301,14 @@ def _decode(raw, scope):
             results.append(StoredResult(ResultAsset(**item["asset"]), receipt))
         results = tuple(results)
         _validate_results(results)
-        record = StoredJob(intent=JobIntent(**intent), results=results, **value)
+        record = StoredJob(
+            intent=JobIntent(**intent), results=results, application_origin=application, **value
+        )
         state = JobState(record.state)
+        if (application is not None) != (
+            state in {JobState.APPLYING, JobState.APPLY_FAILED, JobState.APPLIED}
+        ):
+            raise ValueError
         if record.intent.scope != scope or type(record.revision) is not int or record.revision < 0:
             raise ValueError
         if record.remote_job_id is not None:
@@ -377,6 +396,8 @@ class JobStore:
                     )
                     connection.execute(f"PRAGMA application_id = {_APPLICATION_ID}")
                     connection.execute(f"PRAGMA user_version = {_VERSION}")
+                elif version == 2 and application == _APPLICATION_ID:
+                    self._upgrade_v2(connection)
                 else:
                     self._check_version(connection)
         except OSError:
@@ -385,6 +406,32 @@ class JobStore:
     @property
     def scope(self):
         return self._scope
+
+    @staticmethod
+    def _upgrade_v2(connection):
+        """Preserve only the prior shared-store format in one locked transaction."""
+        for key, request_id, revision, raw in connection.execute(
+            "SELECT scope, request_id, revision, record FROM jobs"
+        ).fetchall():
+            try:
+                scope = JobScope(**json.loads(raw)["intent"]["scope"])
+            except (ValueError, TypeError, KeyError):
+                raise StoreError(
+                    "Stored job data is invalid; preserve the database for recovery"
+                ) from None
+            record = _decode(raw, scope, version=2)
+            expected_key = hashlib.sha256(_json(asdict(scope)).encode()).hexdigest()
+            if (
+                key != expected_key
+                or request_id != record.intent.request_id
+                or revision != record.revision
+            ):
+                raise StoreError("Stored job identity or revision is inconsistent")
+            connection.execute(
+                "UPDATE jobs SET record=? WHERE scope=? AND request_id=?",
+                (_json(asdict(record)), key, request_id),
+            )
+        connection.execute(f"PRAGMA user_version = {_VERSION}")
 
     @contextmanager
     def result_transfer_lock(self, request_id):
@@ -512,7 +559,15 @@ class JobStore:
             )
         return record
 
-    def transition(self, request_id, *, expected_revision, state: JobState, remote_job_id=None):
+    def transition(
+        self,
+        request_id,
+        *,
+        expected_revision,
+        state: JobState,
+        remote_job_id=None,
+        application_origin=None,
+    ):
         _identity(request_id)
         if type(expected_revision) is not int or expected_revision < 0:
             raise ValueError("A nonnegative expected revision is required")
@@ -520,6 +575,10 @@ class JobStore:
             raise ValueError("A supported job state is required")
         if remote_job_id is not None:
             _identity(remote_job_id)
+        if application_origin is not None and (
+            state != JobState.APPLYING or not isinstance(application_origin, JobOrigin)
+        ):
+            raise ValueError("Bind an application origin only when claiming application")
         with self._connection(write=True) as connection:
             previous = self._read(connection, request_id)
             if previous is None or previous.revision != expected_revision:
@@ -538,7 +597,13 @@ class JobStore:
             if state == JobState.READY and any(item.receipt is None for item in previous.results):
                 raise ValueError("Every result needs a verified download receipt")
             updated = replace(
-                previous, state=state, revision=previous.revision + 1, remote_job_id=remote
+                previous,
+                state=state,
+                revision=previous.revision + 1,
+                remote_job_id=remote,
+                application_origin=(application_origin or previous.intent.origin)
+                if state == JobState.APPLYING
+                else previous.application_origin,
             )
             connection.execute(
                 "UPDATE jobs SET revision=?, record=? WHERE scope=? AND request_id=? AND revision=?",

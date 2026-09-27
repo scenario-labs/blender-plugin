@@ -78,7 +78,7 @@ Every connection rechecks that the database is a regular nonsymlink file,
 including after a competing creation. The parent must remain trusted: this check
 and SQLite's path open are separate operations, not an atomic no-follow open.
 
-The database has an application ID and schema version **2**. SQLite transactions
+The database has an application ID and schema version **3**. SQLite transactions
 with `synchronous=FULL` commit the whole change or report `StoreError`; no cached
 in-memory result is reported as saved before commit succeeds. `BEGIN IMMEDIATE`
 serializes writers across threads/processes. Each operation owns a connection,
@@ -94,7 +94,10 @@ another request or resend. Intent fields and a known remote job ID cannot change
 Foreign databases, unsupported versions, malformed records and mismatched stored
 identities/revisions raise errors. They are preserved for explicit recovery,
 never silently replaced with empty history. An already-open store also fails if
-its database disappears. No prototype import or automatic migration is provided.
+its database disappears. Only the previous shared schema 2 is upgraded, in one
+transaction that validates every scope, record, identity and revision. A corrupt
+row or failed commit preserves all previous rows and the old version. This is
+not a prototype import; version 1 and foreign databases remain rejected.
 
 ## State boundaries
 
@@ -115,9 +118,15 @@ actual state rather than declaring a cancellation on request acknowledgement.
 A cancellation command claims `remote → cancel_requested` with the same atomic
 revision check before sending. A second coordinator/process cannot claim it
 again. Restart recovery polls this state even after a crash before sending;
-there is no lease expiry or explicit reset/reattempt command. Schema 2 includes the immutable result manifest and receipts. Version 1 databases
-are preserved and rejected for explicit recovery, never reset or silently migrated.
-Old readers also reject version 2 instead of discarding result recovery metadata.
+there is no lease expiry or explicit reset/reattempt command. Schema 3 retains the
+immutable result manifest and receipts introduced in schema 2 and adds a separate
+`application_origin`. Claiming `applying` atomically saves that destination before
+any Blender mutation. Automatic application uses the original intent origin;
+explicit recovery may supply a newly approved destination. Neither changes the
+intent. Application receipts preserve the claimed destination. A new destination
+requires a new claim after confirmed rollback, never an interrupted `applying`
+record. Upgrading schema 2 records in application states records their original
+origin as the destination. Older readers reject schema 3 instead of dropping it.
 
 Opening storage never executes or automatically advances work. At startup, once
 old workers are stopped, the coordinator must treat saved `submitting` as

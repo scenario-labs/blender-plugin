@@ -12,7 +12,7 @@ import bpy
 
 from ..core.api.errors import ScenarioError
 from ..core.jobs.records import JobRecord
-from ..core.jobs.store import JobState
+from ..core.jobs.store import JobOrigin, JobState, StoredJob
 from .job_session import ImageResultUncertain
 
 
@@ -31,6 +31,14 @@ class ModelQuote:
     used: bool = False
 
 
+@dataclass(frozen=True)
+class ImageApplicationApproval:
+    identifier: str
+    record: StoredJob
+    destination: JobOrigin
+    scene_name: str
+
+
 class ModelJobs:
     """Own ephemeral quotes and display projections, never another job engine."""
 
@@ -47,6 +55,8 @@ class ModelJobs:
         self._images = {}
         self._receipts = {}
         self._automatic_application = set()
+        self._application_approvals = {}
+        self._application_destinations = {}
 
     def quote(self, scene, model_id, body):
         snapshot = _snapshot(body)
@@ -141,6 +151,7 @@ class ModelJobs:
             if not task.done():
                 continue
             del self._commands[request_id]
+            destination = self._application_destinations.pop(request_id, None)
             try:
                 completions = self.session.drain(task=task)
                 if not completions:
@@ -150,8 +161,15 @@ class ModelJobs:
                     raise completion.error
                 if command == "verify_results":
                     self.views[request_id].files = [str(p) for p in completion.result.paths]
-                    result = self.session.apply_images(completion)
+                    result = (
+                        self.session.apply_images(completion)
+                        if destination is None
+                        else self.session.apply_recovered_images(
+                            completion, destination=destination
+                        )
+                    )
                     self._images[request_id] = result.images
+                    self._paused.discard(request_id)
                 self._next_poll[request_id] = time.monotonic() + 2.0
             except ImageResultUncertain as error:
                 if error.images:
@@ -246,6 +264,11 @@ class ModelJobs:
             actions.append("resume")
         elif state == JobState.DOWNLOADING:
             actions.append("recover_download")
+        elif state in (JobState.READY, JobState.APPLY_FAILED) and all(
+            item.asset.media_type in {"image/png", "image/exr", "image/x-exr"}
+            for item in record.results
+        ):
+            actions.append("import_images")
         if state == JobState.REMOTE and record.intent.operation == "model":
             actions.append("cancel")
         if request_id in self._receipts:
@@ -260,6 +283,7 @@ class ModelJobs:
             or record is None
             or record.revision != expected_revision
             or action not in self.actions(record)
+            or action == "import_images"
         ):
             raise ScenarioError(0, "The saved job or available action changed; inspect it again")
         view = self._view(record)
@@ -290,6 +314,58 @@ class ModelJobs:
         else:
             self._paused.add(request_id)
         return task
+
+    def prepare_image_application(self, request_id, expected_revision, scene):
+        """Capture a reviewable destination without verification, import or network."""
+        record = self.store.get(request_id)
+        if (
+            type(expected_revision) is not int
+            or record is None
+            or record.revision != expected_revision
+            or "import_images" not in self.actions(record)
+        ):
+            raise ScenarioError(0, "The saved images changed; inspect the job again")
+        if len(self._application_approvals) >= 128:
+            raise ScenarioError(
+                0, "Too many pending import approvals; complete or cancel one first"
+            )
+        if scene != bpy.context.scene:
+            raise ScenarioError(0, "Select the destination scene before reviewing the import")
+        bpy.context.view_layer.update()
+        ticket = ImageApplicationApproval(
+            uuid.uuid4().hex, record, self.session.capture(scene), scene.name
+        )
+        self._application_approvals[ticket.identifier] = ticket
+        return ticket
+
+    def discard_image_application(self, identifier):
+        self._application_approvals.pop(identifier, None)
+
+    def apply_saved_images(self, identifier):
+        """Consume explicit approval once; verification finishes on the existing pool."""
+        ticket = (
+            self._application_approvals.pop(identifier, None)
+            if isinstance(identifier, str)
+            else None
+        )
+        if ticket is None or not self.session.active:
+            raise ScenarioError(0, "Review and approve the saved image destination again")
+        record = self.store.get(ticket.record.intent.request_id)
+        if record != ticket.record or "import_images" not in self.actions(record):
+            raise ScenarioError(0, "The saved images changed; inspect the job again")
+        # Validate the approved destination before queuing and again immediately
+        # before claiming application. Never recapture a changed scene here.
+        self.session.validate_destination(ticket.destination)
+        request_id = record.intent.request_id
+        task = self.session.verify_results(request_id, expected_revision=record.revision)
+        self._application_destinations[request_id] = ticket.destination
+        self._commands[request_id] = ("verify_results", task)
+        self._automatic_application.discard(request_id)
+        self._paused.add(request_id)
+        view = self._view(record)
+        view.meta["recovery_actions"] = ()
+        view.error = None
+        return request_id, task
 
     def wait(self, request_id, timeout, *, stopped=lambda: False):
         """Wait on an HTTP worker using only saved state; the main thread advances jobs."""

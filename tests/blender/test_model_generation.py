@@ -296,6 +296,129 @@ class ModelGenerationTests(unittest.TestCase):
         self.assertEqual(len(self.paid), 1)
         self.assertEqual(len(self.downloads), 1)
 
+    def recovered_images(self):
+        self.result_fixture()
+        result = self.mcp_submit(self.mcp_quote())
+        owner = self.runtime.state.model_jobs
+        owner.submissions[result["local_id"]].result(5)
+        owner.session.invalidate_scene(bpy.context.scene)
+        self.deliver_results()
+        self.runtime.state.reset()
+        self.runtime.inspect_model_jobs()
+        self.assertEqual(self.store.get(result["local_id"]).state, self.storemod.JobState.READY)
+        return result["local_id"]
+
+    def prepare_import(self, request_id):
+        args = self.recovery_args(request_id, "import_images")
+        del args["action"]
+        return self.tools.prepare_result_application(args)
+
+    def import_args(self, approval):
+        return {key: approval[key] for key in ("context_id", "application_id")}
+
+    def test_mcp_recovered_images_require_destination_approval_and_import_once(self):
+        request_id = self.recovered_images()
+        original = self.store.get(request_id)
+        before, calls = set(bpy.data.images), len(self.calls)
+        approval = self.prepare_import(request_id)
+        self.assertEqual(approval["scene"], bpy.context.scene.name)
+        self.assertEqual(len(approval["images"]), 1)
+        self.assertEqual(set(bpy.data.images), before)
+        self.assertEqual(self.store.get(request_id), original)
+        self.assertEqual(len(self.calls), calls)
+        with self.assertRaises(self.request_error):
+            self.tools.recover_local_job(self.recovery_args(request_id, "import_images"))
+        deferred = self.tools.apply_result_application(self.import_args(approval))
+        status = deferred.finish(deferred.run())
+        saved = self.store.get(request_id)
+        self.assertEqual(status["status"], "applied", status)
+        self.assertEqual(len(status["images"]), 1)
+        self.assertEqual(saved.intent, original.intent)
+        self.assertNotEqual(saved.application_origin.file_id, saved.intent.origin.file_id)
+        self.assertIsNotNone(bpy.data.images[status["images"][0]].packed_file)
+        with self.assertRaises(self.request_error):
+            self.tools.apply_result_application(self.import_args(approval))
+        with self.assertRaises(self.request_error):
+            self.prepare_import(request_id)
+        self.assertEqual(len(self.calls), calls)
+        self.assertEqual(len(self.paid), 1)
+
+    def test_recovered_application_rejects_scene_change_before_and_during_verification(self):
+        request_id = self.recovered_images()
+        before = set(bpy.data.images)
+        for after_queue in (False, True):
+            approval = self.prepare_import(request_id)
+            owner = self.runtime.state.model_jobs
+            if after_queue:
+                deferred = self.tools.apply_result_application(self.import_args(approval))
+                result = deferred.run()
+            owner.session.invalidate_scene(bpy.context.scene)
+            if after_queue:
+                status = deferred.finish(result)
+                self.assertEqual(status["status"], "ready", status)
+                self.assertTrue(status["error"])
+            else:
+                with self.assertRaises(submodule("blender.job_session").OriginUnavailable):
+                    self.tools.apply_result_application(self.import_args(approval))
+            with self.assertRaises(self.request_error):
+                self.tools.apply_result_application(self.import_args(approval))
+            self.assertEqual(set(bpy.data.images), before)
+            self.assertEqual(self.store.get(request_id).state, self.storemod.JobState.READY)
+        self.assertEqual(len(self.paid), 1)
+
+    def test_recovered_application_rejects_file_context_change(self):
+        request_id = self.recovered_images()
+        approval = self.prepare_import(request_id)
+        before = set(bpy.data.images)
+        self.runtime.state.reset()
+        with self.assertRaises(self.request_error):
+            self.tools.apply_result_application(self.import_args(approval))
+        self.assertEqual(set(bpy.data.images), before)
+        self.assertEqual(self.store.get(request_id).state, self.storemod.JobState.READY)
+
+    def test_native_import_requires_a_prepared_destination_and_preserves_original_origin(self):
+        request_id = self.recovered_images()
+        original = self.store.get(request_id)
+        args = self.recovery_args(request_id, "import_images")
+        del args["action"]
+        with self.assertRaises(RuntimeError):
+            bpy.ops.scenario.import_saved_images(**args)
+        approval = self.prepare_import(request_id)
+        self.assertEqual(
+            bpy.ops.scenario.import_saved_images(**args, application_id=approval["application_id"]),
+            {"FINISHED"},
+        )
+        self.deliver_results()
+        saved = self.store.get(request_id)
+        self.assertEqual(saved.state, self.storemod.JobState.APPLIED)
+        self.assertEqual(saved.intent, original.intent)
+        self.assertNotEqual(saved.application_origin, original.intent.origin)
+        self.assertEqual(len(self.paid), 1)
+
+    def test_recovered_import_receipt_failure_never_repeats_blender_mutation(self):
+        request_id = self.recovered_images()
+        approval = self.prepare_import(request_id)
+        selected_store = self.runtime.state.job_store
+        transition = selected_store.transition
+
+        def fail(*args, **kwargs):
+            if kwargs.get("state") == self.storemod.JobState.APPLIED:
+                raise self.storemod.StoreError("synthetic receipt failure")
+            return transition(*args, **kwargs)
+
+        deferred = self.tools.apply_result_application(self.import_args(approval))
+        with patch.object(selected_store, "transition", side_effect=fail):
+            status = deferred.finish(deferred.run())
+        self.assertEqual(status["status"], "applying", status)
+        self.assertIn("retry_receipt", status["actions"])
+        before = set(bpy.data.images)
+        with self.assertRaises(self.request_error):
+            self.prepare_import(request_id)
+        status = self.recover(request_id, "retry_receipt")
+        self.assertEqual(status["status"], "applied", status)
+        self.assertEqual(set(bpy.data.images), before)
+        self.assertEqual(len(self.paid), 1)
+
     def test_recovery_rejects_stale_revision_and_context_before_network(self):
         result = self.mcp_submit(self.mcp_quote())
         self.deliver_results()

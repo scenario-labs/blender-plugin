@@ -288,6 +288,13 @@ original origin. Copying public fields, selecting a new scene or reopening the
 store cannot recreate this authority. `applied` results can still be verified
 for inspection but cannot be claimed again.
 
+`claim_recovered_application(verified, destination)` is a separate explicit
+command. The caller must capture and obtain approval for a new destination,
+then resolve it before mutation. The same owner, ticket, state and stored-revision
+checks apply, with the origin guard checking the approved destination. The
+atomic claim stores it as `application_origin` while preserving `intent.origin`.
+Downloading or inspecting a job does not authorize this command.
+
 The origin guard and coordinator lock cover the atomic `applying` write. The
 verification ticket is consumed before that write is attempted, because a write
 failure can be uncertain. A successful claim returns an immutable
@@ -307,8 +314,9 @@ After confirmed success, `complete_application(claim)` saves `applied` once.
 that no mutation occurred or every change was rolled back. Unexpected exceptions,
 interruption or uncertain rollback must leave `applying` unchanged. Neither
 method catches a Blender callback or interprets an exception as successful rollback.
-An explicit retry after confirmed failure requires a new verification ticket and
-the same original still-current origin; it cannot rebind a restarted record.
+An explicit retry after confirmed failure requires a new verification ticket.
+The ordinary claim still requires the original current origin; the recovered
+claim requires a freshly approved current destination.
 
 Both receipt methods require the exact unfinished claim and its unchanged saved
 revision. They remain available after origin invalidation or owner deactivation,
@@ -339,8 +347,8 @@ state of a scene after later edits or explicit restoration.
 `applying` record remains `REVIEW_APPLICATION`: no expiry, reset, automatic
 completion or retry is provided. The SQLite record is durable; verification
 tickets and application claims are owner-local and are never reconstructed from
-names, paths or stored metadata. No schema change or active UI/MCP wiring is
-introduced by this boundary.
+names, paths or stored metadata. The active Image facade uses these claims for
+automatic delivery and explicitly approved recovered imports.
 
 
 ## Reference upload commands
@@ -408,8 +416,8 @@ thread, and its normal bounded completion queue delivers the result with its
 captured origin. `prepare_quote` resolves that same scene/target before persisting.
 Frame/file/dependency invalidation, view-independent lifetime and shutdown retain
 the existing session rules. Image UI/MCP now use these quote/submission commands,
-result delivery and saved-job controls; other lanes, reference uploads and
-explicit recovered-target application remain on the integration backlog.
+result delivery and saved-job controls, including explicit recovered Image
+application; other lanes and reference uploads remain on the integration backlog.
 
 Estimate ownership is checked before acquiring the coordinator/origin locks.
 Preparation keeps quote selection and persistence under the coordinator lock,

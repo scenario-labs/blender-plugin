@@ -18,7 +18,7 @@ from bpy.app.handlers import persistent
 from ..core.jobs.coordinator import JobCoordinator, OriginQuote, RemoteSnapshot
 from ..core.jobs.origins import OriginRevisions
 from ..core.jobs.results import VerifiedResults
-from ..core.jobs.store import StoredJob
+from ..core.jobs.store import JobOrigin, StoredJob
 from ..core.jobs.workers import JobWorkers
 from .image_application import ImageApplicationError, apply_images
 from .world_application import PanoramaError, WorldApplication, WorldApplicationError, apply_world
@@ -376,6 +376,23 @@ class JobSession:
         return callback(completion.result, scene, target)
 
     def apply_images(self, completion):
+        return self._apply_images(completion)
+
+    def apply_recovered_images(self, completion, *, destination):
+        """Import into an explicitly approved captured destination after recovery."""
+        _main_thread()
+        if not isinstance(destination, JobOrigin):
+            raise OriginUnavailable("Capture and approve the image import destination")
+        return self._apply_images(completion, destination=destination)
+
+    def validate_destination(self, destination):
+        """Check a previously captured application destination without recapturing it."""
+        _main_thread()
+        if not isinstance(destination, JobOrigin):
+            raise OriginUnavailable("Capture and approve the application destination")
+        self._resolve(destination)
+
+    def _apply_images(self, completion, *, destination=None):
         _main_thread()
         if self._issued.get(id(completion)) is not completion:
             raise OriginUnavailable("Use an unconsumed verification from this session")
@@ -384,10 +401,14 @@ class JobSession:
         verified = completion.result
         if not isinstance(verified, VerifiedResults):
             raise OriginUnavailable("Verify the saved images before applying them")
-        self._resolve(completion.origin)
+        self._resolve(destination or completion.origin)
         before = set(bpy.data.images)
         del self._issued[id(completion)]
-        claim = self._coordinator.claim_application(verified)
+        claim = (
+            self._coordinator.claim_application(verified)
+            if destination is None
+            else self._coordinator.claim_recovered_application(verified, destination)
+        )
         try:
             images = apply_images(verified)
         except ImageApplicationError:

@@ -270,6 +270,31 @@ def recover_local_job(args):
     )
     if task is None:
         return jobs.status(args["request_id"])
+    return _finish_recovery(jobs, task, args["request_id"])
+
+
+def prepare_result_application(args):
+    _, approval = runtime.prepare_image_application(
+        args["context_id"], args["request_id"], args["expected_revision"], bpy.context.scene
+    )
+    return {
+        "context_id": args["context_id"],
+        "application_id": approval.identifier,
+        "request_id": approval.record.intent.request_id,
+        "revision": approval.record.revision,
+        "scene": approval.scene_name,
+        "images": [item.asset.name for item in approval.record.results],
+        "note": "Ask the user to approve importing and packing these images into this file. "
+        "The approval becomes invalid if the destination changes. No images have been imported.",
+    }
+
+
+def apply_result_application(args):
+    jobs, request_id, task = runtime.apply_saved_images(args["context_id"], args["application_id"])
+    return _finish_recovery(jobs, task, request_id)
+
+
+def _finish_recovery(jobs, task, request_id):
 
     def run():
         try:
@@ -281,7 +306,7 @@ def recover_local_job(args):
         runtime.sync_catalog_context()
         if runtime.state.model_jobs is not jobs or not jobs.session.active:
             raise ScenarioError(0, "The job context changed during recovery; inspect it again")
-        return jobs.status(args["request_id"])
+        return jobs.status(request_id)
 
     return DeferredTool(run, finish)
 
@@ -430,6 +455,49 @@ _JOB_REF = {
 
 
 SPECS = (
+    ToolSpec(
+        "prepare_result_application",
+        (
+            "Prepare explicit import of downloaded PNG/EXR images from a saved job into the current file.\n"
+            "Args:\n"
+            "  - context_id: required string, current context from list_local_jobs.\n"
+            "  - request_id: required string, saved local job identity.\n"
+            "  - expected_revision: required nonnegative integer, observed saved revision.\n"
+            "Returns: context_id, application_id, request_id, revision, scene, images and note.\n"
+            'Example: {"context_id": "from-list", "request_id": "from-list", "expected_revision": 8}.\n'
+            "Show the destination and images to the user before apply_result_application. This makes no network request, spends no credits and imports nothing. Only ready or confirmed rolled-back results qualify.\n"
+            "Platform equivalent: none; this captures a local Blender destination."
+        ),
+        _schema(
+            {
+                "context_id": {"type": "string"},
+                "request_id": {"type": "string"},
+                "expected_revision": {"type": "integer", "minimum": 0},
+            },
+            ["context_id", "request_id", "expected_revision"],
+        ),
+        prepare_result_application,
+        {"readOnlyHint": True},
+    ),
+    ToolSpec(
+        "apply_result_application",
+        (
+            "Import and pack saved images after the user approves the prepared destination.\n"
+            "Args:\n"
+            "  - context_id: required string, context from prepare_result_application.\n"
+            "  - application_id: required string, single-use approval handle from prepare_result_application.\n"
+            "Returns: saved job status, revision, images and any delivery error.\n"
+            'Example: {"context_id": "from-prepare", "application_id": "from-prepare"}.\n'
+            "Call only after explicit destination approval. Verification runs off the main thread; import rechecks the exact captured scene/file revision. Changed contexts or records require fresh review. This performs no generation, downloads, object/material assignment or file save. Never repeat an uncertain import; inspect the saved job.\n"
+            "Platform equivalent: none; this applies saved results locally in Blender."
+        ),
+        _schema(
+            {"context_id": {"type": "string"}, "application_id": {"type": "string"}},
+            ["context_id", "application_id"],
+        ),
+        apply_result_application,
+        {"destructiveHint": True},
+    ),
     ToolSpec(
         "recover_local_job",
         (

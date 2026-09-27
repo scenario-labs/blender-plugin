@@ -261,6 +261,24 @@ def control_model_job(context_id, request_id, expected_revision, action):
     return jobs, task
 
 
+def prepare_image_application(context_id, request_id, expected_revision, scene):
+    jobs = ensure_model_jobs()
+    if context_id != state.job_context_id:
+        raise ScenarioError(0, "The selected job context changed; list local jobs again")
+    return jobs, jobs.prepare_image_application(request_id, expected_revision, scene)
+
+
+def apply_saved_images(context_id, application_id):
+    jobs = ensure_model_jobs()
+    if context_id != state.job_context_id:
+        raise ScenarioError(0, "The selected job context changed; review the import again")
+    request_id, task = jobs.apply_saved_images(application_id)
+    for view in jobs.views.values():
+        if not any(existing is view for existing in state.jobs_view):
+            state.jobs_view.insert(0, view)
+    return jobs, request_id, task
+
+
 def request_connection_check():
     """Queue a single model-access probe for the current selected credentials."""
     if not online():

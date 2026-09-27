@@ -29,8 +29,8 @@ spending approval. Cancellation needs the current context token and observed
 record revision, and only accepts an unclaimed prepared intent. Resetting, loading a file or
 switching credentials invalidates the context token, even if another scope has
 the same request ID. Shared saved-job controls below also expose known model-job
-cancellation and download/receipt recovery. Uploads, recovered-target application
-and remaining paid entry points still need active integration. These recovery
+cancellation and download/receipt recovery. Uploads and remaining paid entry
+points still need active integration. These recovery
 tools do not import prototype jobs. Image submission creates new durable intents.
 
 Active Image jobs poll and download through this session. `apply_images` requires
@@ -41,7 +41,8 @@ variants are imported together; failure removes only newly created images.
 Confirmed rollback records `apply_failed`; incomplete rollback or uncertain
 receipt persistence retains `applying`. `retry_image_receipt` can acknowledge a
 known completed import without importing again, using its owner-local handle.
-These methods never rebind a restarted job by scene name. The Image facade exposes
+These methods never rebind a restarted job by scene name. Explicit recovered
+image imports use a separately approved destination as described below. The Image facade exposes
 receipt-only retry to UI/MCP while its original owner retains the outcome handle.
 
 ## Origin and quote lifetime
@@ -87,8 +88,9 @@ and explicit upload refresh do not rediscover or rebind targets.
 
 File identities are deliberately session-local. Restarted records stay available
 for recovery, but automatic application cannot assume an old file or target is
-unchanged. Persistent target selection and explicit recovery/application UI remain
-integration work; matching a scene or object name is insufficient.
+unchanged. Explicit Image recovery captures a new destination for review;
+matching a scene or object name is insufficient. Other result types still need
+their own explicit recovery integration.
 
 ## Results and lifecycle
 
@@ -124,8 +126,8 @@ allowing the remaining extension registry cleanup to proceed. Control exceptions
 continue to propagate; a session with live workers retains its ownership.
 
 The selected API-key context and worker-safe online snapshot are bound by the
-active runtime as described above. Remaining lane activation and explicit recovered
-result application remain separate work. The account scope is a local pseudonym,
+active runtime as described above. Remaining lane activation and recovered
+application of other result types remain separate work. The account scope is a local pseudonym,
 not a guessed server account ID.
 
 ## Recovery inspection and cancellation
@@ -330,8 +332,8 @@ completions intact. Context maintenance drives Image quote/receipt delivery in
 both the GUI and actual CLI loop. Image status after restart is read from the
 credential-scoped store, without automatically polling or resubmitting remotely.
 Active jobs poll, download and import supported image results through this owner.
-Explicit recovered-target application and local reference upload remain unwired;
-this slice must not be advertised as complete release acceptance.
+Local reference upload and other result types remain unwired; this slice must
+not be advertised as complete release acceptance.
 
 ## Active saved-job controls
 
@@ -357,3 +359,29 @@ returning status. Shared `wait_for_job` reads saved state on the HTTP worker whi
 the main thread advances delivery; pause, failure, completion or timeout returns
 the current result without canceling or regenerating. Stopping the MCP server
 interrupts its wait without canceling the generation.
+
+## Explicit recovered Image application
+
+For downloaded PNG/EXR results in `ready` or confirmed `apply_failed` state,
+**Import saved images** captures the current file-session/scene revision and
+shows a native confirmation dialog. MCP `prepare_result_application` returns
+the scene, image names and a single-use `application_id`; after user approval,
+`apply_result_application` consumes it. Neither inspection nor download authorizes
+an import. Canceling the dialog discards its approval. Approvals are owner-local,
+bounded to 128 and never persisted or reconstructed after restart.
+
+Admission rechecks the selected context, exact stored record and destination
+before queuing verification on the existing workers. When verification finishes,
+`apply_recovered_images(completion, destination=...)` resolves that same captured
+destination again. It uses the coordinator's explicit recovered claim to save
+`applying` and `application_origin` atomically before decoding or packing images.
+The original `intent.origin`, request, scope, quote and result receipts stay
+unchanged. Scene/file changes require new review; the importer never recaptures
+the current selection as replacement approval.
+
+The importer adds packed image datablocks to the current file; it assigns no
+object, material or World and does not save the blend file. The Image Editor can
+select the imported images. Import, rollback and receipt-only recovery use the
+same primitive as automatic delivery. `applied` and interrupted `applying`
+records cannot be imported again through this command. No service call, download
+or paid submission occurs during application.

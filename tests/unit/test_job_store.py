@@ -321,7 +321,8 @@ def test_invalid_intent_is_rejected(intent, changes):
 
 
 @pytest.mark.parametrize(
-    "missing", ["state", "revision", "remote_job_id", "project_id", "target_id"]
+    "missing",
+    ["state", "revision", "remote_job_id", "project_id", "target_id", "application_origin"],
 )
 def test_missing_fields_cannot_reset_inflight_state_to_prepared(store, tmp_path, intent, missing):
     record = advance(store, store.create(intent), JobState.SUBMITTING)
@@ -338,6 +339,143 @@ def test_missing_fields_cannot_reset_inflight_state_to_prepared(store, tmp_path,
         store.get(intent.request_id)
     with pytest.raises(StoreError):
         store.transition(intent.request_id, expected_revision=1, state=JobState.SUBMITTING)
+
+
+def make_ready(store, intent):
+    record = store.create(intent)
+    for state in (JobState.SUBMITTING, JobState.REMOTE, JobState.SUCCEEDED):
+        record = advance(
+            store,
+            record,
+            state,
+            **({"remote_job_id": "remote"} if state == JobState.REMOTE else {}),
+        )
+    record = store.set_results(
+        intent.request_id,
+        (ResultAsset("asset", "result.png", "image/png"),),
+        expected_revision=record.revision,
+    )
+    record = advance(store, record, JobState.DOWNLOADING)
+    record = store.record_download(
+        intent.request_id,
+        "asset",
+        DownloadedResult("result.png", 1, "a" * 64),
+        expected_revision=record.revision,
+    )
+    return advance(store, record, JobState.READY)
+
+
+def legacy_v2(path):
+    """Write the exact previous shared-store record shape, not prototype history."""
+    with sqlite3.connect(path) as connection:
+        for scope, request_id, raw in connection.execute(
+            "SELECT scope, request_id, record FROM jobs"
+        ).fetchall():
+            value = json.loads(raw)
+            del value["application_origin"]
+            connection.execute(
+                "UPDATE jobs SET record=? WHERE scope=? AND request_id=?",
+                (json.dumps(value), scope, request_id),
+            )
+        connection.execute("PRAGMA user_version=2")
+
+
+def test_v2_upgrade_preserves_all_scopes_states_and_receipts(tmp_path, intent):
+    path = tmp_path / "jobs.sqlite3"
+    expected = {}
+    for scope in (intent.scope, replace(intent.scope, account_id="other-account")):
+        scoped = JobStore(path, scope)
+        records = []
+        for state in (
+            JobState.SUBMITTING,
+            JobState.UNCERTAIN,
+            JobState.READY,
+            JobState.APPLYING,
+            JobState.APPLY_FAILED,
+            JobState.APPLIED,
+        ):
+            item = replace(intent, scope=scope, request_id=state.value)
+            if state in {JobState.SUBMITTING, JobState.UNCERTAIN}:
+                record = advance(scoped, scoped.create(item), JobState.SUBMITTING)
+                if state == JobState.UNCERTAIN:
+                    record = advance(scoped, record, state)
+            else:
+                record = make_ready(scoped, item)
+                if state != JobState.READY:
+                    record = advance(scoped, record, JobState.APPLYING)
+                if state in {JobState.APPLY_FAILED, JobState.APPLIED}:
+                    record = advance(scoped, record, state)
+            records.append(record)
+        expected[scope] = tuple(sorted(records, key=lambda record: record.intent.request_id))
+    legacy_v2(path)
+    for scope, records in expected.items():
+        assert JobStore(path, scope).records() == records
+    with sqlite3.connect(path) as connection:
+        assert connection.execute("PRAGMA user_version").fetchone()[0] == 3
+
+
+@pytest.mark.parametrize("damage", ["commit", "scope", "revision", "record", "foreign", "v1"])
+def test_v2_upgrade_failure_preserves_every_row_and_version(tmp_path, intent, monkeypatch, damage):
+    path = tmp_path / "jobs.sqlite3"
+    scoped = JobStore(path, intent.scope)
+    scoped.create(intent)
+    scoped.create(replace(intent, request_id="z-later"))
+    legacy_v2(path)
+    with sqlite3.connect(path) as connection:
+        if damage == "scope":
+            connection.execute("UPDATE jobs SET scope='invalid' WHERE request_id='z-later'")
+        elif damage == "revision":
+            connection.execute("UPDATE jobs SET revision=42 WHERE request_id='z-later'")
+        elif damage == "record":
+            connection.execute("UPDATE jobs SET record='{}' WHERE request_id='z-later'")
+        elif damage == "foreign":
+            connection.execute("PRAGMA application_id=1")
+        elif damage == "v1":
+            connection.execute("PRAGMA user_version=1")
+    before = path.read_bytes()
+    original = sqlite3.connect
+
+    class FailCommit(sqlite3.Connection):
+        def commit(self):
+            raise sqlite3.OperationalError("synthetic migration commit failure")
+
+    with monkeypatch.context() as patch:
+        if damage == "commit":
+            patch.setattr(
+                sqlite3, "connect", lambda *a, **kw: original(*a, **kw, factory=FailCommit)
+            )
+        with pytest.raises(StoreError):
+            JobStore(path, intent.scope)
+    assert path.read_bytes() == before
+
+
+def test_application_destination_is_claimed_atomically_and_cannot_change_at_receipt(
+    store, intent, tmp_path
+):
+    ready = make_ready(store, intent)
+    destination = JobOrigin("new-file", "new-scene", "new-revision")
+    claim = advance(store, ready, JobState.APPLYING, application_origin=destination)
+    assert claim.intent.origin == intent.origin
+    assert (
+        JobStore(tmp_path / "jobs.sqlite3", intent.scope).get(intent.request_id).application_origin
+        == destination
+    )
+    with pytest.raises(ValueError):
+        advance(store, claim, JobState.APPLIED, application_origin=intent.origin)
+    applied = advance(store, claim, JobState.APPLIED)
+    assert applied.application_origin == destination
+    assert applied.intent == intent
+
+
+@pytest.mark.parametrize("destination", ["not-an-origin", None])
+def test_corrupt_application_destination_is_rejected(store, intent, tmp_path, destination):
+    record = advance(store, make_ready(store, intent), JobState.APPLYING)
+    value = asdict(record)
+    value["application_origin"] = destination
+    with sqlite3.connect(tmp_path / "jobs.sqlite3") as connection:
+        connection.execute("UPDATE jobs SET record=?", (json.dumps(value),))
+    with pytest.raises(StoreError):
+        store.get(intent.request_id)
 
 
 @pytest.mark.parametrize(

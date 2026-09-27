@@ -101,7 +101,8 @@ They do not establish live CDN or provider format acceptance.
 
 ## Integration still required
 
-Other generation lanes and explicit recovered-target application remain unintegrated.
+Other generation lanes remain unintegrated. Explicit recovered Image application
+uses a separately approved destination and reverified local receipts.
 Image UI/MCP controls can resume downloads and reconcile interrupted receipts;
 neither action grants permission to import into a restarted scene.
 The [coordinator](JOB_COORDINATOR.md#result-retrieval-and-download-commands)

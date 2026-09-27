@@ -228,6 +228,105 @@ def test_failed_application_with_changed_origin_cannot_be_rebound(env):
     assert env.store.get("request") == failed
 
 
+def test_restarted_job_requires_explicit_destination_and_preserves_original_intent(env):
+    env.origins.reset()
+    destination = env.origins.capture("destination-scene")
+    owner = env.owner()
+    ticket = verified(env, owner)
+    with pytest.raises(ApplicationError):
+        owner.claim_application(ticket)
+    claim = owner.claim_recovered_application(ticket, destination)
+    assert env.store.get("request") == claim.record
+    assert claim.record.application_origin == destination
+    assert claim.record.intent == env.ready.intent
+    env.origins.invalidate("destination-scene")
+    applied = owner.complete_application(claim)
+    assert applied.application_origin == destination
+    assert applied.intent.origin != destination
+    assert applied.results == env.ready.results
+
+
+@pytest.mark.parametrize("change", ["scene", "file", "owner", "ticket", "record", "destination"])
+def test_recovered_application_rejects_stale_or_fabricated_approval(env, change):
+    env.origins.reset()
+    destination = env.origins.capture("destination")
+    ticket = verified(env)
+    before = env.ready
+    if change == "scene":
+        env.origins.invalidate("destination")
+    elif change == "file":
+        env.origins.reset()
+    elif change == "owner":
+        env.coordinator.deactivate()
+    elif change == "ticket":
+        ticket = replace(ticket)
+    elif change == "record":
+        before = env.store.transition(
+            "request", expected_revision=before.revision, state=JobState.APPLYING
+        )
+    elif change == "destination":
+        destination = None
+    with pytest.raises((ApplicationError, StoreConflict)):
+        env.coordinator.claim_recovered_application(ticket, destination)
+    assert env.store.get("request") == before
+
+
+def test_recovered_rollback_needs_fresh_verification_before_another_destination(env):
+    destination = env.origins.capture("first-destination")
+    ticket = verified(env)
+    claim = env.coordinator.claim_recovered_application(ticket, destination)
+    failed = env.coordinator.fail_application(claim)
+    assert failed.application_origin == destination
+    second = env.origins.capture("second-destination")
+    with pytest.raises(ApplicationError):
+        env.coordinator.claim_recovered_application(ticket, second)
+    retried = env.coordinator.claim_recovered_application(verified(env, record=failed), second)
+    assert retried.record.application_origin == second
+    assert retried.record.intent == env.ready.intent
+
+
+@pytest.mark.parametrize("after_commit", [False, True])
+def test_recovered_claim_write_failure_never_reuses_approval(env, monkeypatch, after_commit):
+    destination = env.origins.capture("destination")
+    ticket = verified(env)
+    transition = env.coordinator._store.transition
+
+    def fail(*args, **kwargs):
+        if after_commit:
+            transition(*args, **kwargs)
+        raise StoreError("synthetic claim interruption")
+
+    monkeypatch.setattr(env.coordinator._store, "transition", fail)
+    with pytest.raises(StoreError):
+        env.coordinator.claim_recovered_application(ticket, destination)
+    with pytest.raises(ApplicationError):
+        env.coordinator.claim_recovered_application(ticket, destination)
+    saved = env.store.get("request")
+    assert saved.application_origin == (destination if after_commit else None)
+    assert saved.state == (JobState.APPLYING if after_commit else JobState.READY)
+
+
+def test_competing_recovered_destinations_cannot_both_apply(env):
+    owners = env.coordinator, env.owner()
+    destinations = tuple(env.origins.capture(scene) for scene in ("first", "second"))
+    tickets = tuple(verified(env, owner) for owner in owners)
+    barrier = threading.Barrier(2)
+
+    def claim(args):
+        owner, ticket, destination = args
+        barrier.wait(timeout=5)
+        try:
+            return owner.claim_recovered_application(ticket, destination)
+        except StoreConflict:
+            return None
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        claims = list(pool.map(claim, zip(owners, tickets, destinations, strict=True)))
+    successful = [claim for claim in claims if claim is not None]
+    assert len(successful) == 1
+    assert env.store.get("request") == successful[0].record
+
+
 @pytest.mark.parametrize("finish", [False, True])
 def test_recovery_preserves_interrupted_or_completed_application_without_replay(env, finish):
     claim = env.coordinator.claim_application(verified(env))

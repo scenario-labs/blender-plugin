@@ -149,8 +149,12 @@ and MCP `list_local_jobs` provide saved state. UI recovery buttons and
 `recover_local_job` use the current context token and observed revision to refresh,
 resume polling/download, cancel a known model job, reconcile interrupted download
 receipts, or save a pending import receipt. These actions never submit generation.
-Resuming after restart does not approve import into the new scene; explicit
-recovered-target application remains unfinished.
+Resuming after restart does not approve import into the new scene. **Import saved
+images** captures the selected destination for confirmation. MCP uses
+`prepare_result_application` followed by explicit `apply_result_application`.
+Both reverify local bytes and recheck the approved scene revision before an
+atomic application claim saves the destination separately from the original job
+origin. An interrupted import cannot be claimed again.
 Its `job_status` and `wait_for_job` return the current saved state; active jobs
 advance through the same maintenance pump. `wait_for_job` waits on the HTTP worker
 while the main thread remains available for delivery. It returns at completion,

@@ -35,6 +35,13 @@ the current scene. Shared `wait_for_job` waits without blocking Blender's main
 thread and returns when delivery finishes, needs review, or reaches its timeout.
 See [job contexts](BLENDER_JOB_CONTEXT.md) for lifetime and remaining integration.
 
+To import recovered PNG/EXR results, call `prepare_result_application` with the
+current context, request and revision, then show its destination and image list
+to the user. After approval, `apply_result_application` consumes the returned
+handle once. Scene/file changes invalidate it. Verification and the durable
+application claim precede image import; an interrupted import is never retried
+automatically. These commands spend no credits and make no service requests.
+
 ## Token lifecycle
 
 GUI startup generates a bearer token the first time the server starts in a
@@ -191,6 +198,8 @@ Do not edit this block by hand; run `make mcp-docs`. An asterisk marks a require
 
 | Tool | Description | Arguments | Notes |
 | --- | --- | --- | --- |
+| `prepare_result_application` | Prepare explicit import of downloaded PNG/EXR images from a saved job into the current file. | `context_id`*: string<br>`request_id`*: string<br>`expected_revision`*: integer | read-only annotation |
+| `apply_result_application` | Import and pack saved images after the user approves the prepared destination. | `context_id`*: string<br>`application_id`*: string | destructive annotation |
 | `recover_local_job` | Explicitly recover a saved job without repeating generation or importing into another scene. | `context_id`*: string<br>`request_id`*: string<br>`expected_revision`*: integer<br>`action`*: string (['refresh', 'resume', 'cancel', 'recover_download', 'retry_receipt']) | destructive annotation |
 | `list_local_jobs` | Inspect durable local jobs for the selected API-key pair without network requests. | none | read-only annotation |
 | `cancel_prepared_job` | Cancel an unsubmitted durable local intent without contacting Scenario. | `context_id`*: string<br>`request_id`*: string<br>`expected_revision`*: integer | destructive annotation |
@@ -263,6 +272,8 @@ behavior interchangeable. Remote names below were checked against the
 | Job status | `job_status(job_id or id)` | `job_get` |
 | Durable local recovery | `list_local_jobs`, `cancel_prepared_job` | Local only; no remote polling or cancellation |
 | Saved job actions | `recover_local_job(context_id, request_id, expected_revision, action)` | Scoped job refresh/cancellation, asset retrieval, or local receipt recovery; never a new generation |
+| Review saved Image import | `prepare_result_application(context_id, request_id, expected_revision)` | Local destination capture; show the returned scene and images for approval |
+| Apply approved saved images | `apply_result_application(context_id, application_id)` | Local verified import into the captured destination; no platform call |
 | Wait | `wait_for_job(job_id or id, timeout)`, one job without blocking Blender | `jobs_wait` |
 | Reference upload | `capture_reference(source)`, captures the scene first | `upload_asset`, `upload_asset_complete` for an existing file |
 | History | `list_generations(limit)` | `jobs_list` |

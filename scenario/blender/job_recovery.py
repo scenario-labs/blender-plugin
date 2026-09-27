@@ -14,6 +14,7 @@ LABELS = {
     "cancel": "Cancel generation",
     "recover_download": "Check interrupted download",
     "retry_receipt": "Save import receipt",
+    "import_images": "Import saved images",
 }
 
 
@@ -39,7 +40,9 @@ class SCENARIO_OT_recover_job(bpy.types.Operator):
     context_id: StringProperty(options={"HIDDEN"})
     request_id: StringProperty(options={"HIDDEN"})
     expected_revision: IntProperty(min=0, options={"HIDDEN"})
-    action: EnumProperty(items=[(key, label, label) for key, label in LABELS.items()])
+    action: EnumProperty(
+        items=[(key, label, label) for key, label in LABELS.items() if key != "import_images"]
+    )
 
     def invoke(self, context, event):
         if self.action == "cancel":
@@ -61,20 +64,72 @@ class SCENARIO_OT_recover_job(bpy.types.Operator):
         return {"FINISHED"}
 
 
+class SCENARIO_OT_import_saved_images(bpy.types.Operator):
+    bl_idname = "scenario.import_saved_images"
+    bl_label = "Import saved images"
+    bl_description = (
+        "Review and import verified saved images into this file without generating again"
+    )
+
+    context_id: StringProperty(options={"HIDDEN"})
+    request_id: StringProperty(options={"HIDDEN"})
+    expected_revision: IntProperty(min=0, options={"HIDDEN"})
+    application_id: StringProperty(options={"HIDDEN", "SKIP_SAVE"})
+    scene_name: StringProperty(options={"HIDDEN", "SKIP_SAVE"})
+
+    def invoke(self, context, event):
+        try:
+            jobs, approval = runtime.prepare_image_application(
+                self.context_id, self.request_id, self.expected_revision, context.scene
+            )
+            self._jobs = jobs
+            self.application_id = approval.identifier
+            self.scene_name = approval.scene_name
+        except Exception:
+            self.report({"ERROR"}, "Could not prepare the image import; inspect saved jobs again")
+            return {"CANCELLED"}
+        return context.window_manager.invoke_props_dialog(self, width=440)
+
+    def draw(self, context):
+        self.layout.label(text=f"Scene: {self.scene_name}", icon="SCENE_DATA")
+        self.layout.label(text="Import and pack these saved images into the current file.")
+        self.layout.label(text="Choose an image in the Image Editor after importing.")
+
+    def cancel(self, context):
+        jobs = getattr(self, "_jobs", None)
+        if jobs is not None:
+            jobs.discard_image_application(self.application_id)
+
+    def execute(self, context):
+        try:
+            runtime.apply_saved_images(self.context_id, self.application_id)
+        except Exception:
+            self.report(
+                {"ERROR"}, "Import was not started; review the saved images and destination again"
+            )
+            return {"CANCELLED"}
+        runtime.set_message("Verifying saved images for the approved destination")
+        return {"FINISHED"}
+
+
 def draw_controls(layout, record):
     if not record.meta.get("shared_job"):
         return
     for action in record.meta.get("recovery_actions", ()):
-        operator = layout.operator("scenario.recover_job", text=LABELS[action])
+        operator = layout.operator(
+            "scenario.import_saved_images" if action == "import_images" else "scenario.recover_job",
+            text=LABELS[action],
+        )
         operator.context_id = runtime.state.job_context_id
         operator.request_id = record.local_id
         operator.expected_revision = record.meta["saved_revision"]
-        operator.action = action
+        if action != "import_images":
+            operator.action = action
     if record.meta.get("saved_state") in ("ready", "apply_failed"):
         layout.label(text="Downloaded result awaits application review", icon="INFO")
 
 
-CLASSES = (SCENARIO_OT_inspect_saved_jobs, SCENARIO_OT_recover_job)
+CLASSES = (SCENARIO_OT_inspect_saved_jobs, SCENARIO_OT_recover_job, SCENARIO_OT_import_saved_images)
 
 
 def register():

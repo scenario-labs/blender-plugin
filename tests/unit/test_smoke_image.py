@@ -111,7 +111,7 @@ def run(tmp_path):
                     }
                 },
             )
-        pytest.fail("Unexpected SDK request")
+        raise AssertionError("Unexpected SDK request")
 
     def args(command, **overrides):
         values = [command, "--run-dir", str(root)]

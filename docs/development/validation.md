@@ -194,6 +194,47 @@ Reports, synthetic ZIPs and native logs stay under `.blender-profile/update-*`
 (or `--artifacts`). The Linux and Windows baseline matrix runs this separate
 fixture on Blender 5.0, 5.1 and 5.2 and preserves its evidence even on failure.
 
+### Scenario package state across updates
+
+The same runner accepts two exact adopted Scenario ZIPs to exercise the real
+extension, including its dependencies, through native installation and upgrade:
+
+```sh
+uv run --locked --no-env-file python tools/test_repository_update.py \
+  --blender /path/to/blender --expected-version 5.0.1 \
+  --previous-zip artifacts/scenario-PREVIOUS.zip \
+  --candidate-zip artifacts/scenario-CANDIDATE.zip
+```
+
+Both options are required together. The candidate must have a newer stable
+version and the same `scenario` identity. The runner copies the selected archives
+without rebuilding or rewriting their contents, generates each repository through
+the existing validator, and verifies installed bytes before and after upgrade.
+Only the index and the two explicit archive filenames are served on loopback.
+The default invocation still runs the small synthetic CI fixture above.
+
+The package probe seeds synthetic saved preferences and credentials, six durable
+job states (prepared, uncertain, remote, download failed, ready and applied), a
+second isolated credential scope, result manifests/receipts and local result bytes,
+three upload states with verified staged bytes, and a saved blend with a reference.
+It compares these after native upgrade in the same process and after reopening
+the blend in a second, offline Blender process. Exact quote strings, application
+origins, upload markers and the installation's scope key must survive. Original
+reference bytes are checked too. The actual package's storage APIs perform reads
+and verification; no mocked add-on replaces the installed extension.
+
+The probe rejects Python socket connections while seeding/checking/upgrading.
+Blender's native updater uses its configured loopback repository; this is not an
+OS sandbox for arbitrary package code or subprocesses. Use only trusted archives.
+The run strips inherited credentials and proxies and never uses a normal profile.
+This is local artifact/state acceptance, not hosted download, provenance,
+physical GUI interaction, a paid journey or production-release authorization.
+The fixture requires the adopted shared store/reference APIs; it performs no
+prototype migration. A test-only predecessor with altered version metadata can
+exercise lifecycle behavior before two adopted releases exist, but must be named
+as synthetic evidence and cannot prove compatibility between published releases.
+Repeat with verified release artifacts for production update acceptance.
+
 - `make build`: build and validate the extension ZIP; use
   `BLENDER_BUILD_ARGS="--repo"` to also generate a local extension repository.
 - `make install`: build and install into a new isolated profile; use

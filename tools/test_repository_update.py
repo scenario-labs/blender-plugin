@@ -1,31 +1,69 @@
 # SPDX-FileCopyrightText: 2026 Scenario Inc.
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""Test Blender's native extension update against exact synthetic ZIPs on loopback."""
+"""Test native updates on loopback with synthetic fixtures or two exact Scenario ZIPs."""
 
 import argparse
 import contextlib
 import http.server
 import json
+import shutil
 import subprocess
 import sys
 import threading
 import urllib.parse
 import zipfile
+from pathlib import Path
 from types import SimpleNamespace
 
 from blender_env import (
     ROOT,
     find_blender,
+    inspect_zip,
     normal_profile_root,
     profile_snapshot,
     sha256,
     verify_installed,
 )
 from build import Session, arguments
-from repository import generate, write_json
+from repository import generate, version, write_json
 from test_blender import PROBE
 
 REPO = "update_fixture"
+
+
+def package_artifact(directory, source):
+    """Copy an exact caller-selected package; never rewrite its version or contents."""
+    if not source.is_file() or source.is_symlink():
+        raise ValueError("Package ZIP must be a regular file")
+    manifest, files = inspect_zip(source)
+    if manifest["id"] != "scenario" or "core/jobs/store.py" not in files:
+        raise ValueError("Use an adopted Scenario package with durable job storage")
+    version(manifest["version"])
+    directory.mkdir()
+    path = directory / f"scenario-{manifest['version']}.zip"
+    shutil.copyfile(source, path)
+    inventory = write_inventory(path, manifest["version"])
+    return path, inventory, manifest["version"]
+
+
+def write_inventory(path, package_version):
+    inventory = path.parent / "inventory.json"
+    write_json(
+        inventory,
+        {
+            "schema_version": 1,
+            "extension_id": "scenario",
+            "archives": [
+                {
+                    "file": path.name,
+                    "version": package_version,
+                    "size": path.stat().st_size,
+                    "sha256": sha256(path),
+                }
+            ],
+        },
+    )
+    return inventory
 
 
 def fixture(directory, version):
@@ -58,22 +96,7 @@ def fixture(directory, version):
             "LICENSE": (ROOT / "LICENSE").read_bytes(),
         }.items():
             archive.writestr(zipfile.ZipInfo(name, (2026, 1, 1, 0, 0, 0)), content)
-    inventory = directory / "inventory.json"
-    write_json(
-        inventory,
-        {
-            "schema_version": 1,
-            "extension_id": "scenario",
-            "archives": [
-                {
-                    "file": path.name,
-                    "version": version,
-                    "size": path.stat().st_size,
-                    "sha256": sha256(path),
-                }
-            ],
-        },
-    )
+    inventory = write_inventory(path, version)
     return path, inventory
 
 
@@ -88,7 +111,7 @@ class RepositoryHandler(http.server.BaseHTTPRequestHandler):
     def do_GET(self):
         # Only generated public fixture files may be served; no directory traversal/listings.
         path = urllib.parse.urlsplit(self.path).path
-        if path not in {"/index.json", "/scenario-1.0.0.zip", "/scenario-2.0.0.zip"}:
+        if path not in self.server.allowed_paths:
             self.send_error(404)
             return
         source = self.server.repository / path.removeprefix("/")
@@ -108,9 +131,12 @@ class RepositoryHandler(http.server.BaseHTTPRequestHandler):
 
 
 @contextlib.contextmanager
-def serve(repository):
+def serve(repository, archives=("scenario-1.0.0.zip", "scenario-2.0.0.zip")):
+    if any(Path(name).name != name or not name.endswith(".zip") for name in archives):
+        raise ValueError("Serve only explicit archive basenames")
     with http.server.HTTPServer(("127.0.0.1", 0), RepositoryHandler) as server:
         server.repository = repository
+        server.allowed_paths = frozenset({"/index.json", *("/" + name for name in archives)})
         server.requests = []
         thread = threading.Thread(target=server.serve_forever, kwargs={"poll_interval": 0.05})
         thread.start()
@@ -124,6 +150,10 @@ def serve(repository):
 
 
 def run(args):
+    previous, candidate = getattr(args, "previous_zip", None), getattr(args, "candidate_zip", None)
+    if bool(previous) != bool(candidate):
+        raise ValueError("Provide both --previous-zip and --candidate-zip")
+    package_mode = previous is not None
     normal_profile = normal_profile_root().resolve()
     if args.artifacts.resolve().is_relative_to(normal_profile):
         raise ValueError("Artifacts must be outside the normal Blender profile")
@@ -135,7 +165,11 @@ def run(args):
     }
     session.env["NO_PROXY"] = "127.0.0.1,localhost"
     session.env["no_proxy"] = "127.0.0.1,localhost"
-    report = {"status": "failed", "fixture": "synthetic", "repository": REPO}
+    report = {
+        "status": "failed",
+        "fixture": "scenario-package" if package_mode else "synthetic",
+        "repository": REPO,
+    }
     server = None
     write_json(session.directory / "repository-update.json", {"profile": str(session.profile)})
     try:
@@ -161,8 +195,19 @@ def run(args):
         ):
             raise ValueError("Blender binary does not match --expected-version")
         report.update(environment)
-        first, first_inventory = fixture(session.directory / "first", "1.0.0")
-        second, second_inventory = fixture(session.directory / "second", "2.0.0")
+        before_version, after_version = "1.0.0", "2.0.0"
+        if package_mode:
+            first, first_inventory, before_version = package_artifact(
+                session.directory / "first", previous
+            )
+            second, second_inventory, after_version = package_artifact(
+                session.directory / "second", candidate
+            )
+            if version(after_version) <= version(before_version):
+                raise ValueError("Candidate version must be newer than the previous package")
+        else:
+            first, first_inventory = fixture(session.directory / "first", before_version)
+            second, second_inventory = fixture(session.directory / "second", after_version)
 
         def native_repository(label, inventory):
             commands = SimpleNamespace(
@@ -173,7 +218,7 @@ def run(args):
         first_repo = native_repository("first", first_inventory)
         second_repo = native_repository("second", second_inventory)
         installed = session.profile / "extensions" / REPO / "scenario"
-        with serve(first_repo) as (server, url):
+        with serve(first_repo, (first.name, second.name)) as (server, url):
             # All saved repository changes belong to this invocation's disposable profile.
             session.step(
                 "configure",
@@ -205,6 +250,8 @@ def run(args):
             verify_installed(first, installed)
             server.repository = second_repo
             evidence = session.directory / "update.json"
+            probe_script = "package_update.py" if package_mode else "repository_update.py"
+            extra = ["--before", before_version, "--after", after_version] if package_mode else []
             session.step(
                 "update",
                 [
@@ -213,23 +260,49 @@ def run(args):
                     "--python-exit-code",
                     "1",
                     "--python",
-                    str(ROOT / "tests/blender/repository_update.py"),
+                    str(ROOT / "tests/blender" / probe_script),
                     "--",
                     "--url",
                     url,
                     "--report",
                     str(evidence),
+                    *extra,
                 ],
             )
             report["update"] = json.loads(evidence.read_text())
-            if report["update"] != {"before": "1.0.0", "after": "2.0.0", "enabled": True}:
+            expected = {"before": before_version, "after": after_version, "enabled": True}
+            if package_mode:
+                expected.update(state_preserved=True, scene_preserved=True, service_requests=0)
+            if report["update"] != expected:
                 raise ValueError("Missing native update and enabled-state evidence")
             verify_installed(second, installed)
-            if not {"/index.json", "/scenario-1.0.0.zip", "/scenario-2.0.0.zip"}.issubset(
-                server.requests
-            ):
+            if not {"/index.json", "/" + first.name, "/" + second.name}.issubset(server.requests):
                 raise ValueError("Native updater did not fetch both exact fixture archives")
             report["requests"] = server.requests
+            if package_mode:
+                restart = session.directory / "restart.json"
+                session.step(
+                    "restart",
+                    [
+                        "--offline-mode",
+                        "--background",
+                        "--python-exit-code",
+                        "1",
+                        "--python",
+                        str(ROOT / "tests/blender" / probe_script),
+                        "--",
+                        "--url",
+                        url,
+                        "--report",
+                        str(restart),
+                        *extra,
+                        "--restart",
+                    ],
+                )
+                report["restart"] = json.loads(restart.read_text())
+                if report["restart"] != expected:
+                    raise ValueError("Package state did not survive an offline Blender restart")
+                verify_installed(second, installed)
         report["server_stopped"] = True
         if profile_snapshot(normal_profile) != before:
             raise ValueError("Normal Blender profile changed during the run")
@@ -239,7 +312,8 @@ def run(args):
         report["profile_removed"] = not session.profile.exists() and not session.temporary.exists()
         report["status"] = "passed"
         print(
-            "PASS: native install/update preserved enabled state and exact archive bytes",
+            "PASS: native install/update preserved enabled state and exact archive bytes"
+            + ("; Scenario state and scene survived update and restart" if package_mode else ""),
             flush=True,
         )
         return 0
@@ -265,6 +339,8 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     arguments(parser)
     parser.add_argument("--expected-version", help="Require this exact Blender version (CI)")
+    parser.add_argument("--previous-zip", type=Path, help="Exact previously adopted Scenario ZIP")
+    parser.add_argument("--candidate-zip", type=Path, help="Exact newer Scenario ZIP to accept")
     args = parser.parse_args()
     if args.timeout <= 0:
         parser.error("--timeout must be positive")

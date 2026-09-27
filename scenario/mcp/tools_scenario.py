@@ -208,10 +208,21 @@ def _job_ref(args):
     return ref
 
 
+def _local_registry():
+    manager = runtime.state.manager
+    return (
+        manager.registry
+        if manager is not None
+        else runtime.JobRegistry(runtime.paths().registry_file).load()
+    )
+
+
 def _find(local_or_job_id):
-    manager = runtime.ensure_manager()
-    for rec in manager.registry.all():
+    for rec in _local_registry().all():
         if rec.local_id == local_or_job_id or rec.job_id == local_or_job_id:
+            if runtime.state.manager is None and not rec.is_terminal:
+                # Active prototype waits still need the manager-owned mutable record.
+                return runtime.ensure_manager().registry.by_local_id(rec.local_id)
             return rec
     raise ValueError(f"Unknown job {local_or_job_id}")
 
@@ -230,10 +241,8 @@ def _status(rec):
 
 
 def _saved_status(reference):
-    manager = runtime.state.manager
-    if manager is not None and any(
-        reference in (record.local_id, record.job_id) for record in manager.registry.all()
-    ):
+    # Cold local imports must not require credentials or resume a job engine.
+    if any(reference in (record.local_id, record.job_id) for record in _local_registry().all()):
         return None
     return runtime.ensure_model_jobs().status(reference)
 

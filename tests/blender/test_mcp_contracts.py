@@ -55,6 +55,70 @@ class McpContractTests(unittest.TestCase):
                 dispatch.assert_called_with(("job_done", rec))
             self.assertEqual(dispatch.call_count, 2)
 
+    def test_cold_local_result_needs_no_credentials_or_shared_session(self):
+        runtime = submodule("blender.runtime")
+        records = submodule("core.jobs.records")
+        handlers = submodule("blender.handlers")
+        with isolated_manager() as manager, patch.object(handlers, "dispatch") as dispatch:
+            rec = records.JobRecord.new(lane="image", kind="image", model_id="fixture", body={})
+            rec.job_id, rec.status, rec.files = "job_fixture", "success", ["fixture.png"]
+            manager.registry.add(rec)
+            pending = records.JobRecord.new(lane="image", kind="image", model_id="fixture", body={})
+            pending.job_id, pending.status = "job_pending", "running"
+            manager.registry.add(pending)
+            manager.registry.save()
+            registry_path = runtime.paths().registry_file
+            saved_registry = registry_path.read_bytes()
+            with (
+                patch.object(runtime, "online", return_value=True),
+                patch.object(
+                    runtime, "make_client", side_effect=AssertionError("Credentials used")
+                ),
+                patch.object(
+                    runtime, "ensure_model_jobs", side_effect=AssertionError("Shared session used")
+                ),
+            ):
+                for reference in (rec.local_id, rec.job_id):
+                    for method in (
+                        self.tools.job_status,
+                        self.tools.wait_for_job,
+                        self.tools.import_result,
+                    ):
+                        with self.subTest(reference=reference, method=method.__name__):
+                            runtime.state.manager = None
+                            try:
+                                result = method({"job_id": reference, "timeout": 1})
+                                self.assertIsInstance(result, dict)
+                                self.assertIsNone(runtime.state.manager)
+                                self.assertEqual(registry_path.read_bytes(), saved_registry)
+                            finally:
+                                if runtime.state.manager is not None:
+                                    runtime.state.manager.shutdown()
+                                    runtime.state.manager.join(timeout=5)
+                                runtime.state.manager = manager
+            self.assertEqual(dispatch.call_count, 2)
+            self.assertEqual(dispatch.call_args.args[0][1].files, rec.files)
+
+    def test_cold_active_lookup_keeps_the_manager_owned_record(self):
+        runtime = submodule("blender.runtime")
+        records = submodule("core.jobs.records")
+        with isolated_manager() as manager, patch.object(runtime, "online", return_value=False):
+            rec = records.JobRecord.new(lane="image", kind="image", model_id="fixture", body={})
+            rec.job_id, rec.status = "job_pending", "running"
+            manager.registry.add(rec)
+            manager.registry.save()
+            runtime.state.manager = None
+            try:
+                found = self.tools._find(rec.job_id)
+                self.assertIs(found, runtime.state.manager.registry.by_local_id(rec.local_id))
+                found.status = "success"
+                self.assertEqual(self.tools.wait_for_job({"id": rec.local_id})["status"], "success")
+            finally:
+                if runtime.state.manager is not None:
+                    runtime.state.manager.shutdown()
+                    runtime.state.manager.join(timeout=5)
+                runtime.state.manager = manager
+
     def test_missing_or_nonstring_reference_fails_before_runtime_access(self):
         runtime = submodule("blender.runtime")
         with patch.object(runtime, "ensure_manager") as manager:

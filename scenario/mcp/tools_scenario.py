@@ -204,7 +204,7 @@ def generate(args):
             "status": rec.status,
             "lane": lane,
             "model_id": record.id,
-            "note": "Submission is saved. Inspect job_status or list_local_jobs; never repeat an uncertain request. Remote refresh and result delivery are not yet connected for this lane.",
+            "note": "Submission is saved. Poll job_status for remote progress and verified image delivery. Paused or restarted jobs require explicit recovery; never repeat an uncertain request.",
         }
     manager = runtime.ensure_manager()
     rec = manager.submit(lane, KIND[lane], record.id, body, meta=meta)
@@ -490,7 +490,7 @@ SPECS = (
             "  - parameters: optional object, model parameters; file inputs take Scenario asset ids.\n"
             "  - quote_id: required for image, from estimate_cost with the same model, inputs and scene.\n"
             "  - approved_cost: required for image, the exact cu_cost_exact string explicitly approved by the user.\n"
-            "Returns: local_id, status, lane, model_id and note. Image job_status reads saved submission state; remote refresh and result delivery are not yet connected. Other lanes retain prototype result handling.\n"
+            "Returns: local_id, status, lane, model_id and note. Active Image jobs poll and download through the shared session, then import verified PNG/EXR images only into the unchanged origin. Other lanes retain prototype result handling.\n"
             'Example: {"lane": "image", "model_id": "model_example", "parameters": {"prompt": "a wooden crate"}, "quote_id": "quote_from_estimate", "approved_cost": "1.25"}.\n'
             "Do not call before estimate_cost and explicit spending approval. Do not repeat a timed-out submission. import_result is only for an intentional additional application.\n"
             "Platform equivalent: model_run."
@@ -513,7 +513,7 @@ SPECS = (
     ToolSpec(
         "job_status",
         (
-            "Read one local generation's saved status and cost without spending credits. Shared Image jobs include cu_cost_exact and revision; this does not refresh the remote job.\n"
+            "Read one local generation's status and cost without spending credits. Active Image jobs advance through shared remote polling and verified delivery; restarted jobs remain inspection-only.\n"
             "Args:\n"
             "  - job_id: optional string, a Scenario job id or the local_id returned by generate.\n"
             "  - id: optional string, compatibility alias; provide job_id or id. job_id takes precedence if both are supplied.\n"
@@ -529,7 +529,7 @@ SPECS = (
     ToolSpec(
         "wait_for_job",
         (
-            "Wait for a prototype generation while Blender remains responsive. Shared Image jobs return current saved submission state immediately; remote waiting is not yet connected.\n"
+            "Wait for a prototype generation while Blender remains responsive. Shared Image jobs return current saved state immediately; call job_status again while active delivery advances.\n"
             "Args:\n"
             "  - job_id: optional string, a Scenario job id or local_id returned by generate.\n"
             "  - id: optional string, compatibility alias; provide job_id or id. job_id takes precedence.\n"

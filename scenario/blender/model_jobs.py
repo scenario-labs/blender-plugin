@@ -12,6 +12,7 @@ import bpy
 from ..core.api.errors import ScenarioError
 from ..core.jobs.records import JobRecord
 from ..core.jobs.store import JobState
+from .job_session import ImageResultUncertain
 
 
 def _snapshot(body):
@@ -32,12 +33,18 @@ class ModelQuote:
 class ModelJobs:
     """Own ephemeral quotes and display projections, never another job engine."""
 
-    def __init__(self, session, store):
+    def __init__(self, session, store, *, online=lambda: True):
         self.session = session
         self.store = store
         self.quotes = {}
         self.submissions = {}
         self.views = {}
+        self._online = online
+        self._commands = {}
+        self._next_poll = {}
+        self._paused = set()
+        self._images = {}
+        self._receipts = {}
 
     def quote(self, scene, model_id, body):
         snapshot = _snapshot(body)
@@ -114,7 +121,9 @@ class ModelJobs:
         return view
 
     def poll(self):
-        """Read durable receipts on the main thread; never retry a submission."""
+        """Advance owned jobs through existing commands; never replay paid work."""
+        if not self.session.active:
+            return
         for request_id, task in tuple(self.submissions.items()):
             if task.done():
                 outcomes = self.session.drain(task=task)
@@ -122,7 +131,32 @@ class ModelJobs:
                     self.views[
                         request_id
                     ].error = "Submission did not complete; inspect the saved job before continuing"
+                    self._paused.add(request_id)
                 del self.submissions[request_id]
+        for request_id, (command, task) in tuple(self._commands.items()):
+            if not task.done():
+                continue
+            del self._commands[request_id]
+            try:
+                completions = self.session.drain(task=task)
+                if not completions:
+                    raise RuntimeError("Missing owned result completion")
+                completion = completions[0]
+                if completion.error is not None:
+                    raise completion.error
+                if command == "verify_results":
+                    result = self.session.apply_images(completion)
+                    self._images[request_id] = result.images
+                    self.views[request_id].files = [str(p) for p in completion.result.paths]
+                self._next_poll[request_id] = time.monotonic() + 2.0
+            except ImageResultUncertain as error:
+                self._receipts[request_id] = error
+                self._pause(request_id, "Image import needs receipt recovery; do not import again")
+            except Exception:
+                self._pause(
+                    request_id,
+                    "Result delivery stopped; review the saved job before retrying",
+                )
         for request_id, view in self.views.items():
             record = self.store.get(request_id)
             if record is None:
@@ -130,11 +164,44 @@ class ModelJobs:
                     0, "The saved job is unavailable; preserve storage for recovery"
                 )
             view.job_id = record.remote_job_id
-            view.status = record.state.value
+            view.status = {
+                JobState.REMOTE: "in-progress",
+                JobState.APPLIED: "success",
+            }.get(record.state, record.state.value)
+            view.asset_ids = [item.asset.asset_id for item in record.results]
+            view.asset_types = {
+                item.asset.asset_id: item.asset.media_type for item in record.results
+            }
             if record.state in (JobState.SUBMITTING, JobState.UNCERTAIN):
                 view.error = "Submission outcome is not confirmed; do not submit it again"
-            elif record.state == JobState.REMOTE:
+            elif request_id not in self._paused:
                 view.error = None
+            if (
+                request_id in self._paused
+                or request_id in self.submissions
+                or request_id in self._commands
+            ):
+                continue
+            command = None
+            if record.state in (JobState.REMOTE, JobState.CANCEL_REQUESTED):
+                if self._online() and time.monotonic() >= self._next_poll.get(request_id, 0):
+                    command = "refresh_remote"
+            elif record.state == JobState.SUCCEEDED and self._online():
+                command = "download_results"
+            elif record.state == JobState.READY:
+                command = "verify_results"
+            if command:
+                try:
+                    task = getattr(self.session, command)(
+                        request_id, expected_revision=record.revision
+                    )
+                    self._commands[request_id] = (command, task)
+                except Exception:
+                    self._pause(request_id, "Result delivery could not start; inspect saved jobs")
+
+    def _pause(self, request_id, message):
+        self._paused.add(request_id)
+        self.views[request_id].error = message
 
     def status(self, reference):
         self.poll()
@@ -156,6 +223,15 @@ class ModelJobs:
             "kind": self.views[record.intent.request_id].kind
             if record.intent.request_id in self.views
             else "model",
-            "files": [],
-            "note": "Saved submission state; remote refresh and result delivery are separate actions",
+            "files": list(self.views[record.intent.request_id].files)
+            if record.intent.request_id in self.views
+            else [],
+            "delivery_paused": record.intent.request_id in self._paused,
+            "images": [
+                image.name
+                for image in self._images.get(record.intent.request_id, ())
+                if image in tuple(bpy.data.images)
+            ],
+            "note": "Saved job state; active jobs advance without repeating generation. "
+            "Restarted or paused jobs require explicit recovery.",
         }

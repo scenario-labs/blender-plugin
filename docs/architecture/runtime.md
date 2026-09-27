@@ -104,7 +104,7 @@ File loading retires the selected owner and invalidates its context token; the
 next recovery call creates a fresh session against the same scoped store.
 GUI ticks and the headless MCP loop reap retired sessions after work finishes.
 The Image entry point now uses this session for quote-bound submission, as described below.
-Remote recovery controls and production transfers remain open.
+Remote recovery controls remain open; active Image transfers use the policy below.
 
 ## Active SDK cost previews and Image submission
 
@@ -128,17 +128,27 @@ it never silently obtains another approval. Retained MCP/UI approvals are not ev
 to admit new quotes. At capacity, new estimates are rejected until a consumed handle
 can be reclaimed; repricing a UI form explicitly releases its previous approval.
 
-GUI and headless main-thread context maintenance drains completed submissions
-and projects their saved state into the existing Jobs view. This projection is
+GUI and headless main-thread context maintenance drains completed submissions,
+polls their known remote IDs at two-second intervals and downloads successful
+results through the coordinator. Saved state is projected into the existing Jobs view. This projection is
 not registered with the prototype manager. Closing a panel does not stop work;
 credential/file changes retire the owner while in-flight receipts stay in the
 original store. Local MCP status can inspect these records after restart.
 
 This is a pre-release integration slice. Image local-file/capture references
 must be uploaded through the forthcoming shared transfer integration before
-pricing/submission; existing Scenario asset IDs are supported. Image remote
-polling, cancellation, result downloads and scene application are not yet wired.
-Its `job_status` and `wait_for_job` return saved state, without remote refresh.
+pricing/submission; existing Scenario asset IDs are supported. Downloaded images
+are receipt-verified again on the main thread, decoded from private snapshots and
+packed as image datablocks after a durable application claim. Automatic import
+supports bounded RGB/RGBA PNG and scanline OpenEXR; other formats remain saved
+without import. It does not assign textures or replace scene targets. A stale
+origin, read/download error or uncertain application stops automatic delivery
+without another generation. The [transfer policy](../RESULT_TRANSFERS.md#active-image-delivery)
+names the documented CDN hosts. Remote cancellation and explicit restart/retry
+controls still need integration; restarted records are inspection-only.
+Its `job_status` and `wait_for_job` return the current saved state; active jobs
+advance through the same maintenance pump. `wait_for_job` still returns immediately
+for these records rather than holding a remote wait.
 Other lanes still use prototype paid dispatch. Do not describe this slice as
 complete generation, supported release acceptance, or completion of #65.
 
@@ -157,7 +167,7 @@ responsive read does not migrate prototype jobs into the durable scoped runtime.
 | Durable intent and coordination | [store.py](../../scenario/core/jobs/store.py), [coordinator.py](../../scenario/core/jobs/coordinator.py), [job guide](../JOB_COORDINATOR.md) | Replace view/prototype-owned jobs with one application runtime for UI and MCP; complete recovery UX. |
 | Worker ownership | [workers.py](../../scenario/core/jobs/workers.py) | Attach lifecycle to the application context, not a panel; integrate shutdown and delivery. |
 | Origin and stale-result protection | [job_session.py](../../scenario/blender/job_session.py), [context guide](../BLENDER_JOB_CONTEXT.md) | Bind actual entry points to the selected account, scene and targets, including explicit restart recovery. |
-| Bounded result downloads | [transfers.py](../../scenario/core/jobs/transfers.py), [transfer guide](../RESULT_TRANSFERS.md) | Coordinator/worker result commands now fetch SDK metadata, persist manifests/receipts and verify downloads. Explicit interrupted-download recovery verifies saved receipts under a cross-process lock without service calls. Production storage policy, orphan-file reconciliation and UI/application hand-off remain. |
+| Bounded result downloads | [transfers.py](../../scenario/core/jobs/transfers.py), [transfer guide](../RESULT_TRANSFERS.md) | Active Image jobs use configured CDN hosts, persisted receipts and guarded image import. Explicit interrupted-download recovery verifies saved receipts under a cross-process lock without service calls. Recovery controls, orphan-file reconciliation and other lanes remain. |
 | Durable application claims | [application commands](../JOB_COORDINATOR.md#durable-application-claims), [World command](../BLENDER_JOB_CONTEXT.md#explicit-saved-result-world-application) | Owner-issued verification tickets can claim the original result and persist an explicit application outcome. Optional JobSession World application binds one saved asset's decoded bytes and scene assignment to that claim. Explicit receipt retry can save or acknowledge a known completed assignment without repeating scene work; restart reconciliation, other result types, recovery UX and active UI/MCP wiring remain separate. |
 | Upload commands | [upload guide](../SDK_UPLOADS.md) | Private source staging, signed PUT parts and durable SDK upload commands share the coordinator/workers. Public scoped inspection and optional JobSession forwarding preserve captured origins and guarded delivery; production policy, recovery UI and active entry-point wiring remain. |
 | Strict model forms | [forms.py](../../scenario/core/schema/forms.py) | Complete trained/custom-model discovery and verified REST routing under #97. |

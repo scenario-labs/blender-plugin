@@ -20,6 +20,7 @@ from ..core.jobs.credential_storage import open_credential_store
 from ..core.jobs.manager import JobManager
 from ..core.jobs.records import JobRegistry
 from ..core.jobs.store import StoreError
+from ..core.jobs.transfers import ResultDownloader, StoragePolicy
 from .job_session import JobSession, reap_retired
 
 log = logging.getLogger("scenario")
@@ -200,7 +201,17 @@ def ensure_job_session():
     if state.job_session is None:
         adapter = catalog.create_job_adapter()
         try:
-            session = JobSession(adapter, state.job_store)
+            # Exact hosts documented by Scenario's CDN and asset-retrieval guides.
+            # Never derive this allowlist from a service response or signed URL.
+            policy = StoragePolicy(frozenset({"cdn.cloud.scenario.com", "cdn.scenario.com"}))
+            root = paths().state_dir / "shared-results"
+            root.mkdir(mode=0o700, parents=True, exist_ok=True)
+            session = JobSession(
+                adapter,
+                state.job_store,
+                result_downloader=ResultDownloader(policy, online_access=catalog.network_allowed),
+                result_root=root,
+            )
         except BaseException:
             adapter.close()
             raise
@@ -220,7 +231,7 @@ def ensure_model_jobs():
 
     session = ensure_job_session()
     if state.model_jobs is None:
-        state.model_jobs = ModelJobs(session, state.job_store)
+        state.model_jobs = ModelJobs(session, state.job_store, online=online)
     return state.model_jobs
 
 

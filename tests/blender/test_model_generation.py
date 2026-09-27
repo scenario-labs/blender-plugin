@@ -2,13 +2,15 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Active Image UI/MCP spend boundary against the bundled SDK and real storage."""
 
+import hashlib
+import io
 import json
 import tempfile
 import threading
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 import bpy
 import httpx
@@ -32,6 +34,11 @@ class ModelGenerationTests(unittest.TestCase):
             patch.object(self.runtime, "paths", return_value=SimpleNamespace(state_dir=Path(root)))
         )
         self.calls, self.paid, self.sessions = [], [], []
+        self.downloads = []
+        self.remote_status = "in-progress"
+        self.result_bytes = b""
+        self.before_images = set(bpy.data.images)
+        self.download_error = False
         self.lose_response = False
         self.entered, self.release = threading.Event(), threading.Event()
         self.release.set()
@@ -49,6 +56,30 @@ class ModelGenerationTests(unittest.TestCase):
             self.assertIsNot(threading.current_thread(), threading.main_thread())
             self.calls.append(request)
             if request.method == "GET":
+                if "/jobs/" in request.url.path:
+                    return httpx.Response(
+                        200,
+                        json={
+                            "job": {
+                                "jobId": request.url.path.rsplit("/", 1)[-1],
+                                "status": self.remote_status,
+                                "metadata": {"assetIds": ["result-image"]},
+                            }
+                        },
+                    )
+                if "/assets/" in request.url.path:
+                    return httpx.Response(
+                        200,
+                        json={
+                            "asset": {
+                                "id": "result-image",
+                                "status": "success",
+                                "mimeType": "image/png",
+                                "properties": {"size": len(self.result_bytes)},
+                                "url": "https://cdn.cloud.scenario.com/fixture.png",
+                            }
+                        },
+                    )
                 return httpx.Response(200, json={"model": self.model})
             if request.url.params.get("dryRun") == "true":
                 return httpx.Response(269, content=b'{"creativeUnitsCost":0.1234567890123456789}')
@@ -79,6 +110,27 @@ class ModelGenerationTests(unittest.TestCase):
             )
         )
         self.enterContext(patch.object(self.runtime, "JobSession", side_effect=session))
+        transfer = submodule("core.jobs.transfers")
+
+        def connect(host, **kwargs):
+            self.assertIsNot(threading.current_thread(), threading.main_thread())
+            self.assertEqual(host, "cdn.cloud.scenario.com")
+            if self.download_error:
+                raise OSError("synthetic private transfer failure")
+            response = Mock(status=200)
+            response.getheader.side_effect = lambda name, default=None: (
+                str(len(self.result_bytes)) if name == "Content-Length" else default
+            )
+            response.read1.side_effect = io.BytesIO(self.result_bytes).read1
+            connection = Mock()
+            connection.sock.fileno.return_value = 1
+            connection.getresponse.return_value = response
+            self.downloads.append(connection)
+            return connection
+
+        self.enterContext(
+            patch.object(transfer.http.client, "HTTPSConnection", side_effect=connect)
+        )
         self.addCleanup(self.cleanup_jobs)
         self.store = self.runtime.ensure_job_store()
         record = submodule("core.api.catalog").ModelRecord.from_api(self.model)
@@ -96,6 +148,96 @@ class ModelGenerationTests(unittest.TestCase):
         self.runtime.state.reset()
         for session in self.sessions:
             session.shutdown()
+        for image in set(bpy.data.images) - self.before_images:
+            bpy.data.images.remove(image)
+
+    def result_fixture(self):
+        image = bpy.data.images.new("Pipeline fixture", width=3, height=5)
+        try:
+            image.pixels[:] = [0.5, 0.25, 0.125, 1.0] * 15
+            image.file_format = "PNG"
+            path = self.runtime.paths().state_dir / "fixture.png"
+            image.filepath_raw = str(path)
+            image.save()
+            self.result_bytes = path.read_bytes()
+        finally:
+            bpy.data.images.remove(image)
+        self.remote_status = "success"
+
+    def deliver_results(self):
+        owner = self.runtime.state.model_jobs
+        self.settle()
+        for _ in range(10):
+            if not owner._commands:
+                return
+            for _, task in tuple(owner._commands.values()):
+                try:
+                    task.result(5)
+                except Exception:
+                    pass  # Assert persisted outcome and main-thread delivery below.
+            self.runtime.sync_catalog_context()
+        self.fail("Result pipeline did not settle")
+
+    def test_ui_and_mcp_deliver_verified_packed_results_without_another_submission(self):
+        self.result_fixture()
+        self.ui_quote()
+        ui = self.generation.submit_generation(bpy.context, "image")
+        self.deliver_results()
+        mcp = self.mcp_submit(self.mcp_quote())
+        self.deliver_results()
+        self.assertEqual(len(self.paid), 2)
+        self.assertEqual(len(self.downloads), 2)
+        self.assertIsNone(ui.error)
+        for reference in (ui.local_id, mcp["local_id"]):
+            status = self.tools.job_status({"job_id": reference})
+            self.assertEqual(status["status"], "applied", status)
+            self.assertFalse(status["delivery_paused"])
+            self.assertEqual(len(status["images"]), 1)
+            image = bpy.data.images[status["images"][0]]
+            self.assertEqual(tuple(image.size), (3, 5))
+            self.assertTrue(image.use_fake_user)
+            self.assertEqual(image.filepath, "")
+            self.assertEqual(
+                hashlib.sha256(image.packed_file.data).digest(),
+                hashlib.sha256(self.result_bytes).digest(),
+            )
+        for connection in self.downloads:
+            connection.request.assert_called_once_with(
+                "GET",
+                "/fixture.png",
+                headers={"Accept-Encoding": "identity", "Connection": "close"},
+            )
+
+    def test_stale_origin_downloads_but_does_not_apply_or_resubmit(self):
+        self.result_fixture()
+        result = self.mcp_submit(self.mcp_quote())
+        owner = self.runtime.state.model_jobs
+        owner.submissions[result["local_id"]].result(5)
+        owner.session.invalidate_scene(bpy.context.scene)
+        before = set(bpy.data.images)
+        self.deliver_results()
+        status = self.tools.job_status({"job_id": result["local_id"]})
+        self.assertEqual(status["status"], "ready")
+        self.assertTrue(status["delivery_paused"])
+        self.assertEqual(set(bpy.data.images), before)
+        self.assertEqual(len(self.paid), 1)
+        self.assertEqual(len(self.downloads), 1)
+
+    def test_failed_download_stops_without_automatic_retry_or_paid_replay(self):
+        self.result_fixture()
+        self.download_error = True
+        result = self.mcp_submit(self.mcp_quote())
+        self.deliver_results()
+        status = self.tools.job_status({"job_id": result["local_id"]})
+        self.assertEqual(status["status"], "download_failed")
+        self.assertTrue(status["delivery_paused"])
+        count = len(self.calls)
+        self.download_error = False
+        for _ in range(5):
+            self.runtime.sync_catalog_context()
+        self.assertEqual(len(self.calls), count)
+        self.assertEqual(len(self.paid), 1)
+        self.assertEqual(self.downloads, [])
 
     def ui_quote(self):
         self.generation.request_estimate(bpy.context.scene, "image")
@@ -158,6 +300,19 @@ class ModelGenerationTests(unittest.TestCase):
         self.settle()
         with self.assertRaisesRegex(RuntimeError, "fresh price"):
             bpy.ops.scenario.generate(lane="image")
+        self.assertEqual(len(self.paid), 1)
+
+    def test_confirmed_receipt_clears_transient_submission_warning(self):
+        self.ui_quote()
+        self.release.clear()
+        view = self.generation.submit_generation(bpy.context, "image")
+        self.assertTrue(self.entered.wait(5))
+        self.runtime.sync_catalog_context()
+        self.assertIsNotNone(view.error)
+        self.release.set()
+        self.settle()
+        self.assertIsNone(view.error)
+        self.assertEqual(view.status, "in-progress")
         self.assertEqual(len(self.paid), 1)
 
     def test_failed_intent_receipt_consumes_quote_without_dispatch(self):

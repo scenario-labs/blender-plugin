@@ -319,17 +319,20 @@ class SessionResultTests(unittest.TestCase):
         self.assertEqual(self.store.get("request").revision, ready.revision)
         self.assertEqual((len(self.calls), len(self.downloads)), before)
 
-    def world_completion(self):
-        image = bpy.data.images.new("Session panorama", width=4, height=2)
+    def world_completion(self, *, exr=False, width=4, height=2):
+        image = bpy.data.images.new(
+            "Session panorama", width=width, height=height, float_buffer=exr
+        )
         try:
-            image.pixels[:] = [0.5, 0.25, 0.125, 1.0] * 8
-            image.file_format = "PNG"
-            image.filepath_raw = str(self.root / "panorama.png")
+            image.pixels[:] = [4.0 if exr else 0.5, 0.25, 0.125, 1.0] * (width * height)
+            image.file_format = "OPEN_EXR" if exr else "PNG"
+            path = self.root / ("panorama.exr" if exr else "panorama.png")
+            image.filepath_raw = str(path)
             image.save()
-            self.body = (self.root / "panorama.png").read_bytes()
+            self.body = path.read_bytes()
         finally:
             bpy.data.images.remove(image)
-        self.media_type = "image/png"
+        self.media_type = "image/exr" if exr else "image/png"
         ready = self.ready()
         return self.command("verify_results", ready)
 
@@ -359,6 +362,92 @@ class SessionResultTests(unittest.TestCase):
         self.assertTrue(outcome.application.restore())
         self.assertEqual(self.scene.world, original)
         self.assertEqual(self.store.get("request").state, self.storage.JobState.APPLIED)
+
+    def test_images_claim_before_import_and_pack_all_variants_once(self):
+        self.asset_ids = ["asset", "second"]
+        verified, completion = self.world_completion()
+        before = set(bpy.data.images)
+        apply = self.module.apply_images
+
+        def checked(value):
+            self.assertEqual(self.store.get("request").state, self.storage.JobState.APPLYING)
+            self.assertEqual(value, verified)
+            return apply(value)
+
+        with patch.object(self.module, "apply_images", side_effect=checked):
+            outcome = self.session.apply_images(completion)
+        self.assertEqual(outcome.record.state, self.storage.JobState.APPLIED)
+        self.assertEqual(len(outcome.images), 2)
+        self.assertEqual(set(bpy.data.images) - before, set(outcome.images))
+        self.assertTrue(all(image.packed_file is not None for image in outcome.images))
+        with self.assertRaises(self.module.OriginUnavailable):
+            self.session.apply_images(completion)
+
+    def test_image_failure_rolls_back_all_variants_and_preserves_downloads(self):
+        self.asset_ids = ["asset", "second"]
+        verified, completion = self.world_completion()
+        before = set(bpy.data.images)
+        verified.paths[1].write_bytes(b"changed")
+        with self.assertRaises(self.module.ImageApplicationError):
+            self.session.apply_images(completion)
+        self.assertEqual(self.store.get("request").state, self.storage.JobState.APPLY_FAILED)
+        self.assertEqual(set(bpy.data.images), before)
+        self.assertEqual(verified.paths[0].read_bytes(), self.body)
+
+    def test_image_import_preserves_non_panorama_exr_pixels(self):
+        _, completion = self.world_completion(exr=True, width=3, height=5)
+        outcome = self.session.apply_images(completion)
+        image = outcome.images[0]
+        self.assertEqual(tuple(image.size), (3, 5))
+        self.assertTrue(image.is_float)
+        self.assertGreater(max(image.pixels), 1.0)
+        self.assertIsNotNone(image.packed_file)
+        self.assertEqual(outcome.record.state, self.storage.JobState.APPLIED)
+
+    def test_image_receipt_failure_retries_storage_without_importing_again(self):
+        _, completion = self.world_completion()
+        transition = self.store.transition
+
+        def fail(*args, **kwargs):
+            if kwargs.get("state") == self.storage.JobState.APPLIED:
+                raise self.storage.StoreError("private persistence detail")
+            return transition(*args, **kwargs)
+
+        with patch.object(self.store, "transition", side_effect=fail):
+            with self.assertRaises(self.module.ImageResultUncertain) as caught:
+                self.session.apply_images(completion)
+        pending = caught.exception
+        self.assertEqual(len(pending.images), 1)
+        self.assertEqual(self.store.get("request").state, self.storage.JobState.APPLYING)
+        before = set(bpy.data.images)
+        with patch.object(self.store, "get", side_effect=self.storage.StoreError("private detail")):
+            with self.assertRaises(self.module.ImageResultUncertain) as caught:
+                self.session.retry_image_receipt(pending)
+        self.assertIs(caught.exception, pending)
+        self.session.deactivate()
+        with patch.object(
+            self.module, "apply_images", side_effect=AssertionError("Repeated import")
+        ):
+            outcome = self.session.retry_image_receipt(pending)
+        self.assertEqual(outcome.record.state, self.storage.JobState.APPLIED)
+        self.assertEqual(set(bpy.data.images), before)
+        with self.assertRaises(self.module.OriginUnavailable):
+            self.session.retry_image_receipt(pending)
+
+    def test_image_import_rejects_restarted_or_switched_origin(self):
+        verified, completion = self.world_completion()
+        before = set(bpy.data.images)
+        bpy.context.window.scene = self.previous
+        with self.assertRaises(self.module.OriginUnavailable):
+            self.session.apply_images(completion)
+        bpy.context.window.scene = self.scene
+        self.session.shutdown()
+        self.session = self.new_session()
+        _, completion = self.command("verify_results", verified.record)
+        with self.assertRaises(self.module.OriginUnavailable):
+            self.session.apply_images(completion)
+        self.assertEqual(set(bpy.data.images), before)
+        self.assertEqual(self.store.get("request").state, self.storage.JobState.READY)
 
     def test_world_application_selects_exactly_one_of_multiple_results(self):
         self.asset_ids = ["asset", "second"]

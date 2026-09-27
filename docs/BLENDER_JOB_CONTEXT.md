@@ -5,7 +5,8 @@ connection, scoped store, coordinator and worker pool. Extension registration
 installs file, dependency, frame, undo and redo hooks; it creates no session,
 connection or worker. This is the integration boundary for the shared runtime.
 The active runtime now creates one selected session lazily for local MCP recovery
-inspection, prepared-intent cancellation, and Image UI/MCP quote/submission.
+inspection, prepared-intent cancellation, and Image UI/MCP quote/submission and
+result delivery.
 Other generation lanes remain on the prototype path.
 
 `runtime.ensure_job_session()` binds the session to the catalog's credential-local
@@ -27,9 +28,20 @@ requests. Inspection returns exact saved costs and recovery suggestions, not new
 spending approval. Cancellation needs the current context token and observed
 record revision, and only accepts an unclaimed prepared intent. Resetting, loading a file or
 switching credentials invalidates the context token, even if another scope has
-the same request ID. Remote cancellation, uploads, downloads, result application
+the same request ID. Remote cancellation, uploads, explicit restart/result recovery
 and remaining paid entry points still need active integration. These recovery
 tools do not import prototype jobs. Image submission creates new durable intents.
+
+Active Image jobs poll and download through this session. `apply_images` requires
+an owned verification completion, resolves the original scene/revision, and claims
+`applying` before loading any image. Every byte snapshot must match its saved
+receipt and supported container before Blender decodes and packs it. Multiple
+variants are imported together; failure removes only newly created images.
+Confirmed rollback records `apply_failed`; incomplete rollback or uncertain
+receipt persistence retains `applying`. `retry_image_receipt` can acknowledge a
+known completed import without importing again, using its owner-local handle.
+These methods never rebind a restarted job by scene name. Explicit recovery UI
+and MCP actions remain pending.
 
 ## Origin and quote lifetime
 
@@ -111,8 +123,8 @@ allowing the remaining extension registry cleanup to proceed. Control exceptions
 continue to propagate; a session with live workers retains its ownership.
 
 The selected API-key context and worker-safe online snapshot are bound by the
-active runtime as described above. Remaining lane activation, remote progress
-and result application remain separate work. The account scope is a local pseudonym,
+active runtime as described above. Remaining lane activation and explicit recovered
+result application remain separate work. The account scope is a local pseudonym,
 not a guessed server account ID.
 
 ## Recovery inspection and cancellation
@@ -315,5 +327,6 @@ at dispatch. No handle is reconstructed from a saved fingerprint after restart.
 completions intact. Context maintenance drives Image quote/receipt delivery in
 both the GUI and actual CLI loop. Image status after restart is read from the
 credential-scoped store, without automatically polling or resubmitting remotely.
-Image result transfer/application and local reference upload remain unwired;
-this slice must not be advertised as complete end-to-end generation.
+Active jobs poll, download and import supported image results through this owner.
+Explicit restart/retry controls and local reference upload remain unwired;
+this slice must not be advertised as complete release acceptance.

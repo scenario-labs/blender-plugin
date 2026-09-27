@@ -1,0 +1,289 @@
+# SPDX-FileCopyrightText: 2026 Scenario Inc.
+# SPDX-License-Identifier: GPL-3.0-or-later
+"""Explicit Image acceptance through shared SDK jobs; see tests/smoke/README.md."""
+
+import argparse
+import hashlib
+import json
+import os
+import re
+import tempfile
+import time
+import uuid
+from dataclasses import asdict
+from decimal import Decimal
+from pathlib import Path
+
+from scenario.core.api.sdk_adapter import Credentials, SDKAdapter
+from scenario.core.jobs.coordinator import JobCoordinator
+from scenario.core.jobs.credential_storage import open_credential_store
+from scenario.core.jobs.store import JobOrigin, JobState
+from scenario.core.jobs.transfers import ResultDownloader, StoragePolicy
+from tools.dev_config import live_settings
+
+
+class SmokeError(RuntimeError):
+    """Static, public-safe failure with an explicit process outcome."""
+
+    def __init__(self, message, code=2):
+        super().__init__(message)
+        self.code = code
+
+
+def decimal_cost(value):
+    if not isinstance(value, str) or not re.fullmatch(r"[0-9]{1,64}(?:\.[0-9]{1,64})?", value):
+        raise argparse.ArgumentTypeError("Use a finite nonnegative decimal CU value")
+    return Decimal(value)
+
+
+def digest(data):
+    return hashlib.sha256(data).hexdigest()
+
+
+def read_bytes(path):
+    if path.is_symlink() or not path.is_file() or path.stat().st_size > 1024 * 1024:
+        raise SmokeError("Use a regular JSON file of at most 1 MiB")
+    return path.read_bytes()
+
+
+def json_bytes(value):
+    return json.dumps(value, sort_keys=True, indent=2, allow_nan=False).encode() + b"\n"
+
+
+def sync_directory(root):
+    # POSIX directory fsync retains newly created names across power loss. On
+    # Windows the SQLite durable claim remains the paid-dispatch authority.
+    if os.name == "posix":
+        descriptor = os.open(root, os.O_RDONLY)
+        try:
+            os.fsync(descriptor)
+        finally:
+            os.close(descriptor)
+
+
+def create_file(path, data):
+    descriptor = os.open(path, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
+    with os.fdopen(descriptor, "wb") as output:
+        output.write(data)
+        output.flush()
+        os.fsync(output.fileno())
+    sync_directory(path.parent)
+
+
+def report(root, store):
+    value = {"schema_version": 1, "jobs": []}
+    for record in store.records():
+        value["jobs"].append(
+            {
+                "state": record.state.value,
+                "quote_cost": record.intent.quote_cost,
+                "payload_sha256": record.intent.payload_sha256,
+                "results": [
+                    {"size": item.receipt.size, "sha256": item.receipt.sha256}
+                    for item in record.results
+                    if item.receipt is not None
+                ],
+            }
+        )
+    descriptor, temporary = tempfile.mkstemp(prefix=".report-", dir=root)
+    try:
+        with os.fdopen(descriptor, "wb") as output:
+            output.write(json_bytes(value))
+            output.flush()
+            os.fsync(output.fileno())
+        os.replace(temporary, root / "report.json")
+    finally:
+        if os.path.exists(temporary):
+            os.unlink(temporary)
+
+
+def follow(coordinator, store, *, timeout, clock=time.monotonic, sleep=time.sleep):
+    """Follow one saved request; never estimate, prepare, submit or apply."""
+    records = store.records()
+    if len(records) != 1:
+        raise SmokeError("Expected one saved request; inspect this run without submitting", 4)
+    record = records[0]
+    deadline = clock() + timeout
+    while True:
+        print(f"Saved job state: {record.state.value}")
+        if record.state in {JobState.REMOTE, JobState.CANCEL_REQUESTED}:
+            if clock() >= deadline:
+                raise SmokeError("Polling deadline reached; resume this run without submitting", 4)
+            record = coordinator.refresh_remote(
+                record.intent.request_id, expected_revision=record.revision
+            ).record
+            if record.state in {JobState.REMOTE, JobState.CANCEL_REQUESTED}:
+                sleep(min(2, max(0, deadline - clock())))
+        elif record.state == JobState.DOWNLOADING:
+            record = coordinator.recover_downloads(
+                record.intent.request_id, expected_revision=record.revision
+            )
+        elif record.state in {JobState.SUCCEEDED, JobState.DOWNLOAD_FAILED}:
+            record = coordinator.download_results(
+                record.intent.request_id, expected_revision=record.revision
+            )
+        elif record.state == JobState.READY:
+            verified = coordinator.verify_results(
+                record.intent.request_id, expected_revision=record.revision
+            )
+            if not verified.paths or any(
+                not item.asset.media_type.startswith("image/") for item in record.results
+            ):
+                raise SmokeError("Downloaded results are not an Image result set", 1)
+            print(f"Verified {len(verified.paths)} image result file(s); no Blender application")
+            return 0
+        elif record.state in {JobState.FAILED, JobState.CANCELED}:
+            raise SmokeError("Saved remote job ended without successful image results", 1)
+        else:
+            raise SmokeError("Saved request needs review; generation will not be replayed", 4)
+
+
+def execute(args, settings, *, transport=None, downloader=None):
+    """Use a private run directory; injected transports are for offline tests only."""
+    root = args.run_dir.absolute()
+    if root != root.resolve() or (root.exists() and not root.is_dir()):
+        raise SmokeError("Use a private run directory without symlink components")
+    if args.command == "quote":
+        parameters = json.loads(read_bytes(args.parameters))
+        if not isinstance(parameters, dict):
+            raise SmokeError("Parameters must be one JSON object")
+        json_bytes(parameters)
+        # Never overwrite another quote, job, uncertain attempt or scope key.
+        root.mkdir(mode=0o700)
+        sync_directory(root.parent)
+    else:
+        if not root.is_dir():
+            raise SmokeError("Keep the original run directory for submission and recovery")
+        if not (root / "jobs.sqlite3").is_file() or not (root / "scope.key").is_file():
+            raise SmokeError("Run storage is incomplete; preserve it for review", 4)
+        raw = read_bytes(root / "quote.json")
+        plan = json.loads(raw)
+        if plan.get("schema_version") != 1:
+            raise SmokeError("Unsupported quote record")
+        if args.command == "submit":
+            if digest(raw) != args.approved_quote:
+                raise SmokeError("Quote record changed; approve its current exact contents")
+            cost = decimal_cost(plan["cost"])
+            if cost != args.approved_cost:
+                raise SmokeError("The approved cost differs from the saved quote", 3)
+            if cost > args.max_cu:
+                raise SmokeError(
+                    "The quote exceeds the approved spending cap; nothing submitted", 3
+                )
+
+    credentials = Credentials(settings.credentials.key, settings.credentials.secret)
+    store = open_credential_store(root, credentials, project_id=settings.project_id)
+    if args.command != "quote" and asdict(store.scope) != plan["scope"]:
+        raise SmokeError("Credentials or project changed; use the run's original scope")
+    result_root = root / "results"
+    result_root.mkdir(mode=0o700, exist_ok=True)
+    policy = StoragePolicy(frozenset({"cdn.cloud.scenario.com", "cdn.scenario.com"}))
+    adapter = SDKAdapter(
+        credentials,
+        account_id=store.scope.account_id,
+        project_id=store.scope.project_id,
+        online=lambda: True,
+        transport=transport,
+    )
+    try:
+        coordinator = JobCoordinator(
+            adapter,
+            store,
+            result_downloader=downloader or ResultDownloader(policy, online_access=lambda: True),
+            result_root=result_root,
+        )
+        if args.command == "quote":
+            origin = JobOrigin(uuid.uuid4().hex, "image-smoke", "1", "download-only")
+            quote = coordinator.quote_model(args.model, parameters, origin=origin)
+            plan = {
+                "schema_version": 1,
+                "scope": asdict(store.scope),
+                "origin": asdict(origin),
+                "model": args.model,
+                "parameters": parameters,
+                "payload_sha256": digest(quote.estimate.payload_json),
+                "cost": format(quote.estimate.cost, "f"),
+            }
+            raw = json_bytes(plan)
+            create_file(root / "quote.json", raw)
+            print(f"Exact quote: {quote.estimate.cost} CU")
+            print(f"Quote approval SHA-256: {digest(raw)}")
+            print("No generation submitted. Review the private quote file and selected test scope.")
+            return 0
+        if args.command == "submit":
+            if store.records():
+                raise SmokeError("A saved job already exists; use resume, never submit again", 4)
+            # Exclusive creation arbitrates concurrent processes before any new
+            # estimate or paid claim. Keep the marker on every failure/crash.
+            try:
+                create_file(root / "submission-attempt", b"Do not delete or repeat submission.\n")
+            except FileExistsError:
+                raise SmokeError(
+                    "Submission was already attempted; use resume or inspect", 4
+                ) from None
+            origin = JobOrigin(**plan["origin"])
+            quote = coordinator.quote_model(plan["model"], plan["parameters"], origin=origin)
+            if (
+                quote.estimate.cost != args.approved_cost
+                or quote.estimate.cost > args.max_cu
+                or digest(quote.estimate.payload_json) != plan["payload_sha256"]
+            ):
+                raise SmokeError(
+                    "Fresh quote or payload changed; nothing submitted, review again", 3
+                )
+            prepared = coordinator.prepare_quote(quote)
+            coordinator.submit(
+                prepared,
+                origin=origin,
+                operation=prepared.intent.operation,
+                target_id=prepared.intent.target_id,
+                payload=prepared.estimate.payload,
+            )
+        return follow(coordinator, store, timeout=args.timeout)
+    finally:
+        adapter.close()
+        report(root, store)
+
+
+def parser():
+    result = argparse.ArgumentParser(description=__doc__)
+    commands = result.add_subparsers(dest="command", required=True)
+    for command in ("quote", "submit", "resume"):
+        item = commands.add_parser(command)
+        item.add_argument("--run-dir", type=Path, required=True)
+        if command == "quote":
+            item.add_argument("--model", required=True)
+            item.add_argument("--parameters", type=Path, required=True)
+        else:
+            item.add_argument(
+                "--timeout", type=int, default=300, choices=range(1, 3601), metavar="SECONDS"
+            )
+        if command == "submit":
+            item.add_argument("--approved-quote", required=True, help="SHA-256 printed by quote")
+            item.add_argument("--approved-cost", type=decimal_cost, required=True)
+            item.add_argument("--max-cu", type=decimal_cost, required=True)
+    return result
+
+
+def main(argv=None):
+    args = parser().parse_args(argv)
+    if args.command == "submit" and os.environ.get("SCENARIO_SMOKE") != "1":
+        print("Set SCENARIO_SMOKE=1 on the command line only after spending authorization")
+        return 2
+    try:
+        settings = live_settings()
+        return execute(args, settings)
+    except SmokeError as error:
+        print(str(error))
+        return error.code
+    except SystemExit:
+        print("Configure the explicit test API-key pair before running this command")
+        return 2
+    except Exception:
+        # Raw exceptions may carry private paths, parameters, IDs or signed URLs.
+        print("Image check stopped; preserve the private run directory and inspect saved state")
+        return 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

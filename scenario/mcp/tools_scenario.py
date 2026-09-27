@@ -451,47 +451,26 @@ def list_reference_uploads(args):
 
 def recover_reference_upload(args):
     owner = _upload_context(args)
-    command = {
-        "refresh": "refresh_upload",
-        "cancel_prepared": "cancel_prepared_upload",
-        "cleanup": "discard_upload_source",
-    }.get(args.get("action"))
-    if command is None:
-        raise ValueError("Choose refresh, cancel_prepared or cleanup")
-    request_id, revision = args["request_id"], args["expected_revision"]
-    if type(revision) is not int or revision < 0:
-        raise ValueError("expected_revision must be a nonnegative integer")
-    result = getattr(owner.session, command)(request_id, expected_revision=revision)
+    command = owner.recover(args["request_id"], args["expected_revision"], args.get("action"))
 
     def finish(_):
-        owner.begin_recovery(request_id)
-        try:
-            # Context maintenance may drain work, but this record cannot advance
-            # automatically until the explicit recovery outcome is observed.
-            runtime.sync_catalog_context()
-            if runtime.state.reference_uploads is not owner or not owner.session.active:
-                raise ScenarioError(0, "The upload context changed during recovery")
-            if command != "cancel_prepared_upload":
-                completion = owner.session.drain(task=result)[0]
-                if completion.error is not None:
-                    raise ScenarioError(0, "Upload recovery failed; inspect its saved state")
-            record = owner.session.inspect_upload(request_id)
-            owner.observe_saved(record)
-            return {
-                "request_id": request_id,
-                "state": record.state.value,
-                "revision": record.revision,
-                "asset_id": record.asset_id,
-            }
-        finally:
-            owner.end_recovery(request_id)
+        runtime.sync_catalog_context()
+        if runtime.state.reference_uploads is not owner or not owner.session.active:
+            raise ScenarioError(0, "The upload context changed during recovery")
+        record = owner.recovery_result(command)
+        return {
+            "request_id": record.intent.request_id,
+            "state": record.state.value,
+            "revision": record.revision,
+            "asset_id": record.asset_id,
+        }
 
-    if command == "cancel_prepared_upload":
-        return finish(result)
+    if command.task is None:
+        return finish(None)
 
     def run():
         try:
-            result.result()
+            command.task.result()
         except Exception:
             # finish() checks the owned completion and reports recovery failure
             # on the main thread; this worker only waits for the task to finish.

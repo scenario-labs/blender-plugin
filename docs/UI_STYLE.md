@@ -42,6 +42,16 @@ review is needed. Do not offer automatic retry for uncertain uploads or mutate
 the reference during drawing. The maintenance pump attaches a completed asset
 only to the unchanged original scene, model and reference slot, then invalidates
 the old price. A removed/edited slot must never receive a late upload result.
+Transient timer context without the originating scene pauses attachment. Local
+validation rejected before task admission permits correcting and retrying the input;
+uncertain admitted work retains its duplicate-upload guard.
+
+**Inspect uploads** offers explicit known-status refresh, unclaimed preparation
+cancellation and finished staging cleanup; cancellation/cleanup require confirmation.
+**Use saved upload** and an image input's **Saved uploads** open the same paginated
+view. Attaching an imported image needs a separate confirmation of its scene, model,
+input and reference destination. Recheck that destination on confirmation, keep
+drawing read-only and invalidate the prior generation price after attachment.
 
 ## Generations
 

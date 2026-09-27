@@ -370,7 +370,7 @@ described above. Local MCP reference uploads now use `uploads.with_raw_response`
 adapter, followed by credential-free signed S3 PUTs. There is no new Scenario API
 fallback or dependency change. See the [active upload contract](SDK_UPLOADS.md#active-reference-uploads)
 for destination trust, source limits and recovery. Image form upload/attachment
-uses those same commands; native recovery/reattachment, authoritative account/project
+and native recovery/reattachment use those same commands. Authoritative account/project
 discovery, search/organization and workflow cancellation remain integration work.
 Submission uses the coordinator contract above; live acceptance remains separate.
 

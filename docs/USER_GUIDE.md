@@ -160,11 +160,17 @@ starts generation.
 
 Keep the scene, model and reference slot unchanged while the upload finishes.
 If they change, a late upload cannot replace the new selection. **Inspect uploads**
-shows saved progress. An uncertain upload is preserved without automatic replay;
-use the [local MCP recovery tools](MCP.md#local-server-and-mcpscenariocom)
-for explicit known-upload refresh and cleanup. Native recovery/reattachment
-controls are still in development. Uploaded references are bound to the selected
-credentials, and later edits to the original file do not change the uploaded snapshot.
+shows saved progress and lets you refresh a known upload, cancel an unsubmitted
+preparation or clean up its finished staging copy. Cleanup keeps your original file.
+An uncertain upload is preserved without sending its bytes again.
+
+To reuse an imported image after reopening a file or changing a reference, choose
+**Use saved upload** on the reference, or **Saved uploads** on its input. Choose
+**Use this image**, then confirm the displayed scene, model and reference slot.
+Changing the destination while confirmation is open requires another review.
+Attachment requests a fresh price; it does not start generation. Uploaded
+references are bound to the selected credentials, and later edits to the original
+file do not change the uploaded snapshot.
 
 This pre-release path imports supported PNG and scanline OpenEXR results as packed
 image datablocks. Select them in Blender's Image Editor. Saved-job controls can

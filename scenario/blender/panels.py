@@ -190,6 +190,9 @@ def draw_references(
         header.label(
             text=f"{label}  {count}" + (f"/{spec.max_length}" if spec.max_length else ""), icon=icon
         )
+        if lane == "image" and kind == "image":
+            op = header.operator("scenario.inspect_uploads", text="Saved uploads", icon="VIEWZOOM")
+            op.param_name = spec.name
         # the Edit lane's required mesh hides its add options; everywhere else offer the kind-appropriate sources
         # (a 3D input: Upload a model to override the selection; image/video: stills or clips) even when auto-pinned.
         if not (spec.ptype == "file" and spec.name in fixed_first and lane == "edit3d"):

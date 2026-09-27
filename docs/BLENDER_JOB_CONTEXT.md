@@ -325,7 +325,10 @@ remain unrecognized for automatic application even when status refresh succeeds.
 Callbacks do not by themselves attach a reference or commit a Blender application
 transaction. The [Image form facade](SDK_UPLOADS.md#image-form-attachment) now
 adds guarded attachment after upload, without another worker pool. Explicit
-native reattachment after context changes remains separate work. The active
+native reattachment captures a fresh destination, requires separate confirmation
+and rechecks the entire reference form before adding/replacing a slot. Recovery
+tasks are owned and drained by the facade independently of dialog or MCP response
+lifetime. The active
 runtime supplies credential-bound scope without requiring project discovery.
 
 ## Active Image submission
@@ -343,8 +346,8 @@ completions intact. Context maintenance drives Image quote/receipt delivery in
 both the GUI and actual CLI loop. Image status after restart is read from the
 credential-scoped store, without automatically polling or resubmitting remotely.
 Active jobs poll, download and import supported image results through this owner.
-Local reference upload and other result types remain unwired; this slice must
-not be advertised as complete release acceptance.
+Local image references use the shared upload path above. Other result types and
+live acceptance remain; this slice must not be advertised as complete release acceptance.
 
 ## Active saved-job controls
 

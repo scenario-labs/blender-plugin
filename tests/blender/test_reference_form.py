@@ -81,6 +81,64 @@ class ReferenceFormTests(unittest.TestCase):
         self.assertEqual(len(self.owner.session.upload_recovery_plan()), 1)
         self.fixture.fixture.uploader.upload.assert_called_once()
 
+    def test_transient_scene_selection_pauses_without_poisoning_attachment(self):
+        binding = self.start()
+        binding.ticket.task.result(5)
+        # A timer's context may omit the active window without changing the
+        # captured scene. Actual scene edits still invalidate its origin.
+        alternate = SimpleNamespace(context=SimpleNamespace(scene=None))
+        with (
+            patch.object(self.form, "bpy", alternate),
+            patch.object(self.fixture.module, "bpy", alternate),
+        ):
+            self.owner.poll()
+            self.assertFalse(binding.error)
+            self.assertIsNone(binding.ticket.error)
+            self.assertFalse(binding.attached)
+            self.assertEqual(self.ref.source, "FILE")
+            self.assertEqual(self.fixture.fixture.calls, [])
+        self.fixture.settle()
+        self.assertTrue(binding.attached, binding.error)
+        self.fixture.fixture.uploader.upload.assert_called_once()
+
+    def test_local_validation_failure_preserves_reason_and_allows_corrected_input(self):
+        for source, path, reason in (
+            ("FILE", "", "Choose an image file"),
+            ("FILE", "unsupported.blend", "supported image reference format"),
+            ("RENDER", "", "Render an image"),
+        ):
+            with self.subTest(source=source, path=path):
+                self.ref.source, self.ref.filepath = source, path
+                with self.assertRaisesRegex(submodule("core.api.errors").ScenarioError, reason):
+                    self.form.start(bpy.context, 0)
+                self.assertFalse(self.ref.get(self.form._MARKER))
+                self.assertEqual(self.owner.forms, {})
+                self.assertEqual(self.owner.references, {})
+        self.ref.source, self.ref.filepath = "FILE", str(self.fixture.fixture.source)
+        binding = self.start()
+        self.fixture.settle()
+        self.assertTrue(binding.attached)
+
+    def test_rejected_queue_admission_allows_retry_but_async_failure_stays_marked(self):
+        with patch.object(
+            self.owner.session,
+            "prepare_upload",
+            side_effect=submodule("blender.job_session").SessionBusy("Full"),
+        ):
+            with self.assertRaises(self.fixture.module.UploadNotStarted):
+                self.form.start(bpy.context, 0)
+        self.assertFalse(self.ref.get(self.form._MARKER))
+        self.assertEqual(self.owner.forms, {})
+        self.ref.filepath = str(self.fixture.fixture.root / "missing.png")
+        binding = self.start()
+        self.fixture.settle()
+        self.assertTrue(binding.ticket.error)
+        self.ref.filepath = str(self.fixture.fixture.source)
+        with self.assertRaises(submodule("core.api.errors").ScenarioError):
+            self.form.start(bpy.context, 0)
+        self.assertTrue(self.ref.get(self.form._MARKER))
+        self.assertEqual(self.fixture.fixture.calls, [])
+
     def test_uploaded_reference_reaches_exact_quote_and_single_durable_submission(self):
         original = self.fixture.fixture.handler
         quotes, paid = [], []
@@ -224,3 +282,123 @@ class ReferenceFormTests(unittest.TestCase):
         ):
             request = self.generation.build_request(self.scene, "image")
         self.assertTrue(request.captures)
+
+    def saved_upload(self):
+        binding = self.start()
+        self.fixture.settle()
+        return binding.ticket.record
+
+    def approve(self, record, *, index=0, param_name="image"):
+        return self.form.prepare_attachment(
+            bpy.context,
+            self.runtime.state.job_context_id,
+            record.intent.request_id,
+            record.revision,
+            index,
+            param_name,
+        )[1]
+
+    def test_saved_upload_attachment_requires_single_use_destination_approval(self):
+        record = self.saved_upload()
+        self.owner.session.invalidate_all()
+        self.ref.source, self.ref.asset_id = "FILE", ""
+        approval = self.approve(record)
+        self.assertEqual(self.ref.source, "FILE")
+        self.assertEqual(approval.reference_label, self.ref.label)
+        ref = self.form.apply_attachment(self.runtime.state.job_context_id, approval.identifier)
+        self.assertEqual(ref.asset_id, "reference-asset")
+        self.assertEqual(self.lane.estimate_key, "")
+        self.assertIsNone(self.form.scope_error(self.lane))
+        with self.assertRaises(submodule("core.api.errors").ScenarioError):
+            self.form.apply_attachment(self.runtime.state.job_context_id, approval.identifier)
+        self.fixture.fixture.uploader.upload.assert_called_once()
+
+    def test_changed_form_rejects_attachment_and_consumes_confirmation(self):
+        record = self.saved_upload()
+        approval = self.approve(record)
+        self.ref.asset_id = "new-selection"
+        with self.assertRaises(submodule("core.api.errors").ScenarioError):
+            self.form.apply_attachment(self.runtime.state.job_context_id, approval.identifier)
+        self.assertEqual(self.ref.asset_id, "new-selection")
+        self.assertNotIn(approval.identifier, self.owner.attachments)
+
+    def test_new_slot_and_single_file_replacement_are_explicit(self):
+        record = self.saved_upload()
+        self.lane.references.clear()
+        approval = self.approve(record, index=-1)
+        self.assertIsNone(approval.reference)
+        self.assertEqual(len(self.lane.references), 0)
+        self.form.apply_attachment(self.runtime.state.job_context_id, approval.identifier)
+        self.assertEqual(len(self.lane.references), 1)
+        approval = self.approve(record, index=-1)
+        self.assertIsNotNone(approval.reference)
+        self.form.apply_attachment(self.runtime.state.job_context_id, approval.identifier)
+        self.assertEqual(len(self.lane.references), 1)
+        self.assertEqual(self.lane.references[0].asset_id, record.asset_id)
+
+    def test_scene_or_context_change_rejects_saved_attachment(self):
+        record = self.saved_upload()
+        approval = self.approve(record)
+        self.owner.session.invalidate_scene(self.scene)
+        with self.assertRaises(self.fixture.fixture.module.OriginUnavailable):
+            self.form.apply_attachment(self.runtime.state.job_context_id, approval.identifier)
+        approval = self.approve(record)
+        self.runtime.state.job_context_id = "another-context"
+        with self.assertRaises(submodule("core.api.errors").ScenarioError):
+            self.form.apply_attachment("fixture-context", approval.identifier)
+
+    def test_native_cleanup_runs_without_dialog_and_preserves_original(self):
+        record = self.saved_upload()
+        source = self.fixture.fixture.source
+        self.assertEqual(
+            bpy.ops.scenario.recover_upload(
+                context_id=self.runtime.state.job_context_id,
+                request_id=record.intent.request_id,
+                expected_revision=record.revision,
+                action="cleanup",
+            ),
+            {"FINISHED"},
+        )
+        command = self.owner._recovering[record.intent.request_id]
+        command.task.result(5)
+        self.owner.poll()
+        self.assertTrue(command.done)
+        self.assertIsNone(command.error)
+        self.assertEqual(self.owner.saved[record.intent.request_id], record)
+        self.assertEqual(source.read_bytes(), b"data")
+
+    def test_actual_blend_reopen_preserves_scope_and_requires_fresh_attachment(self):
+        record = self.saved_upload()
+        fixture = self.fixture.fixture
+        names = self.scene.name, fixture.previous.name, fixture.target.name
+        path = fixture.root / "reference-reopen.blend"
+        bpy.ops.wm.save_as_mainfile(filepath=str(path), check_existing=False)
+        fixture.session.shutdown()
+        bpy.ops.wm.open_mainfile(filepath=str(path))
+        self.scene = fixture.scene = bpy.data.scenes[names[0]]
+        fixture.previous = bpy.data.scenes[names[1]]
+        fixture.target = bpy.data.objects[names[2]]
+        bpy.context.window.scene = self.scene
+        self.lane = self.scene.scenario.lane_state("image")
+        self.ref = self.lane.references[0]
+        replacement = fixture.new_session()
+        self.addCleanup(replacement.shutdown)
+        self.runtime.state.job_session = replacement
+        self.runtime.state.job_store = fixture.store
+        self.runtime.state.reference_uploads = None
+        self.runtime.state.job_context_id = "reopened-context"
+        model = submodule("core.api.catalog").ModelRecord.from_api(self.model)
+        self.generation.set_catalog([model], [model])
+        with patch.object(self.runtime, "ensure_job_session", return_value=replacement):
+            self.owner = self.runtime.ensure_reference_uploads()
+            self.assertIsNone(self.form.scope_error(self.lane))
+            self.ref.source = "FILE"
+            with self.assertRaises(submodule("core.api.errors").ScenarioError):
+                self.form.start(bpy.context, 0)
+            approval = self.approve(record)
+            self.assertEqual(self.ref.source, "FILE")
+            self.form.apply_attachment("reopened-context", approval.identifier)
+            self.assertEqual(self.ref.asset_id, record.asset_id)
+            self.assertIsNone(self.form.scope_error(self.lane))
+        self.assertEqual(len(self.owner.references), 0)
+        self.fixture.fixture.uploader.upload.assert_called_once()

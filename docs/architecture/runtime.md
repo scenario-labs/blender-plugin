@@ -139,7 +139,9 @@ This is a pre-release integration slice. Image local-file/capture references
 must be uploaded before pricing/submission. Local MCP now uses the
 [shared reference upload path](../SDK_UPLOADS.md#active-reference-uploads);
 the Image form exposes **Upload reference** with guarded attachment and saved
-inspection. Native upload recovery/reattachment controls remain incomplete.
+inspection. Native recovery can refresh known uploads, cancel unclaimed preparation
+and clean terminal staging copies. Reusing an imported image after restart or
+form changes requires a fresh destination confirmation and invalidates old prices.
 Existing Scenario asset IDs are supported. Downloaded images
 are receipt-verified again on the main thread, decoded from private snapshots and
 packed as image datablocks after a durable application claim. Automatic import
@@ -183,7 +185,7 @@ responsive read does not migrate prototype jobs into the durable scoped runtime.
 | Origin and stale-result protection | [job_session.py](../../scenario/blender/job_session.py), [context guide](../BLENDER_JOB_CONTEXT.md) | Bind actual entry points to the selected account, scene and targets, including explicit restart recovery. |
 | Bounded result downloads | [transfers.py](../../scenario/core/jobs/transfers.py), [transfer guide](../RESULT_TRANSFERS.md) | Active Image jobs use configured CDN hosts, persisted receipts and guarded image import. Explicit interrupted-download recovery verifies saved receipts under a cross-process lock without service calls. Recovery controls, orphan-file reconciliation and other lanes remain. |
 | Durable application claims | [application commands](../JOB_COORDINATOR.md#durable-application-claims), [World command](../BLENDER_JOB_CONTEXT.md#explicit-saved-result-world-application) | Owner-issued verification tickets can claim the original result and persist an explicit application outcome. Optional JobSession World application binds one saved asset's decoded bytes and scene assignment to that claim. Explicit receipt retry can save or acknowledge a known completed assignment without repeating scene work; restart reconciliation, other result types, recovery UX and active UI/MCP wiring remain separate. |
-| Upload commands | [upload guide](../SDK_UPLOADS.md) | Local MCP and Image form files/captures use private staging, signed S3 PUT parts and durable SDK commands on the existing workers. Guarded form attachment invalidates old prices. MCP recovery survives restart; native recovery/reattachment and live acceptance remain. |
+| Upload commands | [upload guide](../SDK_UPLOADS.md) | Local MCP and Image form files/captures use private staging, signed S3 PUT parts and durable SDK commands on the existing workers. Guarded form attachment invalidates old prices. UI/MCP recovery survives restart; saved-image attachment requires a fresh destination confirmation. Live acceptance remains. |
 | Strict model forms | [forms.py](../../scenario/core/schema/forms.py) | Complete trained/custom-model discovery and verified REST routing under #97. |
 | Mesh and World application | [mesh guide](../MESH_APPLICATION.md), [World guide](../WORLD_APPLICATION.md) | User-facing generation/history/apply flows under #99 and #98. |
 

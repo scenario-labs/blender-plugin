@@ -116,6 +116,13 @@ SDK model metadata and the exact server estimate. UI cost delivery is keyed to
 the originating scene/form. Only the currently selected scene can receive a
 usable Image quote. Other lanes retain the catalog preview path.
 
+The result action **Remove background** selects a current Image background-removal
+model and prepares one local file reference with default settings. It no longer
+submits through the prototype manager. The user explicitly uploads the reference,
+reviews the shared exact estimate and chooses Generate. Failed file/model/schema
+preflight preserves the current form; a successful preparation invalidates its
+old quote without canceling existing jobs or admitted uploads.
+
 Clicking Image **Generate** requires the unchanged ready quote. MCP Image
 `generate` requires its `quote_id` and the explicitly approved `cu_cost_exact`
 string as `approved_cost`. A displayed float is not used to reconstruct the price.

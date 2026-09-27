@@ -55,6 +55,12 @@ drawing read-only and invalidate the prior generation price after attachment.
 
 ## Generations
 
+**Remove background** prepares the Image form and never submits directly. Its
+message tells users to upload the reference, review the price and choose
+**Generate**. Validate the file and available model/schema before replacing the
+form; reset the old prompt/settings/references and invalidate the previous quote.
+Existing jobs and admitted uploads keep their own lifetime and origin guards.
+
 Each result collapses on its own; the panel header has a **Collapse all / Expand all** toggle. A failed result shows a red error control in its header whose tooltip is the whole message (with the Error ID) and which opens the full text with a Copy button on click (a `description()`-driven operator, since Blender labels have no per-instance tooltip). Never truncate an error to a single clipped line as the only way to read it. The prompt box carries a trash button that deletes its text, greyed out when empty.
 
 ## Wording

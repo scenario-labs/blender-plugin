@@ -665,7 +665,7 @@ BACKGROUND_MODELS = (
 class SCENARIO_OT_remove_background(bpy.types.Operator):
     bl_idname = "scenario.remove_background"
     bl_label = "Remove background"
-    bl_description = "Run a background removal model on this image (spends credits); the cut-out lands in Generations"
+    bl_description = "Prepare background removal in Image; upload the reference and review the price before Generate"
     filepath: StringProperty()
 
     @classmethod
@@ -674,22 +674,27 @@ class SCENARIO_OT_remove_background(bpy.types.Operator):
 
     def execute(self, context):
         from ..core.api.model_filter import categories_of
-        from ..core.schema.params import build_body
 
-        if not os.path.exists(self.filepath):
+        filepath = bpy.path.abspath(self.filepath)
+        if not os.path.isfile(filepath):
             self.report({"ERROR"}, "File not found")
             return {"CANCELLED"}
+        runtime.sync_catalog_context()
         records = runtime.state.records
-        candidates = [records[m] for m in BACKGROUND_MODELS if m in records]
+        available = {item[0] for item in runtime.enum_items(("models", "image"))}
+        candidates = [records[m] for m in BACKGROUND_MODELS if m in records and m in available]
         if not candidates:
             candidates = [
                 r
                 for r in runtime.state.lane_models.get("image", [])
-                if "remove_background" in categories_of(r)
-                or "remove-background" in (r.name.lower().replace(" ", "-"))
+                if r.id in available
+                and (
+                    "remove_background" in categories_of(r)
+                    or "remove-background" in (r.name.lower().replace(" ", "-"))
+                )
             ]
         if not candidates:
-            self.report({"ERROR"}, "No background removal model in the catalog")
+            self.report({"ERROR"}, "No background removal model in the Image catalog")
             return {"CANCELLED"}
         record = candidates[0]
         try:
@@ -700,25 +705,29 @@ class SCENARIO_OT_remove_background(bpy.types.Operator):
         schema = generation.schema_for(record.id)
         spec = _first_image_spec(schema) if schema else None
         if spec is None:
-            self.report({"ERROR"}, f"{record.name} takes no image input")
+            self.report({"ERROR"}, "The selected background removal model takes no image input")
             return {"CANCELLED"}
-        body = build_body(schema.specs, {}, {})
-        manager = runtime.ensure_manager()
-        rec = manager.submit(
-            "image",
-            "image",
-            record.id,
-            body,
-            files={spec.name: [self.filepath]},
-            array_params={spec.name} if spec.ptype == "file_array" else set(),
-            meta={
-                "prompt": f"Background removed: {os.path.basename(self.filepath)}",
-                "model_name": record.name,
-                "inputs": [self.filepath],
-            },
+        if record.id not in {item[0] for item in runtime.enum_items(("models", "image"))}:
+            self.report({"WARNING"}, "The Image catalog changed; choose the action again")
+            return {"CANCELLED"}
+
+        # This action only prepares a new form. Existing jobs/uploads keep their
+        # owners, and removed reference bindings cannot attach to the new slot.
+        scene = context.scene
+        lane_state = scene.scenario.lane_state("image")
+        props.mark_estimate_dirty(lane_state)
+        lane_state.references.clear()
+        lane_state.params.clear()
+        lane_state.prompt = ""
+        lane_state.model_id = record.id
+        lane_state.model_key = record.id
+        params_ui.sync_params(lane_state, schema, record.id)
+        _add_file_reference(context, "image", filepath, spec.name)
+        scene.scenario.lane = "image"
+        self.report(
+            {"INFO"},
+            "Background removal prepared: upload the reference, review the price, then Generate",
         )
-        runtime.state.jobs_view.insert(0, rec)
-        self.report({"INFO"}, f"Removing the background with {record.name}")
         return {"FINISHED"}
 
 

@@ -6,6 +6,7 @@ import argparse
 import hashlib
 import importlib
 import json
+import os
 import socket
 import sys
 from contextlib import contextmanager, nullcontext
@@ -26,6 +27,15 @@ def module(name):
 
 def digest(data):
     return hashlib.sha256(data).hexdigest()
+
+
+def windows_namespace(path):
+    """Keep the probe's recursive inventory usable beyond legacy FindFirstFile limits."""
+    if path.startswith("\\\\?\\"):
+        return path
+    if path.startswith("\\\\"):
+        return "\\\\?\\UNC\\" + path[2:]
+    return "\\\\?\\" + path
 
 
 @contextmanager
@@ -211,9 +221,15 @@ def snapshot(profile):
                 )
     for upload in uploads.records():
         sources.verify(upload.intent)
+    inventory_root = paths.state_dir.resolve()
+    if os.name == "nt":
+        # Blender 5.0/Python 3.11 can read verified result bytes yet fail to
+        # enumerate their long directory via rglob. Use Win32's extended path
+        # namespace for this test inventory; do not skip any stored file.
+        inventory_root = Path(windows_namespace(str(inventory_root)))
     files = {
-        str(path.relative_to(paths.state_dir)): digest(path.read_bytes())
-        for path in paths.state_dir.rglob("*")
+        str(path.relative_to(inventory_root)): digest(path.read_bytes())
+        for path in inventory_root.rglob("*")
         if path.is_file()
         and path.suffix not in {".sqlite3"}
         and not path.name.endswith(("-wal", "-shm", ".lock"))

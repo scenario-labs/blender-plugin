@@ -325,3 +325,12 @@ def test_test_predecessor_rejects_ambiguous_or_absent_selection(runner, tmp_path
     archive, _ = runner.fixture(tmp_path / "old", "1.2.3")
     with pytest.raises(ValueError, match="matching version declaration"):
         runner.fixture_predecessor(tmp_path / "before", archive)
+
+
+def test_probe_inventory_uses_extended_windows_drive_and_unc_paths(monkeypatch):
+    monkeypatch.syspath_prepend(str(ROOT / "tests/blender"))
+    probe = importlib.import_module("package_update")
+    assert probe.windows_namespace("C:\\profile\\state") == "\\\\?\\C:\\profile\\state"
+    assert probe.windows_namespace("\\\\server\\share\\state") == "\\\\?\\UNC\\server\\share\\state"
+    extended = "\\\\?\\C:\\profile\\state"
+    assert probe.windows_namespace(extended) == extended

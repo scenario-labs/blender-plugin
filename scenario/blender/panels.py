@@ -248,6 +248,10 @@ def draw_clip_options(layout, context, lane_state, schema):
 
 
 def generate_button_text(lane_state):
+    if not runtime.online():
+        return "Offline"
+    if not runtime.credentials().valid:
+        return "Set up credentials"
     if lane_state.estimate_state == "READY":
         prefix = "from " if lane_state.estimate_partial else ""
         return f"Generate  ({prefix}{lane_state.estimate_cu:g} CU)"
@@ -256,10 +260,33 @@ def generate_button_text(lane_state):
     return "Generate"
 
 
+def generate_enabled(lane_state, lane):
+    """Presentation guard; submission still validates the exact quote and origin."""
+    if not runtime.online() or not runtime.credentials().valid or not lane_state.model_id:
+        return False
+    return lane != "image" or (
+        lane_state.estimate_state == "READY" and lane_state.estimate_key in runtime.state.estimates
+    )
+
+
+def model_button_text(lane_state):
+    record = runtime.state.records.get(lane_state.model_id)
+    if record is not None:
+        return record.name
+    if not runtime.online():
+        return "Online access disabled"
+    if not runtime.credentials().valid:
+        return "Set up credentials"
+    if runtime.state.catalog_error:
+        return "Could not load models"
+    return "Loading models..." if runtime.state.catalog_loading else "Pick a model"
+
+
 def draw_generate_row(layout, lane_state, lane):
     layout.separator(factor=0.5)  # breathing room above the primary action
     row = layout.row(align=True)
     row.scale_y = 1.5
+    row.enabled = generate_enabled(lane_state, lane)
     row.operator(
         "scenario.generate", text=generate_button_text(lane_state), icon="PLAY"
     ).lane = lane

@@ -105,6 +105,41 @@ class SDKEstimateTests(unittest.TestCase):
         self.assertFalse(response["result"].get("isError"), response)
         return json.loads(response["result"]["content"][0]["text"])
 
+    def test_offline_edits_keep_their_estimate_until_online_access_returns(self):
+        pump = submodule("blender.pump")
+        panels = submodule("blender.panels")
+        self.lane.estimate_dirty_at = 1.0
+        self.assertEqual(self.lane.estimate_state, "PENDING")
+        with patch.object(submodule("blender.props"), "clock", return_value=10.0):
+            with online_access(False):
+                pump._process()
+                pump._process()
+                self.assertEqual(self.lane.estimate_dirty_at, 1.0)
+                self.assertEqual(panels.generate_button_text(self.lane), "Offline")
+                self.assertFalse(panels.generate_enabled(self.lane, "image"))
+                self.assertFalse(self.calls)
+            pump._process()
+        self.deliver()
+        self.assertEqual(self.lane.estimate_state, "READY", self.lane.estimate_error)
+        self.assertTrue(panels.generate_enabled(self.lane, "image"))
+        pump._process()
+        self.assertEqual(len([call for call in self.calls if call.method == "POST"]), 1)
+        self.lane.prompt = "another teapot"
+        self.assertFalse(panels.generate_enabled(self.lane, "image"))
+
+    def test_unloaded_catalog_is_not_always_loading(self):
+        panels = submodule("blender.panels")
+        self.runtime.state.records.clear()
+        self.runtime.state.catalog_loaded = False
+        self.runtime.state.catalog_loading = False
+        self.assertEqual(panels.model_button_text(self.lane), "Pick a model")
+        with online_access(False):
+            self.assertEqual(panels.model_button_text(self.lane), "Online access disabled")
+        self.runtime.state.catalog_loading = True
+        self.assertEqual(panels.model_button_text(self.lane), "Loading models...")
+        self.runtime.state.catalog_error = "Could not load models"
+        self.assertEqual(panels.model_button_text(self.lane), "Could not load models")
+
     def test_ui_and_mcp_share_sdk_schema_payload_and_exact_cost(self):
         self.generation.request_estimate(bpy.context.scene, "image")
         self.deliver()

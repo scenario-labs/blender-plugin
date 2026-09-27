@@ -76,10 +76,10 @@ def _process():
                 and lane_state.estimate_dirty_at
                 and now - lane_state.estimate_dirty_at >= ESTIMATE_DEBOUNCE
             ):
-                lane_state.estimate_dirty_at = 0.0
                 if runtime.credentials().valid and runtime.online():
+                    lane_state.estimate_dirty_at = 0.0
                     generation.request_estimate(scene, lane)
-                changed = True
+                    changed = True
     if changed:
         redraw()
 

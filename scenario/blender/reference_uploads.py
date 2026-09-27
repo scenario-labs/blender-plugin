@@ -5,6 +5,7 @@
 import tempfile
 import time
 import uuid
+from collections import deque
 from dataclasses import dataclass
 from pathlib import Path
 from weakref import WeakSet
@@ -110,6 +111,7 @@ class ReferenceUploads:
         self.saved = {}
         self.recovery_errors = {}
         self.forms = {}
+        self.form_errors = deque(maxlen=16)
         self.attachments = {}
 
     def start(self, scene, path, *, temporary=None):

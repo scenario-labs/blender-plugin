@@ -57,6 +57,7 @@ class ReferenceFormTests(unittest.TestCase):
         self.assertEqual(self.lane.estimate_key, "")
         self.fixture.settle()
         self.assertTrue(binding.attached, binding.error)
+        self.assertEqual(self.owner.forms, {})
         self.assertEqual(self.ref.source, "ASSET")
         self.assertEqual(self.ref.asset_id, "reference-asset")
         self.assertIn("uploaded snapshot", self.ref.label)
@@ -79,6 +80,126 @@ class ReferenceFormTests(unittest.TestCase):
         self.fixture.settle()
         self.assertEqual(len(self.owner.references), 1)
         self.assertEqual(len(self.owner.session.upload_recovery_plan()), 1)
+        self.fixture.fixture.uploader.upload.assert_called_once()
+
+    def test_full_copy_does_not_borrow_progress_or_complete_original_binding(self):
+        record = self.saved_upload()
+        ref, binding = self.pending_reference(0)
+        marker = ref[self.form._MARKER]
+        objects = set(bpy.data.objects)
+        self.assertEqual(bpy.ops.scene.new(type="FULL_COPY"), {"FINISHED"})
+        duplicate = bpy.context.scene
+
+        def remove_copy():
+            bpy.context.window.scene = self.scene
+            bpy.data.scenes.remove(duplicate)
+            for obj in set(bpy.data.objects) - objects:
+                bpy.data.objects.remove(obj, do_unlink=True)
+
+        self.addCleanup(remove_copy)
+        lane = duplicate.scenario.lane_state("image")
+        copied = lane.references[0]
+        self.assertEqual(copied[self.form._MARKER], marker)
+        self.assertNotEqual(copied, ref)
+        before = dict(copied.items()), self.form.reference_values(copied)
+        layout = Mock()
+        layout.row.return_value = layout
+        layout.operator.return_value = SimpleNamespace()
+        self.form.draw(layout, self.lane, 0, self.lane.references[0])
+        layout.label.assert_called_once_with(text="Uploading reference…", icon="TIME")
+        layout.label.reset_mock()
+        self.form.draw(layout, lane, 0, copied)
+        layout.label.assert_called_once_with(
+            text="Saved upload: inspect before continuing", icon="INFO"
+        )
+        self.assertEqual(before, (dict(copied.items()), self.form.reference_values(copied)))
+        with self.assertRaisesRegex(submodule("core.api.errors").ScenarioError, "destination"):
+            self.form.start(bpy.context, 0)
+        approval = self.approve(record)
+        self.form.apply_attachment(self.runtime.state.job_context_id, approval.identifier)
+        self.assertEqual(copied.source, "ASSET")
+        self.assertEqual(copied.asset_id, record.asset_id)
+        self.assertEqual(ref.source, "FILE")
+        self.assertFalse(binding.attached)
+        self.assertIs(self.owner.forms[marker], binding)
+        self.assertEqual(len(self.owner.references), 2)
+        self.fixture.fixture.uploader.upload.assert_called_once()
+
+    def test_finished_bindings_retire_and_errors_are_bounded_and_shown_once(self):
+        self.ref.filepath = str(self.fixture.fixture.root / "missing.png")
+        binding = self.start()
+        marker = self.ref[self.form._MARKER]
+        self.fixture.settle()
+        self.assertTrue(binding.error)
+        self.assertEqual(self.owner.forms, {})
+        self.assertEqual(list(self.owner.form_errors), [binding.error])
+        self.assertEqual(self.ref[self.form._MARKER], marker)
+        with self.assertRaises(submodule("core.api.errors").ScenarioError):
+            self.form.start(bpy.context, 0)
+        # Terminal failures release even bindings whose destination no longer
+        # exists. Their bounded notifications must not retain RNA or task handles.
+        for index in range(32):
+            self.owner.forms[str(index)] = self.form.FormUpload(
+                None, None, "", (), error=f"Failure {index}"
+            )
+        self.form.deliver(self.owner)
+        self.assertEqual(self.owner.forms, {})
+        self.assertEqual(len(self.owner.form_errors), 16)
+        self.assertEqual(self.owner.form_errors[-1], "Failure 31")
+        operator = SimpleNamespace()
+        context = SimpleNamespace(window_manager=Mock())
+        self.form.SCENARIO_OT_inspect_uploads.invoke(operator, context, None)
+        self.assertEqual(len(operator._errors), 16)
+        self.assertEqual(list(self.owner.form_errors), [])
+        self.form.SCENARIO_OT_inspect_uploads.invoke(operator, context, None)
+        self.assertEqual(operator._errors, ())
+        self.assertEqual(self.fixture.fixture.calls, [])
+
+    def test_form_capacity_rejects_before_marking_or_admitting_work(self):
+        self.owner.forms.update({str(index): object() for index in range(128)})
+        before = dict(self.ref.items())
+        with self.assertRaisesRegex(submodule("core.api.errors").ScenarioError, "capacity"):
+            self.form.start(bpy.context, 0)
+        self.assertEqual(dict(self.ref.items()), before)
+        self.assertEqual(self.owner.references, {})
+
+    def test_canceled_upload_retires_binding_without_removing_duplicate_guard(self):
+        binding = self.start()
+        binding.ticket.task.result(5)
+        with patch.object(self.owner, "_online", return_value=False):
+            self.owner.poll()
+        record = binding.ticket.record
+        self.owner.recover(record.intent.request_id, record.revision, "cancel_prepared")
+        self.owner.poll()
+        self.assertEqual(binding.ticket.record.state.value, "canceled")
+        self.assertTrue(binding.error)
+        self.assertEqual(self.owner.forms, {})
+        self.assertTrue(self.ref.get(self.form._MARKER))
+        self.assertEqual(self.fixture.fixture.calls, [])
+
+    def test_remote_failure_retires_binding_and_remains_inspectable(self):
+        original = self.fixture.fixture.handler
+
+        def failed(request):
+            response = original(request)
+            if request.url.path.endswith("/action"):
+                self.fixture.fixture.remote["status"] = "failed"
+            return response
+
+        self.fixture.fixture.handler = failed
+        binding = self.start()
+        for _ in range(12):
+            if binding.ticket.task is not None:
+                binding.ticket.task.result(5)
+            binding.ticket.next_poll = 0
+            self.owner.poll()
+            if binding.error:
+                break
+        self.assertEqual(binding.ticket.record.state.value, "failed")
+        self.assertTrue(binding.error)
+        self.assertEqual(self.owner.forms, {})
+        self.assertEqual(self.owner.inspect_saved(), (binding.ticket.record,))
+        self.assertTrue(self.ref.get(self.form._MARKER))
         self.fixture.fixture.uploader.upload.assert_called_once()
 
     def test_transient_scene_selection_pauses_without_poisoning_attachment(self):

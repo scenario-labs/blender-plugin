@@ -31,6 +31,25 @@ def reference_values(ref):
     return ref.param_name, ref.source, ref.filepath, ref.asset_id
 
 
+def _binding(owner, ref):
+    """Copied ID properties do not transfer ownership of an in-flight upload."""
+    if owner is not None:
+        binding = owner.forms.get(ref.get(_MARKER))
+        try:
+            # RNA wrappers need equality, not Python object identity.
+            if binding is not None and binding.scene == ref.id_data and binding.reference == ref:
+                return binding
+        except (ReferenceError, RuntimeError):
+            return None
+    return None
+
+
+def _release_binding(owner, token, binding):
+    if binding.error:
+        owner.form_errors.append(binding.error)
+    owner.forms.pop(token, None)
+
+
 def _form_snapshot(lane):
     # The pump may publish a request ID while staging finishes. It is progress
     # metadata, not a change to the selected source, scope or upload identity.
@@ -147,6 +166,7 @@ def apply_attachment(context_id, identifier):
         if added:
             ref.param_name = approval.param_name
         old_marker = ref.get(_MARKER)
+        binding = _binding(owner, ref)
         ref[_MARKER] = uuid.uuid4().hex
         ref[_SCOPE] = scope_key(owner.session.scope)
         ref[_REQUEST] = approval.record.intent.request_id
@@ -155,8 +175,9 @@ def apply_attachment(context_id, identifier):
         ref.source = "ASSET"
         ref.label = approval.record.intent.file_name + " (uploaded snapshot)"
         props.mark_estimate_dirty(lane)
-        if old_marker in owner.forms:
-            owner.forms[old_marker].attached = True
+        if binding is not None:
+            binding.attached = True
+            _release_binding(owner, old_marker, binding)
     except Exception:
         if added:
             lane.references.remove(len(lane.references) - 1)
@@ -205,7 +226,14 @@ def start(context, index):
         raise ScenarioError(0, "Select a reference to upload")
     ref = lane.references[index]
     if ref.get(_MARKER):
-        raise ScenarioError(0, "This reference already has an upload; inspect its saved progress")
+        reason = (
+            "This reference already has an upload; inspect its saved progress"
+            if _binding(owner, ref) is not None
+            else "This reference has a saved upload; inspect it and confirm the destination"
+        )
+        raise ScenarioError(0, reason)
+    if len(owner.forms) >= 128:
+        raise ScenarioError(0, "Reference upload capacity reached; inspect existing uploads")
     schema = generation.schema_for(lane.model_id)
     spec = schema.by_name(ref.param_name) if schema is not None else None
     if spec is None or not spec.is_file or (spec.kind or "image").lower() != "image":
@@ -234,6 +262,7 @@ def start(context, index):
         raise
     except Exception:
         binding.error = "Upload did not start; inspect progress before choosing another reference"
+        _release_binding(owner, token, binding)
         raise ScenarioError(0, binding.error) from None
     return binding
 
@@ -241,33 +270,46 @@ def start(context, index):
 def deliver(owner):
     """Called only by the maintenance pump; never mutate properties during drawing."""
     for token, binding in tuple(owner.forms.items()):
-        ticket = binding.ticket
-        if binding.attached or binding.error or ticket is None:
-            continue
-        if not binding.current(token):
-            binding.error = "The scene, model or reference changed; the upload was not attached"
-            continue
-        if binding.scene != bpy.context.scene:
-            continue
-        if ticket.record is not None:
-            binding.reference[_REQUEST] = ticket.record.intent.request_id
-        if ticket.error:
-            binding.error = ticket.error
-            continue
-        if ticket.record is None or ticket.record.state != UploadState.IMPORTED:
-            continue
-        try:
-            owner.session.validate_destination(ticket.record.intent.origin)
-        except Exception:
-            binding.error = "The scene changed; inspect the saved upload before attaching it"
-            continue
-        ref = binding.reference
-        ref.asset_id = ticket.record.asset_id
-        ref[_ASSET] = ticket.record.asset_id
-        ref.source = "ASSET"
-        ref.label = (ref.label or "Reference") + " (uploaded snapshot)"
-        binding.attached = True
-        props.mark_estimate_dirty(binding.scene.scenario.lane_state("image"))
+        _deliver_binding(owner, token, binding)
+        if binding.attached or binding.error:
+            _release_binding(owner, token, binding)
+
+
+def _deliver_binding(owner, token, binding):
+    """Deliver only into the binding's original reference; callers retire finished bindings."""
+    ticket = binding.ticket
+    if binding.attached or binding.error or ticket is None:
+        return
+    if not binding.current(token):
+        binding.error = "The scene, model or reference changed; the upload was not attached"
+        return
+    if ticket.error:
+        binding.error = ticket.error
+        return
+    if ticket.record is not None and ticket.record.state in {
+        UploadState.FAILED,
+        UploadState.CANCELED,
+    }:
+        binding.error = "Upload finished without an image; inspect saved progress"
+        return
+    if binding.scene != bpy.context.scene:
+        return
+    if ticket.record is not None:
+        binding.reference[_REQUEST] = ticket.record.intent.request_id
+    if ticket.record is None or ticket.record.state != UploadState.IMPORTED:
+        return
+    try:
+        owner.session.validate_destination(ticket.record.intent.origin)
+    except Exception:
+        binding.error = "The scene changed; inspect the saved upload before attaching it"
+        return
+    ref = binding.reference
+    ref.asset_id = ticket.record.asset_id
+    ref[_ASSET] = ticket.record.asset_id
+    ref.source = "ASSET"
+    ref.label = (ref.label or "Reference") + " (uploaded snapshot)"
+    binding.attached = True
+    props.mark_estimate_dirty(binding.scene.scenario.lane_state("image"))
 
 
 def scope_error(lane_state):
@@ -309,7 +351,7 @@ def draw(layout, lane_state, index, ref):
         op.index = index
         return
     owner = runtime.state.reference_uploads
-    binding = owner.forms.get(marker) if owner is not None else None
+    binding = _binding(owner, ref)
     row = layout.row(align=True)
     if binding is None:
         row.label(text="Saved upload: inspect before continuing", icon="INFO")
@@ -358,9 +400,8 @@ class SCENARIO_OT_inspect_uploads(bpy.types.Operator):
             self._owner = runtime.ensure_reference_uploads()
             self._context_id = runtime.state.job_context_id
             self._records = self._owner.inspect_saved()
-            self._errors = tuple(
-                binding.error for binding in self._owner.forms.values() if binding.error
-            )
+            self._errors = tuple(self._owner.form_errors)
+            self._owner.form_errors.clear()
         except Exception:
             self.report({"ERROR"}, "Could not inspect uploads; preserve local storage for recovery")
             return {"CANCELLED"}
@@ -552,6 +593,7 @@ def _history_post(_):
     owner = runtime.state.reference_uploads
     if owner is not None:
         owner.forms.clear()
+        owner.form_errors.clear()
         owner.attachments.clear()
 
 

@@ -93,6 +93,16 @@ Credential changes and runtime reset
 discard late success and failure. The result confirms model access; it does not
 derive account/project identity or activate durable jobs.
 
+Explicit local MCP recovery calls now lazily activate the selected
+[JobSession](../BLENDER_JOB_CONTEXT.md). `list_local_jobs` reads its durable
+records and `cancel_prepared_job` cancels only an unsubmitted intent, guarded by
+the observed revision and a current-context token. Neither sends service requests
+or imports prototype jobs. The session owns a separate SDK pool with the same
+credential scope and online-permission snapshot as the catalog. Credential changes
+and runtime reset stop admission; in-flight receipts keep their original scope.
+GUI ticks and the headless MCP loop reap retired sessions after work finishes.
+Paid entry points, remote recovery controls and production transfers remain open.
+
 ## Active SDK cost previews
 
 UI and MCP cost previews use the same connection and cached schema as catalog

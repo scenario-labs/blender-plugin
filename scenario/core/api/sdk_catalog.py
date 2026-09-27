@@ -78,6 +78,25 @@ class SDKCatalog:
         if not self._active:
             raise ScenarioError(0, "The selected catalog connection changed")
 
+    def create_job_adapter(self):
+        """Give the job owner its own pool with this scope and permission snapshot.
+
+        The caller must close it after its workers finish. Catalog retirement
+        disables its network permission too, but cannot close an in-flight job.
+        """
+        with self._condition:
+            self._check_active()
+            if self._scope is None:
+                raise ScenarioError(0, "Local job storage is not configured")
+            return self._adapter_factory(
+                self._credentials,
+                online=self._permission.is_set,
+                base_url=self._scope.service,
+                account_id=self._scope.account_id,
+                project_id=self._scope.project_id,
+                team_id=self._scope.team_id,
+            )
+
     @contextmanager
     def _read(self):
         try:

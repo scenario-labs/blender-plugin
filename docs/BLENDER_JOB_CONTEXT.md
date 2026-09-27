@@ -4,7 +4,31 @@
 connection, scoped store, coordinator and worker pool. Extension registration
 installs file, dependency, frame, undo and redo hooks; it creates no session,
 connection or worker. This is the integration boundary for the shared runtime.
-The existing prototype UI/MCP has not yet been switched to it.
+The active runtime now creates one selected session lazily for local MCP recovery
+inspection and prepared-intent cancellation. Paid UI/MCP generation remains on
+the prototype path.
+
+`runtime.ensure_job_session()` binds the session to the catalog's credential-local
+scope and store. The job owner gets a separate SDK HTTP pool using the same
+explicit credentials and worker-safe online-permission event. Catalog retirement
+disables both pools' network permission; each owner closes its own pool only after
+its in-flight work finishes. A catalog preview quote is not a session-issued quote
+and cannot be reused for shared paid dispatch.
+
+Credential changes and runtime reset deactivate the session without waiting for
+network I/O. The existing session registry retains in-flight work so its receipt
+can finish in the original store. GUI timers and the main-thread MCP loop reap
+retired sessions after completion. Closing a panel does not retire the session.
+File loading invalidates origins through the existing lifecycle hooks.
+
+The local MCP tools `list_local_jobs` and `cancel_prepared_job` perform no service
+requests. Inspection returns exact saved costs and recovery suggestions, not new
+spending approval. Cancellation needs the current context token and observed
+record revision, and only accepts an unclaimed prepared intent. Resetting or
+switching credentials invalidates the context token, even if another scope has
+the same request ID. Remote cancellation, uploads, downloads, result application
+and paid entry points still need active integration. These tools do not import
+prototype jobs or create generation intents.
 
 ## Origin and quote lifetime
 
@@ -85,9 +109,10 @@ Unregister removes timer and lifecycle hooks even after session cleanup failures
 allowing the remaining extension registry cleanup to proceed. Control exceptions
 continue to propagate; a session with live workers retains its ownership.
 
-The actual authentication context, safe online-access snapshot for worker calls,
-UI/MCP activation and application of other result types remain separate work.
-No account ID is guessed and no privileged or live service call is introduced.
+The selected API-key context and worker-safe online snapshot are bound by the
+active runtime as described above. Paid UI/MCP activation and application of
+other result types remain separate work. The account scope is a local pseudonym,
+not a guessed server account ID.
 
 ## Recovery inspection and cancellation
 

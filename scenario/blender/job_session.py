@@ -495,6 +495,11 @@ def _session_snapshot():
         return tuple(_sessions)
 
 
+def reap_retired():
+    """Service retired owners on main-thread headless loops as well as GUI ticks."""
+    _reap_inactive()
+
+
 def _reap_inactive():
     """Close retired connections once their tracked network work has finished."""
     _main_thread()

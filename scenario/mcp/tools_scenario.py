@@ -120,6 +120,37 @@ def estimate_cost(args):
     return DeferredTool(lambda: catalog.estimate(record.id, body), finish)
 
 
+def list_local_jobs(args):
+    context_id, items = runtime.local_job_recovery()
+    return {
+        "context_id": context_id,
+        "jobs": [
+            {
+                "request_id": item.record.intent.request_id,
+                "revision": item.record.revision,
+                "state": item.record.state.value,
+                "action": item.action.value,
+                "operation": item.record.intent.operation,
+                "target_id": item.record.intent.target_id,
+                "cu_cost_exact": item.record.intent.quote_cost,
+                "remote_job_id": item.record.remote_job_id,
+            }
+            for item in items
+        ],
+    }
+
+
+def cancel_prepared_job(args):
+    context_id, request_id = args.get("context_id"), args.get("request_id")
+    revision = args.get("expected_revision")
+    if not isinstance(context_id, str) or not context_id or not isinstance(request_id, str):
+        raise ValueError("Use the context_id and request_id returned by list_local_jobs")
+    if type(revision) is not int or revision < 0:
+        raise ValueError("expected_revision must be a nonnegative integer")
+    record = runtime.cancel_prepared_job(context_id, request_id, revision)
+    return {"request_id": request_id, "revision": record.revision, "state": record.state.value}
+
+
 def generate(args):
     import os
 
@@ -301,6 +332,45 @@ _JOB_REF = {
 
 
 SPECS = (
+    ToolSpec(
+        "list_local_jobs",
+        (
+            "Inspect durable local jobs for the selected API-key pair without network requests.\n"
+            "Args: none.\n"
+            "Returns: context_id and jobs[] with request_id, revision, state, action, operation, target_id, cu_cost_exact and remote_job_id.\n"
+            "Example: {}.\n"
+            "Saved costs are informational, not spending approval. Unknown submissions require reconciliation, never automatic retry.\n"
+            "Prototype generate/job_status records are separate and are not imported here. No remote job polling or result application occurs.\n"
+            "Platform equivalent: none; this is local recovery inspection."
+        ),
+        _schema({}),
+        list_local_jobs,
+        {"readOnlyHint": True},
+    ),
+    ToolSpec(
+        "cancel_prepared_job",
+        (
+            "Cancel an unsubmitted durable local intent without contacting Scenario.\n"
+            "Args:\n"
+            "  - context_id: required string, current context returned by list_local_jobs.\n"
+            "  - request_id: required string, local durable request identity.\n"
+            "  - expected_revision: required nonnegative integer, observed record revision.\n"
+            "Returns: request_id, revision and state (canceled).\n"
+            'Example: {"context_id": "from-list", "request_id": "from-list", "expected_revision": 0}.\n'
+            "Only prepared jobs can be canceled here. Claimed, uncertain, remote and changed-context jobs are rejected; this does not cancel a remote generation.\n"
+            "Platform equivalent: none; this changes only local durable state."
+        ),
+        _schema(
+            {
+                "context_id": {"type": "string"},
+                "request_id": {"type": "string"},
+                "expected_revision": {"type": "integer", "minimum": 0},
+            },
+            ["context_id", "request_id", "expected_revision"],
+        ),
+        cancel_prepared_job,
+        {"destructiveHint": True},
+    ),
     ToolSpec(
         "list_models",
         (

@@ -77,6 +77,7 @@ def stop():
 
 
 def process_pending():
+    runtime.sync_catalog_context()
     server = runtime.state.mcp
     if server is not None:
         server.process_pending()

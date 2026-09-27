@@ -12,7 +12,7 @@ import httpx
 import pytest
 
 from scenario.core.api.errors import ScenarioError
-from scenario.core.api.sdk_adapter import Credentials, SDKAdapter
+from scenario.core.api.sdk_adapter import AdapterError, Credentials, SDKAdapter
 from scenario.core.api.sdk_catalog import SDKCatalog
 from scenario.core.jobs.store import JobScope
 
@@ -525,3 +525,50 @@ def test_invalid_privacy_fails_before_opening_an_sdk_pool(privacy):
         context.fetch_list(privacy)
     assert not pools
     context.close()
+
+
+def test_job_adapter_has_independent_pool_but_shared_permission_and_scope():
+    scope = JobScope("https://api.cloud.scenario.com/v1", "local-fixture")
+    context, pools = catalog(lambda _: httpx.Response(200, json={"models": []}), scope=scope)
+    owner = context.create_job_adapter()
+    try:
+        context.fetch_list()
+        assert len(pools) == 2
+        assert owner is not pools[1]
+        assert owner.account_id == scope.account_id
+        context.update_online(False)
+        with pytest.raises(AdapterError, match="[Oo]nline"):
+            owner.model_page()
+        context.update_online(True)
+        owner.model_page()
+        context.close()
+        assert not owner._closed
+        with pytest.raises(AdapterError, match="[Oo]nline"):
+            owner.model_page()
+        with pytest.raises(ScenarioError, match="connection changed"):
+            context.create_job_adapter()
+    finally:
+        owner.close()
+        context.close()
+
+
+def test_job_owner_close_does_not_close_catalog_pool():
+    scope = JobScope("https://api.cloud.scenario.com/v1", "local-fixture")
+    context, _ = catalog(lambda _: httpx.Response(200, json={"models": []}), scope=scope)
+    try:
+        owner = context.create_job_adapter()
+        context.fetch_list()
+        owner.close()
+        assert context.fetch_list() == []
+    finally:
+        context.close()
+
+
+def test_job_adapter_requires_durable_scope():
+    context, pools = catalog(lambda _: pytest.fail("No request expected"))
+    try:
+        with pytest.raises(ScenarioError, match="storage is not configured"):
+            context.create_job_adapter()
+        assert pools == []
+    finally:
+        context.close()

@@ -199,13 +199,6 @@ def test_permission_reasons_follow_manifest_rules():
         assert terse_description(reason), name
 
 
-# The repository is live now; switch to the handbook only after Pages acceptance.
-ALLOWED_WEBSITES = {
-    "https://github.com/scenario-labs/blender-plugin",
-    "https://scenario-labs.github.io/blender-plugin/",
-}
-
-
-def test_manifest_website_points_at_the_project():
+def test_manifest_website_points_at_the_published_handbook():
     website = manifest()["website"]
-    assert website in ALLOWED_WEBSITES, website
+    assert website == "https://blender.scenario.com/", website

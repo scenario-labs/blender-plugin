@@ -152,13 +152,14 @@ issue forms or `support@scenario.com`. The approved direction keeps Discussions
 off; revisit after external participation justifies a monitored Q&A channel.
 The wiki is already off and needs no further change under #20.
 
-Pages is configured with build type `workflow` and URL
-`https://scenario-labs.github.io/blender-plugin/`; its API status is `null`.
-Configuration is not proof that the handbook is deployed (#37). The repository
-homepage is `https://www.scenario.com`. The
-[extension manifest](../scenario/blender_manifest.toml) points its Website link
-to this repository. Move both to the Pages handbook only after its publication
-and content are verified, under #56.
+Pages is configured with build type `workflow`, custom domain `blender.scenario.com`
+and enforced HTTPS. The handbook at `https://blender.scenario.com/` serves the
+installation, update and support guidance; the repository homepage and
+[extension manifest](../scenario/blender_manifest.toml) Website link point there.
+This handbook publication does not establish native repository availability:
+`/repo/index.json` remains intentionally absent until a verified adopted release
+is published under #36/#37. The Pages API's `status: null` is not a content check;
+verify the live response and page before changing these links again.
 
 The description is:
 
@@ -254,7 +255,7 @@ to perform it.
 - [ ] Add/reconcile the `ci-ok` required check after verifying its reported identity; retain the existing `pr-title`, `commits`, CodeQL and code-quality rules unless an explicit reviewed decision changes them: #45.
 - [ ] Verify the first automated release, then remove the repository-admin tag bypass while retaining release App integration `4751046`, both tag patterns and all protection rules; enable immutable releases only after publication and download verification: #36.
 - [ ] Decide restricted allowed actions and require SHA pinning after workflow pins and update behavior are verified: #39.
-- [ ] Verify the published Pages handbook, then switch the homepage and manifest Website link: #56.
+- [ ] Complete #56: the published handbook, homepage and manifest Website link are aligned; desktop Website-action acceptance remains. Native update publication remains #37.
 - [ ] Upload the reviewed, merged social-preview card and verify its custom-image flag, URL and rendered shared-link preview: #19.
 - [ ] Decide the platform team's maintain/admin grant and confirm required code-owner review and direct-write policy: #20 / #21.
 - [ ] Decide project visibility; finish the requested views, Auto-archive and built-in workflow targets through the project UI: #20.

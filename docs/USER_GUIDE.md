@@ -43,7 +43,9 @@ request; changing credentials discards the previous check's result.
 Blender saves entered credentials with its preferences, not in an OS keychain.
 The account strip names the selected source when its key or secret is missing.
 
-Expand Scenario under Edit > Preferences > Get Extensions to find its Website link; it opens the project on GitHub, with the user guide and issue tracker.
+Expand Scenario under Edit > Preferences > Get Extensions to find its Website link;
+it opens this handbook at [blender.scenario.com](https://blender.scenario.com/),
+with installation instructions, update guidance and links to support.
 
 ### Updates
 

@@ -28,7 +28,8 @@ requests. Inspection returns exact saved costs and recovery suggestions, not new
 spending approval. Cancellation needs the current context token and observed
 record revision, and only accepts an unclaimed prepared intent. Resetting, loading a file or
 switching credentials invalidates the context token, even if another scope has
-the same request ID. Remote cancellation, uploads, explicit restart/result recovery
+the same request ID. Shared saved-job controls below also expose known model-job
+cancellation and download/receipt recovery. Uploads, recovered-target application
 and remaining paid entry points still need active integration. These recovery
 tools do not import prototype jobs. Image submission creates new durable intents.
 
@@ -40,8 +41,8 @@ variants are imported together; failure removes only newly created images.
 Confirmed rollback records `apply_failed`; incomplete rollback or uncertain
 receipt persistence retains `applying`. `retry_image_receipt` can acknowledge a
 known completed import without importing again, using its owner-local handle.
-These methods never rebind a restarted job by scene name. Explicit recovery UI
-and MCP actions remain pending.
+These methods never rebind a restarted job by scene name. The Image facade exposes
+receipt-only retry to UI/MCP while its original owner retains the outcome handle.
 
 ## Origin and quote lifetime
 
@@ -153,8 +154,9 @@ Cancellation, refresh and recovery inspection deliberately do not require the
 old scene/target to remain available. This allows explicit cancellation and
 reconciliation after deletion or restart. Their completions still carry the
 original stored origin; `deliver` continues to reject unavailable, stale or
-unrecognized origins before Blender application. These session methods do not
-add active UI/MCP controls or solve authoritative account/project discovery.
+unrecognized origins before Blender application. The Image facade exposes these
+methods through the saved-job controls below; account scope remains the explicit
+credential-bound local identity rather than a guessed discovery result.
 
 ## Stored result retrieval and verification
 
@@ -328,5 +330,30 @@ completions intact. Context maintenance drives Image quote/receipt delivery in
 both the GUI and actual CLI loop. Image status after restart is read from the
 credential-scoped store, without automatically polling or resubmitting remotely.
 Active jobs poll, download and import supported image results through this owner.
-Explicit restart/retry controls and local reference upload remain unwired;
+Explicit recovered-target application and local reference upload remain unwired;
 this slice must not be advertised as complete release acceptance.
+
+## Active saved-job controls
+
+The Jobs panel can inspect saved jobs without network activity. Recovery buttons
+and MCP `recover_local_job` share `ModelJobs.control`, guarded by the selected
+context token and exact saved revision. Queued commands retain their original scope.
+
+- `refresh` observes a known remote ID once, without continuing delivery.
+- `resume` polls and downloads the existing job, including after restart or a
+  failed download, without authorizing automatic import.
+- `cancel` uses the coordinator's once-claimed model cancellation command and
+  continues observing the known ID. The acknowledgement alone is not cancellation.
+- `recover_download` verifies interrupted saved receipts under the existing lock,
+  without network access or import.
+- `retry_receipt` saves an already completed image import's outcome without any
+  scene mutation. The exact pending owner-local handle must still exist.
+
+No action reconstructs a quote, replays an uncertain submission, guesses a remote
+ID or rebinds the original scene. Missing/stale revisions and retired contexts fail
+before command dispatch. The UI confirms remote cancellation through its native
+invoke path. MCP recovery waits off the main thread and rechecks its owner before
+returning status. Shared `wait_for_job` reads saved state on the HTTP worker while
+the main thread advances delivery; pause, failure, completion or timeout returns
+the current result without canceling or regenerating. Stopping the MCP server
+interrupts its wait without canceling the generation.

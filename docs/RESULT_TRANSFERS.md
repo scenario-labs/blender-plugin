@@ -101,7 +101,9 @@ They do not establish live CDN or provider format acceptance.
 
 ## Integration still required
 
-Other generation lanes and explicit restart/retry controls remain unintegrated.
+Other generation lanes and explicit recovered-target application remain unintegrated.
+Image UI/MCP controls can resume downloads and reconcile interrupted receipts;
+neither action grants permission to import into a restarted scene.
 The [coordinator](JOB_COORDINATOR.md#result-retrieval-and-download-commands)
 now orchestrates saved manifests/receipts and retrieves fresh URLs for explicit
 download retries through the SDK. Explicit interrupted-download recovery now verifies committed receipts under a

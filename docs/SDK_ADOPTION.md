@@ -313,8 +313,10 @@ consumes each issued quote once and preserves uncertain outcomes. Inference
 cancellation is available through the coordinator. Image UI/MCP submission now
 consumes session-owned quotes and persists intent before the existing adapter
 hook; its active result path uses `jobs.retrieve` and `assets.retrieve` from the
-same adapter, followed by credential-free CDN transfer. Other lanes and remote
-cancellation controls still need integration. Generated operations use public SDK methods
+same adapter, followed by credential-free CDN transfer. Saved-job UI/MCP controls
+also expose known model-job cancellation and download recovery through the same
+coordinator. Other lanes and recovered-target application still need integration.
+Generated operations use public SDK methods
 with `max_retries=0`; their `with_raw_response` wrappers preserve wire JSON.
 The named discovery exceptions also use the same zero-retry SDK client.
 

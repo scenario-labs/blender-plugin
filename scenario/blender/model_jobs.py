@@ -3,6 +3,7 @@
 """Main-thread Image generation commands shared by UI and local MCP."""
 
 import json
+import threading
 import time
 import uuid
 from dataclasses import dataclass, field
@@ -45,6 +46,7 @@ class ModelJobs:
         self._paused = set()
         self._images = {}
         self._receipts = {}
+        self._automatic_application = set()
 
     def quote(self, scene, model_id, body):
         snapshot = _snapshot(body)
@@ -110,6 +112,8 @@ class ModelJobs:
             meta=dict(meta or {}),
         )
         self.views[view.local_id] = view
+        view.meta["shared_job"] = True
+        self._automatic_application.add(view.local_id)
         try:
             task = self.session.submit(
                 prepared, operation="model", target_id=model_id, payload=estimate.payload
@@ -145,12 +149,13 @@ class ModelJobs:
                 if completion.error is not None:
                     raise completion.error
                 if command == "verify_results":
+                    self.views[request_id].files = [str(p) for p in completion.result.paths]
                     result = self.session.apply_images(completion)
                     self._images[request_id] = result.images
-                    self.views[request_id].files = [str(p) for p in completion.result.paths]
                 self._next_poll[request_id] = time.monotonic() + 2.0
             except ImageResultUncertain as error:
-                self._receipts[request_id] = error
+                if error.images:
+                    self._receipts[request_id] = error
                 self._pause(request_id, "Image import needs receipt recovery; do not import again")
             except Exception:
                 self._pause(
@@ -172,6 +177,9 @@ class ModelJobs:
             view.asset_types = {
                 item.asset.asset_id: item.asset.media_type for item in record.results
             }
+            view.meta["saved_revision"] = record.revision
+            view.meta["saved_state"] = record.state.value
+            view.meta["recovery_actions"] = self.actions(record)
             if record.state in (JobState.SUBMITTING, JobState.UNCERTAIN):
                 view.error = "Submission outcome is not confirmed; do not submit it again"
             elif request_id not in self._paused:
@@ -188,7 +196,7 @@ class ModelJobs:
                     command = "refresh_remote"
             elif record.state == JobState.SUCCEEDED and self._online():
                 command = "download_results"
-            elif record.state == JobState.READY:
+            elif record.state == JobState.READY and request_id in self._automatic_application:
                 command = "verify_results"
             if command:
                 try:
@@ -202,6 +210,118 @@ class ModelJobs:
     def _pause(self, request_id, message):
         self._paused.add(request_id)
         self.views[request_id].error = message
+
+    def inspect(self):
+        """Attach saved display projections without resuming or applying old work."""
+        for record in self.store.records():
+            self._view(record)
+        self.poll()
+        return tuple(self.views.values())
+
+    def _view(self, record):
+        request_id = record.intent.request_id
+        if request_id not in self.views:
+            self.views[request_id] = JobRecord(
+                local_id=request_id,
+                lane="image",
+                kind="model",
+                model_id=record.intent.target_id,
+                body={},
+                cu_cost=float(record.intent.quote_cost),
+                meta={"shared_job": True, "prompt": "Recovered model job"},
+            )
+            self._paused.add(request_id)
+        return self.views[request_id]
+
+    def actions(self, record):
+        """Return available explicit controls, without changing saved state."""
+        request_id = record.intent.request_id
+        if request_id in self._commands or request_id in self.submissions:
+            return ()
+        state = record.state
+        actions = []
+        if state in (JobState.REMOTE, JobState.CANCEL_REQUESTED):
+            actions += ["refresh", "resume"]
+        elif state in (JobState.SUCCEEDED, JobState.DOWNLOAD_FAILED):
+            actions.append("resume")
+        elif state == JobState.DOWNLOADING:
+            actions.append("recover_download")
+        if state == JobState.REMOTE and record.intent.operation == "model":
+            actions.append("cancel")
+        if request_id in self._receipts:
+            actions.append("retry_receipt")
+        return tuple(actions)
+
+    def control(self, request_id, expected_revision, action):
+        """Explicit recovery never reconstructs a quote or approves another import."""
+        record = self.store.get(request_id)
+        if (
+            type(expected_revision) is not int
+            or record is None
+            or record.revision != expected_revision
+            or action not in self.actions(record)
+        ):
+            raise ScenarioError(0, "The saved job or available action changed; inspect it again")
+        view = self._view(record)
+        if action == "retry_receipt":
+            outcome = self.session.retry_image_receipt(self._receipts[request_id])
+            self._images[request_id] = outcome.images
+            del self._receipts[request_id]
+            self._paused.discard(request_id)
+            view.error = None
+            return None
+        command = {
+            "refresh": "refresh_remote",
+            "cancel": "cancel_remote",
+            "recover_download": "recover_downloads",
+            "resume": "refresh_remote"
+            if record.state in (JobState.REMOTE, JobState.CANCEL_REQUESTED)
+            else "download_results",
+        }[action]
+        if command != "recover_downloads" and not self._online():
+            raise ScenarioError(0, "Allow Online Access before contacting Scenario")
+        task = getattr(self.session, command)(request_id, expected_revision=expected_revision)
+        self._commands[request_id] = (command, task)
+        view.meta["recovery_actions"] = ()
+        self._automatic_application.discard(request_id)
+        view.error = None
+        if action in ("resume", "cancel"):
+            self._paused.discard(request_id)
+        else:
+            self._paused.add(request_id)
+        return task
+
+    def wait(self, request_id, timeout, *, stopped=lambda: False):
+        """Wait on an HTTP worker using only saved state; the main thread advances jobs."""
+        deadline = time.monotonic() + timeout
+        sleeper = threading.Event()
+        while self.session.active:
+            if stopped():
+                raise ScenarioError(0, "The job wait stopped; generation was not cancelled")
+            record = self.store.get(request_id)
+            if record is None:
+                raise ScenarioError(0, "Saved job is unavailable")
+            if (
+                request_id in self._paused
+                or record.state
+                in (
+                    JobState.UNCERTAIN,
+                    JobState.FAILED,
+                    JobState.CANCELED,
+                    JobState.DOWNLOAD_FAILED,
+                    JobState.APPLY_FAILED,
+                    JobState.APPLIED,
+                )
+                or (
+                    record.state == JobState.READY and request_id not in self._automatic_application
+                )
+            ):
+                return
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                return
+            sleeper.wait(min(0.1, remaining))
+        raise ScenarioError(0, "The job context changed while waiting; inspect saved jobs again")
 
     def status(self, reference):
         self.poll()
@@ -227,6 +347,10 @@ class ModelJobs:
             if record.intent.request_id in self.views
             else [],
             "delivery_paused": record.intent.request_id in self._paused,
+            "actions": self.actions(record),
+            "error": self.views[record.intent.request_id].error
+            if record.intent.request_id in self.views
+            else None,
             "images": [
                 image.name
                 for image in self._images.get(record.intent.request_id, ())

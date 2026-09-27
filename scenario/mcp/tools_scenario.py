@@ -264,6 +264,28 @@ def job_status(args):
     return saved if saved is not None else _status(_find(reference))
 
 
+def recover_local_job(args):
+    jobs, task = runtime.control_model_job(
+        args["context_id"], args["request_id"], args["expected_revision"], args["action"]
+    )
+    if task is None:
+        return jobs.status(args["request_id"])
+
+    def run():
+        try:
+            task.result()
+        except Exception:
+            pass  # The owned completion supplies sanitized state/error on the main thread.
+
+    def finish(_):
+        runtime.sync_catalog_context()
+        if runtime.state.model_jobs is not jobs or not jobs.session.active:
+            raise ScenarioError(0, "The job context changed during recovery; inspect it again")
+        return jobs.status(args["request_id"])
+
+    return DeferredTool(run, finish)
+
+
 def wait_for_job(args):
     ref = _job_ref(args)
     timeout = args.get("timeout", 170)
@@ -275,7 +297,29 @@ def wait_for_job(args):
         raise ValueError("timeout must be a finite number from 0 to 170 seconds")
     saved = _saved_status(ref)
     if saved is not None:
-        return saved
+        jobs = runtime.state.model_jobs
+        server = runtime.state.mcp
+        if timeout == 0 or saved["local_id"] not in jobs.views:
+            return saved
+
+        def finish_shared(_):
+            runtime.sync_catalog_context()
+            if (
+                runtime.state.model_jobs is not jobs
+                or not jobs.session.active
+                or (server is not None and (runtime.state.mcp is not server or not server.running))
+            ):
+                raise ScenarioError(0, "The job context changed while waiting; inspect it again")
+            return jobs.status(saved["local_id"])
+
+        return DeferredTool(
+            lambda: jobs.wait(
+                saved["local_id"],
+                timeout,
+                stopped=lambda: server is not None and not server.running,
+            ),
+            finish_shared,
+        )
     rec = _find(ref)
     if rec.is_terminal:
         return _status(rec)
@@ -386,6 +430,35 @@ _JOB_REF = {
 
 
 SPECS = (
+    ToolSpec(
+        "recover_local_job",
+        (
+            "Explicitly recover a saved job without repeating generation or importing into another scene.\n"
+            "Args:\n"
+            "  - context_id: required string from list_local_jobs.\n"
+            "  - request_id: required local job identity.\n"
+            "  - expected_revision: required observed integer revision.\n"
+            "  - action: refresh, resume, cancel, recover_download or retry_receipt.\n"
+            "Returns: saved status, revision, available actions and delivery error if any.\n"
+            'Example: {"context_id":"from-list","request_id":"from-list","expected_revision":2,"action":"resume"}.\n'
+            "Refresh reads once; resume polls and downloads without automatic import. Cancel requests known model-job cancellation and observes its actual outcome. recover_download verifies interrupted local receipts without network calls. retry_receipt saves an already completed import without repeating it and requires the same live owner. Stale contexts/revisions and uncertain submissions are rejected.\n"
+            "Platform equivalent: jobs.retrieve, jobs.trigger_action and assets.retrieve through the shared SDK, plus local receipt recovery."
+        ),
+        _schema(
+            {
+                "context_id": {"type": "string"},
+                "request_id": {"type": "string"},
+                "expected_revision": {"type": "integer", "minimum": 0},
+                "action": {
+                    "type": "string",
+                    "enum": ["refresh", "resume", "cancel", "recover_download", "retry_receipt"],
+                },
+            },
+            ["context_id", "request_id", "expected_revision", "action"],
+        ),
+        recover_local_job,
+        {"destructiveHint": True},
+    ),
     ToolSpec(
         "list_local_jobs",
         (
@@ -529,7 +602,7 @@ SPECS = (
     ToolSpec(
         "wait_for_job",
         (
-            "Wait for a prototype generation while Blender remains responsive. Shared Image jobs return current saved state immediately; call job_status again while active delivery advances.\n"
+            "Wait for a generation while Blender remains responsive. Shared jobs return when delivery finishes, pauses for review, or the wait expires. Restarted jobs remain inspection-only until explicitly resumed.\n"
             "Args:\n"
             "  - job_id: optional string, a Scenario job id or local_id returned by generate.\n"
             "  - id: optional string, compatibility alias; provide job_id or id. job_id takes precedence.\n"

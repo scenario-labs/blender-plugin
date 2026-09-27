@@ -104,7 +104,7 @@ File loading retires the selected owner and invalidates its context token; the
 next recovery call creates a fresh session against the same scoped store.
 GUI ticks and the headless MCP loop reap retired sessions after work finishes.
 The Image entry point now uses this session for quote-bound submission, as described below.
-Remote recovery controls remain open; active Image transfers use the policy below.
+Explicit saved-job controls and active Image transfers use the same session below.
 
 ## Active SDK cost previews and Image submission
 
@@ -144,11 +144,18 @@ supports bounded RGB/RGBA PNG and scanline OpenEXR; other formats remain saved
 without import. It does not assign textures or replace scene targets. A stale
 origin, read/download error or uncertain application stops automatic delivery
 without another generation. The [transfer policy](../RESULT_TRANSFERS.md#active-image-delivery)
-names the documented CDN hosts. Remote cancellation and explicit restart/retry
-controls still need integration; restarted records are inspection-only.
+names the documented CDN hosts. The Jobs panel's **Inspect saved jobs** button
+and MCP `list_local_jobs` provide saved state. UI recovery buttons and
+`recover_local_job` use the current context token and observed revision to refresh,
+resume polling/download, cancel a known model job, reconcile interrupted download
+receipts, or save a pending import receipt. These actions never submit generation.
+Resuming after restart does not approve import into the new scene; explicit
+recovered-target application remains unfinished.
 Its `job_status` and `wait_for_job` return the current saved state; active jobs
-advance through the same maintenance pump. `wait_for_job` still returns immediately
-for these records rather than holding a remote wait.
+advance through the same maintenance pump. `wait_for_job` waits on the HTTP worker
+while the main thread remains available for delivery. It returns at completion,
+review-required state or timeout, and rejects a changed credential context.
+An unresumed restarted record is returned immediately.
 Other lanes still use prototype paid dispatch. Do not describe this slice as
 complete generation, supported release acceptance, or completion of #65.
 

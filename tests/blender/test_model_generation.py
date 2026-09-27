@@ -8,6 +8,7 @@ import json
 import tempfile
 import threading
 import unittest
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
@@ -39,6 +40,7 @@ class ModelGenerationTests(unittest.TestCase):
         self.result_bytes = b""
         self.before_images = set(bpy.data.images)
         self.download_error = False
+        self.cancel_calls = []
         self.lose_response = False
         self.entered, self.release = threading.Event(), threading.Event()
         self.release.set()
@@ -63,6 +65,7 @@ class ModelGenerationTests(unittest.TestCase):
                             "job": {
                                 "jobId": request.url.path.rsplit("/", 1)[-1],
                                 "status": self.remote_status,
+                                "jobType": "custom",
                                 "metadata": {"assetIds": ["result-image"]},
                             }
                         },
@@ -81,6 +84,11 @@ class ModelGenerationTests(unittest.TestCase):
                         },
                     )
                 return httpx.Response(200, json={"model": self.model})
+            if "/jobs/" in request.url.path:
+                self.assertEqual(json.loads(request.content), {"action": "cancel"})
+                self.cancel_calls.append(request)
+                self.remote_status = "canceled"
+                return httpx.Response(200, json={"job": {"jobId": "remote-1"}})
             if request.url.params.get("dryRun") == "true":
                 return httpx.Response(269, content=b'{"creativeUnitsCost":0.1234567890123456789}')
             records = self.store.records()
@@ -238,6 +246,177 @@ class ModelGenerationTests(unittest.TestCase):
         self.assertEqual(len(self.calls), count)
         self.assertEqual(len(self.paid), 1)
         self.assertEqual(self.downloads, [])
+
+    def recovery_args(self, request_id, action):
+        inspection = self.tools.list_local_jobs({})
+        item = next(job for job in inspection["jobs"] if job["request_id"] == request_id)
+        return dict(
+            context_id=inspection["context_id"],
+            request_id=request_id,
+            expected_revision=item["revision"],
+            action=action,
+        )
+
+    def recover(self, request_id, action):
+        deferred = self.tools.recover_local_job(self.recovery_args(request_id, action))
+        if isinstance(deferred, dict):
+            return deferred
+        return deferred.finish(deferred.run())
+
+    def test_restart_inspection_and_resume_download_do_not_rebind_application(self):
+        self.result_fixture()
+        self.remote_status = "in-progress"
+        result = self.mcp_submit(self.mcp_quote())
+        self.deliver_results()
+        self.runtime.state.reset()
+        before, calls = set(bpy.data.images), len(self.calls)
+        self.assertEqual(bpy.ops.scenario.inspect_saved_jobs(), {"FINISHED"})
+        self.assertEqual(len(self.calls), calls)
+        self.assertEqual(len(self.runtime.state.jobs_view), 1)
+        self.remote_status = "success"
+        self.recover(result["local_id"], "resume")
+        self.deliver_results()
+        self.assertEqual(self.store.get(result["local_id"]).state, self.storemod.JobState.READY)
+        self.assertEqual(set(bpy.data.images), before)
+        self.assertEqual(len(self.downloads), 1)
+        self.assertEqual(len(self.paid), 1)
+
+    def test_native_download_retry_uses_same_saved_job_without_generation(self):
+        self.result_fixture()
+        self.download_error = True
+        result = self.mcp_submit(self.mcp_quote())
+        self.deliver_results()
+        self.download_error = False
+        before = set(bpy.data.images)
+        args = self.recovery_args(result["local_id"], "resume")
+        self.assertEqual(bpy.ops.scenario.recover_job(**args), {"FINISHED"})
+        self.deliver_results()
+        self.assertEqual(self.store.get(result["local_id"]).state, self.storemod.JobState.READY)
+        self.assertEqual(set(bpy.data.images), before)
+        self.assertEqual(len(self.paid), 1)
+        self.assertEqual(len(self.downloads), 1)
+
+    def test_recovery_rejects_stale_revision_and_context_before_network(self):
+        result = self.mcp_submit(self.mcp_quote())
+        self.deliver_results()
+        args = self.recovery_args(result["local_id"], "refresh")
+        calls = len(self.calls)
+        with self.assertRaises(self.request_error):
+            self.tools.recover_local_job(
+                dict(args, expected_revision=args["expected_revision"] + 1)
+            )
+        with self.assertRaises(self.request_error):
+            self.tools.recover_local_job(dict(args, expected_revision=True))
+        self.prefs.api_secret = "different-fixture-secret"
+        with self.assertRaises(self.request_error):
+            self.tools.recover_local_job(args)
+        self.assertEqual(len(self.calls), calls)
+        self.assertEqual(len(self.paid), 1)
+
+    def test_remote_cancel_observes_terminal_status_and_cannot_repeat(self):
+        result = self.mcp_submit(self.mcp_quote())
+        self.deliver_results()
+        status = self.recover(result["local_id"], "cancel")
+        self.assertEqual(status["status"], "canceled", status)
+        with self.assertRaises(self.request_error):
+            self.recover(result["local_id"], "cancel")
+        self.assertEqual(len(self.cancel_calls), 1)
+        self.assertEqual(len(self.paid), 1)
+
+    def test_uncertain_submission_has_no_recovery_dispatch_action(self):
+        self.lose_response = True
+        result = self.mcp_submit(self.mcp_quote())
+        self.settle()
+        calls = len(self.calls)
+        for action in ("refresh", "resume", "cancel", "recover_download", "retry_receipt"):
+            with self.subTest(action=action), self.assertRaises(self.request_error):
+                self.recover(result["local_id"], action)
+        self.assertEqual(len(self.calls), calls)
+        self.assertEqual(len(self.paid), 1)
+
+    def test_shared_wait_does_not_block_main_thread_result_delivery(self):
+        self.result_fixture()
+        result = self.mcp_submit(self.mcp_quote())
+        deferred = self.tools.wait_for_job({"job_id": result["local_id"], "timeout": 5})
+        with ThreadPoolExecutor(max_workers=1) as worker:
+            waiting = worker.submit(deferred.run)
+            self.assertFalse(waiting.done())
+            self.deliver_results()
+            waiting.result(5)
+        self.assertEqual(deferred.finish(None)["status"], "applied")
+        self.assertEqual(len(self.paid), 1)
+
+    def test_shared_wait_rejects_context_change_without_cancelling_generation(self):
+        result = self.mcp_submit(self.mcp_quote())
+        self.deliver_results()
+        deferred = self.tools.wait_for_job({"job_id": result["local_id"], "timeout": 0.01})
+        with ThreadPoolExecutor(max_workers=1) as worker:
+            worker.submit(deferred.run).result(5)
+        self.prefs.api_secret = "different-fixture-secret"
+        with self.assertRaises(self.request_error):
+            deferred.finish(None)
+        self.assertEqual(self.cancel_calls, [])
+        self.assertEqual(len(self.paid), 1)
+
+    def test_shared_wait_stops_with_mcp_without_cancelling_generation(self):
+        result = self.mcp_submit(self.mcp_quote())
+        self.deliver_results()
+        server = Mock(running=True)
+        self.runtime.state.mcp = server
+        deferred = self.tools.wait_for_job({"job_id": result["local_id"], "timeout": 5})
+        with ThreadPoolExecutor(max_workers=1) as worker:
+            waiting = worker.submit(deferred.run)
+            server.running = False
+            with self.assertRaisesRegex(self.request_error, "wait stopped"):
+                waiting.result(2)
+        with self.assertRaises(self.request_error):
+            deferred.finish(None)
+        self.assertEqual(self.cancel_calls, [])
+        self.assertEqual(len(self.paid), 1)
+        self.assertEqual(self.store.get(result["local_id"]).state, self.storemod.JobState.REMOTE)
+
+    def test_explicit_interrupted_download_recovery_uses_receipts_without_network(self):
+        self.result_fixture()
+        result = self.mcp_submit(self.mcp_quote())
+        transition = self.store.transition
+
+        def fail(*args, **kwargs):
+            if kwargs.get("state") == self.storemod.JobState.READY:
+                raise self.storemod.StoreError("synthetic interrupted final receipt")
+            return transition(*args, **kwargs)
+
+        with patch.object(self.store, "transition", side_effect=fail):
+            self.deliver_results()
+        self.assertEqual(
+            self.store.get(result["local_id"]).state, self.storemod.JobState.DOWNLOADING
+        )
+        before = set(bpy.data.images), len(self.calls), len(self.downloads)
+        with online_access(False):
+            status = self.recover(result["local_id"], "recover_download")
+        self.assertEqual(status["status"], "ready")
+        self.assertEqual((set(bpy.data.images), len(self.calls), len(self.downloads)), before)
+        self.assertEqual(len(self.paid), 1)
+
+    def test_mcp_import_receipt_retry_never_reimports_images(self):
+        self.result_fixture()
+        result = self.mcp_submit(self.mcp_quote())
+        transition = self.store.transition
+
+        def fail(*args, **kwargs):
+            if kwargs.get("state") == self.storemod.JobState.APPLIED:
+                raise self.storemod.StoreError("synthetic interrupted application receipt")
+            return transition(*args, **kwargs)
+
+        with patch.object(self.store, "transition", side_effect=fail):
+            self.deliver_results()
+        self.assertEqual(self.store.get(result["local_id"]).state, self.storemod.JobState.APPLYING)
+        before = set(bpy.data.images), len(self.calls), len(self.downloads)
+        status = self.recover(result["local_id"], "retry_receipt")
+        self.assertEqual(status["status"], "applied")
+        self.assertEqual((set(bpy.data.images), len(self.calls), len(self.downloads)), before)
+        with self.assertRaises(self.request_error):
+            self.recover(result["local_id"], "retry_receipt")
+        self.assertEqual(len(self.paid), 1)
 
     def ui_quote(self):
         self.generation.request_estimate(bpy.context.scene, "image")

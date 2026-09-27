@@ -27,6 +27,12 @@ or refresh remote jobs.
 `cancel_prepared_job` cancels only an unsubmitted durable intent, using the context
 token and revision from inspection. A reset, file load or credential switch invalidates that
 token. Claimed or uncertain submissions require reconciliation, never blind retry.
+
+`recover_local_job` uses that token and the observed revision for explicit refresh,
+resume/download, known model-job cancellation, interrupted-download reconciliation
+or pending import-receipt retry. Resuming a restarted job does not import it into
+the current scene. Shared `wait_for_job` waits without blocking Blender's main
+thread and returns when delivery finishes, needs review, or reaches its timeout.
 See [job contexts](BLENDER_JOB_CONTEXT.md) for lifetime and remaining integration.
 
 ## Token lifecycle
@@ -185,6 +191,7 @@ Do not edit this block by hand; run `make mcp-docs`. An asterisk marks a require
 
 | Tool | Description | Arguments | Notes |
 | --- | --- | --- | --- |
+| `recover_local_job` | Explicitly recover a saved job without repeating generation or importing into another scene. | `context_id`*: string<br>`request_id`*: string<br>`expected_revision`*: integer<br>`action`*: string (['refresh', 'resume', 'cancel', 'recover_download', 'retry_receipt']) | destructive annotation |
 | `list_local_jobs` | Inspect durable local jobs for the selected API-key pair without network requests. | none | read-only annotation |
 | `cancel_prepared_job` | Cancel an unsubmitted durable local intent without contacting Scenario. | `context_id`*: string<br>`request_id`*: string<br>`expected_revision`*: integer | destructive annotation |
 | `list_models` | List the loaded lane catalog, with curated models first and at most 40 matches. | `lane`: string (enum: see tools/list)<br>`query`: string | read-only annotation |
@@ -192,7 +199,7 @@ Do not edit this block by hand; run `make mcp-docs`. An asterisk marks a require
 | `estimate_cost` | Get the exact CU cost with a dry run that spends no credits. | `model_id`*: string<br>`parameters`: object<br>`lane`: string (enum: see tools/list) | read-only annotation |
 | `generate` | Submit a generation that spends the user's credits. Image submissions use durable shared jobs. | `lane`*: string (enum: see tools/list)<br>`quote_id`: string<br>`approved_cost`: string<br>`model_id`*: string<br>`parameters`: object; Model parameters; file parameters take Scenario asset ids | spends credits |
 | `job_status` | Read one local generation's status and cost without spending credits. Active Image jobs advance through shared remote polling and verified delivery; restarted jobs remain inspection-only. | `job_id`: string; Scenario job id (job_...) or the local_id returned by generate<br>`id`: string; Same as job_id, kept for compatibility | read-only annotation |
-| `wait_for_job` | Wait for a prototype generation while Blender remains responsive. Shared Image jobs return current saved state immediately; call job_status again while active delivery advances. | `job_id`: string; Scenario job id (job_...) or the local_id returned by generate<br>`id`: string; Same as job_id, kept for compatibility<br>`timeout`: number | read-only annotation |
+| `wait_for_job` | Wait for a generation while Blender remains responsive. Shared jobs return when delivery finishes, pauses for review, or the wait expires. Restarted jobs remain inspection-only until explicitly resumed. | `job_id`: string; Scenario job id (job_...) or the local_id returned by generate<br>`id`: string; Same as job_id, kept for compatibility<br>`timeout`: number | read-only annotation |
 | `import_result` | Apply an already downloaded generation again to the current Blender scene and selection. | `job_id`: string; Scenario job id (job_...) or the local_id returned by generate<br>`id`: string; Same as job_id, kept for compatibility | - |
 | `capture_reference` | Capture a 1280x720 viewport or camera still and upload it as a Scenario reference asset. | `source`: string (['VIEWPORT', 'CAMERA']) | GUI required |
 | `list_generations` | List recent cloud generations using this Blender runtime's loaded history. | `limit`: integer<br>`refresh`: boolean | read-only annotation |
@@ -255,6 +262,7 @@ behavior interchangeable. Remote names below were checked against the
 | Generate | `generate(lane, model_id, parameters)`, automatic scene application | `model_run` |
 | Job status | `job_status(job_id or id)` | `job_get` |
 | Durable local recovery | `list_local_jobs`, `cancel_prepared_job` | Local only; no remote polling or cancellation |
+| Saved job actions | `recover_local_job(context_id, request_id, expected_revision, action)` | Scoped job refresh/cancellation, asset retrieval, or local receipt recovery; never a new generation |
 | Wait | `wait_for_job(job_id or id, timeout)`, one job without blocking Blender | `jobs_wait` |
 | Reference upload | `capture_reference(source)`, captures the scene first | `upload_asset`, `upload_asset_complete` for an existing file |
 | History | `list_generations(limit)` | `jobs_list` |

@@ -7,7 +7,7 @@ import os
 
 import bpy
 
-from . import generation, params_ui, props, runtime
+from . import generation, job_recovery, params_ui, props, runtime
 
 KIND_ICON = {
     "image": "IMAGE_DATA",
@@ -461,6 +461,7 @@ def draw_result(layout, rec):
         row.operator(
             "scenario.error_details", text="", icon="INFO"
         ).local_id = rec.local_id  # tooltip = full message; click = full text + copy
+    job_recovery.draw_controls(box, rec)
     if rec.meta.get("download_errors"):
         box.label(
             text=f"{len(rec.meta['download_errors'])} file(s) could not be downloaded", icon="ERROR"
@@ -702,6 +703,9 @@ class SCENARIO_PT_jobs(bpy.types.Panel):
 
     def draw(self, context):
         layout = self.layout
+        layout.operator(
+            "scenario.inspect_saved_jobs", text="Inspect saved jobs", icon="FILE_REFRESH"
+        )
         active = [r for r in runtime.state.jobs_view if not r.is_terminal]
         if not active:
             layout.label(text="No job running", icon="CHECKMARK")
@@ -711,10 +715,19 @@ class SCENARIO_PT_jobs(bpy.types.Panel):
             row = box.row(align=True)
             row.label(text=_short_prompt(rec, 44), icon=KIND_ICON.get(rec.kind, "TIME"))
             status = STATUS_TEXT.get(rec.status, rec.status)
-            progress = f" {int(rec.progress * 100)}%" if rec.status == "in-progress" else ""
+            progress = (
+                f" {int(rec.progress * 100)}%"
+                if rec.status == "in-progress" and not rec.meta.get("shared_job")
+                else ""
+            )
             box.label(
                 text=f"{rec.meta.get('model_name', rec.model_id)}: {status}{progress}", icon="TIME"
             )
+            if rec.error:
+                box.operator(
+                    "scenario.error_details", text="Job needs review", icon="ERROR"
+                ).local_id = rec.local_id
+            job_recovery.draw_controls(box, rec)
 
 
 class SCENARIO_PT_generations(bpy.types.Panel):

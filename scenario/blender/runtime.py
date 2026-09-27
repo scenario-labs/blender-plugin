@@ -242,6 +242,25 @@ def cancel_prepared_job(context_id, request_id, expected_revision):
     return session.cancel_prepared(request_id, expected_revision=expected_revision)
 
 
+def inspect_model_jobs():
+    jobs = ensure_model_jobs()
+    for view in jobs.inspect():
+        if not any(existing is view for existing in state.jobs_view):
+            state.jobs_view.insert(0, view)
+    return jobs
+
+
+def control_model_job(context_id, request_id, expected_revision, action):
+    jobs = ensure_model_jobs()
+    if context_id != state.job_context_id:
+        raise ScenarioError(0, "The selected job context changed; list local jobs again")
+    task = jobs.control(request_id, expected_revision, action)
+    view = jobs.views[request_id]
+    if not any(existing is view for existing in state.jobs_view):
+        state.jobs_view.insert(0, view)
+    return jobs, task
+
+
 def request_connection_check():
     """Queue a single model-access probe for the current selected credentials."""
     if not online():

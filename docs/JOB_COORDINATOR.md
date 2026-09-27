@@ -191,8 +191,9 @@ fail closed on that record instead of silently treating it as dispatchable.
 polling interface. Deactivation before the action is claimed stops dispatch;
 once claimed, late observations stay bound to the original store. Shutdown
 joins this work before closing the SDK. General workflow cancellation, live
-service acceptance, and the UI/MCP cancellation controls remain outstanding
-under #65; rejecting a workflow approval node is not a substitute. Captured job
+service acceptance and other generation lanes remain outstanding under #65.
+The Image facade now exposes these commands through shared UI/MCP saved-job
+controls; rejecting a workflow approval node is not a substitute. Captured job
 types and offline tests do not establish live cancellation acceptance.
 
 
@@ -244,9 +245,9 @@ is deliberately rejected; a prior scene mutation may already have occurred.
 All three methods are available through `JobWorkers` using the same bounded pool,
 SDK lifetime and main-thread polling interface. Deactivation stops subsequent
 asset work; a transfer already in flight can save its receipt to the old scope.
-Closing a view must not deactivate these application-owned workers. Runtime
-registration, production host configuration, application recovery and UI/MCP
-controls remain integration work under #65.
+Closing a view must not deactivate these application-owned workers. Active Image
+delivery configures the CDN policy and exposes shared download/recovery controls.
+Recovered-target application and remaining lanes stay under #65.
 
 
 ### Explicit interrupted-download recovery
@@ -406,8 +407,9 @@ supply spending approval or automatically submit anything.
 thread, and its normal bounded completion queue delivers the result with its
 captured origin. `prepare_quote` resolves that same scene/target before persisting.
 Frame/file/dependency invalidation, view-independent lifetime and shutdown retain
-the existing session rules. Image UI/MCP now use these quote/submission commands;
-other lanes and result delivery remain on the integration backlog.
+the existing session rules. Image UI/MCP now use these quote/submission commands,
+result delivery and saved-job controls; other lanes, reference uploads and
+explicit recovered-target application remain on the integration backlog.
 
 Estimate ownership is checked before acquiring the coordinator/origin locks.
 Preparation keeps quote selection and persistence under the coordinator lock,

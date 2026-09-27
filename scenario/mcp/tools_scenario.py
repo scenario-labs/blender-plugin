@@ -395,14 +395,101 @@ def import_result(args):
 
 
 def capture_reference(args):
-    from ..blender import capture
-    from ..core.api import assets
+    from ..blender.reference_uploads import capture_upload
 
-    source = args.get("source") or "VIEWPORT"
-    path = capture.new_capture_path("mcp_ref", "png")
-    capture.capture_still(bpy.context, path, source=source, width=1280, height=720)
-    asset_id = assets.upload_file(runtime.make_client(), path, kind="image")
-    return {"asset_id": asset_id, "path": path}
+    ticket = capture_upload(bpy.context, source=args.get("source") or "VIEWPORT")
+    return _reference_response(ticket.identifier)
+
+
+def upload_reference(args):
+    path = args.get("path")
+    if not isinstance(path, str) or not path:
+        raise ValueError("Choose a local image path to upload")
+    owner = runtime.ensure_reference_uploads()
+    ticket = owner.start(bpy.context.scene, bpy.path.abspath(path))
+    return _reference_response(ticket.identifier)
+
+
+def _reference_response(identifier):
+    return {
+        "context_id": runtime.state.job_context_id,
+        **runtime.ensure_reference_uploads().status(identifier),
+        "note": "Poll reference_upload_status; use its imported asset_id in estimate_cost. "
+        "Do not restart an uncertain upload. Uploading does not generate or approve spending.",
+    }
+
+
+def _upload_context(args):
+    owner = runtime.ensure_reference_uploads()
+    if args.get("context_id") != runtime.state.job_context_id:
+        raise ScenarioError(0, "The upload context changed; list saved uploads again")
+    return owner
+
+
+def reference_upload_status(args):
+    owner = _upload_context(args)
+    return {"context_id": runtime.state.job_context_id, **owner.status(args["reference_id"])}
+
+
+def list_reference_uploads(args):
+    owner = runtime.ensure_reference_uploads()
+    return {
+        "context_id": runtime.state.job_context_id,
+        "uploads": [
+            {
+                "request_id": item.record.intent.request_id,
+                "revision": item.record.revision,
+                "state": item.record.state.value,
+                "action": item.action.value,
+                "asset_id": item.record.asset_id,
+                "upload_id": item.record.upload_id,
+            }
+            for item in owner.session.upload_recovery_plan()
+        ],
+    }
+
+
+def recover_reference_upload(args):
+    owner = _upload_context(args)
+    command = {
+        "refresh": "refresh_upload",
+        "cancel_prepared": "cancel_prepared_upload",
+        "cleanup": "discard_upload_source",
+    }.get(args.get("action"))
+    if command is None:
+        raise ValueError("Choose refresh, cancel_prepared or cleanup")
+    request_id, revision = args["request_id"], args["expected_revision"]
+    if type(revision) is not int or revision < 0:
+        raise ValueError("expected_revision must be a nonnegative integer")
+    result = getattr(owner.session, command)(request_id, expected_revision=revision)
+
+    def finish(_):
+        runtime.sync_catalog_context()
+        if runtime.state.reference_uploads is not owner or not owner.session.active:
+            raise ScenarioError(0, "The upload context changed during recovery")
+        if command != "cancel_prepared_upload":
+            completion = owner.session.drain(task=result)[0]
+            if completion.error is not None:
+                raise ScenarioError(0, "Upload recovery failed; inspect its saved state")
+        record = owner.session.inspect_upload(request_id)
+        owner.observe_saved(record)
+        return {
+            "request_id": request_id,
+            "state": record.state.value,
+            "revision": record.revision,
+            "asset_id": record.asset_id,
+        }
+
+    if command == "cancel_prepared_upload":
+        return finish(result)
+
+    def run():
+        try:
+            result.result()
+        except Exception:
+            pass
+
+    return DeferredTool(run, finish)
 
 
 def list_generations(args):
@@ -455,6 +542,76 @@ _JOB_REF = {
 
 
 SPECS = (
+    ToolSpec(
+        "upload_reference",
+        (
+            "Upload an explicitly chosen local image through the shared durable upload session.\n"
+            "Args:\n  - path: required string, local image path selected by the user.\n"
+            "Returns: context_id, reference_id, staging/upload state, request_id when persisted and note.\n"
+            'Example: {"path": "/chosen/reference.png"}.\n'
+            "This sends the image to Scenario. Call only for an authorized upload; it does not generate or approve spending. Poll reference_upload_status until imported, then quote with asset_id. Do not repeat an uncertain upload.\n"
+            "Platform equivalent: upload_asset then upload_asset_complete."
+        ),
+        _schema({"path": {"type": "string"}}, ["path"]),
+        upload_reference,
+    ),
+    ToolSpec(
+        "reference_upload_status",
+        (
+            "Read a reference upload's progress while the shared session advances its already authorized work.\n"
+            "Args:\n  - context_id: required string, context from upload_reference or capture_reference.\n"
+            "  - reference_id: required string, the returned session-owned upload handle.\n"
+            "Returns: reference_id, request_id, revision, state, asset_id, error and pending.\n"
+            'Example: {"context_id": "from-upload", "reference_id": "from-upload"}.\n'
+            "Use asset_id only after state imported. A changed context rejects old handles; use list_reference_uploads after restart. This does not create or replay uploads.\n"
+            "Platform equivalent: upload status retrieval."
+        ),
+        _schema(
+            {"context_id": {"type": "string"}, "reference_id": {"type": "string"}},
+            ["context_id", "reference_id"],
+        ),
+        reference_upload_status,
+        {"readOnlyHint": True},
+    ),
+    ToolSpec(
+        "list_reference_uploads",
+        (
+            "Inspect saved uploads under the selected credential scope, including after restart.\n"
+            "Args: none.\n"
+            "Returns: context_id and uploads with request_id, revision, state, suggested action, upload_id and asset_id.\n"
+            "Example: {}.\n"
+            "Inspection makes no network request, sends no bytes and never resumes uncertain initialization or parts. Use recover_reference_upload for explicit known-upload reads or local cleanup.\n"
+            "Platform equivalent: none; this inspects local durable upload history."
+        ),
+        _schema({}),
+        list_reference_uploads,
+        {"readOnlyHint": True},
+    ),
+    ToolSpec(
+        "recover_reference_upload",
+        (
+            "Explicitly inspect a known remote upload, cancel unclaimed preparation, or clean its finished private source copy.\n"
+            "Args:\n  - context_id: required string, context from list_reference_uploads.\n"
+            "  - request_id: required string, saved local upload identity.\n"
+            "  - expected_revision: required nonnegative integer, observed saved revision.\n"
+            "  - action: required string, refresh, cancel_prepared or cleanup.\n"
+            "Returns: request_id, state, revision and asset_id.\n"
+            'Example: {"context_id": "from-list", "request_id": "from-list", "expected_revision": 2, "action": "refresh"}.\n'
+            "Refresh sends only a status read. Cleanup accepts only finished records and never deletes the original user file. No action repeats initialization, PUT or finalization.\n"
+            "Platform equivalent: upload retrieval or local source cleanup."
+        ),
+        _schema(
+            {
+                "context_id": {"type": "string"},
+                "request_id": {"type": "string"},
+                "expected_revision": {"type": "integer", "minimum": 0},
+                "action": {"type": "string", "enum": ["refresh", "cancel_prepared", "cleanup"]},
+            },
+            ["context_id", "request_id", "expected_revision", "action"],
+        ),
+        recover_reference_upload,
+        {"destructiveHint": True},
+    ),
     ToolSpec(
         "prepare_result_application",
         (
@@ -705,7 +862,7 @@ SPECS = (
             "Capture a 1280x720 viewport or camera still and upload it as a Scenario reference asset.\n"
             "Args:\n"
             "  - source: optional string, VIEWPORT (default) or CAMERA.\n"
-            "Returns: asset_id for a model file parameter, and the local capture path.\n"
+            "Returns: context_id and reference_id; poll reference_upload_status until imported to obtain asset_id for a model file parameter. Captures use private temporary storage cleaned after staging.\n"
             'Example: {"source": "CAMERA"}.\n'
             "Do not use in background mode: capture needs the Blender GUI and a 3D viewport. This sends the captured scene image to Scenario; use it only for an authorized reference upload.\n"
             "Platform equivalent: upload_asset then upload_asset_complete."

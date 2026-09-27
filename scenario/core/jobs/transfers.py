@@ -85,7 +85,7 @@ class StoragePolicy:
             parsed = urlsplit(url)
             if (
                 parsed.scheme != "https"
-                or parsed.hostname not in self.hosts
+                or not self._allows_host(parsed.hostname)
                 or parsed.username is not None
                 or parsed.password is not None
                 or parsed.port not in (None, 443)
@@ -96,6 +96,9 @@ class StoragePolicy:
         except ValueError:
             raise TransferError("Storage destination rejected") from None
         return parsed.hostname, (parsed.path or "/") + (f"?{parsed.query}" if parsed.query else "")
+
+    def _allows_host(self, host):
+        return host in self.hosts
 
 
 @dataclass(frozen=True)

@@ -365,7 +365,11 @@ are mapped above; multipart metadata commands use the adapter as described in
 [SDK_UPLOADS.md](SDK_UPLOADS.md). Signed result downloads have a standalone
 [transport primitive](RESULT_TRANSFERS.md). Upload byte transfer, durable claims,
 scoped inspection and explicit known-upload status refresh are implemented as
-described above. User-facing transfer recovery, authoritative account/project
+described above. Local MCP reference uploads now use `uploads.with_raw_response`
+`create`, `retrieve` and `trigger_action(action="complete")` through the same
+adapter, followed by credential-free signed S3 PUTs. There is no new Scenario API
+fallback or dependency change. See the [active upload contract](SDK_UPLOADS.md#active-reference-uploads)
+for destination trust, source limits and recovery. Form attachment controls, authoritative account/project
 discovery, search/organization and workflow cancellation remain integration work.
 Submission uses the coordinator contract above; live acceptance remains separate.
 

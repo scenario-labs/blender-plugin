@@ -198,6 +198,10 @@ Do not edit this block by hand; run `make mcp-docs`. An asterisk marks a require
 
 | Tool | Description | Arguments | Notes |
 | --- | --- | --- | --- |
+| `upload_reference` | Upload an explicitly chosen local image through the shared durable upload session. | `path`*: string | - |
+| `reference_upload_status` | Read a reference upload's progress while the shared session advances its already authorized work. | `context_id`*: string<br>`reference_id`*: string | read-only annotation |
+| `list_reference_uploads` | Inspect saved uploads under the selected credential scope, including after restart. | none | read-only annotation |
+| `recover_reference_upload` | Explicitly inspect a known remote upload, cancel unclaimed preparation, or clean its finished private source copy. | `context_id`*: string<br>`request_id`*: string<br>`expected_revision`*: integer<br>`action`*: string (['refresh', 'cancel_prepared', 'cleanup']) | destructive annotation |
 | `prepare_result_application` | Prepare explicit import of downloaded PNG/EXR images from a saved job into the current file. | `context_id`*: string<br>`request_id`*: string<br>`expected_revision`*: integer | read-only annotation |
 | `apply_result_application` | Import and pack saved images after the user approves the prepared destination. | `context_id`*: string<br>`application_id`*: string | destructive annotation |
 | `recover_local_job` | Explicitly recover a saved job without repeating generation or importing into another scene. | `context_id`*: string<br>`request_id`*: string<br>`expected_revision`*: integer<br>`action`*: string (['refresh', 'resume', 'cancel', 'recover_download', 'retry_receipt']) | destructive annotation |
@@ -275,7 +279,8 @@ behavior interchangeable. Remote names below were checked against the
 | Review saved Image import | `prepare_result_application(context_id, request_id, expected_revision)` | Local destination capture; show the returned scene and images for approval |
 | Apply approved saved images | `apply_result_application(context_id, application_id)` | Local verified import into the captured destination; no platform call |
 | Wait | `wait_for_job(job_id or id, timeout)`, one job without blocking Blender | `jobs_wait` |
-| Reference upload | `capture_reference(source)`, captures the scene first | `upload_asset`, `upload_asset_complete` for an existing file |
+| Reference upload | `upload_reference(path)` or `capture_reference(source)`, then `reference_upload_status(context_id, reference_id)` until imported | `upload_asset`, `upload_asset_complete` for an existing file |
+| Saved upload recovery | `list_reference_uploads`, then `recover_reference_upload(context_id, request_id, expected_revision, action)` | Known-upload status retrieval; local cancellation/cleanup have no platform equivalent |
 | History | `list_generations(limit)` | `jobs_list` |
 | Apply an existing result | `import_result(job_id or id)` | No Blender scene access |
 | Prompt assistance | Panel controls | `prompt_spark` |
@@ -287,6 +292,17 @@ behavior interchangeable. Remote names below were checked against the
 Connect both when needed: use the local setup above for Blender and the
 [hosted server setup](https://mcp.scenario.com/docs) for Scenario-wide work.
 Some platform operations are discovered through its tool catalog.
+
+`capture_reference` now returns `context_id` and `reference_id`, rather than an
+immediate asset ID or a local capture path. Both upload tools return while the
+shared session stages and transfers the image. Poll `reference_upload_status`
+until `state` is `imported`, then use `asset_id` in a fresh `estimate_cost` call.
+The generation still requires its own exact-cost approval. Do not repeat an
+uncertain upload: inspect saved progress and explicitly refresh its known ID.
+After restart, use `list_reference_uploads`; session handles do not survive.
+Recovery can refresh, cancel unclaimed preparation, or clean a finished private
+source copy, without replaying upload mutations or deleting the original file.
+See [upload limits and destination policy](SDK_UPLOADS.md#active-reference-uploads).
 
 `wait_for_job` accepts a finite timeout from 0 to 170 seconds (default 170).
 A zero timeout reads status immediately. Other waits observe the captured local

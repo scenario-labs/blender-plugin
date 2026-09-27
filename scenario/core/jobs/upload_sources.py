@@ -4,6 +4,7 @@
 
 import hashlib
 import os
+import re
 import stat
 from contextlib import nullcontext
 from dataclasses import asdict
@@ -119,7 +120,7 @@ class UploadSources:
                     scope,
                     origin,
                     kind,
-                    source.name,
+                    re.sub(r"[^A-Za-z0-9._-]", "_", source.name),
                     content_type,
                     total,
                     whole.hexdigest(),

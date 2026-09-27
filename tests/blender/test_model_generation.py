@@ -32,7 +32,13 @@ class ModelGenerationTests(unittest.TestCase):
         self.prefs = self.enterContext(temp_credentials())
         root = self.enterContext(tempfile.TemporaryDirectory(dir=bpy.utils.resource_path("USER")))
         self.enterContext(
-            patch.object(self.runtime, "paths", return_value=SimpleNamespace(state_dir=Path(root)))
+            patch.object(
+                self.runtime,
+                "paths",
+                return_value=SimpleNamespace(
+                    state_dir=Path(root), registry_file=Path(root) / "jobs.json"
+                ),
+            )
         )
         self.calls, self.paid, self.sessions = [], [], []
         self.downloads = []

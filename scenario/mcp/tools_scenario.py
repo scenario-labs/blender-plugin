@@ -231,9 +231,13 @@ def _status(rec):
 
 def _saved_status(reference):
     manager = runtime.state.manager
-    if manager is not None and any(
-        reference in (record.local_id, record.job_id) for record in manager.registry.all()
-    ):
+    # Cold local imports must not require credentials or resume a job engine.
+    registry = (
+        manager.registry
+        if manager is not None
+        else runtime.JobRegistry(runtime.paths().registry_file).load()
+    )
+    if any(reference in (record.local_id, record.job_id) for record in registry.all()):
         return None
     return runtime.ensure_model_jobs().status(reference)
 

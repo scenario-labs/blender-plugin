@@ -764,6 +764,65 @@ class ReferenceFormTests(unittest.TestCase):
             self.assertTrue(request.errors)
             self.assertEqual(request.body, {})
 
+    def test_unloaded_schema_does_not_invalidate_uploaded_reference(self):
+        lane, ref = self.configure_typed_input("audio", "audio")
+        self.form.start(bpy.context, 0, lane_name="audio")
+        self.fixture.settle()
+        model_id = lane.model_id
+        listed = submodule("core.api.catalog").ModelRecord.from_api(
+            {"id": model_id, "name": "List-only model"}
+        )
+        for records in ({}, {model_id: listed}):
+            with self.subTest(list_only=bool(records)):
+                self.generation._schemas.clear()
+                with patch.dict(self.runtime.state.records, records, clear=True):
+                    self.assertIsNone(self.form.scope_error(lane))
+                    request = self.generation.build_request(self.scene, "audio", for_estimate=True)
+                    self.assertEqual(request.errors, ["Model not loaded yet"])
+                    self.assertEqual(request.body, {})
+                request = self.generation.build_request(self.scene, "audio", for_estimate=True)
+                self.assertFalse(request.errors, request.errors)
+                self.assertEqual(request.body["input"], ref.asset_id)
+        self.fixture.fixture.uploader.upload.assert_called_once()
+
+    def test_pending_upload_waits_for_schema_then_rechecks_kind(self):
+        for restored_kind in ("audio", "video"):
+            with self.subTest(restored_kind=restored_kind):
+                lane, ref = self.configure_typed_input("audio", "audio")
+                binding = self.form.start(bpy.context, 0, lane_name="audio")
+                marker = ref[self.form._MARKER]
+                with patch.object(self.generation, "schema_for", return_value=None):
+                    self.fixture.settle()
+                    self.assertEqual(binding.ticket.record.state.value, "imported")
+                    self.assertEqual(ref.source, "FILE")
+                    self.assertFalse(binding.error)
+                    self.assertIs(self.owner.forms[marker], binding)
+                with patch.object(self.form, "input_kind", return_value=restored_kind):
+                    self.form.deliver(self.owner)
+                self.assertEqual(binding.attached, restored_kind == "audio")
+                self.assertEqual(bool(binding.error), restored_kind != "audio")
+                self.assertNotIn(marker, self.owner.forms)
+        self.assertEqual(self.fixture.fixture.uploader.upload.call_count, 2)
+
+    def test_saved_confirmation_reports_unloaded_schema_without_attachment(self):
+        record = self.saved_upload()
+        approval = self.approve(record)
+        before = dict(self.ref.items()), self.form.reference_values(self.ref)
+        with patch.object(self.generation, "schema_for", return_value=None):
+            with self.assertRaisesRegex(
+                submodule("core.api.errors").ScenarioError, "Model not loaded"
+            ):
+                self.form.apply_attachment(self.runtime.state.job_context_id, approval.identifier)
+            with self.assertRaisesRegex(
+                submodule("core.api.errors").ScenarioError, "Model not loaded"
+            ):
+                self.approve(record)
+        self.assertEqual(before, (dict(self.ref.items()), self.form.reference_values(self.ref)))
+        approval = self.approve(record)
+        self.form.apply_attachment(self.runtime.state.job_context_id, approval.identifier)
+        self.assertEqual(self.ref.asset_id, record.asset_id)
+        self.fixture.fixture.uploader.upload.assert_called_once()
+
     def test_typed_controls_carry_lane_and_drawing_is_read_only(self):
         lane, ref = self.configure_typed_input("video", "audio")
         operators = []

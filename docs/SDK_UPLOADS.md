@@ -453,6 +453,11 @@ then quotes/submits the immutable asset ID, not the later contents of the origin
 file. A marked upload that has not attached blocks request construction in
 every lane, preventing duplicate prototype upload while it is pending or
 uncertain. Unmarked implicit clip/mesh/render preparation remains separate.
+An unloaded or list-only model schema is a temporary state, not an edited input.
+In-flight bindings wait for model inputs before attachment and recheck the kind
+when they load. Saved assets retain their scope checks; request construction
+reports the unloaded model until its schema is available. Saved-reference
+confirmation also requires loaded inputs and a fresh review after loading.
 
 Uploaded references retain their credential-scope fingerprint. Reopening under
 another connection, changing the input kind or manually changing that asset ID

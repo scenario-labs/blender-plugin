@@ -42,6 +42,15 @@ def input_kind(lane, param_name):
     return kind if kind in _KINDS else None
 
 
+def _kind_matches(lane, param_name, expected):
+    """None means the schema is unavailable, not that the input changed."""
+    from . import generation
+
+    if generation.schema_for(lane.model_id) is None:
+        return None
+    return input_kind(lane, param_name) == expected
+
+
 def _lane(scene, name):
     if name not in props.GENERATION_LANES:
         raise ScenarioError(0, "Choose a generation form for this reference")
@@ -151,6 +160,8 @@ def prepare_attachment(
         ref = lane.references[index]
         param_name = ref.param_name
     schema = generation.schema_for(lane.model_id)
+    if schema is None:
+        raise ScenarioError(0, "Model not loaded yet; review the saved upload after loading")
     spec = schema.by_name(param_name) if schema is not None else None
     if input_kind(lane, param_name) != record.intent.kind:
         raise ScenarioError(0, "Choose a matching input type for this saved upload")
@@ -192,12 +203,15 @@ def apply_attachment(context_id, identifier):
         raise ScenarioError(0, "The saved upload changed; review it again")
     owner.session.validate_destination(approval.origin)
     lane = _lane(approval.scene, approval.lane_name)
+    kind_matches = _kind_matches(lane, approval.param_name, approval.record.intent.kind)
     if (
         lane.model_id != approval.model_id
         or _form_snapshot(lane) != approval.form
-        or input_kind(lane, approval.param_name) != approval.record.intent.kind
+        or kind_matches is False
     ):
         raise ScenarioError(0, "The model or references changed; review the destination again")
+    if kind_matches is None:
+        raise ScenarioError(0, "Model not loaded yet; review the saved upload after loading")
     ref = approval.reference
     added = ref is None
     if added:
@@ -260,7 +274,7 @@ class FormUpload:
                 and any(ref == self.reference for ref in lane.references)
                 and self.reference.get(_MARKER) == token
                 and reference_values(self.reference) == self.values
-                and input_kind(lane, self.reference.param_name) == self.kind
+                and _kind_matches(lane, self.reference.param_name, self.kind) is not False
             )
         except (ReferenceError, RuntimeError):
             return False
@@ -348,6 +362,13 @@ def _deliver_binding(owner, token, binding):
         binding.reference[_REQUEST] = ticket.record.intent.request_id
     if ticket.record is None or ticket.record.state != UploadState.IMPORTED:
         return
+    if (
+        _kind_matches(
+            _lane(binding.scene, binding.lane_name), binding.reference.param_name, binding.kind
+        )
+        is None
+    ):
+        return  # Keep the binding until current model inputs can be checked.
     try:
         owner.session.validate_destination(ticket.record.intent.origin)
     except Exception:
@@ -375,7 +396,7 @@ def scope_error(lane_state):
             store is None
             or ref.get(_SCOPE) != scope_key(store.scope)
             or ref.asset_id != ref.get(_ASSET)
-            or input_kind(lane_state, ref.param_name) != ref.get(_KIND, "image")
+            or _kind_matches(lane_state, ref.param_name, ref.get(_KIND, "image")) is False
         ):
             return "This uploaded reference belongs to another connection or was edited; choose it again"
     return None

@@ -1,6 +1,6 @@
 # SPDX-FileCopyrightText: 2026 Scenario Inc.
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""Active Image UI/MCP spend boundary against the bundled SDK and real storage."""
+"""Active UI/MCP model spend boundary against the bundled SDK and real storage."""
 
 import hashlib
 import io
@@ -38,6 +38,7 @@ class ModelGenerationTests(unittest.TestCase):
         self.downloads = []
         self.remote_status = "in-progress"
         self.result_bytes = b""
+        self.result_media_type = "image/png"
         self.before_images = set(bpy.data.images)
         self.download_error = False
         self.cancel_calls = []
@@ -77,7 +78,7 @@ class ModelGenerationTests(unittest.TestCase):
                             "asset": {
                                 "id": "result-image",
                                 "status": "success",
-                                "mimeType": "image/png",
+                                "mimeType": self.result_media_type,
                                 "properties": {"size": len(self.result_bytes)},
                                 "url": "https://cdn.cloud.scenario.com/fixture.png",
                             }
@@ -548,15 +549,15 @@ class ModelGenerationTests(unittest.TestCase):
         self.runtime.sync_catalog_context()
         self.assertEqual(self.lane.estimate_state, "READY", self.lane.estimate_error)
 
-    def mcp_quote(self):
+    def mcp_quote(self, lane="image"):
         deferred = self.tools.estimate_cost(
-            {"model_id": self.model["id"], "parameters": {"prompt": "a teapot"}}
+            {"model_id": self.model["id"], "parameters": {"prompt": "a teapot"}, "lane": lane}
         )
         return deferred.finish(deferred.run())
 
     def mcp_submit(self, quote, **changes):
         args = dict(
-            lane="image",
+            lane=quote["lane"],
             model_id=self.model["id"],
             parameters={"prompt": "a teapot"},
             quote_id=quote["quote_id"],
@@ -764,3 +765,127 @@ class ModelGenerationTests(unittest.TestCase):
         self.assertEqual(self.tools.list_local_jobs({})["jobs"], [])
         self.assertEqual(self.runtime.state.jobs_view, [])
         self.assertEqual(len(self.paid), 1)
+
+    def test_every_mcp_lane_requires_exact_single_use_quote_before_sdk_submission(self):
+        lanes = submodule("core.api.catalog").GENERATION_LANES
+        for count, lane in enumerate(lanes, 1):
+            with self.subTest(lane=lane):
+                with self.assertRaises(self.request_error):
+                    self.tools.generate({"lane": lane, "model_id": self.model["id"]})
+                quote = self.mcp_quote(lane)
+                for changes in ({"approved_cost": "0"}, {"parameters": {"prompt": "changed"}}):
+                    with self.assertRaises(self.request_error):
+                        self.mcp_submit(quote, **changes)
+                result = self.mcp_submit(quote)
+                self.settle()
+                with self.assertRaises(self.request_error):
+                    self.mcp_submit(quote)
+                saved = self.store.get(result["local_id"])
+                self.assertEqual(saved.state, self.storemod.JobState.REMOTE)
+                self.assertEqual(saved.intent.quote_cost, quote["cu_cost_exact"])
+                self.assertEqual(len(self.paid), count)
+                self.assertEqual(json.loads(self.paid[-1].content), {"prompt": "a teapot"})
+                self.assertEqual(self.runtime.state.jobs_view[0].lane, lane)
+        self.assertIsNone(self.runtime.state.manager)
+
+    def test_mcp_quote_cannot_change_lane_even_with_identical_payload_and_cost(self):
+        for lane in submodule("core.api.catalog").GENERATION_LANES:
+            with self.subTest(lane=lane):
+                quote = self.mcp_quote(lane)
+                other = "image" if lane != "image" else "video"
+                with self.assertRaises(self.request_error):
+                    self.mcp_submit(quote, lane=other)
+        self.assertEqual(self.paid, [])
+        self.assertEqual(self.store.records(), ())
+
+    def test_non_image_lanes_preserve_uncertainty_after_restart_without_retry(self):
+        self.lose_response = True
+        references = []
+        for lane in submodule("core.api.catalog").GENERATION_LANES:
+            if lane == "image":
+                continue
+            with self.subTest(lane=lane):
+                quote = self.mcp_quote(lane)
+                result = self.mcp_submit(quote)
+                references.append(result["local_id"])
+                self.settle()
+                with self.assertRaises(self.request_error):
+                    self.mcp_submit(quote)
+        self.runtime.state.reset()
+        for reference in references:
+            self.assertEqual(self.tools.job_status({"job_id": reference})["status"], "uncertain")
+        self.assertEqual(len(self.paid), len(references))
+
+    def test_non_image_downloads_remain_saved_without_scene_application(self):
+        before = set(bpy.data.images), set(bpy.data.objects), set(bpy.data.materials)
+        references = []
+        for lane, media_type in (
+            ("video", "video/mp4"),
+            ("render_video", "video/mp4"),
+            ("audio", "audio/wav"),
+            ("3d", "model/gltf-binary"),
+            ("edit3d", "model/gltf-binary"),
+            ("material", "image/png"),
+            ("render_image", "image/png"),
+        ):
+            with self.subTest(lane=lane):
+                self.result_media_type = media_type
+                self.result_bytes = b"synthetic saved output, never passed to a decoder"
+                self.remote_status = "success"
+                result = self.mcp_submit(self.mcp_quote(lane))
+                reference = result["local_id"]
+                references.append((reference, media_type))
+                self.deliver_results()
+                status = self.tools.job_status({"job_id": reference})
+                self.assertEqual(status["status"], "ready", status)
+                self.assertIsNone(status["error"])
+                self.assertEqual(status["images"], [])
+                self.assertEqual(status["files"], [])
+                with self.assertRaisesRegex(ValueError, "prepare_result_application"):
+                    self.tools.import_result({"job_id": reference})
+                self.assertEqual(status["results"][0]["media_type"], media_type)
+                self.assertTrue(status["results"][0]["downloaded"])
+                self.assertEqual(status["results"][0]["size"], len(self.result_bytes))
+                self.assertEqual(
+                    (set(bpy.data.images), set(bpy.data.objects), set(bpy.data.materials)), before
+                )
+                deferred = self.tools.wait_for_job({"job_id": reference, "timeout": 0.01})
+                self.assertEqual(deferred.finish(deferred.run())["status"], "ready")
+        self.runtime.state.reset()
+        calls = len(self.calls)
+        self.runtime.inspect_model_jobs()
+        for reference, media_type in references:
+            status = self.tools.job_status({"job_id": reference})
+            self.assertEqual(status["status"], "ready")
+            self.assertEqual(status["kind"], "model")
+            self.assertEqual(status["results"][0]["media_type"], media_type)
+        self.assertEqual(len(self.calls), calls)
+        self.assertEqual(len(self.paid), len(references))
+
+    def test_video_remote_cancel_uses_shared_revision_guard_without_replay(self):
+        result = self.mcp_submit(self.mcp_quote("video"))
+        self.deliver_results()
+        status = self.recover(result["local_id"], "cancel")
+        self.assertEqual(status["status"], "canceled")
+        with self.assertRaises(self.request_error):
+            self.recover(result["local_id"], "cancel")
+        self.assertEqual(len(self.cancel_calls), 1)
+        self.assertEqual(len(self.paid), 1)
+
+    def test_non_image_quote_rejects_changed_scene_and_credentials(self):
+        for lane in ("video", "3d", "material", "audio", "render_image", "render_video", "edit3d"):
+            with self.subTest(lane=lane):
+                # Credential retirement clears catalog metadata. Seed the next
+                # context's fixture rather than invoking a separate catalog worker.
+                self.runtime.ensure_catalog()
+                record = submodule("core.api.catalog").ModelRecord.from_api(self.model)
+                self.generation.set_catalog([record], [record])
+                quote = self.mcp_quote(lane)
+                self.runtime.state.job_session.invalidate_scene(bpy.context.scene)
+                with self.assertRaises((self.request_error, self.origin_error)):
+                    self.mcp_submit(quote)
+                quote = self.mcp_quote(lane)
+                self.prefs.api_secret += "-changed"
+                with self.assertRaises(self.request_error):
+                    self.mcp_submit(quote)
+        self.assertEqual(self.paid, [])

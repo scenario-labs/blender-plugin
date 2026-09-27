@@ -9,7 +9,6 @@ import bpy
 
 from ..blender import generation, runtime
 from ..core.api.catalog import GENERATION_LANES as LANES
-from ..core.api.catalog import LANE_KIND as KIND
 from ..core.api.errors import ScenarioError
 from ..core.schema.params import build_body, validate
 from .protocol import DeferredTool, ToolSpec
@@ -107,37 +106,23 @@ def estimate_cost(args):
     lane = args.get("lane") or "image"
     if lane not in LANES:
         raise ValueError(f"lane must be one of {LANES}")
-    if lane == "image":
-        jobs = runtime.ensure_model_jobs()
-        ticket = jobs.quote(bpy.context.scene, record.id, body)
+    jobs = runtime.ensure_model_jobs()
+    ticket = jobs.quote(bpy.context.scene, record.id, body, lane=lane)
 
-        def finish_model(_):
-            if runtime.ensure_model_jobs() is not jobs:
-                raise ScenarioError(0, "The estimate context changed; estimate again")
-            quote = jobs.finish_quote(ticket)
-            return {
-                "model_id": record.id,
-                "quote_id": ticket.identifier,
-                "cu_cost": float(quote.cost),
-                "cu_cost_exact": str(quote.cost),
-                "details": json.loads(quote.response_json).get("costDetails") or {},
-            }
-
-        return DeferredTool(ticket.task.result, finish_model)
-    catalog = runtime.ensure_catalog()
-
-    def finish(quote):
-        runtime.sync_catalog_context()
-        if catalog is not runtime.state.catalog:
-            raise ScenarioError(0, "The selected catalog connection changed")
+    def finish_model(_):
+        if runtime.ensure_model_jobs() is not jobs:
+            raise ScenarioError(0, "The estimate context changed; estimate again")
+        quote = jobs.finish_quote(ticket)
         return {
             "model_id": record.id,
+            "lane": lane,
+            "quote_id": ticket.identifier,
             "cu_cost": float(quote.cost),
             "cu_cost_exact": str(quote.cost),
             "details": json.loads(quote.response_json).get("costDetails") or {},
         }
 
-    return DeferredTool(lambda: catalog.estimate(record.id, body), finish)
+    return DeferredTool(ticket.task.result, finish_model)
 
 
 def list_local_jobs(args):
@@ -179,8 +164,7 @@ def generate(args):
     lane = args.get("lane") or "image"
     if lane not in LANES:
         raise ValueError(f"lane must be one of {LANES}")
-    if lane == "image":
-        runtime.ensure_model_jobs().require_quote(args.get("quote_id"))
+    runtime.ensure_model_jobs().require_quote(args.get("quote_id"))
     record, body = _body_for(args["model_id"], args.get("parameters"))
     meta = {
         "prompt": str(body.get("prompt") or ""),
@@ -188,33 +172,29 @@ def generate(args):
         "source": "mcp",
         "target_objects": [o.name for o in bpy.context.selected_objects if o.type == "MESH"],
     }
-    if lane == "image":
-        jobs = runtime.ensure_model_jobs()
-        rec = jobs.submit(
-            args.get("quote_id"),
-            bpy.context.scene,
-            record.id,
-            body,
-            approved_cost=args.get("approved_cost"),
-            meta=meta,
-        )
-        runtime.state.jobs_view.insert(0, rec)
-        return {
-            "local_id": rec.local_id,
-            "status": rec.status,
-            "lane": lane,
-            "model_id": record.id,
-            "note": "Submission is saved. Poll job_status for remote progress and verified image delivery. Paused or restarted jobs require explicit recovery; never repeat an uncertain request.",
-        }
-    manager = runtime.ensure_manager()
-    rec = manager.submit(lane, KIND[lane], record.id, body, meta=meta)
+    jobs = runtime.ensure_model_jobs()
+    rec = jobs.submit(
+        args.get("quote_id"),
+        bpy.context.scene,
+        record.id,
+        body,
+        lane=lane,
+        approved_cost=args.get("approved_cost"),
+        meta=meta,
+    )
     runtime.state.jobs_view.insert(0, rec)
     return {
         "local_id": rec.local_id,
         "status": rec.status,
         "lane": lane,
         "model_id": record.id,
-        "note": "Poll job_status or wait_for_job; on success the result lands in the scene automatically (image datablock, material on the selection, 3D at the cursor, video file).",
+        "note": "Submission is saved. Poll job_status for remote progress and verified downloads. "
+        + (
+            "Image jobs import supported images only into their unchanged original scene. "
+            if lane == "image"
+            else "Results remain saved for explicit application; this lane does not import automatically. "
+        )
+        + "Paused or restarted jobs require explicit recovery; never repeat an uncertain request.",
     }
 
 
@@ -386,7 +366,13 @@ def wait_for_job(args):
 def import_result(args):
     from ..blender import handlers
 
-    rec = _find(_job_ref(args))
+    reference = _job_ref(args)
+    if _saved_status(reference) is not None:
+        raise ValueError(
+            "Use prepare_result_application for saved PNG/EXR images; "
+            "other saved result types do not yet support scene application"
+        )
+    rec = _find(reference)
     if not rec.files:
         raise ValueError("This job has no downloaded files yet")
     rec.meta["target_objects"] = [o.name for o in bpy.context.selected_objects if o.type == "MESH"]
@@ -748,8 +734,8 @@ SPECS = (
             "Args:\n"
             "  - model_id: required string, the model identifier.\n"
             "  - parameters: optional object, model parameters including Scenario asset ids for file inputs.\n"
-            "  - lane: optional generation lane, default image. Image estimates issue a single-use quote_id.\n"
-            "Returns: model_id, cu_cost, cu_cost_exact (decimal string), details and, for image, quote_id bound to this scene and credential context.\n"
+            "  - lane: optional generation lane, default image. Every lane issues a single-use quote_id.\n"
+            "Returns: model_id, lane, cu_cost, cu_cost_exact (decimal string), details and quote_id bound to the lane, model, inputs, scene and credential context.\n"
             'Example: {"model_id": "model_example", "parameters": {"prompt": "a wooden crate"}}.\n'
             "Call before generate and show the cost to the user; an estimate does not authorize spending.\n"
             "Platform equivalent: model_run with dry_run."
@@ -768,16 +754,16 @@ SPECS = (
     ToolSpec(
         "generate",
         (
-            "Submit a generation that spends the user's credits. Image submissions use durable shared jobs.\n"
+            "Submit a generation that spends the user's credits. Every model lane uses durable shared jobs.\n"
             "Args:\n"
             "  - lane: required string; image, video, 3d, material, audio, render_image, render_video or edit3d.\n"
             "  - model_id: required string, the exact model to run.\n"
             "  - parameters: optional object, model parameters; file inputs take Scenario asset ids.\n"
-            "  - quote_id: required for image, from estimate_cost with the same model, inputs and scene.\n"
-            "  - approved_cost: required for image, the exact cu_cost_exact string explicitly approved by the user.\n"
-            "Returns: local_id, status, lane, model_id and note. Active Image jobs poll and download through the shared session, then import verified PNG/EXR images only into the unchanged origin. Other lanes retain prototype result handling.\n"
+            "  - quote_id: required, from estimate_cost with the same lane, model, inputs and scene.\n"
+            "  - approved_cost: required, the exact cu_cost_exact string explicitly approved by the user.\n"
+            "Returns: local_id, status, lane, model_id and note. All model jobs poll and download through the shared session. Only the Image lane imports verified PNG/EXR images automatically into the unchanged origin. Other lanes stop at saved ready results; their scene application remains separate. Render lanes take explicit model inputs without UI capture or Prompt Spark preparation.\n"
             'Example: {"lane": "image", "model_id": "model_example", "parameters": {"prompt": "a wooden crate"}, "quote_id": "quote_from_estimate", "approved_cost": "1.25"}.\n'
-            "Do not call before estimate_cost and explicit spending approval. Do not repeat a timed-out submission. import_result is only for an intentional additional application.\n"
+            "Do not call before estimate_cost and explicit spending approval. Do not repeat a timed-out submission. Use prepare_result_application for saved PNG/EXR imports; import_result is for prototype records only.\n"
             "Platform equivalent: model_run."
         ),
         _schema(
@@ -791,18 +777,18 @@ SPECS = (
                     "description": "Model parameters; file parameters take Scenario asset ids",
                 },
             },
-            ["lane", "model_id"],
+            ["lane", "model_id", "quote_id", "approved_cost"],
         ),
         generate,
     ),
     ToolSpec(
         "job_status",
         (
-            "Read one local generation's status and cost without spending credits. Active Image jobs advance through shared remote polling and verified delivery; restarted jobs remain inspection-only.\n"
+            "Read one local generation's status and cost without spending credits. Active model jobs advance through shared remote polling and verified downloads; restarted jobs remain inspection-only.\n"
             "Args:\n"
             "  - job_id: optional string, a Scenario job id or the local_id returned by generate.\n"
             "  - id: optional string, compatibility alias; provide job_id or id. job_id takes precedence if both are supplied.\n"
-            "Returns: local_id, job_id, status, progress, cu_cost, files, error and kind. Unknown jobs raise ValueError.\n"
+            "Returns: local_id, job_id, status, cu_cost, files, error and kind. Shared jobs also return revision, cu_cost_exact, results (asset_id, name, media_type, size, downloaded), actions and images. Recovered jobs report kind=model; result media types remain available. Unknown jobs raise ValueError.\n"
             'Example: {"job_id": "job_example"}.\n'
             "Prefer this for one status check; it only knows jobs tracked by this Blender runtime.\n"
             "Platform equivalent: job_get."
@@ -831,13 +817,13 @@ SPECS = (
     ToolSpec(
         "import_result",
         (
-            "Apply an already downloaded generation again to the current Blender scene and selection.\n"
+            "Apply a downloaded prototype generation again to the current Blender scene and selection.\n"
             "Args:\n"
             "  - job_id: optional string, a Scenario job id or local_id returned by generate.\n"
             "  - id: optional string, compatibility alias; provide job_id or id. job_id takes precedence.\n"
             "Returns: applied (result kind), files. Raises ValueError if no downloaded files exist.\n"
             'Example: {"job_id": "job_example"}.\n'
-            "Do not use for the initial automatic application. Use only when the user wants another copy or to apply a material to the current mesh selection.\n"
+            "Do not use for the initial automatic application. Use only for prototype records when the user wants another copy or to apply a material to the current mesh selection. Shared jobs reject this tool; use prepare_result_application for saved PNG/EXR images. Other shared result types await scene-application integration.\n"
             "No platform equivalent."
         ),
         _schema({**_JOB_REF}),

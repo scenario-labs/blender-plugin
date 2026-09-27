@@ -10,10 +10,10 @@ is Blender 5.0; dependency and runtime acceptance have separate gates.
 | Responsibility | Source | Current behavior |
 | --- | --- | --- |
 | Registration | [registry.py](../../scenario/blender/registry.py) | Registers properties, panels, operators, composer, pump and local server integration. The `scenario_blender` headless command serves local MCP on the main thread. |
-| UI lifetime and state | [runtime.py](../../scenario/blender/runtime.py) | Owns the credential-bound SDK catalog and process-wide UI/MCP state; Image quote/submission uses the selected `JobSession`; other generation lanes still use the prototype manager. |
+| UI lifetime and state | [runtime.py](../../scenario/blender/runtime.py) | Owns the credential-bound SDK catalog and process-wide UI/MCP state; Image quote/submission uses the selected `JobSession`; other UI generation lanes still use the prototype manager. |
 | UI generation | [generation.py](../../scenario/blender/generation.py) | Image consumes a session-owned quote before durable submission; other lanes use the prototype manager. |
 | Main-thread application | [pump.py](../../scenario/blender/pump.py) | Drains prototype events and applies results to Blender. GUI timer handling differs from headless execution. |
-| Local MCP | [server.py](../../scenario/mcp/server.py), [tools_scenario.py](../../scenario/mcp/tools_scenario.py), [mcp_service.py](../../scenario/blender/mcp_service.py) | Queues scene tools for main-thread execution; model listing/schema use the same SDK catalog as the UI, while other service tools still call the prototype runtime. |
+| Local MCP | [server.py](../../scenario/mcp/server.py), [tools_scenario.py](../../scenario/mcp/tools_scenario.py), [mcp_service.py](../../scenario/blender/mcp_service.py) | Queues scene tools for main-thread execution; model listing/schema use the same SDK catalog as the UI, all model generation lanes now use the shared session; ancillary service tools still call the prototype runtime. |
 | Credentials | [config.py](../../scenario/core/config.py), [prefs.py](../../scenario/prefs.py) | Credentials default to the saved Blender pair; environment credentials require explicit selection and cannot mix with preferences. OAuth is deferred; shared runtime scope/project integration remains #65. |
 
 These are source-inspection findings. Do not infer UI/MCP parity from the shared
@@ -114,7 +114,7 @@ It does not own another executor or persistent registry. UI and MCP prepare the
 same model inputs; each quote captures the scene before a worker retrieves fresh
 SDK model metadata and the exact server estimate. UI cost delivery is keyed to
 the originating scene/form. Only the currently selected scene can receive a
-usable Image quote. Other lanes retain the catalog preview path.
+usable Image quote. Other UI lanes retain the catalog preview path.
 
 The result action **Remove background** selects a current Image background-removal
 model and prepares one local file reference with default settings. It no longer
@@ -123,9 +123,11 @@ reviews the shared exact estimate and chooses Generate. Failed file/model/schema
 preflight preserves the current form; a successful preparation invalidates its
 old quote without canceling existing jobs or admitted uploads.
 
-Clicking Image **Generate** requires the unchanged ready quote. MCP Image
-`generate` requires its `quote_id` and the explicitly approved `cu_cost_exact`
-string as `approved_cost`. A displayed float is not used to reconstruct the price.
+Clicking Image **Generate** requires the unchanged ready quote. MCP `generate`
+for every model lane requires its `quote_id` and the explicitly approved `cu_cost_exact`
+string as `approved_cost`. The quote also binds its lane: callers cannot turn an
+Image approval into a render, material or other lane submission. A displayed float
+is not used to reconstruct the price.
 The facade consumes the handle before preparation; the coordinator persists an
 intent and claims `submitting` before the single SDK request. Repeated clicks,
 reused quote handles, changed inputs, stale origins and failed writes cannot
@@ -172,7 +174,15 @@ advance through the same maintenance pump. `wait_for_job` waits on the HTTP work
 while the main thread remains available for delivery. It returns at completion,
 review-required state or timeout, and rejects a changed credential context.
 An unresumed restarted record is returned immediately.
-Other lanes still use prototype paid dispatch. Do not describe this slice as
+Other UI lanes still use prototype paid dispatch. Non-image MCP model jobs now
+use the same durable submission, polling, download, cancellation and recovery
+commands. They stop at saved `ready` results without automatically assigning
+materials, importing meshes or inserting media strips. Status includes the saved
+result manifest and receipt presence, without returning paths for unverified
+application. Restarted display records are generic model jobs; the original lane
+is not persisted. Explicit PNG/EXR import remains available by result type.
+Render-lane MCP parameters are caller-supplied, without UI capture/style/Spark
+preparation. Do not describe this slice as
 complete generation, supported release acceptance, or completion of #65.
 
 For prototype jobs, local MCP `wait_for_job` captures a local record on the main thread and waits

@@ -123,6 +123,10 @@ The facade consumes the handle before preparation; the coordinator persists an
 intent and claims `submitting` before the single SDK request. Repeated clicks,
 reused quote handles, changed inputs, stale origins and failed writes cannot
 repeat that submission. Timeouts retain uncertain saved state without retry.
+An unsuccessful UI attempt clears the ready price and requires explicit repricing;
+it never silently obtains another approval. Retained MCP/UI approvals are not evicted
+to admit new quotes. At capacity, new estimates are rejected until a consumed handle
+can be reclaimed; repricing a UI form explicitly releases its previous approval.
 
 GUI and headless main-thread context maintenance drains completed submissions
 and projects their saved state into the existing Jobs view. This projection is

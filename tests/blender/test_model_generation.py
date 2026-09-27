@@ -177,6 +177,61 @@ class ModelGenerationTests(unittest.TestCase):
         self.assertEqual(self.store.records()[0].state, self.storemod.JobState.PREPARED)
         self.assertEqual(self.paid, [])
 
+    def test_rejected_ui_quote_requires_explicit_repricing(self):
+        self.ui_quote()
+        self.runtime.state.job_session.invalidate_scene(bpy.context.scene)
+        with self.assertRaises(self.request_error):
+            self.generation.submit_generation(bpy.context, "image")
+        self.assertEqual(self.lane.estimate_state, "ERROR")
+        self.assertNotIn(self.lane.estimate_key, self.runtime.state.estimates)
+        with self.assertRaisesRegex(self.request_error, "fresh price"):
+            self.generation.submit_generation(bpy.context, "image")
+        self.assertEqual(self.store.records(), ())
+        self.assertEqual(self.paid, [])
+        self.ui_quote()
+        self.generation.submit_generation(bpy.context, "image")
+        self.settle()
+        self.assertEqual(len(self.paid), 1)
+
+    def test_lost_ui_intent_receipt_clears_ready_price_without_replay(self):
+        self.ui_quote()
+        create = self.store.create
+
+        def committed_failure(intent):
+            create(intent)
+            raise self.storemod.StoreError("synthetic lost write acknowledgement")
+
+        with patch.object(self.store, "create", side_effect=committed_failure):
+            with self.assertRaises(self.request_error):
+                self.generation.submit_generation(bpy.context, "image")
+        self.assertEqual(self.lane.estimate_state, "ERROR")
+        with self.assertRaisesRegex(self.request_error, "fresh price"):
+            self.generation.submit_generation(bpy.context, "image")
+        self.assertEqual(len(self.store.records()), 1)
+        self.assertEqual(self.paid, [])
+
+    def test_cache_pressure_preserves_ui_and_mcp_approvals(self):
+        self.ui_quote()
+        quotes = [self.mcp_quote() for _ in range(127)]
+        with self.assertRaisesRegex(self.request_error, "retained estimates"):
+            self.mcp_quote()
+        self.generation.submit_generation(bpy.context, "image")
+        self.settle()
+        # The consumed UI handle can be reclaimed; the oldest MCP approval
+        # remains valid after another quote is admitted.
+        self.mcp_quote()
+        self.mcp_submit(quotes[0])
+        self.settle()
+        self.assertEqual(len(self.paid), 2)
+
+    def test_ui_repricing_releases_superseded_approval(self):
+        self.ui_quote()
+        owner = self.runtime.state.model_jobs
+        previous = self.runtime.state.estimates[self.lane.estimate_key]
+        self.ui_quote()
+        self.assertNotIn(previous.identifier, owner.quotes)
+        self.assertEqual(len(owner.quotes), 1)
+
     def test_missing_changed_or_unapproved_quote_cannot_spend(self):
         with self.assertRaises((self.request_error, self.origin_error)):
             self.generation.submit_generation(bpy.context, "image")

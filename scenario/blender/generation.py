@@ -697,7 +697,10 @@ def request_meta(context, lane, request=None):
 def request_estimate(scene, lane):
     runtime.sync_catalog_context()
     lane_state = scene.scenario.lane_state(lane)
-    runtime.state.estimates.pop(lane_state.estimate_key, None)
+    previous = runtime.state.estimates.pop(lane_state.estimate_key, None)
+    if lane == "image" and previous is not None and runtime.state.model_jobs is not None:
+        # Repricing this form explicitly supersedes its former UI approval.
+        runtime.state.model_jobs.quotes.pop(previous.identifier, None)
     lane_state.estimate_key = ""
     request = build_request(scene, lane, for_estimate=True)
     if lane == "image" and (request.files or request.captures or request.spark):
@@ -777,6 +780,10 @@ def submit_generation(context, lane):
         ticket = runtime.state.estimates.get(lane_state.estimate_key)
         if lane_state.estimate_state != "READY" or ticket is None:
             raise ScenarioError(0, "Wait for a fresh price before generating")
+        # A rejected attempt can consume the handle before storage reports an
+        # error. Never keep that price actionable or automatically reprice it.
+        lane_state.estimate_state = "IDLE"
+        runtime.state.estimates.pop(lane_state.estimate_key, None)
         try:
             jobs = runtime.ensure_model_jobs()
             estimate = jobs.finish_quote(ticket)
@@ -789,8 +796,12 @@ def submit_generation(context, lane):
                 meta=request_meta(context, lane, request),
             )
         except ScenarioError:
+            lane_state.estimate_state = "ERROR"
+            lane_state.estimate_error = "Inspect saved jobs and request a fresh price"
             raise
         except Exception:
+            lane_state.estimate_state = "ERROR"
+            lane_state.estimate_error = "Inspect saved jobs and request a fresh price"
             raise ScenarioError(
                 0, "Could not submit; inspect saved jobs and request a fresh price"
             ) from None

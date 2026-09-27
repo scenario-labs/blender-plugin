@@ -47,12 +47,14 @@ class ModelJobs:
             bpy.context.view_layer.update()
         if len(self.quotes) >= 128:
             for key, old in tuple(self.quotes.items()):
-                if old.task.done():
+                if old.used and old.task.done():
                     self.session.drain(task=old.task)
                     del self.quotes[key]
                     break
             else:
-                raise ScenarioError(0, "Too many pending estimates; wait for one to finish")
+                raise ScenarioError(
+                    0, "Too many retained estimates; use an existing quote before requesting more"
+                )
         origin = self.session.capture(scene)
         task = self.session.quote_model(model_id, json.loads(snapshot), origin=origin)
         quote = ModelQuote(uuid.uuid4().hex, model_id, scene, snapshot, task)

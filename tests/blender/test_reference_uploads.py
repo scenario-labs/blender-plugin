@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Shared reference uploads through actual SDK/store/session with offline transport."""
 
+import json
 import tempfile
 import unittest
 from pathlib import Path
@@ -373,3 +374,150 @@ class ReferenceUploadTests(unittest.TestCase):
             self.assertEqual(deferred.finish(deferred.run())["state"], "imported")
         self.assertEqual(self.fixture.source.read_bytes(), b"data")
         self.assertEqual(len(self.fixture.calls), count)
+
+    def typed_source(self, kind, suffix, content_type):
+        path = self.fixture.root / f"media-{len(self.owner.references)}{suffix}"
+        path.write_bytes(b"data")
+        self.fixture.remote.update(
+            id=f"upload-{len(self.owner.references)}",
+            kind=kind,
+            fileName=path.name,
+            contentType=content_type,
+            status="pending",
+        )
+        return path
+
+    def test_typed_media_uploads_preserve_sdk_metadata_and_transfer_bytes_once(self):
+        cases = (
+            ("audio", ".mp3", "audio/mpeg"),
+            ("audio", ".wav", "audio/wav"),
+            ("audio", ".ogg", "audio/ogg"),
+            ("audio", ".m4a", "audio/m4a"),
+            ("video", ".MP4", "video/mp4"),
+            ("video", ".webm", "video/webm"),
+            ("3d", ".glb", "model/gltf-binary"),
+            ("3d", ".gltf", "model/gltf+json"),
+            ("3d", ".obj", "model/obj"),
+            ("3d", ".fbx", "application/vnd.autodesk.fbx"),
+            ("3d", ".stl", "model/stl"),
+            ("3d", ".ply", "model/ply"),
+            ("3d", ".vox", "model/x-3d-vox"),
+        )
+        for index, (kind, suffix, content_type) in enumerate(cases, 1):
+            with self.subTest(kind=kind, suffix=suffix):
+                path = self.typed_source(kind, suffix, content_type)
+                result = self.tools.upload_reference({"path": str(path), "kind": kind})
+                self.settle()
+                status = self.tools.reference_upload_status(result)
+                self.assertEqual(status["state"], "imported", status)
+                self.assertEqual((status["kind"], status["content_type"]), (kind, content_type))
+                self.assertEqual(self.fixture.uploader.upload.call_count, index)
+                self.assertEqual(
+                    self.fixture.uploader.upload.call_args.kwargs["content_type"], content_type
+                )
+                posts = [r for r, _ in self.fixture.calls if r.method == "POST"]
+                self.assertEqual(len(posts), index * 2)
+                self.assertEqual(
+                    json.loads(posts[-2].content),
+                    {
+                        "kind": kind,
+                        "fileName": path.name,
+                        "contentType": content_type,
+                        "fileSize": 4,
+                        "parts": 1,
+                    },
+                )
+                self.assertEqual(json.loads(posts[-1].content), {"action": "complete"})
+                self.assertEqual(posts[-2].url.params["projectId"], "project")
+                self.assertEqual(path.read_bytes(), b"data")
+        self.assertTrue(all("/uploads" in r.url.path for r, _ in self.fixture.calls))
+
+    def test_invalid_kind_or_extension_rejects_before_staging_or_network(self):
+        before = set(self.fixture.root.rglob("*"))
+        for kind in (None, [], {}, 3, "", "asset", "model", "audio", "video", "3d"):
+            with self.subTest(kind=kind), self.assertRaises(self.module.UploadNotStarted):
+                self.tools.upload_reference({"path": str(self.fixture.source), "kind": kind})
+        for name in ("clip.mp4", "sound.exe", "mesh.glb"):
+            with self.subTest(name=name), self.assertRaises(self.module.UploadNotStarted):
+                self.tools.upload_reference({"path": str(self.fixture.root / name)})
+        self.assertEqual(self.owner.references, {})
+        self.assertEqual(self.fixture.session.upload_recovery_plan(), ())
+        self.assertEqual(set(self.fixture.root.rglob("*")), before)
+        self.assertEqual(self.fixture.calls, [])
+
+    def test_audio_snapshot_survives_source_edit_and_remains_typed(self):
+        path = self.typed_source("audio", ".wav", "audio/wav")
+        ticket = self.owner.start(self.fixture.scene, path, kind="audio")
+        ticket.task.result(5)
+        path.write_bytes(b"edited source")
+        self.settle()
+        self.fixture.uploader.upload.assert_called_once()
+        self.assertEqual(self.fixture.uploader.upload.call_args.args[1], b"data")
+        self.assertEqual(ticket.record.intent.kind, "audio")
+        self.assertEqual(path.read_bytes(), b"edited source")
+
+    def test_video_metadata_change_stops_before_storage_put(self):
+        path = self.typed_source("video", ".mp4", "video/mp4")
+        self.fixture.remote["kind"] = "image"
+        result = self.tools.upload_reference({"path": str(path), "kind": "video"})
+        self.settle()
+        status = self.tools.reference_upload_status(result)
+        self.assertIsNotNone(status["error"])
+        self.assertEqual(status["kind"], "video")
+        self.fixture.uploader.upload.assert_not_called()
+        calls = len(self.fixture.calls)
+        for _ in range(3):
+            self.owner.poll()
+        self.assertEqual(len(self.fixture.calls), calls)
+
+    def test_mesh_initialization_uncertainty_never_replays(self):
+        path = self.typed_source("3d", ".glb", "model/gltf-binary")
+        calls = []
+
+        def fail(request):
+            calls.append(request)
+            raise httpx.ReadTimeout("synthetic private receipt", request=request)
+
+        self.fixture.handler = fail
+        result = self.tools.upload_reference({"path": str(path), "kind": "3d"})
+        self.settle()
+        status = self.tools.reference_upload_status(result)
+        self.assertEqual(status["state"], "initialization_uncertain")
+        self.assertEqual(status["kind"], "3d")
+        for _ in range(4):
+            self.owner.poll()
+        self.assertEqual(len(calls), 1)
+        self.fixture.uploader.upload.assert_not_called()
+        self.assertEqual(self.tools.list_reference_uploads({})["uploads"][0]["kind"], "3d")
+
+    def test_media_restart_preserves_kind_and_cleanup_keeps_original(self):
+        path = self.typed_source("video", ".webm", "video/webm")
+        result = self.tools.upload_reference({"path": str(path), "kind": "video"})
+        self.settle()
+        saved = self.tools.list_reference_uploads({})
+        count = len(self.fixture.calls)
+        self.fixture.session.shutdown()
+        replacement = self.fixture.new_session()
+        self.addCleanup(replacement.shutdown)
+        self.runtime.state.job_session = replacement
+        self.runtime.state.reference_uploads = None
+        self.runtime.state.job_context_id = "restarted-context"
+        with patch.object(self.runtime, "ensure_job_session", return_value=replacement):
+            with self.assertRaises(submodule("core.api.errors").ScenarioError):
+                self.tools.reference_upload_status(result)
+            reopened = self.tools.list_reference_uploads({})
+            self.assertEqual(reopened["uploads"], saved["uploads"])
+            record = reopened["uploads"][0]
+            self.assertEqual((record["kind"], record["content_type"]), ("video", "video/webm"))
+            deferred = self.tools.recover_reference_upload(
+                {
+                    "context_id": reopened["context_id"],
+                    "request_id": record["request_id"],
+                    "expected_revision": record["revision"],
+                    "action": "cleanup",
+                }
+            )
+            outcome = deferred.finish(deferred.run())
+            self.assertEqual((outcome["kind"], outcome["content_type"]), ("video", "video/webm"))
+        self.assertEqual(len(self.fixture.calls), count)
+        self.assertEqual(path.read_bytes(), b"data")

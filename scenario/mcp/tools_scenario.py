@@ -404,9 +404,9 @@ def capture_reference(args):
 def upload_reference(args):
     path = args.get("path")
     if not isinstance(path, str) or not path:
-        raise ValueError("Choose a local image path to upload")
+        raise ValueError("Choose a local reference path to upload")
     owner = runtime.ensure_reference_uploads()
-    ticket = owner.start(bpy.context.scene, bpy.path.abspath(path))
+    ticket = owner.start(bpy.context.scene, bpy.path.abspath(path), kind=args.get("kind", "image"))
     return _reference_response(ticket.identifier)
 
 
@@ -443,6 +443,8 @@ def list_reference_uploads(args):
                 "action": item.action.value,
                 "asset_id": item.record.asset_id,
                 "upload_id": item.record.upload_id,
+                "kind": item.record.intent.kind,
+                "content_type": item.record.intent.content_type,
             }
             for item in owner.session.upload_recovery_plan()
         ],
@@ -463,6 +465,8 @@ def recover_reference_upload(args):
             "state": record.state.value,
             "revision": record.revision,
             "asset_id": record.asset_id,
+            "kind": record.intent.kind,
+            "content_type": record.intent.content_type,
         }
 
     if command.task is None:
@@ -532,14 +536,25 @@ SPECS = (
     ToolSpec(
         "upload_reference",
         (
-            "Upload an explicitly chosen local image through the shared durable upload session.\n"
-            "Args:\n  - path: required string, local image path selected by the user.\n"
-            "Returns: context_id, reference_id, staging/upload state, request_id when persisted and note.\n"
+            "Upload an explicitly chosen image, audio, video or 3D file through the shared durable upload session.\n"
+            "Args:\n  - path: required string, local file path selected by the user.\n"
+            "  - kind: optional string, image (default), audio, video or 3d; must match the file extension.\n"
+            "Returns: context_id, reference_id, staging/upload state, request_id when persisted, kind and content_type after staging, and note.\n"
             'Example: {"path": "/chosen/reference.png"}.\n'
-            "This sends the image to Scenario. Call only for an authorized upload; it does not generate or approve spending. Poll reference_upload_status until imported, then quote with asset_id. Do not repeat an uncertain upload.\n"
+            "This sends the selected file to Scenario without conversion or sidecar discovery. Call only for an authorized upload; it does not generate or approve spending. Poll reference_upload_status until imported, then quote with asset_id. Do not repeat an uncertain upload.\n"
             "Platform equivalent: upload_asset then upload_asset_complete."
         ),
-        _schema({"path": {"type": "string"}}, ["path"]),
+        _schema(
+            {
+                "path": {"type": "string"},
+                "kind": {
+                    "type": "string",
+                    "enum": ["image", "audio", "video", "3d"],
+                    "default": "image",
+                },
+            },
+            ["path"],
+        ),
         upload_reference,
     ),
     ToolSpec(
@@ -548,7 +563,7 @@ SPECS = (
             "Read a reference upload's progress while the shared session advances its already authorized work.\n"
             "Args:\n  - context_id: required string, context from upload_reference or capture_reference.\n"
             "  - reference_id: required string, the returned session-owned upload handle.\n"
-            "Returns: reference_id, request_id, revision, state, asset_id, error and pending.\n"
+            "Returns: reference_id, request_id, revision, state, asset_id, kind, content_type, error and pending. Kind and content_type are null until staging completes.\n"
             'Example: {"context_id": "from-upload", "reference_id": "from-upload"}.\n'
             "Use asset_id only after state imported. A changed context rejects old handles; use list_reference_uploads after restart. This does not create or replay uploads.\n"
             "Platform equivalent: upload status retrieval."
@@ -565,7 +580,7 @@ SPECS = (
         (
             "Inspect saved uploads under the selected credential scope, including after restart.\n"
             "Args: none.\n"
-            "Returns: context_id and uploads with request_id, revision, state, suggested action, upload_id and asset_id.\n"
+            "Returns: context_id and uploads with request_id, revision, state, suggested action, upload_id, asset_id, kind and content_type.\n"
             "Example: {}.\n"
             "Inspection makes no network request, sends no bytes and never resumes uncertain initialization or parts. Use recover_reference_upload for explicit known-upload reads or local cleanup.\n"
             "Platform equivalent: none; this inspects local durable upload history."
@@ -582,7 +597,7 @@ SPECS = (
             "  - request_id: required string, saved local upload identity.\n"
             "  - expected_revision: required nonnegative integer, observed saved revision.\n"
             "  - action: required string, refresh, cancel_prepared or cleanup.\n"
-            "Returns: request_id, state, revision and asset_id.\n"
+            "Returns: request_id, state, revision, asset_id, kind and content_type.\n"
             'Example: {"context_id": "from-list", "request_id": "from-list", "expected_revision": 2, "action": "refresh"}.\n'
             "Refresh sends only a status read. Cleanup accepts only finished records and never deletes the original user file. No action repeats initialization, PUT or finalization.\n"
             "Platform equivalent: upload retrieval or local source cleanup."

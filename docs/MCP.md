@@ -42,6 +42,23 @@ handle once. Scene/file changes invalidate it. Verification and the durable
 application claim precede image import; an interrupted import is never retried
 automatically. These commands spend no credits and make no service requests.
 
+## Typed local references
+
+`upload_reference` accepts a chosen local file and an optional `kind`: `image`
+(the default), `audio`, `video` or `3d`. The kind must match the filename extension;
+an omitted kind never infers a different media type. For example, a WAV input
+uses `{"path": "/chosen/reference.wav", "kind": "audio"}`. See the
+[format policy and limits](SDK_UPLOADS.md#active-reference-uploads).
+
+Poll `reference_upload_status` until `imported` before using the returned asset ID
+in a model estimate. Status, `list_reference_uploads` and recovery return saved
+`kind` and `content_type` metadata; initial staging can report null metadata.
+Only the selected file is sent: no conversion, external-buffer or texture-sidecar
+discovery. Upload approval does not approve generation, and a lost response must
+be reconciled using saved progress instead of starting another upload. GUI capture
+and automatic form attachment remain image-only; non-image form preparation is
+separate integration work.
+
 ## Token lifecycle
 
 GUI startup generates a bearer token the first time the server starts in a
@@ -198,7 +215,7 @@ Do not edit this block by hand; run `make mcp-docs`. An asterisk marks a require
 
 | Tool | Description | Arguments | Notes |
 | --- | --- | --- | --- |
-| `upload_reference` | Upload an explicitly chosen local image through the shared durable upload session. | `path`*: string | - |
+| `upload_reference` | Upload an explicitly chosen image, audio, video or 3D file through the shared durable upload session. | `path`*: string<br>`kind`: string (['image', 'audio', 'video', '3d']) | - |
 | `reference_upload_status` | Read a reference upload's progress while the shared session advances its already authorized work. | `context_id`*: string<br>`reference_id`*: string | read-only annotation |
 | `list_reference_uploads` | Inspect saved uploads under the selected credential scope, including after restart. | none | read-only annotation |
 | `recover_reference_upload` | Explicitly inspect a known remote upload, cancel unclaimed preparation, or clean its finished private source copy. | `context_id`*: string<br>`request_id`*: string<br>`expected_revision`*: integer<br>`action`*: string (['refresh', 'cancel_prepared', 'cleanup']) | destructive annotation |
@@ -279,7 +296,7 @@ behavior interchangeable. Remote names below were checked against the
 | Review saved Image import | `prepare_result_application(context_id, request_id, expected_revision)` | Local destination capture; show the returned scene and images for approval |
 | Apply approved saved images | `apply_result_application(context_id, application_id)` | Local verified import into the captured destination; no platform call |
 | Wait | `wait_for_job(job_id or id, timeout)`, one job without blocking Blender | `jobs_wait` |
-| Reference upload | `upload_reference(path)` or `capture_reference(source)`, then `reference_upload_status(context_id, reference_id)` until imported | `upload_asset`, `upload_asset_complete` for an existing file |
+| Reference upload | `upload_reference(path, kind)` or `capture_reference(source)`, then `reference_upload_status(context_id, reference_id)` until imported | `upload_asset`, `upload_asset_complete` for an existing file |
 | Saved upload recovery | `list_reference_uploads`, then `recover_reference_upload(context_id, request_id, expected_revision, action)` | Known-upload status retrieval; local cancellation/cleanup have no platform equivalent |
 | History | `list_generations(limit)` | `jobs_list` |
 | Apply an existing result | `import_result(job_id or id)` | No Blender scene access |

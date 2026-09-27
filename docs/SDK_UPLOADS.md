@@ -339,13 +339,36 @@ and local MCP recovery controls use these commands as described below.
 
 [`ReferenceUploads`](../scenario/blender/reference_uploads.py) is a main-thread
 facade over the selected `JobSession`, scoped upload store and existing workers.
-`upload_reference` starts one explicitly authorized local-image upload;
+`upload_reference` starts one explicitly authorized local-file upload, with an
+explicit `kind` of `image` (the default), `audio`, `video` or `3d`;
 `capture_reference` captures a viewport/camera still first. Both return a
 session-owned handle immediately. Poll `reference_upload_status` until the saved
-state is `imported`, then pass its `asset_id` to a fresh Image estimate. Uploading
+state is `imported`, then pass its `asset_id` to the intended model file input
+in a fresh estimate. Uploading
 does not submit generation or approve its cost. The Image form uses the same
 owner through **Upload reference**. It never uploads while drawing or pricing.
-Other generation lanes retain their earlier integration.
+Other generation forms retain their earlier integration; typed MCP uploads do
+not establish their UI preparation or paid-generation acceptance.
+
+The upload kind and final file extension must match the local format policy.
+An omitted kind remains `image`; a video path does not silently change the kind.
+Unknown kinds and mismatched/unsupported extensions fail before staging or SDK
+requests. MIME metadata follows the documented Scenario upload guide below.
+
+| Reference kind | Accepted filename extensions |
+| --- | --- |
+| `image` | PNG, JPG/JPEG, WebP, GIF, AVIF, TIF/TIFF, HEIC/HEIF, SVG |
+| `audio` | MP3, WAV, OGG, M4A |
+| `video` | MP4, WebM |
+| `3d` | GLB, GLTF, OBJ, FBX, STL, PLY, VOX |
+
+This is filename-based metadata selection, not media decoding, conversion or
+provider validation. Only the chosen file is staged. GLTF/OBJ sidecars, external
+textures and buffers are not discovered or uploaded; prepare a self-contained
+input when the model needs one. Model-specific format constraints still apply.
+Status and saved/recovery inspection expose the persisted `kind` and
+`content_type`; these are null in status until staging has persisted the intent.
+All kinds share the same byte limits, origin guards and uncertain-write policy.
 
 Preparation snapshots up to 256 MiB into private storage, using 8 MiB parts
 (the final part may be smaller). Metadata replaces basename characters outside

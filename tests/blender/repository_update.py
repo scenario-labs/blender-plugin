@@ -11,7 +11,7 @@ import sys
 import urllib.parse
 
 
-def main():
+def owned_profile():
     raw_profile = os.environ.get("BLENDER_USER_RESOURCES")
     if not raw_profile:
         raise RuntimeError("Use tools/test_repository_update.py with its disposable profile")
@@ -23,11 +23,13 @@ def main():
 
     if pathlib.Path(bpy.utils.resource_path("USER")).resolve() != profile:
         raise RuntimeError("Blender did not use the disposable profile")
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--url", required=True)
-    parser.add_argument("--report", required=True, type=pathlib.Path)
-    args = parser.parse_args(sys.argv[sys.argv.index("--") + 1 :])
-    url = urllib.parse.urlsplit(args.url)
+    return profile
+
+
+def checked_repository(profile, url_value, report):
+    import bpy
+
+    url = urllib.parse.urlsplit(url_value)
     if (
         url.scheme != "http"
         or url.hostname != "127.0.0.1"
@@ -39,11 +41,22 @@ def main():
         or url.path != "/index.json"
     ):
         raise RuntimeError("Only a local fixture repository is allowed")
-    if args.report.resolve().parent != profile.parent:
+    if report.resolve().parent != profile.parent:
         raise RuntimeError("Report must belong to this run")
     repos = bpy.context.preferences.extensions.repos
-    if len(repos) != 1 or repos[0].module != "update_fixture" or repos[0].remote_url != args.url:
+    if len(repos) != 1 or repos[0].module != "update_fixture" or repos[0].remote_url != url_value:
         raise RuntimeError("Only this run's loopback repository may be configured")
+
+
+def main():
+    profile = owned_profile()
+    import bpy
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--url", required=True)
+    parser.add_argument("--report", required=True, type=pathlib.Path)
+    args = parser.parse_args(sys.argv[sys.argv.index("--") + 1 :])
+    checked_repository(profile, args.url, args.report)
     module_name = "bl_ext.update_fixture.scenario"
 
     def check(version):

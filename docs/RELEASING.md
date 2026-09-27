@@ -109,6 +109,18 @@ Complete these checks when publishing the first automated release:
   releases to make them immutable. Once enabled, a broken release needs a new
   version, never an edited asset.
 
+## Native package update acceptance
+
+Before claiming state preservation for an adopted release pair, run the
+[Scenario package update probe](development/validation.md#scenario-package-state-across-updates)
+with the exact previous and candidate ZIPs on each supported Blender series.
+Retain both SHA-256 values, the actual Blender/OS identity and the update/restart
+reports. The probe exercises the real installed package and its durable state
+through a loopback repository, without modifying either archive. It does not
+verify attestations or establish the public HTTPS installation/update flow;
+complete those publication checks separately. A synthetic predecessor is useful
+for pre-release testing but is not evidence of a published release pair.
+
 ## Recovery
 
 For a transient build, upload or admin failure, rerun the **original workflow

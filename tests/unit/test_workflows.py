@@ -207,3 +207,49 @@ def test_aggregate_accepts_only_all_success():
                 text=True,
             )
             assert result.returncode != 0, f"ci-ok accepted {variable}={outcome!r}"
+
+
+@pytest.mark.parametrize("count,command_exit", [(0, 0), (2, 0), (1, 0), (1, 17)])
+def test_package_update_step_uses_one_exact_candidate_and_propagates_failure(
+    tmp_path, count, command_exit
+):
+    text = (ROOT / ".github/workflows/blender-baseline.yml").read_text()
+    step = text.split(
+        "      - name: Test Scenario package state across native update and restart\n", 1
+    )[1]
+    step = step.split("\n      - ", 1)[0]
+    command = "\n".join(line[10:] for line in step.split("        run: |\n", 1)[1].splitlines())
+    run_root = tmp_path / "runner with spaces"
+    candidates = run_root / "scenario-tests/run-fixture"
+    candidates.mkdir(parents=True)
+    for number in range(count):
+        (candidates / f"scenario-{number}.zip").write_bytes(b"fixture")
+    binary = tmp_path / "bin"
+    binary.mkdir()
+    fake = binary / "uv"
+    fake.write_text('#!/bin/sh\nprintf "%s\\0" "$@" > "$UPDATE_ARGUMENTS"\nexit "$UPDATE_EXIT"\n')
+    fake.chmod(0o755)
+    args = tmp_path / "arguments"
+    environment = dict(
+        os.environ,
+        PATH=str(binary) + os.pathsep + os.environ.get("PATH", ""),
+        RUNNER_TEMP=str(run_root),
+        BLENDER_VERSION="5.1.2",
+        UPDATE_ARGUMENTS=str(args),
+        UPDATE_EXIT=str(command_exit),
+    )
+    result = subprocess.run(
+        ["bash", "-c", command], env=environment, capture_output=True, text=True
+    )
+    if count != 1:
+        assert result.returncode != 0
+        assert not args.exists()
+        return
+    assert result.returncode == command_exit
+    values = args.read_bytes().decode().split("\0")[:-1]
+    assert values[values.index("--candidate-zip") + 1] == str(candidates / "scenario-0.zip")
+    assert values[values.index("--expected-version") + 1] == "5.1.2"
+    assert "--test-predecessor" in values
+    assert values[values.index("--artifacts") + 1] == str(
+        run_root / "scenario-package-update-tests"
+    )

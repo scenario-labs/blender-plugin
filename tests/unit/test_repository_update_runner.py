@@ -183,3 +183,154 @@ def test_update_failure_stops_server_and_preserves_only_owned_profile(
     assert "update" in report["error"]
     assert (directory / "profile").is_dir()
     assert not (tmp_path / "normal").exists()
+
+
+def test_exact_package_copy_preserves_all_bytes_and_inventory(runner, tmp_path):
+    import zipfile
+
+    archive, _ = runner.fixture(tmp_path / "source", "1.2.3")
+    with zipfile.ZipFile(archive, "a") as package:
+        package.writestr(
+            "core/jobs/store.py", "# Synthetic adopted-layout marker for unit validation\n"
+        )
+    original = archive.read_bytes()
+    copied, inventory, version = runner.package_artifact(tmp_path / "copied", archive)
+    assert copied.read_bytes() == original == archive.read_bytes()
+    assert version == "1.2.3"
+    entry = json.loads(inventory.read_text())["archives"][0]
+    assert entry["version"] == version
+    assert entry["size"] == len(original)
+    assert entry["sha256"] == runner.sha256(archive)
+
+
+def test_package_mode_rejects_placeholder_and_incomplete_pair_before_install(runner, tmp_path):
+    archive, _ = runner.fixture(tmp_path / "source", "1.0.0")
+    with pytest.raises(ValueError, match="adopted Scenario"):
+        runner.package_artifact(tmp_path / "copied", archive)
+    assert not (tmp_path / "copied").exists()
+    with pytest.raises(ValueError, match="both"):
+        runner.run(SimpleNamespace(previous_zip=archive, candidate_zip=None))
+
+
+def test_selected_archive_server_keeps_the_explicit_file_boundary(runner, tmp_path):
+    (tmp_path / "scenario-0.9.9.zip").write_bytes(b"chosen")
+    (tmp_path / "scenario-2.0.0.zip").write_bytes(b"unselected")
+    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+    with runner.serve(tmp_path, ("scenario-0.9.9.zip",)) as (server, url):
+        root = url.removesuffix("index.json")
+        with opener.open(root + "scenario-0.9.9.zip", timeout=2) as response:
+            assert response.read() == b"chosen"
+        with pytest.raises(urllib.error.HTTPError) as failure:
+            opener.open(root + "scenario-2.0.0.zip", timeout=2)
+        assert failure.value.code == 404
+        failure.value.close()
+        assert server.requests == ["/scenario-0.9.9.zip"]
+    with pytest.raises(ValueError, match="basenames"), runner.serve(tmp_path, ("../private.zip",)):
+        pass
+
+
+@pytest.mark.parametrize("marker", [False, True])
+def test_package_probe_refuses_unmanaged_profiles_before_blender(tmp_path, marker):
+    environment = {
+        key: value for key, value in os.environ.items() if not key.startswith("BLENDER_")
+    }
+    if marker:
+        profile = tmp_path / "profile"
+        profile.mkdir()
+        environment["BLENDER_USER_RESOURCES"] = str(profile)
+        (tmp_path / "repository-update.json").write_text(json.dumps({"profile": "other"}))
+    result = subprocess.run(
+        [sys.executable, str(ROOT / "tests/blender/package_update.py")],
+        env=environment,
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode != 0
+    assert "No module named 'bpy'" not in result.stderr
+    assert (
+        "Refusing an unmanaged" if marker else "Use tools/test_repository_update.py"
+    ) in result.stderr
+
+
+@pytest.mark.parametrize("candidate_version", ["1.2.3", "1.2.2"])
+def test_equal_version_or_downgrade_stops_before_repository_install(
+    runner, tmp_path, monkeypatch, candidate_version
+):
+    import zipfile
+
+    previous, _ = runner.fixture(tmp_path / "previous", "1.2.3")
+    candidate, _ = runner.fixture(tmp_path / "candidate", candidate_version)
+    for path in (previous, candidate):
+        with zipfile.ZipFile(path, "a") as archive:
+            archive.writestr("core/jobs/store.py", "# Adopted-layout unit fixture\n")
+    monkeypatch.setattr(runner, "normal_profile_root", lambda: tmp_path / "normal")
+    monkeypatch.setattr(runner, "find_blender", lambda _: "fixture-blender")
+    calls = []
+
+    def step(session, name, _args):
+        calls.append(name)
+        assert name == "probe"
+        log = session.directory / "probe.log"
+        log.write_text('SCENARIO_ENV={"version":[5,0,1],"blender":"5.0.1"}\n')
+        return log
+
+    monkeypatch.setattr(runner.Session, "step", step)
+    args = SimpleNamespace(
+        blender=None,
+        artifacts=tmp_path / "artifacts",
+        timeout=2,
+        expected_version="5.0.1",
+        previous_zip=previous,
+        candidate_zip=candidate,
+    )
+    assert runner.run(args) == 1
+    assert calls == ["probe"]
+    report = json.loads(next(args.artifacts.glob("*/result.json")).read_text())
+    assert "newer" in report["error"]
+
+
+def test_test_predecessor_changes_only_matching_version_metadata(runner, tmp_path):
+    import zipfile
+
+    candidate, _ = runner.fixture(tmp_path / "candidate", "1.2.3")
+    clean = tmp_path / "candidate.zip"
+    with zipfile.ZipFile(candidate) as source, zipfile.ZipFile(clean, "w") as target:
+        for name in source.namelist():
+            content = source.read(name)
+            if name == "__init__.py":
+                content = b'__version__ = "1.2.3"  # keep this comment\n'
+            target.writestr(name, content)
+    original = clean.read_bytes()
+    before, inventory, version = runner.fixture_predecessor(tmp_path / "before", clean)
+    assert version == "0.0.0"
+    assert clean.read_bytes() == original
+    with zipfile.ZipFile(clean) as source, zipfile.ZipFile(before) as target:
+        assert source.namelist() == target.namelist()
+        for name in source.namelist():
+            expected = source.read(name)
+            if name in ("blender_manifest.toml", "__init__.py"):
+                expected = expected.replace(b'"1.2.3"', b'"0.0.0"')
+            assert target.read(name) == expected
+    assert json.loads(inventory.read_text())["archives"][0]["sha256"] == runner.sha256(before)
+
+
+def test_test_predecessor_rejects_ambiguous_or_absent_selection(runner, tmp_path):
+    for previous, candidate in [(None, None), (tmp_path / "old.zip", tmp_path / "new.zip")]:
+        with pytest.raises(ValueError, match="excludes"):
+            runner.run(
+                SimpleNamespace(
+                    previous_zip=previous, candidate_zip=candidate, test_predecessor=True
+                )
+            )
+    archive, _ = runner.fixture(tmp_path / "old", "1.2.3")
+    with pytest.raises(ValueError, match="matching version declaration"):
+        runner.fixture_predecessor(tmp_path / "before", archive)
+
+
+def test_probe_inventory_uses_extended_windows_drive_and_unc_paths(monkeypatch):
+    monkeypatch.syspath_prepend(str(ROOT / "tests/blender"))
+    probe = importlib.import_module("package_update")
+    assert probe.windows_namespace("C:\\profile\\state") == "\\\\?\\C:\\profile\\state"
+    assert probe.windows_namespace("\\\\server\\share\\state") == "\\\\?\\UNC\\server\\share\\state"
+    extended = "\\\\?\\C:\\profile\\state"
+    assert probe.windows_namespace(extended) == extended

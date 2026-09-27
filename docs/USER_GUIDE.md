@@ -150,7 +150,28 @@ and prices can change.
 - **Blockout**: describe a scene layout, then refine or rebuild its primitives.
 
 ### Image
-Text or reference images to images (GPT Image 2, Gemini 3.1, Seedream, Z-Image, FLUX 2, Qwen and any other txt2img / img2img model; video-to-image tools too). Results open in an Image Editor (fitted to the window, whole image visible) and appear in Generations with **View image**, **Use as reference** (3D image to 3D: the 3D tab opens in Image mode with the picture attached, ready to generate a mesh; or the Image, Video, Render Image or Render Video lane), **Remove background** (runs a background removal model, Bria or 851 Labs or Photoroom, the cut-out lands in Generations), **Apply as texture** (a material with the image as Base Color on the active mesh) and **Add as plane** (a view-facing plane at the 3D cursor).
+
+Choose an image model and describe the result. For a local file, viewport,
+camera still or Render Result reference, first add it to the form, then click
+**Upload reference**. This sends the chosen image snapshot to Scenario. Once it
+finishes, the reference is marked as uploaded and the form requests a fresh price.
+**Generate** uses that exact approved input and price; uploading alone never
+starts generation.
+
+Keep the scene, model and reference slot unchanged while the upload finishes.
+If they change, a late upload cannot replace the new selection. **Inspect uploads**
+shows saved progress. An uncertain upload is preserved without automatic replay;
+use the [local MCP recovery tools](MCP.md#local-server-and-mcpscenariocom)
+for explicit known-upload refresh and cleanup. Native recovery/reattachment
+controls are still in development. Uploaded references are bound to the selected
+credentials, and later edits to the original file do not change the uploaded snapshot.
+
+This pre-release path imports supported PNG and scanline OpenEXR results as packed
+image datablocks. Select them in Blender's Image Editor. Saved-job controls can
+refresh/download or explicitly import recovered images into a reviewed destination;
+see the [current runtime limits](architecture/runtime.md#active-sdk-cost-previews-and-image-submission).
+Other generation lanes and result actions retain their earlier integration and
+need their own acceptance checks.
 
 ### Video
 Text, images or your Blender scene to video (Seedance 2.0 and 2.5, Kling, Veo, Wan, LTX and the other video models, including audio-to-video).

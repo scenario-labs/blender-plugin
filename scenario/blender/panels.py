@@ -128,6 +128,8 @@ def draw_prompt_row(layout, lane_state, lane, text="", placeholder=None):
 
 
 def draw_reference_row(box, lane_state, index, ref):
+    from . import reference_form
+
     row = box.row(align=True)
     path = bpy.path.abspath(ref.filepath) if ref.filepath else ""
     icon_id = thumbnail(path) if ref.source == "FILE" else 0
@@ -140,6 +142,7 @@ def draw_reference_row(box, lane_state, index, ref):
         )
     remove = row.operator("scenario.remove_reference", text="", icon="X")
     remove.lane, remove.index = props.lane_of(lane_state), index
+    reference_form.draw(box, lane_state, index, ref)
 
 
 def draw_references(

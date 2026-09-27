@@ -323,8 +323,10 @@ scene/target before a once-only main-thread callback. A late claimed receipt may
 persist after a file switch, while delivery remains blocked. Restarted origins
 remain unrecognized for automatic application even when status refresh succeeds.
 Callbacks do not by themselves attach a reference or commit a Blender application
-transaction. Form upload controls and explicit attachment UX remain separate work;
-the active runtime supplies credential-bound scope without requiring project discovery.
+transaction. The [Image form facade](SDK_UPLOADS.md#image-form-attachment) now
+adds guarded attachment after upload, without another worker pool. Explicit
+native reattachment after context changes remains separate work. The active
+runtime supplies credential-bound scope without requiring project discovery.
 
 ## Active Image submission
 

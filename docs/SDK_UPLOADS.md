@@ -72,8 +72,9 @@ uncertain; do not attach a guessed upload or automatically recreate it.
 
 Signed PUT transport, private source staging, durable claims and explicit shared
 worker commands are available as described below. The active local MCP path now
-selects a host/size policy and exposes explicit saved-upload recovery. Form
-attachment controls, orphan retention/cleanup and live acceptance remain separate work.
+selects a host/size policy and exposes explicit saved-upload recovery. Image form
+attachment uses the controls below; native recovery actions, orphan retention
+and live acceptance remain separate work.
 Finished uploads have explicit verified source cleanup as described below.
 Storage requests must check destination/online policy and never forward
 Scenario Authorization. No upload-abort method was established in this SDK.
@@ -343,8 +344,9 @@ facade over the selected `JobSession`, scoped upload store and existing workers.
 `capture_reference` captures a viewport/camera still first. Both return a
 session-owned handle immediately. Poll `reference_upload_status` until the saved
 state is `imported`, then pass its `asset_id` to a fresh Image estimate. Uploading
-does not submit generation or approve its cost. The form's local references still
-need separate attachment controls; they are not uploaded while drawing or pricing.
+does not submit generation or approve its cost. The Image form uses the same
+owner through **Upload reference**. It never uploads while drawing or pricing.
+Other generation lanes retain their earlier integration.
 
 Preparation snapshots up to 256 MiB into private storage, using 8 MiB parts
 (the final part may be smaller). Metadata replaces basename characters outside
@@ -399,3 +401,29 @@ Offline native tests exercise actual SDK wrappers, SQLite and workers through
 synthetic API/PUT responses, including changed origins, lost responses, restart
 inspection and cleanup. Transport unit tests separately exercise signed PUT and
 host rejection. This is not live S3/import acceptance or GUI interaction proof.
+
+### Image form attachment
+
+[`reference_form.py`](../scenario/blender/reference_form.py) binds each explicit
+upload to the original scene object, model ID, reference slot and source fields.
+A saved marker blocks a second upload click, including after reopening a blend.
+The main-thread maintenance pump converts the unchanged slot to a Scenario asset
+only after an imported observation and a fresh origin check. It marks the label
+as an uploaded snapshot and invalidates the form's prior estimate. Generation
+then quotes/submits the immutable asset ID, not the later contents of the original
+file. Pending Render Result references cannot fall through to prototype capture
+during Image request construction.
+
+Uploaded references retain their credential-scope fingerprint. Reopening under
+another connection or manually changing that asset ID blocks pricing rather than
+silently using it in another account/project. These local markers are not server
+permission checks and contain no credentials. A scene/model/slot change prevents
+late attachment; it does not abort already authorized remote work. No upload
+operation grants generation approval.
+
+**Inspect uploads** snapshots this connection's durable metadata without sending
+bytes. It shows errors, state and request IDs, with a copy action for imported
+asset IDs. Automatic attachment handles do not survive restart. Explicit native
+recovery/reattachment controls remain incomplete; use the local MCP recovery
+commands to inspect known remote progress and preserve uncertain claims. Never
+remove and re-add a reference as a substitute for reconciling an uncertain upload.

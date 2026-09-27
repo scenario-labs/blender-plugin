@@ -84,6 +84,7 @@ class ReferenceUploads:
         self.session, self._online = session, online
         self.references = {}
         self._recovering = set()
+        self.forms = {}
 
     def start(self, scene, path, *, temporary=None):
         """Upload the chosen image once; this action never quotes or generates."""
@@ -166,6 +167,10 @@ class ReferenceUploads:
                     ticket.error = (
                         "The upload origin changed or work could not start; inspect saved progress"
                     )
+        if self.forms:
+            from .reference_form import deliver
+
+            deliver(self)
 
     def status(self, identifier):
         self.poll()

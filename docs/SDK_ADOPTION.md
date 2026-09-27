@@ -81,9 +81,12 @@ malformed-record conversion failures become a sanitized `ScenarioError` shared
 by the owner and waiters, so UI/MCP delivery reports `catalog_failed`.
 Public/private reads remain separate, and retirement rejects
 old results. No persistent or cross-credential cache is introduced.
-Cache entries are in memory per connection. Credential-bound durable persistence
-is separate integration work; API-key requests do not require explicit tenant
-selection or a generated SDK discovery method.
+Cache entries are in memory per connection. The active context also opens
+[credential-bound local job storage](JOB_STORAGE.md#identity-and-ownership), and
+its adapter carries the same scope. The local account pseudonym isolates records
+without claiming a server identity or adding it to API requests. API-key requests
+do not require explicit tenant selection or a generated SDK discovery method.
+Opening the store does not activate shared job workers or paid submission.
 [Runtime integration status](architecture/runtime.md#active-sdk-catalog) records
 the remaining shared-job and paid-flow boundaries. The original raw `Catalog`
 class remains used by historical smoke scripts; the active Blender path no

@@ -14,6 +14,7 @@ import pytest
 from scenario.core.api.errors import ScenarioError
 from scenario.core.api.sdk_adapter import Credentials, SDKAdapter
 from scenario.core.api.sdk_catalog import SDKCatalog
+from scenario.core.jobs.store import JobScope
 
 
 def catalog(handler, **options):
@@ -37,6 +38,28 @@ ESTIMATE_MODEL = {
     "type": "custom",
     "inputs": [{"name": "prompt", "type": "string", "required": True}],
 }
+
+
+@pytest.mark.parametrize("project", [None, "selected-project"])
+def test_local_scope_binds_adapter_without_sending_local_identity(project):
+    scope = JobScope("https://api.cloud.scenario.com/v1", "local-key-fixture", project)
+    calls = []
+
+    def respond(request):
+        calls.append(request)
+        return httpx.Response(200, json={"models": []})
+
+    context, pools = catalog(respond, scope=scope)
+    try:
+        context.fetch_list()
+        assert context.scope == scope
+        assert pools[0].account_id == scope.account_id
+        assert pools[0].project_id == project
+        assert calls[0].url.params.get("projectId") == project
+        assert scope.account_id not in str(calls[0].url)
+        assert scope.account_id not in str(calls[0].headers)
+    finally:
+        context.close()
 
 
 def test_estimate_uses_selected_sdk_connection_and_keeps_exact_response():

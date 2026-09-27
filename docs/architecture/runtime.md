@@ -69,10 +69,16 @@ team/project selection. Missing generated discovery resources in
 [SDK issue #29](https://github.com/scenario-labs/scenario-sdk-python/issues/29)
 are bridged by the adapter's [named extensions](../SDK_ADOPTION.md#sdk-resource-extensions).
 Discovery is optional and does not infer the key's default project from the first
-listed project. No account identity is derived from credentials and no shared
-`JobSession` or durable account store is activated by catalog reads. Credential-bound
-local persistence still needs integration; it does not require waiting for a
-generated SDK discovery method. Durable quotes, submission,
+listed project. Opening the catalog also opens the
+[credential-bound local job store](../JOB_STORAGE.md#identity-and-ownership).
+Its installation-local HMAC pseudonym binds the exact selected key/secret pair to
+`JobScope.account_id`; it is not a discovered server account and is never sent to
+the API. The catalog's adapter carries the same scope. Credential changes retire
+both selections; switching back or restarting reopens the original records.
+Missing/corrupt local scope keys and storage failures block context creation with
+an explicit error rather than silently replacing history. Model/schema caches
+remain in memory. No shared `JobSession` or job workers are activated by opening
+the store. Durable quotes, submission,
 uploads and result application still need active SDK adoption under
 #65. Invalidating a visible quote does not establish safe migration of those
 prototype paid jobs or their late callbacks.

@@ -21,6 +21,7 @@ LABELS = {
     "import_model": "Import static model",
     "apply_world": "Set panorama as World",
     "restore_world": "Restore previous World",
+    "apply_material": "Apply saved material",
 }
 
 
@@ -51,7 +52,14 @@ class SCENARIO_OT_recover_job(bpy.types.Operator):
             (key, label, label)
             for key, label in LABELS.items()
             if key
-            not in {"import_images", "import_media", "import_model", "apply_world", "restore_world"}
+            not in {
+                "import_images",
+                "import_media",
+                "import_model",
+                "apply_world",
+                "restore_world",
+                "apply_material",
+            }
         ]
     )
 
@@ -295,10 +303,75 @@ class SCENARIO_OT_apply_saved_world(bpy.types.Operator):
         return {"FINISHED"}
 
 
+class SCENARIO_OT_apply_saved_material(bpy.types.Operator):
+    bl_idname = "scenario.apply_saved_material"
+    bl_label = "Apply saved material"
+    bl_description = (
+        "Review a saved texture set for the active mesh material slot without generating again"
+    )
+
+    context_id: StringProperty(options={"HIDDEN"})
+    request_id: StringProperty(options={"HIDDEN"})
+    expected_revision: IntProperty(min=0, options={"HIDDEN"})
+    application_id: StringProperty(options={"HIDDEN", "SKIP_SAVE"})
+    scene_name: StringProperty(options={"HIDDEN", "SKIP_SAVE"})
+    target_name: StringProperty(options={"HIDDEN", "SKIP_SAVE"})
+    slot: IntProperty(options={"HIDDEN", "SKIP_SAVE"})
+    roles: StringProperty(options={"HIDDEN", "SKIP_SAVE"})
+
+    def invoke(self, context, event):
+        try:
+            jobs, approval = runtime.prepare_material_application(
+                self.context_id,
+                self.request_id,
+                self.expected_revision,
+                context.scene,
+                context.view_layer.objects.active,
+            )
+            self._jobs = jobs
+            self.application_id, self.scene_name = approval.identifier, approval.scene_name
+            self.target_name, self.slot = approval.target_name, approval.target.active + 1
+            self.roles = ", ".join(approval.roles)
+        except Exception:
+            self.report(
+                {"ERROR"}, "Choose a local single-user UV mesh and inspect saved texture maps"
+            )
+            return {"CANCELLED"}
+        return context.window_manager.invoke_props_dialog(self, width=540)
+
+    def draw(self, context):
+        self.layout.label(text=f"Scene: {self.scene_name}", icon="SCENE_DATA")
+        self.layout.label(text=f"Mesh: {self.target_name}, material slot {self.slot}")
+        self.layout.label(text=f"Maps: {self.roles}")
+        self.layout.label(text="Create a packed material using this mesh's active UV map.")
+        self.layout.label(text="Replace this slot only; existing materials remain unchanged.")
+        self.layout.label(text="Height uses bump; AO/edge maps remain available for wiring.")
+        self.layout.label(text="Normal maps use Blender tangent space. No global undo entry.")
+
+    def cancel(self, context):
+        jobs = getattr(self, "_jobs", None)
+        if jobs is not None:
+            jobs.discard_image_application(self.application_id)
+
+    def execute(self, context):
+        try:
+            runtime.apply_saved_result(self.context_id, self.application_id)
+        except Exception:
+            self.report({"ERROR"}, "Material assignment was not started; review the destination")
+            return {"CANCELLED"}
+        runtime.set_message("Verifying saved maps for the approved material slot")
+        return {"FINISHED"}
+
+
 def draw_controls(layout, record):
     if not record.meta.get("shared_job"):
         return
     for action in record.meta.get("recovery_actions", ()):
+        if action == "apply_material":
+            operator = layout.operator("scenario.apply_saved_material", text="Apply saved material")
+            operator.context_id, operator.request_id = runtime.state.job_context_id, record.local_id
+            operator.expected_revision = record.meta["saved_revision"]
+            continue
         if action in {"apply_world", "restore_world"}:
             identifiers = (
                 [""]
@@ -379,6 +452,7 @@ CLASSES = (
     SCENARIO_OT_import_saved_media,
     SCENARIO_OT_import_saved_model,
     SCENARIO_OT_apply_saved_world,
+    SCENARIO_OT_apply_saved_material,
 )
 
 

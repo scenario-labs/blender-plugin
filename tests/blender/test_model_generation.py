@@ -85,6 +85,7 @@ class ModelGenerationTests(unittest.TestCase):
                                 "id": "result-image",
                                 "status": "success",
                                 "mimeType": self.result_media_type,
+                                "metadata": getattr(self, "result_metadata", {}),
                                 "properties": {"size": len(self.result_bytes)},
                                 "url": "https://cdn.cloud.scenario.com/fixture.png",
                             }
@@ -1498,3 +1499,174 @@ class ModelGenerationTests(unittest.TestCase):
             status = self.tools.recover_local_job(self.recovery_args(request_id, "retry_receipt"))
         self.assertEqual(status["status"], "applied")
         self.assertEqual(bpy.context.scene.world, world)
+
+    def recovered_material(self):
+        before = set(bpy.data.materials)
+
+        def cleanup():
+            for material in set(bpy.data.materials) - before:
+                bpy.data.materials.remove(material, do_unlink=True)
+
+        self.addCleanup(cleanup)
+        self.result_metadata = {"type": "texture-albedo"}
+        bpy.ops.mesh.primitive_cube_add()
+        return self.recovered_images()
+
+    def prepare_material(self, request_id):
+        args = self.recovery_args(request_id, "apply_material")
+        del args["action"]
+        args["purpose"] = "material"
+        return self.tools.prepare_result_application(args)
+
+    def test_material_mcp_applies_to_captured_mesh_without_additional_requests(self):
+        request_id = self.recovered_material()
+        target = bpy.context.active_object
+        bpy.ops.mesh.primitive_cube_add(location=(3, 0, 0))
+        other = bpy.context.active_object
+        bpy.context.view_layer.objects.active = target
+        before = len(self.calls), len(self.paid)
+        approval = self.prepare_material(request_id)
+        self.assertEqual(approval["roles"], ["albedo"])
+        deferred = self.tools.apply_result_application(self.import_args(approval))
+        result = deferred.run()
+        bpy.context.view_layer.objects.active = other
+        status = deferred.finish(result)
+        self.assertEqual(status["status"], "applied", status)
+        self.assertEqual(status["materials"], [target.active_material.name])
+        self.assertIsNone(other.active_material)
+        self.assertEqual((len(self.calls), len(self.paid)), before)
+        with self.assertRaises(self.request_error):
+            self.tools.apply_result_application(self.import_args(approval))
+
+    def test_material_slot_change_during_verification_keeps_ready_job(self):
+        request_id = self.recovered_material()
+        approval = self.prepare_material(request_id)
+        deferred = self.tools.apply_result_application(self.import_args(approval))
+        result = deferred.run()
+        chosen = bpy.data.materials.new("Changed slot")
+        bpy.context.active_object.data.materials.append(chosen)
+        status = deferred.finish(result)
+        self.assertEqual(status["status"], "ready", status)
+        self.assertEqual(bpy.context.active_object.active_material, chosen)
+
+    def test_material_failed_assignment_preserves_files_and_allows_local_review(self):
+        request_id = self.recovered_material()
+        target = bpy.context.active_object
+        deferred = self.tools.apply_result_application(
+            self.import_args(self.prepare_material(request_id))
+        )
+        result = deferred.run()
+        module = submodule("blender.material_application")
+        original = module._assign
+
+        def fail(*args):
+            original(*args)
+            raise RuntimeError("synthetic assignment failure")
+
+        with patch.object(module, "_assign", side_effect=fail):
+            status = deferred.finish(result)
+        self.assertEqual(status["status"], "apply_failed", status)
+        self.assertIn("apply_material", status["actions"])
+        self.assertIsNone(target.active_material)
+        self.assertTrue(all(item.receipt for item in self.store.get(request_id).results))
+
+    def test_material_receipt_retry_does_not_repeat_assignment(self):
+        request_id = self.recovered_material()
+        deferred = self.tools.apply_result_application(
+            self.import_args(self.prepare_material(request_id))
+        )
+        result = deferred.run()
+        owner = self.runtime.state.model_jobs
+        transition = owner.store.transition
+
+        def fail_receipt(*args, **kwargs):
+            if kwargs.get("state") == self.storemod.JobState.APPLIED:
+                raise OSError("synthetic material receipt failure")
+            return transition(*args, **kwargs)
+
+        with patch.object(owner.store, "transition", side_effect=fail_receipt):
+            status = deferred.finish(result)
+        self.assertEqual(status["status"], "applying", status)
+        material = bpy.context.active_object.active_material
+        with patch.object(
+            submodule("blender.job_session"),
+            "apply_material",
+            side_effect=AssertionError("Repeated assignment"),
+        ):
+            status = self.tools.recover_local_job(self.recovery_args(request_id, "retry_receipt"))
+        self.assertEqual(status["status"], "applied")
+        self.assertEqual(bpy.context.active_object.active_material, material)
+
+    def test_material_shutdown_rejects_pending_receipt_retry(self):
+        request_id = self.recovered_material()
+        deferred = self.tools.apply_result_application(
+            self.import_args(self.prepare_material(request_id))
+        )
+        result = deferred.run()
+        owner = self.runtime.state.model_jobs
+        transition = owner.store.transition
+
+        def fail_receipt(*args, **kwargs):
+            if kwargs.get("state") == self.storemod.JobState.APPLIED:
+                raise OSError("synthetic material receipt failure")
+            return transition(*args, **kwargs)
+
+        with patch.object(owner.store, "transition", side_effect=fail_receipt):
+            deferred.finish(result)
+        pending = owner._receipts[request_id]
+        before = owner.store.get(request_id), bpy.context.active_object.active_material
+        owner.session.shutdown()
+        with self.assertRaises(self.origin_error):
+            owner.session.retry_material_receipt(pending)
+        self.assertEqual(
+            (owner.store.get(request_id), bpy.context.active_object.active_material), before
+        )
+
+    def test_native_material_operator_consumes_the_same_single_approval(self):
+        request_id = self.recovered_material()
+        approval = self.prepare_material(request_id)
+        args = self.import_args(approval)
+        args.update(request_id=request_id, expected_revision=approval["revision"])
+        self.assertEqual(bpy.ops.scenario.apply_saved_material(**args), {"FINISHED"})
+        self.deliver_results()
+        self.assertEqual(self.store.get(request_id).state, self.storemod.JobState.APPLIED)
+        with self.assertRaisesRegex(RuntimeError, "Material assignment was not started"):
+            bpy.ops.scenario.apply_saved_material(**args)
+
+    def test_material_scene_edit_during_verification_keeps_job_ready(self):
+        request_id = self.recovered_material()
+        deferred = self.tools.apply_result_application(
+            self.import_args(self.prepare_material(request_id))
+        )
+        result = deferred.run()
+        bpy.ops.mesh.primitive_cube_add(location=(3, 0, 0))
+        status = deferred.finish(result)
+        self.assertEqual(status["status"], "ready", status)
+        self.assertFalse(status["materials"])
+
+    def test_material_incomplete_rollback_retains_uncertain_claim(self):
+        request_id = self.recovered_material()
+        deferred = self.tools.apply_result_application(
+            self.import_args(self.prepare_material(request_id))
+        )
+        result = deferred.run()
+        module = submodule("blender.material_application")
+        original = module._assign
+
+        def fail(*args):
+            original(*args)
+            raise RuntimeError("synthetic assignment failure")
+
+        with (
+            patch.object(module, "_assign", side_effect=fail),
+            patch.object(
+                module,
+                "_restore_slots",
+                side_effect=module.MaterialApplicationError("synthetic cleanup failure"),
+            ),
+        ):
+            status = deferred.finish(result)
+        self.assertEqual(status["status"], "applying", status)
+        self.assertNotIn("retry_receipt", status["actions"])
+        self.assertNotIn("apply_material", status["actions"])
+        self.assertIsNotNone(bpy.context.active_object.active_material)

@@ -76,3 +76,13 @@ packs embedded textures. The [model guide](../MESH_APPLICATION.md#explicit-saved
 details supported containers, bounded synchronous work and rollback. Existing
 `mesh_application.py` remains the separate explicit in-place mesh/UV primitive;
 importing a new GLB does not establish those edit workflows.
+
+## Saved materials
+
+[`material_application.py`](../../scenario/blender/material_application.py)
+loads only unambiguous receipt-bound texture maps into new packed images and a
+new material. It assigns one approved mesh slot, preserving old material data,
+other slots and face indices. The [material guide](../MATERIAL_APPLICATION.md)
+details target restrictions, bounded decoding, rollback and receipt-only recovery.
+Native and MCP actions share the scoped session; prototype material callbacks
+are not used for this saved-result command.

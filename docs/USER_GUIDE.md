@@ -269,6 +269,18 @@ Patina turns a prompt (or a photo) into a seamless PBR set: base color, normal, 
 
 Select the meshes to texture, describe the material, choose the maps and size, Generate. The material arrives as a Principled BSDF with UV mapping and displacement and is applied to the meshes you had selected. **Tiling** in Generations scales the mapping. Three models: PATINA Material (prompt, with variation and inpainting), PATINA Image to Maps (a flat texture or photo to maps), PATINA Material Extract (isolate one material from a photo).
 
+For an unapplied saved texture set, select a local mesh with UVs and choose
+**Apply saved material**. Confirm its scene, mesh, material slot and listed maps.
+The new material packs the verified images and replaces only that slot. Existing
+material datablocks and other slots stay unchanged. Height uses bump; AO/edge
+maps are retained for manual wiring. This does not regenerate or spend credits.
+
+The mesh must have one object user and belong to one scene. Duplicate map roles,
+multiple texture sets, missing base color, unsupported files and changed targets
+require review. Already-imported Image results cannot be re-claimed here. There
+is no global undo entry; preserve any old material you want to keep and save the
+blend file yourself. See [material application](MATERIAL_APPLICATION.md) for limits.
+
 ### Audio
 
 For new shared jobs, **Add audio strip (N)** confirms one saved MP3, WAV or OGG

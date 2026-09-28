@@ -16,10 +16,13 @@ from ..core.jobs.records import JobRecord
 from ..core.jobs.store import JobOrigin, JobState, StoredJob
 from .job_session import (
     ImageResultUncertain,
+    MaterialResultUncertain,
     MediaResultUncertain,
     ModelResultUncertain,
     WorldResultUncertain,
 )
+from .material_application import MaterialApplicationError, capture_target, selected_maps
+from .material_application import validate_target as validate_material_target
 from .media_application import MEDIA_TYPES
 from .model_application import MODEL_MEDIA_TYPE
 from .model_application import validate_destination as validate_model_destination
@@ -85,6 +88,18 @@ class WorldApplicationApproval:
     kind: str = "world"
 
 
+@dataclass(frozen=True)
+class MaterialApplicationApproval:
+    identifier: str
+    record: StoredJob
+    destination: JobOrigin
+    scene_name: str
+    target_name: str
+    target: object = field(repr=False)
+    roles: tuple
+    kind: str = "material"
+
+
 class ModelJobs:
     """Own ephemeral quotes and display projections, never another job engine."""
 
@@ -108,6 +123,8 @@ class ModelJobs:
         self._models = {}
         self._world_destinations = {}
         self._worlds = {}
+        self._material_destinations = {}
+        self._materials = {}
 
     def quote(self, scene, model_id, body, *, lane="image"):
         if lane not in GENERATION_LANES:
@@ -210,6 +227,7 @@ class ModelJobs:
             media = self._media_destinations.pop(request_id, None)
             model = self._model_destinations.pop(request_id, None)
             world = self._world_destinations.pop(request_id, None)
+            material = self._material_destinations.pop(request_id, None)
             try:
                 completions = self.session.drain(task=task)
                 if not completions:
@@ -217,7 +235,13 @@ class ModelJobs:
                 completion = completions[0]
                 if completion.error is not None:
                     raise completion.error
-                if command == "verify_world":
+                if command == "verify_material":
+                    applied = self.session.apply_recovered_material(
+                        completion, destination=material.destination, target=material.target
+                    )
+                    self._materials[request_id] = applied.application
+                    self._paused.discard(request_id)
+                elif command == "verify_world":
                     self._validate_world(world)
                     applied = self.session.apply_recovered_world(
                         completion, destination=world.destination, asset_id=world.asset_id
@@ -253,6 +277,16 @@ class ModelJobs:
                     self._images[request_id] = result.images
                     self._paused.discard(request_id)
                 self._next_poll[request_id] = time.monotonic() + 2.0
+            except MaterialResultUncertain as error:
+                if error.application is not None:
+                    self._receipts[request_id] = error
+                    self._materials[request_id] = error.application
+                self._pause(request_id, "Material assignment needs recovery; do not apply again")
+            except MaterialApplicationError:
+                self._pause(
+                    request_id,
+                    "Material application stopped; inspect saved maps and mesh destination",
+                )
             except WorldResultUncertain as error:
                 if error.application is not None:
                     self._receipts[request_id] = error
@@ -391,6 +425,10 @@ class ModelJobs:
             for item in record.results
         ):
             actions.append("apply_world")
+        if state in (JobState.READY, JobState.APPLY_FAILED) and any(
+            item.asset.texture_role in {"base", "albedo"} for item in record.results
+        ):
+            actions.append("apply_material")
         if state == JobState.APPLIED and request_id in self._worlds:
             actions.append("restore_world")
         if request_id in self._receipts:
@@ -406,13 +444,23 @@ class ModelJobs:
             or record.revision != expected_revision
             or action not in self.actions(record)
             or action
-            in {"import_images", "import_media", "import_model", "apply_world", "restore_world"}
+            in {
+                "import_images",
+                "import_media",
+                "import_model",
+                "apply_world",
+                "restore_world",
+                "apply_material",
+            }
         ):
             raise ScenarioError(0, "The saved job or available action changed; inspect it again")
         view = self._view(record)
         if action == "retry_receipt":
             pending = self._receipts[request_id]
-            if isinstance(pending, WorldResultUncertain):
+            if isinstance(pending, MaterialResultUncertain):
+                outcome = self.session.retry_material_receipt(pending)
+                self._materials[request_id] = outcome.application
+            elif isinstance(pending, WorldResultUncertain):
                 outcome = self.session.retry_world_receipt(pending)
                 self._worlds[request_id] = outcome.application
             elif isinstance(pending, ModelResultUncertain):
@@ -566,6 +614,48 @@ class ModelJobs:
         self._application_approvals[ticket.identifier] = ticket
         return ticket
 
+    def prepare_material_application(self, request_id, expected_revision, scene, obj):
+        record = self.store.get(request_id)
+        if (
+            type(expected_revision) is not int
+            or record is None
+            or record.revision != expected_revision
+            or "apply_material" not in self.actions(record)
+            or len(self._application_approvals) >= 128
+        ):
+            raise ScenarioError(0, "Inspect the saved material and finish existing reviews first")
+        bpy.context.view_layer.update()
+        target = capture_target(scene, obj)
+        roles = selected_maps(record)
+        ticket = MaterialApplicationApproval(
+            uuid.uuid4().hex,
+            record,
+            self.session.capture(scene, obj),
+            scene.name,
+            obj.name,
+            target,
+            tuple(roles),
+        )
+        self._application_approvals[ticket.identifier] = ticket
+        return ticket
+
+    def _apply_saved_material(self, ticket):
+        self._application_approvals.pop(ticket.identifier)
+        record = self.store.get(ticket.record.intent.request_id)
+        if record != ticket.record or "apply_material" not in self.actions(record):
+            raise ScenarioError(0, "The saved material changed; inspect it again")
+        self.session.validate_destination(ticket.destination)
+        validate_material_target(ticket.target)
+        request_id = record.intent.request_id
+        task = self.session.verify_results(request_id, expected_revision=record.revision)
+        self._material_destinations[request_id] = ticket
+        self._commands[request_id] = ("verify_material", task)
+        self._automatic_application.discard(request_id)
+        self._paused.add(request_id)
+        view = self._view(record)
+        view.meta["recovery_actions"], view.error = (), None
+        return request_id, task
+
     def prepare_world_application(
         self, request_id, expected_revision, scene, asset_id, *, restore=False
     ):
@@ -621,6 +711,8 @@ class ModelJobs:
         ticket = (
             self._application_approvals.get(identifier) if isinstance(identifier, str) else None
         )
+        if isinstance(ticket, MaterialApplicationApproval):
+            return self._apply_saved_material(ticket)
         if not isinstance(
             ticket, (MediaApplicationApproval, ModelApplicationApproval, WorldApplicationApproval)
         ):
@@ -741,6 +833,11 @@ class ModelJobs:
                 obj.name
                 for obj in getattr(self._models.get(record.intent.request_id), "objects", ())
                 if obj in tuple(bpy.data.objects)
+            ],
+            "materials": [
+                application.material.name
+                for application in [self._materials.get(record.intent.request_id)]
+                if application is not None and application.material in tuple(bpy.data.materials)
             ],
             "images": [
                 image.name

@@ -21,6 +21,12 @@ from ..core.jobs.results import VerifiedResults
 from ..core.jobs.store import JobOrigin, StoredJob
 from ..core.jobs.workers import JobWorkers
 from .image_application import ImageApplicationError, apply_images
+from .material_application import (
+    MaterialApplicationError,
+    apply_material,
+    selected_maps,
+    validate_target,
+)
 from .media_application import MediaApplicationError, apply_media
 from .model_application import ModelApplicationError, apply_model
 from .model_application import validate_destination as validate_model_destination
@@ -87,6 +93,20 @@ class AppliedImages:
     images: tuple = field(repr=False)
 
 
+class MaterialResultUncertain(RuntimeError):
+    """Scene assignment may have finished; only a known receipt may be retried."""
+
+    def __init__(self, application=None):
+        super().__init__("Material application is uncertain; inspect the saved job and target")
+        self.application = application
+
+
+@dataclass(frozen=True)
+class AppliedMaterial:
+    record: StoredJob
+    application: object = field(repr=False)
+
+
 class WorldResultUncertain(RuntimeError):
     """Inspect the saved job and scene before acting; never repeat application.
 
@@ -150,6 +170,7 @@ class JobSession:
         self._image_receipts = WeakKeyDictionary()
         self._media_receipts = WeakKeyDictionary()
         self._model_receipts = WeakKeyDictionary()
+        self._material_receipts = WeakKeyDictionary()
         self._upload_captures = {}
         self._active = True
         self._coordinator = JobCoordinator(
@@ -618,6 +639,55 @@ class JobSession:
         del self._model_receipts[outcome]
         return AppliedModel(record, application)
 
+    def apply_recovered_material(self, completion, *, destination, target):
+        _main_thread()
+        if self._issued.get(id(completion)) is not completion:
+            raise OriginUnavailable("Use an unconsumed material verification from this session")
+        if completion.error is not None:
+            raise completion.error
+        verified = completion.result
+        if not isinstance(verified, VerifiedResults) or not isinstance(destination, JobOrigin):
+            raise OriginUnavailable("Verify the material and approve its destination")
+        scene, obj = self._resolve(destination)
+        if target.scene != scene or target.obj != obj:
+            raise OriginUnavailable("Use the exact approved material target")
+        validate_target(target)
+        selected_maps(verified.record)
+        del self._issued[id(completion)]
+        claim = self._coordinator.claim_recovered_application(verified, destination)
+        try:
+            application = apply_material(verified, target)
+        except MaterialApplicationError:
+            try:
+                self._coordinator.fail_application(claim)
+            except Exception:
+                raise MaterialResultUncertain() from None
+            raise
+        except Exception:
+            raise MaterialResultUncertain() from None
+        try:
+            record = self._coordinator.complete_application(claim)
+        except Exception:
+            outcome = MaterialResultUncertain(application)
+            self._material_receipts[outcome] = (claim, application)
+            raise outcome from None
+        return AppliedMaterial(record, application)
+
+    def retry_material_receipt(self, outcome):
+        _main_thread()
+        if (
+            not isinstance(outcome, MaterialResultUncertain)
+            or outcome not in self._material_receipts
+        ):
+            raise OriginUnavailable("Use a pending material receipt from this session")
+        claim, application = self._material_receipts[outcome]
+        try:
+            record = self._coordinator.retry_application_receipt(claim)
+        except Exception:
+            raise outcome from None
+        del self._material_receipts[outcome]
+        return AppliedMaterial(record, application)
+
     def apply_world(self, completion, *, asset_id):
         return self._apply_world(completion, asset_id=asset_id)
 
@@ -767,6 +837,7 @@ class JobSession:
                 self._image_receipts.clear()
                 self._media_receipts.clear()
                 self._model_receipts.clear()
+                self._material_receipts.clear()
                 with _sessions_lock:
                     _sessions.discard(self)
 

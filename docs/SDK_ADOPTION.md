@@ -322,8 +322,9 @@ uses the same saved-result boundary with scene/cursor approval and no API call.
 Unapplied panorama results now use recovered World approval and session-local
 restoration through this same local boundary. Non-image MCP jobs stop after
 verified download without automatic scene application. Capture/Spark preparation,
-Film, in-place mesh editing, material application and already-imported World reuse
-still need integration.
+Film, in-place mesh editing, multi-object material application and already-imported
+World reuse still need integration. Explicit saved texture sets now use local
+[material approval](MATERIAL_APPLICATION.md) and verified bytes, with no new API call.
 Generated operations use public SDK methods
 with `max_retries=0`; their `with_raw_response` wrappers preserve wire JSON.
 The named discovery exceptions also use the same zero-retry SDK client.

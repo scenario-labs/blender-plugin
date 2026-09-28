@@ -195,3 +195,22 @@ app copy used a distinct bundle identifier and local ad-hoc signature for window
 targeting; vendor executable code and the extension ZIP were unchanged. This does
 not establish actual HDR/seam quality, other OS desktop support, resolution of
 #263 or release acceptance.
+
+## Saved material approval
+
+**Apply saved material** names the scene, mesh, slot and saved texture roles.
+Explain packing, replacement of that slot only, height-as-bump, retained AO/edge
+nodes and the absence of a global undo entry. Preparation requires a local UV
+mesh with one object user in one scene; drawing reads the prepared snapshot and
+never opens files or changes assignments. Cancel discards its approval. A changed
+mesh, slot or scene revision requires a new review rather than retargeting.
+
+The exact packaged ZIP
+`21edc21dcc309d10a5989cb6ad9411cc39254d7dc83d123e9bf5d3e1b404efd5`
+passes 606 full native tests on each of macOS arm64 Blender 5.0.1, 5.1.2 and
+5.2.1. Tests cover the native operator and shared MCP approval, slot/scene
+changes during verification, rollback, packing and receipt-only recovery.
+Desktop mouse, focus, keyboard and viewport acceptance is still pending:
+the isolated 5.1.2 fixture reached its ready state, but computer control could
+not access its window. A rendered fixture is not interaction proof. Complete
+that check before accepting this UI change or claiming release readiness.

@@ -75,6 +75,13 @@ restoration. The completed job stays `applied` and cannot be replayed. Existing
 automatically imported Image jobs also stay ineligible for another claim. See
 [World approval and limits](WORLD_APPLICATION.md#saved-result-ui-and-mcp-approval).
 
+For one unapplied saved texture set, `purpose: material` captures the active mesh,
+its active material slot and unambiguous stored map roles. Show that destination
+and map list before consuming the shared application approval. It packs new
+images, creates a material and changes only that slot. It does not reuse a new
+selection after confirmation. See [material application](MATERIAL_APPLICATION.md)
+for single-user/UV restrictions, supported maps, rollback and no-global-undo limits.
+
 ## Typed local references
 
 `upload_reference` accepts a chosen local file and an optional `kind`: `image`
@@ -257,7 +264,7 @@ Do not edit this block by hand; run `make mcp-docs`. An asterisk marks a require
 | `reference_upload_status` | Read a reference upload's progress while the shared session advances its already authorized work. | `context_id`*: string<br>`reference_id`*: string | read-only annotation |
 | `list_reference_uploads` | Inspect saved uploads under the selected credential scope, including after restart. | none | read-only annotation |
 | `recover_reference_upload` | Explicitly inspect a known remote upload, cancel unclaimed preparation, or clean its finished private source copy. | `context_id`*: string<br>`request_id`*: string<br>`expected_revision`*: integer<br>`action`*: string (['refresh', 'cancel_prepared', 'cleanup']) | destructive annotation |
-| `prepare_result_application` | Prepare explicit saved image/media/model import, panorama World replacement, or session-local World restoration. | `context_id`*: string<br>`request_id`*: string<br>`expected_revision`*: integer<br>`asset_id`: string<br>`purpose`: string (['import', 'world', 'restore_world']) | read-only annotation |
+| `prepare_result_application` | Prepare explicit saved image/media/model import, material assignment, panorama World replacement, or session-local World restoration. | `context_id`*: string<br>`request_id`*: string<br>`expected_revision`*: integer<br>`asset_id`: string<br>`purpose`: string (['import', 'material', 'world', 'restore_world']) | read-only annotation |
 | `apply_result_application` | Apply or restore saved results after the user approves the prepared destination and operation. | `context_id`*: string<br>`application_id`*: string | destructive annotation |
 | `recover_local_job` | Explicitly recover a saved job without repeating generation or importing into another scene. | `context_id`*: string<br>`request_id`*: string<br>`expected_revision`*: integer<br>`action`*: string (['refresh', 'resume', 'cancel', 'recover_download', 'retry_receipt']) | destructive annotation |
 | `list_local_jobs` | Inspect durable local jobs for the selected API-key pair without network requests. | none | read-only annotation |
@@ -428,6 +435,6 @@ still use the manager-owned record so active waits observe its progress.
 
 Render lanes take the explicit model parameters supplied by the caller. They do
 not run the UI's capture, style decoration or Prompt Spark preparation. Non-image
-UI capture/Spark preparation, in-place mesh editing, material application, already-imported World reuse and Film
+UI capture/Spark preparation, in-place mesh editing, multi-object material application, already-imported World reuse and Film
 remain integration work under #65/#68. This change does not complete their
 end-to-end acceptance or authorize release.

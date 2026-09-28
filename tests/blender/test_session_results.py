@@ -34,6 +34,7 @@ class SessionResultTests(unittest.TestCase):
         self.assertTrue(self.root.samefile(self.temp.name))
         self.previous = bpy.context.scene
         self.before_worlds, self.before_images = set(bpy.data.worlds), set(bpy.data.images)
+        self.before_sounds = set(bpy.data.sounds)
         self.scene = bpy.data.scenes.new("Result session fixture")
         bpy.context.window.scene = self.scene
         self.target = bpy.data.objects.new("Result target", None)
@@ -100,6 +101,8 @@ class SessionResultTests(unittest.TestCase):
             bpy.data.objects.remove(self.target, do_unlink=True)
         if self.scene in tuple(bpy.data.scenes):
             bpy.data.scenes.remove(self.scene)
+        for sound in set(bpy.data.sounds) - self.before_sounds:
+            bpy.data.sounds.remove(sound, do_unlink=True)
         for world in set(bpy.data.worlds) - self.before_worlds:
             bpy.data.worlds.remove(world, do_unlink=True)
         for image in set(bpy.data.images) - self.before_images:
@@ -740,3 +743,82 @@ class SessionResultTests(unittest.TestCase):
         self.session.shutdown()
         with self.assertRaises(self.module.OriginUnavailable):
             self.session.retry_world_receipt(pending)
+
+    def media_completion(self):
+        from test_media_application import wav_bytes
+
+        self.body, self.media_type = wav_bytes(), "audio/wav"
+        ready = self.ready()
+        return self.command("verify_results", ready)[1]
+
+    def test_media_application_claims_original_bytes_and_explicit_destination_once(self):
+        completion = self.media_completion()
+        self.scene.frame_set(12)
+        destination = self.session.capture(self.scene)
+        before = len(self.calls)
+        result = self.session.apply_recovered_media(
+            completion, destination=destination, asset_id="asset", frame=12
+        )
+        self.addCleanup(lambda: result.application.path.unlink(missing_ok=True))
+        self.assertEqual(result.record.state, self.storage.JobState.APPLIED)
+        self.assertEqual(result.application.strip.frame_final_start, 12)
+        self.assertEqual(result.record.application_origin, destination)
+        self.assertEqual(len(self.calls), before)
+        with self.assertRaises(self.module.OriginUnavailable):
+            self.session.apply_recovered_media(
+                completion, destination=destination, asset_id="asset", frame=12
+            )
+        self.assertEqual(len(self.scene.sequence_editor.strips), 1)
+
+    def test_media_frame_change_rejects_application_before_claim(self):
+        completion = self.media_completion()
+        destination = self.session.capture(self.scene)
+        self.scene.frame_set(22)
+        with self.assertRaises(self.module.OriginUnavailable):
+            self.session.apply_recovered_media(
+                completion, destination=destination, asset_id="asset", frame=1
+            )
+        self.assertEqual(self.store.get("request").state, self.storage.JobState.READY)
+        self.assertIsNone(self.scene.sequence_editor)
+
+    def test_media_receipt_failure_does_not_repeat_insertion(self):
+        completion = self.media_completion()
+        destination = self.session.capture(self.scene)
+        transition = self.store.transition
+
+        def fail_receipt(*args, **kwargs):
+            if kwargs.get("state") == self.storage.JobState.APPLIED:
+                raise self.storage.StoreError("receipt failure")
+            return transition(*args, **kwargs)
+
+        with patch.object(self.store, "transition", side_effect=fail_receipt):
+            with self.assertRaises(self.module.MediaResultUncertain) as raised:
+                self.session.apply_recovered_media(
+                    completion,
+                    destination=destination,
+                    asset_id="asset",
+                    frame=self.scene.frame_current,
+                )
+        outcome = raised.exception
+        self.addCleanup(lambda: outcome.application.path.unlink(missing_ok=True))
+        self.assertEqual(self.store.get("request").state, self.storage.JobState.APPLYING)
+        before = len(self.scene.sequence_editor.strips)
+        self.assertEqual(
+            self.session.retry_media_receipt(outcome).record.state, self.storage.JobState.APPLIED
+        )
+        self.assertEqual(len(self.scene.sequence_editor.strips), before)
+        with self.assertRaises(self.module.OriginUnavailable):
+            self.session.retry_media_receipt(outcome)
+
+    def test_media_verified_bytes_changed_before_application_roll_back(self):
+        completion = self.media_completion()
+        completion.result.paths[0].write_bytes(b"changed")
+        with self.assertRaises(submodule("blender.media_application").MediaApplicationError):
+            self.session.apply_recovered_media(
+                completion,
+                destination=self.session.capture(self.scene),
+                asset_id="asset",
+                frame=self.scene.frame_current,
+            )
+        self.assertEqual(self.store.get("request").state, self.storage.JobState.APPLY_FAILED)
+        self.assertIsNone(self.scene.sequence_editor)

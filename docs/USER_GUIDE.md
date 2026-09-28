@@ -139,7 +139,7 @@ CU labels use up to three decimal places without trailing zeros, with compact
 notation from 10,000 CU (`12.3K CU`). The approval retains the original server
 quote even when its displayed amount is rounded.
 
-New form generations appear in the shared saved jobs. Image imports supported PNG/EXR results into its original scene; other lanes retain downloaded results for explicit application. The lane descriptions below also describe retained prototype capabilities whose shared result application is still being integrated. Result application, live Prompt Spark acceptance and Film acceptance remain release blockers.
+New form generations appear in the shared saved jobs. Image imports supported PNG/EXR results into its original scene; other lanes retain downloaded results for explicit application. Saved video/audio results now offer the confirmed strip insertion described below. The lane descriptions below also describe retained prototype capabilities whose shared result application is still being integrated. Live Prompt Spark acceptance, result application and Film acceptance remain release blockers.
 
 ![The model picker: Image, Video, Audio and 3D tabs with icons, category chips, search, the model list and the description of GPT Image 2](images/model-picker.png)
 
@@ -208,7 +208,15 @@ Text, images or your Blender scene to video (Seedance 2.0 and 2.5, Kling, Veo, W
 
 - **Viewport clip** / **Camera clip**: add the reference, then choose **Upload reference**. This captures a silent 1280x720 MP4 over the preview range when enabled, otherwise the scene frame range. A camera clip uses the scene camera through the viewport; viewport shading is retained unless **Grey clay capture** is enabled. The capture restores scene settings and the current frame afterwards.
 - The uploaded clip is an immutable snapshot. It is not trimmed or padded automatically, and later timeline or model-duration changes do not recapture it. Set the intended range before uploading; replace the reference to capture again. Review the model's input and duration requirements before generation. **Match timeline** remains a model-duration aid, not a guarantee that an uploaded clip matches the output duration.
-- Results: **Play** (system player), **Play in Blender**, or **Add video strip**.
+- For new shared jobs, choose **Add video strip (N)** in saved-job controls.
+  Confirm the scene and current frame before insertion. MP4 and WebM are supported
+  up to 512 MiB. A scene or frame change requires a fresh confirmation. This adds
+  one chosen result on an unused channel without regenerating; one application
+  consumes the job's claim. Other variants remain saved. Select the destination
+  scene in the Sequencer header to see the strip. The independent local media
+  copy must remain available if you move or share the blend file.
+- Retained prototype results offer **Play** (system player), **Play in Blender**,
+  or **Add video strip**.
   Add video strip inserts the downloaded picture frames at the current frame on
   an unused, unlocked and unmuted sequencer channel. It fits the picture inside
   the scene resolution and leaves existing strips, frame rate, frame range and
@@ -245,6 +253,16 @@ Patina turns a prompt (or a photo) into a seamless PBR set: base color, normal, 
 Select the meshes to texture, describe the material, choose the maps and size, Generate. The material arrives as a Principled BSDF with UV mapping and displacement and is applied to the meshes you had selected. **Tiling** in Generations scales the mapping. Three models: PATINA Material (prompt, with variation and inpainting), PATINA Image to Maps (a flat texture or photo to maps), PATINA Material Extract (isolate one material from a photo).
 
 ### Audio
+
+For new shared jobs, **Add audio strip (N)** confirms one saved MP3, WAV or OGG
+result, the destination scene and current frame. It uses an unused channel,
+preserves existing strips and timing, and makes no new service request. The
+same size, one-application and local-file requirements as saved video apply.
+Select the destination scene in the Sequencer header to inspect the strip.
+
+![Confirmed saved audio inserted once at the approved frame in Blender Sequencer](images/saved-media-result.png)
+
+The following playback and preview controls describe retained prototype results.
 Speech, music and sound effects: ElevenLabs Music v2, Google Lyria 3, ACE-Step 1.5, Minimax Music 3.0, ElevenLabs 3 (speech), Gemini 3.1 Flash TTS, ElevenLabs Sound Effects 2, Sonilo (text or video to SFX and music), and every other text-to-audio, audio-to-audio or video-to-audio model through the picker. Results go to `audio/<date>/` in the output folder; in Generations, **Play** opens them with the system player and **Add to sequencer** drops a sound strip at the current frame on a free channel.
 
 For a downloaded result, **Preview waveform** shows a local snapshot without

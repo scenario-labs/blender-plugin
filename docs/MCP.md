@@ -44,6 +44,16 @@ handle once. Scene/file changes invalidate it. Verification and the durable
 application claim precede image import; an interrupted import is never retried
 automatically. These commands spend no credits and make no service requests.
 
+For one saved video/audio asset, pass its `asset_id` to the same preparation
+command. Show the returned scene, frame, kind and local-file requirement before
+approval. Confirmation inserts one MP4/WebM movie or MP3/WAV/OGG sound strip on
+an unused channel; it preserves scene timing and omits embedded video audio.
+Changed frames also invalidate this approval. One selected asset consumes the
+job's application claim; receipt-only recovery never inserts another strip.
+The independent media file must remain available to the blend file. See
+[saved media application](BLENDER_JOB_CONTEXT.md#explicit-saved-video-and-audio-application)
+for size, rollback and persistence limits.
+
 ## Typed local references
 
 `upload_reference` accepts a chosen local file and an optional `kind`: `image`
@@ -226,8 +236,8 @@ Do not edit this block by hand; run `make mcp-docs`. An asterisk marks a require
 | `reference_upload_status` | Read a reference upload's progress while the shared session advances its already authorized work. | `context_id`*: string<br>`reference_id`*: string | read-only annotation |
 | `list_reference_uploads` | Inspect saved uploads under the selected credential scope, including after restart. | none | read-only annotation |
 | `recover_reference_upload` | Explicitly inspect a known remote upload, cancel unclaimed preparation, or clean its finished private source copy. | `context_id`*: string<br>`request_id`*: string<br>`expected_revision`*: integer<br>`action`*: string (['refresh', 'cancel_prepared', 'cleanup']) | destructive annotation |
-| `prepare_result_application` | Prepare explicit import of downloaded PNG/EXR images from a saved job into the current file. | `context_id`*: string<br>`request_id`*: string<br>`expected_revision`*: integer | read-only annotation |
-| `apply_result_application` | Import and pack saved images after the user approves the prepared destination. | `context_id`*: string<br>`application_id`*: string | destructive annotation |
+| `prepare_result_application` | Prepare explicit import of saved PNG/EXR images, or one selected video/audio asset into the current scene sequencer. | `context_id`*: string<br>`request_id`*: string<br>`expected_revision`*: integer<br>`asset_id`: string | read-only annotation |
+| `apply_result_application` | Apply saved images or insert the selected video/audio strip after the user approves the prepared destination. | `context_id`*: string<br>`application_id`*: string | destructive annotation |
 | `recover_local_job` | Explicitly recover a saved job without repeating generation or importing into another scene. | `context_id`*: string<br>`request_id`*: string<br>`expected_revision`*: integer<br>`action`*: string (['refresh', 'resume', 'cancel', 'recover_download', 'retry_receipt']) | destructive annotation |
 | `list_local_jobs` | Inspect durable local jobs for the selected API-key pair without network requests. | none | read-only annotation |
 | `cancel_prepared_job` | Cancel an unsubmitted durable local intent without contacting Scenario. | `context_id`*: string<br>`request_id`*: string<br>`expected_revision`*: integer | destructive annotation |
@@ -304,7 +314,8 @@ behavior interchangeable. Remote names below were checked against the
 | Durable local recovery | `list_local_jobs`, `cancel_prepared_job` | Local only; no remote polling or cancellation |
 | Saved job actions | `recover_local_job(context_id, request_id, expected_revision, action)` | Scoped job refresh/cancellation, asset retrieval, or local receipt recovery; never a new generation |
 | Review saved Image import | `prepare_result_application(context_id, request_id, expected_revision)` | Local destination capture; show the returned scene and images for approval |
-| Apply approved saved images | `apply_result_application(context_id, application_id)` | Local verified import into the captured destination; no platform call |
+| Review one saved video/audio strip | `prepare_result_application(context_id, request_id, expected_revision, asset_id)` | Local scene/frame capture; show returned destination for approval |
+| Apply approved saved results | `apply_result_application(context_id, application_id)` | Local verified import or strip insertion into the captured destination; no platform call |
 | Wait | `wait_for_job(job_id or id, timeout)`, one job without blocking Blender | `jobs_wait` |
 | Reference upload | `upload_reference(path, kind)` or `capture_reference(source)`, then `reference_upload_status(context_id, reference_id)` until imported | `upload_asset`, `upload_asset_complete` for an existing file |
 | Saved upload recovery | `list_reference_uploads`, then `recover_reference_upload(context_id, request_id, expected_revision, action)` | Known-upload status retrieval; local cancellation/cleanup have no platform equivalent |
@@ -386,7 +397,8 @@ a download receipt was recorded. This inspection does not reverify local files
 or authorize scene application. Recovered display records use generic
 `kind: model`; original lane metadata is not persisted. PNG/EXR results can use
 the explicit image import approval above, without inferring a material or World
-assignment from their media type. `import_result` accepts prototype records only;
+assignment from their media type. Supported video/audio uses the explicit
+asset and scene/frame approval above. `import_result` accepts prototype records only;
 shared jobs reject it with guidance for explicit PNG/EXR application. A cold
 session identifies saved prototype records from the local registry before
 accessing shared jobs, so inspecting or importing an already downloaded
@@ -396,6 +408,6 @@ still use the manager-owned record so active waits observe its progress.
 
 Render lanes take the explicit model parameters supplied by the caller. They do
 not run the UI's capture, style decoration or Prompt Spark preparation. Non-image
-UI capture/Spark preparation, result-specific application and Film
+UI capture/Spark preparation, mesh/material/World application and Film
 remain integration work under #65/#68. This change does not complete their
 end-to-end acceptance or authorize release.

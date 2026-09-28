@@ -315,9 +315,16 @@ consumes session-owned quotes and persists intent before the existing adapter
 hook; its active result path uses `jobs.retrieve` and `assets.retrieve` from the
 same adapter, followed by credential-free CDN transfer. Saved-job UI/MCP controls
 also expose known model-job cancellation and download recovery through the same
-coordinator. Explicit recovered Image application uses verified local receipts
-without service calls. Non-image MCP jobs stop after verified download without
-automatic scene application. Capture/Spark preparation, Film and non-image result application still need integration.
+coordinator. Explicit recovered Image and selected video/audio application use
+verified local receipts without service calls. Video/audio approval binds one
+asset and the scene/frame before a durable application claim. Static GLB import
+uses the same saved-result boundary with scene/cursor approval and no API call.
+Unapplied panorama results now use recovered World approval and session-local
+restoration through this same local boundary. Non-image MCP jobs stop after
+verified download without automatic scene application. Capture/Spark preparation,
+Film, in-place mesh editing, multi-object material application and already-imported
+World reuse still need integration. Explicit saved texture sets now use local
+[material approval](MATERIAL_APPLICATION.md) and verified bytes, with no new API call.
 Generated operations use public SDK methods
 with `max_retries=0`; their `with_raw_response` wrappers preserve wire JSON.
 The named discovery exceptions also use the same zero-retry SDK client.
@@ -479,3 +486,16 @@ Prompt result delivery, native approval controls, prototype Spark/LLM replacemen
 and live service acceptance remain separate work. Do not activate these commands
 in paid UI/MCP paths until result delivery and explicit approval are integrated.
 No automatic LLM fallback or remote prompt cancellation is enabled.
+
+## Saved texture-map roles
+
+The existing `SDKAdapter.asset` path uses SDK 2.2.0
+`assets.with_raw_response.retrieve`, retaining the documented `mimeType` and
+`metadata.type` fields without another API call or fallback. Offline contracts
+exercise those fields through the public wrapper. The result command now stores
+an allowlisted image texture role independently from MIME, for later Materials
+application; unknown semantics remain unknown. See
+[texture result semantics](RESULT_TRANSFERS.md#texture-result-semantics) and the
+[versioned store](JOB_STORAGE.md#atomicity-and-failures) for download guards and
+atomic schema 2/3 upgrades. This does not change authentication, scope, retry
+policy, provider acceptance or the dependency pin.

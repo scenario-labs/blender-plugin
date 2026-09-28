@@ -79,9 +79,10 @@ is not given a fake user: manually purging it makes later restoration unavailabl
 
 Handles contain live RNA references and are not serializable history records.
 Discard them after file load, undo or extension shutdown. Invalidated/removed
-references fail closed. This primitive creates no undo entry. A future user-facing
-operator must own the undo transaction and invalidate handles when undo changes
-ownership. Async jobs must validate captured file, scene, target and revision
+references fail closed. This primitive creates no undo entry. Operators offering Blender global undo
+must own its transaction and invalidate handles when undo changes ownership.
+The saved-result operator below offers explicit guarded restoration, without
+a global undo transaction. Async jobs must validate captured file, scene, target and revision
 before calling this function; selecting an active scene is not such validation.
 
 ## Validation and remaining integration
@@ -95,5 +96,41 @@ Scenario service calls.
 
 This is a partial slice of #98 and #65. Optional JobSession integration now binds
 verified downloads to guarded durable World application. SDK model validation,
-estimate/confirmation, production storage policy, history/Set as World UI, undo operators,
+estimate/confirmation, production storage policy, already-imported asset reuse, global undo operators,
 seam/pole quality and authorized live generation remain separate integration work.
+
+## Saved-result UI and MCP approval
+
+For an unapplied downloaded PNG/EXR result, **Set panorama as World (N)** now
+captures the selected scene revision and current World for explicit confirmation.
+MCP uses `prepare_result_application` with `purpose: world` and a selected
+`asset_id`, followed by the same `apply_result_application` command after approval.
+Inspection and the confirmation dialog do not read media or contact Scenario.
+The existing worker verifies receipts, then `apply_recovered_world` rechecks the
+approved destination and saves the recovered application claim before mutation.
+The primitive still verifies the actual panorama bytes, packs the image and
+preserves the previous World. An unrelated ordinary image fails locally without
+replacing anything. No automatic download or generation retry follows failure.
+
+The action is offered by supported image media type, not a claim that every
+image is panoramic. The confirmation explicitly chooses equirectangular use;
+actual 2:1 dimensions and supported container checks occur during application.
+PNG remains LDR, and an accepted EXR does not prove measured HDR range or seamless
+content. Known application failure is reported with panorama requirements.
+
+A successful World assignment exposes **Restore previous World** in the same
+session. MCP prepares `purpose: restore_world` without an asset ID, shows the
+scene and current World, then consumes the approval through
+`apply_result_application`. Restoration checks the captured destination plus
+the primitive's exact ownership/fingerprint guards. A replaced/edited World or
+image refuses restoration and preserves user changes. The original World is not
+mutated. Successful restoration leaves the job `applied`; it does not rewind the
+claim or permit generation/application replay. A pending persistence receipt must
+be saved before restoration is offered, and retry never repeats World assignment.
+
+This path accepts `ready` or confirmed `apply_failed` jobs. Already `applied`
+images, including successful automatic Image imports, cannot be re-claimed as
+Worlds here. Reusing those images needs a separate local-asset/application path.
+Session retirement/restart or file load loses the restoration handle; manually
+select a retained World in Blender when needed. No global undo transaction,
+cloud panorama preset, seam/pole acceptance or completion of #98 is claimed.

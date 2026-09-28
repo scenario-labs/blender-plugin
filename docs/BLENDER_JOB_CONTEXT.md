@@ -415,3 +415,92 @@ file, target or account changes prevent preparing/submitting a stale quote.
 These programmatic commands do not add UI buttons, authorize automatic paid
 Spark preparation, or apply generated prompt text. Result retrieval/application
 and replacing the prototype Prompt Spark entry points remain separate.
+
+## Explicit saved video and audio application
+
+`prepare_media_application` captures one result asset, the current scene revision
+and frame. The native **Add video/audio strip** confirmation and MCP
+`prepare_result_application(asset_id=...)` share this single-use approval;
+`apply_result_application` consumes it. Both admission and delivery recheck the
+selected credential context, stored record, scene and exact frame. A changed
+frame requires new approval even when the scene otherwise remains valid.
+
+The existing worker verifies saved receipts. `JobSession.apply_recovered_media`
+then claims recovered application durably before calling
+[`media_application.apply_media`](../scenario/blender/media_application.py) on
+the main thread. It copies and rehashes the selected receipt into a private
+extension-user-storage directory, checks its container, and inserts one MP4/WebM
+movie or MP3/WAV/OGG sound strip on a wholly unused, unlocked, unmuted channel.
+The local copy is bounded to 512 MiB and remains synchronous; large files can
+pause Blender during copying and decoding. No credentials, download or paid
+submission are involved in this application command.
+
+Existing strips, selection, active strip, scene range, frame rate and resolution
+are preserved. Video inserts picture frames only, fitted inside the scene;
+embedded audio is omitted and source frames play at the scene frame rate.
+A confirmed rollback becomes `apply_failed`; incomplete rollback remains
+uncertain. Failure to persist success retains a receipt-only retry that never
+inserts again. Restarted `applying` and completed `applied` records cannot be
+claimed again. One selected asset consumes this job's application claim; other
+variants remain saved but cannot be inserted by another claim for that job.
+
+Unlike packed images, strips depend on the independent local media copy. Keep
+that file available, including when moving the blend file; the command does not
+save the blend, pack media or clean snapshots after strip deletion. It does not
+change which scene an existing Sequencer editor displays. Select the approved
+scene in that editor's header to inspect the strip. Mesh, material, World and
+Film integration are separate from this video/audio path.
+
+Shutdown releases pending media receipt handles after its workers stop, matching
+image and World ownership. A retained exception cannot persist success after
+shutdown; the saved uncertain record and any existing strip remain unchanged.
+
+## Explicit saved static model application
+
+`prepare_model_application` captures one saved GLB asset, the current scene
+revision and cursor location. Native **Import static model** and MCP's generic
+asset preparation share `apply_saved_result`; media remains frame-bound and
+models are cursor-bound. The existing worker verifies all saved receipts;
+`apply_recovered_model` rechecks the destination and atomically claims application
+before the main-thread staged import. `retry_model_receipt` persists only the
+known outcome and shutdown clears pending handles. Model status includes names
+of its retained imported objects for this session; names do not authorize replay
+or locate replacement targets after restart.
+
+See [static model import](MESH_APPLICATION.md#explicit-saved-static-glb-import)
+for format, allocation, placement, rollback and remaining edit-policy limits.
+Neither this approval nor the importer calls Scenario or submits generation.
+
+## Recovered panorama destination and restoration
+
+`apply_recovered_world(completion, destination=..., asset_id=...)` wraps the
+existing World primitive with the coordinator's recovered claim. The shared
+facade captures the scene revision and current World; both admission and delivery
+recheck them. UI and MCP use one approval owner and existing verification workers.
+Known World failures retain the safe retry state only after complete rollback;
+uncertainty retains a receipt-only retry, never another assignment.
+
+After a completed assignment, a separate prepared restore can call the retained
+World handle on the main thread. The approval checks the same selected context,
+record and current World, and the handle rejects edits to its owned data.
+Restoration does not alter the durable completed job or make it re-applicable.
+See [saved World approval](WORLD_APPLICATION.md#saved-result-ui-and-mcp-approval)
+for `ready`/`apply_failed` admission, session-local restoration and already-applied
+Image reuse limits.
+
+## Explicit saved material application
+
+`apply_recovered_material` consumes owned result verification, resolves the
+approved scene/mesh origin, checks the frozen slot/UV/face-index target and the
+unambiguous saved map roles, then claims recovered application before decoding
+or assignment. The [material primitive](MATERIAL_APPLICATION.md) packs new images
+and builds a new material without editing old materials or other slots. Only a
+verified complete cleanup permits a local retry; incomplete cleanup retains an
+uncertain claim. A successful assignment with a failed receipt write retains a
+session-owned handle for `retry_material_receipt`, which never repeats scene work.
+Shutdown clears those handles after workers stop.
+
+Native **Apply saved material** and MCP `prepare_result_application` with
+`purpose: material` use that same destination approval and saved-job command.
+Changing selection cannot retarget it. Multi-object/shared meshes, ambiguous
+texture sets, already-applied image reuse and global undo remain separate work.

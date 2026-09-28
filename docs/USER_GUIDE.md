@@ -135,7 +135,7 @@ From top to bottom:
 - **Parameters**: built from the model's own schema. A checkbox in front of an optional parameter means "send this value"; unchecked, Scenario uses its default. `(cost)` marks parameters that change the price.
 - **Generate (N CU)**: the current exact server estimate for this form, refreshed as you edit (a dry run, free). Generate consumes that unchanged quote once and saves the submission for recovery. Pending files, captures or Prompt Spark preparation must finish first; a partial price cannot authorize generation.
 
-New form generations appear in the shared saved jobs. Image imports supported PNG/EXR results into its original scene; other lanes retain downloaded results for explicit application. The lane descriptions below also describe retained prototype capabilities whose shared result application is still being integrated. Automatic Prompt Spark preparation, result application and Film acceptance remain release blockers.
+New form generations appear in the shared saved jobs. Image imports supported PNG/EXR results into its original scene; other lanes retain downloaded results for explicit application. Saved video/audio results now offer the confirmed strip insertion described below. The lane descriptions below also describe retained prototype capabilities whose shared result application is still being integrated. Automatic Prompt Spark preparation, result application and Film acceptance remain release blockers.
 
 ![The model picker: Image, Video, Audio and 3D tabs with icons, category chips, search, the model list and the description of GPT Image 2](images/model-picker.png)
 
@@ -203,7 +203,15 @@ Text, images or your Blender scene to video (Seedance 2.0 and 2.5, Kling, Veo, W
 
 - **Viewport clip** / **Camera clip**: add the reference, then choose **Upload reference**. This captures a silent 1280x720 MP4 over the preview range when enabled, otherwise the scene frame range. A camera clip uses the scene camera through the viewport; viewport shading is retained unless **Grey clay capture** is enabled. The capture restores scene settings and the current frame afterwards.
 - The uploaded clip is an immutable snapshot. It is not trimmed or padded automatically, and later timeline or model-duration changes do not recapture it. Set the intended range before uploading; replace the reference to capture again. Review the model's input and duration requirements before generation. **Match timeline** remains a model-duration aid, not a guarantee that an uploaded clip matches the output duration.
-- Results: **Play** (system player), **Play in Blender**, or **Add video strip**.
+- For new shared jobs, choose **Add video strip (N)** in saved-job controls.
+  Confirm the scene and current frame before insertion. MP4 and WebM are supported
+  up to 512 MiB. A scene or frame change requires a fresh confirmation. This adds
+  one chosen result on an unused channel without regenerating; one application
+  consumes the job's claim. Other variants remain saved. Select the destination
+  scene in the Sequencer header to see the strip. The independent local media
+  copy must remain available if you move or share the blend file.
+- Retained prototype results offer **Play** (system player), **Play in Blender**,
+  or **Add video strip**.
   Add video strip inserts the downloaded picture frames at the current frame on
   an unused, unlocked and unmuted sequencer channel. It fits the picture inside
   the scene resolution and leaves existing strips, frame rate, frame range and
@@ -216,6 +224,23 @@ Text, images or your Blender scene to video (Seedance 2.0 and 2.5, Kling, Veo, W
   scene, select the destination scene in its header to see the inserted strip.
 
 ### 3D
+
+For newly generated shared jobs, choose **Import static model (N)** for one
+saved GLB. Confirm the scene and cursor position. The importer adds a new group
+with its bottom center at that cursor, retains the model hierarchy/materials,
+packs embedded textures and preserves your current objects and selection.
+One selected result consumes the job's application claim; variants and maps stay
+saved. A changed cursor or scene requires a new confirmation.
+
+This path accepts static GLBs with one scene and embedded files, up to 256 MiB.
+Rigs, animations, external files, other model formats and replacing an existing
+mesh are not supported by this new import action. Large models may briefly
+pause Blender while loading. Save the blend file yourself after import.
+
+![One saved triangle model imported beside existing geometry at the approved Blender cursor](images/saved-model-result.png)
+
+The following descriptions include retained prototype generation and import
+features whose full shared-runtime acceptance remains open.
 Four modes: **Text**, **Image** (one picture), **Multi-view** (several views of the same object, first one is the front) and **Edit** (Scenario's 3D tools on the selected mesh).
 
 ![3D lane in Text mode with Meshy selected, texture options and a target polygon count](images/panel-3d.png)
@@ -239,7 +264,29 @@ Patina turns a prompt (or a photo) into a seamless PBR set: base color, normal, 
 
 Select the meshes to texture, describe the material, choose the maps and size, Generate. The material arrives as a Principled BSDF with UV mapping and displacement and is applied to the meshes you had selected. **Tiling** in Generations scales the mapping. Three models: PATINA Material (prompt, with variation and inpainting), PATINA Image to Maps (a flat texture or photo to maps), PATINA Material Extract (isolate one material from a photo).
 
+For an unapplied saved texture set, select a local mesh with UVs and choose
+**Apply saved material**. Confirm its scene, mesh, material slot and listed maps.
+The new material packs the verified images and replaces only that slot. Existing
+material datablocks and other slots stay unchanged. Height uses bump; AO/edge
+maps are retained for manual wiring. This does not regenerate or spend credits.
+
+The mesh must have one object user and belong to one scene. Duplicate map roles,
+multiple texture sets, missing base color, unsupported files and changed targets
+require review. Already-imported Image results cannot be re-claimed here. There
+is no global undo entry; preserve any old material you want to keep and save the
+blend file yourself. See [material application](MATERIAL_APPLICATION.md) for limits.
+
 ### Audio
+
+For new shared jobs, **Add audio strip (N)** confirms one saved MP3, WAV or OGG
+result, the destination scene and current frame. It uses an unused channel,
+preserves existing strips and timing, and makes no new service request. The
+same size, one-application and local-file requirements as saved video apply.
+Select the destination scene in the Sequencer header to inspect the strip.
+
+![Confirmed saved audio inserted once at the approved frame in Blender Sequencer](images/saved-media-result.png)
+
+The following playback and preview controls describe retained prototype results.
 Speech, music and sound effects: ElevenLabs Music v2, Google Lyria 3, ACE-Step 1.5, Minimax Music 3.0, ElevenLabs 3 (speech), Gemini 3.1 Flash TTS, ElevenLabs Sound Effects 2, Sonilo (text or video to SFX and music), and every other text-to-audio, audio-to-audio or video-to-audio model through the picker. Results go to `audio/<date>/` in the output folder; in Generations, **Play** opens them with the system player and **Add to sequencer** drops a sound strip at the current frame on a free channel.
 
 For a downloaded result, **Preview waveform** shows a local snapshot without
@@ -338,6 +385,29 @@ For headless use, run `blender --background scene.blend --command scenario_blend
 see the reference for token configuration and online-access requirements.
 
 ![Agents panel in Blender 5.0 with the local server running and Python execution disabled](images/panel-mcp.png)
+
+## Apply a saved panorama to World
+
+For an unapplied saved PNG or EXR result, choose **Set panorama as World (N)**.
+Confirm the scene and current World. The image must be a supported 2:1 panorama;
+Blender uses it as an equirectangular environment, packs it and keeps the original
+World untouched. PNG is LDR. EXR can store HDR, but its format alone says nothing
+about the actual range or seamless edges. An ordinary nonpanoramic image reports
+a local error and leaves the original World in place.
+
+After success, **Restore previous World** offers a separate confirmation in the
+same session. Edited/replaced World or image data prevents restoration so your
+changes are preserved. Save the blend file yourself. A restart or file load loses
+this restore action; retained Worlds can still be selected manually in Blender.
+Neither application nor restoration regenerates the image or spends credits.
+
+![Saved panorama confirmation names the scene and current World before changing environment](images/saved-world-approval.png)
+
+This applies only to saved results that have not already been applied. Automatic
+Image imports and other completed application claims cannot be replayed through
+this action; reuse of those existing images remains separate integration.
+
+![Applied panorama offers a separate native confirmation to restore the previous scene World](images/saved-world-restore.png)
 
 ## The floating composer
 

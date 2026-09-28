@@ -18,9 +18,12 @@ class ImageApplicationError(RuntimeError):
     """Image decode or rollback failed; no generation retry is implied."""
 
 
-def apply_images(verified):
+def apply_images(verified, *, pixel_budget=None):
     if threading.current_thread() is not threading.main_thread():
         raise ImageApplicationError("Apply images on Blender's main thread")
+    if pixel_budget is not None and (type(pixel_budget) is not int or pixel_budget < 1):
+        raise ImageApplicationError("Use a positive combined image pixel budget")
+    total_pixels = 0
     images = []
     package = __package__.rsplit(".", 1)[0]
     root = bpy.utils.extension_path_user(package, path="image-import", create=True)
@@ -47,6 +50,11 @@ def apply_images(verified):
             ):
                 raise ImageApplicationError("The saved image no longer matches its receipt")
             info = inspect_image(data)
+            total_pixels += info.width * info.height
+            if pixel_budget is not None and total_pixels > pixel_budget:
+                raise ImageApplicationError(
+                    "Combined image dimensions exceed the application limit"
+                )
             expected = {"PNG": {"image/png"}, "OPEN_EXR": {"image/exr", "image/x-exr"}}
             if item.asset.media_type not in expected[info.file_format]:
                 raise ImageApplicationError("Image contents do not match the saved media type")

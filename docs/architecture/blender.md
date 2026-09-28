@@ -34,7 +34,9 @@ edited target pass.
 loads and packs the image, and installs a new World on an explicit scene.
 Its restoration checks protect later user changes. The explicit JobSession World
 command wraps one verified saved asset with original-context checks and a durable
-application claim. Panorama generation, history and active UI/MCP wiring remain.
+application claim. Recovered unapplied results now have shared native/MCP
+World approval and guarded session-local restoration. Already-applied image
+reuse, panorama-specific generation and global undo integration remain.
 
 Existing [image](../../scenario/blender/apply_image.py),
 [3D import](../../scenario/blender/apply_3d.py),
@@ -52,3 +54,35 @@ versions and validate the installed ZIP with the native test runner. Syntax
 compatibility, a manifest declaration and ZIP validation are separate from
 successful native execution. UI changes additionally need actual focus,
 keyboard, viewport and screenshot review; headless tests cannot establish that.
+
+## Saved media strips
+
+[`media_application.py`](../../scenario/blender/media_application.py) is the
+shared saved-result primitive for MP4/WebM movie and MP3/WAV/OGG sound strips.
+It snapshots and rehashes a bounded local receipt before decoding on Blender's
+main thread, keeps existing strips and timing unchanged, and rolls back only
+new data. Its persistent file remains necessary for the strip. The
+[JobSession command](../BLENDER_JOB_CONTEXT.md#explicit-saved-video-and-audio-application)
+adds exact scene/frame approval, a durable claim and receipt-only recovery.
+Prototype video/audio operators remain separate; they are not the entry points
+for newly generated shared jobs.
+
+## Saved static models
+
+[`model_application.py`](../../scenario/blender/model_application.py) stages one
+receipt-bound static embedded GLB in a disposable scene, then publishes a new
+collection/group at an approved cursor. It preserves the original selection and
+packs embedded textures. The [model guide](../MESH_APPLICATION.md#explicit-saved-static-glb-import)
+details supported containers, bounded synchronous work and rollback. Existing
+`mesh_application.py` remains the separate explicit in-place mesh/UV primitive;
+importing a new GLB does not establish those edit workflows.
+
+## Saved materials
+
+[`material_application.py`](../../scenario/blender/material_application.py)
+loads only unambiguous receipt-bound texture maps into new packed images and a
+new material. It assigns one approved mesh slot, preserving old material data,
+other slots and face indices. The [material guide](../MATERIAL_APPLICATION.md)
+details target restrictions, bounded decoding, rollback and receipt-only recovery.
+Native and MCP actions share the scoped session; prototype material callbacks
+are not used for this saved-result command.

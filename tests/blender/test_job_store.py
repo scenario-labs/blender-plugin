@@ -2,9 +2,12 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Exercise SQLite and the installed intent store with Blender's own Python."""
 
+import json
+import sqlite3
 import tempfile
 import threading
 import unittest
+from dataclasses import replace
 from pathlib import Path
 
 import bpy
@@ -98,7 +101,9 @@ class JobStoreTests(unittest.TestCase):
                 )
             content = b"offline result receipt"
             digest = hashlib.sha256(content).hexdigest()
-            asset = module.ResultAsset("asset", "result.png", "image/png", len(content), digest)
+            asset = module.ResultAsset(
+                "asset", "result.png", "image/png", len(content), digest, texture_role="normal"
+            )
             record = store.set_results(
                 "result-request", (asset,), expected_revision=record.revision
             )
@@ -114,6 +119,20 @@ class JobStoreTests(unittest.TestCase):
             )
             reopened = module.JobStore(root / "jobs.sqlite3", scope)
             self.assertEqual(reopened.get("result-request"), record)
+            self.assertEqual(record.results[0].asset.texture_role, "normal")
+            with sqlite3.connect(root / "jobs.sqlite3") as connection:
+                raw = json.loads(connection.execute("SELECT record FROM jobs").fetchone()[0])
+                del raw["results"][0]["asset"]["texture_role"]
+                connection.execute("UPDATE jobs SET record=?", (json.dumps(raw),))
+                connection.execute("PRAGMA user_version=3")
+            reopened = module.JobStore(root / "jobs.sqlite3", scope)
+            record = replace(
+                record,
+                results=(replace(record.results[0], asset=replace(asset, texture_role=None)),),
+            )
+            self.assertEqual(reopened.get("result-request"), record)
+            with sqlite3.connect(root / "jobs.sqlite3") as connection:
+                self.assertEqual(connection.execute("PRAGMA user_version").fetchone()[0], 4)
             verified = transfers.verify_download(root, record.results[0].receipt)
             self.assertEqual(verified.name, asset.name)
             self.assertTrue(verified.parent.samefile(root))

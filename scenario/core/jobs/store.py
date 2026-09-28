@@ -116,8 +116,12 @@ class JobIntent:
         _identity(self.target_id)
         if not isinstance(self.scope, JobScope) or not isinstance(self.origin, JobOrigin):
             raise ValueError("A scope and origin are required")
-        if not isinstance(self.operation, str) or self.operation not in {"model", "workflow"}:
-            raise ValueError("Choose a model or workflow operation")
+        if not isinstance(self.operation, str) or self.operation not in {
+            "model",
+            "workflow",
+            "prompt",
+        }:
+            raise ValueError("Choose a model, workflow or prompt operation")
         for value in (self.payload_sha256, self.quote_sha256):
             if not isinstance(value, str) or not re.fullmatch(r"[0-9a-f]{64}", value):
                 raise ValueError("Request and quote require SHA-256 identities")

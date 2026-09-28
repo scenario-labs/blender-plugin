@@ -49,7 +49,7 @@ prepared-intent cancellation lazily activate the selected
 intents through that same session before paid SDK dispatch. Remaining lanes and
 recovery UI need integration; prototype records are not imported.
 
-`JobIntent` freezes the local request ID, model/workflow target, payload SHA-256,
+`JobIntent` freezes the local request ID, model/workflow target (or the fixed `prompt` target for Prompt Spark), payload SHA-256,
 server quote SHA-256, exact quoted cost as a decimal string, and originating
 file/scene/target/revision IDs. IDs describe the captured origin, never current
 selection. Generate a fresh request ID for an intentional new operation and hash
@@ -204,3 +204,11 @@ wired in. Result command orchestration, UI/MCP integration, live cancellation
 acceptance and safe main-thread application remain under #65. Cancellation
 claims, coordinator recovery and bounded workers provide foundations without
 completing those integrated acceptance criteria.
+
+
+Prompt Spark command intents use operation `prompt` and the same prepared,
+submitting, uncertain and known-remote lifecycle. No database fields change, so
+the storage schema version remains 3. Older readers reject the new operation
+instead of interpreting it as model/workflow intent. Restart can inspect and
+refresh a known job ID; it cannot recover spending authorization or replay the
+request from the stored hashes. Prompt text/results are not persisted here.

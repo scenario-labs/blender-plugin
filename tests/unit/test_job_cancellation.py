@@ -160,7 +160,7 @@ def test_only_verified_inference_is_cancelable(setup, kind):
 
 def test_workflows_and_lost_id_never_send_cancellation(setup):
     coordinator, _, calls, record, _ = setup(intent=replace(INTENT, operation="workflow"))
-    with pytest.raises(RecoveryError, match="workflow"):
+    with pytest.raises(RecoveryError, match="Only model-job"):
         coordinator.cancel_remote("request", expected_revision=record.revision)
     assert calls == []
 

@@ -572,3 +572,81 @@ def test_model_page_rejects_malformed_records_and_cursor(adapter, page):
     client = adapter(lambda request: httpx.Response(200, json=page))
     with pytest.raises(AdapterError):
         client.model_page()
+
+
+@pytest.mark.parametrize("project", [None, "project"])
+def test_prompt_quote_uses_exact_sdk_body_and_selected_scope(adapter, project):
+    requests = []
+    client = adapter(
+        lambda request: requests.append(request) or httpx.Response(269, content=QUOTE),
+        project_id=project,
+    )
+    parameters = {
+        "mode": "contextual-v2",
+        "prompt": "café",
+        "modelId": "model",
+        "images": ["asset-one"],
+    }
+    quote = client.estimate_prompt(parameters)
+    parameters["images"].append("asset-two")
+    assert quote.operation == quote.target_id == "prompt"
+    assert quote.cost == Decimal("0.10000000000000001")
+    assert quote.response_json == QUOTE
+    assert quote.payload == {
+        "mode": "contextual-v2",
+        "prompt": "café",
+        "modelId": "model",
+        "images": ["asset-one"],
+        "numResults": 1,
+    }
+    assert json.loads(requests[0].content) == quote.payload
+    assert requests[0].method == "POST"
+    assert requests[0].url.path == "/v1/generate/prompt"
+    assert dict(requests[0].url.params) == {
+        "dryRun": "true",
+        **({"projectId": project} if project else {}),
+    }
+    assert client.owns_estimate(quote)
+    assert not adapter(project_id=project).owns_estimate(quote)
+
+
+@pytest.mark.parametrize(
+    "change",
+    [
+        {"mode": []},
+        {"mode": "unknown"},
+        {"numResults": True},
+        {"numResults": 0},
+        {"numResults": 6},
+        {"numResults": 1.5},
+        {"prompt": None},
+        {"modelId": "../bad"},
+        {"images": "asset"},
+        {"images": [None]},
+        {"images": [" "]},
+        {"images": ["asset"] * 6},
+        {"dryRun": "false"},
+        {"projectId": "other"},
+        {"extra_body": {}},
+    ],
+)
+def test_invalid_prompt_payload_never_reaches_transport(adapter, change):
+    def deny(request):
+        pytest.fail("Invalid prompt request reached transport")
+
+    with pytest.raises(ValueError):
+        adapter(deny).estimate_prompt({"mode": "contextual", **change})
+
+
+def test_contextual_v2_reference_limit_is_fifteen(adapter):
+    client = adapter()
+    assert (
+        len(
+            client.estimate_prompt({"mode": "contextual-v2", "images": ["asset"] * 15}).payload[
+                "images"
+            ]
+        )
+        == 15
+    )
+    with pytest.raises(ValueError):
+        client.estimate_prompt({"mode": "contextual-v2", "images": ["asset"] * 16})

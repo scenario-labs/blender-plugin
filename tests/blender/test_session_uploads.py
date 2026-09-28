@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Installed upload facade, captured origins and read-only recovery after target loss."""
 
+import json
 import tempfile
 import threading
 import unittest
@@ -140,6 +141,56 @@ class SessionUploadTests(unittest.TestCase):
     def initialized(self):
         record, _ = self.prepare()
         return self.invoke("initialize_upload", record)[0]
+
+    def test_prompt_commands_freeze_input_claim_once_and_reject_stale_origin(self):
+        import httpx
+
+        def respond(request):
+            self.calls.append((request, threading.current_thread()))
+            self.assertIsNot(threading.current_thread(), threading.main_thread())
+            self.assertEqual(request.url.path, "/v1/generate/prompt")
+            if request.url.params.get("dryRun") == "true":
+                return httpx.Response(269, content=b'{"creativeUnitsCost":0.10000000000000001}')
+            records = self.jobs.JobStore(self.root / "jobs.sqlite3", self.scope).records()
+            self.assertTrue(any(row.state == self.jobs.JobState.SUBMITTING for row in records))
+            return httpx.Response(
+                200, json={"job": {"jobId": "prompt-job"}, "prompts": ["fixture"]}
+            )
+
+        self.handler = respond
+        origin = self.session.capture(self.scene, self.target)
+        parameters = {"mode": "contextual", "prompt": "fixture", "images": ["asset"]}
+        task = self.session.quote_prompt(parameters, origin=origin)
+        parameters["images"].append("changed")
+        quote = task.result(5)
+        completion = self.session.drain()[0]
+        self.assertIsNone(completion.error)
+        self.assertEqual(completion.origin, origin)
+        self.assertEqual(quote.estimate.payload["images"], ["asset"])
+        prepared = self.session.prepare_quote(quote)
+        self.assertEqual(prepared.intent.operation, "prompt")
+        self.assertEqual(prepared.intent.quote_cost, "0.10000000000000001")
+        result = self.session.submit(
+            prepared, operation="prompt", target_id="prompt", payload=quote.estimate.payload
+        ).result(5)
+        self.assertEqual(result.state, self.jobs.JobState.REMOTE)
+        self.assertEqual(result.remote_job_id, "prompt-job")
+        self.assertIsNone(self.session.drain()[0].error)
+        self.assertEqual(json.loads(self.calls[-1][0].content), quote.estimate.payload)
+        self.assertEqual(len(self.calls), 2)
+        replay = self.session.submit(
+            prepared, operation="prompt", target_id="prompt", payload=quote.estimate.payload
+        )
+        with self.assertRaises(ValueError):
+            replay.result(5)
+        self.session.drain()
+        self.assertEqual(len(self.calls), 2)
+        stale = self.session.quote_prompt({"mode": "inventive"}, origin=origin).result(5)
+        self.session.drain()
+        self.session.invalidate_scene(self.scene)
+        with self.assertRaises(self.module.OriginUnavailable):
+            self.session.prepare_quote(stale)
+        self.assertEqual(len(self.calls), 3)
 
     def test_full_upload_runs_off_thread_and_delivers_original_target_once(self):
         threads = []

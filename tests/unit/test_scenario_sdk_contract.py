@@ -570,3 +570,42 @@ def test_discovery_gap_and_low_level_get_contract(client_factory, resource):
     assert len(requests) == 1
     assert requests[0].url.path == f"/v1/{resource}"
     assert dict(requests[0].url.params) == params
+
+
+@pytest.mark.parametrize("dry_run", ["true", omit])
+def test_prompt_public_raw_response_preserves_aliases_scope_and_quote(client_factory, dry_run):
+    requests = []
+    raw = (
+        b'{"creativeUnitsCost":0.10000000000000001}'
+        if dry_run == "true"
+        else b'{"job":{"jobId":"prompt-job"},"prompts":["fixture"]}'
+    )
+    sdk = client_factory(
+        lambda request: (
+            requests.append(request)
+            or httpx.Response(269 if dry_run == "true" else 200, content=raw)
+        )
+    )
+    result = sdk.generate.with_raw_response.prompt(
+        mode="contextual-v2",
+        model_id="model",
+        num_results=1,
+        images=["asset"],
+        prompt="fixture",
+        project_id=PROJECT,
+        dry_run=dry_run,
+    )
+    assert result.read() == raw
+    assert requests[0].url.path == "/v1/generate/prompt"
+    assert requests[0].method == "POST"
+    assert dict(requests[0].url.params) == {
+        "projectId": PROJECT,
+        **({"dryRun": "true"} if dry_run == "true" else {}),
+    }
+    assert json.loads(requests[0].content) == {
+        "mode": "contextual-v2",
+        "modelId": "model",
+        "numResults": 1,
+        "images": ["asset"],
+        "prompt": "fixture",
+    }

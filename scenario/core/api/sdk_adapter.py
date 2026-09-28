@@ -586,17 +586,71 @@ class SDKAdapter:
         target, payload = _prepare(identifier, fields, parameters)
         return self._estimate("workflow", target, payload)
 
+    def estimate_prompt(self, parameters):
+        """Quote a bounded Prompt Spark request through the public SDK method.
+
+        This initial contract accepts mode, prompt, modelId, images and numResults.
+        Scope and dry-run flags are adapter-owned, never payload fields.
+        """
+        if not isinstance(parameters, dict) or parameters.keys() - {
+            "mode",
+            "prompt",
+            "modelId",
+            "images",
+            "numResults",
+        }:
+            raise ValueError("Unsupported Prompt Spark parameters")
+        payload = copy.deepcopy(parameters)
+        mode = payload.get("mode")
+        if not isinstance(mode, str) or mode not in {
+            "completion",
+            "contextual",
+            "contextual-v2",
+            "image-editing",
+            "inventive",
+            "structured",
+        }:
+            raise ValueError("Choose a supported Prompt Spark mode")
+        count = payload.setdefault("numResults", 1)
+        if type(count) is not int or not 1 <= count <= 5:
+            raise ValueError("Prompt result count must be an integer from 1 to 5")
+        if "prompt" in payload and not isinstance(payload["prompt"], str):
+            raise ValueError("Prompt must be text")
+        if "modelId" in payload:
+            _identifier(payload["modelId"])
+        if "images" in payload:
+            images = payload["images"]
+            limit = 15 if mode == "contextual-v2" else 5
+            if (
+                not isinstance(images, list)
+                or len(images) > limit
+                or any(not isinstance(item, str) or not item.strip() for item in images)
+            ):
+                raise ValueError("Choose valid Prompt Spark image references within the mode limit")
+        return self._estimate("prompt", "prompt", payload)
+
+    def _dispatch_generation(self, operation, identifier, payload, *, dry_run=False):
+        options = {"dry_run": "true"} if dry_run else {}
+        if operation == "prompt":
+            names = {"modelId": "model_id", "numResults": "num_results"}
+            options.update({names.get(key, key): value for key, value in payload.items()})
+            return self._request(self._sdk.generate.with_raw_response.prompt, **options)
+        if operation == "model":
+            method = self._sdk.generate.with_raw_response.run_model
+        elif operation == "workflow":
+            method = self._sdk.workflows.with_raw_response.run
+        else:
+            raise ValueError("Unsupported generation operation")
+        return self._request(method, identifier, body=payload, **options)
+
     def _estimate(self, operation, identifier, payload):
         try:
             payload_json = json.dumps(payload, ensure_ascii=False, allow_nan=False).encode()
         except (TypeError, ValueError):
             raise ValueError("Parameters must contain finite JSON values") from None
-        method = (
-            self._sdk.generate.with_raw_response.run_model
-            if operation == "model"
-            else self._sdk.workflows.with_raw_response.run
+        raw = self._dispatch_generation(
+            operation, identifier, json.loads(payload_json), dry_run=True
         )
-        raw = self._request(method, identifier, body=json.loads(payload_json), dry_run="true")
         result = _json(raw, exact=True)
         cost = result.get("creativeUnitsCost")
         if isinstance(cost, bool) or not isinstance(cost, (int, Decimal)) or cost < 0:
@@ -638,12 +692,7 @@ class SDKAdapter:
                 raise AdapterError("Online access is disabled")
             before_send()
             del self._estimates[id(estimate)]
-        method = (
-            self._sdk.generate.with_raw_response.run_model
-            if estimate.operation == "model"
-            else self._sdk.workflows.with_raw_response.run
-        )
-        raw = self._request(method, estimate.target_id, body=estimate.payload)
+        raw = self._dispatch_generation(estimate.operation, estimate.target_id, estimate.payload)
         job = _json(raw).get("job")
         if not isinstance(job, dict):
             raise AdapterError("Scenario returned no submission receipt")

@@ -435,16 +435,22 @@ class JobCoordinator:
     def quote_workflow(self, identifier, parameters, *, origin):
         return self._quote("workflow", identifier, parameters, origin)
 
+    def quote_prompt(self, parameters, *, origin):
+        return self._quote("prompt", "prompt", parameters, origin)
+
     def _quote(self, operation, identifier, parameters, origin):
         if not isinstance(origin, JobOrigin):
             raise QuoteError("Capture the request origin before estimation")
         snapshot = json.loads(_payload(parameters))
         with self._request_guard(origin):
             pass
-        record = self._metadata(operation, identifier)
-        with self._request_guard(origin):
-            pass
-        estimate = getattr(self._adapter, f"estimate_{operation}")(record, snapshot)
+        if operation == "prompt":
+            estimate = self._adapter.estimate_prompt(snapshot)
+        else:
+            record = self._metadata(operation, identifier)
+            with self._request_guard(origin):
+                pass
+            estimate = getattr(self._adapter, f"estimate_{operation}")(record, snapshot)
         with self._request_guard(origin):
             quote = OriginQuote(self.scope, origin, estimate)
             self._quotes[id(quote)] = quote
@@ -681,7 +687,7 @@ class JobCoordinator:
             ):
                 raise StoreConflict("Only the current known remote job can be canceled")
             if current.intent.operation != "model":
-                raise RecoveryError("General workflow cancellation is not supported")
+                raise RecoveryError("Only model-job cancellation is supported")
         response = self._adapter.job(current.remote_job_id)
         snapshot = self._observe_remote(current, response)
         if snapshot.record.state != JobState.REMOTE:

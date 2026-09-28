@@ -428,3 +428,19 @@ but never acquires the adapter estimate lock there. Submission rechecks and
 consumes the estimate under the adapter lock while committing its durable claim;
 preparation does not reserve spending authorization. This ordering lets a new
 preparation overlap an existing submission without deadlocking either thread.
+
+
+## Prompt Spark commands
+
+`quote_prompt(parameters, origin=...)` skips model/workflow discovery and binds
+the SDK's exact quote to the captured origin before and after network work.
+`prepare_quote` and `submit` use operation and target `prompt`, sharing the
+existing immutable payload/scope checks, single-use issuance and durable claim.
+A missing or lost receipt leaves uncertainty, never permission to retry.
+`JobWorkers.quote_prompt` snapshots parameters before queue admission and uses
+the existing bounded pool. It creates no independent thread or job owner.
+
+Known prompt job IDs can be read after restart through `refresh_remote` without
+resubmission. Only model jobs support remote cancellation. This command layer
+does not apply generated text, resolve prompt assets, or activate UI/MCP Spark;
+those paths require their own approval and result-delivery integration.

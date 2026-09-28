@@ -23,13 +23,13 @@
       "scenario/core/jobs/store.py": "f367c5df685e2376665489c8c274f6e4567e86d4306b91f07cc014cf6d80ffbd",
       "scenario/core/jobs/results.py": "8cc0ee6f0f280300327a06b700a6356dcdae289b51e8ebffd45268e8541e7012",
       "scenario/mcp/tools_scenario.py": "9e9aeee3e9806e19ccc2245fc6103b3efaff1c1c108fa2d4ebe2c438cd7ff436",
-      "tests/blender/test_prompt_tools.py": "0ddbf0ebb71689a84f225ce95e6a960f2f056b94d0f47ac9d4ae50ef5d7fe2e4",
+      "tests/blender/test_prompt_tools.py": "f29d1525e0aef477106b8297fef49c5beeaf72db56d5085c544d455194ea447e",
       "tests/unit/test_sdk_adapter.py": "f9df4ef657e0c4ab76e72bfe80ede1ea8bf0a0b9c3026579332603035a1bc7f5",
       "tests/unit/test_scenario_sdk_contract.py": "2371c6dcfea85cc312e98b1e53e69967331bf3dab32b639dc6f665a13bab7a9b",
       "tests/unit/test_prompt_results.py": "470e071b794aaa5a04ccd1d103642f5aea7608789a674d90fcd7581e45da61c3",
       "tests/unit/test_job_coordinator.py": "18bcecb3c7f27465f316df1ac544268199da650466abfb387c6aa1c148597750",
-      "docs/images/prompt-price-approval.png": "1e841ee921525b8280d2c0da7fe86916560c182229db9b02cdbef3f6447b86a2",
-      "docs/images/prompt-result-delivery.png": "e11d92c1c3193851c4fd51fb03eecf3524e567f8f350a9b5fb37b3596b1af7bc"
+      "docs/images/prompt-price-approval.png": "1d2e0660e834c3ed1db535185355b9a2918b80acc658b5dd4e926f31056edfa7",
+      "docs/images/prompt-result-delivery.png": "9c9891262eaa9f0142f81dc847c0c4dd1b74aa9fcc0b41ea988765432f7f1370"
     }
   }
 }

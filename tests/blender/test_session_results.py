@@ -822,3 +822,31 @@ class SessionResultTests(unittest.TestCase):
             )
         self.assertEqual(self.store.get("request").state, self.storage.JobState.APPLY_FAILED)
         self.assertIsNone(self.scene.sequence_editor)
+
+    def test_shutdown_releases_pending_media_receipt_without_persisting_it(self):
+        completion = self.media_completion()
+        transition = self.store.transition
+
+        def fail_receipt(*args, **kwargs):
+            if kwargs.get("state") == self.storage.JobState.APPLIED:
+                raise self.storage.StoreError("receipt failure")
+            return transition(*args, **kwargs)
+
+        with patch.object(self.store, "transition", side_effect=fail_receipt):
+            with self.assertRaises(self.module.MediaResultUncertain) as raised:
+                self.session.apply_recovered_media(
+                    completion,
+                    destination=self.session.capture(self.scene),
+                    asset_id="asset",
+                    frame=self.scene.frame_current,
+                )
+        pending = raised.exception
+        self.addCleanup(lambda: pending.application.path.unlink(missing_ok=True))
+        record = self.store.get("request")
+        self.assertEqual(record.state, self.storage.JobState.APPLYING)
+        self.session.shutdown()
+        self.assertFalse(self.session._media_receipts)
+        with self.assertRaises(self.module.OriginUnavailable):
+            self.session.retry_media_receipt(pending)
+        self.assertEqual(self.store.get("request"), record)
+        self.assertEqual(len(self.scene.sequence_editor.strips), 1)

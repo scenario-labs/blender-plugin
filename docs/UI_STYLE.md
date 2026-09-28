@@ -204,3 +204,30 @@ a distinct bundle identifier and local ad-hoc signature for window targeting,
 with vendor executable code and the extension ZIP unchanged. Synthetic tests
 and desktop evidence do not establish paid provider acceptance, rig/animation or
 in-place editing, other OS desktop behavior, release readiness or #263 resolution.
+
+## Saved panorama approval and restoration
+
+**Set panorama as World (N)** prepares one PNG/EXR result and identifies the
+selected scene and current World. Explain the 2:1/equirectangular requirement,
+packed image, preserved original World, LDR/HDR distinction and session-local
+restore limit. The action's presence is a media-type offer; byte compatibility is
+checked during application, never in drawing. Cancel discards the prepared handle.
+
+After completed application, **Restore previous World** uses a separate prepared
+approval. It names the current scene/World and explains that edited owned data
+prevents restoration. Do not silently clear edits, reapply the job or reset its
+completed state after restoration. Reference [the user guide](USER_GUIDE.md#apply-a-saved-panorama-to-world)
+for screenshots and [the World guide](WORLD_APPLICATION.md#saved-result-ui-and-mcp-approval)
+for the already-applied Image and file-load boundaries.
+
+Offline desktop acceptance on macOS arm64 Blender 5.1.2 used exact ZIP
+`c570617fdcc2e4ff5e5b424e08768843186a38a95eb6e58252cec6c471b262f1`.
+Mouse approval applied a synthetic saved 2:1 PNG as one packed World; a separate
+confirmation restored the original World and removed the restore action while
+the job stayed applied. Mock submissions and request counts remained unchanged.
+Viewport selection, front-view keyboard input and zoom worked afterward. Blender
+exited cleanly and the normal-profile fingerprint was unchanged. The test-only
+app copy used a distinct bundle identifier and local ad-hoc signature for window
+targeting; vendor executable code and the extension ZIP were unchanged. This does
+not establish actual HDR/seam quality, other OS desktop support, resolution of
+#263 or release acceptance.

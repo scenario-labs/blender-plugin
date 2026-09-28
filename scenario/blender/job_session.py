@@ -626,6 +626,14 @@ class JobSession:
         return AppliedModel(record, application)
 
     def apply_world(self, completion, *, asset_id):
+        return self._apply_world(completion, asset_id=asset_id)
+
+    def apply_recovered_world(self, completion, *, destination, asset_id):
+        if not isinstance(destination, JobOrigin):
+            raise OriginUnavailable("Capture and approve the panorama destination")
+        return self._apply_world(completion, asset_id=asset_id, destination=destination)
+
+    def _apply_world(self, completion, *, asset_id, destination=None):
         """Apply one explicitly selected panorama from an owned verification.
 
         This synchronous main-thread command claims the original job before
@@ -650,13 +658,17 @@ class JobSession:
         if len(selected) != 1:
             raise OriginUnavailable("Select one panorama from this job's saved results")
         item, path = selected[0]
-        scene, _ = self._resolve(completion.origin)
+        scene, _ = self._resolve(completion.origin if destination is None else destination)
         previous = scene.world
         worlds, images = set(bpy.data.worlds), set(bpy.data.images)
         # Consumption precedes the durable claim: a storage failure can occur
         # after committing APPLYING. Never reuse this completion to infer safety.
         del self._issued[id(completion)]
-        claim = self._coordinator.claim_application(verified)
+        claim = (
+            self._coordinator.claim_application(verified)
+            if destination is None
+            else self._coordinator.claim_recovered_application(verified, destination)
+        )
         try:
             application = apply_world(scene, path, expected_receipt=item.receipt)
         except (WorldApplicationError, PanoramaError):

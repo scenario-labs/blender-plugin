@@ -513,3 +513,20 @@ or locate replacement targets after restart.
 See [static model import](MESH_APPLICATION.md#explicit-saved-static-glb-import)
 for format, allocation, placement, rollback and remaining edit-policy limits.
 Neither this approval nor the importer calls Scenario or submits generation.
+
+## Recovered panorama destination and restoration
+
+`apply_recovered_world(completion, destination=..., asset_id=...)` wraps the
+existing World primitive with the coordinator's recovered claim. The shared
+facade captures the scene revision and current World; both admission and delivery
+recheck them. UI and MCP use one approval owner and existing verification workers.
+Known World failures retain the safe retry state only after complete rollback;
+uncertainty retains a receipt-only retry, never another assignment.
+
+After a completed assignment, a separate prepared restore can call the retained
+World handle on the main thread. The approval checks the same selected context,
+record and current World, and the handle rejects edits to its owned data.
+Restoration does not alter the durable completed job or make it re-applicable.
+See [saved World approval](WORLD_APPLICATION.md#saved-result-ui-and-mcp-approval)
+for `ready`/`apply_failed` admission, session-local restoration and already-applied
+Image reuse limits.

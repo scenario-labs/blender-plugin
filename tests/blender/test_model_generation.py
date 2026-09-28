@@ -1363,3 +1363,138 @@ class ModelGenerationTests(unittest.TestCase):
         self.assertEqual((len(self.calls), len(self.paid)), before)
         with self.assertRaises(self.request_error):
             self.prepare_model(request_id)
+
+    def recovered_panorama(self):
+        before_worlds = set(bpy.data.worlds)
+
+        def cleanup():
+            for world in set(bpy.data.worlds) - before_worlds:
+                bpy.data.worlds.remove(world, do_unlink=True)
+
+        self.addCleanup(cleanup)
+        image = bpy.data.images.new("Synthetic panorama", width=8, height=4)
+        try:
+            image.pixels[:] = [0.25, 0.5, 0.75, 1.0] * 32
+            image.file_format = "PNG"
+            path = self.runtime.paths().state_dir / "panorama.png"
+            image.filepath_raw = str(path)
+            image.save()
+            self.result_bytes = path.read_bytes()
+        finally:
+            bpy.data.images.remove(image)
+        self.remote_status = "success"
+        with patch.object(self, "result_fixture", return_value=None):
+            return self.recovered_images()
+
+    def prepare_world(self, request_id, *, restore=False):
+        args = self.recovery_args(request_id, "restore_world" if restore else "apply_world")
+        del args["action"]
+        args["purpose"] = "restore_world" if restore else "world"
+        if not restore:
+            args["asset_id"] = "result-image"
+        return self.tools.prepare_result_application(args)
+
+    def test_world_application_and_restore_share_approval_without_new_requests(self):
+        request_id = self.recovered_panorama()
+        scene, previous = bpy.context.scene, bpy.context.scene.world
+        before = len(self.calls), len(self.paid)
+        approval = self.prepare_world(request_id)
+        self.assertEqual(approval["purpose"], "world")
+        self.assertEqual(scene.world, previous)
+        deferred = self.tools.apply_result_application(self.import_args(approval))
+        status = deferred.finish(deferred.run())
+        self.assertEqual(status["status"], "applied", status)
+        self.assertNotEqual(scene.world, previous)
+        self.assertIn("restore_world", status["actions"])
+        restore = self.prepare_world(request_id, restore=True)
+        status = self.tools.apply_result_application(self.import_args(restore))
+        self.assertEqual(scene.world, previous)
+        self.assertEqual(status["status"], "applied")
+        self.assertNotIn("restore_world", status["actions"])
+        self.assertEqual((len(self.calls), len(self.paid)), before)
+        with self.assertRaises(self.request_error):
+            self.tools.apply_result_application(self.import_args(restore))
+
+    def test_world_changed_during_verification_keeps_saved_panorama_unapplied(self):
+        request_id = self.recovered_panorama()
+        approval = self.prepare_world(request_id)
+        deferred = self.tools.apply_result_application(self.import_args(approval))
+        result = deferred.run()
+        changed = bpy.data.worlds.new("Changed destination")
+        bpy.context.scene.world = changed
+        status = deferred.finish(result)
+        self.assertEqual(status["status"], "ready", status)
+        self.assertTrue(status["error"])
+        self.assertEqual(bpy.context.scene.world, changed)
+
+    def test_world_restore_preserves_edited_world_data(self):
+        request_id = self.recovered_panorama()
+        deferred = self.tools.apply_result_application(
+            self.import_args(self.prepare_world(request_id))
+        )
+        deferred.finish(deferred.run())
+        world = bpy.context.scene.world
+        world.node_tree.nodes.get("Background").inputs["Strength"].default_value = 2
+        approval = self.prepare_world(request_id, restore=True)
+        with self.assertRaises(submodule("blender.world_application").WorldApplicationError):
+            self.tools.apply_result_application(self.import_args(approval))
+        self.assertEqual(bpy.context.scene.world, world)
+        self.assertEqual(
+            world.node_tree.nodes.get("Background").inputs["Strength"].default_value, 2
+        )
+
+    def test_nonpanoramic_saved_image_reports_local_failure_without_replacing_world(self):
+        request_id = self.recovered_images()
+        previous = bpy.context.scene.world
+        before = len(self.calls), len(self.paid)
+        deferred = self.tools.apply_result_application(
+            self.import_args(self.prepare_world(request_id))
+        )
+        status = deferred.finish(deferred.run())
+        self.assertEqual(status["status"], "apply_failed", status)
+        self.assertEqual(bpy.context.scene.world, previous)
+        self.assertEqual((len(self.calls), len(self.paid)), before)
+
+    def test_native_world_operator_uses_prepared_mcp_approval_for_apply_and_restore(self):
+        request_id = self.recovered_panorama()
+        previous = bpy.context.scene.world
+        for restore in (False, True):
+            approval = self.prepare_world(request_id, restore=restore)
+            args = self.import_args(approval)
+            args.update(
+                request_id=request_id,
+                expected_revision=approval["revision"],
+                asset_id=approval["asset_id"],
+                purpose=approval["purpose"],
+            )
+            self.assertEqual(bpy.ops.scenario.apply_saved_world(**args), {"FINISHED"})
+            self.deliver_results()
+            self.assertEqual(bpy.context.scene.world == previous, restore)
+        self.assertEqual(len(self.paid), 1)
+
+    def test_world_receipt_retry_preserves_one_assignment(self):
+        request_id = self.recovered_panorama()
+        deferred = self.tools.apply_result_application(
+            self.import_args(self.prepare_world(request_id))
+        )
+        result = deferred.run()
+        owner = self.runtime.state.model_jobs
+        transition = owner.store.transition
+
+        def fail_receipt(*args, **kwargs):
+            if kwargs.get("state") == self.storemod.JobState.APPLIED:
+                raise OSError("synthetic World receipt failure")
+            return transition(*args, **kwargs)
+
+        with patch.object(owner.store, "transition", side_effect=fail_receipt):
+            status = deferred.finish(result)
+        self.assertEqual(status["status"], "applying", status)
+        world = bpy.context.scene.world
+        with patch.object(
+            submodule("blender.job_session"),
+            "apply_world",
+            side_effect=AssertionError("Repeated assignment"),
+        ):
+            status = self.tools.recover_local_job(self.recovery_args(request_id, "retry_receipt"))
+        self.assertEqual(status["status"], "applied")
+        self.assertEqual(bpy.context.scene.world, world)

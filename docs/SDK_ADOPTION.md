@@ -318,8 +318,12 @@ also expose known model-job cancellation and download recovery through the same
 coordinator. Explicit recovered Image and selected video/audio application use
 verified local receipts without service calls. Video/audio approval binds one
 asset and the scene/frame before a durable application claim. Static GLB import
-uses the same saved-result boundary with scene/cursor approval and no API call. Non-image MCP jobs stop after verified download without
-automatic scene application. Live capture/Spark acceptance, Film, in-place mesh editing and material/World application still need integration.
+uses the same saved-result boundary with scene/cursor approval and no API call.
+Unapplied panorama results now use recovered World approval and session-local
+restoration through this same local boundary. Non-image MCP jobs stop after
+verified download without automatic scene application. Live capture/Spark acceptance,
+Film, in-place mesh editing, material application and already-imported World reuse
+still need integration.
 Generated operations use public SDK methods
 with `max_retries=0`; their `with_raw_response` wrappers preserve wire JSON.
 The named discovery exceptions also use the same zero-retry SDK client.

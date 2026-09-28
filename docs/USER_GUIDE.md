@@ -380,6 +380,29 @@ see the reference for token configuration and online-access requirements.
 
 ![Agents panel in Blender 5.0 with the local server running and Python execution disabled](images/panel-mcp.png)
 
+## Apply a saved panorama to World
+
+For an unapplied saved PNG or EXR result, choose **Set panorama as World (N)**.
+Confirm the scene and current World. The image must be a supported 2:1 panorama;
+Blender uses it as an equirectangular environment, packs it and keeps the original
+World untouched. PNG is LDR. EXR can store HDR, but its format alone says nothing
+about the actual range or seamless edges. An ordinary nonpanoramic image reports
+a local error and leaves the original World in place.
+
+After success, **Restore previous World** offers a separate confirmation in the
+same session. Edited/replaced World or image data prevents restoration so your
+changes are preserved. Save the blend file yourself. A restart or file load loses
+this restore action; retained Worlds can still be selected manually in Blender.
+Neither application nor restoration regenerates the image or spends credits.
+
+![Saved panorama confirmation names the scene and current World before changing environment](images/saved-world-approval.png)
+
+This applies only to saved results that have not already been applied. Automatic
+Image imports and other completed application claims cannot be replayed through
+this action; reuse of those existing images remains separate integration.
+
+![Applied panorama offers a separate native confirmation to restore the previous scene World](images/saved-world-restore.png)
+
 ## The floating composer
 
 The pill at the bottom of the viewport shows the current prompt in a field and a Generate button, in the same style as the expanded card. Drag it anywhere in the viewport; a click without moving expands it. The expanded card moves the same way (drag its background), resizes from the grip in its bottom-right corner, and a double-click on its background puts it back in place; the position is remembered in the preferences. Click the pill to expand: lane tabs (Image, Video, 3D, Materials, Render Image, Render Video), the prompt, the model chip (opens the model picker), a **Settings** chip (opens a dialog with the lane's full form: model, prompt, references, parameters) and Generate with the price. Audio, the 3D Edit mode and Blockout live in the sidebar. The composer is the quick path: it uses the settings of the current lane as they stand in the sidebar or in that dialog. The bottom-right corner resizes the card (a resize cursor appears when the pointer reaches it).

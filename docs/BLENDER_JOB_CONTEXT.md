@@ -415,3 +415,38 @@ file, target or account changes prevent preparing/submitting a stale quote.
 These programmatic commands do not add UI buttons, authorize automatic paid
 Spark preparation, or apply generated prompt text. Result retrieval/application
 and replacing the prototype Prompt Spark entry points remain separate.
+
+## Explicit saved video and audio application
+
+`prepare_media_application` captures one result asset, the current scene revision
+and frame. The native **Add video/audio strip** confirmation and MCP
+`prepare_result_application(asset_id=...)` share this single-use approval;
+`apply_result_application` consumes it. Both admission and delivery recheck the
+selected credential context, stored record, scene and exact frame. A changed
+frame requires new approval even when the scene otherwise remains valid.
+
+The existing worker verifies saved receipts. `JobSession.apply_recovered_media`
+then claims recovered application durably before calling
+[`media_application.apply_media`](../scenario/blender/media_application.py) on
+the main thread. It copies and rehashes the selected receipt into a private
+extension-user-storage directory, checks its container, and inserts one MP4/WebM
+movie or MP3/WAV/OGG sound strip on a wholly unused, unlocked, unmuted channel.
+The local copy is bounded to 512 MiB and remains synchronous; large files can
+pause Blender during copying and decoding. No credentials, download or paid
+submission are involved in this application command.
+
+Existing strips, selection, active strip, scene range, frame rate and resolution
+are preserved. Video inserts picture frames only, fitted inside the scene;
+embedded audio is omitted and source frames play at the scene frame rate.
+A confirmed rollback becomes `apply_failed`; incomplete rollback remains
+uncertain. Failure to persist success retains a receipt-only retry that never
+inserts again. Restarted `applying` and completed `applied` records cannot be
+claimed again. One selected asset consumes this job's application claim; other
+variants remain saved but cannot be inserted by another claim for that job.
+
+Unlike packed images, strips depend on the independent local media copy. Keep
+that file available, including when moving the blend file; the command does not
+save the blend, pack media or clean snapshots after strip deletion. It does not
+change which scene an existing Sequencer editor displays. Select the approved
+scene in that editor's header to inspect the strip. Mesh, material, World and
+Film integration are separate from this video/audio path.

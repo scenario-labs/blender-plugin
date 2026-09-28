@@ -231,6 +231,9 @@ Do not edit this block by hand; run `make mcp-docs`. An asterisk marks a require
 | `recover_local_job` | Explicitly recover a saved job without repeating generation or importing into another scene. | `context_id`*: string<br>`request_id`*: string<br>`expected_revision`*: integer<br>`action`*: string (['refresh', 'resume', 'cancel', 'recover_download', 'retry_receipt']) | destructive annotation |
 | `list_local_jobs` | Inspect durable local jobs for the selected API-key pair without network requests. | none | read-only annotation |
 | `cancel_prepared_job` | Cancel an unsubmitted durable local intent without contacting Scenario. | `context_id`*: string<br>`request_id`*: string<br>`expected_revision`*: integer | destructive annotation |
+| `estimate_prompt` | Get the exact server price for New, Rewrite or Translate on the current scene's native prompt field. This does not generate or change text. Args: lane and action (GENERATE, REWRITE, TRANSLATE). Returns: quote_id and cu_cost_exact. Obtain explicit approval of that exact cost before approve_prompt. The current field text/model must remain unchanged. | `lane`: string (enum: see tools/list)<br>`action`*: string (['GENERATE', 'REWRITE', 'TRANSLATE']) | read-only annotation |
+| `approve_prompt` | Spend the explicitly approved exact price once for a quote from estimate_prompt. Args: quote_id and approved_cost (the unchanged decimal string). Returns: request_id and queued state. Queues one durable submission; never retry an uncertain outcome. The shared runtime updates only the unchanged original prompt field. Inspect list_local_jobs for recovery. | `quote_id`*: string<br>`approved_cost`*: string | destructive annotation |
+| `read_prompt_result` | Read full text from a saved successful prompt or translation job without generating, spending or applying it. Args: context_id, request_id and expected_revision from list_local_jobs; refresh a known remote job's status first if necessary. Returns: prompts; old scene origins are readable but are never silently applied to the current scene. | `context_id`*: string<br>`request_id`*: string<br>`expected_revision`*: integer | read-only annotation |
 | `list_models` | List the loaded lane catalog, with curated models first and at most 40 matches. | `lane`: string (enum: see tools/list)<br>`query`: string | read-only annotation |
 | `model_schema` | Read the model's current form parameters for this Blender extension. | `model_id`*: string | read-only annotation |
 | `estimate_cost` | Get the exact CU cost with a dry run that spends no credits. | `model_id`*: string<br>`parameters`: object<br>`lane`: string (enum: see tools/list) | read-only annotation |
@@ -307,7 +310,8 @@ behavior interchangeable. Remote names below were checked against the
 | Saved upload recovery | `list_reference_uploads`, then `recover_reference_upload(context_id, request_id, expected_revision, action)` | Known-upload status retrieval; local cancellation/cleanup have no platform equivalent |
 | History | `list_generations(limit)` | `jobs_list` |
 | Apply an existing result | `import_result(job_id or id)` | No Blender scene access |
-| Prompt assistance | Panel controls | `prompt_spark` |
+| Prompt assistance | `estimate_prompt(lane, action)` then `approve_prompt(quote_id, approved_cost)`; same native prompt field and exact-price approval | `prompt_spark` for generation; SDK `generate.translate` for English translation |
+| Saved prompt text | `read_prompt_result(context_id, request_id, expected_revision)` | `job_get` and `asset_get`; read-only recovery without Blender mutation |
 | Inspect scene | `scene_summary`, `object_detail`, `datablocks_summary`, `blender_api_help` | Local only |
 | Change scene | `select_objects`, `set_frame`, `camera_path`, `execute_python` | Local only |
 | Capture scene | `screenshot_viewport`, `render_still` | Local only |

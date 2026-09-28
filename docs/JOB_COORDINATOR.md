@@ -442,16 +442,17 @@ the existing bounded pool. It creates no independent thread or job owner.
 
 Known prompt job IDs can be read after restart through `refresh_remote` without
 resubmission. Only model jobs support remote cancellation. `read_prompt_results` retrieves full generated text from a known successful job,
-including text assets, without resubmission. UI/MCP approval and application still
-require integration.
+including text assets, without resubmission. Native and MCP prompt controls use
+the same explicit approval facade; automatic render Spark remains separate.
 
 
 ### Prompt result recovery
 
 `read_prompt_results(request_id, expected_revision=...)` is a read-only command
 on the existing coordinator, worker pool and JobSession. It requires scoped
-`prompt` intent in `succeeded`, retrieves that exact successful job through
-`SDKAdapter.job`, and reads `metadata.output.prompts`. The result holds the
+`prompt` or `translate` intent in `succeeded`, retrieves that exact successful job
+through `SDKAdapter.job`, and checks the matching job type. It reads
+`metadata.output.prompts` for Spark or `metadata.output.translation` for translation. The result holds the
 original stored record and one to five verbatim, nonempty strings, each limited
 to 64 KiB of UTF-8. It is not an application claim or new spending approval.
 
@@ -466,5 +467,11 @@ is substituted. URLs and text are not added to the job database or result repr.
 Reads recheck owner activity and the stored revision before returning. Restart
 can repeat retrieval using the saved remote identity. Main-thread JobSession
 delivery still rejects a retired account or changed/missing origin; it never
-writes a prompt automatically. Native controls and explicit recovered-destination
-approval remain separate integration.
+writes a prompt on its own. The native prompt facade explicitly delivers to the
+unchanged originating field. MCP `read_prompt_result` can return scoped saved text
+after a scene change, without applying it. Redirecting a recovered result to a new
+native destination remains separate integration.
+
+`quote_translate` uses the fixed `translate` operation and target, bypassing
+model discovery. Its worker snapshots the prompt and preserves the same bounded
+queue, exact quote identity, origin checks and durable single-use submission.

@@ -609,3 +609,26 @@ def test_prompt_public_raw_response_preserves_aliases_scope_and_quote(client_fac
         "images": ["asset"],
         "prompt": "fixture",
     }
+
+
+@pytest.mark.parametrize("dry_run", ["true", omit])
+def test_translate_keeps_scope_and_dry_run_in_query(client_factory, dry_run):
+    calls = []
+    sdk = client_factory(
+        lambda request: (
+            calls.append(request)
+            or httpx.Response(
+                200, json={"job": {"jobId": "translated"}, "translation": "copper teapot"}
+            )
+        )
+    )
+    raw = sdk.generate.with_raw_response.translate(
+        prompt="théière", dry_run=dry_run, project_id=PROJECT
+    )
+    assert json.loads(raw.read())["translation"] == "copper teapot"
+    assert calls[0].url.path == "/v1/generate/translate"
+    assert dict(calls[0].url.params) == {
+        "projectId": PROJECT,
+        **({"dryRun": "true"} if dry_run == "true" else {}),
+    }
+    assert json.loads(calls[0].content) == {"prompt": "théière"}

@@ -263,6 +263,8 @@ class ModelJobs:
         if request_id in self._commands or request_id in self.submissions:
             return ()
         state = record.state
+        if record.intent.operation in {"prompt", "translate"}:
+            return ("refresh",) if state == JobState.REMOTE else ()
         actions = []
         if state in (JobState.REMOTE, JobState.CANCEL_REQUESTED):
             actions += ["refresh", "resume"]

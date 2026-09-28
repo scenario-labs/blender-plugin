@@ -368,6 +368,18 @@ def build_request(scene, lane, for_estimate=False):
 
     lane_state = scene.scenario.lane_state(lane)
     model_id = lane_state.model_id
+    if runtime.state.prompt_jobs is not None:
+        from .prompt_jobs import BUSY
+
+        action = runtime.state.prompt_jobs.current(scene, lane)
+        if action is not None and action.phase in BUSY:
+            return Request(
+                lane,
+                lane_kind(lane),
+                model_id,
+                {},
+                errors=["Wait for prompt preparation to finish"],
+            )
     references = lane_state.references
     if lane in RENDER_LANES:
         from .render_references import active_references

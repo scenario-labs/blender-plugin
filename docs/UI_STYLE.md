@@ -103,7 +103,7 @@ Each result collapses on its own; the panel header has a **Collapse all / Expand
 
 - Verbs on buttons say exactly what happens: `Generate`, `Add to scene`, `Use as reference`, `Refresh cloud`, `Download and open`.
 - Singular/plural is correct: `1 Job` / `3 Jobs`, `Applies to 1 selected mesh`.
-- Costs are stated where credits are spent: a tooltip or an inline note (`Prompt Spark, up to 3.75 CU`).
+- Prompt helpers request a free exact server price first. Show its full decimal amount below the tools, wrapping long values, with a separate action-labelled approval button. Do not use a fixed price or a tooltip as spending authorization. Keep pending/error text readable; an uncertain job offers inspection, never automatic resubmission.
 - No internal names in user text (a person sees `Reference Images`, not `referenceImages`).
 
 ## Tooltips
@@ -123,3 +123,21 @@ Modality icons (image, video, audio, 3d) are Scenario's own PNGs (`scenario/icon
 - Text is left, centre or right aligned, never justified.
 - A panel text field is single line; a taller prompt box grows the field, it does not wrap for editing.
 - Dialogs and the sidebar cannot take the composer's custom colours; their layout follows this guide, their palette is the Blender theme's.
+
+## Prompt approval interaction evidence
+
+These offline Blender 5.1.2 macOS arm64 captures show the exact price before
+approval and the delivered text afterward. The model, price and transport are
+synthetic; they are not current service pricing or live generation evidence.
+The price request made no submission; the separate approval produced exactly one.
+Native field editing, focus transfer and viewport selection/zoom were exercised.
+Computer-control focus guards interrupted some typing attempts; this does not
+establish exhaustive keyboard or clipboard acceptance. The isolated run exited
+cleanly and left the normal profile unchanged. A disposable Blender copy used a
+distinct application identifier and local development signature to distinguish
+its window; the extension ZIP was unchanged. Supported-version packaged tests
+remain separate from this single-version desktop check and unresolved #263.
+
+![Full exact prompt price with a separate approval button](images/prompt-price-approval.png)
+
+![Generated text delivered to the original prompt field](images/prompt-result-delivery.png)

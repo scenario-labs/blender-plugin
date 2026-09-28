@@ -135,7 +135,7 @@ From top to bottom:
 - **Parameters**: built from the model's own schema. A checkbox in front of an optional parameter means "send this value"; unchecked, Scenario uses its default. `(cost)` marks parameters that change the price.
 - **Generate (N CU)**: the current exact server estimate for this form, refreshed as you edit (a dry run, free). Generate consumes that unchanged quote once and saves the submission for recovery. Pending files, captures or Prompt Spark preparation must finish first; a partial price cannot authorize generation.
 
-New form generations appear in the shared saved jobs. Image imports supported PNG/EXR results into its original scene; other lanes retain downloaded results for explicit application. The lane descriptions below also describe retained prototype capabilities whose shared result application is still being integrated. Automatic Prompt Spark preparation, result application and Film acceptance remain release blockers.
+New form generations appear in the shared saved jobs. Image imports supported PNG/EXR results into its original scene; other lanes retain downloaded results for explicit application. The lane descriptions below also describe retained prototype capabilities whose shared result application is still being integrated. Result application, live Prompt Spark acceptance and Film acceptance remain release blockers.
 
 ![The model picker: Image, Video, Audio and 3D tabs with icons, category chips, search, the model list and the description of GPT Image 2](images/model-picker.png)
 
@@ -186,8 +186,9 @@ example, a Video model's audio input accepts an audio file, not a still capture.
 An upload stays attached to its original form when you change tabs. Pending
 uploads must finish or be reviewed before generation can continue. Still captures
 serve image inputs, viewport/camera clips serve video inputs, and **Upload selected
-mesh** creates a GLB snapshot for an empty 3D input. Render forms use explicit scene/first-frame slots; automatic Prompt Spark
-preparation remains separate integration.
+mesh** creates a GLB snapshot for an empty 3D input. Render forms use explicit scene/first-frame slots. An empty look can request a
+separate Prompt Spark price from those uploaded images; approve the look before
+reviewing the final render price.
 
 This pre-release path imports supported PNG and scanline OpenEXR results as packed
 image datablocks. Select them in Blender's Image Editor. Saved-job controls can
@@ -265,7 +266,7 @@ Your view, rendered as a finished still by an image edit model. Everything that 
 
 - **Scene to render**: choose Viewport or Scene camera and optional Grey clay capture, then **Capture and upload scene**. Wait for the uploaded snapshot before reviewing its generation price. Remove the reference to capture a new view; later scene edits do not change the uploaded image.
 - **Model**: GPT Image 2 by default, then Gemini 3.1, Seedream 5.0 Pro, FLUX 2 (Max / Pro), Reve Remix, Qwen Edit 2511, MAI Image 2.5 Pro Edit, Grok Imagine Image 2.0, Z-Image; any other img2img model through the picker. Inputs and parameters that belong to another use of the model (Gemini's video input and frame rate) are hidden.
-- **Look**: describe the result, for example "weathered steampunk copper, overcast light". An empty look can use the photoreal default when **Automatic Prompt Spark** is off. Automatic Spark preparation is currently unavailable; leaving it enabled with an empty look blocks pricing and generation.
+- **Look**: describe the result, for example "weathered steampunk copper, overcast light". An empty look uses the photoreal default when **Prepare look with Prompt Spark** is off. With it enabled, finish uploading the scene and style images to request a separate Spark price. Approve that exact price to prepare the look, then review and approve the render's own price. **New** requests a fresh look price after edits or a preparation error; inspect any uncertain saved job first.
 - **Style images**: optional references for palette, materials and lighting. The capture is always image 1.
 - The prompt the model receives states the role of every input: image 1 is the exact scene (every object, its position, the camera, the framing and the perspective are frozen; nothing may be added, moved or removed), the other images are look references only and none of their content may appear. The shared job saves verified results for explicit application; automatic Render Image-to-Video result handoff remains separate integration.
 
@@ -282,6 +283,7 @@ A playblast of your timeline, rendered as a finished clip by a video model that 
 - **Look**: as in Render Image. Enter a look, or disable automatic Spark to use the photoreal default.
 - **First frame**: choose an image with the file field or its folder picker, then choose **Upload first frame**. The field is visible even before an image is selected. Once uploaded, it is sent to the model's first-frame input (or first image in its image-reference array). Disabling or clearing the chosen first frame omits it from the request and preserves the upload for inspection. Choosing a different path requires removing the old slot and uploading again. Shared result-to-first-frame handoff remains separate integration.
 - **Style images**: extra look references.
+- Prompt Spark look preparation requires an enabled, uploaded first-frame image. It uses that first frame and uploaded style images, never the video asset as an image. Without a first frame, enter a look yourself or disable Spark to use the photoreal default.
 - The prompt names the playblast as the exact scene, camera move and timing to reproduce, the first frame as the look to match through the whole clip, and the other images as style only (with `@video1` / `@image1` tags for Seedance, plain words for the others).
 
 ![Render Video lane: Clip to render, the Camera path planner with an orbit built, Seedance 2.0, the Look field with Prompt Spark, the first frame row and style images](images/panel-render-video.png)

@@ -7,7 +7,8 @@ worker pool, timer, UI ownership or bpy calls. UI/MCP model quote and submission
 use these commands through [ModelJobs](../scenario/blender/model_jobs.py).
 Native forms require completed reference/preparation inputs before quoting;
 files, mesh/clip snapshots and render scene/first-frame references use explicit
-upload commands. Automatic Prompt Spark preparation remains separate.
+upload commands. Render look preparation composes these commands with a separate
+approval before the render quote.
 
 ## Prepare, claim, send, acknowledge
 
@@ -443,7 +444,8 @@ the existing bounded pool. It creates no independent thread or job owner.
 Known prompt job IDs can be read after restart through `refresh_remote` without
 resubmission. Only model jobs support remote cancellation. `read_prompt_results` retrieves full generated text from a known successful job,
 including text assets, without resubmission. Native and MCP prompt controls use
-the same explicit approval facade; automatic render Spark remains separate.
+the same explicit approval facade, including render look preparation from uploaded
+images. Preparing a look never submits the render itself.
 
 
 ### Prompt result recovery

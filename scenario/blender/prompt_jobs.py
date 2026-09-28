@@ -24,6 +24,7 @@ class PromptAction:
     original_text: str = field(repr=False)
     model_id: str
     task: object = field(repr=False)
+    preparation_key: str = field(default="", repr=False)
     phase: str = "QUOTING"
     quote: object = field(default=None, repr=False)
     request_id: str = ""
@@ -55,6 +56,12 @@ class PromptJobs:
         lane = scene.scenario.lane_state(item.lane)
         if lane is None or lane.prompt != item.original_text or lane.model_id != item.model_id:
             raise ScenarioError(0, "The prompt or model changed; request a new price")
+        if item.preparation_key:
+            from .render_prompt_jobs import parameters
+
+            _, key = parameters(scene, item.lane)
+            if key != item.preparation_key:
+                raise ScenarioError(0, "The render references changed; request a new prompt price")
         return lane
 
     def quote(self, scene, lane, action):
@@ -86,8 +93,14 @@ class PromptJobs:
         if scene == bpy.context.scene:
             bpy.context.view_layer.update()
         origin = self.session.capture(scene)
+        preparation_key = ""
         if action == "TRANSLATE":
             task = self.session.quote_translate({"prompt": prompt}, origin=origin)
+        elif lane in {"render_image", "render_video"}:
+            from .render_prompt_jobs import parameters as render_parameters
+
+            parameters, preparation_key = render_parameters(scene, lane)
+            task = self.session.quote_prompt(parameters, origin=origin)
         else:
             has_model = model_id not in {"", "NONE"}
             parameters = {
@@ -102,6 +115,7 @@ class PromptJobs:
                 parameters["prompt"] = prompt
             task = self.session.quote_prompt(parameters, origin=origin)
         item = PromptAction(uuid.uuid4().hex, scene, lane, action, prompt, model_id, task)
+        item.preparation_key = preparation_key
         self.actions[item.identifier] = item
         return item
 

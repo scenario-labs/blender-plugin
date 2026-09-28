@@ -364,7 +364,7 @@ class ScenarioLaneState(bpy.types.PropertyGroup):
     spark_enabled: BoolProperty(
         name="Write the look with Prompt Spark",
         default=True,
-        description="Automatic look preparation is unavailable; enter a look or turn this off to use the photoreal default",
+        description="Request a separate look price from uploaded images; approve it before pricing the render, or turn this off for the photoreal default",
         update=_on_prompt_update,
     )
     spark_look: StringProperty(description="The look Prompt Spark wrote for the last generation")

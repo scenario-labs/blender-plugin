@@ -141,3 +141,15 @@ remain separate from this single-version desktop check and unresolved #263.
 ![Full exact prompt price with a separate approval button](images/prompt-price-approval.png)
 
 ![Generated text delivered to the original prompt field](images/prompt-result-delivery.png)
+
+Render forms label the empty-look option **Prepare look with Prompt Spark**.
+Its price and approval remain inside the Look section, separate from Generate.
+The following offline Blender 5.1.2 macOS arm64 fixture shows that boundary before
+and after one synthetic approval. Native focus, a keyboard edit and viewport
+selection/zoom were checked; the run exited cleanly with the normal profile
+unchanged. As above, the test-only Blender app identifier/signature differed,
+while the candidate extension ZIP was unchanged. This is not live render evidence.
+
+![Separate exact Spark price before preparing the render look](images/render-spark-price.png)
+
+![Prepared look in the original render form before generation](images/render-spark-result.png)

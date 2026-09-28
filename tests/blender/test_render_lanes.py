@@ -217,28 +217,7 @@ class RenderLanesTests(unittest.TestCase):
         self.assertEqual(self.video_lane.estimate_key, "approved-video-quote")
         self.assertEqual(self.video_lane.estimate_state, "READY")
         self.assertEqual(self.video_lane.estimate_dirty_at, 0)
-        self.assertEqual(self.image_lane.spark_look, "warm brass")
-
-    def test_prepare_writes_the_spark_look_into_the_body(self):
-        class FakeClient:
-            def post(self, path, json_body=None, query=None):
-                assert path == "/generate/prompt"
-                assert json_body["images"][0].startswith("data:image/png;base64,")
-                return {"prompts": ["brushed brass under studio light"]}
-
-        records = submodule("core.jobs.records")
-        job = records.JobRecord.new(
-            lane="render_image", kind="image", model_id="m", body={"prompt": "placeholder"}, meta={}
-        )
-        prepare = self.render_lanes.make_prepare(
-            {"kind": "image", "style_count": 1},
-            str(FIXTURES / "patina-copper-512" / "albedo.png"),
-            "prompt",
-        )
-        prepare(FakeClient(), job)
-        self.assertIn("brushed brass under studio light", job.body["prompt"])
-        self.assertIn("Image 2 is a style reference only", job.body["prompt"])
-        self.assertEqual(job.meta["spark_look"], "brushed brass under studio light")
+        self.assertEqual(self.image_lane.spark_look, "")
 
     def test_panels_are_registered_as_four_sections(self):
         for name in (

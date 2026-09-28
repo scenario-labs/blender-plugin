@@ -485,3 +485,16 @@ Prompt result delivery, native approval controls, prototype Spark/LLM replacemen
 and live service acceptance remain separate work. Do not activate these commands
 in paid UI/MCP paths until result delivery and explicit approval are integrated.
 No automatic LLM fallback or remote prompt cancellation is enabled.
+
+## Saved texture-map roles
+
+The existing `SDKAdapter.asset` path uses SDK 2.2.0
+`assets.with_raw_response.retrieve`, retaining the documented `mimeType` and
+`metadata.type` fields without another API call or fallback. Offline contracts
+exercise those fields through the public wrapper. The result command now stores
+an allowlisted image texture role independently from MIME, for later Materials
+application; unknown semantics remain unknown. See
+[texture result semantics](RESULT_TRANSFERS.md#texture-result-semantics) and the
+[versioned store](JOB_STORAGE.md#atomicity-and-failures) for download guards and
+atomic schema 2/3 upgrades. This does not change authentication, scope, retry
+policy, provider acceptance or the dependency pin.

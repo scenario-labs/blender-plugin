@@ -60,7 +60,7 @@ scope, payload and origin before authorizing dispatch.
 Only hashes and exact cost are persisted for payload/quote identity. No prompt,
 credential, raw service response, absolute file path or signed storage URL is stored.
 Result manifests retain portable basenames, asset IDs, media types, optional
-expected size/digest and verified download receipts.
+expected size/digest, allowlisted image texture roles and verified download receipts.
 An old stored quote is not reusable spending authorization after restart. The
 store does not itself verify a supplied fingerprint against a live estimate or
 prove ownership of a supplied remote ID; those checks belong to the coordinator.
@@ -78,7 +78,7 @@ Every connection rechecks that the database is a regular nonsymlink file,
 including after a competing creation. The parent must remain trusted: this check
 and SQLite's path open are separate operations, not an atomic no-follow open.
 
-The database has an application ID and schema version **3**. SQLite transactions
+The database has an application ID and schema version **4**. SQLite transactions
 with `synchronous=FULL` commit the whole change or report `StoreError`; no cached
 in-memory result is reported as saved before commit succeeds. `BEGIN IMMEDIATE`
 serializes writers across threads/processes. Each operation owns a connection,
@@ -94,10 +94,15 @@ another request or resend. Intent fields and a known remote job ID cannot change
 Foreign databases, unsupported versions, malformed records and mismatched stored
 identities/revisions raise errors. They are preserved for explicit recovery,
 never silently replaced with empty history. An already-open store also fails if
-its database disappears. Only the previous shared schema 2 is upgraded, in one
+its database disappears. Previous shared schemas 2 and 3 upgrade in one
 transaction that validates every scope, record, identity and revision. A corrupt
 row or failed commit preserves all previous rows and the old version. This is
-not a prototype import; version 1 and foreign databases remain rejected.
+not a prototype import; version 1 and foreign databases remain rejected. Older
+results receive an unknown (`None`) texture role; migration never contacts
+Scenario or infers semantics from filenames. Schema 3 application destinations
+are preserved, while schema 2 retains its original-origin application semantics.
+Older extension builds reject schema 4; stop older Blender processes before
+upgrading and do not expect an older build to open the upgraded store.
 
 ## State boundaries
 
@@ -156,7 +161,7 @@ must remain privately owned and all owners must use the same canonical database
 path on a local filesystem that supports these locks. This is a cooperating
 writer protocol, not protection from arbitrary disk access or direct store calls.
 Stop all older extension processes that do not use this protocol before running
-recovery; the unchanged schema version does not establish lock compatibility.
+recovery; a schema upgrade does not establish lock compatibility.
 
 The coordinator's explicit `recover_downloads` command rechecks receipts under
 this lock before moving an interrupted `downloading` record to `ready` or
@@ -168,7 +173,11 @@ unreceipted bytes, deletes files or performs network work. See the
 
 After observing remote success, `set_results` binds a nonempty tuple of at most
 128 `ResultAsset` entries once. Each entry has an opaque asset ID, portable
-basename, normalized media type and optional expected size/SHA256. Duplicate asset
+basename, normalized media type, optional expected size/SHA256 and optional
+allowlisted `texture_role`. The role is independent of MIME: it describes image
+semantics, never a file decoder. Unknown roles remain `None`; arbitrary metadata,
+prompts and URLs are not retained. Current schema records require the role key
+even when null, so a truncated record cannot silently gain defaults. Duplicate asset
 IDs and filenames (case-insensitive for portable filesystems) are rejected. The
 caller must obtain metadata from the original scoped SDK job/asset responses;
 the store does not prove provider ownership or follow an incoming URL. Use a

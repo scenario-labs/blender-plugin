@@ -214,6 +214,10 @@ is inferred from a similar job or current selection.
 The entire URL-free manifest is committed once after metadata validation. Local
 basenames derive from index, asset-ID digest and MIME extension; provider paths
 and filenames never choose local directories. Signed URLs remain in memory.
+For delivered image MIME types, the manifest retains an allowlisted texture role
+from the SDK asset's `metadata.type`; ZIPs or models never become images because
+of a generation label. See [result semantics](RESULT_TRANSFERS.md#texture-result-semantics).
+Missing or unknown optional metadata remains unclassified.
 These contracts come from the pinned SDK's job/asset response models plus the
 captured model-job asset list; they still need live provider acceptance.
 
@@ -225,7 +229,9 @@ identical asset names in separate requests cannot overwrite each other.
 
 `download_results` loads a missing manifest, durably claims `downloading`, and
 retrieves each unfinished asset again for a fresh signed URL. Identity, MIME and
-size must still match the manifest. The bounded downloader publishes without
+size must still match the manifest. A saved known texture role must match too.
+An unclassified/legacy result remains unclassified even if a fresh response
+supplies a role; that does not rewrite its manifest or grant material semantics. The bounded downloader publishes without
 overwriting files; its verification uses the same configured byte cap. Each
 receipt commits before advancing to another asset. Existing receipts are
 rehash-verified instead of redownloaded. All receipts must exist before `ready`.

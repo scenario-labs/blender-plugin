@@ -365,22 +365,26 @@ def make_ready(store, intent):
     return advance(store, record, JobState.READY)
 
 
-def legacy_v2(path):
+def legacy_store(path, version):
     """Write the exact previous shared-store record shape, not prototype history."""
     with sqlite3.connect(path) as connection:
         for scope, request_id, raw in connection.execute(
             "SELECT scope, request_id, record FROM jobs"
         ).fetchall():
             value = json.loads(raw)
-            del value["application_origin"]
+            if version == 2:
+                del value["application_origin"]
+            for item in value["results"]:
+                del item["asset"]["texture_role"]
             connection.execute(
                 "UPDATE jobs SET record=? WHERE scope=? AND request_id=?",
                 (json.dumps(value), scope, request_id),
             )
-        connection.execute("PRAGMA user_version=2")
+        connection.execute(f"PRAGMA user_version={version}")
 
 
-def test_v2_upgrade_preserves_all_scopes_states_and_receipts(tmp_path, intent):
+@pytest.mark.parametrize("version", [2, 3])
+def test_shared_store_upgrade_preserves_all_scopes_states_and_receipts(tmp_path, intent, version):
     path = tmp_path / "jobs.sqlite3"
     expected = {}
     for scope in (intent.scope, replace(intent.scope, account_id="other-account")):
@@ -407,20 +411,23 @@ def test_v2_upgrade_preserves_all_scopes_states_and_receipts(tmp_path, intent):
                     record = advance(scoped, record, state)
             records.append(record)
         expected[scope] = tuple(sorted(records, key=lambda record: record.intent.request_id))
-    legacy_v2(path)
+    legacy_store(path, version)
     for scope, records in expected.items():
         assert JobStore(path, scope).records() == records
     with sqlite3.connect(path) as connection:
-        assert connection.execute("PRAGMA user_version").fetchone()[0] == 3
+        assert connection.execute("PRAGMA user_version").fetchone()[0] == 4
 
 
 @pytest.mark.parametrize("damage", ["commit", "scope", "revision", "record", "foreign", "v1"])
-def test_v2_upgrade_failure_preserves_every_row_and_version(tmp_path, intent, monkeypatch, damage):
+@pytest.mark.parametrize("version", [2, 3])
+def test_shared_store_upgrade_failure_preserves_every_row_and_version(
+    tmp_path, intent, monkeypatch, damage, version
+):
     path = tmp_path / "jobs.sqlite3"
     scoped = JobStore(path, intent.scope)
     scoped.create(intent)
     scoped.create(replace(intent, request_id="z-later"))
-    legacy_v2(path)
+    legacy_store(path, version)
     with sqlite3.connect(path) as connection:
         if damage == "scope":
             connection.execute("UPDATE jobs SET scope='invalid' WHERE request_id='z-later'")
@@ -626,3 +633,16 @@ def test_resolving_parent_never_accepts_a_symlinked_database(tmp_path, intent, e
     with pytest.raises(StoreError, match="regular local file"):
         JobStore(alias / "jobs.sqlite3", intent.scope)
     assert (target.read_bytes() if target.exists() else None) == before
+
+
+def test_v3_upgrade_preserves_a_recovered_application_destination(tmp_path, intent):
+    path = tmp_path / "jobs.sqlite3"
+    store = JobStore(path, intent.scope)
+    ready = make_ready(store, intent)
+    destination = JobOrigin("recovered-file", "recovered-scene", "recovered-revision")
+    claim = advance(store, ready, JobState.APPLYING, application_origin=destination)
+    legacy_store(path, 3)
+    reopened = JobStore(path, intent.scope).get(intent.request_id)
+    assert reopened == claim
+    assert reopened.application_origin == destination
+    assert reopened.results[0].asset.texture_role is None

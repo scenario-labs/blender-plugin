@@ -8,9 +8,12 @@ boundaries. No paid or live acceptance is implied by this documentation.
 An offline Render Image desktop probe on macOS arm64 / Blender 5.0.1 reached
 a ready quote, accepted text edits, submitted once through a synthetic transport
 and retained viewport navigation. It later crashed with the native traceback in
-a background SQLite job read. The cause is unresolved; passing headless tests
-do not clear this desktop acceptance failure. This probe does not establish
-live generation or full render-lane desktop acceptance.
+a background SQLite job read. Subsequent diagnostic polling, screenshot and
+144-second native interaction probes on that same ZIP completed cleanly, including
+shutdown and normal-profile preservation. The cause remains unresolved under
+[#263](https://github.com/scenario-labs/blender-plugin/issues/263); clean reruns and
+passing headless tests do not clear this failure. These synthetic probes do not
+establish live generation or full render-lane desktop acceptance.
 
 ## Runtime and authentication
 

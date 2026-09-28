@@ -147,7 +147,7 @@ class RenderLanesTests(unittest.TestCase):
         self.assertIn("Prompt Spark", request.errors[0])
         self.assertEqual(request.spark["kind"], "video")
 
-    def test_render_image_result_becomes_the_video_first_frame(self):
+    def test_render_image_result_preserves_the_video_first_frame_and_quote(self):
         records = submodule("core.jobs.records")
         job = records.JobRecord.new(
             lane="render_image",
@@ -158,8 +158,15 @@ class RenderLanesTests(unittest.TestCase):
         )
         job.files = [str(FIXTURES / "patina-copper-512" / "albedo.png")]
         job.status = "success"
+        self.video_lane.first_frame_path = "chosen-first-frame.png"
+        self.video_lane.estimate_key = "approved-video-quote"
+        self.video_lane.estimate_state = "READY"
+        self.video_lane.estimate_dirty_at = 0
         self.render_lanes.on_result(job)
-        self.assertEqual(self.video_lane.first_frame_path, job.files[0])
+        self.assertEqual(self.video_lane.first_frame_path, "chosen-first-frame.png")
+        self.assertEqual(self.video_lane.estimate_key, "approved-video-quote")
+        self.assertEqual(self.video_lane.estimate_state, "READY")
+        self.assertEqual(self.video_lane.estimate_dirty_at, 0)
         self.assertEqual(self.image_lane.spark_look, "warm brass")
 
     def test_prepare_writes_the_spark_look_into_the_body(self):

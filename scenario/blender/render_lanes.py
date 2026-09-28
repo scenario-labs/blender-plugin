@@ -15,7 +15,6 @@ import bpy
 from ..core.api import spark as spark_api
 from ..core.api.catalog import tagged_video_model
 from ..core.scene import capture_plan, render_prompt
-from . import runtime
 
 log = logging.getLogger("scenario.render")
 SPARK_NUM_RESULTS = 1
@@ -187,7 +186,7 @@ def make_prepare(spark_info, image_path, prompt_name):
 
 
 def on_result(rec):
-    """A Render Image result becomes the default first frame of Render Video; the Spark look is shown on the lane."""
+    """Show the legacy Spark look without changing another generation form."""
     lane = rec.meta.get("render_lane")
     if not lane:
         return
@@ -197,11 +196,6 @@ def on_result(rec):
             continue
         if rec.meta.get("spark_look"):
             lane_state.spark_look = rec.meta["spark_look"]
-        if lane == "render_image" and rec.files:
-            video_lane = scene.scenario.lane_state("render_video")
-            if video_lane is not None:
-                video_lane.first_frame_path = rec.files[0]
-                runtime.set_message("Render ready; it is now the first frame of Render Video")
 
 
 # -- drawing --------------------------------------------------------------

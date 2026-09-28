@@ -22,6 +22,7 @@ from ..core.jobs.store import JobOrigin, StoredJob
 from ..core.jobs.workers import JobWorkers
 from .image_application import ImageApplicationError, apply_images
 from .media_application import MediaApplicationError, apply_media
+from .model_application import ModelApplicationError, apply_model
 from .world_application import PanoramaError, WorldApplication, WorldApplicationError, apply_world
 
 _log = logging.getLogger("scenario.jobs")
@@ -57,6 +58,20 @@ class MediaResultUncertain(RuntimeError):
     def __init__(self, application=None):
         super().__init__("Media application needs inspection; do not insert it again")
         self.application = application
+
+
+class ModelResultUncertain(RuntimeError):
+    """Model objects may already exist; only persistence may be retried."""
+
+    def __init__(self, application=None):
+        super().__init__("Model application needs inspection; do not import it again")
+        self.application = application
+
+
+@dataclass(frozen=True)
+class AppliedModel:
+    record: StoredJob
+    application: object = field(repr=False)
 
 
 @dataclass(frozen=True)
@@ -133,6 +148,7 @@ class JobSession:
         self._world_receipts = WeakKeyDictionary()
         self._image_receipts = WeakKeyDictionary()
         self._media_receipts = WeakKeyDictionary()
+        self._model_receipts = WeakKeyDictionary()
         self._upload_captures = {}
         self._active = True
         self._coordinator = JobCoordinator(
@@ -440,7 +456,7 @@ class JobSession:
             raise OriginUnavailable("Capture and approve the image import destination")
         return self._apply_images(completion, destination=destination)
 
-    def validate_destination(self, destination, *, frame=None):
+    def validate_destination(self, destination, *, frame=None, cursor=None):
         """Check a previously captured application destination without recapturing it."""
         _main_thread()
         if not isinstance(destination, JobOrigin):
@@ -448,6 +464,9 @@ class JobSession:
         scene, _ = self._resolve(destination)
         if frame is not None and (type(frame) is not int or scene.frame_current != frame):
             raise OriginUnavailable("The destination frame changed; review it again")
+
+        if cursor is not None and tuple(scene.cursor.location) != cursor:
+            raise OriginUnavailable("The destination cursor changed; review it again")
 
     def _apply_images(self, completion, *, destination=None):
         _main_thread()
@@ -550,6 +569,59 @@ class JobSession:
             raise outcome from None
         del self._media_receipts[outcome]
         return AppliedMedia(record, application)
+
+    def apply_recovered_model(self, completion, *, destination, asset_id, cursor):
+        """Apply one selected asset to the approved scene/cursor after verification."""
+        _main_thread()
+        if self._issued.get(id(completion)) is not completion:
+            raise OriginUnavailable("Use an unconsumed model verification from this session")
+        if completion.error is not None:
+            raise completion.error
+        verified = completion.result
+        if not isinstance(verified, VerifiedResults) or not isinstance(destination, JobOrigin):
+            raise OriginUnavailable("Verify the model and approve its destination")
+        scene, _ = self._resolve(destination)
+        if tuple(scene.cursor.location) != cursor:
+            raise OriginUnavailable("The destination cursor changed; review it again")
+        selected = [
+            (item, path)
+            for item, path in zip(verified.record.results, verified.paths, strict=True)
+            if item.asset.asset_id == asset_id
+        ]
+        if len(selected) != 1:
+            raise OriginUnavailable("Select one saved model asset")
+        item, path = selected[0]
+        del self._issued[id(completion)]
+        claim = self._coordinator.claim_recovered_application(verified, destination)
+        try:
+            application = apply_model(scene, item, path, cursor=cursor)
+        except ModelApplicationError:
+            try:
+                self._coordinator.fail_application(claim)
+            except Exception:
+                raise ModelResultUncertain() from None
+            raise
+        except Exception:
+            raise ModelResultUncertain() from None
+        try:
+            record = self._coordinator.complete_application(claim)
+        except Exception:
+            outcome = ModelResultUncertain(application)
+            self._model_receipts[outcome] = (claim, application)
+            raise outcome from None
+        return AppliedModel(record, application)
+
+    def retry_model_receipt(self, outcome):
+        _main_thread()
+        if not isinstance(outcome, ModelResultUncertain) or outcome not in self._model_receipts:
+            raise OriginUnavailable("Use a pending model receipt from this session")
+        claim, application = self._model_receipts[outcome]
+        try:
+            record = self._coordinator.retry_application_receipt(claim)
+        except Exception:
+            raise outcome from None
+        del self._model_receipts[outcome]
+        return AppliedModel(record, application)
 
     def apply_world(self, completion, *, asset_id):
         """Apply one explicitly selected panorama from an owned verification.
@@ -687,6 +759,7 @@ class JobSession:
                 self._world_receipts.clear()
                 self._image_receipts.clear()
                 self._media_receipts.clear()
+                self._model_receipts.clear()
                 with _sessions_lock:
                     _sessions.discard(self)
 

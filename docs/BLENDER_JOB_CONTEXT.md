@@ -497,3 +497,19 @@ Film integration are separate from this video/audio path.
 Shutdown releases pending media receipt handles after its workers stop, matching
 image and World ownership. A retained exception cannot persist success after
 shutdown; the saved uncertain record and any existing strip remain unchanged.
+
+## Explicit saved static model application
+
+`prepare_model_application` captures one saved GLB asset, the current scene
+revision and cursor location. Native **Import static model** and MCP's generic
+asset preparation share `apply_saved_result`; media remains frame-bound and
+models are cursor-bound. The existing worker verifies all saved receipts;
+`apply_recovered_model` rechecks the destination and atomically claims application
+before the main-thread staged import. `retry_model_receipt` persists only the
+known outcome and shutdown clears pending handles. Model status includes names
+of its retained imported objects for this session; names do not authorize replay
+or locate replacement targets after restart.
+
+See [static model import](MESH_APPLICATION.md#explicit-saved-static-glb-import)
+for format, allocation, placement, rollback and remaining edit-policy limits.
+Neither this approval nor the importer calls Scenario or submits generation.

@@ -112,6 +112,7 @@ class PromptToolsTests(unittest.TestCase):
                 try:
                     item.task.result(5)
                 except Exception:
+                    # poll() consumes the recorded error; callers assert the final phase.
                     pass
             item.next_poll = 0
             self.jobs().poll()

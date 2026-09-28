@@ -412,9 +412,10 @@ the existing worker pool and returns a task; drain its completion before using
 `prepare_quote` and `submit(operation="prompt", target_id="prompt", ...)`.
 Caller parameter edits after queueing cannot change the quoted request. Scene,
 file, target or account changes prevent preparing/submitting a stale quote.
-These programmatic commands do not add UI buttons, authorize automatic paid
-Spark preparation, or apply generated prompt text. Result retrieval/application
-and replacing the prototype Prompt Spark entry points remain separate.
+The `PromptJobs` facade now owns ephemeral New/Rewrite/Translate UI handles,
+sharing this session and worker pool. `quote_translate` has the same captured-origin
+contract. No extra thread pool or job store is created. Automatic render Spark
+preparation is still separate.
 
 
 `read_prompt_results` uses the same record-command admission and completion
@@ -422,3 +423,16 @@ queue. `PromptResults` carries its original stored record through scope/origin
 checks; `deliver` resolves the captured scene/target immediately before a caller's
 callback. Reading text does not itself mutate a prompt field, mark a job applied,
 or grant permission to redirect a recovered result to the current scene.
+
+Native New/Rewrite/Translate and MCP `estimate_prompt` first request a price.
+`approve_prompt` and the native approval button consume that exact displayed
+quote once. The facade also binds original field text and model, blocks concurrent
+preparation, invalidates the image-generation quote on approval, and verifies
+those bindings again before assigning the result. Retiring credentials discards
+the facade; stale callbacks never update every scene or substitute an LLM call.
+The shared pump advances saved remote jobs independently of an open panel.
+
+MCP `read_prompt_result` checks the current credential context and stored revision,
+but returns text without changing a scene. This permits explicit recovery when
+the original field has changed. Saved prompt/translation jobs offer status refresh,
+not image/mesh download or import actions.

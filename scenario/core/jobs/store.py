@@ -120,8 +120,9 @@ class JobIntent:
             "model",
             "workflow",
             "prompt",
+            "translate",
         }:
-            raise ValueError("Choose a model, workflow or prompt operation")
+            raise ValueError("Choose a model, workflow, prompt or translate operation")
         for value in (self.payload_sha256, self.quote_sha256):
             if not isinstance(value, str) or not re.fullmatch(r"[0-9a-f]{64}", value):
                 raise ValueError("Request and quote require SHA-256 identities")

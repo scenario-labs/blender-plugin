@@ -441,14 +441,17 @@ class JobCoordinator:
     def quote_prompt(self, parameters, *, origin):
         return self._quote("prompt", "prompt", parameters, origin)
 
+    def quote_translate(self, parameters, *, origin):
+        return self._quote("translate", "translate", parameters, origin)
+
     def _quote(self, operation, identifier, parameters, origin):
         if not isinstance(origin, JobOrigin):
             raise QuoteError("Capture the request origin before estimation")
         snapshot = json.loads(_payload(parameters))
         with self._request_guard(origin):
             pass
-        if operation == "prompt":
-            estimate = self._adapter.estimate_prompt(snapshot)
+        if operation in {"prompt", "translate"}:
+            estimate = getattr(self._adapter, f"estimate_{operation}")(snapshot)
         else:
             record = self._metadata(operation, identifier)
             with self._request_guard(origin):

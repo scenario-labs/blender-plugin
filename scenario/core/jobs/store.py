@@ -19,9 +19,10 @@ from enum import StrEnum
 from pathlib import Path
 from urllib.parse import urlsplit
 
+from .result_metadata import TEXTURE_ROLES
 from .transfers import DownloadedResult, TransferError, _root, validate_result_name
 
-_VERSION = 3
+_VERSION = 4
 _APPLICATION_ID = 0x53434A42
 
 
@@ -183,6 +184,7 @@ class ResultAsset:
     media_type: str
     expected_size: int | None = None
     expected_sha256: str | None = None
+    texture_role: str | None = None
 
     def __post_init__(self):
         _identity(self.asset_id)
@@ -194,6 +196,12 @@ class ResultAsset:
             r"[a-z0-9][a-z0-9.+-]{0,63}/[a-z0-9][a-z0-9.+-]{0,63}", self.media_type
         ):
             raise ValueError("Use a normalized media type")
+        if self.texture_role is not None and (
+            not isinstance(self.texture_role, str)
+            or self.texture_role not in TEXTURE_ROLES
+            or not self.media_type.startswith("image/")
+        ):
+            raise ValueError("Use a supported image texture role")
         if self.expected_size is not None and (
             type(self.expected_size) is not int or not 0 <= self.expected_size <= 2**63 - 1
         ):
@@ -253,7 +261,7 @@ def _json(value):
     )
 
 
-def _decode(raw, scope, *, version=3):
+def _decode(raw, scope, *, version=_VERSION):
     try:
         value = json.loads(raw)
         # Never let dataclass defaults turn a truncated in-flight record into
@@ -265,7 +273,7 @@ def _decode(raw, scope, *, version=3):
             "remote_job_id",
             "results",
         }
-        if version == 3:
+        if version >= 3:
             expected.add("application_origin")
         if not isinstance(value, dict) or set(value) != expected:
             raise ValueError
@@ -295,8 +303,13 @@ def _decode(raw, scope, *, version=3):
         for item in raw_results:
             if not isinstance(item, dict) or set(item) != {"asset", "receipt"}:
                 raise ValueError
-            if set(item["asset"]) != set(ResultAsset.__dataclass_fields__):
+            asset_fields = set(ResultAsset.__dataclass_fields__)
+            if version in {2, 3}:
+                asset_fields.remove("texture_role")
+            if not isinstance(item["asset"], dict) or set(item["asset"]) != asset_fields:
                 raise ValueError
+            if version in {2, 3}:
+                item["asset"]["texture_role"] = None
             receipt = item["receipt"]
             if receipt is not None:
                 if set(receipt) != set(DownloadedResult.__dataclass_fields__):
@@ -400,8 +413,8 @@ class JobStore:
                     )
                     connection.execute(f"PRAGMA application_id = {_APPLICATION_ID}")
                     connection.execute(f"PRAGMA user_version = {_VERSION}")
-                elif version == 2 and application == _APPLICATION_ID:
-                    self._upgrade_v2(connection)
+                elif version in {2, 3} and application == _APPLICATION_ID:
+                    self._upgrade_previous(connection, version)
                 else:
                     self._check_version(connection)
         except OSError:
@@ -412,8 +425,8 @@ class JobStore:
         return self._scope
 
     @staticmethod
-    def _upgrade_v2(connection):
-        """Preserve only the prior shared-store format in one locked transaction."""
+    def _upgrade_previous(connection, version):
+        """Upgrade supported shared stores atomically without guessing missing roles."""
         for key, request_id, revision, raw in connection.execute(
             "SELECT scope, request_id, revision, record FROM jobs"
         ).fetchall():
@@ -423,7 +436,7 @@ class JobStore:
                 raise StoreError(
                     "Stored job data is invalid; preserve the database for recovery"
                 ) from None
-            record = _decode(raw, scope, version=2)
+            record = _decode(raw, scope, version=version)
             expected_key = hashlib.sha256(_json(asdict(scope)).encode()).hexdigest()
             if (
                 key != expected_key

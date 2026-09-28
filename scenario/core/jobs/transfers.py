@@ -196,7 +196,9 @@ class ResultDownloader:
         """Verify local bytes with the same size bound as this transfer policy."""
         return verify_download(root, receipt, max_bytes=self._policy.max_bytes)
 
-    def download(self, url, *, root, name, expected_size=None, expected_sha256=None):
+    def download(
+        self, url, *, root, name, expected_size=None, expected_sha256=None, max_bytes=None
+    ):
         """Publish complete verified bytes atomically without replacing a result.
 
         Content hashes supplied by a trusted manifest are optional. Without one,
@@ -208,11 +210,16 @@ class ResultDownloader:
         the application after all its workers stop; never infer successful jobs
         from partial files or replay generation to recover a download.
         """
+        limit = self._policy.max_bytes
+        if max_bytes is not None:
+            if type(max_bytes) is not int or max_bytes < 1:
+                raise TransferError("Invalid result byte limit")
+            limit = min(limit, max_bytes)
         host, target = self._policy.destination(url)
         if expected_size is not None and (
             not isinstance(expected_size, int)
             or isinstance(expected_size, bool)
-            or not 0 <= expected_size <= self._policy.max_bytes
+            or not 0 <= expected_size <= limit
         ):
             raise TransferError("Invalid expected result size")
         if expected_sha256 is not None and (
@@ -270,10 +277,7 @@ class ResultDownloader:
                     raise TransferError("Transfer-encoded storage responses are unsupported")
                 length = response.getheader("Content-Length")
                 if length is not None:
-                    if (
-                        not re.fullmatch(r"[0-9]{1,20}", length)
-                        or int(length) > self._policy.max_bytes
-                    ):
+                    if not re.fullmatch(r"[0-9]{1,20}", length) or int(length) > limit:
                         raise TransferError("Storage response size is invalid")
                     length = int(length)
                     if expected_size is not None and length != expected_size:
@@ -286,11 +290,11 @@ class ResultDownloader:
                         check_permission_and_deadline()
                         # One underlying read prevents a trickling body from
                         # hiding inside a read-until-full call.
-                        chunk = response.read1(min(65536, self._policy.max_bytes - size + 1))
+                        chunk = response.read1(min(65536, limit - size + 1))
                         if not chunk:
                             break
                         size += len(chunk)
-                        if size > self._policy.max_bytes:
+                        if size > limit:
                             raise TransferError("Storage response exceeds the byte limit")
                         digest.update(chunk)
                         output.write(chunk)

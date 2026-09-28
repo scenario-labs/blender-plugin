@@ -38,6 +38,7 @@ class RuntimeState:
         self.job_session = None
         self.job_context_id = None
         self.model_jobs = None
+        self.prompt_jobs = None
         self.reference_uploads = None
         self.model_previews = {}
         self.estimates = {}  # Exact SDK responses for current UI previews, never spend approval.
@@ -110,6 +111,7 @@ class RuntimeState:
                 view for view in self.jobs_view if all(view is not v for v in views)
             ]
         self.model_jobs = None
+        self.prompt_jobs = None
         self.reference_uploads = None
         self.model_previews.clear()
 
@@ -247,6 +249,15 @@ def ensure_model_jobs():
     return state.model_jobs
 
 
+def ensure_prompt_jobs():
+    from .prompt_jobs import PromptJobs
+
+    session = ensure_job_session()
+    if state.prompt_jobs is None:
+        state.prompt_jobs = PromptJobs(session, state.job_store, online=online)
+    return state.prompt_jobs
+
+
 def ensure_reference_uploads():
     from .reference_uploads import ReferenceUploads
 
@@ -361,6 +372,8 @@ def sync_catalog_context():
     from . import generation
 
     generation.process_model_jobs()
+    if state.prompt_jobs is not None:
+        state.prompt_jobs.poll()
     if state.reference_uploads is not None:
         state.reference_uploads.poll()
 

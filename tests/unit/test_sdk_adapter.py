@@ -650,3 +650,38 @@ def test_contextual_v2_reference_limit_is_fifteen(adapter):
     )
     with pytest.raises(ValueError):
         client.estimate_prompt({"mode": "contextual-v2", "images": ["asset"] * 16})
+
+
+@pytest.mark.parametrize("project", [None, "project"])
+def test_translate_exact_quote_and_single_dispatch(adapter, project):
+    calls = []
+
+    def respond(request):
+        calls.append(request)
+        return (
+            httpx.Response(269, content=QUOTE)
+            if request.url.params.get("dryRun")
+            else httpx.Response(200, json={"job": {"jobId": "translated"}})
+        )
+
+    client = adapter(respond, project_id=project)
+    quote = client.estimate_translate({"prompt": "théière"})
+    assert quote.cost == Decimal("0.10000000000000001")
+    assert quote.operation == quote.target_id == "translate"
+    claims = []
+    client.submit_estimate(quote, before_send=lambda: claims.append(True))
+    assert claims == [True]
+    assert all(request.url.path == "/v1/generate/translate" for request in calls)
+    assert json.loads(calls[0].content) == json.loads(calls[1].content) == {"prompt": "théière"}
+    assert dict(calls[1].url.params) == ({"projectId": project} if project else {})
+    with pytest.raises(ValueError):
+        client.submit_estimate(quote, before_send=lambda: claims.append(True))
+    assert len(calls) == 2
+
+
+@pytest.mark.parametrize(
+    "body", [{}, {"prompt": " "}, {"prompt": None}, {"prompt": "ok", "projectId": "other"}]
+)
+def test_translate_invalid_input_never_requests(adapter, body):
+    with pytest.raises(ValueError):
+        adapter(lambda request: pytest.fail("Unexpected service call")).estimate_translate(body)

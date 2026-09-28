@@ -4,6 +4,7 @@
 
 import json
 import unittest
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
@@ -650,6 +651,72 @@ class ReferenceFormTests(unittest.TestCase):
         }[kind]
         ref.filepath = str(self.fixture.typed_source(kind, suffix, mime))
         return lane, ref
+
+    def test_clip_and_mesh_snapshots_attach_only_to_original_form(self):
+        capture = submodule("blender.capture")
+        mesh = submodule("blender.mesh_export")
+        for source, kind, lane_name in (
+            ("VIEWPORT_CLIP", "video", "video"),
+            ("CAMERA_CLIP", "video", "video"),
+            ("MESH", "3d", "edit3d"),
+        ):
+            for edited in (False, True):
+                with self.subTest(source=source, edited=edited):
+                    lane, ref = self.configure_typed_input(lane_name, kind)
+                    ref.source = source
+                    suffix = ".glb" if kind == "3d" else ".mp4"
+                    self.fixture.fixture.remote["originalFileName"] = "reference" + suffix
+
+                    def capture_file(context, path, **kwargs):
+                        Path(path).write_bytes(b"data")
+
+                    def export_file(context, objects, *, path):
+                        Path(path).write_bytes(b"data")
+
+                    with (
+                        patch.object(
+                            self.fixture.module,
+                            "bpy",
+                            SimpleNamespace(
+                                context=bpy.context, app=SimpleNamespace(background=False)
+                            ),
+                        ),
+                        patch.object(capture, "capture_playblast", side_effect=capture_file),
+                        patch.object(mesh, "source_objects", return_value=[object()]),
+                        patch.object(mesh, "export_glb", side_effect=export_file),
+                    ):
+                        binding = self.form.start(bpy.context, 0, lane_name=lane_name)
+                    if edited:
+                        ref.filepath = "changed destination"
+                    self.scene.scenario.lane = "image"
+                    self.fixture.settle()
+                    self.assertEqual(binding.attached, not edited)
+                    self.assertEqual(ref.source, source if edited else "ASSET")
+                    self.assertEqual(binding.ticket.record.intent.kind, kind)
+
+    def test_selected_mesh_operator_adds_one_guarded_snapshot(self):
+        lane, _ = self.configure_typed_input("edit3d", "3d")
+        lane.references.clear()
+        self.fixture.fixture.remote["originalFileName"] = "reference.glb"
+        mesh = submodule("blender.mesh_export")
+
+        def export_file(context, objects, *, path):
+            Path(path).write_bytes(b"data")
+
+        with (
+            patch.object(mesh, "source_objects", return_value=[object()]),
+            patch.object(mesh, "export_glb", side_effect=export_file),
+        ):
+            self.assertEqual(
+                bpy.ops.scenario.upload_selected_mesh(lane="edit3d", param_name="input"),
+                {"FINISHED"},
+            )
+            with self.assertRaises(RuntimeError):
+                bpy.ops.scenario.upload_selected_mesh(lane="edit3d", param_name="input")
+        self.assertEqual(len(lane.references), 1)
+        self.fixture.settle()
+        self.assertEqual(lane.references[0].source, "ASSET")
+        self.assertEqual(self.fixture.fixture.uploader.upload.call_count, 1)
 
     def test_typed_uploads_attach_to_originating_lane_after_tab_switch(self):
         image_refs = len(self.lane.references)

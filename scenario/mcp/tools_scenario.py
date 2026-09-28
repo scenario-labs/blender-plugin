@@ -856,15 +856,22 @@ SPECS = (
     ToolSpec(
         "capture_reference",
         (
-            "Capture a 1280x720 viewport or camera still and upload it as a Scenario reference asset.\n"
+            "Capture a viewport/camera still or clip, or export selected meshes, and upload the snapshot as a Scenario reference asset.\n"
             "Args:\n"
-            "  - source: optional string, VIEWPORT (default) or CAMERA.\n"
+            "  - source: optional string, VIEWPORT (default), CAMERA, VIEWPORT_CLIP, CAMERA_CLIP or MESH.\n"
             "Returns: context_id and reference_id; poll reference_upload_status until imported to obtain asset_id for a model file parameter. Captures use private temporary storage cleaned after staging.\n"
             'Example: {"source": "CAMERA"}.\n'
-            "Do not use in background mode: capture needs the Blender GUI and a 3D viewport. This sends the captured scene image to Scenario; use it only for an authorized reference upload.\n"
+            "Stills/clips use 1280x720 and require an interactive Blender window with a 3D viewport. Clips use the preview range when enabled, otherwise the scene frame range, without audio or implicit duration padding. MESH exports the selected meshes as one GLB and also works in background mode. This sends scene content to Scenario; use it only for an authorized reference upload.\n"
             "Platform equivalent: upload_asset then upload_asset_complete."
         ),
-        _schema({"source": {"type": "string", "enum": ["VIEWPORT", "CAMERA"]}}),
+        _schema(
+            {
+                "source": {
+                    "type": "string",
+                    "enum": ["VIEWPORT", "CAMERA", "VIEWPORT_CLIP", "CAMERA_CLIP", "MESH"],
+                }
+            }
+        ),
         capture_reference,
     ),
     ToolSpec(

@@ -341,16 +341,23 @@ and local MCP recovery controls use these commands as described below.
 facade over the selected `JobSession`, scoped upload store and existing workers.
 `upload_reference` starts one explicitly authorized local-file upload, with an
 explicit `kind` of `image` (the default), `audio`, `video` or `3d`;
-`capture_reference` captures a viewport/camera still first. Both return a
+`capture_reference` prepares a viewport/camera still or clip, or a selected-mesh
+GLB first. Both return a
 session-owned handle immediately. Poll `reference_upload_status` until the saved
 state is `imported`, then pass its `asset_id` to the intended model file input
 in a fresh estimate. Uploading
 does not submit generation or approve its cost. Generation forms use the same
 owner through **Upload reference** for image, audio, video and 3D files. Image
-inputs also support explicit still captures. It never uploads while drawing or
-pricing. Clip captures, implicit mesh export, render preparation and non-image
-UI paid dispatch retain their earlier integration; typed form uploads do not
-establish their acceptance.
+inputs also support explicit still captures; video inputs support explicit clips.
+**Upload selected mesh** creates one GLB reference for an empty 3D input. Preparation
+runs on the main thread in private temporary storage retained until asynchronous
+staging finishes or the session retires. Clips use the preview range when enabled,
+otherwise the scene range, at 1280x720 with no audio or implicit duration padding.
+Capture settings/current frame and mesh selection are restored. Stills/clips need
+an interactive viewport; mesh export also works headlessly. Uploaded snapshots do
+not track later source edits. It never uploads while drawing or pricing.
+Render pinned captures, Prompt Spark and non-image result application remain
+separate integration; reference preparation does not establish their acceptance.
 
 The upload kind and final file extension must match the local format policy.
 An omitted kind remains `image`; a video path does not silently change the kind.
@@ -452,7 +459,8 @@ as an uploaded snapshot and invalidates the form's prior estimate. Generation
 then quotes/submits the immutable asset ID, not the later contents of the original
 file. A marked upload that has not attached blocks request construction in
 every lane, preventing duplicate prototype upload while it is pending or
-uncertain. Unmarked implicit clip/mesh/render preparation remains separate.
+uncertain. Explicit clips and mesh snapshots use these same guards; unmarked
+implicit generation-time preparation and render pinned captures remain separate.
 An unloaded or list-only model schema is a temporary state, not an edited input.
 In-flight bindings wait for model inputs before attachment and recheck the kind
 when they load. Saved assets retain their scope checks; request construction

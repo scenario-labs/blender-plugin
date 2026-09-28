@@ -58,8 +58,10 @@ in a model estimate. Status, `list_reference_uploads` and recovery return saved
 Only the selected file is sent: no conversion, external-buffer or texture-sidecar
 discovery. Upload approval does not approve generation, and a lost response must
 be reconciled using saved progress instead of starting another upload. The same uploads and saved-reference recovery are available in generation
-forms for image, audio, video and 3D inputs. Still capture remains image-only;
-clip/mesh preparation and non-image UI generation dispatch are separate work.
+forms for image, audio, video and 3D inputs. `capture_reference` also supports explicit `VIEWPORT_CLIP`, `CAMERA_CLIP` and
+`MESH` snapshots. Clips use the preview/scene range at 1280x720 without audio,
+trimming or padding; mesh export produces one GLB from the selected meshes.
+Only mesh export works in background mode. Render pinned captures and result-specific application are separate work.
 
 ## Token lifecycle
 
@@ -233,7 +235,7 @@ Do not edit this block by hand; run `make mcp-docs`. An asterisk marks a require
 | `job_status` | Read one local generation's status and cost without spending credits. Active model jobs advance through shared remote polling and verified downloads; restarted jobs remain inspection-only. | `job_id`: string; Scenario job id (job_...) or the local_id returned by generate<br>`id`: string; Same as job_id, kept for compatibility | read-only annotation |
 | `wait_for_job` | Wait for a generation while Blender remains responsive. Shared jobs return when delivery finishes, pauses for review, or the wait expires. Restarted jobs remain inspection-only until explicitly resumed. | `job_id`: string; Scenario job id (job_...) or the local_id returned by generate<br>`id`: string; Same as job_id, kept for compatibility<br>`timeout`: number | read-only annotation |
 | `import_result` | Apply a downloaded prototype generation again to the current Blender scene and selection. | `job_id`: string; Scenario job id (job_...) or the local_id returned by generate<br>`id`: string; Same as job_id, kept for compatibility | - |
-| `capture_reference` | Capture a 1280x720 viewport or camera still and upload it as a Scenario reference asset. | `source`: string (['VIEWPORT', 'CAMERA']) | GUI required |
+| `capture_reference` | Capture a viewport/camera still or clip, or export selected meshes, and upload the snapshot as a Scenario reference asset. | `source`: string (['VIEWPORT', 'CAMERA', 'VIEWPORT_CLIP', 'CAMERA_CLIP', 'MESH']) | - |
 | `list_generations` | List recent cloud generations using this Blender runtime's loaded history. | `limit`: integer<br>`refresh`: boolean | read-only annotation |
 <!-- tools:end -->
 
@@ -314,7 +316,7 @@ Some platform operations are discovered through its tool catalog.
 
 `capture_reference` now returns `context_id` and `reference_id`, rather than an
 immediate asset ID or a local capture path. Both upload tools return while the
-shared session stages and transfers the image. Poll `reference_upload_status`
+shared session stages and transfers the prepared reference. Poll `reference_upload_status`
 until `state` is `imported`, then use `asset_id` in a fresh `estimate_cost` call.
 The generation still requires its own exact-cost approval. Do not repeat an
 uncertain upload: inspect saved progress and explicitly refresh its known ID.

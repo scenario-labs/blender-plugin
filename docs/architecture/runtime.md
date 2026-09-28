@@ -149,8 +149,13 @@ This is a pre-release integration slice. Image local-file/capture references
 must be uploaded before pricing/submission. Local MCP now uses the
 [shared reference upload path](../SDK_UPLOADS.md#active-reference-uploads);
 generation forms expose **Upload reference** for typed local files and image
-stills, with guarded lane/input attachment and saved inspection. Clip capture,
-implicit mesh export and non-image UI paid dispatch remain separate. Native recovery can refresh known uploads, cancel unclaimed preparation
+stills, with guarded lane/input attachment and saved inspection.
+Render pinned captures and non-image result application remain separate.
+Explicit viewport/camera clips and selected-mesh GLB uploads now share the typed
+reference lifecycle through both forms and MCP. They stage private snapshots;
+clips preserve the preview/scene range without duration padding, and mesh export
+restores selection. Later source edits do not change an uploaded reference.
+Native recovery can refresh known uploads, cancel unclaimed preparation
 and clean terminal staging copies. Reusing an imported reference after restart or
 form changes requires a fresh destination confirmation and invalidates old prices.
 Existing Scenario asset IDs are supported. Downloaded images

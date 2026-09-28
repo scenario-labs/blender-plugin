@@ -3,6 +3,7 @@
 """Import one static receipt-bound GLB into a new group at an approved cursor."""
 
 import hashlib
+import logging
 import math
 import os
 import stat
@@ -26,7 +27,12 @@ _DATA = (
     "node_groups",
     "cameras",
     "lights",
+    "armatures",
+    "actions",
+    "scenes",
 )
+_TRACKED_DATA = (*_DATA, "shape_keys")
+_log = logging.getLogger("scenario.jobs")
 
 
 class ModelApplicationError(RuntimeError):
@@ -105,8 +111,8 @@ def _publish(scene, objects, cursor, asset_id):
     return ModelApplication(collection, root, tuple(objects))
 
 
-def apply_model(scene, item, path, *, cursor):
-    """Stage in a disposable scene, then publish only newly imported model data."""
+def validate_destination(scene, cursor):
+    """Check non-mutating native preconditions before consuming an application claim."""
     if threading.current_thread() is not threading.main_thread():
         raise ModelApplicationError("Import models on Blender's main thread")
     if (
@@ -118,46 +124,70 @@ def apply_model(scene, item, path, *, cursor):
         or any(not math.isfinite(value) for value in cursor)
     ):
         raise ModelApplicationError("Choose a local scene in Object Mode and a finite cursor")
-    previous = {name: set(getattr(bpy.data, name)) for name in _DATA}
-    staging = None
+
+
+def _snapshot():
+    return {name: set(getattr(bpy.data, name)) for name in _TRACKED_DATA}
+
+
+def _remove_new_data(previous):
+    for name in _DATA:
+        collection = getattr(bpy.data, name)
+        for value in set(collection) - previous[name]:
+            try:
+                collection.remove(value, do_unlink=True)
+            except Exception:
+                # Continue independent cleanup, then verify the actual outcome.
+                pass
+
+
+def apply_model(scene, item, path, *, cursor):
+    """Stage in a disposable scene, then publish only newly imported model data."""
+    validate_destination(scene, cursor)
+    previous = _snapshot()
+    temporary = None
     try:
         data = _read(item, path)
         package = __package__.rsplit(".", 1)[0]
         root = bpy.utils.extension_path_user(package, path="model-import", create=True)
-        with tempfile.TemporaryDirectory(prefix="result-", dir=root) as directory:
-            snapshot = Path(directory) / "model.glb"
-            snapshot.write_bytes(data)
-            staging = bpy.data.scenes.new("Scenario import staging")
-            layer = staging.view_layers[0]
-            with bpy.context.temp_override(
-                scene=staging,
-                view_layer=layer,
-                collection=staging.collection,
-                layer_collection=layer.layer_collection,
-            ):
-                _import(snapshot)
-            objects = tuple(obj for obj in bpy.data.objects if obj not in previous["objects"])
-            if any(obj not in tuple(staging.objects) for obj in objects):
-                raise ModelApplicationError("Imported objects escaped the staging scene")
-            for image in set(bpy.data.images) - previous["images"]:
-                if image.packed_file is None:
-                    image.pack()
-                if image.packed_file is None:
-                    raise ModelApplicationError("The model texture could not be packed")
-                image.filepath = ""
-            application = _publish(scene, objects, cursor, item.asset.asset_id)
-            bpy.data.scenes.remove(staging)
-            staging = None
+        temporary = tempfile.TemporaryDirectory(prefix="result-", dir=root)
+        snapshot = Path(temporary.name) / "model.glb"
+        snapshot.write_bytes(data)
+        staging = bpy.data.scenes.new("Scenario import staging")
+        layer = staging.view_layers[0]
+        with bpy.context.temp_override(
+            scene=staging,
+            view_layer=layer,
+            collection=staging.collection,
+            layer_collection=layer.layer_collection,
+        ):
+            _import(snapshot)
+        objects = tuple(obj for obj in bpy.data.objects if obj not in previous["objects"])
+        if any(obj not in tuple(staging.objects) for obj in objects):
+            raise ModelApplicationError("Imported objects escaped the staging scene")
+        for image in set(bpy.data.images) - previous["images"]:
+            if image.packed_file is None:
+                image.pack()
+            if image.packed_file is None:
+                raise ModelApplicationError("The model texture could not be packed")
+            image.filepath = ""
+        application = _publish(scene, objects, cursor, item.asset.asset_id)
+        bpy.data.scenes.remove(staging)
         return application
     except Exception:
-        # Failure to remove any new data is uncertainty; never report a clean
-        # rollback that would let the same saved job import again.
-        if staging is not None:
-            bpy.data.scenes.remove(staging)
-        for name in _DATA:
-            collection = getattr(bpy.data, name)
-            for value in set(collection) - previous[name]:
-                collection.remove(value, do_unlink=True)
+        _remove_new_data(previous)
+        if _snapshot() != previous:
+            # This is deliberately not ModelApplicationError: the session must
+            # keep the durable claim uncertain and prevent duplicate imports.
+            raise RuntimeError("Model cleanup is incomplete; do not import again") from None
         raise ModelApplicationError(
             "Could not import the verified model; saved files remain"
         ) from None
+    finally:
+        if temporary is not None:
+            try:
+                temporary.cleanup()
+            except Exception:
+                # Packed images have no dependency on this snapshot. A disk
+                # cleanup failure must not undo a completed scene application.
+                _log.warning("Model snapshot cleanup failed; temporary files may remain")

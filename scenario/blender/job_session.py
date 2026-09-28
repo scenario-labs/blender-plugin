@@ -17,7 +17,7 @@ from bpy.app.handlers import persistent
 
 from ..core.jobs.coordinator import JobCoordinator, OriginQuote, RemoteSnapshot
 from ..core.jobs.origins import OriginRevisions
-from ..core.jobs.results import VerifiedResults
+from ..core.jobs.results import PromptResults, VerifiedResults
 from ..core.jobs.store import JobOrigin, StoredJob
 from ..core.jobs.workers import JobWorkers
 from .image_application import ImageApplicationError, apply_images
@@ -182,12 +182,15 @@ class JobSession:
     def quote_prompt(self, parameters, *, origin):
         return self._quote("prompt", "prompt", parameters, origin)
 
+    def quote_translate(self, parameters, *, origin):
+        return self._quote("translate", "translate", parameters, origin)
+
     def _quote(self, operation, identifier, parameters, origin):
         _main_thread()
         self._check_capacity()
         self._resolve(origin)
-        if operation == "prompt":
-            task = self._workers.quote_prompt(parameters, origin=origin)
+        if operation in {"prompt", "translate"}:
+            task = getattr(self._workers, f"quote_{operation}")(parameters, origin=origin)
         else:
             task = getattr(self._workers, f"quote_{operation}")(
                 identifier, parameters, origin=origin
@@ -244,6 +247,10 @@ class JobSession:
     def cancel_remote(self, request_id, *, expected_revision):
         """Queue explicit known model-job cancellation under its original scope."""
         return self._record_command("cancel_remote", request_id, expected_revision)
+
+    def read_prompt_results(self, request_id, *, expected_revision):
+        """Read full text off-thread; delivery still checks the originating scene."""
+        return self._record_command("read_prompt_results", request_id, expected_revision)
 
     def load_results(self, request_id, *, expected_revision):
         """Queue SDK metadata retrieval into the original job's durable manifest."""
@@ -359,7 +366,7 @@ class JobSession:
                 result = task.result()
                 record = (
                     result.record
-                    if isinstance(result, (RemoteSnapshot, VerifiedResults))
+                    if isinstance(result, (RemoteSnapshot, VerifiedResults, PromptResults))
                     else result
                 )
                 if isinstance(record, OriginQuote):

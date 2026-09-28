@@ -317,7 +317,7 @@ same adapter, followed by credential-free CDN transfer. Saved-job UI/MCP control
 also expose known model-job cancellation and download recovery through the same
 coordinator. Explicit recovered Image application uses verified local receipts
 without service calls. Non-image MCP jobs stop after verified download without
-automatic scene application. Capture/Spark preparation, Film and non-image result application still need integration.
+automatic scene application. Live capture/Spark acceptance, Film and non-image result application still need integration.
 Generated operations use public SDK methods
 with `max_retries=0`; their `with_raw_response` wrappers preserve wire JSON.
 The named discovery exceptions also use the same zero-retry SDK client.
@@ -331,6 +331,7 @@ The named discovery exceptions also use the same zero-retry SDK client.
 | Multipart upload metadata | `uploads.create/retrieve/trigger_action(action="complete")`: immutable project scope, strict input/receipt identity, retained processing/future fields; no byte transfer, retry or automatic completion |
 | Model/workflow/asset/job records | `models.retrieve`, `workflows.retrieve`, `assets.retrieve`, `jobs.retrieve`: unwrap the named record and retain unknown fields |
 | Custom-model estimate | `generate.run_model(dry_run="true")`: adopted form value validation plus retained conditional/one-of rules; inputs in JSON and dry-run/project in query |
+| Prompt translation quote/submission | `generate.with_raw_response.translate`: POST `/generate/translate`, exact `dry_run="true"` response; optional selected `project_id` in the query; prompt in JSON; no raw API fallback |
 | Prompt Spark quote/submission commands | `generate.with_raw_response.prompt`: POST `/generate/prompt`, `dry_run="true"` and optional selected `project_id` in the query; explicit mode, prompt, modelId, images and numResults in JSON; no raw API fallback |
 | Workflow estimate | `workflows.run(dry_run="true")`: normalize workflow fields/defaults and preserve the same query/body boundary |
 | Exact estimate record | Keep immutable request/response bytes and a `Decimal` cost, including zero; reject absent, negative, nonnumeric or non-finite costs rather than inventing a free estimate |
@@ -377,7 +378,7 @@ and MIME type. Typed local-file form upload and saved-reference attachment use
 the same commands, including still captures for image inputs in other lanes.
 Explicit clip/mesh and render scene/first-frame preparation use those same
 upload commands; final render generation uses the existing shared model quote
-and submission path. Automatic Spark preparation remains separate. There is no new Scenario API
+and submission path. Render Spark preparation has a separate exact-price approval. There is no new Scenario API
 fallback or dependency change. See the [active upload contract](SDK_UPLOADS.md#active-reference-uploads)
 for destination trust, source limits and recovery. Form attachment captures
 scene, lane, model, input kind and slot; pending marked uploads block duplicate
@@ -475,7 +476,23 @@ Both dry run and dispatch use the same normalized payload, exact response bytes,
 credential scope and zero-retry client. Submission requires the issued quote and
 a committed local intent before one service call. The command returns a durable
 job receipt; it does not deliver inline prompt text or resolve prompt assets.
-Prompt result delivery, native approval controls, prototype Spark/LLM replacement
-and live service acceptance remain separate work. Do not activate these commands
-in paid UI/MCP paths until result delivery and explicit approval are integrated.
+Full prompt result retrieval now uses public `jobs.retrieve` and `assets.retrieve`
+through the shared coordinator. Native New/Rewrite controls and MCP now require
+a separate exact-price approval, then apply only to the unchanged original field.
+The former Spark/LLM fallback entry points are retired. Render Spark preparation
+uses the same public method and explicit approval; live service acceptance remains.
 No automatic LLM fallback or remote prompt cancellation is enabled.
+
+
+Prompt result recovery reads the successful job's `metadata.output.prompts` and
+resolves any text asset references. The raw-response wrapper preserves these
+fields even when the generated response model does not enumerate their contents.
+No custom endpoint or SDK extension is required. Complete preview metadata is
+accepted only with `properties.hasFullPreview == true`; other text uses the
+bounded signed-storage protocol described in [result transfers](RESULT_TRANSFERS.md).
+
+Translation uses the pinned public [SDK translate method](https://docs.scenario.com/api/python/resources/generate/methods/translate)
+through `estimate_translate` and `quote_translate`. It accepts only nonempty
+`prompt` text and follows the same dry-run, durable claim and zero-retry policy.
+A successful `translate` job returns `metadata.output.translation`, read through
+the same bounded text-result command. No LLM substitution or raw endpoint is used.

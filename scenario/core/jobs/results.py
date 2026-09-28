@@ -3,7 +3,8 @@
 """Scoped result commands using SDK metadata and credential-free storage transfer."""
 
 import hashlib
-from dataclasses import asdict, dataclass
+import tempfile
+from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
 from ..config import ext_for_mime
@@ -19,6 +20,34 @@ class ResultError(RuntimeError):
 class VerifiedResults:
     record: StoredJob
     paths: tuple[Path, ...]
+
+
+MAX_PROMPT_BYTES = 65536
+
+
+@dataclass(frozen=True)
+class PromptResults:
+    """Read-only recovered text; no Blender mutation or spending authorization."""
+
+    record: StoredJob
+    prompts: tuple[str, ...] = field(repr=False)
+
+
+def _prompt_text(value):
+    if not isinstance(value, str) or not value.strip():
+        raise ResultError("Scenario returned no usable prompt text")
+    try:
+        valid = len(value.encode("utf-8")) <= MAX_PROMPT_BYTES
+    except UnicodeError:
+        valid = False
+    if not valid or any(ord(char) < 32 and char not in "\n\r\t" for char in value):
+        raise ResultError("Scenario returned invalid or oversized prompt text")
+    return value
+
+
+def _prompt_asset_id(value):
+    value = value.strip()
+    return value.startswith("asset_") and not any(char.isspace() for char in value)
 
 
 def _asset(record, identifier, name):
@@ -73,6 +102,102 @@ class ResultCommands:
             return method(identifier)
         except ValueError:
             raise ResultError("Scenario result metadata could not be retrieved") from None
+
+    def read_prompts(self, request_id, *, expected_revision):
+        """Recover the known successful job's full text, never a paid fallback."""
+        current = self._current(request_id, expected_revision, {JobState.SUCCEEDED})
+        if current.intent.operation not in {"prompt", "translate"}:
+            raise ResultError("Choose a completed Prompt Spark job")
+        translation = current.intent.operation == "translate"
+        job = self._request(self._adapter.job, current.remote_job_id)
+        expected_types = (
+            ("translate",) if translation else ("generate-prompt", "image-prompt-editing")
+        )
+        if (
+            job.get("jobId") != current.remote_job_id
+            or job.get("status") != "success"
+            or job.get("jobType") not in expected_types
+        ):
+            raise ResultError("Scenario did not confirm this successful Prompt Spark job")
+        metadata = job.get("metadata")
+        output = metadata.get("output") if isinstance(metadata, dict) else None
+        values = None
+        if isinstance(output, dict):
+            values = [output.get("translation")] if translation else output.get("prompts")
+        if not isinstance(values, list) or not 1 <= len(values) <= 5:
+            raise ResultError("Scenario returned no bounded prompt result list")
+        prompts = []
+        for value in values:
+            text = _prompt_text(value)
+            if _prompt_asset_id(text):
+                text = text.strip()
+                try:
+                    _identity(text)
+                except ValueError:
+                    raise ResultError(
+                        "Scenario returned an invalid prompt asset identity"
+                    ) from None
+                text = self._read_prompt_asset(text)
+            prompts.append(text)
+        with self._guard():
+            if self._store.get(request_id) != current:
+                raise StoreConflict("Prompt result changed; reload before acting")
+            return PromptResults(current, tuple(prompts))
+
+    def _read_prompt_asset(self, identifier):
+        asset = self._request(self._adapter.asset, identifier)
+        kind = asset.get("type")
+        if (
+            asset.get("id") != identifier
+            or asset.get("status") != "success"
+            or not isinstance(kind, dict)
+            or kind.get("kind") != "text"
+            or asset.get("mimeType") != "text/plain"
+        ):
+            raise ResultError("Scenario returned an unavailable or unsupported prompt asset")
+        props = asset.get("properties")
+        if not isinstance(props, dict):
+            raise ResultError("Scenario returned no prompt asset properties")
+        if props.get("hasFullPreview") is True:
+            text = _prompt_text(props.get("preview"))
+        else:
+            size = props.get("size")
+            if type(size) is not int or not 0 < size <= MAX_PROMPT_BYTES:
+                raise ResultError("Scenario returned an invalid or oversized prompt asset")
+            if self._downloader is None:
+                raise ResultError("Prompt result storage has not been configured")
+            # Dedicated private staging never reuses names from the remote asset.
+            # Context-managed cleanup runs on success, failure and control exceptions.
+            try:
+                with tempfile.TemporaryDirectory(
+                    prefix=".scenario-prompt-", dir=_root(self._root)
+                ) as temporary:
+                    directory = Path(temporary)
+                    with self._guard():
+                        pass
+                    receipt = self._downloader.download(
+                        asset.get("url"),
+                        root=directory,
+                        name="prompt.txt",
+                        expected_size=size,
+                        max_bytes=MAX_PROMPT_BYTES,
+                    )
+                    path = self._downloader.verify(directory, receipt)
+                    with path.open("rb") as source:
+                        data = source.read(MAX_PROMPT_BYTES + 1)
+                    if (
+                        len(data) != receipt.size
+                        or hashlib.sha256(data).hexdigest() != receipt.sha256
+                    ):
+                        raise ResultError("Prompt result changed while reading")
+                    text = _prompt_text(data.decode("utf-8"))
+            except Exception:
+                raise ResultError(
+                    "Full prompt text could not be read; retry retrieval without generating again"
+                ) from None
+        if _prompt_asset_id(text.strip()):
+            raise ResultError("Scenario returned an asset reference instead of prompt text")
+        return text
 
     def load_manifest(self, request_id, *, expected_revision):
         current = self._current(request_id, expected_revision, {JobState.SUCCEEDED})

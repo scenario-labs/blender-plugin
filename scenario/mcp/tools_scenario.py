@@ -125,6 +125,61 @@ def estimate_cost(args):
     return DeferredTool(ticket.task.result, finish_model)
 
 
+def estimate_prompt(args):
+    """Quote the current native prompt field through the shared prompt facade."""
+    jobs = runtime.ensure_prompt_jobs()
+    item = jobs.quote(bpy.context.scene, args.get("lane", "image"), args["action"])
+
+    def finish(_):
+        if runtime.ensure_prompt_jobs() is not jobs:
+            raise ScenarioError(0, "The prompt context changed")
+        jobs.poll()
+        if item.phase != "READY":
+            raise ScenarioError(0, item.error or "The prompt price is unavailable")
+        return {
+            "quote_id": item.identifier,
+            "action": item.action,
+            "lane": item.lane,
+            "cu_cost_exact": item.cost,
+        }
+
+    return DeferredTool(item.task.result, finish)
+
+
+def approve_prompt(args):
+    jobs = runtime.ensure_prompt_jobs()
+    item = jobs.approve(args["quote_id"], bpy.context.scene, approved_cost=args["approved_cost"])
+    return {
+        "request_id": item.request_id,
+        "state": item.phase.lower(),
+        "note": "One prompt submission queued; do not repeat it. The unchanged original field receives the result.",
+    }
+
+
+def read_prompt_result(args):
+    session = runtime.ensure_job_session()
+    if args.get("context_id") != runtime.state.job_context_id:
+        raise ScenarioError(0, "The saved-job context changed; list local jobs again")
+    task = session.read_prompt_results(
+        args["request_id"], expected_revision=args["expected_revision"]
+    )
+
+    def finish(_):
+        if runtime.ensure_job_session() is not session:
+            raise ScenarioError(0, "The saved-job context changed")
+        outcomes = session.drain(task=task)
+        if not outcomes:
+            raise ScenarioError(0, "The prompt result completion is unavailable")
+        if outcomes[0].error is not None:
+            raise outcomes[0].error
+        result = outcomes[0].result
+        # Read-only recovery can inspect an old origin. It never applies to the
+        # current field or turns a restart into new spending authorization.
+        return {"request_id": result.record.intent.request_id, "prompts": list(result.prompts)}
+
+    return DeferredTool(task.result, finish)
+
+
 def list_local_jobs(args):
     context_id, items = runtime.local_job_recovery()
     return {
@@ -719,6 +774,43 @@ SPECS = (
         ),
         cancel_prepared_job,
         {"destructiveHint": True},
+    ),
+    ToolSpec(
+        "estimate_prompt",
+        'Get the exact server price for New, Rewrite or Translate on the current scene\'s native prompt field. This does not generate or change text. Args: lane and action (GENERATE, REWRITE, TRANSLATE). Returns: quote_id and cu_cost_exact. Obtain explicit approval of that exact cost before approve_prompt. The current field text/model must remain unchanged.\nExample: {"lane": "image", "action": "REWRITE"}.\nPlatform equivalent: prompt_spark for prompt generation; translation uses SDK generate.translate.',
+        _schema(
+            {
+                "lane": {"type": "string", "enum": list(LANES)},
+                "action": {"type": "string", "enum": ["GENERATE", "REWRITE", "TRANSLATE"]},
+            },
+            ["action"],
+        ),
+        estimate_prompt,
+        {"readOnlyHint": True},
+    ),
+    ToolSpec(
+        "approve_prompt",
+        'Spend the explicitly approved exact price once for a quote from estimate_prompt. Args: quote_id and approved_cost (the unchanged decimal string). Returns: request_id and queued state. Queues one durable submission; never retry an uncertain outcome. The shared runtime updates only the unchanged original prompt field. Inspect list_local_jobs for recovery.\nExample: {"quote_id": "saved-quote", "approved_cost": "1.25"}.\nPlatform equivalent: prompt_spark after separate local approval.',
+        _schema(
+            {"quote_id": {"type": "string"}, "approved_cost": {"type": "string"}},
+            ["quote_id", "approved_cost"],
+        ),
+        approve_prompt,
+        {"destructiveHint": True},
+    ),
+    ToolSpec(
+        "read_prompt_result",
+        'Read full text from a saved successful prompt or translation job without generating, spending or applying it. Args: context_id, request_id and expected_revision from list_local_jobs; refresh a known remote job\'s status first if necessary. Returns: prompts; old scene origins are readable but are never silently applied to the current scene.\nExample: {"context_id": "current-context", "request_id": "saved-request", "expected_revision": 3}.\nPlatform equivalent: job_get and asset_get without generation.',
+        _schema(
+            {
+                "context_id": {"type": "string"},
+                "request_id": {"type": "string"},
+                "expected_revision": {"type": "integer", "minimum": 0},
+            },
+            ["context_id", "request_id", "expected_revision"],
+        ),
+        read_prompt_result,
+        {"readOnlyHint": True},
     ),
     ToolSpec(
         "list_models",

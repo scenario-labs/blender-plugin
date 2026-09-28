@@ -368,6 +368,18 @@ def build_request(scene, lane, for_estimate=False):
 
     lane_state = scene.scenario.lane_state(lane)
     model_id = lane_state.model_id
+    if runtime.state.prompt_jobs is not None:
+        from .prompt_jobs import BUSY
+
+        action = runtime.state.prompt_jobs.current(scene, lane)
+        if action is not None and action.phase in BUSY:
+            return Request(
+                lane,
+                lane_kind(lane),
+                model_id,
+                {},
+                errors=["Wait for prompt preparation to finish"],
+            )
     references = lane_state.references
     if lane in RENDER_LANES:
         from .render_references import active_references
@@ -731,7 +743,21 @@ def request_estimate(scene, lane):
         runtime.state.model_jobs.quotes.pop(previous.identifier, None)
     lane_state.estimate_key = ""
     request = build_request(scene, lane, for_estimate=True)
-    if request.files or request.captures or request.spark:
+    if request.spark:
+        from .render_prompt_jobs import request_price
+
+        lane_state.estimate_state = "UNAVAILABLE"
+        lane_state.estimate_error = "Approve the Prompt Spark price before pricing the render"
+        try:
+            request_price(scene, lane)
+        except ScenarioError as error:
+            lane_state.estimate_error = error.reason
+        except Exception:
+            lane_state.estimate_error = (
+                "Could not prepare the look; check references and connection"
+            )
+        return
+    if request.files or request.captures:
         request.errors.append("Use uploaded Scenario references before requesting a final price")
     if request.errors:
         lane_state.estimate_state = "UNAVAILABLE"

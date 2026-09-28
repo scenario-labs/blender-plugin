@@ -121,6 +121,10 @@ class JobWorkers:
         snapshot = _snapshot(parameters)
         return self._enqueue(self._coordinator.quote_prompt, snapshot, origin=origin)
 
+    def quote_translate(self, parameters, *, origin):
+        snapshot = _snapshot(parameters)
+        return self._enqueue(self._coordinator.quote_translate, snapshot, origin=origin)
+
     def prepare_upload(self, source, *, origin, kind, content_type):
         return self._enqueue(
             self._coordinator.prepare_upload,
@@ -179,6 +183,11 @@ class JobWorkers:
     def refresh_remote(self, request_id, *, expected_revision):
         return self._enqueue(
             self._coordinator.refresh_remote, request_id, expected_revision=expected_revision
+        )
+
+    def read_prompt_results(self, request_id, *, expected_revision):
+        return self._enqueue(
+            self._coordinator.read_prompt_results, request_id, expected_revision=expected_revision
         )
 
     def load_results(self, request_id, *, expected_revision):

@@ -7,7 +7,8 @@ worker pool, timer, UI ownership or bpy calls. UI/MCP model quote and submission
 use these commands through [ModelJobs](../scenario/blender/model_jobs.py).
 Native forms require completed reference/preparation inputs before quoting;
 files, mesh/clip snapshots and render scene/first-frame references use explicit
-upload commands. Automatic Prompt Spark preparation remains separate.
+upload commands. Render look preparation composes these commands with a separate
+approval before the render quote.
 
 ## Prepare, claim, send, acknowledge
 
@@ -441,6 +442,38 @@ A missing or lost receipt leaves uncertainty, never permission to retry.
 the existing bounded pool. It creates no independent thread or job owner.
 
 Known prompt job IDs can be read after restart through `refresh_remote` without
-resubmission. Only model jobs support remote cancellation. This command layer
-does not apply generated text, resolve prompt assets, or activate UI/MCP Spark;
-those paths require their own approval and result-delivery integration.
+resubmission. Only model jobs support remote cancellation. `read_prompt_results` retrieves full generated text from a known successful job,
+including text assets, without resubmission. Native and MCP prompt controls use
+the same explicit approval facade, including render look preparation from uploaded
+images. Preparing a look never submits the render itself.
+
+
+### Prompt result recovery
+
+`read_prompt_results(request_id, expected_revision=...)` is a read-only command
+on the existing coordinator, worker pool and JobSession. It requires scoped
+`prompt` or `translate` intent in `succeeded`, retrieves that exact successful job
+through `SDKAdapter.job`, and checks the matching job type. It reads
+`metadata.output.prompts` for Spark or `metadata.output.translation` for translation. The result holds the
+original stored record and one to five verbatim, nonempty strings, each limited
+to 64 KiB of UTF-8. It is not an application claim or new spending approval.
+
+Asset references are resolved through `SDKAdapter.asset`. Only successful
+`text/plain` text assets qualify. `properties.preview` is accepted only when
+`hasFullPreview` is exactly true. Otherwise the full asset is downloaded with
+a 64 KiB cap through the configured credential-free storage policy, verified,
+decoded as UTF-8 and removed from private temporary staging. Invalid/missing
+output fails explicitly; no truncated preview, LLM fallback or generation retry
+is substituted. URLs and text are not added to the job database or result repr.
+
+Reads recheck owner activity and the stored revision before returning. Restart
+can repeat retrieval using the saved remote identity. Main-thread JobSession
+delivery still rejects a retired account or changed/missing origin; it never
+writes a prompt on its own. The native prompt facade explicitly delivers to the
+unchanged originating field. MCP `read_prompt_result` can return scoped saved text
+after a scene change, without applying it. Redirecting a recovered result to a new
+native destination remains separate integration.
+
+`quote_translate` uses the fixed `translate` operation and target, bypassing
+model discovery. Its worker snapshots the prompt and preserves the same bounded
+queue, exact quote identity, origin checks and durable single-use submission.

@@ -412,6 +412,49 @@ the existing worker pool and returns a task; drain its completion before using
 `prepare_quote` and `submit(operation="prompt", target_id="prompt", ...)`.
 Caller parameter edits after queueing cannot change the quoted request. Scene,
 file, target or account changes prevent preparing/submitting a stale quote.
-These programmatic commands do not add UI buttons, authorize automatic paid
-Spark preparation, or apply generated prompt text. Result retrieval/application
-and replacing the prototype Prompt Spark entry points remain separate.
+The `PromptJobs` facade now owns ephemeral New/Rewrite/Translate UI handles,
+sharing this session and worker pool. `quote_translate` has the same captured-origin
+contract. No extra thread pool or job store is created. Render look preparation
+uses this same facade, with uploaded-reference identity bound to its quote.
+
+
+`read_prompt_results` uses the same record-command admission and completion
+queue. `PromptResults` carries its original stored record through scope/origin
+checks; `deliver` resolves the captured scene/target immediately before a caller's
+callback. Reading text does not itself mutate a prompt field, mark a job applied,
+or grant permission to redirect a recovered result to the current scene.
+
+Native New/Rewrite/Translate and MCP `estimate_prompt` first request a price.
+`approve_prompt` and the native approval button consume that exact displayed
+quote once. The facade also binds original field text and model, blocks concurrent
+preparation, invalidates the image-generation quote on approval, and verifies
+those bindings again before assigning the result. Retiring credentials discards
+the facade; stale callbacks never update every scene or substitute an LLM call.
+The shared pump advances saved remote jobs independently of an open panel.
+
+MCP `read_prompt_result` checks the current credential context and stored revision,
+but returns text without changing a scene. This permits explicit recovery when
+the original field has changed. Saved prompt/translation jobs offer status refresh,
+not image/mesh download or import actions.
+
+### Render look preparation
+
+An empty render look with Spark enabled requests only a free prompt quote after
+its references are uploaded. It never authorizes a paid call. The existing prompt
+approval button consumes that quote once; result delivery fills the look and
+invalidates the final render price. Rendering still needs its own exact quote and
+approval. Repeated price refreshes reuse the pending look action; errors and
+uncertainty do not automatically start another attempt.
+
+`render_prompt_jobs.parameters` uses the uploaded scene still followed by style
+images for Render Image. Render Video requires an enabled uploaded first frame;
+only that frame and style images enter Spark's `images`, never the video asset.
+The selected model, look, ordered references and their roles, Spark toggle and
+first-frame identity are checked again at approval and delivery. Pending files,
+wrong-scope references and more than 15 images fail before the prompt dry run.
+The old unbound render-result event cannot overwrite any scene's look.
+
+Native and MCP New/Rewrite on a render lane use this same preparation. A read-only
+quote can become stale when the user edits references or saves/changes the scene;
+request a fresh price explicitly rather than replaying it. This does not add an
+automatic scene-still capture for Render Video when no first frame is available.

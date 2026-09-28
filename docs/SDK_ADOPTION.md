@@ -317,8 +317,9 @@ same adapter, followed by credential-free CDN transfer. Saved-job UI/MCP control
 also expose known model-job cancellation and download recovery through the same
 coordinator. Explicit recovered Image and selected video/audio application use
 verified local receipts without service calls. Video/audio approval binds one
-asset and the scene/frame before a durable application claim. Non-image MCP jobs stop after verified download without
-automatic scene application. Capture/Spark preparation, Film and mesh/material/World application still need integration.
+asset and the scene/frame before a durable application claim. Static GLB import
+uses the same saved-result boundary with scene/cursor approval and no API call. Non-image MCP jobs stop after verified download without
+automatic scene application. Capture/Spark preparation, Film, in-place mesh editing and material/World application still need integration.
 Generated operations use public SDK methods
 with `max_retries=0`; their `with_raw_response` wrappers preserve wire JSON.
 The named discovery exceptions also use the same zero-retry SDK client.

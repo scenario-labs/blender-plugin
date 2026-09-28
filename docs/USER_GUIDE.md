@@ -224,6 +224,23 @@ Text, images or your Blender scene to video (Seedance 2.0 and 2.5, Kling, Veo, W
   scene, select the destination scene in its header to see the inserted strip.
 
 ### 3D
+
+For newly generated shared jobs, choose **Import static model (N)** for one
+saved GLB. Confirm the scene and cursor position. The importer adds a new group
+with its bottom center at that cursor, retains the model hierarchy/materials,
+packs embedded textures and preserves your current objects and selection.
+One selected result consumes the job's application claim; variants and maps stay
+saved. A changed cursor or scene requires a new confirmation.
+
+This path accepts static GLBs with one scene and embedded files, up to 256 MiB.
+Rigs, animations, external files, other model formats and replacing an existing
+mesh are not supported by this new import action. Large models may briefly
+pause Blender while loading. Save the blend file yourself after import.
+
+![One saved triangle model imported beside existing geometry at the approved Blender cursor](images/saved-model-result.png)
+
+The following descriptions include retained prototype generation and import
+features whose full shared-runtime acceptance remains open.
 Four modes: **Text**, **Image** (one picture), **Multi-view** (several views of the same object, first one is the front) and **Edit** (Scenario's 3D tools on the selected mesh).
 
 ![3D lane in Text mode with Meshy selected, texture options and a target polygon count](images/panel-3d.png)

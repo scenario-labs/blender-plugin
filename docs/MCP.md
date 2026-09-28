@@ -54,6 +54,14 @@ The independent media file must remain available to the blend file. See
 [saved media application](BLENDER_JOB_CONTEXT.md#explicit-saved-video-and-audio-application)
 for size, rollback and persistence limits.
 
+For a static GLB, the same `asset_id` argument returns `kind: model` and the
+approved `cursor` instead of a media frame. Show its scene and cursor before
+approval. The importer adds one new model group and packs embedded textures;
+it leaves current selection intact. The cursor is rechecked before the durable
+claim. Rigged/animated, external-file and non-GLB results remain unsupported.
+See [static model import](MESH_APPLICATION.md#explicit-saved-static-glb-import)
+for bounds and recovery. This never replaces an existing mesh.
+
 ## Typed local references
 
 `upload_reference` accepts a chosen local file and an optional `kind`: `image`
@@ -236,8 +244,8 @@ Do not edit this block by hand; run `make mcp-docs`. An asterisk marks a require
 | `reference_upload_status` | Read a reference upload's progress while the shared session advances its already authorized work. | `context_id`*: string<br>`reference_id`*: string | read-only annotation |
 | `list_reference_uploads` | Inspect saved uploads under the selected credential scope, including after restart. | none | read-only annotation |
 | `recover_reference_upload` | Explicitly inspect a known remote upload, cancel unclaimed preparation, or clean its finished private source copy. | `context_id`*: string<br>`request_id`*: string<br>`expected_revision`*: integer<br>`action`*: string (['refresh', 'cancel_prepared', 'cleanup']) | destructive annotation |
-| `prepare_result_application` | Prepare explicit import of saved PNG/EXR images, or one selected video/audio asset into the current scene sequencer. | `context_id`*: string<br>`request_id`*: string<br>`expected_revision`*: integer<br>`asset_id`: string | read-only annotation |
-| `apply_result_application` | Apply saved images or insert the selected video/audio strip after the user approves the prepared destination. | `context_id`*: string<br>`application_id`*: string | destructive annotation |
+| `prepare_result_application` | Prepare explicit import of saved PNG/EXR images, one selected video/audio strip, or one static GLB model into the current scene. | `context_id`*: string<br>`request_id`*: string<br>`expected_revision`*: integer<br>`asset_id`: string | read-only annotation |
+| `apply_result_application` | Apply saved images or insert the selected video/audio strip or static GLB model after the user approves the prepared destination. | `context_id`*: string<br>`application_id`*: string | destructive annotation |
 | `recover_local_job` | Explicitly recover a saved job without repeating generation or importing into another scene. | `context_id`*: string<br>`request_id`*: string<br>`expected_revision`*: integer<br>`action`*: string (['refresh', 'resume', 'cancel', 'recover_download', 'retry_receipt']) | destructive annotation |
 | `list_local_jobs` | Inspect durable local jobs for the selected API-key pair without network requests. | none | read-only annotation |
 | `cancel_prepared_job` | Cancel an unsubmitted durable local intent without contacting Scenario. | `context_id`*: string<br>`request_id`*: string<br>`expected_revision`*: integer | destructive annotation |
@@ -312,6 +320,7 @@ behavior interchangeable. Remote names below were checked against the
 | Saved job actions | `recover_local_job(context_id, request_id, expected_revision, action)` | Scoped job refresh/cancellation, asset retrieval, or local receipt recovery; never a new generation |
 | Review saved Image import | `prepare_result_application(context_id, request_id, expected_revision)` | Local destination capture; show the returned scene and images for approval |
 | Review one saved video/audio strip | `prepare_result_application(context_id, request_id, expected_revision, asset_id)` | Local scene/frame capture; show returned destination for approval |
+| Review one saved static GLB | `prepare_result_application(context_id, request_id, expected_revision, asset_id)` | Local scene/cursor capture; show the returned destination for approval |
 | Apply approved saved results | `apply_result_application(context_id, application_id)` | Local verified import or strip insertion into the captured destination; no platform call |
 | Wait | `wait_for_job(job_id or id, timeout)`, one job without blocking Blender | `jobs_wait` |
 | Reference upload | `upload_reference(path, kind)` or `capture_reference(source)`, then `reference_upload_status(context_id, reference_id)` until imported | `upload_asset`, `upload_asset_complete` for an existing file |
@@ -394,7 +403,8 @@ or authorize scene application. Recovered display records use generic
 `kind: model`; original lane metadata is not persisted. PNG/EXR results can use
 the explicit image import approval above, without inferring a material or World
 assignment from their media type. Supported video/audio uses the explicit
-asset and scene/frame approval above. `import_result` accepts prototype records only;
+asset and scene/frame approval above. Static embedded GLBs use the corresponding
+scene/cursor approval; in-place editing is separate. `import_result` accepts prototype records only;
 shared jobs reject it with guidance for explicit PNG/EXR application. A cold
 session identifies saved prototype records from the local registry before
 accessing shared jobs, so inspecting or importing an already downloaded
@@ -404,6 +414,6 @@ still use the manager-owned record so active waits observe its progress.
 
 Render lanes take the explicit model parameters supplied by the caller. They do
 not run the UI's capture, style decoration or Prompt Spark preparation. Non-image
-UI capture/Spark preparation, mesh/material/World application and Film
+UI capture/Spark preparation, in-place mesh editing, material/World application and Film
 remain integration work under #65/#68. This change does not complete their
 end-to-end acceptance or authorize release.

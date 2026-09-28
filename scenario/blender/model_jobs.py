@@ -14,8 +14,9 @@ from ..core.api.catalog import GENERATION_LANES, LANE_KIND
 from ..core.api.errors import ScenarioError
 from ..core.jobs.records import JobRecord
 from ..core.jobs.store import JobOrigin, JobState, StoredJob
-from .job_session import ImageResultUncertain, MediaResultUncertain
+from .job_session import ImageResultUncertain, MediaResultUncertain, ModelResultUncertain
 from .media_application import MEDIA_TYPES
+from .model_application import MODEL_MEDIA_TYPE
 
 
 def _snapshot(body):
@@ -53,6 +54,17 @@ class MediaApplicationApproval:
     kind: str
 
 
+@dataclass(frozen=True)
+class ModelApplicationApproval:
+    identifier: str
+    record: StoredJob
+    destination: JobOrigin
+    scene_name: str
+    asset_id: str
+    cursor: tuple
+    kind: str = "model"
+
+
 class ModelJobs:
     """Own ephemeral quotes and display projections, never another job engine."""
 
@@ -72,6 +84,8 @@ class ModelJobs:
         self._application_approvals = {}
         self._application_destinations = {}
         self._media_destinations = {}
+        self._model_destinations = {}
+        self._models = {}
 
     def quote(self, scene, model_id, body, *, lane="image"):
         if lane not in GENERATION_LANES:
@@ -172,6 +186,7 @@ class ModelJobs:
             del self._commands[request_id]
             destination = self._application_destinations.pop(request_id, None)
             media = self._media_destinations.pop(request_id, None)
+            model = self._model_destinations.pop(request_id, None)
             try:
                 completions = self.session.drain(task=task)
                 if not completions:
@@ -179,7 +194,16 @@ class ModelJobs:
                 completion = completions[0]
                 if completion.error is not None:
                     raise completion.error
-                if command == "verify_media":
+                if command == "verify_model":
+                    applied = self.session.apply_recovered_model(
+                        completion,
+                        destination=model.destination,
+                        asset_id=model.asset_id,
+                        cursor=model.cursor,
+                    )
+                    self._models[request_id] = applied.application
+                    self._paused.discard(request_id)
+                elif command == "verify_media":
                     self.session.apply_recovered_media(
                         completion,
                         destination=media.destination,
@@ -199,6 +223,11 @@ class ModelJobs:
                     self._images[request_id] = result.images
                     self._paused.discard(request_id)
                 self._next_poll[request_id] = time.monotonic() + 2.0
+            except ModelResultUncertain as error:
+                if error.application is not None:
+                    self._receipts[request_id] = error
+                    self._models[request_id] = error.application
+                self._pause(request_id, "Model import needs receipt recovery; do not import again")
             except MediaResultUncertain as error:
                 if error.application is not None:
                     self._receipts[request_id] = error
@@ -309,6 +338,10 @@ class ModelJobs:
             actions.append("import_media")
         if state == JobState.REMOTE and record.intent.operation == "model":
             actions.append("cancel")
+        if state in (JobState.READY, JobState.APPLY_FAILED) and any(
+            item.asset.media_type == MODEL_MEDIA_TYPE for item in record.results
+        ):
+            actions.append("import_model")
         if request_id in self._receipts:
             actions.append("retry_receipt")
         return tuple(actions)
@@ -321,13 +354,16 @@ class ModelJobs:
             or record is None
             or record.revision != expected_revision
             or action not in self.actions(record)
-            or action in {"import_images", "import_media"}
+            or action in {"import_images", "import_media", "import_model"}
         ):
             raise ScenarioError(0, "The saved job or available action changed; inspect it again")
         view = self._view(record)
         if action == "retry_receipt":
             pending = self._receipts[request_id]
-            if isinstance(pending, MediaResultUncertain):
+            if isinstance(pending, ModelResultUncertain):
+                outcome = self.session.retry_model_receipt(pending)
+                self._models[request_id] = outcome.application
+            elif isinstance(pending, MediaResultUncertain):
                 self.session.retry_media_receipt(pending)
             else:
                 outcome = self.session.retry_image_receipt(pending)
@@ -442,23 +478,72 @@ class ModelJobs:
         self._application_approvals[ticket.identifier] = ticket
         return ticket
 
+    def prepare_model_application(self, request_id, expected_revision, scene, asset_id):
+        record = self.store.get(request_id)
+        if (
+            type(expected_revision) is not int
+            or record is None
+            or record.revision != expected_revision
+            or "import_model" not in self.actions(record)
+        ):
+            raise ScenarioError(0, "The saved model changed; inspect the job again")
+        selected = [
+            item
+            for item in record.results
+            if item.asset.asset_id == asset_id and item.asset.media_type == MODEL_MEDIA_TYPE
+        ]
+        if len(selected) != 1:
+            raise ScenarioError(0, "Choose one supported saved static GLB asset")
+        if len(self._application_approvals) >= 128:
+            raise ScenarioError(0, "Complete or cancel an existing application review first")
+        if scene != bpy.context.scene:
+            raise ScenarioError(0, "Select the destination scene before reviewing insertion")
+        bpy.context.view_layer.update()
+        ticket = ModelApplicationApproval(
+            uuid.uuid4().hex,
+            record,
+            self.session.capture(scene),
+            scene.name,
+            asset_id,
+            tuple(scene.cursor.location),
+        )
+        self._application_approvals[ticket.identifier] = ticket
+        return ticket
+
+    def prepare_asset_application(self, request_id, expected_revision, scene, asset_id):
+        record = self.store.get(request_id)
+        if record is not None and any(
+            item.asset.asset_id == asset_id and item.asset.media_type == MODEL_MEDIA_TYPE
+            for item in record.results
+        ):
+            return self.prepare_model_application(request_id, expected_revision, scene, asset_id)
+        return self.prepare_media_application(request_id, expected_revision, scene, asset_id)
+
     def apply_saved_result(self, identifier):
         ticket = (
             self._application_approvals.get(identifier) if isinstance(identifier, str) else None
         )
-        if not isinstance(ticket, MediaApplicationApproval):
+        if not isinstance(ticket, (MediaApplicationApproval, ModelApplicationApproval)):
             return self.apply_saved_images(identifier)
         self._application_approvals.pop(identifier)
         if not self.session.active:
             raise ScenarioError(0, "Review the current connection and media destination again")
         record = self.store.get(ticket.record.intent.request_id)
-        if record != ticket.record or "import_media" not in self.actions(record):
-            raise ScenarioError(0, "The saved media changed; inspect the job again")
-        self.session.validate_destination(ticket.destination, frame=ticket.frame)
+        is_model = isinstance(ticket, ModelApplicationApproval)
+        action = "import_model" if is_model else "import_media"
+        if record != ticket.record or action not in self.actions(record):
+            raise ScenarioError(0, "The saved result changed; inspect the job again")
+        if is_model:
+            self.session.validate_destination(ticket.destination, cursor=ticket.cursor)
+        else:
+            self.session.validate_destination(ticket.destination, frame=ticket.frame)
         request_id = record.intent.request_id
         task = self.session.verify_results(request_id, expected_revision=record.revision)
-        self._media_destinations[request_id] = ticket
-        self._commands[request_id] = ("verify_media", task)
+        if is_model:
+            self._model_destinations[request_id] = ticket
+        else:
+            self._media_destinations[request_id] = ticket
+        self._commands[request_id] = ("verify_model" if is_model else "verify_media", task)
         self._automatic_application.discard(request_id)
         self._paused.add(request_id)
         view = self._view(record)
@@ -535,6 +620,11 @@ class ModelJobs:
             "error": self.views[record.intent.request_id].error
             if record.intent.request_id in self.views
             else None,
+            "objects": [
+                obj.name
+                for obj in getattr(self._models.get(record.intent.request_id), "objects", ())
+                if obj in tuple(bpy.data.objects)
+            ],
             "images": [
                 image.name
                 for image in self._images.get(record.intent.request_id, ())

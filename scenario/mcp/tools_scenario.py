@@ -263,6 +263,41 @@ def recover_local_job(args):
 
 
 def prepare_result_application(args):
+    if args.get("asset_id"):
+        _, approval = runtime.prepare_asset_application(
+            args["context_id"],
+            args["request_id"],
+            args["expected_revision"],
+            bpy.context.scene,
+            args["asset_id"],
+        )
+        if approval.kind == "model":
+            return {
+                "context_id": args["context_id"],
+                "application_id": approval.identifier,
+                "request_id": approval.record.intent.request_id,
+                "revision": approval.record.revision,
+                "scene": approval.scene_name,
+                "asset_id": approval.asset_id,
+                "kind": "model",
+                "cursor": list(approval.cursor),
+                "note": "Approve importing this one static embedded GLB into a new group with its bottom at the cursor. "
+                "Existing objects and selection stay unchanged. Rigged/animated or externally referenced GLBs are unsupported. "
+                "Nothing has been imported; changed destinations require review again.",
+            }
+        return {
+            "context_id": args["context_id"],
+            "application_id": approval.identifier,
+            "request_id": approval.record.intent.request_id,
+            "revision": approval.record.revision,
+            "scene": approval.scene_name,
+            "asset_id": approval.asset_id,
+            "kind": approval.kind,
+            "frame": approval.frame,
+            "note": "Approve inserting this one media asset at this scene/frame on an unused channel. "
+            "Scene timing stays unchanged; video insertion omits embedded audio. "
+            "Media stays in a local file that must remain available. Nothing has been inserted.",
+        }
     _, approval = runtime.prepare_image_application(
         args["context_id"], args["request_id"], args["expected_revision"], bpy.context.scene
     )
@@ -279,7 +314,7 @@ def prepare_result_application(args):
 
 
 def apply_result_application(args):
-    jobs, request_id, task = runtime.apply_saved_images(args["context_id"], args["application_id"])
+    jobs, request_id, task = runtime.apply_saved_result(args["context_id"], args["application_id"])
     return _finish_recovery(jobs, task, request_id)
 
 
@@ -612,14 +647,15 @@ SPECS = (
     ToolSpec(
         "prepare_result_application",
         (
-            "Prepare explicit import of downloaded PNG/EXR images from a saved job into the current file.\n"
+            "Prepare explicit import of saved PNG/EXR images, one selected video/audio strip, or one static GLB model into the current scene.\n"
             "Args:\n"
             "  - context_id: required string, current context from list_local_jobs.\n"
             "  - request_id: required string, saved local job identity.\n"
             "  - expected_revision: required nonnegative integer, observed saved revision.\n"
-            "Returns: context_id, application_id, request_id, revision, scene, images and note.\n"
+            "  - asset_id: optional saved asset ID; required for one MP4/WebM video, MP3/WAV/OGG audio strip or static embedded GLB model. Omit for PNG/EXR image import.\n"
+            "Returns: context_id, application_id, request_id, revision, scene, images or asset_id/kind/frame or cursor, and note.\n"
             'Example: {"context_id": "from-list", "request_id": "from-list", "expected_revision": 8}.\n'
-            "Show the destination and images to the user before apply_result_application. This makes no network request, spends no credits and imports nothing. Only ready or confirmed rolled-back results qualify.\n"
+            "Show the destination, selected assets and media frame or model cursor to the user before apply_result_application. This makes no network request, spends no credits and imports nothing. Only ready or confirmed rolled-back results qualify.\n"
             "Platform equivalent: none; this captures a local Blender destination."
         ),
         _schema(
@@ -627,6 +663,7 @@ SPECS = (
                 "context_id": {"type": "string"},
                 "request_id": {"type": "string"},
                 "expected_revision": {"type": "integer", "minimum": 0},
+                "asset_id": {"type": "string"},
             },
             ["context_id", "request_id", "expected_revision"],
         ),
@@ -636,13 +673,13 @@ SPECS = (
     ToolSpec(
         "apply_result_application",
         (
-            "Import and pack saved images after the user approves the prepared destination.\n"
+            "Apply saved images or insert the selected video/audio strip or static GLB model after the user approves the prepared destination.\n"
             "Args:\n"
             "  - context_id: required string, context from prepare_result_application.\n"
             "  - application_id: required string, single-use approval handle from prepare_result_application.\n"
-            "Returns: saved job status, revision, images and any delivery error.\n"
+            "Returns: saved job status, revision, images, imported object names and any delivery error.\n"
             'Example: {"context_id": "from-prepare", "application_id": "from-prepare"}.\n'
-            "Call only after explicit destination approval. Verification runs off the main thread; import rechecks the exact captured scene/file revision. Changed contexts or records require fresh review. This performs no generation, downloads, object/material assignment or file save. Never repeat an uncertain import; inspect the saved job.\n"
+            "Call only after explicit destination approval. Verification runs off the main thread; application rechecks the captured scene/file revision and media frame or model cursor. Media uses a persistent private file; video omits embedded audio and scene timing is unchanged. Changed contexts or records require fresh review. This performs no generation, downloads, existing-object/material replacement or file save. Never repeat an uncertain import; inspect the saved job.\n"
             "Platform equivalent: none; this applies saved results locally in Blender."
         ),
         _schema(
@@ -847,7 +884,7 @@ SPECS = (
             "  - id: optional string, compatibility alias; provide job_id or id. job_id takes precedence.\n"
             "Returns: applied (result kind), files. Raises ValueError if no downloaded files exist.\n"
             'Example: {"job_id": "job_example"}.\n'
-            "Do not use for the initial automatic application. Use only for prototype records when the user wants another copy or to apply a material to the current mesh selection. Shared jobs reject this tool; use prepare_result_application for saved PNG/EXR images. Other shared result types await scene-application integration.\n"
+            "Do not use for the initial automatic application. Use only for prototype records when the user wants another copy or to apply a material to the current mesh selection. Shared jobs reject this tool; use prepare_result_application for saved PNG/EXR images or a selected MP4/WebM video or MP3/WAV/OGG sound asset. Static embedded GLB import uses the same asset approval. In-place editing and material application remain separate.\n"
             "No platform equivalent."
         ),
         _schema({**_JOB_REF}),

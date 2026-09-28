@@ -123,3 +123,48 @@ Modality icons (image, video, audio, 3d) are Scenario's own PNGs (`scenario/icon
 - Text is left, centre or right aligned, never justified.
 - A panel text field is single line; a taller prompt box grows the field, it does not wrap for editing.
 - Dialogs and the sidebar cannot take the composer's custom colours; their layout follows this guide, their palette is the Blender theme's.
+
+## Saved video and audio confirmation
+
+Shared saved jobs show a separate **Add video/audio strip (N)** action for each
+supported result. Its confirmation states the destination scene, exact frame,
+one-strip operation, unused channel, unchanged timing and local-file dependency;
+video additionally states that embedded audio is omitted. Cancel discards the
+approval. Drawing reads the prepared fields without accessing files or changing
+jobs. A changed scene, frame, record or credential context requires new review.
+
+![Native saved audio confirmation names the scene and frame before adding one strip](images/saved-media-approval.png)
+
+Offline desktop acceptance used the exact packaged ZIP
+`3d831dc70efe10e0e5c2cf377e2044015e49f32814ed2da6b8649822ff76a2d2`
+in an isolated Blender 5.1.2 profile on macOS arm64. The fixture began with one
+mock generation and a saved WAV; mouse approval inserted one sound strip at
+frame 27 without another mock submission or request. Viewport selection/zoom,
+editor switching, scene selection and the Home key in the Sequencer worked.
+Blender exited cleanly and the normal profile fingerprint was unchanged. The
+test-only app copy used a distinct bundle identifier and local ad-hoc signature
+for reliable window targeting; the vendor executable code and extension ZIP
+were unchanged. This is desktop interaction evidence, not human listening,
+paid provider acceptance, other OS desktop coverage or resolution of #263.
+Native exact-ZIP tests separately decode synthetic MP4, WebM, MP3, WAV and OGG.
+
+## Saved static model confirmation
+
+Show **Import static model (N)** for each supported GLB result. The confirmation
+names the selected scene and cursor coordinates, states that it adds one model
+group with packed textures, preserves existing objects/selection, and excludes
+rigged, animated and external-file GLBs. A changed cursor or scene requires fresh
+approval. Drawing only reads prepared values.
+
+![Native static model confirmation shows the selected scene cursor and supported import limits](images/saved-model-approval.png)
+
+Offline desktop acceptance on macOS arm64 Blender 5.1.2 used the exact ZIP
+`bac52e333078c09bc1581e5a530dac67a749d94c179b230a3d0ace7b2afb410f`. Mouse confirmation imported one textured
+triangle hierarchy into one new group at cursor (3, 0, 0), without another mock
+generation or request. Existing selection stayed intact. Viewport clicking,
+front-view keyboard input and zoom worked after import. Blender exited cleanly
+and the normal-profile fingerprint was unchanged. The test-only app copy used
+a distinct bundle identifier and local ad-hoc signature for window targeting,
+with vendor executable code and the extension ZIP unchanged. Synthetic tests
+and desktop evidence do not establish paid provider acceptance, rig/animation or
+in-place editing, other OS desktop behavior, release readiness or #263 resolution.

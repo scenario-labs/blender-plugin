@@ -14,10 +14,16 @@ from ..core.api.catalog import GENERATION_LANES, LANE_KIND
 from ..core.api.errors import ScenarioError
 from ..core.jobs.records import JobRecord
 from ..core.jobs.store import JobOrigin, JobState, StoredJob
-from .job_session import ImageResultUncertain, MediaResultUncertain, ModelResultUncertain
+from .job_session import (
+    ImageResultUncertain,
+    MediaResultUncertain,
+    ModelResultUncertain,
+    WorldResultUncertain,
+)
 from .media_application import MEDIA_TYPES
 from .model_application import MODEL_MEDIA_TYPE
 from .model_application import validate_destination as validate_model_destination
+from .world_application import PanoramaError, WorldApplicationError
 
 
 def _snapshot(body):
@@ -66,6 +72,19 @@ class ModelApplicationApproval:
     kind: str = "model"
 
 
+@dataclass(frozen=True)
+class WorldApplicationApproval:
+    identifier: str
+    record: StoredJob
+    destination: JobOrigin
+    scene_name: str
+    scene: object = field(repr=False)
+    previous: object = field(repr=False)
+    asset_id: str
+    restore: bool = False
+    kind: str = "world"
+
+
 class ModelJobs:
     """Own ephemeral quotes and display projections, never another job engine."""
 
@@ -87,6 +106,8 @@ class ModelJobs:
         self._media_destinations = {}
         self._model_destinations = {}
         self._models = {}
+        self._world_destinations = {}
+        self._worlds = {}
 
     def quote(self, scene, model_id, body, *, lane="image"):
         if lane not in GENERATION_LANES:
@@ -188,6 +209,7 @@ class ModelJobs:
             destination = self._application_destinations.pop(request_id, None)
             media = self._media_destinations.pop(request_id, None)
             model = self._model_destinations.pop(request_id, None)
+            world = self._world_destinations.pop(request_id, None)
             try:
                 completions = self.session.drain(task=task)
                 if not completions:
@@ -195,7 +217,14 @@ class ModelJobs:
                 completion = completions[0]
                 if completion.error is not None:
                     raise completion.error
-                if command == "verify_model":
+                if command == "verify_world":
+                    self._validate_world(world)
+                    applied = self.session.apply_recovered_world(
+                        completion, destination=world.destination, asset_id=world.asset_id
+                    )
+                    self._worlds[request_id] = applied.application
+                    self._paused.discard(request_id)
+                elif command == "verify_model":
                     applied = self.session.apply_recovered_model(
                         completion,
                         destination=model.destination,
@@ -224,6 +253,18 @@ class ModelJobs:
                     self._images[request_id] = result.images
                     self._paused.discard(request_id)
                 self._next_poll[request_id] = time.monotonic() + 2.0
+            except WorldResultUncertain as error:
+                if error.application is not None:
+                    self._receipts[request_id] = error
+                    self._worlds[request_id] = error.application
+                self._pause(
+                    request_id, "World assignment needs receipt recovery; do not apply again"
+                )
+            except (PanoramaError, WorldApplicationError):
+                self._pause(
+                    request_id,
+                    "World import needs a supported, unchanged 2:1 PNG/EXR panorama; inspect the saved result",
+                )
             except ModelResultUncertain as error:
                 if error.application is not None:
                     self._receipts[request_id] = error
@@ -343,6 +384,13 @@ class ModelJobs:
             item.asset.media_type == MODEL_MEDIA_TYPE for item in record.results
         ):
             actions.append("import_model")
+        if state in (JobState.READY, JobState.APPLY_FAILED) and any(
+            item.asset.media_type in {"image/png", "image/exr", "image/x-exr"}
+            for item in record.results
+        ):
+            actions.append("apply_world")
+        if state == JobState.APPLIED and request_id in self._worlds:
+            actions.append("restore_world")
         if request_id in self._receipts:
             actions.append("retry_receipt")
         return tuple(actions)
@@ -355,13 +403,17 @@ class ModelJobs:
             or record is None
             or record.revision != expected_revision
             or action not in self.actions(record)
-            or action in {"import_images", "import_media", "import_model"}
+            or action
+            in {"import_images", "import_media", "import_model", "apply_world", "restore_world"}
         ):
             raise ScenarioError(0, "The saved job or available action changed; inspect it again")
         view = self._view(record)
         if action == "retry_receipt":
             pending = self._receipts[request_id]
-            if isinstance(pending, ModelResultUncertain):
+            if isinstance(pending, WorldResultUncertain):
+                outcome = self.session.retry_world_receipt(pending)
+                self._worlds[request_id] = outcome.application
+            elif isinstance(pending, ModelResultUncertain):
                 outcome = self.session.retry_model_receipt(pending)
                 self._models[request_id] = outcome.application
             elif isinstance(pending, MediaResultUncertain):
@@ -512,6 +564,48 @@ class ModelJobs:
         self._application_approvals[ticket.identifier] = ticket
         return ticket
 
+    def prepare_world_application(
+        self, request_id, expected_revision, scene, asset_id, *, restore=False
+    ):
+        record = self.store.get(request_id)
+        action = "restore_world" if restore else "apply_world"
+        if (
+            type(expected_revision) is not int
+            or record is None
+            or record.revision != expected_revision
+            or action not in self.actions(record)
+        ):
+            raise ScenarioError(0, "Inspect the current saved World result again")
+        if scene != bpy.context.scene or len(self._application_approvals) >= 128:
+            raise ScenarioError(0, "Choose the destination and finish existing reviews first")
+        if restore:
+            if self._worlds[request_id]._scene != scene:
+                raise ScenarioError(0, "Select the scene whose previous World should be restored")
+        elif not any(
+            item.asset.asset_id == asset_id
+            and item.asset.media_type in {"image/png", "image/exr", "image/x-exr"}
+            for item in record.results
+        ):
+            raise ScenarioError(0, "Choose one saved PNG or EXR panorama")
+        bpy.context.view_layer.update()
+        ticket = WorldApplicationApproval(
+            uuid.uuid4().hex,
+            record,
+            self.session.capture(scene),
+            scene.name,
+            scene,
+            scene.world,
+            asset_id or "",
+            restore,
+        )
+        self._application_approvals[ticket.identifier] = ticket
+        return ticket
+
+    def _validate_world(self, ticket):
+        self.session.validate_destination(ticket.destination)
+        if ticket.scene.world != ticket.previous:
+            raise ScenarioError(0, "The scene World changed; approve its replacement again")
+
     def prepare_asset_application(self, request_id, expected_revision, scene, asset_id):
         record = self.store.get(request_id)
         if record is not None and any(
@@ -525,27 +619,46 @@ class ModelJobs:
         ticket = (
             self._application_approvals.get(identifier) if isinstance(identifier, str) else None
         )
-        if not isinstance(ticket, (MediaApplicationApproval, ModelApplicationApproval)):
+        if not isinstance(
+            ticket, (MediaApplicationApproval, ModelApplicationApproval, WorldApplicationApproval)
+        ):
             return self.apply_saved_images(identifier)
         self._application_approvals.pop(identifier)
         if not self.session.active:
             raise ScenarioError(0, "Review the current connection and media destination again")
         record = self.store.get(ticket.record.intent.request_id)
         is_model = isinstance(ticket, ModelApplicationApproval)
-        action = "import_model" if is_model else "import_media"
+        is_world = isinstance(ticket, WorldApplicationApproval)
+        action = (
+            ("restore_world" if ticket.restore else "apply_world")
+            if is_world
+            else ("import_model" if is_model else "import_media")
+        )
         if record != ticket.record or action not in self.actions(record):
             raise ScenarioError(0, "The saved result changed; inspect the job again")
-        if is_model:
+        if is_world:
+            self._validate_world(ticket)
+        elif is_model:
             self.session.validate_destination(ticket.destination, cursor=ticket.cursor)
         else:
             self.session.validate_destination(ticket.destination, frame=ticket.frame)
         request_id = record.intent.request_id
+        if is_world and ticket.restore:
+            self._worlds[request_id].restore()
+            del self._worlds[request_id]
+            self._view(record).error = None
+            return request_id, None
         task = self.session.verify_results(request_id, expected_revision=record.revision)
-        if is_model:
+        if is_world:
+            self._world_destinations[request_id] = ticket
+        elif is_model:
             self._model_destinations[request_id] = ticket
         else:
             self._media_destinations[request_id] = ticket
-        self._commands[request_id] = ("verify_model" if is_model else "verify_media", task)
+        self._commands[request_id] = (
+            "verify_world" if is_world else "verify_model" if is_model else "verify_media",
+            task,
+        )
         self._automatic_application.discard(request_id)
         self._paused.add(request_id)
         view = self._view(record)

@@ -19,6 +19,8 @@ LABELS = {
     "import_images": "Import saved images",
     "import_media": "Add media strip",
     "import_model": "Import static model",
+    "apply_world": "Set panorama as World",
+    "restore_world": "Restore previous World",
 }
 
 
@@ -48,7 +50,8 @@ class SCENARIO_OT_recover_job(bpy.types.Operator):
         items=[
             (key, label, label)
             for key, label in LABELS.items()
-            if key not in {"import_images", "import_media", "import_model"}
+            if key
+            not in {"import_images", "import_media", "import_model", "apply_world", "restore_world"}
         ]
     )
 
@@ -227,10 +230,102 @@ class SCENARIO_OT_import_saved_model(bpy.types.Operator):
         return {"FINISHED"}
 
 
+class SCENARIO_OT_apply_saved_world(bpy.types.Operator):
+    bl_idname = "scenario.apply_saved_world"
+    bl_label = "Review scene World"
+    bl_description = "Confirm one saved panorama or restore the previous World in this session"
+
+    context_id: StringProperty(options={"HIDDEN"})
+    request_id: StringProperty(options={"HIDDEN"})
+    expected_revision: IntProperty(min=0, options={"HIDDEN"})
+    asset_id: StringProperty(options={"HIDDEN"})
+    purpose: EnumProperty(
+        items=[("world", "Set World", ""), ("restore_world", "Restore World", "")]
+    )
+    application_id: StringProperty(options={"HIDDEN", "SKIP_SAVE"})
+    scene_name: StringProperty(options={"HIDDEN", "SKIP_SAVE"})
+    world_name: StringProperty(options={"HIDDEN", "SKIP_SAVE"})
+
+    def invoke(self, context, event):
+        try:
+            jobs, approval = runtime.prepare_world_application(
+                self.context_id,
+                self.request_id,
+                self.expected_revision,
+                context.scene,
+                self.asset_id,
+                restore=self.purpose == "restore_world",
+            )
+            self._jobs = jobs
+            self.application_id, self.scene_name = approval.identifier, approval.scene_name
+            self.world_name = approval.previous.name if approval.previous else "None"
+        except Exception:
+            self.report({"ERROR"}, "Could not prepare the World change; inspect saved jobs")
+            return {"CANCELLED"}
+        return context.window_manager.invoke_props_dialog(self, width=520)
+
+    def draw(self, context):
+        self.layout.label(text=f"Scene: {self.scene_name}", icon="SCENE_DATA")
+        self.layout.label(text=f"Current World: {self.world_name}")
+        if self.purpose == "restore_world":
+            self.layout.label(text="Restore the original World kept by this session.")
+            self.layout.label(text="Changed World or image data prevents restoration.")
+        else:
+            self.layout.label(text="Use this 2:1 PNG/EXR as an equirectangular environment.")
+            self.layout.label(text="Pack the panorama and keep the original World unchanged.")
+            self.layout.label(text="PNG is LDR; EXR does not guarantee HDR or seamless content.")
+            self.layout.label(text="Restore remains available in this session while unchanged.")
+
+    def cancel(self, context):
+        jobs = getattr(self, "_jobs", None)
+        if jobs is not None:
+            jobs.discard_image_application(self.application_id)
+
+    def execute(self, context):
+        try:
+            runtime.apply_saved_result(self.context_id, self.application_id)
+        except Exception:
+            self.report({"ERROR"}, "World change was not started; review the destination again")
+            return {"CANCELLED"}
+        runtime.set_message(
+            "World restoration finished"
+            if self.purpose == "restore_world"
+            else "Verifying the saved panorama for the approved scene"
+        )
+        return {"FINISHED"}
+
+
 def draw_controls(layout, record):
     if not record.meta.get("shared_job"):
         return
     for action in record.meta.get("recovery_actions", ()):
+        if action in {"apply_world", "restore_world"}:
+            identifiers = (
+                [""]
+                if action == "restore_world"
+                else [
+                    key
+                    for key in record.asset_ids
+                    if record.asset_types.get(key) in {"image/png", "image/exr", "image/x-exr"}
+                ]
+            )
+            for index, asset_id in enumerate(identifiers, 1):
+                label = (
+                    "Restore previous World"
+                    if action == "restore_world"
+                    else f"Set panorama as World ({index})"
+                )
+                operator = layout.operator("scenario.apply_saved_world", text=label)
+                operator.context_id, operator.request_id = (
+                    runtime.state.job_context_id,
+                    record.local_id,
+                )
+                operator.expected_revision, operator.asset_id = (
+                    record.meta["saved_revision"],
+                    asset_id,
+                )
+                operator.purpose = "restore_world" if action == "restore_world" else "world"
+            continue
         if action == "import_model":
             for index, asset_id in enumerate(record.asset_ids, 1):
                 if record.asset_types.get(asset_id) != MODEL_MEDIA_TYPE:
@@ -283,6 +378,7 @@ CLASSES = (
     SCENARIO_OT_import_saved_images,
     SCENARIO_OT_import_saved_media,
     SCENARIO_OT_import_saved_model,
+    SCENARIO_OT_apply_saved_world,
 )
 
 

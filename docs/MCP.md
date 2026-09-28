@@ -62,6 +62,19 @@ claim. Rigged/animated, external-file and non-GLB results remain unsupported.
 See [static model import](MESH_APPLICATION.md#explicit-saved-static-glb-import)
 for bounds and recovery. This never replaces an existing mesh.
 
+For one unapplied saved panorama, pass `purpose: world` and its `asset_id` to
+`prepare_result_application`; show the scene and current World before approval.
+The same apply command verifies and packs a supported 2:1 PNG/EXR as an explicitly
+chosen equirectangular environment. It preserves the previous World. This is not
+a seamless-content or actual HDR-range guarantee.
+
+After a completed World assignment, `purpose: restore_world` prepares a separate
+session-local restore without an asset ID. Show that operation before consuming
+its handle. Edited owned World/image data or a changed destination prevents
+restoration. The completed job stays `applied` and cannot be replayed. Existing
+automatically imported Image jobs also stay ineligible for another claim. See
+[World approval and limits](WORLD_APPLICATION.md#saved-result-ui-and-mcp-approval).
+
 ## Typed local references
 
 `upload_reference` accepts a chosen local file and an optional `kind`: `image`
@@ -244,8 +257,8 @@ Do not edit this block by hand; run `make mcp-docs`. An asterisk marks a require
 | `reference_upload_status` | Read a reference upload's progress while the shared session advances its already authorized work. | `context_id`*: string<br>`reference_id`*: string | read-only annotation |
 | `list_reference_uploads` | Inspect saved uploads under the selected credential scope, including after restart. | none | read-only annotation |
 | `recover_reference_upload` | Explicitly inspect a known remote upload, cancel unclaimed preparation, or clean its finished private source copy. | `context_id`*: string<br>`request_id`*: string<br>`expected_revision`*: integer<br>`action`*: string (['refresh', 'cancel_prepared', 'cleanup']) | destructive annotation |
-| `prepare_result_application` | Prepare explicit import of saved PNG/EXR images, one selected video/audio strip, or one static GLB model into the current scene. | `context_id`*: string<br>`request_id`*: string<br>`expected_revision`*: integer<br>`asset_id`: string | read-only annotation |
-| `apply_result_application` | Apply saved images or insert the selected video/audio strip or static GLB model after the user approves the prepared destination. | `context_id`*: string<br>`application_id`*: string | destructive annotation |
+| `prepare_result_application` | Prepare explicit saved image/media/model import, panorama World replacement, or session-local World restoration. | `context_id`*: string<br>`request_id`*: string<br>`expected_revision`*: integer<br>`asset_id`: string<br>`purpose`: string (['import', 'world', 'restore_world']) | read-only annotation |
+| `apply_result_application` | Apply or restore saved results after the user approves the prepared destination and operation. | `context_id`*: string<br>`application_id`*: string | destructive annotation |
 | `recover_local_job` | Explicitly recover a saved job without repeating generation or importing into another scene. | `context_id`*: string<br>`request_id`*: string<br>`expected_revision`*: integer<br>`action`*: string (['refresh', 'resume', 'cancel', 'recover_download', 'retry_receipt']) | destructive annotation |
 | `list_local_jobs` | Inspect durable local jobs for the selected API-key pair without network requests. | none | read-only annotation |
 | `cancel_prepared_job` | Cancel an unsubmitted durable local intent without contacting Scenario. | `context_id`*: string<br>`request_id`*: string<br>`expected_revision`*: integer | destructive annotation |
@@ -321,6 +334,7 @@ behavior interchangeable. Remote names below were checked against the
 | Review saved Image import | `prepare_result_application(context_id, request_id, expected_revision)` | Local destination capture; show the returned scene and images for approval |
 | Review one saved video/audio strip | `prepare_result_application(context_id, request_id, expected_revision, asset_id)` | Local scene/frame capture; show returned destination for approval |
 | Review one saved static GLB | `prepare_result_application(context_id, request_id, expected_revision, asset_id)` | Local scene/cursor capture; show the returned destination for approval |
+| Review panorama World or restore | `prepare_result_application(context_id, request_id, expected_revision, purpose, asset_id)` | Use `world` with one asset or `restore_world` for the retained session handle |
 | Apply approved saved results | `apply_result_application(context_id, application_id)` | Local verified import or strip insertion into the captured destination; no platform call |
 | Wait | `wait_for_job(job_id or id, timeout)`, one job without blocking Blender | `jobs_wait` |
 | Reference upload | `upload_reference(path, kind)` or `capture_reference(source)`, then `reference_upload_status(context_id, reference_id)` until imported | `upload_asset`, `upload_asset_complete` for an existing file |
@@ -414,6 +428,6 @@ still use the manager-owned record so active waits observe its progress.
 
 Render lanes take the explicit model parameters supplied by the caller. They do
 not run the UI's capture, style decoration or Prompt Spark preparation. Non-image
-UI capture/Spark preparation, in-place mesh editing, material/World application and Film
+UI capture/Spark preparation, in-place mesh editing, material application, already-imported World reuse and Film
 remain integration work under #65/#68. This change does not complete their
 end-to-end acceptance or authorize release.

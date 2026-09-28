@@ -475,7 +475,16 @@ Both dry run and dispatch use the same normalized payload, exact response bytes,
 credential scope and zero-retry client. Submission requires the issued quote and
 a committed local intent before one service call. The command returns a durable
 job receipt; it does not deliver inline prompt text or resolve prompt assets.
-Prompt result delivery, native approval controls, prototype Spark/LLM replacement
-and live service acceptance remain separate work. Do not activate these commands
+Full prompt result retrieval now uses public `jobs.retrieve` and `assets.retrieve`
+through the shared coordinator. Native approval/application controls, prototype
+Spark/LLM replacement and live service acceptance remain separate work. Do not activate these commands
 in paid UI/MCP paths until result delivery and explicit approval are integrated.
 No automatic LLM fallback or remote prompt cancellation is enabled.
+
+
+Prompt result recovery reads the successful job's `metadata.output.prompts` and
+resolves any text asset references. The raw-response wrapper preserves these
+fields even when the generated response model does not enumerate their contents.
+No custom endpoint or SDK extension is required. Complete preview metadata is
+accepted only with `properties.hasFullPreview == true`; other text uses the
+bounded signed-storage protocol described in [result transfers](RESULT_TRANSFERS.md).

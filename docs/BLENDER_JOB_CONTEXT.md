@@ -415,3 +415,10 @@ file, target or account changes prevent preparing/submitting a stale quote.
 These programmatic commands do not add UI buttons, authorize automatic paid
 Spark preparation, or apply generated prompt text. Result retrieval/application
 and replacing the prototype Prompt Spark entry points remain separate.
+
+
+`read_prompt_results` uses the same record-command admission and completion
+queue. `PromptResults` carries its original stored record through scope/origin
+checks; `deliver` resolves the captured scene/target immediately before a caller's
+callback. Reading text does not itself mutate a prompt field, mark a job applied,
+or grant permission to redirect a recovered result to the current scene.

@@ -17,7 +17,7 @@ from bpy.app.handlers import persistent
 
 from ..core.jobs.coordinator import JobCoordinator, OriginQuote, RemoteSnapshot
 from ..core.jobs.origins import OriginRevisions
-from ..core.jobs.results import VerifiedResults
+from ..core.jobs.results import PromptResults, VerifiedResults
 from ..core.jobs.store import JobOrigin, StoredJob
 from ..core.jobs.workers import JobWorkers
 from .image_application import ImageApplicationError, apply_images
@@ -245,6 +245,10 @@ class JobSession:
         """Queue explicit known model-job cancellation under its original scope."""
         return self._record_command("cancel_remote", request_id, expected_revision)
 
+    def read_prompt_results(self, request_id, *, expected_revision):
+        """Read full text off-thread; delivery still checks the originating scene."""
+        return self._record_command("read_prompt_results", request_id, expected_revision)
+
     def load_results(self, request_id, *, expected_revision):
         """Queue SDK metadata retrieval into the original job's durable manifest."""
         return self._record_command("load_results", request_id, expected_revision)
@@ -359,7 +363,7 @@ class JobSession:
                 result = task.result()
                 record = (
                     result.record
-                    if isinstance(result, (RemoteSnapshot, VerifiedResults))
+                    if isinstance(result, (RemoteSnapshot, VerifiedResults, PromptResults))
                     else result
                 )
                 if isinstance(record, OriginQuote):

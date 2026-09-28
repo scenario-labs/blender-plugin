@@ -414,8 +414,8 @@ Caller parameter edits after queueing cannot change the quoted request. Scene,
 file, target or account changes prevent preparing/submitting a stale quote.
 The `PromptJobs` facade now owns ephemeral New/Rewrite/Translate UI handles,
 sharing this session and worker pool. `quote_translate` has the same captured-origin
-contract. No extra thread pool or job store is created. Automatic render Spark
-preparation is still separate.
+contract. No extra thread pool or job store is created. Render look preparation
+uses this same facade, with uploaded-reference identity bound to its quote.
 
 
 `read_prompt_results` uses the same record-command admission and completion
@@ -436,3 +436,25 @@ MCP `read_prompt_result` checks the current credential context and stored revisi
 but returns text without changing a scene. This permits explicit recovery when
 the original field has changed. Saved prompt/translation jobs offer status refresh,
 not image/mesh download or import actions.
+
+### Render look preparation
+
+An empty render look with Spark enabled requests only a free prompt quote after
+its references are uploaded. It never authorizes a paid call. The existing prompt
+approval button consumes that quote once; result delivery fills the look and
+invalidates the final render price. Rendering still needs its own exact quote and
+approval. Repeated price refreshes reuse the pending look action; errors and
+uncertainty do not automatically start another attempt.
+
+`render_prompt_jobs.parameters` uses the uploaded scene still followed by style
+images for Render Image. Render Video requires an enabled uploaded first frame;
+only that frame and style images enter Spark's `images`, never the video asset.
+The selected model, look, ordered references and their roles, Spark toggle and
+first-frame identity are checked again at approval and delivery. Pending files,
+wrong-scope references and more than 15 images fail before the prompt dry run.
+The old unbound render-result event cannot overwrite any scene's look.
+
+Native and MCP New/Rewrite on a render lane use this same preparation. A read-only
+quote can become stale when the user edits references or saves/changes the scene;
+request a fresh price explicitly rather than replaying it. This does not add an
+automatic scene-still capture for Render Video when no first frame is available.

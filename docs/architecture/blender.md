@@ -52,3 +52,15 @@ versions and validate the installed ZIP with the native test runner. Syntax
 compatibility, a manifest declaration and ZIP validation are separate from
 successful native execution. UI changes additionally need actual focus,
 keyboard, viewport and screenshot review; headless tests cannot establish that.
+
+## Saved media strips
+
+[`media_application.py`](../../scenario/blender/media_application.py) is the
+shared saved-result primitive for MP4/WebM movie and MP3/WAV/OGG sound strips.
+It snapshots and rehashes a bounded local receipt before decoding on Blender's
+main thread, keeps existing strips and timing unchanged, and rolls back only
+new data. Its persistent file remains necessary for the strip. The
+[JobSession command](../BLENDER_JOB_CONTEXT.md#explicit-saved-video-and-audio-application)
+adds exact scene/frame approval, a durable claim and receipt-only recovery.
+Prototype video/audio operators remain separate; they are not the entry points
+for newly generated shared jobs.

@@ -289,6 +289,24 @@ def prepare_image_application(context_id, request_id, expected_revision, scene):
     return jobs, jobs.prepare_image_application(request_id, expected_revision, scene)
 
 
+def prepare_media_application(context_id, request_id, expected_revision, scene, asset_id):
+    jobs = ensure_model_jobs()
+    if context_id != state.job_context_id:
+        raise ScenarioError(0, "The selected job context changed; list local jobs again")
+    return jobs, jobs.prepare_media_application(request_id, expected_revision, scene, asset_id)
+
+
+def apply_saved_result(context_id, application_id):
+    jobs = ensure_model_jobs()
+    if context_id != state.job_context_id:
+        raise ScenarioError(0, "The selected job context changed; list local jobs again")
+    request_id, task = jobs.apply_saved_result(application_id)
+    view = jobs.views[request_id]
+    if not any(existing is view for existing in state.jobs_view):
+        state.jobs_view.insert(0, view)
+    return jobs, request_id, task
+
+
 def apply_saved_images(context_id, application_id):
     jobs = ensure_model_jobs()
     if context_id != state.job_context_id:

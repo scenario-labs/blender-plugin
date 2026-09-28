@@ -151,7 +151,8 @@ must be uploaded before pricing/submission. Local MCP now uses the
 generation forms expose **Upload reference** for typed local files and image
 stills, with guarded lane/input attachment and saved inspection.
 Render forms now prepare scene snapshots and optional first-frame uploads in
-explicit role-bound slots. Non-image result application remains separate.
+explicit role-bound slots. Video/audio result application is explicit; mesh and
+material application remain separate integration.
 Explicit viewport/camera clips and selected-mesh GLB uploads now share the typed
 reference lifecycle through both forms and MCP. They stage private snapshots;
 clips preserve the preview/scene range without duration padding, and mesh export
@@ -193,6 +194,11 @@ materials, importing meshes or inserting media strips. Status includes the saved
 result manifest and receipt presence, without returning paths for unverified
 application. Restarted display records are generic model jobs; the original lane
 is not persisted. Explicit PNG/EXR import remains available by result type.
+For supported video/audio, **Add video/audio strip** and MCP
+`prepare_result_application(asset_id=...)` capture one asset and the selected
+scene/frame for approval. The shared command verifies local receipts and claims
+application before inserting one strip. Receipt retry never repeats insertion;
+see [saved media application](../BLENDER_JOB_CONTEXT.md#explicit-saved-video-and-audio-application).
 Render-lane MCP parameters are caller-supplied, without UI capture/style/Spark
 preparation. Do not describe this slice as
 complete generation, supported release acceptance, or completion of #65.

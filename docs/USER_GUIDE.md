@@ -131,11 +131,11 @@ From top to bottom:
 - **Account strip**: the connection or credential status, a refresh button for the model list and a shortcut to the preferences. Account/project discovery and switching remain subject to the [known limitations](KNOWN_LIMITATIONS.md).
 - **Model**: a button showing the current model. It opens the model picker, laid out like Scenario's "Choose a Model": modality tabs (Image, Video, Audio, 3D) and the web app's category chips (Image: All, Generate, Edit, Expand, Upscale, Vectorize, Remove Background, Tools; Video: All, Generate, Edit, Lipsync, Upscale, Reframe, Remove Background, Tools; Audio: All, Speech, Music, SFX, Tools; 3D: All, Generate, Splat, Remesh, Retexture, UV Unwrap, Rigging, Animate, Parts), a search field, the list with thumbnails and the description of the highlighted model. Availability depends on the selected credentials and the model catalog. See the [known limitations](KNOWN_LIMITATIONS.md) for trained/custom-model integration boundaries. Picking a model of another modality switches to that lane. The small arrow next to the button is the plain dropdown.
 - **Prompt**: its own box, like Scenario's. The prompt lives in the field; drag the small size control in the header to make the box taller. Below it, three equal full-width buttons with Scenario's icons: **New** (dice, Prompt Spark writes a prompt for the model), **Rewrite** (sparkles, Prompt Spark improves yours), and **Translate** (to English). These helpers can spend credits; inspect their controls and tooltips before use. They run in the background; the field updates when the answer arrives. The trash button clears the prompt and is disabled when it is empty.
-- **References**: one box per file input the model accepts (image, video, audio, 3D), with a thumbnail per file. Add offers File, Viewport still, Camera still, Viewport clip, Camera clip and Render Result. Choose **Upload reference** to capture and upload a still or clip before pricing. For an empty 3D input, **Upload selected mesh** exports and uploads the current selection. Render-lane pinned capture preparation remains separate integration.
+- **References**: one box per file input the model accepts (image, video, audio, 3D), with a thumbnail per file. Add offers File, Viewport still, Camera still, Viewport clip, Camera clip and Render Result. Choose **Upload reference** to capture and upload a still or clip before pricing. For an empty 3D input, **Upload selected mesh** exports and uploads the current selection. Render forms provide **Capture and upload scene** and, for a chosen video first frame, **Upload first frame**. Generate never captures or uploads implicitly.
 - **Parameters**: built from the model's own schema. A checkbox in front of an optional parameter means "send this value"; unchecked, Scenario uses its default. `(cost)` marks parameters that change the price.
 - **Generate (N CU)**: the current exact server estimate for this form, refreshed as you edit (a dry run, free). Generate consumes that unchanged quote once and saves the submission for recovery. Pending files, captures or Prompt Spark preparation must finish first; a partial price cannot authorize generation.
 
-New form generations appear in the shared saved jobs. Image imports supported PNG/EXR results into its original scene; other lanes retain downloaded results for explicit application. The lane descriptions below also describe retained prototype capabilities whose shared result application is still being integrated. Render pinned captures, Prompt Spark preparation, result application and Film acceptance remain release blockers.
+New form generations appear in the shared saved jobs. Image imports supported PNG/EXR results into its original scene; other lanes retain downloaded results for explicit application. The lane descriptions below also describe retained prototype capabilities whose shared result application is still being integrated. Automatic Prompt Spark preparation, result application and Film acceptance remain release blockers.
 
 ![The model picker: Image, Video, Audio and 3D tabs with icons, category chips, search, the model list and the description of GPT Image 2](images/model-picker.png)
 
@@ -186,8 +186,8 @@ example, a Video model's audio input accepts an audio file, not a still capture.
 An upload stays attached to its original form when you change tabs. Pending
 uploads must finish or be reviewed before generation can continue. Still captures
 serve image inputs, viewport/camera clips serve video inputs, and **Upload selected
-mesh** creates a GLB snapshot for an empty 3D input. Render-lane pinned capture
-and Prompt Spark preparation remain separate integration.
+mesh** creates a GLB snapshot for an empty 3D input. Render forms use explicit scene/first-frame slots; automatic Prompt Spark
+preparation remains separate integration.
 
 This pre-release path imports supported PNG and scanline OpenEXR results as packed
 image datablocks. Select them in Blender's Image Editor. Saved-job controls can
@@ -263,30 +263,30 @@ for formats supported by their respective players.
 ### Render Image
 Your view, rendered as a finished still by an image edit model. Everything that shapes the look lives in the **Rendering Style** section (always open): the look prompt, the Prompt Spark options and the style images (the capture is image 1).
 
-- **Scene to render**: Viewport (what you see) or Scene camera; Grey clay capture if the model should ignore your materials.
+- **Scene to render**: choose Viewport or Scene camera and optional Grey clay capture, then **Capture and upload scene**. Wait for the uploaded snapshot before reviewing its generation price. Remove the reference to capture a new view; later scene edits do not change the uploaded image.
 - **Model**: GPT Image 2 by default, then Gemini 3.1, Seedream 5.0 Pro, FLUX 2 (Max / Pro), Reve Remix, Qwen Edit 2511, MAI Image 2.5 Pro Edit, Grok Imagine Image 2.0, Z-Image; any other img2img model through the picker. Inputs and parameters that belong to another use of the model (Gemini's video input and frame rate) are hidden.
-- **Look**: what the render should look like ("weathered steampunk copper, overcast light"). Leave it empty and **Prompt Spark** writes it: a capture of the view is sent to Scenario's prompt writer to describe the materials, lighting and mood. This can spend credits; the resulting look is shown on the lane and kept with the result.
+- **Look**: describe the result, for example "weathered steampunk copper, overcast light". An empty look can use the photoreal default when **Automatic Prompt Spark** is off. Automatic Spark preparation is currently unavailable; leaving it enabled with an empty look blocks pricing and generation.
 - **Style images**: optional references for palette, materials and lighting. The capture is always image 1.
-- The prompt the model receives states the role of every input: image 1 is the exact scene (every object, its position, the camera, the framing and the perspective are frozen; nothing may be added, moved or removed), the other images are look references only and none of their content may appear. The result lands in Generations and becomes the first frame of Render Video.
+- The prompt the model receives states the role of every input: image 1 is the exact scene (every object, its position, the camera, the framing and the perspective are frozen; nothing may be added, moved or removed), the other images are look references only and none of their content may appear. The shared job saves verified results for explicit application; automatic Render Image-to-Video result handoff remains separate integration.
 
 ![Render Image lane: Scene to render, model Gemini 3.1, the Look field, style images with the pinned capture row, parameters and Generate](images/panel-render-image.png)
 
-*Render Image: the capture is pinned as image 1, style images follow.*
+*Earlier Render Image layout. The current form uses Capture and upload scene; the uploaded scene remains image 1 and style images follow.*
 
 ### Render Video
 A playblast of your timeline, rendered as a finished clip by a video model that takes a reference video. The look, the style images (reference frames) and the video first frame live in the **Rendering Style** section (always open); the model's own first/last-frame inputs are handled there, so only the reference frames are offered.
 
-- **Clip to render**: Viewport clip or Camera clip, frame range and duration, Grey clay capture, Match timeline.
+- **Clip to render**: choose Viewport or Scene camera, build any camera path, review the displayed preview/scene range, then **Capture and upload scene**. The silent 1280x720 clip uses that range without implicit padding or trimming. Match timeline links duration settings; it does not alter an uploaded snapshot.
 - **Camera path**: the planner works with editable markers. Type the shot you want ("slow ellipse 2, 8 s, 35mm") and press **Plan**, or pick a move from the library: Orbits (orbit, orbit high, orbit low, spiral in), Ellipses (three variants), Dolly & truck (dolly in / out, truck left / right, pedestal up / down, zoom in), Crane & arcs (crane, arc left / right, top down), Other (pan, flyover). **Place markers** turns the move into numbered `Shot` markers around the subject (small cameras; move them, or select one to set its own focal length and hold time). End a description with "hold 2 s", "pause 2" or "stay for 3 seconds" to pause on arrival. Select a Shot marker to edit its **Hold at Shot N (s)** field. You can also add markers yourself with **At cursor** and **From view**. Set **Duration (s)**, **Focal (mm)** and the **Start frame**; the resulting frame range is shown. **Closed loop** (on for orbits and ellipses) brings the camera back exactly to its first marker. **Build camera path** creates the `Scenario Shot Camera`, keyframes it through the markers, aims it at the subject and sets the frame range; building over an existing path asks first. **Clear path** removes the camera, target and markers. **Preview** plays it in camera view. Camera clip then records exactly that move.
 - **Model**: Seedance 2.0, Minimax H3, Seedance 2.5 and Mini, Runway Aleph 2, Happy Horse Video Edit, Gemini Omni Edit, Grok Edit Video first; every other video2video model through the picker. These models accept the video plus images, often many.
-- **Look**: as in Render Image; empty means Prompt Spark writes it from a still of the first frame.
-- **First frame**: the latest Render Image result is proposed automatically; the toggle sends it as the first frame (Seedance's `image`, H3's `firstFrameImage`) so the clip starts exactly from your rendered still. Any image result offers **Use as video first frame**.
+- **Look**: as in Render Image. Enter a look, or disable automatic Spark to use the photoreal default.
+- **First frame**: choose an image with the file field or its folder picker, then choose **Upload first frame**. The field is visible even before an image is selected. Once uploaded, it is sent to the model's first-frame input (or first image in its image-reference array). Disabling or clearing the chosen first frame omits it from the request and preserves the upload for inspection. Choosing a different path requires removing the old slot and uploading again. Shared result-to-first-frame handoff remains separate integration.
 - **Style images**: extra look references.
 - The prompt names the playblast as the exact scene, camera move and timing to reproduce, the first frame as the look to match through the whole clip, and the other images as style only (with `@video1` / `@image1` tags for Seedance, plain words for the others).
 
 ![Render Video lane: Clip to render, the Camera path planner with an orbit built, Seedance 2.0, the Look field with Prompt Spark, the first frame row and style images](images/panel-render-video.png)
 
-*Render Video with an orbit path built and Prompt Spark ready to write the look.*
+*Earlier Render Video layout. Current forms require explicit scene/first-frame uploads; automatic Spark preparation remains unavailable.*
 
 ### Blockout
 
@@ -356,9 +356,8 @@ references. Read the current estimate instead of relying on prices in screenshot
 A **Generate (N CU)** quote describes the current form; **from N CU** excludes
 references that have not been uploaded. **Price shown after the upload** means
 required mesh or capture inputs are still missing from the estimate. Prompt
-helpers and Blockout design/refinement are separate paid operations. An empty
-Render Image/Video look can also invoke Prompt Spark; inspect that setting before
-generating. See the [known limitations](KNOWN_LIMITATIONS.md) for current spend
+helpers and Blockout design/refinement are separate paid operations. Automatic Render Image/Video Spark preparation is unavailable; an empty look
+requires that option to be disabled before quoting. See the [known limitations](KNOWN_LIMITATIONS.md) for current spend
 confirmation and shared-runtime boundaries.
 
 ## Troubleshooting

@@ -146,7 +146,7 @@ def draw_reference_row(box, lane_state, index, ref):
 
 
 def draw_references(
-    layout, lane_state, schema, title_for=None, fixed_first=None, hide=(), boxed=True
+    layout, lane_state, schema, title_for=None, fixed_first=None, hide=(), boxed=True, skip_refs=()
 ):
     """One file input per group. `fixed_first` names an implicit first entry (the capture, the selected mesh) that
     the lane adds itself; `title_for` overrides the title; `hide` skips inputs entirely. `boxed=False` draws flat,
@@ -224,6 +224,8 @@ def draw_references(
                 text="Select a mesh in the viewport to animate it, or Upload one", icon="INFO"
             )
         for index, ref in enumerate(lane_state.references):
+            if ref.as_pointer() in skip_refs:
+                continue
             if ref.param_name != spec.name:
                 continue
             draw_reference_row(box, lane_state, index, ref)

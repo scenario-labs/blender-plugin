@@ -150,7 +150,8 @@ must be uploaded before pricing/submission. Local MCP now uses the
 [shared reference upload path](../SDK_UPLOADS.md#active-reference-uploads);
 generation forms expose **Upload reference** for typed local files and image
 stills, with guarded lane/input attachment and saved inspection.
-Render pinned captures and non-image result application remain separate.
+Render forms now prepare scene snapshots and optional first-frame uploads in
+explicit role-bound slots. Non-image result application remains separate.
 Explicit viewport/camera clips and selected-mesh GLB uploads now share the typed
 reference lifecycle through both forms and MCP. They stage private snapshots;
 clips preserve the preview/scene range without duration padding, and mesh export
@@ -183,7 +184,9 @@ review-required state or timeout, and rejects a changed credential context.
 An unresumed restarted record is returned immediately.
 Native model forms no longer dispatch through the prototype manager. Files,
 captures and Spark preparation must finish before the final quote. Render forms
-remain unavailable while shared capture/preparation is incomplete. Non-image model jobs now
+require uploaded scene/first-frame snapshots, then use the same quote and submit
+path. An empty look with automatic Spark enabled remains blocked; users can enter
+a look or disable automatic Spark for the default look. Non-image model jobs now
 use the same durable submission, polling, download, cancellation and recovery
 commands. They stop at saved `ready` results without automatically assigning
 materials, importing meshes or inserting media strips. Status includes the saved

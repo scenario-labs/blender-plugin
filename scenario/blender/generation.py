@@ -368,7 +368,12 @@ def build_request(scene, lane, for_estimate=False):
 
     lane_state = scene.scenario.lane_state(lane)
     model_id = lane_state.model_id
-    if error := scope_error(lane_state):
+    references = lane_state.references
+    if lane in RENDER_LANES:
+        from .render_references import active_references
+
+        references = active_references(lane_state)
+    if error := scope_error(lane_state, references=references):
         return Request(lane, lane_kind(lane), model_id, {}, errors=[error])
     schema = schema_for(model_id)
     if schema is None:
@@ -378,7 +383,11 @@ def build_request(scene, lane, for_estimate=False):
             scene, lane_state, schema
         )  # base Video: the model duration follows the timeline
     values, enabled = params_ui.collect_values(lane_state, schema)
-    refs = params_ui.collect_file_refs(lane_state, schema)
+    refs = {
+        spec.name: [ref for ref in references if ref.param_name == spec.name]
+        for spec in schema.specs
+        if spec.is_file
+    }
     files, array_params, asset_ids, captures = {}, set(), {}, []
     # A model's 3D mesh input is fed by the scene selection automatically, in every lane: the Edit lane requires it,
     # elsewhere (a text-to-motion model's character mesh) it is optional but still used when something is selected.

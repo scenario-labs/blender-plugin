@@ -6,7 +6,8 @@ commands for the shared runtime under #65. It connects the scoped
 worker pool, timer, UI ownership or bpy calls. UI/MCP model quote and submission
 use these commands through [ModelJobs](../scenario/blender/model_jobs.py).
 Native forms require completed reference/preparation inputs before quoting;
-clip/mesh/render capture and Prompt Spark integration remain open.
+files, mesh/clip snapshots and render scene/first-frame references use explicit
+upload commands. Automatic Prompt Spark preparation remains separate.
 
 ## Prepare, claim, send, acknowledge
 

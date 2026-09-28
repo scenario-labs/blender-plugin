@@ -4,7 +4,7 @@
 
 import json
 import unittest
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import bpy
 from helpers import FIXTURES, isolated_manager, reset_scene, submodule
@@ -39,6 +39,17 @@ class RenderLanesTests(unittest.TestCase):
         self.image_lane = self.scene.scenario.lane_state("render_image")
         self.video_lane = self.scene.scenario.lane_state("render_video")
 
+    def uploaded(self, lane_name, role="scene", asset="uploaded-scene"):
+        prepared = submodule("blender.render_references")
+        lane = self.scene.scenario.lane_state(lane_name)
+        spec = prepared.target(lane_name, self.generation.schema_for(lane.model_id), role)
+        ref = lane.references.add()
+        ref.param_name, ref.source, ref.asset_id = spec.name, "ASSET", asset
+        ref[prepared.ROLE] = role
+        if role == prepared.FIRST_FRAME:
+            ref.filepath = lane.first_frame_path
+        return ref
+
     def test_lane_tabs_have_no_generations_or_mcp(self):
         props = submodule("blender.props")
         ids = [item[0] for item in props.LANE_ITEMS]
@@ -62,17 +73,17 @@ class RenderLanesTests(unittest.TestCase):
         self.image_lane.model_id = "model_google-gemini-3-1-flash"
         self.image_lane.prompt = "weathered steampunk copper"
         style = self.image_lane.references.add()
-        style.param_name, style.source, style.filepath = (
+        style.param_name, style.source, style.asset_id = (
             "referenceImages",
-            "FILE",
-            str(FIXTURES / "patina-copper-512" / "albedo.png"),
+            "ASSET",
+            "uploaded-style",
         )
+        self.uploaded("render_image")
         request = self.generation.build_request(self.scene, "render_image")
         self.assertEqual(request.errors, [])
         self.assertEqual(request.kind, "image")
-        self.assertEqual(request.captures[0]["param"], "referenceImages")
-        self.assertTrue(request.captures[0]["first"])
-        self.assertEqual(request.captures[0]["source"], "CAMERA")
+        self.assertEqual(request.captures, [])
+        self.assertEqual(request.body["referenceImages"], ["uploaded-scene", "uploaded-style"])
         prompt = request.body["prompt"]
         self.assertTrue(prompt.startswith("Image 1 is a screenshot of a 3D viewport"))
         self.assertIn("weathered steampunk copper", prompt)
@@ -84,10 +95,11 @@ class RenderLanesTests(unittest.TestCase):
         self.image_lane.model_id = "model_google-gemini-3-1-flash"
         self.image_lane.prompt = ""
         self.image_lane.capture_source = "VIEWPORT"
+        self.uploaded("render_image")
         request = self.generation.build_request(self.scene, "render_image")
-        self.assertEqual(request.errors, [])
+        self.assertIn("Prompt Spark", request.errors[0])
         self.assertEqual(request.spark, {"kind": "image", "style_count": 0})
-        self.assertEqual(request.captures[0]["source"], "VIEWPORT")
+        self.assertEqual(request.captures, [])
         self.assertIn("photorealistic", request.body["prompt"])
         self.image_lane.spark_enabled = False
         request = self.generation.build_request(self.scene, "render_image")
@@ -98,14 +110,15 @@ class RenderLanesTests(unittest.TestCase):
         self.video_lane.prompt = "claymation"
         self.video_lane.first_frame_path = str(FIXTURES / "patina-copper-512" / "albedo.png")
         self.scene.frame_start, self.scene.frame_end = 1, 48
+        self.uploaded("render_video")
+        self.uploaded("render_video", "first_frame", "uploaded-first")
         request = self.generation.build_request(self.scene, "render_video")
         self.assertEqual(request.errors, [])
         self.assertEqual(request.kind, "video")
-        self.assertEqual(request.captures[0]["param"], "referenceVideos")
-        self.assertEqual(request.captures[0]["source"], "CAMERA_CLIP")
-        self.assertEqual(
-            request.files["image"], [self.video_lane.first_frame_path]
-        )  # Seedance's single image input is the first frame
+        self.assertEqual(request.captures, [])
+        self.assertEqual(request.body["referenceVideos"], ["uploaded-scene"])
+        self.assertEqual(request.body["image"], "uploaded-first")
+        self.assertEqual(request.files, {})
         prompt = request.body["prompt"]
         self.assertIn("@video1 is a playblast", prompt)
         self.assertIn("@image1 shows how the finished first frame must look", prompt)
@@ -117,22 +130,74 @@ class RenderLanesTests(unittest.TestCase):
         self.video_lane.model_id = "model_minimax-h3"
         self.video_lane.prompt = "oil painting"
         self.video_lane.first_frame_path = ""
+        self.uploaded("render_video")
         request = self.generation.build_request(self.scene, "render_video")
-        self.assertEqual(request.captures[0]["param"], "referenceVideos")
+        self.assertEqual(request.body["referenceVideos"], ["uploaded-scene"])
         prompt = request.body["prompt"]
         self.assertTrue(prompt.startswith("The reference video is a playblast"))
         self.assertNotIn("@video1", prompt)
         self.assertIsNone(request.spark)
 
-    def test_empty_video_look_adds_a_spark_still_capture(self):
+    def test_empty_video_look_blocks_until_spark_has_separate_approval(self):
         self.video_lane.model_id = "model_bytedance-seedance-2-0"
         self.video_lane.prompt = ""
+        self.uploaded("render_video")
         request = self.generation.build_request(self.scene, "render_video")
-        roles = [c.get("role") for c in request.captures]
-        self.assertIn("spark", roles)
+        self.assertEqual(request.captures, [])
+        self.assertIn("Prompt Spark", request.errors[0])
         self.assertEqual(request.spark["kind"], "video")
 
-    def test_render_image_result_becomes_the_video_first_frame(self):
+    def test_first_frame_picker_is_drawn_when_empty(self):
+        self.video_lane.model_id = "model_bytedance-seedance-2-0"
+        layout = MagicMock()
+        self.assertEqual(self.video_lane.first_frame_path, "")
+        self.render_lanes._draw_first_frame(
+            layout, self.video_lane, self.generation.schema_for(self.video_lane.model_id)
+        )
+        layout.row.return_value.prop.assert_any_call(self.video_lane, "first_frame_path", text="")
+        self.assertEqual(self.video_lane.bl_rna.properties["first_frame_path"].subtype, "FILE_PATH")
+        self.assertEqual(self.video_lane.first_frame_path, "")
+
+    def test_result_reference_action_preserves_prepared_single_file_render_slots(self):
+        catalog = submodule("core.api.catalog")
+        form = submodule("blender.reference_form")
+        for lane_name, role in (("render_image", "scene"), ("render_video", "first_frame")):
+            with self.subTest(lane=lane_name):
+                lane = self.scene.scenario.lane_state(lane_name)
+                model = catalog.ModelRecord.from_api(
+                    {
+                        "id": "fixture-single-render-" + lane_name,
+                        "name": "Single render input",
+                        "type": "custom",
+                        "capabilities": [
+                            "img2img" if lane_name == "render_image" else "video2video"
+                        ],
+                        "inputs": [{"name": "image", "type": "file", "kind": "image"}]
+                        + (
+                            [{"name": "video", "type": "file", "kind": "video"}]
+                            if lane_name == "render_video"
+                            else []
+                        ),
+                    }
+                )
+                self.generation.set_catalog([model], [model])
+                lane.model_id = model.id
+                ref = lane.references.add()
+                ref.param_name, ref.source, ref.asset_id = "image", "ASSET", "prepared-asset"
+                ref[form.RENDER_ROLE] = role
+                lane.estimate_key, lane.estimate_state = "approved-quote", "READY"
+                with self.assertRaisesRegex(RuntimeError, "prepared render reference"):
+                    bpy.ops.scenario.use_as_reference(
+                        filepath=str(FIXTURES / "patina-copper-512" / "albedo.png"),
+                        target=lane_name,
+                    )
+                self.assertEqual(len(lane.references), 1)
+                self.assertEqual(ref.asset_id, "prepared-asset")
+                self.assertEqual(ref.get(form.RENDER_ROLE), role)
+                self.assertEqual(lane.estimate_key, "approved-quote")
+                self.assertEqual(lane.estimate_state, "READY")
+
+    def test_render_image_result_preserves_the_video_first_frame_and_quote(self):
         records = submodule("core.jobs.records")
         job = records.JobRecord.new(
             lane="render_image",
@@ -143,8 +208,15 @@ class RenderLanesTests(unittest.TestCase):
         )
         job.files = [str(FIXTURES / "patina-copper-512" / "albedo.png")]
         job.status = "success"
+        self.video_lane.first_frame_path = "chosen-first-frame.png"
+        self.video_lane.estimate_key = "approved-video-quote"
+        self.video_lane.estimate_state = "READY"
+        self.video_lane.estimate_dirty_at = 0
         self.render_lanes.on_result(job)
-        self.assertEqual(self.video_lane.first_frame_path, job.files[0])
+        self.assertEqual(self.video_lane.first_frame_path, "chosen-first-frame.png")
+        self.assertEqual(self.video_lane.estimate_key, "approved-video-quote")
+        self.assertEqual(self.video_lane.estimate_state, "READY")
+        self.assertEqual(self.video_lane.estimate_dirty_at, 0)
         self.assertEqual(self.image_lane.spark_look, "warm brass")
 
     def test_prepare_writes_the_spark_look_into_the_body(self):

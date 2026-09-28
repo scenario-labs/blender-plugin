@@ -5,15 +5,26 @@ platform behavior. See the [audit](maintenance/backlog.md) for the disposition
 of older reports and the [runtime map](architecture/runtime.md) for integration
 boundaries. No paid or live acceptance is implied by this documentation.
 
+An offline Render Image desktop probe on macOS arm64 / Blender 5.0.1 reached
+a ready quote, accepted text edits, submitted once through a synthetic transport
+and retained viewport navigation. It later crashed with the native traceback in
+a background SQLite job read. Subsequent diagnostic polling, screenshot and
+144-second native interaction probes on that same ZIP completed cleanly, including
+shutdown and normal-profile preservation. The cause remains unresolved under
+[#263](https://github.com/scenario-labs/blender-plugin/issues/263); clean reruns and
+passing headless tests do not clear this failure. These synthetic probes do not
+establish live generation or full render-lane desktop acceptance.
+
 ## Runtime and authentication
 
 - The Image lane now shares SDK quotes, durable submission, reference uploads
   and result/recovery commands between UI and local MCP. All MCP `generate`
   lanes now use shared quotes, durable submission and downloads; only Image
   automatically imports results. Native form generation now uses those shared
-  quotes and jobs too. Pending files, clip/mesh/render captures and Prompt Spark
-  preparation cannot submit until their shared preparation is complete. Render
-  forms remain unavailable through this boundary while that integration is open.
+  quotes and jobs too. Files, mesh/clip captures and render scene/first-frame inputs
+  use explicit uploads before the final quote. Render forms accept a written look
+  or the default look with automatic Spark disabled. Automatic Spark preparation
+  remains unavailable and blocks quoting when enabled with an empty look.
   Film and prompt helpers retain separate paths. Complete runtime adoption
   and live/native acceptance remain open
   ([#64](https://github.com/scenario-labs/blender-plugin/issues/64),

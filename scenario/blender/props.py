@@ -343,7 +343,7 @@ class ScenarioLaneState(bpy.types.PropertyGroup):
     match_timeline: BoolProperty(
         name="Match timeline",
         default=True,
-        description="Capture the clip at the video model output duration, so the motion maps one to one",
+        description="Link model and camera-path duration settings; uploaded clips remain unchanged",
         update=_on_match_timeline,
     )
     force_solid: BoolProperty(
@@ -364,7 +364,8 @@ class ScenarioLaneState(bpy.types.PropertyGroup):
     spark_enabled: BoolProperty(
         name="Write the look with Prompt Spark",
         default=True,
-        description="When the look is empty, a capture of the view is sent to Prompt Spark, which writes the art-direction brief (0.75 CU). Off: a photoreal default look is used",
+        description="Automatic look preparation is unavailable; enter a look or turn this off to use the photoreal default",
+        update=_on_prompt_update,
     )
     spark_look: StringProperty(description="The look Prompt Spark wrote for the last generation")
     render_style_open: BoolProperty(
@@ -373,12 +374,15 @@ class ScenarioLaneState(bpy.types.PropertyGroup):
         description="Show the look, style images and first frame",
     )
     first_frame_path: StringProperty(
-        description="A Render Image result used as the first frame of the video"
+        name="First frame",
+        description="Choose an image to upload as the first frame of the video",
+        subtype="FILE_PATH",
+        update=_on_prompt_update,
     )
     use_first_frame: BoolProperty(
         name="Use as first frame",
         default=True,
-        description="Send the rendered still as the first frame so the clip starts exactly from it",
+        description="Include the chosen uploaded image as the video first frame",
         update=_on_prompt_update,
     )
     # Edit 3D

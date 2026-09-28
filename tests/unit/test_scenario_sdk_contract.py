@@ -632,3 +632,26 @@ def test_translate_keeps_scope_and_dry_run_in_query(client_factory, dry_run):
         **({"dryRun": "true"} if dry_run == "true" else {}),
     }
     assert json.loads(calls[0].content) == {"prompt": "théière"}
+
+
+def test_asset_raw_response_preserves_texture_role_separately_from_mime(client_factory):
+    fixture = {
+        "asset": {
+            "id": "fixture-texture",
+            "mimeType": "image/png",
+            "metadata": {"type": "texture-normal", "kind": "image"},
+            "properties": {"size": 123},
+        }
+    }
+    requests = []
+
+    def respond(request):
+        requests.append(request)
+        return httpx.Response(200, json=fixture)
+
+    sdk = client_factory(respond)
+    response = sdk.assets.with_raw_response.retrieve("fixture-texture", project_id=PROJECT)
+    assert json.loads(response.read()) == fixture
+    assert len(requests) == 1
+    assert (requests[0].method, requests[0].url.path) == ("GET", "/v1/assets/fixture-texture")
+    assert dict(requests[0].url.params) == {"projectId": PROJECT}

@@ -4,10 +4,11 @@
 
 import hashlib
 import tempfile
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass, field, replace
 from pathlib import Path
 
 from ..config import ext_for_mime
+from .result_metadata import texture_role
 from .store import JobState, ResultAsset, StoreConflict, StoredJob, StoreError, _identity, _json
 from .transfers import ResultDownloader, TransferError, _root
 
@@ -65,7 +66,9 @@ def _asset(record, identifier, name):
     ):
         raise ResultError("Scenario returned an invalid result size")
     try:
-        return ResultAsset(identifier, name, record.get("mimeType"), int(size))
+        return ResultAsset(
+            identifier, name, record.get("mimeType"), int(size), texture_role=texture_role(record)
+        )
     except ValueError:
         raise ResultError("Scenario returned invalid result metadata") from None
 
@@ -277,7 +280,12 @@ class ResultCommands:
                     self._downloader.verify(directory, item.receipt)
                     continue
                 response = self._request(self._adapter.asset, item.asset.asset_id)
-                if _asset(response, item.asset.asset_id, item.asset.name) != item.asset:
+                fresh = _asset(response, item.asset.asset_id, item.asset.name)
+                if item.asset.texture_role is None:
+                    # Legacy/unclassified results keep unknown semantics. A later
+                    # response may not grant a new material role to saved bytes.
+                    fresh = replace(fresh, texture_role=None)
+                if fresh != item.asset:
                     raise ResultError("Result metadata changed after the manifest was saved")
                 url = response.get("url")
                 if not isinstance(url, str) or not url:

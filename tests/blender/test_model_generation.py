@@ -1069,3 +1069,43 @@ class ModelGenerationTests(unittest.TestCase):
                         self.generation.submit_generation(bpy.context, lane)
         self.assertEqual(self.calls, [])
         self.assertEqual(self.paid, [])
+
+    def test_prepared_render_forms_submit_exact_uploaded_payload_once(self):
+        prepared = submodule("blender.render_references")
+        for lane_name in ("render_image", "render_video"):
+            with self.subTest(lane=lane_name):
+                lane = self.configure_ui_lane(lane_name)
+                ref = lane.references.add()
+                ref.param_name, ref.source, ref.asset_id = "reference", "ASSET", "scene-snapshot"
+                ref[prepared.ROLE] = prepared.SCENE
+                self.ui_quote(lane_name)
+                payload = self.generation.build_request(
+                    bpy.context.scene, lane_name, for_estimate=True
+                ).body
+                with patch.object(
+                    self.generation,
+                    "perform_captures",
+                    side_effect=AssertionError("Implicit capture"),
+                ):
+                    self.assertEqual(bpy.ops.scenario.generate(lane=lane_name), {"FINISHED"})
+                self.settle()
+                self.assertEqual(json.loads(self.paid[-1].content), payload)
+                self.assertEqual(payload["reference"], ["scene-snapshot"])
+                self.assertEqual(
+                    self.store.records()[-1].intent.quote_cost, "0.1234567890123456789"
+                )
+                with self.assertRaises(self.request_error):
+                    self.generation.submit_generation(bpy.context, lane_name)
+        self.assertEqual(len(self.paid), 2)
+
+    def test_render_reference_change_invalidates_approved_request(self):
+        prepared = submodule("blender.render_references")
+        lane = self.configure_ui_lane("render_image")
+        ref = lane.references.add()
+        ref.param_name, ref.source, ref.asset_id = "reference", "ASSET", "scene-before"
+        ref[prepared.ROLE] = prepared.SCENE
+        self.ui_quote("render_image")
+        ref.asset_id = "scene-after"
+        with self.assertRaises(self.request_error):
+            self.generation.submit_generation(bpy.context, "render_image")
+        self.assertEqual(self.paid, [])

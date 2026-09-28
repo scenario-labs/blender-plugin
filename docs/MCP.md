@@ -61,7 +61,10 @@ be reconciled using saved progress instead of starting another upload. The same 
 forms for image, audio, video and 3D inputs. `capture_reference` also supports explicit `VIEWPORT_CLIP`, `CAMERA_CLIP` and
 `MESH` snapshots. Clips use the preview/scene range at 1280x720 without audio,
 trimming or padding; mesh export produces one GLB from the selected meshes.
-Only mesh export works in background mode. Render pinned captures and result-specific application are separate work.
+Only mesh export works in background mode. Native render forms use the same
+upload session for their explicit scene/first-frame slots. MCP still supplies its
+final model parameters directly; render prompt decoration and automatic Spark
+preparation are not new MCP operations. Result-specific application remains separate.
 
 ## Token lifecycle
 

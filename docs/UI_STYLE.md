@@ -35,7 +35,12 @@ A `Model` section (a box with a `NODE_MATERIAL` header, like the others) holds a
 
 ## Duration and Match timeline
 
-The video model's `Duration (cost)` in Settings is the single source of the clip length for **Render Video**. With **Match timeline** on, the camera path's `Duration (s)` is read-only and follows the model's value (synced from a property callback, never during draw, in `generation.sync_shot_duration`), with a plain note under the planner: "The clip is captured at X s to match the video duration". With Match timeline off, the two durations are edited separately. The base **Video** lane keeps the reverse direction (the model duration follows the scene frame range via `generation.apply_match_timeline`, guarded to `lane == "video"`).
+The video model's `Duration (cost)` drives the camera-path duration for **Render
+Video** when **Match timeline** is on. The planner tells users to build the path
+before capture. Capture uses the displayed preview/scene range without implicit
+padding or trimming. Uploaded clips remain unchanged when timeline/model settings
+change. The base **Video** lane keeps the reverse setting direction: the model's
+duration follows the scene frame range through `generation.apply_match_timeline`.
 
 ## Reference inputs
 
@@ -71,6 +76,16 @@ scene, lane, model, input and reference destination. A changed destination must
 be reviewed again. Pending or uncertain marked uploads block generation so the
 prototype path cannot upload the same file a second time. Recheck that destination
 on confirmation, keep drawing read-only and invalidate the prior generation price after attachment.
+
+Render forms show **Capture and upload scene** in their scene/clip section, with
+that slot's progress, inspection and removal controls. Render Video's optional
+first frame has a separate **Upload first frame** action. Do not draw these slots
+again as style references. The scene snapshot precedes styles; a first frame
+precedes other images in the same array. Disabled first frames are omitted without
+canceling or deleting their upload. Changed first-frame paths require explicit
+replacement, and changing the path or automatic Spark option invalidates the price.
+An empty look with automatic Spark enabled blocks quoting; display its unavailable
+status until separate Spark approval is integrated. Drawing remains read-only.
 
 ## Generations
 

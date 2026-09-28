@@ -356,8 +356,13 @@ otherwise the scene range, at 1280x720 with no audio or implicit duration paddin
 Capture settings/current frame and mesh selection are restored. Stills/clips need
 an interactive viewport; mesh export also works headlessly. Uploaded snapshots do
 not track later source edits. It never uploads while drawing or pricing.
-Render pinned captures, Prompt Spark and non-image result application remain
-separate integration; reference preparation does not establish their acceptance.
+Render forms use the same lifecycle for explicit scene captures and first frames.
+Their role is part of asynchronous attachment and saved-confirmation guards.
+A disabled first-frame slot is omitted from generation while its upload retains
+its independent lifetime; changing the chosen path requires a new preparation.
+Requests require one uploaded scene slot in the current model input and place it
+before style references. Automatic Spark and non-image result application remain
+separate integration; preparation does not establish their acceptance.
 
 The upload kind and final file extension must match the local format policy.
 An omitted kind remains `image`; a video path does not silently change the kind.
@@ -457,10 +462,10 @@ The main-thread maintenance pump converts the unchanged slot to a Scenario asset
 only after an imported observation and a fresh origin check. It marks the label
 as an uploaded snapshot and invalidates the form's prior estimate. Generation
 then quotes/submits the immutable asset ID, not the later contents of the original
-file. A marked upload that has not attached blocks request construction in
-every lane, preventing duplicate prototype upload while it is pending or
-uncertain. Explicit clips and mesh snapshots use these same guards; unmarked
-implicit generation-time preparation and render pinned captures remain separate.
+file. An active marked upload that has not attached blocks request construction,
+preventing duplicate prototype upload while it is pending or uncertain. A disabled
+render first frame is excluded from the request and does not block it. Explicit clips and mesh snapshots use these same guards; unmarked
+implicit generation-time preparation is not used by native model forms.
 An unloaded or list-only model schema is a temporary state, not an edited input.
 In-flight bindings wait for model inputs before attachment and recheck the kind
 when they load. Saved assets retain their scope checks; request construction

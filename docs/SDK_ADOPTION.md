@@ -374,7 +374,9 @@ with extension-specific MIME metadata. The latter is asset upload, not the SDK
 `model` kind used for model import. Status and recovery retain the saved kind
 and MIME type. Typed local-file form upload and saved-reference attachment use
 the same commands, including still captures for image inputs in other lanes.
-Clip/mesh and render preparation remain separate. There is no new Scenario API
+Explicit clip/mesh and render scene/first-frame preparation use those same
+upload commands; final render generation uses the existing shared model quote
+and submission path. Automatic Spark preparation remains separate. There is no new Scenario API
 fallback or dependency change. See the [active upload contract](SDK_UPLOADS.md#active-reference-uploads)
 for destination trust, source limits and recovery. Form attachment captures
 scene, lane, model, input kind and slot; pending marked uploads block duplicate

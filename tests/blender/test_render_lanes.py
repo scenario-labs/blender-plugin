@@ -39,6 +39,17 @@ class RenderLanesTests(unittest.TestCase):
         self.image_lane = self.scene.scenario.lane_state("render_image")
         self.video_lane = self.scene.scenario.lane_state("render_video")
 
+    def uploaded(self, lane_name, role="scene", asset="uploaded-scene"):
+        prepared = submodule("blender.render_references")
+        lane = self.scene.scenario.lane_state(lane_name)
+        spec = prepared.target(lane_name, self.generation.schema_for(lane.model_id), role)
+        ref = lane.references.add()
+        ref.param_name, ref.source, ref.asset_id = spec.name, "ASSET", asset
+        ref[prepared.ROLE] = role
+        if role == prepared.FIRST_FRAME:
+            ref.filepath = lane.first_frame_path
+        return ref
+
     def test_lane_tabs_have_no_generations_or_mcp(self):
         props = submodule("blender.props")
         ids = [item[0] for item in props.LANE_ITEMS]
@@ -62,17 +73,17 @@ class RenderLanesTests(unittest.TestCase):
         self.image_lane.model_id = "model_google-gemini-3-1-flash"
         self.image_lane.prompt = "weathered steampunk copper"
         style = self.image_lane.references.add()
-        style.param_name, style.source, style.filepath = (
+        style.param_name, style.source, style.asset_id = (
             "referenceImages",
-            "FILE",
-            str(FIXTURES / "patina-copper-512" / "albedo.png"),
+            "ASSET",
+            "uploaded-style",
         )
+        self.uploaded("render_image")
         request = self.generation.build_request(self.scene, "render_image")
         self.assertEqual(request.errors, [])
         self.assertEqual(request.kind, "image")
-        self.assertEqual(request.captures[0]["param"], "referenceImages")
-        self.assertTrue(request.captures[0]["first"])
-        self.assertEqual(request.captures[0]["source"], "CAMERA")
+        self.assertEqual(request.captures, [])
+        self.assertEqual(request.body["referenceImages"], ["uploaded-scene", "uploaded-style"])
         prompt = request.body["prompt"]
         self.assertTrue(prompt.startswith("Image 1 is a screenshot of a 3D viewport"))
         self.assertIn("weathered steampunk copper", prompt)
@@ -84,10 +95,11 @@ class RenderLanesTests(unittest.TestCase):
         self.image_lane.model_id = "model_google-gemini-3-1-flash"
         self.image_lane.prompt = ""
         self.image_lane.capture_source = "VIEWPORT"
+        self.uploaded("render_image")
         request = self.generation.build_request(self.scene, "render_image")
-        self.assertEqual(request.errors, [])
+        self.assertIn("Prompt Spark", request.errors[0])
         self.assertEqual(request.spark, {"kind": "image", "style_count": 0})
-        self.assertEqual(request.captures[0]["source"], "VIEWPORT")
+        self.assertEqual(request.captures, [])
         self.assertIn("photorealistic", request.body["prompt"])
         self.image_lane.spark_enabled = False
         request = self.generation.build_request(self.scene, "render_image")
@@ -98,14 +110,15 @@ class RenderLanesTests(unittest.TestCase):
         self.video_lane.prompt = "claymation"
         self.video_lane.first_frame_path = str(FIXTURES / "patina-copper-512" / "albedo.png")
         self.scene.frame_start, self.scene.frame_end = 1, 48
+        self.uploaded("render_video")
+        self.uploaded("render_video", "first_frame", "uploaded-first")
         request = self.generation.build_request(self.scene, "render_video")
         self.assertEqual(request.errors, [])
         self.assertEqual(request.kind, "video")
-        self.assertEqual(request.captures[0]["param"], "referenceVideos")
-        self.assertEqual(request.captures[0]["source"], "CAMERA_CLIP")
-        self.assertEqual(
-            request.files["image"], [self.video_lane.first_frame_path]
-        )  # Seedance's single image input is the first frame
+        self.assertEqual(request.captures, [])
+        self.assertEqual(request.body["referenceVideos"], ["uploaded-scene"])
+        self.assertEqual(request.body["image"], "uploaded-first")
+        self.assertEqual(request.files, {})
         prompt = request.body["prompt"]
         self.assertIn("@video1 is a playblast", prompt)
         self.assertIn("@image1 shows how the finished first frame must look", prompt)
@@ -117,19 +130,21 @@ class RenderLanesTests(unittest.TestCase):
         self.video_lane.model_id = "model_minimax-h3"
         self.video_lane.prompt = "oil painting"
         self.video_lane.first_frame_path = ""
+        self.uploaded("render_video")
         request = self.generation.build_request(self.scene, "render_video")
-        self.assertEqual(request.captures[0]["param"], "referenceVideos")
+        self.assertEqual(request.body["referenceVideos"], ["uploaded-scene"])
         prompt = request.body["prompt"]
         self.assertTrue(prompt.startswith("The reference video is a playblast"))
         self.assertNotIn("@video1", prompt)
         self.assertIsNone(request.spark)
 
-    def test_empty_video_look_adds_a_spark_still_capture(self):
+    def test_empty_video_look_blocks_until_spark_has_separate_approval(self):
         self.video_lane.model_id = "model_bytedance-seedance-2-0"
         self.video_lane.prompt = ""
+        self.uploaded("render_video")
         request = self.generation.build_request(self.scene, "render_video")
-        roles = [c.get("role") for c in request.captures]
-        self.assertIn("spark", roles)
+        self.assertEqual(request.captures, [])
+        self.assertIn("Prompt Spark", request.errors[0])
         self.assertEqual(request.spark["kind"], "video")
 
     def test_render_image_result_becomes_the_video_first_frame(self):

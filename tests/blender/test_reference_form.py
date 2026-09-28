@@ -652,6 +652,115 @@ class ReferenceFormTests(unittest.TestCase):
         ref.filepath = str(self.fixture.typed_source(kind, suffix, mime))
         return lane, ref
 
+    def test_render_capture_operator_uses_guarded_typed_upload_once(self):
+        prepared = submodule("blender.render_references")
+        capture = submodule("blender.capture")
+        for lane_name, kind in (("render_image", "image"), ("render_video", "video")):
+            with self.subTest(lane=lane_name):
+                lane, _ = self.configure_typed_input(lane_name, kind)
+                lane.references.clear()
+                lane.prompt = "copper"
+                suffix = ".png" if kind == "image" else ".mp4"
+                self.fixture.fixture.remote["originalFileName"] = "reference" + suffix
+
+                def write_capture(context, path, **kwargs):
+                    Path(path).write_bytes(b"data")
+
+                with (
+                    patch.object(
+                        self.fixture.module,
+                        "bpy",
+                        SimpleNamespace(context=bpy.context, app=SimpleNamespace(background=False)),
+                    ),
+                    patch.object(capture, "capture_still", side_effect=write_capture),
+                    patch.object(capture, "capture_playblast", side_effect=write_capture),
+                ):
+                    self.assertEqual(
+                        bpy.ops.scenario.prepare_render_reference(lane=lane_name, role="scene"),
+                        {"FINISHED"},
+                    )
+                    with self.assertRaises(RuntimeError):
+                        bpy.ops.scenario.prepare_render_reference(lane=lane_name, role="scene")
+                self.assertEqual(len(lane.references), 1)
+                self.assertTrue(
+                    self.generation.build_request(self.scene, lane_name, for_estimate=True).errors
+                )
+                self.scene.scenario.lane = "image"
+                self.fixture.settle()
+                self.assertEqual(lane.references[0][prepared.ROLE], prepared.SCENE)
+                request = self.generation.build_request(self.scene, lane_name, for_estimate=True)
+                self.assertEqual(request.errors, [])
+                self.assertEqual((request.captures, request.files), ([], {}))
+                self.assertEqual(request.body["input"], "reference-asset")
+        self.assertEqual(self.fixture.fixture.uploader.upload.call_count, 2)
+
+    def test_failed_render_capture_removes_unadmitted_slot(self):
+        prepared = submodule("blender.render_references")
+        lane, _ = self.configure_typed_input("render_image", "image")
+        lane.references.clear()
+        with self.assertRaises(self.fixture.module.UploadNotStarted):
+            prepared.prepare(bpy.context, "render_image", "scene")  # No desktop viewport.
+        self.assertEqual(len(lane.references), 0)
+        self.assertEqual(self.fixture.fixture.calls, [])
+
+    def test_render_first_frame_upload_and_optional_exclusion(self):
+        prepared = submodule("blender.render_references")
+        lane, _ = self.configure_typed_input("render_video", "video")
+        model = dict(
+            self.model,
+            id=lane.model_id,
+            inputs=[
+                {"name": "prompt", "type": "string", "prompt": True},
+                {"name": "input", "type": "file", "kind": "video"},
+                {"name": "firstFrameImage", "type": "file", "kind": "image"},
+            ],
+        )
+        self.runtime.state.records[model["id"]] = submodule(
+            "core.api.catalog"
+        ).ModelRecord.from_api(model)
+        self.generation._schemas.pop(model["id"], None)
+        lane.references.clear()
+        scene_ref = lane.references.add()
+        scene_ref.param_name, scene_ref.source, scene_ref.asset_id = "input", "ASSET", "scene-asset"
+        scene_ref[prepared.ROLE] = prepared.SCENE
+        lane.prompt = "copper"
+        lane.first_frame_path = str(self.fixture.typed_source("image", ".png", "image/png"))
+        binding = prepared.prepare(bpy.context, "render_video", "first_frame")
+        self.assertTrue(self.generation.build_request(self.scene, "render_video").errors)
+        lane.use_first_frame = False
+        request = self.generation.build_request(self.scene, "render_video")
+        self.assertEqual(request.errors, [])
+        self.assertNotIn("firstFrameImage", request.body)
+        self.fixture.settle()
+        self.assertTrue(binding.attached)
+        lane.use_first_frame = True
+        request = self.generation.build_request(self.scene, "render_video")
+        self.assertEqual(request.errors, [])
+        self.assertEqual(request.body["firstFrameImage"], "reference-asset")
+        self.assertIn("finished first frame", request.body["prompt"])
+        lane.estimate_key = "stale-quote"
+        lane.first_frame_path = "different.png"
+        self.assertEqual(lane.estimate_key, "")
+        self.assertIn(
+            "first frame changed",
+            self.generation.build_request(self.scene, "render_video").errors[0],
+        )
+        lane.first_frame_path = ""
+        self.assertNotIn(
+            "firstFrameImage", self.generation.build_request(self.scene, "render_video").body
+        )
+
+    def test_changing_render_role_rejects_late_attachment(self):
+        prepared = submodule("blender.render_references")
+        lane, ref = self.configure_typed_input("render_image", "image")
+        ref[prepared.ROLE] = prepared.SCENE
+        binding = self.form.start(bpy.context, 0, lane_name="render_image")
+        ref[prepared.ROLE] = prepared.FIRST_FRAME
+        self.fixture.settle()
+        self.assertFalse(binding.attached)
+        self.assertTrue(binding.error)
+        self.assertEqual(ref.source, "FILE")
+
     def test_clip_and_mesh_snapshots_attach_only_to_original_form(self):
         capture = submodule("blender.capture")
         mesh = submodule("blender.mesh_export")

@@ -23,6 +23,7 @@ _REQUEST = "_scenario_reference_request"
 _ASSET = "_scenario_reference_asset"
 _KIND = "_scenario_reference_kind"
 _KINDS = {"image", "audio", "video", "3d"}
+RENDER_ROLE = "_scenario_render_role"
 
 
 def scope_key(scope):
@@ -101,6 +102,7 @@ def _form_snapshot(lane):
             ref.get(_SCOPE),
             ref.get(_ASSET),
             ref.get(_KIND),
+            ref.get(RENDER_ROLE),
         )
         for ref in lane.references
     )
@@ -269,6 +271,7 @@ class FormUpload:
     attached: bool = False
     lane_name: str = "image"
     kind: str = "image"
+    render_role: str = ""
 
     def current(self, token):
         try:
@@ -277,6 +280,7 @@ class FormUpload:
                 lane.model_id == self.model_id
                 and any(ref == self.reference for ref in lane.references)
                 and self.reference.get(_MARKER) == token
+                and self.reference.get(RENDER_ROLE, "") == self.render_role
                 and reference_values(self.reference) == self.values
                 and _kind_matches(lane, self.reference.param_name, self.kind) is not False
             )
@@ -312,7 +316,13 @@ def start(context, index, *, lane_name="image"):
     ref[_MARKER] = token
     ref[_SCOPE] = scope_key(owner.session.scope)
     binding = FormUpload(
-        context.scene, ref, lane.model_id, reference_values(ref), lane_name=lane_name, kind=kind
+        context.scene,
+        ref,
+        lane.model_id,
+        reference_values(ref),
+        lane_name=lane_name,
+        kind=kind,
+        render_role=ref.get(RENDER_ROLE, ""),
     )
     owner.forms[token] = binding
     props.mark_estimate_dirty(lane)
@@ -393,9 +403,9 @@ def _deliver_binding(owner, token, binding):
     props.mark_estimate_dirty(_lane(binding.scene, binding.lane_name))
 
 
-def scope_error(lane_state):
+def scope_error(lane_state, *, references=None):
     """Persisted uploaded asset IDs may only be quoted in their selected scope."""
-    for ref in lane_state.references:
+    for ref in lane_state.references if references is None else references:
         if ref.get(_MARKER) and ref.source != "ASSET":
             return "Finish the reference upload or inspect its saved progress before generating"
         if ref.source != "ASSET" or not ref.get(_SCOPE):
@@ -466,6 +476,40 @@ class SCENARIO_OT_upload_reference(bpy.types.Operator):
             return {"CANCELLED"}
         except Exception:
             self.report({"ERROR"}, "Upload could not start; inspect saved uploads")
+            return {"CANCELLED"}
+        return {"FINISHED"}
+
+
+class SCENARIO_OT_prepare_render_reference(bpy.types.Operator):
+    bl_idname = "scenario.prepare_render_reference"
+    bl_label = "Prepare render reference"
+    bl_description = (
+        "Capture or upload this render input snapshot before requesting a generation price"
+    )
+    lane: StringProperty(default="render_image", options={"HIDDEN"})
+    role: EnumProperty(
+        items=[
+            ("scene", "Scene", "Scene capture"),
+            ("first_frame", "First frame", "First-frame image"),
+        ]
+    )
+
+    @classmethod
+    def poll(cls, context):
+        return SCENARIO_OT_upload_reference.poll(context)
+
+    def execute(self, context):
+        from . import render_references
+
+        try:
+            render_references.prepare(context, self.lane, self.role)
+        except Exception as error:
+            reason = (
+                error.reason
+                if isinstance(error, ScenarioError)
+                else "Could not prepare the reference; inspect saved uploads"
+            )
+            self.report({"ERROR"}, reason)
             return {"CANCELLED"}
         return {"FINISHED"}
 
@@ -717,6 +761,7 @@ class SCENARIO_OT_attach_saved_upload(bpy.types.Operator):
 CLASSES = (
     SCENARIO_OT_upload_reference,
     SCENARIO_OT_upload_selected_mesh,
+    SCENARIO_OT_prepare_render_reference,
     SCENARIO_OT_inspect_uploads,
     SCENARIO_OT_recover_upload,
     SCENARIO_OT_attach_saved_upload,

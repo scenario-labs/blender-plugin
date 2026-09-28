@@ -79,11 +79,13 @@ on confirmation, keep drawing read-only and invalidate the prior generation pric
 
 Render forms show **Capture and upload scene** in their scene/clip section, with
 that slot's progress, inspection and removal controls. Render Video's optional
-first frame has a separate **Upload first frame** action. Do not draw these slots
+first frame always exposes a file field and native folder picker, followed by a
+separate **Upload first frame** action after choosing an image. Do not draw these slots
 again as style references. The scene snapshot precedes styles; a first frame
 precedes other images in the same array. Disabled first frames are omitted without
 canceling or deleting their upload. Changed first-frame paths require explicit
-replacement, and changing the path or automatic Spark option invalidates the price.
+replacement. Result reuse must not silently replace a role-tagged single-file
+scene or first-frame slot; require explicit removal first. Changing the path or automatic Spark option invalidates the price.
 An empty look with automatic Spark enabled blocks quoting; display its unavailable
 status until separate Spark approval is integrated. Drawing remains read-only.
 

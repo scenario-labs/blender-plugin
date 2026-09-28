@@ -374,13 +374,15 @@ class ScenarioLaneState(bpy.types.PropertyGroup):
         description="Show the look, style images and first frame",
     )
     first_frame_path: StringProperty(
-        description="A Render Image result used as the first frame of the video",
+        name="First frame",
+        description="Choose an image to upload as the first frame of the video",
+        subtype="FILE_PATH",
         update=_on_prompt_update,
     )
     use_first_frame: BoolProperty(
         name="Use as first frame",
         default=True,
-        description="Send the rendered still as the first frame so the clip starts exactly from it",
+        description="Include the chosen uploaded image as the video first frame",
         update=_on_prompt_update,
     )
     # Edit 3D

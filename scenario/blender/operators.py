@@ -565,6 +565,15 @@ def _add_file_reference(context, lane, filepath, param_name=None):
     if spec is None:
         return None
     if spec.ptype == "file":
+        from .reference_form import RENDER_ROLE
+
+        if any(
+            ref.param_name == spec.name and ref.get(RENDER_ROLE) for ref in lane_state.references
+        ):
+            raise ScenarioError(
+                0,
+                "This input has a prepared render reference; remove it explicitly before replacing",
+            )
         for index in range(len(lane_state.references) - 1, -1, -1):
             if lane_state.references[index].param_name == spec.name:
                 lane_state.references.remove(index)  # a single input holds one file
@@ -612,7 +621,11 @@ class SCENARIO_OT_use_as_reference(bpy.types.Operator):
         if lane == "3d":
             scene.scenario.three_d_mode = "IMAGE"
         scene.scenario.lane = lane
-        name = _add_file_reference(context, lane, self.filepath)
+        try:
+            name = _add_file_reference(context, lane, self.filepath)
+        except ScenarioError as error:
+            self.report({"ERROR"}, error.reason)
+            return {"CANCELLED"}
         if name is None:
             self.report(
                 {"WARNING"},

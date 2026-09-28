@@ -279,16 +279,16 @@ def _draw_first_frame(box, lane_state, schema):
     from . import panels, render_references
 
     existing = render_references.slot(lane_state, render_references.FIRST_FRAME)
-    if not lane_state.first_frame_path and not existing:
-        return  # A result action or the chosen path supplies this optional input.
     row = box.row(align=True)
-    row.prop(lane_state, "use_first_frame", text="")
+    row.prop(lane_state, "use_first_frame", text="First frame")
+    row = box.row(align=True)
+    row.prop(lane_state, "first_frame_path", text="")
     icon_id = panels.thumbnail(lane_state.first_frame_path)
     if icon_id:
         row.template_icon(icon_value=icon_id, scale=2.0)
-    row.label(text="First frame: " + os.path.basename(lane_state.first_frame_path)[-32:])
-    row.operator("scenario.clear_first_frame", text="", icon="X")
-    if lane_state.use_first_frame or existing:
+    if lane_state.first_frame_path:
+        row.operator("scenario.clear_first_frame", text="", icon="X")
+    if (lane_state.use_first_frame and lane_state.first_frame_path) or existing:
         render_references.draw_slot(
             box, "render_video", lane_state, schema, render_references.FIRST_FRAME
         )

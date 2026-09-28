@@ -4,7 +4,7 @@
 
 import json
 import unittest
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import bpy
 from helpers import FIXTURES, isolated_manager, reset_scene, submodule
@@ -146,6 +146,56 @@ class RenderLanesTests(unittest.TestCase):
         self.assertEqual(request.captures, [])
         self.assertIn("Prompt Spark", request.errors[0])
         self.assertEqual(request.spark["kind"], "video")
+
+    def test_first_frame_picker_is_drawn_when_empty(self):
+        self.video_lane.model_id = "model_bytedance-seedance-2-0"
+        layout = MagicMock()
+        self.assertEqual(self.video_lane.first_frame_path, "")
+        self.render_lanes._draw_first_frame(
+            layout, self.video_lane, self.generation.schema_for(self.video_lane.model_id)
+        )
+        layout.row.return_value.prop.assert_any_call(self.video_lane, "first_frame_path", text="")
+        self.assertEqual(self.video_lane.bl_rna.properties["first_frame_path"].subtype, "FILE_PATH")
+        self.assertEqual(self.video_lane.first_frame_path, "")
+
+    def test_result_reference_action_preserves_prepared_single_file_render_slots(self):
+        catalog = submodule("core.api.catalog")
+        form = submodule("blender.reference_form")
+        for lane_name, role in (("render_image", "scene"), ("render_video", "first_frame")):
+            with self.subTest(lane=lane_name):
+                lane = self.scene.scenario.lane_state(lane_name)
+                model = catalog.ModelRecord.from_api(
+                    {
+                        "id": "fixture-single-render-" + lane_name,
+                        "name": "Single render input",
+                        "type": "custom",
+                        "capabilities": [
+                            "img2img" if lane_name == "render_image" else "video2video"
+                        ],
+                        "inputs": [{"name": "image", "type": "file", "kind": "image"}]
+                        + (
+                            [{"name": "video", "type": "file", "kind": "video"}]
+                            if lane_name == "render_video"
+                            else []
+                        ),
+                    }
+                )
+                self.generation.set_catalog([model], [model])
+                lane.model_id = model.id
+                ref = lane.references.add()
+                ref.param_name, ref.source, ref.asset_id = "image", "ASSET", "prepared-asset"
+                ref[form.RENDER_ROLE] = role
+                lane.estimate_key, lane.estimate_state = "approved-quote", "READY"
+                with self.assertRaisesRegex(RuntimeError, "prepared render reference"):
+                    bpy.ops.scenario.use_as_reference(
+                        filepath=str(FIXTURES / "patina-copper-512" / "albedo.png"),
+                        target=lane_name,
+                    )
+                self.assertEqual(len(lane.references), 1)
+                self.assertEqual(ref.asset_id, "prepared-asset")
+                self.assertEqual(ref.get(form.RENDER_ROLE), role)
+                self.assertEqual(lane.estimate_key, "approved-quote")
+                self.assertEqual(lane.estimate_state, "READY")
 
     def test_render_image_result_preserves_the_video_first_frame_and_quote(self):
         records = submodule("core.jobs.records")

@@ -679,6 +679,7 @@ class JobSession:
                 self._issued.clear()
                 self._world_receipts.clear()
                 self._image_receipts.clear()
+                self._media_receipts.clear()
                 with _sessions_lock:
                     _sessions.discard(self)
 

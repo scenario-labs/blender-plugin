@@ -450,3 +450,7 @@ save the blend, pack media or clean snapshots after strip deletion. It does not
 change which scene an existing Sequencer editor displays. Select the approved
 scene in that editor's header to inspect the strip. Mesh, material, World and
 Film integration are separate from this video/audio path.
+
+Shutdown releases pending media receipt handles after its workers stop, matching
+image and World ownership. A retained exception cannot persist success after
+shutdown; the saved uncertain record and any existing strip remain unchanged.

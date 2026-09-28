@@ -105,3 +105,38 @@ class ModelApplicationTests(unittest.TestCase):
                 pool.submit(
                     self.module.apply_model, self.scene, self.item, self.path, cursor=(0, 0, 0)
                 ).result(5)
+
+    def test_incomplete_rollback_is_uncertain_even_when_cleanup_does_not_raise(self):
+        original = self.module._publish
+
+        def fail(*args):
+            original(*args)
+            raise RuntimeError("synthetic publication failure")
+
+        with (
+            patch.object(self.module, "_publish", side_effect=fail),
+            patch.object(self.module, "_remove_new_data"),
+            self.assertRaisesRegex(RuntimeError, "cleanup is incomplete") as raised,
+        ):
+            self.module.apply_model(self.scene, self.item, self.path, cursor=(0, 0, 0))
+        self.assertNotIsInstance(raised.exception, self.module.ModelApplicationError)
+        self.assertGreater(len(bpy.data.objects), len(self.before["objects"]) + 1)
+
+    def test_temporary_cleanup_failure_preserves_completed_packed_model(self):
+        cleanup = tempfile.TemporaryDirectory.cleanup
+
+        def fail(directory):
+            cleanup(directory)
+            raise OSError("synthetic cleanup failure")
+
+        with (
+            patch.object(tempfile.TemporaryDirectory, "cleanup", fail),
+            self.assertLogs("scenario.jobs", level="WARNING") as logs,
+        ):
+            result = self.module.apply_model(self.scene, self.item, self.path, cursor=(0, 0, 0))
+        self.assertEqual(len(result.objects), 2)
+        self.assertIn(result.root, tuple(self.scene.objects))
+        self.assertTrue(
+            all(image.packed_file for image in set(bpy.data.images) - self.before["images"])
+        )
+        self.assertIn("temporary files may remain", logs.output[0])

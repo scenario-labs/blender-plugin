@@ -17,6 +17,7 @@ from ..core.jobs.store import JobOrigin, JobState, StoredJob
 from .job_session import ImageResultUncertain, MediaResultUncertain, ModelResultUncertain
 from .media_application import MEDIA_TYPES
 from .model_application import MODEL_MEDIA_TYPE
+from .model_application import validate_destination as validate_model_destination
 
 
 def _snapshot(body):
@@ -501,6 +502,7 @@ class ModelJobs:
         if scene != bpy.context.scene:
             raise ScenarioError(0, "Select the destination scene before reviewing insertion")
         bpy.context.view_layer.update()
+        validate_model_destination(scene, tuple(scene.cursor.location))
         ticket = ModelApplicationApproval(
             uuid.uuid4().hex,
             record,

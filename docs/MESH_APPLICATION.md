@@ -112,7 +112,7 @@ Alternate result files and maps remain saved; only the selected GLB is imported.
 One import consumes the job's application claim.
 
 [`glb.inspect_glb`](../scenario/core/scene/glb.py) checks the
-[GLB 2.0 container](https://registry.khronos.org/glTF/specs/2.0/glTF-2.0.html#glb-file-format-specification)
+[GLB 2.0 container](https://github.com/KhronosGroup/glTF/blob/98015344c6a5f5a3a96686cbd77960a8b09f6276/specification/2.0/Specification.adoc)
 and the supported import policy before Blender runs. It requires one scene,
 one embedded binary buffer and no URI references, animation or skins. Limits
 are 256 MiB of file bytes, 8 MiB of JSON, 10,000 nodes and 10 million accessor
@@ -126,13 +126,19 @@ rehashes the exact local receipt, writes a private snapshot and imports into a
 disposable scene with scene extras and selection changes disabled. Publication
 moves only the new objects into a new destination group. Embedded images remain
 packed after temporary files are removed. Failures remove only newly created
-data; a cleanup failure remains uncertain instead of authorizing another import.
+data and verify the final datablock sets, including staging scenes and shape keys.
+Incomplete scene cleanup remains uncertain instead of authorizing another import;
+there is no receipt-only retry when scene success is unknown. Temporary snapshot
+cleanup is attempted separately: a filesystem cleanup error reports a sanitized
+warning and may leave a temporary file, but preserves a completed packed import.
 Copying, hashing and decoding are synchronous on the main thread, so large models
 can pause Blender. There is no automatic blend save or global-undo transaction.
 
 Native **Import static model (N)** and MCP `prepare_result_application` with
 `asset_id` capture the scene revision and exact cursor. Approval is consumed once;
 worker verification and destination revalidation precede the durable claim.
+The current scene must be local and in Object Mode both at preparation and after
+verification. Rejection before the claim leaves a ready job ready.
 A moved cursor, changed scene/file/context or stored revision requires review
 again. `applied` and interrupted `applying` jobs cannot be claimed a second time.
 Receipt-only retry saves known success without importing another model, and

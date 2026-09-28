@@ -23,6 +23,7 @@ from ..core.jobs.workers import JobWorkers
 from .image_application import ImageApplicationError, apply_images
 from .media_application import MediaApplicationError, apply_media
 from .model_application import ModelApplicationError, apply_model
+from .model_application import validate_destination as validate_model_destination
 from .world_application import PanoramaError, WorldApplication, WorldApplicationError, apply_world
 
 _log = logging.getLogger("scenario.jobs")
@@ -581,6 +582,7 @@ class JobSession:
         if not isinstance(verified, VerifiedResults) or not isinstance(destination, JobOrigin):
             raise OriginUnavailable("Verify the model and approve its destination")
         scene, _ = self._resolve(destination)
+        validate_model_destination(scene, cursor)
         if tuple(scene.cursor.location) != cursor:
             raise OriginUnavailable("The destination cursor changed; review it again")
         selected = [

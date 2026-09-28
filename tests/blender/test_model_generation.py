@@ -1305,3 +1305,61 @@ class ModelGenerationTests(unittest.TestCase):
             owner.session.retry_model_receipt(pending)
         self.assertEqual(owner.store.get(request_id), record)
         self.assertEqual(set(bpy.data.objects), before)
+
+    def test_model_mode_change_during_verification_preserves_ready_claim(self):
+        request_id = self.recovered_model()
+        bpy.ops.mesh.primitive_cube_add()
+        approval = self.prepare_model(request_id)
+        deferred = self.tools.apply_result_application(self.import_args(approval))
+        result = deferred.run()
+        before = self.store.get(request_id), set(bpy.data.objects)
+        bpy.ops.object.mode_set(mode="EDIT")
+        try:
+            status = deferred.finish(result)
+            self.assertEqual(status["status"], "ready", status)
+            self.assertEqual((self.store.get(request_id), set(bpy.data.objects)), before)
+        finally:
+            bpy.ops.object.mode_set(mode="OBJECT")
+
+    def test_model_incomplete_rollback_retains_claim_and_forbids_reimport(self):
+        request_id = self.recovered_model()
+        approval = self.prepare_model(request_id)
+        deferred = self.tools.apply_result_application(self.import_args(approval))
+        result = deferred.run()
+        module = submodule("blender.model_application")
+        original = module._publish
+
+        def fail(*args):
+            original(*args)
+            raise RuntimeError("synthetic publication failure")
+
+        with (
+            patch.object(module, "_publish", side_effect=fail),
+            patch.object(module, "_remove_new_data"),
+        ):
+            status = deferred.finish(result)
+        self.assertEqual(status["status"], "applying", status)
+        self.assertNotIn("retry_receipt", status["actions"])
+        self.assertNotIn("import_model", status["actions"])
+        with self.assertRaises(self.request_error):
+            self.prepare_model(request_id)
+
+    def test_model_temporary_cleanup_failure_still_saves_success_once(self):
+        request_id = self.recovered_model()
+        approval = self.prepare_model(request_id)
+        deferred = self.tools.apply_result_application(self.import_args(approval))
+        result = deferred.run()
+        before = len(self.calls), len(self.paid)
+        cleanup = tempfile.TemporaryDirectory.cleanup
+
+        def fail(directory):
+            cleanup(directory)
+            raise OSError("synthetic cleanup failure")
+
+        with patch.object(tempfile.TemporaryDirectory, "cleanup", fail):
+            status = deferred.finish(result)
+        self.assertEqual(status["status"], "applied", status)
+        self.assertEqual(len(status["objects"]), 2)
+        self.assertEqual((len(self.calls), len(self.paid)), before)
+        with self.assertRaises(self.request_error):
+            self.prepare_model(request_id)

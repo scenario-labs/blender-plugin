@@ -179,11 +179,19 @@ class JobSession:
     def quote_workflow(self, identifier, parameters, *, origin):
         return self._quote("workflow", identifier, parameters, origin)
 
+    def quote_prompt(self, parameters, *, origin):
+        return self._quote("prompt", "prompt", parameters, origin)
+
     def _quote(self, operation, identifier, parameters, origin):
         _main_thread()
         self._check_capacity()
         self._resolve(origin)
-        task = getattr(self._workers, f"quote_{operation}")(identifier, parameters, origin=origin)
+        if operation == "prompt":
+            task = self._workers.quote_prompt(parameters, origin=origin)
+        else:
+            task = getattr(self._workers, f"quote_{operation}")(
+                identifier, parameters, origin=origin
+            )
         self._pending.append((task, origin))
         return task
 

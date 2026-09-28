@@ -331,6 +331,7 @@ The named discovery exceptions also use the same zero-retry SDK client.
 | Multipart upload metadata | `uploads.create/retrieve/trigger_action(action="complete")`: immutable project scope, strict input/receipt identity, retained processing/future fields; no byte transfer, retry or automatic completion |
 | Model/workflow/asset/job records | `models.retrieve`, `workflows.retrieve`, `assets.retrieve`, `jobs.retrieve`: unwrap the named record and retain unknown fields |
 | Custom-model estimate | `generate.run_model(dry_run="true")`: adopted form value validation plus retained conditional/one-of rules; inputs in JSON and dry-run/project in query |
+| Prompt Spark quote/submission commands | `generate.with_raw_response.prompt`: POST `/generate/prompt`, `dry_run="true"` and optional selected `project_id` in the query; explicit mode, prompt, modelId, images and numResults in JSON; no raw API fallback |
 | Workflow estimate | `workflows.run(dry_run="true")`: normalize workflow fields/defaults and preserve the same query/body boundary |
 | Exact estimate record | Keep immutable request/response bytes and a `Decimal` cost, including zero; reject absent, negative, nonnumeric or non-finite costs rather than inventing a free estimate |
 
@@ -454,3 +455,25 @@ Shared scoped jobs and local MCP integration remain under
 [#65](https://github.com/scenario-labs/blender-plugin/issues/65); authentication
 under [#67](https://github.com/scenario-labs/blender-plugin/issues/67); integrated
 acceptance under [#68](https://github.com/scenario-labs/blender-plugin/issues/68).
+
+
+### Prompt Spark command boundary
+
+`SDKAdapter.estimate_prompt` and `JobCoordinator.quote_prompt` use the public
+[SDK prompt method](https://docs.scenario.com/api/python/resources/generate/methods/prompt),
+verified against the pinned 2.2.0 artifact. This initial parameter subset accepts
+an explicit SDK mode, optional text `prompt`, `modelId`, `images`, and an integer
+`numResults` from 1 to 5 (default 1). It rejects unknown fields and scope/dry-run
+injection. `contextual-v2` allows up to 15 references; other supported modes are
+limited conservatively to 5. API-key requests omit project selection unless the
+connection has an explicit override. The server dry run remains authoritative for
+mode-specific requirements and pricing.
+
+Both dry run and dispatch use the same normalized payload, exact response bytes,
+credential scope and zero-retry client. Submission requires the issued quote and
+a committed local intent before one service call. The command returns a durable
+job receipt; it does not deliver inline prompt text or resolve prompt assets.
+Prompt result delivery, native approval controls, prototype Spark/LLM replacement
+and live service acceptance remain separate work. Do not activate these commands
+in paid UI/MCP paths until result delivery and explicit approval are integrated.
+No automatic LLM fallback or remote prompt cancellation is enabled.

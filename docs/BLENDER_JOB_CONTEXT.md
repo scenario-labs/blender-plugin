@@ -402,3 +402,16 @@ select the imported images. Import, rollback and receipt-only recovery use the
 same primitive as automatic delivery. `applied` and interrupted `applying`
 records cannot be imported again through this command. No service call, download
 or paid submission occurs during application.
+
+
+## Prompt Spark command facade
+
+`JobSession.quote_prompt(parameters, origin=...)` requires a main-thread captured
+origin and available completion capacity. It dispatches the SDK dry run through
+the existing worker pool and returns a task; drain its completion before using
+`prepare_quote` and `submit(operation="prompt", target_id="prompt", ...)`.
+Caller parameter edits after queueing cannot change the quoted request. Scene,
+file, target or account changes prevent preparing/submitting a stale quote.
+These programmatic commands do not add UI buttons, authorize automatic paid
+Spark preparation, or apply generated prompt text. Result retrieval/application
+and replacing the prototype Prompt Spark entry points remain separate.

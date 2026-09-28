@@ -14,7 +14,12 @@ import httpx
 import pytest
 
 from scenario.core.api.sdk_adapter import AdapterError, Credentials, SDKAdapter
-from scenario.core.jobs.coordinator import JobCoordinator, QuoteError, SubmissionUncertain
+from scenario.core.jobs.coordinator import (
+    JobCoordinator,
+    QuoteError,
+    RecoveryError,
+    SubmissionUncertain,
+)
 from scenario.core.jobs.store import JobOrigin, JobScope, JobState, JobStore, StoreError
 
 SCOPE = JobScope("https://service.example.invalid/v1", "account", "project", "team")
@@ -45,6 +50,8 @@ def setup(tmp_path):
             requests.append(request)
             if request.url.params.get("dryRun") == "true":
                 return httpx.Response(200, content=QUOTE)
+            if request.method == "GET" and respond:
+                return respond(request)
             # Reopen the actual database from the transport boundary. A cached
             # object is not proof that the submission claim committed.
             records = JobStore(tmp_path / "jobs.sqlite3", SCOPE).records()
@@ -66,14 +73,21 @@ def setup(tmp_path):
         )
         clients.append(adapter)
         coordinator = JobCoordinator(adapter, store, clock=clock)
-        estimate = (
-            adapter.estimate_model(MODEL, {"prompt": "fixture"})
-            if operation == "model"
-            else adapter.estimate_workflow(
+        estimate = None
+        if operation == "model":
+            estimate = adapter.estimate_model(MODEL, {"prompt": "fixture"})
+        elif operation == "workflow":
+            estimate = adapter.estimate_workflow(
                 {"id": "workflow", "inputs": MODEL["inputs"]}, {"prompt": "fixture"}
             )
-        )
-        prepared = coordinator.prepare(estimate, ORIGIN)
+        if operation == "prompt":
+            # The origin-bound command must not perform model/workflow discovery.
+            quote = coordinator.quote_prompt(
+                {"mode": "contextual", "prompt": "fixture"}, origin=ORIGIN
+            )
+            prepared = coordinator.prepare_quote(quote)
+        else:
+            prepared = coordinator.prepare(estimate, ORIGIN)
         return coordinator, store, prepared, requests, adapter
 
     yield create
@@ -92,7 +106,7 @@ def submit(coordinator, prepared, **overrides):
     return coordinator.submit(prepared, **current)
 
 
-@pytest.mark.parametrize("operation", ["model", "workflow"])
+@pytest.mark.parametrize("operation", ["model", "workflow", "prompt"])
 def test_exact_intent_commits_before_single_scoped_submission(setup, operation):
     coordinator, store, prepared, requests, adapter = setup(operation=operation)
     assert len(requests) == 1
@@ -100,10 +114,18 @@ def test_exact_intent_commits_before_single_scoped_submission(setup, operation):
     result = submit(coordinator, prepared)
     assert len(requests) == 2
     assert dict(requests[-1].url.params) == {"projectId": "project"}
-    assert requests[-1].url.path == (
-        "/v1/generate/custom/model" if operation == "model" else "/v1/workflows/workflow/run"
+    assert (
+        requests[-1].url.path
+        == {
+            "model": "/v1/generate/custom/model",
+            "workflow": "/v1/workflows/workflow/run",
+            "prompt": "/v1/generate/prompt",
+        }[operation]
     )
-    assert json.loads(requests[-1].content) == {"prompt": "fixture"}
+    assert json.loads(requests[-1].content) == {
+        "prompt": "fixture",
+        **({"mode": "contextual", "numResults": 1} if operation == "prompt" else {}),
+    }
     assert result.state == JobState.REMOTE and result.remote_job_id == "remote"
     assert (
         result.intent.payload_sha256 == hashlib.sha256(prepared.estimate.payload_json).hexdigest()
@@ -130,8 +152,9 @@ def test_exact_intent_commits_before_single_scoped_submission(setup, operation):
         {"origin": replace(ORIGIN, revision="other")},
     ],
 )
-def test_changed_payload_target_or_origin_cannot_claim_or_spend(setup, changed):
-    coordinator, store, prepared, requests, _ = setup()
+@pytest.mark.parametrize("operation", ["model", "prompt"])
+def test_changed_payload_target_or_origin_cannot_claim_or_spend(setup, changed, operation):
+    coordinator, store, prepared, requests, _ = setup(operation=operation)
     with pytest.raises(QuoteError):
         submit(coordinator, prepared, **changed)
     assert len(requests) == 1
@@ -152,7 +175,8 @@ def test_expiry_is_measured_from_estimate_issuance_not_preparation(setup, point)
 
 
 @pytest.mark.parametrize("failure", ["timeout", "malformed", "no-id", 307, 429, 503])
-def test_failed_or_lost_receipt_is_durable_uncertainty_not_replay(setup, failure):
+@pytest.mark.parametrize("operation", ["model", "prompt"])
+def test_failed_or_lost_receipt_is_durable_uncertainty_not_replay(setup, failure, operation):
     def respond(request):
         if failure == "timeout":
             raise httpx.ReadTimeout("private signed URL", request=request)
@@ -166,7 +190,7 @@ def test_failed_or_lost_receipt_is_durable_uncertainty_not_replay(setup, failure
             headers={"Location": "https://private.invalid/secret", "Retry-After": "0"},
         )
 
-    coordinator, store, prepared, requests, _ = setup(respond)
+    coordinator, store, prepared, requests, _ = setup(respond, operation=operation)
     with pytest.raises(SubmissionUncertain) as error:
         submit(coordinator, prepared)
     assert "private" not in str(error.value)
@@ -176,8 +200,9 @@ def test_failed_or_lost_receipt_is_durable_uncertainty_not_replay(setup, failure
     assert len(requests) == 2
 
 
-def test_failed_claim_never_reaches_paid_transport(setup, monkeypatch):
-    coordinator, store, prepared, requests, _ = setup()
+@pytest.mark.parametrize("operation", ["model", "prompt"])
+def test_failed_claim_never_reaches_paid_transport(setup, monkeypatch, operation):
+    coordinator, store, prepared, requests, _ = setup(operation=operation)
 
     def fail(*args, **kwargs):
         raise StoreError("fixture persistence failure")
@@ -302,7 +327,7 @@ def test_coordinator_requires_explicit_account_identity_before_network(tmp_path)
     assert store.records() == ()
 
 
-@pytest.mark.parametrize("operation", ["model", "workflow"])
+@pytest.mark.parametrize("operation", ["model", "workflow", "prompt"])
 @pytest.mark.parametrize(
     "remote_id",
     ["r" * 257, "remote\u00a0id", "remote\u2003id"],
@@ -326,7 +351,7 @@ def test_unpersistable_receipt_identity_is_uncertain_without_replay(
     assert len(requests) == 2
 
 
-@pytest.mark.parametrize("operation", ["model", "workflow"])
+@pytest.mark.parametrize("operation", ["model", "workflow", "prompt"])
 def test_receipt_identity_limit_is_accepted(setup, operation):
     remote_id = "r" * 256
     coordinator, store, prepared, requests, _ = setup(
@@ -357,3 +382,25 @@ def test_malformed_receipt_persistence_failure_stays_unreplayable(setup, monkeyp
     with pytest.raises(ValueError):
         submit(coordinator, prepared)
     assert len(requests) == 2
+
+
+def test_prompt_restart_observes_known_id_without_resubmission_or_cancellation(setup, tmp_path):
+    def respond(request):
+        return httpx.Response(
+            200,
+            json={"job": {"jobId": "remote", "jobType": "generate-prompt", "status": "success"}},
+        )
+
+    coordinator, store, prepared, requests, adapter = setup(respond, operation="prompt")
+    remote = submit(coordinator, prepared)
+    reopened_store = JobStore(tmp_path / "jobs.sqlite3", SCOPE)
+    restarted = JobCoordinator(adapter, reopened_store)
+    with pytest.raises(RecoveryError, match="Only model-job"):
+        restarted.cancel_remote(remote.intent.request_id, expected_revision=remote.revision)
+    assert len(requests) == 2
+    snapshot = restarted.refresh_remote(remote.intent.request_id, expected_revision=remote.revision)
+    assert snapshot.record.state == JobState.SUCCEEDED
+    assert snapshot.record.intent == prepared.intent
+    assert requests[-1].method == "GET"
+    assert requests[-1].url.path == "/v1/jobs/remote"
+    assert len(requests) == 3

@@ -115,3 +115,16 @@ and supported OS/filesystem behavior remain separate from offline contracts.
 
 SDK identifier-validation failures in result metadata retrieval become sanitized
 `ResultError` exceptions without changing the saved manifest or starting downloads.
+
+
+## Full prompt text
+
+`ResultDownloader.download(max_bytes=...)` can impose a smaller per-request cap;
+it cannot expand the configured storage policy. Prompt result recovery uses a
+64 KiB cap for full text assets when their preview is incomplete, with exact
+expected size and post-download digest verification. The cap applies to headers
+and streamed bodies even without Content-Length. Each read owns private temporary
+staging beneath the configured result root and removes it on success or failure.
+The strings are returned to the caller; no local prompt cache or automatic paid
+fallback is created. A process crash can leave private temporary staging for
+later cleanup, as with other interrupted transfers.

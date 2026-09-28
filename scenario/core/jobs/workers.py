@@ -181,6 +181,11 @@ class JobWorkers:
             self._coordinator.refresh_remote, request_id, expected_revision=expected_revision
         )
 
+    def read_prompt_results(self, request_id, *, expected_revision):
+        return self._enqueue(
+            self._coordinator.read_prompt_results, request_id, expected_revision=expected_revision
+        )
+
     def load_results(self, request_id, *, expected_revision):
         return self._enqueue(
             self._coordinator.load_results, request_id, expected_revision=expected_revision

@@ -500,3 +500,18 @@ def test_cleanup_errors_do_not_mask_control_exception(tmp_path, storage):
         storage[0].close.assert_called_once()
     finally:
         original_close()
+
+
+@pytest.mark.parametrize("headers", [{}, {"Content-Length": "20"}])
+def test_per_request_limit_bounds_stream_and_headers(tmp_path, storage, headers):
+    storage[0].getresponse.return_value = Response(b"x" * 20, headers=headers)
+    with pytest.raises(transfers.TransferError):
+        downloader(max_bytes=100).download(URL, root=tmp_path, name="x", max_bytes=10)
+    assert not list(tmp_path.iterdir())
+
+
+def test_per_request_limit_cannot_expand_storage_policy(tmp_path, storage):
+    storage[0].getresponse.return_value = Response(b"x" * 20, headers={})
+    with pytest.raises(transfers.TransferError):
+        downloader(max_bytes=10).download(URL, root=tmp_path, name="x", max_bytes=100)
+    assert not list(tmp_path.iterdir())

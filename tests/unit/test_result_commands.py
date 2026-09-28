@@ -619,3 +619,36 @@ def test_result_commands_accept_a_database_parent_alias(setup, monkeypatch, tmp_
     assert store.get("request") == ready
     if recover:
         assert len(calls) == before
+
+
+def test_texture_roles_survive_sdk_download_and_reopen_without_raw_metadata(setup, tmp_path):
+    coordinator, store, current, _, assets, _, calls, _ = setup
+    assets["asset-one"]["metadata"] = {"type": "texture-albedo", "prompt": "private fixture prompt"}
+    assets["asset-two"]["metadata"] = {"type": "texture-normal", "other": "private fixture data"}
+    result = coordinator.download_results("request", expected_revision=current.revision)
+    assert [item.asset.texture_role for item in result.results] == ["albedo", "normal"]
+    assert all(item.asset.media_type == "image/png" for item in result.results)
+    assert JobStore(tmp_path / "jobs.sqlite3", store.scope).get("request") == result
+    assert all(request.method == "GET" for request in calls)
+    assert b"private fixture" not in (tmp_path / "jobs.sqlite3").read_bytes()
+
+
+def test_known_texture_role_change_blocks_download_before_storage_transfer(setup):
+    coordinator, store, current, _, assets, downloader, _, _ = setup
+    assets["asset-one"]["metadata"] = {"type": "texture-normal"}
+    manifest = coordinator.load_results("request", expected_revision=current.revision)
+    assets["asset-one"]["metadata"] = {"type": "texture-albedo"}
+    with pytest.raises(ResultError):
+        coordinator.download_results("request", expected_revision=manifest.revision)
+    assert store.get("request").state == JobState.DOWNLOAD_FAILED
+    assert store.get("request").results[0].asset.texture_role == "normal"
+    assert downloader.calls == []
+
+
+def test_unclassified_saved_results_download_without_acquiring_new_semantics(setup):
+    coordinator, _, current, _, assets, _, _, _ = setup
+    manifest = coordinator.load_results("request", expected_revision=current.revision)
+    assets["asset-one"]["metadata"] = {"type": "texture-normal"}
+    result = coordinator.download_results("request", expected_revision=manifest.revision)
+    assert result.state == JobState.READY
+    assert all(item.asset.texture_role is None for item in result.results)

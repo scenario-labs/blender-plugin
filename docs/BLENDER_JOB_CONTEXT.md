@@ -5,9 +5,9 @@ connection, scoped store, coordinator and worker pool. Extension registration
 installs file, dependency, frame, undo and redo hooks; it creates no session,
 connection or worker. This is the integration boundary for the shared runtime.
 The active runtime now creates one selected session lazily for local MCP recovery
-inspection, prepared-intent cancellation, and Image UI/MCP quote/submission and
-result delivery.
-Other generation lanes remain on the prototype path.
+inspection, prepared-intent cancellation, and UI/MCP model quote/submission and
+result delivery. Pending files, captures and Prompt Spark preparation require
+separate completion before a native form can obtain its final quote.
 
 `runtime.ensure_job_session()` binds the session to the catalog's credential-local
 scope and store. The job owner gets a separate SDK HTTP pool using the same
@@ -31,7 +31,7 @@ switching credentials invalidates the context token, even if another scope has
 the same request ID. Shared saved-job controls below also expose known model-job
 cancellation and download/receipt recovery. Uploads and remaining paid entry
 points still need active integration. These recovery
-tools do not import prototype jobs. Image submission creates new durable intents.
+tools do not import prototype jobs. Model submission creates new durable intents.
 
 Active Image jobs poll and download through this session. `apply_images` requires
 an owned verification completion, resolves the original scene/revision, and claims
@@ -332,21 +332,23 @@ tasks are owned and drained by the facade independently of dialog or MCP respons
 lifetime. The active
 runtime supplies credential-bound scope without requiring project discovery.
 
-## Active Image submission
+## Active model submission
 
 [ModelJobs](../scenario/blender/model_jobs.py) retains bounded ephemeral quote
 handles and in-memory display projections for the selected session. UI and MCP
-Image generation share its quote and submission commands. Handles bind the
-captured scene, exact input snapshot and session-issued SDK estimate. Submission
+model generation share its quote and submission commands. Handles bind the
+captured scene, originating lane, exact input snapshot and session-issued SDK estimate. Submission
 validates the current inputs and exact approved cost before consuming the handle
 and persisting intent. The coordinator still checks origin, ownership and expiry
 at dispatch. No handle is reconstructed from a saved fingerprint after restart.
 
 `drain(task=...)` collects only the requested task, leaving other consumers'
-completions intact. Context maintenance drives Image quote/receipt delivery in
-both the GUI and actual CLI loop. Image status after restart is read from the
+completions intact. Context maintenance routes each quote back to its originating
+form even after a tab switch and drives receipt delivery in both the GUI and
+actual CLI loop. Model status after restart is read from the
 credential-scoped store, without automatically polling or resubmitting remotely.
-Active jobs poll, download and import supported image results through this owner.
+Active jobs poll and download through this owner. Only Image automatically
+imports supported images; other lanes stop at saved results for explicit application.
 Local image references use the shared upload path above. Other result types and
 live acceptance remain; this slice must not be advertised as complete release acceptance.
 

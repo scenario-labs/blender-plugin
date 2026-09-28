@@ -10,8 +10,8 @@ is Blender 5.0; dependency and runtime acceptance have separate gates.
 | Responsibility | Source | Current behavior |
 | --- | --- | --- |
 | Registration | [registry.py](../../scenario/blender/registry.py) | Registers properties, panels, operators, composer, pump and local server integration. The `scenario_blender` headless command serves local MCP on the main thread. |
-| UI lifetime and state | [runtime.py](../../scenario/blender/runtime.py) | Owns the credential-bound SDK catalog and process-wide UI/MCP state; Image quote/submission uses the selected `JobSession`; other UI generation lanes still use the prototype manager. |
-| UI generation | [generation.py](../../scenario/blender/generation.py) | Image consumes a session-owned quote before durable submission; other lanes use the prototype manager. |
+| UI lifetime and state | [runtime.py](../../scenario/blender/runtime.py) | Owns the credential-bound SDK catalog and process-wide UI/MCP state; native form quote/submission uses the selected `JobSession`; separate preparation and Film paths remain to integrate. |
+| UI generation | [generation.py](../../scenario/blender/generation.py) | Every native model form consumes a lane-bound session quote before durable submission; unfinished file/capture/Spark inputs block final pricing and submission. |
 | Main-thread application | [pump.py](../../scenario/blender/pump.py) | Drains prototype events and applies results to Blender. GUI timer handling differs from headless execution. |
 | Local MCP | [server.py](../../scenario/mcp/server.py), [tools_scenario.py](../../scenario/mcp/tools_scenario.py), [mcp_service.py](../../scenario/blender/mcp_service.py) | Queues scene tools for main-thread execution; model listing/schema use the same SDK catalog as the UI, all model generation lanes now use the shared session; ancillary service tools still call the prototype runtime. |
 | Credentials | [config.py](../../scenario/core/config.py), [prefs.py](../../scenario/prefs.py) | Credentials default to the saved Blender pair; environment credentials require explicit selection and cannot mix with preferences. OAuth is deferred; shared runtime scope/project integration remains #65. |
@@ -103,18 +103,19 @@ and runtime reset stop admission; in-flight receipts keep their original scope.
 File loading retires the selected owner and invalidates its context token; the
 next recovery call creates a fresh session against the same scoped store.
 GUI ticks and the headless MCP loop reap retired sessions after work finishes.
-The Image entry point now uses this session for quote-bound submission, as described below.
+Native model form entry points use this session for quote-bound submission, as described below.
 Explicit saved-job controls and active Image transfers use the same session below.
 
-## Active SDK cost previews and Image submission
+## Active SDK cost previews and model submission
 
-The Image lane uses [ModelJobs](../../scenario/blender/model_jobs.py), a main-thread
+Native model forms use [ModelJobs](../../scenario/blender/model_jobs.py), a main-thread
 facade over the existing selected `JobSession`, coordinator and worker pool.
 It does not own another executor or persistent registry. UI and MCP prepare the
 same model inputs; each quote captures the scene before a worker retrieves fresh
 SDK model metadata and the exact server estimate. UI cost delivery is keyed to
 the originating scene/form. Only the currently selected scene can receive a
-usable Image quote. Other UI lanes retain the catalog preview path.
+usable quote. Completion is routed by the ticket's originating lane, not the
+currently selected tab. Repricing releases only that form's former approval.
 
 The result action **Remove background** selects a current Image background-removal
 model and prepares one local file reference with default settings. It no longer
@@ -123,7 +124,7 @@ reviews the shared exact estimate and chooses Generate. Failed file/model/schema
 preflight preserves the current form; a successful preparation invalidates its
 old quote without canceling existing jobs or admitted uploads.
 
-Clicking Image **Generate** requires the unchanged ready quote. MCP `generate`
+Clicking **Generate** in any model form requires its unchanged ready quote. MCP `generate`
 for every model lane requires its `quote_id` and the explicitly approved `cu_cost_exact`
 string as `approved_cost`. The quote also binds its lane: callers cannot turn an
 Image approval into a render, material or other lane submission. A displayed float
@@ -175,7 +176,9 @@ advance through the same maintenance pump. `wait_for_job` waits on the HTTP work
 while the main thread remains available for delivery. It returns at completion,
 review-required state or timeout, and rejects a changed credential context.
 An unresumed restarted record is returned immediately.
-Other UI lanes still use prototype paid dispatch. Non-image MCP model jobs now
+Native model forms no longer dispatch through the prototype manager. Files,
+captures and Spark preparation must finish before the final quote. Render forms
+remain unavailable while shared capture/preparation is incomplete. Non-image model jobs now
 use the same durable submission, polling, download, cancellation and recovery
 commands. They stop at saved `ready` results without automatically assigning
 materials, importing meshes or inserting media strips. Status includes the saved

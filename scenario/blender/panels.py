@@ -264,9 +264,8 @@ def generate_enabled(lane_state, lane):
     """Presentation guard; submission still validates the exact quote and origin."""
     if not runtime.online() or not runtime.credentials().valid or not lane_state.model_id:
         return False
-    return lane != "image" or (
-        lane_state.estimate_state == "READY" and lane_state.estimate_key in runtime.state.estimates
-    )
+    ticket = runtime.state.estimates.get(lane_state.estimate_key)
+    return lane_state.estimate_state == "READY" and ticket is not None and ticket.lane == lane
 
 
 def model_button_text(lane_state):

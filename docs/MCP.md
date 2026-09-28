@@ -18,11 +18,13 @@ The extension is experimental. The [runtime map](architecture/runtime.md)
 separates implemented helpers from active UI/MCP integration. A tool description
 is guidance for the connected agent, not a server-enforced spending approval.
 Every `generate` model lane now requires a session-owned quote and the exact
-approved cost. UI lanes other than Image still retain prototype dispatch.
+approved cost. Native generation forms now use the same shared quotes and
+submission boundary; pending files, captures and Prompt Spark preparation must
+finish before a usable final quote.
 
 `list_local_jobs` inspects the separate credential-scoped durable store and returns
 saved costs, revisions and suggested recovery actions without contacting Scenario.
-It includes all new MCP model submissions and shared UI Image submissions,
+It includes all new MCP and native form model submissions,
 but does not import prototype records or refresh remote jobs.
 `cancel_prepared_job` cancels only an unsubmitted durable intent, using the context
 token and revision from inspection. A reset, file load or credential switch invalidates that
@@ -385,6 +387,6 @@ still use the manager-owned record so active waits observe its progress.
 
 Render lanes take the explicit model parameters supplied by the caller. They do
 not run the UI's capture, style decoration or Prompt Spark preparation. Non-image
-UI submission, broader reference uploads, result-specific application and Film
+UI capture/Spark preparation, result-specific application and Film
 remain integration work under #65/#68. This change does not complete their
 end-to-end acceptance or authorize release.

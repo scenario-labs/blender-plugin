@@ -10,14 +10,17 @@ boundaries. No paid or live acceptance is implied by this documentation.
 - The Image lane now shares SDK quotes, durable submission, reference uploads
   and result/recovery commands between UI and local MCP. All MCP `generate`
   lanes now use shared quotes, durable submission and downloads; only Image
-  automatically imports results. Other paid UI generation lanes still use the
-  prototype client and manager. Complete runtime adoption
+  automatically imports results. Native form generation now uses those shared
+  quotes and jobs too. Pending files, clip/mesh/render captures and Prompt Spark
+  preparation cannot submit until their shared preparation is complete. Render
+  forms remain unavailable through this boundary while that integration is open.
+  Film and prompt helpers retain separate paths. Complete runtime adoption
   and live/native acceptance remain open
   ([#64](https://github.com/scenario-labs/blender-plugin/issues/64),
   [#65](https://github.com/scenario-labs/blender-plugin/issues/65)).
 - Credentials use one explicitly selected pair (saved Blender preferences by
-  default, environment only when selected). Image UI and all MCP model jobs use credential-bound
-  local storage; shared scope integration for other UI lanes remains #65. Browser sign-in in
+  default, environment only when selected). UI and MCP model jobs use credential-bound
+  local storage; remaining preparation/application integration stays in #65. Browser sign-in in
   [#67](https://github.com/scenario-labs/blender-plugin/issues/67) is deferred.
 - Trained/custom-model discovery and routing remain incomplete
   ([#97](https://github.com/scenario-labs/blender-plugin/issues/97)).

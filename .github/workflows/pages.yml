@@ -80,12 +80,12 @@ jobs:
         run: >-
           uv run --locked --no-env-file python tools/build_site.py
           --pending-repository --output "$RUNNER_TEMP/site"
-      - uses: actions/upload-pages-artifact@7b1f4a764d45c48632c6b24a0339c27f5614fb0b # v4.0.0
+      - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
         with:
           path: ${{ runner.temp }}/site
       - name: Reject a publication race before deploying
         env:
           GH_TOKEN: ${{ github.token }}
         run: uv run --locked --no-env-file python tools/prepare_site_release.py --output "$RUNNER_TEMP/verified" --check-current
-      - uses: actions/deploy-pages@d6db90164ac5ed86f2b6aed7e0febac5b3c0c03e # v4.0.5
+      - uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1
         id: deploy

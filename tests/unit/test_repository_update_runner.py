@@ -334,3 +334,107 @@ def test_probe_inventory_uses_extended_windows_drive_and_unc_paths(monkeypatch):
     assert probe.windows_namespace("\\\\server\\share\\state") == "\\\\?\\UNC\\server\\share\\state"
     extended = "\\\\?\\C:\\profile\\state"
     assert probe.windows_namespace(extended) == extended
+
+
+@pytest.fixture
+def package_probe(monkeypatch):
+    monkeypatch.syspath_prepend(str(ROOT / "tests/blender"))
+    probe = importlib.import_module("package_update")
+    monkeypatch.setattr(probe, "module", lambda name: importlib.import_module("scenario." + name))
+    return probe
+
+
+def test_package_probe_seeds_exact_mesh_upload_and_detects_lost_binding(package_probe, tmp_path):
+    from dataclasses import replace
+
+    from scenario.core.jobs import store as jobs
+    from scenario.core.jobs.upload_sources import UploadSources
+    from scenario.core.jobs.upload_store import UploadState, UploadStore
+
+    scope = jobs.JobScope("https://fixture.invalid", "update-account")
+    selected = jobs.JobStore(tmp_path / "jobs.sqlite3", scope)
+    uploads = UploadStore(tmp_path / "uploads.sqlite3", scope)
+    (tmp_path / "sources").mkdir()
+    sources = UploadSources(tmp_path / "sources", part_bytes=128)
+    origin = jobs.JobOrigin("file", "scene", "revision", "target")
+    binding = package_probe.seed_mesh_upload(tmp_path, selected, uploads, sources, origin)
+    upload = uploads.get("upload-mesh")
+    assert upload.state == UploadState.IMPORTED
+    assert len(upload.receipts) > 1
+    sources.verify(upload.intent)
+    assert binding.mesh_source.file_sha256 == package_probe.digest(
+        (tmp_path / "reference.glb").read_bytes()
+    )
+    for name in ("ready", "applied"):
+        selected.create(
+            jobs.JobIntent(
+                name,
+                scope,
+                origin,
+                "model",
+                "fixture-model",
+                "a" * 64,
+                "b" * 64,
+                "0.1234567890123456789",
+                (binding,),
+            )
+        )
+    package_probe.check_mesh_bindings(selected, uploads)
+    missing = replace(
+        selected.get("ready"), intent=replace(selected.get("ready").intent, mesh_sources=())
+    )
+    damaged = SimpleNamespace(get=lambda name: missing if name == "ready" else selected.get(name))
+    with pytest.raises(RuntimeError, match="captured generation input"):
+        package_probe.check_mesh_bindings(damaged, uploads)
+
+
+def test_package_probe_detects_lost_uncertainty_or_allowed_replay(
+    package_probe, tmp_path, monkeypatch
+):
+    from dataclasses import replace
+
+    from scenario.core.jobs import store as jobs
+    from scenario.core.jobs.transfers import DownloadedResult
+
+    scope = jobs.JobScope("https://fixture.invalid", "update-account")
+    selected = jobs.JobStore(tmp_path / "jobs.sqlite3", scope)
+    origin = jobs.JobOrigin("file", "scene", "revision", "target")
+    intent = jobs.JobIntent(
+        "applied", scope, origin, "model", "fixture-model", "a" * 64, "b" * 64, "1"
+    )
+    record = selected.create(intent)
+    for state in (jobs.JobState.SUBMITTING, jobs.JobState.REMOTE, jobs.JobState.SUCCEEDED):
+        record = selected.transition(
+            "applied",
+            expected_revision=record.revision,
+            state=state,
+            **({"remote_job_id": "remote"} if state == jobs.JobState.REMOTE else {}),
+        )
+    record = selected.set_results(
+        "applied",
+        (jobs.ResultAsset("asset", "result.png", "image/png"),),
+        expected_revision=record.revision,
+    )
+    record = selected.transition(
+        "applied", expected_revision=record.revision, state=jobs.JobState.DOWNLOADING
+    )
+    record = selected.record_download(
+        "applied",
+        "asset",
+        DownloadedResult("result.png", 1, "a" * 64),
+        expected_revision=record.revision,
+    )
+    for state in (jobs.JobState.READY, jobs.JobState.APPLYING, jobs.JobState.APPLIED):
+        record = selected.transition("applied", expected_revision=record.revision, state=state)
+    package_probe.seed_local_applications(selected, record, origin)
+    expected = selected.get("applied")
+    package_probe.check_local_applications(selected)
+    assert selected.get("applied") == expected
+    lost = SimpleNamespace(
+        get=lambda _: replace(expected, local_applications=expected.local_applications[:-1])
+    )
+    with pytest.raises(RuntimeError, match="local application history"):
+        package_probe.check_local_applications(lost)
+    monkeypatch.setattr(selected, "claim_local_application", lambda *a, **kw: expected)
+    with pytest.raises(RuntimeError, match="permitted replay"):
+        package_probe.check_local_applications(selected)

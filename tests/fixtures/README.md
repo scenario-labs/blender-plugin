@@ -131,3 +131,8 @@ Its asset copyright metadata records Scenario Inc. It contains no recording,
 provider output, external URI, animation or rig. Pure preflight tests mutate its
 JSON to check unsupported contracts; native tests exercise actual import,
 hierarchy, packed textures, cursor placement, rollback and durable recovery.
+
+The native update probe stages
+these exact bytes and compares their captured-source metadata and generation
+bindings before and after upgrade/restart. This does not establish live provider
+behavior or in-place application acceptance.

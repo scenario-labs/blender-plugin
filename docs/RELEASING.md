@@ -115,7 +115,11 @@ Before claiming state preservation for an adopted release pair, run the
 [Scenario package update probe](development/validation.md#scenario-package-state-across-updates)
 with the exact previous and candidate ZIPs on each supported Blender series.
 Retain both SHA-256 values, the actual Blender/OS identity and the update/restart
-reports. The probe exercises the real installed package and its durable state
+reports. The current probe also preserves captured-mesh input/upload provenance
+and separate local reuse outcomes, including rejection of an unfinished claim
+after update and restart. It requires packages exposing those storage APIs;
+older package acceptance needs its matching historical probe, not silently
+skipped state coverage. The probe exercises the real installed package and its durable state
 through a loopback repository, without modifying either archive. It does not
 verify attestations or establish the public HTTPS installation/update flow;
 complete those publication checks separately. A synthetic predecessor is useful

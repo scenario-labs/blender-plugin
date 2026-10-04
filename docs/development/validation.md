@@ -216,11 +216,18 @@ The default invocation still runs the small synthetic fixture above.
 The package probe seeds synthetic saved preferences and credentials, six durable
 job states (prepared, uncertain, remote, download failed, ready and applied), a
 second isolated credential scope, result manifests/receipts and local result bytes,
-three upload states with verified staged bytes, and a saved blend with a reference.
+three image upload states plus an imported captured-mesh upload with verified
+staged bytes, and a saved blend with a reference.
 It compares these after native upgrade in the same process and after reopening
 the blend in a second, offline Blender process. Exact quote strings, application
 origins, upload markers and the installation's scope key must survive. Original
-reference bytes are checked too. The actual package's storage APIs perform reads
+reference bytes are checked too. Ready/applied jobs retain the exact mesh input
+binding, export hash, source transform and upload revision. The completed job
+retains successful, confirmed-failed and unfinished local application claims;
+the probe attempts another claim and requires rejection without changing the
+record before update, after update and after restart. These fixtures require
+packages with the captured-source and local-reuse storage APIs. They do not
+restore live object authority or replay scene application. The actual package's storage APIs perform reads
 and verification; no mocked add-on replaces the installed extension.
 
 The probe rejects Python socket connections while seeding/checking/upgrading.

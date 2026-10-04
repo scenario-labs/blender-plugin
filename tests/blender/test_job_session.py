@@ -75,6 +75,93 @@ class JobSessionTests(unittest.TestCase):
         task.result(5)
         return self.session.drain()[0]
 
+    def film_quote(self):
+        import httpx
+
+        plan = submodule("core.scene.film_scene_plan")
+        recipe = {
+            "title": "Film fixture",
+            "shots": [
+                {
+                    "id": "shot",
+                    "title": "Shot",
+                    "duration": 4,
+                    "scene": plan.local_plan("studio", "", 4),
+                }
+            ],
+            "tasks": [
+                {
+                    "id": "take",
+                    "title": "Take",
+                    "kind": "model",
+                    "model": "model",
+                    "parameters": {"prompt": "fixture"},
+                }
+            ],
+        }
+        original = self.handler
+
+        def respond(request):
+            if request.method == "GET":
+                self.calls.append(request)
+                return httpx.Response(
+                    200,
+                    json={
+                        "model": {
+                            "id": "model",
+                            "type": "custom",
+                            "inputs": [{"name": "prompt", "type": "string", "required": True}],
+                        }
+                    },
+                )
+            return original(request)
+
+        self.handler = respond
+        origin = self.session.capture(self.scene)
+        task = self.session.quote_film_task(
+            recipe,
+            production_id="production",
+            task_id="take",
+            origin=origin,
+        )
+        task.result(5)
+        completion = self.session.drain(task=task)[0]
+        return self.session.deliver(completion, lambda result, *_: result)
+
+    def test_film_session_quote_persists_identity_before_shared_submission(self):
+        storage = submodule("core.jobs.store")
+        quote = self.film_quote()
+        prepared = self.session.prepare_quote(quote)
+        original = self.handler
+
+        def respond(request):
+            saved = storage.JobStore(Path(self.temp.name) / "jobs.sqlite3", self.scope)
+            row = saved.film_job("production", "take")
+            self.assertEqual(row.state, storage.JobState.SUBMITTING)
+            self.assertEqual(row.intent.film_task, quote.film_task)
+            return original(request)
+
+        self.handler = respond
+        task = self.session.submit(
+            prepared, operation="model", target_id="model", payload=quote.estimate.payload
+        )
+        row = task.result(5)
+        completion = self.session.drain(task=task)[0]
+        self.assertIsNone(completion.error)
+        self.assertEqual(row.intent.film_task.task_id, "take")
+        self.assertEqual(self.store.film_job("production", "take"), row)
+        with self.assertRaises(storage.StoreConflict):
+            self.film_quote()
+        self.assertEqual(len(self.calls), 3)
+
+    def test_film_quote_rejects_changed_scene_before_preparation(self):
+        quote = self.film_quote()
+        self.session.invalidate_scene(self.scene)
+        with self.assertRaises(self.module.OriginUnavailable):
+            self.session.prepare_quote(quote)
+        self.assertEqual(self.store.records(), ())
+        self.assertEqual(len(self.calls), 2)
+
     def test_delivery_uses_captured_target_on_main_thread_once(self):
         completion = self.completion()
         observed = []

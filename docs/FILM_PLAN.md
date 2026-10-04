@@ -72,22 +72,68 @@ when project/team are absent. A recipe's project field alone cannot authorize an
 output. Missing tasks, invalid/negative/ambiguous indexes and foreign-scope
 observations fail. Asset identifiers are opaque and need no `asset_` prefix.
 
-The future coordinator must construct these observations from its scoped saved
-jobs/uploads after checking their state. The helper does not read storage or
-certify completion of a caller-supplied observation. Resolved parameters still
+The shared Film model-task command now constructs these observations from
+matching completed scoped model jobs, as described below. Upload-task binding
+remains separate integration work. The pure helper itself does not read storage
+or certify completion of a caller-supplied observation. Resolved parameters still
 need a fresh exact quote, explicit approval and a durable task/submission binding;
 resolution is not spending authorization. No separate Film runner, client or
 production-state database is introduced here.
 
+## Durable model tasks
+
+`JobCoordinator.quote_film_task` validates a raw recipe in the selected scope,
+resolves completed model-task references and uses the existing SDK model schema
+and exact estimate command. `JobWorkers` and `JobSession` expose it on the same
+bounded queue and main-thread origin delivery as ordinary model quotes. It creates
+no separate runner, client or production-state file. No native Film control or
+MCP endpoint calls this command yet.
+
+The caller supplies a stable opaque `production_id` and a recipe task name.
+Reopening that production must reuse its identity; a title, scene name or fresh
+random ID on every load is not sufficient. The quote captures a normalized recipe
+SHA256 and a task SHA256. The task digest includes the normalized task and the
+digests of referenced ancestors, so editing an earlier dependency cannot silently
+reuse a later task's old output. References must name earlier tasks. Appending a
+new task can reuse unchanged dependencies even though the full recipe digest
+changes. Unknown, forward, self and malformed references fail before service work.
+
+`prepare_quote` saves the binding with the exact payload/quote hashes and cost
+in the existing [job store](JOB_STORAGE.md#film-task-reservations), before paid
+submission. The scope/production/task tuple is reserved atomically across owners.
+Any existing attempt, including canceled, failed, prepared and uncertain jobs,
+blocks another preparation for that task name. Inspect the saved job for recovery;
+a deliberate new take needs a new task name and a fresh quote. A lost write
+acknowledgement cannot create a second intent. Restart does not restore a quote or
+spending permission. The existing single-use submission and uncertainty rules apply.
+
+References use the saved result manifest's ordered asset IDs after confirmed
+remote success. A missing manifest, pending/failed job, changed task or dependency,
+other production, cloud-only record or foreign credential/project scope fails.
+Local download or Blender application is not required to reuse remote asset IDs;
+existing transfer/application failures do not erase a successful remote output.
+Literal asset IDs still pass through the selected SDK/model validation and remote
+permissions. Upload-task references are currently rejected explicitly.
+
+Recipe text and parameters are not persisted by this binding; the caller must
+retain/reload the recipe separately. Quotes are immutable snapshots. A future
+view must invalidate its displayed quote when the recipe or production changes
+and pass the exact approved request to submission. No recipe field supplies
+spending approval, authorizes scene application or infers an API key's project.
+
 ## Remaining integration and evidence
 
-Next integration must persist recipe/task identity with shared jobs before
-spending, retain ambiguous submission state without retry, derive references from
-verified scoped saved outputs, and expose the same preparation/approval commands
-to native views and local MCP. Scene construction, shot capture, media finishing,
+Next integration must expose these preparation/approval commands to native views
+and local MCP, retain the production identity when reopening a recipe, and bind
+upload tasks to the existing upload records. Scene construction, shot capture, media finishing,
 provider-specific preparation and final export remain separate work. Keep useful
 source capabilities and tests as those paths are connected; do not describe this
 helper adoption as a completed Film workflow.
+
+[Shared Film job tests](../tests/unit/test_film_jobs.py) cover atomic competing
+reservations, committed-but-unacknowledged writes, uncertain submissions, scope
+isolation and transitive dependency changes. Native session tests cover installed
+Film quote/submission and changed-scene rejection.
 
 [Recipe tests](../tests/unit/test_film_plan.py) and
 [scene-plan tests](../tests/unit/test_film_scene_plan.py) cover source timing,

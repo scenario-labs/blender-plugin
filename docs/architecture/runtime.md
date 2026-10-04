@@ -327,9 +327,16 @@ separate; this does not complete #65 or #68.
 [Film recipe helpers](../FILM_PLAN.md) preserve data-only recipe/scene validation,
 editorial timing, continuity declarations and ordered task references. Project
 selection is optional; referenced outputs must match the full selected job scope.
-These helpers do not submit work, create scenes or own storage. Shared durable
-Film task binding, UI/MCP preparation, capture/finishing and release acceptance
-remain to integrate. There is no active Film entry point in this checkout.
+These helpers do not submit work, create scenes or own storage. UI/MCP preparation,
+upload-task binding, capture/finishing and release acceptance remain to integrate.
+There is no active Film entry point in this checkout.
+
+The shared `quote_film_task` command now binds model tasks to the existing scoped
+job store and quote/submission queue. Recipe and transitive task digests protect
+reference reuse; atomic production/task reservation prevents another attempt
+through a fresh quote after restart or uncertainty. The native `JobSession`
+exposes the command with existing scene guards, but no Film view or MCP endpoint
+calls it yet. See [durable Film tasks](../FILM_PLAN.md#durable-model-tasks).
 
 ## Shared MCP render preparation
 

@@ -45,6 +45,18 @@ These methods never rebind a restarted job by scene name. Explicit recovered
 image imports use a separately approved destination as described below. The Image facade exposes
 receipt-only retry to UI/MCP while its original owner retains the outcome handle.
 
+## Film model task command
+
+`JobSession.quote_film_task(recipe, production_id=..., task_id=..., origin=...)`
+queues the shared [Film quote command](JOB_COORDINATOR.md#film-model-task-quotes).
+The caller captures its scene/target origin before admission. The existing bounded
+queue copies the recipe; normal main-thread delivery and `prepare_quote` reject a
+changed scene or retired credential context. The bound intent uses the same
+`submit` and recovery paths, with its production/task identity committed before
+network dispatch. No scene mutation, Film panel, MCP tool or new background owner
+is added. A future view must preserve production identity and invalidate displayed
+quotes when its recipe changes; this session command operates on a snapshot.
+
 ## Cloud result adoption command
 
 `JobSession.adopt_cloud_job(identifier, expected_model_id=..., scene=...)`

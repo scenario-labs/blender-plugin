@@ -102,11 +102,30 @@ def _body_for(model_id, parameters):
     return record, body
 
 
-def estimate_cost(args):
+def _generation_input(args, lane):
+    if lane in {"render_image", "render_video"}:
+        from ..blender import render_commands
+
+        runtime.sync_catalog_context()
+        request = render_commands.request(
+            bpy.context.scene, lane, args["model_id"], args.get("parameters")
+        )
+        return generation.ensure_record(request.model_id), request.body, request
     record, body = _body_for(args["model_id"], args.get("parameters"))
+    return record, body, None
+
+
+def render_form(args):
+    from ..blender import render_commands
+
+    return render_commands.execute(bpy.context, args)
+
+
+def estimate_cost(args):
     lane = args.get("lane") or "image"
     if lane not in LANES:
         raise ValueError(f"lane must be one of {LANES}")
+    record, body, render_request = _generation_input(args, lane)
     jobs = runtime.ensure_model_jobs()
     ticket = jobs.quote(bpy.context.scene, record.id, body, lane=lane)
 
@@ -114,6 +133,14 @@ def estimate_cost(args):
         if runtime.ensure_model_jobs() is not jobs:
             raise ScenarioError(0, "The estimate context changed; estimate again")
         quote = jobs.finish_quote(ticket)
+        if render_request is not None:
+            try:
+                _, current, _ = _generation_input(args, lane)
+                if current != body:
+                    raise ScenarioError(0, "The render form changed; estimate again")
+            except Exception:
+                jobs.quotes.pop(ticket.identifier, None)
+                raise
         return {
             "model_id": record.id,
             "lane": lane,
@@ -292,14 +319,19 @@ def generate(args):
     lane = args.get("lane") or "image"
     if lane not in LANES:
         raise ValueError(f"lane must be one of {LANES}")
-    runtime.ensure_model_jobs().require_quote(args.get("quote_id"))
-    record, body = _body_for(args["model_id"], args.get("parameters"))
+    ticket = runtime.ensure_model_jobs().require_quote(args.get("quote_id"))
+    if ticket.lane != lane:
+        raise ScenarioError(0, "The generation lane changed; estimate again")
+    record, body, render_request = _generation_input(args, lane)
     meta = {
         "prompt": str(body.get("prompt") or ""),
         "model_name": record.name,
         "source": "mcp",
         "target_objects": [o.name for o in bpy.context.selected_objects if o.type == "MESH"],
     }
+    if render_request is not None:
+        meta.update(generation.request_meta(bpy.context, lane, render_request))
+        meta["source"] = "mcp"
     jobs = runtime.ensure_model_jobs()
     rec = jobs.submit(
         args.get("quote_id"),
@@ -1195,12 +1227,58 @@ SPECS = (
         {"readOnlyHint": True},
     ),
     ToolSpec(
+        "render_form",
+        (
+            "Inspect or prepare the native Render Image/Video form without submitting generation.\n"
+            "Args:\n"
+            "  - lane: required render_image or render_video.\n"
+            "  - action: inspect (default), configure, prepare or remove.\n"
+            "  - settings: configure edits model_id, look, capture_source (CAMERA/VIEWPORT), force_solid, spark_enabled, first_frame_path, use_first_frame, match_timeline, scalar parameters and style_assets (replaces unmarked styles). Optional parameters accept null to disable them. Choose a model from list_models. Remove references before changing models.\n"
+            "  - role: prepare explicitly captures/uploads scene or uploads the selected first_frame file using the shared reference lifecycle. Repeated preparation refuses an occupied slot.\n"
+            "  - reference_key: remove requires the exact key from a fresh inspection; detaches only that reference and does not cancel its saved upload. Inspect uncertain uploads before preparing another.\n"
+            "Returns: current settings, references with reference_key/upload_id, preparation errors, ready_to_estimate and spark_required. Uploaded snapshots remain fixed when capture settings or the scene change.\n"
+            'Example: {"lane":"render_image","action":"configure","settings":{"look":"copper sculpture","capture_source":"CAMERA"}}.\n'
+            "Configure, prepare the scene and optional first frame, then inspect until ready. An empty automatic look needs estimate_prompt(action=GENERATE), separate approve_prompt spending approval and result delivery first. Finally use estimate_cost/generate with this lane/model and no parameters. File uploads and captures are explicit; no Python execution is required.\n"
+            "Platform equivalent: upload_create and upload_complete for prepared snapshots; native form editing is local."
+        ),
+        _schema(
+            {
+                "lane": {"type": "string", "enum": ["render_image", "render_video"]},
+                "action": {"type": "string", "enum": ["inspect", "configure", "prepare", "remove"]},
+                "settings": {
+                    "type": "object",
+                    "properties": {
+                        "model_id": {"type": "string"},
+                        "look": {"type": "string"},
+                        "capture_source": {"type": "string", "enum": ["CAMERA", "VIEWPORT"]},
+                        "force_solid": {"type": "boolean"},
+                        "spark_enabled": {"type": "boolean"},
+                        "first_frame_path": {"type": "string"},
+                        "use_first_frame": {"type": "boolean"},
+                        "match_timeline": {"type": "boolean"},
+                        "parameters": {"type": "object"},
+                        "style_assets": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                            "maxItems": 15,
+                        },
+                    },
+                    "additionalProperties": False,
+                },
+                "role": {"type": "string", "enum": ["scene", "first_frame"]},
+                "reference_key": {"type": "string"},
+            },
+            ["lane"],
+        ),
+        render_form,
+    ),
+    ToolSpec(
         "estimate_cost",
         (
             "Get the exact CU cost with a dry run that spends no credits.\n"
             "Args:\n"
             "  - model_id: required string, the model identifier.\n"
-            "  - parameters: optional object, model parameters including Scenario asset ids for file inputs.\n"
+            "  - parameters: optional object, model parameters including Scenario asset ids for file inputs. Omit for render lanes: prepare render_form first; pricing uses its native scene prompt and uploaded snapshots.\n"
             "  - lane: optional generation lane, default image. Every lane issues a single-use quote_id.\n"
             "Returns: model_id, lane, cu_cost, cu_cost_exact (decimal string), details, mesh_sources (local captured 3D input provenance) and quote_id bound to the lane, model, inputs, scene and credential context.\n"
             'Example: {"model_id": "model_example", "parameters": {"prompt": "a wooden crate"}}.\n'
@@ -1225,10 +1303,10 @@ SPECS = (
             "Args:\n"
             "  - lane: required string; image, video, 3d, material, audio, render_image, render_video or edit3d.\n"
             "  - model_id: required string, the exact model to run.\n"
-            "  - parameters: optional object, model parameters; file inputs take Scenario asset ids.\n"
+            "  - parameters: optional object, model parameters; file inputs take Scenario asset ids. Omit for render lanes, which rebuild the current render_form before checking the approved quote.\n"
             "  - quote_id: required, from estimate_cost with the same lane, model, inputs and scene.\n"
             "  - approved_cost: required, the exact cu_cost_exact string explicitly approved by the user.\n"
-            "Returns: local_id, status, lane, model_id and note. All model jobs poll and download through the shared session. Only the Image lane imports verified PNG/EXR images automatically into the unchanged origin. Other lanes stop at saved ready results; their scene application remains separate. Render lanes take explicit model inputs without UI capture or Prompt Spark preparation.\n"
+            "Returns: local_id, status, lane, model_id and note. All model jobs poll and download through the shared session. Only the Image lane imports verified PNG/EXR images automatically into the unchanged origin. Other lanes stop at saved ready results; their scene application remains separate. Render lanes require explicit render_form uploads and separate Prompt Spark approval when enabled with an empty look. No capture, upload or Spark submission occurs during generate.\n"
             'Example: {"lane": "image", "model_id": "model_example", "parameters": {"prompt": "a wooden crate"}, "quote_id": "quote_from_estimate", "approved_cost": "1.25"}.\n'
             "Do not call before estimate_cost and explicit spending approval. Do not repeat a timed-out submission. Use prepare_result_application for saved-result imports.\n"
             "Platform equivalent: model_run."

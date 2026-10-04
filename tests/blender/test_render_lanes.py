@@ -50,6 +50,103 @@ class RenderLanesTests(unittest.TestCase):
             ref.filepath = lane.first_frame_path
         return ref
 
+    def form(self, action="inspect", **args):
+        return submodule("mcp.tools_scenario").render_form(
+            {"lane": "render_image", "action": action, **args}
+        )
+
+    def test_mcp_configures_native_form_without_capture_or_submission(self):
+        self.image_lane.model_id = "model_google-gemini-3-1-flash"
+        before = list(self.image_lane.references)
+        result = self.form(
+            "configure",
+            settings={
+                "look": "copper sculpture",
+                "capture_source": "VIEWPORT",
+                "force_solid": True,
+                "spark_enabled": False,
+                "style_assets": ["style-one"],
+            },
+        )
+        self.assertEqual(before, [])
+        self.assertEqual(result["look"], "copper sculpture")
+        self.assertEqual(result["capture_source"], "VIEWPORT")
+        self.assertTrue(result["force_solid"])
+        self.assertFalse(result["ready_to_estimate"])
+        self.assertEqual(len(result["references"]), 1)
+        self.assertEqual(result["references"][0]["asset_id"], "style-one")
+        self.uploaded("render_image")
+        self.assertTrue(self.form()["ready_to_estimate"])
+        payload = self.generation.build_request(self.scene, "render_image").body
+        self.assertEqual(payload["referenceImages"], ["uploaded-scene", "style-one"])
+        self.assertIn("copper sculpture", payload["prompt"])
+
+    def test_mcp_bad_settings_do_not_partially_edit_the_form(self):
+        self.image_lane.model_id = "model_google-gemini-3-1-flash"
+        self.image_lane.prompt = "original"
+        for extra in (
+            {"capture_source": "wrong"},
+            {"force_solid": 1},
+            {"parameters": {"missing": 2}},
+            {"style_assets": [""]},
+            {"parameters": {"referenceImages": ["asset"]}},
+        ):
+            with self.subTest(extra=extra), self.assertRaises(ValueError):
+                self.form("configure", settings={"look": "changed", **extra})
+            self.assertEqual(self.image_lane.prompt, "original")
+            self.assertEqual(len(self.image_lane.references), 0)
+
+    def test_mcp_parameter_edits_validate_before_native_assignment(self):
+        self.video_lane.model_id = "model_bytedance-seedance-2-0"
+        commands = submodule("blender.render_commands")
+        state = commands.configure(self.scene, "render_video", {"parameters": {"duration": 4}})
+        self.assertEqual(int(state["parameters"]["duration"]), 4)
+        for value in (True, float("nan"), 4.5, 999):
+            with self.subTest(value=value), self.assertRaises(ValueError):
+                commands.configure(
+                    self.scene, "render_video", {"look": "bad", "parameters": {"duration": value}}
+                )
+            self.assertEqual(self.video_lane.prompt, "")
+            self.assertEqual(
+                int(commands.inspect(self.scene, "render_video")["parameters"]["duration"]), 4
+            )
+
+    def test_mcp_reference_removal_rejects_changed_binding_and_does_not_cancel_upload(self):
+        self.image_lane.model_id = "model_google-gemini-3-1-flash"
+        ref = self.uploaded("render_image")
+        key = self.form()["references"][0]["reference_key"]
+        ref.asset_id = "changed"
+        with self.assertRaises(ValueError):
+            self.form("remove", reference_key=key)
+        key = self.form()["references"][0]["reference_key"]
+        result = self.form("remove", reference_key=key)
+        self.assertEqual(result["references"], [])
+        self.assertFalse(result["ready_to_estimate"])
+        with self.assertRaises(ValueError):
+            self.form("remove", reference_key=key)
+
+    def test_mcp_model_change_preserves_references_until_explicit_removal(self):
+        self.image_lane.model_id = "model_google-gemini-3-1-flash"
+        self.uploaded("render_image")
+        with self.assertRaisesRegex(ValueError, "Remove"):
+            self.form("configure", settings={"model_id": "model_openai-gpt-image-2"})
+        self.assertEqual(self.image_lane.model_id, "model_google-gemini-3-1-flash")
+        self.form("remove", reference_key=self.form()["references"][0]["reference_key"])
+        self.form("configure", settings={"model_id": "model_openai-gpt-image-2"})
+        self.assertEqual(self.image_lane.model_id, "model_openai-gpt-image-2")
+
+    def test_mcp_inspection_and_quote_never_prepare_missing_references(self):
+        self.image_lane.model_id = "model_google-gemini-3-1-flash"
+        commands = submodule("blender.render_commands")
+        error = submodule("core.api.errors").ScenarioError
+        with patch.object(
+            commands.render_references, "prepare", side_effect=AssertionError("Implicit upload")
+        ):
+            self.assertFalse(self.form()["ready_to_estimate"])
+            with self.assertRaises(error):
+                commands.request(self.scene, "render_image", self.image_lane.model_id)
+        self.assertEqual(len(self.image_lane.references), 0)
+
     def test_lane_tabs_have_no_generations_or_mcp(self):
         props = submodule("blender.props")
         ids = [item[0] for item in props.LANE_ITEMS]

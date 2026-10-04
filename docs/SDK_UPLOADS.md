@@ -466,6 +466,11 @@ file. An active marked upload that has not attached blocks request construction,
 preventing duplicate prototype upload while it is pending or uncertain. A disabled
 render first frame is excluded from the request and does not block it. Explicit clips and mesh snapshots use these same guards; unmarked
 implicit generation-time preparation is not used by native model forms.
+MCP `render_form(action=prepare)` uses these same role-tagged slots and guarded
+uploads. Configure and inspect are local form actions; quote and submission do
+not initiate an upload. Explicit reference removal requires its current slot key
+and leaves saved upload work intact. See the
+[MCP render sequence](MCP.md#preparing-render-image-and-render-video).
 An unloaded or list-only model schema is a temporary state, not an edited input.
 In-flight bindings wait for model inputs before attachment and recheck the kind
 when they load. Saved assets retain their scope checks; request construction

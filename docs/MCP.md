@@ -106,10 +106,10 @@ be reconciled using saved progress instead of starting another upload. The same 
 forms for image, audio, video and 3D inputs. `capture_reference` also supports explicit `VIEWPORT_CLIP`, `CAMERA_CLIP` and
 `MESH` snapshots. Clips use the preview/scene range at 1280x720 without audio,
 trimming or padding; mesh export produces one GLB from the selected meshes.
-Only mesh export works in background mode. Native render forms use the same
-upload session for their explicit scene/first-frame slots. MCP still supplies its
-final model parameters directly; render prompt decoration and automatic Spark
-preparation are not new MCP operations. Result-specific application remains separate.
+Only mesh export works in background mode. `render_form` uses the native render
+form and the same upload session for explicit scene/first-frame slots. Its
+`prepare` action requires a GUI for scene captures; first-frame file uploads also
+work headlessly. Result-specific application remains separate.
 
 ## Token lifecycle
 
@@ -287,6 +287,7 @@ Do not edit this block by hand; run `make mcp-docs`. An asterisk marks a require
 | `read_prompt_result` | Read full text from a saved successful prompt or translation job without generating, spending or applying it. Args: context_id, request_id and expected_revision from list_local_jobs; refresh a known remote job's status first if necessary. Returns: prompts; old scene origins are readable but are never silently applied to the current scene. | `context_id`*: string<br>`request_id`*: string<br>`expected_revision`*: integer | read-only annotation |
 | `list_models` | List the loaded lane catalog, with curated models first and at most 40 matches. | `lane`: string (enum: see tools/list)<br>`query`: string | read-only annotation |
 | `model_schema` | Read the model's current form parameters for this Blender extension. | `model_id`*: string | read-only annotation |
+| `render_form` | Inspect or prepare the native Render Image/Video form without submitting generation. | `lane`*: string (['render_image', 'render_video'])<br>`action`: string (['inspect', 'configure', 'prepare', 'remove'])<br>`settings`: object<br>`role`: string (['scene', 'first_frame'])<br>`reference_key`: string | - |
 | `estimate_cost` | Get the exact CU cost with a dry run that spends no credits. | `model_id`*: string<br>`parameters`: object<br>`lane`: string (enum: see tools/list) | read-only annotation |
 | `generate` | Submit a generation that spends the user's credits. Every model lane uses durable shared jobs. | `lane`*: string (enum: see tools/list)<br>`quote_id`*: string<br>`approved_cost`*: string<br>`model_id`*: string<br>`parameters`: object; Model parameters; file parameters take Scenario asset ids | spends credits |
 | `job_status` | Read one local generation's status and cost without spending credits. Active model jobs advance through shared remote polling and verified downloads; restarted jobs remain inspection-only. | `job_id`: string; Scenario job id (job_...) or the local_id returned by generate<br>`id`: string; Same as job_id, kept for compatibility | read-only annotation |
@@ -451,11 +452,44 @@ can still use the cold local registry without credentials or creating a manager
 that resumes unrelated pending jobs. Non-terminal prototype lookups
 still use the manager-owned record so active waits observe its progress.
 
-Render lanes take the explicit model parameters supplied by the caller. They do
-not run the UI's capture, style decoration or Prompt Spark preparation. Non-image
-UI capture/Spark preparation, in-place mesh editing, multi-object material application and Film
-remain integration work under #65/#68. This change does not complete their
-end-to-end acceptance or authorize release.
+### Preparing Render Image and Render Video
+
+1. Discover a model with `list_models(lane=render_image|render_video)` and inspect
+   its parameters with `model_schema`.
+2. Call `render_form` with `action=configure` and `settings`: select `model_id`,
+   supply `look` or choose `spark_enabled=false` for the photoreal default, edit
+   scalar `parameters`, and optionally provide `style_assets`. These edits change
+   the current native form; they do not capture, upload or submit generation.
+3. Call `render_form(action=prepare, role=scene)` to capture and upload the current
+   camera/viewport. For Render Video, set `first_frame_path` and prepare
+   `role=first_frame` when using it. Inspect until uploads finish. Captures use
+   the current scene/camera and existing clip range; later scene edits do not
+   change these uploaded snapshots.
+4. An empty look with automatic Spark enabled requires a separate
+   `estimate_prompt(lane=..., action=GENERATE)` and explicit `approve_prompt`
+   with its exact approved cost. The shared pump delivers the look only to the
+   unchanged form. Render Video Spark requires the uploaded first frame.
+5. Call `estimate_cost` with the same lane/model and **omit `parameters`**. Show
+   `cu_cost_exact`, obtain approval, then pass that exact string and `quote_id`
+   to `generate`, again omitting `parameters`. Both tools rebuild the native
+   decorated prompt and ordered uploaded inputs. Changed inputs, scene or
+   credentials cannot spend an old approval.
+
+Use `render_form(action=inspect)` to read preparation errors and reference
+handles. `action=remove` requires the exact current `reference_key`; it detaches
+that slot without canceling or deleting its saved upload. Repeated preparation
+refuses an occupied slot, including uncertain uploads. Inspect saved progress
+before explicitly replacing a snapshot. A model change requires removing its
+old references first. `style_assets` replaces only unmarked style references;
+marked uploads require explicit removal. Optional scalar parameters accept null
+to disable them; invalid edits fail before changing the form. Final quotes still
+validate conditional and one-of schema requirements.
+
+Raw render-lane parameter calls now fail with preparation guidance. Use the
+ordinary Image/Video lanes for direct model parameters. Scene capture, file
+upload, Spark approval and render submission remain separate actions. Offline
+native tests cover this shared preparation path; live provider and desktop
+acceptance, multi-object material application and Film remain #65/#68 work.
 
 
 ### Reusing completed shared results

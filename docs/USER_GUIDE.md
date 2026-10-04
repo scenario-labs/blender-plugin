@@ -322,6 +322,11 @@ for formats supported by their respective players.
 *Audio lane: ElevenLabs Music v2, 30 s, quoted before generating.*
 
 ### Render Image
+
+Agents can prepare these same render forms with the local MCP `render_form`
+tool, then obtain and approve an exact render price. See the
+[agent preparation sequence](MCP.md#preparing-render-image-and-render-video).
+
 Your view, rendered as a finished still by an image edit model. Everything that shapes the look lives in the **Rendering Style** section (always open): the look prompt, the Prompt Spark options and the style images (the capture is image 1).
 
 - **Scene to render**: choose Viewport or Scene camera and optional Grey clay capture, then **Capture and upload scene**. Wait for the uploaded snapshot before reviewing its generation price. Remove the reference to capture a new view; later scene edits do not change the uploaded image.
@@ -494,8 +499,10 @@ references. Read the current estimate instead of relying on prices in screenshot
 A **Generate (N CU)** quote describes the current form; **from N CU** excludes
 references that have not been uploaded. **Price shown after the upload** means
 required mesh or capture inputs are still missing from the estimate. Prompt
-helpers and Blockout design/refinement are separate paid operations. Automatic Render Image/Video Spark preparation is unavailable; an empty look
-requires that option to be disabled before quoting. See the [known limitations](KNOWN_LIMITATIONS.md) for current spend
+helpers and Blockout design/refinement are separate paid operations. An empty
+Render Image/Video look with automatic Spark enabled requires its own displayed
+price and approval, then guarded look delivery before the render price. Disable
+that option to use the photoreal default without a Spark request. See the [known limitations](KNOWN_LIMITATIONS.md) for current spend
 confirmation and shared-runtime boundaries.
 
 ## Troubleshooting

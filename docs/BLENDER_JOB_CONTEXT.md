@@ -539,6 +539,23 @@ but returns text without changing a scene. This permits explicit recovery when
 the original field has changed. Saved prompt/translation jobs offer status refresh,
 not image/mesh download or import actions.
 
+### MCP render form commands
+
+`render_commands` provides main-thread inspection/configuration, explicit scene
+and first-frame upload preparation, and guarded reference removal through the
+existing native form. MCP `render_form` uses these commands; it owns no worker
+pool or paid job engine. Parameter edits are validated before applying them and
+invalidate the visible price. Removing a reference requires a key bound to its
+scene, model, slot and current source; saved upload work remains independent.
+
+Render `estimate_cost` and `generate` rebuild `generation.build_request`, including
+render prompt decoration, ordered uploaded references and Spark readiness. They
+reject raw `parameters`, a different selected model, pending uploads and an
+unapproved empty automatic look. The estimate finisher rechecks the body before
+returning its handle; submission uses the existing `ModelJobs` payload, exact
+cost, scene, lane and credential checks. UI and MCP use the same model commands
+and retained result application policy. No new service endpoint is introduced.
+
 ### Render look preparation
 
 An empty render look with Spark enabled requests only a free prompt quote after

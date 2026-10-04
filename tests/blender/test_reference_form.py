@@ -694,6 +694,61 @@ class ReferenceFormTests(unittest.TestCase):
                 self.assertEqual(request.body["input"], "reference-asset")
         self.assertEqual(self.fixture.fixture.uploader.upload.call_count, 2)
 
+    def test_mcp_render_capture_uses_guarded_upload_and_explicit_removal(self):
+        prepared = submodule("blender.render_references")
+        capture = submodule("blender.capture")
+        for lane_name, kind in (("render_image", "image"), ("render_video", "video")):
+            with self.subTest(lane=lane_name):
+                lane, _ = self.configure_typed_input(lane_name, kind)
+                lane.references.clear()
+                lane.prompt = "copper"
+                suffix = ".png" if kind == "image" else ".mp4"
+                self.fixture.fixture.remote["originalFileName"] = "reference" + suffix
+
+                def write_capture(context, path, **kwargs):
+                    Path(path).write_bytes(b"data")
+
+                with (
+                    patch.object(
+                        self.fixture.module,
+                        "bpy",
+                        SimpleNamespace(context=bpy.context, app=SimpleNamespace(background=False)),
+                    ),
+                    patch.object(capture, "capture_still", side_effect=write_capture),
+                    patch.object(capture, "capture_playblast", side_effect=write_capture),
+                ):
+                    mcp = submodule("mcp.tools_scenario")
+                    args = {"lane": lane_name, "action": "prepare", "role": "scene"}
+                    result = mcp.render_form(args)
+                    self.assertFalse(result["ready_to_estimate"])
+                    with self.assertRaises(submodule("core.api.errors").ScenarioError):
+                        mcp.render_form(args)
+                self.assertEqual(len(lane.references), 1)
+                self.assertTrue(
+                    self.generation.build_request(self.scene, lane_name, for_estimate=True).errors
+                )
+                self.scene.scenario.lane = "image"
+                self.fixture.settle()
+                self.assertEqual(lane.references[0][prepared.ROLE], prepared.SCENE)
+                request = self.generation.build_request(self.scene, lane_name, for_estimate=True)
+                self.assertEqual(request.errors, [])
+                self.assertEqual((request.captures, request.files), ([], {}))
+                self.assertEqual(request.body["input"], "reference-asset")
+                result = mcp.render_form({"lane": lane_name})
+                self.assertTrue(result["ready_to_estimate"])
+                self.assertTrue(result["references"][0]["upload_id"])
+                saved = len(self.owner.session.upload_recovery_plan())
+                mcp.render_form(
+                    {
+                        "lane": lane_name,
+                        "action": "remove",
+                        "reference_key": result["references"][0]["reference_key"],
+                    }
+                )
+                self.assertEqual(len(lane.references), 0)
+                self.assertEqual(len(self.owner.session.upload_recovery_plan()), saved)
+        self.assertEqual(self.fixture.fixture.uploader.upload.call_count, 2)
+
     def test_failed_render_capture_removes_unadmitted_slot(self):
         prepared = submodule("blender.render_references")
         lane, _ = self.configure_typed_input("render_image", "image")

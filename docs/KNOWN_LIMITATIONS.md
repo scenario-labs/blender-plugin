@@ -23,9 +23,9 @@ establish live generation or full render-lane desktop acceptance.
   automatically imports results. Native form generation now uses those shared
   quotes and jobs too. Files, mesh/clip captures and render scene/first-frame inputs
   use explicit uploads before the final quote. Render forms accept a written look
-  or the default look with automatic Spark disabled. Automatic Spark preparation
-  remains unavailable and blocks quoting when enabled with an empty look.
-  Film and prompt helpers retain separate paths. Complete runtime adoption
+  or the default look with automatic Spark disabled. An empty automatic look
+  requires its own exact Spark quote, approval and guarded result delivery before
+  the final render quote. Film retains a separate path. Complete runtime adoption
   and live/native acceptance remain open
   ([#64](https://github.com/scenario-labs/blender-plugin/issues/64),
   [#65](https://github.com/scenario-labs/blender-plugin/issues/65)).
@@ -38,8 +38,9 @@ establish live generation or full render-lane desktop acceptance.
 
 ## Creation and scene application
 
-- MCP generation does not yet share the UI's render-lane decoration and full
-  preparation/approval path. Shared commands are tracked in #65.
+- MCP Render Image/Video now share native form preparation, uploaded references,
+  prompt decoration and exact approvals. Live provider and desktop acceptance
+  remain open under #65/#68; scene captures require a GUI.
 - Reversible mesh and panoramic World application exist as explicit synchronous
   primitives. Full generation/history integration remains
   [#99](https://github.com/scenario-labs/blender-plugin/issues/99) and

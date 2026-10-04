@@ -451,6 +451,19 @@ other OS desktop acceptance, resolution of #263 or complete release acceptance.
 The fixture pauses catalog loading. Its test-only application identifier and
 signature differ for window targeting; executable code and extension ZIP do not.
 
+After review, ZIP `3f36db535d94416bdf351b086a1356ea1993fb1d4c482c1d7759275a32e0e072`
+passed 689 installed tests on all three versions. A fresh isolated 5.1.2 desktop
+run repeated approval, menu Undo/Redo and viewport input. Public job status
+remained readable throughout; `mesh_edit` became null on Undo and remained null
+after Redo instead of following recreated objects by name. Geometry and original
+copy restoration still worked, with unchanged durable job and mock request
+counts. The process exited cleanly and the normal profile was unchanged. The
+screenshots below show the preceding identical UI; the follow-up changes only
+transient status ownership and adds a failed-import history regression.
+A final receipt-recovery guard keeps that status retired even when saving a
+pending success receipt after Undo; it changes no native UI or scene application.
+Its exact ZIP and full matrix validation are recorded in the PR.
+
 [Undo restores the source](images/saved-mesh-undone.png),
 [Redo restores the edit](images/saved-mesh-redone.png).
 

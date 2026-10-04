@@ -2327,6 +2327,7 @@ class ModelGenerationTests(unittest.TestCase):
             if original_name:
                 self.assertNotIn(original_name, bpy.data.objects)
             self.assertEqual(self.store.get(request_id), record)
+            self.assertIsNone(self.tools.job_status({"job_id": request_id})["mesh_edit"])
             with self.assertRaises(
                 (
                     self.origin_error,
@@ -2343,6 +2344,7 @@ class ModelGenerationTests(unittest.TestCase):
                 self.assertIn(original_name, bpy.data.objects)
             self.assertEqual(self.store.get(request_id), record)
             self.assertEqual((len(self.calls), len(self.paid), len(self.downloads)), calls)
+            self.assertIsNone(self.tools.job_status({"job_id": request_id})["mesh_edit"])
             self.assertFalse(
                 any(scene.name.startswith("Scenario import staging") for scene in bpy.data.scenes)
             )
@@ -2376,6 +2378,40 @@ class ModelGenerationTests(unittest.TestCase):
         self.assertEqual(status["status"], "apply_failed", status)
         self.assertEqual(source.data, before)
         self.assertIn("apply_mesh", status["actions"])
+
+    def test_mesh_failed_import_does_not_automatically_undo_latest_user_state(self):
+        request_id = self.recovered_mesh_edit()
+        source = bpy.context.view_layer.objects.active
+        source_name = source.name
+        before = source.data
+        module = submodule("blender.mesh_result_application")
+        preferences = bpy.context.preferences.edit
+        settings = preferences.use_global_undo, preferences.undo_steps
+        preferences.use_global_undo, preferences.undo_steps = True, 32
+        try:
+            self.assertEqual(bpy.ops.ed.undo_push(message="Fixture prior state"), {"FINISHED"})
+            source["latest_user_edit"] = "must survive failed application"
+            with (
+                patch.object(module, "_undo_enabled", return_value=True),
+                patch.object(
+                    module.model_application,
+                    "_import",
+                    side_effect=RuntimeError("fixture decode failure"),
+                ),
+            ):
+                status = self.finish_application(self.prepare_mesh_edit(request_id))
+            self.assertEqual(status["status"], "apply_failed", status)
+            self.assertEqual(source.data, before)
+            self.assertEqual(source["latest_user_edit"], "must survive failed application")
+            record = self.store.get(request_id)
+            calls = len(self.calls), len(self.paid), len(self.downloads)
+            # Only the user's explicit undo traverses history and retires guards.
+            self.assertEqual(bpy.ops.ed.undo(), {"FINISHED"})
+            self.assertNotIn("latest_user_edit", bpy.data.objects[source_name])
+            self.assertEqual(self.store.get(request_id), record)
+            self.assertEqual((len(self.calls), len(self.paid), len(self.downloads)), calls)
+        finally:
+            preferences.use_global_undo, preferences.undo_steps = settings
 
     def test_mesh_failed_final_undo_checkpoint_keeps_success_without_replay(self):
         request_id = self.recovered_mesh_edit()
@@ -2413,6 +2449,9 @@ class ModelGenerationTests(unittest.TestCase):
         self.assertEqual(status["status"], "applying", status)
         self.assertEqual(status["actions"], ("retry_receipt",))
         mesh = bpy.context.view_layer.objects.active.data
+        self.assertEqual(status["mesh_edit"]["policy"], "REMESH")
+        self.runtime.state.model_jobs.session.invalidate_all()
+        self.assertIsNone(self.tools.job_status({"job_id": request_id})["mesh_edit"])
         with patch.object(
             submodule("blender.job_session"),
             "apply_saved_mesh",
@@ -2420,8 +2459,8 @@ class ModelGenerationTests(unittest.TestCase):
         ):
             status = self.recover(request_id, "retry_receipt")
         self.assertEqual(status["status"], "applied", status)
+        self.assertIsNone(status["mesh_edit"])
         self.assertEqual(bpy.context.view_layer.objects.active.data, mesh)
-        self.assertEqual(status["mesh_edit"]["policy"], "REMESH")
 
     def test_completed_mesh_can_be_reused_for_an_explicit_mesh_edit(self):
         request_id = self.recovered_mesh_edit()

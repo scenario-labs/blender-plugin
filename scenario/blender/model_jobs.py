@@ -278,7 +278,7 @@ class ModelJobs:
                         result_to_source=mesh.mapping,
                         keep_original=mesh.keep_original,
                     )
-                    self._mesh_edits[request_id] = applied.application
+                    self._remember_model_application(request_id, applied.application)
                     self._paused.discard(request_id)
                 elif command == "verify_material":
                     applied = self.session.apply_recovered_material(
@@ -695,7 +695,10 @@ class ModelJobs:
 
     def _remember_model_application(self, request_id, application):
         if isinstance(application, MeshEditApplication):
-            self._mesh_edits[request_id] = application
+            previous = self._mesh_edits.get(request_id)
+            if previous is None or previous[1] is not application:
+                self._mesh_edits[request_id] = (self.session.history_revision, application)
+            # Receipt-only retry must keep the original history revision.
         else:
             _remember(self._objects, request_id, application.objects, bpy.data.objects)
 
@@ -998,8 +1001,13 @@ class ModelJobs:
         raise ScenarioError(0, "The job context changed while waiting; inspect saved jobs again")
 
     def _mesh_status(self, request_id):
-        application = self._mesh_edits.get(request_id)
-        if application is None:
+        saved = self._mesh_edits.get(request_id)
+        if saved is None:
+            return None
+        revision, application = saved
+        if revision != self.session.history_revision:
+            # History can replace RNA wrappers, even when object names survive.
+            # Retire this transient status; never rebind it by name after redo.
             return None
         objects = tuple(bpy.data.objects)
         return {

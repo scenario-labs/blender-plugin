@@ -332,11 +332,18 @@ checkpoint stops before import or source mutation. If the final checkpoint fails
 the completed edit stays applied, a sanitized warning is logged, and
 `mesh_edit.undo_available` is false. It never becomes permission to repeat the edit.
 A true value reports that the checkpoint was recorded, not indefinite retention.
+If import/application fails after the pre-checkpoint, verified rollback restores
+the scene but leaves that checkpoint in history. It can truncate prior redo
+history. The command never calls Undo to remove it: doing so can discard the
+user's latest edits and invalidate unrelated live targets. A later explicit Undo
+still follows the ordinary history-invalidation rules.
 
 Undo/Redo changes Blender scene data only. Durable jobs, local application claims,
 download receipts and spending records remain unchanged; Redo does not submit,
 download or run application again. Existing history handlers discard live origin
-and captured-source ownership. Pending approvals cannot survive history changes;
+and captured-source ownership. The transient `mesh_edit` status is cleared before touching potentially retired
+RNA references and is not rebound by name after Redo. Pending approvals cannot
+survive history changes;
 reuse requires a fresh explicit destination review. Saving/reopening a blend file
 does not restore undo history or source authority from stored names.
 

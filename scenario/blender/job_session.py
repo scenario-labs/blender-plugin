@@ -175,6 +175,7 @@ class JobSession:
         self._material_receipts = WeakKeyDictionary()
         self._upload_captures = {}
         self._mesh_sources = {}
+        self._history_revision = 0
         self._active = True
         self._coordinator = JobCoordinator(
             adapter,
@@ -203,6 +204,11 @@ class JobSession:
     @property
     def active(self):
         return self._active
+
+    @property
+    def history_revision(self):
+        """Generation of live Blender references; changes across load/undo/retirement."""
+        return self._history_revision
 
     @staticmethod
     def _identity(records, value):
@@ -955,6 +961,7 @@ class JobSession:
 
     def invalidate_all(self):
         _main_thread()
+        self._history_revision += 1
         self._origins.reset()
         self._scenes.clear()
         self._targets.clear()

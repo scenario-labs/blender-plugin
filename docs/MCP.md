@@ -507,6 +507,8 @@ Undo and history limits; a false value does not mean application failed or may
 be repeated. Headless application does not create desktop history.
 
 Undo/Redo restores scene data without replaying service calls or changing durable
-job/application/spending records. History changes discard live target authority,
+job/application/spending records. The transient `mesh_edit` status becomes null
+after a history change, including Redo; it is not rebound by object name.
+History changes discard live target authority,
 so another local application requires fresh destination review. See the
 [full history contract](MESH_APPLICATION.md#native-undo-for-saved-mesh-edits).

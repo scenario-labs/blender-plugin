@@ -1194,15 +1194,18 @@ class ModelGenerationTests(unittest.TestCase):
         from helpers import FIXTURES
 
         module = submodule("blender.model_application")
-        before = {name: set(getattr(bpy.data, name)) for name in module._DATA}
+        # Native undo can replace RNA wrappers for preexisting fixture data.
+        # Names are only for cleanup of this disposable test scene, never targets.
+        before = {name: {value.name for value in getattr(bpy.data, name)} for name in module._DATA}
 
         def cleanup():
             for name in module._DATA:
                 if name == "images":
                     continue  # Existing fixture cleanup owns images after session shutdown.
                 values = getattr(bpy.data, name)
-                for value in set(values) - before[name]:
-                    values.remove(value, do_unlink=True)
+                for value in tuple(values):
+                    if value.name not in before[name]:
+                        values.remove(value, do_unlink=True)
 
         self.addCleanup(cleanup)
         self.result_bytes = (FIXTURES / "synthetic/static-triangle.glb").read_bytes()
@@ -2279,6 +2282,118 @@ class ModelGenerationTests(unittest.TestCase):
         self.assertEqual((len(self.calls), len(self.paid), len(self.downloads)), calls)
         with self.assertRaises(self.request_error):
             self.tools.apply_result_application(self.import_args(approval))
+
+    def mesh_native_history(self, policy, *, keep_original):
+        request_id = self.recovered_mesh_edit()
+        source = bpy.context.view_layer.objects.active
+        if policy != "REMESH":
+            self.finish_application(self.prepare_mesh_edit(request_id, keep_original=False))
+        names = bpy.context.scene.name, source.name
+        source["retain_user_value"] = "before application"
+        source.location = (0, 0, 0)
+        before = [tuple(vertex.co) for vertex in source.data.vertices]
+        material = bpy.data.materials.new("History original material")
+        source.data.materials.clear()
+        source.data.materials.append(material)
+        before_materials = [item.name for item in source.data.materials]
+        module = submodule("blender.mesh_result_application")
+        preferences = bpy.context.preferences.edit
+        settings = preferences.use_global_undo, preferences.undo_steps
+        preferences.use_global_undo, preferences.undo_steps = True, 32
+        try:
+            # Exercise real native memfile history in the installed background
+            # runner; production enables automatic checkpoints on desktop only.
+            with patch.object(module, "_undo_enabled", return_value=True):
+                status = self.finish_application(
+                    self.prepare_mesh_edit(
+                        request_id, mesh_policy=policy, keep_original=keep_original
+                    )
+                )
+            self.assertEqual(status["status"], "applied", status)
+            self.assertTrue(status["mesh_edit"]["undo_available"])
+            after = [tuple(vertex.co) for vertex in source.data.vertices]
+            after_materials = [item.name for item in source.data.materials]
+            original_name = status["mesh_edit"]["original"]
+            record = self.store.get(request_id)
+            pending = self.prepare_mesh_edit(request_id)
+            calls = len(self.calls), len(self.paid), len(self.downloads)
+            self.assertEqual(bpy.ops.ed.undo(), {"FINISHED"})
+            scene = bpy.data.scenes[names[0]]
+            source = bpy.data.objects[names[1]]
+            bpy.context.window.scene = scene
+            self.assertEqual([tuple(vertex.co) for vertex in source.data.vertices], before)
+            self.assertEqual([item.name for item in source.data.materials], before_materials)
+            self.assertEqual(source["retain_user_value"], "before application")
+            if original_name:
+                self.assertNotIn(original_name, bpy.data.objects)
+            self.assertEqual(self.store.get(request_id), record)
+            with self.assertRaises(
+                (
+                    self.origin_error,
+                    self.request_error,
+                    submodule("blender.mesh_application").MeshApplicationError,
+                )
+            ):
+                self.tools.apply_result_application(self.import_args(pending))
+            self.assertEqual(bpy.ops.ed.redo(), {"FINISHED"})
+            source = bpy.data.objects[names[1]]
+            self.assertEqual([tuple(vertex.co) for vertex in source.data.vertices], after)
+            self.assertEqual([item.name for item in source.data.materials], after_materials)
+            if original_name:
+                self.assertIn(original_name, bpy.data.objects)
+            self.assertEqual(self.store.get(request_id), record)
+            self.assertEqual((len(self.calls), len(self.paid), len(self.downloads)), calls)
+            self.assertFalse(
+                any(scene.name.startswith("Scenario import staging") for scene in bpy.data.scenes)
+            )
+            self.assertFalse(
+                any(obj.name.startswith("Scenario rollback") for obj in bpy.data.objects)
+            )
+        finally:
+            preferences.use_global_undo, preferences.undo_steps = settings
+
+    def test_mesh_native_undo_redo_preserves_job_without_replaying_remesh(self):
+        self.mesh_native_history("REMESH", keep_original=False)
+
+    def test_mesh_native_undo_redo_restores_uv_edit_and_original_copy(self):
+        self.mesh_native_history("UV", keep_original=True)
+
+    def test_mesh_native_undo_redo_restores_retexture_materials(self):
+        self.mesh_native_history("RETEXTURE", keep_original=True)
+
+    def test_mesh_failed_undo_preparation_preserves_source_and_allows_local_review(self):
+        request_id = self.recovered_mesh_edit()
+        source = bpy.context.view_layer.objects.active
+        before = source.data
+        module = submodule("blender.mesh_result_application")
+        with (
+            patch.object(module, "_undo_enabled", return_value=True),
+            patch.object(
+                module, "_undo_push", side_effect=RuntimeError("fixture unavailable history")
+            ),
+        ):
+            status = self.finish_application(self.prepare_mesh_edit(request_id))
+        self.assertEqual(status["status"], "apply_failed", status)
+        self.assertEqual(source.data, before)
+        self.assertIn("apply_mesh", status["actions"])
+
+    def test_mesh_failed_final_undo_checkpoint_keeps_success_without_replay(self):
+        request_id = self.recovered_mesh_edit()
+        source = bpy.context.view_layer.objects.active
+        module = submodule("blender.mesh_result_application")
+        with (
+            patch.object(module, "_undo_enabled", return_value=True),
+            patch.object(
+                module,
+                "_undo_push",
+                side_effect=[None, RuntimeError("fixture unavailable history")],
+            ),
+        ):
+            status = self.finish_application(self.prepare_mesh_edit(request_id))
+        self.assertEqual(status["status"], "applied", status)
+        self.assertFalse(status["mesh_edit"]["undo_available"])
+        self.assertEqual(len(source.data.vertices), 3)
+        self.assertNotIn("retry_receipt", status["actions"])
 
     def test_mesh_edit_receipt_recovery_saves_success_without_replacement(self):
         request_id = self.recovered_mesh_edit()

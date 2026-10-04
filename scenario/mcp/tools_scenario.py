@@ -356,7 +356,9 @@ def prepare_result_application(args):
             "WORLD preserves imported scene "
             "positions; LOCAL treats imported positions as object-local. Neither fits or rescales "
             "the result automatically. Keep original preserves an unselected copy. "
-            "No new generation, blend save or global undo entry. Provider alignment is not guaranteed.",
+            "No new generation or blend save. Desktop undo follows Blender settings; "
+            "undo/redo changes the scene only and never replays spending. Check mesh_edit.undo_available "
+            "after application. Provider alignment is not guaranteed.",
         }
     if purpose == "material":
         _, approval = runtime.prepare_material_application(

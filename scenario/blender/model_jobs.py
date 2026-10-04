@@ -1006,6 +1006,7 @@ class ModelJobs:
             "target": application.source.name if application.source in objects else None,
             "original": application.original.name if application.original in objects else None,
             "policy": application.policy,
+            "undo_available": application.undo_available,
         }
 
     def status(self, reference):

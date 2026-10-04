@@ -518,7 +518,10 @@ class SCENARIO_OT_apply_saved_mesh(bpy.types.Operator):
             layout.label(text="Replace active UVs only; topology and positions must match exactly.")
         layout.label(text="Keep the source object's name, transforms, parenting and collections.")
         layout.label(text="One static GLB mesh only. No automatic fitting or scale adjustment.")
-        layout.label(text="Keep original makes an unselected copy. No global undo entry.")
+        layout.label(text="Keep original makes an unselected copy. Undo follows Blender settings.")
+        layout.label(
+            text="Undo/redo changes the scene only; saved jobs and spending stay recorded."
+        )
         if self.review_error:
             layout.label(text=self.review_error, icon="ERROR")
 

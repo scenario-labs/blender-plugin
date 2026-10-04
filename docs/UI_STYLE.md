@@ -287,7 +287,9 @@ proof.
 GLB. The dialog shows the replacement policy, scene/local coordinate placement
 and Keep original choice before confirmation. Explain geometry/UV/material
 replacement, exact-topology UV/retexture restrictions, no automatic fitting, preserved
-object context and the absence of global undo. Defaults keep an original copy.
+object context and the dependence of undo on Blender settings. Defaults keep an
+original copy. Explain that history changes affect the scene only, not saved jobs
+or spending.
 
 Option changes use `check()`, outside drawing, and revise the existing captured
 approval instead of selecting a new target. A stale target or scene requires
@@ -342,7 +344,7 @@ fingerprints were unchanged. The test-only app copy had a distinct bundle ID and
 local ad-hoc signature; vendor executable code and extension ZIP were unchanged.
 The fixture freezes catalog loading and mocks service responses; its loading
 labels are not live connection evidence. These checks do not establish provider
-alignment, pre-generation source binding, remaining edit policies/global undo,
+alignment, pre-generation source binding, remaining edit policies,
 other OS desktop behavior, #263 resolution or release acceptance.
 
 [Before application](images/saved-mesh-edit-before.png),
@@ -388,7 +390,7 @@ The images above remain captures from the earlier named artifact.
 This proves the local source-selection, cancellation and confirmation interaction.
 The synthetic form's pending estimate is not live pricing evidence. It does not
 establish provider alignment, other OS desktop behavior, #263 resolution, remaining
-edit policies, global undo or release acceptance. See
+edit policies or release acceptance. See
 [the source contract](MESH_APPLICATION.md#applying-to-the-captured-mesh-source).
 
 
@@ -416,10 +418,40 @@ changed for window targeting; executable code and extension ZIP were unchanged.
 
 The fixture uses synthetic transport and pauses catalog loading. These images
 are local interaction evidence, not live pricing or provider appearance quality.
-Provider indexing/alignment, other OS desktop behavior, global undo, #263 and
+Provider indexing/alignment, other OS desktop behavior, #263 and
 full release acceptance remain unverified.
 
 [Before retexture](images/saved-retexture-before.png),
 [applied retexture with original retained](images/saved-retexture-result.png).
 
 ![Retexture review explicitly preserves geometry and requires matching topology](images/saved-retexture-approval.png)
+
+
+## Saved mesh undo interaction
+
+The approval dialog explains that Keep original retains an unselected copy,
+Blender settings control undo, and history changes leave jobs and spending
+recorded. The shared command uses native history for all three mesh policies;
+see [the contract](MESH_APPLICATION.md#native-undo-for-saved-mesh-edits).
+
+An isolated macOS arm64 Blender 5.1.2 desktop check used exact ZIP SHA-256
+`0d0a8da1ff9667e2bf7ea289f4e73ec01183ecb0268bddc81d50305b8308c862`.
+The same ZIP passed 688 installed tests on each of Blender 5.0.1, 5.1.2 and 5.2.1.
+Mouse input opened captured-source review while another mesh was selected, and
+Return confirmed. The source changed from eight to three vertices with its
+original copy retained; the other mesh stayed at eight vertices. Edit > Undo
+restored the eight-vertex source and removed the copy. Edit > Redo restored the
+three-vertex result and its copy. The saved job stayed applied and mock submission
+and request counts stayed unchanged throughout. Viewport zoom and front-view
+keyboard input worked after Redo. The isolated process exited cleanly and the
+normal profile fingerprint was unchanged.
+
+This is synthetic local interaction evidence, not live pricing/provider output,
+other OS desktop acceptance, resolution of #263 or complete release acceptance.
+The fixture pauses catalog loading. Its test-only application identifier and
+signature differ for window targeting; executable code and extension ZIP do not.
+
+[Undo restores the source](images/saved-mesh-undone.png),
+[Redo restores the edit](images/saved-mesh-redone.png).
+
+![Mesh approval explains native undo and unchanged job records](images/saved-mesh-undo-approval.png)

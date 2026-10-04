@@ -182,7 +182,8 @@ are removed; replacement material/image dependencies remain packed. Keep origina
 retains a separate unselected copy, preserving the previous selection and active
 object. Without it, the primitive may release the unchanged, unused original mesh.
 A returned result is finalized and contains the source, optional original and
-policy; it is not a persistent rollback handle or a global undo transaction.
+policy and whether a desktop undo checkpoint was recorded; it is not a persistent
+rollback handle. See [native history](#native-undo-for-saved-mesh-edits).
 
 Successful cleanup sweeps unused imported datablocks across the shared importer's
 categories, including helper actions, while retaining existing data, live
@@ -209,7 +210,8 @@ See [session ownership](BLENDER_JOB_CONTEXT.md#verified-saved-mesh-replacement).
 Installed synthetic tests cover remesh and exact-topology UV, parented/scaled
 sources, shared originals, packed materials, explicit node-transform mapping,
 selection, source changes, multi-scene/multi-mesh rejection, rollback failure,
-separate local reuse and persistence-only recovery. Provider coordinate contracts, rig/segmentation policy and global undo remain integration work under #65/#99.
+separate local reuse and persistence-only recovery. Provider coordinate contracts
+and rig/segmentation policy remain integration work under #65/#99.
 There are no new service calls or live/provider acceptance claims in this command.
 
 ## Saved mesh edit approval
@@ -239,7 +241,8 @@ recorded purpose; older `model` entries are not reclassified. Status exposes
 the latest session-local `mesh_edit` target, original-copy name and policy;
 deleted objects have null names. A failed outcome receipt can be saved without
 replacing the mesh again. An uncertain scene outcome never authorizes replay.
-There is no automatic blend save or global undo entry.
+There is no automatic blend save. Desktop application records native undo when
+Blender history is enabled; see [native history](#native-undo-for-saved-mesh-edits).
 
 The generic action reviews a destination selected now. The captured-source action
 below uses the original exported object. Neither establishes provider alignment,
@@ -279,7 +282,7 @@ remain uploadable where export supports them, without in-place source ownership.
 Each session retains at most 128 distinct eligible snapshots without evicting older
 ones. Further captures remain upload references but have no original-source guard.
 This is explicit local application; it makes no service request, cannot establish
-provider alignment, and adds no global undo or persistent restoration.
+provider alignment, and adds no persistent restoration command.
 
 
 ## Retexture without geometry replacement
@@ -305,8 +308,40 @@ collide with retained source attributes. A failure restores the exact source
 and retains downloaded bytes for a separately reviewed local retry.
 
 The primitive's guarded rollback and the saved command's receipt-only recovery
-remain unchanged. Keep original is the user-visible retained copy; this does not
-add global undo or a persistent restoration command. Rig/animation sources,
+remain unchanged. Keep original is the user-visible retained copy; native undo
+follows the saved-command history contract below. Rig/animation sources,
 multiple meshes, provider coordinate/topology guarantees and paid acceptance
 remain outside this policy. Explicit remesh remains a separate reviewed choice
 when geometry replacement is intended.
+
+
+## Native undo for saved mesh edits
+
+The shared saved-mesh command records Blender history immediately before import
+and after successful replacement, staging cleanup and rollback-handle finalization.
+This covers REMESH, UV and RETEXTURE from both native review and local MCP. The
+pre-state includes the latest user edits; neither checkpoint contains temporary
+import scenes or private rollback holders. Undo restores the source data and
+removes any Keep original copy; Redo restores the applied data and that copy.
+
+Automatic checkpoints require a desktop window, Global Undo enabled and at least
+two undo steps. The extension does not change preferences. Blender's history size
+and memory limits still apply, so Keep original and saving the blend file remain
+useful. Background application does not create desktop history. A failed initial
+checkpoint stops before import or source mutation. If the final checkpoint fails,
+the completed edit stays applied, a sanitized warning is logged, and
+`mesh_edit.undo_available` is false. It never becomes permission to repeat the edit.
+A true value reports that the checkpoint was recorded, not indefinite retention.
+
+Undo/Redo changes Blender scene data only. Durable jobs, local application claims,
+download receipts and spending records remain unchanged; Redo does not submit,
+download or run application again. Existing history handlers discard live origin
+and captured-source ownership. Pending approvals cannot survive history changes;
+reuse requires a fresh explicit destination review. Saving/reopening a blend file
+does not restore undo history or source authority from stored names.
+
+Installed native tests exercise actual undo/redo for all three policies, retained
+copies, materials, stale approvals and unchanged durable records/request counts.
+They force checkpoint eligibility in the background runner while retaining the
+real native history operators. Separate desktop proof is recorded in
+[UI interaction evidence](UI_STYLE.md#saved-mesh-undo-interaction).

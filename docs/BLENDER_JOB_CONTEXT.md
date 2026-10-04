@@ -52,6 +52,9 @@ captures the selected scene on the main thread and queues the
 [shared cloud read](JOB_COORDINATOR.md#adopting-a-completed-cloud-job).
 It captures no mesh target, mutates no scene data and creates no second worker
 pool. Normal delivery guards reject retired owners and changed scenes.
+Repeating a read from another scene preserves the original saved intent. Its
+completion is bound to the new reader's captured scene and verified job/model
+identity, while result application still requires a separate destination claim.
 
 Once saved, cloud records survive restart and use the existing inspection,
 explicit download and fresh destination-approval commands. Status distinguishes

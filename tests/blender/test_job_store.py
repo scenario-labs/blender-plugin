@@ -7,6 +7,7 @@ import sqlite3
 import tempfile
 import threading
 import unittest
+from contextlib import closing
 from dataclasses import replace
 from pathlib import Path
 
@@ -120,19 +121,23 @@ class JobStoreTests(unittest.TestCase):
             reopened = module.JobStore(root / "jobs.sqlite3", scope)
             self.assertEqual(reopened.get("result-request"), record)
             self.assertEqual(record.results[0].asset.texture_role, "normal")
-            with sqlite3.connect(root / "jobs.sqlite3") as connection:
+            with closing(sqlite3.connect(root / "jobs.sqlite3")) as connection, connection:
                 raw = json.loads(connection.execute("SELECT record FROM jobs").fetchone()[0])
                 del raw["results"][0]["asset"]["texture_role"]
                 connection.execute("UPDATE jobs SET record=?", (json.dumps(raw),))
                 connection.execute("PRAGMA user_version=3")
+            with self.assertRaises(sqlite3.ProgrammingError):
+                connection.execute("SELECT 1")
             reopened = module.JobStore(root / "jobs.sqlite3", scope)
             record = replace(
                 record,
                 results=(replace(record.results[0], asset=replace(asset, texture_role=None)),),
             )
             self.assertEqual(reopened.get("result-request"), record)
-            with sqlite3.connect(root / "jobs.sqlite3") as connection:
+            with closing(sqlite3.connect(root / "jobs.sqlite3")) as connection, connection:
                 self.assertEqual(connection.execute("PRAGMA user_version").fetchone()[0], 4)
+            with self.assertRaises(sqlite3.ProgrammingError):
+                connection.execute("SELECT 1")
             verified = transfers.verify_download(root, record.results[0].receipt)
             self.assertEqual(verified.name, asset.name)
             self.assertTrue(verified.parent.samefile(root))

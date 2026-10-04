@@ -9,6 +9,7 @@ import os
 import stat
 import tempfile
 import threading
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -141,10 +142,9 @@ def _remove_new_data(previous):
                 pass
 
 
-def apply_model(scene, item, path, *, cursor):
-    """Stage in a disposable scene, then publish only newly imported model data."""
-    validate_destination(scene, cursor)
-    previous = _snapshot()
+@contextmanager
+def staged_model(item, path, previous):
+    """Decode a receipt-bound snapshot in isolation; caller owns all Blender cleanup."""
     temporary = None
     try:
         data = _read(item, path)
@@ -162,6 +162,7 @@ def apply_model(scene, item, path, *, cursor):
             layer_collection=layer.layer_collection,
         ):
             _import(snapshot)
+            layer.update()
         objects = tuple(obj for obj in bpy.data.objects if obj not in previous["objects"])
         if any(obj not in tuple(staging.objects) for obj in objects):
             raise ModelApplicationError("Imported objects escaped the staging scene")
@@ -171,23 +172,28 @@ def apply_model(scene, item, path, *, cursor):
             if image.packed_file is None:
                 raise ModelApplicationError("The model texture could not be packed")
             image.filepath = ""
-        application = _publish(scene, objects, cursor, item.asset.asset_id)
-        bpy.data.scenes.remove(staging)
-        return application
-    except Exception:
-        _remove_new_data(previous)
-        if _snapshot() != previous:
-            # This is deliberately not ModelApplicationError: the session must
-            # keep the durable claim uncertain and prevent duplicate imports.
-            raise RuntimeError("Model cleanup is incomplete; do not import again") from None
-        raise ModelApplicationError(
-            "Could not import the verified model; saved files remain"
-        ) from None
+        yield staging, objects
     finally:
         if temporary is not None:
             try:
                 temporary.cleanup()
             except Exception:
-                # Packed images have no dependency on this snapshot. A disk
-                # cleanup failure must not undo a completed scene application.
                 _log.warning("Model snapshot cleanup failed; temporary files may remain")
+
+
+def apply_model(scene, item, path, *, cursor):
+    """Stage in a disposable scene, then publish only newly imported model data."""
+    validate_destination(scene, cursor)
+    previous = _snapshot()
+    try:
+        with staged_model(item, path, previous) as (staging, objects):
+            application = _publish(scene, objects, cursor, item.asset.asset_id)
+            bpy.data.scenes.remove(staging)
+            return application
+    except Exception:
+        _remove_new_data(previous)
+        if _snapshot() != previous:
+            raise RuntimeError("Model cleanup is incomplete; do not import again") from None
+        raise ModelApplicationError(
+            "Could not import the verified model; saved files remain"
+        ) from None

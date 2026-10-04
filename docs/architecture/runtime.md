@@ -306,3 +306,16 @@ do not satisfy their live or native acceptance criteria.
 
 The current release follows the [API-key release plan](../maintenance/release-plan.md).
 OAuth deferral does not relax credential precedence, project scope or paid-job safety.
+
+## Saved 3D edit application boundary
+
+The [verified saved-mesh command](../MESH_APPLICATION.md#captured-source-and-verified-saved-mesh-command)
+connects receipt-checked static GLB import to the existing explicit remesh/UV
+primitive. `JobSession.apply_recovered_mesh` binds one selected asset to a captured
+source object and a durable original or local-reuse claim. It rejects changed
+geometry/context, ambiguous multi-mesh results and uncertain rollback, while
+known receipt retry only saves persistence. The caller supplies an explicit
+Blender-imported-scene-to-source-local matrix, edit policy and Keep original choice.
+No service operation or second executor is added. UI/MCP approval, source export
+metadata, provider mapping contracts and remaining edit policies still need
+integration; this is not full #99 or release acceptance.

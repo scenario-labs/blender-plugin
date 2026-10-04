@@ -133,6 +133,59 @@ def _matrix(value):
     return matrix
 
 
+@dataclass(frozen=True)
+class MeshTarget:
+    scene: object = field(repr=False)
+    obj: object = field(repr=False)
+    mesh: object = field(repr=False)
+    name: str
+    mesh_name: str
+    geometry: bytes = field(repr=False)
+    context: tuple = field(repr=False)
+
+
+def capture_target(scene, obj):
+    """Freeze an explicit source before asynchronous work; never infer selection."""
+    _main_thread()
+    try:
+        _validate_object(scene, obj)
+        if (
+            scene != bpy.context.scene
+            or not scene.is_editable
+            or scene.library
+            or scene.override_library
+            or len(obj.users_scene) != 1
+        ):
+            raise MeshApplicationError("Choose a source in only the current local scene")
+        matrices = tuple(
+            tuple(tuple(row) for row in matrix)
+            for matrix in (
+                obj.matrix_basis,
+                obj.matrix_local,
+                obj.matrix_world,
+                obj.matrix_parent_inverse,
+            )
+        )
+        context = (
+            matrices,
+            obj.parent,
+            obj.parent_type,
+            frozenset((collection, collection.name) for collection in obj.users_collection),
+            obj.active_material_index,
+        )
+        return MeshTarget(
+            scene, obj, obj.data, obj.name, obj.data.name, _fingerprint(obj.data), context
+        )
+    except (ReferenceError, AttributeError):
+        raise MeshApplicationError("The source mesh was removed or replaced") from None
+
+
+def validate_target(target):
+    """Reject changed identity, geometry, transforms, parenting or memberships."""
+    if not isinstance(target, MeshTarget) or capture_target(target.scene, target.obj) != target:
+        raise MeshApplicationError("The source mesh changed; review it again")
+
+
 def _same_topology(source, result, mapping):
     if (len(source.vertices), len(source.edges), len(source.polygons), len(source.loops)) != (
         len(result.vertices),

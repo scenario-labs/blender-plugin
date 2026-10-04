@@ -570,3 +570,28 @@ its local outcomes, actions and error. Owner-local receipt retry never repeats
 Blender work. Restart loses receipt authority and never clears uncertainty.
 World restoration retains only the most recent assignment handle per job in the
 current session; this is not a persistent history of reversible scene edits.
+
+## Verified saved-mesh replacement
+
+`apply_recovered_mesh(completion, destination=..., asset_id=..., target=...,
+policy=..., result_to_source=..., keep_original=...)` applies one saved static GLB
+to an explicitly captured source mesh. The target snapshot must match the resolved
+scene/object origin and its geometry/context must still match before claiming
+application. A caller captures this source before asynchronous work and binds its
+policy, mapping and Keep original choice to the approved operation; the command
+does not derive provider semantics or infer targets from selection.
+
+The [verified mesh command](MESH_APPLICATION.md#captured-source-and-verified-saved-mesh-command)
+rehashes the actual bytes, imports in isolation and uses the existing remesh/UV
+primitive. Confirmed rollback permits a failed local outcome; incomplete scene
+cleanup retains uncertainty. A successful mesh change followed by a failed store
+write retains an owner-issued `ModelResultUncertain` handle for the existing
+`retry_model_receipt`. That retry never imports or replaces again. Shutdown drops
+receipt authority; restart does not authorize replay of an unfinished claim.
+Completed jobs can use a separate `model` local claim without changing their
+original generation outcome. Its target identifies the explicitly selected source.
+
+This is a shared session command with installed native coverage. UI/MCP destination
+approval, operation/export metadata and end-to-end edit-lane acceptance remain
+separate integration. It provides no global undo entry, persistent restoration
+handle, new generation request or automatic provider-coordinate mapping.

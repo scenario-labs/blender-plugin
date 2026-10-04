@@ -319,6 +319,40 @@ def recover_local_job(args):
 
 def prepare_result_application(args):
     purpose = args.get("purpose", "import")
+    if purpose == "mesh_edit":
+        _, approval = runtime.prepare_mesh_application(
+            args["context_id"],
+            args["request_id"],
+            args["expected_revision"],
+            bpy.context.scene,
+            bpy.context.view_layer.objects.active,
+            args.get("asset_id"),
+            policy=args.get("mesh_policy", "REMESH"),
+            placement=args.get("mesh_placement", "WORLD"),
+            keep_original=args.get("keep_original", True),
+        )
+        return {
+            "context_id": args["context_id"],
+            "application_id": approval.identifier,
+            "request_id": approval.record.intent.request_id,
+            "revision": approval.record.revision,
+            "reuse": approval.record.state.value == "applied",
+            "kind": "mesh_edit",
+            "purpose": purpose,
+            "scene": approval.scene_name,
+            "target": approval.target_name,
+            "asset_id": approval.asset_id,
+            "mesh_policy": approval.policy,
+            "mesh_placement": approval.placement,
+            "keep_original": approval.keep_original,
+            "result_to_source": [list(row) for row in approval.mapping],
+            "note": "Approve replacing this captured mesh from one saved static GLB. "
+            "REMESH replaces geometry, UVs and mesh materials; UV replaces only active UVs "
+            "and requires exact indexed topology and positions. WORLD preserves imported scene "
+            "positions; LOCAL treats imported positions as object-local. Neither fits or rescales "
+            "the result automatically. Keep original preserves an unselected copy. "
+            "No new generation, blend save or global undo entry. Provider alignment is not guaranteed.",
+        }
     if purpose == "material":
         _, approval = runtime.prepare_material_application(
             args["context_id"],
@@ -770,11 +804,14 @@ SPECS = (
             "  - context_id: required string, current context from list_local_jobs.\n"
             "  - request_id: required string, saved local job identity.\n"
             "  - expected_revision: required nonnegative integer, observed saved revision.\n"
-            "  - purpose: import (default), material, world, or restore_world; material uses the active mesh and saved unambiguous texture roles; World replacement requires asset_id.\n"
+            "  - purpose: import (default), material, world, restore_world or mesh_edit; material uses the active mesh and saved unambiguous texture roles; World replacement requires asset_id.\n"
             "  - asset_id: optional saved asset ID; required for one MP4/WebM video, MP3/WAV/OGG audio strip or static embedded GLB model. Omit for PNG/EXR image import.\n"
+            "  - mesh_policy: REMESH (default) replaces geometry/UV/materials; UV replaces only active UVs with exact topology/position matching.\n"
+            "  - mesh_placement: WORLD (default) preserves imported scene positions; LOCAL uses imported positions in the object's local coordinates. No fitting is inferred.\n"
+            "  - keep_original: boolean, default true; preserve an unselected original mesh copy. These mesh options apply only to mesh_edit, which requires asset_id.\n"
             "Returns: context_id, application_id, request_id, revision, reuse, scene, images or asset_id/kind/frame or cursor, and note.\n"
             'Example: {"context_id": "from-list", "request_id": "from-list", "expected_revision": 8}.\n'
-            "Show the destination, selected assets and media frame, model cursor or material target/slot/roles or World operation before apply_result_application. This makes no network request, spends no credits and imports nothing. Ready or confirmed rolled-back results use their original application claim. Completed results require a new local reuse approval; show reuse=true as another application, never another generation. Unfinished reuse blocks another attempt. Restoration applies to this session's most recent World assignment for this job.\n"
+            "Show the destination, selected assets and media frame, model cursor, material target/slot/roles, World operation or mesh target/policy/placement/Keep original before apply_result_application. This makes no network request, spends no credits and imports nothing. Ready or confirmed rolled-back results use their original application claim. Completed results require a new local reuse approval; show reuse=true as another application, never another generation. Unfinished reuse blocks another attempt. Restoration applies to this session's most recent World assignment for this job.\n"
             "Platform equivalent: none; this captures a local Blender destination."
         ),
         _schema(
@@ -785,8 +822,11 @@ SPECS = (
                 "asset_id": {"type": "string"},
                 "purpose": {
                     "type": "string",
-                    "enum": ["import", "material", "world", "restore_world"],
+                    "enum": ["import", "material", "world", "restore_world", "mesh_edit"],
                 },
+                "mesh_policy": {"type": "string", "enum": ["REMESH", "UV"]},
+                "mesh_placement": {"type": "string", "enum": ["WORLD", "LOCAL"]},
+                "keep_original": {"type": "boolean"},
             },
             ["context_id", "request_id", "expected_revision"],
         ),
@@ -802,7 +842,7 @@ SPECS = (
             "  - application_id: required string, single-use approval handle from prepare_result_application.\n"
             "Returns: saved job status, revision, images, imported object names, materials and any delivery error.\n"
             'Example: {"context_id": "from-prepare", "application_id": "from-prepare"}.\n'
-            "Call only after explicit destination approval. Verification runs off the main thread; application rechecks the captured scene/file revision and media frame or model cursor. Media uses a persistent private file; video omits embedded audio and scene timing is unchanged. Changed contexts or records require fresh review. World replacement or restoration changes only the approved scene World with guarded owned-data cleanup. Material assignment changes only the approved mesh slot to a new packed material; it preserves old materials and other slots. This performs no generation, downloads, geometry replacement or file save. Never repeat an uncertain import; inspect the saved job.\n"
+            "Call only after explicit destination approval. Verification runs off the main thread; application rechecks the captured scene/file revision and media frame or model cursor. Media uses a persistent private file; video omits embedded audio and scene timing is unchanged. Changed contexts or records require fresh review. World replacement or restoration changes only the approved scene World with guarded owned-data cleanup. Material assignment changes only the approved mesh slot to a new packed material; it preserves old materials and other slots. Mesh edit replaces only the captured target under its prepared policy, placement and Keep original choice. This performs no generation, downloads or file save. Never repeat an uncertain import; inspect the saved job.\n"
             "Platform equivalent: none; this applies saved results locally in Blender."
         ),
         _schema(

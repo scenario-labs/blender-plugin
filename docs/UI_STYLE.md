@@ -280,3 +280,22 @@ vendor executable code and extension ZIP were unchanged. See the
 live provider quality, other OS desktop support, resolution of #263 or release
 acceptance. An earlier window-targeting attempt was not counted as interaction
 proof.
+
+## Saved mesh edit review
+
+**Apply mesh edit (N)** names the captured scene, source mesh and selected saved
+GLB. The dialog shows the replacement policy, scene/local coordinate placement
+and Keep original choice before confirmation. Explain geometry/UV/material
+replacement, exact-topology UV restrictions, no automatic fitting, preserved
+object context and the absence of global undo. Defaults keep an original copy.
+
+Option changes use `check()`, outside drawing, and revise the existing captured
+approval instead of selecting a new target. A stale target or scene requires
+cancellation and fresh review. `draw()` only reads the prepared labels and
+operator properties. Completed-result reviews retain the reuse notice.
+
+Installed native tests exercise the shared approval and operator boundary. Actual
+mouse, keyboard, focus and viewport acceptance for this dialog is still pending:
+the isolated desktop fixture rendered its job controls, but computer control
+timed out while attaching to its window. That attempt is not interaction proof
+and does not resolve #263 or establish release acceptance.

@@ -2003,3 +2003,198 @@ class ModelGenerationTests(unittest.TestCase):
         self.assertEqual(
             (set(bpy.data.images), bpy.context.scene.world, len(self.calls), len(self.paid)), before
         )
+
+    def recovered_mesh_edit(self):
+        request_id = self.recovered_model()
+        bpy.ops.mesh.primitive_cube_add()
+        return request_id
+
+    def prepare_mesh_edit(self, request_id, **options):
+        return self.tools.prepare_result_application(
+            {
+                "context_id": self.runtime.state.job_context_id,
+                "request_id": request_id,
+                "expected_revision": self.store.get(request_id).revision,
+                "purpose": "mesh_edit",
+                "asset_id": "result-image",
+                **options,
+            }
+        )
+
+    def test_saved_mesh_edit_requires_explicit_target_review_before_replacement(self):
+        request_id = self.recovered_mesh_edit()
+        source = bpy.context.view_layer.objects.active
+        old_mesh = source.data
+        before = len(self.calls), len(self.paid), len(self.downloads)
+        approval = self.prepare_mesh_edit(request_id)
+        self.assertEqual(approval["target"], source.name)
+        self.assertEqual(approval["mesh_policy"], "REMESH")
+        self.assertEqual(approval["mesh_placement"], "WORLD")
+        self.assertTrue(approval["keep_original"])
+        self.assertEqual(source.data, old_mesh)
+        self.assertEqual((len(self.calls), len(self.paid), len(self.downloads)), before)
+        status = self.finish_application(approval)
+        self.assertEqual(status["status"], "applied", status)
+        self.assertNotEqual(source.data, old_mesh)
+        self.assertEqual(status["mesh_edit"]["target"], source.name)
+        self.assertEqual(bpy.data.objects[status["mesh_edit"]["original"]].data, old_mesh)
+        self.assertFalse(bpy.data.objects[status["mesh_edit"]["original"]].select_get())
+        self.assertEqual((len(self.calls), len(self.paid), len(self.downloads)), before)
+        with self.assertRaises(self.request_error):
+            self.tools.apply_result_application(self.import_args(approval))
+
+    def test_mesh_edit_world_placement_preserves_imported_positions_with_transformed_source(self):
+        request_id = self.recovered_mesh_edit()
+        source = bpy.context.view_layer.objects.active
+        source.location.x = 10
+        source.scale = (2, 2, 2)
+        approval = self.prepare_mesh_edit(request_id, keep_original=False)
+        status = self.finish_application(approval)
+        self.assertEqual(status["status"], "applied", status)
+        self.assertIsNone(status["mesh_edit"]["original"])
+        self.assertEqual(min((source.matrix_world @ v.co).x for v in source.data.vertices), 2)
+        self.assertEqual(source.location.x, 10)
+        self.assertEqual(tuple(source.scale), (2, 2, 2))
+
+    def test_mesh_edit_rejects_geometry_changed_after_approval(self):
+        request_id = self.recovered_mesh_edit()
+        approval = self.prepare_mesh_edit(request_id)
+        source = bpy.context.view_layer.objects.active
+        source.data.vertices[0].co.x += 1
+        old = self.store.get(request_id)
+        with self.assertRaises(submodule("blender.mesh_application").MeshApplicationError):
+            self.tools.apply_result_application(self.import_args(approval))
+        self.assertEqual(self.store.get(request_id), old)
+
+    def test_mesh_edit_options_keep_same_captured_target_and_invalidate_old_ticket(self):
+        request_id = self.recovered_mesh_edit()
+        source = bpy.context.view_layer.objects.active
+        approval = self.prepare_mesh_edit(request_id)
+        jobs = self.runtime.state.model_jobs
+        ticket = jobs._application_approvals[approval["application_id"]]
+        updated = self.runtime.revise_mesh_application(
+            self.runtime.state.job_context_id,
+            ticket.identifier,
+            policy="REMESH",
+            placement="LOCAL",
+            keep_original=False,
+        )
+        self.assertEqual(updated.target, ticket.target)
+        self.assertEqual(updated.destination, ticket.destination)
+        self.assertNotEqual(updated.identifier, ticket.identifier)
+        with self.assertRaises(self.request_error):
+            self.tools.apply_result_application(self.import_args(approval))
+        approval["application_id"] = updated.identifier
+        status = self.finish_application(approval)
+        self.assertEqual(status["status"], "applied", status)
+        self.assertEqual(status["mesh_edit"]["target"], source.name)
+        self.assertEqual(bpy.context.view_layer.objects.active, source)
+
+    def test_mesh_edit_uv_mismatch_is_a_known_local_failure(self):
+        request_id = self.recovered_mesh_edit()
+        source = bpy.context.view_layer.objects.active
+        mesh = source.data
+        status = self.finish_application(self.prepare_mesh_edit(request_id, mesh_policy="UV"))
+        self.assertEqual(status["status"], "apply_failed", status)
+        self.assertEqual(source.data, mesh)
+        self.assertIn("apply_mesh", status["actions"])
+
+    def test_mesh_edit_receipt_recovery_saves_success_without_replacement(self):
+        request_id = self.recovered_mesh_edit()
+        approval = self.prepare_mesh_edit(request_id)
+        deferred = self.tools.apply_result_application(self.import_args(approval))
+        result = deferred.run()
+        store = self.runtime.state.job_store
+        transition = store.transition
+
+        def fail_receipt(*args, **kwargs):
+            if kwargs.get("state") == self.storemod.JobState.APPLIED:
+                raise OSError("synthetic receipt failure")
+            return transition(*args, **kwargs)
+
+        with patch.object(store, "transition", side_effect=fail_receipt):
+            status = deferred.finish(result)
+        self.assertEqual(status["status"], "applying", status)
+        self.assertEqual(status["actions"], ("retry_receipt",))
+        mesh = bpy.context.view_layer.objects.active.data
+        with patch.object(
+            submodule("blender.job_session"),
+            "apply_saved_mesh",
+            side_effect=AssertionError("repeated"),
+        ):
+            status = self.recover(request_id, "retry_receipt")
+        self.assertEqual(status["status"], "applied", status)
+        self.assertEqual(bpy.context.view_layer.objects.active.data, mesh)
+        self.assertEqual(status["mesh_edit"]["policy"], "REMESH")
+
+    def test_completed_mesh_can_be_reused_for_an_explicit_mesh_edit(self):
+        request_id = self.recovered_mesh_edit()
+        self.finish_application(self.prepare_model(request_id))
+        original = self.store.get(request_id)
+        approval = self.prepare_mesh_edit(request_id, mesh_placement="LOCAL")
+        self.assertTrue(approval["reuse"])
+        status = self.finish_application(approval)
+        saved = self.store.get(request_id)
+        self.assertEqual(saved.intent, original.intent)
+        self.assertEqual(saved.application_origin, original.application_origin)
+        self.assertEqual(status["local_applications"][0]["state"], "applied")
+        self.assertEqual(status["mesh_edit"]["target"], bpy.context.view_layer.objects.active.name)
+
+    def test_mesh_edit_unknown_outcome_blocks_another_application(self):
+        request_id = self.recovered_mesh_edit()
+        deferred = self.tools.apply_result_application(
+            self.import_args(self.prepare_mesh_edit(request_id))
+        )
+        result = deferred.run()
+        with patch.object(
+            submodule("blender.job_session"),
+            "apply_saved_mesh",
+            side_effect=RuntimeError("uncertain"),
+        ):
+            status = deferred.finish(result)
+        self.assertEqual(status["status"], "applying", status)
+        self.assertEqual(status["actions"], ())
+        with self.assertRaises(self.request_error):
+            self.prepare_mesh_edit(request_id)
+
+    def test_mesh_edit_invalid_keep_original_is_rejected_before_verification(self):
+        request_id = self.recovered_mesh_edit()
+        before = len(self.calls), len(self.paid), len(self.downloads), self.store.get(request_id)
+        with self.assertRaises(
+            submodule("blender.mesh_result_application").MeshResultApplicationError
+        ):
+            self.prepare_mesh_edit(request_id, keep_original=1)
+        self.assertEqual(
+            (len(self.calls), len(self.paid), len(self.downloads), self.store.get(request_id)),
+            before,
+        )
+
+    def test_mesh_operator_uses_prepared_approval_and_consumes_it_once(self):
+        request_id = self.recovered_mesh_edit()
+        approval = self.prepare_mesh_edit(request_id)
+        source = bpy.context.view_layer.objects.active
+        previous = source.data
+        args = self.import_args(approval)
+        self.assertEqual(bpy.ops.scenario.apply_saved_mesh(**args), {"FINISHED"})
+        jobs = self.runtime.state.model_jobs
+        jobs._commands[request_id][1].result(5)
+        status = jobs.status(request_id)
+        self.assertEqual(status["status"], "applied", status)
+        self.assertNotEqual(source.data, previous)
+        with self.assertRaisesRegex(RuntimeError, "Mesh edit was not started"):
+            bpy.ops.scenario.apply_saved_mesh(**args)
+
+    def test_mesh_edit_target_changed_during_verification_is_not_claimed(self):
+        request_id = self.recovered_mesh_edit()
+        approval = self.prepare_mesh_edit(request_id)
+        source = bpy.context.view_layer.objects.active
+        previous = source.data
+        before = self.store.get(request_id)
+        deferred = self.tools.apply_result_application(self.import_args(approval))
+        verified = deferred.run()
+        source.data.vertices[0].co.x += 1
+        status = deferred.finish(verified)
+        self.assertEqual(self.store.get(request_id), before)
+        self.assertEqual(status["status"], "ready", status)
+        self.assertEqual(source.data, previous)
+        self.assertTrue(status["delivery_paused"])

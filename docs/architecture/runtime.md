@@ -316,6 +316,7 @@ source object and a durable original or local-reuse claim. It rejects changed
 geometry/context, ambiguous multi-mesh results and uncertain rollback, while
 known receipt retry only saves persistence. The caller supplies an explicit
 Blender-imported-scene-to-source-local matrix, edit policy and Keep original choice.
-No service operation or second executor is added. UI/MCP approval, source export
-metadata, provider mapping contracts and remaining edit policies still need
-integration; this is not full #99 or release acceptance.
+Native **Apply mesh edit** and MCP `purpose: mesh_edit` now prepare the same
+captured target, explicit scene/local placement, policy and Keep original review.
+No service operation or second executor is added. Source export metadata, provider
+mapping contracts and remaining edit policies still need integration; this is not full #99 or release acceptance.

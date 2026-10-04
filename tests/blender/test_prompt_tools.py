@@ -139,6 +139,29 @@ class PromptToolsTests(unittest.TestCase):
     def approve(self, item):
         return bpy.ops.scenario.prompt_approve(quote_id=item.identifier, approved_cost=item.cost)
 
+    def test_deleted_scene_action_does_not_block_remaining_scene(self):
+        removed = bpy.data.scenes.new("Removed prompt scene")
+        bpy.context.window.scene = removed
+        try:
+            item = self.jobs().quote(removed, "image", "GENERATE")
+            self.advance(item)
+            self.assertEqual(item.phase, "READY")
+        finally:
+            bpy.context.window.scene = self.scene
+            bpy.data.scenes.remove(removed)
+        with self.assertRaises(ReferenceError):
+            _ = removed.name
+        before = len(self.calls)
+        for phase in ("READY", "DONE", "ERROR", "SUBMITTING"):
+            with self.subTest(phase=phase):
+                item.phase = phase
+                self.assertIsNone(self.jobs().current(self.scene, "image"))
+                self.assertIs(self.jobs().actions[item.identifier], item)
+        self.assertEqual(len(self.calls), before)
+        fresh = self.quote()
+        self.assertEqual(fresh.scene, self.scene)
+        self.assertEqual(self.paid, [])
+
     def test_new_requires_exact_price_then_updates_only_original_scene(self):
         other = bpy.data.scenes.new("Other prompt scene")
         self.addCleanup(lambda: bpy.data.scenes.remove(other))

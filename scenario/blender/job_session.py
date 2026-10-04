@@ -15,7 +15,7 @@ from weakref import WeakKeyDictionary, WeakValueDictionary
 import bpy
 from bpy.app.handlers import persistent
 
-from ..core.jobs.coordinator import JobCoordinator, OriginQuote, RemoteSnapshot
+from ..core.jobs.coordinator import FilmUploadResult, JobCoordinator, OriginQuote, RemoteSnapshot
 from ..core.jobs.origins import OriginRevisions
 from ..core.jobs.results import ModelTextResult, PromptResults, VerifiedResults
 from ..core.jobs.store import JobOrigin, JobState, StoredJob
@@ -320,6 +320,23 @@ class JobSession:
         self._pending.append((task, origin))
         return task
 
+    def bind_film_upload(
+        self, recipe, *, production_id, task_id, request_id, expected_revision, origin
+    ):
+        _main_thread()
+        self._check_capacity()
+        self._resolve(origin)
+        task = self._workers.bind_film_upload(
+            recipe,
+            production_id=production_id,
+            task_id=task_id,
+            request_id=request_id,
+            expected_revision=expected_revision,
+            origin=origin,
+        )
+        self._pending.append((task, origin))
+        return task
+
     def quote_workflow(self, identifier, parameters, *, origin):
         return self._quote("workflow", identifier, parameters, origin)
 
@@ -547,7 +564,7 @@ class JobSession:
                         and record.intent.operation == "model"
                         and record.intent.target_id == model_id
                     )
-                elif isinstance(record, OriginQuote):
+                elif isinstance(record, (OriginQuote, FilmUploadResult)):
                     matches = record.origin == origin and record.scope == self.scope
                 else:
                     matches = record.intent.origin == origin and record.intent.scope == self.scope

@@ -11,7 +11,8 @@ from ..scene.film_plan import (
     resolve_references,
     validate_film_plan,
 )
-from .store import FilmTaskBinding, JobState, StoreConflict, _json
+from .store import FilmTaskBinding, FilmUploadReference, JobState, StoreConflict, _json
+from .upload_store import StoredUpload, UploadState
 
 
 def _digest(value):
@@ -32,13 +33,8 @@ def _references(value):
         yield match[1]
 
 
-def model_task_request(store, recipe, *, production_id, task_id):
-    """Resolve a validated recipe task only from matching completed saved tasks.
-
-    The returned binding must accompany the owned quote into JobStore.create's
-    atomic uniqueness check. This read alone does not reserve a task or authorize
-    submission. Persist only the digests, never recipe text or remote URLs.
-    """
+def _task_context(store, recipe, *, production_id, task_id, kind):
+    """Validate the recipe and compute exact task/dependency identities."""
     plan = validate_film_plan(recipe)
     require_plan_scope(plan, store.scope)
     tasks, digests, dependencies = {}, {}, {}
@@ -51,16 +47,74 @@ def model_task_request(store, recipe, *, production_id, task_id):
             {"task": task, "dependencies": {key: digests[key] for key in sorted(refs)}}
         )
         tasks[task["id"]] = task
-    if not isinstance(task_id, str) or task_id not in tasks or tasks[task_id]["kind"] != "model":
-        raise ValueError("Choose a model task from the Film recipe")
+    if not isinstance(task_id, str) or task_id not in tasks or tasks[task_id]["kind"] != kind:
+        raise ValueError(f"Choose a {kind} task from the Film recipe")
     binding = FilmTaskBinding(production_id, task_id, _digest(plan), digests[task_id])
-    if store.film_job(production_id, task_id) is not None:
-        raise StoreConflict("Film task already has a saved job; inspect it or name a new take")
+    return binding, tasks, digests, dependencies
+
+
+def _upload_evidence(inspect_upload, binding, scope, request_id, expected_revision):
+    if inspect_upload is None:
+        raise ValueError("Film upload references require the selected upload store")
+    saved = inspect_upload(request_id)
+    if (
+        not isinstance(saved, StoredUpload)
+        or saved.intent.scope != scope
+        or saved.intent.request_id != request_id
+        or type(expected_revision) is not int
+        or saved.revision != expected_revision
+        or saved.state != UploadState.IMPORTED
+    ):
+        raise ValueError("Choose an unchanged imported upload in the selected scope")
+    return FilmUploadReference(
+        scope,
+        binding,
+        request_id,
+        saved.revision,
+        saved.asset_id,
+        saved.intent.file_sha256,
+        saved.intent.kind,
+    )
+
+
+def upload_task_reference(
+    store, recipe, *, production_id, task_id, inspect_upload, request_id, expected_revision
+):
+    """Validate a local association; no upload, staging, cleanup or remote reads."""
+    binding, _, _, _ = _task_context(
+        store, recipe, production_id=production_id, task_id=task_id, kind="upload"
+    )
+    return _upload_evidence(inspect_upload, binding, store.scope, request_id, expected_revision)
+
+
+def model_task_request(store, recipe, *, production_id, task_id, inspect_upload=None):
+    """Resolve matching completed saved tasks; this read does not reserve a take."""
+    binding, tasks, digests, dependencies = _task_context(
+        store, recipe, production_id=production_id, task_id=task_id, kind="model"
+    )
+    if (
+        store.film_job(production_id, task_id) is not None
+        or store.film_upload(production_id, task_id) is not None
+    ):
+        raise StoreConflict("Film task already has saved work; inspect it or name a new take")
     observations = {}
     for reference in dependencies[task_id]:
         source = tasks[reference]
-        if source["kind"] != "model":
-            raise ValueError("Film upload-task binding is not available yet")
+        if source["kind"] == "upload":
+            attached = store.film_upload(production_id, reference)
+            if attached is None or attached.film_task.task_sha256 != digests[reference]:
+                raise ValueError("Film reference needs a matching saved upload association")
+            current = _upload_evidence(
+                inspect_upload,
+                attached.film_task,
+                store.scope,
+                attached.upload_request_id,
+                attached.upload_revision,
+            )
+            if current != attached:
+                raise ValueError("Film upload changed; inspect the saved association")
+            observations[reference] = TaskAssets(store.scope, (attached.asset_id,))
+            continue
         saved = store.film_job(production_id, reference)
         if (
             saved is None

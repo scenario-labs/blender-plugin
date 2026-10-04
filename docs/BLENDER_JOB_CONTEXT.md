@@ -57,6 +57,14 @@ network dispatch. No scene mutation, Film panel, MCP tool or new background owne
 is added. A future view must preserve production identity and invalidate displayed
 quotes when its recipe changes; this session command operates on a snapshot.
 
+`JobSession.bind_film_upload` queues the local upload-task association with an
+explicit observed upload revision and captured caller origin. It shares normal
+admission, recipe snapshotting and delivery guards. A saved association survives a
+late rejected callback; it never applies to the changed scene. Repeating the same
+association from another scene delivers the unchanged saved reference to that new
+reader. Imported-upload eligibility is checked through the selected coordinator's
+upload store, with no remote read, staging or upload replay.
+
 ## Cloud result adoption command
 
 `JobSession.adopt_cloud_job(identifier, expected_model_id=..., scene=...)`

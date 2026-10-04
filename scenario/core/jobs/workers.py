@@ -123,6 +123,20 @@ class JobWorkers:
             origin=origin,
         )
 
+    def bind_film_upload(
+        self, recipe, *, production_id, task_id, request_id, expected_revision, origin
+    ):
+        snapshot = _snapshot(recipe)
+        return self._enqueue(
+            self._coordinator.bind_film_upload,
+            snapshot,
+            production_id=production_id,
+            task_id=task_id,
+            request_id=request_id,
+            expected_revision=expected_revision,
+            origin=origin,
+        )
+
     def quote_workflow(self, identifier, parameters, *, origin):
         snapshot = _snapshot(parameters)
         return self._enqueue(self._coordinator.quote_workflow, identifier, snapshot, origin=origin)

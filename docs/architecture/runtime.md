@@ -330,6 +330,8 @@ captured source before worker admission; staging rejects a mismatched file hash.
 Multiple sources remain explicit without guessing a primary mesh. Upload schema 2
 upgrades existing records transactionally without resetting uncertain claims.
 
-This is upload provenance, not generation-origin binding or automatic mesh
-replacement. Provider alignment, operation-specific policies and live acceptance
+The shared quote coordinator binds captured uploads to typed 3D inputs and
+persists their source snapshots in
+[generation intents](../JOB_STORAGE.md#captured-mesh-inputs-in-generation-intents).
+This does not change the generation origin or authorize automatic mesh replacement. Provider alignment, operation-specific policies and live acceptance
 remain separate. No SDK request or dependency changes are introduced.

@@ -15,9 +15,11 @@ from pathlib import Path
 from weakref import WeakKeyDictionary, WeakValueDictionary
 
 from ..api.sdk_adapter import Estimate, SDKAdapter
+from ..schema.forms import _fields, is_file_field
 from .results import ResultCommands, ResultError, VerifiedResults
 from .store import (
     JobIntent,
+    JobMeshSource,
     JobOrigin,
     JobScope,
     JobState,
@@ -41,6 +43,7 @@ class OriginQuote:
     scope: JobScope
     origin: JobOrigin
     estimate: Estimate = field(repr=False)
+    mesh_sources: tuple[JobMeshSource, ...] = ()
 
 
 class SubmissionUncertain(RuntimeError):
@@ -487,6 +490,65 @@ class JobCoordinator:
             raise QuoteError("Scenario returned another model or workflow identity")
         return result
 
+    def _mesh_bindings(self, operation, metadata, payload):
+        if self._uploads is None or operation not in {"model", "workflow"}:
+            return ()
+        fields = metadata.get("inputs" if operation == "model" else "inputs_definition")
+        if fields is None:
+            fields = metadata.get("parameters" if operation == "model" else "inputs")
+        inputs = [
+            spec
+            for spec in _fields({"parameters": fields})
+            if is_file_field(spec) and str(spec.get("kind", "")).lower() == "3d"
+        ]
+        if not inputs:
+            return ()
+        exports = self._uploads.mesh_sources()
+        bindings = []
+        for spec in inputs:
+            value = payload.get(spec["name"])
+            values = (
+                enumerate(value)
+                if spec["type"] == "file_array" and isinstance(value, list)
+                else ((None, value),)
+            )
+            for index, asset_id in values:
+                matching = [record for record in exports if record.asset_id == asset_id]
+                if not matching:
+                    continue  # External assets and ordinary uploads have no inferred source.
+                if len(matching) != 1:
+                    raise QuoteError(
+                        "Several captured uploads identify this asset; review its source"
+                    )
+                record = matching[0]
+                bindings.append(
+                    JobMeshSource(
+                        spec["name"],
+                        index,
+                        asset_id,
+                        record.intent.request_id,
+                        record.revision,
+                        record.intent.origin,
+                        record.intent.mesh_source,
+                    )
+                )
+        if len(bindings) > 128:
+            raise QuoteError("Too many captured mesh inputs")
+        return tuple(bindings)
+
+    def _validate_mesh_bindings(self, bindings):
+        for binding in bindings:
+            record = self._upload_commands().inspect(binding.upload_id)
+            if (
+                record is None
+                or record.state.value != "imported"
+                or record.revision != binding.upload_revision
+                or record.asset_id != binding.asset_id
+                or record.intent.origin != binding.origin
+                or record.intent.mesh_source != binding.mesh_source
+            ):
+                raise QuoteError("A captured input changed; inspect the upload and estimate again")
+
     def quote_model(self, identifier, parameters, *, origin):
         return self._quote("model", identifier, parameters, origin)
 
@@ -505,6 +567,7 @@ class JobCoordinator:
         snapshot = json.loads(_payload(parameters))
         with self._request_guard(origin):
             pass
+        record = {}
         if operation in {"prompt", "translate"}:
             estimate = getattr(self._adapter, f"estimate_{operation}")(snapshot)
         else:
@@ -513,7 +576,8 @@ class JobCoordinator:
                 pass
             estimate = getattr(self._adapter, f"estimate_{operation}")(record, snapshot)
         with self._request_guard(origin):
-            quote = OriginQuote(self.scope, origin, estimate)
+            bindings = self._mesh_bindings(operation, record, estimate.payload)
+            quote = OriginQuote(self.scope, origin, estimate, bindings)
             self._quotes[id(quote)] = quote
             self._bound_estimates[estimate] = True
             return quote
@@ -529,7 +593,8 @@ class JobCoordinator:
         with self._request_guard(quote.origin):
             if self._quotes.get(id(quote)) is not quote or quote.scope != self.scope:
                 raise QuoteError("Use an unchanged quote issued by this context")
-            prepared = self._prepare(quote.estimate, quote.origin)
+            self._validate_mesh_bindings(quote.mesh_sources)
+            prepared = self._prepare(quote.estimate, quote.origin, mesh_sources=quote.mesh_sources)
             del self._quotes[id(quote)]
             return prepared
 
@@ -542,7 +607,7 @@ class JobCoordinator:
                 raise QuoteError("Use prepare_quote for an estimate bound to an origin")
             return self._prepare(estimate, origin)
 
-    def _prepare(self, estimate: Estimate, origin: JobOrigin):
+    def _prepare(self, estimate: Estimate, origin: JobOrigin, *, mesh_sources=()):
         """Persist after ownership was checked outside the coordinator lock.
 
         Preparation does not reserve or consume an estimate. Submission rechecks
@@ -560,6 +625,7 @@ class JobCoordinator:
                 payload_sha256=hashlib.sha256(estimate.payload_json).hexdigest(),
                 quote_sha256=hashlib.sha256(estimate.response_json).hexdigest(),
                 quote_cost=str(estimate.cost),
+                mesh_sources=mesh_sources,
             )
             expires_at = estimate.issued_at + self._ttl
             now = self._clock()
@@ -610,6 +676,7 @@ class JobCoordinator:
                         or current.state != JobState.PREPARED
                     ):
                         raise StoreConflict("Request is no longer prepared; do not resubmit")
+                    self._validate_mesh_bindings(intent.mesh_sources)
                     self._store.transition(
                         intent.request_id,
                         expected_revision=current.revision,

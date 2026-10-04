@@ -94,15 +94,17 @@ another request or resend. Intent fields and a known remote job ID cannot change
 Foreign databases, unsupported versions, malformed records and mismatched stored
 identities/revisions raise errors. They are preserved for explicit recovery,
 never silently replaced with empty history. An already-open store also fails if
-its database disappears. Previous shared schemas 2, 3 and 4 upgrade in one
+its database disappears. Previous shared schemas 2, 3, 4 and 5 upgrade in one
 transaction that validates every scope, record, identity and revision. A corrupt
 row or failed commit preserves all previous rows and the old version. This is
 not a prototype import; version 1 and foreign databases remain rejected. Schema 2/3
 results receive an unknown (`None`) texture role; schema 4 roles are preserved. Migration never contacts
 Scenario or infers semantics from filenames. Schema 3 application destinations
 are preserved, while schema 2 retains its original-origin application semantics.
-All previous records receive an empty local-application history.
-Older extension builds reject schema 5; stop older Blender processes before
+Schemas before 5 receive an empty local-application history; schema 5 preserves
+its existing claims, including unfinished applications. All previous records
+receive empty mesh input bindings.
+Older extension builds reject schema 6; stop older Blender processes before
 upgrading and do not expect an older build to open the upgraded store.
 
 ## State boundaries
@@ -269,3 +271,26 @@ Native UI and MCP use these records through the existing runtime and fresh
 byte verification before decoding. Status inspection exposes the separate local
 outcomes. Resolution of uncertain scene outcomes still requires inspection; no
 automatic reset or replay is offered.
+
+
+## Captured mesh inputs in generation intents
+
+Schema 6 stores `JobIntent.mesh_sources`, an immutable tuple of typed input
+bindings. Each binding records the parameter and optional array index, imported
+asset ID, upload request/revision, captured upload origin and exact mesh export
+provenance. It accompanies the exact normalized payload and quote hashes before
+the submission claim. Metadata stays local; the SDK request still contains only
+the model/workflow parameters.
+
+The shared quote path matches only declared 3D file inputs to completed captured
+uploads in the selected credential/project scope. Prompt strings, unknown assets
+and ordinary file uploads acquire no inferred source. Repeated array values keep
+their positions; ambiguous captured records for the same asset reject the quote.
+The coordinator rechecks every binding before preparation and again before the
+paid claim. A missing or changed upload stops dispatch while preserving the job.
+
+Bindings describe the immutable uploaded snapshot, not the current geometry of
+an object. Their origin may differ from the generation's current scene context.
+They neither retarget the job nor authorize automatic application, provider
+alignment or original-object recovery after restart. Reopening keeps the source
+history available for explicit review; no paid request is replayed.

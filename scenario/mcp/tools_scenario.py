@@ -4,6 +4,7 @@
 
 import json
 import time
+from dataclasses import asdict
 
 import bpy
 
@@ -119,6 +120,7 @@ def estimate_cost(args):
             "quote_id": ticket.identifier,
             "cu_cost": float(quote.cost),
             "cu_cost_exact": str(quote.cost),
+            "mesh_sources": [asdict(source) for source in ticket.quote.mesh_sources],
             "details": json.loads(quote.response_json).get("costDetails") or {},
         }
 
@@ -996,7 +998,7 @@ SPECS = (
             "  - model_id: required string, the model identifier.\n"
             "  - parameters: optional object, model parameters including Scenario asset ids for file inputs.\n"
             "  - lane: optional generation lane, default image. Every lane issues a single-use quote_id.\n"
-            "Returns: model_id, lane, cu_cost, cu_cost_exact (decimal string), details and quote_id bound to the lane, model, inputs, scene and credential context.\n"
+            "Returns: model_id, lane, cu_cost, cu_cost_exact (decimal string), details, mesh_sources (local captured 3D input provenance) and quote_id bound to the lane, model, inputs, scene and credential context.\n"
             'Example: {"model_id": "model_example", "parameters": {"prompt": "a wooden crate"}}.\n'
             "Call before generate and show the cost to the user; an estimate does not authorize spending.\n"
             "Platform equivalent: model_run with dry_run."
@@ -1049,7 +1051,7 @@ SPECS = (
             "Args:\n"
             "  - job_id: optional string, a Scenario job id or the local_id returned by generate.\n"
             "  - id: optional string, compatibility alias; provide job_id or id. job_id takes precedence if both are supplied.\n"
-            "Returns: local_id, job_id, status, cu_cost, files, error and kind. Shared jobs also return revision, cu_cost_exact, results (asset_id, name, media_type, size, downloaded), actions and images. Recovered jobs report kind=model; result media types remain available. Unknown jobs raise ValueError.\n"
+            "Returns: local_id, job_id, status, cu_cost, files, error and kind. Shared jobs also return revision, cu_cost_exact, results (asset_id, name, media_type, size, downloaded), actions, images and mesh_sources. Source records describe uploaded snapshots; they do not authorize finding or replacing an object after restart. Recovered jobs report kind=model; result media types remain available. Unknown jobs raise ValueError.\n"
             'Example: {"job_id": "job_example"}.\n'
             "Prefer this for one status check; it only knows jobs tracked by this Blender runtime.\n"
             "Platform equivalent: job_get."

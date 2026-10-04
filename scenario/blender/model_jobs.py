@@ -6,7 +6,7 @@ import json
 import threading
 import time
 import uuid
-from dataclasses import dataclass, field, replace
+from dataclasses import asdict, dataclass, field, replace
 
 import bpy
 from mathutils import Matrix
@@ -1006,6 +1006,7 @@ class ModelJobs:
             "job_id": record.remote_job_id,
             "status": record.state.value,
             "revision": record.revision,
+            "mesh_sources": [asdict(source) for source in record.intent.mesh_sources],
             "cu_cost": float(record.intent.quote_cost),
             "cu_cost_exact": record.intent.quote_cost,
             "kind": self.views[record.intent.request_id].kind

@@ -558,7 +558,9 @@ preserves identities, revisions, receipts and uncertain claims. Any malformed
 legacy row rolls the whole upgrade back. Older uploads and ordinary file/capture
 uploads remain valid with no mesh provenance; no source is inferred from names.
 
-This records the source at upload time. Binding that provenance to a generation
-quote and operation-specific result application remains separate integration.
+The shared model/workflow quote path now binds imported captured sources to
+their typed 3D input parameters and persists them before spending; see
+[generation source bindings](JOB_STORAGE.md#captured-mesh-inputs-in-generation-intents).
+Operation-specific result application remains separate integration.
 Session target IDs are not authority to find an object by name after restart;
 reopened files still require explicit destination review.

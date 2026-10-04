@@ -9,7 +9,7 @@ import tempfile
 import threading
 import unittest
 from concurrent.futures import ThreadPoolExecutor
-from dataclasses import replace
+from dataclasses import asdict, replace
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
@@ -2345,3 +2345,91 @@ class ModelGenerationTests(unittest.TestCase):
         self.assertEqual(status["status"], "ready", status)
         self.assertEqual(source.data, previous)
         self.assertTrue(status["delivery_paused"])
+
+    def captured_mesh_upload(self):
+        session = self.runtime.ensure_job_session()
+        origin = session.capture(bpy.context.scene, bpy.context.object)
+        source_types = submodule("core.jobs.mesh_source")
+        uploads = submodule("core.jobs.upload_store")
+        source = source_types.MeshSource(
+            "a" * 64,
+            (
+                source_types.MeshSourceObject(
+                    origin.target_id,
+                    "b" * 64,
+                    tuple(tuple(row) for row in bpy.context.object.matrix_world),
+                ),
+            ),
+        )
+        store = session._coordinator._uploads._store
+        record = store.create(
+            uploads.UploadIntent(
+                "captured-mesh",
+                store.scope,
+                origin,
+                "3d",
+                "source.glb",
+                "model/gltf-binary",
+                11,
+                "a" * 64,
+                11,
+                ("a" * 64,),
+                source,
+            )
+        )
+
+        def advance(state, **changes):
+            nonlocal record
+            record = store.transition(
+                record.intent.request_id, expected_revision=record.revision, state=state, **changes
+            )
+
+        advance(uploads.UploadState.INITIALIZING)
+        advance(uploads.UploadState.UPLOADING, upload_id="remote-upload")
+        record = store.claim_part(record.intent.request_id, expected_revision=record.revision)
+        record = store.record_part(
+            record.intent.request_id,
+            uploads.UploadedPart(1, 11, "a" * 64),
+            expected_revision=record.revision,
+        )
+        advance(uploads.UploadState.FINALIZING)
+        advance(uploads.UploadState.PROCESSING)
+        advance(uploads.UploadState.IMPORTED, asset_id="uploaded-mesh")
+        return record
+
+    def test_ui_and_mcp_persist_same_captured_mesh_binding_without_sending_it(self):
+        self.configure_ui_lane("edit3d")
+        upload = self.captured_mesh_upload()
+        self.ui_quote("edit3d")
+        self.assertEqual(bpy.ops.scenario.generate(lane="edit3d"), {"FINISHED"})
+        self.settle()
+        ui = self.store.records()[0]
+        self.assertEqual(ui.state, self.storemod.JobState.REMOTE)
+        self.assertEqual(ui.intent.mesh_sources[0].mesh_source, upload.intent.mesh_source)
+        self.assertEqual(ui.intent.mesh_sources[0].origin, upload.intent.origin)
+        args = {
+            "lane": "edit3d",
+            "model_id": self.model["id"],
+            "parameters": {"prompt": "a teapot", "mesh": "uploaded-mesh"},
+        }
+        deferred = self.tools.estimate_cost(args)
+        quote = deferred.finish(deferred.run())
+        self.assertEqual(
+            quote["mesh_sources"], [asdict(source) for source in ui.intent.mesh_sources]
+        )
+        result = self.tools.generate(
+            dict(args, quote_id=quote["quote_id"], approved_cost=quote["cu_cost_exact"])
+        )
+        self.settle()
+        saved = self.store.get(result["local_id"])
+        self.assertEqual(saved.intent.mesh_sources, ui.intent.mesh_sources)
+        status = self.tools.job_status({"job_id": result["local_id"]})
+        self.assertEqual(status["mesh_sources"], quote["mesh_sources"])
+        self.assertEqual(len(self.paid), 2)
+        self.assertEqual(self.paid[0].content, self.paid[1].content)
+        self.assertNotIn("mesh_sources", json.loads(self.paid[0].content))
+        self.runtime.state.reset()
+        self.assertEqual(
+            self.runtime.ensure_job_store().get(result["local_id"]).intent.mesh_sources,
+            saved.intent.mesh_sources,
+        )

@@ -413,6 +413,11 @@ class SCENARIO_OT_apply_saved_mesh(bpy.types.Operator):
         items=(
             ("REMESH", "Replace geometry", "Adopt result geometry, UVs and mesh materials"),
             ("UV", "Replace active UVs", "Require exactly matching indexed topology and positions"),
+            (
+                "RETEXTURE",
+                "Replace textures",
+                "Preserve geometry; adopt result UVs and materials with exactly matching topology and positions",
+            ),
         ),
         default="REMESH",
         options={"SKIP_SAVE"},
@@ -506,6 +511,9 @@ class SCENARIO_OT_apply_saved_mesh(bpy.types.Operator):
         layout.prop(self, "keep_original")
         if self.policy == "REMESH":
             layout.label(text="Replace this mesh's geometry, UVs and mesh materials.")
+        elif self.policy == "RETEXTURE":
+            layout.label(text="Replace all UV layers and mesh materials; preserve geometry.")
+            layout.label(text="Indexed topology and positions must match exactly.")
         else:
             layout.label(text="Replace active UVs only; topology and positions must match exactly.")
         layout.label(text="Keep the source object's name, transforms, parenting and collections.")

@@ -195,6 +195,106 @@ class MeshApplicationTests(unittest.TestCase):
         with self.assertRaises(self.module.MeshApplicationError):
             self.apply(policy="UV")
 
+    def test_retexture_preserves_geometry_attributes_context_and_shared_original(self):
+        attribute = self.source.data.attributes.new("Keep weight", "FLOAT", "POINT")
+        attribute.data[0].value = 0.75
+        self.source.data.polygons[0].use_smooth = True
+        self.source.data.edges[0].use_seam = True
+        before = self.source.data
+        alias = bpy.data.objects.new("Shared original", before)
+        self.scene.collection.objects.link(alias)
+        self.source.location = (2, 3, 4)
+        bpy.context.view_layer.update()
+        transform = self.source.matrix_world.copy()
+        geometry = [tuple(vertex.co) for vertex in before.vertices]
+        receipt = self.apply(policy="RETEXTURE", keep_original=True)
+        self.assertEqual([tuple(vertex.co) for vertex in self.source.data.vertices], geometry)
+        self.assertEqual(self.source.matrix_world, transform)
+        self.assertEqual(self.source.data.attributes["Keep weight"].data[0].value, 0.75)
+        self.assertTrue(self.source.data.polygons[0].use_smooth)
+        self.assertTrue(self.source.data.edges[0].use_seam)
+        self.assertEqual(list(self.source.data.materials), [self.result_material])
+        self.assertEqual(self.source.data.uv_layers[0].name, "Result UV")
+        self.assertEqual(list(before.materials), [self.source_material])
+        self.assertIs(alias.data, before)
+        self.assertIs(receipt.original.data, before)
+        receipt.rollback()
+        self.assertIs(self.source.data, before)
+        self.assertIs(receipt.original.data, before)
+
+    def test_retexture_adopts_all_named_uv_roles_and_face_materials(self):
+        self.uv(self.result, "Second UV", 0.5)
+        self.result.data.uv_layers.active_index = 1
+        self.result.data.uv_layers[1].active_render = True
+        self.result.data.uv_layers[1].active_clone = True
+        self.result.data.materials.append(self.source_material)
+        self.result.data.polygons[0].material_index = 1
+        self.apply(policy="RETEXTURE")
+        self.assertEqual(list(self.source.data.materials), list(self.result.data.materials))
+        self.assertEqual(self.source.data.polygons[0].material_index, 1)
+        self.assertEqual(self.source.data.uv_layers.active_index, 1)
+        for actual, expected in zip(
+            self.source.data.uv_layers, self.result.data.uv_layers, strict=True
+        ):
+            self.assertEqual(
+                (actual.name, actual.active_render, actual.active_clone),
+                (expected.name, expected.active_render, expected.active_clone),
+            )
+            self.assertEqual(
+                [tuple(item.uv) for item in actual.data], [tuple(item.uv) for item in expected.data]
+            )
+
+    def test_retexture_rejects_attribute_name_collision_without_mutation(self):
+        self.source.data.attributes.new("Result UV", "FLOAT", "POINT")
+        before = self.source.data
+        meshes = set(bpy.data.meshes)
+        with self.assertRaisesRegex(self.module.MeshApplicationError, "conflict"):
+            self.apply(policy="RETEXTURE")
+        self.assertIs(self.source.data, before)
+        self.assertEqual(set(bpy.data.meshes), meshes)
+
+    def test_retexture_rejects_missing_materials_uvs_and_invalid_face_assignments(self):
+        before = self.source.data
+        for kind in ("materials", "uvs", "face"):
+            with self.subTest(kind=kind):
+                if kind == "materials":
+                    self.result.data.materials.clear()
+                elif kind == "uvs":
+                    self.result.data.uv_layers.remove(self.result.data.uv_layers[0])
+                else:
+                    self.result.data.polygons[0].material_index = 4
+                meshes = set(bpy.data.meshes)
+                with self.assertRaises(self.module.MeshApplicationError):
+                    self.apply(policy="RETEXTURE")
+                self.assertIs(self.source.data, before)
+                self.assertEqual(set(bpy.data.meshes), meshes)
+                if kind == "materials":
+                    self.result.data.materials.append(self.result_material)
+                elif kind == "uvs":
+                    self.uv(self.result, "Result UV", 0.25)
+
+    def test_retexture_rejects_geometry_change_and_reindexed_faces(self):
+        before = self.source.data
+        self.result.data.vertices[0].co.x = 0.01
+        with self.assertRaisesRegex(self.module.MeshApplicationError, "topology"):
+            self.apply(policy="RETEXTURE")
+        self.assertIs(self.source.data, before)
+        self.result.data.clear_geometry()
+        self.result.data.from_pydata(
+            [(0, 0, 0), (1, 0, 0), (1, 1, 0), (0, 1, 0)], [], [(3, 2, 1, 0)]
+        )
+        with self.assertRaisesRegex(self.module.MeshApplicationError, "topology"):
+            self.apply(policy="RETEXTURE")
+        self.assertIs(self.source.data, before)
+
+    def test_retexture_rollback_refuses_later_uv_edit(self):
+        receipt = self.apply(policy="RETEXTURE")
+        applied = self.source.data
+        applied.uv_layers[0].data[0].uv.x += 0.5
+        with self.assertRaisesRegex(self.module.MeshApplicationError, "Mesh data changed"):
+            receipt.rollback()
+        self.assertIs(self.source.data, applied)
+
     def test_explicit_mapping_bakes_result_coordinates_without_moving_object(self):
         before = self.source.matrix_world.copy()
         self.apply(result_to_source=Matrix.Translation((2, 3, 4)))

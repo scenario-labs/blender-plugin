@@ -10,7 +10,7 @@ receipt = apply_mesh(
     captured_scene,
     captured_source,
     imported_primary_mesh,
-    policy="REMESH",                 # or "UV"
+    policy="REMESH",                 # or "UV" / "RETEXTURE"
     result_to_source=local_mapping,  # explicit finite, orientation-preserving affine 4x4 matrix
     keep_original=True,
 )
@@ -34,6 +34,7 @@ metadata remain integration work under #65 and #99.
 | Policy | Geometry and attributes | UVs | Materials |
 | --- | --- | --- | --- |
 | `REMESH` | Copy result mesh and bake the explicit local mapping | Adopt result UV layers | Adopt result mesh material slots and polygon assignments |
+| `RETEXTURE` | Copy source geometry and non-UV attributes; require exact indexed topology and mapped positions | Replace all layers with result names, coordinates and active/render/clone roles | Adopt nonempty result slots and valid face assignments; preserve existing shader datablocks |
 | `UV` | Copy source mesh; require exactly matching indexed vertices, edges, polygons and loops, with exact positions after mapping | Copy coordinates from exactly one result UV layer to the source's active layer; preserve its name and other layers; create a layer if absent | Preserve source slots and polygon assignments |
 
 A remesh deliberately replaces all source mesh attributes with the result's data.
@@ -53,7 +54,7 @@ constraints, vertex groups, shape keys, animation, armature/bone/vertex parentin
 vertex-parented children, object material overrides and custom mesh properties are
 rejected. Generic attributes are limited to boolean, scalar float/integer, integer
 2D, float 2D/3D and float/byte color types. Other types fail closed. Rigging,
-retexture, segmentation grouping, animation transfer and multi-object replacement
+segmentation grouping, animation transfer and multi-object replacement
 need separate policies. Supplying one explicit result object does not classify
 other returned helper objects, maps or alternate meshes.
 
@@ -146,7 +147,7 @@ claim after fresh approval. An interrupted original or local `applying` claim
 cannot be replayed.
 Receipt-only retry saves known success without importing another model, and
 session shutdown releases that retry handle. This remains partial #65/#99 work:
-in-place remesh/UV/retexture, rig/animation transfer and edit-specific recovery
+provider-specific edit contracts, rig/animation transfer and edit-specific recovery
 are not established by a successful new-object import.
 
 ## Captured source and verified saved-mesh command
@@ -167,7 +168,7 @@ verified static GLB. It shares the new-object importer's receipt/hash preflight,
 private byte snapshot, isolated staging scene and image packing. It requires
 exactly one mesh with optional Empty parents; multiple meshes and other object
 types fail rather than selecting the first variant. The caller explicitly chooses
-`REMESH` or `UV` and Keep original.
+`REMESH`, `UV` or `RETEXTURE` and Keep original.
 
 The required finite, orientation-preserving mapping converts **Blender-imported
 GLB scene coordinates** into **source-local coordinates**. Imported node transforms
@@ -208,8 +209,7 @@ See [session ownership](BLENDER_JOB_CONTEXT.md#verified-saved-mesh-replacement).
 Installed synthetic tests cover remesh and exact-topology UV, parented/scaled
 sources, shared originals, packed materials, explicit node-transform mapping,
 selection, source changes, multi-scene/multi-mesh rejection, rollback failure,
-separate local reuse and persistence-only recovery. Provider coordinate contracts, rig/retexture/
-segmentation policy and global undo remain integration work under #65/#99.
+separate local reuse and persistence-only recovery. Provider coordinate contracts, rig/segmentation policy and global undo remain integration work under #65/#99.
 There are no new service calls or live/provider acceptance claims in this command.
 
 ## Saved mesh edit approval
@@ -243,7 +243,7 @@ There is no automatic blend save or global undo entry.
 
 The generic action reviews a destination selected now. The captured-source action
 below uses the original exported object. Neither establishes provider alignment,
-retexture/rig/segmentation policy or end-to-end Edit 3D acceptance.
+provider retexture contracts, rig/segmentation policy or end-to-end Edit 3D acceptance.
 
 
 ## Applying to the captured mesh source
@@ -280,3 +280,33 @@ Each session retains at most 128 distinct eligible snapshots without evicting ol
 ones. Further captures remain upload references but have no original-source guard.
 This is explicit local application; it makes no service request, cannot establish
 provider alignment, and adds no global undo or persistent restoration.
+
+
+## Retexture without geometry replacement
+
+Choose **Replace textures** in either mesh approval dialog, or pass
+`mesh_policy: RETEXTURE` with MCP `purpose: mesh_edit` or `mesh_source`. The
+same captured destination, coordinate mapping, Keep original and durable
+application controls apply. No generation or service request is made.
+
+Retexture copies the source mesh, preserving its vertex positions, indexed
+topology, non-UV attributes, edge flags and shading flags. It replaces **all**
+UV layers with the result's names, coordinates and active/render/clone roles,
+and adopts the result's material slots and polygon assignments. UV names are
+preserved so imported shader references keep their intended map. Old materials
+and their node graphs remain untouched; shared source meshes and a requested
+original copy retain the previous appearance. Embedded result images stay packed.
+
+The mapping must give exactly matching indexed topology and positions, as for
+UV replacement. Rounded positions, reordered or seam-split vertices and changed
+geometry are rejected instead of guessed. Result materials and UVs must be
+nonempty, face material indices must be valid, and result UV names must not
+collide with retained source attributes. A failure restores the exact source
+and retains downloaded bytes for a separately reviewed local retry.
+
+The primitive's guarded rollback and the saved command's receipt-only recovery
+remain unchanged. Keep original is the user-visible retained copy; this does not
+add global undo or a persistent restoration command. Rig/animation sources,
+multiple meshes, provider coordinate/topology guarantees and paid acceptance
+remain outside this policy. Explicit remesh remains a separate reviewed choice
+when geometry replacement is intended.

@@ -23,8 +23,10 @@ class MeshEditApplication:
 def validate_request(target, *, policy, result_to_source, keep_original):
     """Validate the captured source and explicit policy without decoding files."""
     mesh_application.validate_target(target)
-    if policy not in {"REMESH", "UV"} or type(keep_original) is not bool:
-        raise MeshResultApplicationError("Choose REMESH or UV and an explicit Keep original value")
+    if policy not in {"REMESH", "UV", "RETEXTURE"} or type(keep_original) is not bool:
+        raise MeshResultApplicationError(
+            "Choose REMESH, UV or RETEXTURE and an explicit Keep original value"
+        )
     return mesh_application._matrix(result_to_source)
 
 

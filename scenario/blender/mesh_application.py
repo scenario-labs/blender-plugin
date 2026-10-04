@@ -216,6 +216,36 @@ def _same_topology(source, result, mapping):
     )
 
 
+def _retexture(staged, result):
+    """Adopt result UV/material bindings without mutating shared shader graphs."""
+    if not result.materials or any(material is None for material in result.materials):
+        raise MeshApplicationError("Retexture requires nonempty result material slots")
+    if any(face.material_index >= len(result.materials) for face in result.polygons):
+        raise MeshApplicationError("Retexture requires valid result face material assignments")
+    if not result.uv_layers:
+        raise MeshApplicationError("Retexture requires result UV layers")
+    source_uv_names = {layer.name for layer in staged.uv_layers}
+    other_names = {attribute.name for attribute in staged.attributes} - source_uv_names
+    if any(layer.name in other_names for layer in result.uv_layers):
+        raise MeshApplicationError("Result UV names conflict with preserved source attributes")
+    for layer in tuple(staged.uv_layers):
+        staged.uv_layers.remove(layer)
+    for layer in result.uv_layers:
+        destination = staged.uv_layers.new(name=layer.name, do_init=False)
+        if destination.name != layer.name:
+            raise MeshApplicationError("Cannot preserve result UV names")
+        for old, new in zip(destination.data, layer.data, strict=True):
+            old.uv = new.uv
+        destination.active_render = layer.active_render
+        destination.active_clone = layer.active_clone
+    staged.uv_layers.active_index = result.uv_layers.active_index
+    staged.materials.clear()
+    for material in result.materials:
+        staged.materials.append(material)
+    for old, new in zip(staged.polygons, result.polygons, strict=True):
+        old.material_index = new.material_index
+
+
 def _stage(source, result, policy, mapping):
     if policy == "REMESH":
         staged = result.copy()
@@ -228,15 +258,20 @@ def _stage(source, result, policy, mapping):
             raise
     if not _same_topology(source, result, mapping):
         raise MeshApplicationError(
-            "UV application requires identical indexed topology and positions"
+            f"{policy} application requires identical indexed topology and positions"
         )
-    if len(result.uv_layers) != 1:
+    if policy == "UV" and len(result.uv_layers) != 1:
         raise MeshApplicationError("UV application requires exactly one result UV layer")
     staged = source.copy()
     try:
-        destination = staged.uv_layers.active or staged.uv_layers.new(name=result.uv_layers[0].name)
-        for old, new in zip(destination.data, result.uv_layers[0].data, strict=True):
-            old.uv = new.uv
+        if policy == "RETEXTURE":
+            _retexture(staged, result)
+        else:
+            destination = staged.uv_layers.active or staged.uv_layers.new(
+                name=result.uv_layers[0].name
+            )
+            for old, new in zip(destination.data, result.uv_layers[0].data, strict=True):
+                old.uv = new.uv
         staged.update()
         return staged
     except BaseException:
@@ -379,13 +414,17 @@ def apply_mesh(scene, source, result, *, policy, result_to_source, keep_original
 
     REMESH adopts result geometry, materials and UVs. UV preserves source mesh
     attributes/materials and replaces only its active UV coordinates, requiring
-    exact indexed topology/positions and one result UV layer. Selection is unused.
+    exact indexed topology/positions and one result UV layer. RETEXTURE preserves
+    geometry/non-UV attributes and adopts result UV layers/material assignments,
+    also requiring exact topology/positions. Selection is unused.
     The caller must validate captured job origin immediately before invoking this
     synchronous primitive; it does not prove cloud provenance or import safety.
     """
     _main_thread()
-    if policy not in {"REMESH", "UV"} or type(keep_original) is not bool:
-        raise MeshApplicationError("Use an explicit REMESH/UV policy and boolean Keep original")
+    if policy not in {"REMESH", "UV", "RETEXTURE"} or type(keep_original) is not bool:
+        raise MeshApplicationError(
+            "Use an explicit REMESH/UV/RETEXTURE policy and boolean Keep original"
+        )
     _validate_object(scene, source)
     _validate_object(scene, result)
     if source is result or source.data is result.data:

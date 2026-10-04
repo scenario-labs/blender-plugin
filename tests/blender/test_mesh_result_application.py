@@ -293,6 +293,40 @@ class MeshResultTests(unittest.TestCase):
             [tuple(loop.uv) for loop in self.source.data.uv_layers.active.data], expected
         )
 
+    def test_saved_retexture_adopts_packed_materials_without_geometry_replacement(self):
+        imported = self.model.apply_model(self.scene, self.item, self.path, cursor=(0, 0, 0))
+        primary = next(obj for obj in imported.objects if obj.type == "MESH")
+        self.source.data = primary.data.copy()
+        material = bpy.data.materials.new("Keep original material")
+        self.source.data.materials.clear()
+        self.source.data.materials.append(material)
+        attribute = self.source.data.attributes.new("User value", "FLOAT", "POINT")
+        attribute.data[0].value = 0.25
+        before = self.source.data
+        geometry = [tuple(vertex.co) for vertex in before.vertices]
+        self.target = self.mesh.capture_target(self.scene, self.source)
+        result = self.apply(policy="RETEXTURE", result_to_source=Matrix.Translation((-2, 0, 0)))
+        self.assertEqual(result.policy, "RETEXTURE")
+        self.assertEqual([tuple(vertex.co) for vertex in self.source.data.vertices], geometry)
+        self.assertEqual(self.source.data.attributes["User value"].data[0].value, 0.25)
+        self.assertEqual(result.original.data, before)
+        self.assertEqual(list(before.materials), [material])
+        images = [
+            node.image
+            for node in self.source.data.materials[0].node_tree.nodes
+            if node.type == "TEX_IMAGE"
+        ]
+        self.assertTrue(images)
+        self.assertTrue(all(image.packed_file and image.filepath == "" for image in images))
+
+    def test_retexture_topology_failure_preserves_source_and_saved_file(self):
+        before = self.model._snapshot()
+        with self.assertRaises(self.module.MeshResultApplicationError):
+            self.apply(policy="RETEXTURE")
+        self.assertEqual(self.model._snapshot(), before)
+        self.mesh.validate_target(self.target)
+        self.assertEqual(self.path.read_bytes(), self.body)
+
     def ready_session(self):
         import httpx
 

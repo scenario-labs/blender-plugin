@@ -2241,6 +2241,45 @@ class ModelGenerationTests(unittest.TestCase):
         self.assertEqual(source.data, mesh)
         self.assertIn("apply_mesh", status["actions"])
 
+    def test_mesh_edit_retexture_mismatch_is_a_known_local_failure(self):
+        request_id = self.recovered_mesh_edit()
+        source = bpy.context.view_layer.objects.active
+        before = source.data, len(self.calls), len(self.paid), len(self.downloads)
+        approval = self.prepare_mesh_edit(request_id, mesh_policy="RETEXTURE")
+        self.assertEqual(approval["mesh_policy"], "RETEXTURE")
+        status = self.finish_application(approval)
+        self.assertEqual(status["status"], "apply_failed", status)
+        self.assertEqual(
+            (source.data, len(self.calls), len(self.paid), len(self.downloads)), before
+        )
+        self.assertIn("apply_mesh", status["actions"])
+
+    def test_mesh_edit_retexture_shared_approval_preserves_geometry_and_records_success(self):
+        request_id = self.recovered_mesh_edit()
+        source = bpy.context.view_layer.objects.active
+        # Establish exact GLB indexing with the existing explicitly approved remesh.
+        self.assertEqual(
+            self.finish_application(self.prepare_mesh_edit(request_id))["status"], "applied"
+        )
+        material = bpy.data.materials.new("Retexture source material")
+        source.data.materials.clear()
+        source.data.materials.append(material)
+        old_mesh = source.data
+        geometry = [tuple(vertex.co) for vertex in old_mesh.vertices]
+        calls = len(self.calls), len(self.paid), len(self.downloads)
+        approval = self.prepare_mesh_edit(request_id, mesh_policy="RETEXTURE")
+        self.assertTrue(approval["reuse"])
+        status = self.finish_application(approval)
+        self.assertEqual(status["status"], "applied", status)
+        self.assertEqual(status["mesh_edit"]["policy"], "RETEXTURE")
+        self.assertEqual(status["local_applications"][-1]["state"], "applied")
+        self.assertEqual([tuple(vertex.co) for vertex in source.data.vertices], geometry)
+        self.assertNotEqual(source.data.materials[0], material)
+        self.assertEqual(list(old_mesh.materials), [material])
+        self.assertEqual((len(self.calls), len(self.paid), len(self.downloads)), calls)
+        with self.assertRaises(self.request_error):
+            self.tools.apply_result_application(self.import_args(approval))
+
     def test_mesh_edit_receipt_recovery_saves_success_without_replacement(self):
         request_id = self.recovered_mesh_edit()
         approval = self.prepare_mesh_edit(request_id)

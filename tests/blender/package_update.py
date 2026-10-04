@@ -281,7 +281,12 @@ def seed(profile):
         advance("succeeded")
         data = b"offline preserved result bytes"
         asset = jobs.ResultAsset(
-            "asset-" + desired, "result.png", "image/png", len(data), digest(data)
+            "asset-" + desired,
+            "result.png",
+            "image/png",
+            len(data),
+            digest(data),
+            texture_role="base",
         )
         record = selected.set_results(desired, (asset,), expected_revision=record.revision)
         advance("downloading")

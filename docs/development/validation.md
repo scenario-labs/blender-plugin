@@ -219,7 +219,7 @@ second isolated credential scope, result manifests/receipts and local result byt
 three image upload states plus an imported captured-mesh upload with verified
 staged bytes, and a saved blend with a reference.
 It compares these after native upgrade in the same process and after reopening
-the blend in a second, offline Blender process. Exact quote strings, application
+the blend in a second, offline Blender process. Exact quote strings, nonempty texture roles, application
 origins, upload markers and the installation's scope key must survive. Original
 reference bytes are checked too. Ready/applied jobs retain the exact mesh input
 binding, export hash, source transform and upload revision. The completed job

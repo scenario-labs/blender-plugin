@@ -171,7 +171,16 @@ def test_eight_editorial_shots_cover_600_frames_with_distinct_generation_lengths
     raw["shots"][0]["source_trim"] = 1 / 24
     result = film_module().validate_film_plan(raw)
     assert result["duration"] == 25 and result["total_frames"] == 600
-    assert [shot["start_frame"] for shot in result["shots"]] == [1, 49, 145, 193, 265, 313, 361, 481]
+    assert [shot["start_frame"] for shot in result["shots"]] == [
+        1,
+        49,
+        145,
+        193,
+        265,
+        313,
+        361,
+        481,
+    ]
     assert [shot["source_duration"] for shot in result["shots"]] == [4, 4, 4, 4, 4, 4, 5, 5]
     assert result["shots"][0]["source_trim"] == 1 / 24
     assert result["shots"][0]["scene"]["camera"]["duration"] == 2
@@ -187,13 +196,22 @@ def test_native_supported_editorial_lengths_are_frame_aligned(length):
     assert result["total_frames"] == round(length * 24)
 
 
-@pytest.mark.parametrize("field,value", [
-    ("duration", 0.5), ("duration", 2.001), ("duration", 31),
-    ("source_trim", -1), ("source_trim", 0.01),
-    ("source_duration", 3), ("source_duration", 4.5), ("source_duration", 31),
-    ("native_audio_volume", -0.1), ("native_audio_volume", 2.1),
-    ("native_audio_volume", True),
-])
+@pytest.mark.parametrize(
+    "field,value",
+    [
+        ("duration", 0.5),
+        ("duration", 2.001),
+        ("duration", 31),
+        ("source_trim", -1),
+        ("source_trim", 0.01),
+        ("source_duration", 3),
+        ("source_duration", 4.5),
+        ("source_duration", 31),
+        ("native_audio_volume", -0.1),
+        ("native_audio_volume", 2.1),
+        ("native_audio_volume", True),
+    ],
+)
 def test_invalid_source_and_editorial_timing_is_rejected(field, value):
     raw = acting_fixture()
     raw["shots"][0][field] = value
@@ -221,11 +239,18 @@ def test_fifty_shots_are_supported_and_fifty_one_are_rejected():
 def test_audio_track_defaults_and_duck_gains_preserve_absolute_source_progress():
     mod = film_module()
     raw = acting_fixture()
-    raw["audio_tracks"] = [{
-        "id": "bed", "task": "score-take-2", "kind": "music", "start": 1, "end": 25,
-        "trim_start": 0.5, "volume": 0.4,
-        "duck": [{"start": 2, "end": 4, "volume": 0.1}],
-    }]
+    raw["audio_tracks"] = [
+        {
+            "id": "bed",
+            "task": "score-take-2",
+            "kind": "music",
+            "start": 1,
+            "end": 25,
+            "trim_start": 0.5,
+            "volume": 0.4,
+            "duck": [{"start": 2, "end": 4, "volume": 0.1}],
+        }
+    ]
     track = mod.validate_film_plan(raw)["audio_tracks"][0]
     assert track["loop"] is False
     assert mod.audio_segments(track, 24) == [
@@ -239,10 +264,22 @@ def test_audio_track_defaults_and_duck_gains_preserve_absolute_source_progress()
     assert mod.effective_audio_tracks(legacy)[0]["loop"] is True
 
 
-@pytest.mark.parametrize("change", [
-    "outside", "backwards", "fractional", "bad_trim", "bad_gain", "bad_loop",
-    "duplicate", "wrong_kind", "duck_outside", "duck_overlap", "duck_dialogue",
-])
+@pytest.mark.parametrize(
+    "change",
+    [
+        "outside",
+        "backwards",
+        "fractional",
+        "bad_trim",
+        "bad_gain",
+        "bad_loop",
+        "duplicate",
+        "wrong_kind",
+        "duck_outside",
+        "duck_overlap",
+        "duck_dialogue",
+    ],
+)
 def test_invalid_audio_mix_fails_during_recipe_validation(change):
     raw = acting_fixture()
     track = {"id": "bed", "task": "music", "kind": "music", "start": 0, "end": 25}
@@ -267,7 +304,8 @@ def test_invalid_audio_mix_fails_during_recipe_validation(change):
         track["duck"] = [{"start": 24, "end": 26, "volume": 0.1}]
     elif change == "duck_overlap":
         track["duck"] = [
-            {"start": 1, "end": 4, "volume": 0.1}, {"start": 3, "end": 5, "volume": 0.2}
+            {"start": 1, "end": 4, "volume": 0.1},
+            {"start": 3, "end": 5, "volume": 0.2},
         ]
     else:
         track.update(kind="dialogue", duck=[{"start": 1, "end": 4, "volume": 0.1}])
@@ -279,10 +317,12 @@ def test_declared_continuity_compares_only_adjacent_shared_states_and_declared_c
     mod = film_module()
     raw = acting_fixture()
     raw["shots"][0]["continuity"] = {
-        "entry": {"eyes": "off"}, "exit": {"eyes": "amber", "axis": "west"}
+        "entry": {"eyes": "off"},
+        "exit": {"eyes": "amber", "axis": "west"},
     }
     raw["shots"][1]["continuity"] = {
-        "entry": {"eyes": "off", "axis": "east"}, "exit": {"eyes": "blue"},
+        "entry": {"eyes": "off", "axis": "east"},
+        "exit": {"eyes": "blue"},
         "intentional_changes": ["axis"],
     }
     raw["shots"][2]["continuity"] = {"entry": {"eyes": "blue"}}
@@ -290,9 +330,9 @@ def test_declared_continuity_compares_only_adjacent_shared_states_and_declared_c
     audit = result["continuity_audit"]
     assert audit["visual_verification"] is False and audit["ok"] is False
     assert audit["compared_states"] == 3
-    assert audit["mismatches"] == [{
-        "previous_shot": "cut_1", "shot": "cut_2", "key": "eyes", "exit": "amber", "entry": "off"
-    }]
+    assert audit["mismatches"] == [
+        {"previous_shot": "cut_1", "shot": "cut_2", "key": "eyes", "exit": "amber", "entry": "off"}
+    ]
     assert [row["key"] for row in audit["intentional_changes"]] == ["axis"]
     prompt = mod.shot_prompt(result, result["shots"][1], ["courier"])
     assert "eyes=off" in prompt and "eyes=blue" in prompt
@@ -302,8 +342,14 @@ def test_declared_continuity_compares_only_adjacent_shared_states_and_declared_c
 def test_dialogue_directions_use_source_window_and_preserve_exact_words():
     raw = acting_fixture()
     raw["shots"][0].update(
-        source_trim=1, source_duration=4,
-        dialogue={"text": "Please don't explode.", "speaker": "Mina", "task": "mina-line", "offset": 0.5},
+        source_trim=1,
+        source_duration=4,
+        dialogue={
+            "text": "Please don't explode.",
+            "speaker": "Mina",
+            "task": "mina-line",
+            "offset": 0.5,
+        },
     )
     result = film_module().validate_film_plan(raw)
     prompt = film_module().shot_prompt(result, result["shots"][0], ["courier"])
@@ -319,4 +365,6 @@ def test_dialogue_directions_use_source_window_and_preserve_exact_words():
 def test_dialogue_reference_resolution_rejects_a_different_production_project():
     records = {"line": {"asset_ids": ["asset_voice"], "project_id": "proj_other"}}
     with pytest.raises(ValueError, match="does not belong"):
-        film_module().resolve_references({"referenceAudio": ["$line"]}, records, project_id="proj_test")
+        film_module().resolve_references(
+            {"referenceAudio": ["$line"]}, records, project_id="proj_test"
+        )

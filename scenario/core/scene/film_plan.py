@@ -65,7 +65,7 @@ def continuity_audit(plan: dict) -> dict:
     mismatches, intentional = [], []
     comparisons = 0
     shots = plan.get("shots", [])
-    for previous, current in zip(shots, shots[1:]):
+    for previous, current in zip(shots, shots[1:], strict=False):
         before = previous.get("continuity", {}).get("exit", {})
         spec = current.get("continuity", {})
         after = spec.get("entry", {})
@@ -74,8 +74,11 @@ def continuity_audit(plan: dict) -> dict:
             if before[key] == after[key]:
                 continue
             row = {
-                "previous_shot": previous["id"], "shot": current["id"], "key": key,
-                "exit": before[key], "entry": after[key],
+                "previous_shot": previous["id"],
+                "shot": current["id"],
+                "key": key,
+                "exit": before[key],
+                "entry": after[key],
             }
             target = intentional if key in spec.get("intentional_changes", []) else mismatches
             target.append(row)
@@ -96,8 +99,10 @@ def validate_audio_tracks(raw: Any, fps: int, duration: float) -> list[dict]:
     tracks, used = [], set()
     for item in raw:
         item = _keys(
-            item, {"id", "task", "kind", "start", "end", "trim_start", "volume", "loop", "duck"},
-            "Audio track", {"id", "task", "kind", "start", "end"},
+            item,
+            {"id", "task", "kind", "start", "end", "trim_start", "volume", "loop", "duck"},
+            "Audio track",
+            {"id", "task", "kind", "start", "end"},
         )
         tid = identifier(item["id"], "Audio track ID")
         if tid in used:
@@ -113,8 +118,11 @@ def validate_audio_tracks(raw: Any, fps: int, duration: float) -> list[dict]:
         if not isinstance(loop, bool):
             raise ValueError("Audio loop must be true or false.")
         track = {
-            "id": tid, "task": identifier(item["task"], "Audio task"), "kind": item["kind"],
-            "start": start, "end": end,
+            "id": tid,
+            "task": identifier(item["task"], "Audio task"),
+            "kind": item["kind"],
+            "start": start,
+            "end": end,
             "trim_start": frame_time(item.get("trim_start", 0), "Audio trim", fps, 0, 900),
             "volume": _number(item.get("volume", 1), "Audio volume", 0, 2),
             "loop": loop,
@@ -132,12 +140,15 @@ def validate_audio_tracks(raw: Any, fps: int, duration: float) -> list[dict]:
             b = frame_time(duck["end"], "Duck end", fps, start, end)
             if b <= a:
                 raise ValueError("Duck end must follow its start.")
-            track["duck"].append({
-                "start": a, "end": b, "volume": _number(duck["volume"], "Duck volume", 0, 2)
-            })
+            track["duck"].append(
+                {"start": a, "end": b, "volume": _number(duck["volume"], "Duck volume", 0, 2)}
+            )
         normalized_ducks = track.get("duck", [])
         normalized_ducks.sort(key=lambda value: value["start"])
-        if any(a["end"] > b["start"] for a, b in zip(normalized_ducks, normalized_ducks[1:])):
+        if any(
+            a["end"] > b["start"]
+            for a, b in zip(normalized_ducks, normalized_ducks[1:], strict=False)
+        ):
             raise ValueError("Music duck intervals must not overlap.")
         tracks.append(track)
     return tracks
@@ -147,10 +158,19 @@ def effective_audio_tracks(plan: dict, score_task_id: str = "score") -> list[dic
     """Keep the legacy looping score only when the new track list is omitted."""
     if "audio_tracks" in plan:
         return validate_audio_tracks(plan["audio_tracks"], plan["fps"], plan["duration"])
-    return [{
-        "id": "score", "task": score_task_id, "kind": "music", "start": 0,
-        "end": plan["duration"], "trim_start": 0, "volume": 0.4, "loop": True, "duck": [],
-    }]
+    return [
+        {
+            "id": "score",
+            "task": score_task_id,
+            "kind": "music",
+            "start": 0,
+            "end": plan["duration"],
+            "trim_start": 0,
+            "volume": 0.4,
+            "loop": True,
+            "duck": [],
+        }
+    ]
 
 
 def audio_segments(track: dict, fps: int, source_frames: int | None = None) -> list[dict]:
@@ -166,7 +186,9 @@ def audio_segments(track: dict, fps: int, source_frames: int | None = None) -> l
         if source_frames < 1:
             raise ValueError("Audio source must contain at least one editorial frame.")
         if not looping and trim + end - start > source_frames:
-            raise ValueError(f"Audio track {track['id']} extends beyond its source. Shorten it or enable loop.")
+            raise ValueError(
+                f"Audio track {track['id']} extends beyond its source. Shorten it or enable loop."
+            )
         if looping:
             boundary = start + source_frames - trim % source_frames
             while boundary < end:
@@ -176,7 +198,7 @@ def audio_segments(track: dict, fps: int, source_frames: int | None = None) -> l
                 boundary += source_frames
     points = sorted(boundaries)
     segments = []
-    for a, b in zip(points, points[1:]):
+    for a, b in zip(points, points[1:], strict=False):
         volume = track.get("volume", 1)
         for duck in ducks:
             if round(duck["start"] * fps) <= a < round(duck["end"] * fps):
@@ -185,10 +207,15 @@ def audio_segments(track: dict, fps: int, source_frames: int | None = None) -> l
         offset = trim + a - start
         if looping and source_frames:
             offset %= source_frames
-        segments.append({
-            "start": a / fps, "end": b / fps, "trim_start": offset / fps,
-            "volume": volume, "loop": looping and source_frames is None,
-        })
+        segments.append(
+            {
+                "start": a / fps,
+                "end": b / fps,
+                "trim_start": offset / fps,
+                "volume": volume,
+                "loop": looping and source_frames is None,
+            }
+        )
     return segments
 
 
@@ -331,7 +358,10 @@ def validate_film_plan(raw: dict) -> dict:
         frames = round(duration * plan["fps"])
         trim = frame_time(shot.get("source_trim", 0), "Source trim", plan["fps"], 0, 29)
         source_duration = _number(
-            shot.get("source_duration", max(4, math.ceil(trim + duration))), "Source duration", 4, 30
+            shot.get("source_duration", max(4, math.ceil(trim + duration))),
+            "Source duration",
+            4,
+            30,
         )
         if source_duration != int(source_duration):
             raise ValueError("Source duration must be a whole number of seconds for Seedance.")
@@ -366,16 +396,21 @@ def validate_film_plan(raw: dict) -> dict:
             val["continuity"] = _continuity(shot["continuity"])
         if "dialogue" in shot:
             dialogue = _keys(
-                shot["dialogue"], {"text", "speaker", "task", "offset"}, "Dialogue",
+                shot["dialogue"],
+                {"text", "speaker", "task", "offset"},
+                "Dialogue",
                 {"text", "speaker", "task", "offset"},
             )
             text = _text(dialogue["text"], "Dialogue text", 4000)
             if not text:
                 raise ValueError("Dialogue text cannot be empty.")
             val["dialogue"] = {
-                "text": text, "speaker": _label(dialogue["speaker"], "Dialogue speaker"),
+                "text": text,
+                "speaker": _label(dialogue["speaker"], "Dialogue speaker"),
                 "task": identifier(dialogue["task"], "Dialogue task"),
-                "offset": frame_time(dialogue["offset"], "Dialogue offset", plan["fps"], 0, duration),
+                "offset": frame_time(
+                    dialogue["offset"], "Dialogue offset", plan["fps"], 0, duration
+                ),
             }
             if val["dialogue"]["offset"] >= duration:
                 raise ValueError("Dialogue offset must be inside the editorial shot.")
@@ -448,7 +483,9 @@ def validate_film_plan(raw: dict) -> dict:
     if plan["duration"] > 900:
         raise ValueError("A film recipe is limited to fifteen minutes.")
     if "audio_tracks" in raw:
-        plan["audio_tracks"] = validate_audio_tracks(raw["audio_tracks"], plan["fps"], plan["duration"])
+        plan["audio_tracks"] = validate_audio_tracks(
+            raw["audio_tracks"], plan["fps"], plan["duration"]
+        )
     plan["continuity_audit"] = continuity_audit(plan)
     tasks = raw.get("tasks", [])
     if not isinstance(tasks, list) or len(tasks) > 300:
@@ -537,7 +574,11 @@ def shot_prompt(plan: dict, shot: dict, hero_order: list[str], style_reference: 
                 + "."
             )
     if continuity.get("intentional_changes"):
-        parts.append("INTENTIONAL INCOMING CUT CHANGES: " + ", ".join(continuity["intentional_changes"]) + ".")
+        parts.append(
+            "INTENTIONAL INCOMING CUT CHANGES: "
+            + ", ".join(continuity["intentional_changes"])
+            + "."
+        )
     if shot.get("dialogue"):
         dialogue = shot["dialogue"]
         parts.append(

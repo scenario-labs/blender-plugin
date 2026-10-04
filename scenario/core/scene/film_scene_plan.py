@@ -74,26 +74,20 @@ def _vector(
 ) -> list[float]:
     """Normalize a small numeric vector from a JSON array."""
     if not isinstance(value, (list, tuple)) or len(value) not in sizes:
-        raise ValueError(
-            f"{label} must contain {' or '.join(map(str, sizes))} numbers."
-        )
+        raise ValueError(f"{label} must contain {' or '.join(map(str, sizes))} numbers.")
     return [_number(item, f"{label}[{i}]", low, high) for i, item in enumerate(value)]
 
 
 def _label(value: Any, field: str) -> str:
     """Normalize a bounded human label, never interpreting its contents."""
     if not isinstance(value, str) or not value.strip() or len(value) > 200:
-        raise ValueError(
-            f"{field} must be a nonempty string of at most 200 characters."
-        )
+        raise ValueError(f"{field} must be a nonempty string of at most 200 characters.")
     if any(ord(char) < 32 for char in value):
         raise ValueError(f"{field} cannot contain control characters.")
     return value.strip()
 
 
-def _keys(
-    value: Any, allowed: set[str], label: str, required: set[str]
-) -> dict[str, Any]:
+def _keys(value: Any, allowed: set[str], label: str, required: set[str]) -> dict[str, Any]:
     """Reject unsupported instructions rather than silently discarding them."""
     if not isinstance(value, dict):
         raise ValueError(f"{label} must be a JSON object.")
@@ -102,9 +96,7 @@ def _keys(
     unknown = set(value) - allowed
     missing = required - set(value)
     if unknown:
-        raise ValueError(
-            f"{label} contains unsupported keys: {', '.join(sorted(unknown))}."
-        )
+        raise ValueError(f"{label} contains unsupported keys: {', '.join(sorted(unknown))}.")
     if missing:
         raise ValueError(f"{label} is missing: {', '.join(sorted(missing))}.")
     return value
@@ -172,9 +164,7 @@ def validate_scene_plan(plan: dict[str, Any]) -> dict[str, Any]:
         points = raw_camera["points"]
         if not isinstance(points, list) or not 2 <= len(points) <= 100:
             raise ValueError("Camera points must contain 2 to 100 coordinate triples.")
-        camera["points"] = [
-            _vector(point, f"Camera points[{i}]") for i, point in enumerate(points)
-        ]
+        camera["points"] = [_vector(point, f"Camera points[{i}]") for i, point in enumerate(points)]
     if camera["style"] == "path" and "points" not in camera:
         raise ValueError("Camera path style requires at least two points.")
     result: dict[str, Any] = {
@@ -185,9 +175,7 @@ def validate_scene_plan(plan: dict[str, Any]) -> dict[str, Any]:
     if "world" in plan:
         world = _keys(plan["world"], {"color", "strength"}, "World", set())
         result["world"] = {
-            "color": _vector(
-                world.get("color", [0.04, 0.05, 0.08]), "World color", 0, 1
-            ),
+            "color": _vector(world.get("color", [0.04, 0.05, 0.08]), "World color", 0, 1),
             "strength": _number(world.get("strength", 0.35), "World strength", 0, 10),
         }
     return result
@@ -216,9 +204,7 @@ def _object(
     }
 
 
-def local_plan(
-    preset: str = "studio", prompt: str = "", duration: float = 6.0
-) -> dict[str, Any]:
+def local_plan(preset: str = "studio", prompt: str = "", duration: float = 6.0) -> dict[str, Any]:
     """Build a deterministic local template, without a network request.
 
     Keyword choices: red, purple, green/forest, warm/sunset/desert set the accent
@@ -269,9 +255,7 @@ def local_plan(
                 (1.57, 1.57, 0.035),
                 accent,
             ),
-            _object(
-                "Pedestal / top", "cylinder", (0, 0, 0.27), (1.61, 1.61, 0.065), stone
-            ),
+            _object("Pedestal / top", "cylinder", (0, 0, 0.27), (1.61, 1.61, 0.065), stone),
             _object(
                 "Prism / enclosure",
                 "box",
@@ -612,11 +596,7 @@ def local_plan(
     else:
         title = "Terraced Monolith Landscape"
         target, distance, height = [0, 0, 1.25], 22.0, 8.0
-        sand = (
-            (0.52, 0.38, 0.24)
-            if words & {"desert", "warm", "sunset"}
-            else (0.20, 0.29, 0.25)
-        )
+        sand = (0.52, 0.38, 0.24) if words & {"desert", "warm", "sunset"} else (0.20, 0.29, 0.25)
         items = [
             _object(
                 "Landscape / horizon",

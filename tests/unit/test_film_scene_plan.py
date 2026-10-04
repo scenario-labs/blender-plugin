@@ -15,9 +15,7 @@ import pytest
 MODULE_PATH = (
     Path(__file__).resolve().parents[2] / "scenario" / "core" / "scene" / "film_scene_plan.py"
 )
-SPEC = importlib.util.spec_from_file_location(
-    "scenario_scene_plan_under_test", MODULE_PATH
-)
+SPEC = importlib.util.spec_from_file_location("scenario_scene_plan_under_test", MODULE_PATH)
 scene_plan = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(scene_plan)
 
@@ -65,9 +63,7 @@ def test_normalizes_without_mutating_input(plan: dict) -> None:
     "value",
     [float("nan"), float("inf"), -float("inf"), True, False, "2", None, 10**1000],
 )
-def test_nonfinite_and_ambiguous_numeric_types_rejected(
-    plan: dict, value: object
-) -> None:
+def test_nonfinite_and_ambiguous_numeric_types_rejected(plan: dict, value: object) -> None:
     plan["objects"][0]["location"][0] = value
     with pytest.raises(ValueError):
         scene_plan.validate_scene_plan(plan)
@@ -164,7 +160,9 @@ def test_unrecognized_instructions_are_rejected(
     target = (
         plan
         if location == "plan"
-        else plan["objects"][0] if location == "object" else plan["camera"]
+        else plan["objects"][0]
+        if location == "object"
+        else plan["camera"]
     )
     target[key] = value
     with pytest.raises(ValueError, match="unsupported keys"):
@@ -239,8 +237,7 @@ def test_template_keyword_choices_are_real() -> None:
     for keyword in ("red", "green", "forest", "purple", "warm", "sunset", "desert"):
         changed = scene_plan.local_plan("studio", keyword)
         assert (
-            changed["objects"][2]["color"]
-            != scene_plan.local_plan("studio")["objects"][2]["color"]
+            changed["objects"][2]["color"] != scene_plan.local_plan("studio")["objects"][2]["color"]
         )
     assert (
         scene_plan.local_plan("studio", "night")["world"]["strength"]

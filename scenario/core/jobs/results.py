@@ -106,18 +106,24 @@ class ResultCommands:
     def read_prompts(self, request_id, *, expected_revision):
         """Recover the known successful job's full text, never a paid fallback."""
         current = self._current(request_id, expected_revision, {JobState.SUCCEEDED})
-        if current.intent.operation != "prompt":
+        if current.intent.operation not in {"prompt", "translate"}:
             raise ResultError("Choose a completed Prompt Spark job")
+        translation = current.intent.operation == "translate"
         job = self._request(self._adapter.job, current.remote_job_id)
+        expected_types = (
+            ("translate",) if translation else ("generate-prompt", "image-prompt-editing")
+        )
         if (
             job.get("jobId") != current.remote_job_id
             or job.get("status") != "success"
-            or job.get("jobType") not in ("generate-prompt", "image-prompt-editing")
+            or job.get("jobType") not in expected_types
         ):
             raise ResultError("Scenario did not confirm this successful Prompt Spark job")
         metadata = job.get("metadata")
         output = metadata.get("output") if isinstance(metadata, dict) else None
-        values = output.get("prompts") if isinstance(output, dict) else None
+        values = None
+        if isinstance(output, dict):
+            values = [output.get("translation")] if translation else output.get("prompts")
         if not isinstance(values, list) or not 1 <= len(values) <= 5:
             raise ResultError("Scenario returned no bounded prompt result list")
         prompts = []

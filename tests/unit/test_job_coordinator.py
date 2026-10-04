@@ -80,11 +80,12 @@ def setup(tmp_path):
             estimate = adapter.estimate_workflow(
                 {"id": "workflow", "inputs": MODEL["inputs"]}, {"prompt": "fixture"}
             )
-        if operation == "prompt":
+        if operation in {"prompt", "translate"}:
             # The origin-bound command must not perform model/workflow discovery.
-            quote = coordinator.quote_prompt(
-                {"mode": "contextual", "prompt": "fixture"}, origin=ORIGIN
-            )
+            parameters = {"prompt": "fixture"}
+            if operation == "prompt":
+                parameters["mode"] = "contextual"
+            quote = getattr(coordinator, f"quote_{operation}")(parameters, origin=ORIGIN)
             prepared = coordinator.prepare_quote(quote)
         else:
             prepared = coordinator.prepare(estimate, ORIGIN)
@@ -106,7 +107,7 @@ def submit(coordinator, prepared, **overrides):
     return coordinator.submit(prepared, **current)
 
 
-@pytest.mark.parametrize("operation", ["model", "workflow", "prompt"])
+@pytest.mark.parametrize("operation", ["model", "workflow", "prompt", "translate"])
 def test_exact_intent_commits_before_single_scoped_submission(setup, operation):
     coordinator, store, prepared, requests, adapter = setup(operation=operation)
     assert len(requests) == 1
@@ -120,6 +121,7 @@ def test_exact_intent_commits_before_single_scoped_submission(setup, operation):
             "model": "/v1/generate/custom/model",
             "workflow": "/v1/workflows/workflow/run",
             "prompt": "/v1/generate/prompt",
+            "translate": "/v1/generate/translate",
         }[operation]
     )
     assert json.loads(requests[-1].content) == {
@@ -152,7 +154,7 @@ def test_exact_intent_commits_before_single_scoped_submission(setup, operation):
         {"origin": replace(ORIGIN, revision="other")},
     ],
 )
-@pytest.mark.parametrize("operation", ["model", "prompt"])
+@pytest.mark.parametrize("operation", ["model", "prompt", "translate"])
 def test_changed_payload_target_or_origin_cannot_claim_or_spend(setup, changed, operation):
     coordinator, store, prepared, requests, _ = setup(operation=operation)
     with pytest.raises(QuoteError):
@@ -175,7 +177,7 @@ def test_expiry_is_measured_from_estimate_issuance_not_preparation(setup, point)
 
 
 @pytest.mark.parametrize("failure", ["timeout", "malformed", "no-id", 307, 429, 503])
-@pytest.mark.parametrize("operation", ["model", "prompt"])
+@pytest.mark.parametrize("operation", ["model", "prompt", "translate"])
 def test_failed_or_lost_receipt_is_durable_uncertainty_not_replay(setup, failure, operation):
     def respond(request):
         if failure == "timeout":
@@ -200,7 +202,7 @@ def test_failed_or_lost_receipt_is_durable_uncertainty_not_replay(setup, failure
     assert len(requests) == 2
 
 
-@pytest.mark.parametrize("operation", ["model", "prompt"])
+@pytest.mark.parametrize("operation", ["model", "prompt", "translate"])
 def test_failed_claim_never_reaches_paid_transport(setup, monkeypatch, operation):
     coordinator, store, prepared, requests, _ = setup(operation=operation)
 
@@ -327,7 +329,7 @@ def test_coordinator_requires_explicit_account_identity_before_network(tmp_path)
     assert store.records() == ()
 
 
-@pytest.mark.parametrize("operation", ["model", "workflow", "prompt"])
+@pytest.mark.parametrize("operation", ["model", "workflow", "prompt", "translate"])
 @pytest.mark.parametrize(
     "remote_id",
     ["r" * 257, "remote\u00a0id", "remote\u2003id"],
@@ -351,7 +353,7 @@ def test_unpersistable_receipt_identity_is_uncertain_without_replay(
     assert len(requests) == 2
 
 
-@pytest.mark.parametrize("operation", ["model", "workflow", "prompt"])
+@pytest.mark.parametrize("operation", ["model", "workflow", "prompt", "translate"])
 def test_receipt_identity_limit_is_accepted(setup, operation):
     remote_id = "r" * 256
     coordinator, store, prepared, requests, _ = setup(

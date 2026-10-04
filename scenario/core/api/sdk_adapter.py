@@ -629,8 +629,23 @@ class SDKAdapter:
                 raise ValueError("Choose valid Prompt Spark image references within the mode limit")
         return self._estimate("prompt", "prompt", payload)
 
+    def estimate_translate(self, parameters):
+        """Quote English translation through the SDK, without a model fallback."""
+        if (
+            not isinstance(parameters, dict)
+            or set(parameters) != {"prompt"}
+            or not isinstance(parameters["prompt"], str)
+            or not parameters["prompt"].strip()
+        ):
+            raise ValueError("Provide only the nonempty prompt to translate")
+        return self._estimate("translate", "translate", dict(parameters))
+
     def _dispatch_generation(self, operation, identifier, payload, *, dry_run=False):
         options = {"dry_run": "true"} if dry_run else {}
+        if operation == "translate":
+            return self._request(
+                self._sdk.generate.with_raw_response.translate, **payload, **options
+            )
         if operation == "prompt":
             names = {"modelId": "model_id", "numResults": "num_results"}
             options.update({names.get(key, key): value for key, value in payload.items()})

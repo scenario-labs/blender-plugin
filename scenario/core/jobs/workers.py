@@ -121,6 +121,10 @@ class JobWorkers:
         snapshot = _snapshot(parameters)
         return self._enqueue(self._coordinator.quote_prompt, snapshot, origin=origin)
 
+    def quote_translate(self, parameters, *, origin):
+        snapshot = _snapshot(parameters)
+        return self._enqueue(self._coordinator.quote_translate, snapshot, origin=origin)
+
     def prepare_upload(self, source, *, origin, kind, content_type):
         return self._enqueue(
             self._coordinator.prepare_upload,

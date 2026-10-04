@@ -231,3 +231,23 @@ def test_non_prompt_jobs_are_rejected_before_service_access(setup, tmp_path):
             "request", expected_revision=record.revision
         )
     assert not setup[5]
+
+
+def test_translation_recovers_its_own_job_output_contract(setup, tmp_path):
+    other = JobStore(tmp_path / "translation.sqlite3", setup[1].scope)
+    record = other.create(replace(setup[2].intent, operation="translate", target_id="translate"))
+    for state in (JobState.SUBMITTING, JobState.REMOTE, JobState.SUCCEEDED):
+        record = other.transition(
+            "request",
+            expected_revision=record.revision,
+            state=state,
+            remote_job_id="remote" if state == JobState.REMOTE else None,
+        )
+    setup[3].update(jobType="translate", metadata={"output": {"translation": "A copper teapot"}})
+    owner = JobCoordinator(setup[-1], other)
+    assert owner.read_prompt_results("request", expected_revision=record.revision).prompts == (
+        "A copper teapot",
+    )
+    setup[3]["jobType"] = "generate-prompt"
+    with pytest.raises(ResultError):
+        owner.read_prompt_results("request", expected_revision=record.revision)

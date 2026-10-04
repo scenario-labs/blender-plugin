@@ -259,6 +259,9 @@ class JobCoordinator:
                 raise ResultError("This result context is inactive")
             yield
 
+    def read_prompt_results(self, request_id, *, expected_revision):
+        return self._results.read_prompts(request_id, expected_revision=expected_revision)
+
     def load_results(self, request_id, *, expected_revision):
         return self._results.load_manifest(request_id, expected_revision=expected_revision)
 

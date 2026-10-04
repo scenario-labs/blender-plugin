@@ -192,6 +192,62 @@ class SessionUploadTests(unittest.TestCase):
             self.session.prepare_quote(stale)
         self.assertEqual(len(self.calls), 3)
 
+    def test_prompt_result_read_preserves_text_and_rejects_stale_delivery(self):
+        import httpx
+
+        origin = self.session.capture(self.scene, self.target)
+        intent = self.jobs.JobIntent(
+            "prompt-result", self.scope, origin, "prompt", "prompt", "a" * 64, "b" * 64, "1.25"
+        )
+        record = self.store.create(intent)
+        for state in (
+            self.jobs.JobState.SUBMITTING,
+            self.jobs.JobState.REMOTE,
+            self.jobs.JobState.SUCCEEDED,
+        ):
+            record = self.store.transition(
+                intent.request_id,
+                expected_revision=record.revision,
+                state=state,
+                remote_job_id="prompt-job" if state == self.jobs.JobState.REMOTE else None,
+            )
+
+        def respond(request):
+            self.assertIsNot(threading.current_thread(), threading.main_thread())
+            self.assertEqual(request.method, "GET")
+            self.assertEqual(request.url.path, "/v1/jobs/prompt-job")
+            return httpx.Response(
+                200,
+                json={
+                    "job": {
+                        "jobId": "prompt-job",
+                        "status": "success",
+                        "jobType": "generate-prompt",
+                        "metadata": {"output": {"prompts": ["First line\nSecond line"]}},
+                    }
+                },
+            )
+
+        self.handler = respond
+        task = self.session.read_prompt_results(
+            intent.request_id, expected_revision=record.revision
+        )
+        task.result(5)
+        completion = self.session.drain(task=task)[0]
+        delivered = self.session.deliver(
+            completion, lambda result, scene, target: (result.prompts, scene, target)
+        )
+        self.assertEqual(delivered, (("First line\nSecond line",), self.scene, self.target))
+        task = self.session.read_prompt_results(
+            intent.request_id, expected_revision=record.revision
+        )
+        task.result(5)
+        completion = self.session.drain(task=task)[0]
+        self.session.invalidate_scene(self.scene)
+        with self.assertRaises(self.module.OriginUnavailable):
+            self.session.deliver(completion, lambda *args: self.fail("Stale text delivered"))
+        self.assertEqual(self.store.get(intent.request_id), record)
+
     def test_full_upload_runs_off_thread_and_delivers_original_target_once(self):
         threads = []
         stage = self.sources.stage

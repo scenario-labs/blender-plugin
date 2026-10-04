@@ -294,8 +294,34 @@ approval instead of selecting a new target. A stale target or scene requires
 cancellation and fresh review. `draw()` only reads the prepared labels and
 operator properties. Completed-result reviews retain the reuse notice.
 
-Installed native tests exercise the shared approval and operator boundary. Actual
-mouse, keyboard, focus and viewport acceptance for this dialog is still pending:
-the isolated desktop fixture rendered its job controls, but computer control
-timed out while attaching to its window. That attempt is not interaction proof
-and does not resolve #263 or establish release acceptance.
+Offline desktop acceptance on macOS arm64 Blender 5.1.2 used final ZIP
+`e1eed465de2c9376231e54a7e623f1391974f4102ba54f2845fddbec369dda38`,
+which passes 659 full native tests each on Blender 5.0.1, 5.1.2 and 5.2.1.
+Mouse input opened the explicit source review. Escape cancelled without applying;
+viewport selection and front-view keyboard input then worked. A fresh review
+named the selected source, and Return confirmed geometry replacement with Keep
+original enabled. The source became the synthetic three-vertex result, its
+original copy remained, and the durable job became applied without another mock
+submission or request. The temporary message acknowledges approval rather than
+continuing to describe verification after it has already finished.
+
+The preceding desktop check used ZIP
+`cc603cfa3c98e29430d5ea72c2c54a1ce6f7480324695c158d460f5f437e42f0`;
+the only subsequent production change was that message text. It additionally
+verified both policy and coordinate menus, Keep original toggling, cancellation,
+viewport focus after application and explicit completed-result reuse confirmed
+with Return. Reuse preserved the completed generation and recorded one separate
+applied local claim without another mock request or submission.
+
+Both isolated Blender processes exited cleanly and their normal-profile
+fingerprints were unchanged. The test-only app copy had a distinct bundle ID and
+local ad-hoc signature; vendor executable code and extension ZIP were unchanged.
+The fixture freezes catalog loading and mocks service responses; its loading
+labels are not live connection evidence. These checks do not establish provider
+alignment, pre-generation source binding, remaining edit policies/global undo,
+other OS desktop behavior, #263 resolution or release acceptance.
+
+[Before application](images/saved-mesh-edit-before.png),
+[approved replacement result](images/saved-mesh-edit-result.png).
+
+![Native mesh approval identifies the source and replacement policy](images/saved-mesh-edit-approval.png)

@@ -508,7 +508,7 @@ class SCENARIO_OT_apply_saved_mesh(bpy.types.Operator):
                 {"ERROR"}, "Mesh edit was not started; review the captured target and options"
             )
             return {"CANCELLED"}
-        runtime.set_message("Verifying the saved result for the approved mesh edit")
+        runtime.set_message("Mesh edit approved; inspect the saved job for its result")
         return {"FINISHED"}
 
 

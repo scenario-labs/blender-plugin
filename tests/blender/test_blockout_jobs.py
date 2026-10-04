@@ -141,6 +141,7 @@ class BlockoutJobsTests(unittest.TestCase):
                 try:
                     item.task.result(5)
                 except Exception:
+                    # The facade must consume and report the failed task below.
                     pass
             item.next_poll = 0
             self.jobs().poll()
@@ -251,6 +252,9 @@ class BlockoutJobsTests(unittest.TestCase):
         instruction = json.loads(quoted.content)["instruction"]
         self.assertIn("Long named element 99", instruction)
         self.assertIn("Add a doorway", instruction)
+        self.assertNotIn("Scene to block out:", instruction)
+        self.assertIn("UPDATED full plan applying this change: Add a doorway", instruction)
+        self.assertEqual(len(json.loads(instruction.split("\nCurrent plan:\n")[1])), 100)
         self.assertEqual(self.paid, [])
 
     def test_truncated_or_non_array_plan_preserves_previous_plan(self):

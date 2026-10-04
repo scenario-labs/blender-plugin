@@ -91,13 +91,8 @@ class BlockoutJobs:
             raise ScenarioError(
                 0, "Write the requested plan or refinement and enable online access"
             )
-        instruction = blockout.instruction(text, scene_type, scale)
-        if action == "REFINE":
-            original = parse_complete_plan(previous)
-            instruction += (
-                "\nReturn the updated full plan after applying this change to the current plan:\n"
-                + json.dumps(original)
-            )
+        original = parse_complete_plan(previous) if action == "REFINE" else None
+        instruction = blockout.instruction(text, scene_type, scale, previous=original)
         if current is not None:
             self.actions.pop(current.identifier)
         if len(self.actions) >= 32:

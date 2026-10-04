@@ -50,7 +50,8 @@ receipt-only retry to UI/MCP while its original owner retains the outcome handle
 `BlockoutJobs` is a presentation facade over the selected session, not another
 worker or store. Design and Refine capture the original scene revision plus
 prompt, refinement, type, scale and previous plan before quoting. Refine includes
-the complete bounded prior plan, without the prototype's text truncation.
+the complete bounded prior plan, without text truncation, using an explicit
+update instruction rather than describing the refinement note as a new scene.
 UI and MCP `estimate_blockout` / `approve_blockout` share exact cost approval and
 persist an intent before one paid dispatch. A repeated approval cannot resubmit;
 uncertain retained actions require saved-job inspection.

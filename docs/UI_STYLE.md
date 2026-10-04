@@ -671,3 +671,10 @@ recovered-plan import into a new scene are not established by these checks.
 [Before quote approval](images/blockout-plan-approval.png).
 
 ![Blockout geometry after build, native undo and redo](images/blockout-plan-built.png)
+
+The refinement-instruction follow-up uses ZIP SHA-256
+`5c66b30ebe403ab46658fa556fa906fd49dcd2a48816d7867f18c5ab83a27c42`,
+with 732 installed tests passing on each of the same three Blender versions.
+It replaces mixed design/refinement wording with the explicit complete-plan
+update instruction. The desktop interaction and screenshots above use the
+preceding ZIP; no new UI behavior or live provider acceptance is claimed here.

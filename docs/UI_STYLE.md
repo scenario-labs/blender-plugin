@@ -218,7 +218,7 @@ approval. It names the current scene/World and explains that edited owned data
 prevents restoration. Do not silently clear edits, reapply the job or reset its
 completed state after restoration. Reference [the user guide](USER_GUIDE.md#apply-a-saved-panorama-to-world)
 for screenshots and [the World guide](WORLD_APPLICATION.md#saved-result-ui-and-mcp-approval)
-for the already-applied Image and file-load boundaries.
+for reuse and file-load restoration boundaries.
 
 Offline desktop acceptance on macOS arm64 Blender 5.1.2 used exact ZIP
 `c570617fdcc2e4ff5e5b424e08768843186a38a95eb6e58252cec6c471b262f1`.
@@ -255,3 +255,28 @@ could not access the window; it was not counted as interaction evidence.
 This check does not establish live provider quality, other OS desktop support,
 full Materials acceptance or resolution of #263. See the
 [user guide](USER_GUIDE.md#materials) for the approval and result screenshots.
+
+
+## Completed-result reuse approval
+
+Completed shared jobs show **Reuse saved results** above the supported saved
+application actions. Each native approval adds **Use saved results again; no new
+generation.** while retaining its destination, selected assets and limitations.
+Drawing uses the prepared snapshot only. Unfinished local claims suppress new
+application actions; a known receipt failure offers persistence-only recovery.
+
+Offline desktop acceptance on macOS arm64 Blender 5.1.2 used exact ZIP
+`28d7dced697249cf9389ddbc0c7bb300d99faa66623c0ffc0caaf2303ba1e6eb`,
+which passes 619 full native tests on each of Blender 5.0.1, 5.1.2 and 5.2.1.
+An already imported synthetic albedo result was applied as a packed material to
+the approved mesh slot through the visible reuse confirmation. The original job
+stayed applied, its separate material application completed, and mocked request
+and submission counts did not increase. Material preview, viewport and Outliner
+selection, front-view keyboard input, zoom and material-property inspection
+worked. Blender exited cleanly with the normal-profile fingerprint unchanged.
+The test-only app copy had a distinct bundle identifier and local ad-hoc signature;
+vendor executable code and extension ZIP were unchanged. See the
+[user guide screenshots](USER_GUIDE.md#reuse-saved-results). This does not establish
+live provider quality, other OS desktop support, resolution of #263 or release
+acceptance. An earlier window-targeting attempt was not counted as interaction
+proof.

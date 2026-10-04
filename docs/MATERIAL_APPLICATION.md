@@ -67,8 +67,8 @@ handle needs explicit inspection; it cannot be assumed safe to repeat.
 
 This slice has no global undo entry or persistent restoration handle. Old material
 datablocks are not edited, but unused data is subject to Blender's normal purge
-and save rules. Preserve a desired old material yourself. Already-applied Image
-jobs cannot be claimed again through this command; reusable local-asset
-application, multi-object/shared-mesh policies and texture-set selection remain
+and save rules. Preserve a desired old material yourself. Completed jobs can
+apply saved maps again through a fresh destination approval and separate durable
+local claim. Multi-object/shared-mesh policies and texture-set selection remain
 separate work. Synthetic native tests do not establish live provider or
 full Materials/release acceptance.

@@ -319,11 +319,12 @@ coordinator. Explicit recovered Image and selected video/audio application use
 verified local receipts without service calls. Video/audio approval binds one
 asset and the scene/frame before a durable application claim. Static GLB import
 uses the same saved-result boundary with scene/cursor approval and no API call.
-Unapplied panorama results now use recovered World approval and session-local
+Saved panorama results use explicit World approval and session-local
 restoration through this same local boundary. Non-image MCP jobs stop after
 verified download without automatic scene application. Live capture/Spark acceptance,
-Film, in-place mesh editing, multi-object material application and already-imported
-World reuse still need integration. Explicit saved texture sets now use local
+Film, in-place mesh editing and multi-object material application still need
+integration. Completed results can be reused through fresh UI/MCP approval and
+a separate durable local claim without calling Scenario. Explicit saved texture sets now use local
 [material approval](MATERIAL_APPLICATION.md) and verified bytes, with no new API call.
 Generated operations use public SDK methods
 with `max_retries=0`; their `with_raw_response` wrappers preserve wire JSON.

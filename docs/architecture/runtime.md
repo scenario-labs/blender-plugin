@@ -203,9 +203,10 @@ The same asset-selected MCP approval and **Import static model** support one
 self-contained static GLB at the captured cursor. Import stages in a disposable
 scene, preserves existing selection and packs its textures. Its separate durable
 claim/receipt recovery follows the same session; in-place editing remains open.
-Unapplied PNG/EXR results also offer explicit World replacement, with a separate
-guarded restore in the current session.
-These commands reuse saved bytes and do not re-claim already-applied Image jobs.
+Saved PNG/EXR results also offer explicit World replacement, with a separate
+guarded restore in the current session. Completed jobs can reuse saved results
+through fresh UI/MCP approval and a separate durable local claim, preserving the
+original generation outcome. Interrupted local claims block another application.
 Saved texture sets also offer explicit one-mesh material-slot approval, using
 [stored roles and packed material construction](../MATERIAL_APPLICATION.md).
 Render-lane MCP parameters are caller-supplied, without UI capture/style/Spark

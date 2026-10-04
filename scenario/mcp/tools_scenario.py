@@ -330,6 +330,8 @@ def prepare_result_application(args):
         return {
             "context_id": args["context_id"],
             "application_id": approval.identifier,
+            "reuse": approval.record.state.value == "applied"
+            and not getattr(approval, "restore", False),
             "request_id": approval.record.intent.request_id,
             "revision": approval.record.revision,
             "scene": approval.scene_name,
@@ -356,6 +358,8 @@ def prepare_result_application(args):
         return {
             "context_id": args["context_id"],
             "application_id": approval.identifier,
+            "reuse": approval.record.state.value == "applied"
+            and not getattr(approval, "restore", False),
             "request_id": approval.record.intent.request_id,
             "revision": approval.record.revision,
             "scene": approval.scene_name,
@@ -383,6 +387,8 @@ def prepare_result_application(args):
             return {
                 "context_id": args["context_id"],
                 "application_id": approval.identifier,
+                "reuse": approval.record.state.value == "applied"
+                and not getattr(approval, "restore", False),
                 "request_id": approval.record.intent.request_id,
                 "revision": approval.record.revision,
                 "scene": approval.scene_name,
@@ -396,6 +402,8 @@ def prepare_result_application(args):
         return {
             "context_id": args["context_id"],
             "application_id": approval.identifier,
+            "reuse": approval.record.state.value == "applied"
+            and not getattr(approval, "restore", False),
             "request_id": approval.record.intent.request_id,
             "revision": approval.record.revision,
             "scene": approval.scene_name,
@@ -412,6 +420,8 @@ def prepare_result_application(args):
     return {
         "context_id": args["context_id"],
         "application_id": approval.identifier,
+        "reuse": approval.record.state.value == "applied"
+        and not getattr(approval, "restore", False),
         "request_id": approval.record.intent.request_id,
         "revision": approval.record.revision,
         "scene": approval.scene_name,
@@ -762,9 +772,9 @@ SPECS = (
             "  - expected_revision: required nonnegative integer, observed saved revision.\n"
             "  - purpose: import (default), material, world, or restore_world; material uses the active mesh and saved unambiguous texture roles; World replacement requires asset_id.\n"
             "  - asset_id: optional saved asset ID; required for one MP4/WebM video, MP3/WAV/OGG audio strip or static embedded GLB model. Omit for PNG/EXR image import.\n"
-            "Returns: context_id, application_id, request_id, revision, scene, images or asset_id/kind/frame or cursor, and note.\n"
+            "Returns: context_id, application_id, request_id, revision, reuse, scene, images or asset_id/kind/frame or cursor, and note.\n"
             'Example: {"context_id": "from-list", "request_id": "from-list", "expected_revision": 8}.\n'
-            "Show the destination, selected assets and media frame, model cursor or material target/slot/roles or World operation before apply_result_application. This makes no network request, spends no credits and imports nothing. Imports and World replacement require ready or confirmed rolled-back results; restoration requires this session's completed World application.\n"
+            "Show the destination, selected assets and media frame, model cursor or material target/slot/roles or World operation before apply_result_application. This makes no network request, spends no credits and imports nothing. Ready or confirmed rolled-back results use their original application claim. Completed results require a new local reuse approval; show reuse=true as another application, never another generation. Unfinished reuse blocks another attempt. Restoration applies to this session's most recent World assignment for this job.\n"
             "Platform equivalent: none; this captures a local Blender destination."
         ),
         _schema(

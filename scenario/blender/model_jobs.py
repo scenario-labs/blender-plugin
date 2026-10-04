@@ -13,7 +13,7 @@ import bpy
 from ..core.api.catalog import GENERATION_LANES, LANE_KIND
 from ..core.api.errors import ScenarioError
 from ..core.jobs.records import JobRecord
-from ..core.jobs.store import JobOrigin, JobState, StoredJob
+from ..core.jobs.store import JobOrigin, JobState, LocalApplicationState, StoredJob
 from .job_session import (
     ImageResultUncertain,
     MaterialResultUncertain,
@@ -339,6 +339,10 @@ class ModelJobs:
             view.meta["recovery_actions"] = self.actions(record)
             if record.state in (JobState.SUBMITTING, JobState.UNCERTAIN):
                 view.error = "Submission outcome is not confirmed; do not submit it again"
+            elif any(
+                item.state == LocalApplicationState.APPLYING for item in record.local_applications
+            ):
+                view.error = "Local application outcome is unconfirmed; inspect the scene and do not repeat it"
             elif request_id not in self._paused:
                 view.error = None
             if (
@@ -396,6 +400,13 @@ class ModelJobs:
         if request_id in self._commands or request_id in self.submissions:
             return ()
         state = record.state
+        if request_id in self._receipts:
+            return ("retry_receipt",)
+        if any(item.state == LocalApplicationState.APPLYING for item in record.local_applications):
+            return ()
+        reusable = state in (JobState.READY, JobState.APPLY_FAILED) or (
+            state == JobState.APPLIED and len(record.local_applications) < 128
+        )
         if record.intent.operation in {"prompt", "translate"}:
             return ("refresh",) if state == JobState.REMOTE else ()
         actions = []
@@ -405,27 +416,23 @@ class ModelJobs:
             actions.append("resume")
         elif state == JobState.DOWNLOADING:
             actions.append("recover_download")
-        elif state in (JobState.READY, JobState.APPLY_FAILED) and all(
+        elif reusable and all(
             item.asset.media_type in {"image/png", "image/exr", "image/x-exr"}
             for item in record.results
         ):
             actions.append("import_images")
-        if state in (JobState.READY, JobState.APPLY_FAILED) and any(
-            item.asset.media_type in MEDIA_TYPES for item in record.results
-        ):
+        if reusable and any(item.asset.media_type in MEDIA_TYPES for item in record.results):
             actions.append("import_media")
         if state == JobState.REMOTE and record.intent.operation == "model":
             actions.append("cancel")
-        if state in (JobState.READY, JobState.APPLY_FAILED) and any(
-            item.asset.media_type == MODEL_MEDIA_TYPE for item in record.results
-        ):
+        if reusable and any(item.asset.media_type == MODEL_MEDIA_TYPE for item in record.results):
             actions.append("import_model")
-        if state in (JobState.READY, JobState.APPLY_FAILED) and any(
+        if reusable and any(
             item.asset.media_type in {"image/png", "image/exr", "image/x-exr"}
             for item in record.results
         ):
             actions.append("apply_world")
-        if state in (JobState.READY, JobState.APPLY_FAILED) and any(
+        if reusable and any(
             item.asset.texture_role in {"base", "albedo"} for item in record.results
         ):
             actions.append("apply_material")
@@ -823,6 +830,22 @@ class ModelJobs:
                     "downloaded": item.receipt is not None,
                 }
                 for item in record.results
+            ],
+            "local_applications": [
+                {
+                    "application_id": item.application_id,
+                    "source_revision": item.source_revision,
+                    "purpose": item.purpose,
+                    "asset_ids": list(item.asset_ids),
+                    "state": item.state.value,
+                    "destination": {
+                        "file_id": item.destination.file_id,
+                        "scene_id": item.destination.scene_id,
+                        "target_id": item.destination.target_id,
+                        "revision": item.destination.revision,
+                    },
+                }
+                for item in record.local_applications
             ],
             "delivery_paused": record.intent.request_id in self._paused,
             "actions": self.actions(record),

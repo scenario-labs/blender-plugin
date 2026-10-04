@@ -321,7 +321,7 @@ def recover_local_job(args):
 
 def prepare_result_application(args):
     purpose = args.get("purpose", "import")
-    if purpose == "mesh_edit":
+    if purpose in {"mesh_edit", "mesh_source"}:
         _, approval = runtime.prepare_mesh_application(
             args["context_id"],
             args["request_id"],
@@ -332,6 +332,7 @@ def prepare_result_application(args):
             policy=args.get("mesh_policy", "REMESH"),
             placement=args.get("mesh_placement", "WORLD"),
             keep_original=args.get("keep_original", True),
+            original_source=purpose == "mesh_source",
         )
         return {
             "context_id": args["context_id"],
@@ -806,11 +807,11 @@ SPECS = (
             "  - context_id: required string, current context from list_local_jobs.\n"
             "  - request_id: required string, saved local job identity.\n"
             "  - expected_revision: required nonnegative integer, observed saved revision.\n"
-            "  - purpose: import (default), material, world, restore_world or mesh_edit; material uses the active mesh and saved unambiguous texture roles; World replacement requires asset_id.\n"
+            "  - purpose: import (default), material, world, restore_world, mesh_edit or mesh_source; material uses the active mesh and saved unambiguous texture roles; World replacement requires asset_id.\n"
             "  - asset_id: optional saved asset ID; required for one MP4/WebM video, MP3/WAV/OGG audio strip or static embedded GLB model. Omit for PNG/EXR image import.\n"
             "  - mesh_policy: REMESH (default) replaces geometry/UV/materials; UV replaces only active UVs with exact topology/position matching.\n"
             "  - mesh_placement: WORLD (default) preserves imported scene positions; LOCAL uses imported positions in the object's local coordinates. No fitting is inferred.\n"
-            "  - keep_original: boolean, default true; preserve an unselected original mesh copy. These mesh options apply only to mesh_edit, which requires asset_id.\n"
+            "  - keep_original: boolean, default true; preserve an unselected original mesh copy. These mesh options apply to mesh_edit and mesh_source, which require asset_id. mesh_source requires exactly one captured input and its unchanged live export source; it ignores current selection and cannot restore authority after undo/load/restart.\n"
             "Returns: context_id, application_id, request_id, revision, reuse, scene, images or asset_id/kind/frame or cursor, and note.\n"
             'Example: {"context_id": "from-list", "request_id": "from-list", "expected_revision": 8}.\n'
             "Show the destination, selected assets and media frame, model cursor, material target/slot/roles, World operation or mesh target/policy/placement/Keep original before apply_result_application. This makes no network request, spends no credits and imports nothing. Ready or confirmed rolled-back results use their original application claim. Completed results require a new local reuse approval; show reuse=true as another application, never another generation. Unfinished reuse blocks another attempt. Restoration applies to this session's most recent World assignment for this job.\n"
@@ -824,7 +825,14 @@ SPECS = (
                 "asset_id": {"type": "string"},
                 "purpose": {
                     "type": "string",
-                    "enum": ["import", "material", "world", "restore_world", "mesh_edit"],
+                    "enum": [
+                        "import",
+                        "material",
+                        "world",
+                        "restore_world",
+                        "mesh_edit",
+                        "mesh_source",
+                    ],
                 },
                 "mesh_policy": {"type": "string", "enum": ["REMESH", "UV"]},
                 "mesh_placement": {"type": "string", "enum": ["WORLD", "LOCAL"]},

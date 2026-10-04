@@ -604,8 +604,8 @@ recaptures the source. Admission calls the shared destination guard before
 queuing verification; a retired session rejects the consumed approval without
 queuing work, claiming application or changing the scene. The single-use handle
 cannot be replayed. Delivery rechecks the destination after verification.
-Operation/export metadata and end-to-end edit-lane
-acceptance remain separate integration. It provides no global undo entry, persistent restoration
+The captured-source mode below links export metadata to that same guard;
+end-to-end edit-lane acceptance remains incomplete. It provides no global undo entry, persistent restoration
 handle, new generation request or automatic provider-coordinate mapping.
 
 ## Source identity in mesh uploads
@@ -633,3 +633,19 @@ these snapshots for matching 3D input assets in
 [generation intents](JOB_STORAGE.md#captured-mesh-inputs-in-generation-intents).
 They do not restore target authority after restart or prove the current object
 is unchanged from the uploaded snapshot.
+
+
+## Live captured-source application
+
+`mesh_provenance.export_with_source` retains an eligible static source guard in
+the selected `JobSession`. `mesh_source_target` resolves the exact stored input
+binding against that live export and validates the frozen object before the
+shared UI/MCP mesh approval. It ignores active selection and rejects absent,
+changed or retired authority. File/scene/object identities must still match;
+undo/load/credential retirement clears guards rather than reconstructing them.
+
+The approval reuses the same post-verification destination checks, durable claim,
+Keep original and persistence-only recovery as generic saved-mesh application.
+See [captured-source application](MESH_APPLICATION.md#applying-to-the-captured-mesh-source)
+for capacity, ambiguity and unsupported-source limits. No stored metadata alone
+permits scene mutation or paid resubmission.

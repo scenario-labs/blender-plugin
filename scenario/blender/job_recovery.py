@@ -401,6 +401,7 @@ class SCENARIO_OT_apply_saved_mesh(bpy.types.Operator):
     request_id: StringProperty(options={"HIDDEN"})
     expected_revision: IntProperty(min=0, options={"HIDDEN"})
     asset_id: StringProperty(options={"HIDDEN"})
+    original_source: BoolProperty(options={"HIDDEN", "SKIP_SAVE"})
     application_id: StringProperty(options={"HIDDEN", "SKIP_SAVE"})
     scene_name: StringProperty(options={"HIDDEN", "SKIP_SAVE"})
     target_name: StringProperty(options={"HIDDEN", "SKIP_SAVE"})
@@ -450,6 +451,7 @@ class SCENARIO_OT_apply_saved_mesh(bpy.types.Operator):
                 policy=self.policy,
                 placement=self.placement,
                 keep_original=self.keep_original,
+                original_source=self.original_source,
             )
             self._jobs = jobs
             self.application_id = approval.identifier
@@ -457,7 +459,14 @@ class SCENARIO_OT_apply_saved_mesh(bpy.types.Operator):
             self.is_reuse = approval.record.state.value == "applied"
             self.review_error = ""
         except Exception:
-            self.report({"ERROR"}, "Choose one local mesh in Object Mode and inspect the saved GLB")
+            self.report(
+                {"ERROR"},
+                (
+                    "Captured source changed or is unavailable; review a destination with Apply mesh edit"
+                    if self.original_source
+                    else "Choose one local mesh in Object Mode and inspect the saved GLB"
+                ),
+            )
             return {"CANCELLED"}
         return context.window_manager.invoke_props_dialog(self, width=580)
 
@@ -486,6 +495,8 @@ class SCENARIO_OT_apply_saved_mesh(bpy.types.Operator):
         layout.label(text=f"Scene: {self.scene_name}", icon="SCENE_DATA")
         layout.label(text=f"Mesh: {self.target_name}", icon="MESH_DATA")
         layout.label(text=f"Saved result: {self.asset_id}")
+        if self.original_source:
+            layout.label(text="Use the unchanged source captured for this generation.", icon="INFO")
         if self.is_reuse:
             layout.label(text="Use saved results again; no new generation.", icon="INFO")
         layout.prop(self, "policy")
@@ -563,17 +574,23 @@ def draw_controls(layout, record):
                 )
                 operator.purpose = "restore_world" if action == "restore_world" else "world"
             continue
-        if action == "apply_mesh":
+        if action in {"apply_mesh", "apply_mesh_source"}:
             for index, asset_id in enumerate(record.asset_ids, 1):
                 if record.asset_types.get(asset_id) != MODEL_MEDIA_TYPE:
                     continue
                 operator = layout.operator(
-                    "scenario.apply_saved_mesh", text=f"Apply mesh edit ({index})"
+                    "scenario.apply_saved_mesh",
+                    text=(
+                        f"Apply to captured source ({index})"
+                        if action == "apply_mesh_source"
+                        else f"Apply mesh edit ({index})"
+                    ),
                 )
                 operator.context_id, operator.request_id = (
                     runtime.state.job_context_id,
                     record.local_id,
                 )
+                operator.original_source = action == "apply_mesh_source"
                 operator.expected_revision, operator.asset_id = (
                     record.meta["saved_revision"],
                     asset_id,

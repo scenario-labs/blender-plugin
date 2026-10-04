@@ -349,3 +349,32 @@ other OS desktop behavior, #263 resolution or release acceptance.
 [approved replacement result](images/saved-mesh-edit-result.png).
 
 ![Native mesh approval identifies the source and replacement policy](images/saved-mesh-edit-approval.png)
+
+
+## Captured mesh source interaction evidence
+
+The saved-job **Apply to captured source (N)** action opens the existing mesh
+review with the original exported object, independently of active selection.
+Its extra line identifies the unchanged captured source. **Apply mesh edit (N)**
+keeps explicit current-destination review; both require confirmation.
+
+On macOS arm64 Blender 5.1.2, an isolated installation of ZIP SHA-256
+`f9f57e8efd3679bf8143713067e938eb4545d433ff5e27cc349a938a61fac976`
+was exercised with synthetic transport and a real source export. With another
+mesh active, mouse activation named `Cube.001` as the captured source. Escape
+canceled without changing the saved ready record or either mesh; viewport focus
+and numpad front view still worked. Reopening and confirming with Return replaced
+the source's eight vertices with the saved three-vertex fixture, retained an
+original copy, and left the other active mesh at eight vertices. The job became
+applied with no additional mock submission, service request or download. The
+normal Blender profile was unchanged and the isolated process exited cleanly.
+
+![Captured source confirmation names the exported cube while another mesh remains active](images/captured-mesh-source-approval.png)
+
+![Applied captured source retains its original copy and leaves the other active mesh unchanged](images/captured-mesh-source-result.png)
+
+This proves the local source-selection, cancellation and confirmation interaction.
+The synthetic form's pending estimate is not live pricing evidence. It does not
+establish provider alignment, other OS desktop behavior, #263 resolution, remaining
+edit policies, global undo or release acceptance. See
+[the source contract](MESH_APPLICATION.md#applying-to-the-captured-mesh-source).

@@ -208,8 +208,7 @@ See [session ownership](BLENDER_JOB_CONTEXT.md#verified-saved-mesh-replacement).
 Installed synthetic tests cover remesh and exact-topology UV, parented/scaled
 sources, shared originals, packed materials, explicit node-transform mapping,
 selection, source changes, multi-scene/multi-mesh rejection, rollback failure,
-separate local reuse and persistence-only recovery. Operation-bound export
-metadata, provider coordinate contracts, rig/retexture/
+separate local reuse and persistence-only recovery. Provider coordinate contracts, rig/retexture/
 segmentation policy and global undo remain integration work under #65/#99.
 There are no new service calls or live/provider acceptance claims in this command.
 
@@ -242,6 +241,39 @@ deleted objects have null names. A failed outcome receipt can be saved without
 replacing the mesh again. An uncertain scene outcome never authorizes replay.
 There is no automatic blend save or global undo entry.
 
-This is explicit application of a saved result. It does not bind a source export
-to a generation request or establish provider alignment, retexture/rig/segmentation
-policy or end-to-end Edit 3D acceptance.
+The generic action reviews a destination selected now. The captured-source action
+below uses the original exported object. Neither establishes provider alignment,
+retexture/rig/segmentation policy or end-to-end Edit 3D acceptance.
+
+
+## Applying to the captured mesh source
+
+**Apply to captured source (N)** and MCP `prepare_result_application` with
+`purpose: mesh_source` use the original object exported for the generation's
+single captured 3D input. Current selection is ignored. The confirmation still
+names the target, selected result, remesh/UV policy, coordinates and Keep original
+choice before any mutation. More than one input binding or source object is
+ambiguous and cannot select an original target automatically.
+
+Single static-mesh export retains a live `MeshTarget` before exporting, rechecks
+it afterwards and keys it by the exact upload origin and export metadata. Shared
+quotes persist that upload binding in the generation intent. Review resolves only
+this retained guard, never an object name or a reconstructed match from disk.
+Geometry, data identity, names, transforms, parenting and collection membership
+must still match. Unrelated scene changes can advance the scene revision without
+changing the source; review captures a fresh destination revision, which the
+existing application path rechecks after asynchronous file verification.
+
+Undo/redo, file loading, session retirement and restart discard live source
+ownership. Stored provenance remains useful history, but cannot restore that
+ownership. **Apply mesh edit** remains available for a freshly reviewed explicit
+destination, including after restart. A successful remesh changes the original
+snapshot, so another original-source application requires a new capture; it is
+not silently authorized by the completed job's reuse controls.
+
+Modifiers, constraints, rig/animation data and other unsupported source policies
+remain uploadable where export supports them, without in-place source ownership.
+Each session retains at most 128 distinct eligible snapshots without evicting older
+ones. Further captures remain upload references but have no original-source guard.
+This is explicit local application; it makes no service request, cannot establish
+provider alignment, and adds no global undo or persistent restoration.

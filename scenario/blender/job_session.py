@@ -174,6 +174,7 @@ class JobSession:
         self._model_receipts = WeakKeyDictionary()
         self._material_receipts = WeakKeyDictionary()
         self._upload_captures = {}
+        self._mesh_sources = {}
         self._active = True
         self._coordinator = JobCoordinator(
             adapter,
@@ -237,6 +238,51 @@ class JobSession:
                 self._target_scenes.setdefault(target_id, set()).add(scene_id)
             origins.append(self._origins.capture(scene_id, target_id))
         return tuple(origins)
+
+    def retain_mesh_source(self, origin, source, target):
+        """Retain a bounded live export guard; saved metadata cannot recreate it."""
+        from .mesh_application import validate_target
+
+        _main_thread()
+        validate_target(target)
+        if self.capture(target.scene, target.obj) != origin or len(source.objects) != 1:
+            raise OriginUnavailable("The captured mesh context changed during export")
+        item = source.objects[0]
+        if (
+            item.target_id != origin.target_id
+            or item.geometry_sha256 != target.geometry.hex()
+            or item.matrix_world != tuple(tuple(row) for row in target.obj.matrix_world)
+        ):
+            raise OriginUnavailable("The exported mesh does not match its live source")
+        key = (origin, source)
+        # Never evict an older export's authority to admit another snapshot.
+        # Further uploads remain valid references, without original-source apply.
+        if key in self._mesh_sources or len(self._mesh_sources) < 128:
+            self._mesh_sources[key] = target
+
+    def mesh_source_target(self, binding):
+        """Resolve only a retained export; current selection and names are irrelevant."""
+        from .mesh_application import validate_target
+
+        _main_thread()
+        target = self._mesh_sources.get((binding.origin, binding.mesh_source))
+        if not self._active or target is None:
+            raise OriginUnavailable(
+                "The live captured source is unavailable; review another destination"
+            )
+        validate_target(target)
+        current = self.capture(target.scene, target.obj)
+        original = binding.origin
+        # Unrelated scene changes may advance its revision. The frozen source
+        # guard proves this object unchanged, while file/scene/object IDs must
+        # still belong to this exact session. Undo/load retire that authority.
+        if (current.file_id, current.scene_id, current.target_id) != (
+            original.file_id,
+            original.scene_id,
+            original.target_id,
+        ):
+            raise OriginUnavailable("The captured source context was replaced")
+        return target
 
     def quote_model(self, identifier, parameters, *, origin):
         return self._quote("model", identifier, parameters, origin)
@@ -910,6 +956,7 @@ class JobSession:
         self._scenes.clear()
         self._targets.clear()
         self._target_scenes.clear()
+        self._mesh_sources.clear()
 
     def deactivate(self):
         _main_thread()

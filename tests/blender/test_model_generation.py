@@ -2346,7 +2346,7 @@ class ModelGenerationTests(unittest.TestCase):
         self.assertEqual(source.data, previous)
         self.assertTrue(status["delivery_paused"])
 
-    def captured_mesh_upload(self):
+    def captured_mesh_upload(self, *, live=False):
         session = self.runtime.ensure_job_session()
         origin = session.capture(bpy.context.scene, bpy.context.object)
         source_types = submodule("core.jobs.mesh_source")
@@ -2361,6 +2361,14 @@ class ModelGenerationTests(unittest.TestCase):
                 ),
             ),
         )
+        size, digest = 11, "a" * 64
+        if live:
+            with tempfile.TemporaryDirectory(dir=bpy.utils.resource_path("USER")) as directory:
+                path = Path(directory) / "source.glb"
+                origin, source = submodule("blender.mesh_provenance").export_with_source(
+                    bpy.context, (bpy.context.object,), path, session
+                )
+                size, digest = path.stat().st_size, source.file_sha256
         store = session._coordinator._uploads._store
         record = store.create(
             uploads.UploadIntent(
@@ -2370,10 +2378,10 @@ class ModelGenerationTests(unittest.TestCase):
                 "3d",
                 "source.glb",
                 "model/gltf-binary",
-                11,
-                "a" * 64,
-                11,
-                ("a" * 64,),
+                size,
+                digest,
+                size,
+                (digest,),
                 source,
             )
         )
@@ -2389,7 +2397,7 @@ class ModelGenerationTests(unittest.TestCase):
         record = store.claim_part(record.intent.request_id, expected_revision=record.revision)
         record = store.record_part(
             record.intent.request_id,
-            uploads.UploadedPart(1, 11, "a" * 64),
+            uploads.UploadedPart(1, size, digest),
             expected_revision=record.revision,
         )
         advance(uploads.UploadState.FINALIZING)
@@ -2433,3 +2441,136 @@ class ModelGenerationTests(unittest.TestCase):
             self.runtime.ensure_job_store().get(result["local_id"]).intent.mesh_sources,
             saved.intent.mesh_sources,
         )
+
+    def captured_source_result(self):
+        from helpers import FIXTURES
+
+        self.configure_ui_lane("edit3d")
+        source = bpy.context.object
+        self.captured_mesh_upload(live=True)
+        self.result_bytes = (FIXTURES / "synthetic/static-triangle.glb").read_bytes()
+        self.result_media_type, self.remote_status = "model/gltf-binary", "success"
+        self.ui_quote("edit3d")
+        result = self.generation.submit_generation(bpy.context, "edit3d")
+        self.deliver_results()
+        self.assertEqual(self.store.get(result.local_id).state, self.storemod.JobState.READY)
+        return result.local_id, source
+
+    def test_captured_source_review_ignores_selection_and_preserves_original(self):
+        request_id, source = self.captured_source_result()
+        previous = source.data
+        bpy.ops.mesh.primitive_cube_add(location=(9, 0, 0))
+        other = bpy.context.object
+        other_data = other.data
+        before = len(self.calls), len(self.paid), len(self.downloads)
+        approval = self.prepare_mesh_edit(request_id, purpose="mesh_source")
+        self.assertEqual(approval["target"], source.name)
+        self.assertIn(
+            "apply_mesh_source", self.runtime.state.model_jobs.actions(self.store.get(request_id))
+        )
+        status = self.finish_application(approval)
+        self.assertEqual(status["status"], "applied", status)
+        self.assertEqual(len(source.data.vertices), 3)
+        self.assertEqual(other.data, other_data)
+        self.assertEqual(bpy.context.object, other)
+        original = bpy.data.objects[status["mesh_edit"]["original"]]
+        self.assertEqual(len(original.data.vertices), len(previous.vertices))
+        self.assertEqual((len(self.calls), len(self.paid), len(self.downloads)), before)
+        with self.assertRaises(submodule("blender.mesh_application").MeshApplicationError):
+            self.prepare_mesh_edit(request_id, purpose="mesh_source")
+
+    def test_captured_source_rejects_geometry_edit_before_review(self):
+        request_id, source = self.captured_source_result()
+        before = self.store.get(request_id)
+        source.data.vertices[0].co.x += 1
+        with self.assertRaises(submodule("blender.mesh_application").MeshApplicationError):
+            self.prepare_mesh_edit(request_id, purpose="mesh_source")
+        self.assertEqual(self.store.get(request_id), before)
+
+    def test_captured_source_rejects_deleted_object_with_same_name(self):
+        request_id, source = self.captured_source_result()
+        name = source.name
+        bpy.data.objects.remove(source, do_unlink=True)
+        bpy.ops.mesh.primitive_cube_add()
+        bpy.context.object.name = name
+        with self.assertRaises(submodule("blender.mesh_application").MeshApplicationError):
+            self.prepare_mesh_edit(request_id, purpose="mesh_source")
+        self.assertEqual(self.store.get(request_id).state, self.storemod.JobState.READY)
+
+    def test_captured_source_rejects_history_reset_and_restart_but_allows_manual_review(self):
+        request_id, source = self.captured_source_result()
+        session = self.runtime.state.model_jobs.session
+        submodule("blender.job_session")._history_pre(None)
+        self.assertEqual(session._mesh_sources, {})
+        with self.assertRaises(self.origin_error):
+            self.prepare_mesh_edit(request_id, purpose="mesh_source")
+        self.runtime.state.reset()
+        self.runtime.inspect_model_jobs()
+        with self.assertRaises(self.origin_error):
+            self.prepare_mesh_edit(request_id, purpose="mesh_source")
+        approval = self.prepare_mesh_edit(request_id)
+        self.assertEqual(approval["target"], source.name)
+        self.assertEqual(self.store.get(request_id).state, self.storemod.JobState.READY)
+
+    def test_captured_source_changed_during_verification_keeps_job_ready(self):
+        request_id, source = self.captured_source_result()
+        approval = self.prepare_mesh_edit(request_id, purpose="mesh_source")
+        before, mesh = self.store.get(request_id), source.data
+        deferred = self.tools.apply_result_application(self.import_args(approval))
+        verified = deferred.run()
+        source.location.x += 1
+        status = deferred.finish(verified)
+        self.assertEqual(self.store.get(request_id), before)
+        self.assertEqual(source.data, mesh)
+        self.assertEqual(status["status"], "ready", status)
+        self.assertTrue(status["delivery_paused"])
+
+    def test_metadata_without_live_export_cannot_authorize_original_source(self):
+        self.configure_ui_lane("edit3d")
+        self.captured_mesh_upload()
+        self.ui_quote("edit3d")
+        quote = next(iter(self.runtime.state.model_jobs.quotes.values()))
+        binding = quote.task.result(5).mesh_sources[0]
+        with self.assertRaises(self.origin_error):
+            self.runtime.state.model_jobs.session.mesh_source_target(binding)
+
+    def test_multiple_captured_inputs_cannot_guess_an_original_target(self):
+        request_id, _ = self.captured_source_result()
+        jobs = self.runtime.state.model_jobs
+        record = self.store.get(request_id)
+        binding = record.intent.mesh_sources[0]
+        ambiguous = replace(
+            record,
+            intent=replace(
+                record.intent, mesh_sources=(binding, replace(binding, parameter="another_mesh"))
+            ),
+        )
+        with patch.object(jobs.store, "get", return_value=ambiguous):
+            with self.assertRaises(self.request_error):
+                self.prepare_mesh_edit(request_id, purpose="mesh_source")
+        self.assertEqual(self.store.get(request_id), record)
+
+    def test_modified_mesh_remains_uploadable_without_original_source_authority(self):
+        self.configure_ui_lane("edit3d")
+        bpy.context.object.modifiers.new("Keep modifier", "BEVEL")
+        upload = self.captured_mesh_upload(live=True)
+        self.assertIsNotNone(upload.intent.mesh_source)
+        self.assertEqual(self.runtime.ensure_job_session()._mesh_sources, {})
+
+    def test_retired_credentials_cannot_retain_or_restore_source_authority(self):
+        request_id, _ = self.captured_source_result()
+        jobs = self.runtime.state.model_jobs
+        binding = self.store.get(request_id).intent.mesh_sources[0]
+        jobs.session.deactivate()
+        self.assertEqual(jobs.session._mesh_sources, {})
+        with self.assertRaises(self.origin_error):
+            jobs.session.mesh_source_target(binding)
+
+    def test_source_authority_requires_exact_export_metadata(self):
+        request_id, _ = self.captured_source_result()
+        jobs = self.runtime.state.model_jobs
+        binding = self.store.get(request_id).intent.mesh_sources[0]
+        forged = replace(binding, mesh_source=replace(binding.mesh_source, file_sha256="f" * 64))
+        with self.assertRaises(self.origin_error):
+            jobs.session.mesh_source_target(forged)
+        self.assertIsNotNone(jobs.session.mesh_source_target(binding))

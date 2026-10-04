@@ -788,6 +788,9 @@ def process_model_jobs():
         return
     _prune_ui_estimates()
     jobs.poll()
+    for view in jobs.views.values():
+        if not any(existing is view for existing in runtime.state.jobs_view):
+            runtime.state.jobs_view.insert(0, view)
     for key, ticket in tuple(runtime.state.model_previews.items()):
         if not ticket.task.done():
             continue

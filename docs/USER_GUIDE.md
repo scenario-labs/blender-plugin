@@ -107,7 +107,7 @@ Where things are:
 
 - **Scenario**: what to generate. Lane tabs with Scenario's modality icons, laid out Image / Video / 3D, Audio / Materials, Render Image / Render Video, Blockout. Below the tabs, the form of the lane.
 - **Jobs**: what is running, all lanes together, with a count in the header: "Prompt Spark is writing the look", "uploading and submitting", "rendering 40%".
-- **Generations**: what came back. Each entry has a header (type icon, start of the prompt, price, a collapse arrow), the model, the asset id (click it to copy), a failure marker when something went wrong, the output thumbnail and the actions of its kind (images: View image, Use as reference (3D image to 3D, Image, Video, Render Image style, Render Video style), Remove background, Apply as texture, Add as plane; 3D: Add to scene, Select, Delete; video: Play, Play in Blender, Add video strip; audio: Play, Add to sequencer; materials: Tiling). The refresh button **reloads the parameters**: lane, model, prompt, every setting sent and the references come back into the form, ready to tweak and generate again. Objects a generation created are stamped with its id on import, so Select and Delete find them after renames. The info button opens Details: the full prompt, the settings sent, the references with their asset ids, the result assets, the files, the errors. Collapse an entry to keep only its icon and prompt. **Collapse all / Expand all** changes every entry from the panel header. A failed entry has a red error control: hover for the message, or click to read and copy the full text. Turn on **Project history (cloud)** to see generations made elsewhere. Matching shared saved jobs offer **Inspect saved jobs**, followed by explicit recovery and destination approval; unmatched cloud rows retain **Download and open** as described below.
+- **Generations**: what came back. Each entry has a header (type icon, start of the prompt, price, a collapse arrow), the model, the asset id (click it to copy), a failure marker when something went wrong, the output thumbnail and the actions of its kind (images: View image, Use as reference (3D image to 3D, Image, Video, Render Image style, Render Video style), Remove background, Apply as texture, Add as plane; 3D: Add to scene, Select, Delete; video: Play, Play in Blender, Add video strip; audio: Play, Add to sequencer; materials: Tiling). The refresh button **reloads the parameters**: lane, model, prompt, every setting sent and the references come back into the form, ready to tweak and generate again. Objects a generation created are stamped with its id on import, so Select and Delete find them after renames. The info button opens Details: the full prompt, the settings sent, the references with their asset ids, the result assets, the files, the errors. Collapse an entry to keep only its icon and prompt. **Collapse all / Expand all** changes every entry from the panel header. A failed entry has a red error control: hover for the message, or click to read and copy the full text. Then, with the Project history (cloud) checkbox on, the project's cloud history: generations made on the web app, by agents or on another machine, with **Save for recovery** for completed model jobs. Saved jobs use explicit download and destination approval; see [Generations](#generations).
 
 - **Agents (MCP)**: the local MCP server, its token, one-click client setups, the Python permission.
 
@@ -407,9 +407,13 @@ destination before applying a result. This also works after restarting Blender.
 Opening the saved job does not generate again, resume an inactive download or
 import into the current scene. An older cached copy cannot bypass its result approval.
 
-Cloud jobs without a matching saved record still offer the earlier **Download
-and open** path. That path is not yet integrated with durable result approvals;
-it does not establish the release's complete cloud-history acceptance.
+For a completed cloud model job without a saved record, choose **Save for
+recovery**. This reads the job into local saved history without downloading files
+or changing your scene. Then use **Inspect saved jobs**, resume its download and
+review the result destination before applying. Repeated reads preserve the same
+record. A read error permits another read, never another paid generation.
+Cloud recovery does not recover an original mesh-edit target from another session.
+Native desktop interaction and live provider acceptance remain separate checks.
 
 ![Generations list with result prompts, credit amounts and Import into scene buttons](images/panel-generations.png)
 

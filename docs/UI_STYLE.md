@@ -101,7 +101,7 @@ Each result collapses on its own; the panel header has a **Collapse all / Expand
 
 ## Wording
 
-- Verbs on buttons say exactly what happens: `Generate`, `Add to scene`, `Use as reference`, `Refresh cloud`, `Download and open`.
+- Verbs on buttons say exactly what happens: `Generate`, `Add to scene`, `Use as reference`, `Refresh cloud`, `Save for recovery`.
 - Singular/plural is correct: `1 Job` / `3 Jobs`, `Applies to 1 selected mesh`.
 - Prompt helpers request a free exact server price first. Show the formatted CU amount below the tools with a separate action-labelled approval button. Do not use a fixed price or a tooltip as spending authorization. Keep pending/error text readable; an uncertain job offers inspection, never automatic resubmission.
 - CU labels follow the web generation indicator: up to three decimal places,
@@ -783,3 +783,29 @@ saved-job routing for late shared-view acknowledgements, and verify storage
 failure/retry and credential-change invalidation. The existing screenshots and
 desktop interaction evidence above belong to the preceding ZIP; desktop input
 on the changed artifact remains unverified.
+
+## Completed cloud job recovery controls
+
+A successful cloud row without a scoped record offers **Save for recovery**.
+While its shared worker reads the job, the disabled label is **Reading cloud
+job...**. Success exposes **Inspect saved jobs** and a paused recovery record;
+download and destination approval remain separate. A sanitized read error allows
+an explicit retry. Legacy cache rows and files cannot substitute their old
+actions or hide this control. Drawing only inspects the current store/facade.
+
+The screenshot below is an installed macOS arm64 Blender 5.1.2 rendering check
+with synthetic transport, using ZIP SHA-256
+`23e4d1865714f524d0fedcdf7438f40f8cd6fd2296f52876063da5ca818aafbb`.
+The later duplicate-row guard changes no visible layout in this fixture. No job,
+download, submission or scene mutation occurred; the isolated process exited
+cleanly and its normal-profile fingerprint was unchanged. The pending estimate
+label belongs to frozen fixture state and is not a live performance observation.
+
+Native mouse/keyboard input, focus and before/after interaction proof remain
+pending: path-specific computer control returned `cgWindowNotFound`. A generic
+bundle-ID retry was rejected because it could target the normal-profile app.
+An earlier test-only lane enum mistake was corrected before this rendered run.
+The installed functional matrix is recorded in the PR, separately from desktop
+and live-provider acceptance.
+
+![Cloud history offers Save for recovery while the scene remains unchanged](images/cloud-history-recovery-controls.png)

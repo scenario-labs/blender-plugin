@@ -67,6 +67,9 @@ class ModelGenerationTests(unittest.TestCase):
             self.calls.append(request)
             if request.method == "GET":
                 if "/jobs/" in request.url.path:
+                    if getattr(self, "block_cloud_read", False):
+                        self.entered.set()
+                        self.assertTrue(self.release.wait(5))
                     return httpx.Response(
                         200,
                         json={
@@ -272,6 +275,98 @@ class ModelGenerationTests(unittest.TestCase):
         self.assertEqual(len(set(bpy.data.images) - before), 1)
         self.assertEqual(self.paid, [])
         self.assertTrue(all(request.method == "GET" for request in self.calls))
+
+    def test_native_cloud_recovery_and_mcp_repeat_use_one_saved_record_without_application(self):
+        self.result_fixture()
+        before = set(bpy.data.images)
+        self.assertEqual(
+            bpy.ops.scenario.import_result(job_id="cloud-ui", model_id=self.model["id"]),
+            {"FINISHED"},
+        )
+        owner = self.runtime.state.model_jobs
+        owner.cloud_reads["cloud-ui"].task.result(5)
+        self.generation.process_model_jobs()
+        record = self.store.records()[0]
+        self.assertEqual(record.intent.source, "cloud")
+        self.assertEqual(record.state, self.storemod.JobState.SUCCEEDED)
+        self.assertTrue(owner.status(record.intent.request_id)["delivery_paused"])
+        self.assertIs(self.runtime.state.jobs_view[0], owner.views[record.intent.request_id])
+        self.runtime.state.reset()
+        deferred = self.tools.recover_cloud_job(
+            {"job_id": "cloud-ui", "model_id": self.model["id"]}
+        )
+        result = deferred.finish(deferred.run())
+        self.assertEqual(result["request_id"], record.intent.request_id)
+        self.assertEqual(self.store.records(), (record,))
+        self.assertEqual(set(bpy.data.images), before)
+        self.assertFalse(self.downloads or self.paid)
+        self.assertEqual(len(self.calls), 2)
+
+    def test_pending_native_and_mcp_cloud_reads_share_one_worker(self):
+        self.result_fixture()
+        self.block_cloud_read = True
+        self.release.clear()
+        try:
+            bpy.ops.scenario.import_result(job_id="cloud-pending", model_id=self.model["id"])
+            self.assertTrue(self.entered.wait(5))
+            owner = self.runtime.state.model_jobs
+            item = owner.cloud_reads["cloud-pending"]
+            deferred = self.tools.recover_cloud_job(
+                {"job_id": "cloud-pending", "model_id": self.model["id"]}
+            )
+            self.assertIs(owner.cloud_reads["cloud-pending"], item)
+            self.assertEqual(len(self.calls), 1)
+        finally:
+            self.release.set()
+        result = deferred.finish(deferred.run())
+        self.assertEqual(len(self.store.records()), 1)
+        self.assertEqual(result["state"], "succeeded")
+        self.assertFalse(self.downloads or self.paid)
+
+    def test_cloud_read_failure_is_sanitized_and_explicit_retry_is_read_only(self):
+        self.result_fixture()
+        deferred = self.tools.recover_cloud_job(
+            {"job_id": "cloud-retry", "model_id": "wrong-model"}
+        )
+        deferred.run()
+        with self.assertRaisesRegex(self.request_error, "Could not read this cloud job"):
+            deferred.finish(None)
+        self.assertFalse(self.store.records())
+        deferred = self.tools.recover_cloud_job(
+            {"job_id": "cloud-retry", "model_id": self.model["id"]}
+        )
+        result = deferred.finish(deferred.run())
+        self.assertEqual(result["source"], "cloud")
+        self.assertEqual(len(self.calls), 2)
+        self.assertFalse(self.downloads or self.paid)
+
+    def test_cloud_read_completion_cannot_follow_changed_credentials(self):
+        self.result_fixture()
+        deferred = self.tools.recover_cloud_job(
+            {"job_id": "cloud-scope", "model_id": self.model["id"]}
+        )
+        deferred.run()
+        saved = self.store.records()
+        self.assertEqual(len(saved), 1)
+        self.prefs.api_secret = "different-fixture-secret"
+        with self.assertRaisesRegex(self.request_error, "context changed"):
+            deferred.finish(None)
+        self.assertEqual(self.store.records(), saved)
+        self.assertFalse(self.runtime.ensure_job_store().records())
+        self.assertFalse(self.downloads or self.paid)
+
+    def test_cloud_read_completes_after_view_closure_without_applying(self):
+        self.result_fixture()
+        owner = self.runtime.ensure_model_jobs()
+        item = owner.recover_cloud("cloud-closed", self.model["id"], bpy.context.scene)
+        self.runtime.state.jobs_view.clear()
+        item.task.result(5)
+        self.runtime.sync_catalog_context()
+        self.assertFalse(item.pending)
+        self.assertIsNone(item.record.intent.quote_cost)
+        self.assertEqual(self.runtime.state.jobs_view[0].local_id, item.record.intent.request_id)
+        self.assertTrue(owner.status(item.record.intent.request_id)["delivery_paused"])
+        self.assertFalse(self.downloads or self.paid)
 
     def test_stale_origin_downloads_but_does_not_apply_or_resubmit(self):
         self.result_fixture()

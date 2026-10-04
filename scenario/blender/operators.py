@@ -268,8 +268,10 @@ class SCENARIO_OT_history_older(bpy.types.Operator):
 
 class SCENARIO_OT_import_result(bpy.types.Operator):
     bl_idname = "scenario.import_result"
-    bl_label = "Import into scene"
-    bl_description = "Download this generation (if needed) and bring it into the scene"
+    bl_label = "Save for recovery"
+    bl_description = (
+        "Read this completed cloud job into saved jobs, then review its download and destination"
+    )
     job_id: StringProperty()
     kind: StringProperty(default="image")
     model_id: StringProperty()
@@ -280,46 +282,21 @@ class SCENARIO_OT_import_result(bpy.types.Operator):
         return _network_poll(cls, context) and context.mode == "OBJECT"
 
     def execute(self, context):
-        from ..core.jobs.records import JobRecord
-        from . import handlers, history
+        from . import history
 
         try:
             if history.saved_matches(self.job_id):
                 runtime.inspect_model_jobs()
                 self.report({"INFO"}, "Inspect the saved job and approve its result destination")
                 return {"FINISHED"}
+            jobs = runtime.ensure_model_jobs()
+            jobs.recover_cloud(self.job_id, self.model_id, context.scene)
         except Exception:
-            self.report({"ERROR"}, "Could not inspect saved jobs; preserve storage for recovery")
+            self.report({"ERROR"}, "Could not inspect saved jobs or start the cloud read")
             return {"CANCELLED"}
-
-        manager = runtime.ensure_manager()
-        existing = next(
-            (r for r in manager.registry.all() if r.job_id == self.job_id and r.files), None
+        self.report(
+            {"INFO"}, "Reading cloud job; inspect saved jobs before download and application"
         )
-        if existing is not None:
-            existing.meta["target_objects"] = [
-                o.name for o in context.selected_objects if o.type == "MESH"
-            ]
-            handlers.dispatch(("job_done", existing))
-            return {"FINISHED"}
-        rec = JobRecord.new(
-            lane=self.kind,
-            kind=self.kind,
-            model_id=self.model_id,
-            body={},
-            meta={"prompt": self.prompt, "model_name": self.model_id},
-        )
-        rec.job_id, rec.status = self.job_id, "in-progress"
-        rec.meta["target_objects"] = [o.name for o in context.selected_objects if o.type == "MESH"]
-        manager.registry.add(rec)
-        manager.registry.save()
-        try:
-            manager.track(rec)
-        except ScenarioError as err:
-            self.report({"ERROR"}, err.reason)
-            return {"CANCELLED"}
-        runtime.state.jobs_view.insert(0, rec)
-        self.report({"INFO"}, "Downloading generation")
         return {"FINISHED"}
 
 

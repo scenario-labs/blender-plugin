@@ -262,6 +262,50 @@ class SDKHistoryTests(unittest.TestCase):
         self.runtime.sync_catalog_context()
         self.assertIsNone(self.runtime.state.history_saved_ids)
 
+    def test_unsaved_cloud_draw_ignores_legacy_files_and_offers_only_recovery(self):
+        from test_model_picker import FakeLayout
+
+        self.legacy_collision()
+        self.history.refresh()
+        self.deliver()
+        layout = FakeLayout()
+        panels = submodule("blender.panels")
+        with (
+            patch.object(panels, "thumbnail", side_effect=AssertionError("Legacy file read")),
+            patch.object(panels, "draw_result", side_effect=AssertionError("Legacy actions")),
+            patch.object(
+                self.runtime, "ensure_model_jobs", side_effect=AssertionError("Draw mutation")
+            ),
+        ):
+            panels.draw_history(layout, bpy.context)
+        operators = [call for node in layout.walk() for call in node.named("operator")]
+        self.assertTrue(
+            any(
+                call[1][0] == "scenario.import_result"
+                and call[2].get("text") == "Save for recovery"
+                for call in operators
+            )
+        )
+        self.assertEqual(self.tools.list_generations({})["generations"][0]["local_files"], [])
+        self.assertFalse(self.runtime.state.job_store.records())
+
+    def test_legacy_session_row_cannot_hide_cloud_recovery_controls(self):
+        from types import SimpleNamespace
+
+        from test_model_picker import FakeLayout
+
+        legacy = self.legacy_collision()
+        self.runtime.state.jobs_view.append(legacy)
+        self.history.refresh()
+        self.deliver()
+        bpy.context.scene.scenario.show_cloud_history = True
+        layout = FakeLayout()
+        panels = submodule("blender.panels")
+        with patch.object(panels, "draw_result"):
+            panels.SCENARIO_PT_generations.draw(SimpleNamespace(layout=layout), bpy.context)
+        operators = [call[1][0] for node in layout.walk() for call in node.named("operator")]
+        self.assertIn("scenario.import_result", operators)
+
     def test_saved_acknowledgement_after_page_load_overrides_stale_legacy_projection(self):
         from test_model_picker import FakeLayout
 

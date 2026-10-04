@@ -99,8 +99,9 @@ record and can safely retry without spending.
 
 `JobWorkers` and `JobSession` queue this command through their existing bounded
 pool. A saved record then uses ordinary manifest/download recovery and explicit
-destination approval. This foundation does not yet expose a native history
-action or MCP adoption tool, and does not establish provider/live acceptance.
+destination approval. Native history **Save for recovery** and MCP
+`recover_cloud_job` now call this command through the same `ModelJobs` facade.
+This does not establish provider/live acceptance.
 
 ## Restart inspection and known-job refresh
 

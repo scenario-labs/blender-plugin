@@ -654,8 +654,6 @@ def wait_for_job(args):
 
 
 def import_result(args):
-    from ..blender import handlers
-
     reference = _job_ref(args)
     if not runtime.credentials().valid:
         raise ScenarioError(
@@ -666,12 +664,38 @@ def import_result(args):
             "Use prepare_result_application and explicit destination approval for saved results; "
             "use prepare_blockout_plan for saved Blockout text"
         )
-    rec = _find(reference)
-    if not rec.files:
-        raise ValueError("This job has no downloaded files yet")
-    rec.meta["target_objects"] = [o.name for o in bpy.context.selected_objects if o.type == "MESH"]
-    handlers.dispatch(("job_done", rec))
-    return {"applied": rec.kind, "files": list(rec.files)}
+    raise ValueError(
+        "Use recover_cloud_job with the remote job and model IDs, then explicit destination "
+        "approval; cached prototype files cannot authorize application"
+    )
+
+
+def recover_cloud_job(args):
+    jobs = runtime.ensure_model_jobs()
+    item = jobs.recover_cloud(args["job_id"], args["model_id"], bpy.context.scene)
+
+    def finish(_):
+        if runtime.ensure_model_jobs() is not jobs:
+            raise ScenarioError(0, "The cloud recovery context changed; inspect saved jobs")
+        record = jobs.finish_cloud(item)
+        generation.process_model_jobs()
+        return {
+            "context_id": runtime.state.job_context_id,
+            "request_id": record.intent.request_id,
+            "job_id": record.remote_job_id,
+            "revision": record.revision,
+            "state": record.state.value,
+            "source": getattr(record.intent, "source", "generation"),
+            "note": "Saved for explicit recovery; this read did not download or apply anything",
+        }
+
+    def run():
+        try:
+            item.task.result()
+        except Exception:
+            pass  # The main-thread finisher reports the owned, sanitized failure.
+
+    return DeferredTool(run, finish)
 
 
 def capture_reference(args):
@@ -793,9 +817,7 @@ def list_generations(args):
                 "prompt": e.prompt,
                 "status": e.status,
                 "cu_cost": e.cu_cost,
-                "local_files": []
-                if e.job_id in saved_ids or e.local_request_ids
-                else e.local_files,
+                "local_files": [],
                 "local_request_ids": saved_ids.get(e.job_id, list(e.local_request_ids)),
             }
             for e in runtime.state.history[:limit]
@@ -1208,7 +1230,7 @@ SPECS = (
             "  - approved_cost: required, the exact cu_cost_exact string explicitly approved by the user.\n"
             "Returns: local_id, status, lane, model_id and note. All model jobs poll and download through the shared session. Only the Image lane imports verified PNG/EXR images automatically into the unchanged origin. Other lanes stop at saved ready results; their scene application remains separate. Render lanes take explicit model inputs without UI capture or Prompt Spark preparation.\n"
             'Example: {"lane": "image", "model_id": "model_example", "parameters": {"prompt": "a wooden crate"}, "quote_id": "quote_from_estimate", "approved_cost": "1.25"}.\n'
-            "Do not call before estimate_cost and explicit spending approval. Do not repeat a timed-out submission. Use prepare_result_application for saved PNG/EXR imports; import_result is for prototype records only.\n"
+            "Do not call before estimate_cost and explicit spending approval. Do not repeat a timed-out submission. Use prepare_result_application for saved-result imports.\n"
             "Platform equivalent: model_run."
         ),
         _schema(
@@ -1260,15 +1282,32 @@ SPECS = (
         {"readOnlyHint": True},
     ),  # touches bpy (paths, manager): main thread
     ToolSpec(
+        "recover_cloud_job",
+        (
+            "Read one completed cloud model job into the selected credential-scoped saved jobs.\n"
+            "Args:\n"
+            "  - job_id: required string, the exact remote job ID from list_generations.\n"
+            "  - model_id: required string, that row's model ID, verified against the fresh SDK response.\n"
+            "Returns: context_id, request_id, job_id, revision, state, source and note. Existing saved records are preserved; repeated reads do not duplicate them. No local quote is invented and this never submits generation, downloads media or changes the scene.\n"
+            'Example: {"job_id": "job_example", "model_id": "model_example"}.\n'
+            "Inspect list_local_jobs next. Use recover_local_job to resume downloads, then prepare_result_application and explicit destination approval. Failed reads may be retried; uncertain generation submissions must not be repeated.\n"
+            "Platform equivalent: job_get followed by local recovery storage."
+        ),
+        _schema(
+            {"job_id": {"type": "string"}, "model_id": {"type": "string"}}, ["job_id", "model_id"]
+        ),
+        recover_cloud_job,
+    ),
+    ToolSpec(
         "import_result",
         (
-            "Apply a downloaded prototype generation again to the current Blender scene and selection.\n"
+            "Reject direct cached-file import and explain the required saved-result approval flow.\n"
             "Args:\n"
             "  - job_id: optional string, a Scenario job id or local_id returned by generate.\n"
             "  - id: optional string, compatibility alias; provide job_id or id. job_id takes precedence.\n"
-            "Returns: applied (result kind), files. Raises ValueError if no downloaded files exist.\n"
+            "Returns: an error directing the caller to explicit destination approval; no scene mutation.\n"
             'Example: {"job_id": "job_example"}.\n'
-            "Do not use for the initial automatic application. Use only for prototype records when the user wants another copy or to apply a material to the current mesh selection. Shared jobs reject this tool; use prepare_result_application for saved PNG/EXR images or a selected MP4/WebM video or MP3/WAV/OGG sound asset. Static embedded GLB import uses the same asset approval. In-place editing and material application remain separate.\n"
+            "Use recover_cloud_job for a completed cloud row that is not yet saved. For saved jobs, use prepare_result_application and approve its exact destination. Cached prototype files cannot authorize application.\n"
             "No platform equivalent."
         ),
         _schema({**_JOB_REF}),
@@ -1302,7 +1341,7 @@ SPECS = (
             "Args:\n"
             "  - limit: optional integer, default 20, maximum number of rows to return.\n"
             "  - refresh: optional boolean, request a new cloud page or retry a failed read; then poll without refresh.\n"
-            "Returns: generations[] with job_id, kind, model_id, prompt, status, cu_cost, local_files and local_request_ids. Matching scoped saved jobs expose request IDs instead of unverified legacy file paths; inspect list_local_jobs and use explicit result approval. The first call may return an empty list and a note while history loads; call again after loading.\n"
+            "Returns: generations[] with job_id, kind, model_id, prompt, status, cu_cost, empty local_files and local_request_ids. Matching scoped saved jobs expose request IDs; inspect list_local_jobs and use explicit result approval. Use recover_cloud_job for unsaved completed model jobs. The first call may return an empty list and a note while history loads; call again after loading.\n"
             'Example: {"limit": 10}.\n'
             "Prefer job_status for a tracked active generation; this is not a fresh platform-wide history query on every call.\n"
             "Platform equivalent: jobs_list."

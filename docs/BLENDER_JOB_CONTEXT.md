@@ -60,8 +60,14 @@ Once saved, cloud records survive restart and use the existing inspection,
 explicit download and fresh destination-approval commands. Status distinguishes
 `source: cloud` from `generation`; cloud costs remain unknown (`None`), never a
 synthetic zero. The native recovery view omits the missing cost. A cloud record
-cannot recover original mesh-source ownership from remote metadata. History and
-MCP adoption entry points still need to call this command explicitly.
+cannot recover original mesh-source ownership from remote metadata.
+
+`ModelJobs.recover_cloud` connects native history and MCP to this command.
+Pending reads of the same remote job/model share one task. Up to 16 retained
+reads expose pending/sanitized failure state, and the normal application pump
+attaches a successful saved-job view in paused recovery state. Closing the panel
+does not own the worker. A retired credential context cannot deliver a late read
+into its replacement. No adoption read joins automatic image application.
 
 ## Blockout plan commands
 

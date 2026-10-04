@@ -129,6 +129,15 @@ The strings are returned to the caller; no local prompt cache or automatic paid
 fallback is created. A process crash can leave private temporary staging for
 later cleanup, as with other interrupted transfers.
 
+[Model text recovery](JOB_COORDINATOR.md#model-text-recovery) uses the same
+reader for one explicitly selected output. SDK 2.2.0 exposes text classification
+as top-level `kind`, separately from `mimeType`; the old nested `type.kind` shape
+does not qualify. An explicit `properties.hasFullPreview=true` permits the whole
+preview; otherwise a bounded full-body read must succeed. There is no fallback
+to a truncated prefix. Integral numeric byte counts are normalized to integers
+before transfer. This reader returns text and leaves scene application to its
+caller; it does not adopt the prototype Blockout path on its own.
+
 ## Texture result semantics
 
 The selected SDK 2.2.0's public `assets.with_raw_response.retrieve` response keeps

@@ -120,6 +120,20 @@ the selected JobSession, preserving the same raw SDK estimate. Explicit shared m
 submission consumes that quote through the coordinator; no endpoint exception,
 new dependency or retry policy is introduced.
 
+## Shared model text reads
+
+The shared coordinator's [model text reader](JOB_COORDINATOR.md#model-text-recovery)
+uses the same pinned SDK `jobs.with_raw_response.retrieve` and
+`assets.with_raw_response.retrieve` methods. The selected model output must occur
+in `metadata.assetIds`; its asset must report top-level `kind="text"` and
+`mimeType="text/plain"`. `properties.hasFullPreview` controls whether the preview
+is complete; otherwise the existing credential-free bounded storage downloader
+reads the full body. These fields are established by the published 2.2.0 types
+and the [asset API contract](https://docs.scenario.com/api/python/resources/assets/methods/retrieve).
+No SDK extension, new raw API exception, dependency or retry change is needed.
+This read-only command does not establish live provider acceptance or wire the
+Blockout generation operators.
+
 ## Active history reads
 
 UI refresh/load-older and MCP `list_generations` use the same connection and

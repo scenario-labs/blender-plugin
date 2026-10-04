@@ -191,6 +191,14 @@ class JobWorkers:
             self._coordinator.read_prompt_results, request_id, expected_revision=expected_revision
         )
 
+    def read_model_text(self, request_id, *, expected_revision, asset_id):
+        return self._enqueue(
+            self._coordinator.read_model_text,
+            request_id,
+            expected_revision=expected_revision,
+            asset_id=asset_id,
+        )
+
     def load_results(self, request_id, *, expected_revision):
         return self._enqueue(
             self._coordinator.load_results, request_id, expected_revision=expected_revision

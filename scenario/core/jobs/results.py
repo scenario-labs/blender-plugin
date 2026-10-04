@@ -34,6 +34,15 @@ class PromptResults:
     prompts: tuple[str, ...] = field(repr=False)
 
 
+@dataclass(frozen=True)
+class ModelTextResult:
+    """One explicitly selected text asset; retrieval never applies or resubmits it."""
+
+    record: StoredJob
+    asset_id: str
+    text: str = field(repr=False)
+
+
 def _prompt_text(value):
     if not isinstance(value, str) or not value.strip():
         raise ResultError("Scenario returned no usable prompt text")
@@ -140,35 +149,81 @@ class ResultCommands:
                     raise ResultError(
                         "Scenario returned an invalid prompt asset identity"
                     ) from None
-                text = self._read_prompt_asset(text)
+                text = self._read_text_asset(text)
             prompts.append(text)
         with self._guard():
             if self._store.get(request_id) != current:
                 raise StoreConflict("Prompt result changed; reload before acting")
             return PromptResults(current, tuple(prompts))
 
-    def _read_prompt_asset(self, identifier):
+    def read_model_text(self, request_id, *, expected_revision, asset_id):
+        """Read complete text from an explicitly selected successful model output."""
+        current = self._current(
+            request_id,
+            expected_revision,
+            {
+                JobState.SUCCEEDED,
+                JobState.DOWNLOAD_FAILED,
+                JobState.READY,
+                JobState.APPLY_FAILED,
+                JobState.APPLIED,
+            },
+        )
+        if current.intent.operation != "model":
+            raise ResultError("Choose a completed model job")
+        try:
+            _identity(asset_id)
+        except ValueError:
+            raise ResultError("Choose a valid result asset identity") from None
+        job = self._request(self._adapter.job, current.remote_job_id)
+        if job.get("jobId") != current.remote_job_id or job.get("status") != "success":
+            raise ResultError("Scenario did not confirm this successful model job")
+        metadata = job.get("metadata")
+        identifiers = metadata.get("assetIds") if isinstance(metadata, dict) else None
+        if not isinstance(identifiers, list) or not 1 <= len(identifiers) <= 128:
+            raise ResultError("The model job has no supported bounded asset result list")
+        try:
+            for identifier in identifiers:
+                _identity(identifier)
+            if len(set(identifiers)) != len(identifiers) or asset_id not in identifiers:
+                raise ValueError
+            if current.results and asset_id not in {
+                item.asset.asset_id for item in current.results
+            }:
+                raise ValueError
+        except ValueError:
+            raise ResultError("The selected text asset does not match this saved job") from None
+        text = self._read_text_asset(asset_id)
+        with self._guard():
+            if self._store.get(request_id) != current:
+                raise StoreConflict("Model result changed; reload before acting")
+            return ModelTextResult(current, asset_id, text)
+
+    def _read_text_asset(self, identifier):
         asset = self._request(self._adapter.asset, identifier)
-        kind = asset.get("type")
         if (
             asset.get("id") != identifier
             or asset.get("status") != "success"
-            or not isinstance(kind, dict)
-            or kind.get("kind") != "text"
+            or asset.get("kind") != "text"
             or asset.get("mimeType") != "text/plain"
         ):
-            raise ResultError("Scenario returned an unavailable or unsupported prompt asset")
+            raise ResultError("Scenario returned an unavailable or unsupported text asset")
         props = asset.get("properties")
         if not isinstance(props, dict):
-            raise ResultError("Scenario returned no prompt asset properties")
+            raise ResultError("Scenario returned no text asset properties")
         if props.get("hasFullPreview") is True:
             text = _prompt_text(props.get("preview"))
         else:
             size = props.get("size")
-            if type(size) is not int or not 0 < size <= MAX_PROMPT_BYTES:
-                raise ResultError("Scenario returned an invalid or oversized prompt asset")
+            if (
+                type(size) not in {int, float}
+                or not 0 < size <= MAX_PROMPT_BYTES
+                or int(size) != size
+            ):
+                raise ResultError("Scenario returned an invalid or oversized text asset")
+            size = int(size)
             if self._downloader is None:
-                raise ResultError("Prompt result storage has not been configured")
+                raise ResultError("Text result storage has not been configured")
             # Dedicated private staging never reuses names from the remote asset.
             # Context-managed cleanup runs on success, failure and control exceptions.
             try:
@@ -192,11 +247,11 @@ class ResultCommands:
                         len(data) != receipt.size
                         or hashlib.sha256(data).hexdigest() != receipt.sha256
                     ):
-                        raise ResultError("Prompt result changed while reading")
+                        raise ResultError("Text result changed while reading")
                     text = _prompt_text(data.decode("utf-8"))
             except Exception:
                 raise ResultError(
-                    "Full prompt text could not be read; retry retrieval without generating again"
+                    "Full text could not be read; retry retrieval without generating again"
                 ) from None
         if _prompt_asset_id(text.strip()):
             raise ResultError("Scenario returned an asset reference instead of prompt text")

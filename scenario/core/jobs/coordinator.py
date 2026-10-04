@@ -274,6 +274,11 @@ class JobCoordinator:
     def read_prompt_results(self, request_id, *, expected_revision):
         return self._results.read_prompts(request_id, expected_revision=expected_revision)
 
+    def read_model_text(self, request_id, *, expected_revision, asset_id):
+        return self._results.read_model_text(
+            request_id, expected_revision=expected_revision, asset_id=asset_id
+        )
+
     def load_results(self, request_id, *, expected_revision):
         return self._results.load_manifest(request_id, expected_revision=expected_revision)
 

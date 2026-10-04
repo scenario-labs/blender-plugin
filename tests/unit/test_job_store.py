@@ -21,6 +21,7 @@ from scenario.core.jobs.store import (
     JobScope,
     JobState,
     JobStore,
+    LocalApplicationState,
     ResultAsset,
     StoreConflict,
     StoreError,
@@ -341,7 +342,7 @@ def test_missing_fields_cannot_reset_inflight_state_to_prepared(store, tmp_path,
         store.transition(intent.request_id, expected_revision=1, state=JobState.SUBMITTING)
 
 
-def make_ready(store, intent):
+def make_ready(store, intent, *, texture_role=None):
     record = store.create(intent)
     for state in (JobState.SUBMITTING, JobState.REMOTE, JobState.SUCCEEDED):
         record = advance(
@@ -352,7 +353,7 @@ def make_ready(store, intent):
         )
     record = store.set_results(
         intent.request_id,
-        (ResultAsset("asset", "result.png", "image/png"),),
+        (ResultAsset("asset", "result.png", "image/png", texture_role=texture_role),),
         expected_revision=record.revision,
     )
     record = advance(store, record, JobState.DOWNLOADING)
@@ -372,10 +373,12 @@ def legacy_store(path, version):
             "SELECT scope, request_id, record FROM jobs"
         ).fetchall():
             value = json.loads(raw)
+            del value["local_applications"]
             if version == 2:
                 del value["application_origin"]
-            for item in value["results"]:
-                del item["asset"]["texture_role"]
+            if version in {2, 3}:
+                for item in value["results"]:
+                    del item["asset"]["texture_role"]
             connection.execute(
                 "UPDATE jobs SET record=? WHERE scope=? AND request_id=?",
                 (json.dumps(value), scope, request_id),
@@ -383,7 +386,7 @@ def legacy_store(path, version):
         connection.execute(f"PRAGMA user_version={version}")
 
 
-@pytest.mark.parametrize("version", [2, 3])
+@pytest.mark.parametrize("version", [2, 3, 4])
 def test_shared_store_upgrade_preserves_all_scopes_states_and_receipts(tmp_path, intent, version):
     path = tmp_path / "jobs.sqlite3"
     expected = {}
@@ -404,7 +407,7 @@ def test_shared_store_upgrade_preserves_all_scopes_states_and_receipts(tmp_path,
                 if state == JobState.UNCERTAIN:
                     record = advance(scoped, record, state)
             else:
-                record = make_ready(scoped, item)
+                record = make_ready(scoped, item, texture_role="normal" if version == 4 else None)
                 if state != JobState.READY:
                     record = advance(scoped, record, JobState.APPLYING)
                 if state in {JobState.APPLY_FAILED, JobState.APPLIED}:
@@ -415,11 +418,11 @@ def test_shared_store_upgrade_preserves_all_scopes_states_and_receipts(tmp_path,
     for scope, records in expected.items():
         assert JobStore(path, scope).records() == records
     with sqlite3.connect(path) as connection:
-        assert connection.execute("PRAGMA user_version").fetchone()[0] == 4
+        assert connection.execute("PRAGMA user_version").fetchone()[0] == 5
 
 
 @pytest.mark.parametrize("damage", ["commit", "scope", "revision", "record", "foreign", "v1"])
-@pytest.mark.parametrize("version", [2, 3])
+@pytest.mark.parametrize("version", [2, 3, 4])
 def test_shared_store_upgrade_failure_preserves_every_row_and_version(
     tmp_path, intent, monkeypatch, damage, version
 ):
@@ -646,3 +649,258 @@ def test_v3_upgrade_preserves_a_recovered_application_destination(tmp_path, inte
     assert reopened == claim
     assert reopened.application_origin == destination
     assert reopened.results[0].asset.texture_role is None
+
+
+def completed_result(store, intent):
+    ready = make_ready(store, intent)
+    return advance(store, advance(store, ready, JobState.APPLYING), JobState.APPLIED)
+
+
+def reuse(store, record, **changes):
+    arguments = {
+        "expected_revision": record.revision,
+        "application_id": "local-one",
+        "destination": JobOrigin("new-file", "new-scene", "new-revision", "new-target"),
+        "purpose": "world",
+        "asset_ids": ("asset",),
+        **changes,
+    }
+    return store.claim_local_application(record.intent.request_id, **arguments)
+
+
+@pytest.mark.parametrize("outcome", [LocalApplicationState.APPLIED, LocalApplicationState.FAILED])
+def test_local_reuse_keeps_generation_completed_and_history_survives_restart(
+    store, intent, tmp_path, outcome
+):
+    original = completed_result(store, intent)
+    claimed = reuse(store, original)
+    assert replace(claimed, revision=original.revision, local_applications=()) == original
+    assert claimed.local_applications[0].source_revision == original.revision
+    reopened = JobStore(tmp_path / "jobs.sqlite3", store.scope)
+    assert reopened.get(intent.request_id) == claimed
+    with pytest.raises(StoreConflict, match="unfinished"):
+        reuse(reopened, claimed, application_id="local-two")
+    finished = reopened.finish_local_application(
+        intent.request_id,
+        expected_revision=claimed.revision,
+        application_id="local-one",
+        state=outcome,
+    )
+    assert finished.state == JobState.APPLIED
+    assert finished.local_applications == (replace(claimed.local_applications[0], state=outcome),)
+    with pytest.raises(StoreConflict):
+        reuse(store, original, application_id="stale-review")
+    with pytest.raises(StoreConflict, match="already used"):
+        reuse(store, finished)
+    second = reuse(store, finished, application_id="local-two", purpose="images")
+    assert second.local_applications[:-1] == finished.local_applications
+    assert second.local_applications[-1].source_revision == finished.revision
+    assert JobStore(tmp_path / "jobs.sqlite3", store.scope).get(intent.request_id) == second
+    for state in (JobState.PREPARED, JobState.SUBMITTING, JobState.READY, JobState.APPLYING):
+        with pytest.raises(ValueError):
+            advance(store, second, state)
+
+
+def test_local_reuse_is_scoped_and_only_one_racing_claim_wins(store, intent, tmp_path):
+    original = completed_result(store, intent)
+    other = JobStore(tmp_path / "jobs.sqlite3", replace(store.scope, project_id="other-project"))
+    with pytest.raises(StoreConflict):
+        reuse(other, original)
+    owners = [JobStore(tmp_path / "jobs.sqlite3", store.scope) for _ in range(2)]
+    barrier = Barrier(2)
+
+    def claim(index):
+        barrier.wait(timeout=5)
+        try:
+            return reuse(owners[index], original, application_id=f"racer-{index}")
+        except StoreConflict:
+            return None
+
+    with ThreadPoolExecutor(max_workers=2) as workers:
+        results = tuple(workers.map(claim, range(2)))
+    assert sum(item is not None for item in results) == 1
+    current = store.get(intent.request_id)
+    assert current.revision == original.revision + 1
+    assert len(current.local_applications) == 1
+    assert other.get(intent.request_id) is None
+
+
+@pytest.mark.parametrize(
+    "change",
+    [
+        {"expected_revision": True},
+        {"application_id": "https://private.invalid/"},
+        {"purpose": "generate"},
+        {"asset_ids": ()},
+        {"asset_ids": ["asset"]},
+        {"asset_ids": ("asset", "asset")},
+        {"asset_ids": ("missing",)},
+        {"destination": None},
+        {"asset_ids": tuple(str(i) for i in range(129))},
+    ],
+)
+def test_invalid_local_reuse_preserves_completed_job(store, intent, change):
+    original = completed_result(store, intent)
+    with pytest.raises((ValueError, StoreConflict)):
+        reuse(store, original, **change)
+    assert store.get(intent.request_id) == original
+
+
+@pytest.mark.parametrize("state", [JobState.READY, JobState.APPLYING, JobState.APPLY_FAILED])
+def test_unfinished_original_application_cannot_be_bypassed_by_local_reuse(store, intent, state):
+    record = make_ready(store, intent)
+    if state != JobState.READY:
+        record = advance(store, record, JobState.APPLYING)
+    if state == JobState.APPLY_FAILED:
+        record = advance(store, record, state)
+    with pytest.raises(ValueError, match="completed"):
+        reuse(store, record)
+    assert store.get(intent.request_id) == record
+
+
+@pytest.mark.parametrize("committed", [False, True])
+@pytest.mark.parametrize("operation", ["claim", "finish"])
+def test_local_application_write_failure_never_authorizes_replay(
+    store, intent, monkeypatch, committed, operation
+):
+    original = completed_result(store, intent)
+    before = reuse(store, original) if operation == "finish" else original
+    connect = sqlite3.connect
+
+    class FailCommit(sqlite3.Connection):
+        def commit(self):
+            if committed:
+                super().commit()
+            raise sqlite3.OperationalError("private-path write response lost")
+
+    with monkeypatch.context() as patch:
+        patch.setattr(sqlite3, "connect", lambda *a, **kw: connect(*a, **kw, factory=FailCommit))
+        with pytest.raises(StoreError) as caught:
+            if operation == "claim":
+                reuse(store, before)
+            else:
+                store.finish_local_application(
+                    intent.request_id,
+                    expected_revision=before.revision,
+                    application_id="local-one",
+                    state=LocalApplicationState.APPLIED,
+                )
+        assert "private-path" not in str(caught.value)
+    saved = store.get(intent.request_id)
+    assert saved.state == JobState.APPLIED and saved.intent == original.intent
+    if not committed:
+        assert saved == before
+    elif operation == "claim":
+        assert saved.local_applications[-1].state == LocalApplicationState.APPLYING
+        with pytest.raises(StoreConflict):
+            reuse(store, saved, application_id="retry")
+    else:
+        assert saved.local_applications[-1].state == LocalApplicationState.APPLIED
+        with pytest.raises(StoreConflict):
+            store.finish_local_application(
+                intent.request_id,
+                expected_revision=before.revision,
+                application_id="local-one",
+                state=LocalApplicationState.FAILED,
+            )
+
+
+def test_local_application_outcome_requires_current_unfinished_identity(store, intent):
+    claimed = reuse(store, completed_result(store, intent))
+    for identifier, revision, state in [
+        ("missing", claimed.revision, LocalApplicationState.APPLIED),
+        ("local-one", claimed.revision - 1, LocalApplicationState.APPLIED),
+        ("local-one", claimed.revision, LocalApplicationState.APPLYING),
+        ("local-one", claimed.revision, "applied"),
+    ]:
+        with pytest.raises((ValueError, StoreConflict)):
+            store.finish_local_application(
+                intent.request_id,
+                expected_revision=revision,
+                application_id=identifier,
+                state=state,
+            )
+        assert store.get(intent.request_id) == claimed
+    finished = store.finish_local_application(
+        intent.request_id,
+        expected_revision=claimed.revision,
+        application_id="local-one",
+        state=LocalApplicationState.APPLIED,
+    )
+    with pytest.raises(StoreConflict):
+        store.finish_local_application(
+            intent.request_id,
+            expected_revision=finished.revision,
+            application_id="local-one",
+            state=LocalApplicationState.FAILED,
+        )
+
+
+@pytest.mark.parametrize(
+    "damage",
+    [
+        "missing-history",
+        "missing-destination",
+        "bad-state",
+        "bad-assets",
+        "duplicate",
+        "future-revision",
+        "outcome-revision",
+        "out-of-order",
+        "unfinished-earlier",
+        "wrong-job-state",
+    ],
+)
+def test_corrupt_local_application_history_fails_closed(store, intent, tmp_path, damage):
+    first = reuse(store, completed_result(store, intent))
+    finished = store.finish_local_application(
+        intent.request_id,
+        expected_revision=first.revision,
+        application_id="local-one",
+        state=LocalApplicationState.APPLIED,
+    )
+    reuse(store, finished, application_id="local-two")
+    with sqlite3.connect(tmp_path / "jobs.sqlite3") as connection:
+        raw = json.loads(connection.execute("SELECT record FROM jobs").fetchone()[0])
+        history = raw["local_applications"]
+        if damage == "missing-history":
+            del raw["local_applications"]
+        elif damage == "missing-destination":
+            del history[0]["destination"]["target_id"]
+        elif damage == "bad-state":
+            history[0]["state"] = "prepared"
+        elif damage == "bad-assets":
+            history[0]["asset_ids"] = ["different"]
+        elif damage == "duplicate":
+            history[1]["application_id"] = history[0]["application_id"]
+        elif damage == "future-revision":
+            history[1]["source_revision"] = raw["revision"]
+        elif damage == "outcome-revision":
+            history[1]["state"] = "applied"
+        elif damage == "out-of-order":
+            history[1]["source_revision"] = history[0]["source_revision"]
+        elif damage == "unfinished-earlier":
+            history[0]["state"] = "applying"
+        else:
+            raw["state"] = "ready"
+            raw["application_origin"] = None
+        connection.execute("UPDATE jobs SET record=?", (json.dumps(raw),))
+    before = (tmp_path / "jobs.sqlite3").read_bytes()
+    with pytest.raises(StoreError):
+        store.get(intent.request_id)
+    assert (tmp_path / "jobs.sqlite3").read_bytes() == before
+
+
+def test_local_history_capacity_preserves_all_prior_records(store, intent):
+    record = completed_result(store, intent)
+    for index in range(128):
+        record = reuse(store, record, application_id=f"local-{index}")
+        record = store.finish_local_application(
+            intent.request_id,
+            expected_revision=record.revision,
+            application_id=f"local-{index}",
+            state=LocalApplicationState.APPLIED,
+        )
+    with pytest.raises(ValueError, match="bounded"):
+        reuse(store, record, application_id="beyond-capacity")
+    assert store.get(intent.request_id) == record

@@ -27,6 +27,7 @@ from scenario.core.jobs.store import (
     JobScope,
     JobState,
     JobStore,
+    LocalApplicationState,
     ResultAsset,
     StoreConflict,
     StoreError,
@@ -123,6 +124,147 @@ def verified(env, owner=None, record=None):
     return (owner or env.coordinator).verify_results(
         "request", expected_revision=(record or env.ready).revision
     )
+
+
+def finished_original(env):
+    claim = env.coordinator.claim_application(verified(env))
+    return env.coordinator.complete_application(claim)
+
+
+def local_claim(env, record, *, owner=None, destination=None, ticket=None):
+    owner = owner or env.coordinator
+    destination = destination or env.origins.capture("reuse-scene", "reuse-target")
+    return owner.claim_local_application(
+        ticket or verified(env, owner, record), destination, purpose="world", asset_ids=("asset",)
+    )
+
+
+@pytest.mark.parametrize("outcome", ["complete_application", "fail_application"])
+def test_explicit_local_reuse_retains_generation_and_requires_fresh_verification(env, outcome):
+    original = finished_original(env)
+    ticket = verified(env, record=original)
+    with pytest.raises(ApplicationError):
+        env.coordinator.claim_application(ticket)
+    claim = local_claim(env, original, ticket=ticket)
+    assert claim.local_application_id == claim.record.local_applications[-1].application_id
+    assert claim.paths == (env.path,)
+    assert replace(claim.record, revision=original.revision, local_applications=()) == original
+    assert env.coordinator.recovery_plan()[0].action == RecoveryAction.REVIEW_APPLICATION
+    with pytest.raises(ApplicationError):
+        local_claim(env, original, ticket=ticket)
+    finished = getattr(env.coordinator, outcome)(claim)
+    expected = (
+        LocalApplicationState.APPLIED
+        if outcome == "complete_application"
+        else LocalApplicationState.FAILED
+    )
+    assert finished.local_applications[-1].state == expected
+    assert finished.state == JobState.APPLIED
+    assert env.coordinator.recovery_plan()[0].action == RecoveryAction.FINISHED
+    next_claim = local_claim(env, finished)
+    assert next_claim.local_application_id != claim.local_application_id
+    assert next_claim.record.local_applications[:-1] == finished.local_applications
+
+
+@pytest.mark.parametrize("change", ["scene", "file", "owner", "ticket", "record", "scope", "bytes"])
+def test_local_reuse_rejects_stale_or_forged_context_without_mutation(env, change):
+    original = finished_original(env)
+    destination = env.origins.capture("reuse-scene", "reuse-target")
+    ticket = verified(env, record=original)
+    owner = env.coordinator
+    before = original
+    if change == "scene":
+        env.origins.invalidate("reuse-scene")
+    elif change == "file":
+        env.origins.reset()
+    elif change == "owner":
+        owner.deactivate()
+    elif change == "ticket":
+        ticket = replace(ticket)
+    elif change == "scope":
+        owner = env.owner(scope=replace(SCOPE, project_id="different"))
+    elif change == "record":
+        before = local_claim(env, original).record
+    else:
+        env.path.write_bytes(b"changed")
+        with pytest.raises(ResultError):
+            verified(env, record=original)
+        assert env.store.get("request") == original
+        return  # Decoders must still recheck actual bytes after a prior verification.
+    with pytest.raises((ApplicationError, StoreConflict)):
+        local_claim(env, original, owner=owner, destination=destination, ticket=ticket)
+    assert env.store.get("request") == before
+
+
+def test_local_reuse_after_restart_preserves_uncertainty_and_rejects_foreign_receipts(env):
+    original = finished_original(env)
+    claim = local_claim(env, original)
+    restarted = env.owner()
+    item = restarted.recovery_plan()[0]
+    assert item.action == RecoveryAction.REVIEW_APPLICATION and item.record == claim.record
+    with pytest.raises(StoreConflict, match="unfinished"):
+        local_claim(env, claim.record, owner=restarted)
+    for forged in (claim, replace(claim)):
+        with pytest.raises(ApplicationError):
+            restarted.complete_application(forged)
+    assert env.store.get("request") == claim.record
+
+
+@pytest.mark.parametrize("after_commit", [False, True])
+def test_local_claim_write_failure_consumes_verification_without_scene_authorization(
+    env, monkeypatch, after_commit
+):
+    original = finished_original(env)
+    ticket = verified(env, record=original)
+    claim = env.coordinator._store.claim_local_application
+
+    def fail(*args, **kwargs):
+        if after_commit:
+            claim(*args, **kwargs)
+        raise StoreError("synthetic write interruption")
+
+    monkeypatch.setattr(env.coordinator._store, "claim_local_application", fail)
+    with pytest.raises(StoreError):
+        local_claim(env, original, ticket=ticket)
+    with pytest.raises(ApplicationError):
+        local_claim(env, original, ticket=ticket)
+    saved = env.store.get("request")
+    assert saved.state == JobState.APPLIED
+    assert len(saved.local_applications) == int(after_commit)
+    assert not env.coordinator._application_claims
+
+
+@pytest.mark.parametrize("after_commit", [False, True])
+@pytest.mark.parametrize("outcome", ["complete_application", "fail_application"])
+def test_local_receipt_retry_persists_only_the_known_outcome(
+    env, monkeypatch, after_commit, outcome
+):
+    claim = local_claim(env, finished_original(env))
+    finish = env.coordinator._store.finish_local_application
+
+    def fail(*args, **kwargs):
+        if after_commit:
+            finish(*args, **kwargs)
+        raise StoreError("synthetic receipt interruption")
+
+    monkeypatch.setattr(env.coordinator._store, "finish_local_application", fail)
+    with pytest.raises(StoreError):
+        getattr(env.coordinator, outcome)(claim)
+    opposite = "fail_application" if outcome == "complete_application" else "complete_application"
+    with pytest.raises(ApplicationError, match="cannot be changed"):
+        getattr(env.coordinator, opposite)(claim)
+    monkeypatch.setattr(env.coordinator._store, "finish_local_application", finish)
+    env.coordinator.deactivate()
+    receipt = env.coordinator.retry_application_receipt(claim)
+    expected = (
+        LocalApplicationState.APPLIED
+        if outcome == "complete_application"
+        else LocalApplicationState.FAILED
+    )
+    assert receipt.local_applications[-1].state == expected
+    assert receipt.state == JobState.APPLIED
+    assert len(receipt.local_applications) == 1
+    assert env.coordinator.retry_application_receipt(claim) == receipt
 
 
 def test_claim_precedes_application_and_completion_is_once_only(env):

@@ -78,7 +78,7 @@ Every connection rechecks that the database is a regular nonsymlink file,
 including after a competing creation. The parent must remain trusted: this check
 and SQLite's path open are separate operations, not an atomic no-follow open.
 
-The database has an application ID and schema version **4**. SQLite transactions
+The database has an application ID and schema version **5**. SQLite transactions
 with `synchronous=FULL` commit the whole change or report `StoreError`; no cached
 in-memory result is reported as saved before commit succeeds. `BEGIN IMMEDIATE`
 serializes writers across threads/processes. Each operation owns a connection,
@@ -94,14 +94,15 @@ another request or resend. Intent fields and a known remote job ID cannot change
 Foreign databases, unsupported versions, malformed records and mismatched stored
 identities/revisions raise errors. They are preserved for explicit recovery,
 never silently replaced with empty history. An already-open store also fails if
-its database disappears. Previous shared schemas 2 and 3 upgrade in one
+its database disappears. Previous shared schemas 2, 3 and 4 upgrade in one
 transaction that validates every scope, record, identity and revision. A corrupt
 row or failed commit preserves all previous rows and the old version. This is
-not a prototype import; version 1 and foreign databases remain rejected. Older
-results receive an unknown (`None`) texture role; migration never contacts
+not a prototype import; version 1 and foreign databases remain rejected. Schema 2/3
+results receive an unknown (`None`) texture role; schema 4 roles are preserved. Migration never contacts
 Scenario or infers semantics from filenames. Schema 3 application destinations
 are preserved, while schema 2 retains its original-origin application semantics.
-Older extension builds reject schema 4; stop older Blender processes before
+All previous records receive an empty local-application history.
+Older extension builds reject schema 5; stop older Blender processes before
 upgrading and do not expect an older build to open the upgraded store.
 
 ## State boundaries
@@ -217,8 +218,48 @@ completing those integrated acceptance criteria.
 
 Prompt Spark and translation intents use operations `prompt` and `translate`
 respectively, and the same prepared,
-submitting, uncertain and known-remote lifecycle. No database fields change, so
-the storage schema version remains 3. Older readers reject the new operation
+submitting, uncertain and known-remote lifecycle. These operations add no dedicated database fields; the current storage version
+is documented above. Older readers reject the new operation
 instead of interpreting it as model/workflow intent. Restart can inspect and
 refresh a known job ID; it cannot recover spending authorization or replay the
 request from the stored hashes. Prompt text/results are not persisted here.
+
+
+## Durable local result reuse
+
+A generation job's original `applied` state remains terminal. Local reuse adds
+`local_applications` to that same scoped record rather than reopening generation
+or overwriting its first application destination. Each entry retains a unique
+application ID, the reviewed job revision, captured file/scene/target revision,
+purpose and selected asset IDs. It stores no extra paths, prompts, credentials,
+URLs or Blender names. Supported purpose labels are images, media, model, World
+and material; a label does not establish decoder compatibility or scene acceptance.
+
+`claim_local_application` requires the exact current revision of an applied job,
+valid selected result IDs and no unfinished reuse. It appends an `applying` entry
+and increments the job revision in one SQLite write transaction. Competing owners
+cannot both claim the same review. The original intent, exact quote, remote ID,
+results, download receipts, first application origin and generation state remain
+unchanged. Claims do not verify files or establish user permission: the shared
+coordinator and eventual UI/MCP caller must provide those checks.
+
+`finish_local_application` records only known success (`applied`) or confirmed
+no-change/full rollback (`failed`) against that same unfinished identity and
+revision. It increments the job revision without replacing history. A failed
+write can have committed; inspect the exact successor and retry only a known
+receipt, never scene work. An interrupted `applying` record survives restart and
+blocks another reuse. Elapsed time, file loading or another process cannot clear
+it. There is no automatic uncertainty resolver or manual reset in this component.
+
+Histories are limited to 128 entries per job and preserve every admitted entry.
+At capacity, new reuse is rejected without evicting prior outcomes. Decoding
+requires every version-5 field, unique identities, ordered source revisions,
+matching selected asset IDs and a consistent final outcome/revision. Unsupported
+formats and malformed histories fail closed. Schema upgrades validate all scopes
+and roll back completely on corrupt rows or commit failures; stop old Blender
+processes before upgrading and do not downgrade the database.
+
+This is durable storage and coordinator admission for the existing runtime, not
+another executor or an exposed reuse button. Native destination approval, byte
+verification immediately before decoding, purpose-specific application, UI/MCP
+inspection and resolution of uncertain scene outcomes still need integration.

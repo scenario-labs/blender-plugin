@@ -267,6 +267,11 @@ Do not edit this block by hand; run `make mcp-docs`. An asterisk marks a require
 
 | Tool | Description | Arguments | Notes |
 | --- | --- | --- | --- |
+| `film_recipe` | Inspect or load the current scene's Film recipe, or explicitly start a new production. | `action`: string (['inspect', 'load', 'new_production'])<br>`recipe`: object | - |
+| `estimate_film_task` | Request the exact server price for one model task in the loaded Film recipe. | `production_id`*: string<br>`task_id`*: string | read-only annotation |
+| `approve_film_task` | Approve one unchanged Film estimate and save its identity before one paid submission. | `quote_id`*: string<br>`approved_cost`*: string | - |
+| `discard_film_estimate` | Release one unsubmitted Film estimate so its task can be repriced. | `quote_id`*: string | - |
+| `bind_film_upload` | Associate one imported saved upload with a Film upload task without sending bytes. | `production_id`*: string<br>`task_id`*: string<br>`context_id`*: string<br>`request_id`*: string<br>`expected_revision`*: integer | - |
 | `upload_reference` | Upload an explicitly chosen image, audio, video or 3D file through the shared durable upload session. | `path`*: string<br>`kind`: string (['image', 'audio', 'video', '3d']) | - |
 | `reference_upload_status` | Read a reference upload's progress while the shared session advances its already authorized work. | `context_id`*: string<br>`reference_id`*: string | read-only annotation |
 | `list_reference_uploads` | Inspect saved uploads under the selected credential scope, including after restart. | none | read-only annotation |
@@ -647,3 +652,21 @@ Read failures may be explicitly retried; this never retries generation.
 Use `recover_local_job(action: resume)` to download, then prepare and approve the
 result destination. The recovery read does not download files or mutate a scene,
 and it rejects delivery into a changed credential context.
+
+### Film task commands
+
+`film_recipe` loads or inspects the native scene's validated recipe and stable
+production identity. Loading preserves identity; `new_production` deliberately
+starts another production without submitting anything. Save the blend file.
+`estimate_film_task` uses that identity and task name to return resolved inputs
+and an exact shared SDK quote. `approve_film_task` consumes the quote with its
+verbatim CU cost before durable submission. `discard_film_estimate` releases an
+unused quote. `bind_film_upload` saves an immutable reference to an unchanged
+imported upload observed through `list_reference_uploads`.
+
+Recipe management, inspection and upload association are local operations with
+no platform equivalent. Estimate/approval use the same model operations as
+`estimate_cost`/`generate`, through the shared session. Use `job_status`,
+`wait_for_job`, explicit recovery and application for saved results; Film does
+not auto-import or replay uncertain tasks. These commands do not construct scenes,
+capture shots, assemble media or export a finished film.

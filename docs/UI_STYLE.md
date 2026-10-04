@@ -852,3 +852,17 @@ The live-provider, other-OS and release limitations above still apply.
 ![Save for recovery is enabled in Edit Mode](images/cloud-recovery-edit-mode.png)
 
 ![The paused cloud record survives switching to another scene](images/cloud-recovery-scene-switch.png)
+
+## Film task controls
+
+Film tasks occupy an optional, initially closed Scenario sidebar panel. Loading
+a recipe validates it before changing persistent scene properties and preserves
+the production identity. Task rows are saved properties, not transient enums or
+mutations during drawing. **New production** requires confirmation.
+
+**Use saved upload** opens a cached list of imported uploads and confirms the
+unchanged task, recipe, production, scene and connection before association.
+**Estimate task** makes a free quote request; the separate **Generate** confirmation
+shows its exact decimal CU price and states that results remain saved for explicit
+application. The panel draws cached handles only; it does not open storage or
+contact Scenario. Native desktop interaction acceptance remains pending.

@@ -7,7 +7,7 @@ the selected Studio source. They are pure Python: they do not open files, contac
 Scenario, submit jobs or mutate Blender.
 
 This is the input contract for the remaining Film integration under #64/#65.
-There is no active Film UI or MCP command yet. Passing these contracts does not
+Native Film task controls and MCP commands now use these contracts. This does not
 establish a Film generation journey or satisfy the [release gate](maintenance/release-plan.md).
 
 ## Recipe and timing validation
@@ -86,8 +86,8 @@ production-state database is introduced here.
 resolves completed model-task references and uses the existing SDK model schema
 and exact estimate command. `JobWorkers` and `JobSession` expose it on the same
 bounded queue and main-thread origin delivery as ordinary model quotes. It creates
-no separate runner, client or production-state file. No native Film control or
-MCP endpoint calls this command yet.
+no separate runner, client or production-state file. Native Film controls and MCP
+use it through the selected `FilmJobs` facade described below.
 
 The caller supplies a stable opaque `production_id` and a recipe task name.
 Reopening that production must reuse its identity; a title, scene name or fresh
@@ -150,14 +150,48 @@ asset is a valid input for a particular operation.
 `JobWorkers` snapshots recipes on the existing queue. `JobSession` captures the
 association caller's origin and rejects a changed scene or retired context at
 delivery. Repeating an association from another scene returns the same saved
-reference to the new reader without retargeting or applying it. No native Film
-picker or MCP Film tool invokes these commands yet.
+reference to the new reader without retargeting or applying it. The native saved-upload
+picker and MCP `bind_film_upload` share this command.
+
+## Native and MCP task controls
+
+Expand **Film tasks** in the Scenario sidebar and choose **Load recipe**. Loading
+validates the raw JSON before changing scene data. Reloading preserves the
+production identity, including when a title or source filename changes. Save the
+blend file to retain both the recipe and identity. **New production** deliberately
+starts a separate identity after confirmation; existing saved jobs remain.
+Copying a scene or blend file preserves its production identity and task reservations.
+Name a new task for another take within that production.
+
+Select one upload task and choose **Use saved upload** to review an already
+imported upload. Confirmation records its observed revision and checks the unchanged
+scene, recipe, production and selected credentials. Association sends no bytes.
+Use the existing reference upload controls first when the source is still local.
+
+For a model task, **Estimate task** resolves its saved dependencies and requests
+one exact SDK estimate. **Generate** opens a separate confirmation with the exact
+decimal CU cost. Approval consumes the handle before persistence and dispatch.
+Recipe edits, a different production/scene or retired credentials reject approval;
+the maintenance pump discards obsolete ready estimates. **Discard estimate**
+releases an unused current quote for repricing. A saved task cannot be spent again,
+even with a new quote after an uncertain response or restart.
+
+MCP uses `film_recipe` to load/inspect the same scene data and obtain its stable
+`production_id`. `estimate_film_task` returns the resolved payload and exact cost;
+`approve_film_task` requires that cost verbatim. `discard_film_estimate` releases
+an unused approval. `bind_film_upload` requires the context, request and revision
+returned by `list_reference_uploads`. Inspection reads local records without
+resuming work. See [MCP contracts](MCP.md#local-server-and-mcpscenariocom).
+
+`FilmJobs` owns bounded presentation handles, not an executor or another store.
+Approved tasks enter the existing `ModelJobs` polling/download path. Results stay
+saved for explicit application through the existing saved-job controls or MCP.
+Restarted/paused jobs require explicit recovery; opening Film does not resume or
+resubmit them. These controls do not build scenes or assemble a finished film.
 
 ## Remaining integration and evidence
 
-Next integration must expose these preparation/approval commands to native views
-and local MCP, retain the production identity when reopening a recipe, and offer
-explicit selection/association of uploads from the existing upload workflow. Scene construction, shot capture, media finishing,
+Scene construction, shot capture, media finishing,
 provider-specific preparation and final export remain separate work. Keep useful
 source capabilities and tests as those paths are connected; do not describe this
 helper adoption as a completed Film workflow.

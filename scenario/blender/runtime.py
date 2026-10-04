@@ -40,6 +40,7 @@ class RuntimeState:
         self.model_jobs = None
         self.prompt_jobs = None
         self.blockout_jobs = None
+        self.film_jobs = None
         self.reference_uploads = None
         self.model_previews = {}
         self.estimates = {}  # Exact SDK responses for current UI previews, never spend approval.
@@ -115,6 +116,7 @@ class RuntimeState:
         self.model_jobs = None
         self.prompt_jobs = None
         self.blockout_jobs = None
+        self.film_jobs = None
         self.reference_uploads = None
         self.model_previews.clear()
 
@@ -250,6 +252,15 @@ def ensure_model_jobs():
     if state.model_jobs is None:
         state.model_jobs = ModelJobs(session, state.job_store, online=online)
     return state.model_jobs
+
+
+def ensure_film_jobs():
+    from .film_jobs import FilmJobs
+
+    models = ensure_model_jobs()
+    if state.film_jobs is None:
+        state.film_jobs = FilmJobs(models, online=online)
+    return state.film_jobs
 
 
 def ensure_prompt_jobs():
@@ -477,6 +488,8 @@ def sync_catalog_context():
     from . import generation
 
     generation.process_model_jobs()
+    if state.film_jobs is not None:
+        state.film_jobs.poll()
     if state.prompt_jobs is not None:
         state.prompt_jobs.poll()
     if state.blockout_jobs is not None:

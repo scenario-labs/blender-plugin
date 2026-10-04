@@ -10,7 +10,7 @@ is Blender 5.0; dependency and runtime acceptance have separate gates.
 | Responsibility | Source | Current behavior |
 | --- | --- | --- |
 | Registration | [registry.py](../../scenario/blender/registry.py) | Registers properties, panels, operators, composer, pump and local server integration. The `scenario_blender` headless command serves local MCP on the main thread. |
-| UI lifetime and state | [runtime.py](../../scenario/blender/runtime.py) | Owns the credential-bound SDK catalog and process-wide UI/MCP state; native form quote/submission uses the selected `JobSession`; separate preparation and Film paths remain to integrate. |
+| UI lifetime and state | [runtime.py](../../scenario/blender/runtime.py) | Owns the credential-bound SDK catalog and process-wide UI/MCP state; native form quote/submission uses the selected `JobSession`; Film task controls use the same owner; Film capture/finishing remain to integrate. |
 | UI generation | [generation.py](../../scenario/blender/generation.py) | Every native model form consumes a lane-bound session quote before durable submission; unfinished file/capture/Spark inputs block final pricing and submission. |
 | Main-thread application | [pump.py](../../scenario/blender/pump.py) | Drains prototype events and applies results to Blender. GUI timer handling differs from headless execution. |
 | Local MCP | [server.py](../../scenario/mcp/server.py), [tools_scenario.py](../../scenario/mcp/tools_scenario.py), [mcp_service.py](../../scenario/blender/mcp_service.py) | Queues scene tools for main-thread execution; model listing/schema use the same SDK catalog as the UI, all model generation lanes now use the shared session; ancillary service tools still call the prototype runtime. |
@@ -327,16 +327,17 @@ separate; this does not complete #65 or #68.
 [Film recipe helpers](../FILM_PLAN.md) preserve data-only recipe/scene validation,
 editorial timing, continuity declarations and ordered task references. Project
 selection is optional; referenced outputs must match the full selected job scope.
-These helpers do not submit work, create scenes or own storage. UI/MCP preparation,
-capture/finishing and release acceptance remain to integrate.
-There is no active Film entry point in this checkout.
+These helpers do not submit work, create scenes or own storage.
+The optional Film panel and local MCP now share task preparation/approval through
+`FilmJobs`; capture/finishing and release acceptance remain to integrate.
 
 The shared `quote_film_task` command now binds model tasks to the existing scoped
 job store and quote/submission queue. Recipe and transitive task digests protect
 reference reuse; atomic production/task reservation prevents another attempt
 through a fresh quote after restart or uncertainty. The native `JobSession`
-exposes the command with existing scene guards, but no Film view or MCP endpoint
-calls it yet. Explicit upload-task association now selects an already imported
+exposes the command with existing scene guards. `FilmJobs` binds its approval
+to the saved scene recipe and production identity, then uses `ModelJobs` for
+submission, polling and downloads without automatic application. Explicit upload-task association now selects an already imported
 scoped upload and saves its immutable source/asset identity in the same job
 database. Dependent quotes recheck that upload locally; association sends no
 bytes and never replays uncertain uploads. See [durable Film tasks](../FILM_PLAN.md#durable-model-tasks).

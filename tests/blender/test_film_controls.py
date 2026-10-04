@@ -1,0 +1,323 @@
+# SPDX-FileCopyrightText: 2026 Scenario Inc.
+# SPDX-License-Identifier: GPL-3.0-or-later
+"""Native and MCP Film actions share scoped exact quotes and durable recovery."""
+
+import copy
+import os
+import unittest
+from unittest.mock import patch
+
+import bpy
+import test_model_generation as model_tests
+from helpers import online_access, submodule
+
+
+class FilmControlsTests(unittest.TestCase):
+    cleanup_jobs = model_tests.ModelGenerationTests.cleanup_jobs
+    result_fixture = model_tests.ModelGenerationTests.result_fixture
+    settle = model_tests.ModelGenerationTests.settle
+    deliver_results = model_tests.ModelGenerationTests.deliver_results
+
+    def setUp(self):
+        model_tests.ModelGenerationTests.setUp(self)
+        self.film = submodule("blender.film_jobs")
+        self.scene = bpy.context.scene
+        self.recipe = {
+            "title": "Film control fixture",
+            "shots": [
+                {
+                    "id": "shot",
+                    "title": "Shot",
+                    "duration": 4,
+                    "scene": submodule("core.scene.film_scene_plan").local_plan("studio", "", 4),
+                }
+            ],
+            "tasks": [
+                {"id": "source", "title": "Reference", "kind": "upload"},
+                {
+                    "id": "take",
+                    "title": "First take",
+                    "kind": "model",
+                    "model": self.model["id"],
+                    "parameters": {"prompt": "a teapot"},
+                },
+            ],
+        }
+        self.tools.film_recipe({"action": "load", "recipe": self.recipe})
+        self.scene.scenario_film.task_index = 1
+        self.production = self.scene.scenario_film.production_id
+
+    def owner(self):
+        return self.runtime.ensure_film_jobs()
+
+    def quote(self):
+        self.assertEqual(bpy.ops.scenario.quote_film(), {"FINISHED"})
+        item = self.owner().current(self.scene, "take")
+        item.task.result(5)
+        self.owner().finish(item, self.scene)
+        self.assertEqual(item.phase, "READY", item.error)
+        return item
+
+    def estimate(self):
+        result = self.tools.estimate_film_task(
+            {"production_id": self.production, "task_id": "take"}
+        )
+        return result.finish(result.run())
+
+    def approve(self, item):
+        return self.tools.approve_film_task(
+            {"quote_id": item.identifier, "approved_cost": item.cost}
+        )
+
+    def test_native_quote_mcp_approval_downloads_without_automatic_application(self):
+        self.result_fixture()
+        before = set(bpy.data.images)
+        item = self.quote()
+        self.assertEqual(item.cost, "0.1234567890123456789")
+        self.assertEqual(self.paid, [])
+        submitted = self.approve(item)
+        self.deliver_results()
+        saved = self.store.get(submitted["request_id"])
+        self.assertEqual(saved.state, self.storemod.JobState.READY)
+        self.assertEqual(saved.intent.film_task.production_id, self.production)
+        self.assertEqual(saved.intent.film_task.task_id, "take")
+        self.assertEqual(len(self.paid), 1)
+        self.assertEqual(len(self.downloads), 1)
+        self.assertEqual(set(bpy.data.images), before)
+        with self.assertRaises(self.request_error):
+            self.approve(item)
+        inspection = self.tools.film_recipe({})
+        self.assertEqual(inspection["tasks"][1]["request_id"], submitted["request_id"])
+
+    def test_mcp_quote_native_approval_uses_same_handle_and_exact_cost(self):
+        quote = self.estimate()
+        self.assertEqual(quote["parameters"], {"prompt": "a teapot"})
+        self.assertEqual(
+            bpy.ops.scenario.approve_film(
+                quote_id=quote["quote_id"], approved_cost=quote["cu_cost_exact"]
+            ),
+            {"FINISHED"},
+        )
+        self.settle()
+        self.assertEqual(len(self.paid), 1)
+        self.assertEqual(
+            bpy.ops.scenario.approve_film(
+                quote_id=quote["quote_id"], approved_cost=quote["cu_cost_exact"]
+            ),
+            {"CANCELLED"},
+        )
+        self.assertIs(self.owner().models, self.runtime.state.model_jobs)
+
+    def test_automated_gui_probe_cannot_approve_through_native_or_mcp(self):
+        item = self.quote()
+        with patch.dict(os.environ, {"SCENARIO_GUI_PROBE": "1"}):
+            with self.assertRaises(PermissionError):
+                self.approve(item)
+            self.assertEqual(
+                bpy.ops.scenario.approve_film(quote_id=item.identifier, approved_cost=item.cost),
+                {"CANCELLED"},
+            )
+        self.assertEqual(item.phase, "READY")
+        self.assertEqual(self.paid, [])
+        self.assertEqual(self.store.records(), ())
+
+    def test_changed_exact_price_rejected_without_consuming_valid_approval(self):
+        item = self.quote()
+        with self.assertRaisesRegex(Exception, "exact Film price"):
+            self.owner().approve(item.identifier, self.scene, approved_cost="0.123")
+        self.assertEqual(item.phase, "READY")
+        self.assertEqual(self.paid, [])
+
+    def test_reloading_recipe_preserves_identity_but_rejects_changed_quote(self):
+        item = self.quote()
+        changed = copy.deepcopy(self.recipe)
+        changed["tasks"][1]["parameters"]["prompt"] = "another teapot"
+        self.tools.film_recipe({"action": "load", "recipe": changed})
+        self.assertEqual(self.scene.scenario_film.production_id, self.production)
+        with self.assertRaisesRegex(self.request_error, "fresh Film estimate"):
+            self.approve(item)
+        self.assertEqual(self.paid, [])
+
+    def test_observed_recipe_change_discards_old_approval_even_if_reverted(self):
+        item = self.quote()
+        changed = copy.deepcopy(self.recipe)
+        changed["title"] = "Edited title"
+        self.film.load_recipe(self.scene, changed)
+        self.owner().poll()
+        self.assertEqual(item.phase, "DISCARDED")
+        self.assertIsNone(item.quote)
+        self.film.load_recipe(self.scene, self.recipe)
+        with self.assertRaisesRegex(Exception, "fresh Film estimate"):
+            self.approve(item)
+        self.assertNotEqual(self.quote().identifier, item.identifier)
+        self.assertEqual(self.paid, [])
+
+    def test_changed_production_requires_new_quote(self):
+        item = self.quote()
+        self.tools.film_recipe({"action": "new_production"})
+        self.assertNotEqual(self.scene.scenario_film.production_id, self.production)
+        with self.assertRaisesRegex(self.request_error, "fresh Film estimate"):
+            self.approve(item)
+        with self.assertRaisesRegex(Exception, "production changed"):
+            self.estimate()
+        self.assertEqual(self.paid, [])
+
+    def test_changed_scene_and_retired_credentials_reject_approval(self):
+        item = self.quote()
+        second = bpy.data.scenes.new("Other Film scene")
+        try:
+            with self.assertRaisesRegex(Exception, "changed"):
+                self.owner().approve(item.identifier, second, approved_cost=item.cost)
+        finally:
+            bpy.data.scenes.remove(second)
+        previous = self.owner()
+        self.runtime.state.reset()
+        with self.assertRaisesRegex(Exception, "changed"):
+            previous.approve(item.identifier, self.scene, approved_cost=item.cost)
+        with self.assertRaisesRegex(Exception, "fresh Film estimate"):
+            self.approve(item)
+        self.assertEqual(self.paid, [])
+
+    def test_discard_releases_quote_and_repricing_cannot_use_old_handle(self):
+        item = self.quote()
+        with self.assertRaisesRegex(Exception, "discard"):
+            self.owner().quote(self.scene, "take")
+        self.tools.discard_film_estimate({"quote_id": item.identifier})
+        with self.assertRaisesRegex(Exception, "fresh Film estimate"):
+            self.approve(item)
+        replacement = self.quote()
+        self.assertNotEqual(replacement.identifier, item.identifier)
+        self.assertEqual(self.paid, [])
+
+    def test_uncertain_submission_reopens_for_inspection_without_repeat(self):
+        self.lose_response = True
+        item = self.quote()
+        submitted = self.approve(item)
+        self.settle()
+        self.assertEqual(
+            self.store.get(submitted["request_id"]).state, self.storemod.JobState.UNCERTAIN
+        )
+        self.runtime.state.reset()
+        calls = len(self.calls)
+        inspection = self.tools.film_recipe({})
+        self.assertEqual(len(self.calls), calls)
+        self.assertEqual(inspection["tasks"][1]["state"], "uncertain")
+        action = self.owner().quote(self.scene, "take")
+        with self.assertRaises(self.storemod.StoreConflict):
+            action.task.result(5)
+        self.owner().poll()
+        self.assertEqual(action.phase, "ERROR")
+        self.assertEqual(len(self.paid), 1)
+        self.assertEqual(len(self.calls), calls)
+
+    def test_lost_persistence_acknowledgement_consumes_approval(self):
+        item = self.quote()
+        original = self.owner().session.prepare_quote
+
+        def fail_after_write(quote):
+            original(quote)
+            raise OSError("Synthetic lost acknowledgement")
+
+        with patch.object(self.owner().session, "prepare_quote", side_effect=fail_after_write):
+            with self.assertRaises(OSError):
+                self.approve(item)
+        with self.assertRaisesRegex(Exception, "fresh Film estimate"):
+            self.approve(item)
+        self.assertEqual(len(self.store.records()), 1)
+        self.assertEqual(self.paid, [])
+
+    def test_stale_completion_does_not_replace_current_recipe(self):
+        item = self.owner().quote(self.scene, "take")
+        item.task.result(5)
+        changed = copy.deepcopy(self.recipe)
+        changed["title"] = "Changed production title"
+        self.film.load_recipe(self.scene, changed)
+        self.owner().poll()
+        self.assertEqual(item.phase, "ERROR")
+        self.assertEqual(self.scene.scenario_film.title, "Changed production title")
+        self.assertEqual(self.paid, [])
+
+    def test_invalid_recipe_does_not_mutate_saved_scene(self):
+        before = self.film.snapshot(self.scene)
+        with self.assertRaises(ValueError):
+            self.tools.film_recipe({"action": "load", "recipe": {"title": "invalid"}})
+        self.assertEqual(self.film.snapshot(self.scene), before)
+        self.assertEqual(len(self.scene.scenario_film.tasks), 2)
+
+    def test_offline_read_allowed_but_price_and_approval_blocked(self):
+        item = self.quote()
+        with online_access(False):
+            self.assertEqual(self.tools.film_recipe({})["production_id"], self.production)
+            with self.assertRaisesRegex(Exception, "online"):
+                self.approve(item)
+        self.assertEqual(self.paid, [])
+
+    def test_scene_storage_preserves_recipe_task_selection_and_identity(self):
+        # Load the saved scene as a separate datablock, without replacing the running test file.
+        path = self.runtime.paths().state_dir / "film.blend"
+        bpy.data.libraries.write(str(path), {self.scene})
+        with bpy.data.libraries.load(str(path), link=False) as (source, target):
+            target.scenes = source.scenes
+        loaded = target.scenes[0]
+        try:
+            self.assertEqual(self.film.snapshot(loaded), self.film.snapshot(self.scene))
+            self.assertEqual(loaded.scenario_film.task_index, 1)
+            self.assertEqual(loaded.scenario_film.tasks[1].name, "take")
+        finally:
+            bpy.data.scenes.remove(loaded)
+
+    def test_imported_upload_binding_is_local_and_feeds_price(self):
+        owner = self.owner()
+        uploads = submodule("core.jobs.upload_store")
+        store = owner.session._coordinator._uploads._store
+        saved = store.create(
+            uploads.UploadIntent(
+                "film-upload",
+                store.scope,
+                owner.session.capture(self.scene),
+                "image",
+                "source.png",
+                "image/png",
+                4,
+                "a" * 64,
+                4,
+                ("a" * 64,),
+            )
+        )
+        for state, values in [
+            (uploads.UploadState.INITIALIZING, {}),
+            (uploads.UploadState.UPLOADING, {"upload_id": "remote-upload"}),
+            (uploads.UploadState.IMPORTED, {"asset_id": "source-asset"}),
+        ]:
+            saved = store.transition(
+                "film-upload", expected_revision=saved.revision, state=state, **values
+            )
+        info = self.tools.list_reference_uploads({})
+        args = dict(
+            production_id=self.production,
+            task_id="source",
+            context_id=info["context_id"],
+            request_id="film-upload",
+            expected_revision=saved.revision,
+        )
+        with self.assertRaisesRegex(Exception, "context changed"):
+            self.tools.bind_film_upload(dict(args, context_id="stale"))
+        deferred = self.tools.bind_film_upload(args)
+        self.assertEqual(deferred.finish(deferred.run())["state"], "bound")
+        self.assertEqual(self.calls, [])
+        changed = copy.deepcopy(self.recipe)
+        changed["tasks"][1]["parameters"]["prompt"] = "$source"
+        self.film.load_recipe(self.scene, changed)
+        self.assertEqual(self.estimate()["parameters"], {"prompt": "source-asset"})
+        self.assertEqual(self.paid, [])
+
+    def test_draw_does_not_load_storage_or_mutate_scene(self):
+        from unittest.mock import MagicMock
+
+        before = self.film.snapshot(self.scene)
+        panel = submodule("blender.film").SCENARIO_PT_film
+        with patch.object(
+            self.runtime, "ensure_film_jobs", side_effect=AssertionError("draw owns no commands")
+        ):
+            panel.draw(type("Panel", (), {"layout": MagicMock()})(), bpy.context)
+        self.assertEqual(self.film.snapshot(self.scene), before)

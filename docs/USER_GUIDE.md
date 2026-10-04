@@ -594,3 +594,17 @@ separate local application record. An uncertain application must be inspected,
 never repeated blindly; a pending success receipt can be saved without applying
 again. This local workflow does not establish provider alignment or complete the
 Edit 3D generation workflow.
+
+## Film tasks
+
+Expand **Film tasks** in the Scenario sidebar to load a validated JSON recipe,
+associate saved uploads and estimate/approve individual model tasks. Save the
+blend file to retain the recipe and production identity. Reloading a recipe keeps
+that identity; another take needs another task name. **New production** starts a
+deliberately separate production while retaining old jobs.
+
+Each model task requires its own exact price and separate Generate confirmation.
+Results remain in saved jobs for explicit application. Opening the panel or
+inspecting a recipe never resumes uncertain work. Scene construction, shot capture,
+finishing and Film export remain unavailable. See [Film task controls](FILM_PLAN.md#native-and-mcp-task-controls)
+for the equivalent MCP commands and recovery boundaries.

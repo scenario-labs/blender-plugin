@@ -2805,11 +2805,16 @@ class ModelGenerationTests(unittest.TestCase):
             saved.intent.mesh_sources,
         )
 
-    def captured_source_result(self, body=None, *, scale=(1, 1, 1)):
+    def captured_source_result(self, body=None, *, source_geometry=None, scale=(1, 1, 1)):
         from helpers import FIXTURES
 
         self.configure_ui_lane("edit3d")
         source = bpy.context.object
+        if source_geometry is not None:
+            data = bpy.data.meshes.new("Captured source geometry")
+            data.from_pydata(source_geometry, [], [(0, 1, 2)])
+            data.update()
+            source.data = data
         source.scale = scale
         bpy.context.view_layer.update()
         self.captured_mesh_upload(live=True)
@@ -2881,6 +2886,89 @@ class ModelGenerationTests(unittest.TestCase):
 
     def test_captured_positive_source_dialog_ignores_mirrored_selected_transform(self):
         self.captured_source_dialog((1, 2, 1), (-1, 1, 1), "WORLD")
+
+    def captured_rig_result(self):
+        return self.captured_source_result(
+            animated_glb(morph=False), source_geometry=[(0, 0, 0), (1, 0, 0), (0, 0, 1)]
+        )
+
+    def test_captured_rig_uses_original_source_and_native_history_without_new_spending(self):
+        request_id, source = self.captured_rig_result()
+        source_name = source.name
+        bpy.ops.mesh.primitive_cube_add(location=(9, 0, 0))
+        other_name = bpy.context.object.name
+        calls = len(self.calls), len(self.paid), len(self.downloads)
+        approval = self.prepare_mesh_edit(request_id, purpose="mesh_source", mesh_policy="RIG")
+        self.assertEqual(approval["target"], source_name)
+        module = submodule("blender.mesh_result_application")
+        prefs = bpy.context.preferences.edit
+        settings = prefs.use_global_undo, prefs.undo_steps
+        prefs.use_global_undo, prefs.undo_steps = True, 32
+        try:
+            with patch.object(module, "_undo_enabled", return_value=True):
+                status = self.finish_application(approval)
+            self.assertEqual(status["status"], "applied", status)
+            rig_name = status["mesh_edit"]["rig"]
+            self.assertEqual(source.modifiers[0].object.name, rig_name)
+            self.assertEqual(bpy.context.object.name, other_name)
+            self.assertEqual(bpy.ops.ed.undo(), {"FINISHED"})
+            source = bpy.data.objects[source_name]
+            self.assertFalse(source.modifiers)
+            self.assertFalse(source.vertex_groups)
+            self.assertNotIn(rig_name, bpy.data.objects)
+            self.assertIsNone(self.tools.job_status({"job_id": request_id})["mesh_edit"])
+            self.assertEqual(bpy.ops.ed.redo(), {"FINISHED"})
+            self.assertEqual(bpy.data.objects[source_name].modifiers[0].object.name, rig_name)
+            self.assertEqual(self.store.get(request_id).state, self.storemod.JobState.APPLIED)
+            self.assertEqual((len(self.calls), len(self.paid), len(self.downloads)), calls)
+        finally:
+            prefs.use_global_undo, prefs.undo_steps = settings
+
+    def test_native_rig_command_uses_the_shared_captured_source_approval(self):
+        request_id, source = self.captured_rig_result()
+        approval = self.prepare_mesh_edit(request_id, purpose="mesh_source", mesh_policy="RIG")
+        args = self.import_args(approval)
+        args.update(
+            request_id=request_id,
+            expected_revision=approval["revision"],
+            asset_id=approval["asset_id"],
+            original_source=True,
+            policy="RIG",
+        )
+        before = len(self.calls), len(self.paid)
+        self.assertEqual(bpy.ops.scenario.apply_saved_mesh(**args), {"FINISHED"})
+        self.deliver_results()
+        self.assertEqual(self.store.get(request_id).state, self.storemod.JobState.APPLIED)
+        self.assertEqual(source.modifiers[0].type, "ARMATURE")
+        self.assertEqual((len(self.calls), len(self.paid)), before)
+
+    def test_rig_receipt_retry_does_not_attach_another_armature(self):
+        request_id, source = self.captured_rig_result()
+        approval = self.prepare_mesh_edit(request_id, purpose="mesh_source", mesh_policy="RIG")
+        deferred = self.tools.apply_result_application(self.import_args(approval))
+        result = deferred.run()
+        owner = self.runtime.state.model_jobs
+        transition = owner.store.transition
+
+        def fail(*args, **kwargs):
+            if kwargs.get("state") == self.storemod.JobState.APPLIED:
+                raise OSError("synthetic rig receipt persistence failure")
+            return transition(*args, **kwargs)
+
+        with patch.object(owner.store, "transition", side_effect=fail):
+            status = deferred.finish(result)
+        self.assertEqual(status["status"], "applying", status)
+        rig = source.modifiers[0].object
+        before = len(self.calls), len(self.paid), set(bpy.data.armatures)
+        with patch.object(
+            submodule("blender.mesh_result_application"),
+            "apply_saved_mesh",
+            side_effect=AssertionError("Repeated rig application"),
+        ):
+            status = self.tools.recover_local_job(self.recovery_args(request_id, "retry_receipt"))
+        self.assertEqual(status["status"], "applied", status)
+        self.assertEqual(source.modifiers[0].object, rig)
+        self.assertEqual((len(self.calls), len(self.paid), set(bpy.data.armatures)), before)
 
     def test_captured_parts_apply_preserves_other_selection_and_records_no_new_spending(self):
         from helpers import parts_glb

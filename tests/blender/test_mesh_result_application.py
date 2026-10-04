@@ -12,7 +12,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 import bpy
-from helpers import FIXTURES, parts_glb, submodule
+from helpers import FIXTURES, animated_glb, parts_glb, submodule
 from mathutils import Matrix
 
 
@@ -675,3 +675,172 @@ class MeshResultTests(unittest.TestCase):
                 keep_original=True,
             )
         self.assertEqual(self.module.model_application._snapshot(), before)
+
+
+class RigResultTests(unittest.TestCase):
+    tearDown = MeshResultTests.tearDown
+    apply = MeshResultTests.apply
+
+    def setUp(self):
+        MeshResultTests.setUp(self)
+        self.body = animated_glb(morph=False)
+        self.path.write_bytes(self.body)
+        self.item = self.storage.StoredResult(
+            self.storage.ResultAsset("rig", self.path.name, "model/gltf-binary", len(self.body)),
+            self.transfers.DownloadedResult(
+                self.path.name, len(self.body), hashlib.sha256(self.body).hexdigest()
+            ),
+        )
+        # The native importer converts glTF Y-up to Blender Z-up.
+        for vertex, position in zip(
+            self.source.data.vertices, [(0, 0, 0), (1, 0, 0), (0, 0, 1)], strict=True
+        ):
+            vertex.co = position
+        self.source.data.update()
+        self.target = self.mesh.capture_target(self.scene, self.source)
+
+    def test_rig_attachment_preserves_source_and_deforms_at_destination_fps(self):
+        before = self.source.data
+        result = self.apply(policy="RIG")
+        self.assertEqual(result.source, self.source)
+        self.assertEqual(result.original.data, before)
+        self.assertEqual(len(result.rig.data.bones), 2)
+        self.assertEqual(self.source.modifiers[0].object, result.rig)
+        self.assertEqual(self.source.vertex_groups[0].name, "RootJoint")
+        self.assertEqual(self.source.data.vertices[0].groups[0].weight, 1)
+        self.assertEqual(bpy.context.view_layer.objects.active, self.source)
+        self.scene.frame_set(0)
+        start = (
+            self.source.evaluated_get(bpy.context.evaluated_depsgraph_get())
+            .data.vertices[0]
+            .co.copy()
+        )
+        self.scene.frame_set(self.scene.render.fps)
+        end = (
+            self.source.evaluated_get(bpy.context.evaluated_depsgraph_get())
+            .data.vertices[0]
+            .co.copy()
+        )
+        self.assertAlmostEqual(end.x - start.x, 2, places=4)
+
+    def test_transformed_parent_and_selection_are_preserved(self):
+        parent = bpy.data.objects.new("Original parent", None)
+        self.scene.collection.objects.link(parent)
+        parent.location = (4, 5, 6)
+        self.source.parent = parent
+        self.source.location = (2, 3, 4)
+        self.source.rotation_euler = (0.2, 0.3, 0.4)
+        self.source.scale = (2, 3, 4)
+        other = bpy.data.objects.new("Selected other", None)
+        self.scene.collection.objects.link(other)
+        self.source.select_set(False)
+        other.select_set(True)
+        bpy.context.view_layer.objects.active = other
+        bpy.context.view_layer.update()
+        self.target = self.mesh.capture_target(self.scene, self.source)
+        world, local = self.source.matrix_world.copy(), self.source.matrix_local.copy()
+        collections = tuple(self.source.users_collection)
+        result = self.apply(policy="RIG")
+        self.assertEqual(self.source.parent, parent)
+        self.assertEqual(self.source.matrix_world, world)
+        self.assertEqual(self.source.matrix_local, local)
+        self.assertEqual(tuple(self.source.users_collection), collections)
+        self.assertEqual(bpy.context.view_layer.objects.active, other)
+        self.assertEqual(set(bpy.context.selected_objects), {other})
+        self.assertEqual(result.rig.parent.parent, parent)
+        self.scene.frame_set(0)
+        start = (
+            self.source.evaluated_get(bpy.context.evaluated_depsgraph_get())
+            .data.vertices[0]
+            .co.copy()
+        )
+        self.scene.frame_set(self.scene.render.fps)
+        end = (
+            self.source.evaluated_get(bpy.context.evaluated_depsgraph_get())
+            .data.vertices[0]
+            .co.copy()
+        )
+        self.assertAlmostEqual(end.x - start.x, 2, places=4)
+
+    def test_source_material_uv_and_attributes_survive(self):
+        material = bpy.data.materials.new("Source material")
+        self.source.data.materials.append(material)
+        uv = self.source.data.uv_layers.new(name="Keep UV")
+        uv.data[0].uv = (0.25, 0.75)
+        attr = self.source.data.attributes.new(name="Keep attribute", type="FLOAT", domain="POINT")
+        attr.data[0].value = 42
+        self.target = self.mesh.capture_target(self.scene, self.source)
+        self.apply(policy="RIG", keep_original=False)
+        self.assertEqual(tuple(self.source.data.materials), (material,))
+        self.assertEqual(tuple(self.source.data.uv_layers["Keep UV"].data[0].uv), (0.25, 0.75))
+        self.assertEqual(self.source.data.attributes["Keep attribute"].data[0].value, 42)
+
+    def test_mismatched_geometry_or_stale_source_fails_without_mutation(self):
+        for stale in (False, True):
+            with self.subTest(stale=stale):
+                if stale:
+                    self.source.location.x += 1
+                before = self.model._snapshot()
+                with self.assertRaises(
+                    (self.module.MeshResultApplicationError, self.mesh.MeshApplicationError)
+                ):
+                    self.apply(policy="RIG", result_to_source=Matrix.Translation((1, 0, 0)))
+                self.assertEqual(self.model._snapshot(), before)
+                self.assertFalse(self.source.modifiers)
+                self.assertFalse(self.source.vertex_groups)
+                self.assertTrue(self.path.exists())
+
+    def test_morph_result_is_explicitly_rejected(self):
+        body = animated_glb()
+        self.path.write_bytes(body)
+        self.item = self.storage.StoredResult(
+            self.storage.ResultAsset("rig", self.path.name, "model/gltf-binary", len(body)),
+            self.transfers.DownloadedResult(
+                self.path.name, len(body), hashlib.sha256(body).hexdigest()
+            ),
+        )
+        before = self.model._snapshot()
+        with self.assertRaises(self.module.MeshResultApplicationError):
+            self.apply(policy="RIG")
+        self.assertEqual(self.model._snapshot(), before)
+        self.mesh.validate_target(self.target)
+
+    def test_cleanup_failure_rolls_back_source_and_all_new_rig_data(self):
+        before = self.model._snapshot()
+        with (
+            patch.object(
+                self.module,
+                "_release_import",
+                side_effect=RuntimeError("synthetic cleanup failure"),
+            ),
+            self.assertRaises(self.module.MeshResultApplicationError),
+        ):
+            self.apply(policy="RIG")
+        self.assertEqual(self.model._snapshot(), before)
+        self.mesh.validate_target(self.target)
+        self.assertTrue(self.path.exists())
+
+    def test_invalid_weights_constraints_and_extra_modifiers_are_rejected(self):
+        for kind in ("weights", "constraint", "modifier"):
+            with self.subTest(kind=kind):
+                before = self.model._snapshot()
+                original = self.model._import
+
+                def alter(path, original=original, kind=kind):
+                    original(path)
+                    primary = next(obj for obj in bpy.context.scene.objects if obj.type == "MESH")
+                    rig = next(obj for obj in bpy.context.scene.objects if obj.type == "ARMATURE")
+                    if kind == "weights":
+                        primary.vertex_groups[0].add([0], 0.5, "REPLACE")
+                    elif kind == "constraint":
+                        rig.pose.bones[0].constraints.new("LIMIT_LOCATION")
+                    else:
+                        primary.modifiers.new("Unsupported modifier", "DECIMATE")
+
+                with (
+                    patch.object(self.model, "_import", side_effect=alter),
+                    self.assertRaises(self.module.MeshResultApplicationError),
+                ):
+                    self.apply(policy="RIG")
+                self.assertEqual(self.model._snapshot(), before)
+                self.mesh.validate_target(self.target)

@@ -312,8 +312,8 @@ OAuth deferral does not relax credential precedence, project scope or paid-job s
 ## Saved 3D edit application boundary
 
 The [verified saved-mesh command](../MESH_APPLICATION.md#captured-source-and-verified-saved-mesh-command)
-connects receipt-checked static GLB import to the existing explicit remesh/UV
-primitive. `JobSession.apply_recovered_mesh` binds one selected asset to a captured
+connects receipt-checked GLB import to explicit remesh/UV/retexture/parts and
+[compatible rig attachment](../MESH_APPLICATION.md#attach-a-returned-rig). `JobSession.apply_recovered_mesh` binds one selected asset to a captured
 source object and a durable original or local-reuse claim. It rejects changed
 geometry/context, ambiguous multi-mesh results and uncertain rollback, while
 known receipt retry only saves persistence. The caller supplies an explicit

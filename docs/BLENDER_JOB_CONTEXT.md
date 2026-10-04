@@ -579,7 +579,7 @@ current session; this is not a persistent history of reversible scene edits.
 ## Verified saved-mesh replacement
 
 `apply_recovered_mesh(completion, destination=..., asset_id=..., target=...,
-policy=..., result_to_source=..., keep_original=...)` applies one saved static GLB
+policy=..., result_to_source=..., keep_original=...)` applies one saved GLB with an explicit static-mesh or RIG policy
 to an explicitly captured source mesh. The target snapshot must match the resolved
 scene/object origin and its geometry/context must still match before claiming
 application. A caller captures this source before asynchronous work and binds its

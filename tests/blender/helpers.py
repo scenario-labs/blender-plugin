@@ -139,7 +139,7 @@ def parts_glb(count=2):
     )
 
 
-def animated_glb(*, clips=2, node_transform=False):
+def animated_glb(*, clips=2, morph=True, node_transform=False):
     """Add a two-bone skin, morph target and node clips to our first-party triangle."""
     original = (FIXTURES / "synthetic/static-triangle.glb").read_bytes()
     length = struct.unpack_from("<I", original, 12)[0]
@@ -203,6 +203,12 @@ def animated_glb(*, clips=2, node_transform=False):
                 ],
             }
         )
+    if not morph:
+        primitive.pop("targets")
+        document["meshes"][0].pop("weights")
+        for clip in document["animations"]:
+            clip["channels"] = clip["channels"][:1]
+            clip["samplers"] = clip["samplers"][:1]
     document["buffers"][0]["byteLength"] = len(binary)
     binary.extend(b"\0" * (-len(binary) % 4))
     description = json.dumps(document).encode()

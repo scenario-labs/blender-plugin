@@ -562,3 +562,42 @@ finalization; the completed repeat used explicit fixture cleanup before quitting
 [frame thirty](images/saved-model-animation-end.png).
 
 ![Model import approval explains retained rigs, clips and timeline behavior](images/saved-model-animation-approval.png)
+
+## Rig attachment interaction
+
+The saved-mesh review offers **Attach rig**. It names the captured source and
+explains matching geometry, retained source UVs/materials, bone weights and clips,
+Keep original and native undo. It also explains that the source and new rig group
+must move together afterward. Drawing stays read-only; the shared UI/MCP command
+implements the [skin attachment contract](MESH_APPLICATION.md#attach-a-returned-rig).
+
+The final ZIP with SHA-256
+`43d303619c6eb4d0ebf9e6bad2dd40f210f4cce0890587a8bade647326264a2b`
+passed 715 installed tests each on macOS arm64 Blender 5.0.1, 5.1.2 and 5.2.1.
+Isolated 5.1.2 desktop input selected Attach rig, cancelled without mutation and
+confirmed against the captured triangle while another mesh stayed selected.
+The source retained its geometry, gained two bone groups and an armature modifier,
+and Keep original retained an unselected copy. Native Edit > Undo removed the
+rig, groups and copy; Redo restored them. The saved job stayed applied and its
+transient mesh status retired on undo. Mock submission/request counts stayed
+unchanged. Viewport zoom/front-view input and Outliner expansion worked; clicking
+frame 30 moved the skinned source two units in X while the original stayed still.
+The completed repeat exited through explicit fixture cleanup and verified that
+the normal profile remained unchanged.
+
+Transport and geometry were synthetic. Frozen catalog, estimate and price labels
+are fixture state, not live pricing or performance evidence. This check does not
+establish provider compatibility, existing-rig retargeting, other OS desktop
+acceptance or integrated release acceptance. An earlier interrupted exit crashed
+in the fixture's temporary-preference cleanup during Python finalization; its
+interaction observations were repeated before a clean exit.
+
+The screenshots and cancellation/selection sequence used the preceding ZIP
+`8623714355635f3d3f2a36539992161547add46ed462910086f4f33e71c91fd5`.
+The final ZIP differs only by formatting in one Python member (identical AST);
+attachment, native undo/redo and frame-30 deformation were repeated on that final
+ZIP, followed by a clean exit and unchanged normal-profile fingerprint.
+
+[Animated source, original copy and preserved selection](images/saved-mesh-rig-animated.png).
+
+![Rig approval names the captured source and explains compatibility](images/saved-mesh-rig-approval.png)

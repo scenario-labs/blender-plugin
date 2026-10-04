@@ -1,6 +1,6 @@
 # SPDX-FileCopyrightText: 2026 Scenario Inc.
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""Apply an explicitly chosen static GLB mesh or parts policy to a captured source."""
+"""Apply an explicitly chosen GLB mesh, skin or parts policy to a captured source."""
 
 import logging
 from dataclasses import dataclass, field
@@ -8,7 +8,7 @@ from dataclasses import dataclass, field
 import bpy
 from mathutils import Matrix
 
-from . import mesh_application, model_application
+from . import mesh_application, model_application, rig_application
 
 _log = logging.getLogger("scenario.jobs")
 
@@ -24,14 +24,18 @@ class MeshEditApplication:
     policy: str
     undo_available: bool = False
     parts: tuple = field(default=(), repr=False)
+    rig: object = field(default=None, repr=False)
 
 
 def validate_request(target, *, policy, result_to_source, keep_original):
     """Validate the captured source and explicit policy without decoding files."""
     mesh_application.validate_target(target)
-    if policy not in {"REMESH", "UV", "RETEXTURE", "PARTS"} or type(keep_original) is not bool:
+    if (
+        policy not in {"REMESH", "UV", "RETEXTURE", "PARTS", "RIG"}
+        or type(keep_original) is not bool
+    ):
         raise MeshResultApplicationError(
-            "Choose REMESH, UV, RETEXTURE or PARTS and an explicit Keep original value"
+            "Choose REMESH, UV, RETEXTURE, PARTS or RIG and an explicit Keep original value"
         )
     if policy == "PARTS" and (not target.mesh.vertices or not target.mesh.polygons):
         raise MeshResultApplicationError(
@@ -133,20 +137,22 @@ def apply_saved_mesh(target, item, path, *, policy, result_to_source, keep_origi
     before = model_application._snapshot()
     receipt = None
     try:
-        with model_application.staged_model(item, path, before) as (staging, objects):
+        with model_application.staged_model(item, path, before, static_only=policy != "RIG") as (
+            staging,
+            objects,
+        ):
             meshes = [obj for obj in objects if obj.type == "MESH"]
-            if any(obj.type not in {"MESH", "EMPTY"} for obj in objects):
+            if policy != "RIG" and any(obj.type not in {"MESH", "EMPTY"} for obj in objects):
                 raise MeshResultApplicationError("Choose static meshes with optional Empty parents")
             parts = ()
+            rig = None
             if policy == "PARTS":
                 parts, primary = _stage_parts(target, meshes, mapping)
                 objects = (*objects, primary)
                 local_mapping = Matrix.Identity(4)
             else:
                 if len(meshes) != 1:
-                    raise MeshResultApplicationError(
-                        "Choose one static primary mesh without variants"
-                    )
+                    raise MeshResultApplicationError("Choose one primary mesh without variants")
                 primary = meshes[0]
                 # Blender has already converted GLB axes. Preserve imported node
                 # transforms; never infer alignment or move the source object.
@@ -156,14 +162,21 @@ def apply_saved_mesh(target, item, path, *, policy, result_to_source, keep_origi
                 name: set(getattr(bpy.data, name)) - previous for name, previous in before.items()
             }
             mesh_application.validate_target(target)
-            receipt = mesh_application.apply_mesh(
-                target.scene,
-                target.obj,
-                primary,
-                policy="REMESH" if policy == "PARTS" else policy,
-                result_to_source=local_mapping,
-                keep_original=keep_original,
-            )
+            if policy == "RIG":
+                receipt = rig_application.apply_skin(
+                    target, primary, objects, mapping, keep_original=keep_original
+                )
+                rig = receipt.rig
+                objects = tuple(obj for obj in objects if obj not in receipt.objects)
+            else:
+                receipt = mesh_application.apply_mesh(
+                    target.scene,
+                    target.obj,
+                    primary,
+                    policy="REMESH" if policy == "PARTS" else policy,
+                    result_to_source=local_mapping,
+                    keep_original=keep_original,
+                )
             if parts:
                 _publish_parts(target, parts)
             if receipt.original is not None:
@@ -179,7 +192,7 @@ def apply_saved_mesh(target, item, path, *, policy, result_to_source, keep_origi
                     # application and must never authorize another replacement.
                     undo = False
                     _log.warning("Mesh applied, but Blender undo could not be recorded")
-            return MeshEditApplication(target.obj, receipt.original, policy, undo, parts)
+            return MeshEditApplication(target.obj, receipt.original, policy, undo, parts, rig)
     except Exception:
         if receipt is not None:
             try:

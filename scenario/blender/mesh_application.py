@@ -430,13 +430,19 @@ def apply_mesh(scene, source, result, *, policy, result_to_source, keep_original
     if source is result or source.data is result.data:
         raise MeshApplicationError("Use a separate imported result mesh")
     mapping = _matrix(result_to_source)
+    _fingerprint(source.data)
+    _fingerprint(result.data)
+    staged = _stage(source.data, result.data, policy, mapping)
+    return _replace_mesh(scene, source, staged, keep_original=keep_original)
+
+
+def _replace_mesh(scene, source, staged, *, keep_original):
+    """Publish an already validated private mesh; caller owns non-mesh changes."""
     before = source.data
     before_active = source.active_material_index
     before_hash = _fingerprint(before)
-    _fingerprint(result.data)
-    staged = holder = None
+    holder = None
     try:
-        staged = _stage(before, result.data, policy, mapping)
         staged.use_fake_user = False
         applied_hash = _fingerprint(staged)
         holder = (

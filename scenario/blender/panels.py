@@ -655,7 +655,7 @@ def draw_blockout_tab(layout, context):
     row = box.row(align=True)
     row.prop(props, "scene_type", text="")
     row.prop(props, "scale", text="")
-    box.operator("scenario.blockout_design", text="Design blockout", icon="MOD_BUILD")
+    box.operator("scenario.blockout_design", text="Get design price", icon="MOD_BUILD")
 
     plan = bo.stored_plan(context.scene)
     if plan:
@@ -670,7 +670,7 @@ def draw_blockout_tab(layout, context):
             label = core.CATEGORIES.get(cat, core.CATEGORIES[core.DEFAULT_CATEGORY])[0]
             grid.label(text=f"{label}: {count}", icon="LAYER_ACTIVE")
         actions = info.row(align=True)
-        actions.operator("scenario.blockout_build", text="Rebuild", icon="FILE_REFRESH")
+        actions.operator("scenario.blockout_build", text="Build plan", icon="FILE_REFRESH")
         actions.operator("scenario.blockout_clear", text="Clear", icon="TRASH")
         refine = layout.box()
         refine.label(text="Refine", icon="GREASEPENCIL")
@@ -678,9 +678,10 @@ def draw_blockout_tab(layout, context):
         rrow.prop(
             props, "refine", text="", placeholder="add a second floor, taller tower, more stalls..."
         )
-        rrow.operator("scenario.blockout_refine", text="Refine", icon="MOD_BUILD")
+        rrow.operator("scenario.blockout_refine", text="Get refinement price", icon="MOD_BUILD")
+    bo.draw_status(layout, context.scene)
     layout.label(
-        text="Boxes land in the 'Blockout' collection, coloured by type. About 0.5 CU per design.",
+        text="Generate a plan, then build its grouped primitives locally.",
         icon="INFO",
     )
 

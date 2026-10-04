@@ -354,20 +354,23 @@ A playblast of your timeline, rendered as a finished clip by a video model that 
 
 ![Blockout tab with Scene, Type and Scale controls above a stored example layout and Rebuild, Clear and Refine actions](images/panel-blockout.png)
 
-*This offline example uses a stored sample plan to illustrate the controls; it is not a live generated result.*
+*Earlier layout with a stored sample plan. Current controls separate price, generation and local building as described below.*
 
 Turn a scene description into a greybox layout made of coloured primitives in a
 `Blockout` collection, grouped by the generated plan.
 
-1. Choose **Blockout** in the Scenario sidebar. Describe the scene, choose its
-   **Type** (Exterior, Interior, Game level, Nature or Architecture) and
-   **Scale** (Human, Room, Building or District), then press **Design blockout**.
-   Scenario writes a plan and Blender builds it when the response arrives.
-2. To change the plan, describe a change under **Refine** and press **Refine**.
-   Design and Refine contact Scenario and can consume credits; they require
-   configured credentials and Blender's Allow Online Access.
-3. **Rebuild** recreates the stored plan locally without another Scenario call.
-   **Clear** deletes the `Blockout` collection and forgets the stored plan.
+1. Choose **Blockout** in the Scenario sidebar. Describe the scene and choose its
+   **Type** and **Scale**, then press **Get design price**. This requests a quote
+   without generating a plan or changing geometry.
+2. Review the exact quoted cost and choose **Generate plan**. Changing the fields,
+   previous plan, scene or credentials invalidates the approval. One durable job
+   is saved before submission; an uncertain response is never retried automatically.
+3. A complete result updates the unchanged original scene's stored plan. Choose
+   **Build plan** to create the geometry locally. To refine it, describe the change,
+   choose **Get refinement price**, approve that separate quote, then build the
+   resulting plan when ready.
+4. **Clear** asks for confirmation before removing this scene's generated
+   collection and stored plan. Build and Clear support native Blender undo.
 
 The stored plan uses boxes, cylinders, planes, wedges, cones and spheres.
 Groups become subcollections; category colours distinguish Floor, Wall, Structure,
@@ -375,10 +378,17 @@ Prop, Furniture, Vegetation, Vehicle, Water, Light and Other. The summary shows
 element/group counts and category counts. You can use generated 3D assets to
 replace individual blocks as your scene develops.
 
-Design, Refine and Rebuild replace the existing `Blockout` collection. Manual
-edits to its objects are not written back to the plan and will be lost on rebuild;
-move work you want to retain outside that collection and its subcollections,
-unlinking it from Blockout first.
+Only **Build plan** replaces this scene's generated collection. Creation is
+staged before the previous build is removed; another scene's collection or an
+unrelated collection with the same name is preserved. Shared collections or
+unrelated objects added to a generated collection block rebuilding/clearing until
+you preserve them elsewhere. Manual edits to generated objects are not written
+back to the stored plan and will be replaced on an explicit rebuild.
+
+After an uncertain submission or read failure, use **Inspect saved jobs**. Do not
+repeat generation to recover a completed result. Local MCP `read_model_text` can
+retrieve the full saved output after restart without applying it to another
+scene. Native import of a recovered plan into a new scene remains separate work.
 
 ### Generations
 This session's results (collapsible entries with the asset id and a Details dialog), then the project's cloud history: prompt, kind, price, status, asset id. **Import into scene** brings a result into Blender (downloading it if needed), also for generations made on the web app or by an agent. **Load older** pages back in time. This is also the recovery path when a download failed: the job is still there, import it again.

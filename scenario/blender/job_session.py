@@ -17,7 +17,7 @@ from bpy.app.handlers import persistent
 
 from ..core.jobs.coordinator import JobCoordinator, OriginQuote, RemoteSnapshot
 from ..core.jobs.origins import OriginRevisions
-from ..core.jobs.results import PromptResults, VerifiedResults
+from ..core.jobs.results import ModelTextResult, PromptResults, VerifiedResults
 from ..core.jobs.store import JobOrigin, JobState, StoredJob
 from ..core.jobs.workers import JobWorkers
 from .image_application import ImageApplicationError, apply_images
@@ -381,6 +381,11 @@ class JobSession:
         """Read full text off-thread; delivery still checks the originating scene."""
         return self._record_command("read_prompt_results", request_id, expected_revision)
 
+    def read_model_text(self, request_id, *, expected_revision, asset_id):
+        return self._record_command(
+            "read_model_text", request_id, expected_revision, asset_id=asset_id
+        )
+
     def load_results(self, request_id, *, expected_revision):
         """Queue SDK metadata retrieval into the original job's durable manifest."""
         return self._record_command("load_results", request_id, expected_revision)
@@ -469,7 +474,7 @@ class JobSession:
         self._pending.append((task, record.intent.origin))
         return task
 
-    def _record_command(self, command, request_id, expected_revision):
+    def _record_command(self, command, request_id, expected_revision, **parameters):
         _main_thread()
         self._check_capacity()
         records = self.recovery_plan()
@@ -478,7 +483,9 @@ class JobSession:
         )
         if record is None:
             raise OriginUnavailable("The job is not in this connection's store")
-        task = getattr(self._workers, command)(request_id, expected_revision=expected_revision)
+        task = getattr(self._workers, command)(
+            request_id, expected_revision=expected_revision, **parameters
+        )
         self._pending.append((task, record.intent.origin))
         return task
 
@@ -495,7 +502,9 @@ class JobSession:
                 result = task.result()
                 record = (
                     result.record
-                    if isinstance(result, (RemoteSnapshot, VerifiedResults, PromptResults))
+                    if isinstance(
+                        result, (RemoteSnapshot, VerifiedResults, PromptResults, ModelTextResult)
+                    )
                     else result
                 )
                 if isinstance(record, OriginQuote):

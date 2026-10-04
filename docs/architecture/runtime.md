@@ -22,6 +22,15 @@ exception to the mandatory SDK policy in [AGENTS.md](../../AGENTS.md).
 
 ## Active SDK catalog
 
+Blockout Design/Refine now use
+[BlockoutJobs](../../scenario/blender/blockout_jobs.py), owned by the selected
+JobSession. UI and MCP share exact quote approval, durable submission, polling
+and complete text retrieval. Guarded delivery stores a plan; explicit local
+Build plan creates geometry. No unbound prototype event can apply a late plan.
+The [Blockout contract](../BLENDER_JOB_CONTEXT.md#blockout-plan-commands) describes
+scene ownership and recovery limits. This scoped integration does not establish
+Film or complete release acceptance.
+
 [SDKCatalog](../../scenario/core/api/sdk_catalog.py) binds model list/detail
 reads to the explicitly selected API-key pair. The application owns this context;
 opening or closing a panel does not replace it. The existing manager dispatches

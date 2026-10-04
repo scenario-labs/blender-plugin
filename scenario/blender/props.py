@@ -451,6 +451,7 @@ class ScenarioBlockoutProps(bpy.types.PropertyGroup):
         description="A change to apply to the current blockout, e.g. 'add a second floor', 'make the tower taller', 'more stalls on the left'",
     )
     plan_json: StringProperty(description="The current blockout plan as JSON (internal)")
+    built_collection: PointerProperty(type=bpy.types.Collection, options={"HIDDEN"})
 
 
 CLASSES = (

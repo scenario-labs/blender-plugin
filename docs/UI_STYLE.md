@@ -642,3 +642,32 @@ earlier artifact's provenance.
 ![Separate World restoration review for the second scene](images/world-scene-restore-approval.png)
 
 ![Restoration finished after each scene recovered its original World](images/world-scenes-restored.png)
+
+## Blockout plan approval interaction
+
+Blockout uses **Get design price**, then **Generate plan (cost)**. Refine has its
+own quote. A completed plan exposes **Build plan**; generation itself leaves
+geometry unchanged. Clear opens a confirmation dialog. Drawing is read-only.
+
+The exact ZIP with SHA-256
+`44edc43008d64f1e2836c95c0cb526f5c727a4278f6468676d4d7ef71b8fc47e`
+passed 732 installed native tests each on macOS arm64 Blender 5.0.1, 5.1.2 and
+5.2.1. An isolated 5.1.2 desktop check edited the prompt with native input,
+requested a quote with zero submissions, approved once, and received a plan
+without changing geometry. Build created the grouped tower while the existing
+cube remained selected. Native Edit > Undo removed the tower and restored the
+earlier empty plan; Redo restored both. Cancelling Clear preserved the result.
+Viewport zoom and front-view input remained available. The single mock submission
+and eight total mock requests did not increase during local operations.
+The test exited cleanly and verified the normal profile fingerprint unchanged.
+
+The transport and tower were synthetic; the frozen Connecting label is fixture
+state, not service performance evidence. The initial fixture failed while waiting
+for the sidebar region and exited without profile changes; the completed repeat
+waited for that region. Native runs retain a small Blender shutdown allocation
+diagnostic. Live provider compatibility, other OS desktop behavior and explicit
+recovered-plan import into a new scene are not established by these checks.
+
+[Before quote approval](images/blockout-plan-approval.png).
+
+![Blockout geometry after build, native undo and redo](images/blockout-plan-built.png)

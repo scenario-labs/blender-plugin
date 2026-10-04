@@ -289,10 +289,20 @@ MCP refresh requests reuse a pending history read instead of starting more worke
 The MCP `refresh` argument accepts only JSON booleans; other types fail before
 starting or delivering history work.
 
-This is in-memory browsing, not durable history or submission recovery. Local
-files are attached only to jobs returned by the current cloud page. Importing a
-history result and prototype job polling still use their existing paths; this
-change does not establish their credential or application safety.
+Cloud rows now identify matching jobs in the selected credential-bound store.
+Those rows offer **Inspect saved jobs**, which exposes the existing recovery and
+destination-approval controls. The native history import entry point rechecks
+current storage even when the displayed page predates a remote acknowledgement.
+MCP status and import lookup likewise prefer scoped saved records to an old
+unscoped cache; ambiguous remote IDs require an explicit local request ID.
+Neither path borrows the old cache's files or silently applies a saved result.
+Drawing and MCP history responses also recheck current saved identities, and
+storage failures do not fall back to the older import path.
+
+The cloud page itself remains an in-memory browse result. Jobs with no matching
+scoped record still use the existing prototype history/import path. Importing
+arbitrary cloud jobs into durable storage remains separate work; this change
+does not establish that path's credential/application safety or full acceptance.
 
 ## Where to make a change
 

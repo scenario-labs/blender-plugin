@@ -6,7 +6,27 @@ import uuid
 
 from ..core import history as core_history
 from ..core.api.catalog import LANE_KIND as KIND_BY_LANE
+from ..core.api.errors import ScenarioError
+from ..core.jobs.store import StoreError
 from . import runtime
+
+
+def saved_records():
+    """Read current scoped storage, independently of the displayed cloud page."""
+    try:
+        return runtime.ensure_job_store().records()
+    except (StoreError, OSError):
+        raise ScenarioError(
+            0, "Could not inspect saved jobs; preserve storage for recovery"
+        ) from None
+
+
+def saved_matches(reference):
+    return tuple(
+        record
+        for record in saved_records()
+        if reference in (record.intent.request_id, record.remote_job_id)
+    )
 
 
 def _kinds():
@@ -74,8 +94,13 @@ def on_history_event(payload):
         try:
             manager = runtime.ensure_manager()
             entries = core_history.entries_from_jobs(
-                payload["jobs"], manager.registry.all(), kinds=_kinds()
+                payload["jobs"],
+                manager.registry.all(),
+                kinds=_kinds(),
+                shared_records=runtime.ensure_job_store().records(),
             )
+        except (StoreError, OSError):
+            error = "Could not inspect saved jobs; preserve storage for recovery"
         except (AttributeError, TypeError, ValueError, KeyError):
             error = "Scenario returned an invalid history page"
     if error:

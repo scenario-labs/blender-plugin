@@ -592,8 +592,21 @@ def draw_result(layout, rec):
 
 
 def draw_history(layout, context, shown_ids=()):
+    if runtime.state.catalog_credentials != runtime.credentials():
+        layout.label(text="Refresh cloud history for the selected connection", icon="INFO")
+        return
     if not runtime.state.history:
         layout.label(text="Press Refresh cloud to list this project's generations", icon="INFO")
+        return
+    # Read current storage without activating a session or changing state in draw.
+    # A job may have received its remote ID since the displayed page was loaded.
+    try:
+        store = runtime.state.job_store
+        if store is None:
+            raise ValueError("No selected store")
+        saved_ids = {record.remote_job_id for record in store.records() if record.remote_job_id}
+    except Exception:
+        layout.label(text="Could not inspect saved jobs; refresh history", icon="ERROR")
         return
     local_by_job = {}
     manager = runtime.state.manager
@@ -602,7 +615,8 @@ def draw_history(layout, context, shown_ids=()):
     for entry in runtime.state.history[:24]:
         if entry.job_id in shown_ids:
             continue  # already listed among this session's results
-        local = local_by_job.get(entry.job_id)
+        saved = bool(entry.local_request_ids) or entry.job_id in saved_ids
+        local = None if saved else local_by_job.get(entry.job_id)
         if local is not None:
             draw_result(layout, local)  # same entry, same actions as a session result
             continue
@@ -619,11 +633,15 @@ def draw_history(layout, context, shown_ids=()):
                 "scenario.copy_text", text=entry.asset_ids[0], icon="COPYDOWN"
             )
             op.text, op.what = entry.asset_ids[0], "asset id"
-        if entry.local_files and entry.kind == "image":
+        if not saved and entry.local_files and entry.kind == "image":
             icon_id = thumbnail(entry.local_files[0])
             if icon_id:
                 box.template_icon(icon_value=icon_id, scale=3.0)
-        if entry.is_success:
+        if saved:
+            box.operator(
+                "scenario.inspect_saved_jobs", text="Inspect saved jobs", icon="FILE_REFRESH"
+            )
+        elif entry.is_success:
             op = box.operator("scenario.import_result", text="Download and open", icon="IMPORT")
             op.job_id, op.kind, op.model_id, op.prompt = (
                 entry.job_id,

@@ -737,3 +737,22 @@ Local approval, Undo/Redo and Build add no service request or submission; both
 disposable runs exit cleanly with the normal profile unchanged. The screenshots
 above retain their original artifact provenance. These checks do not establish
 live provider or integrated release acceptance.
+
+## Cloud history recovery controls
+
+A cloud row matched to the current scoped job store offers **Inspect saved jobs**
+instead of **Download and open**. Its saved-job controls retain the explicit
+download and destination-approval steps. Drawing reads current saved identities
+without activating a session, starting a service request or changing scene/job
+data. A changed credential selection hides the old row actions until refresh;
+a storage-read failure shows an error instead of cached import controls.
+
+The exact ZIP with SHA-256
+`fff9c8a03016711d5724cd51b7b918abf0cad0b4224b1f3c9eaa59ce25336c71`
+passes 748 installed tests on each macOS arm64 Blender 5.0.1, 5.1.2 and 5.2.1.
+Regressions cover native operator execution, read-only draw routing, stale-page
+acknowledgement, old-cache collisions, missing storage, restart and credential
+changes. These are synthetic installed tests. Native desktop interaction and
+before/after screenshots for this control change remain pending; the desktop
+control service still cannot locate the isolated Blender window. No live or paid
+provider acceptance is claimed.

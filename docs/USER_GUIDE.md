@@ -398,7 +398,18 @@ separately to update geometry. If you change scenes or edit the destination duri
 review, read and review it again. Recovery reads never generate another plan.
 
 ### Generations
-This session's results (collapsible entries with the asset id and a Details dialog), then the project's cloud history: prompt, kind, price, status, asset id. **Import into scene** brings a result into Blender (downloading it if needed), also for generations made on the web app or by an agent. **Load older** pages back in time. This is also the recovery path when a download failed: the job is still there, import it again.
+This session's results appear first, followed by cloud history with prompt, kind,
+price, status and asset identity. **Load older** pages back in time.
+
+For a job saved by this extension's shared runtime, choose **Inspect saved jobs**.
+Use its explicit recovery controls to resume a download, then review the selected
+destination before applying a result. This also works after restarting Blender.
+Opening the saved job does not generate again, resume an inactive download or
+import into the current scene. An older cached copy cannot bypass its result approval.
+
+Cloud jobs without a matching saved record still offer the earlier **Download
+and open** path. That path is not yet integrated with durable result approvals;
+it does not establish the release's complete cloud-history acceptance.
 
 ![Generations list with result prompts, credit amounts and Import into scene buttons](images/panel-generations.png)
 

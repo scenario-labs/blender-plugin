@@ -91,7 +91,9 @@ Native saved-job controls expose **Read saved Blockout plan**, followed by
 whether an existing plan will be replaced. Cancellation discards its handle.
 MCP `prepare_blockout_plan`, `blockout_plan_status` and `apply_blockout_plan`
 use the same read, review and single-use approval commands. Status can discard
-a finished review without mutating Blender data.
+a finished review without mutating Blender data. A deleted destination is skipped
+by saved-job drawing and returns an unavailable-scene error from status; a new
+scene with the same name never inherits its review.
 
 Application rechecks the selected context, saved job revision, destination
 revision and unchanged fields before consuming the handle and replacing only

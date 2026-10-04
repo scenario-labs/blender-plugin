@@ -52,14 +52,15 @@ class BlockoutRecovery:
         self.reviews = {}
 
     def current(self, request_id, scene):
-        return next(
-            (
-                review
-                for review in reversed(tuple(self.reviews.values()))
-                if review.request_id == request_id and review.scene == scene
-            ),
-            None,
-        )
+        for review in reversed(tuple(self.reviews.values())):
+            try:
+                # Reading the name rejects invalid wrappers even if equality
+                # itself does not raise after deletion or Undo.
+                if review.request_id == request_id and review.scene.name and review.scene == scene:
+                    return review
+            except ReferenceError:
+                continue
+        return None
 
     def _record(self, request_id, revision):
         if not self.session.active:
@@ -155,14 +156,20 @@ class BlockoutRecovery:
         review = self.reviews.get(identifier)
         if review is None:
             raise ScenarioError(0, "Use a current saved-plan review")
+        try:
+            scene_name = review.scene.name
+            phase, error = review.phase, review.error
+        except ReferenceError:
+            scene_name, phase = "Unavailable", "ERROR"
+            error = "The destination scene was removed; read the plan for a new destination"
         return {
             "review_id": review.identifier,
-            "state": review.phase.lower(),
-            "scene": review.scene.name,
+            "state": phase.lower(),
+            "scene": scene_name,
             "elements": review.elements,
             "groups": review.groups,
             "replaces_plan": bool(review.binding[-1]),
-            "error": review.error,
+            "error": error,
         }
 
     def discard(self, identifier):

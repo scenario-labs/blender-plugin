@@ -500,6 +500,13 @@ class BlockoutJobsTests(unittest.TestCase):
         bpy.data.scenes.remove(self.scene)
         replacement = bpy.data.scenes.new(old_name)
         bpy.context.window.scene = replacement
+        self.assertIsNone(recovery.current(record.intent.request_id, replacement))
+        summary = self.mcp.blockout_plan_status(
+            {"context_id": self.runtime.state.job_context_id, "review_id": review.identifier}
+        )
+        self.assertEqual(summary["state"], "error")
+        self.assertEqual(summary["scene"], "Unavailable")
+        self.assertIn("removed", summary["error"])
         with self.assertRaises((RuntimeError, self.facade.ScenarioError)):
             recovery.apply(review.identifier)
         self.assertEqual(replacement.scenario_blockout.plan_json, "")

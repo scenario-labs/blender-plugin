@@ -705,3 +705,9 @@ used an incomplete old-plan object and caused draw errors; a normalized repeat
 rendered the controls correctly. No normal-profile change was detected.
 
 ![Saved Blockout job offers a separate read action before destination approval](images/blockout-recovery-controls.png)
+
+The deleted-destination follow-up uses ZIP SHA-256
+`9b9bb818f0ec81e0af4ed95ba6d70390d17e12af72c24b5040d6814316b31ed2`.
+Saved-job drawing skips invalid scene references and status reports an unavailable
+scene without rebinding a same-name replacement. The installed regression covers
+that deletion/status path; it does not replace the pending desktop input proof.

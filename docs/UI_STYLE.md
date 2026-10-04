@@ -241,12 +241,17 @@ mesh with one object user in one scene; drawing reads the prepared snapshot and
 never opens files or changes assignments. Cancel discards its approval. A changed
 mesh, slot or scene revision requires a new review rather than retargeting.
 
-The exact packaged ZIP
-`21edc21dcc309d10a5989cb6ad9411cc39254d7dc83d123e9bf5d3e1b404efd5`
-passes 606 full native tests on each of macOS arm64 Blender 5.0.1, 5.1.2 and
-5.2.1. Tests cover the native operator and shared MCP approval, slot/scene
-changes during verification, rollback, packing and receipt-only recovery.
-Desktop mouse, focus, keyboard and viewport acceptance is still pending:
-the isolated 5.1.2 fixture reached its ready state, but computer control could
-not access its window. A rendered fixture is not interaction proof. Complete
-that check before accepting this UI change or claiming release readiness.
+Offline desktop acceptance on macOS arm64 Blender 5.1.2 used exact ZIP
+`b30a62ff2864507ad62dfd8eb743d3b17a17e7487bf1c94185072efcff405f67`,
+which passes 607 full native tests on each of Blender 5.0.1, 5.1.2 and 5.2.1.
+Mouse confirmation applied one synthetic saved albedo map as a packed material
+to the approved mesh slot. The job became applied with mock submission/request
+counts unchanged. Material preview, viewport and Outliner selection, front-view
+and orbit keyboard input, zoom and material-property inspection worked afterward.
+Blender exited cleanly and the normal-profile fingerprint was unchanged. The
+test-only app copy used a distinct bundle identifier and local ad-hoc signature;
+vendor executable code and extension ZIP were unchanged. The earlier attempt
+could not access the window; it was not counted as interaction evidence.
+This check does not establish live provider quality, other OS desktop support,
+full Materials acceptance or resolution of #263. See the
+[user guide](USER_GUIDE.md#materials) for the approval and result screenshots.

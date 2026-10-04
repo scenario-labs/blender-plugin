@@ -281,6 +281,10 @@ require review. Already-imported Image results cannot be re-claimed here. There
 is no global undo entry; preserve any old material you want to keep and save the
 blend file yourself. See [material application](MATERIAL_APPLICATION.md) for limits.
 
+![Saved material confirmation identifies the approved mesh slot and albedo texture role](images/saved-material-approval.png)
+
+![The approved mesh has a new Scenario Material with its albedo input visible](images/saved-material-result.png)
+
 ### Audio
 
 For new shared jobs, **Add audio strip (N)** confirms one saved MP3, WAV or OGG

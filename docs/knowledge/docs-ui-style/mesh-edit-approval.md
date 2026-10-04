@@ -18,9 +18,9 @@
       "scenario/blender/mesh_result_application.py": "73ef54edb7fe04c6c3807db817b35f13655fdb2d57aaf83b622f6fd6a8aee70f",
       "scenario/mcp/tools_scenario.py": "ed2ccd0b21a7a6ac465280493015ee8d99d2ec84881a32c7b7e7b2dbad2a7676",
       "tests/blender/test_model_generation.py": "ffa27c20d89607735c78fb2e6d240668e3ce569cd35f0bcba4dd6d86cefc50bf",
-      "docs/images/saved-mesh-edit-before.png": "e009de4b97ae48a4059e85ab9804568e962975a960b6f83cc6d9fac28d2285af",
-      "docs/images/saved-mesh-edit-approval.png": "d61e9477bfff7057b356ffde75defacd25cf892b4eacfa10f9fe8a0adfdbd9d4",
-      "docs/images/saved-mesh-edit-result.png": "85a5a503fb93f65dc2d963545560afa41c011498c1efe37cd71f3cf3c81255e6"
+      "docs/images/saved-mesh-edit-before.png": "471166c6947616434322872aaecfbe94f595b3aa332db6d504a9bed2e44f3ae9",
+      "docs/images/saved-mesh-edit-approval.png": "970d76317a7545a27708b9b27ca2a1957ecbcf7a003ed9727e4ab345137cba26",
+      "docs/images/saved-mesh-edit-result.png": "a421cf043df14b0510c24fe3d0d45b5fb8b9bfe60b84be104ea4a1da04c54669"
     }
   }
 }

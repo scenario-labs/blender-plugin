@@ -363,6 +363,17 @@ class JobSession:
     def refresh_remote(self, request_id, *, expected_revision):
         return self._record_command("refresh_remote", request_id, expected_revision)
 
+    def adopt_cloud_job(self, identifier, *, expected_model_id, scene):
+        """Queue an explicit cloud-result read; this never approves scene application."""
+        _main_thread()
+        self._check_capacity()
+        origin = self.capture(scene)
+        task = self._workers.adopt_cloud_job(
+            identifier, expected_model_id=expected_model_id, origin=origin
+        )
+        self._pending.append((task, origin))
+        return task
+
     def recovery_plan(self):
         """Inspect this connection's saved jobs without resolving old Blender targets."""
         _main_thread()

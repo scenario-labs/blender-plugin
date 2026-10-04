@@ -18,6 +18,7 @@ from ..api.sdk_adapter import Estimate, SDKAdapter
 from ..schema.forms import _fields, is_file_field
 from .results import ResultCommands, ResultError, VerifiedResults
 from .store import (
+    CloudJobIntent,
     JobIntent,
     JobMeshSource,
     JobOrigin,
@@ -771,6 +772,44 @@ class JobCoordinator:
                 raise StoreConflict("Only the current known remote job can be refreshed")
         response = self._adapter.job(current.remote_job_id)
         return self._observe_remote(current, response)
+
+    def adopt_cloud_job(self, identifier, *, expected_model_id, origin):
+        """Retrieve an explicitly selected completed model job, without submission."""
+        _identity(identifier)
+        _identity(expected_model_id)
+        intent = CloudJobIntent(
+            "cloud-" + hashlib.sha256(identifier.encode()).hexdigest(),
+            self.scope,
+            origin,
+            expected_model_id,
+        )
+        with self._request_guard(origin):
+            pass
+        response = self._adapter.job(identifier)
+        metadata = response.get("metadata")
+        inputs = metadata.get("input") if isinstance(metadata, dict) else None
+        assets = metadata.get("assetIds") if isinstance(metadata, dict) else None
+        if (
+            response.get("jobId") != identifier
+            or response.get("status") != "success"
+            or response.get("jobType") not in ("custom", "inference")
+            or not isinstance(inputs, dict)
+            or inputs.get("modelId") != expected_model_id
+            or not isinstance(assets, list)
+            or not 1 <= len(assets) <= 128
+        ):
+            raise RecoveryError("Scenario did not confirm the selected completed model job")
+        try:
+            for asset in assets:
+                _identity(asset)
+            if len(set(assets)) != len(assets):
+                raise ValueError
+        except ValueError:
+            raise RecoveryError(
+                "Scenario returned invalid completed-job asset identities"
+            ) from None
+        with self._request_guard(origin):
+            return self._store.adopt_cloud_job(intent, identifier)
 
     def _observe_remote(self, current, response):
         """Commit only retrieval evidence, never cancellation acknowledgements."""

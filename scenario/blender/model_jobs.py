@@ -455,7 +455,9 @@ class ModelJobs:
                 kind="model",
                 model_id=record.intent.target_id,
                 body={},
-                cu_cost=float(record.intent.quote_cost),
+                cu_cost=float(record.intent.quote_cost)
+                if record.intent.quote_cost is not None
+                else None,
                 meta={"shared_job": True, "prompt": "Recovered model job"},
             )
             self._paused.add(request_id)
@@ -1074,8 +1076,11 @@ class ModelJobs:
             "status": record.state.value,
             "revision": record.revision,
             "mesh_sources": [asdict(source) for source in record.intent.mesh_sources],
-            "cu_cost": float(record.intent.quote_cost),
+            "cu_cost": float(record.intent.quote_cost)
+            if record.intent.quote_cost is not None
+            else None,
             "cu_cost_exact": record.intent.quote_cost,
+            "source": getattr(record.intent, "source", "generation"),
             "kind": self.views[record.intent.request_id].kind
             if record.intent.request_id in self.views
             else "model",

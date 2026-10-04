@@ -26,6 +26,10 @@ finish before a usable final quote.
 saved costs, revisions and suggested recovery actions without contacting Scenario.
 It includes all new MCP and native form model submissions,
 but does not import prototype records or refresh remote jobs.
+Rows identify `source: generation` or `cloud`. A record created through the
+[cloud adoption foundation](JOB_COORDINATOR.md#adopting-a-completed-cloud-job)
+has `cu_cost_exact: null`, because no local quote exists. `job_status` preserves
+the same distinction. There is not yet an MCP tool for adopting a cloud job.
 `cancel_prepared_job` cancels only an unsubmitted durable intent, using the context
 token and revision from inspection. A reset, file load or credential switch invalidates that
 token. Claimed or uncertain submissions require reconciliation, never blind retry.

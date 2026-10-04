@@ -265,6 +265,7 @@ def list_local_jobs(args):
                 "operation": item.record.intent.operation,
                 "target_id": item.record.intent.target_id,
                 "cu_cost_exact": item.record.intent.quote_cost,
+                "source": getattr(item.record.intent, "source", "generation"),
                 "remote_job_id": item.record.remote_job_id,
             }
             for item in items

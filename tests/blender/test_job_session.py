@@ -89,6 +89,38 @@ class JobSessionTests(unittest.TestCase):
         with self.assertRaises(self.module.OriginUnavailable):
             self.session.deliver(completion, lambda *args: self.fail("Delivered twice"))
 
+    def test_cloud_read_stays_off_main_thread_and_does_not_mutate_scene(self):
+        import httpx
+
+        before = tuple(self.scene.objects)
+
+        def respond(request):
+            self.assertIsNot(threading.current_thread(), threading.main_thread())
+            self.assertEqual(request.method, "GET")
+            return httpx.Response(
+                200,
+                json={
+                    "job": {
+                        "jobId": "cloud-job",
+                        "jobType": "custom",
+                        "status": "success",
+                        "metadata": {"input": {"modelId": "model"}, "assetIds": ["asset"]},
+                    }
+                },
+            )
+
+        self.handler = respond
+        task = self.session.adopt_cloud_job(
+            "cloud-job", expected_model_id="model", scene=self.scene
+        )
+        record = task.result(5)
+        outcomes = self.session.drain(task=task)
+        self.assertIsNone(outcomes[0].error)
+        self.assertEqual(outcomes[0].result, record)
+        self.assertEqual(tuple(self.scene.objects), before)
+        self.assertIsNone(record.intent.origin.target_id)
+        self.assertIsNone(record.intent.quote_cost)
+
     def test_real_dependency_update_invalidates_quote_and_result(self):
         completion = self.completion()
         self.target.location.x += 1

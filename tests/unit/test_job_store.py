@@ -374,7 +374,8 @@ def legacy_store(path, version):
             "SELECT scope, request_id, record FROM jobs"
         ).fetchall():
             value = json.loads(raw)
-            del value["intent"]["mesh_sources"]
+            if version < 6:
+                del value["intent"]["mesh_sources"]
             if version < 5:
                 del value["local_applications"]
             if version == 2:
@@ -389,7 +390,7 @@ def legacy_store(path, version):
         connection.execute(f"PRAGMA user_version={version}")
 
 
-@pytest.mark.parametrize("version", [2, 3, 4, 5])
+@pytest.mark.parametrize("version", [2, 3, 4, 5, 6])
 def test_shared_store_upgrade_preserves_all_scopes_states_and_receipts(tmp_path, intent, version):
     path = tmp_path / "jobs.sqlite3"
     expected = {}
@@ -421,11 +422,11 @@ def test_shared_store_upgrade_preserves_all_scopes_states_and_receipts(tmp_path,
     for scope, records in expected.items():
         assert JobStore(path, scope).records() == records
     with sqlite3.connect(path) as connection:
-        assert connection.execute("PRAGMA user_version").fetchone()[0] == 6
+        assert connection.execute("PRAGMA user_version").fetchone()[0] == 7
 
 
 @pytest.mark.parametrize("damage", ["commit", "scope", "revision", "record", "foreign", "v1"])
-@pytest.mark.parametrize("version", [2, 3, 4, 5])
+@pytest.mark.parametrize("version", [2, 3, 4, 5, 6])
 def test_shared_store_upgrade_failure_preserves_every_row_and_version(
     tmp_path, intent, monkeypatch, damage, version
 ):
@@ -969,6 +970,22 @@ def test_schema_five_upgrade_preserves_unfinished_local_application(tmp_path, in
     legacy_store(path, 5)
     reopened = JobStore(path, intent.scope)
     assert reopened.get(intent.request_id) == unfinished
+    assert unfinished.local_applications[-1].state == LocalApplicationState.APPLYING
+    with pytest.raises(StoreConflict, match="unfinished"):
+        reuse(reopened, unfinished, application_id="repeat")
+
+
+def test_schema_six_upgrade_preserves_mesh_sources_and_unfinished_reuse(
+    tmp_path, intent, mesh_binding
+):
+    path = tmp_path / "jobs.sqlite3"
+    store = JobStore(path, intent.scope)
+    bound = replace(intent, mesh_sources=(mesh_binding,))
+    unfinished = reuse(store, completed_result(store, bound))
+    legacy_store(path, 6)
+    reopened = JobStore(path, intent.scope)
+    assert reopened.get(intent.request_id) == unfinished
+    assert unfinished.intent.mesh_sources == (mesh_binding,)
     assert unfinished.local_applications[-1].state == LocalApplicationState.APPLYING
     with pytest.raises(StoreConflict, match="unfinished"):
         reuse(reopened, unfinished, application_id="repeat")

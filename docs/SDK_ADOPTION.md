@@ -168,6 +168,17 @@ These reads do not activate durable recovery, project-selection UI, downloads,
 submission or result application. See the
 [runtime history boundary](architecture/runtime.md#active-sdk-history).
 
+## Completed cloud job adoption
+
+The [shared adoption command](JOB_COORDINATOR.md#adopting-a-completed-cloud-job)
+uses SDK 2.2.0 `jobs.with_raw_response.retrieve` through `SDKAdapter.job`.
+The published wheel and [job retrieval reference](https://docs.scenario.com/api/python/resources/jobs/methods/retrieve)
+establish GET `/jobs/{jobId}`, optional `projectId` and the `job` response wrapper.
+The adapter preserves the original metadata used to verify the selected model
+and output identities. Existing selected credentials, permission checks and
+sanitized errors apply; no new raw fallback or SDK extension is needed.
+Synthetic transport/native checks do not prove live provider acceptance.
+
 ## Upload and job operation boundaries
 
 The operation audit uses the published wheel's `resources/uploads.py`,

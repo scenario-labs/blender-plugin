@@ -16,7 +16,7 @@ from unittest.mock import Mock, patch
 
 import bpy
 import httpx
-from helpers import online_access, reset_scene, submodule, temp_credentials
+from helpers import animated_glb, online_access, reset_scene, submodule, temp_credentials
 
 
 class ModelGenerationTests(unittest.TestCase):
@@ -1242,6 +1242,40 @@ class ModelGenerationTests(unittest.TestCase):
         self.assertEqual((len(self.calls), len(self.paid)), before)
         with self.assertRaises(self.request_error):
             self.tools.apply_result_application(self.import_args(approval))
+
+    def test_shared_animated_model_import_retains_rig_and_clips_without_more_requests(self):
+        request_id = self.recovered_model(animated_glb())
+        before = len(self.calls), len(self.paid)
+        approval = self.prepare_model(request_id)
+        deferred = self.tools.apply_result_application(self.import_args(approval))
+        status = deferred.finish(deferred.run())
+        self.assertEqual(status["status"], "applied", status)
+        rig = next(
+            bpy.data.objects[name]
+            for name in status["objects"]
+            if bpy.data.objects[name].type == "ARMATURE"
+        )
+        self.assertEqual(len(rig.data.bones), 2)
+        self.assertEqual(len(rig.animation_data.nla_tracks), 2)
+        self.assertEqual((len(self.calls), len(self.paid)), before)
+        with self.assertRaises(self.request_error):
+            self.tools.apply_result_application(self.import_args(approval))
+
+    def test_native_animated_model_import_uses_shared_approval(self):
+        request_id = self.recovered_model(animated_glb())
+        before = len(self.calls), len(self.paid)
+        approval = self.prepare_model(request_id)
+        args = self.import_args(approval)
+        args.update(
+            request_id=request_id,
+            expected_revision=approval["revision"],
+            asset_id=approval["asset_id"],
+        )
+        self.assertEqual(bpy.ops.scenario.import_saved_model(**args), {"FINISHED"})
+        self.deliver_results()
+        self.assertEqual(self.store.get(request_id).state, self.storemod.JobState.APPLIED)
+        self.assertEqual(sum(obj.type == "ARMATURE" for obj in bpy.context.scene.objects), 1)
+        self.assertEqual((len(self.calls), len(self.paid)), before)
 
     def test_changed_model_cursor_during_verification_prevents_import(self):
         request_id = self.recovered_model()

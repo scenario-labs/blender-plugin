@@ -60,3 +60,32 @@ def test_unsupported_dependencies_and_allocation_bounds_are_rejected(mutation):
 def test_incomplete_or_malformed_container_is_rejected(data):
     with pytest.raises(GLBError):
         inspect_glb(data)
+
+
+def test_new_group_policy_allows_bounded_skins_and_node_animation():
+    data = modified(
+        lambda d: d.update(
+            skins=[{"joints": [0]}],
+            animations=[{"channels": [{"target": {"node": 0, "path": "translation"}}]}],
+        )
+    )
+    assert inspect_glb(data, static_only=False)["skins"]
+    with pytest.raises(GLBError, match="own application policy"):
+        inspect_glb(data)
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    [
+        lambda d: d.update(animations=[{}] * 129),
+        lambda d: d.update(skins=[{}] * 129),
+        lambda d: d.update(skins=[{"joints": [0] * 10001}]),
+        lambda d: d.update(skins=[{"joints": [True]}]),
+        lambda d: d.update(skins=[{"joints": [999]}]),
+        lambda d: d.update(animations=[{"channels": [{"target": {"node": 0, "path": "pointer"}}]}]),
+        lambda d: d["images"][0].update(uri="../external.png"),
+    ],
+)
+def test_dynamic_policy_keeps_resource_and_animation_bounds(mutation):
+    with pytest.raises(GLBError):
+        inspect_glb(modified(mutation), static_only=False)

@@ -102,9 +102,9 @@ this is a work cap, not a latency guarantee. Large meshes and unsupported data
 require another application path. Installed-ZIP tests use local synthetic meshes;
 no OAuth or paid cloud acceptance is implied.
 
-## Explicit saved static GLB import
+## Explicit saved GLB import
 
-The shared saved-job path can import one explicitly selected static
+The shared saved-job path can import one explicitly selected
 `model/gltf-binary` result into a new **Scenario Model** collection and parent
 group. It places the model's world-space bottom center at the approved 3D cursor,
 retains the imported hierarchy and materials, packs embedded images, and leaves
@@ -116,12 +116,15 @@ One import consumes the job's application claim.
 [`glb.inspect_glb`](../scenario/core/scene/glb.py) checks the
 [GLB 2.0 container](https://github.com/KhronosGroup/glTF/blob/98015344c6a5f5a3a96686cbd77960a8b09f6276/specification/2.0/Specification.adoc)
 and the supported import policy before Blender runs. It requires one scene,
-one embedded binary buffer and no URI references, animation or skins. Limits
-are 256 MiB of file bytes, 8 MiB of JSON, 10,000 nodes and 10 million accessor
-entries. This is a bounded policy preflight, not a complete glTF validator or
-proof against every expensive decoder input; Blender validates geometry and
-textures. JSON glTF, FBX, OBJ, splats, multiple scenes, external files, rigs and
-animations need separate integration. Unsupported downloads remain available.
+one embedded binary buffer and no URI references. New-group imports retain skins
+and node transform/morph-weight animations. Limits are 256 MiB of file bytes,
+8 MiB of JSON, 10,000 nodes, 10 million accessor entries, 128 skins, 128 animation
+clips and 10,000 total joints or animation channels. This is a bounded policy
+preflight, not a complete glTF validator or proof against every expensive decoder
+input; Blender validates geometry and textures. JSON glTF, FBX, OBJ, splats,
+multiple scenes, external files and pointer-based animation need separate
+integration. Unsupported downloads remain available. In-place mesh policies
+keep the default static-only preflight.
 
 [`model_application.apply_model`](../scenario/blender/model_application.py)
 rehashes the exact local receipt, writes a private snapshot and imports into a
@@ -136,7 +139,7 @@ warning and may leave a temporary file, but preserves a completed packed import.
 Copying, hashing and decoding are synchronous on the main thread, so large models
 can pause Blender. There is no automatic blend save or global-undo transaction.
 
-Native **Import static model (N)** and MCP `prepare_result_application` with
+Native **Import model (N)** and MCP `prepare_result_application` with
 `asset_id` capture the scene revision and exact cursor. Approval is consumed once;
 worker verification and destination revalidation precede the durable claim.
 The current scene must be local and in Object Mode both at preparation and after
@@ -149,6 +152,32 @@ Receipt-only retry saves known success without importing another model, and
 session shutdown releases that retry handle. This remains partial #65/#99 work:
 provider-specific edit contracts, rig/animation transfer and edit-specific recovery
 are not established by a successful new-object import.
+
+## Rigged and animated model import
+
+The new-group path keeps imported armatures, bone hierarchy, vertex weights,
+shape keys, actions and NLA clips. Blender activates the first clip and retains
+other clips in muted NLA tracks. Animation times use the destination scene's
+current effective frame rate; time zero maps to frame zero. Import leaves the
+current frame/subframe, frame range and frame rate unchanged. It does not shift
+clips to the current frame, extend the timeline or retarget animation to an
+existing rig. Moving the new parent group moves the imported character together.
+
+Armature construction requires the staging scene to own the active window and
+view layer while Blender's importer runs. The importer restores both afterward,
+including on failure, and disables generated bone-display helper geometry.
+It also restores the optional glTF animation UI list on pre-existing scenes:
+that upstream UI writes outside the import context. Imported actions and NLA
+tracks remain on their new owners. Supported Blender 5.0/5.1/5.2 importers multiply
+seconds by `fps * fps_base`; the disposable scene uses reciprocal `fps_base` so
+clips match the destination's effective `fps / fps_base` without changing its
+settings. Native coverage includes a fractional frame rate, deformation, multiple
+clips, UI-list restoration and complete cleanup after failed publication.
+
+This imports a complete new character. Applying a returned rig or animation to
+the original captured mesh remains separate #99 work. Native global Undo is not
+added to this new-group command. See [interaction evidence](UI_STYLE.md#animated-model-import-interaction)
+for the exact packaged desktop check and its limits.
 
 ## Captured source and verified saved-mesh command
 

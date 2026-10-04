@@ -199,10 +199,12 @@ For supported video/audio, **Add video/audio strip** and MCP
 scene/frame for approval. The shared command verifies local receipts and claims
 application before inserting one strip. Receipt retry never repeats insertion;
 see [saved media application](../BLENDER_JOB_CONTEXT.md#explicit-saved-video-and-audio-application).
-The same asset-selected MCP approval and **Import static model** support one
-self-contained static GLB at the captured cursor. Import stages in a disposable
-scene, preserves existing selection and packs its textures. Its separate durable
-claim/receipt recovery follows the same session; in-place editing remains open.
+The same asset-selected MCP approval and **Import model** support one
+self-contained GLB at the captured cursor. Import stages in a disposable
+scene, preserves existing selection and packs its textures. Rigs, weights and
+node/morph animation clips remain in the new group; timing uses scene FPS without
+changing the current frame or timeline range. Its separate durable claim/receipt
+recovery follows the same session; in-place rig/animation transfer remains open.
 Saved PNG/EXR results also offer explicit World replacement, with a separate
 guarded restore in the current session. Completed jobs can reuse saved results
 through fresh UI/MCP approval and a separate durable local claim, preserving the

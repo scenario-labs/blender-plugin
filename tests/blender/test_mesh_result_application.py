@@ -638,3 +638,26 @@ class MeshResultTests(unittest.TestCase):
             with self.assertRaises(self.mesh.MeshApplicationError):
                 self.apply()
         importer.assert_not_called()
+
+    def test_animated_glb_still_cannot_replace_static_source(self):
+        from helpers import animated_glb
+
+        data = animated_glb()
+        self.path.write_bytes(data)
+        self.item = self.storage.StoredResult(
+            self.storage.ResultAsset("model", self.path.name, "model/gltf-binary", len(data)),
+            self.transfers.DownloadedResult(
+                self.path.name, len(data), hashlib.sha256(data).hexdigest()
+            ),
+        )
+        before = self.module.model_application._snapshot()
+        with self.assertRaises(self.module.MeshResultApplicationError):
+            self.module.apply_saved_mesh(
+                self.target,
+                self.item,
+                self.path,
+                policy="REMESH",
+                result_to_source=Matrix.Identity(4),
+                keep_original=True,
+            )
+        self.assertEqual(self.module.model_application._snapshot(), before)

@@ -1,6 +1,6 @@
 # SPDX-FileCopyrightText: 2026 Scenario Inc.
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""Bounded preflight for self-contained static GLB result imports."""
+"""Bounded preflight for self-contained GLB result imports."""
 
 import json
 import math
@@ -19,7 +19,7 @@ def _reject_constant(_value):
     raise GLBError("Nonfinite JSON values are unsupported")
 
 
-def inspect_glb(data):
+def inspect_glb(data, *, static_only=True):
     """Validate the container and policy; Blender still validates actual geometry.
 
     Layout: glTF 2.0 GLB specification, linked from docs/MESH_APPLICATION.md.
@@ -47,12 +47,14 @@ def inspect_glb(data):
         document = json.loads(data[start : start + length], parse_constant=_reject_constant)
         if document["asset"]["version"] != "2.0":
             raise GLBError("Use glTF 2.0")
-        if document.get("animations") or document.get("skins"):
+        if static_only and (document.get("animations") or document.get("skins")):
             raise GLBError("Rigged or animated results require their own application policy")
         if len(document.get("scenes", [])) != 1 or document.get("scene", 0) != 0:
             raise GLBError("Choose a GLB with one model scene")
         if not 0 < len(document.get("nodes", [])) <= 10_000:
             raise GLBError("GLB node count exceeds the supported import limit")
+        if not static_only:
+            _check_animation_bounds(document)
         buffers = document["buffers"]
         if len(buffers) != 1 or type(buffers[0]["byteLength"]) is not int:
             raise GLBError("Use one embedded binary buffer")
@@ -79,3 +81,26 @@ def inspect_glb(data):
         if isinstance(error, GLBError):
             raise
         raise GLBError("Malformed or unsupported GLB description") from None
+
+
+def _check_animation_bounds(document):
+    """Bound supported skin/node animation work; Blender validates buffer semantics."""
+    skins, animations = document.get("skins", []), document.get("animations", [])
+    if len(skins) > 128 or len(animations) > 128:
+        raise GLBError("GLB skin or animation count exceeds the supported import limit")
+    joints = [joint for skin in skins for joint in skin["joints"]]
+    channels = [channel for clip in animations for channel in clip["channels"]]
+    if len(joints) > 10_000 or len(channels) > 10_000:
+        raise GLBError("GLB joints or animation channels exceed the supported import limit")
+    nodes = len(document["nodes"])
+    if any(type(joint) is not int or not 0 <= joint < nodes for joint in joints):
+        raise GLBError("Invalid skin joint reference")
+    for channel in channels:
+        target = channel["target"]
+        node = target.get("node")
+        if (
+            type(node) is not int
+            or not 0 <= node < nodes
+            or target["path"] not in {"translation", "rotation", "scale", "weights"}
+        ):
+            raise GLBError("Use node transform or morph-weight animation")

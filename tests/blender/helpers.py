@@ -137,3 +137,78 @@ def parts_glb(count=2):
         + value
         + tail
     )
+
+
+def animated_glb(*, clips=2):
+    """Add a two-bone skin, morph target and node clips to our first-party triangle."""
+    original = (FIXTURES / "synthetic/static-triangle.glb").read_bytes()
+    length = struct.unpack_from("<I", original, 12)[0]
+    document = json.loads(original[20 : 20 + length])
+    binary = bytearray(original[28 + length :])
+
+    def accessor(values, fmt, kind, count, component=5126):
+        binary.extend(b"\0" * (-len(binary) % 4))
+        offset = len(binary)
+        binary.extend(struct.pack("<" + fmt * len(values), *values))
+        view = len(document["bufferViews"])
+        document["bufferViews"].append(
+            {"buffer": 0, "byteOffset": offset, "byteLength": len(binary) - offset}
+        )
+        index = len(document["accessors"])
+        document["accessors"].append(
+            {"bufferView": view, "componentType": component, "count": count, "type": kind}
+        )
+        return index
+
+    primitive = document["meshes"][0]["primitives"][0]
+    primitive["attributes"]["JOINTS_0"] = accessor([0, 0, 0, 0] * 3, "H", "VEC4", 3, 5123)
+    primitive["attributes"]["WEIGHTS_0"] = accessor([1, 0, 0, 0] * 3, "f", "VEC4", 3)
+    primitive["targets"] = [{"POSITION": accessor([0, 0, 1] * 3, "f", "VEC3", 3)}]
+    document["meshes"][0]["weights"] = [0]
+    document["nodes"] = [
+        {"name": "Character", "children": [1, 2]},
+        {"name": "Body", "mesh": 0, "skin": 0},
+        {"name": "RootJoint", "children": [3]},
+        {"name": "TipJoint", "translation": [0, 1, 0]},
+    ]
+    identity = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]
+    tip_inverse = identity.copy()
+    tip_inverse[13] = -1
+    document["skins"] = [
+        {
+            "joints": [2, 3],
+            "skeleton": 2,
+            "inverseBindMatrices": accessor(identity + tip_inverse, "f", "MAT4", 2),
+        }
+    ]
+    times = accessor([0, 1], "f", "SCALAR", 2)
+    document["accessors"][times].update(min=[0], max=[1])
+    document["animations"] = []
+    for index in range(clips):
+        translations = accessor([0, 0, 0, (index + 1) * 2, 0, 0], "f", "VEC3", 2)
+        weights = accessor([0, 1], "f", "SCALAR", 2)
+        document["animations"].append(
+            {
+                "name": f"Move {index + 1}",
+                "samplers": [
+                    {"input": times, "output": translations},
+                    {"input": times, "output": weights},
+                ],
+                "channels": [
+                    {"sampler": 0, "target": {"node": 2, "path": "translation"}},
+                    {"sampler": 1, "target": {"node": 1, "path": "weights"}},
+                ],
+            }
+        )
+    document["buffers"][0]["byteLength"] = len(binary)
+    binary.extend(b"\0" * (-len(binary) % 4))
+    description = json.dumps(document).encode()
+    description += b" " * (-len(description) % 4)
+    return (
+        struct.pack(
+            "<4sIII4s", b"glTF", 2, 28 + len(description) + len(binary), len(description), b"JSON"
+        )
+        + description
+        + struct.pack("<I4s", len(binary), b"BIN\0")
+        + binary
+    )

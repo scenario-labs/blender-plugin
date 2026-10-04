@@ -230,17 +230,22 @@ Text, images or your Blender scene to video (Seedance 2.0 and 2.5, Kling, Veo, W
 
 ### 3D
 
-For newly generated shared jobs, choose **Import static model (N)** for one
+For newly generated shared jobs, choose **Import model (N)** for one
 saved GLB. Confirm the scene and cursor position. The importer adds a new group
 with its bottom center at that cursor, retains the model hierarchy/materials,
 packs embedded textures and preserves your current objects and selection.
 One selected result consumes the job's application claim; variants and maps stay
 saved. A changed cursor or scene requires a new confirmation.
 
-This path accepts static GLBs with one scene and embedded files, up to 256 MiB.
-Rigs, animations, external files, other model formats and replacing an existing
-mesh are not supported by this new import action. Large models may briefly
-pause Blender while loading. Save the blend file yourself after import.
+This path accepts GLBs with one scene and embedded files, up to 256 MiB. It keeps
+rigs, skin weights, shape keys and node animation clips. The first clip is active;
+other clips are retained in muted NLA tracks. Clip timing uses your scene frame
+rate, with time zero at frame zero. Your current frame and timeline range stay
+unchanged; adjust the range yourself to play the full clip. External files,
+pointer-based animation, other model formats and replacing an existing mesh are
+not supported by this new import action. Large models may briefly pause Blender
+while loading. Save the blend file yourself after import; this command does not
+add a global Undo step.
 
 ![One saved triangle model imported beside existing geometry at the approved Blender cursor](images/saved-model-result.png)
 

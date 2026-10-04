@@ -530,3 +530,35 @@ Escape closed it and front-view keyboard input worked in the viewport. Mock
 submissions, requests and downloads stayed unchanged, with no network attempts.
 The process exited cleanly, its profile was removed and the normal profile was
 unchanged. Earlier screenshots retain their original artifact provenance.
+
+## Animated model import interaction
+
+The shared saved-result button is **Import model**. Its review names the scene
+and cursor and explains a new group, packed textures, preserved selection,
+retained rigs/clips and unchanged timeline. Drawing remains read-only. The
+[import contract](MESH_APPLICATION.md#rigged-and-animated-model-import) describes
+clip timing, staging isolation and the separate in-place transfer boundary.
+
+The exact ZIP with SHA-256
+`ee5dc51cd853739685458c589975aca6acf326c460dd9e12eefecb4e74ec0adf`
+passed 705 installed native tests on macOS arm64 Blender 5.0.1, 5.1.2 and 5.2.1.
+An isolated 5.1.2 desktop check opened the review, cancelled without importing,
+then confirmed a new character with two bones and two clips. The original cube
+remained active. Native viewport zoom/front-view input and Outliner expansion
+worked. Clicking frame 30 on the timeline animated the rig and skinned/morphed
+triangle from its frame-zero state; evaluated vertices moved two units in X and
+one unit through the morph. FPS stayed 30 and the range stayed 1 through 90.
+The saved job stayed applied and mock submission/request counts stayed unchanged.
+The completed test exited cleanly with the normal profile fingerprint unchanged.
+
+Transport and geometry were synthetic. Frozen catalog/estimate labels in these
+screenshots are fixture state, not live performance evidence. This scoped check
+does not establish provider rig compatibility, in-place retargeting, other OS
+desktop acceptance or integrated release acceptance. An earlier interrupted test
+exit crashed in the fixture's temporary-preference cleanup during Python
+finalization; the completed repeat used explicit fixture cleanup before quitting.
+
+[Frame zero](images/saved-model-animation-start.png),
+[frame thirty](images/saved-model-animation-end.png).
+
+![Model import approval explains retained rigs, clips and timeline behavior](images/saved-model-animation-approval.png)

@@ -18,7 +18,7 @@ LABELS = {
     "retry_receipt": "Save import receipt",
     "import_images": "Import saved images",
     "import_media": "Add media strip",
-    "import_model": "Import static model",
+    "import_model": "Import model",
     "apply_world": "Set panorama as World",
     "restore_world": "Restore previous World",
     "apply_material": "Apply saved material",
@@ -199,8 +199,8 @@ class SCENARIO_OT_import_saved_media(bpy.types.Operator):
 
 class SCENARIO_OT_import_saved_model(bpy.types.Operator):
     bl_idname = "scenario.import_saved_model"
-    bl_label = "Import saved static model"
-    bl_description = "Review one saved static GLB model and its scene/cursor destination"
+    bl_label = "Import saved model"
+    bl_description = "Review one saved GLB model and its scene/cursor destination"
 
     context_id: StringProperty(options={"HIDDEN"})
     request_id: StringProperty(options={"HIDDEN"})
@@ -237,9 +237,10 @@ class SCENARIO_OT_import_saved_model(bpy.types.Operator):
             self.layout.label(text="Use saved results again; no new generation.", icon="INFO")
         position = ", ".join(f"{value:.3f}" for value in self.destination_cursor)
         self.layout.label(text=f"Place model bottom at cursor: {position}")
-        self.layout.label(text="Import one static GLB into a new group; pack its textures.")
+        self.layout.label(text="Import one GLB into a new group; pack its textures.")
         self.layout.label(text="Keep existing objects and selection unchanged.")
-        self.layout.label(text="Rigged, animated and external-file GLBs are not supported.")
+        self.layout.label(text="Use scene FPS; keep timeline range and current frame.")
+        self.layout.label(text="Keep rigs and animation clips; external-file GLBs are unsupported.")
 
     def cancel(self, context):
         jobs = getattr(self, "_jobs", None)
@@ -622,7 +623,7 @@ def draw_controls(layout, record):
                 if record.asset_types.get(asset_id) != MODEL_MEDIA_TYPE:
                     continue
                 operator = layout.operator(
-                    "scenario.import_saved_model", text=f"Import static model ({index})"
+                    "scenario.import_saved_model", text=f"Import model ({index})"
                 )
                 operator.context_id, operator.request_id = (
                     runtime.state.job_context_id,

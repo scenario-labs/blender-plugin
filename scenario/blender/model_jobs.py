@@ -681,7 +681,7 @@ class ModelJobs:
             if item.asset.asset_id == asset_id and item.asset.media_type == MODEL_MEDIA_TYPE
         ]
         if len(selected) != 1:
-            raise ScenarioError(0, "Choose one supported saved static GLB asset")
+            raise ScenarioError(0, "Choose one supported saved GLB asset")
         if len(self._application_approvals) >= 128:
             raise ScenarioError(0, "Complete or cancel an existing application review first")
         if scene != bpy.context.scene:

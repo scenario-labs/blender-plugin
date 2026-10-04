@@ -8,7 +8,7 @@ import threading
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import bpy
 import httpx
@@ -196,6 +196,25 @@ class PromptToolsTests(unittest.TestCase):
             self.assertTrue(self.paid[0].url.path.endswith("/" + endpoint))
             self.assertEqual(len(self.paid), 1)
 
+    def test_compact_price_display_preserves_exact_approval(self):
+        item = self.quote()
+        layout = MagicMock()
+        self.tools.draw_prompt_status(layout, self.lane, "image")
+        layout.label.assert_called_once_with(text="Cost: 0.123 CU")
+        approval = layout.row.return_value.operator.return_value
+        self.assertEqual(approval.quote_id, item.identifier)
+        self.assertEqual(approval.approved_cost, "0.1234567890123456789")
+        self.assertEqual(self.paid, [])
+        self.assertEqual(
+            bpy.ops.scenario.prompt_approve(
+                quote_id=approval.quote_id, approved_cost=approval.approved_cost
+            ),
+            {"FINISHED"},
+        )
+        self.advance(item)
+        self.assertEqual(len(self.paid), 1)
+        self.assertEqual(self.lane.prompt, self.result_text)
+
     def test_empty_rewrite_and_translation_do_not_request_prices(self):
         self.lane.prompt = ""
         self.assertEqual(bpy.ops.scenario.prompt_spark(lane="image", mode="REWRITE"), {"CANCELLED"})
@@ -205,7 +224,7 @@ class PromptToolsTests(unittest.TestCase):
     def test_changed_prompt_or_wrong_cost_cannot_spend(self):
         item = self.quote()
         self.assertEqual(
-            bpy.ops.scenario.prompt_approve(quote_id=item.identifier, approved_cost="0.12"),
+            bpy.ops.scenario.prompt_approve(quote_id=item.identifier, approved_cost="0.123"),
             {"CANCELLED"},
         )
         self.lane.prompt = "Changed after quote"

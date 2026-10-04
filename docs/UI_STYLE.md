@@ -103,7 +103,12 @@ Each result collapses on its own; the panel header has a **Collapse all / Expand
 
 - Verbs on buttons say exactly what happens: `Generate`, `Add to scene`, `Use as reference`, `Refresh cloud`, `Download and open`.
 - Singular/plural is correct: `1 Job` / `3 Jobs`, `Applies to 1 selected mesh`.
-- Prompt helpers request a free exact server price first. Show its full decimal amount below the tools, wrapping long values, with a separate action-labelled approval button. Do not use a fixed price or a tooltip as spending authorization. Keep pending/error text readable; an uncertain job offers inspection, never automatic resubmission.
+- Prompt helpers request a free exact server price first. Show the formatted CU amount below the tools with a separate action-labelled approval button. Do not use a fixed price or a tooltip as spending authorization. Keep pending/error text readable; an uncertain job offers inspection, never automatic resubmission.
+- CU labels follow the web generation indicator: up to three decimal places,
+  no trailing zeros, and thousands separators below 10,000; at or above 10,000,
+  use K/M/B/T with three significant digits (`0.123 CU`, `1,234.568 CU`,
+  `12.3K CU`). This is display formatting only. Keep the original server decimal
+  in the quote, approval action and saved job; never reconstruct it from the label.
 - No internal names in user text (a person sees `Reference Images`, not `referenceImages`).
 
 ## Tooltips
@@ -126,10 +131,11 @@ Modality icons (image, video, audio, 3d) are Scenario's own PNGs (`scenario/icon
 
 ## Prompt approval interaction evidence
 
-These offline Blender 5.1.2 macOS arm64 captures show the exact price before
+These earlier offline Blender 5.1.2 macOS arm64 captures show the price before
 approval and the delivered text afterward. The model, price and transport are
 synthetic; they are not current service pricing or live generation evidence.
-The price request made no submission; the separate approval produced exactly one.
+They predate the shorter CU labels described above. The price request made no
+submission; the separate approval produced exactly one.
 Native field editing, focus transfer and viewport selection/zoom were exercised.
 Computer-control focus guards interrupted some typing attempts; this does not
 establish exhaustive keyboard or clipboard acceptance. The isolated run exited

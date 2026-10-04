@@ -1020,6 +1020,7 @@ class ModelJobs:
             "original": application.original.name if application.original in objects else None,
             "policy": application.policy,
             "undo_available": application.undo_available,
+            "parts": tuple(part.name for part in application.parts if part in objects),
         }
 
     def status(self, reference):

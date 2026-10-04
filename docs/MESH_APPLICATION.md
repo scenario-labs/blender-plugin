@@ -166,9 +166,10 @@ input's identity. Restart/file load requires a fresh explicit destination review
 result_to_source=..., keep_original=...)` connects the existing primitive to one
 verified static GLB. It shares the new-object importer's receipt/hash preflight,
 private byte snapshot, isolated staging scene and image packing. It requires
-exactly one mesh with optional Empty parents; multiple meshes and other object
-types fail rather than selecting the first variant. The caller explicitly chooses
-`REMESH`, `UV` or `RETEXTURE` and Keep original.
+exactly one mesh with optional Empty parents for `REMESH`, `UV` and `RETEXTURE`.
+The explicit `PARTS` policy accepts 2 to 128 static surface meshes in that one GLB;
+other object types fail. The caller chooses the policy and Keep original.
+Multiple result assets are never combined or ranked automatically.
 
 The required finite, orientation-preserving mapping converts **Blender-imported
 GLB scene coordinates** into **source-local coordinates**. Imported node transforms
@@ -321,7 +322,7 @@ when geometry replacement is intended.
 
 The shared saved-mesh command records Blender history immediately before import
 and after successful replacement, staging cleanup and rollback-handle finalization.
-This covers REMESH, UV and RETEXTURE from both native review and local MCP. The
+This covers REMESH, UV, RETEXTURE and PARTS from both native review and local MCP. The
 pre-state includes the latest user edits; neither checkpoint contains temporary
 import scenes or private rollback holders. Undo restores the source data and
 removes any Keep original copy; Redo restores the applied data and that copy.
@@ -354,3 +355,39 @@ copies, materials, stale approvals and unchanged durable records/request counts.
 They force checkpoint eligibility in the background runner while retaining the
 real native history operators. Separate desktop proof is recorded in
 [UI interaction evidence](UI_STYLE.md#saved-mesh-undo-interaction).
+
+## Apply static parts
+
+The saved-result command's `PARTS` policy preserves the captured source object as
+an empty mesh parent. It stages independent copies of every imported mesh, bakes
+imported node transforms through the explicit coordinate mapping, then parents
+the copies directly to the source with identity local transforms. Child names
+combine the source name, a numbered Part prefix and the imported name, subject
+to Blender's name limits. Material slots, UVs and packed image dependencies stay
+with the copied part meshes. Source name, transforms, parenting, collections and
+existing children remain unchanged. The prior selection remains active.
+
+The policy deliberately treats **every mesh in the selected GLB as a part**.
+Choose the actual segmented artifact, not a variant collection, exploded view or
+helper/bounds artifact. The command cannot infer those provider semantics. It
+rejects rigs, animation, external dependencies, empty parts, fewer than two or
+more than 128 meshes, unsupported attributes and aggregate geometry/attribute
+components above the existing synchronous limit. The source must have surface
+geometry; an empty parts anchor cannot receive another parts group. Select a
+child or the retained original for further mesh operations.
+
+Keep original retains an unselected copy of the previous source geometry. The
+shared guarded replacement swaps in empty geometry only after all parts pass
+validation; part publication and imported-data cleanup stay inside the same
+rollback boundary. A verified failure restores the captured source and removes
+new datablocks. Uncertain rollback retains possible applied data and never
+permits blind replay. Native Undo/Redo restores the source or the complete parts
+group without changing durable job state or issuing service requests.
+
+The exact packaged ZIP passed 699 installed native tests on each of macOS arm64
+Blender 5.0.1, 5.1.2 and 5.2.1. Synthetic cases cover transformed/parented sources,
+existing children, shared originals, mapping, count/component limits, empty-anchor
+rejection, publication/cleanup failures, uncertain rollback, captured-source
+UI/MCP application and native history. See [desktop evidence](UI_STYLE.md#parts-application-interaction).
+Provider alignment, semantic part classification, rigs/animation and integrated
+release acceptance remain separate work.

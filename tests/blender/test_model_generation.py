@@ -1190,7 +1190,7 @@ class ModelGenerationTests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "Media insertion was not started"):
             bpy.ops.scenario.import_saved_media(**args)
 
-    def recovered_model(self):
+    def recovered_model(self, body=None):
         from helpers import FIXTURES
 
         module = submodule("blender.model_application")
@@ -1208,7 +1208,9 @@ class ModelGenerationTests(unittest.TestCase):
                         values.remove(value, do_unlink=True)
 
         self.addCleanup(cleanup)
-        self.result_bytes = (FIXTURES / "synthetic/static-triangle.glb").read_bytes()
+        self.result_bytes = (
+            body if body is not None else (FIXTURES / "synthetic/static-triangle.glb").read_bytes()
+        )
         self.result_media_type, self.remote_status = "model/gltf-binary", "success"
         result = self.mcp_submit(self.mcp_quote())
         owner = self.runtime.state.model_jobs
@@ -2057,8 +2059,8 @@ class ModelGenerationTests(unittest.TestCase):
             (set(bpy.data.images), bpy.context.scene.world, len(self.calls), len(self.paid)), before
         )
 
-    def recovered_mesh_edit(self):
-        request_id = self.recovered_model()
+    def recovered_mesh_edit(self, body=None):
+        request_id = self.recovered_model(body)
         bpy.ops.mesh.primitive_cube_add()
         return request_id
 
@@ -2284,9 +2286,11 @@ class ModelGenerationTests(unittest.TestCase):
             self.tools.apply_result_application(self.import_args(approval))
 
     def mesh_native_history(self, policy, *, keep_original):
-        request_id = self.recovered_mesh_edit()
+        from helpers import parts_glb
+
+        request_id = self.recovered_mesh_edit(parts_glb() if policy == "PARTS" else None)
         source = bpy.context.view_layer.objects.active
-        if policy != "REMESH":
+        if policy not in {"REMESH", "PARTS"}:
             self.finish_application(self.prepare_mesh_edit(request_id, keep_original=False))
         names = bpy.context.scene.name, source.name
         source["retain_user_value"] = "before application"
@@ -2314,6 +2318,7 @@ class ModelGenerationTests(unittest.TestCase):
             after = [tuple(vertex.co) for vertex in source.data.vertices]
             after_materials = [item.name for item in source.data.materials]
             original_name = status["mesh_edit"]["original"]
+            part_names = status["mesh_edit"]["parts"]
             record = self.store.get(request_id)
             pending = self.prepare_mesh_edit(request_id)
             calls = len(self.calls), len(self.paid), len(self.downloads)
@@ -2326,6 +2331,7 @@ class ModelGenerationTests(unittest.TestCase):
             self.assertEqual(source["retain_user_value"], "before application")
             if original_name:
                 self.assertNotIn(original_name, bpy.data.objects)
+            self.assertTrue(all(name not in bpy.data.objects for name in part_names))
             self.assertEqual(self.store.get(request_id), record)
             self.assertIsNone(self.tools.job_status({"job_id": request_id})["mesh_edit"])
             with self.assertRaises(
@@ -2342,6 +2348,7 @@ class ModelGenerationTests(unittest.TestCase):
             self.assertEqual([item.name for item in source.data.materials], after_materials)
             if original_name:
                 self.assertIn(original_name, bpy.data.objects)
+            self.assertTrue(all(bpy.data.objects[name].parent == source for name in part_names))
             self.assertEqual(self.store.get(request_id), record)
             self.assertEqual((len(self.calls), len(self.paid), len(self.downloads)), calls)
             self.assertIsNone(self.tools.job_status({"job_id": request_id})["mesh_edit"])
@@ -2359,6 +2366,9 @@ class ModelGenerationTests(unittest.TestCase):
 
     def test_mesh_native_undo_redo_restores_uv_edit_and_original_copy(self):
         self.mesh_native_history("UV", keep_original=True)
+
+    def test_mesh_native_undo_redo_restores_grouped_parts_and_original_copy(self):
+        self.mesh_native_history("PARTS", keep_original=True)
 
     def test_mesh_native_undo_redo_restores_retexture_materials(self):
         self.mesh_native_history("RETEXTURE", keep_original=True)
@@ -2636,7 +2646,7 @@ class ModelGenerationTests(unittest.TestCase):
             saved.intent.mesh_sources,
         )
 
-    def captured_source_result(self, *, scale=(1, 1, 1)):
+    def captured_source_result(self, body=None, *, scale=(1, 1, 1)):
         from helpers import FIXTURES
 
         self.configure_ui_lane("edit3d")
@@ -2644,7 +2654,9 @@ class ModelGenerationTests(unittest.TestCase):
         source.scale = scale
         bpy.context.view_layer.update()
         self.captured_mesh_upload(live=True)
-        self.result_bytes = (FIXTURES / "synthetic/static-triangle.glb").read_bytes()
+        self.result_bytes = (
+            body if body is not None else (FIXTURES / "synthetic/static-triangle.glb").read_bytes()
+        )
         self.result_media_type, self.remote_status = "model/gltf-binary", "success"
         self.ui_quote("edit3d")
         result = self.generation.submit_generation(bpy.context, "edit3d")
@@ -2710,6 +2722,32 @@ class ModelGenerationTests(unittest.TestCase):
 
     def test_captured_positive_source_dialog_ignores_mirrored_selected_transform(self):
         self.captured_source_dialog((1, 2, 1), (-1, 1, 1), "WORLD")
+
+    def test_captured_parts_apply_preserves_other_selection_and_records_no_new_spending(self):
+        from helpers import parts_glb
+
+        request_id, source = self.captured_source_result(parts_glb())
+        original = source.data
+        bpy.ops.mesh.primitive_cube_add(location=(9, 0, 0))
+        other = bpy.context.object
+        other_mesh = other.data
+        calls = len(self.calls), len(self.paid), len(self.downloads)
+        approval = self.prepare_mesh_edit(request_id, purpose="mesh_source", mesh_policy="PARTS")
+        self.assertEqual(approval["target"], source.name)
+        self.assertEqual(approval["mesh_policy"], "PARTS")
+        status = self.finish_application(approval)
+        self.assertEqual(status["status"], "applied", status)
+        self.assertEqual(len(source.data.vertices), 0)
+        self.assertEqual(len(status["mesh_edit"]["parts"]), 2)
+        self.assertTrue(
+            all(bpy.data.objects[name].parent == source for name in status["mesh_edit"]["parts"])
+        )
+        self.assertEqual(bpy.data.objects[status["mesh_edit"]["original"]].data, original)
+        self.assertEqual(bpy.context.object, other)
+        self.assertEqual(other.data, other_mesh)
+        self.assertEqual((len(self.calls), len(self.paid), len(self.downloads)), calls)
+        with self.assertRaises(self.request_error):
+            self.tools.apply_result_application(self.import_args(approval))
 
     def test_captured_source_review_ignores_selection_and_preserves_original(self):
         request_id, source = self.captured_source_result()

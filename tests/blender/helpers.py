@@ -3,7 +3,9 @@
 """Helpers for tests that run inside `blender --background`."""
 
 import importlib
+import json
 import pathlib
+import struct
 import sys
 import tempfile
 from contextlib import contextmanager
@@ -108,3 +110,30 @@ def isolated_manager():
                     if original is None:
                         raise RuntimeError(message)
                     original.add_note(message)
+
+
+def parts_glb(count=2):
+    """First-party textured triangle instances with nested, named part transforms."""
+    data = (FIXTURES / "synthetic/static-triangle.glb").read_bytes()
+    length = struct.unpack_from("<I", data, 12)[0]
+    document = json.loads(data[20 : 20 + length])
+    document["nodes"] = [
+        {
+            "name": "Parts transform",
+            "translation": [2, 0, 0],
+            "children": list(range(1, count + 1)),
+        },
+        *[
+            {"name": f"Panel {index + 1}", "mesh": 0, "translation": [index * 3, 0, 0]}
+            for index in range(count)
+        ],
+    ]
+    document["scenes"] = [{"nodes": [0]}]
+    value = json.dumps(document).encode()
+    value += b" " * (-len(value) % 4)
+    tail = data[20 + length :]
+    return (
+        struct.pack("<4sIII4s", b"glTF", 2, 20 + len(value) + len(tail), len(value), b"JSON")
+        + value
+        + tail
+    )

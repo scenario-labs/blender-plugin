@@ -487,3 +487,35 @@ Its exact ZIP and full matrix validation are recorded in the PR.
 [Redo restores the edit](images/saved-mesh-redone.png).
 
 ![Mesh approval explains native undo and unchanged job records](images/saved-mesh-undo-approval.png)
+
+
+## Parts application interaction
+
+The saved-mesh review offers **Replace with parts** as an explicit policy. Its
+read-only explanation identifies the source, empty mesh parent, named children,
+2-to-128 part limit, unchanged source context and Keep original behavior. It
+states that every mesh in the chosen GLB is treated as a part. It does not infer
+variants or automatically fit the result. The shared UI/MCP command applies the
+[parts contract](MESH_APPLICATION.md#apply-static-parts).
+
+An isolated macOS arm64 Blender 5.1.2 desktop run installed the exact ZIP with
+SHA-256 `ad88e5b70dcf879d182a4805415dcb0ecab114d32a7287e711b84923f6f86be7`.
+Native clicks and keyboard input selected the policy, cancelled without mutation,
+then confirmed application to the captured source while another mesh remained
+selected. The source became an empty mesh parent with two named triangle parts;
+Keep original retained its eight-vertex copy and the other mesh kept eight
+vertices. Edit > Undo restored the eight-vertex source and removed the parts and
+copy. Edit > Redo restored both children and the copy. The public job stayed
+applied, transient mesh status retired on undo, and mock submission/request
+counts did not change. Viewport zoom/front-view input and Outliner expansion
+remained usable. The owned test process exited cleanly and the normal profile
+was unchanged.
+
+Transport and result geometry were synthetic; the frozen model/estimate labels
+in the screenshots are fixture state, not live provider or estimate performance
+evidence. This proves the scoped local interaction, not provider alignment,
+other-platform desktop behavior or integrated release acceptance.
+
+[Applied parts and preserved selection](images/saved-mesh-parts-applied.png).
+
+![Parts approval names the target and explains grouping](images/saved-mesh-parts-approval.png)

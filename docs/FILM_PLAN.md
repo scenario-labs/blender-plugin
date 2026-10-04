@@ -172,7 +172,12 @@ For a model task, **Estimate task** resolves its saved dependencies and requests
 one exact SDK estimate. **Generate** opens a separate confirmation with the exact
 decimal CU cost. Approval consumes the handle before persistence and dispatch.
 Recipe edits, a different production/scene or retired credentials reject approval;
-the maintenance pump discards obsolete ready estimates. **Discard estimate**
+the maintenance pump discards obsolete ready estimates. Deleted scene wrappers are
+skipped during read-only panel lookup and retired by the pump. Completed quote
+and association delivery waits while another scene is current, then rechecks the
+unchanged original scene before consuming its completion. Blender dependency
+revision changes, including those emitted during scene activation, still reject
+the old quote and require a fresh estimate. **Discard estimate**
 releases an unused current quote for repricing. A saved task cannot be spent again,
 even with a new quote after an uncertain response or restart.
 

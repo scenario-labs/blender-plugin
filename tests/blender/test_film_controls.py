@@ -311,6 +311,77 @@ class FilmControlsTests(unittest.TestCase):
         self.assertEqual(self.estimate()["parameters"], {"prompt": "source-asset"})
         self.assertEqual(self.paid, [])
 
+    def test_deleted_scene_does_not_break_lookup_or_panel_drawing(self):
+        from unittest.mock import MagicMock
+
+        owner = self.owner()
+        item = self.quote()
+        other = bpy.data.scenes.new("Surviving Film scene")
+        bpy.context.window.scene = other
+        self.film.load_recipe(other, self.recipe)
+        bpy.data.scenes.remove(self.scene)
+        self.assertIsNone(owner.current(other, "take"))
+        panel = submodule("blender.film").SCENARIO_PT_film
+        panel.draw(type("Panel", (), {"layout": MagicMock()})(), bpy.context)
+        owner.poll()
+        self.assertEqual(item.phase, "DISCARDED")
+        self.assertEqual(self.paid, [])
+
+    def test_finished_quote_waits_for_unchanged_origin_scene_before_delivery(self):
+        other = bpy.data.scenes.new("Temporary current scene")
+        owner = self.owner()
+        item = owner.quote(self.scene, "take")
+        item.task.result(5)
+        calls = len(self.calls)
+        try:
+            # Timer context may name another scene without altering this origin.
+            # Actual dependency revisions remain subject to the session guard.
+            with bpy.context.temp_override(scene=other):
+                owner.poll()
+                self.assertEqual(item.phase, "QUOTING")
+                self.assertIsNone(item.quote)
+                self.assertTrue(any(task is item.task for task, _ in owner.session._pending))
+            owner.poll()
+            self.assertEqual(item.phase, "READY", item.error)
+            self.assertEqual(item.cost, "0.1234567890123456789")
+            self.assertEqual(len(self.calls), calls)
+            self.approve(item)
+            self.settle()
+            self.assertEqual(len(self.paid), 1)
+        finally:
+            bpy.data.scenes.remove(other)
+
+    def test_waiting_quote_still_rejects_a_changed_origin_revision(self):
+        other = bpy.data.scenes.new("Temporary current scene")
+        owner = self.owner()
+        item = owner.quote(self.scene, "take")
+        item.task.result(5)
+        try:
+            with bpy.context.temp_override(scene=other):
+                owner.poll()
+                self.assertEqual(item.phase, "QUOTING")
+            self.scene.frame_set(self.scene.frame_current + 1)
+            owner.poll()
+            self.assertEqual(item.phase, "ERROR")
+            with self.assertRaises(self.request_error):
+                self.approve(item)
+            self.assertEqual(self.paid, [])
+        finally:
+            bpy.data.scenes.remove(other)
+
+    def test_deleted_pending_origin_drains_completion_without_delivery(self):
+        owner = self.owner()
+        item = owner.quote(self.scene, "take")
+        item.task.result(5)
+        other = bpy.data.scenes.new("Remaining scene")
+        bpy.context.window.scene = other
+        bpy.data.scenes.remove(self.scene)
+        owner.poll()
+        self.assertEqual(item.phase, "ERROR")
+        self.assertFalse(any(task is item.task for task, _ in owner.session._pending))
+        self.assertIsNone(owner.current(other, "take"))
+        self.assertEqual(self.paid, [])
+
     def test_draw_does_not_load_storage_or_mutate_scene(self):
         from unittest.mock import MagicMock
 

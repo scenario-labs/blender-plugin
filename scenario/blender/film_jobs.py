@@ -73,25 +73,29 @@ class FilmJobs:
         self.actions = {}
 
     def current(self, scene, task_id):
-        return next(
-            (
-                item
-                for item in reversed(tuple(self.actions.values()))
-                if item.scene == scene
-                and item.task_id == task_id
-                and item.binding == snapshot(scene)
-            ),
-            None,
-        )
+        binding = snapshot(scene)
+        for item in reversed(tuple(self.actions.values())):
+            try:
+                if item.scene == scene and item.task_id == task_id and item.binding == binding:
+                    return item
+            except ReferenceError:
+                # A retained RNA wrapper can outlive its scene. Drawing is read-only;
+                # the maintenance pump still owns draining and retiring its action.
+                continue
+        return None
 
     def _check(self, item, scene):
-        if (
-            not self.session.active
-            or self.actions.get(item.identifier) is not item
-            or item.scene != scene
-            or scene not in tuple(bpy.data.scenes)
-            or snapshot(scene) != item.binding
-        ):
+        try:
+            valid = (
+                self.session.active
+                and self.actions.get(item.identifier) is item
+                and item.scene == scene
+                and scene in tuple(bpy.data.scenes)
+                and snapshot(scene) == item.binding
+            )
+        except ReferenceError:
+            valid = False
+        if not valid:
             raise ScenarioError(0, "The Film recipe, production or scene changed; inspect it again")
 
     def _start(self, scene, task_id, phase, **upload):
@@ -159,8 +163,12 @@ class FilmJobs:
             if item.phase not in {"QUOTING", "BINDING"} or not item.task.done():
                 continue
             try:
-                completions = self.session.drain(task=item.task)
                 self._check(item, item.scene)
+                if item.scene != bpy.context.scene:
+                    # Session delivery requires the current source scene. Keep its
+                    # completed task queued until that unchanged scene is selected.
+                    continue
+                completions = self.session.drain(task=item.task)
                 if not completions:
                     raise ScenarioError(0, "The Film completion is unavailable")
                 result = self.session.deliver(completions[0], lambda value, *_: value)
@@ -171,6 +179,7 @@ class FilmJobs:
                     item.request_id = result.reference.upload_request_id
                     item.phase = "BOUND"
             except Exception:
+                self.session.drain(task=item.task)
                 item.phase, item.error = (
                     "ERROR",
                     (

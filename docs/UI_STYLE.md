@@ -678,3 +678,30 @@ with 732 installed tests passing on each of the same three Blender versions.
 It replaces mixed design/refinement wording with the explicit complete-plan
 update instruction. The desktop interaction and screenshots above use the
 preceding ZIP; no new UI behavior or live provider acceptance is claimed here.
+
+## Saved Blockout plan recovery
+
+Saved jobs expose **Read saved Blockout plan**, followed by **Use saved Blockout
+plan** after complete text validation. The confirmation names the scene and
+element/group counts, warns before replacing an existing plan and explains that
+geometry remains unchanged until a separate Build plan action. Cancellation
+discards the review. Drawing does not read the service or mutate the plan.
+
+Packaged tests cover native operator execution, MCP parity, restart with and
+without a saved manifest, discarded/single-use reviews, changed fields and scene
+replacement, retired contexts, offline reads and malformed text. This is separate
+from real desktop input, cancellation and Undo/Redo proof. The exact package
+`ee9d379b6bde9208788d42abc10cf577e06826e31e533ff145d63c0cad88280b`
+passes 740 installed tests on each macOS arm64 Blender 5.0.1, 5.1.2 and 5.2.1.
+Transport and geometry are synthetic; these runs do not establish provider or
+integrated release acceptance.
+
+Computer control returned `cgWindowNotFound` / `noWindowsAvailable` for the
+isolated test app, including after window observation succeeded. Native recovery
+input, cancellation and Undo/Redo interaction remain pending. This screenshot is
+an installed 5.1.2 rendering check only; the earlier generation/build evidence
+above does not establish this new dialog's behavior. The first desktop fixture
+used an incomplete old-plan object and caused draw errors; a normalized repeat
+rendered the controls correctly. No normal-profile change was detected.
+
+![Saved Blockout job offers a separate read action before destination approval](images/blockout-recovery-controls.png)

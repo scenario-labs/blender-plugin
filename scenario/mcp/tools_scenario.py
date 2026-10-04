@@ -204,6 +204,28 @@ def approve_blockout(args):
     return {"request_id": item.request_id, "state": item.phase.lower()}
 
 
+def prepare_blockout_plan(args):
+    recovery = runtime.blockout_recovery(args["context_id"])
+    review = recovery.prepare(args["request_id"], args["expected_revision"], bpy.context.scene)
+    return recovery.status(review.identifier)
+
+
+def blockout_plan_status(args):
+    recovery = runtime.blockout_recovery(args["context_id"])
+    recovery.poll()
+    if args.get("discard", False):
+        review = recovery.reviews.get(args["review_id"])
+        if review is not None and review.task is not None:
+            raise ScenarioError(0, "Wait for the saved-plan read before discarding its review")
+        recovery.discard(args["review_id"])
+        return {"state": "discarded"}
+    return recovery.status(args["review_id"])
+
+
+def apply_blockout_plan(args):
+    return runtime.blockout_recovery(args["context_id"]).apply(args["review_id"])
+
+
 def read_model_text(args):
     session = runtime.ensure_job_session()
     if args.get("context_id") != runtime.state.job_context_id:
@@ -1005,6 +1027,44 @@ SPECS = (
             ["quote_id", "approved_cost"],
         ),
         approve_blockout,
+    ),
+    ToolSpec(
+        "prepare_blockout_plan",
+        'Read and validate one saved Scenario LLM plan for the current scene without generating or building geometry. Args: context_id, request_id, expected_revision from list_local_jobs. Returns: review_id, state, scene, elements, groups, replaces_plan, error. Poll blockout_plan_status until ready, then review the destination and replacement before apply_blockout_plan.\nExample: {"context_id": "current-context", "request_id": "saved-request", "expected_revision": 3}.\nPlatform equivalent: job_get and asset_get, followed by local destination review.',
+        _schema(
+            {
+                "context_id": {"type": "string"},
+                "request_id": {"type": "string"},
+                "expected_revision": {"type": "integer", "minimum": 0},
+            },
+            ["context_id", "request_id", "expected_revision"],
+        ),
+        prepare_blockout_plan,
+        {"readOnlyHint": True},
+    ),
+    ToolSpec(
+        "blockout_plan_status",
+        'Inspect a prepared saved-plan review or discard its finished approval handle. Args: context_id, review_id, optional discard. Returns: state, scene, elements, groups, replaces_plan, error; discarded state when requested. Never generates or changes a scene.\nExample: {"context_id": "current-context", "review_id": "saved-review"}.\nPlatform equivalent: local saved-result review.',
+        _schema(
+            {
+                "context_id": {"type": "string"},
+                "review_id": {"type": "string"},
+                "discard": {"type": "boolean"},
+            },
+            ["context_id", "review_id"],
+        ),
+        blockout_plan_status,
+        {"readOnlyHint": True},
+    ),
+    ToolSpec(
+        "apply_blockout_plan",
+        'Use a ready saved-plan review once, after explicit destination and replacement approval. Args: context_id, review_id from prepare_blockout_plan. Returns: scene, elements, geometry_changed=false. Replaces only the unchanged destination scene stored Blockout plan; use native Build plan separately. Never spends or builds geometry.\nExample: {"context_id": "current-context", "review_id": "saved-review"}.\nPlatform equivalent: local plan application.',
+        _schema(
+            {"context_id": {"type": "string"}, "review_id": {"type": "string"}},
+            ["context_id", "review_id"],
+        ),
+        apply_blockout_plan,
+        {"destructiveHint": True},
     ),
     ToolSpec(
         "read_model_text",

@@ -376,3 +376,205 @@ class BlockoutJobsTests(unittest.TestCase):
         op = layout.row.return_value.operator.return_value
         self.assertEqual(op.quote_id, item.identifier)
         self.assertEqual(op.approved_cost, item.cost)
+
+    def saved_plan(self, *, manifest=True):
+        item = self.quote()
+        self.approve(item)
+        if manifest:
+            self.advance(item)
+            self.assertEqual(item.phase, "DONE")
+        else:
+            item.task.result(5)
+            record = self.runtime.state.job_store.get(item.request_id)
+            self.jobs().session.refresh_remote(
+                item.request_id, expected_revision=record.revision
+            ).result(5)
+        self.runtime.state.reset()
+        self.scene.scenario_blockout.plan_json = ""
+        self.runtime.local_job_recovery()
+        record = self.runtime.state.job_store.get(item.request_id)
+        return record
+
+    def ready_review(self, record):
+        recovery = self.jobs().recovery
+        review = recovery.prepare(record.intent.request_id, record.revision, bpy.context.scene)
+        for _ in range(3):
+            if review.task is not None:
+                try:
+                    review.task.result(5)
+                except Exception:
+                    # Recovery polling below consumes and reports this failed task.
+                    pass
+            recovery.poll()
+        return recovery, review
+
+    def test_recovered_plan_native_approval_preserves_geometry_and_is_single_use(self):
+        record = self.saved_plan()
+        self.scene.scenario_blockout.plan_json = '[{"name":"Existing plan"}]'
+        before = tuple(self.scene.objects)
+        self.assertEqual(
+            bpy.ops.scenario.read_saved_blockout(
+                context_id=self.runtime.state.job_context_id,
+                request_id=record.intent.request_id,
+                expected_revision=record.revision,
+            ),
+            {"FINISHED"},
+        )
+        recovery = self.jobs().recovery
+        review = recovery.current(record.intent.request_id, self.scene)
+        review.task.result(5)
+        recovery.poll()
+        summary = recovery.status(review.identifier)
+        self.assertEqual(summary["state"], "ready")
+        self.assertTrue(summary["replaces_plan"])
+        self.assertEqual(summary["elements"], 1)
+        self.assertIn("Existing plan", self.scene.scenario_blockout.plan_json)
+        calls = len(self.calls)
+        arguments = dict(context_id=self.runtime.state.job_context_id, review_id=review.identifier)
+        self.assertEqual(bpy.ops.scenario.use_saved_blockout(**arguments), {"FINISHED"})
+        self.assertIn("Test tower", self.scene.scenario_blockout.plan_json)
+        self.assertEqual(tuple(self.scene.objects), before)
+        # Blender surfaces this operator's reported ERROR as RuntimeError.
+        with self.assertRaises(RuntimeError):
+            bpy.ops.scenario.use_saved_blockout(**arguments)
+        self.assertEqual(len(self.calls), calls)
+        self.assertEqual(len(self.paid), 1)
+        self.assertEqual(self.runtime.state.job_store.get(record.intent.request_id), record)
+
+    def test_recovered_plan_loads_missing_manifest_without_regeneration(self):
+        record = self.saved_plan(manifest=False)
+        self.assertFalse(record.results)
+        recovery, review = self.ready_review(record)
+        self.assertEqual(review.phase, "READY", review.error)
+        self.assertGreater(review.revision, record.revision)
+        recovery.apply(review.identifier)
+        self.assertIn("Test tower", self.scene.scenario_blockout.plan_json)
+        self.assertEqual(len(self.paid), 1)
+
+    def test_mcp_recovered_plan_uses_explicit_new_scene_and_can_discard(self):
+        record = self.saved_plan()
+        other = bpy.data.scenes.new("Recovered plan destination")
+        bpy.context.window.scene = other
+        arguments = {
+            "context_id": self.runtime.state.job_context_id,
+            "request_id": record.intent.request_id,
+            "expected_revision": record.revision,
+        }
+        started = self.mcp.prepare_blockout_plan(arguments)
+        recovery = self.jobs().recovery
+        review = recovery.reviews[started["review_id"]]
+        review.task.result(5)
+        keys = {"context_id": arguments["context_id"], "review_id": review.identifier}
+        summary = self.mcp.blockout_plan_status(keys)
+        self.assertEqual(summary["state"], "ready")
+        self.assertEqual(summary["scene"], other.name)
+        self.assertEqual(
+            self.mcp.blockout_plan_status({**keys, "discard": True})["state"], "discarded"
+        )
+        with self.assertRaises((RuntimeError, self.facade.ScenarioError)):
+            self.mcp.apply_blockout_plan(keys)
+        recovery, review = self.ready_review(record)
+        result = self.mcp.apply_blockout_plan({**keys, "review_id": review.identifier})
+        self.assertFalse(result["geometry_changed"])
+        self.assertEqual(self.scene.scenario_blockout.plan_json, "")
+        self.assertIn("Test tower", other.scenario_blockout.plan_json)
+        self.assertEqual(len(self.paid), 1)
+
+    def test_recovered_plan_rejects_changed_destination_and_same_name_replacement(self):
+        record = self.saved_plan()
+        for field in ("prompt", "refine", "plan_json", "scale", "scene_type"):
+            with self.subTest(field=field):
+                recovery, review = self.ready_review(record)
+                self.assertEqual(review.phase, "READY")
+                props = self.scene.scenario_blockout
+                original = getattr(props, field)
+                replacement = {"scale": "room", "scene_type": "interior"}.get(field, "changed")
+                setattr(props, field, replacement)
+                with self.assertRaises((RuntimeError, self.facade.ScenarioError)):
+                    recovery.apply(review.identifier)
+                setattr(props, field, original)
+        recovery, review = self.ready_review(record)
+        other = bpy.data.scenes.new("Other")
+        bpy.context.window.scene = other
+        old_name = self.scene.name
+        bpy.data.scenes.remove(self.scene)
+        replacement = bpy.data.scenes.new(old_name)
+        bpy.context.window.scene = replacement
+        with self.assertRaises((RuntimeError, self.facade.ScenarioError)):
+            recovery.apply(review.identifier)
+        self.assertEqual(replacement.scenario_blockout.plan_json, "")
+        self.assertEqual(len(self.paid), 1)
+
+    def test_recovered_plan_rejects_late_read_and_retired_context(self):
+        record = self.saved_plan()
+        recovery = self.jobs().recovery
+        review = recovery.prepare(record.intent.request_id, record.revision, self.scene)
+        self.scene.scenario_blockout.plan_json = "newer work"
+        review.task.result(5)
+        recovery.poll()
+        self.assertEqual(review.phase, "ERROR")
+        self.assertEqual(self.scene.scenario_blockout.plan_json, "newer work")
+        self.scene.scenario_blockout.plan_json = ""
+        recovery, review = self.ready_review(record)
+        old_context = self.runtime.state.job_context_id
+        self.runtime.state.reset()
+        with self.assertRaises((RuntimeError, self.facade.ScenarioError)):
+            recovery.apply(review.identifier)
+        with self.assertRaises((RuntimeError, self.facade.ScenarioError)):
+            self.mcp.apply_blockout_plan(
+                {"context_id": old_context, "review_id": review.identifier}
+            )
+        self.assertEqual(self.scene.scenario_blockout.plan_json, "")
+
+    def test_recovered_plan_failure_can_retry_read_but_never_generation(self):
+        record = self.saved_plan()
+        for text in ('[{"name":"partial"},', "not a plan", "[]"):
+            with self.subTest(text=text):
+                self.result_text = text
+                recovery, review = self.ready_review(record)
+                self.assertEqual(review.phase, "ERROR")
+                with self.assertRaises((RuntimeError, self.facade.ScenarioError)):
+                    recovery.apply(review.identifier)
+        self.result_text = '[{"name":"Recovered tower"}]'
+        recovery, review = self.ready_review(record)
+        self.assertEqual(review.phase, "READY", review.error)
+        recovery.apply(review.identifier)
+        self.assertIn("Recovered tower", self.scene.scenario_blockout.plan_json)
+        self.assertEqual(len(self.paid), 1)
+
+    def test_recovered_plan_rejects_stale_revision_and_offline_reads(self):
+        record = self.saved_plan()
+        recovery = self.jobs().recovery
+        with self.assertRaises((RuntimeError, self.facade.ScenarioError)):
+            recovery.prepare(record.intent.request_id, record.revision - 1, self.scene)
+        calls = len(self.calls)
+        with online_access(False):
+            self.runtime.sync_catalog_context()
+            try:
+                _, review = self.ready_review(record)
+            except Exception:
+                pass  # Admission may reject before a task exists.
+            else:
+                self.assertEqual(review.phase, "ERROR")
+        self.assertEqual(len(self.calls), calls)
+        self.assertEqual(self.scene.scenario_blockout.plan_json, "")
+
+    def test_saved_plan_controls_draw_without_reading_or_changing_state(self):
+        from unittest.mock import MagicMock
+
+        record = self.saved_plan()
+        jobs = self.runtime.inspect_model_jobs()
+        view = jobs.views[record.intent.request_id]
+        self.assertIn("recover_blockout", view.meta["recovery_actions"])
+        recovery_ui = submodule("blender.job_recovery")
+        before, calls = self.facade.binding(self.scene), len(self.calls)
+        layout = MagicMock()
+        recovery_ui.draw_controls(layout, view)
+        self.assertEqual(layout.operator.call_args.args[0], "scenario.read_saved_blockout")
+        self.assertEqual(self.facade.binding(self.scene), before)
+        self.assertEqual(len(self.calls), calls)
+        recovery, review = self.ready_review(record)
+        layout.reset_mock()
+        recovery_ui.draw_controls(layout, view)
+        self.assertEqual(layout.operator.call_args.args[0], "scenario.use_saved_blockout")
+        self.assertEqual(layout.operator.return_value.review_id, review.identifier)

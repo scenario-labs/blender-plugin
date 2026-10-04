@@ -273,6 +273,9 @@ Do not edit this block by hand; run `make mcp-docs`. An asterisk marks a require
 | `cancel_prepared_job` | Cancel an unsubmitted durable local intent without contacting Scenario. | `context_id`*: string<br>`request_id`*: string<br>`expected_revision`*: integer | destructive annotation |
 | `estimate_blockout` | Get the exact free estimate for the current scene's Blockout description or refinement. This reads the native Blockout fields and current plan; it does not generate or build geometry. Approve the exact returned cu_cost_exact separately. Args: action DESIGN or REFINE. Returns: quote_id, action, cu_cost_exact. | `action`: string (['DESIGN', 'REFINE']) | read-only annotation |
 | `approve_blockout` | Spend the explicitly approved exact cost once for estimate_blockout. Args: quote_id and approved_cost. Inputs, current plan and origin must still match. Returns: request_id and state. The unchanged source scene receives a complete plan; no geometry is built automatically. Inspect list_local_jobs after failure or restart; never repeat an uncertain submission. | `quote_id`*: string<br>`approved_cost`*: string | - |
+| `prepare_blockout_plan` | Read and validate one saved Scenario LLM plan for the current scene without generating or building geometry. Args: context_id, request_id, expected_revision from list_local_jobs. Returns: review_id, state, scene, elements, groups, replaces_plan, error. Poll blockout_plan_status until ready, then review the destination and replacement before apply_blockout_plan. | `context_id`*: string<br>`request_id`*: string<br>`expected_revision`*: integer | read-only annotation |
+| `blockout_plan_status` | Inspect a prepared saved-plan review or discard its finished approval handle. Args: context_id, review_id, optional discard. Returns: state, scene, elements, groups, replaces_plan, error; discarded state when requested. Never generates or changes a scene. | `context_id`*: string<br>`review_id`*: string<br>`discard`: boolean | read-only annotation |
+| `apply_blockout_plan` | Use a ready saved-plan review once, after explicit destination and replacement approval. Args: context_id, review_id from prepare_blockout_plan. Returns: scene, elements, geometry_changed=false. Replaces only the unchanged destination scene stored Blockout plan; use native Build plan separately. Never spends or builds geometry. | `context_id`*: string<br>`review_id`*: string | destructive annotation |
 | `read_model_text` | Read one explicitly selected complete text asset from a successful saved model job, including after restart. Obtain context_id and revision from list_local_jobs and asset_id from job_status results. Returns: request_id, asset_id and bounded full text. Never spends, parses a plan, applies to the scene or substitutes a truncated preview. Args: context_id, request_id, expected_revision, asset_id. | `context_id`*: string<br>`request_id`*: string<br>`expected_revision`*: integer<br>`asset_id`*: string | read-only annotation |
 | `estimate_prompt` | Get the exact server price for New, Rewrite or Translate on the current scene's native prompt field. This does not generate or change text. Args: lane and action (GENERATE, REWRITE, TRANSLATE). Returns: quote_id and cu_cost_exact. Obtain explicit approval of that exact cost before approve_prompt. The current field text/model must remain unchanged. | `lane`: string (enum: see tools/list)<br>`action`*: string (['GENERATE', 'REWRITE', 'TRANSLATE']) | read-only annotation |
 | `approve_prompt` | Spend the explicitly approved exact price once for a quote from estimate_prompt. Args: quote_id and approved_cost (the unchanged decimal string). Returns: request_id and queued state. Queues one durable submission; never retry an uncertain outcome. The shared runtime updates only the unchanged original prompt field. Inspect list_local_jobs for recovery. | `quote_id`*: string<br>`approved_cost`*: string | destructive annotation |
@@ -561,6 +564,16 @@ separate explicit local **Build plan** action.
 After failure or restart, use `list_local_jobs` for context/revision and
 `job_status` for saved asset IDs. `read_model_text` retrieves one selected full
 text output without spending or applying it to a scene. Incomplete previews must
-be downloaded successfully; truncated JSON prefixes are not plans. Native
-recovery into a different scene still needs an explicit plan-import workflow;
-read-only MCP recovery does not authorize that mutation.
+be downloaded successfully; truncated JSON prefixes are not plans. For native recovery, choose **Read saved Blockout plan** in saved jobs, then
+**Use saved Blockout plan** to review the destination and whether its existing
+plan will be replaced. This does not change geometry or spend credits.
+
+MCP uses `prepare_blockout_plan` with the current context and saved revision,
+then `blockout_plan_status` until ready. Show the scene, element/group counts and
+replacement flag before explicit `apply_blockout_plan` approval. The handle is
+single-use and bound to the unchanged destination and saved record. Pass
+`discard: true` to the status command to discard a finished review. The complete
+plan stays in memory until approval; no result text is stored in job metadata.
+Use native **Build plan** separately for geometry. Native plan application has
+Undo; MCP consumers retain the same scope and destination guards without a
+promise of native Undo for direct tool calls.

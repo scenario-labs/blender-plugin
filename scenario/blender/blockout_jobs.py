@@ -45,8 +45,11 @@ class BlockoutJobs:
     """Own only presentation handles; the session owns workers and durable jobs."""
 
     def __init__(self, session, store, *, online=lambda: True):
+        from .blockout_recovery import BlockoutRecovery
+
         self.session, self.store, self._online = session, store, online
         self.actions = {}
+        self.recovery = BlockoutRecovery(session, store)
 
     def current(self, scene):
         return next(
@@ -137,6 +140,7 @@ class BlockoutJobs:
     def poll(self):
         if not self.session.active:
             return
+        self.recovery.poll()
         for item in tuple(self.actions.values()):
             if item.phase not in BUSY:
                 continue

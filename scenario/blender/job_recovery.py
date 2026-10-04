@@ -22,6 +22,7 @@ LABELS = {
     "apply_world": "Set panorama as World",
     "restore_world": "Restore previous World",
     "apply_material": "Apply saved material",
+    "recover_blockout": "Read saved Blockout plan",
 }
 
 
@@ -59,6 +60,7 @@ class SCENARIO_OT_recover_job(bpy.types.Operator):
                 "apply_world",
                 "restore_world",
                 "apply_material",
+                "recover_blockout",
             }
         ]
     )
@@ -80,6 +82,78 @@ class SCENARIO_OT_recover_job(bpy.types.Operator):
             self.report({"ERROR"}, "Recovery did not complete; inspect the saved job again")
             return {"CANCELLED"}
         runtime.set_message("Recovery requested; no new generation was submitted")
+        return {"FINISHED"}
+
+
+class SCENARIO_OT_read_saved_blockout(bpy.types.Operator):
+    bl_idname = "scenario.read_saved_blockout"
+    bl_label = "Read saved Blockout plan"
+    bl_description = "Read the complete saved plan for destination review without generating again"
+    context_id: StringProperty(options={"HIDDEN"})
+    request_id: StringProperty(options={"HIDDEN"})
+    expected_revision: IntProperty(min=0, options={"HIDDEN"})
+
+    def execute(self, context):
+        try:
+            runtime.blockout_recovery(self.context_id).prepare(
+                self.request_id, self.expected_revision, context.scene
+            )
+        except Exception:
+            self.report({"ERROR"}, "Could not read the saved plan; inspect the job and connection")
+            return {"CANCELLED"}
+        runtime.set_message("Reading the saved plan; review its destination before using it")
+        return {"FINISHED"}
+
+
+class SCENARIO_OT_use_saved_blockout(bpy.types.Operator):
+    bl_idname = "scenario.use_saved_blockout"
+    bl_label = "Use saved Blockout plan"
+    bl_description = "Replace only the reviewed scene's stored plan without generating or building"
+    bl_options = {"REGISTER", "UNDO"}
+    context_id: StringProperty(options={"HIDDEN"})
+    review_id: StringProperty(options={"HIDDEN", "SKIP_SAVE"})
+    scene_name: StringProperty(options={"HIDDEN", "SKIP_SAVE"})
+    element_count: IntProperty(options={"HIDDEN", "SKIP_SAVE"})
+    group_count: IntProperty(options={"HIDDEN", "SKIP_SAVE"})
+    replaces_plan: BoolProperty(options={"HIDDEN", "SKIP_SAVE"})
+
+    def invoke(self, context, event):
+        try:
+            recovery = runtime.blockout_recovery(self.context_id)
+            summary = recovery.status(self.review_id)
+            if summary["state"] != "ready":
+                raise ValueError("The plan is not ready")
+            self._recovery = recovery
+            self.scene_name = summary["scene"]
+            self.element_count, self.group_count = summary["elements"], summary["groups"]
+            self.replaces_plan = summary["replaces_plan"]
+        except Exception:
+            self.report({"ERROR"}, "Read and review the saved plan again")
+            return {"CANCELLED"}
+        return context.window_manager.invoke_props_dialog(self, width=480)
+
+    def draw(self, context):
+        layout = self.layout
+        layout.label(text=f"Scene: {self.scene_name}", icon="SCENE_DATA")
+        layout.label(text=f"Plan: {self.element_count} elements in {self.group_count} groups")
+        if self.replaces_plan:
+            layout.label(text="Replace this scene's existing stored plan.", icon="ERROR")
+        layout.label(text="Keep existing geometry unchanged; no new generation.")
+        layout.label(text="Choose Build plan separately to update geometry.")
+        layout.label(text="Use Blender Undo to restore the previous plan.")
+
+    def cancel(self, context):
+        recovery = getattr(self, "_recovery", None)
+        if recovery is not None:
+            recovery.discard(self.review_id)
+
+    def execute(self, context):
+        try:
+            runtime.blockout_recovery(self.context_id).apply(self.review_id)
+        except Exception:
+            self.report({"ERROR"}, "The saved plan or destination changed; review it again")
+            return {"CANCELLED"}
+        runtime.set_message("Saved plan ready; choose Build plan to update geometry")
         return {"FINISHED"}
 
 
@@ -577,6 +651,29 @@ def draw_controls(layout, record):
     ):
         layout.label(text="Reuse saved results", icon="FILE_REFRESH")
     for action in actions:
+        if action == "recover_blockout":
+            jobs = runtime.state.blockout_jobs
+            review = jobs.recovery.current(record.local_id, bpy.context.scene) if jobs else None
+            if review is not None and review.task is not None:
+                layout.label(text="Reading saved plan...", icon="TIME")
+            elif review is not None and review.phase == "READY":
+                operator = layout.operator(
+                    "scenario.use_saved_blockout", text="Use saved Blockout plan"
+                )
+                operator.context_id = runtime.state.job_context_id
+                operator.review_id = review.identifier
+            else:
+                if review is not None and review.phase == "ERROR":
+                    layout.label(text="Plan needs review; check job and destination", icon="ERROR")
+                operator = layout.operator(
+                    "scenario.read_saved_blockout", text="Read saved Blockout plan"
+                )
+                operator.context_id, operator.request_id = (
+                    runtime.state.job_context_id,
+                    record.local_id,
+                )
+                operator.expected_revision = record.meta["saved_revision"]
+            continue
         if action == "apply_material":
             operator = layout.operator("scenario.apply_saved_material", text="Apply saved material")
             operator.context_id, operator.request_id = runtime.state.job_context_id, record.local_id
@@ -680,6 +777,8 @@ def draw_controls(layout, record):
 CLASSES = (
     SCENARIO_OT_inspect_saved_jobs,
     SCENARIO_OT_recover_job,
+    SCENARIO_OT_read_saved_blockout,
+    SCENARIO_OT_use_saved_blockout,
     SCENARIO_OT_import_saved_images,
     SCENARIO_OT_import_saved_media,
     SCENARIO_OT_import_saved_model,

@@ -28,7 +28,10 @@ JobSession. UI and MCP share exact quote approval, durable submission, polling
 and complete text retrieval. Guarded delivery stores a plan; explicit local
 Build plan creates geometry. No unbound prototype event can apply a late plan.
 The [Blockout contract](../BLENDER_JOB_CONTEXT.md#blockout-plan-commands) describes
-scene ownership and recovery limits. This scoped integration does not establish
+scene ownership and recovery limits. Saved-plan recovery reads complete text
+through that session, then requires a separate approval bound to a newly selected
+scene and its unchanged Blockout fields. It replaces the stored plan only;
+geometry still needs Build plan. This scoped integration does not establish
 Film or complete release acceptance.
 
 [SDKCatalog](../../scenario/core/api/sdk_catalog.py) binds model list/detail

@@ -1742,7 +1742,7 @@ class ModelGenerationTests(unittest.TestCase):
         self.assertEqual(status["local_applications"][0]["purpose"], "world")
         self.assertEqual(status["local_applications"][0]["asset_ids"], ["result-image"])
         self.assertNotEqual(bpy.context.scene.world, previous)
-        self.assertTrue(images <= set(bpy.data.images))
+        self.assertLessEqual(images, set(bpy.data.images))
         saved = self.store.get(request_id)
         self.assertEqual(
             (saved.intent, saved.application_origin, saved.results),

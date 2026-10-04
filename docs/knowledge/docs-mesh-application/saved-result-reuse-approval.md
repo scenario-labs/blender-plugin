@@ -15,7 +15,7 @@
       "scenario/blender/model_jobs.py": "9e694c6c2de26d213411fae8cad262aaba9d84d56ca8267bb7cbe8f744d72c7d",
       "scenario/blender/job_recovery.py": "db457391e6f2c541bf75e269b7ab5014217ad098e5e7599319eeb30cd11c2f05",
       "scenario/mcp/tools_scenario.py": "3ab7c49cf17656cad572375f744bb4868ae572d0b1e36b5b4bc4db119f980dcf",
-      "tests/blender/test_model_generation.py": "7fd9a09167b85c4d3bc632f2bb454a2f8995a7700c34d29d82eaf16f5bca60df",
+      "tests/blender/test_model_generation.py": "9114c85e7442540e9eb6b4cc16a668452a32ccb82a98edbd8aad33a75fff0863",
       "scenario/core/jobs/coordinator.py": "3fa2983e2e5f078548e9710b57c9ca04d0810bdeebed9bcca55fd3da3c750c16",
       "scenario/core/jobs/store.py": "884a342106149d9e56f25d7bc2462a342b9f555dddf9f44084e408bed3734244"
     }

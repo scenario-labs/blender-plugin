@@ -762,6 +762,9 @@ class ReferenceFormTests(unittest.TestCase):
         self.assertEqual(ref.source, "FILE")
 
     def test_clip_and_mesh_snapshots_attach_only_to_original_form(self):
+        bpy.ops.mesh.primitive_cube_add()
+        cube = bpy.context.active_object
+        self.addCleanup(lambda: bpy.data.objects.remove(cube, do_unlink=True))
         capture = submodule("blender.capture")
         mesh = submodule("blender.mesh_export")
         for source, kind, lane_name in (
@@ -791,7 +794,7 @@ class ReferenceFormTests(unittest.TestCase):
                             ),
                         ),
                         patch.object(capture, "capture_playblast", side_effect=capture_file),
-                        patch.object(mesh, "source_objects", return_value=[object()]),
+                        patch.object(mesh, "source_objects", return_value=[cube]),
                         patch.object(mesh, "export_glb", side_effect=export_file),
                     ):
                         binding = self.form.start(bpy.context, 0, lane_name=lane_name)
@@ -804,6 +807,9 @@ class ReferenceFormTests(unittest.TestCase):
                     self.assertEqual(binding.ticket.record.intent.kind, kind)
 
     def test_selected_mesh_operator_adds_one_guarded_snapshot(self):
+        bpy.ops.mesh.primitive_cube_add()
+        cube = bpy.context.active_object
+        self.addCleanup(lambda: bpy.data.objects.remove(cube, do_unlink=True))
         lane, _ = self.configure_typed_input("edit3d", "3d")
         lane.references.clear()
         self.fixture.fixture.remote["originalFileName"] = "reference.glb"
@@ -813,7 +819,7 @@ class ReferenceFormTests(unittest.TestCase):
             Path(path).write_bytes(b"data")
 
         with (
-            patch.object(mesh, "source_objects", return_value=[object()]),
+            patch.object(mesh, "source_objects", return_value=[cube]),
             patch.object(mesh, "export_glb", side_effect=export_file),
         ):
             self.assertEqual(

@@ -73,7 +73,7 @@ class UploadSources:
         identity = _json({"scope": asdict(scope), "request": request_id})
         return self._root / hashlib.sha256(identity.encode()).hexdigest()
 
-    def stage(self, source, *, request_id, scope, origin, kind, content_type):
+    def stage(self, source, *, request_id, scope, origin, kind, content_type, mesh_source=None):
         """Return an immutable identity only after the private snapshot is durable."""
         source = Path(source)
         directory = self._directory(scope, request_id)
@@ -126,6 +126,7 @@ class UploadSources:
                     whole.hexdigest(),
                     part_size,
                     tuple(digests),
+                    mesh_source,
                 )
                 if os.name != "nt":
                     for path in (directory, self._root):

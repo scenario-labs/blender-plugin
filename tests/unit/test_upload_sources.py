@@ -141,3 +141,36 @@ def test_other_stat_apis_still_compare_ctime(
     if phase == "stage":
         assert list(root.iterdir()) == []
     assert path.read_bytes() == DATA
+
+
+def test_staging_rejects_export_metadata_for_different_bytes_and_cleans_private_copy(tmp_path):
+    import hashlib
+
+    from scenario.core.jobs.mesh_source import MeshSource, MeshSourceObject
+
+    root = tmp_path / "staged"
+    root.mkdir()
+    path = tmp_path / "source.glb"
+    path.write_bytes(DATA)
+    source = MeshSource(
+        hashlib.sha256(b"older export").hexdigest(),
+        (
+            MeshSourceObject(
+                "object",
+                hashlib.sha256(b"mesh").hexdigest(),
+                ((1, 0, 0, 0), (0, 1, 0, 0), (0, 0, 1, 0), (0, 0, 0, 1)),
+            ),
+        ),
+    )
+    with pytest.raises(TransferError):
+        upload_sources.UploadSources(root).stage(
+            path,
+            request_id="capture",
+            scope=JobScope("https://example.invalid", "account"),
+            origin=JobOrigin("file", "scene", "revision", "object"),
+            kind="3d",
+            content_type="model/gltf-binary",
+            mesh_source=source,
+        )
+    assert list(root.iterdir()) == []
+    assert path.read_bytes() == DATA

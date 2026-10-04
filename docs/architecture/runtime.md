@@ -320,3 +320,16 @@ Native **Apply mesh edit** and MCP `purpose: mesh_edit` now prepare the same
 captured target, explicit scene/local placement, policy and Keep original review.
 No service operation or second executor is added. Source export metadata, provider
 mapping contracts and remaining edit policies still need integration; this is not full #99 or release acceptance.
+
+## Mesh upload source identity
+
+Mesh snapshot uploads preserve [export provenance](../SDK_UPLOADS.md#captured-mesh-export-provenance)
+with their durable upload intent: exact exported bytes, source session IDs,
+base-mesh fingerprints, world matrices and exporter settings. Export rechecks its
+captured source before worker admission; staging rejects a mismatched file hash.
+Multiple sources remain explicit without guessing a primary mesh. Upload schema 2
+upgrades existing records transactionally without resetting uncertain claims.
+
+This is upload provenance, not generation-origin binding or automatic mesh
+replacement. Provider alignment, operation-specific policies and live acceptance
+remain separate. No SDK request or dependency changes are introduced.

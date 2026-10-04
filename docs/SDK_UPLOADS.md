@@ -498,3 +498,42 @@ Attaching invalidates the previous price and never submits generation. Native
 tests save/reopen an actual blend before explicitly approving the recovered
 reference; they do not establish physical GUI interaction or live-service acceptance.
 Never remove and re-add a reference as a substitute for reconciling an uncertain upload.
+
+## Captured mesh export provenance
+
+UI and MCP mesh snapshot uploads now persist local export provenance in the
+scoped upload intent. Before exporting, the main thread captures each selected
+mesh's session identity, datablock identity, name, base geometry/attribute and
+material-slot fingerprint, world matrix, parent and collection membership. It
+rechecks those values after export. A changed source rejects admission and cleans
+the private export without starting an upload.
+
+The durable `mesh_source` records the exact GLB SHA256, each source target ID,
+base-mesh fingerprint and world matrix. Its exporter convention is
+`blender-world-gltf-y-up`, with evaluated modifiers and animations disabled,
+matching the existing GLB exporter settings. One mesh becomes the upload origin's
+explicit target; multiple meshes retain all IDs and leave the primary target
+unset. The metadata is immutable and never added to a Scenario API request.
+Worker staging verifies that its copied bytes match the recorded export hash.
+It cannot substitute a newer export or another source file under that provenance.
+
+Capture permits at most 64 distinct meshes and retains the mesh fingerprint's
+bounded component/type policy. Export hashing is synchronous and bounded to
+256 MiB; staging and network transfer remain on the shared worker. Export and
+hashing can pause Blender. The fingerprint describes base mesh data and material
+slots, not evaluated modifier output, material node graphs, shape-key animation
+or a complete rig contract; the file hash identifies the actual exported bytes.
+A parented/scaled synthetic mesh is exported and imported natively to verify
+world-coordinate roundtripping. This does not establish any provider's output
+alignment or topology preservation.
+
+Upload schema 2 requires an explicit nullable `mesh_source`. Opening a schema-1
+store atomically validates all scopes and records, adds null provenance and
+preserves identities, revisions, receipts and uncertain claims. Any malformed
+legacy row rolls the whole upgrade back. Older uploads and ordinary file/capture
+uploads remain valid with no mesh provenance; no source is inferred from names.
+
+This records the source at upload time. Binding that provenance to a generation
+quote and operation-specific result application remains separate integration.
+Session target IDs are not authority to find an object by name after restart;
+reopened files still require explicit destination review.

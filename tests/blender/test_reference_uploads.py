@@ -364,6 +364,14 @@ class ReferenceUploadTests(unittest.TestCase):
             record = ticket.task.result(5)
         self.assertEqual(record.intent.kind, "3d")
         self.assertEqual(record.intent.content_type, "model/gltf-binary")
+        provenance = record.intent.mesh_source
+        self.assertIsNotNone(provenance)
+        self.assertEqual(provenance.file_sha256, record.intent.file_sha256)
+        self.assertEqual(len(provenance.objects), 1)
+        self.assertEqual(provenance.objects[0].target_id, record.intent.origin.target_id)
+        self.assertEqual(
+            provenance.objects[0].matrix_world, tuple(tuple(row) for row in cube.matrix_world)
+        )
         staged = list((self.fixture.root / "sources").glob("*/source.bin"))
         self.assertEqual(staged[0].read_bytes()[:4], b"glTF")
         self.assertEqual(bpy.context.selected_objects, [cube])
@@ -610,3 +618,98 @@ class ReferenceUploadTests(unittest.TestCase):
             self.assertEqual((outcome["kind"], outcome["content_type"]), ("video", "video/webm"))
         self.assertEqual(len(self.fixture.calls), count)
         self.assertEqual(path.read_bytes(), b"data")
+
+    def test_mesh_export_source_changes_are_rejected_before_upload_staging(self):
+        bpy.ops.mesh.primitive_cube_add()
+        cube = bpy.context.active_object
+        self.addCleanup(lambda: bpy.data.objects.remove(cube, do_unlink=True))
+        mesh_export = submodule("blender.mesh_export")
+        original = mesh_export.export_glb
+
+        def changed_source(*args, **kwargs):
+            result = original(*args, **kwargs)
+            cube.data.vertices[0].co.x += 1
+            return result
+
+        with patch.object(mesh_export, "export_glb", side_effect=changed_source):
+            with self.assertRaises(self.module.UploadNotStarted):
+                self.tools.capture_reference({"source": "MESH"})
+        self.assertEqual(self.owner.references, {})
+        self.assertEqual(self.fixture.calls, [])
+        self.assertEqual(list(self.fixture.root.glob("reference-*")), [])
+
+    def test_multi_mesh_capture_preserves_all_source_identities_without_primary_guess(self):
+        meshes = []
+        for location in ((3, 2, 1), (9, 8, 7)):
+            bpy.ops.mesh.primitive_cube_add(location=location)
+            meshes.append(bpy.context.active_object)
+            self.addCleanup(lambda obj=meshes[-1]: bpy.data.objects.remove(obj, do_unlink=True))
+        for obj in meshes:
+            obj.select_set(True)
+        with (
+            patch.object(self.fixture.sources, "_max_bytes", 1024 * 1024),
+            patch.object(self.fixture.sources, "_part_bytes", 1024 * 1024),
+        ):
+            result = self.tools.capture_reference({"source": "MESH"})
+            ticket = self.owner.references[result["reference_id"]]
+            record = ticket.task.result(5)
+        self.assertIsNone(record.intent.origin.target_id)
+        self.assertEqual(len(record.intent.mesh_source.objects), 2)
+        self.assertEqual(
+            {
+                tuple(row[3] for row in obj.matrix_world[:3])
+                for obj in record.intent.mesh_source.objects
+            },
+            {(3, 2, 1), (9, 8, 7)},
+        )
+        self.assertEqual(set(bpy.context.selected_objects), set(meshes))
+        self.assertEqual(self.fixture.calls, [])
+
+    def test_parented_mesh_export_roundtrip_uses_blender_world_coordinates(self):
+        bpy.ops.mesh.primitive_cube_add(location=(1, 2, 3))
+        cube = bpy.context.active_object
+        parent = bpy.data.objects.new("Export parent", None)
+        bpy.context.scene.collection.objects.link(parent)
+        cube.parent = parent
+        parent.location = (4, 5, 6)
+        parent.rotation_euler.z = 0.5
+        cube.scale = (2, 3, 4)
+        self.addCleanup(lambda: bpy.data.objects.remove(parent, do_unlink=True))
+        self.addCleanup(lambda: bpy.data.objects.remove(cube, do_unlink=True))
+        bpy.context.view_layer.update()
+        expected = {
+            tuple(round(v, 4) for v in cube.matrix_world @ vertex.co)
+            for vertex in cube.data.vertices
+        }
+        with (
+            patch.object(self.fixture.sources, "_max_bytes", 1024 * 1024),
+            patch.object(self.fixture.sources, "_part_bytes", 1024 * 1024),
+        ):
+            result = self.tools.capture_reference({"source": "MESH"})
+            ticket = self.owner.references[result["reference_id"]]
+            record = ticket.task.result(5)
+        provenance = record.intent.mesh_source
+        self.assertEqual(provenance.convention, "blender-world-gltf-y-up")
+        path = self.fixture.root / "roundtrip.glb"
+        path.write_bytes(next((self.fixture.root / "sources").glob("*/source.bin")).read_bytes())
+        kinds = ("objects", "collections", "meshes", "materials", "images")
+        before = {name: set(getattr(bpy.data, name)) for name in kinds}
+
+        def clean_import():
+            for name in kinds:
+                values = getattr(bpy.data, name)
+                for item in set(values) - before[name]:
+                    values.remove(item, do_unlink=True)
+
+        self.addCleanup(clean_import)
+        bpy.ops.import_scene.gltf(filepath=str(path))
+        bpy.context.view_layer.update()
+        imported = set(bpy.data.objects) - before["objects"]
+        actual = {
+            tuple(round(v, 4) for v in obj.matrix_world @ vertex.co)
+            for obj in imported
+            if obj.type == "MESH"
+            for vertex in obj.data.vertices
+        }
+        self.assertEqual(actual, expected)
+        self.assertEqual(self.fixture.calls, [])

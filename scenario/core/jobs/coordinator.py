@@ -220,9 +220,9 @@ class JobCoordinator:
             raise UploadError("Upload storage and transfer policy are not configured")
         return self._uploads
 
-    def prepare_upload(self, source, *, origin, kind, content_type):
+    def prepare_upload(self, source, *, origin, kind, content_type, mesh_source=None):
         return self._upload_commands().prepare(
-            source, origin=origin, kind=kind, content_type=content_type
+            source, origin=origin, kind=kind, content_type=content_type, mesh_source=mesh_source
         )
 
     def inspect_upload(self, request_id):

@@ -125,13 +125,14 @@ class JobWorkers:
         snapshot = _snapshot(parameters)
         return self._enqueue(self._coordinator.quote_translate, snapshot, origin=origin)
 
-    def prepare_upload(self, source, *, origin, kind, content_type):
+    def prepare_upload(self, source, *, origin, kind, content_type, mesh_source=None):
         return self._enqueue(
             self._coordinator.prepare_upload,
             os.fspath(source),
             origin=origin,
             kind=kind,
             content_type=content_type,
+            mesh_source=mesh_source,
         )
 
     def initialize_upload(self, request_id, *, expected_revision):

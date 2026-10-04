@@ -324,13 +324,13 @@ class JobSession:
         """Queue explicit offline reconciliation without resolving or applying old targets."""
         return self._record_command("recover_downloads", request_id, expected_revision)
 
-    def prepare_upload(self, source, *, origin, kind, content_type):
+    def prepare_upload(self, source, *, origin, kind, content_type, mesh_source=None):
         """Stage a reference for the origin captured with its source, off the main thread."""
         _main_thread()
         self._check_capacity()
         self._resolve(origin)
         task = self._workers.prepare_upload(
-            source, origin=origin, kind=kind, content_type=content_type
+            source, origin=origin, kind=kind, content_type=content_type, mesh_source=mesh_source
         )
         self._pending.append((task, origin))
         return task

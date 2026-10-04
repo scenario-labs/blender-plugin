@@ -138,7 +138,7 @@ class UploadCommands:
             current.intent.request_id, expected_revision=current.revision, state=state, **kwargs
         )
 
-    def prepare(self, source, *, origin, kind, content_type):
+    def prepare(self, source, *, origin, kind, content_type, mesh_source=None):
         # SDK model uploads produce model identities, not asset references.
         if kind == "model":
             raise UploadError("Model import needs its own result lifecycle")
@@ -154,6 +154,7 @@ class UploadCommands:
                 origin=origin,
                 kind=kind,
                 content_type=content_type,
+                mesh_source=mesh_source,
             )
         except Exception:
             raise UploadError("Could not prepare a stable upload source") from None

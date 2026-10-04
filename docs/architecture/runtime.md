@@ -298,6 +298,8 @@ unscoped cache; ambiguous remote IDs require an explicit local request ID.
 Neither path borrows the old cache's files or silently applies a saved result.
 Drawing and MCP history responses also recheck current saved identities, and
 storage failures do not fall back to the older import path.
+MCP import also requires complete selected credentials before consulting either
+store; missing credentials permit cold read-only inspection, never application.
 
 The cloud page itself remains an in-memory browse result. Jobs with no matching
 scoped record still use the existing prototype history/import path. Importing

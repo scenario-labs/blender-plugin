@@ -656,6 +656,10 @@ def import_result(args):
     from ..blender import handlers
 
     reference = _job_ref(args)
+    if not runtime.credentials().valid:
+        raise ScenarioError(
+            0, "Select complete credentials before importing; inspect saved jobs first"
+        )
     if _saved_status(reference) is not None:
         raise ValueError(
             "Use prepare_result_application and explicit destination approval for saved results; "

@@ -147,6 +147,20 @@ class SDKHistoryTests(unittest.TestCase):
             dispatch.assert_not_called()
         self.assertFalse(self.calls)
 
+    def test_incomplete_credentials_cannot_import_a_colliding_legacy_result(self):
+        saved = self.saved_job()
+        store = self.runtime.state.job_store
+        self.legacy_collision()
+        self.prefs.api_secret = ""
+        with patch.object(self.handlers, "dispatch") as dispatch:
+            with self.assertRaisesRegex(
+                submodule("core.api.errors").ScenarioError, "complete credentials"
+            ):
+                self.tools.import_result({"job_id": "job-fixture"})
+            dispatch.assert_not_called()
+        self.assertEqual(store.get(saved.intent.request_id), saved)
+        self.assertFalse(self.calls)
+
     def test_ambiguous_saved_remote_id_does_not_fall_back_to_legacy_import(self):
         self.saved_job("first")
         self.saved_job("second")

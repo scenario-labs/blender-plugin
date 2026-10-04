@@ -8,12 +8,13 @@ import unittest
 import urllib.request
 from unittest.mock import patch
 
-from helpers import isolated_manager, submodule
+from helpers import isolated_manager, submodule, temp_credentials
 
 
 class McpContractTests(unittest.TestCase):
     def setUp(self):
         self.tools = submodule("mcp.tools_scenario")
+        self.enterContext(temp_credentials())
 
     def test_job_status_and_wait_accept_local_or_remote_ids_under_either_spelling(self):
         records = submodule("core.jobs.records")
@@ -55,10 +56,11 @@ class McpContractTests(unittest.TestCase):
                 dispatch.assert_called_with(("job_done", rec))
             self.assertEqual(dispatch.call_count, 2)
 
-    def test_cold_local_result_needs_no_credentials_or_shared_session(self):
+    def test_cold_local_reads_need_no_credentials_but_import_requires_scope(self):
         runtime = submodule("blender.runtime")
         records = submodule("core.jobs.records")
         handlers = submodule("blender.handlers")
+        self.enterContext(temp_credentials(key="", secret=""))
         with isolated_manager() as manager, patch.object(handlers, "dispatch") as dispatch:
             rec = records.JobRecord.new(lane="image", kind="image", model_id="fixture", body={})
             rec.job_id, rec.status, rec.files = "job_fixture", "success", ["fixture.png"]
@@ -82,7 +84,6 @@ class McpContractTests(unittest.TestCase):
                     for method in (
                         self.tools.job_status,
                         self.tools.wait_for_job,
-                        self.tools.import_result,
                     ):
                         with self.subTest(reference=reference, method=method.__name__):
                             runtime.state.manager = None
@@ -96,8 +97,11 @@ class McpContractTests(unittest.TestCase):
                                     runtime.state.manager.shutdown()
                                     runtime.state.manager.join(timeout=5)
                                 runtime.state.manager = manager
-            self.assertEqual(dispatch.call_count, 2)
-            self.assertEqual(dispatch.call_args.args[0][1].files, rec.files)
+                    with self.assertRaisesRegex(
+                        submodule("core.api.errors").ScenarioError, "complete credentials"
+                    ):
+                        self.tools.import_result({"job_id": reference})
+            dispatch.assert_not_called()
 
     def test_cold_active_lookup_keeps_the_manager_owned_record(self):
         runtime = submodule("blender.runtime")

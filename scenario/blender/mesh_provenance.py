@@ -75,6 +75,8 @@ def export_with_source(context, objects, path, session):
         try:
             target = capture_target(scene, objects[0])
         except MeshApplicationError:
+            # Upload/export supports more sources than in-place replacement.
+            # Preserve the upload without granting a live application guard.
             pass
     mesh_export.export_glb(context, objects, path=str(path))
     context.view_layer.update()

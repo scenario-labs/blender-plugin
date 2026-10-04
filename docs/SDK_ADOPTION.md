@@ -317,7 +317,7 @@ same adapter, followed by credential-free CDN transfer. Saved-job UI/MCP control
 also expose known model-job cancellation and download recovery through the same
 coordinator. Explicit recovered Image application uses verified local receipts
 without service calls. Non-image MCP jobs stop after verified download without
-automatic scene application. Capture/Spark preparation, Film and non-image result application still need integration.
+automatic scene application. Live capture/Spark acceptance, Film and non-image result application still need integration.
 Generated operations use public SDK methods
 with `max_retries=0`; their `with_raw_response` wrappers preserve wire JSON.
 The named discovery exceptions also use the same zero-retry SDK client.
@@ -378,7 +378,7 @@ and MIME type. Typed local-file form upload and saved-reference attachment use
 the same commands, including still captures for image inputs in other lanes.
 Explicit clip/mesh and render scene/first-frame preparation use those same
 upload commands; final render generation uses the existing shared model quote
-and submission path. Automatic Spark preparation remains separate. There is no new Scenario API
+and submission path. Render Spark preparation has a separate exact-price approval. There is no new Scenario API
 fallback or dependency change. See the [active upload contract](SDK_UPLOADS.md#active-reference-uploads)
 for destination trust, source limits and recovery. Form attachment captures
 scene, lane, model, input kind and slot; pending marked uploads block duplicate
@@ -479,8 +479,8 @@ job receipt; it does not deliver inline prompt text or resolve prompt assets.
 Full prompt result retrieval now uses public `jobs.retrieve` and `assets.retrieve`
 through the shared coordinator. Native New/Rewrite controls and MCP now require
 a separate exact-price approval, then apply only to the unchanged original field.
-The former Spark/LLM fallback entry points are retired. Automatic render Spark
-and live service acceptance remain separate work.
+The former Spark/LLM fallback entry points are retired. Render Spark preparation
+uses the same public method and explicit approval; live service acceptance remains.
 No automatic LLM fallback or remote prompt cancellation is enabled.
 
 

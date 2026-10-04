@@ -8,7 +8,7 @@ import threading
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import bpy
 import httpx
@@ -196,6 +196,25 @@ class PromptToolsTests(unittest.TestCase):
             self.assertTrue(self.paid[0].url.path.endswith("/" + endpoint))
             self.assertEqual(len(self.paid), 1)
 
+    def test_compact_price_display_preserves_exact_approval(self):
+        item = self.quote()
+        layout = MagicMock()
+        self.tools.draw_prompt_status(layout, self.lane, "image")
+        layout.label.assert_called_once_with(text="Cost: 0.123 CU")
+        approval = layout.row.return_value.operator.return_value
+        self.assertEqual(approval.quote_id, item.identifier)
+        self.assertEqual(approval.approved_cost, "0.1234567890123456789")
+        self.assertEqual(self.paid, [])
+        self.assertEqual(
+            bpy.ops.scenario.prompt_approve(
+                quote_id=approval.quote_id, approved_cost=approval.approved_cost
+            ),
+            {"FINISHED"},
+        )
+        self.advance(item)
+        self.assertEqual(len(self.paid), 1)
+        self.assertEqual(self.lane.prompt, self.result_text)
+
     def test_empty_rewrite_and_translation_do_not_request_prices(self):
         self.lane.prompt = ""
         self.assertEqual(bpy.ops.scenario.prompt_spark(lane="image", mode="REWRITE"), {"CANCELLED"})
@@ -205,7 +224,7 @@ class PromptToolsTests(unittest.TestCase):
     def test_changed_prompt_or_wrong_cost_cannot_spend(self):
         item = self.quote()
         self.assertEqual(
-            bpy.ops.scenario.prompt_approve(quote_id=item.identifier, approved_cost="0.12"),
+            bpy.ops.scenario.prompt_approve(quote_id=item.identifier, approved_cost="0.123"),
             {"CANCELLED"},
         )
         self.lane.prompt = "Changed after quote"
@@ -308,3 +327,151 @@ class PromptToolsTests(unittest.TestCase):
         self.assertEqual(bpy.ops.scenario.prompt_clear(lane="image"), {"FINISHED"})
         self.assertEqual(self.lane.prompt, "")
         self.assertEqual(self.calls, [])
+
+    def render_lane(self, lane_name="render_image"):
+        generation = submodule("blender.generation")
+        references = submodule("blender.render_references")
+        video = lane_name == "render_video"
+        model = {
+            "id": "fixture-render-model",
+            "name": "Render fixture",
+            "type": "custom",
+            "capabilities": ["video2video" if video else "img2img"],
+            "inputs": [
+                {"name": "prompt", "type": "string", "required": True, "prompt": True},
+                {"name": "referenceImages", "type": "file_array", "kind": "image"},
+            ]
+            + (
+                [
+                    {"name": "video", "type": "file", "kind": "video"},
+                    {"name": "firstFrameImage", "type": "file", "kind": "image"},
+                ]
+                if video
+                else []
+            ),
+        }
+        record = submodule("core.api.catalog").ModelRecord.from_api(model)
+        generation.set_catalog([record], [record])
+        lane = self.scene.scenario.lane_state(lane_name)
+        lane.model_id, lane.prompt = record.id, ""
+        lane.spark_enabled = True
+        scene = lane.references.add()
+        scene.param_name = "video" if video else "referenceImages"
+        scene.source, scene.asset_id = "ASSET", "asset_scene"
+        scene[references.ROLE] = references.SCENE
+        if video:
+            lane.use_first_frame, lane.first_frame_path = True, "first-frame.png"
+            first = lane.references.add()
+            first.param_name, first.source, first.asset_id = (
+                "firstFrameImage",
+                "ASSET",
+                "asset_first",
+            )
+            first.filepath = lane.first_frame_path
+            first[references.ROLE] = references.FIRST_FRAME
+        style = lane.references.add()
+        style.param_name, style.source, style.asset_id = "referenceImages", "ASSET", "asset_style"
+        return lane
+
+    def test_render_automatic_preparation_quotes_once_then_requires_approval(self):
+        lane = self.render_lane()
+        generation = submodule("blender.generation")
+        generation.request_estimate(self.scene, "render_image")
+        item = self.jobs().current(self.scene, "render_image")
+        self.advance(item)
+        self.assertEqual(item.phase, "READY")
+        self.assertEqual(lane.estimate_state, "UNAVAILABLE")
+        generation.request_estimate(self.scene, "render_image")
+        self.assertEqual(len(self.calls), 1)
+        self.assertEqual(self.paid, [])
+        payload = json.loads(self.calls[0].content)
+        self.assertEqual(payload["images"], ["asset_scene", "asset_style"])
+        self.assertIn("style references only", payload["prompt"])
+        self.assertEqual(self.approve(item), {"FINISHED"})
+        self.advance(item)
+        self.assertEqual(item.phase, "DONE")
+        self.assertEqual(lane.prompt, self.result_text)
+        request = generation.build_request(self.scene, "render_image", for_estimate=True)
+        self.assertEqual(request.errors, [])
+        self.assertIsNone(request.spark)
+        self.assertIn("A copper teapot Soft studio light", request.body["prompt"])
+        self.assertEqual(len(self.paid), 1)
+        self.assertTrue(all(call.url.path.endswith("/prompt") for call in self.paid))
+        self.assertEqual(lane.estimate_key, "")  # A new render quote is still required.
+
+    def test_video_prompt_uses_first_frame_and_styles_never_the_video_asset(self):
+        lane = self.render_lane("render_video")
+        item = self.jobs().quote(self.scene, "render_video", "GENERATE")
+        self.advance(item)
+        payload = json.loads(self.calls[0].content)
+        self.assertEqual(payload["images"], ["asset_first", "asset_style"])
+        self.assertIn("approved first frame", payload["prompt"])
+        self.assertNotIn("asset_scene", payload["images"])
+        self.assertEqual(self.approve(item), {"FINISHED"})
+        self.advance(item)
+        self.assertEqual(lane.prompt, self.result_text)
+        self.assertEqual(len(self.paid), 1)
+
+    def test_render_reference_change_rejects_price_and_late_text(self):
+        lane = self.render_lane()
+        item = self.jobs().quote(self.scene, "render_image", "GENERATE")
+        self.advance(item)
+        lane.references[0].asset_id = "asset_replaced"
+        self.assertEqual(self.approve(item), {"CANCELLED"})
+        self.assertEqual(self.paid, [])
+        item = self.jobs().quote(self.scene, "render_image", "GENERATE")
+        self.advance(item)
+        self.assertEqual(self.approve(item), {"FINISHED"})
+        lane.references[1].asset_id = "asset_other_style"
+        self.advance(item)
+        self.assertEqual(item.phase, "ERROR")
+        self.assertEqual(lane.prompt, "")
+        self.assertEqual(len(self.paid), 1)
+
+    def test_render_spark_toggle_invalidates_preparation_approval(self):
+        lane = self.render_lane()
+        item = self.jobs().quote(self.scene, "render_image", "GENERATE")
+        self.advance(item)
+        lane.spark_enabled = False
+        self.assertEqual(self.approve(item), {"CANCELLED"})
+        self.assertEqual(self.paid, [])
+
+    def test_render_pending_file_or_other_scope_cannot_request_prompt_price(self):
+        lane = self.render_lane()
+        errors = submodule("core.api.errors")
+        style = lane.references[1]
+        style.source, style.filepath = "FILE", "style.png"
+        with self.assertRaises(errors.ScenarioError):
+            self.jobs().quote(self.scene, "render_image", "GENERATE")
+        style.source = "ASSET"
+        form = submodule("blender.reference_form")
+        style[form._SCOPE] = "another-scope"
+        with self.assertRaises(errors.ScenarioError):
+            self.jobs().quote(self.scene, "render_image", "GENERATE")
+        self.assertEqual(self.calls, [])
+
+    def test_video_missing_first_frame_gives_actionable_preparation_error(self):
+        lane = self.render_lane("render_video")
+        lane.use_first_frame = False
+        submodule("blender.generation").request_estimate(self.scene, "render_video")
+        self.assertIn("first frame", lane.estimate_error)
+        self.assertEqual(lane.estimate_state, "UNAVAILABLE")
+        self.assertEqual(self.calls, [])
+
+    def test_uncertain_render_preparation_never_automatically_quotes_or_submits_again(self):
+        lane = self.render_lane()
+        generation = submodule("blender.generation")
+        self.lose_response = True
+        generation.request_estimate(self.scene, "render_image")
+        item = self.jobs().current(self.scene, "render_image")
+        self.advance(item)
+        self.assertEqual(self.approve(item), {"FINISHED"})
+        self.advance(item)
+        before = len(self.calls)
+        generation.request_estimate(self.scene, "render_image")
+        self.assertEqual(len(self.calls), before)
+        self.assertEqual(len(self.paid), 1)
+        self.assertEqual(lane.prompt, "")
+        self.assertEqual(
+            self.runtime.state.job_store.get(item.request_id).state, self.storage.JobState.UNCERTAIN
+        )

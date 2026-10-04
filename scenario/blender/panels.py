@@ -7,6 +7,7 @@ import os
 
 import bpy
 
+from ..core.ui.costs import format_cu
 from . import generation, job_recovery, params_ui, props, runtime
 
 KIND_ICON = {
@@ -268,7 +269,7 @@ def generate_button_text(lane_state):
         return "Set up credentials"
     if lane_state.estimate_state == "READY":
         prefix = "from " if lane_state.estimate_partial else ""
-        return f"Generate  ({prefix}{lane_state.estimate_cu:g} CU)"
+        return f"Generate  ({prefix}{format_cu(lane_state.estimate_cu)} CU)"
     if lane_state.estimate_state == "PENDING":
         return "Generate  (estimating...)"
     return "Generate"
@@ -484,7 +485,7 @@ def draw_result(layout, rec):
         ).local_id = rec.local_id
     elif not rec.is_success:
         header.label(text="", icon="ERROR")
-    header.label(text=f"{rec.cu_cost:g} CU" if rec.cu_cost is not None else "")
+    header.label(text=f"{format_cu(rec.cu_cost)} CU" if rec.cu_cost is not None else "")
     if collapsed:
         return
     row = box.row(align=True)
@@ -610,7 +611,9 @@ def draw_history(layout, context, shown_ids=()):
         header.label(
             text=(entry.prompt or entry.model_id)[:40], icon=KIND_ICON.get(entry.kind, "FILE")
         )
-        header.label(text=f"{entry.cu_cost:g} CU" if entry.cu_cost is not None else entry.status)
+        header.label(
+            text=f"{format_cu(entry.cu_cost)} CU" if entry.cu_cost is not None else entry.status
+        )
         if entry.asset_ids:
             op = box.row(align=True).operator(
                 "scenario.copy_text", text=entry.asset_ids[0], icon="COPYDOWN"

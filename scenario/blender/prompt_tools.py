@@ -7,6 +7,7 @@ import textwrap
 import bpy
 from bpy.props import EnumProperty, StringProperty
 
+from ..core.ui.costs import format_cu
 from . import runtime
 from .prompt_jobs import LABELS
 
@@ -76,7 +77,7 @@ class SCENARIO_OT_prompt_translate(bpy.types.Operator):
 class SCENARIO_OT_prompt_approve(bpy.types.Operator):
     bl_idname = "scenario.prompt_approve"
     bl_label = "Approve prompt generation"
-    bl_description = "Spend the displayed exact price once and update the unchanged original prompt"
+    bl_description = "Approve this quote once and update the unchanged original prompt"
     quote_id: StringProperty(options={"SKIP_SAVE"})
     approved_cost: StringProperty(options={"SKIP_SAVE"})
 
@@ -122,9 +123,7 @@ def draw_prompt_status(layout, lane_state, lane):
     if item is None:
         return
     if item.phase == "READY":
-        # Long exact decimals remain fully visible even in a narrow sidebar.
-        for line in textwrap.wrap(f"Cost: {item.cost} CU", 32):
-            layout.label(text=line)
+        layout.label(text=f"Cost: {format_cu(item.cost)} CU")
         row = layout.row()
         row.enabled = (
             lane_state.prompt == item.original_text and lane_state.model_id == item.model_id
@@ -134,6 +133,7 @@ def draw_prompt_status(layout, lane_state, lane):
             text=f"Approve {LABELS[item.action]}",
             icon="CHECKMARK",
         )
+        # Formatting is presentation only; approval stays bound to the exact quote.
         op.quote_id, op.approved_cost = item.identifier, item.cost
     elif item.phase == "QUOTING":
         layout.label(text="Getting prompt price...", icon="TIME")

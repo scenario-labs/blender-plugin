@@ -5,19 +5,10 @@
 Render Image: viewport or camera still + style images + look -> a finished still (image edit models).
 Render Video: playblast of the timeline + images (first frame, styles) + look -> a finished clip (video models with a video input).
 Uploaded scene/first-frame snapshots are required before the final quote.
-Automatic Prompt Spark preparation remains unavailable until it has its own shared approval flow."""
+Prompt Spark has a separate exact-price approval before the final render quote."""
 
-import logging
-import os
-
-import bpy
-
-from ..core.api import spark as spark_api
 from ..core.api.catalog import tagged_video_model
 from ..core.scene import capture_plan, render_prompt
-
-log = logging.getLogger("scenario.render")
-SPARK_NUM_RESULTS = 1
 
 
 def image_specs(schema):
@@ -147,7 +138,7 @@ def decorate(scene, lane, lane_state, schema, request, for_estimate):
             request.body.pop(name, None)
     if request.spark is not None:
         request.errors.append(
-            "Enter a look or turn off automatic Prompt Spark before requesting a price"
+            "Approve Prompt Spark preparation, enter a look or turn off Spark before pricing"
         )
     request.meta.update(
         {
@@ -160,42 +151,8 @@ def decorate(scene, lane, lane_state, schema, request, for_estimate):
     return request
 
 
-def make_prepare(spark_info, image_path, prompt_name):
-    """Worker-side step: ask Prompt Spark for the look from the capture, then write the final prompt into the body."""
-
-    def prepare(client, rec):
-        images = (
-            [spark_api.data_url(image_path)] if image_path and os.path.exists(image_path) else []
-        )
-        looks = spark_api.spark(
-            client, prompt=render_prompt.SPARK_BRIEF, images=images, num_results=SPARK_NUM_RESULTS
-        )
-        look = looks[0]
-        if spark_info["kind"] == "video":
-            prompt = render_prompt.video_prompt(
-                look, spark_info["image_count"], spark_info["first_frame"], spark_info["tagged"]
-            )
-        else:
-            prompt = render_prompt.image_prompt(look, spark_info["style_count"])
-        rec.body[prompt_name] = prompt
-        rec.meta["spark_look"] = look
-        rec.meta["prompt"] = look
-        log.info("Prompt Spark look: %s", look[:120])
-
-    return prepare
-
-
 def on_result(rec):
-    """Show the legacy Spark look without changing another generation form."""
-    lane = rec.meta.get("render_lane")
-    if not lane:
-        return
-    for scene in bpy.data.scenes:
-        lane_state = scene.scenario.lane_state(lane)
-        if lane_state is None:
-            continue
-        if rec.meta.get("spark_look"):
-            lane_state.spark_look = rec.meta["spark_look"]
+    """Ignore retired unbound look events; shared prompt delivery owns its field."""
 
 
 # -- drawing --------------------------------------------------------------
@@ -226,10 +183,8 @@ def _draw_rendering_style(layout, context, lane, lane_state, schema):
     if not lane_state.prompt.strip():
         row = box.row(align=True)
         row.prop(
-            lane_state, "spark_enabled", text="Automatic Prompt Spark (unavailable)"
+            lane_state, "spark_enabled", text="Prepare look with Prompt Spark"
         )  # tooltip carries the detail
-    if lane_state.spark_look:
-        box.label(text="Spark: " + lane_state.spark_look[:70], icon="INFO")
     if lane == "render_video":
         _draw_first_frame(box, lane_state, schema)
     # references drawn flat inside this box (no nested boxes): the capture/frames, plus any audio reference

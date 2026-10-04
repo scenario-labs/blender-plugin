@@ -9,6 +9,7 @@ import bpy
 from bpy.props import EnumProperty, FloatProperty, IntProperty, StringProperty
 
 from ..core.api.errors import ScenarioError
+from ..core.ui.costs import format_cu
 from . import apply_image, generation, params_ui, props, runtime
 
 
@@ -454,7 +455,7 @@ class SCENARIO_OT_result_details(bpy.types.Operator):
         header = layout.box()
         row = header.row(align=True)
         row.label(text=panels._short_prompt(rec, 60), icon=panels.KIND_ICON.get(rec.kind, "FILE"))
-        row.label(text=f"{rec.cu_cost:g} CU" if rec.cu_cost is not None else rec.status)
+        row.label(text=f"{format_cu(rec.cu_cost)} CU" if rec.cu_cost is not None else rec.status)
         row = header.row(align=True)
         row.label(text=rec.meta.get("model_name") or rec.model_id, icon="NODE_MATERIAL")
         row.label(text=rec.status, icon="CHECKMARK" if rec.is_success else "ERROR")

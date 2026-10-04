@@ -51,6 +51,15 @@ def first_frame_spec(schema):
     return None
 
 
+def style_input(lane, schema):
+    """The native style slot; Render Video reserves its first-frame input."""
+    return (
+        style_spec(schema, exclude=first_frame_spec(schema))
+        if lane == "render_video"
+        else scene_spec(lane, schema)
+    )
+
+
 def hidden_inputs(schema):
     """File inputs Render Image does not use: anything that is not an image (Gemini 3.1 also takes a video)."""
     return {s.name for s in schema.specs if s.is_file and (s.kind or "image") != "image"}
@@ -188,11 +197,7 @@ def _draw_rendering_style(layout, context, lane, lane_state, schema):
     if lane == "render_video":
         _draw_first_frame(box, lane_state, schema)
     # references drawn flat inside this box (no nested boxes): the capture/frames, plus any audio reference
-    styles = (
-        style_spec(schema, exclude=first_frame_spec(schema))
-        if lane == "render_video"
-        else scene_spec(lane, schema)
-    )
+    styles = style_input(lane, schema)
     keep = {styles.name} if styles is not None else set()
     keep |= {
         s.name for s in schema.specs if s.is_file and s.kind == "audio"

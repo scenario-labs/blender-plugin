@@ -147,6 +147,70 @@ class RenderLanesTests(unittest.TestCase):
                 commands.request(self.scene, "render_image", self.image_lane.model_id)
         self.assertEqual(len(self.image_lane.references), 0)
 
+    def test_mcp_style_replacement_preserves_other_inputs_and_their_upload_markers(self):
+        self.video_lane.model_id = "model_bytedance-seedance-2-0"
+        schema = self.generation.schema_for(self.video_lane.model_id)
+        style = self.render_lanes.style_input("render_video", schema)
+        self.assertIsNotNone(style)
+        for marked in (False, True):
+            with self.subTest(marked=marked):
+                self.video_lane.references.clear()
+                other = []
+                for name in ("referenceAudios", "referenceVideos", "lastFrameImage"):
+                    ref = self.video_lane.references.add()
+                    ref.param_name, ref.source, ref.asset_id = name, "ASSET", "asset-" + name
+                    if marked:
+                        ref[submodule("blender.reference_form")._MARKER] = "pending-" + name
+                    other.append((name, ref.asset_id, dict(ref.items())))
+                ref = self.video_lane.references.add()
+                ref.param_name, ref.source, ref.asset_id = style.name, "ASSET", "old-style"
+                commands = submodule("blender.render_commands")
+                result = commands.configure(
+                    self.scene, "render_video", {"style_assets": ["new-style"]}
+                )
+                self.assertEqual(
+                    [
+                        (r.param_name, r.asset_id, dict(r.items()))
+                        for r in list(self.video_lane.references)[:3]
+                    ],
+                    other,
+                )
+                self.assertEqual(self.video_lane.references[-1].asset_id, "new-style")
+                self.assertEqual(
+                    [r["role"] for r in result["references"]], ["input", "input", "input", "style"]
+                )
+                commands.configure(self.scene, "render_video", {"style_assets": []})
+                self.assertEqual(
+                    [
+                        (r.param_name, r.asset_id, dict(r.items()))
+                        for r in self.video_lane.references
+                    ],
+                    other,
+                )
+
+    def test_mcp_styles_preserve_reserved_first_frame_without_an_image_array(self):
+        self.video_lane.model_id = "model_minimax-h3"
+        schema = self.generation.schema_for(self.video_lane.model_id)
+        params = submodule("core.schema.params")
+        first = self.render_lanes.first_frame_spec(schema)
+        self.assertIsNotNone(first)
+        scene = self.render_lanes.scene_spec("render_video", schema)
+        schema = params.Schema([first, scene])
+        commands = submodule("blender.render_commands")
+        with patch.object(self.generation, "schema_for", return_value=schema):
+            self.assertIsNone(self.render_lanes.style_input("render_video", schema))
+            with self.assertRaisesRegex(ValueError, "no style input"):
+                commands.configure(
+                    self.scene, "render_video", {"look": "changed", "style_assets": ["style"]}
+                )
+            self.assertEqual(self.video_lane.prompt, "")
+            self.assertEqual(len(self.video_lane.references), 0)
+            ref = self.video_lane.references.add()
+            ref.param_name, ref.source, ref.asset_id = first.name, "ASSET", "first-frame"
+            commands.configure(self.scene, "render_video", {"style_assets": []})
+            self.assertEqual(len(self.video_lane.references), 1)
+            self.assertEqual(self.video_lane.references[0].asset_id, "first-frame")
+
     def test_lane_tabs_have_no_generations_or_mcp(self):
         props = submodule("blender.props")
         ids = [item[0] for item in props.LANE_ITEMS]

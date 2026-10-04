@@ -60,13 +60,15 @@ def _reference_key(scene, lane, ref):
 def inspect(scene, lane):
     state = lane_state(scene, lane)
     schema = generation.schema_for(state.model_id)
+    styles = render_lanes.style_input(lane, schema) if schema else None
     values, enabled = params_ui.collect_values(state, schema) if schema else ({}, {})
     references = []
     for ref in state.references:
         references.append(
             {
                 "reference_key": _reference_key(scene, lane, ref),
-                "role": ref.get(render_references.ROLE, "style"),
+                "role": ref.get(render_references.ROLE)
+                or ("style" if styles and ref.param_name == styles.name else "input"),
                 "parameter": ref.param_name,
                 "source": ref.source,
                 "asset_id": ref.asset_id if ref.source == "ASSET" else "",
@@ -161,6 +163,7 @@ def configure(scene, lane, changes):
     edits = {name: _parameter(schema.by_name(name), value) for name, value in parameters.items()}
     styles = changes.get("style_assets")
     style_spec = None
+    old_style_indices = []
     if "style_assets" in changes:
         if (
             not isinstance(styles, list)
@@ -168,16 +171,20 @@ def configure(scene, lane, changes):
             or any(not isinstance(item, str) or not item.strip() for item in styles)
         ):
             raise ValueError("style_assets must contain at most 15 nonempty asset ids")
-        old_styles = [ref for ref in state.references if not ref.get(render_references.ROLE)]
-        if any(ref.get(reference_form._MARKER) for ref in old_styles):
-            raise ValueError("Remove marked style references explicitly before replacing them")
         scene_spec = render_lanes.scene_spec(lane, schema)
-        style_spec = render_lanes.style_spec(
-            schema, exclude=scene_spec if scene_spec and scene_spec.ptype == "file" else None
-        )
+        style_spec = render_lanes.style_input(lane, schema)
         if styles and style_spec is None:
             raise ValueError("This model has no style input")
         if style_spec:
+            old_style_indices = [
+                index
+                for index, ref in enumerate(state.references)
+                if ref.param_name == style_spec.name and not ref.get(render_references.ROLE)
+            ]
+            if any(
+                state.references[index].get(reference_form._MARKER) for index in old_style_indices
+            ):
+                raise ValueError("Remove marked style references explicitly before replacing them")
             occupied = sum(
                 ref.param_name == style_spec.name and bool(ref.get(render_references.ROLE))
                 for ref in state.references
@@ -202,9 +209,8 @@ def configure(scene, lane, changes):
         if prop != "enabled":
             item.enabled = True
     if styles is not None:
-        for index in range(len(state.references) - 1, -1, -1):
-            if not state.references[index].get(render_references.ROLE):
-                state.references.remove(index)
+        for index in reversed(old_style_indices):
+            state.references.remove(index)
         for asset in styles:
             ref = state.references.add()
             ref.param_name, ref.source, ref.asset_id = style_spec.name, "ASSET", asset

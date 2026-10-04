@@ -155,9 +155,10 @@ are not established by a successful new-object import.
 mesh, names, bounded geometry/attribute fingerprint, transforms, parenting,
 collection membership and active material index. It accepts one local scene in
 Object Mode and retains the primitive's unsupported-data checks. It does not infer
-selection. `validate_target` rejects intervening edits, replacement, deletion or
-membership in another scene. Capture this alongside the `JobSession` origin
-before asynchronous work; a target captured afterward cannot establish the old
+selection. Capture evaluates the current view layer so pending parent transforms
+cannot hide behind a stale world matrix. `validate_target` rejects intervening
+edits, replacement, deletion or membership in another scene. Capture the mesh
+snapshot first, then the `JobSession` origin, before asynchronous work; a target captured afterward cannot establish the old
 input's identity. Restart/file load requires a fresh explicit destination review.
 
 `mesh_result_application.apply_saved_mesh(target, item, path, policy=...,

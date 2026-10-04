@@ -353,8 +353,8 @@ class MeshResultTests(unittest.TestCase):
         first_mesh = self.source.data
         second = bpy.data.objects.new("Another explicit source", first_mesh.copy())
         self.scene.collection.objects.link(second)
-        self.origin = self.session.capture(self.scene, second)
         self.target = self.mesh.capture_target(self.scene, second)
+        self.origin = self.session.capture(self.scene, second)
         result = self.deliver(self.verify(first.record))
         self.assertEqual(result.record.state, self.storage.JobState.APPLIED)
         self.assertEqual(result.record.intent, first.record.intent)
@@ -379,3 +379,14 @@ class MeshResultTests(unittest.TestCase):
         with self.assertRaises(self.session_module.OriginUnavailable):
             self.deliver(self.verify(record), target=wrong)
         self.assertEqual(self.store.get("edit"), record)
+
+    def test_parent_transform_change_is_rejected_without_caller_depsgraph_update(self):
+        parent = bpy.data.objects.new("Moving parent", None)
+        self.scene.collection.objects.link(parent)
+        self.source.parent = parent
+        self.target = self.mesh.capture_target(self.scene, self.source)
+        parent.location.x = 8
+        with patch.object(self.model, "_import") as importer:
+            with self.assertRaises(self.mesh.MeshApplicationError):
+                self.apply()
+        importer.assert_not_called()

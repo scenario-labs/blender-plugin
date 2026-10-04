@@ -157,6 +157,8 @@ def capture_target(scene, obj):
             or len(obj.users_scene) != 1
         ):
             raise MeshApplicationError("Choose a source in only the current local scene")
+        # Parent edits can leave matrix_world stale until dependency evaluation.
+        bpy.context.view_layer.update()
         matrices = tuple(
             tuple(tuple(row) for row in matrix)
             for matrix in (

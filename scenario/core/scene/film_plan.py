@@ -8,8 +8,10 @@ import copy
 import json
 import math
 import re
+from dataclasses import dataclass
 from typing import Any
 
+from ..jobs.store import JobScope, _identity
 from .film_scene_plan import _keys, _label, _number, _vector, validate_scene_plan
 
 
@@ -244,6 +246,12 @@ def _keys_for_motion(raw: dict, duration: float) -> list[dict]:
 
 def validate_film_plan(raw: dict) -> dict:
     """Validate the whole recipe before the first Blender mutation or cloud job."""
+    try:
+        encoded = json.dumps(raw, allow_nan=False, ensure_ascii=False).encode("utf-8")
+    except (TypeError, ValueError, RecursionError):
+        raise ValueError("Film recipe must contain finite JSON data") from None
+    if len(encoded) > 2_000_000:
+        raise ValueError("Film recipe exceeds the 2 MB limit.")
     raw = _keys(
         raw,
         {
@@ -261,13 +269,11 @@ def validate_film_plan(raw: dict) -> dict:
             "audio_tracks",
         },
         "Film",
-        {"title", "project_id", "shots"},
+        {"title", "shots"},
     )
-    if len(json.dumps(raw)) > 2_000_000:
-        raise ValueError("Film recipe exceeds the 2 MB limit.")
     plan = {
         "title": _label(raw["title"], "Film title"),
-        "project_id": identifier(raw["project_id"], "Project"),
+        "project_id": (_identity(raw["project_id"]) if raw.get("project_id") is not None else None),
         "fps": int(_number(raw.get("fps", 24), "Frame rate", 24, 60)),
         "style": _text(raw.get("style", ""), "Style"),
         "story": _text(raw.get("story", ""), "Story"),
@@ -507,7 +513,10 @@ def validate_film_plan(raw: dict) -> dict:
         value = copy.deepcopy(task)
         value["title"] = _label(task["title"], "Task title")
         value["collection"] = _label(task.get("collection", "Production"), "Collection")
-        value["tags"] = [_label(t, "Task tag") for t in task.get("tags", [])]
+        tags = task.get("tags", [])
+        if not isinstance(tags, list) or len(tags) > 30:
+            raise ValueError("Use a list of at most 30 task tags")
+        value["tags"] = list(dict.fromkeys(_label(t, "Task tag") for t in tags))
         if task["kind"] == "model":
             identifier(task.get("model"), "Model")
             if not isinstance(task.get("parameters"), dict):
@@ -516,29 +525,57 @@ def validate_film_plan(raw: dict) -> dict:
     return plan
 
 
-def resolve_references(value: Any, records: dict, *, project_id: str | None = None) -> Any:
-    """Resolve $task or $task:index only from recorded outputs, never guess."""
+@dataclass(frozen=True)
+class TaskAssets:
+    """An ordered observation from scoped saved output, never recipe-supplied identity."""
+
+    scope: JobScope
+    asset_ids: tuple[str, ...]
+
+    def __post_init__(self):
+        if (
+            not isinstance(self.scope, JobScope)
+            or not isinstance(self.asset_ids, tuple)
+            or not 1 <= len(self.asset_ids) <= 128
+        ):
+            raise ValueError("Use scoped, ordered saved task assets")
+        for asset_id in self.asset_ids:
+            _identity(asset_id)
+        if len(set(self.asset_ids)) != len(self.asset_ids):
+            raise ValueError("Saved task assets must be unique")
+
+
+def require_plan_scope(plan: dict, scope: JobScope) -> None:
+    """An explicit recipe project must match the selected override; never discover one."""
+    if not isinstance(scope, JobScope):
+        raise ValueError("Select the credential-bound job scope")
+    if plan.get("project_id") is not None and plan["project_id"] != scope.project_id:
+        raise ValueError("The recipe project differs from the selected project override")
+
+
+def resolve_references(value: Any, records: dict[str, TaskAssets], *, scope: JobScope) -> Any:
+    """Resolve $task[:index] only from saved outputs in the exact selected scope.
+
+    The caller obtains TaskAssets from its scoped saved jobs/uploads. This helper
+    neither reads storage nor certifies completion of a caller-supplied observation.
+    """
+    if not isinstance(scope, JobScope):
+        raise ValueError("Select the credential-bound job scope")
     if isinstance(value, dict):
-        return {
-            key: resolve_references(item, records, project_id=project_id)
-            for key, item in value.items()
-        }
+        return {key: resolve_references(item, records, scope=scope) for key, item in value.items()}
     if isinstance(value, list):
-        return [resolve_references(item, records, project_id=project_id) for item in value]
+        return [resolve_references(item, records, scope=scope) for item in value]
     if isinstance(value, str) and value.startswith("$"):
-        bits = value[1:].split(":")
-        if project_id and bits[0] in records and records[bits[0]].get("project_id") != project_id:
-            raise ValueError(f"Reference {value} does not belong to this project.")
+        match = re.fullmatch(r"\$([a-zA-Z0-9][a-zA-Z0-9_-]{0,95})(?::(0|[1-9][0-9]{0,2}))?", value)
+        if match is None:
+            raise ValueError("Use a task reference with an optional nonnegative output index")
         try:
-            index = int(bits[1]) if len(bits) == 2 else 0
-            if len(bits) > 2 or index < 0:
+            record = records[match[1]]
+            if not isinstance(record, TaskAssets) or record.scope != scope:
                 raise ValueError
-            result = records[bits[0]]["asset_ids"][index]
-            if not isinstance(result, str) or not result.startswith("asset_"):
-                raise ValueError
-            return result
+            return record.asset_ids[int(match[2] or 0)]
         except (KeyError, IndexError, ValueError, TypeError):
-            raise ValueError(f"Reference {value} is not ready in this production.") from None
+            raise ValueError("Reference is not ready in the selected production scope") from None
     return copy.deepcopy(value)
 
 

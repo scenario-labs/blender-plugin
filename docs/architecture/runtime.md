@@ -322,6 +322,15 @@ session row, while explicit saved-result commands retain their byte verification
 and destination approval. Desktop interaction and live provider acceptance remain
 separate; this does not complete #65 or #68.
 
+## Film input contracts
+
+[Film recipe helpers](../FILM_PLAN.md) preserve data-only recipe/scene validation,
+editorial timing, continuity declarations and ordered task references. Project
+selection is optional; referenced outputs must match the full selected job scope.
+These helpers do not submit work, create scenes or own storage. Shared durable
+Film task binding, UI/MCP preparation, capture/finishing and release acceptance
+remain to integrate. There is no active Film entry point in this checkout.
+
 ## Shared MCP render preparation
 
 Local MCP `render_form` edits and inspects the native Render Image/Video form,

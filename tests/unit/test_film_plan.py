@@ -4,8 +4,13 @@
 
 import copy
 import importlib
+from dataclasses import replace
 
 import pytest
+
+from scenario.core.jobs.store import JobScope
+
+SCOPE = JobScope("https://api.cloud.scenario.com", "synthetic-account")
 
 
 def film_module():
@@ -103,12 +108,12 @@ def test_prompt_binds_hero_and_placeholder_roles_to_exact_reference_order():
 
 def test_symbolic_references_cannot_silently_resolve_to_another_task():
     mod = film_module()
-    records = {"design": {"asset_ids": ["asset_hero"]}}
-    assert mod.resolve_references({"referenceImages": ["$design"]}, records) == {
+    records = {"design": mod.TaskAssets(SCOPE, ("asset_hero",))}
+    assert mod.resolve_references({"referenceImages": ["$design"]}, records, scope=SCOPE) == {
         "referenceImages": ["asset_hero"]
     }
     with pytest.raises(ValueError):
-        mod.resolve_references({"image": "$missing"}, records)
+        mod.resolve_references({"image": "$missing"}, records, scope=SCOPE)
 
 
 def test_actor_stop_and_camera_target_keys_are_bounded_by_the_shot():
@@ -363,8 +368,143 @@ def test_dialogue_directions_use_source_window_and_preserve_exact_words():
 
 
 def test_dialogue_reference_resolution_rejects_a_different_production_project():
-    records = {"line": {"asset_ids": ["asset_voice"], "project_id": "proj_other"}}
-    with pytest.raises(ValueError, match="does not belong"):
-        film_module().resolve_references(
-            {"referenceAudio": ["$line"]}, records, project_id="proj_test"
+    mod = film_module()
+    records = {"line": mod.TaskAssets(replace(SCOPE, project_id="proj_other"), ("asset_voice",))}
+    with pytest.raises(ValueError, match="scope"):
+        mod.resolve_references(
+            {"referenceAudio": ["$line"]}, records, scope=replace(SCOPE, project_id="proj_test")
         )
+
+
+@pytest.mark.parametrize("project", [None, "project-explicit"])
+def test_recipe_uses_credential_bound_scope_with_optional_exact_project_override(project):
+    mod = film_module()
+    raw = fixture()
+    raw.pop("project_id")
+    if project is not None:
+        raw["project_id"] = project
+    before = copy.deepcopy(raw)
+    plan = mod.validate_film_plan(raw)
+    assert plan["project_id"] == project
+    mod.require_plan_scope(plan, replace(SCOPE, project_id=project))
+    assert raw == before
+    if project is not None:
+        with pytest.raises(ValueError, match="override"):
+            mod.require_plan_scope(plan, SCOPE)
+
+
+@pytest.mark.parametrize(
+    "field,value",
+    [
+        ("service", "https://other.scenario.example"),
+        ("account_id", "other-credential-pseudonym"),
+        ("project_id", "other-project"),
+        ("team_id", "other-team"),
+    ],
+)
+def test_task_assets_reject_every_foreign_scope_dimension(field, value):
+    mod = film_module()
+    records = {"design": mod.TaskAssets(replace(SCOPE, **{field: value}), ("asset_hero",))}
+    with pytest.raises(ValueError, match="scope"):
+        mod.resolve_references({"image": "$design"}, records, scope=SCOPE)
+
+
+def test_reference_resolution_preserves_output_order_and_accepts_opaque_asset_ids():
+    mod = film_module()
+    assets = ("550e8400-e29b-41d4-a716-446655440000", "asset-second")
+    records = {"design": mod.TaskAssets(SCOPE, assets)}
+    value = {"images": ["$design:1", "$design:0"], "seed": 0, "nested": {"text": "literal"}}
+    before = copy.deepcopy(value)
+    assert mod.resolve_references(value, records, scope=SCOPE) == {
+        "images": [assets[1], assets[0]],
+        "seed": 0,
+        "nested": {"text": "literal"},
+    }
+    assert value == before and records["design"].asset_ids == assets
+
+
+@pytest.mark.parametrize(
+    "reference",
+    [
+        "$",
+        "$design:-1",
+        "$design:+1",
+        "$design:01",
+        "$design: 1",
+        "$design:0:1",
+        "$design:128",
+        "$missing",
+    ],
+)
+def test_ambiguous_missing_and_out_of_range_task_references_are_rejected(reference):
+    mod = film_module()
+    records = {"design": mod.TaskAssets(SCOPE, ("asset-first",))}
+    with pytest.raises(ValueError):
+        mod.resolve_references(reference, records, scope=SCOPE)
+
+
+def test_recipe_project_field_alone_cannot_authorize_asset_resolution():
+    mod = film_module()
+    with pytest.raises(ValueError, match="scope"):
+        mod.resolve_references(
+            "$design", {"design": {"project_id": None, "asset_ids": ["asset_hero"]}}, scope=SCOPE
+        )
+    with pytest.raises(ValueError):
+        mod.resolve_references("$design", {}, scope=None)
+
+
+@pytest.mark.parametrize(
+    "assets",
+    [
+        [],
+        (),
+        ("asset-one", "asset-one"),
+        ("https://example.com/a",),
+        tuple(f"asset-{i}" for i in range(129)),
+    ],
+)
+def test_invalid_task_output_observations_are_rejected(assets):
+    with pytest.raises(ValueError):
+        film_module().TaskAssets(SCOPE, assets)
+
+
+@pytest.mark.parametrize("value", [float("nan"), float("inf"), object()])
+def test_non_json_model_parameters_are_rejected_before_a_recipe_is_accepted(value):
+    raw = fixture()
+    raw["tasks"] = [
+        {
+            "id": "take",
+            "title": "Take",
+            "kind": "model",
+            "model": "model-fixture",
+            "parameters": {"seed": value},
+        }
+    ]
+    with pytest.raises(ValueError, match="finite JSON"):
+        film_module().validate_film_plan(raw)
+
+
+@pytest.mark.parametrize("tags", ["wrong", ["tag"] * 31])
+def test_task_tags_are_a_bounded_list(tags):
+    raw = fixture()
+    raw["tasks"] = [{"id": "take", "title": "Take", "kind": "upload", "tags": tags}]
+    with pytest.raises(ValueError, match="task tags"):
+        film_module().validate_film_plan(raw)
+
+
+def test_recipe_size_limit_counts_utf8_bytes_and_rejects_cycles():
+    raw = fixture()
+    raw["tasks"] = [
+        {
+            "id": "take",
+            "title": "Take",
+            "kind": "model",
+            "model": "model-fixture",
+            "parameters": {"prompt": "界" * 700_000},
+        }
+    ]
+    with pytest.raises(ValueError, match="2 MB"):
+        film_module().validate_film_plan(raw)
+    raw["tasks"][0]["parameters"] = raw
+    with pytest.raises(ValueError, match="finite JSON"):
+        film_module().validate_film_plan(raw)

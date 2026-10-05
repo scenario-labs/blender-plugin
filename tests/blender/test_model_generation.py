@@ -1179,3 +1179,187 @@ class ModelGenerationTests(unittest.TestCase):
         self.assertEqual(len(bpy.context.scene.sequence_editor.strips), 1)
         with self.assertRaisesRegex(RuntimeError, "Media insertion was not started"):
             bpy.ops.scenario.import_saved_media(**args)
+
+    def recovered_model(self):
+        from helpers import FIXTURES
+
+        module = submodule("blender.model_application")
+        before = {name: set(getattr(bpy.data, name)) for name in module._DATA}
+
+        def cleanup():
+            for name in module._DATA:
+                if name == "images":
+                    continue  # Existing fixture cleanup owns images after session shutdown.
+                values = getattr(bpy.data, name)
+                for value in set(values) - before[name]:
+                    values.remove(value, do_unlink=True)
+
+        self.addCleanup(cleanup)
+        self.result_bytes = (FIXTURES / "synthetic/static-triangle.glb").read_bytes()
+        self.result_media_type, self.remote_status = "model/gltf-binary", "success"
+        result = self.mcp_submit(self.mcp_quote())
+        owner = self.runtime.state.model_jobs
+        owner.submissions[result["local_id"]].result(5)
+        owner.session.invalidate_scene(bpy.context.scene)
+        self.deliver_results()
+        self.runtime.state.reset()
+        self.runtime.inspect_model_jobs()
+        self.assertEqual(self.store.get(result["local_id"]).state, self.storemod.JobState.READY)
+        return result["local_id"]
+
+    def prepare_model(self, request_id):
+        args = self.recovery_args(request_id, "import_model")
+        del args["action"]
+        args["asset_id"] = "result-image"
+        return self.tools.prepare_result_application(args)
+
+    def test_mcp_model_recovery_imports_one_group_without_more_requests(self):
+        request_id = self.recovered_model()
+        bpy.context.scene.cursor.location = (4, 5, 6)
+        before = len(self.calls), len(self.paid)
+        approval = self.prepare_model(request_id)
+        self.assertEqual(approval["kind"], "model")
+        self.assertEqual(approval["cursor"], [4, 5, 6])
+        deferred = self.tools.apply_result_application(self.import_args(approval))
+        status = deferred.finish(deferred.run())
+        self.assertEqual(status["status"], "applied", status)
+        self.assertEqual(len(status["objects"]), 2)
+        self.assertEqual((len(self.calls), len(self.paid)), before)
+        with self.assertRaises(self.request_error):
+            self.tools.apply_result_application(self.import_args(approval))
+
+    def test_changed_model_cursor_during_verification_prevents_import(self):
+        request_id = self.recovered_model()
+        approval = self.prepare_model(request_id)
+        before = set(bpy.data.objects)
+        deferred = self.tools.apply_result_application(self.import_args(approval))
+        result = deferred.run()
+        bpy.context.scene.cursor.location.x += 1
+        status = deferred.finish(result)
+        self.assertEqual(status["status"], "ready", status)
+        self.assertTrue(status["error"])
+        self.assertEqual(set(bpy.data.objects), before)
+
+    def test_native_model_import_uses_the_same_single_approval(self):
+        request_id = self.recovered_model()
+        approval = self.prepare_model(request_id)
+        args = self.import_args(approval)
+        args.update(
+            request_id=request_id,
+            expected_revision=approval["revision"],
+            asset_id=approval["asset_id"],
+        )
+        self.assertEqual(bpy.ops.scenario.import_saved_model(**args), {"FINISHED"})
+        self.deliver_results()
+        self.assertEqual(self.store.get(request_id).state, self.storemod.JobState.APPLIED)
+        with self.assertRaisesRegex(RuntimeError, "Model import was not started"):
+            bpy.ops.scenario.import_saved_model(**args)
+
+    def test_model_receipt_retry_does_not_repeat_scene_import(self):
+        request_id = self.recovered_model()
+        approval = self.prepare_model(request_id)
+        deferred = self.tools.apply_result_application(self.import_args(approval))
+        result = deferred.run()
+        active_store = self.runtime.state.model_jobs.store
+        original = active_store.transition
+
+        def fail_receipt(*args, **kwargs):
+            if kwargs.get("state") == self.storemod.JobState.APPLIED:
+                raise OSError("synthetic receipt failure")
+            return original(*args, **kwargs)
+
+        with patch.object(active_store, "transition", side_effect=fail_receipt):
+            status = deferred.finish(result)
+        self.assertEqual(status["status"], "applying", status)
+        self.assertIn("retry_receipt", status["actions"])
+        before = set(bpy.data.objects)
+        with patch.object(
+            submodule("blender.job_session"),
+            "apply_model",
+            side_effect=AssertionError("Repeated import"),
+        ):
+            status = self.tools.recover_local_job(self.recovery_args(request_id, "retry_receipt"))
+        self.assertEqual(status["status"], "applied", status)
+        self.assertEqual(set(bpy.data.objects), before)
+
+    def test_model_shutdown_rejects_receipt_retry_without_changing_saved_claim(self):
+        request_id = self.recovered_model()
+        approval = self.prepare_model(request_id)
+        deferred = self.tools.apply_result_application(self.import_args(approval))
+        result = deferred.run()
+        owner = self.runtime.state.model_jobs
+        original = owner.store.transition
+
+        def fail_receipt(*args, **kwargs):
+            if kwargs.get("state") == self.storemod.JobState.APPLIED:
+                raise OSError("synthetic receipt failure")
+            return original(*args, **kwargs)
+
+        with patch.object(owner.store, "transition", side_effect=fail_receipt):
+            status = deferred.finish(result)
+        self.assertEqual(status["status"], "applying", status)
+        pending = owner._receipts[request_id]
+        record, before = owner.store.get(request_id), set(bpy.data.objects)
+        owner.session.shutdown()
+        with self.assertRaises(self.origin_error):
+            owner.session.retry_model_receipt(pending)
+        self.assertEqual(owner.store.get(request_id), record)
+        self.assertEqual(set(bpy.data.objects), before)
+
+    def test_model_mode_change_during_verification_preserves_ready_claim(self):
+        request_id = self.recovered_model()
+        bpy.ops.mesh.primitive_cube_add()
+        approval = self.prepare_model(request_id)
+        deferred = self.tools.apply_result_application(self.import_args(approval))
+        result = deferred.run()
+        before = self.store.get(request_id), set(bpy.data.objects)
+        bpy.ops.object.mode_set(mode="EDIT")
+        try:
+            status = deferred.finish(result)
+            self.assertEqual(status["status"], "ready", status)
+            self.assertEqual((self.store.get(request_id), set(bpy.data.objects)), before)
+        finally:
+            bpy.ops.object.mode_set(mode="OBJECT")
+
+    def test_model_incomplete_rollback_retains_claim_and_forbids_reimport(self):
+        request_id = self.recovered_model()
+        approval = self.prepare_model(request_id)
+        deferred = self.tools.apply_result_application(self.import_args(approval))
+        result = deferred.run()
+        module = submodule("blender.model_application")
+        original = module._publish
+
+        def fail(*args):
+            original(*args)
+            raise RuntimeError("synthetic publication failure")
+
+        with (
+            patch.object(module, "_publish", side_effect=fail),
+            patch.object(module, "_remove_new_data"),
+        ):
+            status = deferred.finish(result)
+        self.assertEqual(status["status"], "applying", status)
+        self.assertNotIn("retry_receipt", status["actions"])
+        self.assertNotIn("import_model", status["actions"])
+        with self.assertRaises(self.request_error):
+            self.prepare_model(request_id)
+
+    def test_model_temporary_cleanup_failure_still_saves_success_once(self):
+        request_id = self.recovered_model()
+        approval = self.prepare_model(request_id)
+        deferred = self.tools.apply_result_application(self.import_args(approval))
+        result = deferred.run()
+        before = len(self.calls), len(self.paid)
+        cleanup = tempfile.TemporaryDirectory.cleanup
+
+        def fail(directory):
+            cleanup(directory)
+            raise OSError("synthetic cleanup failure")
+
+        with patch.object(tempfile.TemporaryDirectory, "cleanup", fail):
+            status = deferred.finish(result)
+        self.assertEqual(status["status"], "applied", status)
+        self.assertEqual(len(status["objects"]), 2)
+        self.assertEqual((len(self.calls), len(self.paid)), before)
+        with self.assertRaises(self.request_error):
+            self.prepare_model(request_id)

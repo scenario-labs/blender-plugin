@@ -307,6 +307,20 @@ def prepare_media_application(context_id, request_id, expected_revision, scene, 
     return jobs, jobs.prepare_media_application(request_id, expected_revision, scene, asset_id)
 
 
+def prepare_model_application(context_id, request_id, expected_revision, scene, asset_id):
+    jobs = ensure_model_jobs()
+    if context_id != state.job_context_id:
+        raise ScenarioError(0, "The selected job context changed; list local jobs again")
+    return jobs, jobs.prepare_model_application(request_id, expected_revision, scene, asset_id)
+
+
+def prepare_asset_application(context_id, request_id, expected_revision, scene, asset_id):
+    jobs = ensure_model_jobs()
+    if context_id != state.job_context_id:
+        raise ScenarioError(0, "The selected job context changed; list local jobs again")
+    return jobs, jobs.prepare_asset_application(request_id, expected_revision, scene, asset_id)
+
+
 def apply_saved_result(context_id, application_id):
     jobs = ensure_model_jobs()
     if context_id != state.job_context_id:

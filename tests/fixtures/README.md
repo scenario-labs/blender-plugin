@@ -121,3 +121,13 @@ acceptance and maintainer confirmation of media rights remain under #9.
 Live recording requires explicitly selected test credentials and authorization;
 see [contributor configuration](../../CONTRIBUTING.md#environment-variables).
 The default test suite needs neither credentials nor a Scenario account.
+
+## Synthetic static GLB
+
+`synthetic/static-triangle.glb` is first-party GPL-3.0-or-later test data:
+a parent node, one translated triangle, three positions and UV pairs, and one
+material with a generated solid-color 2-by-2 RGBA PNG embedded in the GLB buffer.
+Its asset copyright metadata records Scenario Inc. It contains no recording,
+provider output, external URI, animation or rig. Pure preflight tests mutate its
+JSON to check unsupported contracts; native tests exercise actual import,
+hierarchy, packed textures, cursor placement, rollback and durable recovery.

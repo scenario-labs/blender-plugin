@@ -183,3 +183,24 @@ for reliable window targeting; the vendor executable code and extension ZIP
 were unchanged. This is desktop interaction evidence, not human listening,
 paid provider acceptance, other OS desktop coverage or resolution of #263.
 Native exact-ZIP tests separately decode synthetic MP4, WebM, MP3, WAV and OGG.
+
+## Saved static model confirmation
+
+Show **Import static model (N)** for each supported GLB result. The confirmation
+names the selected scene and cursor coordinates, states that it adds one model
+group with packed textures, preserves existing objects/selection, and excludes
+rigged, animated and external-file GLBs. A changed cursor or scene requires fresh
+approval. Drawing only reads prepared values.
+
+![Native static model confirmation shows the selected scene cursor and supported import limits](images/saved-model-approval.png)
+
+Offline desktop acceptance on macOS arm64 Blender 5.1.2 used the exact ZIP
+`bac52e333078c09bc1581e5a530dac67a749d94c179b230a3d0ace7b2afb410f`. Mouse confirmation imported one textured
+triangle hierarchy into one new group at cursor (3, 0, 0), without another mock
+generation or request. Existing selection stayed intact. Viewport clicking,
+front-view keyboard input and zoom worked after import. Blender exited cleanly
+and the normal-profile fingerprint was unchanged. The test-only app copy used
+a distinct bundle identifier and local ad-hoc signature for window targeting,
+with vendor executable code and the extension ZIP unchanged. Synthetic tests
+and desktop evidence do not establish paid provider acceptance, rig/animation or
+in-place editing, other OS desktop behavior, release readiness or #263 resolution.

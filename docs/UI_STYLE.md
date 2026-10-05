@@ -687,27 +687,39 @@ element/group counts, warns before replacing an existing plan and explains that
 geometry remains unchanged until a separate Build plan action. Cancellation
 discards the review. Drawing does not read the service or mutate the plan.
 
-Packaged tests cover native operator execution, MCP parity, restart with and
-without a saved manifest, discarded/single-use reviews, changed fields and scene
-replacement, retired contexts, offline reads and malformed text. This is separate
-from real desktop input, cancellation and Undo/Redo proof. The exact package
-`ee9d379b6bde9208788d42abc10cf577e06826e31e533ff145d63c0cad88280b`
+The exact package with SHA-256
+`9b9bb818f0ec81e0af4ed95ba6d70390d17e12af72c24b5040d6814316b31ed2`
 passes 740 installed tests on each macOS arm64 Blender 5.0.1, 5.1.2 and 5.2.1.
-Transport and geometry are synthetic; these runs do not establish provider or
-integrated release acceptance.
-
-Computer control returned `cgWindowNotFound` / `noWindowsAvailable` for the
-isolated test app, including after window observation succeeded. Native recovery
-input, cancellation and Undo/Redo interaction remain pending. This screenshot is
-an installed 5.1.2 rendering check only; the earlier generation/build evidence
-above does not establish this new dialog's behavior. The first desktop fixture
-used an incomplete old-plan object and caused draw errors; a normalized repeat
-rendered the controls correctly. No normal-profile change was detected.
+These cover native operator execution, MCP parity, restart with and without a
+saved manifest, discarded/single-use reviews, changed fields and scene
+replacement, retired contexts, offline reads and malformed text. Saved-job
+drawing skips invalid scene references, and status reports a deleted scene
+without rebinding a same-name replacement.
 
 ![Saved Blockout job offers a separate read action before destination approval](images/blockout-recovery-controls.png)
 
-The deleted-destination follow-up uses ZIP SHA-256
-`9b9bb818f0ec81e0af4ed95ba6d70390d17e12af72c24b5040d6814316b31ed2`.
-Saved-job drawing skips invalid scene references and status reports an unavailable
-scene without rebinding a same-name replacement. The installed regression covers
-that deletion/status path; it does not replace the pending desktop input proof.
+Desktop interaction with the same ZIP passes on macOS arm64 Blender 5.1.2 in an
+isolated profile, using a synthetic saved job and blocked external networking:
+
+- **Read saved Blockout plan**, then **Use saved Blockout plan**, opens the
+  destination/count/replacement dialog. Escape cancels and discards the review
+  while preserving the previous stored plan and all geometry.
+- After a fresh read, Return confirms the dialog and replaces only the stored
+  plan. Blender's **Edit > Undo** restores the previous plan; **Edit > Redo**
+  reapplies the recovered plan. Geometry stays unchanged throughout.
+- A viewport click selects the existing cube, and Home frames the scene,
+  confirming viewport focus and keyboard navigation after the dialog.
+- A separate **Build plan** click creates the recovered tower and preserves the
+  existing cube, light and camera. Approval, Undo/Redo, viewport interaction and
+  building issue no further service requests or submissions.
+
+![Saved Blockout plan confirmation names the destination and preserves geometry until Build](images/blockout-recovery-approval.png)
+
+![Separate Build plan action creates the recovered tower beside the preserved cube](images/blockout-recovery-built.png)
+
+The test app uses the vendor Blender binary and the unchanged extension ZIP;
+the harness removes its disposable profile after the interaction. The normal
+profile remained unchanged. Transport and plan contents are synthetic, with no
+live generation. This proves the scoped recovery interaction at the tested
+window size, not other OS/DPI combinations, live provider behavior or integrated
+release acceptance.

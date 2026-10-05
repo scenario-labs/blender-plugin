@@ -7,9 +7,9 @@
     "path": "docs/USER_GUIDE.md",
     "scope": "blockout-recovery",
     "coverage": "source-reviewed",
-    "reviewed_at": "2026-10-04",
+    "reviewed_at": "2026-10-05",
     "base_revision": "4589f22964cc9cf99e53ec37bb8c5dbe6948c96b",
-    "limits": "Scoped source and installed-test review of asynchronous complete saved-plan reads, single-use destination approval, deleted-scene status/drawing safety, native/MCP parity and local plan replacement without geometry or new submission. 740 installed tests pass each on macOS arm64 Blender 5.0.1, 5.1.2 and 5.2.1. Synthetic installed desktop rendering only: computer-control window/input failures leave native focus, cancellation and Undo/Redo interaction pending. No paid/live provider, other OS desktop, Film or integrated release acceptance. Existing topics retain separate evidence.",
+    "limits": "Scoped source and installed-test review of asynchronous complete saved-plan reads, single-use destination approval, deleted-scene status/drawing safety, native/MCP parity and local plan replacement without geometry or new submission. 740 installed tests pass each on macOS arm64 Blender 5.0.1, 5.1.2 and 5.2.1. Desktop input on Blender 5.1.2 with the same ZIP and synthetic transport verifies Escape cancellation, Return confirmation, native Edit-menu Undo/Redo, viewport selection/Home navigation and separate Build with existing geometry preserved; no further service requests or submissions follow approval. The isolated profile is removed and the normal profile remains unchanged. No live provider, other OS/DPI desktop, Film or integrated release acceptance. Existing topics retain separate evidence.",
     "sources": {
       "scenario/blender/blockout_recovery.py": "884cb1c1a482837eb9f17be8ebf08cfd86ef0b8ba5d69dc5041c1ce4579b8b6c",
       "scenario/blender/blockout_jobs.py": "b0451f11b71bbe25c2cf00a1b1dc90498efbf795e494d039ea415e2ebf9cdd4f",

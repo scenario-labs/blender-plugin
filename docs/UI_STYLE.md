@@ -793,19 +793,32 @@ download and destination approval remain separate. A sanitized read error allows
 an explicit retry. Legacy cache rows and files cannot substitute their old
 actions or hide this control. Drawing only inspects the current store/facade.
 
-The screenshot below is an installed macOS arm64 Blender 5.1.2 rendering check
-with synthetic transport, using ZIP SHA-256
-`23e4d1865714f524d0fedcdf7438f40f8cd6fd2296f52876063da5ca818aafbb`.
-The later duplicate-row guard changes no visible layout in this fixture. No job,
-download, submission or scene mutation occurred; the isolated process exited
-cleanly and its normal-profile fingerprint was unchanged. The pending estimate
-label belongs to frozen fixture state and is not a live performance observation.
-
-Native mouse/keyboard input, focus and before/after interaction proof remain
-pending: path-specific computer control returned `cgWindowNotFound`. A generic
-bundle-ID retry was rejected because it could target the normal-profile app.
-An earlier test-only lane enum mistake was corrected before this rendered run.
-The installed functional matrix is recorded in the PR, separately from desktop
-and live-provider acceptance.
+The exact ZIP with SHA-256
+`e572909c23aae8ddd027aa48e489f338eb34dd35b2eacdaf35cbb9a7c57f11ec`
+passes 760 installed tests on each macOS arm64 Blender 5.0.1, 5.1.2 and 5.2.1.
+Native desktop interaction with that same ZIP passes on macOS arm64 Blender
+5.1.2 in a disposable profile. The fixture preloads one synthetic cloud row and
+uses the real installed SDK adapter with a GET-only mock transport; external
+Python network connections are blocked.
 
 ![Cloud history offers Save for recovery while the scene remains unchanged](images/cloud-history-recovery-controls.png)
+
+Clicking **Save for recovery** starts one job read and disables the pending
+control. Pressing N closes the sidebar while that read is held by the fixture.
+Releasing the synthetic response delivers one paused cloud record with the
+sidebar still closed. Reopening it shows **Resume download**. Repeated
+**Inspect saved jobs** does not alter the record or issue another request.
+The scene's objects and images remain unchanged, with zero downloads or paid
+submissions. A subsequent viewport click selects the light, and Home frames
+the scene, confirming mouse focus and keyboard navigation after recovery.
+
+![Recovered cloud job waits for Resume download without importing any result into the scene](images/cloud-history-recovery-saved.png)
+
+A separate run exercised a sanitized read rejection after selection changed
+while the read was pending; explicit retry saved one paused record without a
+submission or download. Both completed runs exit through harness cleanup, remove
+their disposable profiles and leave the normal profile unchanged. The isolated
+application has a test-only identifier to distinguish its window; the extension
+ZIP is unchanged. These checks establish native recovery controls with synthetic
+responses, not live cloud history, provider latency, completed result application,
+other OS/DPI combinations or integrated release acceptance.

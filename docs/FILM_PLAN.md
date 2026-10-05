@@ -751,13 +751,63 @@ these movies; portable export still needs explicit media gathering.
 Installed tests use small first-party synthetic movie/audio fixtures to cover
 trims, contiguous shots, loop phase/ducking, silent/native audio, muted masters,
 scope/receipt/rate failures, rollback uncertainty and a saved-scene library
-round-trip. This is a synchronous local primitive, not active native/MCP review
-controls, an application claim, portable export or desktop/live acceptance. Shared
-worker preparation, current-source approval and user-facing controls remain to wire.
+round-trip. The standalone primitive is synchronous. The shared preparation and
+application commands below move copying and probing to workers and supply
+current-source checks and application claims. Native/MCP review controls, portable
+export and desktop/live acceptance remain separate.
+
+## Shared native-review preparation and application
+
+`JobSession.prepare_film_review` queues immutable recipe JSON on the existing
+worker pool, sharing its one-local-media-operation admission and cancellation
+with capture/composition inspection. No additional client, executor or store is
+created. The worker reads current scoped Film task bindings and retained upload
+or downloaded-result receipts, hashes independent copies under extension user
+storage, probes those exact bytes, and rechecks source revisions and the captured
+origin before returning. Picture coverage, media kinds and matching video/cut
+rates must pass. The same 512 MiB/file and 2 GiB/review limits apply.
+
+Optional `include_master` requires the saved master to match the current recipe
+compiled with these measured source durations and task references. It is copied
+as a muted alternate; an unrelated, stale or absent master rejects preparation.
+Preparation does not reserve a master, generate, download, upload or mutate jobs.
+
+The coordinator retains at most 16 issued preparations. A copied object or a
+different owner cannot consume one. Failed/cancelled preparation removes its
+new copies; explicit discard and shutdown after joining workers remove unused
+completed preparations. Consumption transfers file ownership to application.
+Successful or uncertain native scenes keep those files after session shutdown.
+A process crash can leave files for inspection; restart never recreates approval
+or automatically sweeps possibly referenced media.
+
+`JobSession.apply_film_review` is a separate explicit approval command. It checks
+the issued completion, original scene/origin, production and unchanged recipe,
+current source revisions and private copy identities before consuming the ticket.
+Generated sources receive the existing durable application claims before native
+decoding; already applied results use separate local reuse claims. Imported upload
+records retain their upload state. The builder uses the worker's files directly
+and checks their regular-file identity, size and timestamps before and after
+decoding, without copying or hashing large movies on the GUI thread. This assumes
+application-owned private directories; it is not a hostile same-user filesystem
+isolation boundary. Native decoding itself still runs on Blender's main thread.
+
+Complete rollback records failed applications and deletes new files. Incomplete
+rollback preserves partial data/files and uncertain claims. A lost claim response
+never starts the builder. Known receipt-write failures return a session-owned
+`FilmReviewOutcome`; `retry_film_review_receipt` retries only those saved outcomes,
+never file copying or scene mutation. Restart loses that in-memory receipt
+authority and leaves the existing durable inspection state. `discard_film_review`
+can retire an unused completion after its original context changes.
+
+Installed tests cover real movie/audio strips from worker copies, generated job
+claims, reuse, stale recipe/origin/copy rejection, rollback, uncertain claims and
+receipt-only recovery. This command layer still needs native/MCP presentation and
+explicit user approval controls. It is not desktop, provider motion/audio, portable
+export or release acceptance.
 
 ## Remaining integration and evidence
 
-Shared native-review preparation/approval, mixed-rate normalization,
+Native/MCP review controls, mixed-rate normalization,
 provider-specific preparation and final export remain separate work. Keep useful
 source capabilities and tests as those paths are connected; do not describe this
 helper adoption as a completed Film workflow.

@@ -652,3 +652,19 @@ prepared intent check authorizes this already reserved master. No second store,
 worker pool, submission command or SDK fallback is added. Guard data is in memory;
 only the existing exact payload/quote digests and Film task intent are persisted.
 Restart cannot resurrect a prior owner's quote. See [the composition boundary](FILM_PLAN.md#quoted-composition-generation).
+
+## Native Film review media ownership
+
+`prepare_film_review` uses the same bounded local worker queue to copy and measure
+saved scoped media. It returns an owner-issued `PreparedFilmReview` with immutable
+source observations, measured copies and verified generated-job results. The
+optional saved master must match the compiled current recipe. No SDK operation,
+new store or spending is involved. See [the native review contract](FILM_PLAN.md#shared-native-review-preparation-and-application).
+
+The coordinator retains at most 16 preparations for cleanup. `take_film_review`
+checks identity, scope, origin, current sources and file stamps before consuming
+one; this transfers copy ownership to the main-thread caller, not spending or
+permission to skip its native destination checks. `discard_film_review` deletes
+only an unused issued preparation. Shutdown joins workers before cleanup; failed
+preparation removes its own files. Consumed files remain the native application's
+responsibility. A crash does not reconstruct tickets or authorize replay.

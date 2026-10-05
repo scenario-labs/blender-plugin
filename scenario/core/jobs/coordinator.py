@@ -229,6 +229,7 @@ class JobCoordinator:
         )
         self._quotes = WeakValueDictionary()
         self._compositions = WeakValueDictionary()
+        self._film_reviews = {}
         self._bound_estimates = WeakKeyDictionary()
         self._verified_results = WeakValueDictionary()
         self._application_claims = WeakValueDictionary()
@@ -287,6 +288,64 @@ class JobCoordinator:
                 raise local_render.RenderCancelled("Film media inspection cancelled")
             self._compositions[id(result)] = result
             return result
+
+    def prepare_film_review(
+        self, recipe, *, production_id, mode, score_task_id, include_master, root, origin, cancel
+    ):
+        from . import film_review_media
+
+        if not isinstance(origin, JobOrigin):
+            raise ValueError("Capture the Film review origin before preparing media")
+        with self._request_guard(origin):
+            if len(self._film_reviews) >= 16:
+                raise ValueError("Finish or discard an existing Film media review first")
+        result = film_review_media.prepare(
+            self,
+            json.loads(_payload(recipe)),
+            production_id=production_id,
+            mode=mode,
+            score_task_id=score_task_id,
+            include_master=include_master,
+            root=root,
+            origin=origin,
+            cancel=cancel,
+        )
+        try:
+            with self._request_guard(origin):
+                if cancel.is_set():
+                    raise local_render.RenderCancelled("Film review preparation cancelled")
+                if len(self._film_reviews) >= 16:
+                    raise ValueError("Finish or discard an existing Film media review first")
+                self._film_reviews[id(result)] = result
+                return result
+        except BaseException:
+            film_review_media.discard(result)
+            raise
+
+    def take_film_review(self, prepared, *, origin):
+        """Consume owner-issued preparation once; the caller now owns its files."""
+        from . import film_review_media
+
+        with self._request_guard(origin):
+            if (
+                self._film_reviews.get(id(prepared)) is not prepared
+                or prepared.scope != self.scope
+                or prepared.origin != origin
+            ):
+                raise ValueError("Use this connection's unconsumed Film review")
+            film_review_media.validate_sources(self, prepared)
+            film_review_media.check_copies(prepared)
+            del self._film_reviews[id(prepared)]
+            return prepared
+
+    def discard_film_review(self, prepared):
+        from .film_review_media import discard
+
+        with self._lock:
+            if self._film_reviews.get(id(prepared)) is not prepared:
+                raise ValueError("Use this connection's unconsumed Film review")
+            discard(prepared)
+            del self._film_reviews[id(prepared)]
 
     def render_local(self, spec, *, origin, source_origin, cancel):
         """Render local bytes outside locks; recheck both origins before and after."""
@@ -542,7 +601,17 @@ class JobCoordinator:
     def close(self):
         """Release the SDK client after the application owner has joined workers."""
         self.deactivate()
-        self._adapter.close()
+        cleanup_failed = False
+        try:
+            for prepared in tuple(self._film_reviews.values()):
+                try:
+                    self.discard_film_review(prepared)
+                except Exception:
+                    cleanup_failed = True
+        finally:
+            self._adapter.close()
+        if cleanup_failed:
+            raise RuntimeError("Unused Film review media needs cleanup inspection")
 
     @contextmanager
     def _request_guard(self, origin=None):

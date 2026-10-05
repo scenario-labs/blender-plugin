@@ -21,6 +21,7 @@ from pathlib import Path
 import bpy
 
 from ..core.jobs import media_probe
+from ..core.jobs.film_review_media import MAX_TOTAL_BYTES, ReviewSource, check_copies
 from ..core.jobs.store import JobScope, StoredResult, _identity, _json
 from ..core.scene.film_finish import required_sources
 from ..core.scene.film_plan import (
@@ -32,20 +33,11 @@ from ..core.scene.film_plan import (
 )
 from .film_scene import _main_thread
 
-MAX_TOTAL_BYTES = 2 * 1024**3
 MAX_STRIPS = 2000
 
 
 class FilmReviewError(RuntimeError):
     """The build failed and its new scene/data/files were rolled back."""
-
-
-@dataclass(frozen=True)
-class ReviewSource:
-    scope: JobScope
-    result: StoredResult
-    path: Path = field(repr=False)
-    media: media_probe.MediaInfo
 
 
 @dataclass(frozen=True)
@@ -194,7 +186,15 @@ def _sound(editor, source, path, name, start, frames, trim, channel, volume, *, 
 
 
 def build_review_scene(
-    recipe, *, scope, production_id, sources, mode="final", score_task_id="score", master=None
+    recipe,
+    *,
+    scope,
+    production_id,
+    sources,
+    mode="final",
+    score_task_id="score",
+    master=None,
+    _prepared=None,
 ):
     """Build a new independent sequence, preserving every existing scene and selection.
 
@@ -211,15 +211,22 @@ def build_review_scene(
     package = __package__.rsplit(".", 1)[0]
     root = Path(bpy.utils.extension_path_user(package, path="film-review", create=True))
     before = _snapshot()
-    directory = Path(tempfile.mkdtemp(prefix="review-", dir=root))
+    directory = (
+        _prepared.directory
+        if _prepared is not None
+        else Path(tempfile.mkdtemp(prefix="review-", dir=root))
+    )
     try:
+        if _prepared is not None:
+            check_copies(_prepared)
         paths = {}
         all_sources = list(sources.items()) + ([(None, master)] if master is not None else [])
         for index, (task, source) in enumerate(all_sources):
             suffix = media_probe.FORMATS[source.result.asset.media_type][1]
             target = directory / (str(index) + suffix)
-            media_probe._snapshot(source.path, source.result.receipt, target, threading.Event())
-            paths[task] = target
+            if _prepared is None:
+                media_probe._snapshot(source.path, source.result.receipt, target, threading.Event())
+            paths[task] = source.path if _prepared is not None else target
         review = bpy.data.scenes.new(plan["title"] + " / " + mode.title() + " Review")
         review.render.fps, review.render.fps_base = plan["fps"], 1.0
         review.render.resolution_x, review.render.resolution_y = 1920, 1080
@@ -312,6 +319,8 @@ def build_review_scene(
         # on Blender 5.2. Update only this scene, keeping the working scene selected.
         for layer in review.view_layers:
             layer.update()
+        if _prepared is not None:
+            check_copies(_prepared)
         return ReviewScene(
             review,
             directory,
@@ -329,3 +338,19 @@ def build_review_scene(
         raise FilmReviewError(
             "Could not build the Film review; saved source media is preserved"
         ) from None
+
+
+def build_prepared_review(prepared):
+    """Build from this session's consumed worker copies; the caller owns approval."""
+    sources = dict(prepared.files)
+    master = sources.pop(prepared.master_task) if prepared.master_task is not None else None
+    return build_review_scene(
+        prepared.recipe,
+        scope=prepared.scope,
+        production_id=prepared.production_id,
+        sources=sources,
+        mode=prepared.mode,
+        score_task_id=prepared.score_task_id,
+        master=master,
+        _prepared=prepared,
+    )

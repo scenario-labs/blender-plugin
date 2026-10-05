@@ -174,6 +174,20 @@ class JobWorkers:
             origin=origin,
         )
 
+    def prepare_film_review(
+        self, recipe, *, production_id, mode, score_task_id, include_master, root, origin
+    ):
+        return self._enqueue_local(
+            self._coordinator.prepare_film_review,
+            _snapshot(recipe),
+            production_id=production_id,
+            mode=mode,
+            score_task_id=score_task_id,
+            include_master=include_master,
+            root=os.fspath(root),
+            origin=origin,
+        )
+
     def _enqueue_local(self, command, *args, **kwargs):
         """Bound local render/inspection processes on the same existing worker pool."""
         with self._condition:

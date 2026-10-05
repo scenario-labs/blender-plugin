@@ -19,6 +19,10 @@ from helpers import submodule
 
 class FilmCompositionControlsTests(unittest.TestCase):
     def setUp(self):
+        window_manager = bpy.context.window_manager
+        previous_mode = window_manager.scenario_film_composition_mode
+        self.addCleanup(setattr, window_manager, "scenario_film_composition_mode", previous_mode)
+        window_manager.scenario_film_composition_mode = "final"
         self.media = test_film_finishing.FilmMediaSessionTests()
         self.media.setUp()
         self.addCleanup(self.media.doCleanups)
@@ -371,7 +375,11 @@ class FilmCompositionControlsTests(unittest.TestCase):
         review = self.quoted()
         calls = len(self.fixture.calls)
         for mode in ("previs", "final", "previs", "final"):
-            self.scene.scenario_film.composition_mode = mode
+            bpy.ops.wm.context_set_enum(
+                data_path="window_manager.scenario_film_composition_mode", value=mode
+            )
+            # Native property clicks tag their owner; Python assignment alone does not.
+            bpy.context.window_manager.update_tag()
             bpy.context.view_layer.update()
             self.owner.poll()
             self.assertEqual(review.phase, "QUOTED", review.error)

@@ -1120,8 +1120,17 @@ or mouse/keyboard behavior was observed. The process exited cleanly with zero
 fixture service requests and the normal profile unchanged. That startup rendering
 is not composition layout or interaction acceptance.
 
-Composition navigation alone does not invalidate a retained price: installed
-regression coverage toggles Final/Previs with explicit dependency updates and
-idle polls, preserving the same quote without service requests. A frame change
-still invalidates the captured scene revision by design; this is distinct from
-mode navigation and preserves the shared scene-bound approval contract.
+Final/Previs is temporary WindowManager UI state, shared across the current
+Blender session and excluded from saved scene data. Native edits to a scene-owned
+custom property tag its owning scene, which invalidated retained quotes even
+though the recipe was unchanged. Direct Python assignment in the earlier
+regression did not reproduce that native update. The corrected installed
+regression also tags the property's owner, preserving the same quote without
+service requests after navigation. Frame changes still invalidate the captured
+scene revision; that guard is unchanged.
+
+A later isolated Blender 5.1.2 desktop check exercised cancellation, discard and
+exact pricing, then reproduced the scene-owned selector failure. The fixed ZIP
+passes 916 installed tests on each of Blender 5.0.1, 5.1.2 and 5.2.1 on macOS arm64.
+Its desktop interaction recheck remains pending; automated regression success
+does not establish that missing proof.

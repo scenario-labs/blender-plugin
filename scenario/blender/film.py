@@ -40,12 +40,6 @@ class ScenarioFilm(bpy.types.PropertyGroup):
     task_index: IntProperty(min=0)
     shots: CollectionProperty(type=ScenarioFilmShot)
     shot_index: IntProperty(min=0)
-    composition_mode: EnumProperty(
-        items=[
-            ("final", "Final", "Include editorial audio and source trims"),
-            ("previs", "Previs", "Review the previs cut without editorial audio"),
-        ]
-    )
 
 
 def selected(scene):
@@ -319,9 +313,18 @@ def register():
     for cls in CLASSES:
         bpy.utils.register_class(cls)
     bpy.types.Scene.scenario_film = PointerProperty(type=ScenarioFilm)
+    # Navigation must not tag the recipe scene and invalidate its retained quotes.
+    bpy.types.WindowManager.scenario_film_composition_mode = EnumProperty(
+        items=[
+            ("final", "Final", "Include editorial audio and source trims"),
+            ("previs", "Previs", "Review the previs cut without editorial audio"),
+        ],
+        options={"SKIP_SAVE"},
+    )
 
 
 def unregister():
+    del bpy.types.WindowManager.scenario_film_composition_mode
     del bpy.types.Scene.scenario_film
     for cls in reversed(CLASSES):
         bpy.utils.unregister_class(cls)

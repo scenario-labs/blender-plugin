@@ -35,7 +35,9 @@ class SCENARIO_OT_prepare_film_composition(bpy.types.Operator):
 
     def execute(self, context):
         try:
-            commands().prepare(context.scene, mode=context.scene.scenario_film.composition_mode)
+            commands().prepare(
+                context.scene, mode=context.window_manager.scenario_film_composition_mode
+            )
         except Exception:
             return _error(self, "Check the recipe, saved sources and existing composition reviews")
         return {"FINISHED"}
@@ -168,10 +170,14 @@ class SCENARIO_PT_film_composition(bpy.types.Panel):
         from .panels import equal_segments
 
         layout = self.layout
-        props = context.scene.scenario_film
-        equal_segments(layout.row(align=True), props, "composition_mode", ("final", "previs"))
+        props = context.window_manager
+        equal_segments(
+            layout.row(align=True), props, "scenario_film_composition_mode", ("final", "previs")
+        )
         owner = commands(create=False)
-        status = owner.current(context.scene, props.composition_mode) if owner else None
+        status = (
+            owner.current(context.scene, props.scenario_film_composition_mode) if owner else None
+        )
         if not status:
             layout.operator("scenario.prepare_film_composition", icon="SEQUENCE")
             layout.label(text="Uses downloaded results and retained upload files.")

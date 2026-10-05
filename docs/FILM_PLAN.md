@@ -661,6 +661,9 @@ verified draft and fresh model metadata. The separate **Generate** confirmation
 shows the original scene, master mode, frame count/rate, source/layer counts and
 full exact CU price. It creates one saved master job through `ModelJobs`, without
 editing the recipe, constructing a sequence or automatically importing results.
+Final/Previs selects which review to display and prepare. It is temporary UI state
+for the current Blender session, not a saved scene edit; switching modes preserves
+each retained review. Recipe and scene changes still invalidate approvals.
 
 Local MCP uses `film_recipe` inspection's `context_id` and `production_id` with
 `prepare_film_composition`. Poll `film_composition_review` until `READY`, then

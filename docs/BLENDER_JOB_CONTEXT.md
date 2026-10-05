@@ -145,6 +145,9 @@ binding throughout; no recipe installation or automatic application changes the
 submission origin. Main-thread maintenance waits for the original scene before
 delivering a completed probe/price and invalidates changed origins or recipes.
 Native controls and four MCP tools share these bounded ephemeral handles.
+The native Final/Previs selector is temporary WindowManager state, so navigating
+between modes does not tag the recipe scene or invalidate its retained quote.
+The shared scene-revision and recipe guards remain unchanged.
 Cancellation/discard never deletes source media or saved master jobs. Declared
 master task IDs remain locally inspectable after restart even when the original
 recipe had no master task row. See [composition controls](FILM_PLAN.md#native-and-mcp-composition-controls)

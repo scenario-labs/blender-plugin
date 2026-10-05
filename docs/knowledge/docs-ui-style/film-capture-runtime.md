@@ -8,8 +8,8 @@
     "scope": "film-capture-runtime",
     "coverage": "source-reviewed",
     "reviewed_at": "2026-10-05",
-    "base_revision": "4589f22964cc9cf99e53ec37bb8c5dbe6948c96b",
-    "limits": "Shared native/MCP local capture settings, once-only approval, bounded existing-worker admission, recipe/shot origin checks, retirement/cancellation and main-thread delivery. Separate upload approval validates the rendered content hash during staging and reuses existing SDK upload commands; no new endpoint or retry. Synthetic native coverage includes transient context pauses, stale/deleted sources, explicit recipe project, admission failure, cleanup, read-only drawing and uncertain-upload non-replay. Local capture files/reviews expire with the session; stored uploads remain. Desktop layout/input/focus/viewport, sustained GPU/audio, human motion review, live provider acceptance, finishing/export and integrated release acceptance remain pending. This topic does not approve the draft UI or certify the full document.",
+    "base_revision": "e4da254583900a68da7414e0ac2744656831e47f",
+    "limits": "Shared native/MCP local capture settings, once-only approval, bounded existing-worker admission, recipe/shot origin checks, retirement/cancellation and main-thread delivery. Separate upload approval validates the rendered content hash during staging and reuses existing SDK upload commands; no new endpoint or retry. Synthetic native coverage includes transient context pauses, stale/deleted sources, explicit recipe project, admission failure, cleanup, read-only drawing and uncertain-upload non-replay. Local capture files/reviews expire with the session; stored uploads remain. Desktop interaction with the exact accepted ZIP passes on macOS arm64 Blender 5.1.2: native dimension input and approval cancellation, real offline still rendering, synthetic upload approval/cancellation with matching captured/staged/transferred bytes, imported-upload inspection, discard cancellation and cleanup preserving the upload, and viewport selection/zoom. Original scenes/settings and the normal profile remain unchanged. This is bounded still interaction with mocked service/storage transport. Desktop video cancellation, sustained GPU/audio, human motion review, live uploads, other OS/DPI, finishing/export and integrated release acceptance remain pending. This topic does not certify the full document.",
     "sources": {
       "scenario/blender/film_capture.py": "e9f9b17f45a30623f52cee552d5e82c98634f18dc45450abb66376b05b8be090",
       "scenario/blender/film_capture_controls.py": "a1d516cef462a8ff1c1cc0d753d887307cb6e31836c068d7eb871c458baf58d4",
@@ -27,7 +27,10 @@
       "tests/unit/test_job_workers.py": "99189cfb291f9f1ea8fb0d1f44575b96d46e71c7898bf10ea8fcd18dc41362b7",
       "tests/unit/test_upload_sources.py": "ae8cdc0852592fee27e250a4a6c71dd471527c4ee190fd20c11249b00b613c0d",
       "tests/unit/test_mcp_descriptions.py": "5db5c5452101c4a5cb1dccae3b5afa1078d026473a3d309d59f85f11dccf6755",
-      "tests/blender/run_all.py": "136f24708c00418869e2f57934c1bc9c9fa076d2af1c87b6c562a274063454dc"
+      "tests/blender/run_all.py": "136f24708c00418869e2f57934c1bc9c9fa076d2af1c87b6c562a274063454dc",
+      "docs/images/film-capture-approval.png": "ec71f8f1b0ff55d8028756949e1ce038ad1f0f18c1eac3d327956f605deb67e5",
+      "docs/images/film-capture-upload-approval.png": "f5523c98ce6f37ebe8bd8571aa7b1f21b1ac326229ed46515a7cb4a7191aa797",
+      "docs/images/film-capture-uploaded.png": "c260c82f6bf479033a512fa6b4df6fc0e0e2fef709106c59f7fa630921259c48"
     }
   }
 }

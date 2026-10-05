@@ -647,4 +647,7 @@ also expire when the session shuts down; upload the desired output or copy it
 elsewhere before that. Captures do not resume automatically after restart.
 See [capture approval](FILM_PLAN.md#shared-capture-and-upload-approval) for limits
 and MCP equivalents. Finishing and Film export remain unavailable.
-These controls still require desktop interaction acceptance.
+Desktop still capture, approval cancellation, synthetic upload and cleanup pass
+on macOS Blender 5.1.2; see [the evidence and limits](UI_STYLE.md#film-capture-controls).
+Live uploads, desktop video cancellation, other OS/DPI and integrated release
+acceptance remain separate.

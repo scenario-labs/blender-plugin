@@ -136,6 +136,20 @@ and original origin. The ordinary `drain`/`deliver` checks apply to that quote;
 coordinator. These are integration commands with no native/MCP presentation yet.
 They do not install a new recipe or approve spending. See [media prerequisites and limits](FILM_PLAN.md#verified-media-preparation).
 
+## Film composition review ownership
+
+[`FilmCompositionCommands`](../scenario/blender/film_composition.py) is owned by
+`FilmJobs`, using its existing session and `ModelJobs` for preparation, exact
+quotes and one-time master submission. It retains the original scene and recipe
+binding throughout; no recipe installation or automatic application changes the
+submission origin. Main-thread maintenance waits for the original scene before
+delivering a completed probe/price and invalidates changed origins or recipes.
+Native controls and four MCP tools share these bounded ephemeral handles.
+Cancellation/discard never deletes source media or saved master jobs. Declared
+master task IDs remain locally inspectable after restart even when the original
+recipe had no master task row. See [composition controls](FILM_PLAN.md#native-and-mcp-composition-controls)
+for the approval, recovery and remaining desktop/provider acceptance boundaries.
+
 ## Local Film timeline approval
 
 `JobSession.film_timeline` retains bounded live source choices and single-use

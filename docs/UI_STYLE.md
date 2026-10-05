@@ -1097,3 +1097,25 @@ Saved jobs remain unchanged, with zero service requests/downloads, clean exit,
 disposable-profile cleanup and normal-profile preservation. This check covers
 recipe-status filtering and retained uncertainty, not a new build/Undo journey
 or the native recipe file chooser.
+
+### Film composition controls
+
+The **Composition** child panel uses equal Final/Previs segments, then **Prepare
+composition**, **Request price** and a separate **Generate** confirmation. The
+confirmation shows the original scene, timing, source/layer counts and full exact
+CU cost. Discard requires confirmation; cancellation affects only preparation or
+the pending price. Saved jobs remain available after either action. Error details
+wrap the complete cached error and support copying. Drawing only reads cached
+status; the existing runtime maintenance owns progress.
+
+Installed synthetic tests exercise native operator execution/dialog construction,
+MCP parity and read-only drawing. Desktop layout, mouse/keyboard/focus and viewport
+interaction remain unverified; these controls remain draft pending that proof.
+No live provider or complete Film/release acceptance is claimed.
+
+A fresh isolated macOS arm64 Blender 5.1.2 test installed the same ZIP that
+passed the functional matrix and rendered the initial sidebar with Film collapsed.
+Path-specific computer control returned `cgWindowNotFound`; no expanded control
+or mouse/keyboard behavior was observed. The process exited cleanly with zero
+fixture service requests and the normal profile unchanged. That startup rendering
+is not composition layout or interaction acceptance.

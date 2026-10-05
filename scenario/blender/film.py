@@ -7,12 +7,19 @@ import uuid
 from pathlib import Path
 
 import bpy
-from bpy.props import CollectionProperty, IntProperty, PointerProperty, StringProperty
+from bpy.props import CollectionProperty, EnumProperty, IntProperty, PointerProperty, StringProperty
 from bpy_extras.io_utils import ImportHelper
 
 from ..core.jobs.upload_store import UploadState
 from ..core.ui.costs import format_cu
-from . import film_capture_controls, film_jobs, film_scene_controls, film_timeline_controls, runtime
+from . import (
+    film_capture_controls,
+    film_composition_controls,
+    film_jobs,
+    film_scene_controls,
+    film_timeline_controls,
+    runtime,
+)
 
 
 class ScenarioFilmTask(bpy.types.PropertyGroup):
@@ -33,6 +40,12 @@ class ScenarioFilm(bpy.types.PropertyGroup):
     task_index: IntProperty(min=0)
     shots: CollectionProperty(type=ScenarioFilmShot)
     shot_index: IntProperty(min=0)
+    composition_mode: EnumProperty(
+        items=[
+            ("final", "Final", "Include editorial audio and source trims"),
+            ("previs", "Previs", "Review the previs cut without editorial audio"),
+        ]
+    )
 
 
 def selected(scene):
@@ -278,7 +291,7 @@ class SCENARIO_PT_film(bpy.types.Panel):
         if item is not None and item.error:
             box.label(text="Action needs review. Inspect saved jobs.", icon="ERROR")
         layout.operator("scenario.inspect_saved_jobs", icon="FILE_REFRESH")
-        layout.label(text="Film finishing and final export are not available yet")
+        layout.label(text="Local final assembly and export are not available yet")
 
 
 CLASSES = (
@@ -298,6 +311,7 @@ CLASSES = (
     *film_scene_controls.CLASSES,
     *film_timeline_controls.CLASSES,
     *film_capture_controls.CLASSES,
+    *film_composition_controls.CLASSES,
 )
 
 

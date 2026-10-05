@@ -646,8 +646,19 @@ private local files after work stops, preserving saved uploads. Capture files
 also expire when the session shuts down; upload the desired output or copy it
 elsewhere before that. Captures do not resume automatically after restart.
 See [capture approval](FILM_PLAN.md#shared-capture-and-upload-approval) for limits
-and MCP equivalents. Finishing and Film export remain unavailable.
+and MCP equivalents. Local final assembly and Film export remain unavailable.
 Desktop still capture, approval cancellation, synthetic upload and cleanup pass
 on macOS Blender 5.1.2; see [the evidence and limits](UI_STYLE.md#film-capture-controls).
 Live uploads, desktop video cancellation, other OS/DPI and integrated release
 acceptance remain separate.
+
+**Film > Composition** prepares a final or previs master from saved source media.
+Choose **Prepare composition**, wait for verification, then **Request price**.
+Review the separate **Generate** confirmation and its exact CU price. The master
+is saved as a job; your recipe and Blender scene remain unchanged. Missing saved
+media or `ffprobe` stops preparation. Cancel stops inspection or discards a pending
+price; discarding a review keeps saved media and jobs. After an error or restart,
+use **Inspect saved jobs** instead of repeating an uncertain generation. See
+[composition controls](FILM_PLAN.md#native-and-mcp-composition-controls) for MCP,
+source requirements and acceptance limits. Desktop interaction and provider
+acceptance for these experimental controls remain pending.

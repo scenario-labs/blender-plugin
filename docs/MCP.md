@@ -267,6 +267,10 @@ Do not edit this block by hand; run `make mcp-docs`. An asterisk marks a require
 
 | Tool | Description | Arguments | Notes |
 | --- | --- | --- | --- |
+| `prepare_film_composition` | Inspect saved Film media and prepare a final or previs composition without spending. | `context_id`*: string<br>`production_id`*: string<br>`mode`: string (['final', 'previs'])<br>`score_task_id`: string | - |
+| `film_composition_review` | Inspect, cancel or discard a session-local Film composition review. | `review_id`*: string<br>`action`: string (['status', 'cancel', 'discard']) | - |
+| `estimate_film_composition` | Request the exact server price for one READY verified Film composition. | `review_id`*: string | read-only annotation |
+| `generate_film_composition` | Approve one exact Film composition price and save its master identity before a single submission. | `review_id`*: string<br>`approved_cost`*: string | - |
 | `film_capture_sources` | Inspect matching local scenes for one Film shot before capture. | `production_id`*: string<br>`shot_id`*: string | read-only annotation |
 | `prepare_film_capture` | Prepare a local shot capture for separate render approval. | `context_id`*: string<br>`production_id`*: string<br>`shot_id`*: string<br>`source_id`*: string<br>`kind`: string (['STILL', 'VIDEO'])<br>`width`: integer<br>`height`: integer<br>`color_type`: string (['MATERIAL', 'TEXTURE', 'OBJECT']) | - |
 | `render_film_capture` | Approve a READY Film capture and start one local render on the shared workers. | `review_id`*: string | - |
@@ -743,4 +747,21 @@ These four local commands have no platform equivalent, make no service call and
 never change saved jobs or import result files. Local scene markers establish
 recipe compatibility, not service provenance. They share the native command
 owner but do not create a native operator Undo entry. Capture uses the separate
-commands above; finishing/export remain unavailable.
+commands above; local final assembly/export remain unavailable.
+
+### Film composition commands
+
+Inspect `film_recipe` for the selected context and production, then call
+`prepare_film_composition` with final/previs mode. Poll `film_composition_review`
+until local saved-media verification is READY. `estimate_film_composition` returns
+the resolved model payload and full `cu_cost_exact`; obtain explicit approval of
+both before `generate_film_composition(review_id, approved_cost)`.
+
+Preparation needs retained upload files or downloaded results and installed
+`ffprobe`; it never uploads or downloads missing sources. The reviewed recipe
+and original scene stay unchanged. Pricing/submission use the existing shared SDK
+model path. Cancel/discard release preparation or approval, preserving saved jobs
+and media. On an error, lost response or restart, inspect the recipe's declared
+master job and use ordinary saved-job recovery; never repeat uncertain generation.
+These tools share [native composition review](FILM_PLAN.md#native-and-mcp-composition-controls).
+Desktop/provider acceptance and local final assembly/export remain pending.

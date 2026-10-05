@@ -616,10 +616,9 @@ or authorize later use of changed bytes.
 
 One local render or inspection can run per worker owner. Session delivery checks
 the original scope and scene revision, and retirement cancels work independently
-of any panel. This command is available to integration code, not yet native Film
-controls or local MCP. Active controls must still retain the original recipe review
-and obtain separate generation approval. The quote command below rechecks the saved
-sources.
+of any panel. The native/MCP composition controls below retain the original
+recipe review and require separate generation approval. The quote command below
+rechecks the saved sources.
 
 ## Quoted composition generation
 
@@ -650,8 +649,52 @@ resubmission of an old quote. The existing job schema and SDK transport are
 unchanged, and API keys need no discovered/default project identifier.
 
 This command is verified through the installed native session and offline SDK
-fixtures. Native/MCP composition review controls, recipe installation, provider
-acceptance and final assembly/export remain separate work.
+fixtures. The controls below expose this path without installing or modifying
+the recipe. Provider acceptance and final assembly/export remain separate work.
+
+## Native and MCP composition controls
+
+Under **Film > Composition**, choose **Final** or **Previs**, then **Prepare
+composition**. Preparation verifies retained source media locally; it needs
+installed `ffprobe` and never fetches missing sources. **Request price** uses the
+verified draft and fresh model metadata. The separate **Generate** confirmation
+shows the original scene, master mode, frame count/rate, source/layer counts and
+full exact CU price. It creates one saved master job through `ModelJobs`, without
+editing the recipe, constructing a sequence or automatically importing results.
+
+Local MCP uses `film_recipe` inspection's `context_id` and `production_id` with
+`prepare_film_composition`. Poll `film_composition_review` until `READY`, then
+call `estimate_film_composition`. Review its resolved parameters and exact
+`cu_cost_exact` before explicitly authorizing `generate_film_composition` with
+that unchanged string as `approved_cost`. Native controls and MCP share the same
+review handles and submission owner. API-key default scope requires no discovery.
+
+`FilmCompositionCommands` belongs to the existing `FilmJobs` owner. It retains
+at most 16 reviews, never evicts active approvals and adds no executor, store or
+service client. Main-thread maintenance drains work independently of the panel.
+Completed inspection/pricing waits for the original scene to be selected before
+delivery; changed recipes, production identities, scene revisions or credentials
+invalidate it. Drawing reads cached status without polling, storage or network I/O.
+
+**Cancel preparation** stops a local probe or discards a pending price when the
+request ends. **Discard review** releases only the handle after work ends, keeping
+source media and saved jobs. Errors remain readable and copyable. A failed or
+uncertain submission consumes approval before durable preparation; inspect saved
+jobs instead of repeating generation. A lost preparation acknowledgement can
+still expose its committed master request ID. No old quote is restored on restart.
+
+The recipe's declared `final_master_task` and `previs_master_task` identities make
+saved master jobs visible in `film_recipe` inspection even though preparation
+never appended a task to the recipe. **Inspect saved jobs** offers the existing
+recovery commands. A new take needs an explicitly different master task identity
+or production; discarding a review does not free a spent identity.
+
+Installed synthetic controls tests cover UI/MCP sharing, exact-price rejection,
+source/recipe/scene invalidation, cancellation, uncertainty, lost acknowledgements,
+read-only drawing and saved-master discovery after reopening the owner. Desktop
+mouse/keyboard/focus and viewport interaction, live provider/media acceptance and
+local final assembly/export remain pending. These controls do not complete the
+Film or release acceptance gates.
 
 ## Remaining integration and evidence
 

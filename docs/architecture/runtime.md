@@ -10,7 +10,7 @@ is Blender 5.0; dependency and runtime acceptance have separate gates.
 | Responsibility | Source | Current behavior |
 | --- | --- | --- |
 | Registration | [registry.py](../../scenario/blender/registry.py) | Registers properties, panels, operators, composer, pump and local server integration. The `scenario_blender` headless command serves local MCP on the main thread. |
-| UI lifetime and state | [runtime.py](../../scenario/blender/runtime.py) | Owns the credential-bound SDK catalog and process-wide UI/MCP state; native form quote/submission and Film task/capture controls use the selected `JobSession`; Film finishing remains to integrate. |
+| UI lifetime and state | [runtime.py](../../scenario/blender/runtime.py) | Owns the credential-bound SDK catalog and process-wide UI/MCP state; native form quote/submission and Film task/capture/composition controls use the selected `JobSession`; local Film final assembly/export remain to integrate. |
 | UI generation | [generation.py](../../scenario/blender/generation.py) | Every native model form consumes a lane-bound session quote before durable submission; unfinished file/capture/Spark inputs block final pricing and submission. |
 | Main-thread application | [pump.py](../../scenario/blender/pump.py) | Drains prototype events and applies results to Blender. GUI timer handling differs from headless execution. |
 | Local MCP | [server.py](../../scenario/mcp/server.py), [tools_scenario.py](../../scenario/mcp/tools_scenario.py), [mcp_service.py](../../scenario/blender/mcp_service.py) | Queues scene tools for main-thread execution; model listing/schema use the same SDK catalog as the UI, all model generation lanes now use the shared session; ancillary service tools still call the prototype runtime. |
@@ -464,11 +464,14 @@ remaining edit policies and global undo still limit #99 acceptance.
 The [unpaid Film composition helpers](../FILM_PLAN.md#unpaid-composition-drafts)
 can prepare and revalidate final/previs task drafts from scoped saved outputs.
 They preserve cut and audio timing without mutating the recipe, reserving a job
-or making service requests. This component is not connected to active UI/MCP
-controls. The existing `JobSession.prepare_film_composition` and worker pool now provide
+or making service requests. The existing `JobSession.prepare_film_composition` and worker pool provide
 [receipt-bound media measurement](../FILM_PLAN.md#verified-media-preparation),
 current-source rechecks and guarded delivery. The session also exposes
 [composition quoting](../FILM_PLAN.md#quoted-composition-generation) with saved-source
 checks through the existing exact-price preparation and single-dispatch claim.
-Active draft review/recipe installation still need native/MCP controls and separate
-generation approval. Native final-review assembly and export remain unimplemented.
+[Native/MCP composition controls](../FILM_PLAN.md#native-and-mcp-composition-controls)
+now retain the draft and original recipe for separate price and generation
+approval. The existing `FilmJobs` owner maintains reviews and uses `ModelJobs` to
+save the master without changing the recipe. Declared master IDs remain visible
+through local inspection after restart. Native desktop interaction and provider
+acceptance remain pending. Local final-review assembly and export are unimplemented.

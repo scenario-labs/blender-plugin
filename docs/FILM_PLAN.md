@@ -798,6 +798,9 @@ never starts the builder. Known receipt-write failures return a session-owned
 never file copying or scene mutation. Restart loses that in-memory receipt
 authority and leaves the existing durable inspection state. `discard_film_review`
 can retire an unused completion after its original context changes.
+Known rollback outcomes are saved before file deletion. A deletion failure retains
+the outcome and any receipt-retry authority, requires cleanup inspection, and never
+leaves an otherwise confirmed rollback applying solely because files could not be removed.
 
 Installed tests cover real movie/audio strips from worker copies, generated job
 claims, reuse, stale recipe/origin/copy rejection, rollback, uncertain claims and

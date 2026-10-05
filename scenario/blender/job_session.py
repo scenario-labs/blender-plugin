@@ -531,7 +531,6 @@ class JobSession:
 
     def apply_film_review(self, completion):
         """Explicitly approve this owner's prepared cut once in its original scene."""
-        from ..core.jobs import film_review_media
         from ..core.jobs.store import _json
         from . import film_jobs, film_review
 
@@ -570,19 +569,34 @@ class JobSession:
         except Exception:
             # A lost claim response may have committed. Never build or replay it.
             outcome = self._finish_film_review(claims, application=None, unknown=True)
-            film_review_media.discard(prepared)
-            return outcome
+            return self._cleanup_film_review(prepared, outcome)
         before = film_review._snapshot()
         try:
             application = film_review.build_prepared_review(prepared)
         except Exception:
             if film_review._snapshot() != before:
                 return FilmReviewOutcome("UNCERTAIN", inspection_required=True)
-            # Preflight can fail before the primitive enters its own rollback block.
-            if prepared.directory.exists():
-                film_review_media.discard(prepared)
-            return self._finish_film_review(claims, application=None)
+            # Save the confirmed native outcome before attempting file cleanup.
+            outcome = self._finish_film_review(claims, application=None)
+            return self._cleanup_film_review(prepared, outcome)
         return self._finish_film_review(claims, application=application)
+
+    def _cleanup_film_review(self, prepared, outcome):
+        from ..core.jobs.film_review_media import discard
+
+        try:
+            # Preflight can fail before the primitive enters its cleanup block.
+            if prepared.directory.exists():
+                discard(prepared)
+        except OSError:
+            retained = FilmReviewOutcome(
+                "UNCERTAIN", outcome.application, True, outcome.receipt_retry_available
+            )
+            if outcome in self._film_review_receipts:
+                claims, application, _ = self._film_review_receipts.pop(outcome)
+                self._film_review_receipts[retained] = (claims, application, True)
+            return retained
+        return outcome
 
     def _finish_film_review(self, claims, *, application, unknown=False):
         pending = []

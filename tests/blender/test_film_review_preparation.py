@@ -295,3 +295,58 @@ class FilmReviewPreparationTests(unittest.TestCase):
         self.session.shutdown()
         self.assertFalse(completion.result.directory.exists())
         self.assertTrue(self.source.exists())
+
+    def test_cleanup_failure_after_native_rollback_still_saves_failed_claim(self):
+        completion = self.ready()
+        with (
+            patch.object(self.builder, "_sound", side_effect=ValueError("decode failed")),
+            patch.object(self.builder.shutil, "rmtree", side_effect=OSError("cleanup denied")),
+        ):
+            result = self.session.apply_film_review(completion)
+        self.assertEqual(self.builder._snapshot(), self.before)
+        self.assertEqual(self.store.get("picture").state, self.storage.JobState.APPLY_FAILED)
+        self.assertEqual(result.phase, "UNCERTAIN")
+        self.assertTrue(result.inspection_required)
+        self.assertFalse(result.receipt_retry_available)
+        self.assertTrue(completion.result.directory.exists())
+
+    def test_cleanup_failure_preserves_failed_receipt_recovery_without_rebuild(self):
+        completion = self.ready()
+        original = self.store.transition
+
+        def lose(*args, **kwargs):
+            result = original(*args, **kwargs)
+            if kwargs.get("state") == self.storage.JobState.APPLY_FAILED:
+                raise OSError("lost failed receipt acknowledgement")
+            return result
+
+        with (
+            patch.object(self.store, "transition", side_effect=lose),
+            patch.object(self.builder, "_sound", side_effect=ValueError("decode failed")),
+            patch.object(self.builder.shutil, "rmtree", side_effect=OSError("cleanup denied")),
+        ):
+            result = self.session.apply_film_review(completion)
+        self.assertTrue(result.receipt_retry_available)
+        with patch.object(
+            self.builder, "build_prepared_review", side_effect=AssertionError("rebuild")
+        ):
+            recovered = self.session.retry_film_review_receipt(result)
+        self.assertEqual(self.store.get("picture").state, self.storage.JobState.APPLY_FAILED)
+        self.assertEqual(recovered.phase, "UNCERTAIN")
+        self.assertTrue(recovered.inspection_required)
+        self.assertFalse(recovered.receipt_retry_available)
+        self.assertTrue(completion.result.directory.exists())
+
+    def test_cleanup_failure_does_not_mask_lost_claim_outcome(self):
+        completion = self.ready()
+        with (
+            patch.object(
+                self.session, "_claim_saved_application", side_effect=OSError("lost claim")
+            ),
+            patch.object(self.media, "discard", side_effect=OSError("cleanup denied")),
+        ):
+            result = self.session.apply_film_review(completion)
+        self.assertEqual(result.phase, "UNCERTAIN")
+        self.assertTrue(result.inspection_required)
+        self.assertTrue(completion.result.directory.exists())
+        self.assertEqual(self.builder._snapshot(), self.before)

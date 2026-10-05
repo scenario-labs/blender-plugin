@@ -856,6 +856,9 @@ outcome and retries persistence, never decoding or mutation. Unused completion
 discard and joined shutdown clean preparation copies; successful/uncertain scenes
 retain their files. See [the detailed contract](FILM_PLAN.md#shared-native-review-preparation-and-application)
 for copy identity assumptions, limits, pending controls and acceptance boundaries.
+Failed copy cleanup cannot suppress a known rollback receipt or its retry handle.
+The result retains inspection-required status after receipt recovery until the
+remaining files have been inspected; it never repeats native application.
 
 Native **Apply mesh edit** and MCP `prepare_result_application` with
 `purpose: mesh_edit` share this command and its captured target. The

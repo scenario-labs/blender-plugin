@@ -156,6 +156,42 @@ class FilmTimelineControlTests(unittest.TestCase):
                 self.timeline.prepare(self.scene, selections=selections)
             shot.camera, shot.frame_end = camera, frame_end
 
+    def test_deleted_camera_replacement_rejects_preparation_and_approval_cleanly(self):
+        for phase in ("prepare", "approve"):
+            _, selections = self.inspect()
+            identifier = (
+                self.timeline.prepare(self.scene, selections=selections)["review_id"]
+                if phase == "approve"
+                else None
+            )
+            shot = self.shots["second"]
+            name = shot.camera.name
+            bpy.data.objects.remove(shot.camera, do_unlink=True)
+            replacement = bpy.data.objects.new(name, bpy.data.cameras.new("Replacement camera"))
+            shot.collection.objects.link(replacement)
+            shot.camera = replacement
+            before = self.builder._snapshot()
+            # A non-current scene can retain an unchanged revision until depsgraph delivery.
+            with patch.object(self.session._origins, "current", return_value=True):
+                with self.assertRaisesRegex(ValueError, "A selected Film shot changed"):
+                    if identifier:
+                        self.timeline.approve(identifier)
+                    else:
+                        self.timeline.prepare(self.scene, selections=selections)
+            self.assertEqual(self.builder._snapshot(), before)
+
+    def test_invalidated_source_reference_rejects_without_building(self):
+        _, selections = self.inspect()
+        identifier = self.timeline.prepare(self.scene, selections=selections)["review_id"]
+        before = self.builder._snapshot()
+        with patch.object(self.builder, "matching_shot", side_effect=ReferenceError("Removed RNA")):
+            with self.assertRaisesRegex(ValueError, "A selected Film shot changed"):
+                self.timeline.prepare(self.scene, selections=selections)
+            with self.assertRaisesRegex(ValueError, "A selected Film shot changed"):
+                self.timeline.approve(identifier)
+        self.assertEqual(self.builder._snapshot(), before)
+        self.assertEqual(self.timeline.status(identifier)["phase"], "READY")
+
     def test_origin_change_and_connection_retirement_reject_ready_build(self):
         identifier = self.prepare()
         self.session.invalidate_scene(self.shots["second"])

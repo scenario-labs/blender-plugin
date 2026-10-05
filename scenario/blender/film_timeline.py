@@ -106,19 +106,24 @@ class FilmTimelineCommands:
             raise ValueError("Select one local scene for every Film shot")
         for shot in plan["shots"]:
             source = sources[shot["id"]]
-            if (
-                source.binding != binding
-                or source.shot_id != shot["id"]
-                or not self.session._origins.current(source.origin)
-                or not film_scene.matching_shot(
-                    source.scene,
-                    production_id=binding[0],
-                    digest=digest,
-                    shot=shot,
-                    fps=plan["fps"],
+            try:
+                changed = (
+                    source.binding != binding
+                    or source.shot_id != shot["id"]
+                    or not self.session._origins.current(source.origin)
+                    or not film_scene.matching_shot(
+                        source.scene,
+                        production_id=binding[0],
+                        digest=digest,
+                        shot=shot,
+                        fps=plan["fps"],
+                    )
+                    or source.scene.camera != source.camera
                 )
-                or source.scene.camera != source.camera
-            ):
+            except ReferenceError:
+                # Blender may invalidate captured RNA before revision delivery.
+                changed = True
+            if changed:
                 raise ValueError("A selected Film shot changed; inspect its scene again")
         return plan
 

@@ -253,7 +253,6 @@ class FilmReviewTests(unittest.TestCase):
         self.unchanged_context()
 
     def test_changed_missing_and_symlink_source_roll_back_copies(self):
-        source = self.sources["shot-video"]
         for mode in ("changed", "missing", "symlink"):
             with self.subTest(mode=mode):
                 source = self.video()

@@ -387,8 +387,9 @@ approved `build_film_timeline`. `film_timeline_review` inspects or discards the
 review; discarding uncertainty requires `inspected: true`. Native confirmation
 calls the same prepare/approve methods. Cancelling the dialog creates no review
 or timeline. The native build participates in Undo, while its consumed approval
-cannot replay; MCP does not create an operator Undo entry. Desktop interaction
-and Undo/Redo acceptance remain pending.
+cannot replay; MCP does not create an operator Undo entry. Synthetic desktop
+selection, cancellation, Undo/Redo and Sequencer inspection pass on macOS Blender
+5.1.2; see [the evidence and limits](UI_STYLE.md#film-timeline-controls).
 
 ## Remaining integration and evidence
 

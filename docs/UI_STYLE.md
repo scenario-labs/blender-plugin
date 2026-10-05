@@ -964,6 +964,36 @@ Known rollback errors remain readable and copyable. Incomplete cleanup hides
 the build action and requires **Discard timeline review** with its inspection
 checkbox; this never deletes Blender data. Drawing only reads cached status.
 Native source/destination guards and single-use approval have synthetic installed
-coverage. Desktop layout, keyboard/focus, viewport and Undo/Redo interaction remain
-unverified; this new panel is draft pending that proof. The preceding shot-controls
-fixture's `cgWindowNotFound` failure is not interaction evidence for this panel.
+coverage. Exact ZIP SHA-256
+`aef03c55e607a3ea99eb839bd4cdef2cc4c7e6517aa5ca5152d302744874f402`
+passes 869 installed tests on each macOS arm64 Blender 5.0.1, 5.1.2 and 5.2.1.
+
+Desktop interaction with that same ZIP passes on macOS arm64 Blender 5.1.2 in
+an isolated profile. The local fixture supplies two recipe shots and a second
+take for one shot, with external Python sockets blocked. Native mouse input
+opens the panel and confirmation, which displays 180 frames at 30 fps. Selecting
+the nondefault scene for the second shot and pressing Escape leaves every scene
+and saved job unchanged and creates no review. A fresh dialog accepts the same explicit scene
+choice, and Return confirms the build.
+
+![Timeline approval shows the frame count and an explicit choice between takes](images/film-timeline-approval.png)
+
+Exactly one new timeline contains the selected shots at frames 1–120 and 121–180,
+with the working scene still selected and its objects intact. Saved jobs and
+application receipts are unchanged. Edit > Undo removes only the new timeline;
+Edit > Redo restores the exact scene sources and frame boundaries. The consumed
+review stays consumed. After history invalidates its scene handle, the panel
+requires a fresh approval for another build.
+
+![Film reports the built timeline while preserving the working scene](images/film-timeline-built.png)
+
+Viewport Light selection and Home framing work after the dialogs. The native
+scene selector opens the built timeline. Selecting that scene in the Video
+Sequencer's own scene selector displays the two editable scene strips.
+
+![The Video Sequencer displays the selected 120-frame and 60-frame shots](images/film-timeline-sequencer.png)
+
+The run records zero service requests and downloads, exits cleanly, removes its
+disposable profile and leaves the normal profile unchanged. This establishes the
+synthetic timeline interaction, not live provider compatibility, human motion/audio
+review, other OS/DPI combinations, capture/finishing/export or release acceptance.

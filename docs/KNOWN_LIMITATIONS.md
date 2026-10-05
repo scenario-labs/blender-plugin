@@ -32,8 +32,9 @@ establish live generation or full render-lane desktop acceptance.
   provider, other OS/DPI and motion/audio acceptance remain separate. Local
   timeline assembly requires explicit selection of completed shot scenes and
   confirmation; it creates editable scene strips without generation or rendering.
-  Timeline desktop acceptance remains pending. Capture, finishing and export
-  remain unavailable. Complete runtime adoption
+  Synthetic timeline selection, cancellation, Undo/Redo and Sequencer inspection
+  pass on macOS Blender 5.1.2; see [the evidence and limits](UI_STYLE.md#film-timeline-controls).
+  Capture, finishing and export remain unavailable. Complete runtime adoption
   and live/native acceptance remain open
   ([#64](https://github.com/scenario-labs/blender-plugin/issues/64),
   [#65](https://github.com/scenario-labs/blender-plugin/issues/65)).

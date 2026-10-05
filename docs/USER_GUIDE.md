@@ -626,4 +626,6 @@ later edits to a shot affect the sequence. Save the blend file. A partial build
 must be inspected before dismissing its review; dismissal never deletes data.
 See [timeline approval](FILM_PLAN.md#editable-timeline-approval) for MCP equivalents.
 Shot capture, finishing and Film export remain unavailable.
-The timeline controls still require desktop interaction acceptance.
+To inspect the result, select the new timeline scene in the Video Sequencer's
+scene selector. Synthetic desktop selection, cancellation and Undo/Redo pass on
+macOS Blender 5.1.2; see [the evidence and limits](UI_STYLE.md#film-timeline-controls).

@@ -660,5 +660,5 @@ media or `ffprobe` stops preparation. Cancel stops inspection or discards a pend
 price; discarding a review keeps saved media and jobs. After an error or restart,
 use **Inspect saved jobs** instead of repeating an uncertain generation. See
 [composition controls](FILM_PLAN.md#native-and-mcp-composition-controls) for MCP,
-source requirements and acceptance limits. Desktop interaction and provider
-acceptance for these experimental controls remain pending.
+source requirements and acceptance limits. Synthetic desktop interaction passes
+on macOS Blender 5.1.2; live provider and other OS/DPI acceptance remain pending.

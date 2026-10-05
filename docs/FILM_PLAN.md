@@ -694,10 +694,12 @@ or production; discarding a review does not free a spent identity.
 
 Installed synthetic controls tests cover UI/MCP sharing, exact-price rejection,
 source/recipe/scene invalidation, cancellation, uncertainty, lost acknowledgements,
-read-only drawing and saved-master discovery after reopening the owner. Desktop
-mouse/keyboard/focus and viewport interaction, live provider/media acceptance and
-local final assembly/export remain pending. These controls do not complete the
-Film or release acceptance gates.
+read-only drawing and saved-master discovery after reopening the owner. Synthetic
+desktop mouse/keyboard, focus, confirmation and viewport checks pass on macOS
+arm64 Blender 5.1.2; see [the exact ZIP evidence](UI_STYLE.md#film-composition-controls).
+Live provider/media acceptance, other OS/DPI behavior and local final
+assembly/export remain pending. These controls do not complete the Film or
+release acceptance gates.
 
 ## Remaining integration and evidence
 

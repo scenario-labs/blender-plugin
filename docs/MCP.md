@@ -764,4 +764,5 @@ model path. Cancel/discard release preparation or approval, preserving saved job
 and media. On an error, lost response or restart, inspect the recipe's declared
 master job and use ordinary saved-job recovery; never repeat uncertain generation.
 These tools share [native composition review](FILM_PLAN.md#native-and-mcp-composition-controls).
-Desktop/provider acceptance and local final assembly/export remain pending.
+Synthetic native interaction passes on macOS Blender 5.1.2; live provider,
+other OS/DPI and local final assembly/export acceptance remain pending.

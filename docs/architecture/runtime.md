@@ -473,5 +473,7 @@ checks through the existing exact-price preparation and single-dispatch claim.
 now retain the draft and original recipe for separate price and generation
 approval. The existing `FilmJobs` owner maintains reviews and uses `ModelJobs` to
 save the master without changing the recipe. Declared master IDs remain visible
-through local inspection after restart. Native desktop interaction and provider
-acceptance remain pending. Local final-review assembly and export are unimplemented.
+through local inspection after restart. Synthetic native composition interaction
+passes on macOS Blender 5.1.2; see [the evidence and limits](../UI_STYLE.md#film-composition-controls).
+Live provider and other OS/DPI acceptance remain pending. Local final-review
+assembly and export are unimplemented.

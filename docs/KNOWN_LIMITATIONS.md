@@ -41,8 +41,11 @@ establish live generation or full render-lane desktop acceptance.
   Desktop video cancellation, live uploads, other OS/DPI and sustained media
   acceptance remain pending. Composition preparation, exact pricing and separate
   generation approval now share native/MCP controls and preserve saved masters
-  after restart. Their desktop and live provider acceptance remain pending;
-  local final assembly and export remain unavailable. Complete runtime adoption
+  after restart. Synthetic composition approval, mode navigation, invalidation and
+  saved-job inspection pass on macOS Blender 5.1.2; see
+  [the evidence and limits](UI_STYLE.md#film-composition-controls). Live provider
+  acceptance and other OS/DPI behavior remain pending; local final assembly and
+  export remain unavailable. Complete runtime adoption
   and live/native acceptance remain open
   ([#64](https://github.com/scenario-labs/blender-plugin/issues/64),
   [#65](https://github.com/scenario-labs/blender-plugin/issues/65)).

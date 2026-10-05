@@ -151,7 +151,8 @@ The shared scene-revision and recipe guards remain unchanged.
 Cancellation/discard never deletes source media or saved master jobs. Declared
 master task IDs remain locally inspectable after restart even when the original
 recipe had no master task row. See [composition controls](FILM_PLAN.md#native-and-mcp-composition-controls)
-for the approval, recovery and remaining desktop/provider acceptance boundaries.
+for the approval, recovery, scoped desktop proof and remaining provider acceptance
+boundaries.
 
 ## Local Film timeline approval
 

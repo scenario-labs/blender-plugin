@@ -1109,16 +1109,8 @@ wrap the complete cached error and support copying. Drawing only reads cached
 status; the existing runtime maintenance owns progress.
 
 Installed synthetic tests exercise native operator execution/dialog construction,
-MCP parity and read-only drawing. Desktop layout, mouse/keyboard/focus and viewport
-interaction remain unverified; these controls remain draft pending that proof.
-No live provider or complete Film/release acceptance is claimed.
-
-A fresh isolated macOS arm64 Blender 5.1.2 test installed the same ZIP that
-passed the functional matrix and rendered the initial sidebar with Film collapsed.
-Path-specific computer control returned `cgWindowNotFound`; no expanded control
-or mouse/keyboard behavior was observed. The process exited cleanly with zero
-fixture service requests and the normal profile unchanged. That startup rendering
-is not composition layout or interaction acceptance.
+MCP parity and read-only drawing. The corrected navigation implementation passes
+916 installed tests on each of Blender 5.0.1, 5.1.2 and 5.2.1 on macOS arm64.
 
 Final/Previs is temporary WindowManager UI state, shared across the current
 Blender session and excluded from saved scene data. Native edits to a scene-owned
@@ -1129,8 +1121,26 @@ regression also tags the property's owner, preserving the same quote without
 service requests after navigation. Frame changes still invalidate the captured
 scene revision; that guard is unchanged.
 
-A later isolated Blender 5.1.2 desktop check exercised cancellation, discard and
-exact pricing, then reproduced the scene-owned selector failure. The fixed ZIP
-passes 916 installed tests on each of Blender 5.0.1, 5.1.2 and 5.2.1 on macOS arm64.
-Its desktop interaction recheck remains pending; automated regression success
-does not establish that missing proof.
+An isolated macOS arm64 Blender 5.1.2 desktop check installed exact ZIP SHA-256
+`6f932e81a802f8569378c38ad3d4b820da779a1f86090272585c9b1db8e1335f`.
+All 136 packaged Python files matched the reviewed source. Native input cancelled
+preparation, cancelled and confirmed discard, prepared a fresh review and requested
+its exact synthetic price. Final → Previs → Final preserved the same review,
+quote, scene and request count. Editing the current frame invalidated the review
+without another request; the full error was readable in its details dialog.
+
+The separate Generate confirmation displayed the original destination, 120 frames
+at 30 fps, one source/layer and full synthetic price `0.10000000000000001` CU.
+Cancelling preserved the quote with no submission. Confirming created exactly one
+mocked durable master; discarding its review preserved that job, visible through
+**Inspect saved jobs**. Viewport selection and zoom worked after leaving the
+controls. Recipe and source bytes stayed unchanged. The process exited cleanly,
+removed its disposable profile and left the normal profile unchanged.
+
+![Film composition confirmation showing exact price before mocked submission](images/film-composition-approval.png)
+![Saved Film composition job after discarding its review](images/film-composition-saved.png)
+
+SDK transport and media metadata were mocked, and external socket/DNS calls were
+disabled. This proves the scoped native interaction flow, not real media probing,
+live provider quality, other OS/DPI behavior, local final assembly/export or
+complete Film/release acceptance.

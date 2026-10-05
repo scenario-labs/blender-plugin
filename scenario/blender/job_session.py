@@ -192,6 +192,9 @@ class JobSession:
         )
         self._workers = JobWorkers(self._coordinator, workers=workers, pending_limit=pending_limit)
         self.film_shots = FilmShotCommands(self, store)
+        from .film_timeline import FilmTimelineCommands
+
+        self.film_timeline = FilmTimelineCommands(self)
         with _sessions_lock:
             _sessions.add(self)
         try:
@@ -1086,6 +1089,7 @@ class JobSession:
                 self._model_receipts.clear()
                 self._material_receipts.clear()
                 self.film_shots.close()
+                self.film_timeline.close()
                 with _sessions_lock:
                     _sessions.discard(self)
 

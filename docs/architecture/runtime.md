@@ -357,7 +357,11 @@ scene, claims every source job before building and supports receipt-only recover
 The [native/MCP shot controls](../FILM_PLAN.md#native-and-mcp-shot-controls) expose
 source inspection, local verification, separate build approval and recovery over
 that command. The maintenance pump owns verification delivery; draw reads cached
-status. Timeline approval, capture and finishing remain to integrate.
+status. `JobSession.film_timeline` now supplies bounded explicit local shot
+selection and single-use timeline approval through native controls and MCP.
+It rechecks live scenes and captured revisions and creates a new editable
+scene-strip sequence without importing results or changing saved jobs.
+Capture and finishing remain to integrate.
 
 ## Shared MCP render preparation
 

@@ -950,3 +950,20 @@ The run records zero service requests and downloads, exits cleanly, removes its
 disposable profile and leaves the normal profile unchanged. This establishes the
 synthetic shot-control interaction, not live provider compatibility, motion/audio
 review, other OS/DPI combinations, timeline/capture/finishing or release acceptance.
+
+### Film timeline controls
+
+The **Timeline** child panel offers **Build timeline**. Its confirmation lists
+the editorial frame count/rate and a local scene choice for each recipe shot.
+Missing choices explain that the shot must be built first. The dialog explains
+that it creates a new sequence, keeps the working scene selected and references
+live scenes whose later edits affect the timeline. Cancel creates no review.
+The confirmed selection uses the same session command as local MCP.
+
+Known rollback errors remain readable and copyable. Incomplete cleanup hides
+the build action and requires **Discard timeline review** with its inspection
+checkbox; this never deletes Blender data. Drawing only reads cached status.
+Native source/destination guards and single-use approval have synthetic installed
+coverage. Desktop layout, keyboard/focus, viewport and Undo/Redo interaction remain
+unverified; this new panel is draft pending that proof. The preceding shot-controls
+fixture's `cgWindowNotFound` failure is not interaction evidence for this panel.

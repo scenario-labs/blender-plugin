@@ -95,6 +95,18 @@ shared by the [native and MCP shot controls](FILM_PLAN.md#native-and-mcp-shot-co
 The maintenance pump advances its verification independently of an open view.
 Drawing only reads matching cached reviews and hides retired credential contexts.
 
+## Local Film timeline approval
+
+`JobSession.film_timeline` retains bounded live source choices and single-use
+reviews for [editable scene-strip assembly](FILM_PLAN.md#editable-timeline-approval).
+It shares session retirement and scene revisions without adding workers, SDK
+calls, storage or job claims. Explicit local scene choices are checked again
+before mutation; deletion, camera/timing changes, changed recipes and inactive
+sessions reject approval. Session shutdown releases its source/review handles.
+Saved Blender scenes remain available for new explicit inspection after restart.
+Partial cleanup must be inspected before dismissing uncertainty and preparing
+again. No saved job or result receipt is changed by timeline assembly.
+
 ## Cloud result adoption command
 
 `JobSession.adopt_cloud_job(identifier, expected_model_id=..., scene=...)`

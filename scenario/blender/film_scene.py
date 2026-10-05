@@ -173,10 +173,14 @@ def _linear(obj):
             key.interpolation = "LINEAR"
 
 
+def _frame_at(time, fps, frames):
+    return 1 + time * fps * (frames - 1) / frames
+
+
 def _motion(obj, keys, fps, frames, *, baked_scale=None):
     # Preserve subframe timing instead of collapsing distinct authored keys by rounding.
     for key in keys:
-        frame = 1 + key["time"] * fps * (frames - 1) / frames
+        frame = _frame_at(key["time"], fps, frames)
         for name in ("location", "rotation", "scale"):
             if name not in key:
                 continue
@@ -293,7 +297,7 @@ def _clip(obj, actor, frames, fps):
     if slot is not None and hasattr(strip, "action_slot"):
         strip.action_slot = slot
     if actor["action"] == "loop" and actor["action_until"] > 0:
-        end = min(frames, max(1, round(actor["action_until"] * fps)))
+        end = _frame_at(actor["action_until"], fps, frames)
         strip.scale = 1 / actor["action_speed"]
         span = max(1, (action.frame_range[1] - action.frame_range[0]) * strip.scale)
         strip.repeat = max(1, math.ceil(end / span))
@@ -323,12 +327,11 @@ def _hero(scene, actor, spec, source, shot, fps):
         obj["scenario_hero_id"] = actor["hero"]
     scene.frame_set(1)
     bpy.context.view_layer.update()
-    points = [
-        obj.matrix_world @ Vector(corner)
-        for obj in objects
-        if obj.type == "MESH"
-        for corner in obj.bound_box
-    ]
+    graph = bpy.context.evaluated_depsgraph_get()
+    evaluated = [obj.evaluated_get(graph) for obj in objects if obj.type == "MESH"]
+    points = [obj.matrix_world @ Vector(corner) for obj in evaluated for corner in obj.bound_box]
+    if not points or any(not math.isfinite(value) for point in points for value in point):
+        raise ValueError("The selected hero pose has no finite evaluated mesh bounds")
     low = Vector(tuple(min(p[i] for p in points) for i in range(3)))
     high = Vector(tuple(max(p[i] for p in points) for i in range(3)))
     extent = high - low

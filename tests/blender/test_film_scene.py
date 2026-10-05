@@ -228,17 +228,23 @@ class FilmSceneTests(unittest.TestCase):
         bpy.context.window.scene = result.scene
         try:
             bpy.context.view_layer.update()
+            graph = bpy.context.evaluated_depsgraph_get()
             for application, pivot in result.actors:
                 bounds = [
-                    obj.matrix_world @ Vector(corner)
+                    evaluated.matrix_world @ Vector(corner)
                     for obj in application.objects
                     if obj.type == "MESH"
-                    for corner in obj.bound_box
+                    for evaluated in (obj.evaluated_get(graph),)
+                    for corner in evaluated.bound_box
                 ]
                 for axis in (0, 1):
                     center = (min(p[axis] for p in bounds) + max(p[axis] for p in bounds)) / 2
                     self.assertAlmostEqual(center, pivot.location[axis], places=4)
                 self.assertAlmostEqual(min(p.z for p in bounds), pivot.location.z, places=4)
+                # The asset's 90-degree Z orientation moves its normalized X width onto Y.
+                self.assertAlmostEqual(
+                    max(p.y for p in bounds) - min(p.y for p in bounds), 2, places=4
+                )
         finally:
             bpy.context.window.scene = self.old_scene
 
@@ -261,7 +267,7 @@ class FilmSceneTests(unittest.TestCase):
         bpy.context.window.scene = result.scene
         try:
             values = []
-            for frame in (1, 8.5, 16, 60, 120):
+            for frame in (1, 8.5, 16, 60.5, 120):
                 result.scene.frame_set(int(frame), subframe=frame % 1)
                 bpy.context.view_layer.update()
                 values.append(tuple(shape.key_blocks[1].value for shape in shapes))
@@ -272,6 +278,32 @@ class FilmSceneTests(unittest.TestCase):
             self.assertAlmostEqual(values[3][1], values[4][1], places=3)
         finally:
             bpy.context.window.scene = self.old_scene
+
+    def test_animation_stop_matches_motion_at_the_same_editorial_time(self):
+        self.actors()
+        actor = self.raw["shots"][0]["actors"][0]
+        actor.update(
+            action="loop", action_until=1.25, keyframes=[{"time": 1.25, "location": [1, 0, 0]}]
+        )
+        for fps in (24, 30, 60):
+            self.raw["fps"] = fps
+            result = self.build(heroes={"hero": self.source(animated_glb(clips=1))})
+            application, pivot = result.actors[0]
+            frame = submodule("blender.shot_planner").fcurves_of(pivot)[0].keyframe_points[0].co.x
+            for obj in application.objects:
+                owners = [obj]
+                if obj.type == "MESH" and obj.data.shape_keys:
+                    owners.append(obj.data.shape_keys)
+                for owner in owners:
+                    if owner.animation_data:
+                        strips = [
+                            strip
+                            for track in owner.animation_data.nla_tracks
+                            if not track.mute
+                            for strip in track.strips
+                        ]
+                        for strip in strips:
+                            self.assertAlmostEqual(strip.frame_end, frame, places=4)
 
     def test_tampered_hero_fails_before_creating_data(self):
         self.actors()

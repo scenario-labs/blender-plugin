@@ -1109,3 +1109,73 @@ class ModelGenerationTests(unittest.TestCase):
         with self.assertRaises(self.request_error):
             self.generation.submit_generation(bpy.context, "render_image")
         self.assertEqual(self.paid, [])
+
+    def recovered_media(self):
+        from test_media_application import wav_bytes
+
+        self.result_bytes, self.result_media_type = wav_bytes(), "audio/wav"
+        self.remote_status = "success"
+        result = self.mcp_submit(self.mcp_quote())
+        owner = self.runtime.state.model_jobs
+        owner.submissions[result["local_id"]].result(5)
+        owner.session.invalidate_scene(bpy.context.scene)
+        self.deliver_results()
+        self.runtime.state.reset()
+        self.runtime.inspect_model_jobs()
+        self.assertEqual(self.store.get(result["local_id"]).state, self.storemod.JobState.READY)
+        return result["local_id"]
+
+    def prepare_media(self, request_id):
+        args = self.recovery_args(request_id, "import_media")
+        del args["action"]
+        args["asset_id"] = "result-image"
+        return self.tools.prepare_result_application(args)
+
+    def test_mcp_media_recovery_requires_scene_frame_approval_without_spending(self):
+        request_id = self.recovered_media()
+        bpy.context.scene.frame_set(27)
+        before = len(self.calls), len(self.paid)
+        approval = self.prepare_media(request_id)
+        self.assertEqual(approval["kind"], "audio")
+        self.assertEqual(approval["frame"], 27)
+        self.assertFalse(
+            bpy.context.scene.sequence_editor and bpy.context.scene.sequence_editor.strips
+        )
+        deferred = self.tools.apply_result_application(self.import_args(approval))
+        status = deferred.finish(deferred.run())
+        self.assertEqual(status["status"], "applied", status)
+        strips = bpy.context.scene.sequence_editor.strips
+        self.assertEqual(len(strips), 1)
+        self.assertEqual(strips[0].frame_final_start, 27)
+        self.assertEqual((len(self.calls), len(self.paid)), before)
+        with self.assertRaises(self.request_error):
+            self.tools.apply_result_application(self.import_args(approval))
+
+    def test_media_frame_change_during_verification_keeps_saved_result_ready(self):
+        request_id = self.recovered_media()
+        approval = self.prepare_media(request_id)
+        deferred = self.tools.apply_result_application(self.import_args(approval))
+        result = deferred.run()
+        bpy.context.scene.frame_set(50)
+        status = deferred.finish(result)
+        self.assertEqual(status["status"], "ready", status)
+        self.assertTrue(status["error"])
+        self.assertFalse(
+            bpy.context.scene.sequence_editor and bpy.context.scene.sequence_editor.strips
+        )
+
+    def test_native_media_execution_needs_the_same_prepared_approval(self):
+        request_id = self.recovered_media()
+        approval = self.prepare_media(request_id)
+        args = self.import_args(approval)
+        args.update(
+            request_id=request_id,
+            expected_revision=approval["revision"],
+            asset_id=approval["asset_id"],
+        )
+        self.assertEqual(bpy.ops.scenario.import_saved_media(**args), {"FINISHED"})
+        self.deliver_results()
+        self.assertEqual(self.store.get(request_id).state, self.storemod.JobState.APPLIED)
+        self.assertEqual(len(bpy.context.scene.sequence_editor.strips), 1)
+        with self.assertRaisesRegex(RuntimeError, "Media insertion was not started"):
+            bpy.ops.scenario.import_saved_media(**args)

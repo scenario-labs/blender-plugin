@@ -48,6 +48,21 @@ ffmpeg -f lavfi -i color=c=0x6b88a4:s=32x32:r=24 -frames:v 6 -an \
   tests/fixtures/synthetic/video-six-frames.mp4
 ```
 
+The adjacent `synthetic/audio-silence.mp3`, `audio-silence.ogg` and
+`video-six-frames.webm` are also first-party GPL-3.0-or-later test media. They
+contain one second of generated silence or the same six solid-color frames,
+with no recording or provider output. Native saved-result tests decode each
+format using Blender. Reproduce them with:
+
+```sh
+ffmpeg -f lavfi -i anullsrc=r=8000:cl=mono -t 1 -c:a libmp3lame -b:a 32k \
+  -map_metadata -1 tests/fixtures/synthetic/audio-silence.mp3
+ffmpeg -f lavfi -i anullsrc=r=8000:cl=mono -t 1 -c:a libvorbis \
+  -map_metadata -1 tests/fixtures/synthetic/audio-silence.ogg
+ffmpeg -f lavfi -i color=c=0x6b88a4:s=32x32:r=24 -frames:v 6 -an \
+  -c:v libvpx-vp9 -map_metadata -1 tests/fixtures/synthetic/video-six-frames.webm
+```
+
 ## Identifiers and URLs
 
 The recorder replaces string-valued account fields `userId`, `authorId`,

@@ -230,6 +230,17 @@ packages with the captured-source and local-reuse storage APIs. They do not
 restore live object authority or replay scene application. The actual package's storage APIs perform reads
 and verification; no mocked add-on replaces the installed extension.
 
+When the installed predecessor exposes Film task storage, all six selected jobs
+also retain their production/task and recipe hashes. When Film upload storage is
+available, the captured mesh has a separate saved Film upload association; the
+snapshot compares its complete identity and checks that the other credential
+scope cannot read it. This association lives outside serialized job/upload
+records, so checking those records alone is insufficient. Older packages record
+empty Film fields; that is not Film acceptance. Check `expected-state.json` for
+nonempty task bindings and `film_upload` before claiming this coverage. Adding
+Film storage to a package must not remove the captured-mesh, texture-role or local
+reuse checks above.
+
 The probe rejects Python socket connections while seeding/checking/upgrading.
 Blender's native updater uses its configured loopback repository; this is not an
 OS sandbox for arbitrary package code or subprocesses. Use only trusted archives.

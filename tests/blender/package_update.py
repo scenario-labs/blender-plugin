@@ -29,6 +29,51 @@ def digest(data):
     return hashlib.sha256(data).hexdigest()
 
 
+def film_binding(task_id):
+    jobs = module("core.jobs.store")
+    if not hasattr(jobs, "FilmTaskBinding"):
+        return None
+    return jobs.FilmTaskBinding(
+        "update-production", task_id, digest(b"fixture recipe"), digest(task_id.encode())
+    )
+
+
+def seed_film_upload(selected, uploads):
+    jobs = module("core.jobs.store")
+    if not hasattr(jobs, "FilmUploadReference"):
+        return
+    upload = uploads.get("upload-mesh")
+    selected.bind_film_upload(
+        jobs.FilmUploadReference(
+            selected.scope,
+            film_binding("captured-reference"),
+            upload.intent.request_id,
+            upload.revision,
+            upload.asset_id,
+            upload.intent.file_sha256,
+            upload.intent.kind,
+        )
+    )
+
+
+def job_snapshot(record):
+    value = asdict(record)
+    if value["intent"].get("source") != "cloud":
+        value["intent"].setdefault("film_task", None)
+    return value
+
+
+def film_upload_snapshot(selected, other):
+    """Film upload associations live outside job/upload record serialization."""
+    if not hasattr(selected, "film_upload"):
+        return None
+    identity = ("update-production", "captured-reference")
+    reference = selected.film_upload(*identity)
+    if other.film_upload(*identity) is not None:
+        raise RuntimeError("Film upload escaped its credential scope")
+    return asdict(reference) if reference is not None else None
+
+
 def windows_namespace(path):
     """Keep the probe's recursive inventory usable beyond legacy FindFirstFile limits."""
     if path.startswith("\\\\?\\"):
@@ -241,6 +286,7 @@ def seed(profile):
     jobs = module("core.jobs.store")
     origin = jobs.JobOrigin("update-file", "update-scene", "update-revision", "update-target")
     mesh_binding = seed_mesh_upload(profile, selected, uploads, sources, origin)
+    seed_film_upload(selected, uploads)
     template = jobs.JobIntent(
         "prepared",
         selected.scope,
@@ -252,13 +298,15 @@ def seed(profile):
         "0.1234567890123456789",
     )
     for desired in ("prepared", "uncertain", "remote", "download_failed", "ready", "applied"):
-        record = selected.create(
-            replace(
-                template,
-                request_id=desired,
-                mesh_sources=(mesh_binding,) if desired in {"ready", "applied"} else (),
-            )
+        intent = replace(
+            template,
+            request_id=desired,
+            mesh_sources=(mesh_binding,) if desired in {"ready", "applied"} else (),
         )
+        binding = film_binding(desired)
+        if binding is not None:
+            intent = replace(intent, film_task=binding)
+        record = selected.create(intent)
 
         def advance(state, **kwargs):
             nonlocal record
@@ -419,9 +467,10 @@ def snapshot(profile):
     values["credentials_digest"] = digest(json.dumps([prefs.api_key, prefs.api_secret]).encode())
     value = {
         "preferences": values,
-        "jobs": [asdict(r) for r in records],
-        "other_jobs": [asdict(r) for r in other.records()],
+        "jobs": [job_snapshot(r) for r in records],
+        "other_jobs": [job_snapshot(r) for r in other.records()],
         "uploads": [asdict(r) for r in uploads.records()],
+        "film_upload": film_upload_snapshot(selected, other),
         "files": files,
         "scene": scene,
         "original_source": digest((profile / "reference.png").read_bytes()),

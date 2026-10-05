@@ -344,6 +344,57 @@ def package_probe(monkeypatch):
     return probe
 
 
+def test_update_snapshot_adds_only_absent_film_field(package_probe):
+    from dataclasses import dataclass
+
+    @dataclass
+    class Record:
+        intent: dict
+
+    old = Record({"request_id": "old"})
+    assert package_probe.job_snapshot(old)["intent"] == {
+        "request_id": "old",
+        "film_task": None,
+    }
+    binding = {"production_id": "production", "task_id": "take", "task_sha256": "a" * 64}
+    bound = Record({"film_task": binding})
+    assert package_probe.job_snapshot(bound)["intent"]["film_task"] == binding
+    cloud = Record({"source": "cloud"})
+    assert package_probe.job_snapshot(cloud)["intent"] == {"source": "cloud"}
+    assert old.intent == {"request_id": "old"}
+
+
+def test_update_snapshot_includes_separate_film_upload_and_rejects_scope_leak(package_probe):
+    from dataclasses import dataclass, replace
+
+    @dataclass(frozen=True)
+    class Reference:
+        film_task: dict
+        upload_request_id: str
+        upload_revision: int
+        asset_id: str
+        file_sha256: str
+        kind: str
+
+    saved = Reference({"task_id": "captured-reference"}, "upload-mesh", 7, "asset", "a" * 64, "3d")
+
+    def store(reference):
+        def read(production, task):
+            assert (production, task) == ("update-production", "captured-reference")
+            return reference
+
+        return SimpleNamespace(film_upload=read)
+
+    expected = package_probe.film_upload_snapshot(store(saved), store(None))
+    assert expected["file_sha256"] == saved.file_sha256
+    assert expected["film_task"] == saved.film_task
+    for changed in (None, replace(saved, upload_revision=8), replace(saved, asset_id="other")):
+        assert package_probe.film_upload_snapshot(store(changed), store(None)) != expected
+    with pytest.raises(RuntimeError, match="credential scope"):
+        package_probe.film_upload_snapshot(store(saved), store(saved))
+    assert package_probe.film_upload_snapshot(SimpleNamespace(), SimpleNamespace()) is None
+
+
 def test_package_probe_seeds_exact_mesh_upload_and_detects_lost_binding(package_probe, tmp_path):
     from dataclasses import replace
 

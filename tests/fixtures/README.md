@@ -134,5 +134,7 @@ hierarchy, packed textures, cursor placement, rollback and durable recovery.
 
 The native update probe stages
 these exact bytes and compares their captured-source metadata and generation
-bindings before and after upgrade/restart. This does not establish live provider
+bindings before and after upgrade/restart. Packages exposing Film upload storage
+also bind this same imported fixture to a saved production/task and preserve that
+separate association. This does not establish live provider
 behavior or in-place application acceptance.

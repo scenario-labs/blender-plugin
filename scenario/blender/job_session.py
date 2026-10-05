@@ -335,6 +335,15 @@ class JobSession:
         self._pending.append((task, origin))
         return task
 
+    def quote_film_composition(self, verified, *, origin):
+        """Request a fresh exact price for this session's unchanged measured sources."""
+        _main_thread()
+        self._check_capacity()
+        self._resolve(origin)
+        task = self._workers.quote_film_composition(verified, origin=origin)
+        self._pending.append((task, origin))
+        return task
+
     def bind_film_upload(
         self, recipe, *, production_id, task_id, request_id, expected_revision, origin
     ):

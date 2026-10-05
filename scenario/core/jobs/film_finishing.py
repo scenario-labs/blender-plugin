@@ -148,13 +148,8 @@ def prepare_composition(
     return CompositionDraft(production_id, mode, score_task_id, _json(draft), sources)
 
 
-def validate_composition_draft(store, draft, *, inspect_upload=None):
-    """Recheck review inputs; no approval, reservation or concurrency lock is acquired.
-
-    The eventual session owner must bind this review to its original scene/scope,
-    keep it current through quote delivery, and consume a separate exact quote
-    for paid dispatch. This read alone cannot authorize generation.
-    """
+def validate_composition_sources(store, draft, *, inspect_upload=None):
+    """Recheck measured source identities, including after reserving this master."""
     if not isinstance(draft, CompositionDraft):
         raise ValueError("Use a prepared composition draft")
     sources = composition_sources(
@@ -167,5 +162,11 @@ def validate_composition_draft(store, draft, *, inspect_upload=None):
     )
     if sources != draft.sources:
         raise ValueError("Composition sources changed; prepare a fresh draft")
-    _unused_master(store, draft.recipe, draft.production_id, draft.mode)
     return draft.recipe
+
+
+def validate_composition_draft(store, draft, *, inspect_upload=None):
+    """Recheck sources and unused master; this read grants no spending authority."""
+    recipe = validate_composition_sources(store, draft, inspect_upload=inspect_upload)
+    _unused_master(store, recipe, draft.production_id, draft.mode)
+    return recipe

@@ -56,6 +56,8 @@ def env(tmp_path, monkeypatch):
         video_seconds="4",
         video_frame_rate="30/1",
         audio_seconds="2",
+        online=False,
+        handler=lambda request: pytest.fail("Media inspection used the SDK"),
     )
     source_root, result_root, probe_root = (tmp_path / p for p in ("sources", "results", "probes"))
     for directory in (source_root, result_root, probe_root):
@@ -64,10 +66,10 @@ def env(tmp_path, monkeypatch):
     policy = StoragePolicy(frozenset({"storage.invalid"}))
     adapter = SDKAdapter(
         Credentials("fixture", "secret"),
-        online=lambda: False,
+        online=lambda: e.online,
         base_url=scope.service,
         account_id=scope.account_id,
-        transport=httpx.MockTransport(lambda request: pytest.fail("Media inspection used the SDK")),
+        transport=httpx.MockTransport(lambda request: e.handler(request)),
     )
     e.owner = JobCoordinator(
         adapter,

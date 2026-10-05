@@ -565,11 +565,13 @@ The resulting model task resolves through the existing Film task command and
 SDK `generate.with_raw_response.run_model` path. Its eventual estimate must fetch
 current model metadata, validate the payload and preserve the server's exact
 cost; this template is not evidence that a provider currently accepts it. The
-active UI/MCP do not yet install or quote these drafts. Their future session
-owner must preserve source/scene/scope identity through review and quote delivery,
-then require explicit generation approval. Verified media preparation is available
-through the session command below; native final-review assembly, export, live
-provider acceptance and human motion/audio review remain separate. These helpers alone do not complete Film finishing.
+active UI/MCP do not yet install or quote these drafts. The session quote command
+below preserves source/scene/scope identity through price preparation and dispatch;
+active controls must retain the original recipe review and require explicit
+generation approval. Verified media preparation is available through the session
+command below; native final-review assembly, export, live provider acceptance and
+human motion/audio review remain separate. These helpers alone do not complete
+Film finishing.
 
 ## Verified media preparation
 
@@ -615,8 +617,41 @@ or authorize later use of changed bytes.
 One local render or inspection can run per worker owner. Session delivery checks
 the original scope and scene revision, and retirement cancels work independently
 of any panel. This command is available to integration code, not yet native Film
-controls or local MCP. Draft review must still revalidate sources through quote
-delivery and obtain separate generation approval.
+controls or local MCP. Active controls must still retain the original recipe review
+and obtain separate generation approval. The quote command below rechecks the saved
+sources.
+
+## Quoted composition generation
+
+`JobSession.quote_film_composition` accepts only a `VerifiedComposition` issued
+by the same active coordinator for the unchanged original scene. A copied,
+reconstructed or modified observation is not an inspection ticket. The command
+resolves the prepared master task through the existing Film references and
+requests fresh model metadata and the server's exact estimate using the shared
+SDK adapter. It does not install a recipe or submit generation.
+
+The immutable source observations travel with the quote and prepared request.
+The coordinator rechecks their scope, task digest, asset and saved revision after
+schema retrieval, after estimation, before durable preparation and immediately
+before claiming submission. The master must remain unreserved until preparation;
+a prepared master validates its sources without rejecting its own reservation.
+Sources that change while queued stop dispatch. These are current-record checks
+at those boundaries, not a transaction locking every source for the request's
+entire lifetime. Probing does not freeze the remote asset or certify provider
+composition support.
+
+An explicit caller approval still uses `prepare_quote` and ordinary model
+submission, preserving the exact decimal cost, payload, captured origin and
+single durable master identity. Competing prices and a lost preparation
+acknowledgement cannot create a second master. A timeout after dispatch remains
+uncertain and never retries automatically. The source guards and inspection
+tickets are session-local; restart permits saved-job inspection/recovery, not
+resubmission of an old quote. The existing job schema and SDK transport are
+unchanged, and API keys need no discovered/default project identifier.
+
+This command is verified through the installed native session and offline SDK
+fixtures. Native/MCP composition review controls, recipe installation, provider
+acceptance and final assembly/export remain separate work.
 
 ## Remaining integration and evidence
 

@@ -17,6 +17,12 @@ from weakref import WeakKeyDictionary, WeakValueDictionary
 from ..api.sdk_adapter import Estimate, SDKAdapter
 from ..schema.forms import _fields, is_file_field
 from . import local_render
+from .film_finishing import (
+    CompositionDraft,
+    validate_composition_draft,
+    validate_composition_sources,
+)
+from .film_media import VerifiedComposition
 from .results import ResultCommands, ResultError, VerifiedResults
 from .store import (
     CloudJobIntent,
@@ -49,6 +55,7 @@ class OriginQuote:
     estimate: Estimate = field(repr=False)
     mesh_sources: tuple[JobMeshSource, ...] = ()
     film_task: FilmTaskBinding | None = None
+    composition: CompositionDraft | None = field(default=None, repr=False)
 
 
 @dataclass(frozen=True)
@@ -86,6 +93,7 @@ class PreparedJob:
     intent: JobIntent
     expires_at: float
     estimate: Estimate = field(repr=False)
+    composition: CompositionDraft | None = field(default=None, repr=False)
 
 
 class RecoveryError(RuntimeError):
@@ -220,6 +228,7 @@ class JobCoordinator:
             adapter, store, self._result_guard, downloader=result_downloader, root=result_root
         )
         self._quotes = WeakValueDictionary()
+        self._compositions = WeakValueDictionary()
         self._bound_estimates = WeakKeyDictionary()
         self._verified_results = WeakValueDictionary()
         self._application_claims = WeakValueDictionary()
@@ -263,7 +272,7 @@ class JobCoordinator:
         if not isinstance(origin, JobOrigin):
             raise QuoteError("Capture the composition origin before inspecting media")
         snapshot = json.loads(_payload(recipe))
-        return prepare_media(
+        result = prepare_media(
             self,
             snapshot,
             production_id=production_id,
@@ -273,6 +282,11 @@ class JobCoordinator:
             origin=origin,
             cancel=cancel,
         )
+        with self._request_guard(origin):
+            if cancel.is_set():
+                raise local_render.RenderCancelled("Film media inspection cancelled")
+            self._compositions[id(result)] = result
+            return result
 
     def render_local(self, spec, *, origin, source_origin, cancel):
         """Render local bytes outside locks; recheck both origins before and after."""
@@ -522,6 +536,7 @@ class JobCoordinator:
             self._active = False
             self._prepared.clear()
             self._quotes.clear()
+            self._compositions.clear()
             self._verified_results.clear()
 
     def close(self):
@@ -655,6 +670,37 @@ class JobCoordinator:
             )
         return self._quote("model", model, parameters, origin, film_task=binding)
 
+    def _validate_composition(self, draft, *, reserved=False):
+        if draft is None:
+            return None
+        validate = validate_composition_sources if reserved else validate_composition_draft
+        return validate(
+            self._store, draft, inspect_upload=self._uploads.inspect if self._uploads else None
+        )
+
+    def quote_film_composition(self, verified, *, origin):
+        """Quote only this owner's verified draft; never accept a supplied duration."""
+        from .film_tasks import model_task_request
+
+        with self._request_guard(origin):
+            if (
+                not isinstance(verified, VerifiedComposition)
+                or self._compositions.get(id(verified)) is not verified
+                or verified.scope != self.scope
+                or verified.origin != origin
+            ):
+                raise QuoteError("Inspect composition media in this scene and connection first")
+            draft = verified.draft
+            recipe = self._validate_composition(draft)
+            binding, model, parameters = model_task_request(
+                self._store,
+                recipe,
+                production_id=draft.production_id,
+                task_id=recipe.get(draft.mode + "_master_task", draft.mode + "-master"),
+                inspect_upload=self._uploads.inspect if self._uploads else None,
+            )
+        return self._quote("model", model, parameters, origin, film_task=binding, composition=draft)
+
     def bind_film_upload(
         self, recipe, *, production_id, task_id, request_id, expected_revision, origin
     ):
@@ -684,7 +730,9 @@ class JobCoordinator:
     def quote_translate(self, parameters, *, origin):
         return self._quote("translate", "translate", parameters, origin)
 
-    def _quote(self, operation, identifier, parameters, origin, *, film_task=None):
+    def _quote(
+        self, operation, identifier, parameters, origin, *, film_task=None, composition=None
+    ):
         if not isinstance(origin, JobOrigin):
             raise QuoteError("Capture the request origin before estimation")
         snapshot = json.loads(_payload(parameters))
@@ -696,11 +744,12 @@ class JobCoordinator:
         else:
             record = self._metadata(operation, identifier)
             with self._request_guard(origin):
-                pass
+                self._validate_composition(composition)
             estimate = getattr(self._adapter, f"estimate_{operation}")(record, snapshot)
         with self._request_guard(origin):
+            self._validate_composition(composition)
             bindings = self._mesh_bindings(operation, record, estimate.payload)
-            quote = OriginQuote(self.scope, origin, estimate, bindings, film_task)
+            quote = OriginQuote(self.scope, origin, estimate, bindings, film_task, composition)
             self._quotes[id(quote)] = quote
             self._bound_estimates[estimate] = True
             return quote
@@ -717,11 +766,13 @@ class JobCoordinator:
             if self._quotes.get(id(quote)) is not quote or quote.scope != self.scope:
                 raise QuoteError("Use an unchanged quote issued by this context")
             self._validate_mesh_bindings(quote.mesh_sources)
+            self._validate_composition(quote.composition)
             prepared = self._prepare(
                 quote.estimate,
                 quote.origin,
                 mesh_sources=quote.mesh_sources,
                 film_task=quote.film_task,
+                composition=quote.composition,
             )
             del self._quotes[id(quote)]
             return prepared
@@ -735,7 +786,15 @@ class JobCoordinator:
                 raise QuoteError("Use prepare_quote for an estimate bound to an origin")
             return self._prepare(estimate, origin)
 
-    def _prepare(self, estimate: Estimate, origin: JobOrigin, *, mesh_sources=(), film_task=None):
+    def _prepare(
+        self,
+        estimate: Estimate,
+        origin: JobOrigin,
+        *,
+        mesh_sources=(),
+        film_task=None,
+        composition=None,
+    ):
         """Persist after ownership was checked outside the coordinator lock.
 
         Preparation does not reserve or consume an estimate. Submission rechecks
@@ -760,7 +819,7 @@ class JobCoordinator:
             now = self._clock()
             if not math.isfinite(now) or now < estimate.issued_at or now >= expires_at:
                 raise QuoteError("Quote expired; request a fresh estimate")
-            prepared = PreparedJob(intent, expires_at, estimate)
+            prepared = PreparedJob(intent, expires_at, estimate, composition)
             self._store.create(intent)
             self._prepared[id(prepared)] = prepared
             return prepared
@@ -806,6 +865,7 @@ class JobCoordinator:
                     ):
                         raise StoreConflict("Request is no longer prepared; do not resubmit")
                     self._validate_mesh_bindings(intent.mesh_sources)
+                    self._validate_composition(prepared.composition, reserved=True)
                     self._store.transition(
                         intent.request_id,
                         expected_revision=current.revision,

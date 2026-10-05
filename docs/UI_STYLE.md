@@ -865,4 +865,33 @@ unchanged task, recipe, production, scene and connection before association.
 **Estimate task** makes a free quote request; the separate **Generate** confirmation
 shows its exact decimal CU price and states that results remain saved for explicit
 application. The panel draws cached handles only; it does not open storage or
-contact Scenario. Native desktop interaction acceptance remains pending.
+contact Scenario.
+
+Offline desktop acceptance on macOS arm64 Blender 5.1.2 used exact ZIP SHA-256
+`b1ad71d94a1355bc7d8d825b4d1232b7a14cf91c53d8c11aa37737e4a0907590`,
+which separately passed 799 installed tests on each supported Blender series.
+Native mouse input loaded the JSON through Blender's file picker and selected
+both task rows. Escape cancelled upload association without saving it; Return
+confirmed the separate association. The Generate dialog displayed the full
+synthetic price `0.1234567890123456789 CU`. Escape preserved the ready estimate
+without submitting; the automated-GUI-probe guard also rejected approval without
+creating a job. Discarding released that estimate.
+
+With the fixture's SDK transport and result bytes mocked and external sockets
+blocked, a fresh quote and explicit confirmation produced exactly one saved job
+and one downloaded result. The result stayed ready for explicit application;
+objects and image datablocks were unchanged. Re-estimating the reserved task was
+rejected without another submission. Cancelling New production preserved its
+identity; confirming changed it while retaining the recipe and previous job.
+Viewport Light selection and Home framing worked after the dialogs. The isolated
+run exited cleanly, removed its test profile and left the normal profile unchanged.
+The test-only Blender app copy had a distinct bundle identifier and local signature;
+the vendor executable code and extension ZIP were unchanged.
+
+![Film approval displays the exact synthetic price before confirmation](images/film-task-approval.png)
+
+![One Film submission is saved while the scene remains unchanged](images/film-task-saved.png)
+
+These are offline interaction checks, not live pricing or provider acceptance.
+They do not establish other OS desktop behavior, Film scene construction/capture,
+finishing/export, resolution of #263 or integrated release acceptance.

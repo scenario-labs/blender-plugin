@@ -616,4 +616,6 @@ build receipts, or explicitly acknowledge inspection when an outcome is uncertai
 Unresolved saved claims remain blocked. Full errors are available through
 **Shot error details**. See [shot controls](FILM_PLAN.md#native-and-mcp-shot-controls).
 Timeline assembly, shot capture, finishing and Film export remain unavailable.
-These controls still require desktop interaction acceptance.
+Synthetic desktop checks on macOS Blender 5.1.2 cover these shot controls and
+Undo/Redo; see [the interaction evidence](UI_STYLE.md#film-shot-controls). Live
+provider, other OS/DPI and integrated release acceptance remain separate.

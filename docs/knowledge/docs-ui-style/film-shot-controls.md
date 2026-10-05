@@ -8,8 +8,8 @@
     "scope": "film-shot-controls",
     "coverage": "source-reviewed",
     "reviewed_at": "2026-10-05",
-    "base_revision": "4589f22964cc9cf99e53ec37bb8c5dbe6948c96b",
-    "limits": "Native/MCP saved Film hero selection, local verification, separate build approval and receipt/dismissal controls over the existing scoped session. Synthetic installed tests cover cross-entry-point handles, no implicit claims on cancellation, stale destination/context, saved shot selection, read-only drawing and recovery without rebuilding. No SDK operation, download, paid generation, timeline approval, capture or finishing/export is added. A fresh isolated 5.1.2 fixture rendered with the Film panel collapsed; computer control returned cgWindowNotFound and desktop input/focus/expanded layout/Undo-Redo acceptance remains pending. The draft controls do not establish live provider or release acceptance.",
+    "base_revision": "e4da254583900a68da7414e0ac2744656831e47f",
+    "limits": "Native/MCP saved Film hero selection, local verification, separate build approval and receipt/dismissal controls over the existing scoped session. Synthetic installed tests cover cross-entry-point handles, cancellation without claims, stale context, persistent selection, read-only drawing and recovery without rebuilding. Exact ZIP passes 855 native tests each on macOS arm64 Blender 5.0.1, 5.1.2 and 5.2.1. Desktop interaction on 5.1.2 verifies source/build cancellation, review discard, explicit two-hero build with the working scene preserved, native Undo/Redo with durable receipts unchanged, viewport selection/keyboard focus and scene switching. Zero service requests/downloads; clean isolated-profile teardown and normal profile unchanged. No SDK operation, paid generation, live provider or motion/audio acceptance, other OS/DPI proof, timeline approval, capture, finishing/export or release authorization. Other evidence topics retain their scope.",
     "sources": {
       "scenario/blender/film_scene_controls.py": "0692d269579019eedc9937b19c4fe3b7faa429123ce9945f170bdf0755c10cfb",
       "scenario/blender/film.py": "eb2d6e038d4f558b74def74f8ebcf3f522be92fd5ba228b772b7ea6d2b078280",
@@ -19,7 +19,9 @@
       "scenario/mcp/tools_scenario.py": "e6b2f0f6c7f250772ea2fb74f7aecb15c8176ffe995814f25290012006f03ae8",
       "tests/blender/test_film_shot_controls.py": "0b9c6e817d489fde78df6b601441ec0e95c6ff1b49d20a4a8ac85b9be4d130a6",
       "tests/blender/test_mcp_contracts.py": "8a66b26d69a14b27b85cbb48f3729597ec86165ad62e9280a615700fe5b9a897",
-      "tests/unit/test_mcp_descriptions.py": "2f09bd5620a9a26b5d4963bbee8cffc95bb6c55009fdb216cc9b4157e24a5aff"
+      "tests/unit/test_mcp_descriptions.py": "2f09bd5620a9a26b5d4963bbee8cffc95bb6c55009fdb216cc9b4157e24a5aff",
+      "docs/images/film-shot-approval.png": "399bd47ac899cf2735d69fb8ea6f90634430b65da10d2d58275d9148ace980e7",
+      "docs/images/film-shot-built.png": "a95f957d3caf96d0bb3b56fcc39480159c382a0f3bccb52bc116f5b6faba934c"
     }
   }
 }

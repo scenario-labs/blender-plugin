@@ -332,8 +332,9 @@ A ready review exposes **Build shot** with a separate confirmation naming its
 shot, recipe scene and number of saved heroes. It creates a new scene and keeps
 the working scene selected. The native operator participates in Blender Undo;
 saved job receipts do not rewind, and replaying a consumed review cannot rebuild.
-Undo/Redo desktop behavior still needs interaction acceptance. A shot with no
-heroes follows the same explicit approval without inventing a generation job.
+Synthetic desktop Undo/Redo interaction passes on macOS Blender 5.1.2; see
+[the evidence and limits](UI_STYLE.md#film-shot-controls). A shot with no heroes
+follows the same explicit approval without inventing a generation job.
 
 **Discard review** retires unapproved work. **Save build receipt** retries only a
 known persistence outcome. **Acknowledge inspection** requires its checkbox after

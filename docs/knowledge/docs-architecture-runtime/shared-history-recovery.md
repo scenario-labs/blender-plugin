@@ -7,9 +7,9 @@
     "path": "docs/architecture/runtime.md",
     "scope": "shared-history-recovery",
     "coverage": "source-reviewed",
-    "reviewed_at": "2026-10-04",
+    "reviewed_at": "2026-10-05",
     "base_revision": "4589f22964cc9cf99e53ec37bb8c5dbe6948c96b",
-    "limits": "Scoped history lookup and explicit saved-result recovery routing, including unscoped-cache collisions, ambiguous IDs, storage failures, fresh acknowledgement, restart and credential changes. Incomplete credentials permit cold read-only inspection but reject all MCP import dispatch. Synthetic installed functional tests only: 749 pass on each macOS arm64 Blender 5.0.1, 5.1.2 and 5.2.1. Native desktop input/screenshots remain pending. No arbitrary-cloud-job adoption, prototype migration, live/paid provider or integrated release acceptance.",
+    "limits": "Scoped history lookup and explicit saved-result recovery routing, including unscoped-cache collisions, ambiguous IDs, storage failures, fresh acknowledgement, restart and credential changes. Incomplete credentials permit cold read-only inspection but reject all MCP import dispatch. Synthetic installed functional tests: 749 pass on each macOS arm64 Blender 5.0.1, 5.1.2 and 5.2.1. Desktop input on macOS arm64 Blender 5.1.2 with the same ZIP and a preloaded synthetic cloud page verifies the project-history toggle, matched-row Inspect saved jobs action, unchanged saved record/scene/images/request count, no legacy import dispatch/tracking, and subsequent viewport selection/Home navigation. The disposable profile is removed and the normal profile remains unchanged. This does not prove live cloud refresh, completed download/import or other OS/DPI interaction. No arbitrary-cloud-job adoption, prototype migration, live/paid provider or integrated release acceptance.",
     "sources": {
       "scenario/core/history.py": "70f03b84bd4eaa98712332b97ee492180d91f1663825e8f967cfbb7a9cfce781",
       "scenario/blender/history.py": "01e55d9f4ce82ab82ed29792f51086413272bb051315132241d17786b03360be",

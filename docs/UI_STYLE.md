@@ -748,11 +748,28 @@ data. A changed credential selection hides the old row actions until refresh;
 a storage-read failure shows an error instead of cached import controls.
 
 The exact ZIP with SHA-256
-`fff9c8a03016711d5724cd51b7b918abf0cad0b4224b1f3c9eaa59ce25336c71`
-passes 748 installed tests on each macOS arm64 Blender 5.0.1, 5.1.2 and 5.2.1.
+`30b0e2c03268e81a64ad83d0cc2924be9d0afaac8d7aebf9a80b3aafc9349b2c`
+passes 749 installed tests on each macOS arm64 Blender 5.0.1, 5.1.2 and 5.2.1.
 Regressions cover native operator execution, read-only draw routing, stale-page
 acknowledgement, old-cache collisions, missing storage, restart and credential
-changes. These are synthetic installed tests. Native desktop interaction and
-before/after screenshots for this control change remain pending; the desktop
-control service still cannot locate the isolated Blender window. No live or paid
-provider acceptance is claimed.
+changes, including rejecting MCP import with incomplete credentials. These are
+synthetic installed tests.
+
+Desktop input with the same ZIP passes on macOS arm64 Blender 5.1.2 in an isolated
+profile. The fixture preloads a synthetic cloud page, a matching scoped saved
+job and a colliding old cache entry. Clicking **Project history (cloud)** shows
+**Inspect saved jobs** on the matching row. Clicking it opens the shared recovery
+controls with a separate **Resume download** action. It does not import the old
+file or change the saved record, scene objects or images. The request count stays
+unchanged, and neither legacy import dispatch nor job tracking runs.
+
+![Matching cloud history row offers Inspect saved jobs before any download or import](images/history-saved-job-row.png)
+
+A viewport click selects the light, and Home frames the scene, confirming focus
+and keyboard navigation after inspection. The harness closes the test and removes
+its disposable profile; the normal profile remains unchanged. External networking
+is blocked. This proves the scoped row-to-recovery interaction, not a live cloud
+refresh, download/import completion, arbitrary cloud-job adoption, other OS/DPI
+combinations or integrated release acceptance.
+
+![Shared saved-job recovery offers Resume download while the existing scene remains intact](images/history-saved-job-recovery.png)

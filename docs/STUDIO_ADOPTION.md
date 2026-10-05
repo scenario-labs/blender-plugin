@@ -224,6 +224,29 @@ Use portable discovery and test present/missing tools, timeout/cancellation and
 child-process cleanup on supported platforms under #64/#31. These are adoption
 requirements, not claims that upstream already implements every check.
 
+## Local background capture adaptation
+
+The first-party PNG/playblast responsibility from selected Studio
+`src/scenario_studio/scene.py` (`prepare_video_render`/`render_video_job`) and
+`src/scenario_studio/render_worker.py` is adapted into
+[`local_capture.py`](../scenario/blender/local_capture.py),
+[`local_render.py`](../scenario/core/jobs/local_render.py) and the bundled
+[`render_worker.py`](../scenario/blender/render_worker.py).
+The source revision is `e2b0277064f0c502d46524fba1d006d0ac83f846`;
+Emmanuel de Maistre's source attribution and GPL notices are preserved.
+This is a functional adaptation, not a wholesale relocation or mechanical
+normalization of the upstream runtime.
+
+The current implementation exports only the selected scene/dependencies with
+`bpy.data.libraries.write`, binds the snapshot hash, runs an offline child with
+a disposable profile, requires exact frames and validates the encoded media.
+It preserves the selected Workbench styling and optional external encoder
+approach without adopting Studio's task runner, production storage, automatic
+save, service client or implicit upload. No media executable or sample asset is
+imported. The [capture contract](FILM_PLAN.md#local-capture-foundation) distinguishes
+retained diagnostic/media files from child scratch cleanup and names the pending
+session/UI/MCP integration.
+
 ## Next implementation gates
 
 1. Prepare a provenance-preserving source intake and separate mechanical

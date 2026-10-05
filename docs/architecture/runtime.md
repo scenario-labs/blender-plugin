@@ -361,7 +361,13 @@ status. `JobSession.film_timeline` now supplies bounded explicit local shot
 selection and single-use timeline approval through native controls and MCP.
 It rechecks live scenes and captured revisions and creates a new editable
 scene-strip sequence without importing results or changing saved jobs.
-Capture and finishing remain to integrate.
+The [local capture foundation](../FILM_PLAN.md#local-capture-foundation) now exports
+an immutable blend snapshot on the main thread and renders stills or exact-range
+MP4s in an owned offline Blender child. Its bpy-free worker primitive checks
+optional installed media tools and cleans child profiles on success or failure.
+It adds no worker pool, job store, UI/MCP registration or service operation.
+Session-owned capture approval, cancellation, delivery/upload and artifact
+cleanup remain to wire; finishing/export remain separate.
 
 ## Shared MCP render preparation
 

@@ -399,9 +399,51 @@ cannot replay; MCP does not create an operator Undo entry. Synthetic desktop
 selection, cancellation, Undo/Redo and Sequencer inspection pass on macOS Blender
 5.1.2; see [the evidence and limits](UI_STYLE.md#film-timeline-controls).
 
+## Local capture foundation
+
+[`local_capture.snapshot`](../scenario/blender/local_capture.py) exports the
+selected local scene and its dependencies into a private blend snapshot on
+Blender's main thread. It preserves the working file, active scene, frame and
+render settings. The caller supplies an existing private storage root and an
+explicit still frame or inclusive video range. The snapshot is hashed before
+handoff; external resources retain absolute references, so their bytes are not
+frozen by exporting the blend file.
+
+[`local_render.render`](../scenario/core/jobs/local_render.py) is a blocking,
+bpy-free worker primitive. It verifies the snapshot and admits that capture
+directory once, then runs the bundled
+[`render_worker.py`](../scenario/blender/render_worker.py) in an offline,
+factory-startup Blender process with script auto-execution disabled. A disposable
+profile and temporary directory isolate the child. Inherited Scenario credentials
+and Blender/Python path overrides are removed. The child renders Workbench RGB
+PNGs with explicit dimensions and material, texture or object colors; it never
+registers the extension or uses the parent's UI context.
+
+Stills require no external media tool. Video checks for installed `ffmpeg` and
+`ffprobe` on PATH before export and again before rendering. It encodes the exact
+frame sequence as silent H.264 MP4 and checks dimensions, decoded frame count and
+frame rate with ffprobe. No tool is downloaded or bundled. Missing tools fail
+before expensive work; encoding failure preserves usable PNGs and logs.
+Cancellation, timeout and process failure reap the child and remove its scratch
+profile. Snapshot, frames, output and diagnostics remain in the caller-owned
+capture directory; the caller must manage their eventual cleanup.
+
+The primitive accepts one to 1,800 frames, frame rates from 1 to 120 and dimensions
+from 64 to 4,096. MP4 dimensions must be even. It returns a content hash, size,
+media type and timing without attaching or uploading anything. It never pads,
+trims or retimes a shot to satisfy a provider. Film shot scenes use editorial
+duration; recipe `source_duration` describes the separate generated clip, with
+`source_trim` selecting its editorial window.
+
+This foundation has no registered capture button or MCP tool yet. The next
+integration must use the existing session workers, bind explicit capture approval
+and delivery to the originating scene/recipe/scope, own cancellation and artifact
+cleanup, and require separate upload approval for the actual resulting bytes.
+Local rendering does not approve upload or generation.
+
 ## Remaining integration and evidence
 
-Shot capture, media finishing,
+Shared shot-capture controls and delivery, media finishing,
 provider-specific preparation and final export remain separate work. Keep useful
 source capabilities and tests as those paths are connected; do not describe this
 helper adoption as a completed Film workflow.

@@ -12,8 +12,8 @@ from pathlib import Path
 
 import pytest
 
+import scenario.core.jobs.local_render as process_owner
 from scenario.core.jobs import media_probe as probe
-from scenario.core.jobs.local_render import RenderCancelled
 from scenario.core.jobs.transfers import DownloadedResult
 
 
@@ -91,7 +91,7 @@ def test_missing_tool_and_precancel_leave_source_and_storage_untouched(fixture, 
         probe.measure(path, receipt, "audio/wav", root=root)
     cancel = threading.Event()
     cancel.set()
-    with pytest.raises(RenderCancelled):
+    with pytest.raises(process_owner.RenderCancelled):
         probe.measure(path, receipt, "audio/wav", root=root, cancel=cancel)
     assert not calls and list(root.iterdir()) == [] and path.exists()
 
@@ -176,8 +176,6 @@ def test_real_owned_probe_child_is_reaped_on_timeout_or_cancel(tmp_path, monkeyp
     root = tmp_path / "scratch"
     root.mkdir()
     monkeypatch.setattr(probe, "probe_tool", lambda: Path(sys.executable))
-    import scenario.core.jobs.local_render as process_owner
-
     actual = subprocess.Popen
     spawned = []
     cancel = threading.Event()
@@ -194,7 +192,7 @@ def test_real_owned_probe_child_is_reaped_on_timeout_or_cancel(tmp_path, monkeyp
 
     monkeypatch.setattr(process_owner.subprocess, "Popen", launch)
     try:
-        expected = RenderCancelled if reason == "cancel" else probe.MediaProbeError
+        expected = process_owner.RenderCancelled if reason == "cancel" else probe.MediaProbeError
         with pytest.raises(expected):
             probe.measure(
                 path,

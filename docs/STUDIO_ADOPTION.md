@@ -273,6 +273,25 @@ workers. It uses an optional installed ffprobe, private copies and current-sourc
 checks instead of importing the prototype's unchecked file-path or duration cache.
 No new third-party dependency or service operation is added.
 
+## Native saved-media review adaptation
+
+The local `build_review_scene` responsibility from selected Studio
+`src/scenario_studio/film_finish.py` at
+`e2b0277064f0c502d46524fba1d006d0ac83f846` is adapted into
+[`blender/film_review.py`](../scenario/blender/film_review.py), retaining Emmanuel
+de Maistre's attribution. Picture/source trims, native audio gain, editorial
+loop phase and ducking, continuity metadata and optional muted master comparison
+remain. The new primitive also supports a previs cut.
+
+Prototype record/path fallbacks and scene switching are replaced by explicit
+scoped receipts, measured metadata, independent hashed copies and transactional
+rollback that preserves the working scene. Silent video is handled without an
+invalid sound strip. Matching movie/cut frame rates are required until explicit
+normalization is implemented. The [contract](FILM_PLAN.md#native-saved-media-review-primitive)
+records limits and installed synthetic tests. Shared current-source approval,
+worker preparation, active controls, portable export and provider/desktop
+acceptance remain separate; no prototype client or production ledger is imported.
+
 ## Next implementation gates
 
 1. Prepare a provenance-preserving source intake and separate mechanical

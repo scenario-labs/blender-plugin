@@ -702,9 +702,60 @@ Live provider/media acceptance, other OS/DPI behavior and local final
 assembly/export remain pending. These controls do not complete the Film or
 release acceptance gates.
 
+## Native saved-media review primitive
+
+[`blender/film_review.py`](../scenario/blender/film_review.py) adapts local final
+and previs VSE assembly from the selected Studio source. A caller supplies the
+selected `JobScope`, production, complete recipe source mapping and optional
+master. Each `ReviewSource` pairs a `StoredResult` receipt/path with the exact
+`MediaInfo` observation. These objects describe evidence, not owner-issued
+approval. The active job owner must still validate current source/task revisions,
+original recipe/scene and user approval before calling this primitive.
+
+Preflight validates the recipe, scope, exact task/media roles, receipt/measurement
+agreement, picture trim coverage, frame rates and editorial audio segments.
+At most 512 MiB per file and 2 GiB per review can be copied; the assembled cut is
+bounded to 2,000 picture/sound strips. Each source is copied once per declared
+task into a new private `film-review` directory under extension user storage.
+Copying checks whole-file size/SHA256 and file identity before native decoding.
+No files are downloaded, uploaded or read through a legacy asset-path fallback.
+
+The new scene uses the cut's exact frame range/rate, a 1920x1080 canvas, Standard
+view transform and fill-to-canvas picture scaling. Each picture strip receives
+its source trim and editorial range; Blender's decoded dimensions, frame rate
+and duration must agree with the cut. Silent videos create no sound strip. Native
+audio uses the recipe volume and matching trim, ending at its measured source
+boundary when it ends before the picture. Editorial loop/duck segments retain
+phase, gains and channel assignment. An explicitly supplied master becomes muted
+picture/sound alternates; it never replaces the editable cut automatically.
+Previs uses its declared takes with no final trims or editorial score.
+
+The direct movie-strip API indexes source frames. This primitive currently
+requires the measured movie rate to equal the Film cut rate and rejects shorter
+sources rather than freezing or silently stretching them. Mixed-rate normalization
+and variable-frame-rate/provider acceptance remain separate work. Metadata and
+successful native decoding do not certify human motion/audio quality.
+
+All Blender work is on the main thread. The new scene's view layers are
+synchronized before returning so Blender 5.2 can safely copy its scene data.
+The working scene, selection, frame, view layer and existing sequences remain
+unchanged. Failed builds remove only
+their new scene/sounds and private copies. If scene cleanup fails, file copies
+remain for inspection so partial strips cannot reference deleted data. Successful
+copies persist independently of original download/upload cleanup and must remain
+available while the review references them. Saving a blend file does not pack
+these movies; portable export still needs explicit media gathering.
+
+Installed tests use small first-party synthetic movie/audio fixtures to cover
+trims, contiguous shots, loop phase/ducking, silent/native audio, muted masters,
+scope/receipt/rate failures, rollback uncertainty and a saved-scene library
+round-trip. This is a synchronous local primitive, not active native/MCP review
+controls, an application claim, portable export or desktop/live acceptance. Shared
+worker preparation, current-source approval and user-facing controls remain to wire.
+
 ## Remaining integration and evidence
 
-Media finishing,
+Shared native-review preparation/approval, mixed-rate normalization,
 provider-specific preparation and final export remain separate work. Keep useful
 source capabilities and tests as those paths are connected; do not describe this
 helper adoption as a completed Film workflow.

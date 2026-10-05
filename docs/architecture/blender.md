@@ -112,3 +112,15 @@ the existing session and accepts completion only in the unchanged original
 context. Separate upload approval hashes the staged bytes against the rendered
 receipt. The session joins workers before cleaning retained capture artifacts;
 no bpy mutation runs on a worker or during drawing.
+
+## Film saved-media review
+
+[`film_review.py`](../../scenario/blender/film_review.py) provides transactional
+local final/previs sequence assembly from explicitly scoped, measured receipts.
+It rehashes independent copies before movie/audio decoding, preserves the working
+scene and removes only new data on a fully rolled-back failure. Copies persist
+for successful sequences and remain available after uncertain cleanup. Native
+trims, audio loop/duck segments and optional muted masters are covered by installed
+fixtures. It requires matching movie/cut frame rates. The [review contract](../FILM_PLAN.md#native-saved-media-review-primitive)
+describes byte/strip limits and pending shared preparation/approval, controls,
+portable export and live/desktop acceptance; this primitive supplies no job claim.

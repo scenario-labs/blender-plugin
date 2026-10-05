@@ -611,3 +611,17 @@ assumes the scene was unchanged. Native UI/MCP now supply fresh destination and
 selection approval through the [saved-result boundary](BLENDER_JOB_CONTEXT.md#explicit-local-result-reuse).
 These coordinator commands perform no Scenario service operation, download, paid
 submission or Blender mutation; the main-thread caller owns application.
+
+## Unpaid Film composition inspection
+
+[`film_finishing.py`](../scenario/core/jobs/film_finishing.py) reads matching
+completed model outputs and imported upload associations from the selected
+stores. It produces a [composition draft](FILM_PLAN.md#unpaid-composition-drafts)
+without reserving a master or sending an estimate. Revalidation compares each
+request/revision/asset/kind/task digest and rejects an already reserved master.
+A draft is immutable review data, not a quote or spend authorization; its helper
+performs no atomic dispatch claim. Active session/UI/MCP ownership remains to be
+connected, including unchanged source checks through quote delivery. The existing
+Film model-task command resolves the draft's references before the ordinary fresh
+schema/estimate and single-dispatch path. No new worker pool or SDK endpoint is
+introduced.

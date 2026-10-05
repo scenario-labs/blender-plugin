@@ -250,6 +250,25 @@ integrates explicit native/MCP rendering, cancellation and separate upload
 approval on the existing session. Finishing/export and native desktop acceptance
 remain separate.
 
+## Composition planning adaptation
+
+The unpaid composition responsibility from selected Studio
+`src/scenario_studio/film_finish.py` at
+`e2b0277064f0c502d46524fba1d006d0ac83f846` is adapted into
+[`core/scene/film_finish.py`](../scenario/core/scene/film_finish.py).
+Emmanuel de Maistre's source attribution is retained. Exact cut timing, selected
+takes, source trims, native volume, separate previs/final modes, audio loop phase
+and duck segments are preserved. This is a functional adaptation, not a wholesale
+relocation of the original module or its prototype records.
+
+The new [scoped draft reader](../scenario/core/jobs/film_finishing.py) reuses the
+shared job/upload stores and rejects stale or ambiguous source observations.
+Audio duration is supplied as an asset-bound exact observation; no path fallback,
+implicit media probe, legacy production storage, organizer client, VSE mutation
+or automatic generation is imported. The [draft contract](FILM_PLAN.md#unpaid-composition-drafts)
+keeps active controls, verified media measurement, final review/export and live
+acceptance as explicit remaining work.
+
 ## Next implementation gates
 
 1. Prepare a provenance-preserving source intake and separate mechanical

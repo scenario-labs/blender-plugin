@@ -244,8 +244,11 @@ It preserves the selected Workbench styling and optional external encoder
 approach without adopting Studio's task runner, production storage, automatic
 save, service client or implicit upload. No media executable or sample asset is
 imported. The [capture contract](FILM_PLAN.md#local-capture-foundation) distinguishes
-retained diagnostic/media files from child scratch cleanup and names the pending
-session/UI/MCP integration.
+retained diagnostic/media files from child scratch cleanup. The
+[shared capture owner](FILM_PLAN.md#shared-capture-and-upload-approval) now
+integrates explicit native/MCP rendering, cancellation and separate upload
+approval on the existing session. Finishing/export and native desktop acceptance
+remain separate.
 
 ## Next implementation gates
 

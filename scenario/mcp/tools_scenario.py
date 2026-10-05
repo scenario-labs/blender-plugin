@@ -310,6 +310,54 @@ def build_film_timeline(args):
     return runtime.ensure_film_jobs().session.film_timeline.approve(args["review_id"])
 
 
+def film_capture_sources(args):
+    owner = _film_owner(args).session.film_capture
+    return {
+        "context_id": runtime.state.job_context_id,
+        **owner.inspect(bpy.context.scene, shot_id=args["shot_id"]),
+    }
+
+
+def prepare_film_capture(args):
+    owner = _film_owner(args).session.film_capture
+    if args["context_id"] != runtime.state.job_context_id:
+        raise ValueError("The capture connection changed; inspect sources again")
+    return owner.prepare(
+        bpy.context.scene,
+        shot_id=args["shot_id"],
+        source_id=args["source_id"],
+        kind=args.get("kind", "VIDEO"),
+        width=args.get("width", 1280),
+        height=args.get("height", 720),
+        color_type=args.get("color_type", "MATERIAL"),
+    )
+
+
+def render_film_capture(args):
+    return runtime.ensure_film_jobs().session.film_capture.approve(args["review_id"])
+
+
+def film_capture_review(args):
+    owner = runtime.ensure_film_jobs().session.film_capture
+    action = args.get("action", "status")
+    owner.poll()
+    if action == "status":
+        return owner.status(args["review_id"])
+    if action == "cancel":
+        return owner.cancel(args["review_id"])
+    if action == "discard":
+        return owner.discard(args["review_id"])
+    raise ValueError("Choose status, cancel or discard")
+
+
+def upload_film_capture(args):
+    owner = runtime.ensure_film_jobs().session.film_capture
+    return {
+        "context_id": runtime.state.job_context_id,
+        **owner.upload(args["review_id"], runtime.ensure_reference_uploads()),
+    }
+
+
 def estimate_prompt(args):
     """Quote the current native prompt field through the shared prompt facade."""
     jobs = runtime.ensure_prompt_jobs()
@@ -1030,6 +1078,93 @@ _JOB_REF = {
 
 
 SPECS = (
+    ToolSpec(
+        "film_capture_sources",
+        (
+            "Inspect matching local scenes for one Film shot before capture.\n"
+            "Args: production_id and shot_id are required strings from film_recipe.\n"
+            "Returns: context_id, source_id/scene choices, editorial frames/fps and generated source timing.\n"
+            'Example: {"production_id": "saved-production", "shot_id": "shot"}.\n'
+            "Fresh inspection replaces unprepared source handles; prepared reviews keep their identities. No rendering or upload.\n"
+            "Platform equivalent: none; local Film capture inspection."
+        ),
+        _schema(
+            {"production_id": {"type": "string"}, "shot_id": {"type": "string"}},
+            ["production_id", "shot_id"],
+        ),
+        film_capture_sources,
+        {"readOnlyHint": True},
+    ),
+    ToolSpec(
+        "prepare_film_capture",
+        (
+            "Prepare a local shot capture for separate render approval.\n"
+            "Args: context_id, production_id, shot_id and source_id are required; kind is VIDEO (default) or STILL, width/height default 1280/720, color_type is MATERIAL (default), TEXTURE or OBJECT.\n"
+            "Returns: review_id, READY phase, exact source, dimensions, frames and fps.\n"
+            'Example: {"context_id": "current-context", "production_id": "saved-production", "shot_id": "shot", "source_id": "current-source", "kind": "STILL"}.\n'
+            "No scene snapshot, render, upload or generation yet. VIDEO requires installed ffmpeg/ffprobe and uses the editorial range without padding; STILL uses its first frame. Ask for approval of the displayed settings before render_film_capture.\n"
+            "Platform equivalent: none; local capture settings review."
+        ),
+        _schema(
+            {
+                "context_id": {"type": "string"},
+                "production_id": {"type": "string"},
+                "shot_id": {"type": "string"},
+                "source_id": {"type": "string"},
+                "kind": {"type": "string", "enum": ["STILL", "VIDEO"]},
+                "width": {"type": "integer", "minimum": 64, "maximum": 4096},
+                "height": {"type": "integer", "minimum": 64, "maximum": 4096},
+                "color_type": {"type": "string", "enum": ["MATERIAL", "TEXTURE", "OBJECT"]},
+            },
+            ["context_id", "production_id", "shot_id", "source_id"],
+        ),
+        prepare_film_capture,
+    ),
+    ToolSpec(
+        "render_film_capture",
+        (
+            "Approve a READY Film capture and start one local render on the shared workers.\n"
+            "Args: review_id is required from prepare_film_capture.\n"
+            "Returns: capture phase; poll film_capture_review without starting another render.\n"
+            'Example: {"review_id": "approved-capture"}.\n'
+            "Requires explicit approval of the source and settings. The snapshot/render is local, preserves the working file and sends no bytes to Scenario. Changed scenes or credentials invalidate approval.\n"
+            "Platform equivalent: none; local offline capture."
+        ),
+        _schema({"review_id": {"type": "string"}}, ["review_id"]),
+        render_film_capture,
+    ),
+    ToolSpec(
+        "film_capture_review",
+        (
+            "Inspect, cancel or discard an owner-local Film capture.\n"
+            "Args: review_id is required; action is status (default), cancel or discard.\n"
+            "Returns: phase, dimensions/timing, private output path/hash, error and any upload reference_id/request_id.\n"
+            'Example: {"review_id": "current-capture", "action": "status"}.\n'
+            "Cancel stops only the local render. Explicit discard deletes its private snapshot/media/logs after active work ends, preserving saved uploads. Captures are session-local and cleaned on session shutdown; no render replays after restart. No upload or generation.\n"
+            "Platform equivalent: none; local capture lifecycle."
+        ),
+        _schema(
+            {
+                "review_id": {"type": "string"},
+                "action": {"type": "string", "enum": ["status", "cancel", "discard"]},
+            },
+            ["review_id"],
+        ),
+        film_capture_review,
+    ),
+    ToolSpec(
+        "upload_film_capture",
+        (
+            "Upload the reviewed bytes of one completed Film capture through the shared upload runtime.\n"
+            "Args: review_id is required for a CAPTURED result.\n"
+            "Returns: reference_id for reference_upload_status and the original capture metadata.\n"
+            'Example: {"review_id": "approved-capture"}.\n'
+            "Requires separate user approval of the captured output and selected connection. Staging verifies its exact content hash before any service request. Never restart an uncertain upload; inspect saved progress. Associate the imported upload with a recipe task separately using bind_film_upload. Does not generate or approve spending.\n"
+            "Platform equivalent: shared uploads create/complete, followed by explicit local Film association."
+        ),
+        _schema({"review_id": {"type": "string"}}, ["review_id"]),
+        upload_film_capture,
+    ),
     ToolSpec(
         "film_timeline_sources",
         (

@@ -34,7 +34,10 @@ establish live generation or full render-lane desktop acceptance.
   confirmation; it creates editable scene strips without generation or rendering.
   Synthetic timeline selection, cancellation, Undo/Redo and Sequencer inspection
   pass on macOS Blender 5.1.2; see [the evidence and limits](UI_STYLE.md#film-timeline-controls).
-  Capture, finishing and export remain unavailable. Complete runtime adoption
+  Local capture now shares explicit native/MCP approval, cancellation and separate
+  byte-checked upload. Capture reviews/files are session-local; desktop interaction
+  and sustained media acceptance remain pending. Finishing and export remain
+  unavailable. Complete runtime adoption
   and live/native acceptance remain open
   ([#64](https://github.com/scenario-labs/blender-plugin/issues/64),
   [#65](https://github.com/scenario-labs/blender-plugin/issues/65)).

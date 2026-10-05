@@ -73,7 +73,18 @@ class UploadSources:
         identity = _json({"scope": asdict(scope), "request": request_id})
         return self._root / hashlib.sha256(identity.encode()).hexdigest()
 
-    def stage(self, source, *, request_id, scope, origin, kind, content_type, mesh_source=None):
+    def stage(
+        self,
+        source,
+        *,
+        request_id,
+        scope,
+        origin,
+        kind,
+        content_type,
+        mesh_source=None,
+        expected_sha256=None,
+    ):
         """Return an immutable identity only after the private snapshot is durable."""
         source = Path(source)
         directory = self._directory(scope, request_id)
@@ -115,6 +126,8 @@ class UploadSources:
                         raise TransferError("Upload source changed during staging")
                     output.flush()
                     os.fsync(output.fileno())
+                if expected_sha256 is not None and whole.hexdigest() != expected_sha256:
+                    raise TransferError("The approved upload bytes changed")
                 intent = UploadIntent(
                     request_id,
                     scope,

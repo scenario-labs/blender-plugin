@@ -106,5 +106,9 @@ the working file. Only this snapshot step touches the parent's bpy state.
 The [local render primitive](../FILM_PLAN.md#local-capture-foundation) owns its
 offline child process and disposable profile; its standalone worker changes
 render settings only in that child. Still capture does not require ffmpeg.
-Scene/credential approval, the existing session queue, upload handoff and retained
-artifact cleanup belong to the caller and are not wired to Film controls yet.
+The [Film capture owner](../FILM_PLAN.md#shared-capture-and-upload-approval) now
+binds native/MCP approval to the recipe and selected shot, queues work through
+the existing session and accepts completion only in the unchanged original
+context. Separate upload approval hashes the staged bytes against the rendered
+receipt. The session joins workers before cleaning retained capture artifacts;
+no bpy mutation runs on a worker or during drawing.

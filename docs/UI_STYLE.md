@@ -951,6 +951,27 @@ disposable profile and leaves the normal profile unchanged. This establishes the
 synthetic shot-control interaction, not live provider compatibility, motion/audio
 review, other OS/DPI combinations, timeline/capture/finishing or release acceptance.
 
+### Film capture controls
+
+The **Capture** child panel uses the shot selected in **Shots**. **Render capture**
+confirms a matching local scene, still/video, color mode, dimensions and exact
+editorial timing. It names optional video tools and distinguishes generated
+source duration/trim from captured frames. Cancelling is inert. Prepared MCP
+reviews expose **Render prepared capture** with the same exact settings.
+
+Completed output offers **Open capture** and a separate **Upload capture**
+confirmation showing size, timing, dimensions and full content hash.
+**Cancel capture** retains frames after stopping work. **Discard capture**
+confirms deleting only private capture files after work ends; saved uploads
+remain. Failed work exposes its retained directory and wrapped cached error.
+Drawing reads cached review status, never starts work or mutates properties.
+The shared maintenance pump owns progress even with the panel closed.
+
+Installed synthetic tests cover commands, cancellation, read-only drawing and
+byte-checked upload handoff. Desktop layout, mouse/keyboard/focus and viewport
+acceptance remain pending; these controls are draft. Offline media metadata and
+headless operator calls do not replace native interaction proof.
+
 ### Film timeline controls
 
 The **Timeline** child panel offers **Build timeline**. Its confirmation lists

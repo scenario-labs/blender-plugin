@@ -267,6 +267,11 @@ Do not edit this block by hand; run `make mcp-docs`. An asterisk marks a require
 
 | Tool | Description | Arguments | Notes |
 | --- | --- | --- | --- |
+| `film_capture_sources` | Inspect matching local scenes for one Film shot before capture. | `production_id`*: string<br>`shot_id`*: string | read-only annotation |
+| `prepare_film_capture` | Prepare a local shot capture for separate render approval. | `context_id`*: string<br>`production_id`*: string<br>`shot_id`*: string<br>`source_id`*: string<br>`kind`: string (['STILL', 'VIDEO'])<br>`width`: integer<br>`height`: integer<br>`color_type`: string (['MATERIAL', 'TEXTURE', 'OBJECT']) | - |
+| `render_film_capture` | Approve a READY Film capture and start one local render on the shared workers. | `review_id`*: string | - |
+| `film_capture_review` | Inspect, cancel or discard an owner-local Film capture. | `review_id`*: string<br>`action`: string (['status', 'cancel', 'discard']) | - |
+| `upload_film_capture` | Upload the reviewed bytes of one completed Film capture through the shared upload runtime. | `review_id`*: string | - |
 | `film_timeline_sources` | Inspect matching local scenes for every shot in the current Film recipe. | `production_id`*: string | read-only annotation |
 | `prepare_film_timeline` | Prepare explicit completed shot choices for separate timeline build approval. | `context_id`*: string<br>`production_id`*: string<br>`selections`*: object | - |
 | `film_timeline_review` | Inspect or discard an owner-local Film timeline review. | `review_id`*: string<br>`action`: string (['status', 'discard'])<br>`inspected`: boolean | - |
@@ -705,6 +710,24 @@ generation/download request. They share native UI review handles but do not add 
 native operator Undo entry. Timeline approval uses the commands below;
 capture and export remain separate.
 
+### Film capture commands
+
+Inspect `film_capture_sources(production_id, shot_id)` and choose an opaque
+source handle. `prepare_film_capture` requires that handle and context identity,
+with still/video, dimensions and color mode. Show the exact returned settings
+for approval before `render_film_capture(review_id)`. Rendering consumes that
+review once and returns immediately; `film_capture_review` polls, cancels local
+work or explicitly discards its private files after work stops.
+
+Once CAPTURED, review the local output and ask for separate upload approval
+before `upload_film_capture`. Staging checks its content hash before remote
+initialization. Poll the ordinary `reference_upload_status` handle, inspect
+uncertainty without retry, then explicitly `bind_film_upload` after import.
+Neither local rendering nor uploading grants generation approval.
+These tools use the [same native capture owner](FILM_PLAN.md#shared-capture-and-upload-approval).
+Reviews expire with the session, capture files are cleaned on shutdown and
+interrupted captures never resume automatically.
+
 ### Editable Film timeline commands
 
 `film_timeline_sources` returns current-context opaque scene choices for every
@@ -719,4 +742,5 @@ cleanup requires `inspected: true` and must never be replayed automatically.
 These four local commands have no platform equivalent, make no service call and
 never change saved jobs or import result files. Local scene markers establish
 recipe compatibility, not service provenance. They share the native command
-owner but do not create a native operator Undo entry. Capture/export remain separate.
+owner but do not create a native operator Undo entry. Capture uses the separate
+commands above; finishing/export remain unavailable.

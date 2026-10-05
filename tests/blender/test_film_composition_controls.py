@@ -366,3 +366,17 @@ class FilmCompositionControlsTests(unittest.TestCase):
         self.assertEqual(status["error"], "Install ffprobe")
         self.ready()
         self.assertFalse(self.fixture.calls)
+
+    def test_idle_updates_and_mode_navigation_preserve_price_but_frame_changes_invalidate(self):
+        review = self.quoted()
+        calls = len(self.fixture.calls)
+        for mode in ("previs", "final", "previs", "final"):
+            self.scene.scenario_film.composition_mode = mode
+            bpy.context.view_layer.update()
+            self.owner.poll()
+            self.assertEqual(review.phase, "QUOTED", review.error)
+        self.assertEqual(len(self.fixture.calls), calls)
+        self.scene.frame_set(self.scene.frame_current + 1)
+        self.owner.poll()
+        self.assertEqual(review.phase, "ERROR")
+        self.assertFalse(self.paid)

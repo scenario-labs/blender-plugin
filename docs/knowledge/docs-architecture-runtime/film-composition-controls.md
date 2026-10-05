@@ -17,7 +17,7 @@
       "scenario/blender/film_jobs.py": "f8ae6ddc89e2f56142f3eda7bb59966cf4c193c17f4b5cfc50c125c83e4ac708",
       "scenario/blender/model_jobs.py": "1c71898d7ab1c1f0c980d1e1bcb7afe07d6d1427f0dbb187d505e5f8b3806226",
       "scenario/mcp/tools_scenario.py": "bb4b40a7c3245777f1dbc79e44419211f6375f525a8830ea5ceaf6daa7a588fe",
-      "tests/blender/test_film_composition_controls.py": "ee9cc64f28e7ad85f52495bf1b9c3b613f4b23ab9a6d653139b1d98e3b53593d",
+      "tests/blender/test_film_composition_controls.py": "e4d9d4a7b7480c8c03e5af04d8666e65a48e999003c56c94f6c530ee4903e4ee",
       "tests/blender/test_mcp_contracts.py": "fc1725b294eb7d326b8e182f513e468841fe91ebb9222f22941254d8be5de251",
       "tests/unit/test_mcp_descriptions.py": "1d2c6708e0b9f3b36639fffd5251ecd2ee0543d398e81ddb2e995216146df374"
     }

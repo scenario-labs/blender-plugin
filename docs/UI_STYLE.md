@@ -1119,3 +1119,9 @@ Path-specific computer control returned `cgWindowNotFound`; no expanded control
 or mouse/keyboard behavior was observed. The process exited cleanly with zero
 fixture service requests and the normal profile unchanged. That startup rendering
 is not composition layout or interaction acceptance.
+
+Composition navigation alone does not invalidate a retained price: installed
+regression coverage toggles Final/Previs with explicit dependency updates and
+idle polls, preserving the same quote without service requests. A frame change
+still invalidates the captured scene revision by design; this is distinct from
+mode navigation and preserves the shared scene-bound approval contract.

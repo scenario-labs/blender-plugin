@@ -20,6 +20,7 @@ from ..core.jobs.origins import OriginRevisions
 from ..core.jobs.results import ModelTextResult, PromptResults, VerifiedResults
 from ..core.jobs.store import JobOrigin, JobState, StoredJob
 from ..core.jobs.workers import JobWorkers
+from .film_application import FilmShotCommands
 from .image_application import ImageApplicationError, apply_images
 from .material_application import (
     MaterialApplicationError,
@@ -190,6 +191,7 @@ class JobSession:
             part_uploader=part_uploader,
         )
         self._workers = JobWorkers(self._coordinator, workers=workers, pending_limit=pending_limit)
+        self.film_shots = FilmShotCommands(self, store)
         with _sessions_lock:
             _sessions.add(self)
         try:
@@ -1083,6 +1085,7 @@ class JobSession:
                 self._media_receipts.clear()
                 self._model_receipts.clear()
                 self._material_receipts.clear()
+                self.film_shots.close()
                 with _sessions_lock:
                     _sessions.discard(self)
 

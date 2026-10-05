@@ -68,6 +68,23 @@ association from another scene delivers the unchanged saved reference to that ne
 reader. Imported-upload eligibility is checked through the selected coordinator's
 upload store, with no remote read, staging or upload replay.
 
+## Film shot application
+
+`JobSession.film_shots` shares this session's receipt workers and coordinator
+application claims. Its [shot review contract](FILM_PLAN.md#shared-shot-application-command)
+binds explicit GLB selections to the current recipe scene, production, scoped task
+digest and observed job revision. Inspection and asynchronous verification are
+separate from single-use approval. Every distinct result job is claimed before
+the new shot scene is built; repeated actors do not duplicate a job claim.
+
+Deleted scenes, real origin changes, changed recipes and retired credentials reject
+delivery/application. Temporarily different timer contexts defer delivery to the
+unchanged source scene. Confirmed rollback records failure; partial claims or
+incomplete cleanup remain uncertain. Known success/failure receipt writes can be
+retried without repeating scene work. Restart requires a fresh review, using the
+same durable results and explicit application recovery policy. The command is
+available for integration but has no native/MCP control registration in this slice.
+
 ## Cloud result adoption command
 
 `JobSession.adopt_cloud_job(identifier, expected_model_id=..., scene=...)`

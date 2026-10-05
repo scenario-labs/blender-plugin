@@ -256,16 +256,57 @@ working scene and never replaces an existing sequence.
 
 These are main-thread local primitives, with no SDK, network, paid submission,
 file save, activation control or separate job storage. A receipt proves bytes,
-not credential ownership or approval. Before exposing scene construction through
-native/MCP Film controls, the shared command layer still must verify Film task and
-credential scope, bind the unchanged recipe/destination, persist all application
-claims and handle ambiguous receipts. The native tests establish synthetic shot,
-model and sequence behavior, not that integrated command flow, visual motion
-acceptance, capture/encoding, finishing or export.
+not credential ownership or approval. The shared shot command below supplies the
+source/destination checks and application claims. Native/MCP scene-building controls
+must use that command; timeline approval remains separate. Primitive tests establish
+synthetic shot, model and sequence behavior, not visual motion acceptance,
+capture/encoding, finishing or export.
+
+## Shared shot application command
+
+`JobSession.film_shots` owns bounded reviews through
+[`FilmShotCommands`](../scenario/blender/film_application.py). `inspect` lists
+downloaded GLB outputs for the selected scene's recipe and shot. `prepare` requires
+an explicit hero-to-output selection with each observed request ID and revision;
+it captures the current scene/revision, production identity and exact saved recipe.
+`poll` advances local receipt verification on the existing bounded worker queue.
+`status` reads a cached review; neither inspection nor preparation builds a scene.
+
+The [source resolver](../scenario/core/jobs/film_sources.py) requires matching
+credential scope, production/task identity, model and transitive task digest.
+Unrelated editorial changes can reuse an unchanged model task after a fresh review.
+Changed task parameters/dependencies, incomplete downloads, uncertain application,
+stale revisions and non-GLB selections fail. It never selects an arbitrary first
+variant. API keys keep their credential-bound default project; no discovery is
+required. Receipt verification is serially admitted per distinct source job, so
+hero counts do not require a larger worker pool. A transient other-scene timer
+context defers delivery; real origin changes still invalidate the review.
+
+Separate `approve(review_id)` rechecks the unchanged recipe, destination, source
+records, owned verification tickets and GLB bytes. It consumes the review before
+claiming every distinct job and before building. Several actors/heroes sharing
+one job use one claim; an already applied job uses the existing local model-reuse
+claim with the selected asset IDs. The same coordinator/store records the outcome.
+A no-hero shot is a local single-use approved action without a fabricated job.
+
+If a later claim fails, known earlier claims are marked failed with no scene build;
+the uncertain claim requires inspection. Confirmed full native rollback marks all
+known claims failed. Incomplete cleanup retains uncertainty and does not offer a
+blind retry. After a successful build, receipt persistence can fail independently:
+`retry_receipts` only acknowledges or writes the already attempted outcome and
+never calls the builder. It retains the existing shot. Native Undo does not rewind
+job receipts; an intentional new take needs another review and claim.
+
+Reviews and receipt handles are owner-local, capped at sixteen, and disappear on
+session shutdown. Saved tasks/results survive restart and require fresh destination
+review; uncertain durable application remains explicit inspection work. `discard`
+retires an unapproved review and drains pending verification without applying it.
+There is no new SDK request, download, store, worker pool or UI registration.
+Native/MCP presentation, timeline approval and release acceptance remain separate.
 
 ## Remaining integration and evidence
 
-Shared scene-construction commands, shot capture, media finishing,
+Native/MCP scene-building controls, timeline approval, shot capture, media finishing,
 provider-specific preparation and final export remain separate work. Keep useful
 source capabilities and tests as those paths are connected; do not describe this
 helper adoption as a completed Film workflow.

@@ -345,8 +345,10 @@ bytes and never replays uncertain uploads. See [durable Film tasks](../FILM_PLAN
 The [native Film scene primitives](../FILM_PLAN.md#native-shot-and-timeline-primitives)
 now construct complete new shot scenes and editable timelines from validated
 recipes and explicit saved GLB receipts. They restore the current scene and roll
-back only new data on failure. Shared credential/task selection, application
-claims and native/MCP scene-building approval remain to integrate; the existing
+back only new data on failure. The [shared shot application command](../FILM_PLAN.md#shared-shot-application-command)
+now verifies selected credential-bound task outputs, captures the unchanged recipe
+scene, claims every source job before building and supports receipt-only recovery.
+Native/MCP presentation and timeline approval remain to integrate; the existing
 Film controls still prepare/approve model and upload tasks only.
 
 ## Shared MCP render preparation

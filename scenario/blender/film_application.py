@@ -232,6 +232,21 @@ class FilmShotCommands:
             "inspection_required": review.unknown,
         }
 
+    def current(self, scene, shot_id):
+        """Read the latest matching cached review; never open storage or mutate during draw."""
+        for review in reversed(tuple(self._reviews.values())):
+            try:
+                matches = (
+                    review.scene == scene
+                    and review.shot_id == shot_id
+                    and review.binding == _binding(scene)
+                )
+            except ReferenceError:
+                matches = False
+            if matches:
+                return self.status(review.identifier)
+        return None
+
     def discard(self, identifier):
         _main_thread()
         review = self._reviews.get(identifier)

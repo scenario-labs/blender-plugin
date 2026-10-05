@@ -174,6 +174,7 @@ def film_recipe(args):
         "production_id": scene.scenario_film.production_id,
         "title": plan["title"],
         "tasks": plan["tasks"],
+        "shots": [{"shot_id": shot["id"], "title": shot["title"]} for shot in plan["shots"]],
     }
 
 
@@ -240,6 +241,44 @@ def bind_film_upload(args):
         }
 
     return DeferredTool(item.task.result, finish)
+
+
+def film_shot_sources(args):
+    owner = _film_owner(args)
+    return {
+        "context_id": runtime.state.job_context_id,
+        "production_id": args["production_id"],
+        "shot_id": args["shot_id"],
+        "heroes": owner.session.film_shots.inspect(bpy.context.scene, shot_id=args["shot_id"]),
+    }
+
+
+def prepare_film_shot(args):
+    owner = _film_owner(args)
+    if args["context_id"] != runtime.state.job_context_id:
+        raise ScenarioError(0, "The Film connection changed; inspect the shot's sources again")
+    return owner.session.film_shots.prepare(
+        bpy.context.scene, shot_id=args["shot_id"], selections=args["selections"]
+    )
+
+
+def film_shot_review(args):
+    commands = runtime.ensure_film_jobs().session.film_shots
+    action = args.get("action", "status")
+    if action == "status":
+        commands.poll()
+        return commands.status(args["review_id"])
+    if action == "discard":
+        return commands.discard(args["review_id"])
+    if action == "retry_receipts":
+        return commands.retry_receipts(args["review_id"])
+    if action == "dismiss_uncertain":
+        return commands.dismiss_uncertain(args["review_id"], inspected=args.get("inspected"))
+    raise ValueError("Choose status, discard, retry_receipts or dismiss_uncertain")
+
+
+def build_film_shot(args):
+    return runtime.ensure_film_jobs().session.film_shots.approve(args["review_id"])
 
 
 def estimate_prompt(args):
@@ -963,11 +1002,97 @@ _JOB_REF = {
 
 SPECS = (
     ToolSpec(
+        "film_shot_sources",
+        (
+            "Inspect eligible downloaded hero models for one shot in the current Film recipe.\n"
+            "Args: production_id and shot_id are required strings from film_recipe.\n"
+            "Returns: context_id, production_id, shot_id and heroes with request_id, revision and GLB asset choices.\n"
+            'Example: {"production_id": "saved-production", "shot_id": "shot-one"}.\n'
+            "Reads the selected credential scope only. No verification, download, generation or scene build occurs.\n"
+            "Platform equivalent: none; local saved Film model inspection."
+        ),
+        _schema(
+            {"production_id": {"type": "string"}, "shot_id": {"type": "string"}},
+            ["production_id", "shot_id"],
+        ),
+        film_shot_sources,
+        {"readOnlyHint": True},
+    ),
+    ToolSpec(
+        "prepare_film_shot",
+        (
+            "Verify explicit saved hero selections and prepare a shot for separate build approval.\n"
+            "Args: context_id, production_id and shot_id are required strings from film_shot_sources; selections is a required object mapping every hero_id to request_id, integer revision and asset_id. Use {} for a no-hero shot.\n"
+            "Returns: review_id, shot_id, phase, hero_count, scene, error and recovery flags.\n"
+            'Example: {"context_id": "current", "production_id": "saved-production", "shot_id": "shot-one", "selections": {"hero": {"request_id": "saved-job", "revision": 8, "asset_id": "saved-glb"}}}.\n'
+            "Captures the current recipe and scene; verifies local receipts on the shared workers without building, downloading or spending. Poll film_shot_review; a READY review still needs explicit build_film_shot approval.\n"
+            "Platform equivalent: none; local Film application preparation."
+        ),
+        _schema(
+            {
+                "context_id": {"type": "string"},
+                "production_id": {"type": "string"},
+                "shot_id": {"type": "string"},
+                "selections": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "object",
+                        "properties": {
+                            "request_id": {"type": "string"},
+                            "revision": {"type": "integer", "minimum": 0},
+                            "asset_id": {"type": "string"},
+                        },
+                        "required": ["request_id", "revision", "asset_id"],
+                        "additionalProperties": False,
+                    },
+                },
+            },
+            ["context_id", "production_id", "shot_id", "selections"],
+        ),
+        prepare_film_shot,
+    ),
+    ToolSpec(
+        "film_shot_review",
+        (
+            "Inspect or discard a Film shot review, or retry only its known persistence receipts.\n"
+            "Args: review_id is required; action is status (default), discard, retry_receipts or dismiss_uncertain. Dismissal requires inspected=true.\n"
+            "Returns: review_id, shot_id, phase, hero_count, scene, error, receipt_retry_available and inspection_required.\n"
+            'Example: {"review_id": "returned-review", "action": "status"}.\n'
+            "Status advances pending local verification but never builds. Discard retires unapproved work. Receipt retry never calls the builder. After inspecting the scene and saved jobs, dismissal retires an uncertain review only if no known receipts remain; it never clears durable claims or repeats a build. Review handles do not survive a changed connection or restart.\n"
+            "Platform equivalent: none; local review and receipt recovery."
+        ),
+        _schema(
+            {
+                "review_id": {"type": "string"},
+                "action": {
+                    "type": "string",
+                    "enum": ["status", "discard", "retry_receipts", "dismiss_uncertain"],
+                },
+                "inspected": {"type": "boolean"},
+            },
+            ["review_id"],
+        ),
+        film_shot_review,
+    ),
+    ToolSpec(
+        "build_film_shot",
+        (
+            "Approve one READY Film review and build a new shot scene from its verified saved models.\n"
+            "Args: review_id is the required string from prepare_film_shot.\n"
+            "Returns: review_id, shot_id, phase, hero_count, scene, error and recovery flags.\n"
+            'Example: {"review_id": "returned-review"}.\n'
+            "Requires explicit scene-build approval. Rechecks the original recipe/destination, consumes the review and claims every source before mutation. Keeps the working scene selected. No generation or download occurs. Never repeat an uncertain build; use receipt-only recovery when offered.\n"
+            "Platform equivalent: none; local Blender shot construction."
+        ),
+        _schema({"review_id": {"type": "string"}}, ["review_id"]),
+        build_film_shot,
+    ),
+    ToolSpec(
         "film_recipe",
         (
             "Inspect or load the current scene's Film recipe, or explicitly start a new production.\n"
             "Args: action is inspect (default), load or new_production; recipe is a raw Film JSON object required for load.\n"
-            "Returns: stable production_id, title and tasks; inspection adds saved job/upload identities and states. A quoted task includes quote_id, model_id, parameters and cu_cost_exact for its existing approval.\n"
+            "Returns: stable production_id, title, tasks and shots; inspection adds saved job/upload identities and states. A quoted task includes quote_id, model_id, parameters and cu_cost_exact for its existing approval.\n"
             'Example: {"action": "inspect"}.\n'
             "Load validates before mutation and preserves identity. Save the blend file to retain it. New production deliberately gives the same task names a fresh identity; it does not submit or recover work.\n"
             "After a scene-switch error, return to the original scene and inspect to recover an unchanged quote or saved upload association. Inspection only completes already-admitted preparation; it never reprices, resumes saved jobs or submits. Stale quotes are omitted.\n"

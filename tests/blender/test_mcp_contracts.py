@@ -163,8 +163,12 @@ class McpContractTests(unittest.TestCase):
             )
             with urllib.request.urlopen(request, timeout=5) as response:
                 tools = json.load(response)["result"]["tools"]
-            self.assertEqual(len(tools), 44)
+            self.assertEqual(len(tools), 48)
             for name in (
+                "film_shot_sources",
+                "prepare_film_shot",
+                "film_shot_review",
+                "build_film_shot",
                 "estimate_film_task",
                 "approve_film_task",
                 "film_recipe",

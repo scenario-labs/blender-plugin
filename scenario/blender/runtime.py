@@ -488,6 +488,8 @@ def sync_catalog_context():
     from . import generation
 
     generation.process_model_jobs()
+    if state.job_session is not None:
+        state.job_session.film_shots.poll()
     if state.film_jobs is not None:
         state.film_jobs.poll()
     if state.prompt_jobs is not None:

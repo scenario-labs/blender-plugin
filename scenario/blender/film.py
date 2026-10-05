@@ -12,7 +12,7 @@ from bpy_extras.io_utils import ImportHelper
 
 from ..core.jobs.upload_store import UploadState
 from ..core.ui.costs import format_cu
-from . import film_jobs, runtime
+from . import film_jobs, film_scene_controls, runtime
 
 
 class ScenarioFilmTask(bpy.types.PropertyGroup):
@@ -21,12 +21,18 @@ class ScenarioFilmTask(bpy.types.PropertyGroup):
     model_id: StringProperty()
 
 
+class ScenarioFilmShot(bpy.types.PropertyGroup):
+    title: StringProperty()
+
+
 class ScenarioFilm(bpy.types.PropertyGroup):
     production_id: StringProperty(options={"HIDDEN"})
     recipe_json: StringProperty(options={"HIDDEN"})
     title: StringProperty()
     tasks: CollectionProperty(type=ScenarioFilmTask)
     task_index: IntProperty(min=0)
+    shots: CollectionProperty(type=ScenarioFilmShot)
+    shot_index: IntProperty(min=0)
 
 
 def selected(scene):
@@ -224,7 +230,7 @@ class SCENARIO_UL_film_tasks(bpy.types.UIList):
 
 
 class SCENARIO_PT_film(bpy.types.Panel):
-    bl_label = "Film tasks"
+    bl_label = "Film"
     bl_space_type = "VIEW_3D"
     bl_region_type = "UI"
     bl_category = "Scenario"
@@ -272,11 +278,12 @@ class SCENARIO_PT_film(bpy.types.Panel):
         if item is not None and item.error:
             box.label(text="Action needs review. Inspect saved jobs.", icon="ERROR")
         layout.operator("scenario.inspect_saved_jobs", icon="FILE_REFRESH")
-        layout.label(text="Scene building and Film finishing are not available yet")
+        layout.label(text="Capture and Film finishing are not available yet")
 
 
 CLASSES = (
     ScenarioFilmTask,
+    ScenarioFilmShot,
     ScenarioFilm,
     ScenarioFilmUpload,
     SCENARIO_OT_load_film,
@@ -288,6 +295,7 @@ CLASSES = (
     SCENARIO_OT_bind_film_upload,
     SCENARIO_UL_film_tasks,
     SCENARIO_PT_film,
+    *film_scene_controls.CLASSES,
 )
 
 

@@ -33,6 +33,16 @@ def load_recipe(scene, raw):
     if not props.production_id:
         props.production_id = uuid.uuid4().hex
     props.title = plan["title"]
+    selected_shot = (
+        props.shots[props.shot_index].name if 0 <= props.shot_index < len(props.shots) else ""
+    )
+    props.shots.clear()
+    props.shot_index = 0
+    for index, shot in enumerate(plan["shots"]):
+        row = props.shots.add()
+        row.name, row.title = shot["id"], shot["title"]
+        if row.name == selected_shot:
+            props.shot_index = index
     props.tasks.clear()
     props.task_index = 0
     for index, task in enumerate(plan["tasks"]):
@@ -308,4 +318,9 @@ class FilmJobs:
                 elif item is not None and item.phase in {"QUOTING", "BINDING"}:
                     row["state"] = item.phase.lower()
             rows.append(row)
-        return {"production_id": production_id, "title": plan["title"], "tasks": rows}
+        return {
+            "production_id": production_id,
+            "title": plan["title"],
+            "tasks": rows,
+            "shots": [{"shot_id": shot["id"], "title": shot["title"]} for shot in plan["shots"]],
+        }

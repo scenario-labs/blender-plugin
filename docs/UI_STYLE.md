@@ -859,7 +859,7 @@ The live-provider, other-OS and release limitations above still apply.
 
 ## Film task controls
 
-Film tasks occupy an optional, initially closed Scenario sidebar panel. Loading
+Film tasks occupy an optional, initially closed **Film** sidebar panel. Loading
 a recipe validates it before changing persistent scene properties and preserves
 the production identity. Task rows are saved properties, not transient enums or
 mutations during drawing. **New production** requires confirmation.
@@ -907,3 +907,23 @@ saved-row review fixes. Those changes have separate installed native regression
 coverage; fresh physical input and screenshot proof remain pending.
 They do not establish other OS desktop behavior, Film scene construction/capture,
 finishing/export, resolution of #263 or integrated release acceptance.
+
+### Film shot controls
+
+The **Shots** child panel uses saved shot rows and a stable selected index.
+**Prepare shot** presents saved GLB choices per hero before local verification;
+**Build shot** requires a second confirmation naming the shot, recipe scene and
+hero count. The build preserves the working scene. **Discard review** confirms
+discarding unapproved work. **Save build receipt** never repeats a scene build.
+**Acknowledge inspection** requires a checkbox and cannot clear saved uncertainty.
+**Shot error details** wraps the complete cached error and offers copying.
+Drawing uses cached status and never starts a session or polls storage/workers.
+
+Installed synthetic tests cover UI/MCP handle sharing, source/build cancellation,
+changed destinations, receipt-only recovery, strict inspection acknowledgement,
+saved shot selection and read-only drawing. A fresh isolated Blender 5.1.2 window
+rendered the fixture with Film collapsed and zero service requests; path-specific
+computer control returned `cgWindowNotFound`. It was closed cleanly with the
+normal profile unchanged. That startup screenshot does not establish expanded
+control layout, mouse/keyboard/focus, viewport or Undo/Redo acceptance; the controls
+remain draft pending that desktop proof. Live media and release acceptance are separate.

@@ -91,7 +91,9 @@ receipt writes can be retried without repeating scene work. Explicitly acknowled
 dismiss an uncertain review only after known receipts have been saved; it never
 clears an uncertain durable claim or rebuilds a scene. Restart requires a fresh review, using the
 same durable results and explicit application recovery policy. The command is
-available for integration but has no native/MCP control registration in this slice.
+shared by the [native and MCP shot controls](FILM_PLAN.md#native-and-mcp-shot-controls).
+The maintenance pump advances its verification independently of an open view.
+Drawing only reads matching cached reviews and hides retired credential contexts.
 
 ## Cloud result adoption command
 

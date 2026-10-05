@@ -26,8 +26,10 @@ establish live generation or full render-lane desktop acceptance.
   or the default look with automatic Spark disabled. An empty automatic look
   requires its own exact Spark quote, approval and guarded result delivery before
   the final render quote. Film task quotes, approvals and saved-upload associations
-  now share these jobs through native controls and MCP; Film scene building,
-  capture, finishing and export remain unavailable. Complete runtime adoption
+  now share these jobs through native controls and MCP. Film shot construction
+  uses separate saved-model verification and build approval; desktop interaction
+  acceptance remains pending. Timeline approval, capture, finishing and export
+  remain unavailable. Complete runtime adoption
   and live/native acceptance remain open
   ([#64](https://github.com/scenario-labs/blender-plugin/issues/64),
   [#65](https://github.com/scenario-labs/blender-plugin/issues/65)).

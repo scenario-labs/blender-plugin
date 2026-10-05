@@ -267,6 +267,10 @@ Do not edit this block by hand; run `make mcp-docs`. An asterisk marks a require
 
 | Tool | Description | Arguments | Notes |
 | --- | --- | --- | --- |
+| `film_shot_sources` | Inspect eligible downloaded hero models for one shot in the current Film recipe. | `production_id`*: string<br>`shot_id`*: string | read-only annotation |
+| `prepare_film_shot` | Verify explicit saved hero selections and prepare a shot for separate build approval. | `context_id`*: string<br>`production_id`*: string<br>`shot_id`*: string<br>`selections`*: object | - |
+| `film_shot_review` | Inspect or discard a Film shot review, or retry only its known persistence receipts. | `review_id`*: string<br>`action`: string (['status', 'discard', 'retry_receipts', 'dismiss_uncertain'])<br>`inspected`: boolean | - |
+| `build_film_shot` | Approve one READY Film review and build a new shot scene from its verified saved models. | `review_id`*: string | - |
 | `film_recipe` | Inspect or load the current scene's Film recipe, or explicitly start a new production. | `action`: string (['inspect', 'load', 'new_production'])<br>`recipe`: object | - |
 | `estimate_film_task` | Request the exact server price for one model task in the loaded Film recipe. | `production_id`*: string<br>`task_id`*: string | read-only annotation |
 | `approve_film_task` | Approve one unchanged Film estimate and save its identity before one paid submission. | `quote_id`*: string<br>`approved_cost`*: string | - |
@@ -679,3 +683,19 @@ no platform equivalent. Estimate/approval use the same model operations as
 `wait_for_job`, explicit recovery and application for saved results; Film does
 not auto-import or replay uncertain tasks. These commands do not construct scenes,
 capture shots, assemble media or export a finished film.
+
+### Film shot commands
+
+`film_shot_sources` lists eligible saved GLBs for each hero and returns the
+current context token. `prepare_film_shot` binds explicit per-hero asset/job
+revision selections to that context, production, recipe and destination.
+`film_shot_review` polls verification status without building; its other actions
+discard unapproved work, save known receipts or dismiss an uncertain review after
+explicit inspection (`inspected: true`). Dismissal never clears a durable claim
+and refuses pending receipt handles. `build_film_shot` separately approves one
+ready review, claims all sources and builds a new scene while retaining the
+working scene. It must not be repeated after uncertainty.
+
+These four local Blender commands have no platform equivalent and make no
+generation/download request. They share native UI review handles but do not add a
+native operator Undo entry. Timeline approval, capture and export remain separate.

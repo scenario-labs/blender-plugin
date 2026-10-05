@@ -22,6 +22,7 @@ from ..core.jobs.coordinator import (
     OriginQuote,
     RemoteSnapshot,
 )
+from ..core.jobs.film_media import VerifiedComposition
 from ..core.jobs.origins import OriginRevisions
 from ..core.jobs.results import ModelTextResult, PromptResults, VerifiedResults
 from ..core.jobs.store import JobOrigin, JobState, StoredJob
@@ -460,6 +461,27 @@ class JobSession:
         """Queue explicit offline reconciliation without resolving or applying old targets."""
         return self._record_command("recover_downloads", request_id, expected_revision)
 
+    def prepare_film_composition(
+        self, recipe, *, production_id, origin, mode="final", score_task_id="score"
+    ):
+        """Queue saved-media inspection; completion is a draft, never spend approval."""
+        _main_thread()
+        self._check_capacity()
+        self._resolve(origin)
+        root = bpy.utils.extension_path_user(
+            __package__.rsplit(".", 1)[0], path="state", create=True
+        )
+        task = self._workers.prepare_film_composition(
+            recipe,
+            production_id=production_id,
+            mode=mode,
+            score_task_id=score_task_id,
+            root=root,
+            origin=origin,
+        )
+        self._pending.append((task, origin))
+        return task
+
     def render_local(self, spec, *, origin, source_origin):
         _main_thread()
         self._check_capacity()
@@ -600,7 +622,9 @@ class JobSession:
                         and record.intent.operation == "model"
                         and record.intent.target_id == model_id
                     )
-                elif isinstance(record, (OriginQuote, FilmUploadResult, LocalCaptureResult)):
+                elif isinstance(
+                    record, (OriginQuote, FilmUploadResult, LocalCaptureResult, VerifiedComposition)
+                ):
                     matches = record.origin == origin and record.scope == self.scope
                 else:
                     matches = record.intent.origin == origin and record.intent.scope == self.scope

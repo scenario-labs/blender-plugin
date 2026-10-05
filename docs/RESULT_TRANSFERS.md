@@ -164,3 +164,13 @@ This is a prerequisite for explicit material application under #65/#68. It does
 not assign materials or choose between multiple texture sets/variants. A later
 material approval must select unambiguous assets and the intended mesh targets;
 role preservation alone does not authorize a scene mutation.
+
+## Local Film media measurement
+
+`ResultCommands.measure_media` selects exactly one asset from a current verified
+saved result, then measures a private copy bound to its saved receipt. It rechecks
+the saved record after inspection. This is a worker-side read with no metadata
+refresh, download, repair or scene application. A missing or changed saved file
+fails before a composition draft can be prepared; source bytes are preserved.
+See [Film media limits](FILM_PLAN.md#verified-media-preparation), including the
+optional installed ffprobe and metadata-only timing guarantee.

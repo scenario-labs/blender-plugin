@@ -406,6 +406,25 @@ class ResultCommands:
                     request_id, expected_revision=current.revision, state=state
                 )
 
+    def measure_media(self, request_id, *, expected_revision, asset_id, root, cancel):
+        """Inspect one downloaded receipt on a worker without applying or fetching it."""
+        from .media_probe import measure
+
+        verified = self.verify_ready(request_id, expected_revision=expected_revision)
+        chosen = [
+            (item, path)
+            for item, path in zip(verified.record.results, verified.paths, strict=True)
+            if item.asset.asset_id == asset_id
+        ]
+        if len(chosen) != 1:
+            raise ResultError("Choose one saved media result")
+        item, path = chosen[0]
+        result = measure(path, item.receipt, item.asset.media_type, root=root, cancel=cancel)
+        with self._guard():
+            if self._store.get(request_id) != verified.record:
+                raise StoreConflict("Result changed during media inspection")
+        return result
+
     def verify_ready(self, request_id, *, expected_revision):
         current = self._current(
             request_id, expected_revision, {JobState.READY, JobState.APPLY_FAILED, JobState.APPLIED}

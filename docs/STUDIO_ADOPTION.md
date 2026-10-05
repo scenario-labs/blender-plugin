@@ -266,8 +266,12 @@ shared job/upload stores and rejects stale or ambiguous source observations.
 Audio duration is supplied as an asset-bound exact observation; no path fallback,
 implicit media probe, legacy production storage, organizer client, VSE mutation
 or automatic generation is imported. The [draft contract](FILM_PLAN.md#unpaid-composition-drafts)
-keeps active controls, verified media measurement, final review/export and live
-acceptance as explicit remaining work.
+keeps active controls, final review/export and live acceptance as explicit
+remaining work. The new [verified-media command](FILM_PLAN.md#verified-media-preparation)
+implements explicit receipt-bound measurement through the shared session and
+workers. It uses an optional installed ffprobe, private copies and current-source
+checks instead of importing the prototype's unchecked file-path or duration cache.
+No new third-party dependency or service operation is added.
 
 ## Next implementation gates
 

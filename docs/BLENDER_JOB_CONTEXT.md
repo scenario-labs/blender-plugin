@@ -120,6 +120,19 @@ does not remove durable upload records or their separate staged copies.
 An imported upload requires its own Film task association; no automatic generation
 or scene application follows capture or upload.
 
+## Film media preparation ownership
+
+`JobSession.prepare_film_composition` captures the supplied current origin and
+queues local saved-media inspection in its existing workers. Scratch lives under
+`bpy.utils.extension_path_user(..., path="state")`; workers never use `bpy`.
+`drain` checks `VerifiedComposition` scope/origin, and `deliver` separately checks
+the selected scene and its revision before exposing the draft once. A completed
+probe cannot deliver to a changed scene. The existing local cancellation handle
+and retirement signal stop owned processes; no panel owns their lifetime.
+
+This is an integration command with no native/MCP presentation yet. It does not
+install a new recipe or approve spending. See [media prerequisites and limits](FILM_PLAN.md#verified-media-preparation).
+
 ## Local Film timeline approval
 
 `JobSession.film_timeline` retains bounded live source choices and single-use

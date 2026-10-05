@@ -79,6 +79,15 @@ class UploadCommands:
         with self._guard():
             return self._store.get(request_id)
 
+    def measure_media(self, request_id, *, expected_revision, root, cancel):
+        """Inspect retained imported-source bytes without any upload/service action."""
+        current = self._current(request_id, expected_revision, {UploadState.IMPORTED})
+        result = self._sources.measure_media(current.intent, root=root, cancel=cancel)
+        with self._guard():
+            if self._store.get(request_id) != current:
+                raise StoreConflict("Upload changed during media inspection")
+        return result
+
     def mesh_sources(self, asset_id):
         """Read selected captured exports in this scope; never infer a primary source."""
         with self._guard():

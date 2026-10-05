@@ -404,7 +404,7 @@ def test_local_capture_cancellation_signals_running_child(setup, tmp_path, monke
     monkeypatch.setattr(local_render, "render", render)
     task = owner.render_local(local_spec(tmp_path), origin=ORIGIN, source_origin=ORIGIN)
     assert entered.wait(2)
-    with pytest.raises(WorkerError, match="current local capture"):
+    with pytest.raises(WorkerError, match="current local media operation"):
         owner.render_local(local_spec(tmp_path), origin=ORIGIN, source_origin=ORIGIN)
     owner.deactivate() if retire else owner.cancel_local(task)
     with pytest.raises(local_render.RenderCancelled):

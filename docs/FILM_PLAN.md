@@ -565,9 +565,52 @@ current model metadata, validate the payload and preserve the server's exact
 cost; this template is not evidence that a provider currently accepts it. The
 active UI/MCP do not yet install or quote these drafts. Their future session
 owner must preserve source/scene/scope identity through review and quote delivery,
-then require explicit generation approval. Media probing, native final-review
-assembly, export, live provider acceptance and human motion/audio review remain
-separate. These helpers alone do not complete Film finishing.
+then require explicit generation approval. Verified media preparation is available
+through the session command below; native final-review assembly, export, live
+provider acceptance and human motion/audio review remain separate. These helpers alone do not complete Film finishing.
+
+## Verified media preparation
+
+`JobSession.prepare_film_composition` snapshots a recipe and runs its local media
+inspection on the existing job workers. The coordinator reads the current scoped
+source associations, measures each saved file, verifies that picture duration
+covers the exact source trim and cut, then rechecks every source revision before
+returning an immutable `VerifiedComposition`. Audio duration observations come
+from those same receipt-bound bytes. This command creates no job, quote, upload,
+download or scene change. API-key default scope still needs no project discovery.
+
+Model results must already have verified downloaded receipts in `ready`,
+`apply_failed` or `applied` state. Imported uploads must retain their staged source
+bytes. An association whose staging was explicitly cleaned remains usable as a
+remote asset but cannot supply a duration to this command; preparation stops
+without refetching or reuploading it. Missing, changed, ambiguous or unsupported
+media likewise stops before estimation.
+
+[`media_probe.py`](../scenario/core/jobs/media_probe.py) requires an explicitly
+installed `ffprobe` on PATH, copies at most 512 MiB per source into private storage,
+and verifies the saved size/SHA256 while copying. It probes only that copy with
+a forced supported container demuxer and the local-file protocol. MOV external
+track references and absolute external paths are disabled. Credential/proxy
+variables are scrubbed using the existing local-process environment. The command
+bounds process time, diagnostic output, stream inventory and timing metadata;
+cancellation or retirement terminates and reaps the owned child. Owned probe
+scratch is removed on success or failure; original results/staging stay intact.
+No binary is fetched or bundled.
+
+Supported MIME types cover MP4/MOV, WebM/Matroska, AVI, WAV, MP3, Ogg, FLAC, M4A
+and AAC. Ambiguous multiple picture/sound streams are rejected; audio cover art is
+ignored. Picture and sound use their own exact rational duration where present;
+a container-wide fallback is allowed only for a single primary media stream.
+Measurements describe container metadata, not a full decode, constant-frame-rate
+proof or human motion/audio acceptance. A later source replacement cannot alter
+the already inspected private copy, but this read does not lock the saved file
+or authorize later use of changed bytes.
+
+One local render or inspection can run per worker owner. Session delivery checks
+the original scope and scene revision, and retirement cancels work independently
+of any panel. This command is available to integration code, not yet native Film
+controls or local MCP. Draft review must still revalidate sources through quote
+delivery and obtain separate generation approval.
 
 ## Remaining integration and evidence
 

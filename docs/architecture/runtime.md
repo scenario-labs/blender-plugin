@@ -156,6 +156,12 @@ results through the coordinator. Saved state is projected into the existing Jobs
 not registered with the prototype manager. Closing a panel does not stop work;
 credential/file changes retire the owner while in-flight receipts stay in the
 original store. Local MCP status can inspect these records after restart.
+The model-job pump and explicit inspection publish at most fifty sidebar rows,
+deduplicated by local job ID, with the owner's current projection replacing stale
+copies. Ordering uses descending creation time, then job ID for stable ties
+(hydrated records without timestamps use zero). Repeated pumps do not rotate
+older hydrated rows into the visible list. This display limit does not delete
+saved jobs or stop their workers.
 
 This is a pre-release integration slice. Image local-file/capture references
 must be uploaded before pricing/submission. Local MCP now uses the

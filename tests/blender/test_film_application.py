@@ -343,6 +343,53 @@ class FilmApplicationTests(unittest.TestCase):
         self.assertEqual(self.builder._snapshot(), before)
         self.assertEqual(self.states(), [self.storage.JobState.APPLY_FAILED] * 2)
 
+    def test_inspected_failed_claim_can_be_dismissed_without_replaying(self):
+        before = self.builder._snapshot()
+        # Dismissed handles also release the bounded review cache.
+        for _ in range(17):
+            identifier = self.ready()
+            with patch.object(
+                self.session, "_claim_saved_application", side_effect=OSError("Before write")
+            ):
+                self.assertEqual(self.commands.approve(identifier)["phase"], "UNCERTAIN")
+            with self.assertRaises(RuntimeError):
+                self.prepare()
+            for acknowledgement in (False, None, 1, "true"):
+                with self.assertRaisesRegex(ValueError, "Confirm inspection"):
+                    self.commands.dismiss_uncertain(identifier, inspected=acknowledgement)
+            with patch.object(
+                self.builder, "build_shot", side_effect=AssertionError("No implicit rebuild")
+            ):
+                result = self.commands.dismiss_uncertain(identifier, inspected=True)
+            self.assertEqual(result["phase"], "DISCARDED")
+            self.assertTrue(result["inspection_required"])
+            self.assertEqual(self.states(), [self.storage.JobState.READY] * 2)
+            self.assertEqual(self.builder._snapshot(), before)
+        self.assertLessEqual(len(self.commands._reviews), 16)
+        self.assertEqual(self.commands.status(self.ready())["phase"], "READY")
+
+    def test_dismissal_never_releases_an_uncertain_durable_claim(self):
+        identifier = self.ready()
+        original = self.session._claim_saved_application
+
+        def lost(*args):
+            original(*args)
+            raise OSError("Lost durable claim acknowledgement")
+
+        with patch.object(self.session, "_claim_saved_application", side_effect=lost):
+            self.commands.approve(identifier)
+        before = self.store.records()
+        self.commands.dismiss_uncertain(identifier, inspected=True)
+        self.assertEqual(self.store.records(), before)
+        self.assertIn(self.storage.JobState.APPLYING, self.states())
+        with self.assertRaises(ValueError):
+            self.prepare()
+
+    def test_dismissal_requires_uncertain_review(self):
+        identifier = self.ready()
+        with self.assertRaisesRegex(ValueError, "uncertain"):
+            self.commands.dismiss_uncertain(identifier, inspected=True)
+
     def test_partial_native_mutation_leaves_uncertain_claims(self):
         identifier = self.ready()
 
@@ -374,6 +421,9 @@ class FilmApplicationTests(unittest.TestCase):
         self.assertEqual(result["phase"], "UNCERTAIN", result)
         self.assertTrue(result["receipt_retry_available"])
         self.assertFalse(result["inspection_required"])
+        with self.assertRaisesRegex(ValueError, "receipts"):
+            self.commands.dismiss_uncertain(identifier, inspected=True)
+        self.assertEqual(self.commands.status(identifier)["phase"], "UNCERTAIN")
         before = self.builder._snapshot()
         with patch.object(self.builder, "build_shot", side_effect=AssertionError("Do not rebuild")):
             recovered = self.commands.retry_receipts(identifier)

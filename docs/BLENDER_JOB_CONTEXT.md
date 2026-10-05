@@ -81,7 +81,9 @@ Deleted scenes, real origin changes, changed recipes and retired credentials rej
 delivery/application. Temporarily different timer contexts defer delivery to the
 unchanged source scene. Confirmed rollback records failure; partial claims or
 incomplete cleanup remain uncertain. Known success/failure receipt writes can be
-retried without repeating scene work. Restart requires a fresh review, using the
+retried without repeating scene work. Explicitly acknowledging inspection can
+dismiss an uncertain review only after known receipts have been saved; it never
+clears an uncertain durable claim or rebuilds a scene. Restart requires a fresh review, using the
 same durable results and explicit application recovery policy. The command is
 available for integration but has no native/MCP control registration in this slice.
 

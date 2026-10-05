@@ -276,6 +276,32 @@ class ModelGenerationTests(unittest.TestCase):
         self.assertEqual(self.paid, [])
         self.assertTrue(all(request.method == "GET" for request in self.calls))
 
+    def test_model_pump_replaces_stale_rows_and_caps_hydrated_views_stably(self):
+        record = submodule("core.jobs.records").JobRecord
+        rows = [
+            record(str(index), "image", "image", "fixture", {}, created_at=index)
+            for index in range(70)
+        ]
+        owner = SimpleNamespace(views={row.local_id: row for row in rows}, poll=Mock())
+        self.runtime.state.model_jobs = owner
+        self.runtime.state.jobs_view = [
+            replace(rows[-1], status="stale"),
+            replace(rows[-1], status="duplicate"),
+        ]
+        try:
+            for _ in range(3):
+                self.generation.process_model_jobs()
+                self.assertEqual(self.runtime.state.jobs_view, list(reversed(rows[20:])))
+                self.assertIs(self.runtime.state.jobs_view[0], rows[-1])
+            # Inspection must be bounded immediately, without waiting for another tick.
+            owner.inspect = Mock(return_value=tuple(rows))
+            self.runtime.state.jobs_view.clear()
+            with patch.object(self.runtime, "ensure_model_jobs", return_value=owner):
+                self.runtime.inspect_model_jobs()
+            self.assertEqual(self.runtime.state.jobs_view, list(reversed(rows[20:])))
+        finally:
+            self.runtime.state.model_jobs = None
+
     def test_native_cloud_recovery_and_mcp_repeat_use_one_saved_record_without_application(self):
         self.result_fixture()
         before = set(bpy.data.images)

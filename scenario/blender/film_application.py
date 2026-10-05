@@ -239,6 +239,20 @@ class FilmShotCommands:
                 # The coordinator retains the attempted outcome for acknowledgement-only retry.
                 review.receipts.append(claim)
 
+    def dismiss_uncertain(self, identifier, *, inspected):
+        """Retire an inspected review without changing jobs, receipts or scene data."""
+        _main_thread()
+        review = self._reviews.get(identifier)
+        if review is None or review.phase != "UNCERTAIN":
+            raise ValueError("Dismiss only an uncertain Film shot review")
+        if inspected is not True:
+            raise ValueError("Confirm inspection of the scene and saved jobs first")
+        if review.receipts:
+            raise ValueError("Save the known Film application receipts before dismissal")
+        review.phase = "DISCARDED"
+        review.completions.clear()
+        return self.status(identifier)
+
     def approve(self, identifier):
         _main_thread()
         review = self._reviews.get(identifier)

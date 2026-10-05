@@ -301,6 +301,13 @@ Reviews and receipt handles are owner-local, capped at sixteen, and disappear on
 session shutdown. Saved tasks/results survive restart and require fresh destination
 review; uncertain durable application remains explicit inspection work. `discard`
 retires an unapproved review and drains pending verification without applying it.
+After inspecting an uncertain attempt's scene and saved jobs,
+`dismiss_uncertain(..., inspected=True)` retires only its review. It refuses
+dismissal while a known receipt can still be saved through `retry_receipts`.
+Dismissal neither changes saved job state nor repeats scene work: unresolved
+application claims still block a fresh review. If a failed claim never reached
+storage and the jobs remain eligible, the user can explicitly prepare again
+without restarting the session.
 There is no new SDK request, download, store, worker pool or UI registration.
 Native/MCP presentation, timeline approval and release acceptance remain separate.
 

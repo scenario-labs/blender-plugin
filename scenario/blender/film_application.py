@@ -204,6 +204,7 @@ class FilmShotCommands:
             try:
                 scene_name = review.application.scene.name
             except ReferenceError:
+                # The built scene was deleted; report no live scene rather than a replacement.
                 pass
         return {
             "review_id": identifier,

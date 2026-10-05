@@ -216,9 +216,51 @@ saved for explicit application through the existing saved-job controls or MCP.
 Restarted/paused jobs require explicit recovery; opening Film does not resume or
 resubmit them. These controls do not build scenes or assemble a finished film.
 
+## Native shot and timeline primitives
+
+[`film_scene.py`](../scenario/blender/film_scene.py) constructs one new shot scene
+from a raw validated recipe. It preserves the current scene, selection, active
+object and timeline. A failure removes only newly created geometry, materials,
+images, rigs, actions, camera curves and Worlds; no partially built shot is returned.
+Repeated builds create separate takes instead of editing an earlier scene.
+
+The builder uses the recipe's frame rate, editorial duration, camera lens/path,
+animated camera target, primitive transforms/colors/roles, placeholder motion and
+World settings. Camera paths remain editable Bezier curves. Motion keys map
+continuously onto the inclusive shot frame range; distinct subframe keys are not
+rounded together. It adds local lighting and a ground plane when the plan has no
+environment plane. Shot metadata retains the production identity, recipe digest,
+editorial/source timing, declared continuity and placeholder legend.
+
+Each hero needs an explicitly selected `HeroSource` containing a saved GLB result
+and its download receipt/path. The existing model importer rechecks bounded,
+embedded GLB bytes and packs textures. Preflight verifies every source before
+mutation, and import rehashes it again. Actors have independent geometry, rigs,
+morph data and animation instances. Width/height normalization, asset orientation,
+actor transforms, trajectories and imported hold/loop animation are separate.
+Hold/loop uses the importer's active clip or first stored NLA clip; other clip data
+is retained, but this recipe schema has no named-clip selector. Hero reference and
+material-task names remain recipe metadata; the builder keeps the GLB's embedded
+materials and does not apply a separate material task.
+
+`build_timeline` composes an explicitly supplied complete set of matching live
+shot scenes into a new editable scene-strip sequence, with exact editorial order,
+frame boundaries and markers. It rejects foreign production/recipe identities,
+removed scenes and changed shot timing before creating data. It preserves the
+working scene and never replaces an existing sequence.
+
+These are main-thread local primitives, with no SDK, network, paid submission,
+file save, activation control or separate job storage. A receipt proves bytes,
+not credential ownership or approval. Before exposing scene construction through
+native/MCP Film controls, the shared command layer still must verify Film task and
+credential scope, bind the unchanged recipe/destination, persist all application
+claims and handle ambiguous receipts. The native tests establish synthetic shot,
+model and sequence behavior, not that integrated command flow, visual motion
+acceptance, capture/encoding, finishing or export.
+
 ## Remaining integration and evidence
 
-Scene construction, shot capture, media finishing,
+Shared scene-construction commands, shot capture, media finishing,
 provider-specific preparation and final export remain separate work. Keep useful
 source capabilities and tests as those paths are connected; do not describe this
 helper adoption as a completed Film workflow.

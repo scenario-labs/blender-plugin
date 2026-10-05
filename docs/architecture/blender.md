@@ -87,3 +87,13 @@ other slots and face indices. The [material guide](../MATERIAL_APPLICATION.md)
 details target restrictions, bounded decoding, rollback and receipt-only recovery.
 Native and MCP actions share the scoped session; prototype material callbacks
 are not used for this saved-result command.
+
+## Film shot scenes
+
+[`film_scene.py`](../../scenario/blender/film_scene.py) provides transactional local
+shot construction and editable scene-strip timeline assembly. It validates the
+whole recipe before mutation, uses receipt-checked GLB import for explicit heroes,
+restores the working scene and removes newly created data on failure. See the
+[Film primitive contract](../FILM_PLAN.md#native-shot-and-timeline-primitives) for
+choreography, source identity and remaining shared-command approval requirements.
+It does not bypass those requirements by exposing an unclaimed UI/MCP importer.

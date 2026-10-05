@@ -191,6 +191,23 @@ See the [Film contract guide](FILM_PLAN.md) for timing, audio, scene-schema limi
 and explicit remaining integration. No Studio runner, client, separate storage,
 view registration, media binary or sample media is imported by this step.
 
+## Native Film scene construction
+
+The first-party [Film scene primitive](../scenario/blender/film_scene.py) implements
+the retained shot/timeline responsibilities identified in the selected Studio
+`src/scenario_studio/film_scene.py` and scene adapter at
+`e2b0277064f0c502d46524fba1d006d0ac83f846`: editable primitives and cameras, role metadata,
+hero placement and animation, and a director sequence. It uses current validated
+recipe contracts, data-based geometry construction and the existing receipt-bound
+GLB importer. Motion/NLA choreography is adapted from Emmanuel de Maistre's
+selected source; attribution is retained with the adaptation. Geometry creation,
+receipt preflight, transaction cleanup and scene identity checks use the current
+package's contracts. No prototype file-path importer, global source-asset cache, transport,
+production-state file, snapshot history or automatic project save is carried over.
+Actor geometry/rig/morph data are independent, trading extra import/memory cost for
+explicit instance isolation. Shared Film application claims and controls are the
+next integration boundary; this local component is not completed Film acceptance.
+
 ## External media tools
 
 Adopt **external, optional ffmpeg** for Studio's PNG-to-MP4 playblast encoding;

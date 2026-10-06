@@ -393,6 +393,135 @@ class SCENARIO_OT_apply_saved_material(bpy.types.Operator):
         return {"FINISHED"}
 
 
+class SCENARIO_OT_apply_saved_mesh(bpy.types.Operator):
+    bl_idname = "scenario.apply_saved_mesh"
+    bl_label = "Apply saved mesh edit"
+    bl_description = "Review one saved result before replacing the captured mesh"
+    context_id: StringProperty(options={"HIDDEN"})
+    request_id: StringProperty(options={"HIDDEN"})
+    expected_revision: IntProperty(min=0, options={"HIDDEN"})
+    asset_id: StringProperty(options={"HIDDEN"})
+    application_id: StringProperty(options={"HIDDEN", "SKIP_SAVE"})
+    scene_name: StringProperty(options={"HIDDEN", "SKIP_SAVE"})
+    target_name: StringProperty(options={"HIDDEN", "SKIP_SAVE"})
+    is_reuse: BoolProperty(options={"HIDDEN", "SKIP_SAVE"})
+    review_error: StringProperty(options={"HIDDEN", "SKIP_SAVE"})
+    local_placement_required: BoolProperty(options={"HIDDEN", "SKIP_SAVE"})
+    policy: EnumProperty(
+        name="Edit",
+        items=(
+            ("REMESH", "Replace geometry", "Adopt result geometry, UVs and mesh materials"),
+            ("UV", "Replace active UVs", "Require exactly matching indexed topology and positions"),
+        ),
+        default="REMESH",
+        options={"SKIP_SAVE"},
+    )
+    placement: EnumProperty(
+        name="Result coordinates",
+        items=(
+            ("WORLD", "Scene coordinates", "Preserve imported result positions in the scene"),
+            (
+                "LOCAL",
+                "Object local coordinates",
+                "Use imported positions in the source object's local axes",
+            ),
+        ),
+        default="WORLD",
+        options={"SKIP_SAVE"},
+    )
+    keep_original: BoolProperty(name="Keep original", default=True, options={"SKIP_SAVE"})
+
+    def invoke(self, context, event):
+        try:
+            context.view_layer.update()
+            source = context.view_layer.objects.active
+            self.local_placement_required = (
+                source is not None and source.matrix_world.determinant() <= 0
+            )
+            if self.placement == "WORLD" and self.local_placement_required:
+                self.placement = "LOCAL"
+            jobs, approval = runtime.prepare_mesh_application(
+                self.context_id,
+                self.request_id,
+                self.expected_revision,
+                context.scene,
+                source,
+                self.asset_id,
+                policy=self.policy,
+                placement=self.placement,
+                keep_original=self.keep_original,
+            )
+            self._jobs = jobs
+            self.application_id = approval.identifier
+            self.scene_name, self.target_name = approval.scene_name, approval.target_name
+            self.is_reuse = approval.record.state.value == "applied"
+            self.review_error = ""
+        except Exception:
+            self.report({"ERROR"}, "Choose one local mesh in Object Mode and inspect the saved GLB")
+            return {"CANCELLED"}
+        return context.window_manager.invoke_props_dialog(self, width=580)
+
+    def _sync_options(self):
+        approval = runtime.revise_mesh_application(
+            self.context_id,
+            self.application_id,
+            policy=self.policy,
+            placement=self.placement,
+            keep_original=self.keep_original,
+        )
+        self.application_id = approval.identifier
+        self.review_error = ""
+
+    def check(self, context):
+        if not self.application_id:
+            return False
+        try:
+            self._sync_options()
+        except Exception:
+            self.review_error = "Target or options changed; cancel and review again"
+        return True
+
+    def draw(self, context):
+        layout = self.layout
+        layout.label(text=f"Scene: {self.scene_name}", icon="SCENE_DATA")
+        layout.label(text=f"Mesh: {self.target_name}", icon="MESH_DATA")
+        layout.label(text=f"Saved result: {self.asset_id}")
+        if self.is_reuse:
+            layout.label(text="Use saved results again; no new generation.", icon="INFO")
+        layout.prop(self, "policy")
+        layout.prop(self, "placement")
+        if self.local_placement_required:
+            layout.label(text="Mirrored or zero-scale source: use object local coordinates.")
+        layout.prop(self, "keep_original")
+        if self.policy == "REMESH":
+            layout.label(text="Replace this mesh's geometry, UVs and mesh materials.")
+        else:
+            layout.label(text="Replace active UVs only; topology and positions must match exactly.")
+        layout.label(text="Keep the source object's name, transforms, parenting and collections.")
+        layout.label(text="One static GLB mesh only. No automatic fitting or scale adjustment.")
+        layout.label(text="Keep original makes an unselected copy. No global undo entry.")
+        if self.review_error:
+            layout.label(text=self.review_error, icon="ERROR")
+
+    def cancel(self, context):
+        jobs = getattr(self, "_jobs", None)
+        if jobs is not None:
+            jobs.discard_image_application(self.application_id)
+
+    def execute(self, context):
+        try:
+            self._sync_options()
+            runtime.apply_saved_result(self.context_id, self.application_id)
+        except Exception:
+            self.cancel(context)
+            self.report(
+                {"ERROR"}, "Mesh edit was not started; review the captured target and options"
+            )
+            return {"CANCELLED"}
+        runtime.set_message("Mesh edit approved; inspect the saved job for its result")
+        return {"FINISHED"}
+
+
 def draw_controls(layout, record):
     if not record.meta.get("shared_job"):
         return
@@ -433,6 +562,22 @@ def draw_controls(layout, record):
                     asset_id,
                 )
                 operator.purpose = "restore_world" if action == "restore_world" else "world"
+            continue
+        if action == "apply_mesh":
+            for index, asset_id in enumerate(record.asset_ids, 1):
+                if record.asset_types.get(asset_id) != MODEL_MEDIA_TYPE:
+                    continue
+                operator = layout.operator(
+                    "scenario.apply_saved_mesh", text=f"Apply mesh edit ({index})"
+                )
+                operator.context_id, operator.request_id = (
+                    runtime.state.job_context_id,
+                    record.local_id,
+                )
+                operator.expected_revision, operator.asset_id = (
+                    record.meta["saved_revision"],
+                    asset_id,
+                )
             continue
         if action == "import_model":
             for index, asset_id in enumerate(record.asset_ids, 1):
@@ -488,6 +633,7 @@ CLASSES = (
     SCENARIO_OT_import_saved_model,
     SCENARIO_OT_apply_saved_world,
     SCENARIO_OT_apply_saved_material,
+    SCENARIO_OT_apply_saved_mesh,
 )
 
 

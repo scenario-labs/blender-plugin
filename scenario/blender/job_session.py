@@ -684,7 +684,7 @@ class JobSession:
             raise OriginUnavailable("Select one saved mesh asset")
         item, path = selected[0]
         del self._issued[id(completion)]
-        claim = self._claim_saved_application(verified, destination, "model", (asset_id,))
+        claim = self._claim_saved_application(verified, destination, "mesh_edit", (asset_id,))
         try:
             application = apply_saved_mesh(
                 target,

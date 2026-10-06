@@ -6,9 +6,10 @@ import json
 import threading
 import time
 import uuid
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 
 import bpy
+from mathutils import Matrix
 
 from ..core.api.catalog import GENERATION_LANES, LANE_KIND
 from ..core.api.errors import ScenarioError
@@ -24,6 +25,10 @@ from .job_session import (
 from .material_application import MaterialApplicationError, capture_target, selected_maps
 from .material_application import validate_target as validate_material_target
 from .media_application import MEDIA_TYPES
+from .mesh_application import capture_target as capture_mesh_target
+from .mesh_application import validate_target as validate_mesh_target
+from .mesh_result_application import MeshEditApplication
+from .mesh_result_application import validate_request as validate_mesh_request
 from .model_application import MODEL_MEDIA_TYPE
 from .model_application import validate_destination as validate_model_destination
 from .world_application import PanoramaError, WorldApplicationError
@@ -108,6 +113,22 @@ class MaterialApplicationApproval:
     kind: str = "material"
 
 
+@dataclass(frozen=True)
+class MeshApplicationApproval:
+    identifier: str
+    record: StoredJob
+    destination: JobOrigin
+    scene_name: str
+    target_name: str
+    asset_id: str
+    target: object = field(repr=False)
+    policy: str
+    placement: str
+    mapping: tuple
+    keep_original: bool
+    kind: str = "mesh_edit"
+
+
 class ModelJobs:
     """Own ephemeral quotes and display projections, never another job engine."""
 
@@ -133,6 +154,8 @@ class ModelJobs:
         self._worlds = {}
         self._material_destinations = {}
         self._materials = {}
+        self._mesh_destinations = {}
+        self._mesh_edits = {}
 
     def quote(self, scene, model_id, body, *, lane="image"):
         if lane not in GENERATION_LANES:
@@ -236,6 +259,7 @@ class ModelJobs:
             model = self._model_destinations.pop(request_id, None)
             world = self._world_destinations.pop(request_id, None)
             material = self._material_destinations.pop(request_id, None)
+            mesh = self._mesh_destinations.pop(request_id, None)
             try:
                 completions = self.session.drain(task=task)
                 if not completions:
@@ -243,7 +267,19 @@ class ModelJobs:
                 completion = completions[0]
                 if completion.error is not None:
                     raise completion.error
-                if command == "verify_material":
+                if command == "verify_mesh_edit":
+                    applied = self.session.apply_recovered_mesh(
+                        completion,
+                        destination=mesh.destination,
+                        asset_id=mesh.asset_id,
+                        target=mesh.target,
+                        policy=mesh.policy,
+                        result_to_source=mesh.mapping,
+                        keep_original=mesh.keep_original,
+                    )
+                    self._mesh_edits[request_id] = applied.application
+                    self._paused.discard(request_id)
+                elif command == "verify_material":
                     applied = self.session.apply_recovered_material(
                         completion, destination=material.destination, target=material.target
                     )
@@ -322,10 +358,10 @@ class ModelJobs:
             except ModelResultUncertain as error:
                 if error.application is not None:
                     self._receipts[request_id] = error
-                    _remember(
-                        self._objects, request_id, error.application.objects, bpy.data.objects
-                    )
-                self._pause(request_id, "Model import needs receipt recovery; do not import again")
+                    self._remember_model_application(request_id, error.application)
+                self._pause(
+                    request_id, "Model application needs receipt recovery; do not apply again"
+                )
             except MediaResultUncertain as error:
                 if error.application is not None:
                     self._receipts[request_id] = error
@@ -449,16 +485,19 @@ class ModelJobs:
         if state == JobState.REMOTE and record.intent.operation == "model":
             actions.append("cancel")
         if reusable and any(item.asset.media_type == MODEL_MEDIA_TYPE for item in record.results):
-            actions.append("import_model")
+            actions.extend(("import_model", "apply_mesh"))
         if reusable and any(
             item.asset.media_type in {"image/png", "image/exr", "image/x-exr"}
             for item in record.results
         ):
             actions.append("apply_world")
-        if reusable and any(
-            item.asset.texture_role in {"base", "albedo"} for item in record.results
-        ):
-            actions.append("apply_material")
+        if reusable:
+            try:
+                selected_maps(record)
+            except MaterialApplicationError:
+                pass
+            else:
+                actions.append("apply_material")
         if state == JobState.APPLIED and request_id in self._worlds:
             actions.append("restore_world")
         if request_id in self._receipts:
@@ -481,6 +520,7 @@ class ModelJobs:
                 "apply_world",
                 "restore_world",
                 "apply_material",
+                "apply_mesh",
             }
         ):
             raise ScenarioError(0, "The saved job or available action changed; inspect it again")
@@ -497,7 +537,7 @@ class ModelJobs:
                 self._worlds[request_id] = outcome.application
             elif isinstance(pending, ModelResultUncertain):
                 outcome = self.session.retry_model_receipt(pending)
-                _remember(self._objects, request_id, outcome.application.objects, bpy.data.objects)
+                self._remember_model_application(request_id, outcome.application)
             elif isinstance(pending, MediaResultUncertain):
                 self.session.retry_media_receipt(pending)
             else:
@@ -646,6 +686,121 @@ class ModelJobs:
         self._application_approvals[ticket.identifier] = ticket
         return ticket
 
+    def _remember_model_application(self, request_id, application):
+        if isinstance(application, MeshEditApplication):
+            self._mesh_edits[request_id] = application
+        else:
+            _remember(self._objects, request_id, application.objects, bpy.data.objects)
+
+    @staticmethod
+    def _mesh_options(target, policy, placement, keep_original):
+        if placement not in {"WORLD", "LOCAL"}:
+            raise ScenarioError(0, "Choose scene or object-local result coordinates")
+        validate_mesh_target(target)
+        try:
+            mapping = (
+                target.obj.matrix_world.inverted() if placement == "WORLD" else Matrix.Identity(4)
+            )
+        except ValueError:
+            raise ScenarioError(0, "The target transform cannot map scene coordinates") from None
+        mapping = validate_mesh_request(
+            target, policy=policy, result_to_source=mapping, keep_original=keep_original
+        )
+        return tuple(tuple(row) for row in mapping)
+
+    def prepare_mesh_application(
+        self,
+        request_id,
+        expected_revision,
+        scene,
+        obj,
+        asset_id,
+        *,
+        policy="REMESH",
+        placement="WORLD",
+        keep_original=True,
+    ):
+        record = self.store.get(request_id)
+        if (
+            type(expected_revision) is not int
+            or record is None
+            or record.revision != expected_revision
+            or "apply_mesh" not in self.actions(record)
+            or len(self._application_approvals) >= 128
+        ):
+            raise ScenarioError(0, "Inspect the saved mesh and finish existing reviews first")
+        if not any(
+            item.asset.asset_id == asset_id and item.asset.media_type == MODEL_MEDIA_TYPE
+            for item in record.results
+        ):
+            raise ScenarioError(0, "Choose one saved static GLB result")
+        target = capture_mesh_target(scene, obj)
+        mapping = self._mesh_options(target, policy, placement, keep_original)
+        ticket = MeshApplicationApproval(
+            uuid.uuid4().hex,
+            record,
+            self.session.capture(scene, obj),
+            scene.name,
+            obj.name,
+            asset_id,
+            target,
+            policy,
+            placement,
+            mapping,
+            keep_original,
+        )
+        self._application_approvals[ticket.identifier] = ticket
+        return ticket
+
+    def revise_mesh_application(self, identifier, *, policy, placement, keep_original):
+        """Change reviewed options without recapturing or retargeting the source."""
+        ticket = self._application_approvals.get(identifier)
+        if not isinstance(ticket, MeshApplicationApproval):
+            raise ScenarioError(0, "Use an unconsumed mesh destination review")
+        mapping = self._mesh_options(ticket.target, policy, placement, keep_original)
+        self.session.validate_destination(ticket.destination)
+        if self.store.get(ticket.record.intent.request_id) != ticket.record:
+            raise ScenarioError(0, "The saved mesh changed; start a fresh review")
+        if (policy, placement, keep_original) == (
+            ticket.policy,
+            ticket.placement,
+            ticket.keep_original,
+        ):
+            return ticket
+        revised = replace(
+            ticket,
+            identifier=uuid.uuid4().hex,
+            policy=policy,
+            placement=placement,
+            mapping=mapping,
+            keep_original=keep_original,
+        )
+        del self._application_approvals[identifier]
+        self._application_approvals[revised.identifier] = revised
+        return revised
+
+    def _apply_saved_mesh(self, ticket):
+        self._application_approvals.pop(ticket.identifier)
+        record = self.store.get(ticket.record.intent.request_id)
+        if record != ticket.record or "apply_mesh" not in self.actions(record):
+            raise ScenarioError(0, "The saved mesh changed; inspect it again")
+        validate_mesh_request(
+            ticket.target,
+            policy=ticket.policy,
+            result_to_source=ticket.mapping,
+            keep_original=ticket.keep_original,
+        )
+        self.session.validate_destination(ticket.destination)
+        request_id = record.intent.request_id
+        task = self.session.verify_results(request_id, expected_revision=record.revision)
+        self._mesh_destinations[request_id] = ticket
+        self._commands[request_id] = ("verify_mesh_edit", task)
+        self._automatic_application.discard(request_id)
+        self._paused.add(request_id)
+        view = self._view(record)
+        view.meta["recovery_actions"], view.error = (), None
+        return request_id, task
+
     def prepare_material_application(self, request_id, expected_revision, scene, obj):
         record = self.store.get(request_id)
         if (
@@ -743,6 +898,8 @@ class ModelJobs:
         ticket = (
             self._application_approvals.get(identifier) if isinstance(identifier, str) else None
         )
+        if isinstance(ticket, MeshApplicationApproval):
+            return self._apply_saved_mesh(ticket)
         if isinstance(ticket, MaterialApplicationApproval):
             return self._apply_saved_material(ticket)
         if not isinstance(
@@ -823,6 +980,17 @@ class ModelJobs:
             sleeper.wait(min(0.1, remaining))
         raise ScenarioError(0, "The job context changed while waiting; inspect saved jobs again")
 
+    def _mesh_status(self, request_id):
+        application = self._mesh_edits.get(request_id)
+        if application is None:
+            return None
+        objects = tuple(bpy.data.objects)
+        return {
+            "target": application.source.name if application.source in objects else None,
+            "original": application.original.name if application.original in objects else None,
+            "policy": application.policy,
+        }
+
     def status(self, reference):
         self.poll()
         matches = [
@@ -877,6 +1045,7 @@ class ModelJobs:
             "error": self.views[record.intent.request_id].error
             if record.intent.request_id in self.views
             else None,
+            "mesh_edit": self._mesh_status(record.intent.request_id),
             "objects": [
                 obj.name
                 for obj in self._objects.get(record.intent.request_id, ())

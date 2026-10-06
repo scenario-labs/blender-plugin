@@ -232,8 +232,13 @@ A generation job's original `applied` state remains terminal. Local reuse adds
 or overwriting its first application destination. Each entry retains a unique
 application ID, the reviewed job revision, captured file/scene/target revision,
 purpose and selected asset IDs. It stores no extra paths, prompts, credentials,
-URLs or Blender names. Supported purpose labels are images, media, model, World
-and material; a label does not establish decoder compatibility or scene acceptance.
+URLs or Blender names. Supported purpose labels are images, media, model,
+mesh_edit, World and material; a label does not establish decoder compatibility
+or scene acceptance. New mesh replacements use `mesh_edit`; new static-model
+imports retain `model`. Existing claims keep their recorded labels, including
+older mesh replacements stored as `model`. This adds a validated label without
+changing schema-5 fields. Older readers reject an unknown label; do not downgrade
+a store containing newer application purposes.
 
 `claim_local_application` requires the exact current revision of an applied job,
 valid selected result IDs and no unfinished reuse. It appends an `applying` entry

@@ -280,3 +280,72 @@ vendor executable code and extension ZIP were unchanged. See the
 live provider quality, other OS desktop support, resolution of #263 or release
 acceptance. An earlier window-targeting attempt was not counted as interaction
 proof.
+
+## Saved mesh edit review
+
+**Apply mesh edit (N)** names the captured scene, source mesh and selected saved
+GLB. The dialog shows the replacement policy, scene/local coordinate placement
+and Keep original choice before confirmation. Explain geometry/UV/material
+replacement, exact-topology UV restrictions, no automatic fitting, preserved
+object context and the absence of global undo. Defaults keep an original copy.
+
+Option changes use `check()`, outside drawing, and revise the existing captured
+approval instead of selecting a new target. A stale target or scene requires
+cancellation and fresh review. `draw()` only reads the prepared labels and
+operator properties. Completed-result reviews retain the reuse notice.
+
+Mirrored or zero-scale source transforms cannot use scene-coordinate mapping.
+The native dialog opens with **Object local coordinates** and a visible
+explanation for those sources. Review and confirmation remain explicit; choosing
+the unsupported scene-coordinate option cannot start verification or application.
+
+An isolated macOS arm64 Blender 5.1.2 desktop check used ZIP
+`21edce46cf2c0e94095ba27668c2acef3b6b68968dc0dc0082921f1bd0760000`,
+which passes 670 installed native tests on each of Blender 5.0.1, 5.1.2 and 5.2.1.
+The mirrored-source dialog opened with local coordinates selected. Escape
+cancelled; selecting scene coordinates showed rejection, and returning to local
+coordinates allowed Return confirmation. Source scale remained negative, Keep
+original retained a copy, and a second explicit reuse persisted `mesh_edit`
+without more mock requests or submissions. Viewport selection, front-view input
+and zoom worked. Blender exited cleanly with the normal profile unchanged.
+The test app used a distinct local bundle identity with unchanged vendor
+executable code. This synthetic check does not establish provider alignment,
+other OS desktop behavior, global undo or release acceptance.
+
+![Selected mirrored source with negative scale before saved mesh application](images/mirrored-mesh-before.png)
+
+![Mirrored source approval selects and explains local coordinates](images/mirrored-mesh-approval.png)
+
+![Applied mirrored mesh retains its negative source scale](images/mirrored-mesh-result.png)
+
+Offline desktop acceptance on macOS arm64 Blender 5.1.2 used final ZIP
+`e1eed465de2c9376231e54a7e623f1391974f4102ba54f2845fddbec369dda38`,
+which passes 659 full native tests each on Blender 5.0.1, 5.1.2 and 5.2.1.
+Mouse input opened the explicit source review. Escape cancelled without applying;
+viewport selection and front-view keyboard input then worked. A fresh review
+named the selected source, and Return confirmed geometry replacement with Keep
+original enabled. The source became the synthetic three-vertex result, its
+original copy remained, and the durable job became applied without another mock
+submission or request. The temporary message acknowledges approval rather than
+continuing to describe verification after it has already finished.
+
+The preceding desktop check used ZIP
+`cc603cfa3c98e29430d5ea72c2c54a1ce6f7480324695c158d460f5f437e42f0`;
+the only subsequent production change was that message text. It additionally
+verified both policy and coordinate menus, Keep original toggling, cancellation,
+viewport focus after application and explicit completed-result reuse confirmed
+with Return. Reuse preserved the completed generation and recorded one separate
+applied local claim without another mock request or submission.
+
+Both isolated Blender processes exited cleanly and their normal-profile
+fingerprints were unchanged. The test-only app copy had a distinct bundle ID and
+local ad-hoc signature; vendor executable code and extension ZIP were unchanged.
+The fixture freezes catalog loading and mocks service responses; its loading
+labels are not live connection evidence. These checks do not establish provider
+alignment, pre-generation source binding, remaining edit policies/global undo,
+other OS desktop behavior, #263 resolution or release acceptance.
+
+[Before application](images/saved-mesh-edit-before.png),
+[approved replacement result](images/saved-mesh-edit-result.png).
+
+![Native mesh approval identifies the source and replacement policy](images/saved-mesh-edit-approval.png)

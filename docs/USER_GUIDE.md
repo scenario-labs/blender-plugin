@@ -506,3 +506,24 @@ Bundled dependencies, adopted sources and assets retain their original licences
 and notices; see the [repository licence notice](https://github.com/scenario-labs/blender-plugin#licence).
 
 Blender is a registered trademark of the Blender Foundation. Scenario for Blender is an independent extension, not published by or affiliated with the Blender Foundation. Trademark notes: https://github.com/scenario-labs/blender-plugin/blob/main/TRADEMARKS.md
+
+## Apply a saved mesh edit
+
+Select a local mesh in Object Mode, inspect the shared saved job, then choose
+**Apply mesh edit (N)** for one GLB result. Check the named scene, mesh and saved
+result before confirming. **Replace geometry** replaces geometry, UVs and mesh
+materials; **Replace active UVs** requires exactly matching indexed topology and
+positions. Unsupported rigs, animation and multi-mesh results are rejected.
+
+Choose **Scene coordinates** to keep the imported result's scene positions, or
+**Object local coordinates** to interpret those positions in the source's local
+axes. The extension does not fit or realign the result automatically. It preserves
+the source object's name, transforms, parenting and collections. **Keep original**
+is enabled by default and leaves an unselected copy. There is no global undo entry.
+
+Changing the source or scene invalidates approval; cancel and review again.
+Application uses the saved file without another generation. Completed jobs get a
+separate local application record. An uncertain application must be inspected,
+never repeated blindly; a pending success receipt can be saved without applying
+again. This local workflow does not establish provider alignment or complete the
+Edit 3D generation workflow.

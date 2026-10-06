@@ -273,6 +273,7 @@ class LocalApplication:
             "images",
             "media",
             "model",
+            "mesh_edit",
             "world",
             "material",
         }:

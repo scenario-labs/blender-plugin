@@ -201,14 +201,47 @@ warning does not undo a completed packed result.
 `JobSession.apply_recovered_mesh` supplies owner-issued verification, exact
 scene/object origin resolution and a durable claim before mutation. Original
 ready/confirmed-failed jobs use their recovered claim; completed jobs use a
-separate `model` local claim whose destination identifies the source object.
+separate `mesh_edit` local claim whose destination identifies the source object.
 `retry_model_receipt` records only known success, never another replacement.
 See [session ownership](BLENDER_JOB_CONTEXT.md#verified-saved-mesh-replacement).
 
 Installed synthetic tests cover remesh and exact-topology UV, parented/scaled
 sources, shared originals, packed materials, explicit node-transform mapping,
 selection, source changes, multi-scene/multi-mesh rejection, rollback failure,
-separate local reuse and persistence-only recovery. Native UI/MCP approval,
-operation-bound export metadata, provider coordinate contracts, rig/retexture/
+separate local reuse and persistence-only recovery. Operation-bound export
+metadata, provider coordinate contracts, rig/retexture/
 segmentation policy and global undo remain integration work under #65/#99.
 There are no new service calls or live/provider acceptance claims in this command.
+
+## Saved mesh edit approval
+
+**Apply mesh edit (N)** and MCP `prepare_result_application` with
+`purpose: mesh_edit` review one saved static GLB against the currently active
+mesh. The review names the scene, source and selected asset. `REMESH` replaces
+geometry, UVs and mesh materials; `UV` replaces only active UVs and requires
+exact indexed topology and positions. **Keep original** defaults to enabled.
+
+**Scene coordinates** (`WORLD`) maps imported positions through the captured
+source's inverse world transform. **Object local coordinates** (`LOCAL`) treats
+those imported positions as source-local. Neither fits, centers or rescales a
+provider result automatically. Singular or orientation-reversing mappings are
+rejected. The review binds the chosen mapping, policy and original-copy choice.
+For mirrored or zero-scale sources, the native dialog starts with object-local
+coordinates and explains that requirement. It still requires confirmation;
+explicit MCP `WORLD` requests remain rejected rather than changing their mapping.
+Editing options replaces that approval handle without recapturing the target;
+changed source or scene context requires cancellation and fresh review.
+
+Confirmation consumes the handle and verifies saved files on the existing worker.
+Main-thread application revalidates the captured source and calls the shared
+session command above. Completed jobs persist separate `mesh_edit` local claims,
+distinct from `model` imports even after restart. Existing claims keep their
+recorded purpose; older `model` entries are not reclassified. Status exposes
+the latest session-local `mesh_edit` target, original-copy name and policy;
+deleted objects have null names. A failed outcome receipt can be saved without
+replacing the mesh again. An uncertain scene outcome never authorizes replay.
+There is no automatic blend save or global undo entry.
+
+This is explicit application of a saved result. It does not bind a source export
+to a generation request or establish provider alignment, retexture/rig/segmentation
+policy or end-to-end Edit 3D acceptance.

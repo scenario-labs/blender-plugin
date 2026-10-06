@@ -593,10 +593,17 @@ cleanup retains uncertainty. A successful mesh change followed by a failed store
 write retains an owner-issued `ModelResultUncertain` handle for the existing
 `retry_model_receipt`. That retry never imports or replaces again. Shutdown drops
 receipt authority; restart does not authorize replay of an unfinished claim.
-Completed jobs can use a separate `model` local claim without changing their
+Completed jobs can use a separate `mesh_edit` local claim without changing their
 original generation outcome. Its target identifies the explicitly selected source.
 
-This is a shared session command with installed native coverage. UI/MCP destination
-approval, operation/export metadata and end-to-end edit-lane acceptance remain
-separate integration. It provides no global undo entry, persistent restoration
+Native **Apply mesh edit** and MCP `prepare_result_application` with
+`purpose: mesh_edit` share this command and its captured target. The
+[review](MESH_APPLICATION.md#saved-mesh-edit-approval) binds policy, coordinate
+placement and Keep original before verification. Editing review options never
+recaptures the source. Admission calls the shared destination guard before
+queuing verification; a retired session rejects the consumed approval without
+queuing work, claiming application or changing the scene. The single-use handle
+cannot be replayed. Delivery rechecks the destination after verification.
+Operation/export metadata and end-to-end edit-lane
+acceptance remain separate integration. It provides no global undo entry, persistent restoration
 handle, new generation request or automatic provider-coordinate mapping.

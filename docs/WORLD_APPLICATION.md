@@ -96,12 +96,12 @@ Scenario service calls.
 
 This is a partial slice of #98 and #65. Optional JobSession integration now binds
 verified downloads to guarded durable World application. SDK model validation,
-estimate/confirmation, production storage policy, already-imported asset reuse, global undo operators,
+estimate/confirmation, production storage policy, global undo operators,
 seam/pole quality and authorized live generation remain separate integration work.
 
 ## Saved-result UI and MCP approval
 
-For an unapplied downloaded PNG/EXR result, **Set panorama as World (N)** now
+For a downloaded PNG/EXR result, **Set panorama as World (N)** now
 captures the selected scene revision and current World for explicit confirmation.
 MCP uses `prepare_result_application` with `purpose: world` and a selected
 `asset_id`, followed by the same `apply_result_application` command after approval.
@@ -128,9 +128,12 @@ mutated. Successful restoration leaves the job `applied`; it does not rewind the
 claim or permit generation/application replay. A pending persistence receipt must
 be saved before restoration is offered, and retry never repeats World assignment.
 
-This path accepts `ready` or confirmed `apply_failed` jobs. Already `applied`
-images, including successful automatic Image imports, cannot be re-claimed as
-Worlds here. Reusing those images needs a separate local-asset/application path.
+This path accepts `ready` or confirmed `apply_failed` jobs under the original
+claim. Already `applied` images, including automatic Image imports, use a separate
+durable local claim after fresh approval. Interrupted local claims block further
+reuse. Restoration covers the most recent World assignment for this job in the
+current session; previous owned Worlds remain subject to normal Blender save/purge
+rules, and are not a persistent undo history.
 Session retirement/restart or file load loses the restoration handle; manually
 select a retained World in Blender when needed. No global undo transaction,
 cloud panorama preset, seam/pole acceptance or completion of #98 is claimed.

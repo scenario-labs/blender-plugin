@@ -3,7 +3,7 @@
 """Explicit shared-job recovery controls; drawing never changes stored jobs."""
 
 import bpy
-from bpy.props import EnumProperty, FloatVectorProperty, IntProperty, StringProperty
+from bpy.props import BoolProperty, EnumProperty, FloatVectorProperty, IntProperty, StringProperty
 
 from ..core.api.errors import ScenarioError
 from . import runtime
@@ -95,6 +95,7 @@ class SCENARIO_OT_import_saved_images(bpy.types.Operator):
     expected_revision: IntProperty(min=0, options={"HIDDEN"})
     application_id: StringProperty(options={"HIDDEN", "SKIP_SAVE"})
     scene_name: StringProperty(options={"HIDDEN", "SKIP_SAVE"})
+    is_reuse: BoolProperty(options={"HIDDEN", "SKIP_SAVE"})
 
     def invoke(self, context, event):
         try:
@@ -102,6 +103,9 @@ class SCENARIO_OT_import_saved_images(bpy.types.Operator):
                 self.context_id, self.request_id, self.expected_revision, context.scene
             )
             self._jobs = jobs
+            self.is_reuse = approval.record.state.value == "applied" and not getattr(
+                approval, "restore", False
+            )
             self.application_id = approval.identifier
             self.scene_name = approval.scene_name
         except Exception:
@@ -111,6 +115,8 @@ class SCENARIO_OT_import_saved_images(bpy.types.Operator):
 
     def draw(self, context):
         self.layout.label(text=f"Scene: {self.scene_name}", icon="SCENE_DATA")
+        if self.is_reuse:
+            self.layout.label(text="Use saved results again; no new generation.", icon="INFO")
         self.layout.label(text="Import and pack these saved images into the current file.")
         self.layout.label(text="Choose an image in the Image Editor after importing.")
 
@@ -142,6 +148,7 @@ class SCENARIO_OT_import_saved_media(bpy.types.Operator):
     asset_id: StringProperty(options={"HIDDEN"})
     application_id: StringProperty(options={"HIDDEN", "SKIP_SAVE"})
     scene_name: StringProperty(options={"HIDDEN", "SKIP_SAVE"})
+    is_reuse: BoolProperty(options={"HIDDEN", "SKIP_SAVE"})
     destination_frame: IntProperty(options={"HIDDEN", "SKIP_SAVE"})
     media_kind: StringProperty(options={"HIDDEN", "SKIP_SAVE"})
 
@@ -155,6 +162,9 @@ class SCENARIO_OT_import_saved_media(bpy.types.Operator):
                 self.asset_id,
             )
             self._jobs = jobs
+            self.is_reuse = approval.record.state.value == "applied" and not getattr(
+                approval, "restore", False
+            )
             self.application_id, self.scene_name = approval.identifier, approval.scene_name
             self.destination_frame, self.media_kind = approval.frame, approval.kind
         except Exception:
@@ -164,6 +174,8 @@ class SCENARIO_OT_import_saved_media(bpy.types.Operator):
 
     def draw(self, context):
         self.layout.label(text=f"Scene: {self.scene_name}", icon="SCENE_DATA")
+        if self.is_reuse:
+            self.layout.label(text="Use saved results again; no new generation.", icon="INFO")
         self.layout.label(text=f"Add one {self.media_kind} strip at frame {self.destination_frame}")
         self.layout.label(text="Use an unused channel; keep scene timing unchanged.")
         if self.media_kind == "video":
@@ -196,6 +208,7 @@ class SCENARIO_OT_import_saved_model(bpy.types.Operator):
     asset_id: StringProperty(options={"HIDDEN"})
     application_id: StringProperty(options={"HIDDEN", "SKIP_SAVE"})
     scene_name: StringProperty(options={"HIDDEN", "SKIP_SAVE"})
+    is_reuse: BoolProperty(options={"HIDDEN", "SKIP_SAVE"})
     destination_cursor: FloatVectorProperty(size=3, options={"HIDDEN", "SKIP_SAVE"})
 
     def invoke(self, context, event):
@@ -208,6 +221,9 @@ class SCENARIO_OT_import_saved_model(bpy.types.Operator):
                 self.asset_id,
             )
             self._jobs = jobs
+            self.is_reuse = approval.record.state.value == "applied" and not getattr(
+                approval, "restore", False
+            )
             self.application_id, self.scene_name = approval.identifier, approval.scene_name
             self.destination_cursor = approval.cursor
         except Exception:
@@ -217,6 +233,8 @@ class SCENARIO_OT_import_saved_model(bpy.types.Operator):
 
     def draw(self, context):
         self.layout.label(text=f"Scene: {self.scene_name}", icon="SCENE_DATA")
+        if self.is_reuse:
+            self.layout.label(text="Use saved results again; no new generation.", icon="INFO")
         position = ", ".join(f"{value:.3f}" for value in self.destination_cursor)
         self.layout.label(text=f"Place model bottom at cursor: {position}")
         self.layout.label(text="Import one static GLB into a new group; pack its textures.")
@@ -252,6 +270,7 @@ class SCENARIO_OT_apply_saved_world(bpy.types.Operator):
     )
     application_id: StringProperty(options={"HIDDEN", "SKIP_SAVE"})
     scene_name: StringProperty(options={"HIDDEN", "SKIP_SAVE"})
+    is_reuse: BoolProperty(options={"HIDDEN", "SKIP_SAVE"})
     world_name: StringProperty(options={"HIDDEN", "SKIP_SAVE"})
 
     def invoke(self, context, event):
@@ -265,6 +284,9 @@ class SCENARIO_OT_apply_saved_world(bpy.types.Operator):
                 restore=self.purpose == "restore_world",
             )
             self._jobs = jobs
+            self.is_reuse = approval.record.state.value == "applied" and not getattr(
+                approval, "restore", False
+            )
             self.application_id, self.scene_name = approval.identifier, approval.scene_name
             self.world_name = approval.previous.name if approval.previous else "None"
         except Exception:
@@ -274,6 +296,8 @@ class SCENARIO_OT_apply_saved_world(bpy.types.Operator):
 
     def draw(self, context):
         self.layout.label(text=f"Scene: {self.scene_name}", icon="SCENE_DATA")
+        if self.is_reuse:
+            self.layout.label(text="Use saved results again; no new generation.", icon="INFO")
         self.layout.label(text=f"Current World: {self.world_name}")
         if self.purpose == "restore_world":
             self.layout.label(text="Restore the original World kept by this session.")
@@ -315,6 +339,7 @@ class SCENARIO_OT_apply_saved_material(bpy.types.Operator):
     expected_revision: IntProperty(min=0, options={"HIDDEN"})
     application_id: StringProperty(options={"HIDDEN", "SKIP_SAVE"})
     scene_name: StringProperty(options={"HIDDEN", "SKIP_SAVE"})
+    is_reuse: BoolProperty(options={"HIDDEN", "SKIP_SAVE"})
     target_name: StringProperty(options={"HIDDEN", "SKIP_SAVE"})
     slot: IntProperty(options={"HIDDEN", "SKIP_SAVE"})
     roles: StringProperty(options={"HIDDEN", "SKIP_SAVE"})
@@ -329,6 +354,9 @@ class SCENARIO_OT_apply_saved_material(bpy.types.Operator):
                 context.view_layer.objects.active,
             )
             self._jobs = jobs
+            self.is_reuse = approval.record.state.value == "applied" and not getattr(
+                approval, "restore", False
+            )
             self.application_id, self.scene_name = approval.identifier, approval.scene_name
             self.target_name, self.slot = approval.target_name, approval.target.active + 1
             self.roles = ", ".join(approval.roles)
@@ -341,6 +369,8 @@ class SCENARIO_OT_apply_saved_material(bpy.types.Operator):
 
     def draw(self, context):
         self.layout.label(text=f"Scene: {self.scene_name}", icon="SCENE_DATA")
+        if self.is_reuse:
+            self.layout.label(text="Use saved results again; no new generation.", icon="INFO")
         self.layout.label(text=f"Mesh: {self.target_name}, material slot {self.slot}")
         self.layout.label(text=f"Maps: {self.roles}")
         self.layout.label(text="Create a packed material using this mesh's active UV map.")
@@ -366,7 +396,12 @@ class SCENARIO_OT_apply_saved_material(bpy.types.Operator):
 def draw_controls(layout, record):
     if not record.meta.get("shared_job"):
         return
-    for action in record.meta.get("recovery_actions", ()):
+    actions = record.meta.get("recovery_actions", ())
+    if record.meta.get("saved_state") == "applied" and any(
+        action not in {"restore_world", "retry_receipt"} for action in actions
+    ):
+        layout.label(text="Reuse saved results", icon="FILE_REFRESH")
+    for action in actions:
         if action == "apply_material":
             operator = layout.operator("scenario.apply_saved_material", text="Apply saved material")
             operator.context_id, operator.request_id = runtime.state.job_context_id, record.local_id

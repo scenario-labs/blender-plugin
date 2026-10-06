@@ -211,8 +211,8 @@ Text, images or your Blender scene to video (Seedance 2.0 and 2.5, Kling, Veo, W
 - For new shared jobs, choose **Add video strip (N)** in saved-job controls.
   Confirm the scene and current frame before insertion. MP4 and WebM are supported
   up to 512 MiB. A scene or frame change requires a fresh confirmation. This adds
-  one chosen result on an unused channel without regenerating; one application
-  consumes the job's claim. Other variants remain saved. Select the destination
+  one chosen result on an unused channel without regenerating. After completion,
+  a fresh approval can insert another saved variant or reuse the same one. Select the destination
   scene in the Sequencer header to see the strip. The independent local media
   copy must remain available if you move or share the blend file.
 - Retained prototype results offer **Play** (system player), **Play in Blender**,
@@ -290,7 +290,7 @@ blend file yourself. See [material application](MATERIAL_APPLICATION.md) for lim
 For new shared jobs, **Add audio strip (N)** confirms one saved MP3, WAV or OGG
 result, the destination scene and current frame. It uses an unused channel,
 preserves existing strips and timing, and makes no new service request. The
-same size, one-application and local-file requirements as saved video apply.
+same size, fresh-approval and local-file requirements as saved video apply.
 Select the destination scene in the Sequencer header to inspect the strip.
 
 ![Confirmed saved audio inserted once at the approved frame in Blender Sequencer](images/saved-media-result.png)
@@ -398,7 +398,7 @@ see the reference for token configuration and online-access requirements.
 
 ## Apply a saved panorama to World
 
-For an unapplied saved PNG or EXR result, choose **Set panorama as World (N)**.
+For a saved PNG or EXR result, choose **Set panorama as World (N)**.
 Confirm the scene and current World. The image must be a supported 2:1 panorama;
 Blender uses it as an equirectangular environment, packs it and keeps the original
 World untouched. PNG is LDR. EXR can store HDR, but its format alone says nothing
@@ -413,11 +413,32 @@ Neither application nor restoration regenerates the image or spends credits.
 
 ![Saved panorama confirmation names the scene and current World before changing environment](images/saved-world-approval.png)
 
-This applies only to saved results that have not already been applied. Automatic
-Image imports and other completed application claims cannot be replayed through
-this action; reuse of those existing images remains separate integration.
+Already imported images can use this action through a fresh local approval.
+After repeated World assignments from the same job, restoration covers only its
+most recent assignment in the current session.
 
 ![Applied panorama offers a separate native confirmation to restore the previous scene World](images/saved-world-restore.png)
+
+## Reuse saved results
+
+Completed shared jobs offer **Reuse saved results** in their saved-job controls.
+Choose another image import, supported media/model import, World assignment or
+material assignment. Each action reviews the current destination again and uses
+verified saved files without another generation or credit spend. For example,
+an automatically imported image with an albedo role can become a material on a
+selected UV mesh; a supported 2:1 image can become a World.
+
+![Reuse confirmation names the selected mesh and explains no new generation is submitted](images/saved-result-reuse-approval.png)
+
+The original generation stays completed. Each reuse has a separate saved outcome.
+A changed destination or competing approval requires a new review. If Blender
+cannot confirm whether scene changes finished, inspect the scene; the job blocks
+further reuse. **Save import receipt** records a known outcome without importing
+again. There is no automatic reset after restart and no global undo entry.
+A job retains up to 128 reuse attempts, including confirmed failures; reaching
+that limit disables additional reuse without discarding the history.
+
+![Reused saved albedo appears on the approved mesh with packed material and reuse controls](images/saved-result-reuse-result.png)
 
 ## The floating composer
 

@@ -140,7 +140,9 @@ worker verification and destination revalidation precede the durable claim.
 The current scene must be local and in Object Mode both at preparation and after
 verification. Rejection before the claim leaves a ready job ready.
 A moved cursor, changed scene/file/context or stored revision requires review
-again. `applied` and interrupted `applying` jobs cannot be claimed a second time.
+again. Completed jobs can import another saved model under a separate local
+claim after fresh approval. An interrupted original or local `applying` claim
+cannot be replayed.
 Receipt-only retry saves known success without importing another model, and
 session shutdown releases that retry handle. This remains partial #65/#99 work:
 in-place remesh/UV/retexture, rig/animation transfer and edit-specific recovery

@@ -52,6 +52,12 @@ Receipt verification runs on the shared worker. Current scene/target revisions
 and slot state are checked again before the durable application claim. A stale
 or changed destination leaves the saved job available for fresh review.
 
+The approved scene must still be selected at admission and after verification,
+as required by the shared session for image, media, model and World application
+too. Switching scenes stops assignment before any durable claim or material
+change. Return to the intended scene and approve it again. Changing only the
+active object within that scene does not redirect the captured mesh target.
+
 Assignment replaces the approved existing slot, or adds the first slot when none
 exists. It leaves geometry, UVs, face indices, transforms, selection, old material
 node graphs and unrelated scene data intact. A failure restores slot bindings and
@@ -67,8 +73,8 @@ handle needs explicit inspection; it cannot be assumed safe to repeat.
 
 This slice has no global undo entry or persistent restoration handle. Old material
 datablocks are not edited, but unused data is subject to Blender's normal purge
-and save rules. Preserve a desired old material yourself. Already-applied Image
-jobs cannot be claimed again through this command; reusable local-asset
-application, multi-object/shared-mesh policies and texture-set selection remain
+and save rules. Preserve a desired old material yourself. Completed jobs can
+apply saved maps again through a fresh destination approval and separate durable
+local claim. Multi-object/shared-mesh policies and texture-set selection remain
 separate work. Synthetic native tests do not establish live provider or
 full Materials/release acceptance.

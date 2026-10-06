@@ -507,6 +507,7 @@ claims, other owners and a restarted process cannot invent receipt evidence.
 
 `recovery_plan` reports `review_application` for unfinished local reuse even
 though the original generation stays applied. Restart never authorizes replay or
-assumes the scene was unchanged. New destination/selection approval and native
-UI/MCP reuse remain follow-up integration; no Scenario service operation, download,
-paid submission or Blender mutation is performed by these commands.
+assumes the scene was unchanged. Native UI/MCP now supply fresh destination and
+selection approval through the [saved-result boundary](BLENDER_JOB_CONTEXT.md#explicit-local-result-reuse).
+These coordinator commands perform no Scenario service operation, download, paid
+submission or Blender mutation; the main-thread caller owns application.

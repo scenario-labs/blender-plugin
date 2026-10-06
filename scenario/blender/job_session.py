@@ -18,7 +18,7 @@ from bpy.app.handlers import persistent
 from ..core.jobs.coordinator import JobCoordinator, OriginQuote, RemoteSnapshot
 from ..core.jobs.origins import OriginRevisions
 from ..core.jobs.results import PromptResults, VerifiedResults
-from ..core.jobs.store import JobOrigin, StoredJob
+from ..core.jobs.store import JobOrigin, JobState, StoredJob
 from ..core.jobs.workers import JobWorkers
 from .image_application import ImageApplicationError, apply_images
 from .material_application import (
@@ -490,6 +490,14 @@ class JobSession:
         if cursor is not None and tuple(scene.cursor.location) != cursor:
             raise OriginUnavailable("The destination cursor changed; review it again")
 
+    def _claim_saved_application(self, verified, destination, purpose, asset_ids):
+        """Explicit recovered delivery may reuse a completed job under a new claim."""
+        if verified.record.state == JobState.APPLIED:
+            return self._coordinator.claim_local_application(
+                verified, destination, purpose=purpose, asset_ids=asset_ids
+            )
+        return self._coordinator.claim_recovered_application(verified, destination)
+
     def _apply_images(self, completion, *, destination=None):
         _main_thread()
         if self._issued.get(id(completion)) is not completion:
@@ -505,7 +513,12 @@ class JobSession:
         claim = (
             self._coordinator.claim_application(verified)
             if destination is None
-            else self._coordinator.claim_recovered_application(verified, destination)
+            else self._claim_saved_application(
+                verified,
+                destination,
+                "images",
+                tuple(item.asset.asset_id for item in verified.record.results),
+            )
         )
         try:
             images = apply_images(verified)
@@ -561,7 +574,7 @@ class JobSession:
             raise OriginUnavailable("Select one saved media asset")
         item, path = selected[0]
         del self._issued[id(completion)]
-        claim = self._coordinator.claim_recovered_application(verified, destination)
+        claim = self._claim_saved_application(verified, destination, "media", (asset_id,))
         try:
             application = apply_media(scene, item, path, frame=frame)
         except MediaApplicationError:
@@ -615,7 +628,7 @@ class JobSession:
             raise OriginUnavailable("Select one saved model asset")
         item, path = selected[0]
         del self._issued[id(completion)]
-        claim = self._coordinator.claim_recovered_application(verified, destination)
+        claim = self._claim_saved_application(verified, destination, "model", (asset_id,))
         try:
             application = apply_model(scene, item, path, cursor=cursor)
         except ModelApplicationError:
@@ -659,9 +672,14 @@ class JobSession:
         if target.scene != scene or target.obj != obj:
             raise OriginUnavailable("Use the exact approved material target")
         validate_target(target)
-        selected_maps(verified.record)
+        roles = selected_maps(verified.record)
         del self._issued[id(completion)]
-        claim = self._coordinator.claim_recovered_application(verified, destination)
+        claim = self._claim_saved_application(
+            verified,
+            destination,
+            "material",
+            tuple(verified.record.results[index].asset.asset_id for index in roles.values()),
+        )
         try:
             application = apply_material(verified, target)
         except MaterialApplicationError:
@@ -737,7 +755,7 @@ class JobSession:
         claim = (
             self._coordinator.claim_application(verified)
             if destination is None
-            else self._coordinator.claim_recovered_application(verified, destination)
+            else self._claim_saved_application(verified, destination, "world", (asset_id,))
         )
         try:
             application = apply_world(scene, path, expected_receipt=item.receipt)

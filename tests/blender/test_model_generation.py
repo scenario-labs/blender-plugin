@@ -353,8 +353,9 @@ class ModelGenerationTests(unittest.TestCase):
         self.assertIsNotNone(bpy.data.images[status["images"][0]].packed_file)
         with self.assertRaises(self.request_error):
             self.tools.apply_result_application(self.import_args(approval))
-        with self.assertRaises(self.request_error):
-            self.prepare_import(request_id)
+        fresh = self.prepare_import(request_id)
+        self.assertTrue(fresh["reuse"])
+        self.assertEqual(self.store.get(request_id), saved)
         self.assertEqual(len(self.calls), calls)
         self.assertEqual(len(self.paid), 1)
 
@@ -1369,8 +1370,9 @@ class ModelGenerationTests(unittest.TestCase):
         self.assertEqual(status["status"], "applied", status)
         self.assertEqual(len(status["objects"]), 2)
         self.assertEqual((len(self.calls), len(self.paid)), before)
-        with self.assertRaises(self.request_error):
-            self.prepare_model(request_id)
+        fresh = self.prepare_model(request_id)
+        self.assertTrue(fresh["reuse"])
+        self.assertEqual((len(self.calls), len(self.paid)), before)
 
     def recovered_panorama(self):
         before_worlds = set(bpy.data.worlds)
@@ -1716,3 +1718,252 @@ class ModelGenerationTests(unittest.TestCase):
         self.assertNotIn("retry_receipt", status["actions"])
         self.assertNotIn("apply_material", status["actions"])
         self.assertIsNotNone(bpy.context.active_object.active_material)
+
+    def finish_application(self, approval):
+        deferred = self.tools.apply_result_application(self.import_args(approval))
+        return deferred.finish(deferred.run())
+
+    def test_completed_image_reuses_as_world_after_restart_without_network(self):
+        request_id = self.recovered_panorama()
+        self.finish_application(self.prepare_import(request_id))
+        original = self.store.get(request_id)
+        images = set(bpy.data.images)
+        previous = bpy.context.scene.world
+        self.runtime.state.reset()
+        self.runtime.inspect_model_jobs()
+        before = len(self.calls), len(self.paid), len(self.downloads)
+        approval = self.prepare_world(request_id)
+        self.assertTrue(approval["reuse"])
+        self.assertEqual(bpy.context.scene.world, previous)
+        self.assertEqual(self.store.get(request_id), original)
+        status = self.finish_application(approval)
+        self.assertEqual(status["status"], "applied", status)
+        self.assertEqual(status["local_applications"][0]["state"], "applied")
+        self.assertEqual(status["local_applications"][0]["purpose"], "world")
+        self.assertEqual(status["local_applications"][0]["asset_ids"], ["result-image"])
+        self.assertNotEqual(bpy.context.scene.world, previous)
+        self.assertLessEqual(images, set(bpy.data.images))
+        saved = self.store.get(request_id)
+        self.assertEqual(
+            (saved.intent, saved.application_origin, saved.results),
+            (original.intent, original.application_origin, original.results),
+        )
+        restore = self.prepare_world(request_id, restore=True)
+        self.assertFalse(restore["reuse"])
+        self.tools.apply_result_application(self.import_args(restore))
+        self.assertEqual(bpy.context.scene.world, previous)
+        self.assertEqual(self.store.get(request_id), saved)
+        self.assertEqual((len(self.calls), len(self.paid), len(self.downloads)), before)
+
+    def test_completed_image_can_apply_saved_material_to_captured_mesh(self):
+        request_id = self.recovered_material()
+        self.finish_application(self.prepare_import(request_id))
+        before = len(self.calls), len(self.paid), len(self.downloads)
+        target = bpy.context.active_object
+        approval = self.prepare_material(request_id)
+        self.assertTrue(approval["reuse"])
+        status = self.finish_application(approval)
+        self.assertEqual(status["local_applications"][0]["purpose"], "material")
+        self.assertEqual(status["local_applications"][0]["state"], "applied")
+        first_material = target.active_material
+        bpy.ops.mesh.primitive_cube_add(location=(3, 0, 0))
+        second = bpy.context.active_object
+        approval = self.prepare_material(request_id)
+        deferred = self.tools.apply_result_application(self.import_args(approval))
+        result = deferred.run()
+        bpy.context.view_layer.objects.active = target
+        status = deferred.finish(result)
+        self.assertIsNotNone(second.active_material)
+        self.assertEqual(target.active_material, first_material)
+        self.assertEqual(len(status["local_applications"]), 2)
+        self.assertEqual((len(self.calls), len(self.paid), len(self.downloads)), before)
+
+    def test_material_reuse_scene_switch_before_admission_requires_fresh_approval(self):
+        self.assert_material_reuse_scene_switch_requires_fresh_approval("admission")
+
+    def test_material_reuse_scene_switch_during_verification_requires_fresh_approval(self):
+        self.assert_material_reuse_scene_switch_requires_fresh_approval("verification")
+
+    def assert_material_reuse_scene_switch_requires_fresh_approval(self, phase):
+        request_id = self.recovered_material()
+        self.finish_application(self.prepare_import(request_id))
+        original = self.store.get(request_id)
+        scene, target = bpy.context.scene, bpy.context.active_object
+        other_scene = bpy.data.scenes.new("Unapproved reuse scene")
+        try:
+            approval = self.prepare_material(request_id)
+            before = (
+                set(bpy.data.materials),
+                set(bpy.data.images),
+                len(self.calls),
+                len(self.paid),
+                len(self.downloads),
+            )
+            if phase == "verification":
+                deferred = self.tools.apply_result_application(self.import_args(approval))
+                result = deferred.run()
+            bpy.context.window.scene = other_scene
+            if phase == "admission":
+                args = self.import_args(approval)
+                args.update(request_id=request_id, expected_revision=approval["revision"])
+                with self.assertRaisesRegex(RuntimeError, "Material assignment was not started"):
+                    bpy.ops.scenario.apply_saved_material(**args)
+            else:
+                status = deferred.finish(result)
+                self.assertTrue(status["error"])
+                self.assertFalse(status["local_applications"])
+            self.assertEqual(self.store.get(request_id), original)
+            self.assertIsNone(target.active_material)
+            self.assertEqual(bpy.context.scene, other_scene)
+            self.assertFalse(tuple(other_scene.objects))
+            self.assertEqual(
+                (
+                    set(bpy.data.materials),
+                    set(bpy.data.images),
+                    len(self.calls),
+                    len(self.paid),
+                    len(self.downloads),
+                ),
+                before,
+            )
+            bpy.context.window.scene = scene
+            with self.assertRaises(self.request_error):
+                self.tools.apply_result_application(self.import_args(approval))
+            fresh = self.prepare_material(request_id)
+            args = self.import_args(fresh)
+            args.update(request_id=request_id, expected_revision=fresh["revision"])
+            self.assertEqual(bpy.ops.scenario.apply_saved_material(**args), {"FINISHED"})
+            self.deliver_results()
+            saved = self.store.get(request_id)
+            self.assertEqual(saved.state, self.storemod.JobState.APPLIED)
+            self.assertEqual(len(saved.local_applications), 1)
+            self.assertEqual(saved.local_applications[0].state.value, "applied")
+            self.assertEqual(
+                (saved.intent, saved.application_origin, saved.results),
+                (original.intent, original.application_origin, original.results),
+            )
+            self.assertIsNotNone(target.active_material)
+            self.assertEqual((len(self.calls), len(self.paid), len(self.downloads)), before[2:])
+        finally:
+            bpy.context.window.scene = scene
+            bpy.data.scenes.remove(other_scene)
+
+    def test_completed_audio_can_be_reused_at_another_approved_frame(self):
+        request_id = self.recovered_media()
+        self.finish_application(self.prepare_media(request_id))
+        before = len(self.calls), len(self.paid), len(self.downloads)
+        strips = tuple(bpy.context.scene.sequence_editor.strips)
+        bpy.context.scene.frame_set(30)
+        approval = self.prepare_media(request_id)
+        self.assertTrue(approval["reuse"])
+        status = self.finish_application(approval)
+        added = [strip for strip in bpy.context.scene.sequence_editor.strips if strip not in strips]
+        self.assertEqual(len(added), 1)
+        self.assertEqual(added[0].frame_start, 30)
+        self.assertEqual(status["local_applications"][0]["purpose"], "media")
+        self.assertEqual(status["local_applications"][0]["state"], "applied")
+        self.assertEqual((len(self.calls), len(self.paid), len(self.downloads)), before)
+
+    def test_completed_model_reuse_creates_another_group_only_after_new_approval(self):
+        request_id = self.recovered_model()
+        self.finish_application(self.prepare_model(request_id))
+        before = len(self.calls), len(self.paid), len(self.downloads)
+        objects = set(bpy.data.objects)
+        bpy.context.scene.cursor.location = (5, 0, 0)
+        approval = self.prepare_model(request_id)
+        self.assertTrue(approval["reuse"])
+        self.assertEqual(set(bpy.data.objects), objects)
+        status = self.finish_application(approval)
+        added = set(bpy.data.objects) - objects
+        self.assertEqual(len(added), 3)  # Two GLB nodes plus the placement group.
+        self.assertEqual(len(status["objects"]), 2)
+        self.assertEqual(sum(obj.parent not in added for obj in added), 1)
+        self.assertEqual(status["local_applications"][0]["state"], "applied")
+        with self.assertRaises(self.request_error):
+            self.tools.apply_result_application(self.import_args(approval))
+        self.assertEqual((len(self.calls), len(self.paid), len(self.downloads)), before)
+
+    def test_completed_image_reuse_rejects_other_prepared_approval_after_claim(self):
+        request_id = self.recovered_images()
+        self.finish_application(self.prepare_import(request_id))
+        first, second = self.prepare_import(request_id), self.prepare_import(request_id)
+        before = len(self.calls), len(self.paid), len(self.downloads)
+        status = self.finish_application(first)
+        images = set(bpy.data.images)
+        self.assertEqual(len(status["local_applications"]), 1)
+        with self.assertRaises(self.request_error):
+            self.tools.apply_result_application(self.import_args(second))
+        self.assertEqual(set(bpy.data.images), images)
+        self.assertEqual((len(self.calls), len(self.paid), len(self.downloads)), before)
+
+    def test_uncertain_local_application_blocks_reuse_after_restart(self):
+        request_id = self.recovered_images()
+        self.finish_application(self.prepare_import(request_id))
+        deferred = self.tools.apply_result_application(
+            self.import_args(self.prepare_import(request_id))
+        )
+        result = deferred.run()
+        with patch.object(
+            submodule("blender.job_session"),
+            "apply_images",
+            side_effect=RuntimeError("synthetic uncertain application"),
+        ):
+            status = deferred.finish(result)
+        self.assertEqual(status["status"], "applied")
+        self.assertEqual(status["local_applications"][0]["state"], "applying")
+        self.assertEqual(status["actions"], ())
+        self.runtime.state.reset()
+        self.runtime.inspect_model_jobs()
+        before = len(self.calls), len(self.paid), len(self.downloads), set(bpy.data.images)
+        status = self.runtime.state.model_jobs.status(request_id)
+        self.assertEqual(status["actions"], ())
+        self.assertIn("do not repeat", status["error"])
+        with self.assertRaises(self.request_error):
+            self.prepare_import(request_id)
+        self.assertEqual(
+            (len(self.calls), len(self.paid), len(self.downloads), set(bpy.data.images)), before
+        )
+
+    def test_local_receipt_retry_recognizes_committed_success_without_another_import(self):
+        request_id = self.recovered_images()
+        self.finish_application(self.prepare_import(request_id))
+        deferred = self.tools.apply_result_application(
+            self.import_args(self.prepare_import(request_id))
+        )
+        result = deferred.run()
+        owner = self.runtime.state.model_jobs
+        finish = owner.store.finish_local_application
+
+        def lose_receipt(*args, **kwargs):
+            finish(*args, **kwargs)
+            raise OSError("synthetic lost receipt response")
+
+        with patch.object(owner.store, "finish_local_application", side_effect=lose_receipt):
+            status = deferred.finish(result)
+        self.assertEqual(status["status"], "applied")
+        self.assertEqual(status["local_applications"][0]["state"], "applied")
+        self.assertEqual(status["actions"], ("retry_receipt",))
+        before = set(bpy.data.images), len(self.calls), len(self.paid), len(self.downloads)
+        with patch.object(
+            submodule("blender.job_session"),
+            "apply_images",
+            side_effect=AssertionError("Repeated scene mutation"),
+        ):
+            status = self.recover(request_id, "retry_receipt")
+        self.assertEqual(status["local_applications"][0]["state"], "applied")
+        self.assertIn("import_images", status["actions"])
+        self.assertEqual(
+            (set(bpy.data.images), len(self.calls), len(self.paid), len(self.downloads)), before
+        )
+
+    def test_failed_reuse_keeps_completed_generation_and_original_images(self):
+        request_id = self.recovered_images()
+        self.finish_application(self.prepare_import(request_id))
+        before = set(bpy.data.images), bpy.context.scene.world, len(self.calls), len(self.paid)
+        status = self.finish_application(self.prepare_world(request_id))
+        self.assertEqual(status["status"], "applied")
+        self.assertEqual(status["local_applications"][0]["state"], "failed")
+        self.assertIn("apply_world", status["actions"])
+        self.assertEqual(
+            (set(bpy.data.images), bpy.context.scene.world, len(self.calls), len(self.paid)), before
+        )

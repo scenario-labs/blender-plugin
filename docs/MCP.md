@@ -439,6 +439,25 @@ still use the manager-owned record so active waits observe its progress.
 
 Render lanes take the explicit model parameters supplied by the caller. They do
 not run the UI's capture, style decoration or Prompt Spark preparation. Non-image
-UI capture/Spark preparation, in-place mesh editing, multi-object material application, already-imported World reuse and Film
+UI capture/Spark preparation, in-place mesh editing, multi-object material application and Film
 remain integration work under #65/#68. This change does not complete their
 end-to-end acceptance or authorize release.
+
+
+### Reusing completed shared results
+
+Use the same `prepare_result_application` and `apply_result_application` sequence
+with a fresh observed revision and destination. Preparation returns `reuse: true`
+for another local application of a completed result; show this explicitly with
+the selected files and destination before applying. It does not submit generation.
+Restoration returns `reuse: false` and targets the most recent World assignment
+for that job in the current session.
+
+`job_status.local_applications` reports each local claim's identifier, source
+revision, purpose, selected asset IDs, destination identity and state. The
+original generation's `status: applied` does not prove a new local application
+finished. Observe `actions`, `delivery_paused`, errors and the local outcome.
+An unfinished local claim blocks further reuse, including after restart. A
+session-owned `retry_receipt` action saves only the known outcome. No tool clears
+uncertainty or automatically repeats scene work. Each job retains at most 128
+local claims without evicting earlier records.

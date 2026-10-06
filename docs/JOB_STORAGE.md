@@ -259,7 +259,8 @@ formats and malformed histories fail closed. Schema upgrades validate all scopes
 and roll back completely on corrupt rows or commit failures; stop old Blender
 processes before upgrading and do not downgrade the database.
 
-This is durable storage and coordinator admission for the existing runtime, not
-another executor or an exposed reuse button. Native destination approval, byte
-verification immediately before decoding, purpose-specific application, UI/MCP
-inspection and resolution of uncertain scene outcomes still need integration.
+Native UI and MCP use these records through the existing runtime and fresh
+[saved-result approval](BLENDER_JOB_CONTEXT.md#explicit-local-result-reuse), including
+byte verification before decoding. Status inspection exposes the separate local
+outcomes. Resolution of uncertain scene outcomes still requires inspection; no
+automatic reset or replay is offered.

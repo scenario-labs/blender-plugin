@@ -526,10 +526,9 @@ uncertainty retains a receipt-only retry, never another assignment.
 After a completed assignment, a separate prepared restore can call the retained
 World handle on the main thread. The approval checks the same selected context,
 record and current World, and the handle rejects edits to its owned data.
-Restoration does not alter the durable completed job or make it re-applicable.
+Restoration does not alter the durable completed job or reopen its original claim.
 See [saved World approval](WORLD_APPLICATION.md#saved-result-ui-and-mcp-approval)
-for `ready`/`apply_failed` admission, session-local restoration and already-applied
-Image reuse limits.
+for original/reuse admission and session-local restoration limits.
 
 ## Explicit saved material application
 
@@ -545,5 +544,29 @@ Shutdown clears those handles after workers stop.
 
 Native **Apply saved material** and MCP `prepare_result_application` with
 `purpose: material` use that same destination approval and saved-job command.
+Like other saved-result commands, admission and delivery require the approved
+scene to remain selected through the shared `_resolve` guard. A scene switch
+stops before the local application claim; it leaves the completed generation,
+saved results and material slots unchanged for fresh approval after returning.
 Changing selection cannot retarget it. Multi-object/shared meshes, ambiguous
-texture sets, already-applied image reuse and global undo remain separate work.
+texture sets and global undo remain separate work.
+
+
+## Explicit local result reuse
+
+The five explicit recovered delivery methods accept completed records through
+`_claim_saved_application`. Original `ready`/`apply_failed` records keep their
+recovered claim; `applied` records receive a separate coordinator local claim.
+Automatic image/World delivery never takes this reuse path. The destination,
+purpose and exact selected assets remain bound to the prepared approval and
+stored revision. Verification precedes the claim; each native primitive rechecks
+actual bytes before decoding, with its existing rollback and receipt rules.
+
+`ModelJobs.actions` permits fresh review only when no command, pending receipt or
+unfinished local claim exists and the 128-entry limit is not reached. Status
+exposes `local_applications` independently of the terminal generation state.
+The same job may remain `applied` while local scene work is uncertain; inspect
+its local outcomes, actions and error. Owner-local receipt retry never repeats
+Blender work. Restart loses receipt authority and never clears uncertainty.
+World restoration retains only the most recent assignment handle per job in the
+current session; this is not a persistent history of reversible scene edits.

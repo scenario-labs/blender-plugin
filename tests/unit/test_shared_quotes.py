@@ -506,6 +506,61 @@ def test_array_positions_preserve_each_occurrence_without_binding_external_asset
     assert submitted["mesh"] == values and "mesh_sources" not in submitted
 
 
+@pytest.mark.parametrize("operation", ["model", "workflow"])
+@pytest.mark.parametrize("file_schema", [{"type": "file_array"}, {"type": "file", "array": True}])
+@pytest.mark.parametrize("position", [127, 128])
+def test_captured_mesh_array_position_limit_reports_a_quote_error(
+    env, operation, file_schema, position
+):
+    captured_upload(env)
+    values = ["external-asset"] * position + ["mesh-asset"]
+    if position == 128:
+        with pytest.raises(QuoteError, match="Too many captured mesh inputs"):
+            mesh_quote(env, operation=operation, value=values, file_schema=file_schema)
+        assert env.store.records() == ()
+        assert [request.url.params.get("dryRun") for request in env.calls] == [None, "true"]
+    else:
+        quote = mesh_quote(env, operation=operation, value=values, file_schema=file_schema)
+        assert [source.index for source in quote.mesh_sources] == [127]
+        prepared = env.coordinator.prepare_quote(quote)
+        assert prepared.intent.mesh_sources == quote.mesh_sources
+
+
+@pytest.mark.parametrize("operation", ["model", "workflow"])
+@pytest.mark.parametrize("file_schema", [{"type": "file_array"}, {"type": "file", "array": True}])
+def test_external_array_tail_does_not_exceed_captured_mesh_binding_limits(
+    env, operation, file_schema
+):
+    captured_upload(env)
+    values = ["mesh-asset"] + ["external-asset"] * 128
+    quote = mesh_quote(env, operation=operation, value=values, file_schema=file_schema)
+    assert quote.estimate.payload["mesh"] == values
+    assert [source.index for source in quote.mesh_sources] == [0]
+    assert env.coordinator.prepare_quote(quote).intent.mesh_sources == quote.mesh_sources
+
+
+@pytest.mark.parametrize("operation", ["model", "workflow"])
+@pytest.mark.parametrize("count", [128, 129])
+def test_captured_mesh_binding_limit_applies_across_parameters(env, operation, count):
+    captured_upload(env)
+    env.model["inputs"] = [
+        {"name": f"mesh_{index}", "type": "file", "kind": "3d", "required": True}
+        for index in range(count)
+    ]
+    payload = {spec["name"]: "mesh-asset" for spec in env.model["inputs"]}
+    command = getattr(env.coordinator, "quote_" + operation)
+    if count == 129:
+        with pytest.raises(QuoteError, match="Too many captured mesh inputs"):
+            command(operation + "-one", payload, origin=env.origin)
+        assert env.store.records() == ()
+        assert [request.url.params.get("dryRun") for request in env.calls] == [None, "true"]
+    else:
+        quote = command(operation + "-one", payload, origin=env.origin)
+        assert len(quote.mesh_sources) == 128
+        assert {source.parameter for source in quote.mesh_sources} == set(payload)
+        assert env.coordinator.prepare_quote(quote).intent.mesh_sources == quote.mesh_sources
+
+
 def test_prompt_text_and_different_scope_cannot_claim_mesh_provenance(env):
     captured_upload(env, scope=replace(env.scope, account_id="other"))
     quote = mesh_quote(env)

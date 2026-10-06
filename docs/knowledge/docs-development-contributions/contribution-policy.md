@@ -14,8 +14,7 @@
       ".github/workflows/commitlint.yml": "b80890944a6acd659312d9f1eced37582b21da64f163849900ae8154005b29a2",
       ".github/workflows/pr-name.yml": "0e315b620212b21f3058eae7d173813190ab81fd929b5d1178772c2fdbbc79d6",
       "commitlint.config.ts": "a3f4eb2798279d823aee2523592781ba1b328295e7d9528875f8682f6bb56881",
-      "tests/unit/test_conventions_docs.py": "b07164b35c741484b3c726d5fe263c974219045f30c43f3e1065885c993613b4",
-      ".agents/skills/blender-pr-summary/SKILL.md": "2eb7eb1c8a1e5c2ae34a1085c2565f87ec0c0549d8d798748a6c53edaa593869"
+      "tests/unit/test_conventions_docs.py": "b07164b35c741484b3c726d5fe263c974219045f30c43f3e1065885c993613b4"
     },
     "scope": "contribution-policy",
     "base_revision": "17ed3fc912f64f3dbd64720cdd82649c5162d2ce"

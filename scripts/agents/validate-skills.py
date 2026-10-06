@@ -32,8 +32,6 @@ COMMAND_CONTRACTS: dict[str, dict] = {
         "explicit-only": True,
         "codex-interface": True,
     },
-    "blender-pr-summary": {"claude-command": "pr-summary", "codex-interface": True},
-    "blender-squash-message": {"claude-command": "squash-message", "codex-interface": True},
 }
 
 

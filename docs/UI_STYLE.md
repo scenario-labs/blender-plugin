@@ -300,6 +300,25 @@ Mirrored or zero-scale source transforms cannot use scene-coordinate mapping.
 The native dialog opens with **Object local coordinates** and a visible
 explanation for those sources. Review and confirmation remain explicit; choosing
 the unsupported scene-coordinate option cannot start verification or application.
+For **Apply to captured source**, inspect the retained source's transform before
+choosing that default. A different selected object's transform must not affect it.
+
+A captured-source follow-up on macOS arm64 Blender 5.1.2 uses ZIP SHA-256
+`03074fe0f5ff70e360e392502a14064f36312dd463058866edeeee58077c541e`,
+which passes 719 native tests on each supported Blender series. With another
+positive-scale mesh selected, mouse input opens the mirrored captured mesh's
+review with object-local coordinates and its explanation. Escape preserves both
+meshes and the saved job; Return applies only to the captured mesh, retaining
+its negative scale and Keep original copy. Native Edit > Undo/Redo restores the
+source and copy without changing durable job state or request counts. Viewport
+selection, front-view keyboard input and zoom work after the dialogs. The
+synthetic transport makes no additional service requests or submissions during
+review, application or history changes. The isolated run exits cleanly, removes
+its profile and leaves the normal profile unchanged. Zero-scale and reversed
+selection cases have native regression coverage; other OS desktop and live
+provider acceptance remain separate.
+
+![Captured mirrored mesh approval uses local coordinates while another mesh remains selected](images/captured-mirrored-mesh-approval.png)
 
 An isolated macOS arm64 Blender 5.1.2 desktop check used ZIP
 `21edce46cf2c0e94095ba27668c2acef3b6b68968dc0dc0082921f1bd0760000`,

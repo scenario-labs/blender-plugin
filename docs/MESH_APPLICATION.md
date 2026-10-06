@@ -230,6 +230,8 @@ rejected. The review binds the chosen mapping, policy and original-copy choice.
 For mirrored or zero-scale sources, the native dialog starts with object-local
 coordinates and explains that requirement. It still requires confirmation;
 explicit MCP `WORLD` requests remain rejected rather than changing their mapping.
+For captured-source review, the default and explanation use the retained captured
+target's transform, independently of whichever object is currently selected.
 Editing options replaces that approval handle without recapturing the target;
 changed source or scene context requires cancellation and fresh review.
 

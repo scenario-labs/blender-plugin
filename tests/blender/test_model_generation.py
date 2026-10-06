@@ -2636,11 +2636,13 @@ class ModelGenerationTests(unittest.TestCase):
             saved.intent.mesh_sources,
         )
 
-    def captured_source_result(self):
+    def captured_source_result(self, *, scale=(1, 1, 1)):
         from helpers import FIXTURES
 
         self.configure_ui_lane("edit3d")
         source = bpy.context.object
+        source.scale = scale
+        bpy.context.view_layer.update()
         self.captured_mesh_upload(live=True)
         self.result_bytes = (FIXTURES / "synthetic/static-triangle.glb").read_bytes()
         self.result_media_type, self.remote_status = "model/gltf-binary", "success"
@@ -2649,6 +2651,65 @@ class ModelGenerationTests(unittest.TestCase):
         self.deliver_results()
         self.assertEqual(self.store.get(result.local_id).state, self.storemod.JobState.READY)
         return result.local_id, source
+
+    def captured_source_dialog(self, source_scale, selected_scale, placement):
+        request_id, source = self.captured_source_result(scale=source_scale)
+        bpy.ops.mesh.primitive_cube_add(location=(9, 0, 0))
+        selected = bpy.context.object
+        selected.scale = selected_scale
+        before = self.store.get(request_id)
+        requests = len(self.calls), len(self.paid), len(self.downloads)
+        objects = set(bpy.data.objects)
+        meshes = source.data, selected.data
+        if placement == "LOCAL":
+            with self.assertRaises(
+                (submodule("blender.mesh_application").MeshApplicationError, self.request_error)
+            ):
+                self.prepare_mesh_edit(request_id, purpose="mesh_source", mesh_placement="WORLD")
+        dialog = Mock(return_value={"RUNNING_MODAL"})
+        context = SimpleNamespace(
+            scene=bpy.context.scene,
+            view_layer=bpy.context.view_layer,
+            window_manager=SimpleNamespace(invoke_props_dialog=dialog),
+        )
+        op = SimpleNamespace(
+            context_id=self.runtime.state.job_context_id,
+            request_id=request_id,
+            expected_revision=before.revision,
+            asset_id="result-image",
+            policy="REMESH",
+            placement="WORLD",
+            keep_original=True,
+            original_source=True,
+            report=Mock(),
+        )
+        operator = submodule("blender.job_recovery").SCENARIO_OT_apply_saved_mesh
+        self.assertEqual(operator.invoke(op, context, None), {"RUNNING_MODAL"})
+        dialog.assert_called_once_with(op, width=580)
+        op.report.assert_not_called()
+        jobs = self.runtime.state.model_jobs
+        ticket = jobs._application_approvals[op.application_id]
+        self.assertIs(ticket.target.obj, source)
+        self.assertEqual((op.placement, ticket.placement), (placement, placement))
+        self.assertEqual(op.local_placement_required, placement == "LOCAL")
+        self.assertEqual(op.target_name, source.name)
+        operator.cancel(op, context)
+        self.assertFalse(jobs._application_approvals)
+        self.assertFalse(jobs._commands)
+        self.assertEqual(self.store.get(request_id), before)
+        self.assertEqual((len(self.calls), len(self.paid), len(self.downloads)), requests)
+        self.assertEqual(set(bpy.data.objects), objects)
+        self.assertEqual((source.data, selected.data), meshes)
+        self.assertIs(bpy.context.object, selected)
+
+    def test_captured_mirrored_source_dialog_ignores_positive_selected_transform(self):
+        self.captured_source_dialog((-1, 2, 1), (1, 1, 1), "LOCAL")
+
+    def test_captured_zero_scale_dialog_ignores_positive_selected_transform(self):
+        self.captured_source_dialog((0, 1, 1), (1, 1, 1), "LOCAL")
+
+    def test_captured_positive_source_dialog_ignores_mirrored_selected_transform(self):
+        self.captured_source_dialog((1, 2, 1), (-1, 1, 1), "WORLD")
 
     def test_captured_source_review_ignores_selection_and_preserves_original(self):
         request_id, source = self.captured_source_result()

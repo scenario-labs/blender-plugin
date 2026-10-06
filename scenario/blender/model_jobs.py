@@ -730,6 +730,7 @@ class ModelJobs:
         placement="WORLD",
         keep_original=True,
         original_source=False,
+        review_placement=False,
     ):
         record = self.store.get(request_id)
         if (
@@ -754,6 +755,10 @@ class ModelJobs:
             scene, obj = target.scene, target.obj
         else:
             target = capture_mesh_target(scene, obj)
+        # Native review chooses its displayed default from the resolved target,
+        # which can differ from the selected object. Explicit MCP options stay strict.
+        if review_placement and placement == "WORLD" and target.obj.matrix_world.determinant() <= 0:
+            placement = "LOCAL"
         mapping = self._mesh_options(target, policy, placement, keep_original)
         ticket = MeshApplicationApproval(
             uuid.uuid4().hex,

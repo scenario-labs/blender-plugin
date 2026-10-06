@@ -508,6 +508,11 @@ material-slot fingerprint, world matrix, parent and collection membership. It
 rechecks those values after export. A changed source rejects admission and cleans
 the private export without starting an upload.
 
+Known capture rejections preserve their corrective messages through the shared
+UI/MCP upload error path, including source/selection changes and export bounds.
+Unexpected exporter or filesystem exceptions retain a generic message so private
+details are not exposed. Both paths clean the private export before admission.
+
 The durable `mesh_source` records the exact GLB SHA256, each source target ID,
 base-mesh fingerprint and world matrix. Its exporter convention is
 `blender-world-gltf-y-up`, with evaluated modifiers and animations disabled,

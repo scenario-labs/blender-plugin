@@ -5,6 +5,7 @@
 import json
 import tempfile
 import unittest
+from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -632,8 +633,78 @@ class ReferenceUploadTests(unittest.TestCase):
             return result
 
         with patch.object(mesh_export, "export_glb", side_effect=changed_source):
-            with self.assertRaises(self.module.UploadNotStarted):
+            with self.assertRaisesRegex(self.module.UploadNotStarted, "Source mesh changed"):
                 self.tools.capture_reference({"source": "MESH"})
+        self.assertEqual(self.owner.references, {})
+        self.assertEqual(self.fixture.calls, [])
+        self.assertEqual(list(self.fixture.root.glob("reference-*")), [])
+
+    def test_mesh_capture_selection_rejections_preserve_actionable_reason(self):
+        bpy.ops.mesh.primitive_cube_add()
+        cube = bpy.context.active_object
+        self.addCleanup(lambda: bpy.data.objects.remove(cube, do_unlink=True))
+        exporter = submodule("blender.mesh_export")
+        for objects, reason in (
+            ([cube] * 65, "Choose between one and 64 distinct source meshes"),
+            ([self.fixture.target], "Choose live meshes in the selected scene"),
+        ):
+            with self.subTest(reason=reason):
+                with (
+                    patch.object(exporter, "source_objects", return_value=objects),
+                    patch.object(exporter, "export_glb") as export,
+                ):
+                    with self.assertRaises(self.module.UploadNotStarted) as error:
+                        self.tools.capture_reference({"source": "MESH"})
+                self.assertEqual(error.exception.reason, reason)
+                export.assert_not_called()
+                self.assertEqual(self.owner.references, {})
+                self.assertEqual(self.fixture.calls, [])
+                self.assertEqual(list(self.fixture.root.glob("reference-*")), [])
+
+    def test_mesh_capture_context_rejection_preserves_actionable_reason(self):
+        bpy.ops.mesh.primitive_cube_add()
+        cube = bpy.context.active_object
+        self.addCleanup(lambda: bpy.data.objects.remove(cube, do_unlink=True))
+        origin = self.fixture.session.capture(self.fixture.scene, cube)
+        with patch.object(
+            self.fixture.session,
+            "capture",
+            side_effect=(origin, replace(origin, file_id="changed-file")),
+        ):
+            with self.assertRaisesRegex(self.module.UploadNotStarted, "source context changed"):
+                self.tools.capture_reference({"source": "MESH"})
+        self.assertEqual(self.owner.references, {})
+        self.assertEqual(self.fixture.calls, [])
+        self.assertEqual(list(self.fixture.root.glob("reference-*")), [])
+
+    def test_mesh_capture_file_rejection_preserves_actionable_reason(self):
+        bpy.ops.mesh.primitive_cube_add()
+        cube = bpy.context.active_object
+        self.addCleanup(lambda: bpy.data.objects.remove(cube, do_unlink=True))
+        exporter = submodule("blender.mesh_export")
+
+        def empty_export(*args, path):
+            Path(path).write_bytes(b"")
+
+        with patch.object(exporter, "export_glb", side_effect=empty_export):
+            with self.assertRaisesRegex(
+                self.module.UploadNotStarted, "nonempty and at most 256 MiB"
+            ):
+                self.tools.capture_reference({"source": "MESH"})
+        self.assertEqual(self.owner.references, {})
+        self.assertEqual(self.fixture.calls, [])
+        self.assertEqual(list(self.fixture.root.glob("reference-*")), [])
+
+    def test_mesh_capture_unexpected_error_keeps_private_details_sanitized(self):
+        bpy.ops.mesh.primitive_cube_add()
+        cube = bpy.context.active_object
+        self.addCleanup(lambda: bpy.data.objects.remove(cube, do_unlink=True))
+        exporter = submodule("blender.mesh_export")
+        with patch.object(exporter, "export_glb", side_effect=ValueError("private capture detail")):
+            with self.assertRaises(self.module.UploadNotStarted) as error:
+                self.tools.capture_reference({"source": "MESH"})
+        self.assertEqual(error.exception.reason, "Could not prepare the reference snapshot")
+        self.assertNotIn("private capture detail", str(error.exception))
         self.assertEqual(self.owner.references, {})
         self.assertEqual(self.fixture.calls, [])
         self.assertEqual(list(self.fixture.root.glob("reference-*")), [])

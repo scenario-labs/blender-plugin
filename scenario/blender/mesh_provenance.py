@@ -8,6 +8,7 @@ from pathlib import Path
 
 import bpy
 
+from ..core.api.errors import ScenarioError
 from ..core.jobs.mesh_source import MeshSource, MeshSourceObject
 from . import mesh_export, mesh_export_fingerprint
 
@@ -26,7 +27,7 @@ class _Source:
 
 def _capture(scene, obj, geometry):
     if scene != bpy.context.scene or obj not in tuple(scene.objects) or obj.type != "MESH":
-        raise ValueError("Choose live meshes in the selected scene")
+        raise ScenarioError(0, "Choose live meshes in the selected scene")
     return _Source(
         obj,
         obj.data,
@@ -43,7 +44,7 @@ def _capture_sources(scene, objects):
     if scene != bpy.context.scene or any(
         obj not in tuple(scene.objects) or obj.type != "MESH" for obj in objects
     ):
-        raise ValueError("Choose live meshes in the selected scene")
+        raise ScenarioError(0, "Choose live meshes in the selected scene")
     hashes = mesh_export_fingerprint.fingerprints(obj.data for obj in objects)
     return tuple(_capture(scene, obj, digest) for obj, digest in zip(objects, hashes, strict=True))
 
@@ -52,7 +53,7 @@ def export_with_source(context, objects, path, session):
     """Return immutable provenance; it does not authorize automatic application."""
     objects = tuple(objects)
     if not 1 <= len(objects) <= 64 or len(set(objects)) != len(objects):
-        raise ValueError("Choose between one and 64 distinct source meshes")
+        raise ScenarioError(0, "Choose between one and 64 distinct source meshes")
     scene = context.scene
     context.view_layer.update()
     before = _capture_sources(scene, objects)
@@ -60,7 +61,7 @@ def export_with_source(context, objects, path, session):
     mesh_export.export_glb(context, objects, path=str(path))
     context.view_layer.update()
     if _capture_sources(scene, objects) != before:
-        raise ValueError("Source mesh changed during export; inspect it before uploading")
+        raise ScenarioError(0, "Source mesh changed during export; inspect it before uploading")
     # Export temporarily changes selection and can evaluate the graph. Freeze the
     # upload revision after restoration, retaining the exact pre-export identities.
     current = tuple(session.capture(scene, obj) for obj in objects)
@@ -68,17 +69,23 @@ def export_with_source(context, objects, path, session):
         (old.file_id, old.scene_id, old.target_id) != (new.file_id, new.scene_id, new.target_id)
         for old, new in zip(identities, current, strict=True)
     ):
-        raise ValueError("The source context changed during export")
+        raise ScenarioError(
+            0, "The source context changed during export; select it and capture again"
+        )
     path = Path(path)
     if path.is_symlink() or not path.is_file() or not 1 <= path.stat().st_size <= 256 * 1024 * 1024:
-        raise ValueError("Use a bounded private GLB export")
+        raise ScenarioError(
+            0, "Mesh snapshot must be nonempty and at most 256 MiB; simplify it and capture again"
+        )
     digest = hashlib.sha256()
     with path.open("rb") as stream:
         total = 0
         for chunk in iter(lambda: stream.read(1024 * 1024), b""):
             total += len(chunk)
             if total > 256 * 1024 * 1024:
-                raise ValueError("The exported source exceeded its capture limit")
+                raise ScenarioError(
+                    0, "Mesh snapshot exceeded 256 MiB; simplify it and capture again"
+                )
             digest.update(chunk)
     source = MeshSource(
         digest.hexdigest(),

@@ -522,7 +522,11 @@ Choose **Scene coordinates** to keep the imported result's scene positions, or
 **Object local coordinates** to interpret those positions in the source's local
 axes. The extension does not fit or realign the result automatically. It preserves
 the source object's name, transforms, parenting and collections. **Keep original**
-is enabled by default and leaves an unselected copy. There is no global undo entry.
+is enabled by default and leaves an unselected copy. In desktop Blender, Undo and
+Redo restore the scene before and after this edit when Global Undo is enabled
+with at least two steps. Blender's history limits still apply. Undo does not
+reverse a generation charge or reset the saved job; Redo does not generate again.
+Save the blend file to preserve your work across restart.
 
 Changing the source or scene invalidates approval; cancel and review again.
 Application uses the saved file without another generation. Completed jobs get a

@@ -2,11 +2,14 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Replace one captured mesh from a verified single-mesh static GLB."""
 
+import logging
 from dataclasses import dataclass, field
 
 import bpy
 
 from . import mesh_application, model_application
+
+_log = logging.getLogger("scenario.jobs")
 
 
 class MeshResultApplicationError(RuntimeError):
@@ -18,6 +21,7 @@ class MeshEditApplication:
     source: object = field(repr=False)
     original: object = field(repr=False)
     policy: str
+    undo_available: bool = False
 
 
 def validate_request(target, *, policy, result_to_source, keep_original):
@@ -28,6 +32,22 @@ def validate_request(target, *, policy, result_to_source, keep_original):
             "Choose REMESH, UV or RETEXTURE and an explicit Keep original value"
         )
     return mesh_application._matrix(result_to_source)
+
+
+def _undo_enabled():
+    """Respect native history settings; background sessions have no desktop history."""
+    preferences = bpy.context.preferences.edit
+    return (
+        not bpy.app.background
+        and preferences.use_global_undo
+        and preferences.undo_steps > 1
+        and bpy.context.window is not None
+    )
+
+
+def _undo_push(message):
+    if bpy.ops.ed.undo_push(message=message) != {"FINISHED"}:
+        raise RuntimeError("Blender could not record the mesh undo state")
 
 
 def _release_import(imported, objects, staging):
@@ -50,6 +70,16 @@ def apply_saved_mesh(target, item, path, *, policy, result_to_source, keep_origi
     mapping = validate_request(
         target, policy=policy, result_to_source=result_to_source, keep_original=keep_original
     )
+    undo = _undo_enabled()
+    if undo:
+        # Capture the latest user state before importing temporary datablocks.
+        # A missing pre-state must stop replacement while the source is intact.
+        try:
+            _undo_push("Before Scenario mesh edit")
+        except Exception:
+            raise MeshResultApplicationError(
+                "Could not prepare Blender undo; source is unchanged"
+            ) from None
     before = model_application._snapshot()
     receipt = None
     try:
@@ -77,9 +107,17 @@ def apply_saved_mesh(target, item, path, *, policy, result_to_source, keep_origi
             if receipt.original is not None:
                 receipt.original.select_set(False)
             _release_import(imported, objects, staging)
-            result = MeshEditApplication(target.obj, receipt.original, policy)
             receipt.accept()
-            return result
+            if undo:
+                try:
+                    # The history state must contain no staging scene/private holder.
+                    _undo_push("Scenario mesh edit")
+                except Exception:
+                    # The edit is complete. A missing history entry is not a failed
+                    # application and must never authorize another replacement.
+                    undo = False
+                    _log.warning("Mesh applied, but Blender undo could not be recorded")
+            return MeshEditApplication(target.obj, receipt.original, policy, undo)
     except Exception:
         if receipt is not None:
             try:

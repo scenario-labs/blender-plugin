@@ -278,7 +278,7 @@ class ModelJobs:
                         result_to_source=mesh.mapping,
                         keep_original=mesh.keep_original,
                     )
-                    self._mesh_edits[request_id] = applied.application
+                    self._remember_model_application(request_id, applied.application)
                     self._paused.discard(request_id)
                 elif command == "verify_material":
                     applied = self.session.apply_recovered_material(
@@ -695,7 +695,10 @@ class ModelJobs:
 
     def _remember_model_application(self, request_id, application):
         if isinstance(application, MeshEditApplication):
-            self._mesh_edits[request_id] = application
+            previous = self._mesh_edits.get(request_id)
+            if previous is None or previous[1] is not application:
+                self._mesh_edits[request_id] = (self.session.history_revision, application)
+            # Receipt-only retry must keep the original history revision.
         else:
             _remember(self._objects, request_id, application.objects, bpy.data.objects)
 
@@ -727,6 +730,7 @@ class ModelJobs:
         placement="WORLD",
         keep_original=True,
         original_source=False,
+        review_placement=False,
     ):
         record = self.store.get(request_id)
         if (
@@ -751,6 +755,10 @@ class ModelJobs:
             scene, obj = target.scene, target.obj
         else:
             target = capture_mesh_target(scene, obj)
+        # Native review chooses its displayed default from the resolved target,
+        # which can differ from the selected object. Explicit MCP options stay strict.
+        if review_placement and placement == "WORLD" and target.obj.matrix_world.determinant() <= 0:
+            placement = "LOCAL"
         mapping = self._mesh_options(target, policy, placement, keep_original)
         ticket = MeshApplicationApproval(
             uuid.uuid4().hex,
@@ -998,14 +1006,20 @@ class ModelJobs:
         raise ScenarioError(0, "The job context changed while waiting; inspect saved jobs again")
 
     def _mesh_status(self, request_id):
-        application = self._mesh_edits.get(request_id)
-        if application is None:
+        saved = self._mesh_edits.get(request_id)
+        if saved is None:
+            return None
+        revision, application = saved
+        if revision != self.session.history_revision:
+            # History can replace RNA wrappers, even when object names survive.
+            # Retire this transient status; never rebind it by name after redo.
             return None
         objects = tuple(bpy.data.objects)
         return {
             "target": application.source.name if application.source in objects else None,
             "original": application.original.name if application.original in objects else None,
             "policy": application.policy,
+            "undo_available": application.undo_available,
         }
 
     def status(self, reference):

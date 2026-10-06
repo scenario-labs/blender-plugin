@@ -441,11 +441,6 @@ class SCENARIO_OT_apply_saved_mesh(bpy.types.Operator):
         try:
             context.view_layer.update()
             source = context.view_layer.objects.active
-            self.local_placement_required = (
-                source is not None and source.matrix_world.determinant() <= 0
-            )
-            if self.placement == "WORLD" and self.local_placement_required:
-                self.placement = "LOCAL"
             jobs, approval = runtime.prepare_mesh_application(
                 self.context_id,
                 self.request_id,
@@ -457,9 +452,12 @@ class SCENARIO_OT_apply_saved_mesh(bpy.types.Operator):
                 placement=self.placement,
                 keep_original=self.keep_original,
                 original_source=self.original_source,
+                review_placement=True,
             )
             self._jobs = jobs
             self.application_id = approval.identifier
+            self.placement = approval.placement
+            self.local_placement_required = approval.target.obj.matrix_world.determinant() <= 0
             self.scene_name, self.target_name = approval.scene_name, approval.target_name
             self.is_reuse = approval.record.state.value == "applied"
             self.review_error = ""
@@ -518,7 +516,10 @@ class SCENARIO_OT_apply_saved_mesh(bpy.types.Operator):
             layout.label(text="Replace active UVs only; topology and positions must match exactly.")
         layout.label(text="Keep the source object's name, transforms, parenting and collections.")
         layout.label(text="One static GLB mesh only. No automatic fitting or scale adjustment.")
-        layout.label(text="Keep original makes an unselected copy. No global undo entry.")
+        layout.label(text="Keep original makes an unselected copy. Undo follows Blender settings.")
+        layout.label(
+            text="Undo/redo changes the scene only; saved jobs and spending stay recorded."
+        )
         if self.review_error:
             layout.label(text=self.review_error, icon="ERROR")
 

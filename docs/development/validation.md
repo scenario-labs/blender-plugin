@@ -216,12 +216,30 @@ The default invocation still runs the small synthetic fixture above.
 The package probe seeds synthetic saved preferences and credentials, six durable
 job states (prepared, uncertain, remote, download failed, ready and applied), a
 second isolated credential scope, result manifests/receipts and local result bytes,
-three upload states with verified staged bytes, and a saved blend with a reference.
+three image upload states plus an imported captured-mesh upload with verified
+staged bytes, and a saved blend with a reference.
 It compares these after native upgrade in the same process and after reopening
-the blend in a second, offline Blender process. Exact quote strings, application
+the blend in a second, offline Blender process. Exact quote strings, nonempty texture roles, application
 origins, upload markers and the installation's scope key must survive. Original
-reference bytes are checked too. The actual package's storage APIs perform reads
+reference bytes are checked too. Ready/applied jobs retain the exact mesh input
+binding, export hash, source transform and upload revision. The completed job
+retains successful, confirmed-failed and unfinished local application claims;
+the probe attempts another claim and requires rejection without changing the
+record before update, after update and after restart. These fixtures require
+packages with the captured-source and local-reuse storage APIs. They do not
+restore live object authority or replay scene application. The actual package's storage APIs perform reads
 and verification; no mocked add-on replaces the installed extension.
+
+When the installed predecessor exposes Film task storage, all six selected jobs
+also retain their production/task and recipe hashes. When Film upload storage is
+available, the captured mesh has a separate saved Film upload association; the
+snapshot compares its complete identity and checks that the other credential
+scope cannot read it. This association lives outside serialized job/upload
+records, so checking those records alone is insufficient. Older packages record
+empty Film fields; that is not Film acceptance. Check `expected-state.json` for
+nonempty task bindings and `film_upload` before claiming this coverage. Adding
+Film storage to a package must not remove the captured-mesh, texture-role or local
+reuse checks above.
 
 The probe rejects Python socket connections while seeding/checking/upgrading.
 Blender's native updater uses its configured loopback repository; this is not an

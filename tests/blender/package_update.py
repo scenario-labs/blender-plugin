@@ -29,6 +29,51 @@ def digest(data):
     return hashlib.sha256(data).hexdigest()
 
 
+def film_binding(task_id):
+    jobs = module("core.jobs.store")
+    if not hasattr(jobs, "FilmTaskBinding"):
+        return None
+    return jobs.FilmTaskBinding(
+        "update-production", task_id, digest(b"fixture recipe"), digest(task_id.encode())
+    )
+
+
+def seed_film_upload(selected, uploads):
+    jobs = module("core.jobs.store")
+    if not hasattr(jobs, "FilmUploadReference"):
+        return
+    upload = uploads.get("upload-mesh")
+    selected.bind_film_upload(
+        jobs.FilmUploadReference(
+            selected.scope,
+            film_binding("captured-reference"),
+            upload.intent.request_id,
+            upload.revision,
+            upload.asset_id,
+            upload.intent.file_sha256,
+            upload.intent.kind,
+        )
+    )
+
+
+def job_snapshot(record):
+    value = asdict(record)
+    if value["intent"].get("source") != "cloud":
+        value["intent"].setdefault("film_task", None)
+    return value
+
+
+def film_upload_snapshot(selected, other):
+    """Film upload associations live outside job/upload record serialization."""
+    if not hasattr(selected, "film_upload"):
+        return None
+    identity = ("update-production", "captured-reference")
+    reference = selected.film_upload(*identity)
+    if other.film_upload(*identity) is not None:
+        raise RuntimeError("Film upload escaped its credential scope")
+    return asdict(reference) if reference is not None else None
+
+
 def windows_namespace(path):
     """Keep the probe's recursive inventory usable beyond legacy FindFirstFile limits."""
     if path.startswith("\\\\?\\"):
@@ -88,6 +133,144 @@ def stores():
     return paths, selected, other, uploads, sources, results
 
 
+def seed_mesh_upload(profile, selected, uploads, sources, origin):
+    """Persist an exact synthetic GLB and its local captured-source metadata."""
+    jobs = module("core.jobs.store")
+    provenance = module("core.jobs.mesh_source")
+    states = module("core.jobs.upload_store")
+    source = profile / "reference.glb"
+    source.write_bytes(
+        (
+            Path(__file__).resolve().parents[1] / "fixtures/synthetic/static-triangle.glb"
+        ).read_bytes()
+    )
+    metadata = provenance.MeshSource(
+        digest(source.read_bytes()),
+        (
+            provenance.MeshSourceObject(
+                origin.target_id,
+                digest(b"synthetic source geometry"),
+                ((1, 0, 0, 3), (0, 2, 0, 4), (0, 0, 1, 5), (0, 0, 0, 1)),
+            ),
+        ),
+    )
+    intent = sources.stage(
+        source,
+        request_id="upload-mesh",
+        scope=selected.scope,
+        origin=origin,
+        kind="3d",
+        content_type="model/gltf-binary",
+        mesh_source=metadata,
+    )
+    record = uploads.create(intent)
+    for state in (states.UploadState.INITIALIZING, states.UploadState.UPLOADING):
+        record = uploads.transition(
+            intent.request_id,
+            expected_revision=record.revision,
+            state=state,
+            upload_id="update-mesh-upload" if state == states.UploadState.UPLOADING else None,
+        )
+    for index, part_hash in enumerate(intent.part_sha256, 1):
+        record = uploads.claim_part(intent.request_id, expected_revision=record.revision)
+        size = intent.part_bytes(index)
+        record = uploads.record_part(
+            intent.request_id,
+            states.UploadedPart(index, size, part_hash),
+            expected_revision=record.revision,
+        )
+    for state in (
+        states.UploadState.FINALIZING,
+        states.UploadState.PROCESSING,
+        states.UploadState.IMPORTED,
+    ):
+        record = uploads.transition(
+            intent.request_id,
+            expected_revision=record.revision,
+            state=state,
+            asset_id="update-mesh-asset" if state == states.UploadState.IMPORTED else None,
+        )
+    return jobs.JobMeshSource(
+        "mesh",
+        None,
+        record.asset_id,
+        intent.request_id,
+        record.revision,
+        origin,
+        metadata,
+    )
+
+
+def seed_local_applications(selected, record, origin):
+    """Preserve successful, rolled-back and uncertain reuse independently of generation."""
+    jobs = module("core.jobs.store")
+    for name, state in (
+        ("reuse-applied", jobs.LocalApplicationState.APPLIED),
+        ("reuse-failed", jobs.LocalApplicationState.FAILED),
+        ("reuse-unfinished", jobs.LocalApplicationState.APPLYING),
+    ):
+        record = selected.claim_local_application(
+            record.intent.request_id,
+            expected_revision=record.revision,
+            application_id=name,
+            destination=replace(origin, scene_id=name, target_id="target-" + name),
+            purpose="images",
+            asset_ids=tuple(item.asset.asset_id for item in record.results),
+        )
+        if state != jobs.LocalApplicationState.APPLYING:
+            record = selected.finish_local_application(
+                record.intent.request_id,
+                expected_revision=record.revision,
+                application_id=name,
+                state=state,
+            )
+
+
+def check_mesh_bindings(selected, uploads):
+    jobs = module("core.jobs.store")
+    upload = uploads.get("upload-mesh")
+    if upload is None or upload.state.value != "imported" or upload.intent.mesh_source is None:
+        raise RuntimeError("Update lost the captured mesh upload")
+    expected = jobs.JobMeshSource(
+        "mesh",
+        None,
+        upload.asset_id,
+        upload.intent.request_id,
+        upload.revision,
+        upload.intent.origin,
+        upload.intent.mesh_source,
+    )
+    for request_id in ("ready", "applied"):
+        if selected.get(request_id).intent.mesh_sources != (expected,):
+            raise RuntimeError("Update lost or changed the captured generation input")
+
+
+def check_local_applications(selected):
+    """Update/restart must retain uncertainty and continue rejecting another claim."""
+    jobs = module("core.jobs.store")
+    record = selected.get("applied")
+    if [item.state for item in record.local_applications] != [
+        jobs.LocalApplicationState.APPLIED,
+        jobs.LocalApplicationState.FAILED,
+        jobs.LocalApplicationState.APPLYING,
+    ]:
+        raise RuntimeError("Update lost the local application history")
+    try:
+        selected.claim_local_application(
+            "applied",
+            expected_revision=record.revision,
+            application_id="forbidden-replay",
+            destination=record.intent.origin,
+            purpose="images",
+            asset_ids=tuple(item.asset.asset_id for item in record.results),
+        )
+    except jobs.StoreConflict:
+        if selected.get("applied") != record:
+            raise RuntimeError("Rejected reuse changed the saved job") from None
+    else:
+        raise RuntimeError("Update permitted replay of an unfinished local application")
+
+
 def seed(profile):
     import bpy
 
@@ -102,6 +285,8 @@ def seed(profile):
     paths, selected, other, uploads, sources, results = stores()
     jobs = module("core.jobs.store")
     origin = jobs.JobOrigin("update-file", "update-scene", "update-revision", "update-target")
+    mesh_binding = seed_mesh_upload(profile, selected, uploads, sources, origin)
+    seed_film_upload(selected, uploads)
     template = jobs.JobIntent(
         "prepared",
         selected.scope,
@@ -113,7 +298,15 @@ def seed(profile):
         "0.1234567890123456789",
     )
     for desired in ("prepared", "uncertain", "remote", "download_failed", "ready", "applied"):
-        record = selected.create(replace(template, request_id=desired))
+        intent = replace(
+            template,
+            request_id=desired,
+            mesh_sources=(mesh_binding,) if desired in {"ready", "applied"} else (),
+        )
+        binding = film_binding(desired)
+        if binding is not None:
+            intent = replace(intent, film_task=binding)
+        record = selected.create(intent)
 
         def advance(state, **kwargs):
             nonlocal record
@@ -136,7 +329,12 @@ def seed(profile):
         advance("succeeded")
         data = b"offline preserved result bytes"
         asset = jobs.ResultAsset(
-            "asset-" + desired, "result.png", "image/png", len(data), digest(data)
+            "asset-" + desired,
+            "result.png",
+            "image/png",
+            len(data),
+            digest(data),
+            texture_role="base",
         )
         record = selected.set_results(desired, (asset,), expected_revision=record.revision)
         advance("downloading")
@@ -155,6 +353,7 @@ def seed(profile):
         if desired == "applied":
             advance("applying", application_origin=replace(origin, scene_id="approved-other-scene"))
             advance("applied")
+            seed_local_applications(selected, record, origin)
     other.create(replace(template, scope=other.scope, request_id="other-scope"))
     source = profile / "reference.png"
     source.write_bytes(b"offline preserved reference bytes")
@@ -210,6 +409,8 @@ def snapshot(profile):
     records = selected.records()
     if len(records) != 6 or selected.get("other-scope") is not None or len(other.records()) != 1:
         raise RuntimeError("Update lost durable records or credential isolation")
+    check_mesh_bindings(selected, uploads)
+    check_local_applications(selected)
     for record in records:
         if record.state.value == "ready":
             results.verify_ready(record.intent.request_id, expected_revision=record.revision)
@@ -266,12 +467,14 @@ def snapshot(profile):
     values["credentials_digest"] = digest(json.dumps([prefs.api_key, prefs.api_secret]).encode())
     value = {
         "preferences": values,
-        "jobs": [asdict(r) for r in records],
-        "other_jobs": [asdict(r) for r in other.records()],
+        "jobs": [job_snapshot(r) for r in records],
+        "other_jobs": [job_snapshot(r) for r in other.records()],
         "uploads": [asdict(r) for r in uploads.records()],
+        "film_upload": film_upload_snapshot(selected, other),
         "files": files,
         "scene": scene,
         "original_source": digest((profile / "reference.png").read_bytes()),
+        "original_mesh_source": digest((profile / "reference.glb").read_bytes()),
     }
     return json.loads(json.dumps(value))
 

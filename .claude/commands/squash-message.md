@@ -1,1 +1,0 @@
-../../.agents/skills/blender-squash-message/SKILL.md

@@ -1,1 +1,0 @@
-../../.agents/skills/blender-pr-summary/SKILL.md

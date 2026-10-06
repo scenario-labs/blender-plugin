@@ -526,6 +526,8 @@ class JobCoordinator:
                     raise QuoteError(
                         "Several captured uploads identify this asset; review its source"
                     )
+                if (index is not None and index >= 128) or len(bindings) >= 128:
+                    raise QuoteError("Too many captured mesh inputs")
                 record = matching[0]
                 bindings.append(
                     JobMeshSource(
@@ -538,8 +540,6 @@ class JobCoordinator:
                         record.intent.mesh_source,
                     )
                 )
-        if len(bindings) > 128:
-            raise QuoteError("Too many captured mesh inputs")
         return tuple(bindings)
 
     def _validate_mesh_bindings(self, bindings):

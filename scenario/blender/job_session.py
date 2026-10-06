@@ -222,6 +222,15 @@ class JobSession:
     def capture(self, scene, target=None):
         return self.capture_many(scene, (target,))[0]
 
+    def has_scene(self, scene_id):
+        """Read live scene ownership without capturing or renewing an origin revision."""
+        _main_thread()
+        scene = self._scenes.get(scene_id)
+        try:
+            return self._active and scene is not None and scene in tuple(bpy.data.scenes)
+        except ReferenceError:
+            return False
+
     def capture_many(self, scene, targets):
         """Validate one current scene-membership snapshot before recording any origins."""
         _main_thread()

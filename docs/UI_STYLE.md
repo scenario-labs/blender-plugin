@@ -601,3 +601,44 @@ ZIP, followed by a clean exit and unchanged normal-profile fingerprint.
 [Animated source, original copy and preserved selection](images/saved-mesh-rig-animated.png).
 
 ![Rig approval names the captured source and explains compatibility](images/saved-mesh-rig-approval.png)
+
+## World restoration across scenes
+
+Reusing a panorama in another scene preserves the earlier scene's
+**Restore previous World** action. Each review still identifies the selected
+scene and its current World; restoration changes only that scene. The
+[World contract](WORLD_APPLICATION.md#saved-result-ui-and-mcp-approval) describes
+identity, ownership checks and session limits.
+
+An isolated macOS arm64 Blender 5.1.2 desktop check used exact ZIP
+`8676574595eb6fcc21cee719467184bc87c6d3f73a9986741edc643749f2e9dc`,
+which passed 692 installed native tests on each of Blender 5.0.1, 5.1.2 and 5.2.1.
+The synthetic fixture applied one saved panorama to two scenes. Native input
+opened the first restoration review and cancelled without mutation; a fresh
+confirmation restored its original World while preserving the second panorama.
+The native scene selector switched to the second destination; its separate
+review restored that scene's original World. Viewport focus and front-view
+keyboard input worked afterward. The saved generation and local claim stayed
+applied, and mock submission/request/download counts did not change. The
+process exited cleanly, with no network attempts and an unchanged normal profile.
+This is synthetic local restoration proof, not live panorama quality, other-OS
+desktop or integrated release acceptance. Catalog loading text is fixture state.
+
+A subsequent lifecycle correction was checked with exact ZIP
+`24c7731dc6f339d55f826dfd27e68f0b90052b2c987fe9572431d5dbe6c353ca`:
+694 installed native tests passed on each of the same three Blender versions.
+The scene identity survives the render-thread origin revision reset; Undo/Redo
+still retires live ownership, and deleted or retired destinations no longer
+offer restoration. Regression tests invoke the actual render-thread and history
+callbacks, verify rejection of stale approvals and prune expired handles.
+They do not establish physical desktop Undo/Redo behavior.
+The isolated 5.1.2 desktop flow above was repeated after the fixture invoked
+the render-thread callback: cancel, independent confirmations, native scene
+selection and viewport keyboard input all worked. Both original Worlds were
+restored with unchanged applied records and mock counts, no network attempts,
+clean exit and an unchanged normal profile. The screenshots below retain the
+earlier artifact's provenance.
+
+![Separate World restoration review for the second scene](images/world-scene-restore-approval.png)
+
+![Restoration finished after each scene recovered its original World](images/world-scenes-restored.png)

@@ -241,6 +241,7 @@ class ModelJobs:
 
     def poll(self):
         """Advance owned jobs through existing commands; never replay paid work."""
+        self._prune_worlds()
         if not self.session.active:
             return
         for request_id, task in tuple(self.submissions.items()):
@@ -297,7 +298,7 @@ class ModelJobs:
                     applied = self.session.apply_recovered_world(
                         completion, destination=world.destination, asset_id=world.asset_id
                     )
-                    self._worlds[request_id] = applied.application
+                    self._remember_world(request_id, world.destination, applied.application)
                     self._paused.discard(request_id)
                 elif command == "verify_model":
                     applied = self.session.apply_recovered_model(
@@ -348,7 +349,7 @@ class ModelJobs:
             except WorldResultUncertain as error:
                 if error.application is not None:
                     self._receipts[request_id] = error
-                    self._worlds[request_id] = error.application
+                    self._remember_world(request_id, world.destination, error.application)
                 self._pause(
                     request_id, "World assignment needs receipt recovery; do not apply again"
                 )
@@ -510,7 +511,9 @@ class ModelJobs:
                 pass
             else:
                 actions.append("apply_material")
-        if state == JobState.APPLIED and request_id in self._worlds:
+        if state == JobState.APPLIED and any(
+            self.session.has_scene(scene_id) for scene_id in self._worlds.get(request_id, {})
+        ):
             actions.append("restore_world")
         if request_id in self._receipts:
             actions.append("retry_receipt")
@@ -546,8 +549,8 @@ class ModelJobs:
                     self._materials, request_id, (outcome.application.material,), bpy.data.materials
                 )
             elif isinstance(pending, WorldResultUncertain):
-                outcome = self.session.retry_world_receipt(pending)
-                self._worlds[request_id] = outcome.application
+                # The original scene handle was retained before persistence failed.
+                self.session.retry_world_receipt(pending)
             elif isinstance(pending, ModelResultUncertain):
                 outcome = self.session.retry_model_receipt(pending)
                 self._remember_model_application(request_id, outcome.application)
@@ -874,6 +877,23 @@ class ModelJobs:
         view.meta["recovery_actions"], view.error = (), None
         return request_id, task
 
+    def _remember_world(self, request_id, destination, application):
+        self._worlds.setdefault(request_id, {})[destination.scene_id] = application
+
+    def _prune_worlds(self):
+        for request_id, worlds in tuple(self._worlds.items()):
+            for scene_id in tuple(worlds):
+                if not self.session.has_scene(scene_id):
+                    del worlds[scene_id]
+            if not worlds:
+                del self._worlds[request_id]
+
+    def _world_application(self, request_id, destination):
+        application = self._worlds.get(request_id, {}).get(destination.scene_id)
+        if application is None or not self.session.has_scene(destination.scene_id):
+            raise ScenarioError(0, "Select the scene whose previous World should be restored")
+        return application
+
     def prepare_world_application(
         self, request_id, expected_revision, scene, asset_id, *, restore=False
     ):
@@ -888,20 +908,20 @@ class ModelJobs:
             raise ScenarioError(0, "Inspect the current saved World result again")
         if scene != bpy.context.scene or len(self._application_approvals) >= 128:
             raise ScenarioError(0, "Choose the destination and finish existing reviews first")
+        bpy.context.view_layer.update()
+        destination = self.session.capture(scene)
         if restore:
-            if self._worlds[request_id]._scene != scene:
-                raise ScenarioError(0, "Select the scene whose previous World should be restored")
+            self._world_application(request_id, destination)
         elif not any(
             item.asset.asset_id == asset_id
             and item.asset.media_type in {"image/png", "image/exr", "image/x-exr"}
             for item in record.results
         ):
             raise ScenarioError(0, "Choose one saved PNG or EXR panorama")
-        bpy.context.view_layer.update()
         ticket = WorldApplicationApproval(
             uuid.uuid4().hex,
             record,
-            self.session.capture(scene),
+            destination,
             scene.name,
             scene,
             scene.world,
@@ -958,8 +978,11 @@ class ModelJobs:
             self.session.validate_destination(ticket.destination, frame=ticket.frame)
         request_id = record.intent.request_id
         if is_world and ticket.restore:
-            self._worlds[request_id].restore()
-            del self._worlds[request_id]
+            self._world_application(request_id, ticket.destination).restore()
+            worlds = self._worlds[request_id]
+            del worlds[ticket.destination.scene_id]
+            if not worlds:
+                del self._worlds[request_id]
             self._view(record).error = None
             return request_id, None
         task = self.session.verify_results(request_id, expected_revision=record.revision)

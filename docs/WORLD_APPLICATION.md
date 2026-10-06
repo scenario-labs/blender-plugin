@@ -131,9 +131,19 @@ be saved before restoration is offered, and retry never repeats World assignment
 This path accepts `ready` or confirmed `apply_failed` jobs under the original
 claim. Already `applied` images, including automatic Image imports, use a separate
 durable local claim after fresh approval. Interrupted local claims block further
-reuse. Restoration covers the most recent World assignment for this job in the
-current session; previous owned Worlds remain subject to normal Blender save/purge
-rules, and are not a persistent undo history.
-Session retirement/restart or file load loses the restoration handle; manually
-select a retained World in Blender when needed. No global undo transaction,
-cloud panorama preset, seam/pole acceptance or completion of #98 is claimed.
+reuse. Restoration covers the most recent World assignment for this job in each
+destination scene in the current file session. Reusing a panorama in another
+scene preserves the earlier scene's restore handle; restore each scene separately
+after selecting and reviewing it. Handles use scene identities owned by this
+session, independently of ordinary edit/render origin revisions. Renaming a
+scene preserves restoration while deleting it and creating another with the
+same name does not transfer authority. Retrying a persistence receipt keeps
+its original destination even if another scene is
+active. Previous owned Worlds remain subject to normal Blender save/purge rules;
+these handles are not a persistent undo history.
+Undo/Redo invalidates live scene ownership and retires restoration handles,
+as do session retirement/restart and file load. Deleted or retired destinations
+do not offer restoration, and maintenance removes their handles without touching
+stale Blender data. Manually select a retained World in Blender when needed.
+No global undo transaction, cloud panorama preset, seam/pole acceptance or
+completion of #98 is claimed.

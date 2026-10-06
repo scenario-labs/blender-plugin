@@ -453,7 +453,8 @@ with a fresh observed revision and destination. Preparation returns `reuse: true
 for another local application of a completed result; show this explicitly with
 the selected files and destination before applying. It does not submit generation.
 Restoration returns `reuse: false` and targets the most recent World assignment
-for that job in the current session.
+for that job in the selected scene and current file session. Applying the same
+result in another scene preserves both scenes' restoration handles.
 
 `job_status.local_applications` reports each local claim's identifier, source
 revision, purpose, selected asset IDs, destination identity and state. The

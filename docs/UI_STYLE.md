@@ -601,3 +601,29 @@ ZIP, followed by a clean exit and unchanged normal-profile fingerprint.
 [Animated source, original copy and preserved selection](images/saved-mesh-rig-animated.png).
 
 ![Rig approval names the captured source and explains compatibility](images/saved-mesh-rig-approval.png)
+
+## World restoration across scenes
+
+Reusing a panorama in another scene preserves the earlier scene's
+**Restore previous World** action. Each review still identifies the selected
+scene and its current World; restoration changes only that scene. The
+[World contract](WORLD_APPLICATION.md#saved-result-ui-and-mcp-approval) describes
+identity, ownership checks and session limits.
+
+An isolated macOS arm64 Blender 5.1.2 desktop check used exact ZIP
+`8676574595eb6fcc21cee719467184bc87c6d3f73a9986741edc643749f2e9dc`,
+which passed 692 installed native tests on each of Blender 5.0.1, 5.1.2 and 5.2.1.
+The synthetic fixture applied one saved panorama to two scenes. Native input
+opened the first restoration review and cancelled without mutation; a fresh
+confirmation restored its original World while preserving the second panorama.
+The native scene selector switched to the second destination; its separate
+review restored that scene's original World. Viewport focus and front-view
+keyboard input worked afterward. The saved generation and local claim stayed
+applied, and mock submission/request/download counts did not change. The
+process exited cleanly, with no network attempts and an unchanged normal profile.
+This is synthetic local restoration proof, not live panorama quality, other-OS
+desktop or integrated release acceptance. Catalog loading text is fixture state.
+
+![Separate World restoration review for the second scene](images/world-scene-restore-approval.png)
+
+![Restoration completed for both scenes](images/world-scenes-restored.png)

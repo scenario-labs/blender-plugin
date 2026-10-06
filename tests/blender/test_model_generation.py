@@ -1569,6 +1569,94 @@ class ModelGenerationTests(unittest.TestCase):
         self.assertTrue(status["error"])
         self.assertEqual(bpy.context.scene.world, changed)
 
+    def assert_world_reuse_restores_each_scene(self, *, lose_receipt=False):
+        request_id = self.recovered_panorama()
+        first, previous = bpy.context.scene, bpy.context.scene.world
+        second = bpy.data.scenes.new("Second panorama destination")
+        before = len(self.calls), len(self.paid), len(self.downloads)
+        try:
+            self.finish_application(self.prepare_world(request_id))
+            first_applied = first.world
+            bpy.context.window.scene = second
+            deferred = self.tools.apply_result_application(
+                self.import_args(self.prepare_world(request_id))
+            )
+            result = deferred.run()
+            if lose_receipt:
+                owner = self.runtime.state.model_jobs
+                with patch.object(
+                    owner.store,
+                    "finish_local_application",
+                    side_effect=OSError("synthetic World receipt failure"),
+                ):
+                    status = deferred.finish(result)
+                self.assertEqual(status["actions"], ("retry_receipt",))
+                bpy.context.window.scene = first
+                with patch.object(
+                    submodule("blender.job_session"),
+                    "apply_world",
+                    side_effect=AssertionError("Repeated World assignment"),
+                ):
+                    self.recover(request_id, "retry_receipt")
+            else:
+                deferred.finish(result)
+            second_applied = second.world
+            saved = self.store.get(request_id)
+            self.assertEqual(saved.local_applications[0].state.value, "applied")
+            self.assertNotEqual(first_applied, second_applied)
+            second.name = "Renamed panorama destination"
+            bpy.context.window.scene = first
+            approval = self.prepare_world(request_id, restore=True)
+            status = self.tools.apply_result_application(self.import_args(approval))
+            self.assertEqual(first.world, previous)
+            self.assertEqual(second.world, second_applied)
+            self.assertIn("restore_world", status["actions"])
+            with self.assertRaises(self.request_error):
+                self.tools.apply_result_application(self.import_args(approval))
+            bpy.context.window.scene = second
+            status = self.tools.apply_result_application(
+                self.import_args(self.prepare_world(request_id, restore=True))
+            )
+            self.assertIsNone(second.world)
+            self.assertNotIn("restore_world", status["actions"])
+            self.assertEqual(self.store.get(request_id), saved)
+            self.assertEqual((len(self.calls), len(self.paid), len(self.downloads)), before)
+        finally:
+            bpy.context.window.scene = first
+            bpy.data.scenes.remove(second)
+
+    def test_reused_panorama_keeps_independent_restore_handles_after_scene_rename(self):
+        self.assert_world_reuse_restores_each_scene()
+
+    def test_reused_panorama_receipt_retry_keeps_both_scene_restore_handles(self):
+        self.assert_world_reuse_restores_each_scene(lose_receipt=True)
+
+    def test_world_restore_rejects_recreated_scene_without_losing_other_destination(self):
+        request_id = self.recovered_panorama()
+        first, previous = bpy.context.scene, bpy.context.scene.world
+        second = bpy.data.scenes.new("Temporary panorama destination")
+        try:
+            self.finish_application(self.prepare_world(request_id))
+            bpy.context.window.scene = second
+            self.finish_application(self.prepare_world(request_id))
+            name = second.name
+            bpy.context.window.scene = first
+            bpy.data.scenes.remove(second)
+            self.runtime.state.job_session.prune_missing_scenes()
+            second = bpy.data.scenes.new(name)
+            bpy.context.window.scene = second
+            with self.assertRaises(self.request_error):
+                self.prepare_world(request_id, restore=True)
+            self.assertIsNone(second.world)
+            bpy.context.window.scene = first
+            self.tools.apply_result_application(
+                self.import_args(self.prepare_world(request_id, restore=True))
+            )
+            self.assertEqual(first.world, previous)
+        finally:
+            bpy.context.window.scene = first
+            bpy.data.scenes.remove(second)
+
     def test_world_restore_preserves_edited_world_data(self):
         request_id = self.recovered_panorama()
         deferred = self.tools.apply_result_application(

@@ -5,6 +5,7 @@
 import json
 import tempfile
 import unittest
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
@@ -857,6 +858,67 @@ class ReferenceUploadTests(unittest.TestCase):
         self.assertEqual(self.owner.references, {})
         self.assertEqual(self.fixture.calls, [])
         self.assertEqual(list(self.fixture.root.glob("reference-*")), [])
+        self.assertEqual(self.fixture.session._scenes, {})
+        self.assertEqual(self.fixture.session._targets, {})
+        self.assertEqual(self.fixture.session._target_scenes, {})
+
+    def test_rejected_mesh_snapshot_does_not_invalidate_existing_work_when_source_is_deleted(self):
+        capture = submodule("blender.mesh_export_fingerprint")
+        provenance = submodule("blender.mesh_provenance")
+        exporter = submodule("blender.mesh_export")
+        for module, method, error in (
+            (capture, "_plan", self.module.ScenarioError(0, "Unsupported mesh attribute")),
+            (capture, "_hash", self.module.ScenarioError(0, "Mesh string exceeds capture limit")),
+            (provenance, "_capture", ValueError("private snapshot detail")),
+        ):
+            with self.subTest(method=method):
+                bpy.ops.mesh.primitive_cube_add()
+                obj = bpy.context.active_object
+                try:
+                    bpy.context.view_layer.update()
+                    record, _ = self.fixture.prepare()
+                    session = self.fixture.session
+                    before = (
+                        dict(session._scenes),
+                        dict(session._targets),
+                        {key: set(value) for key, value in session._target_scenes.items()},
+                    )
+                    with (
+                        patch.object(module, method, side_effect=error),
+                        patch.object(exporter, "export_glb") as export,
+                    ):
+                        with self.assertRaises(self.module.UploadNotStarted):
+                            self.tools.capture_reference({"source": "MESH"})
+                    export.assert_not_called()
+                    self.assertEqual(
+                        (session._scenes, session._targets, session._target_scenes), before
+                    )
+                    self.assertTrue(session._origins.current(record.intent.origin))
+                finally:
+                    bpy.data.objects.remove(obj, do_unlink=True)
+                session.prune_missing_scenes()
+                self.assertTrue(session._origins.current(record.intent.origin))
+                self.assertEqual(self.owner.references, {})
+                self.assertEqual(self.fixture.calls, [])
+                self.assertEqual(list(self.fixture.root.glob("reference-*")), [])
+
+    def test_mesh_snapshot_guards_run_before_fingerprinting(self):
+        provenance = submodule("blender.mesh_provenance")
+        capture = submodule("blender.mesh_export_fingerprint")
+        bpy.ops.mesh.primitive_cube_add()
+        obj = bpy.context.active_object
+        self.addCleanup(lambda: bpy.data.objects.remove(obj, do_unlink=True))
+        with patch.object(capture, "fingerprints") as fingerprints:
+            with ThreadPoolExecutor(max_workers=1) as pool:
+                future = pool.submit(
+                    provenance.export_with_source, None, (obj,), None, self.fixture.session
+                )
+                with self.assertRaisesRegex(RuntimeError, "main thread"):
+                    future.result(5)
+            self.fixture.session.deactivate()
+            with self.assertRaisesRegex(self.module.UploadNotStarted, "context is unavailable"):
+                self.tools.capture_reference({"source": "MESH"})
+        fingerprints.assert_not_called()
 
     def test_shared_mesh_capture_hashes_each_datablock_once_per_pass(self):
         capture = submodule("blender.mesh_export_fingerprint")

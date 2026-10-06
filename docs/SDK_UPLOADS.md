@@ -508,12 +508,14 @@ material-slot fingerprint, world matrix, parent and collection membership. It
 rechecks those values after export. A changed source rejects admission and cleans
 the private export without starting an upload.
 
-Each capture pass uses one current scene-membership set through
-`JobSession.capture_many` for every selected source. Membership is rebuilt after
-export rather than retained across it. Main-thread, active-session and live-target
-checks precede origin registration; a rejected batch records no partial origins.
-The source snapshots reuse that validation instead of rescanning the scene for
-each object. Scene-only origin capture does not enumerate scene objects.
+Each capture pass completes its fingerprints and source snapshots before
+`JobSession.capture_many` registers origins using one current scene-membership set
+for every selected source. Membership is rebuilt after export rather than retained
+across it. Main-thread and active-session guards precede snapshot reads; live-target
+validation precedes registration. A first-pass budget, attribute or snapshot-read
+failure records no new origins, so deleting that rejected source cannot invalidate
+other work through the captured-target registry. Membership rejection also records
+no partial origins. Scene-only origin capture does not enumerate scene objects.
 
 Known capture rejections preserve their corrective messages through the shared
 UI/MCP upload error path, including source/selection changes and export bounds.

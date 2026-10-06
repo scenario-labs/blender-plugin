@@ -619,6 +619,9 @@ set before recording any origins, retaining the main-thread and active-session
 guards. Mesh export uses one batch before and one after export; membership is
 never cached across passes. The ordinary `capture` method delegates a single
 target through the same checks, without enumerating objects for scene-only origins.
+Each pass finishes its fingerprints and source snapshots before registering
+origins. A rejected first-pass snapshot leaves the session registries unchanged;
+deleting its source cannot invalidate other work through target pruning.
 For a single source the `JobOrigin.target_id` identifies that mesh. Multi-source
 exports persist all IDs in local `mesh_source` metadata without assigning a
 primary target. The exact export hash accompanies the upload through the existing

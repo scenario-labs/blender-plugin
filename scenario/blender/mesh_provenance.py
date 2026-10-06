@@ -9,8 +9,7 @@ from pathlib import Path
 import bpy
 
 from ..core.jobs.mesh_source import MeshSource, MeshSourceObject
-from . import mesh_export
-from .mesh_application import _fingerprint
+from . import mesh_export, mesh_export_fingerprint
 
 
 @dataclass(frozen=True)
@@ -25,7 +24,7 @@ class _Source:
     collections: frozenset
 
 
-def _capture(scene, obj):
+def _capture(scene, obj, geometry):
     if scene != bpy.context.scene or obj not in tuple(scene.objects) or obj.type != "MESH":
         raise ValueError("Choose live meshes in the selected scene")
     return _Source(
@@ -33,11 +32,20 @@ def _capture(scene, obj):
         obj.data,
         obj.name,
         obj.data.name,
-        _fingerprint(obj.data),
+        geometry,
         tuple(tuple(row) for row in obj.matrix_world),
         obj.parent,
         frozenset(obj.users_collection),
     )
+
+
+def _capture_sources(scene, objects):
+    if scene != bpy.context.scene or any(
+        obj not in tuple(scene.objects) or obj.type != "MESH" for obj in objects
+    ):
+        raise ValueError("Choose live meshes in the selected scene")
+    hashes = mesh_export_fingerprint.fingerprints(obj.data for obj in objects)
+    return tuple(_capture(scene, obj, digest) for obj, digest in zip(objects, hashes, strict=True))
 
 
 def export_with_source(context, objects, path, session):
@@ -47,11 +55,11 @@ def export_with_source(context, objects, path, session):
         raise ValueError("Choose between one and 64 distinct source meshes")
     scene = context.scene
     context.view_layer.update()
-    before = tuple(_capture(scene, obj) for obj in objects)
+    before = _capture_sources(scene, objects)
     identities = tuple(session.capture(scene, obj) for obj in objects)
     mesh_export.export_glb(context, objects, path=str(path))
     context.view_layer.update()
-    if tuple(_capture(scene, obj) for obj in objects) != before:
+    if _capture_sources(scene, objects) != before:
         raise ValueError("Source mesh changed during export; inspect it before uploading")
     # Export temporarily changes selection and can evaluate the graph. Freeze the
     # upload revision after restoration, retaining the exact pre-export identities.

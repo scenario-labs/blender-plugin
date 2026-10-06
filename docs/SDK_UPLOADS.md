@@ -517,10 +517,21 @@ unset. The metadata is immutable and never added to a Scenario API request.
 Worker staging verifies that its copied bytes match the recorded export hash.
 It cannot substitute a newer export or another source file under that provenance.
 
-Capture permits at most 64 distinct meshes and retains the mesh fingerprint's
-bounded component/type policy. Export hashing is synchronous and bounded to
-256 MiB; staging and network transfer remain on the shared worker. Export and
-hashing can pause Blender. The fingerprint describes base mesh data and material
+Capture permits at most 64 distinct meshes. Export fingerprints have their own
+policy, independent of the in-place mesh application's component/type limits.
+Numeric geometry and attributes use Blender's bulk reads, including quaternion,
+matrix and short-vector attributes. String attributes use bounded byte reads.
+Before reading any buffers, each snapshot pass budgets at most 256 MiB across
+all distinct selected mesh datablocks, including metadata and worst-case string
+storage. Shared datablocks are read once per pass; an oversized selection rejects
+before export with a request to select fewer or simpler meshes. The second pass
+has the same aggregate bound and detects source changes after export.
+
+The GLB has a separate 256 MiB file limit. Export and fingerprinting remain
+synchronous and can pause Blender; staging and network transfer remain on the
+shared worker. This bounds additional snapshot work, not exporter memory or
+wall-clock time. The export fingerprint is not interchangeable with the stricter
+mesh-application fingerprint. It describes base mesh data and material
 slots, not evaluated modifier output, material node graphs, shape-key animation
 or a complete rig contract; the file hash identifies the actual exported bytes.
 A parented/scaled synthetic mesh is exported and imported natively to verify

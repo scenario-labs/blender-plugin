@@ -665,6 +665,113 @@ class ReferenceUploadTests(unittest.TestCase):
         self.assertEqual(set(bpy.context.selected_objects), set(meshes))
         self.assertEqual(self.fixture.calls, [])
 
+    def test_dense_mesh_snapshot_is_not_subject_to_mesh_edit_component_limit(self):
+        bpy.ops.mesh.primitive_grid_add(x_subdivisions=384, y_subdivisions=384)
+        obj = bpy.context.active_object
+        mesh = obj.data
+        self.addCleanup(lambda: bpy.data.meshes.remove(mesh))
+        self.addCleanup(lambda: bpy.data.objects.remove(obj, do_unlink=True))
+        components = sum(
+            len(items) for items in (mesh.vertices, mesh.edges, mesh.loops, mesh.polygons)
+        )
+        components += sum(len(attribute.data) for attribute in mesh.attributes)
+        self.assertGreater(components, submodule("blender.mesh_application").MAX_COMPONENTS)
+        with (
+            patch.object(self.fixture.sources, "_max_bytes", 256 * 1024 * 1024),
+            patch.object(self.fixture.sources, "_part_bytes", 8 * 1024 * 1024),
+        ):
+            result = self.tools.capture_reference({"source": "MESH"})
+            record = self.owner.references[result["reference_id"]].task.result(10)
+        self.assertEqual(record.intent.mesh_source.file_sha256, record.intent.file_sha256)
+        self.assertEqual(
+            record.intent.mesh_source.objects[0].target_id, record.intent.origin.target_id
+        )
+        self.assertEqual(record.state.value, "prepared")
+        self.assertEqual(self.fixture.calls, [])
+
+    def test_mesh_capture_accepts_string_quaternion_matrix_and_short_vector_attributes(self):
+        bpy.ops.mesh.primitive_cube_add()
+        obj = bpy.context.active_object
+        self.addCleanup(lambda: bpy.data.objects.remove(obj, do_unlink=True))
+        for kind in ("STRING", "QUATERNION", "FLOAT4X4", "INT16_2D"):
+            obj.data.attributes.new("capture_" + kind, kind, "POINT")
+        with (
+            patch.object(self.fixture.sources, "_max_bytes", 1024 * 1024),
+            patch.object(self.fixture.sources, "_part_bytes", 1024 * 1024),
+        ):
+            result = self.tools.capture_reference({"source": "MESH"})
+            record = self.owner.references[result["reference_id"]].task.result(5)
+        self.assertIsNotNone(record.intent.mesh_source)
+        self.assertEqual(self.fixture.calls, [])
+
+    def test_extended_attribute_mutation_during_export_rejects_upload_and_cleans_export(self):
+        from mathutils import Matrix
+
+        bpy.ops.mesh.primitive_cube_add()
+        obj = bpy.context.active_object
+        self.addCleanup(lambda: bpy.data.objects.remove(obj, do_unlink=True))
+        exporter = submodule("blender.mesh_export")
+        original = exporter.export_glb
+        for kind, initial, changed in (
+            ("STRING", b"original", b"changed"),
+            ("QUATERNION", (1, 0, 0, 0), (0, 1, 0, 0)),
+            ("FLOAT4X4", Matrix.Identity(4), Matrix.Translation((1, 2, 3))),
+            ("INT16_2D", (0, 0), (1, 2)),
+        ):
+            with self.subTest(kind=kind):
+                attribute = obj.data.attributes.new("capture_" + kind, kind, "POINT")
+                attribute.data[0].value = initial
+
+                def mutate(*args, attribute=attribute, changed=changed, **kwargs):
+                    result = original(*args, **kwargs)
+                    attribute.data[0].value = changed
+                    return result
+
+                with patch.object(exporter, "export_glb", side_effect=mutate):
+                    with self.assertRaises(self.module.UploadNotStarted):
+                        self.tools.capture_reference({"source": "MESH"})
+                self.assertEqual(self.owner.references, {})
+                self.assertEqual(self.fixture.calls, [])
+                self.assertEqual(list(self.fixture.root.glob("reference-*")), [])
+
+    def test_mesh_capture_budget_covers_whole_selection_before_hashing_or_export(self):
+        capture = submodule("blender.mesh_export_fingerprint")
+        exporter = submodule("blender.mesh_export")
+        objects = []
+        for _ in range(2):
+            bpy.ops.mesh.primitive_cube_add()
+            obj = bpy.context.active_object
+            objects.append(obj)
+            self.addCleanup(lambda obj=obj: bpy.data.objects.remove(obj, do_unlink=True))
+        for obj in objects:
+            obj.select_set(True)
+        single_size = capture._plan(objects[0].data)[2]
+        with (
+            patch.object(capture, "MAX_SNAPSHOT_BYTES", single_size + 1),
+            patch.object(capture, "_hash", wraps=capture._hash) as read,
+            patch.object(exporter, "export_glb") as export,
+        ):
+            with self.assertRaisesRegex(self.module.UploadNotStarted, "select fewer or simpler"):
+                self.tools.capture_reference({"source": "MESH"})
+        read.assert_not_called()
+        export.assert_not_called()
+        self.assertEqual(self.owner.references, {})
+        self.assertEqual(self.fixture.calls, [])
+        self.assertEqual(list(self.fixture.root.glob("reference-*")), [])
+
+    def test_shared_mesh_capture_hashes_each_datablock_once_per_pass(self):
+        capture = submodule("blender.mesh_export_fingerprint")
+        bpy.ops.mesh.primitive_cube_add()
+        obj = bpy.context.active_object
+        self.addCleanup(lambda: bpy.data.objects.remove(obj, do_unlink=True))
+        with (
+            patch.object(capture, "MAX_SNAPSHOT_BYTES", capture._plan(obj.data)[2]),
+            patch.object(capture, "_hash", wraps=capture._hash) as read,
+        ):
+            first, second = capture.fingerprints((obj.data, obj.data))
+        self.assertEqual(first, second)
+        read.assert_called_once()
+
     def test_parented_mesh_export_roundtrip_uses_blender_world_coordinates(self):
         bpy.ops.mesh.primitive_cube_add(location=(1, 2, 3))
         cube = bpy.context.active_object

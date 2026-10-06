@@ -170,6 +170,20 @@ class MeshResultTests(unittest.TestCase):
         self.assertEqual(alias.data, old_mesh)
         self.assertEqual(set(self.scene.objects), {self.source, alias})
 
+    def test_saved_static_remesh_accepts_a_windowless_destination(self):
+        old_mesh = self.source.data
+        with bpy.context.temp_override(
+            window=None, scene=self.scene, view_layer=self.scene.view_layers[0]
+        ):
+            result = self.apply()
+            self.assertIsNone(bpy.context.window)
+            self.assertEqual(result.source, self.source)
+            self.assertNotEqual(self.source.data, old_mesh)
+            self.assertEqual(result.original.data, old_mesh)
+            self.assertEqual(bpy.context.view_layer.objects.active, self.source)
+        self.assertEqual(set(self.scene.objects), {self.source, result.original})
+        self.assertEqual(tuple(self.root.iterdir()), (self.path,))
+
     def test_changed_source_is_rejected_before_import(self):
         self.source.data.vertices[0].co.x = 1
         with patch.object(self.model, "_import") as importer:
@@ -638,3 +652,26 @@ class MeshResultTests(unittest.TestCase):
             with self.assertRaises(self.mesh.MeshApplicationError):
                 self.apply()
         importer.assert_not_called()
+
+    def test_animated_glb_still_cannot_replace_static_source(self):
+        from helpers import animated_glb
+
+        data = animated_glb()
+        self.path.write_bytes(data)
+        self.item = self.storage.StoredResult(
+            self.storage.ResultAsset("model", self.path.name, "model/gltf-binary", len(data)),
+            self.transfers.DownloadedResult(
+                self.path.name, len(data), hashlib.sha256(data).hexdigest()
+            ),
+        )
+        before = self.module.model_application._snapshot()
+        with self.assertRaises(self.module.MeshResultApplicationError):
+            self.module.apply_saved_mesh(
+                self.target,
+                self.item,
+                self.path,
+                policy="REMESH",
+                result_to_source=Matrix.Identity(4),
+                keep_original=True,
+            )
+        self.assertEqual(self.module.model_application._snapshot(), before)

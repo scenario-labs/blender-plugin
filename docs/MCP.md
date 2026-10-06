@@ -54,12 +54,14 @@ The independent media file must remain available to the blend file. See
 [saved media application](BLENDER_JOB_CONTEXT.md#explicit-saved-video-and-audio-application)
 for size, rollback and persistence limits.
 
-For a static GLB, the same `asset_id` argument returns `kind: model` and the
+For a self-contained GLB, the same `asset_id` argument returns `kind: model` and the
 approved `cursor` instead of a media frame. Show its scene and cursor before
 approval. The importer adds one new model group and packs embedded textures;
 it leaves current selection intact. The cursor is rechecked before the durable
-claim. Rigged/animated, external-file and non-GLB results remain unsupported.
-See [static model import](MESH_APPLICATION.md#explicit-saved-static-glb-import)
+claim. Rigs, weights and node/morph animation clips stay in the new group.
+Timing uses the current scene FPS, with unchanged frame and timeline range.
+External-file, pointer-animation and non-GLB results remain unsupported.
+See [model import](MESH_APPLICATION.md#explicit-saved-glb-import)
 for bounds and recovery. This never replaces an existing mesh.
 
 For one unapplied saved panorama, pass `purpose: world` and its `asset_id` to
@@ -343,7 +345,7 @@ behavior interchangeable. Remote names below were checked against the
 | Saved job actions | `recover_local_job(context_id, request_id, expected_revision, action)` | Scoped job refresh/cancellation, asset retrieval, or local receipt recovery; never a new generation |
 | Review saved Image import | `prepare_result_application(context_id, request_id, expected_revision)` | Local destination capture; show the returned scene and images for approval |
 | Review one saved video/audio strip | `prepare_result_application(context_id, request_id, expected_revision, asset_id)` | Local scene/frame capture; show returned destination for approval |
-| Review one saved static GLB | `prepare_result_application(context_id, request_id, expected_revision, asset_id)` | Local scene/cursor capture; show the returned destination for approval |
+| Review one saved GLB | `prepare_result_application(context_id, request_id, expected_revision, asset_id)` | Local scene/cursor capture; show the returned destination for approval |
 | Review panorama World or restore | `prepare_result_application(context_id, request_id, expected_revision, purpose, asset_id)` | Use `world` with one asset or `restore_world` for the retained session handle |
 | Apply approved saved results | `apply_result_application(context_id, application_id)` | Local verified import or strip insertion into the captured destination; no platform call |
 | Wait | `wait_for_job(job_id or id, timeout)`, one job without blocking Blender | `jobs_wait` |
@@ -428,7 +430,7 @@ or authorize scene application. Recovered display records use generic
 `kind: model`; original lane metadata is not persisted. PNG/EXR results can use
 the explicit image import approval above, without inferring a material or World
 assignment from their media type. Supported video/audio uses the explicit
-asset and scene/frame approval above. Static embedded GLBs use the corresponding
+asset and scene/frame approval above. Embedded GLBs use the corresponding
 scene/cursor approval; in-place editing is separate. `import_result` accepts prototype records only;
 shared jobs reject it with guidance for explicit PNG/EXR application. A cold
 session identifies saved prototype records from the local registry before

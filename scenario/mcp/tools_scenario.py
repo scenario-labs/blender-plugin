@@ -438,8 +438,8 @@ def prepare_result_application(args):
                 "asset_id": approval.asset_id,
                 "kind": "model",
                 "cursor": list(approval.cursor),
-                "note": "Approve importing this one static embedded GLB into a new group with its bottom at the cursor. "
-                "Existing objects and selection stay unchanged. Rigged/animated or externally referenced GLBs are unsupported. "
+                "note": "Approve importing this one embedded GLB into a new group with its bottom at the cursor. "
+                "Existing objects, selection and timeline stay unchanged. Rigs and node animation clips are retained using scene FPS; external-file GLBs are unsupported. "
                 "Nothing has been imported; changed destinations require review again.",
             }
         return {
@@ -814,7 +814,7 @@ SPECS = (
             "  - request_id: required string, saved local job identity.\n"
             "  - expected_revision: required nonnegative integer, observed saved revision.\n"
             "  - purpose: import (default), material, world, restore_world, mesh_edit or mesh_source; material uses the active mesh and saved unambiguous texture roles; World replacement requires asset_id.\n"
-            "  - asset_id: optional saved asset ID; required for one MP4/WebM video, MP3/WAV/OGG audio strip or static embedded GLB model. Omit for PNG/EXR image import.\n"
+            "  - asset_id: optional saved asset ID; required for one MP4/WebM video, MP3/WAV/OGG audio strip or embedded GLB model. Omit for PNG/EXR image import.\n"
             "  - mesh_policy: REMESH (default) replaces geometry/UV/materials; UV replaces only active UVs; RETEXTURE preserves geometry/non-UV attributes and replaces all UV layers/materials. UV and RETEXTURE require exact topology/position matching. PARTS replaces source geometry with an empty mesh parent and 2 to 128 named parts from the selected static GLB; every mesh is a part, not an alternate variant.\n"
             "  - mesh_placement: WORLD (default) preserves imported scene positions; LOCAL uses imported positions in the object's local coordinates. No fitting is inferred.\n"
             "  - keep_original: boolean, default true; preserve an unselected original mesh copy. These mesh options apply to mesh_edit and mesh_source, which require asset_id. mesh_source requires exactly one captured input and its unchanged live export source; it ignores current selection and cannot restore authority after undo/load/restart.\n"

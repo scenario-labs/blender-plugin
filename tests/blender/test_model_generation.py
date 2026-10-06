@@ -16,7 +16,7 @@ from unittest.mock import Mock, patch
 
 import bpy
 import httpx
-from helpers import online_access, reset_scene, submodule, temp_credentials
+from helpers import animated_glb, online_access, reset_scene, submodule, temp_credentials
 
 
 class ModelGenerationTests(unittest.TestCase):
@@ -1242,6 +1242,131 @@ class ModelGenerationTests(unittest.TestCase):
         self.assertEqual((len(self.calls), len(self.paid)), before)
         with self.assertRaises(self.request_error):
             self.tools.apply_result_application(self.import_args(approval))
+
+    def test_shared_animated_model_import_retains_rig_and_clips_without_more_requests(self):
+        request_id = self.recovered_model(animated_glb())
+        before = len(self.calls), len(self.paid)
+        approval = self.prepare_model(request_id)
+        deferred = self.tools.apply_result_application(self.import_args(approval))
+        status = deferred.finish(deferred.run())
+        self.assertEqual(status["status"], "applied", status)
+        rig = next(
+            bpy.data.objects[name]
+            for name in status["objects"]
+            if bpy.data.objects[name].type == "ARMATURE"
+        )
+        self.assertEqual(len(rig.data.bones), 2)
+        self.assertEqual(len(rig.animation_data.nla_tracks), 2)
+        self.assertEqual((len(self.calls), len(self.paid)), before)
+        with self.assertRaises(self.request_error):
+            self.tools.apply_result_application(self.import_args(approval))
+
+    def headless_saved_application(self, request_id, *, mesh_edit=False):
+        self.assertTrue(bpy.app.background)
+        service = submodule("blender.mcp_service")
+        server_type = service.McpServer
+        serve = server_type.serve_blocking
+        context = bpy.context.window, bpy.context.scene, bpy.context.view_layer
+        before = len(self.calls), len(self.paid), len(self.downloads)
+        arguments = self.recovery_args(request_id, "import_model")
+        del arguments["action"]
+        arguments["asset_id"] = "result-image"
+        if mesh_edit:
+            arguments["purpose"] = "mesh_edit"
+        completed = []
+
+        def serve_once(server, stop_event, *, before_process):
+            # Port zero is test-only; connect to the OS-assigned listening port.
+            url = f"http://127.0.0.1:{server._httpd.server_address[1]}/mcp"
+
+            def client():
+                try:
+                    with httpx.Client(trust_env=False, timeout=10) as connection:
+
+                        def call(name, arguments):
+                            response = connection.post(
+                                url,
+                                headers={"Authorization": "Bearer synthetic-cli-token"},
+                                json={
+                                    "jsonrpc": "2.0",
+                                    "id": 1,
+                                    "method": "tools/call",
+                                    "params": {"name": name, "arguments": arguments},
+                                },
+                            )
+                            response.raise_for_status()
+                            value = response.json()
+                            self.assertNotIn("error", value)
+                            return value["result"]
+
+                        prepared = call("prepare_result_application", arguments)
+                        self.assertFalse(prepared.get("isError"), prepared)
+                        approval = json.loads(prepared["content"][0]["text"])
+                        applied = call("apply_result_application", self.import_args(approval))
+                        self.assertFalse(applied.get("isError"), applied)
+                        completed.append(json.loads(applied["content"][0]["text"]))
+                        replay = call("apply_result_application", self.import_args(approval))
+                        self.assertTrue(replay.get("isError"), replay)
+                finally:
+                    stop_event.set()
+
+            with ThreadPoolExecutor(max_workers=1) as pool:
+                future = pool.submit(client)
+                serve(server, stop_event, before_process=before_process)
+                future.result(15)
+
+        def ephemeral_server(host, port, *args, **kwargs):
+            return server_type(host, 0, *args, **kwargs)
+
+        with (
+            patch.object(server_type, "serve_blocking", serve_once),
+            patch.object(service, "McpServer", side_effect=ephemeral_server),
+        ):
+            self.assertEqual(service.cli(["--token", "synthetic-cli-token"]), 0)
+        self.assertEqual((bpy.context.window, bpy.context.scene, bpy.context.view_layer), context)
+        self.assertEqual((len(self.calls), len(self.paid), len(self.downloads)), before)
+        self.assertEqual(len(completed), 1)
+        self.assertEqual(completed[0]["status"], "applied", completed[0])
+        return completed[0]
+
+    def test_headless_mcp_loop_imports_saved_rig_and_animation_without_replay(self):
+        request_id = self.recovered_model(animated_glb())
+        active = bpy.context.view_layer.objects.active
+        status = self.headless_saved_application(request_id)
+        rig = next(
+            bpy.data.objects[name]
+            for name in status["objects"]
+            if bpy.data.objects[name].type == "ARMATURE"
+        )
+        self.assertEqual(len(rig.data.bones), 2)
+        self.assertEqual(len(rig.animation_data.nla_tracks), 2)
+        self.assertEqual(bpy.context.view_layer.objects.active, active)
+
+    def test_headless_mcp_loop_applies_saved_mesh_without_replay(self):
+        request_id = self.recovered_mesh_edit()
+        source = bpy.context.view_layer.objects.active
+        original = source.data
+        status = self.headless_saved_application(request_id, mesh_edit=True)
+        self.assertEqual(status["mesh_edit"]["target"], source.name)
+        self.assertEqual(len(source.data.vertices), 3)
+        self.assertEqual(bpy.data.objects[status["mesh_edit"]["original"]].data, original)
+        self.assertEqual(bpy.context.view_layer.objects.active, source)
+
+    def test_native_animated_model_import_uses_shared_approval(self):
+        request_id = self.recovered_model(animated_glb())
+        before = len(self.calls), len(self.paid)
+        approval = self.prepare_model(request_id)
+        args = self.import_args(approval)
+        args.update(
+            request_id=request_id,
+            expected_revision=approval["revision"],
+            asset_id=approval["asset_id"],
+        )
+        self.assertEqual(bpy.ops.scenario.import_saved_model(**args), {"FINISHED"})
+        self.deliver_results()
+        self.assertEqual(self.store.get(request_id).state, self.storemod.JobState.APPLIED)
+        self.assertEqual(sum(obj.type == "ARMATURE" for obj in bpy.context.scene.objects), 1)
+        self.assertEqual((len(self.calls), len(self.paid)), before)
 
     def test_changed_model_cursor_during_verification_prevents_import(self):
         request_id = self.recovered_model()

@@ -1,6 +1,6 @@
 # SPDX-FileCopyrightText: 2026 Scenario Inc.
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""Import one static receipt-bound GLB into a new group at an approved cursor."""
+"""Import one receipt-bound GLB into a new group at an approved cursor."""
 
 import hashlib
 import logging
@@ -47,7 +47,7 @@ class ModelApplication:
     objects: tuple = field(repr=False)
 
 
-def _read(item, path):
+def _read(item, path, *, static_only=True):
     path, receipt = Path(path), item.receipt
     if (
         item.asset.media_type != MODEL_MEDIA_TYPE
@@ -65,7 +65,7 @@ def _read(item, path):
         data = source.read(receipt.size + 1)
     if len(data) != receipt.size or hashlib.sha256(data).hexdigest() != receipt.sha256:
         raise ModelApplicationError("The saved model changed; verify its receipt again")
-    inspect_glb(data)
+    inspect_glb(data, static_only=static_only)
     return data
 
 
@@ -76,12 +76,27 @@ def _import(path):
         import_select_created_objects=False,
         import_scene_extras=False,
         import_scene_as_collection=False,
+        disable_bone_shape=True,
     )
     if result != {"FINISHED"}:
         raise ModelApplicationError("Blender could not import the saved GLB")
 
 
-def _publish(scene, objects, cursor, asset_id):
+def _bottom_center(objects):
+    points = [
+        obj.matrix_world @ Vector(corner)
+        for obj in objects
+        if obj.type == "MESH"
+        for corner in obj.bound_box
+    ]
+    if not points or any(not math.isfinite(value) for point in points for value in point):
+        raise ModelApplicationError("GLB contains no supported finite mesh geometry")
+    low = [min(point[axis] for point in points) for axis in range(3)]
+    high = [max(point[axis] for point in points) for axis in range(3)]
+    return Vector(((low[0] + high[0]) / 2, (low[1] + high[1]) / 2, low[2]))
+
+
+def _publish(scene, objects, cursor, asset_id, anchor):
     collection = bpy.data.collections.new("Scenario Model")
     scene.collection.children.link(collection)
     root = bpy.data.objects.new("Scenario Model", None)
@@ -93,20 +108,7 @@ def _publish(scene, objects, cursor, asset_id):
         obj["scenario_asset"] = asset_id
         if obj.parent not in objects:
             obj.parent = root
-    bpy.context.view_layer.update()
-    points = [
-        obj.matrix_world @ Vector(corner)
-        for obj in objects
-        if obj.type == "MESH"
-        for corner in obj.bound_box
-    ]
-    if not points or any(not math.isfinite(value) for point in points for value in point):
-        raise ModelApplicationError("GLB contains no supported finite mesh geometry")
-    low = [min(point[axis] for point in points) for axis in range(3)]
-    high = [max(point[axis] for point in points) for axis in range(3)]
-    root.location = Vector(cursor) - Vector(
-        ((low[0] + high[0]) / 2, (low[1] + high[1]) / 2, low[2])
-    )
+    root.location = Vector(cursor) - anchor
     root["scenario_asset"] = asset_id
     bpy.context.view_layer.update()
     return ModelApplication(collection, root, tuple(objects))
@@ -143,26 +145,79 @@ def _remove_new_data(previous):
 
 
 @contextmanager
-def staged_model(item, path, previous):
+def _preserve_animation_ui(scenes):
+    """glTF's optional animation UI writes to scenes[0], outside its import context."""
+    saved = [
+        (
+            scene,
+            tuple(track.name for track in scene.gltf2_animation_tracks),
+            scene.gltf2_animation_active,
+            scene.gltf2_animation_applied,
+        )
+        for scene in scenes
+        if hasattr(scene, "gltf2_animation_tracks")
+    ]
+    try:
+        yield
+    finally:
+        for scene, tracks, active, applied in saved:
+            if tuple(track.name for track in scene.gltf2_animation_tracks) != tracks:
+                scene.gltf2_animation_tracks.clear()
+                for name in tracks:
+                    scene.gltf2_animation_tracks.add().name = name
+            scene.gltf2_animation_active = active
+            scene.gltf2_animation_applied = applied
+
+
+@contextmanager
+def staged_model(item, path, previous, *, static_only=True):
     """Decode a receipt-bound snapshot in isolation; caller owns all Blender cleanup."""
     temporary = None
     try:
-        data = _read(item, path)
+        data = _read(item, path, static_only=static_only)
+        window = bpy.context.window
+        if window is None and not static_only and inspect_glb(data, static_only=False).get("skins"):
+            raise ModelApplicationError("Rigged model import requires a Blender window context")
         package = __package__.rsplit(".", 1)[0]
         root = bpy.utils.extension_path_user(package, path="model-import", create=True)
         temporary = tempfile.TemporaryDirectory(prefix="result-", dir=root)
         snapshot = Path(temporary.name) / "model.glb"
         snapshot.write_bytes(data)
         staging = bpy.data.scenes.new("Scenario import staging")
+        destination = bpy.context.scene
+        staging.render.fps = destination.render.fps
+        # Supported Blender importers multiply by fps_base when converting glTF
+        # seconds. Use a reciprocal only in staging to retain destination timing.
+        staging.render.fps_base = 1.0 / destination.render.fps_base
+        staging.frame_set(destination.frame_current, subframe=destination.frame_subframe)
         layer = staging.view_layers[0]
-        with bpy.context.temp_override(
-            scene=staging,
-            view_layer=layer,
-            collection=staging.collection,
-            layer_collection=layer.layer_collection,
-        ):
-            _import(snapshot)
-            layer.update()
+        # Background CLI sessions normally retain an off-screen window. Static
+        # imports also work with only an explicit scene/view-layer context.
+        if window is not None:
+            previous_scene, previous_layer = window.scene, window.view_layer
+        try:
+            # Armature construction uses operators and context.object; a scene
+            # override alone still exposes the destination's active object.
+            if window is not None:
+                window.scene = staging
+                window.view_layer = layer
+            with bpy.context.temp_override(
+                scene=staging,
+                view_layer=layer,
+                collection=staging.collection,
+                layer_collection=layer.layer_collection,
+            ):
+                with _preserve_animation_ui(previous["scenes"]):
+                    _import(snapshot)
+                layer.update()
+        finally:
+            if window is not None:
+                try:
+                    if bpy.context.mode != "OBJECT":
+                        bpy.ops.object.mode_set(mode="OBJECT")
+                finally:
+                    window.scene = previous_scene
+                    window.view_layer = previous_layer
         objects = tuple(obj for obj in bpy.data.objects if obj not in previous["objects"])
         if any(obj not in tuple(staging.objects) for obj in objects):
             raise ModelApplicationError("Imported objects escaped the staging scene")
@@ -186,8 +241,16 @@ def apply_model(scene, item, path, *, cursor):
     validate_destination(scene, cursor)
     previous = _snapshot()
     try:
-        with staged_model(item, path, previous) as (staging, objects):
-            application = _publish(scene, objects, cursor, item.asset.asset_id)
+        with staged_model(item, path, previous, static_only=False) as (staging, objects):
+            # Measure the first clip at time zero in isolation. Measuring after
+            # publication would bake the destination's current animated offset
+            # into the parent group, moving the starting pose away from the cursor.
+            layer = staging.view_layers[0]
+            with bpy.context.temp_override(scene=staging, view_layer=layer):
+                staging.frame_set(0)
+                layer.update()
+                anchor = _bottom_center(objects)
+            application = _publish(scene, objects, cursor, item.asset.asset_id, anchor)
             bpy.data.scenes.remove(staging)
             return application
     except Exception:

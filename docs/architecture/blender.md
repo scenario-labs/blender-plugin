@@ -67,12 +67,13 @@ adds exact scene/frame approval, a durable claim and receipt-only recovery.
 Prototype video/audio operators remain separate; they are not the entry points
 for newly generated shared jobs.
 
-## Saved static models
+## Saved models
 
 [`model_application.py`](../../scenario/blender/model_application.py) stages one
-receipt-bound static embedded GLB in a disposable scene, then publishes a new
+receipt-bound embedded GLB in a disposable scene, then publishes a new
 collection/group at an approved cursor. It preserves the original selection and
-packs embedded textures. The [model guide](../MESH_APPLICATION.md#explicit-saved-static-glb-import)
+packs embedded textures, retains rigs and node/morph animation clips, and keeps
+the destination timeline unchanged. The [model guide](../MESH_APPLICATION.md#explicit-saved-glb-import)
 details supported containers, bounded synchronous work and rollback. Existing
 `mesh_application.py` remains the separate explicit in-place mesh/UV primitive;
 importing a new GLB does not establish those edit workflows.

@@ -10,7 +10,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 import bpy
-from helpers import FIXTURES, submodule
+from helpers import FIXTURES, animated_glb, submodule
 from mathutils import Vector
 
 
@@ -90,6 +90,46 @@ class ModelApplicationTests(unittest.TestCase):
         self.assertEqual(bpy.context.view_layer.objects.active, self.existing)
         self.assertTrue(self.path.exists())
 
+    def test_static_import_accepts_an_explicit_windowless_scene_context(self):
+        window = bpy.context.window
+        with bpy.context.temp_override(
+            window=None, scene=self.scene, view_layer=self.scene.view_layers[0]
+        ):
+            self.assertIsNone(bpy.context.window)
+            result = self.module.apply_model(self.scene, self.item, self.path, cursor=(4, 5, 6))
+            self.assertEqual(len(result.objects), 2)
+            self.assertIsNone(bpy.context.window)
+            self.assertEqual(bpy.context.view_layer.objects.active, self.existing)
+            layer = bpy.context.view_layer
+            self.assertEqual(
+                {obj for obj in layer.objects if obj.select_get(view_layer=layer)}, {self.existing}
+            )
+        self.assertEqual(bpy.context.window, window)
+        self.assertEqual(window.scene, self.scene)
+        self.assertEqual(set(bpy.context.selected_objects), {self.existing})
+        self.assertEqual(tuple(self.root.iterdir()), (self.path,))
+
+    def test_windowless_static_import_failure_removes_only_new_data(self):
+        before = self.module._snapshot()
+        original = self.module._import
+
+        def fail(path):
+            original(path)
+            raise RuntimeError("synthetic importer failure")
+
+        with (
+            bpy.context.temp_override(
+                window=None, scene=self.scene, view_layer=self.scene.view_layers[0]
+            ),
+            patch.object(self.module, "_import", side_effect=fail) as importer,
+            self.assertRaises(self.module.ModelApplicationError),
+        ):
+            self.module.apply_model(self.scene, self.item, self.path, cursor=(0, 0, 0))
+        importer.assert_called_once()
+        self.assertEqual(self.module._snapshot(), before)
+        self.assertEqual(bpy.context.view_layer.objects.active, self.existing)
+        self.assertEqual(tuple(self.root.iterdir()), (self.path,))
+
     def test_changed_bytes_fail_before_import(self):
         self.path.write_bytes(self.path.read_bytes() + b"changed")
         with (
@@ -98,6 +138,23 @@ class ModelApplicationTests(unittest.TestCase):
         ):
             self.module.apply_model(self.scene, self.item, self.path, cursor=(0, 0, 0))
         importer.assert_not_called()
+
+    def test_windowless_rig_is_rejected_before_import_without_new_data(self):
+        self.use_animation()
+        before = self.module._snapshot()
+        with (
+            bpy.context.temp_override(
+                window=None, scene=self.scene, view_layer=self.scene.view_layers[0]
+            ),
+            patch.object(self.module, "_import") as importer,
+            self.assertRaises(self.module.ModelApplicationError),
+        ):
+            self.module.apply_model(self.scene, self.item, self.path, cursor=(0, 0, 0))
+        importer.assert_not_called()
+        self.assertEqual(self.module._snapshot(), before)
+        self.assertEqual(bpy.context.view_layer.objects.active, self.existing)
+        self.assertEqual(set(bpy.context.selected_objects), {self.existing})
+        self.assertEqual(tuple(self.root.iterdir()), (self.path,))
 
     def test_worker_cannot_import(self):
         with ThreadPoolExecutor(max_workers=1) as pool:
@@ -140,3 +197,151 @@ class ModelApplicationTests(unittest.TestCase):
             all(image.packed_file for image in set(bpy.data.images) - self.before["images"])
         )
         self.assertIn("temporary files may remain", logs.output[0])
+
+    def use_animation(self, *, node_transform=False):
+        data = animated_glb(node_transform=node_transform)
+        self.path.write_bytes(data)
+        self.item = self.storage.StoredResult(
+            self.storage.ResultAsset("model", self.path.name, "model/gltf-binary", len(data)),
+            self.transfers.DownloadedResult(
+                self.path.name, len(data), hashlib.sha256(data).hexdigest()
+            ),
+        )
+
+    def test_rig_morph_and_multiple_clips_survive_with_destination_timing(self):
+        self.use_animation()
+        self.scene.render.fps = 30
+        self.scene.render.fps_base = 1.001
+        self.scene.frame_start, self.scene.frame_end = 12, 160
+        self.scene.frame_set(7, subframe=0.25)
+        result = self.module.apply_model(self.scene, self.item, self.path, cursor=(4, 5, 6))
+        rig = next(obj for obj in result.objects if obj.type == "ARMATURE")
+        mesh = next(obj for obj in result.objects if obj.type == "MESH")
+        self.assertEqual(len(rig.data.bones), 2)
+        self.assertEqual(rig.data.bones["TipJoint"].parent.name, "RootJoint")
+        self.assertEqual(mesh.modifiers[0].object, rig)
+        self.assertEqual(mesh.vertex_groups[0].name, "RootJoint")
+        self.assertEqual(mesh.data.vertices[0].groups[0].weight, 1)
+        self.assertEqual(len(mesh.data.shape_keys.key_blocks), 2)
+        for owner in (rig, mesh.data.shape_keys):
+            animation = owner.animation_data
+            self.assertIsNotNone(animation.action)
+            self.assertEqual(len(animation.nla_tracks), 2)
+            for track in animation.nla_tracks:
+                self.assertTrue(track.mute)
+                action = track.strips[0].action
+                self.assertAlmostEqual(action.frame_range[0], 0, places=3)
+                self.assertAlmostEqual(action.frame_range[1], 30 / 1.001, places=3)
+        self.assertEqual((self.scene.frame_start, self.scene.frame_end), (12, 160))
+        self.assertEqual(self.scene.frame_current, 7)
+        self.assertAlmostEqual(self.scene.frame_subframe, 0.25)
+        self.assertEqual(self.scene.render.fps, 30)
+        self.assertAlmostEqual(self.scene.render.fps_base, 1.001, places=5)
+        self.assertEqual(bpy.context.view_layer.objects.active, self.existing)
+        self.scene.frame_set(0)
+        first = mesh.evaluated_get(bpy.context.evaluated_depsgraph_get()).data.vertices[0].co.copy()
+        self.scene.frame_set(30)
+        last = mesh.evaluated_get(bpy.context.evaluated_depsgraph_get()).data.vertices[0].co.copy()
+        self.assertAlmostEqual(last.x - first.x, 2, places=4)
+        self.assertGreater((last - first).length, 2)
+        self.assertTrue(
+            all(image.packed_file for image in set(bpy.data.images) - self.before["images"])
+        )
+
+    def test_node_animation_placement_uses_frame_zero_without_changing_destination_time(self):
+        self.use_animation(node_transform=True)
+        self.scene.render.fps = 30
+        self.scene.render.fps_base = 1.001
+        self.scene.frame_start, self.scene.frame_end = 12, 160
+        previous = self.module._snapshot()
+        roots = []
+        for frame in (7, 30):
+            with self.subTest(frame=frame):
+                self.scene.frame_set(frame, subframe=0.25)
+                result = self.module.apply_model(self.scene, self.item, self.path, cursor=(4, 5, 6))
+                roots.append(tuple(result.root.location))
+                self.assertEqual(self.scene.frame_current, frame)
+                self.assertAlmostEqual(self.scene.frame_subframe, 0.25)
+                self.assertEqual((self.scene.frame_start, self.scene.frame_end), (12, 160))
+                self.assertEqual(self.scene.render.fps, 30)
+                self.assertAlmostEqual(self.scene.render.fps_base, 1.001, places=5)
+                self.assertEqual(bpy.context.view_layer.objects.active, self.existing)
+                self.assertEqual(set(bpy.context.selected_objects), {self.existing})
+                mesh = next(obj for obj in result.objects if obj.type == "MESH")
+                centers = []
+                for sample in (0, 30):
+                    self.scene.frame_set(sample)
+                    evaluated = mesh.evaluated_get(bpy.context.evaluated_depsgraph_get())
+                    points = [evaluated.matrix_world @ Vector(c) for c in evaluated.bound_box]
+                    low = [min(point[i] for point in points) for i in range(3)]
+                    high = [max(point[i] for point in points) for i in range(3)]
+                    centers.append(((low[0] + high[0]) / 2, (low[1] + high[1]) / 2, low[2]))
+                for actual, expected in zip(centers[0], (4, 5, 6), strict=True):
+                    self.assertAlmostEqual(actual, expected, places=4)
+                self.assertAlmostEqual(centers[1][0] - centers[0][0], 2, places=4)
+                self.module._remove_new_data(previous)
+        self.assertEqual(roots[0], roots[1])
+
+    def test_failed_rig_import_removes_skin_shape_keys_and_actions(self):
+        self.use_animation()
+        layer = self.scene.view_layers.new("Keep chosen view layer")
+        bpy.context.window.view_layer = layer
+        layer.objects.active = self.existing
+        self.existing.select_set(True)
+        previous = self.module._snapshot()
+        original = self.module._publish
+
+        def fail(*args):
+            original(*args)
+            raise RuntimeError("synthetic failure after rig publication")
+
+        with (
+            patch.object(self.module, "_publish", side_effect=fail) as publisher,
+            self.assertRaises(self.module.ModelApplicationError),
+        ):
+            self.module.apply_model(self.scene, self.item, self.path, cursor=(0, 0, 0))
+        publisher.assert_called_once()
+        self.assertEqual(bpy.context.window.scene, self.scene)
+        self.assertEqual(bpy.context.window.view_layer, layer)
+        self.assertEqual(bpy.context.view_layer.objects.active, self.existing)
+        self.assertEqual(set(bpy.context.selected_objects), {self.existing})
+        self.assertEqual(self.module._snapshot(), previous)
+        self.assertTrue(self.path.exists())
+
+    def test_optional_gltf_animation_ui_metadata_is_preserved_on_success_and_failure(self):
+        self.use_animation()
+        prefs = bpy.context.preferences.addons["io_scene_gltf2"].preferences
+        old = prefs.animation_ui
+        prefs.animation_ui = True
+        scene = bpy.data.scenes[0]
+        before = tuple(t.name for t in scene.gltf2_animation_tracks)
+        active, applied = scene.gltf2_animation_active, scene.gltf2_animation_applied
+        try:
+            scene.gltf2_animation_tracks.add().name = "Existing clip"
+            expected = tuple(t.name for t in scene.gltf2_animation_tracks)
+            self.module.apply_model(self.scene, self.item, self.path, cursor=(0, 0, 0))
+            self.assertEqual(tuple(t.name for t in scene.gltf2_animation_tracks), expected)
+            self.assertEqual(
+                (scene.gltf2_animation_active, scene.gltf2_animation_applied), (active, applied)
+            )
+            original = self.module._import
+
+            def fail(path):
+                original(path)
+                raise RuntimeError("synthetic import failure")
+
+            with (
+                patch.object(self.module, "_import", side_effect=fail),
+                self.assertRaises(self.module.ModelApplicationError),
+            ):
+                self.module.apply_model(self.scene, self.item, self.path, cursor=(0, 0, 0))
+            self.assertEqual(tuple(t.name for t in scene.gltf2_animation_tracks), expected)
+            self.assertEqual(
+                (scene.gltf2_animation_active, scene.gltf2_animation_applied), (active, applied)
+            )
+        finally:
+            scene.gltf2_animation_tracks.clear()
+            for name in before:
+                scene.gltf2_animation_tracks.add().name = name
+            scene.gltf2_animation_active, scene.gltf2_animation_applied = active, applied
+            prefs.animation_ui = old

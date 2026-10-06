@@ -166,6 +166,10 @@ existing rig. Moving the new parent group moves the imported character together.
 Armature construction requires the staging scene to own the active window and
 view layer while Blender's importer runs. The importer restores both afterward,
 including on failure, and disables generated bone-display helper geometry.
+Ordinary background Blender sessions retain an off-screen window and support
+that path. An explicitly windowless caller can import static models or apply a
+saved static mesh using its scene and view layer; rigged models are rejected
+before importer execution when no window is available.
 It also restores the optional glTF animation UI list on pre-existing scenes:
 that upstream UI writes outside the import context. Imported actions and NLA
 tracks remain on their new owners. Supported Blender 5.0/5.1/5.2 importers multiply

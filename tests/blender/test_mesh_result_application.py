@@ -170,6 +170,20 @@ class MeshResultTests(unittest.TestCase):
         self.assertEqual(alias.data, old_mesh)
         self.assertEqual(set(self.scene.objects), {self.source, alias})
 
+    def test_saved_static_remesh_accepts_a_windowless_destination(self):
+        old_mesh = self.source.data
+        with bpy.context.temp_override(
+            window=None, scene=self.scene, view_layer=self.scene.view_layers[0]
+        ):
+            result = self.apply()
+            self.assertIsNone(bpy.context.window)
+            self.assertEqual(result.source, self.source)
+            self.assertNotEqual(self.source.data, old_mesh)
+            self.assertEqual(result.original.data, old_mesh)
+            self.assertEqual(bpy.context.view_layer.objects.active, self.source)
+        self.assertEqual(set(self.scene.objects), {self.source, result.original})
+        self.assertEqual(tuple(self.root.iterdir()), (self.path,))
+
     def test_changed_source_is_rejected_before_import(self):
         self.source.data.vertices[0].co.x = 1
         with patch.object(self.model, "_import") as importer:

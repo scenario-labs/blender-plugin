@@ -174,6 +174,9 @@ def staged_model(item, path, previous, *, static_only=True):
     temporary = None
     try:
         data = _read(item, path, static_only=static_only)
+        window = bpy.context.window
+        if window is None and not static_only and inspect_glb(data, static_only=False).get("skins"):
+            raise ModelApplicationError("Rigged model import requires a Blender window context")
         package = __package__.rsplit(".", 1)[0]
         root = bpy.utils.extension_path_user(package, path="model-import", create=True)
         temporary = tempfile.TemporaryDirectory(prefix="result-", dir=root)
@@ -187,17 +190,16 @@ def staged_model(item, path, previous, *, static_only=True):
         staging.render.fps_base = 1.0 / destination.render.fps_base
         staging.frame_set(destination.frame_current, subframe=destination.frame_subframe)
         layer = staging.view_layers[0]
-        # Supported background CLI sessions retain an off-screen window context.
-        # The glTF armature importer needs it even without a visible desktop.
-        window = bpy.context.window
-        if window is None:
-            raise ModelApplicationError("Model import requires a Blender window context")
-        previous_scene, previous_layer = window.scene, window.view_layer
+        # Background CLI sessions normally retain an off-screen window. Static
+        # imports also work with only an explicit scene/view-layer context.
+        if window is not None:
+            previous_scene, previous_layer = window.scene, window.view_layer
         try:
             # Armature construction uses operators and context.object; a scene
             # override alone still exposes the destination's active object.
-            window.scene = staging
-            window.view_layer = layer
+            if window is not None:
+                window.scene = staging
+                window.view_layer = layer
             with bpy.context.temp_override(
                 scene=staging,
                 view_layer=layer,
@@ -208,12 +210,13 @@ def staged_model(item, path, previous, *, static_only=True):
                     _import(snapshot)
                 layer.update()
         finally:
-            try:
-                if bpy.context.mode != "OBJECT":
-                    bpy.ops.object.mode_set(mode="OBJECT")
-            finally:
-                window.scene = previous_scene
-                window.view_layer = previous_layer
+            if window is not None:
+                try:
+                    if bpy.context.mode != "OBJECT":
+                        bpy.ops.object.mode_set(mode="OBJECT")
+                finally:
+                    window.scene = previous_scene
+                    window.view_layer = previous_layer
         objects = tuple(obj for obj in bpy.data.objects if obj not in previous["objects"])
         if any(obj not in tuple(staging.objects) for obj in objects):
             raise ModelApplicationError("Imported objects escaped the staging scene")

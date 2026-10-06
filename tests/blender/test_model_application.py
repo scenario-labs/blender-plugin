@@ -90,6 +90,46 @@ class ModelApplicationTests(unittest.TestCase):
         self.assertEqual(bpy.context.view_layer.objects.active, self.existing)
         self.assertTrue(self.path.exists())
 
+    def test_static_import_accepts_an_explicit_windowless_scene_context(self):
+        window = bpy.context.window
+        with bpy.context.temp_override(
+            window=None, scene=self.scene, view_layer=self.scene.view_layers[0]
+        ):
+            self.assertIsNone(bpy.context.window)
+            result = self.module.apply_model(self.scene, self.item, self.path, cursor=(4, 5, 6))
+            self.assertEqual(len(result.objects), 2)
+            self.assertIsNone(bpy.context.window)
+            self.assertEqual(bpy.context.view_layer.objects.active, self.existing)
+            layer = bpy.context.view_layer
+            self.assertEqual(
+                {obj for obj in layer.objects if obj.select_get(view_layer=layer)}, {self.existing}
+            )
+        self.assertEqual(bpy.context.window, window)
+        self.assertEqual(window.scene, self.scene)
+        self.assertEqual(set(bpy.context.selected_objects), {self.existing})
+        self.assertEqual(tuple(self.root.iterdir()), (self.path,))
+
+    def test_windowless_static_import_failure_removes_only_new_data(self):
+        before = self.module._snapshot()
+        original = self.module._import
+
+        def fail(path):
+            original(path)
+            raise RuntimeError("synthetic importer failure")
+
+        with (
+            bpy.context.temp_override(
+                window=None, scene=self.scene, view_layer=self.scene.view_layers[0]
+            ),
+            patch.object(self.module, "_import", side_effect=fail) as importer,
+            self.assertRaises(self.module.ModelApplicationError),
+        ):
+            self.module.apply_model(self.scene, self.item, self.path, cursor=(0, 0, 0))
+        importer.assert_called_once()
+        self.assertEqual(self.module._snapshot(), before)
+        self.assertEqual(bpy.context.view_layer.objects.active, self.existing)
+        self.assertEqual(tuple(self.root.iterdir()), (self.path,))
+
     def test_changed_bytes_fail_before_import(self):
         self.path.write_bytes(self.path.read_bytes() + b"changed")
         with (
@@ -98,6 +138,23 @@ class ModelApplicationTests(unittest.TestCase):
         ):
             self.module.apply_model(self.scene, self.item, self.path, cursor=(0, 0, 0))
         importer.assert_not_called()
+
+    def test_windowless_rig_is_rejected_before_import_without_new_data(self):
+        self.use_animation()
+        before = self.module._snapshot()
+        with (
+            bpy.context.temp_override(
+                window=None, scene=self.scene, view_layer=self.scene.view_layers[0]
+            ),
+            patch.object(self.module, "_import") as importer,
+            self.assertRaises(self.module.ModelApplicationError),
+        ):
+            self.module.apply_model(self.scene, self.item, self.path, cursor=(0, 0, 0))
+        importer.assert_not_called()
+        self.assertEqual(self.module._snapshot(), before)
+        self.assertEqual(bpy.context.view_layer.objects.active, self.existing)
+        self.assertEqual(set(bpy.context.selected_objects), {self.existing})
+        self.assertEqual(tuple(self.root.iterdir()), (self.path,))
 
     def test_worker_cannot_import(self):
         with ThreadPoolExecutor(max_workers=1) as pool:

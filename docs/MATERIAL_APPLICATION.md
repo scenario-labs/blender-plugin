@@ -19,6 +19,13 @@ filenames or combine multiple texture sets. Unclassified assets remain saved and
 Each selected map needs a verified receipt and a supported PNG/EXR media type;
 Blender must decode the same bounded bytes and pack the image before assignment.
 
+UI and MCP offer material application only when the saved metadata passes the
+same texture-selection check used by approval. An unsupported JPEG/WebP map,
+missing receipt, ambiguous role or excessive combined size hides the action;
+the files remain saved. This availability check does not decode images or
+verify file bytes. Worker verification and destination checks still run after
+explicit approval.
+
 | Map | New material behavior |
 | --- | --- |
 | Base/albedo | sRGB image into Principled Base Color |

@@ -9,6 +9,7 @@ import tempfile
 import threading
 import unittest
 from concurrent.futures import ThreadPoolExecutor
+from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
@@ -1532,6 +1533,55 @@ class ModelGenerationTests(unittest.TestCase):
         args["purpose"] = "material"
         return self.tools.prepare_result_application(args)
 
+    def test_material_actions_require_the_same_supported_texture_set_as_approval(self):
+        request_id = self.recovered_material()
+        owner = self.runtime.state.model_jobs
+        record = self.store.get(request_id)
+        albedo = record.results[0]
+        before = len(self.calls), len(self.paid), len(self.downloads)
+        for media_type in ("image/png", "image/exr", "image/x-exr", "image/jpeg", "image/webp"):
+            with self.subTest(media_type=media_type):
+                changed = replace(albedo, asset=replace(albedo.asset, media_type=media_type))
+                proposed = replace(record, results=(changed,))
+                self.assertEqual(
+                    "apply_material" in owner.actions(proposed),
+                    media_type in {"image/png", "image/exr", "image/x-exr"},
+                )
+        invalid_sets = (
+            (replace(albedo, receipt=None),),
+            (albedo, replace(albedo, asset=replace(albedo.asset, asset_id="second-albedo"))),
+            (
+                albedo,
+                replace(
+                    albedo,
+                    asset=replace(
+                        albedo.asset,
+                        asset_id="normal",
+                        texture_role="normal",
+                        media_type="image/webp",
+                    ),
+                ),
+            ),
+        )
+        for results in invalid_sets:
+            with self.subTest(results=tuple(item.asset.asset_id for item in results)):
+                self.assertNotIn("apply_material", owner.actions(replace(record, results=results)))
+        self.assertEqual(self.store.get(request_id), record)
+        self.assertEqual((len(self.calls), len(self.paid), len(self.downloads)), before)
+
+    def test_saved_webp_texture_does_not_offer_an_unusable_material_action(self):
+        self.result_media_type = "image/webp"
+        request_id = self.recovered_material()
+        owner = self.runtime.state.model_jobs
+        before = self.store.get(request_id)
+        self.assertNotIn("apply_material", owner.status(request_id)["actions"])
+        with patch.object(owner.session, "verify_results") as verify:
+            with self.assertRaises(self.request_error):
+                self.prepare_material(request_id)
+        verify.assert_not_called()
+        self.assertEqual(self.store.get(request_id), before)
+        self.assertFalse(owner._application_approvals)
+
     def test_material_mcp_applies_to_captured_mesh_without_additional_requests(self):
         request_id = self.recovered_material()
         target = bpy.context.active_object
@@ -2065,6 +2115,27 @@ class ModelGenerationTests(unittest.TestCase):
         with self.assertRaises(submodule("blender.mesh_application").MeshApplicationError):
             self.tools.apply_result_application(self.import_args(approval))
         self.assertEqual(self.store.get(request_id), old)
+
+    def test_retired_mesh_approval_cannot_queue_verification_or_change_the_scene(self):
+        request_id = self.recovered_mesh_edit()
+        approval = self.prepare_mesh_edit(request_id)
+        owner = self.runtime.state.model_jobs
+        before = self.store.get(request_id)
+        source = bpy.context.view_layer.objects.active
+        mesh = source.data
+        objects = set(bpy.data.objects)
+        requests = len(self.calls), len(self.paid), len(self.downloads)
+        owner.session.deactivate()
+        with patch.object(owner.session, "verify_results") as verify:
+            with self.assertRaises(self.origin_error):
+                owner.apply_saved_result(approval["application_id"])
+        verify.assert_not_called()
+        self.assertNotIn(approval["application_id"], owner._application_approvals)
+        self.assertNotIn(request_id, owner._commands)
+        self.assertEqual(self.store.get(request_id), before)
+        self.assertEqual(source.data, mesh)
+        self.assertEqual(set(bpy.data.objects), objects)
+        self.assertEqual((len(self.calls), len(self.paid), len(self.downloads)), requests)
 
     def test_mesh_edit_options_keep_same_captured_target_and_invalidate_old_ticket(self):
         request_id = self.recovered_mesh_edit()

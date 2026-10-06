@@ -491,10 +491,13 @@ class ModelJobs:
             for item in record.results
         ):
             actions.append("apply_world")
-        if reusable and any(
-            item.asset.texture_role in {"base", "albedo"} for item in record.results
-        ):
-            actions.append("apply_material")
+        if reusable:
+            try:
+                selected_maps(record)
+            except MaterialApplicationError:
+                pass
+            else:
+                actions.append("apply_material")
         if state == JobState.APPLIED and request_id in self._worlds:
             actions.append("restore_world")
         if request_id in self._receipts:

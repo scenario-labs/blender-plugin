@@ -600,6 +600,10 @@ Native **Apply mesh edit** and MCP `prepare_result_application` with
 `purpose: mesh_edit` share this command and its captured target. The
 [review](MESH_APPLICATION.md#saved-mesh-edit-approval) binds policy, coordinate
 placement and Keep original before verification. Editing review options never
-recaptures the source. Operation/export metadata and end-to-end edit-lane
+recaptures the source. Admission calls the shared destination guard before
+queuing verification; a retired session rejects the consumed approval without
+queuing work, claiming application or changing the scene. The single-use handle
+cannot be replayed. Delivery rechecks the destination after verification.
+Operation/export metadata and end-to-end edit-lane
 acceptance remain separate integration. It provides no global undo entry, persistent restoration
 handle, new generation request or automatic provider-coordinate mapping.

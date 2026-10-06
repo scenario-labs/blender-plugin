@@ -406,6 +406,7 @@ class SCENARIO_OT_apply_saved_mesh(bpy.types.Operator):
     target_name: StringProperty(options={"HIDDEN", "SKIP_SAVE"})
     is_reuse: BoolProperty(options={"HIDDEN", "SKIP_SAVE"})
     review_error: StringProperty(options={"HIDDEN", "SKIP_SAVE"})
+    local_placement_required: BoolProperty(options={"HIDDEN", "SKIP_SAVE"})
     policy: EnumProperty(
         name="Edit",
         items=(
@@ -432,12 +433,19 @@ class SCENARIO_OT_apply_saved_mesh(bpy.types.Operator):
 
     def invoke(self, context, event):
         try:
+            context.view_layer.update()
+            source = context.view_layer.objects.active
+            self.local_placement_required = (
+                source is not None and source.matrix_world.determinant() <= 0
+            )
+            if self.placement == "WORLD" and self.local_placement_required:
+                self.placement = "LOCAL"
             jobs, approval = runtime.prepare_mesh_application(
                 self.context_id,
                 self.request_id,
                 self.expected_revision,
                 context.scene,
-                context.view_layer.objects.active,
+                source,
                 self.asset_id,
                 policy=self.policy,
                 placement=self.placement,
@@ -482,6 +490,8 @@ class SCENARIO_OT_apply_saved_mesh(bpy.types.Operator):
             layout.label(text="Use saved results again; no new generation.", icon="INFO")
         layout.prop(self, "policy")
         layout.prop(self, "placement")
+        if self.local_placement_required:
+            layout.label(text="Mirrored or zero-scale source: use object local coordinates.")
         layout.prop(self, "keep_original")
         if self.policy == "REMESH":
             layout.label(text="Replace this mesh's geometry, UVs and mesh materials.")

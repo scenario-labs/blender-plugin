@@ -294,6 +294,30 @@ approval instead of selecting a new target. A stale target or scene requires
 cancellation and fresh review. `draw()` only reads the prepared labels and
 operator properties. Completed-result reviews retain the reuse notice.
 
+Mirrored or zero-scale source transforms cannot use scene-coordinate mapping.
+The native dialog opens with **Object local coordinates** and a visible
+explanation for those sources. Review and confirmation remain explicit; choosing
+the unsupported scene-coordinate option cannot start verification or application.
+
+An isolated macOS arm64 Blender 5.1.2 desktop check used ZIP
+`21edce46cf2c0e94095ba27668c2acef3b6b68968dc0dc0082921f1bd0760000`,
+which passes 670 installed native tests on each of Blender 5.0.1, 5.1.2 and 5.2.1.
+The mirrored-source dialog opened with local coordinates selected. Escape
+cancelled; selecting scene coordinates showed rejection, and returning to local
+coordinates allowed Return confirmation. Source scale remained negative, Keep
+original retained a copy, and a second explicit reuse persisted `mesh_edit`
+without more mock requests or submissions. Viewport selection, front-view input
+and zoom worked. Blender exited cleanly with the normal profile unchanged.
+The test app used a distinct local bundle identity with unchanged vendor
+executable code. This synthetic check does not establish provider alignment,
+other OS desktop behavior, global undo or release acceptance.
+
+![Selected mirrored source with negative scale before saved mesh application](images/mirrored-mesh-before.png)
+
+![Mirrored source approval selects and explains local coordinates](images/mirrored-mesh-approval.png)
+
+![Applied mirrored mesh retains its negative source scale](images/mirrored-mesh-result.png)
+
 Offline desktop acceptance on macOS arm64 Blender 5.1.2 used final ZIP
 `e1eed465de2c9376231e54a7e623f1391974f4102ba54f2845fddbec369dda38`,
 which passes 659 full native tests each on Blender 5.0.1, 5.1.2 and 5.2.1.

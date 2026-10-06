@@ -669,15 +669,17 @@ def reuse(store, record, **changes):
 
 
 @pytest.mark.parametrize("outcome", [LocalApplicationState.APPLIED, LocalApplicationState.FAILED])
+@pytest.mark.parametrize("purpose", ["world", "model", "mesh_edit"])
 def test_local_reuse_keeps_generation_completed_and_history_survives_restart(
-    store, intent, tmp_path, outcome
+    store, intent, tmp_path, outcome, purpose
 ):
     original = completed_result(store, intent)
-    claimed = reuse(store, original)
+    claimed = reuse(store, original, purpose=purpose)
     assert replace(claimed, revision=original.revision, local_applications=()) == original
     assert claimed.local_applications[0].source_revision == original.revision
     reopened = JobStore(tmp_path / "jobs.sqlite3", store.scope)
     assert reopened.get(intent.request_id) == claimed
+    assert reopened.get(intent.request_id).local_applications[0].purpose == purpose
     with pytest.raises(StoreConflict, match="unfinished"):
         reuse(reopened, claimed, application_id="local-two")
     finished = reopened.finish_local_application(

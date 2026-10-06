@@ -2116,6 +2116,76 @@ class ModelGenerationTests(unittest.TestCase):
             self.tools.apply_result_application(self.import_args(approval))
         self.assertEqual(self.store.get(request_id), old)
 
+    def test_mesh_dialog_reviews_local_coordinates_for_mirrored_or_zero_scale_sources(self):
+        request_id = self.recovered_mesh_edit()
+        source = bpy.context.view_layer.objects.active
+        operator = submodule("blender.job_recovery").SCENARIO_OT_apply_saved_mesh
+        jobs = self.runtime.state.model_jobs
+        before = self.store.get(request_id)
+        requests = len(self.calls), len(self.paid), len(self.downloads)
+        for scale, placement in (
+            ((-1, 1, 1), "LOCAL"),
+            ((0, 1, 1), "LOCAL"),
+            ((-1, -1, 1), "WORLD"),
+        ):
+            with self.subTest(scale=scale):
+                source.scale = scale
+                dialog = Mock(return_value={"RUNNING_MODAL"})
+                context = SimpleNamespace(
+                    scene=bpy.context.scene,
+                    view_layer=bpy.context.view_layer,
+                    window_manager=SimpleNamespace(invoke_props_dialog=dialog),
+                )
+                op = SimpleNamespace(
+                    context_id=self.runtime.state.job_context_id,
+                    request_id=request_id,
+                    expected_revision=before.revision,
+                    asset_id="result-image",
+                    policy="REMESH",
+                    placement="WORLD",
+                    keep_original=True,
+                    report=Mock(),
+                )
+                self.assertEqual(operator.invoke(op, context, None), {"RUNNING_MODAL"})
+                dialog.assert_called_once_with(op, width=580)
+                op.report.assert_not_called()
+                ticket = jobs._application_approvals[op.application_id]
+                self.assertEqual(op.placement, placement)
+                self.assertEqual(ticket.placement, placement)
+                self.assertEqual(ticket.target.obj, source)
+                self.assertEqual(op.local_placement_required, placement == "LOCAL")
+                if placement == "LOCAL":
+                    op._sync_options = lambda op=op: operator._sync_options(op)
+                    op.placement = "WORLD"
+                    operator.check(op, context)
+                    self.assertTrue(op.review_error)
+                    self.assertIs(jobs._application_approvals[op.application_id], ticket)
+                    op.placement = "LOCAL"
+                    operator.check(op, context)
+                    self.assertFalse(op.review_error)
+                operator.cancel(op, context)
+                self.assertFalse(jobs._application_approvals)
+        self.assertEqual(self.store.get(request_id), before)
+        self.assertEqual((len(self.calls), len(self.paid), len(self.downloads)), requests)
+        self.assertFalse(jobs._commands)
+
+    def test_mirrored_mesh_requires_explicit_local_mapping_and_preserves_source_transform(self):
+        request_id = self.recovered_mesh_edit()
+        source = bpy.context.view_layer.objects.active
+        source.scale = (-1, 2, 1)
+        bpy.context.view_layer.update()
+        transform = source.matrix_world.copy()
+        with self.assertRaises(submodule("blender.mesh_application").MeshApplicationError):
+            self.prepare_mesh_edit(request_id, mesh_placement="WORLD")
+        jobs = self.runtime.state.model_jobs
+        self.assertFalse(jobs._application_approvals)
+        self.assertFalse(jobs._commands)
+        status = self.finish_application(self.prepare_mesh_edit(request_id, mesh_placement="LOCAL"))
+        self.assertEqual(status["status"], "applied", status)
+        self.assertEqual(source.matrix_world, transform)
+        self.assertEqual(len(source.data.vertices), 3)
+        self.assertEqual(min(v.co.x for v in source.data.vertices), 2)
+
     def test_retired_mesh_approval_cannot_queue_verification_or_change_the_scene(self):
         request_id = self.recovered_mesh_edit()
         approval = self.prepare_mesh_edit(request_id)
@@ -2209,7 +2279,13 @@ class ModelGenerationTests(unittest.TestCase):
         self.assertEqual(saved.intent, original.intent)
         self.assertEqual(saved.application_origin, original.application_origin)
         self.assertEqual(status["local_applications"][0]["state"], "applied")
+        self.assertEqual(status["local_applications"][0]["purpose"], "mesh_edit")
         self.assertEqual(status["mesh_edit"]["target"], bpy.context.view_layer.objects.active.name)
+        reopened = self.storemod.JobStore(self.store._path, self.store.scope)
+        self.assertEqual(reopened.get(request_id), saved)
+        self.finish_application(self.prepare_model(request_id))
+        purposes = [item.purpose for item in reopened.get(request_id).local_applications]
+        self.assertEqual(purposes, ["mesh_edit", "model"])
 
     def test_mesh_edit_unknown_outcome_blocks_another_application(self):
         request_id = self.recovered_mesh_edit()

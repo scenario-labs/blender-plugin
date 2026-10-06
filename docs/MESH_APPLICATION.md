@@ -201,7 +201,7 @@ warning does not undo a completed packed result.
 `JobSession.apply_recovered_mesh` supplies owner-issued verification, exact
 scene/object origin resolution and a durable claim before mutation. Original
 ready/confirmed-failed jobs use their recovered claim; completed jobs use a
-separate `model` local claim whose destination identifies the source object.
+separate `mesh_edit` local claim whose destination identifies the source object.
 `retry_model_receipt` records only known success, never another replacement.
 See [session ownership](BLENDER_JOB_CONTEXT.md#verified-saved-mesh-replacement).
 
@@ -226,12 +226,17 @@ source's inverse world transform. **Object local coordinates** (`LOCAL`) treats
 those imported positions as source-local. Neither fits, centers or rescales a
 provider result automatically. Singular or orientation-reversing mappings are
 rejected. The review binds the chosen mapping, policy and original-copy choice.
+For mirrored or zero-scale sources, the native dialog starts with object-local
+coordinates and explains that requirement. It still requires confirmation;
+explicit MCP `WORLD` requests remain rejected rather than changing their mapping.
 Editing options replaces that approval handle without recapturing the target;
 changed source or scene context requires cancellation and fresh review.
 
 Confirmation consumes the handle and verifies saved files on the existing worker.
 Main-thread application revalidates the captured source and calls the shared
-session command above. Completed jobs use separate local claims. Status exposes
+session command above. Completed jobs persist separate `mesh_edit` local claims,
+distinct from `model` imports even after restart. Existing claims keep their
+recorded purpose; older `model` entries are not reclassified. Status exposes
 the latest session-local `mesh_edit` target, original-copy name and policy;
 deleted objects have null names. A failed outcome receipt can be saved without
 replacing the mesh again. An uncertain scene outcome never authorizes replay.

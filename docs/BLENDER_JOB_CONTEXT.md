@@ -593,7 +593,7 @@ cleanup retains uncertainty. A successful mesh change followed by a failed store
 write retains an owner-issued `ModelResultUncertain` handle for the existing
 `retry_model_receipt`. That retry never imports or replaces again. Shutdown drops
 receipt authority; restart does not authorize replay of an unfinished claim.
-Completed jobs can use a separate `model` local claim without changing their
+Completed jobs can use a separate `mesh_edit` local claim without changing their
 original generation outcome. Its target identifies the explicitly selected source.
 
 Native **Apply mesh edit** and MCP `prepare_result_application` with

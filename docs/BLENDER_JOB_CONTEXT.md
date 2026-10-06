@@ -565,6 +565,11 @@ actual bytes before decoding, with its existing rollback and receipt rules.
 `ModelJobs.actions` permits fresh review only when no command, pending receipt or
 unfinished local claim exists and the 128-entry limit is not reached. Status
 exposes `local_applications` independently of the terminal generation state.
+The session's `objects`, `materials` and `images` status lists retain live outputs
+from the original application and every reuse. Receipt-only recovery deduplicates
+those references; deleted datablocks are omitted. These names are session-local
+inspection data, not persisted handles or authority to change the scene. Restart
+retains durable application records without reconstructing live output references.
 The same job may remain `applied` while local scene work is uncertain; inspect
 its local outcomes, actions and error. Owner-local receipt retry never repeats
 Blender work. Restart loses receipt authority and never clears uncertainty.

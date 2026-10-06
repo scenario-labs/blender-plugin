@@ -3,6 +3,8 @@
 """Receipt-bound static mesh replacement and durable session outcomes."""
 
 import hashlib
+import json
+import struct
 import tempfile
 import unittest
 from concurrent.futures import ThreadPoolExecutor
@@ -59,6 +61,76 @@ class MeshResultTests(unittest.TestCase):
         options = dict(policy="REMESH", result_to_source=Matrix.Identity(4), keep_original=True)
         options.update(kwargs)
         return self.module.apply_saved_mesh(self.target, self.item, self.path, **options)
+
+    def morph_result(self):
+        length = struct.unpack_from("<I", self.body, 12)[0]
+        document = json.loads(self.body[20 : 20 + length])
+        mesh = document["meshes"][0]
+        primitive = mesh["primitives"][0]
+        primitive["targets"] = [{"POSITION": primitive["attributes"]["POSITION"]}]
+        mesh["weights"] = [0.0]
+        mesh["extras"] = {"targetNames": ["Fixture morph"]}
+        value = json.dumps(document).encode()
+        value += b" " * (-len(value) % 4)
+        tail = self.body[20 + length :]
+        self.body = (
+            struct.pack("<4sIII4s", b"glTF", 2, 20 + len(value) + len(tail), len(value), b"JSON")
+            + value
+            + tail
+        )
+        self.path.write_bytes(self.body)
+        self.item = self.storage.StoredResult(
+            self.storage.ResultAsset("mesh", self.path.name, "model/gltf-binary", len(self.body)),
+            self.transfers.DownloadedResult(
+                self.path.name, len(self.body), hashlib.sha256(self.body).hexdigest()
+            ),
+        )
+
+    def test_morph_rejection_restores_datablocks_and_allows_confirmed_local_retry(self):
+        self.morph_result()
+        record = self.ready_session()
+        before = self.model._snapshot()
+        importer = self.model._import
+        imported_keys = []
+
+        def observe(path):
+            importer(path)
+            imported_keys.append(len(set(bpy.data.shape_keys) - before["shape_keys"]))
+
+        with patch.object(self.model, "_import", side_effect=observe):
+            for _ in range(2):
+                self.target = self.mesh.capture_target(self.scene, self.source)
+                self.origin = self.session.capture(self.scene, self.source)
+                with self.assertRaises(self.module.MeshResultApplicationError):
+                    self.deliver(self.verify(record))
+                record = self.store.get("edit")
+                self.assertEqual(record.state, self.storage.JobState.APPLY_FAILED)
+                self.assertEqual(self.model._snapshot(), before)
+                self.mesh.validate_target(self.target)
+        self.assertEqual(imported_keys, [1, 1])
+
+    def test_successful_replacement_cleans_imported_helper_action_only(self):
+        existing = bpy.data.actions.new("Keep existing action")
+        existing.use_fake_user = True
+        importer = self.model._import
+
+        def add_action(path):
+            importer(path)
+            helper = next(obj for obj in bpy.context.scene.objects if obj.type == "EMPTY")
+            helper.animation_data_create().action = bpy.data.actions.new("Imported helper action")
+            group = bpy.data.node_groups.new("Unused imported group", "ShaderNodeTree")
+            image = bpy.data.images.new("Unused imported image", width=1, height=1)
+            image.pixels[:] = (1, 1, 1, 1)
+            image.update()
+            group.nodes.new("ShaderNodeTexImage").image = image
+
+        with patch.object(self.model, "_import", side_effect=add_action):
+            self.apply()
+        self.assertEqual(set(bpy.data.actions) - self.before["actions"], {existing})
+        self.assertNotIn("Unused imported group", bpy.data.node_groups)
+        self.assertNotIn("Unused imported image", bpy.data.images)
+        self.assertTrue(self.source.data.polygons)
+        self.assertTrue(self.source.data.materials)
 
     def test_saved_glb_replaces_data_preserving_parent_transform_selection_and_original(self):
         parent = bpy.data.objects.new("Parent", None)

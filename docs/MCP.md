@@ -457,6 +457,10 @@ for that job in the current session.
 revision, purpose, selected asset IDs, destination identity and state. The
 original generation's `status: applied` does not prove a new local application
 finished. Observe `actions`, `delivery_paused`, errors and the local outcome.
+The `objects`, `materials` and `images` lists include every still-live output of
+that job retained by the current session, including earlier reuse. Deleted data
+is omitted, and receipt retry does not duplicate entries. These display names are
+not durable object identifiers and are not reconstructed after restart.
 An unfinished local claim blocks further reuse, including after restart. A
 session-owned `retry_receipt` action saves only the known outcome. No tool clears
 uncertainty or automatically repeats scene work. Each job retains at most 128

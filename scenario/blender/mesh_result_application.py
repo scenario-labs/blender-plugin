@@ -34,7 +34,9 @@ def _release_import(imported, objects, staging):
         bpy.data.objects.remove(obj, do_unlink=True)
     bpy.data.scenes.remove(staging)
     # The replacement mesh retains any material/image dependencies it needs.
-    for name in ("collections", "meshes", "materials", "node_groups", "images"):
+    for name in model_application._DATA:
+        if name in {"objects", "scenes"}:
+            continue
         values = getattr(bpy.data, name)
         for value in imported[name]:
             if not value.users and not value.use_fake_user:

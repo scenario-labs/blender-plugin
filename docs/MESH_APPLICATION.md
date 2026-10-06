@@ -183,6 +183,14 @@ object. Without it, the primitive may release the unchanged, unused original mes
 A returned result is finalized and contains the source, optional original and
 policy; it is not a persistent rollback handle or a global undo transaction.
 
+Successful cleanup sweeps unused imported datablocks across the shared importer's
+categories, including helper actions, while retaining existing data, live
+dependencies and fake-user ownership. Groups are released before their images.
+Animated GLBs are rejected by preflight before import. Morph targets can decode,
+but the mesh policy rejects their shape keys; removing the imported mesh also
+removes its keys. Native tests require exact datablock restoration before a
+confirmed failure permits a newly reviewed local attempt.
+
 On failure after replacement, the command attempts guarded rollback before any
 new-data cleanup. It permits a known local failure only after both the exact
 captured source and original datablock sets are restored. An edited source,

@@ -33,6 +33,14 @@ def _snapshot(body):
     return json.dumps(body, sort_keys=True, separators=(",", ":"), allow_nan=False)
 
 
+def _remember(cache, request_id, values, collection):
+    """Retain live session outputs across reuse and deduplicate receipt retries."""
+    live = tuple(collection)
+    cache[request_id] = tuple(
+        dict.fromkeys(value for value in (*cache.get(request_id, ()), *values) if value in live)
+    )
+
+
 @dataclass
 class ModelQuote:
     identifier: str
@@ -120,7 +128,7 @@ class ModelJobs:
         self._application_destinations = {}
         self._media_destinations = {}
         self._model_destinations = {}
-        self._models = {}
+        self._objects = {}
         self._world_destinations = {}
         self._worlds = {}
         self._material_destinations = {}
@@ -239,7 +247,12 @@ class ModelJobs:
                     applied = self.session.apply_recovered_material(
                         completion, destination=material.destination, target=material.target
                     )
-                    self._materials[request_id] = applied.application
+                    _remember(
+                        self._materials,
+                        request_id,
+                        (applied.application.material,),
+                        bpy.data.materials,
+                    )
                     self._paused.discard(request_id)
                 elif command == "verify_world":
                     self._validate_world(world)
@@ -255,7 +268,9 @@ class ModelJobs:
                         asset_id=model.asset_id,
                         cursor=model.cursor,
                     )
-                    self._models[request_id] = applied.application
+                    _remember(
+                        self._objects, request_id, applied.application.objects, bpy.data.objects
+                    )
                     self._paused.discard(request_id)
                 elif command == "verify_media":
                     self.session.apply_recovered_media(
@@ -274,13 +289,18 @@ class ModelJobs:
                             completion, destination=destination
                         )
                     )
-                    self._images[request_id] = result.images
+                    _remember(self._images, request_id, result.images, bpy.data.images)
                     self._paused.discard(request_id)
                 self._next_poll[request_id] = time.monotonic() + 2.0
             except MaterialResultUncertain as error:
                 if error.application is not None:
                     self._receipts[request_id] = error
-                    self._materials[request_id] = error.application
+                    _remember(
+                        self._materials,
+                        request_id,
+                        (error.application.material,),
+                        bpy.data.materials,
+                    )
                 self._pause(request_id, "Material assignment needs recovery; do not apply again")
             except MaterialApplicationError:
                 self._pause(
@@ -302,7 +322,9 @@ class ModelJobs:
             except ModelResultUncertain as error:
                 if error.application is not None:
                     self._receipts[request_id] = error
-                    self._models[request_id] = error.application
+                    _remember(
+                        self._objects, request_id, error.application.objects, bpy.data.objects
+                    )
                 self._pause(request_id, "Model import needs receipt recovery; do not import again")
             except MediaResultUncertain as error:
                 if error.application is not None:
@@ -313,6 +335,7 @@ class ModelJobs:
             except ImageResultUncertain as error:
                 if error.images:
                     self._receipts[request_id] = error
+                    _remember(self._images, request_id, error.images, bpy.data.images)
                 self._pause(request_id, "Image import needs receipt recovery; do not import again")
             except Exception:
                 self._pause(
@@ -466,18 +489,20 @@ class ModelJobs:
             pending = self._receipts[request_id]
             if isinstance(pending, MaterialResultUncertain):
                 outcome = self.session.retry_material_receipt(pending)
-                self._materials[request_id] = outcome.application
+                _remember(
+                    self._materials, request_id, (outcome.application.material,), bpy.data.materials
+                )
             elif isinstance(pending, WorldResultUncertain):
                 outcome = self.session.retry_world_receipt(pending)
                 self._worlds[request_id] = outcome.application
             elif isinstance(pending, ModelResultUncertain):
                 outcome = self.session.retry_model_receipt(pending)
-                self._models[request_id] = outcome.application
+                _remember(self._objects, request_id, outcome.application.objects, bpy.data.objects)
             elif isinstance(pending, MediaResultUncertain):
                 self.session.retry_media_receipt(pending)
             else:
                 outcome = self.session.retry_image_receipt(pending)
-                self._images[request_id] = outcome.images
+                _remember(self._images, request_id, outcome.images, bpy.data.images)
             del self._receipts[request_id]
             self._paused.discard(request_id)
             view.error = None
@@ -854,13 +879,13 @@ class ModelJobs:
             else None,
             "objects": [
                 obj.name
-                for obj in getattr(self._models.get(record.intent.request_id), "objects", ())
+                for obj in self._objects.get(record.intent.request_id, ())
                 if obj in tuple(bpy.data.objects)
             ],
             "materials": [
-                application.material.name
-                for application in [self._materials.get(record.intent.request_id)]
-                if application is not None and application.material in tuple(bpy.data.materials)
+                material.name
+                for material in self._materials.get(record.intent.request_id, ())
+                if material in tuple(bpy.data.materials)
             ],
             "images": [
                 image.name

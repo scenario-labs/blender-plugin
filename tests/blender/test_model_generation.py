@@ -1290,6 +1290,7 @@ class ModelGenerationTests(unittest.TestCase):
             status = self.tools.recover_local_job(self.recovery_args(request_id, "retry_receipt"))
         self.assertEqual(status["status"], "applied", status)
         self.assertEqual(set(bpy.data.objects), before)
+        self.assertEqual(len(status["objects"]), 2)
 
     def test_model_shutdown_rejects_receipt_retry_without_changing_saved_claim(self):
         request_id = self.recovered_model()
@@ -1643,6 +1644,7 @@ class ModelGenerationTests(unittest.TestCase):
             status = self.tools.recover_local_job(self.recovery_args(request_id, "retry_receipt"))
         self.assertEqual(status["status"], "applied")
         self.assertEqual(bpy.context.active_object.active_material, material)
+        self.assertEqual(status["materials"], [material.name])
 
     def test_material_shutdown_rejects_pending_receipt_retry(self):
         request_id = self.recovered_material()
@@ -1776,6 +1778,14 @@ class ModelGenerationTests(unittest.TestCase):
         self.assertIsNotNone(second.active_material)
         self.assertEqual(target.active_material, first_material)
         self.assertEqual(len(status["local_applications"]), 2)
+        self.assertCountEqual(
+            status["materials"], [first_material.name, second.active_material.name]
+        )
+        bpy.data.materials.remove(first_material, do_unlink=True)
+        self.assertEqual(
+            self.runtime.state.model_jobs.status(request_id)["materials"],
+            [second.active_material.name],
+        )
         self.assertEqual((len(self.calls), len(self.paid), len(self.downloads)), before)
 
     def test_material_reuse_scene_switch_before_admission_requires_fresh_approval(self):
@@ -1866,7 +1876,7 @@ class ModelGenerationTests(unittest.TestCase):
 
     def test_completed_model_reuse_creates_another_group_only_after_new_approval(self):
         request_id = self.recovered_model()
-        self.finish_application(self.prepare_model(request_id))
+        original_status = self.finish_application(self.prepare_model(request_id))
         before = len(self.calls), len(self.paid), len(self.downloads)
         objects = set(bpy.data.objects)
         bpy.context.scene.cursor.location = (5, 0, 0)
@@ -1876,11 +1886,24 @@ class ModelGenerationTests(unittest.TestCase):
         status = self.finish_application(approval)
         added = set(bpy.data.objects) - objects
         self.assertEqual(len(added), 3)  # Two GLB nodes plus the placement group.
-        self.assertEqual(len(status["objects"]), 2)
+        self.assertCountEqual(
+            status["objects"],
+            [
+                *original_status["objects"],
+                *(obj.name for obj in added if obj.type == "MESH" or obj.parent in added),
+            ],
+        )
+        self.assertEqual(len(status["objects"]), 4)
         self.assertEqual(sum(obj.parent not in added for obj in added), 1)
         self.assertEqual(status["local_applications"][0]["state"], "applied")
         with self.assertRaises(self.request_error):
             self.tools.apply_result_application(self.import_args(approval))
+        removed = original_status["objects"][0]
+        bpy.data.objects.remove(bpy.data.objects[removed], do_unlink=True)
+        self.assertCountEqual(
+            self.runtime.state.model_jobs.status(request_id)["objects"],
+            [name for name in status["objects"] if name != removed],
+        )
         self.assertEqual((len(self.calls), len(self.paid), len(self.downloads)), before)
 
     def test_completed_image_reuse_rejects_other_prepared_approval_after_claim(self):
@@ -1926,7 +1949,7 @@ class ModelGenerationTests(unittest.TestCase):
 
     def test_local_receipt_retry_recognizes_committed_success_without_another_import(self):
         request_id = self.recovered_images()
-        self.finish_application(self.prepare_import(request_id))
+        original_status = self.finish_application(self.prepare_import(request_id))
         deferred = self.tools.apply_result_application(
             self.import_args(self.prepare_import(request_id))
         )
@@ -1943,6 +1966,9 @@ class ModelGenerationTests(unittest.TestCase):
         self.assertEqual(status["status"], "applied")
         self.assertEqual(status["local_applications"][0]["state"], "applied")
         self.assertEqual(status["actions"], ("retry_receipt",))
+        self.assertEqual(len(status["images"]), 2)
+        self.assertIn(original_status["images"][0], status["images"])
+        imported_names = status["images"]
         before = set(bpy.data.images), len(self.calls), len(self.paid), len(self.downloads)
         with patch.object(
             submodule("blender.job_session"),
@@ -1952,9 +1978,19 @@ class ModelGenerationTests(unittest.TestCase):
             status = self.recover(request_id, "retry_receipt")
         self.assertEqual(status["local_applications"][0]["state"], "applied")
         self.assertIn("import_images", status["actions"])
+        self.assertEqual(status["images"], imported_names)
         self.assertEqual(
             (set(bpy.data.images), len(self.calls), len(self.paid), len(self.downloads)), before
         )
+        removed = original_status["images"][0]
+        bpy.data.images.remove(bpy.data.images[removed], do_unlink=True)
+        self.assertEqual(
+            owner.status(request_id)["images"], [name for name in imported_names if name != removed]
+        )
+        status = self.finish_application(self.prepare_import(request_id))
+        self.assertEqual(len(status["images"]), 2)
+        self.assertIn(next(name for name in imported_names if name != removed), status["images"])
+        self.assertEqual((len(self.calls), len(self.paid), len(self.downloads)), before[1:])
 
     def test_failed_reuse_keeps_completed_generation_and_original_images(self):
         request_id = self.recovered_images()

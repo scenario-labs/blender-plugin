@@ -28,6 +28,8 @@ from .material_application import (
     validate_target,
 )
 from .media_application import MediaApplicationError, apply_media
+from .mesh_result_application import MeshResultApplicationError, apply_saved_mesh
+from .mesh_result_application import validate_request as validate_mesh_request
 from .model_application import ModelApplicationError, apply_model
 from .model_application import validate_destination as validate_model_destination
 from .world_application import PanoramaError, WorldApplication, WorldApplicationError, apply_world
@@ -632,6 +634,67 @@ class JobSession:
         try:
             application = apply_model(scene, item, path, cursor=cursor)
         except ModelApplicationError:
+            try:
+                self._coordinator.fail_application(claim)
+            except Exception:
+                raise ModelResultUncertain() from None
+            raise
+        except Exception:
+            raise ModelResultUncertain() from None
+        try:
+            record = self._coordinator.complete_application(claim)
+        except Exception:
+            outcome = ModelResultUncertain(application)
+            self._model_receipts[outcome] = (claim, application)
+            raise outcome from None
+        return AppliedModel(record, application)
+
+    def apply_recovered_mesh(
+        self,
+        completion,
+        *,
+        destination,
+        asset_id,
+        target,
+        policy,
+        result_to_source,
+        keep_original,
+    ):
+        """Apply a selected GLB to an explicitly captured mesh, never current selection."""
+        _main_thread()
+        if self._issued.get(id(completion)) is not completion:
+            raise OriginUnavailable("Use an unconsumed mesh verification from this session")
+        if completion.error is not None:
+            raise completion.error
+        verified = completion.result
+        if not isinstance(verified, VerifiedResults) or not isinstance(destination, JobOrigin):
+            raise OriginUnavailable("Verify the mesh and approve its captured destination")
+        scene, obj = self._resolve(destination)
+        if target.scene != scene or target.obj != obj:
+            raise OriginUnavailable("Use the exact captured mesh target")
+        validate_mesh_request(
+            target, policy=policy, result_to_source=result_to_source, keep_original=keep_original
+        )
+        selected = [
+            (item, path)
+            for item, path in zip(verified.record.results, verified.paths, strict=True)
+            if item.asset.asset_id == asset_id
+        ]
+        if len(selected) != 1:
+            raise OriginUnavailable("Select one saved mesh asset")
+        item, path = selected[0]
+        del self._issued[id(completion)]
+        claim = self._claim_saved_application(verified, destination, "model", (asset_id,))
+        try:
+            application = apply_saved_mesh(
+                target,
+                item,
+                path,
+                policy=policy,
+                result_to_source=result_to_source,
+                keep_original=keep_original,
+            )
+        except MeshResultApplicationError:
             try:
                 self._coordinator.fail_application(claim)
             except Exception:

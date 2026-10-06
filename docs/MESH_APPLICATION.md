@@ -25,8 +25,9 @@ from result mesh coordinates into source-local coordinates. Reflection and singu
 mappings are rejected; this slice does not define a handedness/normal-flip policy. The primitive does not
 infer that mapping from object placement, names or current selection. It does not
 prove cloud provenance, safe download/import, or that a late result still matches
-its original inputs. Shared job lifecycle delivery and durable APPLIED bookkeeping
-remain integration work under #65 and #99.
+its original inputs. The verified saved-mesh command below adds receipt-bound
+import and shared-session bookkeeping; UI/MCP approval and operation-bound input
+metadata remain integration work under #65 and #99.
 
 ## Supported policies
 
@@ -147,3 +148,67 @@ Receipt-only retry saves known success without importing another model, and
 session shutdown releases that retry handle. This remains partial #65/#99 work:
 in-place remesh/UV/retexture, rig/animation transfer and edit-specific recovery
 are not established by a successful new-object import.
+
+## Captured source and verified saved-mesh command
+
+`mesh_application.capture_target(scene, source)` freezes the live source object,
+mesh, names, bounded geometry/attribute fingerprint, transforms, parenting,
+collection membership and active material index. It accepts one local scene in
+Object Mode and retains the primitive's unsupported-data checks. It does not infer
+selection. Capture evaluates the current view layer so pending parent transforms
+cannot hide behind a stale world matrix. `validate_target` rejects intervening
+edits, replacement, deletion or membership in another scene. Capture the mesh
+snapshot first, then the `JobSession` origin, before asynchronous work; a target captured afterward cannot establish the old
+input's identity. Restart/file load requires a fresh explicit destination review.
+
+`mesh_result_application.apply_saved_mesh(target, item, path, policy=...,
+result_to_source=..., keep_original=...)` connects the existing primitive to one
+verified static GLB. It shares the new-object importer's receipt/hash preflight,
+private byte snapshot, isolated staging scene and image packing. It requires
+exactly one mesh with optional Empty parents; multiple meshes and other object
+types fail rather than selecting the first variant. The caller explicitly chooses
+`REMESH` or `UV` and Keep original.
+
+The required finite, orientation-preserving mapping converts **Blender-imported
+GLB scene coordinates** into **source-local coordinates**. Imported node transforms
+are composed into it after Blender's glTF axis conversion. There is no automatic
+centering, scale fitting, alignment guess or source-object movement. This local
+mapping does not prove a provider preserved the input's coordinates or topology.
+UV still requires exact indexed topology/positions after mapping and one UV layer.
+
+The source is revalidated immediately before replacement. Imported staging objects
+are removed; replacement material/image dependencies remain packed. Keep original
+retains a separate unselected copy, preserving the previous selection and active
+object. Without it, the primitive may release the unchanged, unused original mesh.
+A returned result is finalized and contains the source, optional original and
+policy; it is not a persistent rollback handle or a global undo transaction.
+
+Successful cleanup sweeps unused imported datablocks across the shared importer's
+categories, including helper actions, while retaining existing data, live
+dependencies and fake-user ownership. Groups are released before their images.
+Animated GLBs are rejected by preflight before import. Morph targets can decode,
+but the mesh policy rejects their shape keys; removing the imported mesh also
+removes its keys. Native tests require exact datablock restoration before a
+confirmed failure permits a newly reviewed local attempt.
+
+On failure after replacement, the command attempts guarded rollback before any
+new-data cleanup. It permits a known local failure only after both the exact
+captured source and original datablock sets are restored. An edited source,
+failed rollback or incomplete cleanup remains uncertain; new data is retained
+when removing it could destroy a possibly applied result. A temporary-file cleanup
+warning does not undo a completed packed result.
+
+`JobSession.apply_recovered_mesh` supplies owner-issued verification, exact
+scene/object origin resolution and a durable claim before mutation. Original
+ready/confirmed-failed jobs use their recovered claim; completed jobs use a
+separate `model` local claim whose destination identifies the source object.
+`retry_model_receipt` records only known success, never another replacement.
+See [session ownership](BLENDER_JOB_CONTEXT.md#verified-saved-mesh-replacement).
+
+Installed synthetic tests cover remesh and exact-topology UV, parented/scaled
+sources, shared originals, packed materials, explicit node-transform mapping,
+selection, source changes, multi-scene/multi-mesh rejection, rollback failure,
+separate local reuse and persistence-only recovery. Native UI/MCP approval,
+operation-bound export metadata, provider coordinate contracts, rig/retexture/
+segmentation policy and global undo remain integration work under #65/#99.
+There are no new service calls or live/provider acceptance claims in this command.

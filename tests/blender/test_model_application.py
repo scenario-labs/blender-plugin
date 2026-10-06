@@ -198,8 +198,8 @@ class ModelApplicationTests(unittest.TestCase):
         )
         self.assertIn("temporary files may remain", logs.output[0])
 
-    def use_animation(self):
-        data = animated_glb()
+    def use_animation(self, *, node_transform=False):
+        data = animated_glb(node_transform=node_transform)
         self.path.write_bytes(data)
         self.item = self.storage.StoredResult(
             self.storage.ResultAsset("model", self.path.name, "model/gltf-binary", len(data)),
@@ -247,6 +247,40 @@ class ModelApplicationTests(unittest.TestCase):
         self.assertTrue(
             all(image.packed_file for image in set(bpy.data.images) - self.before["images"])
         )
+
+    def test_node_animation_placement_uses_frame_zero_without_changing_destination_time(self):
+        self.use_animation(node_transform=True)
+        self.scene.render.fps = 30
+        self.scene.render.fps_base = 1.001
+        self.scene.frame_start, self.scene.frame_end = 12, 160
+        previous = self.module._snapshot()
+        roots = []
+        for frame in (7, 30):
+            with self.subTest(frame=frame):
+                self.scene.frame_set(frame, subframe=0.25)
+                result = self.module.apply_model(self.scene, self.item, self.path, cursor=(4, 5, 6))
+                roots.append(tuple(result.root.location))
+                self.assertEqual(self.scene.frame_current, frame)
+                self.assertAlmostEqual(self.scene.frame_subframe, 0.25)
+                self.assertEqual((self.scene.frame_start, self.scene.frame_end), (12, 160))
+                self.assertEqual(self.scene.render.fps, 30)
+                self.assertAlmostEqual(self.scene.render.fps_base, 1.001, places=5)
+                self.assertEqual(bpy.context.view_layer.objects.active, self.existing)
+                self.assertEqual(set(bpy.context.selected_objects), {self.existing})
+                mesh = next(obj for obj in result.objects if obj.type == "MESH")
+                centers = []
+                for sample in (0, 30):
+                    self.scene.frame_set(sample)
+                    evaluated = mesh.evaluated_get(bpy.context.evaluated_depsgraph_get())
+                    points = [evaluated.matrix_world @ Vector(c) for c in evaluated.bound_box]
+                    low = [min(point[i] for point in points) for i in range(3)]
+                    high = [max(point[i] for point in points) for i in range(3)]
+                    centers.append(((low[0] + high[0]) / 2, (low[1] + high[1]) / 2, low[2]))
+                for actual, expected in zip(centers[0], (4, 5, 6), strict=True):
+                    self.assertAlmostEqual(actual, expected, places=4)
+                self.assertAlmostEqual(centers[1][0] - centers[0][0], 2, places=4)
+                self.module._remove_new_data(previous)
+        self.assertEqual(roots[0], roots[1])
 
     def test_failed_rig_import_removes_skin_shape_keys_and_actions(self):
         self.use_animation()

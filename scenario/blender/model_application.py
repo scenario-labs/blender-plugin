@@ -82,7 +82,21 @@ def _import(path):
         raise ModelApplicationError("Blender could not import the saved GLB")
 
 
-def _publish(scene, objects, cursor, asset_id):
+def _bottom_center(objects):
+    points = [
+        obj.matrix_world @ Vector(corner)
+        for obj in objects
+        if obj.type == "MESH"
+        for corner in obj.bound_box
+    ]
+    if not points or any(not math.isfinite(value) for point in points for value in point):
+        raise ModelApplicationError("GLB contains no supported finite mesh geometry")
+    low = [min(point[axis] for point in points) for axis in range(3)]
+    high = [max(point[axis] for point in points) for axis in range(3)]
+    return Vector(((low[0] + high[0]) / 2, (low[1] + high[1]) / 2, low[2]))
+
+
+def _publish(scene, objects, cursor, asset_id, anchor):
     collection = bpy.data.collections.new("Scenario Model")
     scene.collection.children.link(collection)
     root = bpy.data.objects.new("Scenario Model", None)
@@ -94,20 +108,7 @@ def _publish(scene, objects, cursor, asset_id):
         obj["scenario_asset"] = asset_id
         if obj.parent not in objects:
             obj.parent = root
-    bpy.context.view_layer.update()
-    points = [
-        obj.matrix_world @ Vector(corner)
-        for obj in objects
-        if obj.type == "MESH"
-        for corner in obj.bound_box
-    ]
-    if not points or any(not math.isfinite(value) for point in points for value in point):
-        raise ModelApplicationError("GLB contains no supported finite mesh geometry")
-    low = [min(point[axis] for point in points) for axis in range(3)]
-    high = [max(point[axis] for point in points) for axis in range(3)]
-    root.location = Vector(cursor) - Vector(
-        ((low[0] + high[0]) / 2, (low[1] + high[1]) / 2, low[2])
-    )
+    root.location = Vector(cursor) - anchor
     root["scenario_asset"] = asset_id
     bpy.context.view_layer.update()
     return ModelApplication(collection, root, tuple(objects))
@@ -241,7 +242,15 @@ def apply_model(scene, item, path, *, cursor):
     previous = _snapshot()
     try:
         with staged_model(item, path, previous, static_only=False) as (staging, objects):
-            application = _publish(scene, objects, cursor, item.asset.asset_id)
+            # Measure the first clip at time zero in isolation. Measuring after
+            # publication would bake the destination's current animated offset
+            # into the parent group, moving the starting pose away from the cursor.
+            layer = staging.view_layers[0]
+            with bpy.context.temp_override(scene=staging, view_layer=layer):
+                staging.frame_set(0)
+                layer.update()
+                anchor = _bottom_center(objects)
+            application = _publish(scene, objects, cursor, item.asset.asset_id, anchor)
             bpy.data.scenes.remove(staging)
             return application
     except Exception:

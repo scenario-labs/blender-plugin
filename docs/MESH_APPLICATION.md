@@ -158,7 +158,10 @@ are not established by a successful new-object import.
 The new-group path keeps imported armatures, bone hierarchy, vertex weights,
 shape keys, actions and NLA clips. Blender activates the first clip and retains
 other clips in muted NLA tracks. Animation times use the destination scene's
-current effective frame rate; time zero maps to frame zero. Import leaves the
+current effective frame rate; time zero maps to frame zero. Placement anchors the
+first clip's frame-zero bottom center at the approved cursor, measured in the
+disposable staging scene before publication. The destination's current animated
+pose does not change that anchor. Import leaves the
 current frame/subframe, frame range and frame rate unchanged. It does not shift
 clips to the current frame, extend the timeline or retarget animation to an
 existing rig. Moving the new parent group moves the imported character together.

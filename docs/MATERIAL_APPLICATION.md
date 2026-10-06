@@ -10,9 +10,12 @@ save the blend file or change viewport shading.
 
 The [stored texture roles](RESULT_TRANSFERS.md#texture-result-semantics) come from
 the scoped SDK asset response, independently of file MIME. Application requires
-exactly one base or albedo map, no repeated role, and at most one of roughness
-and smoothness. It does not select the first variant, infer roles from filenames or
-combine multiple texture sets. Unclassified assets remain saved and unused.
+an albedo or base map, no repeated role, and at most one of roughness and smoothness.
+When both albedo and base are present, the dedicated albedo map supplies Base Color;
+the base preview stays saved without being loaded into the material. Base is the
+fallback when no albedo is present. This choice uses stored roles, regardless of
+asset order. Application does not select the first variant, infer roles from
+filenames or combine multiple texture sets. Unclassified assets remain saved and unused.
 Each selected map needs a verified receipt and a supported PNG/EXR media type;
 Blender must decode the same bounded bytes and pack the image before assignment.
 

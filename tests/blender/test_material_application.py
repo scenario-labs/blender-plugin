@@ -103,7 +103,8 @@ class MaterialApplicationTests(unittest.TestCase):
     def test_ambiguous_maps_fail_before_loading_or_assignment(self):
         for roles in (
             ("albedo", "albedo"),
-            ("base", "albedo"),
+            ("base", "base", "albedo"),
+            ("base", "albedo", "albedo"),
             ("normal",),
             ("base", "roughness", "smoothness"),
         ):
@@ -112,6 +113,23 @@ class MaterialApplicationTests(unittest.TestCase):
         self.assertEqual(len(self.obj.material_slots), 0)
         self.assertEqual(set(bpy.data.materials), self.materials)
         self.assertEqual(set(bpy.data.images), self.images)
+
+    def test_complete_texture_set_uses_albedo_without_loading_its_base_preview(self):
+        maps = ("albedo", "normal", "smoothness", "metallic", "height", "ao", "edge")
+        for roles in (("base", *maps), (*maps, "base")):
+            with self.subTest(roles=roles):
+                verified = self.fixture(roles)
+                before = {path: path.read_bytes() for path in verified.paths}
+                target = self.module.capture_target(self.scene, self.obj)
+                result = self.module.apply_material(verified, target)
+                tree = result.material.node_tree
+                textures = {node.label for node in tree.nodes if node.type == "TEX_IMAGE"}
+                self.assertEqual(textures, {role.title() for role in maps})
+                self.assertEqual(len(result.images), len(maps))
+                bsdf = next(node for node in tree.nodes if node.type == "BSDF_PRINCIPLED")
+                self.assertEqual(bsdf.inputs["Base Color"].links[0].from_node.label, "Albedo")
+                self.assertTrue(all(image.packed_file for image in result.images))
+                self.assertEqual({path: path.read_bytes() for path in verified.paths}, before)
 
     def test_shared_mesh_is_rejected_without_changing_either_object(self):
         other = bpy.data.objects.new("Shared data user", self.obj.data)

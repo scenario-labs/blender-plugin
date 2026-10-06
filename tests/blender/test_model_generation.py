@@ -73,19 +73,26 @@ class ModelGenerationTests(unittest.TestCase):
                                 "jobId": request.url.path.rsplit("/", 1)[-1],
                                 "status": self.remote_status,
                                 "jobType": "custom",
-                                "metadata": {"assetIds": ["result-image"]},
+                                "metadata": {
+                                    "assetIds": list(
+                                        getattr(self, "result_assets", ["result-image"])
+                                    )
+                                },
                             }
                         },
                     )
                 if "/assets/" in request.url.path:
+                    asset_id = request.url.path.rsplit("/", 1)[-1]
                     return httpx.Response(
                         200,
                         json={
                             "asset": {
-                                "id": "result-image",
+                                "id": asset_id,
                                 "status": "success",
                                 "mimeType": self.result_media_type,
-                                "metadata": getattr(self, "result_metadata", {}),
+                                "metadata": getattr(self, "result_assets", {}).get(
+                                    asset_id, getattr(self, "result_metadata", {})
+                                ),
                                 "properties": {"size": len(self.result_bytes)},
                                 "url": "https://cdn.cloud.scenario.com/fixture.png",
                             }
@@ -1500,7 +1507,7 @@ class ModelGenerationTests(unittest.TestCase):
         self.assertEqual(status["status"], "applied")
         self.assertEqual(bpy.context.scene.world, world)
 
-    def recovered_material(self):
+    def recovered_material(self, metadata_types=None):
         before = set(bpy.data.materials)
 
         def cleanup():
@@ -1509,6 +1516,10 @@ class ModelGenerationTests(unittest.TestCase):
 
         self.addCleanup(cleanup)
         self.result_metadata = {"type": "texture-albedo"}
+        if metadata_types is not None:
+            self.result_assets = {
+                f"result-map-{index}": {"type": kind} for index, kind in enumerate(metadata_types)
+            }
         bpy.ops.mesh.primitive_cube_add()
         return self.recovered_images()
 
@@ -1548,6 +1559,40 @@ class ModelGenerationTests(unittest.TestCase):
         status = deferred.finish(result)
         self.assertEqual(status["status"], "ready", status)
         self.assertEqual(bpy.context.active_object.active_material, chosen)
+
+    def test_complete_material_job_uses_albedo_and_preserves_saved_preview(self):
+        request_id = self.recovered_material(
+            (
+                "inference-txt2img-texture",
+                "texture-albedo",
+                "texture-normal",
+                "texture-smoothness",
+                "texture-metallic",
+                "texture-height",
+                "texture-ao",
+                "texture-edge",
+            )
+        )
+        saved = self.store.get(request_id).results
+        self.assertEqual(
+            [item.asset.texture_role for item in saved],
+            ["base", "albedo", "normal", "smoothness", "metallic", "height", "ao", "edge"],
+        )
+        before = len(self.calls), len(self.paid)
+        approval = self.prepare_material(request_id)
+        self.assertEqual(
+            approval["roles"],
+            ["albedo", "normal", "smoothness", "metallic", "height", "ao", "edge"],
+        )
+        deferred = self.tools.apply_result_application(self.import_args(approval))
+        status = deferred.finish(deferred.run())
+        self.assertEqual(status["status"], "applied", status)
+        self.assertEqual(self.store.get(request_id).results, saved)
+        self.assertEqual((len(self.calls), len(self.paid)), before)
+        tree = bpy.context.active_object.active_material.node_tree
+        bsdf = next(node for node in tree.nodes if node.type == "BSDF_PRINCIPLED")
+        self.assertEqual(bsdf.inputs["Base Color"].links[0].from_node.label, "Albedo")
+        self.assertEqual(len([node for node in tree.nodes if node.type == "TEX_IMAGE"]), 7)
 
     def test_material_failed_assignment_preserves_files_and_allows_local_review(self):
         request_id = self.recovered_material()
@@ -1623,8 +1668,9 @@ class ModelGenerationTests(unittest.TestCase):
         )
 
     def test_native_material_operator_consumes_the_same_single_approval(self):
-        request_id = self.recovered_material()
+        request_id = self.recovered_material(("texture-albedo", "inference-txt2img-texture"))
         approval = self.prepare_material(request_id)
+        self.assertEqual(approval["roles"], ["albedo"])
         args = self.import_args(approval)
         args.update(request_id=request_id, expected_revision=approval["revision"])
         self.assertEqual(bpy.ops.scenario.apply_saved_material(**args), {"FINISHED"})

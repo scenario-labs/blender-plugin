@@ -35,8 +35,11 @@ def selected_maps(record):
         if role in result or item.asset.media_type not in _IMAGE_TYPES or item.receipt is None:
             raise MaterialApplicationError("Choose one supported, unambiguous saved texture set")
         result[role] = index
-    if ("base" in result) == ("albedo" in result):
-        raise MaterialApplicationError("A material needs exactly one base-color or albedo map")
+    if "albedo" in result:
+        # PATINA returns the source texture alongside its dedicated PBR albedo map.
+        result.pop("base", None)
+    elif "base" not in result:
+        raise MaterialApplicationError("A material needs a base-color or albedo map")
     if "roughness" in result and "smoothness" in result:
         raise MaterialApplicationError("Choose roughness or smoothness, not both")
     if sum(record.results[index].receipt.size for index in result.values()) > _MAX_MAP_BYTES:

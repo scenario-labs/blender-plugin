@@ -628,5 +628,8 @@ primary target. The exact export hash accompanies the upload through the existin
 worker and storage path; ordinary file/capture uploads have no mesh provenance.
 
 See [the upload contract](SDK_UPLOADS.md#captured-mesh-export-provenance) for limits,
-schema upgrade and native roundtrip coverage. These records do not restore target
-authority after restart or bind a later generation quote yet.
+schema upgrade and native roundtrip coverage. Shared UI/MCP quotes preserve
+these snapshots for matching 3D input assets in
+[generation intents](JOB_STORAGE.md#captured-mesh-inputs-in-generation-intents).
+They do not restore target authority after restart or prove the current object
+is unchanged from the uploaded snapshot.

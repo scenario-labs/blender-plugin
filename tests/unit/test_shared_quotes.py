@@ -2,7 +2,9 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Scoped metadata and quote ownership through the real SDK and shared workers."""
 
+import hashlib
 import json
+import sqlite3
 import threading
 from dataclasses import replace
 from decimal import Decimal
@@ -13,8 +15,12 @@ import pytest
 
 from scenario.core.api.sdk_adapter import Credentials, SDKAdapter
 from scenario.core.jobs.coordinator import JobCoordinator, QuoteError
+from scenario.core.jobs.mesh_source import MeshSource, MeshSourceObject
 from scenario.core.jobs.origins import OriginRevisions
 from scenario.core.jobs.store import JobScope, JobState, JobStore
+from scenario.core.jobs.upload_sources import UploadSources
+from scenario.core.jobs.upload_store import UploadIntent, UploadState, UploadStore
+from scenario.core.jobs.upload_transfers import PartUploader, S3UploadPolicy, UploadedPart
 from scenario.core.jobs.workers import JobWorkers
 
 
@@ -32,7 +38,13 @@ def env(tmp_path):
         ],
     }
     env = SimpleNamespace(
-        scope=scope, origin=origin, revisions=revisions, model=model, calls=[], hook=None
+        scope=scope,
+        origin=origin,
+        revisions=revisions,
+        model=model,
+        workflow=None,
+        calls=[],
+        hook=None,
     )
 
     def handler(request):
@@ -43,7 +55,11 @@ def env(tmp_path):
             return httpx.Response(200, json={"model": env.model})
         if request.url.path.endswith("/workflows/workflow-one"):
             return httpx.Response(
-                200, json={"workflow": {"id": "workflow-one", "inputs_definition": model["inputs"]}}
+                200,
+                json={
+                    "workflow": env.workflow
+                    or {"id": "workflow-one", "inputs_definition": model["inputs"]}
+                },
             )
         if request.url.path.endswith("/models"):
             return httpx.Response(200, json={"models": [model]})
@@ -63,7 +79,17 @@ def env(tmp_path):
         transport=httpx.MockTransport(handler),
     )
     store = JobStore(tmp_path / "jobs.sqlite3", scope)
-    coordinator = JobCoordinator(adapter, store, origin_guard=revisions.guard)
+    uploads = UploadStore(tmp_path / "uploads.sqlite3", scope)
+    (tmp_path / "upload-sources").mkdir(mode=0o700)
+    coordinator = JobCoordinator(
+        adapter,
+        store,
+        origin_guard=revisions.guard,
+        upload_store=uploads,
+        upload_sources=UploadSources(tmp_path / "upload-sources"),
+        part_uploader=PartUploader(S3UploadPolicy(), online_access=lambda: True),
+    )
+    env.upload_store = uploads
     env.coordinator, env.store = coordinator, store
     yield env
     coordinator.close()
@@ -315,10 +341,10 @@ def test_preparation_overlapping_submission_does_not_invert_locks(env, monkeypat
         def __exit__(self, *args):
             self.lock.release()
 
-    def prepare_inside_lock(*args):
+    def prepare_inside_lock(*args, **kwargs):
         preparing.set()
         assert submitting.wait(5)
-        return original_prepare(*args)
+        return original_prepare(*args, **kwargs)
 
     def online():
         # submit_estimate calls this while holding the adapter lock, before claim.
@@ -357,3 +383,261 @@ def test_preparation_overlapping_submission_does_not_invert_locks(env, monkeypat
         )
         == 1
     )
+
+
+def captured_upload(env, *, request_id="capture", asset_id="mesh-asset", scope=None):
+    scope = scope or env.scope
+    store = UploadStore(env.upload_store._path, scope)
+    digest = hashlib.sha256(b"fixture GLB").hexdigest()
+    source = MeshSource(
+        digest,
+        (
+            MeshSourceObject(
+                env.origin.target_id,
+                hashlib.sha256(b"geometry").hexdigest(),
+                ((1, 0, 0, 3), (0, 1, 0, 4), (0, 0, 1, 5), (0, 0, 0, 1)),
+            ),
+        ),
+    )
+    intent = UploadIntent(
+        request_id,
+        scope,
+        env.origin,
+        "3d",
+        "source.glb",
+        "model/gltf-binary",
+        11,
+        digest,
+        11,
+        (digest,),
+        source,
+    )
+    record = store.create(intent)
+
+    def advance(state, **kwargs):
+        nonlocal record
+        record = store.transition(
+            request_id, expected_revision=record.revision, state=state, **kwargs
+        )
+
+    advance(UploadState.INITIALIZING)
+    advance(UploadState.UPLOADING, upload_id="remote-upload-" + request_id)
+    record = store.claim_part(request_id, expected_revision=record.revision)
+    record = store.record_part(
+        request_id, UploadedPart(1, 11, digest), expected_revision=record.revision
+    )
+    advance(UploadState.FINALIZING)
+    advance(UploadState.PROCESSING)
+    advance(UploadState.IMPORTED, asset_id=asset_id)
+    return record
+
+
+def mesh_quote(env, *, operation="model", value="mesh-asset", file_schema=None):
+    env.model["inputs"].append(
+        {"name": "mesh", "type": "file", "kind": "3d", "required": True, **(file_schema or {})}
+    )
+    return getattr(env.coordinator, "quote_" + operation)(
+        operation + "-one",
+        {"prompt": "fixture", "mesh": value},
+        origin=env.origin,
+    )
+
+
+@pytest.mark.parametrize("operation", ["model", "workflow"])
+def test_captured_mesh_is_bound_to_exact_quote_and_persisted_before_spending(env, operation):
+    upload = captured_upload(env)
+    quote = mesh_quote(env, operation=operation)
+    assert len(quote.mesh_sources) == 1
+    source = quote.mesh_sources[0]
+    assert (source.parameter, source.index, source.asset_id) == ("mesh", None, upload.asset_id)
+    assert source.mesh_source == upload.intent.mesh_source
+    assert source.origin == upload.intent.origin
+    prepared = env.coordinator.prepare_quote(quote)
+    assert (
+        JobStore(env.store._path, env.scope).get(prepared.intent.request_id).intent.mesh_sources
+        == quote.mesh_sources
+    )
+
+    def before_send(request):
+        if request.method in {"POST", "PUT"} and "dryRun" not in request.url.params:
+            saved = env.store.get(prepared.intent.request_id)
+            assert saved.state == JobState.SUBMITTING
+            assert saved.intent.mesh_sources == quote.mesh_sources
+            assert json.loads(request.content) == quote.estimate.payload
+            assert "mesh_sources" not in json.loads(request.content)
+
+    env.hook = before_send
+    result = env.coordinator.submit(
+        prepared,
+        origin=env.origin,
+        operation=operation,
+        target_id=operation + "-one",
+        payload=quote.estimate.payload,
+    )
+    assert result.intent.mesh_sources == quote.mesh_sources
+    assert len(env.calls) == 3
+
+
+@pytest.mark.parametrize("operation", ["model", "workflow"])
+@pytest.mark.parametrize("file_schema", [{"type": "file_array"}, {"type": "file", "array": True}])
+def test_array_positions_preserve_each_occurrence_without_binding_external_assets(
+    env, operation, file_schema
+):
+    captured_upload(env)
+    values = ["mesh-asset", "external-asset", "mesh-asset"]
+    quote = mesh_quote(env, operation=operation, value=values, file_schema=file_schema)
+    assert [source.index for source in quote.mesh_sources] == [0, 2]
+    assert all(source.parameter == "mesh" for source in quote.mesh_sources)
+    prepared = env.coordinator.prepare_quote(quote)
+    assert (
+        JobStore(env.store._path, env.scope).get(prepared.intent.request_id).intent.mesh_sources
+        == quote.mesh_sources
+    )
+    result = env.coordinator.submit(
+        prepared,
+        origin=env.origin,
+        operation=operation,
+        target_id=operation + "-one",
+        payload=quote.estimate.payload,
+    )
+    assert result.intent.mesh_sources == quote.mesh_sources
+    estimated, submitted = (json.loads(request.content) for request in env.calls[1:])
+    assert estimated == submitted == quote.estimate.payload
+    assert submitted["mesh"] == values and "mesh_sources" not in submitted
+
+
+def test_prompt_text_and_different_scope_cannot_claim_mesh_provenance(env):
+    captured_upload(env, scope=replace(env.scope, account_id="other"))
+    quote = mesh_quote(env)
+    assert quote.mesh_sources == ()
+    captured_upload(env)
+    env.model["inputs"] = [{"name": "prompt", "type": "string", "required": True}]
+    quote = env.coordinator.quote_model("model-one", {"prompt": "mesh-asset"}, origin=env.origin)
+    assert quote.mesh_sources == ()
+
+
+def test_ambiguous_export_asset_never_selects_the_first_origin(env):
+    captured_upload(env)
+    captured_upload(env, request_id="second-source")
+    with pytest.raises(QuoteError, match="Several captured"):
+        mesh_quote(env)
+    assert env.store.records() == ()
+    assert all("dryRun" in request.url.params for request in env.calls if request.method == "POST")
+
+
+@pytest.mark.parametrize("phase", ["prepare", "submit"])
+@pytest.mark.parametrize("file_schema", [None, {"type": "file", "array": True}])
+def test_missing_mesh_upload_blocks_before_persistence_or_paid_claim(env, phase, file_schema):
+    upload = captured_upload(env)
+    quote = mesh_quote(
+        env, value=["mesh-asset"] if file_schema else "mesh-asset", file_schema=file_schema
+    )
+    prepared = env.coordinator.prepare_quote(quote) if phase == "submit" else None
+    with sqlite3.connect(env.upload_store._path) as connection:
+        connection.execute("DELETE FROM uploads WHERE request_id=?", (upload.intent.request_id,))
+    with pytest.raises(QuoteError, match="captured input changed"):
+        if phase == "prepare":
+            env.coordinator.prepare_quote(quote)
+        else:
+            env.coordinator.submit(
+                prepared,
+                origin=env.origin,
+                operation="model",
+                target_id="model-one",
+                payload=quote.estimate.payload,
+            )
+    assert len(env.calls) == 2
+    assert (
+        env.store.records() == ()
+        if phase == "prepare"
+        else env.store.get(prepared.intent.request_id).state == JobState.PREPARED
+    )
+
+
+def test_dictionary_input_schema_and_sdk_parameters_fallback_bind_same_source(env):
+    upload = captured_upload(env)
+    env.model["inputs"] = None
+    env.model["parameters"] = {"mesh": {"type": "file", "kind": "3d", "required": True}}
+    quote = env.coordinator.quote_model("model-one", {"mesh": upload.asset_id}, origin=env.origin)
+    assert quote.mesh_sources[0].upload_id == upload.intent.request_id
+
+
+@pytest.mark.parametrize(
+    "operation,primary,fallback",
+    [("model", "inputs", "parameters"), ("workflow", "inputs_definition", "inputs")],
+)
+@pytest.mark.parametrize("typed_primary", [True, False])
+def test_mesh_binding_uses_the_same_schema_as_sdk_payload_preparation(
+    env, operation, primary, fallback, typed_primary
+):
+    upload = captured_upload(env)
+    mesh = {"name": "mesh", "type": "file", "kind": "3d", "required": True}
+    text = {"name": "mesh", "type": "string", "required": True}
+    metadata = {
+        "id": operation + "-one",
+        "type": "custom",
+        primary: [mesh if typed_primary else text],
+        fallback: [text if typed_primary else mesh],
+    }
+    setattr(env, operation, metadata)
+    quote = getattr(env.coordinator, "quote_" + operation)(
+        metadata["id"], {"mesh": upload.asset_id}, origin=env.origin
+    )
+    assert quote.estimate.payload == {"mesh": upload.asset_id}
+    assert len(quote.mesh_sources) == int(typed_primary)
+    if typed_primary:
+        assert quote.mesh_sources[0].upload_id == upload.intent.request_id
+    prepared = env.coordinator.prepare_quote(quote)
+    result = env.coordinator.submit(
+        prepared,
+        origin=env.origin,
+        operation=operation,
+        target_id=metadata["id"],
+        payload=quote.estimate.payload,
+    )
+    assert result.intent.mesh_sources == quote.mesh_sources
+    assert json.loads(env.calls[-1].content) == quote.estimate.payload
+
+
+@pytest.mark.parametrize(
+    "operation,primary,fallback",
+    [("model", "inputs", "parameters"), ("workflow", "inputs_definition", "inputs")],
+)
+@pytest.mark.parametrize("primary_present", [True, False])
+def test_missing_or_null_primary_schema_uses_sdk_fallback_for_mesh_binding(
+    env, operation, primary, fallback, primary_present
+):
+    upload = captured_upload(env)
+    metadata = {
+        "id": operation + "-one",
+        "type": "custom",
+        fallback: {"mesh": {"type": "file", "kind": "3d", "required": True}},
+    }
+    if primary_present:
+        metadata[primary] = None
+    setattr(env, operation, metadata)
+    quote = getattr(env.coordinator, "quote_" + operation)(
+        metadata["id"], {"mesh": upload.asset_id}, origin=env.origin
+    )
+    assert quote.mesh_sources[0].upload_id == upload.intent.request_id
+    assert env.coordinator.prepare_quote(quote).intent.mesh_sources == quote.mesh_sources
+
+
+@pytest.mark.parametrize(
+    "operation,primary,fallback",
+    [("model", "inputs", "parameters"), ("workflow", "inputs_definition", "inputs")],
+)
+@pytest.mark.parametrize("schemas_present", [True, False])
+def test_absent_or_null_schemas_stop_before_estimation_or_mesh_binding(
+    env, operation, primary, fallback, schemas_present
+):
+    captured_upload(env)
+    metadata = {"id": operation + "-one", "type": "custom"}
+    if schemas_present:
+        metadata.update({primary: None, fallback: None})
+    setattr(env, operation, metadata)
+    with pytest.raises(ValueError, match="current input schema"):
+        getattr(env.coordinator, "quote_" + operation)(metadata["id"], {}, origin=env.origin)
+    assert len(env.calls) == 1 and env.calls[0].method == "GET"
+    assert env.store.records() == ()
+    assert env.coordinator._quotes == {}

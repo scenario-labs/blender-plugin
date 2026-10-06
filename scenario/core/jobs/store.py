@@ -17,12 +17,16 @@ from dataclasses import asdict, dataclass, replace
 from decimal import Decimal, InvalidOperation
 from enum import StrEnum
 from pathlib import Path
+from typing import TYPE_CHECKING
 from urllib.parse import urlsplit
 
 from .result_metadata import TEXTURE_ROLES
 from .transfers import DownloadedResult, TransferError, _root, validate_result_name
 
-_VERSION = 5
+if TYPE_CHECKING:
+    from .mesh_source import MeshSource
+
+_VERSION = 6
 _APPLICATION_ID = 0x53434A42
 
 
@@ -102,6 +106,57 @@ class JobOrigin:
 
 
 @dataclass(frozen=True)
+class JobMeshSource:
+    parameter: str
+    index: int | None
+    asset_id: str
+    upload_id: str
+    upload_revision: int
+    origin: JobOrigin
+    mesh_source: "MeshSource"
+
+    def __post_init__(self):
+        # Local import avoids a module cycle with shared opaque-ID validation.
+        from .mesh_source import MeshSource
+
+        if (
+            not isinstance(self.parameter, str)
+            or not self.parameter.strip()
+            or len(self.parameter) > 256
+            or any(ord(char) < 32 for char in self.parameter)
+            or (
+                self.index is not None
+                and (type(self.index) is not int or not 0 <= self.index < 128)
+            )
+            or type(self.upload_revision) is not int
+            or self.upload_revision < 0
+            or not isinstance(self.origin, JobOrigin)
+            or not isinstance(self.mesh_source, MeshSource)
+        ):
+            raise ValueError("Use an exact mesh input and saved upload provenance")
+        _identity(self.asset_id)
+        _identity(self.upload_id)
+        expected = (
+            self.mesh_source.objects[0].target_id if len(self.mesh_source.objects) == 1 else None
+        )
+        if self.origin.target_id != expected:
+            raise ValueError("Mesh provenance and captured source target disagree")
+
+
+def _decode_mesh_binding(value):
+    from .mesh_source import decode_mesh_source
+
+    if not isinstance(value, dict) or set(value) != set(JobMeshSource.__dataclass_fields__):
+        raise ValueError("Invalid mesh input binding")
+    value = dict(value)
+    origin = value.pop("origin")
+    if not isinstance(origin, dict) or set(origin) != set(JobOrigin.__dataclass_fields__):
+        raise ValueError("Invalid mesh input origin")
+    source = decode_mesh_source(value.pop("mesh_source"))
+    return JobMeshSource(**value, origin=JobOrigin(**origin), mesh_source=source)
+
+
+@dataclass(frozen=True)
 class JobIntent:
     request_id: str
     scope: JobScope
@@ -111,6 +166,7 @@ class JobIntent:
     payload_sha256: str
     quote_sha256: str
     quote_cost: str
+    mesh_sources: tuple[JobMeshSource, ...] = ()
 
     def __post_init__(self):
         _identity(self.request_id)
@@ -127,6 +183,15 @@ class JobIntent:
         for value in (self.payload_sha256, self.quote_sha256):
             if not isinstance(value, str) or not re.fullmatch(r"[0-9a-f]{64}", value):
                 raise ValueError("Request and quote require SHA-256 identities")
+        if (
+            not isinstance(self.mesh_sources, tuple)
+            or len(self.mesh_sources) > 128
+            or any(not isinstance(source, JobMeshSource) for source in self.mesh_sources)
+            or len({(source.parameter, source.index) for source in self.mesh_sources})
+            != len(self.mesh_sources)
+            or (self.mesh_sources and self.operation not in {"model", "workflow"})
+        ):
+            raise ValueError("Use unique bounded mesh input bindings for a model or workflow")
         try:
             if not isinstance(self.quote_cost, str) or len(self.quote_cost) > 128:
                 raise ValueError
@@ -352,6 +417,10 @@ def _decode(raw, scope, *, version=_VERSION):
         if not isinstance(value, dict) or set(value) != expected:
             raise ValueError
         intent = value.pop("intent")
+        if version < 6:
+            if not isinstance(intent, dict) or "mesh_sources" in intent:
+                raise ValueError
+            intent["mesh_sources"] = []
         for fields, cls in (
             (intent, JobIntent),
             (intent["scope"], JobScope),
@@ -361,6 +430,10 @@ def _decode(raw, scope, *, version=_VERSION):
                 raise ValueError
         intent["scope"] = JobScope(**intent["scope"])
         intent["origin"] = JobOrigin(**intent["origin"])
+        bindings = intent["mesh_sources"]
+        if not isinstance(bindings, list) or len(bindings) > 128:
+            raise ValueError
+        intent["mesh_sources"] = tuple(_decode_mesh_binding(binding) for binding in bindings)
         application = value.pop("application_origin", None)
         if version == 2 and value["state"] in {"applying", "apply_failed", "applied"}:
             application = asdict(intent["origin"])
@@ -517,7 +590,7 @@ class JobStore:
                     )
                     connection.execute(f"PRAGMA application_id = {_APPLICATION_ID}")
                     connection.execute(f"PRAGMA user_version = {_VERSION}")
-                elif version in {2, 3, 4} and application == _APPLICATION_ID:
+                elif version in {2, 3, 4, 5} and application == _APPLICATION_ID:
                     self._upgrade_previous(connection, version)
                 else:
                     self._check_version(connection)

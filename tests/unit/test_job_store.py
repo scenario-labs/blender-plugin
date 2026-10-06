@@ -17,6 +17,7 @@ import pytest
 
 from scenario.core.jobs.store import (
     JobIntent,
+    JobMeshSource,
     JobOrigin,
     JobScope,
     JobState,
@@ -373,7 +374,9 @@ def legacy_store(path, version):
             "SELECT scope, request_id, record FROM jobs"
         ).fetchall():
             value = json.loads(raw)
-            del value["local_applications"]
+            del value["intent"]["mesh_sources"]
+            if version < 5:
+                del value["local_applications"]
             if version == 2:
                 del value["application_origin"]
             if version in {2, 3}:
@@ -386,7 +389,7 @@ def legacy_store(path, version):
         connection.execute(f"PRAGMA user_version={version}")
 
 
-@pytest.mark.parametrize("version", [2, 3, 4])
+@pytest.mark.parametrize("version", [2, 3, 4, 5])
 def test_shared_store_upgrade_preserves_all_scopes_states_and_receipts(tmp_path, intent, version):
     path = tmp_path / "jobs.sqlite3"
     expected = {}
@@ -407,7 +410,7 @@ def test_shared_store_upgrade_preserves_all_scopes_states_and_receipts(tmp_path,
                 if state == JobState.UNCERTAIN:
                     record = advance(scoped, record, state)
             else:
-                record = make_ready(scoped, item, texture_role="normal" if version == 4 else None)
+                record = make_ready(scoped, item, texture_role="normal" if version >= 4 else None)
                 if state != JobState.READY:
                     record = advance(scoped, record, JobState.APPLYING)
                 if state in {JobState.APPLY_FAILED, JobState.APPLIED}:
@@ -418,11 +421,11 @@ def test_shared_store_upgrade_preserves_all_scopes_states_and_receipts(tmp_path,
     for scope, records in expected.items():
         assert JobStore(path, scope).records() == records
     with sqlite3.connect(path) as connection:
-        assert connection.execute("PRAGMA user_version").fetchone()[0] == 5
+        assert connection.execute("PRAGMA user_version").fetchone()[0] == 6
 
 
 @pytest.mark.parametrize("damage", ["commit", "scope", "revision", "record", "foreign", "v1"])
-@pytest.mark.parametrize("version", [2, 3, 4])
+@pytest.mark.parametrize("version", [2, 3, 4, 5])
 def test_shared_store_upgrade_failure_preserves_every_row_and_version(
     tmp_path, intent, monkeypatch, damage, version
 ):
@@ -906,3 +909,66 @@ def test_local_history_capacity_preserves_all_prior_records(store, intent):
     with pytest.raises(ValueError, match="bounded"):
         reuse(store, record, application_id="beyond-capacity")
     assert store.get(intent.request_id) == record
+
+
+@pytest.fixture
+def mesh_binding(intent):
+    from scenario.core.jobs.mesh_source import MeshSource, MeshSourceObject
+
+    return JobMeshSource(
+        "mesh",
+        None,
+        "mesh-asset",
+        "upload-one",
+        8,
+        intent.origin,
+        MeshSource(
+            "a" * 64,
+            (
+                MeshSourceObject(
+                    intent.origin.target_id,
+                    "b" * 64,
+                    ((1, 0, 0, 3), (0, 1, 0, 4), (0, 0, 1, 5), (0, 0, 0, 1)),
+                ),
+            ),
+        ),
+    )
+
+
+@pytest.mark.parametrize(
+    "damage", ["missing", "null", "extra", "matrix", "target", "duplicate", "index"]
+)
+def test_corrupt_mesh_binding_cannot_be_read_as_unbound_job(store, intent, mesh_binding, damage):
+    saved = store.create(replace(intent, mesh_sources=(mesh_binding,)))
+    with sqlite3.connect(store._path) as connection:
+        value = json.loads(connection.execute("SELECT record FROM jobs").fetchone()[0])
+        bindings = value["intent"]["mesh_sources"]
+        if damage == "missing":
+            del value["intent"]["mesh_sources"]
+        elif damage == "null":
+            value["intent"]["mesh_sources"] = None
+        elif damage == "extra":
+            bindings[0]["unknown"] = True
+        elif damage == "matrix":
+            bindings[0]["mesh_source"]["objects"][0]["matrix_world"] = [[1]]
+        elif damage == "target":
+            bindings[0]["origin"]["target_id"] = "another-object"
+        elif damage == "duplicate":
+            bindings.append(bindings[0])
+        elif damage == "index":
+            bindings[0]["index"] = True
+        connection.execute("UPDATE jobs SET record=?", (json.dumps(value),))
+    with pytest.raises(StoreError):
+        store.get(saved.intent.request_id)
+
+
+def test_schema_five_upgrade_preserves_unfinished_local_application(tmp_path, intent):
+    path = tmp_path / "jobs.sqlite3"
+    store = JobStore(path, intent.scope)
+    unfinished = reuse(store, completed_result(store, intent))
+    legacy_store(path, 5)
+    reopened = JobStore(path, intent.scope)
+    assert reopened.get(intent.request_id) == unfinished
+    assert unfinished.local_applications[-1].state == LocalApplicationState.APPLYING
+    with pytest.raises(StoreConflict, match="unfinished"):
+        reuse(reopened, unfinished, application_id="repeat")

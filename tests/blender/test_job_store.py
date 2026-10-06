@@ -124,6 +124,7 @@ class JobStoreTests(unittest.TestCase):
             with closing(sqlite3.connect(root / "jobs.sqlite3")) as connection, connection:
                 raw = json.loads(connection.execute("SELECT record FROM jobs").fetchone()[0])
                 del raw["local_applications"]
+                del raw["intent"]["mesh_sources"]
                 del raw["results"][0]["asset"]["texture_role"]
                 connection.execute("UPDATE jobs SET record=?", (json.dumps(raw),))
                 connection.execute("PRAGMA user_version=3")
@@ -136,7 +137,7 @@ class JobStoreTests(unittest.TestCase):
             )
             self.assertEqual(reopened.get("result-request"), record)
             with closing(sqlite3.connect(root / "jobs.sqlite3")) as connection, connection:
-                self.assertEqual(connection.execute("PRAGMA user_version").fetchone()[0], 5)
+                self.assertEqual(connection.execute("PRAGMA user_version").fetchone()[0], 6)
             with self.assertRaises(sqlite3.ProgrammingError):
                 connection.execute("SELECT 1")
             verified = transfers.verify_download(root, record.results[0].receipt)
@@ -150,6 +151,7 @@ class JobStoreTests(unittest.TestCase):
             with closing(sqlite3.connect(root / "jobs.sqlite3")) as connection, connection:
                 raw = json.loads(connection.execute("SELECT record FROM jobs").fetchone()[0])
                 del raw["local_applications"]
+                del raw["intent"]["mesh_sources"]
                 connection.execute("UPDATE jobs SET record=?", (json.dumps(raw),))
                 connection.execute("PRAGMA user_version=4")
             reopened = module.JobStore(root / "jobs.sqlite3", scope)

@@ -465,3 +465,18 @@ An unfinished local claim blocks further reuse, including after restart. A
 session-owned `retry_receipt` action saves only the known outcome. No tool clears
 uncertainty or automatically repeats scene work. Each job retains at most 128
 local claims without evicting earlier records.
+
+## Captured mesh input history
+
+`estimate_cost` also returns `mesh_sources` for typed 3D inputs that identify
+completed mesh snapshot uploads in the selected credential/project scope.
+`job_status` retains these bindings after submission and restart. Each includes
+the exact parameter/array position, asset and upload identities, captured origin,
+export hash, source fingerprints and transforms. Ordinary assets and file uploads
+have no inferred source metadata. Ambiguous matches fail before spending.
+
+The shared coordinator persists and revalidates these records before its paid
+claim. They describe uploaded snapshots and stay out of Scenario request bodies.
+They do not prove the current source is unchanged, establish provider alignment,
+or authorize finding/replacing an object after restart. See
+[the storage contract](JOB_STORAGE.md#captured-mesh-inputs-in-generation-intents).

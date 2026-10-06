@@ -5,6 +5,7 @@
 An element is a primitive (box, cylinder, plane, wedge, cone, sphere) with a position, size, yaw and a semantic
 category that decides its greybox colour and which sub-collection it lands in. The Scenario LLM writes the plan as
 JSON; parse_plan tolerates the usual noise and clamps every value so a bad answer can never place a runaway shape."""
+
 import json
 import re
 
@@ -17,16 +18,16 @@ PRIMITIVES = ("box", "cylinder", "plane", "wedge", "cone", "sphere")
 # semantic categories: label + a readable greybox colour (linear-ish RGB, alpha 1). A wall reads grey, vegetation
 # green, a light yellow, so the blockout is legible without modelling anything.
 CATEGORIES = {
-    "floor":      ("Floor",      (0.62, 0.62, 0.64)),
-    "wall":       ("Wall",       (0.78, 0.78, 0.80)),
-    "structure":  ("Structure",  (0.55, 0.62, 0.72)),
-    "prop":       ("Prop",       (0.85, 0.62, 0.35)),
-    "furniture":  ("Furniture",  (0.70, 0.52, 0.38)),
+    "floor": ("Floor", (0.62, 0.62, 0.64)),
+    "wall": ("Wall", (0.78, 0.78, 0.80)),
+    "structure": ("Structure", (0.55, 0.62, 0.72)),
+    "prop": ("Prop", (0.85, 0.62, 0.35)),
+    "furniture": ("Furniture", (0.70, 0.52, 0.38)),
     "vegetation": ("Vegetation", (0.42, 0.62, 0.40)),
-    "vehicle":    ("Vehicle",    (0.75, 0.40, 0.40)),
-    "water":      ("Water",      (0.40, 0.60, 0.78)),
-    "light":      ("Light",      (0.90, 0.82, 0.45)),
-    "other":      ("Other",      (0.66, 0.66, 0.66)),
+    "vehicle": ("Vehicle", (0.75, 0.40, 0.40)),
+    "water": ("Water", (0.40, 0.60, 0.78)),
+    "light": ("Light", (0.90, 0.82, 0.45)),
+    "other": ("Other", (0.66, 0.66, 0.66)),
 }
 DEFAULT_CATEGORY = "other"
 
@@ -61,8 +62,13 @@ def instruction(prompt, scene_type="exterior", scale="human", previous=None):
         "groups, with a floor or ground, walls or boundaries, structures, and props. "
     )
     if previous:
-        return (head + "Here is the current plan as JSON; return an UPDATED full plan applying this change: "
-                + str(prompt) + "\nCurrent plan:\n" + json.dumps(previous)[:6000])
+        return (
+            head
+            + "Here is the current plan as JSON; return an UPDATED full plan applying this change: "
+            + str(prompt)
+            + "\nCurrent plan:\n"
+            + json.dumps(previous)
+        )
     return head + "Scene to block out: " + str(prompt)
 
 
@@ -103,26 +109,30 @@ def _recover_objects(text):
             depth -= 1
             if depth == 0 and start is not None:
                 try:
-                    objects.append(json.loads(text[start:i + 1]))
+                    objects.append(json.loads(text[start : i + 1]))
                 except ValueError:
                     pass
                 start = None
     return objects
 
 
-def _extract_json_array(text):
+def _extract_json_array(text, *, recover=True):
     text = (text or "").strip()
     fence = re.search(r"```(?:json)?\s*(.+?)```", text, re.DOTALL)
     if fence:
         text = fence.group(1).strip()
+    if not recover:
+        root = re.search(r"[\[{]", text)
+        if root is None or root.group() != "[":
+            return None  # A nested array inside a JSON object is not a plan.
     start, end = text.find("["), text.rfind("]")
     if start != -1 and end != -1 and end > start:
         try:
-            return json.loads(text[start:end + 1])
+            return json.loads(text[start : end + 1])
         except ValueError:
             pass
     # the array was truncated (a capped output): recover the complete objects written before the cut
-    if start != -1:
+    if recover and start != -1:
         recovered = _recover_objects(text[start:])
         if recovered:
             return recovered
@@ -149,8 +159,35 @@ def parse_plan(text):
         position = _vec3(raw.get("position"), [0.0, 0.0, size[2] / 2.0], -MAX_COORD, MAX_COORD)
         rotation = _num(raw.get("rotation"), 0.0, -360.0, 360.0)
         group = str(raw.get("group") or "Blockout").strip()[:60] or "Blockout"
-        elements.append({"name": name, "category": category, "primitive": primitive,
-                         "position": position, "size": size, "rotation": rotation, "group": group})
+        elements.append(
+            {
+                "name": name,
+                "category": category,
+                "primitive": primitive,
+                "position": position,
+                "size": size,
+                "rotation": rotation,
+                "group": group,
+            }
+        )
+    return elements
+
+
+def parse_complete_plan(text):
+    """Accept a complete array with optional prose/fences, never a recovered prefix."""
+    try:
+        raw = json.loads(text)
+    except json.JSONDecodeError:
+        raw = _extract_json_array(text, recover=False)
+    if (
+        not isinstance(raw, list)
+        or not 1 <= len(raw) <= MAX_ELEMENTS
+        or any(not isinstance(item, dict) for item in raw)
+    ):
+        raise ValueError("Expected a complete bounded Blockout array")
+    elements = parse_plan(json.dumps(raw, allow_nan=False))
+    if len(elements) != len(raw):
+        raise ValueError("The Blockout plan is incomplete")
     return elements
 
 

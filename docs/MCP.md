@@ -271,6 +271,9 @@ Do not edit this block by hand; run `make mcp-docs`. An asterisk marks a require
 | `recover_local_job` | Explicitly recover a saved job without repeating generation or importing into another scene. | `context_id`*: string<br>`request_id`*: string<br>`expected_revision`*: integer<br>`action`*: string (['refresh', 'resume', 'cancel', 'recover_download', 'retry_receipt']) | destructive annotation |
 | `list_local_jobs` | Inspect durable local jobs for the selected API-key pair without network requests. | none | read-only annotation |
 | `cancel_prepared_job` | Cancel an unsubmitted durable local intent without contacting Scenario. | `context_id`*: string<br>`request_id`*: string<br>`expected_revision`*: integer | destructive annotation |
+| `estimate_blockout` | Get the exact free estimate for the current scene's Blockout description or refinement. This reads the native Blockout fields and current plan; it does not generate or build geometry. Approve the exact returned cu_cost_exact separately. Args: action DESIGN or REFINE. Returns: quote_id, action, cu_cost_exact. | `action`: string (['DESIGN', 'REFINE']) | read-only annotation |
+| `approve_blockout` | Spend the explicitly approved exact cost once for estimate_blockout. Args: quote_id and approved_cost. Inputs, current plan and origin must still match. Returns: request_id and state. The unchanged source scene receives a complete plan; no geometry is built automatically. Inspect list_local_jobs after failure or restart; never repeat an uncertain submission. | `quote_id`*: string<br>`approved_cost`*: string | - |
+| `read_model_text` | Read one explicitly selected complete text asset from a successful saved model job, including after restart. Obtain context_id and revision from list_local_jobs and asset_id from job_status results. Returns: request_id, asset_id and bounded full text. Never spends, parses a plan, applies to the scene or substitutes a truncated preview. Args: context_id, request_id, expected_revision, asset_id. | `context_id`*: string<br>`request_id`*: string<br>`expected_revision`*: integer<br>`asset_id`*: string | read-only annotation |
 | `estimate_prompt` | Get the exact server price for New, Rewrite or Translate on the current scene's native prompt field. This does not generate or change text. Args: lane and action (GENERATE, REWRITE, TRANSLATE). Returns: quote_id and cu_cost_exact. Obtain explicit approval of that exact cost before approve_prompt. The current field text/model must remain unchanged. | `lane`: string (enum: see tools/list)<br>`action`*: string (['GENERATE', 'REWRITE', 'TRANSLATE']) | read-only annotation |
 | `approve_prompt` | Spend the explicitly approved exact price once for a quote from estimate_prompt. Args: quote_id and approved_cost (the unchanged decimal string). Returns: request_id and queued state. Queues one durable submission; never retry an uncertain outcome. The shared runtime updates only the unchanged original prompt field. Inspect list_local_jobs for recovery. | `quote_id`*: string<br>`approved_cost`*: string | destructive annotation |
 | `read_prompt_result` | Read full text from a saved successful prompt or translation job without generating, spending or applying it. Args: context_id, request_id and expected_revision from list_local_jobs; refresh a known remote job's status first if necessary. Returns: prompts; old scene origins are readable but are never silently applied to the current scene. | `context_id`*: string<br>`request_id`*: string<br>`expected_revision`*: integer | read-only annotation |
@@ -543,3 +546,21 @@ afterward. `mesh_edit.rig` names the current session's attached armature; it is 
 a durable lookup authority after undo/load. The shared native history and
 receipt-only recovery rules apply. See [the RIG contract](MESH_APPLICATION.md#attach-a-returned-rig)
 for bounds and provider/retargeting limitations.
+
+
+## Blockout plan commands
+
+`estimate_blockout` reads the current scene's native Blockout description, type,
+scale and previous plan for DESIGN or REFINE. It returns an exact free quote;
+`approve_blockout` requires that quote and unchanged decimal cost, then persists
+one intent before submission. Changed fields, scenes or credentials reject the
+approval. UI and MCP use the same facade and job session. Complete returned JSON
+updates only the unchanged original scene's stored plan; geometry is built by a
+separate explicit local **Build plan** action.
+
+After failure or restart, use `list_local_jobs` for context/revision and
+`job_status` for saved asset IDs. `read_model_text` retrieves one selected full
+text output without spending or applying it to a scene. Incomplete previews must
+be downloaded successfully; truncated JSON prefixes are not plans. Native
+recovery into a different scene still needs an explicit plan-import workflow;
+read-only MCP recovery does not authorize that mutation.

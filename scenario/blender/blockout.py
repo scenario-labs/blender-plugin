@@ -9,8 +9,8 @@ from math import radians
 
 import bmesh
 import bpy
+from bpy.props import StringProperty
 
-from ..core.api.errors import ScenarioError
 from ..core.scene import blockout as core
 from . import runtime
 
@@ -102,28 +102,50 @@ def _mesh_for(primitive):
 
 # -- collections ------------------------------------------------------------------------------------------------------
 def _sub_collection(name, parent):
-    coll = bpy.data.collections.get(name)
-    if coll is None:
-        coll = bpy.data.collections.new(name)
-    if coll.name not in {c.name for c in parent.children}:
-        parent.children.link(coll)
+    coll = bpy.data.collections.new(name)
+    coll[MARK] = True
+    parent.children.link(coll)
     return coll
 
 
-def clear_blockout(scene):
-    """Remove the Blockout collection, its sub-collections and their objects. Returns how many objects were removed."""
-    root = bpy.data.collections.get(COLLECTION)
+def _owned_tree(scene):
+    root = scene.scenario_blockout.built_collection
     if root is None:
-        return 0
-    removed = 0
-    for coll in list(root.children) + [root]:
-        for obj in list(coll.objects):
-            bpy.data.objects.remove(obj, do_unlink=True)
-            removed += 1
-    for coll in list(root.children):
+        return None
+    collections = {root, *root.children_recursive}
+    parents = tuple(bpy.data.collections) + tuple(item.collection for item in bpy.data.scenes)
+    if root not in tuple(scene.collection.children):
+        raise ValueError("The Blockout collection moved; inspect it before rebuilding")
+    for coll in collections:
+        if coll.get(MARK) is not True:
+            raise ValueError(
+                "The Blockout contains another collection; preserve it before rebuilding"
+            )
+        allowed = {scene.collection} if coll == root else collections
+        if any(coll in tuple(parent.children) and parent not in allowed for parent in parents):
+            raise ValueError("The Blockout collection is shared; make it local before rebuilding")
+        for obj in coll.objects:
+            if MARK not in obj or any(owner not in collections for owner in obj.users_collection):
+                raise ValueError(
+                    "The Blockout contains unrelated or shared objects; preserve them first"
+                )
+    return root
+
+
+def _remove_tree(root):
+    collections = (root, *tuple(root.children_recursive))
+    objects = {obj for coll in collections for obj in coll.objects}
+    for obj in objects:
+        bpy.data.objects.remove(obj, do_unlink=True)
+    for coll in reversed(collections):
         bpy.data.collections.remove(coll)
-    bpy.data.collections.remove(root)
-    return removed
+    return len(objects)
+
+
+def clear_blockout(scene):
+    """Clear only this scene's explicitly owned, unshared generated collection."""
+    root = _owned_tree(scene)
+    return _remove_tree(root) if root is not None else 0
 
 
 def _colour_the_viewport():
@@ -135,33 +157,47 @@ def _colour_the_viewport():
 
 
 def build_blockout(context, elements):
-    """Place every element as a coloured primitive, grouped into sub-collections under 'Blockout'. Returns the objects."""
+    """Stage a complete local build before replacing only this scene's owned tree."""
     scene = context.scene
-    clear_blockout(scene)
+    old = _owned_tree(scene)
     root = _sub_collection(COLLECTION, scene.collection)
     groups, created = {}, []
-    for el in elements:
-        group = el.get("group") or COLLECTION
-        category = el.get("category") or core.DEFAULT_CATEGORY
-        if group == COLLECTION:
-            gcoll = root  # ungrouped elements sit directly in the root, never a sub-collection named after it
-        else:
-            gcoll = groups.get(group)
-            if gcoll is None:
-                gcoll = _sub_collection(group, root)
-                groups[group] = gcoll
-        obj = bpy.data.objects.new(
-            el.get("name") or "Block", _mesh_for(el.get("primitive") or "box")
-        )
-        obj.location = el.get("position") or (0.0, 0.0, 0.0)
-        obj.scale = el.get("size") or (1.0, 1.0, 1.0)
-        obj.rotation_euler = (0.0, 0.0, radians(el.get("rotation", 0.0) or 0.0))
-        r, g, b = core.CATEGORIES.get(category, core.CATEGORIES[core.DEFAULT_CATEGORY])[1]
-        obj.color = (r, g, b, 1.0)
-        obj[MARK] = category
-        obj.display_type = "SOLID"
-        gcoll.objects.link(obj)
-        created.append(obj)
+    try:
+        for el in elements:
+            group = el.get("group") or COLLECTION
+            category = el.get("category") or core.DEFAULT_CATEGORY
+            if group == COLLECTION:
+                gcoll = root
+            else:
+                gcoll = groups.get(group)
+                if gcoll is None:
+                    gcoll = _sub_collection(group, root)
+                    groups[group] = gcoll
+            obj = bpy.data.objects.new(
+                el.get("name") or "Block", _mesh_for(el.get("primitive") or "box")
+            )
+            created.append(obj)
+            gcoll.objects.link(obj)
+            obj.location = el.get("position") or (0.0, 0.0, 0.0)
+            obj.scale = el.get("size") or (1.0, 1.0, 1.0)
+            obj.rotation_euler = (0.0, 0.0, radians(el.get("rotation", 0.0) or 0.0))
+            r, g, b = core.CATEGORIES.get(category, core.CATEGORIES[core.DEFAULT_CATEGORY])[1]
+            obj.color = (r, g, b, 1.0)
+            obj[MARK] = category
+            obj.display_type = "SOLID"
+    except BaseException:
+        _remove_tree(root)
+        raise
+    # All decoding and creation succeeded before touching the old collection.
+    # After publication starts, never destroy the staged replacement on failure.
+    scene.scenario_blockout.built_collection = root
+    if old is not None:
+        _remove_tree(old)
+    root.name = COLLECTION
+    for name, coll in groups.items():
+        coll.name = name
+    for obj, element in zip(created, elements, strict=True):
+        obj.name = element.get("name") or "Block"
     if created and not bpy.app.background:
         _colour_the_viewport()
     return created
@@ -181,48 +217,82 @@ def stored_plan(scene):
 
 
 def on_blockout_plan(payload):
-    """Store the designed plan and build it (main thread, called by the pump)."""
-    elements = payload.get("elements") or []
-    scene = bpy.context.scene
-    _store(scene, elements)
-    created = build_blockout(bpy.context, elements)
-    summary = core.plan_summary(elements)
-    runtime.set_message(f"Blockout: {len(created)} elements in {len(summary['by_group'])} group(s)")
+    """Ignore retired unbound events; the selected JobSession delivers plans."""
 
 
-# -- operators --------------------------------------------------------------------------------------------------------
 def _design(context, prompt, previous=None):
-    """Resolve the client on the main thread, then design the plan off-thread and build it through an event."""
-    from ..core.api import llm
-
-    props = context.scene.scenario_blockout
-    client = runtime.make_client()
-    manager = runtime.ensure_manager()
-    text = core.instruction(prompt, props.scene_type, props.scale, previous=previous)
-
-    def worker(manager, client):
-        try:
-            elements = core.parse_plan(llm.run_text(client, text))
-        except (ScenarioError, ValueError) as err:
-            manager.events.put(("error", f"Blockout failed: {getattr(err, 'reason', err)}"))
-            return
-        if not elements:
-            manager.events.put(
-                ("error", "The blockout came back empty; try a more concrete description")
-            )
-            return
-        manager.events.put(("blockout_plan", {"elements": elements}))
-
-    runtime.set_message(
-        "Designing the blockout..." if previous is None else "Refining the blockout..."
+    runtime.ensure_blockout_jobs().quote(
+        context.scene, "REFINE" if previous is not None else "DESIGN"
     )
-    manager._spawn(worker, manager, client)
+
+
+class SCENARIO_OT_blockout_approve(bpy.types.Operator):
+    bl_idname = "scenario.blockout_approve"
+    bl_label = "Generate Blockout plan"
+    bl_description = (
+        "Approve the displayed exact price once and prepare a plan without changing geometry"
+    )
+    quote_id: StringProperty(options={"SKIP_SAVE"})
+    approved_cost: StringProperty(options={"SKIP_SAVE"})
+
+    @classmethod
+    def poll(cls, context):
+        from .operators import _network_poll
+
+        return _network_poll(cls, context)
+
+    def execute(self, context):
+        try:
+            runtime.ensure_blockout_jobs().approve(
+                self.quote_id, context.scene, approved_cost=self.approved_cost
+            )
+        except Exception:
+            self.report(
+                {"WARNING"},
+                "Blockout approval is stale or could not be submitted; inspect saved jobs",
+            )
+            return {"CANCELLED"}
+        return {"FINISHED"}
+
+
+def draw_status(layout, scene):
+    from ..core.ui.costs import format_cu
+
+    jobs = runtime.state.blockout_jobs
+    item = jobs.current(scene) if jobs is not None else None
+    if item is None:
+        return
+    if item.phase == "READY":
+        from .blockout_jobs import binding
+
+        row = layout.row()
+        row.enabled = binding(scene) == item.binding
+        op = row.operator(
+            "scenario.blockout_approve",
+            text=f"Generate plan ({format_cu(item.cost)} CU)",
+            icon="PLAY",
+        )
+        op.quote_id, op.approved_cost = item.identifier, item.cost
+    elif item.phase == "QUOTING":
+        layout.label(text="Getting plan price...", icon="TIME")
+    elif item.phase in {"SUBMITTING", "POLLING", "LISTING", "READING"}:
+        layout.label(text="Preparing Blockout plan...", icon="TIME")
+    elif item.phase == "DONE":
+        layout.label(text="Plan ready. Build it to update geometry.", icon="CHECKMARK")
+    elif item.phase == "ERROR":
+        layout.label(text="Blockout needs review", icon="ERROR")
+        if item.request_id:
+            layout.operator(
+                "scenario.inspect_saved_jobs", text="Inspect saved jobs", icon="VIEWZOOM"
+            )
+        else:
+            layout.label(text="Check inputs and request a new price")
 
 
 class SCENARIO_OT_blockout_design(bpy.types.Operator):
     bl_idname = "scenario.blockout_design"
     bl_label = "Design blockout"
-    bl_description = "Design a greybox of the scene from the description with the Scenario LLM, then place it (about 0.5 CU)"
+    bl_description = "Request the exact price for a Blockout plan before approving generation"
 
     @classmethod
     def poll(cls, context):
@@ -238,8 +308,10 @@ class SCENARIO_OT_blockout_design(bpy.types.Operator):
             return {"CANCELLED"}
         try:
             _design(context, prompt)
-        except ScenarioError as err:
-            self.report({"ERROR"}, err.reason)
+        except Exception:
+            self.report(
+                {"WARNING"}, "Could not request a Blockout price; check inputs and connection"
+            )
             return {"CANCELLED"}
         return {"FINISHED"}
 
@@ -247,7 +319,9 @@ class SCENARIO_OT_blockout_design(bpy.types.Operator):
 class SCENARIO_OT_blockout_refine(bpy.types.Operator):
     bl_idname = "scenario.blockout_refine"
     bl_label = "Refine blockout"
-    bl_description = "Apply the refinement to the current blockout with the Scenario LLM, then rebuild it (about 0.5 CU)"
+    bl_description = (
+        "Request the exact price for a refined Blockout plan before approving generation"
+    )
 
     @classmethod
     def poll(cls, context):
@@ -267,10 +341,11 @@ class SCENARIO_OT_blockout_refine(bpy.types.Operator):
             return {"CANCELLED"}
         try:
             _design(context, change, previous=previous)
-        except ScenarioError as err:
-            self.report({"ERROR"}, err.reason)
+        except Exception:
+            self.report(
+                {"WARNING"}, "Could not request a Blockout price; check inputs and connection"
+            )
             return {"CANCELLED"}
-        props.refine = ""
         return {"FINISHED"}
 
 
@@ -285,7 +360,13 @@ class SCENARIO_OT_blockout_build(bpy.types.Operator):
         if not elements:
             self.report({"WARNING"}, "No blockout plan yet; design one first")
             return {"CANCELLED"}
-        created = build_blockout(context, elements)
+        try:
+            created = build_blockout(context, elements)
+        except (ValueError, RuntimeError):
+            self.report(
+                {"WARNING"}, "Could not build safely; inspect the existing Blockout collection"
+            )
+            return {"CANCELLED"}
         self.report({"INFO"}, f"Rebuilt {len(created)} elements")
         return {"FINISHED"}
 
@@ -296,8 +377,17 @@ class SCENARIO_OT_blockout_clear(bpy.types.Operator):
     bl_description = "Delete the Blockout collection and forget the plan"
     bl_options = {"REGISTER", "UNDO"}
 
+    def invoke(self, context, event):
+        return context.window_manager.invoke_confirm(self, event)
+
     def execute(self, context):
-        removed = clear_blockout(context.scene)
+        try:
+            removed = clear_blockout(context.scene)
+        except (ValueError, RuntimeError):
+            self.report(
+                {"WARNING"}, "The Blockout contains shared or unrelated data; preserve it first"
+            )
+            return {"CANCELLED"}
         context.scene.scenario_blockout.plan_json = ""
         self.report({"INFO"}, f"Cleared {removed} object(s)")
         return {"FINISHED"}
@@ -305,6 +395,7 @@ class SCENARIO_OT_blockout_clear(bpy.types.Operator):
 
 CLASSES = (
     SCENARIO_OT_blockout_design,
+    SCENARIO_OT_blockout_approve,
     SCENARIO_OT_blockout_refine,
     SCENARIO_OT_blockout_build,
     SCENARIO_OT_blockout_clear,

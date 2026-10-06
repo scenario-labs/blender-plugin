@@ -131,8 +131,22 @@ is complete; otherwise the existing credential-free bounded storage downloader
 reads the full body. These fields are established by the published 2.2.0 types
 and the [asset API contract](https://docs.scenario.com/api/python/resources/assets/methods/retrieve).
 No SDK extension, new raw API exception, dependency or retry change is needed.
-This read-only command does not establish live provider acceptance or wire the
-Blockout generation operators.
+This read-only command does not establish live provider acceptance.
+
+### Active Blockout plans
+
+Blockout Design and Refine now use the selected JobSession through
+[BlockoutJobs](../scenario/blender/blockout_jobs.py). Fresh model metadata uses
+`models.with_raw_response.retrieve`; the exact quote and single paid submission
+use `generate.with_raw_response.run_model` for `model_scenario-llm`, with the
+existing query-only dry-run and no-retry policy. Job and complete text reads use
+the methods above. UI and MCP share this route; there is no endpoint exception,
+SDK pin change or parallel paid worker. API keys retain credential-bound server
+scope without requiring discovery or a project override.
+
+Offline SDK transport fixtures and installed native tests establish command
+wiring and scope/origin guards. Live model compatibility, recovered-plan import
+into an explicitly selected new scene and release acceptance remain separate.
 
 ## Active history reads
 

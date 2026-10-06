@@ -182,6 +182,54 @@ def read_prompt_result(args):
     return DeferredTool(task.result, finish)
 
 
+def estimate_blockout(args):
+    jobs = runtime.ensure_blockout_jobs()
+    item = jobs.quote(bpy.context.scene, args.get("action", "DESIGN"))
+
+    def finish(_):
+        if runtime.ensure_blockout_jobs() is not jobs:
+            raise ScenarioError(0, "The Blockout context changed")
+        jobs.poll()
+        if item.phase != "READY":
+            raise ScenarioError(0, item.error or "The Blockout price is unavailable")
+        return {"quote_id": item.identifier, "action": item.action, "cu_cost_exact": item.cost}
+
+    return DeferredTool(item.task.result, finish)
+
+
+def approve_blockout(args):
+    item = runtime.ensure_blockout_jobs().approve(
+        args["quote_id"], bpy.context.scene, approved_cost=args["approved_cost"]
+    )
+    return {"request_id": item.request_id, "state": item.phase.lower()}
+
+
+def read_model_text(args):
+    session = runtime.ensure_job_session()
+    if args.get("context_id") != runtime.state.job_context_id:
+        raise ScenarioError(0, "The saved-job context changed; list local jobs again")
+    task = session.read_model_text(
+        args["request_id"], expected_revision=args["expected_revision"], asset_id=args["asset_id"]
+    )
+
+    def finish(_):
+        if runtime.ensure_job_session() is not session:
+            raise ScenarioError(0, "The text result context changed")
+        outcomes = session.drain(task=task)
+        if not outcomes:
+            raise ScenarioError(0, "The text result completion is unavailable")
+        if outcomes[0].error is not None:
+            raise outcomes[0].error
+        result = outcomes[0].result
+        return {
+            "request_id": result.record.intent.request_id,
+            "asset_id": result.asset_id,
+            "text": result.text,
+        }
+
+    return DeferredTool(task.result, finish)
+
+
 def list_local_jobs(args):
     context_id, items = runtime.local_job_recovery()
     return {
@@ -941,6 +989,37 @@ SPECS = (
         ),
         cancel_prepared_job,
         {"destructiveHint": True},
+    ),
+    ToolSpec(
+        "estimate_blockout",
+        'Get the exact free estimate for the current scene\'s Blockout description or refinement. This reads the native Blockout fields and current plan; it does not generate or build geometry. Approve the exact returned cu_cost_exact separately. Args: action DESIGN or REFINE. Returns: quote_id, action, cu_cost_exact.\nExample: {"action": "DESIGN"}.\nPlatform equivalent: model_estimate for the Scenario LLM.',
+        _schema({"action": {"type": "string", "enum": ["DESIGN", "REFINE"]}}, []),
+        estimate_blockout,
+        {"readOnlyHint": True},
+    ),
+    ToolSpec(
+        "approve_blockout",
+        'Spend the explicitly approved exact cost once for estimate_blockout. Args: quote_id and approved_cost. Inputs, current plan and origin must still match. Returns: request_id and state. The unchanged source scene receives a complete plan; no geometry is built automatically. Inspect list_local_jobs after failure or restart; never repeat an uncertain submission.\nExample: {"quote_id": "saved-quote", "approved_cost": "1.25"}.\nPlatform equivalent: model_generate after exact local approval.',
+        _schema(
+            {"quote_id": {"type": "string"}, "approved_cost": {"type": "string"}},
+            ["quote_id", "approved_cost"],
+        ),
+        approve_blockout,
+    ),
+    ToolSpec(
+        "read_model_text",
+        'Read one explicitly selected complete text asset from a successful saved model job, including after restart. Obtain context_id and revision from list_local_jobs and asset_id from job_status results. Returns: request_id, asset_id and bounded full text. Never spends, parses a plan, applies to the scene or substitutes a truncated preview. Args: context_id, request_id, expected_revision, asset_id.\nExample: {"context_id": "current-context", "request_id": "saved-request", "expected_revision": 3, "asset_id": "asset_text"}.\nPlatform equivalent: job_get and asset_get without generation.',
+        _schema(
+            {
+                "context_id": {"type": "string"},
+                "request_id": {"type": "string"},
+                "expected_revision": {"type": "integer", "minimum": 0},
+                "asset_id": {"type": "string"},
+            },
+            ["context_id", "request_id", "expected_revision", "asset_id"],
+        ),
+        read_model_text,
+        {"readOnlyHint": True},
     ),
     ToolSpec(
         "estimate_prompt",

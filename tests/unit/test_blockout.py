@@ -1,5 +1,9 @@
 # SPDX-FileCopyrightText: 2026 Scenario Inc.
 # SPDX-License-Identifier: GPL-3.0-or-later
+import json
+
+import pytest
+
 from scenario.core.scene import blockout
 
 
@@ -16,11 +20,48 @@ def test_parses_rich_elements():
 def test_tolerates_fence_prose_and_fills_defaults():
     text = 'Here you go:\n```json\n[{"name": "Wall", "size": [4, 0.3, 3]}]\n```'
     el = blockout.parse_plan(text)[0]
-    assert el["primitive"] == "box"          # default primitive
-    assert el["category"] == "other"          # default category
-    assert el["group"] == "Blockout"          # default group
+    assert el["primitive"] == "box"  # default primitive
+    assert el["category"] == "other"  # default category
+    assert el["group"] == "Blockout"  # default group
     assert el["position"] == [0.0, 0.0, 1.5]  # sits on the ground (z = size_z / 2)
     assert el["rotation"] == 0.0
+
+
+@pytest.mark.parametrize(
+    "wrapper",
+    [
+        "{}",
+        "```json\n{}\n```",
+        "```\n{}\n```",
+        "Here is the plan:\n{}\nDone.",
+        "Here is the plan:\n```json\n{}\n```\nDone.",
+    ],
+)
+def test_complete_plan_accepts_wrappers_and_preserves_every_element(wrapper):
+    plan = json.dumps([{"name": "Wall", "size": [4, 0.3, 3]}, {"name": "Tower"}])
+    assert blockout.parse_complete_plan(wrapper.format(plan)) == blockout.parse_plan(plan)
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        '[{"name":"Complete prefix"},',
+        '```json\n[{"name":"Complete prefix"}, {"size":[1,2,3]}\n```',
+        'Here is the plan:\n[{"name":"Complete prefix"}, {"size":[1,2,3]}',
+        '```json\n[{"name":"Bad"},]\n```',
+        "{}",
+        '{"plan":[{}]}',
+        '```json\n{"plan":[{}]}\n```',
+        'Here is the plan:\n{"plan":[{}]}',
+        "[]",
+        "[{},2]",
+        '[{"size":[NaN,1,2]}]',
+        json.dumps([{}] * (blockout.MAX_ELEMENTS + 1)),
+    ],
+)
+def test_complete_plan_never_recovers_a_prefix_or_silently_drops_elements(text):
+    with pytest.raises(ValueError):
+        blockout.parse_complete_plan(text)
 
 
 def test_bad_enums_fall_back_and_values_clamp():
@@ -35,9 +76,11 @@ def test_bad_enums_fall_back_and_values_clamp():
 
 def test_recovers_elements_from_a_truncated_array():
     # a capped LLM answer cut off mid-element: keep the complete objects, drop the incomplete tail
-    truncated = ('[{"name": "Floor", "category": "floor", "primitive": "box", "size": [10,10,0.2]}, '
-                 '{"name": "Wall", "category": "wall", "size": [10,0.2,5]}, '
-                 '{"name": "Desk", "category": "furniture", "position": [0.0, 3')
+    truncated = (
+        '[{"name": "Floor", "category": "floor", "primitive": "box", "size": [10,10,0.2]}, '
+        '{"name": "Wall", "category": "wall", "size": [10,0.2,5]}, '
+        '{"name": "Desk", "category": "furniture", "position": [0.0, 3'
+    )
     els = blockout.parse_plan(truncated)
     assert [e["name"] for e in els] == ["Floor", "Wall"]
 
@@ -50,7 +93,9 @@ def test_unparseable_returns_empty_and_count_is_capped():
 
 
 def test_plan_summary_counts_by_category_and_group():
-    els = blockout.parse_plan('[{"name":"a","category":"wall","group":"G1"},{"name":"b","category":"wall","group":"G2"},{"name":"c","category":"prop","group":"G1"}]')
+    els = blockout.parse_plan(
+        '[{"name":"a","category":"wall","group":"G1"},{"name":"b","category":"wall","group":"G2"},{"name":"c","category":"prop","group":"G1"}]'
+    )
     summary = blockout.plan_summary(els)
     assert summary["total"] == 3
     assert summary["by_category"] == {"wall": 2, "prop": 1}
@@ -62,3 +107,11 @@ def test_instruction_includes_scene_type_and_refine():
     assert "market" not in base and "JSON array" in base and "a square" in base
     refine = blockout.instruction("add a tower", previous=[{"name": "x"}])
     assert "UPDATED" in refine and "add a tower" in refine
+
+
+def test_refinement_instruction_preserves_complete_plan_without_design_framing():
+    previous = [{"name": "Long named layout element " + str(index)} for index in range(200)]
+    instruction = blockout.instruction("add one door", previous=previous)
+    assert "Scene to block out:" not in instruction
+    assert "UPDATED full plan applying this change: add one door" in instruction
+    assert json.loads(instruction.split("\nCurrent plan:\n")[1]) == previous

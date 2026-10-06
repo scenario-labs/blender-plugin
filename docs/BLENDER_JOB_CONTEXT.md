@@ -45,6 +45,39 @@ These methods never rebind a restarted job by scene name. Explicit recovered
 image imports use a separately approved destination as described below. The Image facade exposes
 receipt-only retry to UI/MCP while its original owner retains the outcome handle.
 
+## Blockout plan commands
+
+`BlockoutJobs` is a presentation facade over the selected session, not another
+worker or store. Design and Refine capture the original scene revision plus
+prompt, refinement, type, scale and previous plan before quoting. Refine includes
+the complete bounded prior plan, without text truncation, using an explicit
+update instruction rather than describing the refinement note as a new scene.
+UI and MCP `estimate_blockout` / `approve_blockout` share exact cost approval and
+persist an intent before one paid dispatch. A repeated approval cannot resubmit;
+uncertain retained actions require saved-job inspection.
+
+The application pump polls the known job, lists its single plain-text output and
+reads the complete body through `JobSession.read_model_text`. Delivery validates
+scope, original scene/revision and unchanged inputs before storing a normalized
+array of 1–200 elements. Complete arrays may have Markdown fences or surrounding
+prose; malformed/truncated arrays are rejected without recovering a partial
+prefix. Delivery never creates geometry. A scene switch, edited plan, file load
+or retired owner cannot redirect a late result to the current scene.
+
+Build plan stages local geometry before replacing the scene's explicitly stored
+collection pointer. It does not adopt collections by name. Unmarked additions,
+externally linked objects and shared collection trees block destructive rebuild
+or Clear; a staging failure removes only the new tree and preserves the old one.
+Clear requires native confirmation. Build and Clear are native undo operators.
+Undo can also restore the earlier plan snapshot; Redo restores its plan and
+geometry without submitting again.
+
+Saved model jobs remain available after restart or a text-read failure. MCP
+`read_model_text` checks the current credential context and observed revision and
+returns complete text without changing a scene or spending again. Importing a
+recovered plan into a newly approved scene still needs its own native workflow.
+These guarantees do not establish live provider or integrated release acceptance.
+
 ## Origin and quote lifetime
 
 On Blender's main thread, capture inputs together with

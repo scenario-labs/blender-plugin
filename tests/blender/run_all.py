@@ -49,6 +49,8 @@ BASELINE = (
     "test_sdk_history",
     "test_render_lanes",
     "test_prompt_tools",
+    "test_blockout",
+    "test_blockout_jobs",
     "test_offline_runtime",
     "test_sdk_bundle",
     "test_sdk_estimates",

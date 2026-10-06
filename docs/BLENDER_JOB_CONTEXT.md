@@ -52,9 +52,14 @@ worker or store. Design and Refine capture the original scene revision plus
 prompt, refinement, type, scale and previous plan before quoting. Refine includes
 the complete bounded prior plan, without text truncation, using an explicit
 update instruction rather than describing the refinement note as a new scene.
+An absent, malformed or incomplete prior plan is rejected with a guided error
+before a quote request, including through MCP.
 UI and MCP `estimate_blockout` / `approve_blockout` share exact cost approval and
 persist an intent before one paid dispatch. A repeated approval cannot resubmit;
 uncertain retained actions require saved-job inspection.
+At the 32-action limit, requesting a new quote can reclaim a finished presentation
+handle without changing saved jobs or scene plans. Pending commands, unapproved
+quotes and unconfirmed or uncertain jobs retain their handles.
 
 The application pump polls the known job, lists its single plain-text output and
 reads the complete body through `JobSession.read_model_text`. Delivery validates
@@ -93,7 +98,10 @@ MCP `prepare_blockout_plan`, `blockout_plan_status` and `apply_blockout_plan`
 use the same read, review and single-use approval commands. Status can discard
 a finished review without mutating Blender data. A deleted destination is skipped
 by saved-job drawing and returns an unavailable-scene error from status; a new
-scene with the same name never inherits its review.
+scene with the same name never inherits its review. Preparing another review
+reclaims deleted destinations once their pending reads have been drained, so
+inaccessible reviews cannot permanently fill the 16-review limit. Drawing and
+status queries do not perform this cleanup.
 
 Application rechecks the selected context, saved job revision, destination
 revision and unchanged fields before consuming the handle and replacing only

@@ -723,3 +723,17 @@ profile remained unchanged. Transport and plan contents are synthetic, with no
 live generation. This proves the scoped recovery interaction at the tested
 window size, not other OS/DPI combinations, live provider behavior or integrated
 release acceptance.
+
+The recovery review fixes were retested with ZIP SHA-256
+`b0bc4c291aa5d910beb53d34974526c74e5971d3462b326006cb521c697faeec`:
+746 installed tests pass on each macOS arm64 Blender 5.0.1, 5.1.2 and 5.2.1.
+These add deleted-destination review cleanup, pending-read drainage, finished
+action reclamation without retiring uncertain jobs, and guided invalid-plan
+refinement errors before any quote request. Desktop checks on Blender 5.1.2
+repeat Escape cancellation, Return confirmation, stored-plan Undo/Redo and
+separate Build; viewport front-view and zoom input work afterward. The synthetic
+fixture establishes an Undo checkpoint after preparing its starting scene.
+Local approval, Undo/Redo and Build add no service request or submission; both
+disposable runs exit cleanly with the normal profile unchanged. The screenshots
+above retain their original artifact provenance. These checks do not establish
+live provider or integrated release acceptance.

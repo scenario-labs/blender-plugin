@@ -66,6 +66,27 @@ class BlockoutJobs:
             raise ScenarioError(0, "The Blockout inputs or scene changed; request a new price")
         return scene.scenario_blockout
 
+    def _reclaim_finished(self):
+        for item in tuple(self.actions.values()):
+            if item.task is not None or item.phase not in {"DONE", "ERROR"}:
+                continue
+            if item.request_id:
+                record = self.store.get(item.request_id)
+                # An ERROR presentation can still guard uncertain spending.
+                # Retire only confirmed finished jobs, retaining durable history.
+                if record is None or record.state not in {
+                    JobState.SUCCEEDED,
+                    JobState.FAILED,
+                    JobState.CANCELED,
+                    JobState.DOWNLOAD_FAILED,
+                    JobState.READY,
+                    JobState.APPLY_FAILED,
+                    JobState.APPLIED,
+                }:
+                    continue
+            self.actions.pop(item.identifier)
+            return
+
     def quote(self, scene, action):
         if action not in {"DESIGN", "REFINE"}:
             raise ScenarioError(0, "Choose Design or Refine")
@@ -83,10 +104,19 @@ class BlockoutJobs:
             raise ScenarioError(
                 0, "Write the requested plan or refinement and enable online access"
             )
-        original = parse_complete_plan(previous) if action == "REFINE" else None
+        original = None
+        if action == "REFINE":
+            try:
+                original = parse_complete_plan(previous)
+            except (ValueError, RecursionError):
+                raise ScenarioError(
+                    0, "Design or recover a complete Blockout plan before refining it"
+                ) from None
         instruction = blockout.instruction(text, scene_type, scale, previous=original)
         if current is not None:
             self.actions.pop(current.identifier)
+        if len(self.actions) >= 32:
+            self._reclaim_finished()
         if len(self.actions) >= 32:
             raise ScenarioError(0, "Finish an existing Blockout action first")
         if scene == bpy.context.scene:

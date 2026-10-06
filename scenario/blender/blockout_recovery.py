@@ -89,8 +89,19 @@ class BlockoutRecovery:
             asset_id=record.results[0].asset.asset_id,
         )
 
+    def _prune_removed(self):
+        for review in tuple(self.reviews.values()):
+            # Poll must consume every outstanding completion before retirement.
+            if review.task is not None:
+                continue
+            try:
+                _ = review.scene.name
+            except ReferenceError:
+                self.reviews.pop(review.identifier)
+
     def prepare(self, request_id, revision, scene):
         record = self._record(request_id, revision)
+        self._prune_removed()
         old = self.current(request_id, scene)
         if old is not None:
             if old.task is not None:

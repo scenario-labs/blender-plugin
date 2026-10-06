@@ -513,7 +513,10 @@ Select a local mesh in Object Mode, inspect the shared saved job, then choose
 **Apply mesh edit (N)** for one GLB result. Check the named scene, mesh and saved
 result before confirming. **Replace geometry** replaces geometry, UVs and mesh
 materials; **Replace active UVs** requires exactly matching indexed topology and
-positions. Unsupported rigs, animation and multi-mesh results are rejected.
+positions. **Replace textures** keeps geometry and non-UV attributes while
+replacing all UV layers and mesh materials from the saved GLB. It also requires
+exactly matching indexed topology and positions; incompatible results leave the
+source intact. Unsupported rigs, animation and multi-mesh results are rejected.
 
 Choose **Scene coordinates** to keep the imported result's scene positions, or
 **Object local coordinates** to interpret those positions in the source's local

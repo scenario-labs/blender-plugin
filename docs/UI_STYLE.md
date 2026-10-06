@@ -286,7 +286,7 @@ proof.
 **Apply mesh edit (N)** names the captured scene, source mesh and selected saved
 GLB. The dialog shows the replacement policy, scene/local coordinate placement
 and Keep original choice before confirmation. Explain geometry/UV/material
-replacement, exact-topology UV restrictions, no automatic fitting, preserved
+replacement, exact-topology UV/retexture restrictions, no automatic fitting, preserved
 object context and the absence of global undo. Defaults keep an original copy.
 
 Option changes use `check()`, outside drawing, and revise the existing captured
@@ -390,3 +390,36 @@ The synthetic form's pending estimate is not live pricing evidence. It does not
 establish provider alignment, other OS desktop behavior, #263 resolution, remaining
 edit policies, global undo or release acceptance. See
 [the source contract](MESH_APPLICATION.md#applying-to-the-captured-mesh-source).
+
+
+## Retexture review
+
+The mesh review's **Replace textures** choice preserves geometry and adopts all
+result UV layers and mesh material assignments. Its two explanation lines name
+that replacement and require exactly matching indexed topology and positions.
+Keep original and coordinate placement remain explicit, and drawing stays read-only.
+Both current-destination and captured-source review use this policy.
+
+Offline interaction on macOS arm64 Blender 5.1.2 used exact ZIP
+`53587fc3756f6eb9acaa40df066b0fc8dc80defb5a009059ec3148f5ecf54b61`,
+which passed 683 installed tests on each of Blender 5.0.1, 5.1.2 and 5.2.1.
+Mouse selection exposed the new policy and its geometry-preservation explanation.
+Escape canceled without changing materials, geometry or local claims. A fresh
+review selected the policy using the native menu and keyboard; Return applied
+it with Keep original enabled. Vertex positions stayed identical, the saved
+material replaced the fixture's blue material, and one separate local claim
+became applied while the completed generation stayed applied. Mock submissions
+and requests remained unchanged. Viewport click, front-view and orbit keys,
+Outliner selection and zoom worked. The isolated process exited cleanly and the
+normal profile was unchanged. The test-only application identifier/signature
+changed for window targeting; executable code and extension ZIP were unchanged.
+
+The fixture uses synthetic transport and pauses catalog loading. These images
+are local interaction evidence, not live pricing or provider appearance quality.
+Provider indexing/alignment, other OS desktop behavior, global undo, #263 and
+full release acceptance remain unverified.
+
+[Before retexture](images/saved-retexture-before.png),
+[applied retexture with original retained](images/saved-retexture-result.png).
+
+![Retexture review explicitly preserves geometry and requires matching topology](images/saved-retexture-approval.png)

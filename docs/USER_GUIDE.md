@@ -516,7 +516,14 @@ materials; **Replace active UVs** requires exactly matching indexed topology and
 positions. **Replace textures** keeps geometry and non-UV attributes while
 replacing all UV layers and mesh materials from the saved GLB. It also requires
 exactly matching indexed topology and positions; incompatible results leave the
-source intact. Unsupported rigs, animation and multi-mesh results are rejected.
+source intact. These three policies require a single static mesh.
+**Replace with parts** accepts 2 to 128 static meshes in one GLB and replaces
+the source geometry with an empty mesh parent containing named child parts.
+Choose the segmented artifact: every mesh in that GLB becomes a part, including
+any variants or helpers it contains. Rigs and animation remain unsupported.
+Existing source children remain in place. For further editing or mesh export,
+select a child part or the retained original; the empty parent has no surface
+geometry and cannot receive another parts group.
 
 Choose **Scene coordinates** to keep the imported result's scene positions, or
 **Object local coordinates** to interpret those positions in the source's local

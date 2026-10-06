@@ -12,7 +12,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 import bpy
-from helpers import FIXTURES, submodule
+from helpers import FIXTURES, parts_glb, submodule
 from mathutils import Matrix
 
 
@@ -326,6 +326,148 @@ class MeshResultTests(unittest.TestCase):
         self.assertEqual(self.model._snapshot(), before)
         self.mesh.validate_target(self.target)
         self.assertEqual(self.path.read_bytes(), self.body)
+
+    def use_parts(self, count=2):
+        self.body = parts_glb(count)
+        self.path.write_bytes(self.body)
+        self.item = self.storage.StoredResult(
+            self.storage.ResultAsset("mesh", self.path.name, "model/gltf-binary", len(self.body)),
+            self.transfers.DownloadedResult(
+                self.path.name, len(self.body), hashlib.sha256(self.body).hexdigest()
+            ),
+        )
+
+    def test_parts_keep_source_as_parent_preserving_context_and_nested_placement(self):
+        self.use_parts()
+        parent = bpy.data.objects.new("Existing parent", None)
+        child = bpy.data.objects.new("Existing child", None)
+        self.scene.collection.objects.link(parent)
+        self.scene.collection.objects.link(child)
+        parent.location = (7, 8, 9)
+        self.source.parent = parent
+        self.source.location = (3, 4, 5)
+        self.source.scale = (2, 3, 4)
+        child.parent = self.source
+        child.location = (2, 1, 0)
+        bpy.context.view_layer.update()
+        self.target = self.mesh.capture_target(self.scene, self.source)
+        before = self.source.data
+        matrix, child_matrix = self.source.matrix_world.copy(), child.matrix_world.copy()
+        collections = tuple(self.source.users_collection)
+        result = self.apply(policy="PARTS", result_to_source=Matrix.Translation((0, 0, 4)))
+        self.assertEqual(result.source, self.source)
+        self.assertEqual(self.source.parent, parent)
+        self.assertEqual(self.source.name, self.target.name)
+        self.assertEqual(self.source.matrix_world, matrix)
+        self.assertEqual(child.matrix_world, child_matrix)
+        self.assertEqual(tuple(self.source.users_collection), collections)
+        self.assertEqual(len(self.source.data.vertices), 0)
+        self.assertEqual(result.original.data, before)
+        self.assertEqual(result.original.matrix_world, matrix)
+        self.assertEqual(len(result.parts), 2)
+        self.assertEqual(set(self.source.children), {*result.parts, child})
+        for index, part in enumerate(result.parts):
+            self.assertIn(f"Panel {index + 1}", part.name)
+            self.assertEqual(tuple(part.users_collection), collections)
+            self.assertEqual(part.matrix_world, matrix)
+            self.assertEqual(min(v.co.x for v in part.data.vertices), 2 + 3 * index)
+            self.assertEqual(min(v.co.z for v in part.data.vertices), 4)
+            self.assertTrue(part.data.uv_layers)
+            self.assertTrue(part.data.materials)
+        self.assertEqual(set(bpy.context.selected_objects), {self.source})
+        self.assertEqual(bpy.context.view_layer.objects.active, self.source)
+        images = set(bpy.data.images) - self.before["images"]
+        self.assertTrue(images)
+        self.assertTrue(all(image.packed_file and image.filepath == "" for image in images))
+        self.assertEqual(tuple(self.root.iterdir()), (self.path,))
+
+    def test_parts_anchor_cannot_accumulate_another_group_as_a_source(self):
+        self.use_parts()
+        result = self.apply(policy="PARTS")
+        self.target = self.mesh.capture_target(self.scene, self.source)
+        before = self.model._snapshot()
+        with self.assertRaisesRegex(self.module.MeshResultApplicationError, "surface geometry"):
+            self.apply(policy="PARTS")
+        self.assertEqual(self.model._snapshot(), before)
+        self.assertEqual(set(self.source.children), set(result.parts))
+
+    def test_parts_without_original_do_not_change_a_shared_source_mesh(self):
+        self.use_parts()
+        before = self.source.data
+        alias = bpy.data.objects.new("Shared source", before)
+        self.scene.collection.objects.link(alias)
+        result = self.apply(policy="PARTS", keep_original=False)
+        self.assertIsNone(result.original)
+        self.assertEqual(alias.data, before)
+        self.assertEqual(len(before.vertices), 3)
+        self.assertEqual(len(self.source.data.vertices), 0)
+
+    def test_parts_reject_single_mesh_and_excessive_part_count_without_mutation(self):
+        for count in (1, 129):
+            with self.subTest(count=count):
+                self.use_parts(count)
+                before = self.model._snapshot()
+                with self.assertRaises(self.module.MeshResultApplicationError):
+                    self.apply(policy="PARTS")
+                self.assertEqual(self.model._snapshot(), before)
+                self.mesh.validate_target(self.target)
+
+    def test_parts_enforce_aggregate_geometry_bound_before_replacement(self):
+        self.use_parts()
+        before = self.model._snapshot()
+        # Source is below the limit, but two independently safe parts exceed it.
+        source_size = 3 + 3 + 3 + 1 + sum(len(a.data) for a in self.source.data.attributes)
+        with patch.object(self.mesh, "MAX_COMPONENTS", source_size + 1):
+            with self.assertRaises(self.module.MeshResultApplicationError):
+                self.apply(policy="PARTS")
+        self.assertEqual(self.model._snapshot(), before)
+        self.mesh.validate_target(self.target)
+
+    def test_parts_publication_failure_restores_source_and_removes_new_parts(self):
+        self.use_parts()
+        before = self.model._snapshot()
+        publish = self.module._publish_parts
+
+        def fail(*args):
+            publish(*args)
+            raise RuntimeError("fixture parts publication failure")
+
+        with patch.object(self.module, "_publish_parts", side_effect=fail):
+            with self.assertRaises(self.module.MeshResultApplicationError):
+                self.apply(policy="PARTS")
+        self.assertEqual(self.model._snapshot(), before)
+        self.mesh.validate_target(self.target)
+        self.assertEqual(self.path.read_bytes(), self.body)
+
+    def test_parts_cleanup_failure_restores_source_after_imported_objects_are_removed(self):
+        self.use_parts()
+        before = self.model._snapshot()
+        release = self.module._release_import
+
+        def fail(*args):
+            release(*args)
+            raise RuntimeError("fixture parts cleanup failure")
+
+        with patch.object(self.module, "_release_import", side_effect=fail):
+            with self.assertRaises(self.module.MeshResultApplicationError):
+                self.apply(policy="PARTS")
+        self.assertEqual(self.model._snapshot(), before)
+        self.mesh.validate_target(self.target)
+
+    def test_parts_uncertain_rollback_retains_possible_applied_group(self):
+        self.use_parts()
+        with (
+            patch.object(self.module, "_release_import", side_effect=RuntimeError("fixture")),
+            patch.object(
+                self.mesh.MeshApplication, "rollback", side_effect=RuntimeError("fixture")
+            ),
+        ):
+            with self.assertRaisesRegex(RuntimeError, "uncertain") as raised:
+                self.apply(policy="PARTS")
+        self.assertNotIsInstance(raised.exception, self.module.MeshResultApplicationError)
+        self.assertEqual(len(self.source.data.vertices), 0)
+        self.assertEqual(len(self.source.children), 2)
+        self.assertTrue(all(child.data.polygons for child in self.source.children))
 
     def ready_session(self):
         import httpx

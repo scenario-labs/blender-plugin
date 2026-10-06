@@ -418,6 +418,11 @@ class SCENARIO_OT_apply_saved_mesh(bpy.types.Operator):
                 "Replace textures",
                 "Preserve geometry; adopt result UVs and materials with exactly matching topology and positions",
             ),
+            (
+                "PARTS",
+                "Replace with parts",
+                "Keep the source as an empty mesh parent; adopt every mesh in the selected GLB as a part",
+            ),
         ),
         default="REMESH",
         options={"SKIP_SAVE"},
@@ -509,13 +514,20 @@ class SCENARIO_OT_apply_saved_mesh(bpy.types.Operator):
         layout.prop(self, "keep_original")
         if self.policy == "REMESH":
             layout.label(text="Replace this mesh's geometry, UVs and mesh materials.")
+        elif self.policy == "PARTS":
+            layout.label(text="Replace source geometry with an empty mesh parent and named parts.")
+            layout.label(text="Treat every mesh in this GLB as a part, not an alternate variant.")
         elif self.policy == "RETEXTURE":
             layout.label(text="Replace all UV layers and mesh materials; preserve geometry.")
             layout.label(text="Indexed topology and positions must match exactly.")
         else:
             layout.label(text="Replace active UVs only; topology and positions must match exactly.")
         layout.label(text="Keep the source object's name, transforms, parenting and collections.")
-        layout.label(text="One static GLB mesh only. No automatic fitting or scale adjustment.")
+        layout.label(
+            text="One static GLB, 2 to 128 parts. No automatic fitting or scale adjustment."
+            if self.policy == "PARTS"
+            else "One static GLB mesh only. No automatic fitting or scale adjustment."
+        )
         layout.label(text="Keep original makes an unselected copy. Undo follows Blender settings.")
         layout.label(
             text="Undo/redo changes the scene only; saved jobs and spending stay recorded."

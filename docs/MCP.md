@@ -264,7 +264,7 @@ Do not edit this block by hand; run `make mcp-docs`. An asterisk marks a require
 | `reference_upload_status` | Read a reference upload's progress while the shared session advances its already authorized work. | `context_id`*: string<br>`reference_id`*: string | read-only annotation |
 | `list_reference_uploads` | Inspect saved uploads under the selected credential scope, including after restart. | none | read-only annotation |
 | `recover_reference_upload` | Explicitly inspect a known remote upload, cancel unclaimed preparation, or clean its finished private source copy. | `context_id`*: string<br>`request_id`*: string<br>`expected_revision`*: integer<br>`action`*: string (['refresh', 'cancel_prepared', 'cleanup']) | destructive annotation |
-| `prepare_result_application` | Prepare explicit saved image/media/model import, material assignment, panorama World replacement, or session-local World restoration. | `context_id`*: string<br>`request_id`*: string<br>`expected_revision`*: integer<br>`asset_id`: string<br>`purpose`: string (['import', 'material', 'world', 'restore_world', 'mesh_edit', 'mesh_source'])<br>`mesh_policy`: string (['REMESH', 'UV', 'RETEXTURE'])<br>`mesh_placement`: string (['WORLD', 'LOCAL'])<br>`keep_original`: boolean | read-only annotation |
+| `prepare_result_application` | Prepare explicit saved image/media/model import, material assignment, panorama World replacement, or session-local World restoration. | `context_id`*: string<br>`request_id`*: string<br>`expected_revision`*: integer<br>`asset_id`: string<br>`purpose`: string (['import', 'material', 'world', 'restore_world', 'mesh_edit', 'mesh_source'])<br>`mesh_policy`: string (['REMESH', 'UV', 'RETEXTURE', 'PARTS'])<br>`mesh_placement`: string (['WORLD', 'LOCAL'])<br>`keep_original`: boolean | read-only annotation |
 | `apply_result_application` | Apply or restore saved results after the user approves the prepared destination and operation. | `context_id`*: string<br>`application_id`*: string | destructive annotation |
 | `recover_local_job` | Explicitly recover a saved job without repeating generation or importing into another scene. | `context_id`*: string<br>`request_id`*: string<br>`expected_revision`*: integer<br>`action`*: string (['refresh', 'resume', 'cancel', 'recover_download', 'retry_receipt']) | destructive annotation |
 | `list_local_jobs` | Inspect durable local jobs for the selected API-key pair without network requests. | none | read-only annotation |
@@ -502,7 +502,7 @@ including verification, durable claims and no generation or automatic retry.
 
 `mesh_edit.undo_available` reports whether a desktop Blender history checkpoint
 was recorded for a completed saved mesh edit. This applies to REMESH, UV and
-RETEXTURE through `mesh_edit` and `mesh_source` review. Respect Blender's Global
+RETEXTURE and PARTS through `mesh_edit` and `mesh_source` review. Respect Blender's Global
 Undo and history limits; a false value does not mean application failed or may
 be repeated. Headless application does not create desktop history.
 
@@ -512,3 +512,16 @@ after a history change, including Redo; it is not rebound by object name.
 History changes discard live target authority,
 so another local application requires fresh destination review. See the
 [full history contract](MESH_APPLICATION.md#native-undo-for-saved-mesh-edits).
+
+
+### Saved parts application
+
+Use `mesh_policy: PARTS` with `purpose: mesh_edit` or `mesh_source` and one
+explicit saved GLB asset. Review that every mesh in this artifact is intended as
+a part. The source retains its object identity and becomes an empty mesh parent
+with 2 to 128 named static children; Keep original defaults to true. The same
+explicit coordinate mapping, target checks, durable claims and undo limits apply.
+`mesh_edit.parts` reports the child names while the live application is valid;
+history invalidation clears the transient mesh status without resetting the job.
+Do not reconstruct authority from those names. See the
+[parts contract](MESH_APPLICATION.md#apply-static-parts) for limits and rollback.

@@ -432,9 +432,9 @@ def captured_upload(env, *, request_id="capture", asset_id="mesh-asset", scope=N
     return record
 
 
-def mesh_quote(env, *, operation="model", value="mesh-asset", array=False):
+def mesh_quote(env, *, operation="model", value="mesh-asset", file_schema=None):
     env.model["inputs"].append(
-        {"name": "mesh", "type": "file_array" if array else "file", "kind": "3d", "required": True}
+        {"name": "mesh", "type": "file", "kind": "3d", "required": True, **(file_schema or {})}
     )
     return getattr(env.coordinator, "quote_" + operation)(
         operation + "-one",
@@ -478,12 +478,32 @@ def test_captured_mesh_is_bound_to_exact_quote_and_persisted_before_spending(env
     assert len(env.calls) == 3
 
 
-def test_array_positions_preserve_each_occurrence_without_binding_external_assets(env):
+@pytest.mark.parametrize("operation", ["model", "workflow"])
+@pytest.mark.parametrize("file_schema", [{"type": "file_array"}, {"type": "file", "array": True}])
+def test_array_positions_preserve_each_occurrence_without_binding_external_assets(
+    env, operation, file_schema
+):
     captured_upload(env)
-    quote = mesh_quote(env, value=["mesh-asset", "external-asset", "mesh-asset"], array=True)
+    values = ["mesh-asset", "external-asset", "mesh-asset"]
+    quote = mesh_quote(env, operation=operation, value=values, file_schema=file_schema)
     assert [source.index for source in quote.mesh_sources] == [0, 2]
     assert all(source.parameter == "mesh" for source in quote.mesh_sources)
-    assert env.coordinator.prepare_quote(quote).intent.mesh_sources == quote.mesh_sources
+    prepared = env.coordinator.prepare_quote(quote)
+    assert (
+        JobStore(env.store._path, env.scope).get(prepared.intent.request_id).intent.mesh_sources
+        == quote.mesh_sources
+    )
+    result = env.coordinator.submit(
+        prepared,
+        origin=env.origin,
+        operation=operation,
+        target_id=operation + "-one",
+        payload=quote.estimate.payload,
+    )
+    assert result.intent.mesh_sources == quote.mesh_sources
+    estimated, submitted = (json.loads(request.content) for request in env.calls[1:])
+    assert estimated == submitted == quote.estimate.payload
+    assert submitted["mesh"] == values and "mesh_sources" not in submitted
 
 
 def test_prompt_text_and_different_scope_cannot_claim_mesh_provenance(env):
@@ -506,9 +526,12 @@ def test_ambiguous_export_asset_never_selects_the_first_origin(env):
 
 
 @pytest.mark.parametrize("phase", ["prepare", "submit"])
-def test_missing_mesh_upload_blocks_before_persistence_or_paid_claim(env, phase):
+@pytest.mark.parametrize("file_schema", [None, {"type": "file", "array": True}])
+def test_missing_mesh_upload_blocks_before_persistence_or_paid_claim(env, phase, file_schema):
     upload = captured_upload(env)
-    quote = mesh_quote(env)
+    quote = mesh_quote(
+        env, value=["mesh-asset"] if file_schema else "mesh-asset", file_schema=file_schema
+    )
     prepared = env.coordinator.prepare_quote(quote) if phase == "submit" else None
     with sqlite3.connect(env.upload_store._path) as connection:
         connection.execute("DELETE FROM uploads WHERE request_id=?", (upload.intent.request_id,))

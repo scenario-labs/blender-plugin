@@ -290,7 +290,8 @@ Absent or null schemas without a usable fallback stop before estimation.
 The shared quote path matches only declared 3D file inputs to completed captured
 uploads in the selected credential/project scope. Prompt strings, unknown assets
 and ordinary file uploads acquire no inferred source. Repeated array values keep
-their positions; ambiguous captured records for the same asset reject the quote.
+their positions for both `type: file_array` and `type: file` with `array: true`,
+matching payload validation. Ambiguous captured records for the same asset reject the quote.
 The coordinator rechecks every binding before preparation and again before the
 paid claim. A missing or changed upload stops dispatch while preserving the job.
 

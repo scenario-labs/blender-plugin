@@ -509,7 +509,8 @@ class JobCoordinator:
             value = payload.get(spec["name"])
             values = (
                 enumerate(value)
-                if spec["type"] == "file_array" and isinstance(value, list)
+                if (spec["type"] == "file_array" or spec.get("array") is True)
+                and isinstance(value, list)
                 else ((None, value),)
             )
             for index, asset_id in values:

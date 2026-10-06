@@ -2144,6 +2144,7 @@ class ModelGenerationTests(unittest.TestCase):
                     policy="REMESH",
                     placement="WORLD",
                     keep_original=True,
+                    original_source=False,
                     report=Mock(),
                 )
                 self.assertEqual(operator.invoke(op, context, None), {"RUNNING_MODAL"})
@@ -2574,3 +2575,25 @@ class ModelGenerationTests(unittest.TestCase):
         with self.assertRaises(self.origin_error):
             jobs.session.mesh_source_target(forged)
         self.assertIsNotNone(jobs.session.mesh_source_target(binding))
+
+    def test_source_authority_rejects_edit_fingerprint_as_export_provenance(self):
+        request_id, _ = self.captured_source_result()
+        session = self.runtime.state.model_jobs.session
+        binding = self.store.get(request_id).intent.mesh_sources[0]
+        target = session.mesh_source_target(binding)
+        item = binding.mesh_source.objects[0]
+        self.assertNotEqual(item.geometry_sha256, target.geometry.hex())
+        forged = replace(
+            binding,
+            mesh_source=replace(
+                binding.mesh_source,
+                objects=(replace(item, geometry_sha256=target.geometry.hex()),),
+            ),
+        )
+        before = dict(session._mesh_sources)
+        with self.assertRaises(self.origin_error):
+            session.retain_mesh_source(forged.origin, forged.mesh_source, target)
+        self.assertEqual(session._mesh_sources, before)
+        with self.assertRaises(self.origin_error):
+            session.mesh_source_target(forged)
+        self.assertIs(session.mesh_source_target(binding), target)

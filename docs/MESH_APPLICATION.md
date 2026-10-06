@@ -259,6 +259,9 @@ Single static-mesh export retains a live `MeshTarget` before exporting, rechecks
 it afterwards and keys it by the exact upload origin and export metadata. Shared
 quotes persist that upload binding in the generation intent. Review resolves only
 this retained guard, never an object name or a reconstructed match from disk.
+Retention compares the stored export digest with a fresh export fingerprint of
+the live mesh. The stricter edit fingerprint has a different format and remains
+part of the retained target's validation, rather than substituting for that digest.
 Geometry, data identity, names, transforms, parenting and collection membership
 must still match. Unrelated scene changes can advance the scene revision without
 changing the source; review captures a fresh destination revision, which the

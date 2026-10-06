@@ -242,15 +242,18 @@ class JobSession:
     def retain_mesh_source(self, origin, source, target):
         """Retain a bounded live export guard; saved metadata cannot recreate it."""
         from .mesh_application import validate_target
+        from .mesh_export_fingerprint import fingerprints
 
         _main_thread()
         validate_target(target)
         if self.capture(target.scene, target.obj) != origin or len(source.objects) != 1:
             raise OriginUnavailable("The captured mesh context changed during export")
         item = source.objects[0]
+        # Export provenance and edit guards use distinct fingerprint formats.
+        # Compare like formats while retaining the stricter validated edit guard.
         if (
             item.target_id != origin.target_id
-            or item.geometry_sha256 != target.geometry.hex()
+            or item.geometry_sha256 != fingerprints((target.mesh,))[0].hex()
             or item.matrix_world != tuple(tuple(row) for row in target.obj.matrix_world)
         ):
             raise OriginUnavailable("The exported mesh does not match its live source")

@@ -519,3 +519,14 @@ other-platform desktop behavior or integrated release acceptance.
 [Applied parts and preserved selection](images/saved-mesh-parts-applied.png).
 
 ![Parts approval names the target and explains grouping](images/saved-mesh-parts-approval.png)
+
+The error-message update's ZIP
+`b5e207c2bd571e89e31e45e1dce24a43fd341ba1f23766bc2792e4be6445eb9c`
+passed 700 installed tests on each supported Blender version on macOS arm64.
+In an isolated 5.1.2 desktop check, confirming single-mesh replacement with a
+two-mesh fixture failed without changing either source or selection. **Job needs
+review** opened the full message identifying the saved GLB, source and edit policy.
+Escape closed it and front-view keyboard input worked in the viewport. Mock
+submissions, requests and downloads stayed unchanged, with no network attempts.
+The process exited cleanly, its profile was removed and the normal profile was
+unchanged. Earlier screenshots retain their original artifact provenance.

@@ -384,6 +384,10 @@ new datablocks. Uncertain rollback retains possible applied data and never
 permits blind replay. Native Undo/Redo restores the source or the complete parts
 group without changing durable job state or issuing service requests.
 
+Known mesh validation or application failures pause delivery with a message to
+inspect the saved GLB, source and edit policy. Uncertain outcomes keep their
+receipt-recovery warning and never authorize another application automatically.
+
 The exact packaged ZIP passed 699 installed native tests on each of macOS arm64
 Blender 5.0.1, 5.1.2 and 5.2.1. Synthetic cases cover transformed/parented sources,
 existing children, shared originals, mapping, count/component limits, empty-anchor

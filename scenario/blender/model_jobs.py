@@ -25,9 +25,10 @@ from .job_session import (
 from .material_application import MaterialApplicationError, capture_target, selected_maps
 from .material_application import validate_target as validate_material_target
 from .media_application import MEDIA_TYPES
+from .mesh_application import MeshApplicationError
 from .mesh_application import capture_target as capture_mesh_target
 from .mesh_application import validate_target as validate_mesh_target
-from .mesh_result_application import MeshEditApplication
+from .mesh_result_application import MeshEditApplication, MeshResultApplicationError
 from .mesh_result_application import validate_request as validate_mesh_request
 from .model_application import MODEL_MEDIA_TYPE
 from .model_application import validate_destination as validate_model_destination
@@ -362,6 +363,11 @@ class ModelJobs:
                     self._remember_model_application(request_id, error.application)
                 self._pause(
                     request_id, "Model application needs receipt recovery; do not apply again"
+                )
+            except (MeshApplicationError, MeshResultApplicationError):
+                self._pause(
+                    request_id,
+                    "Mesh application stopped; inspect the saved GLB, source and edit policy",
                 )
             except MediaResultUncertain as error:
                 if error.application is not None:

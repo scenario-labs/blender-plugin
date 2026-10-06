@@ -2246,6 +2246,39 @@ class ModelGenerationTests(unittest.TestCase):
         self.assertEqual(source.data, mesh)
         self.assertIn("apply_mesh", status["actions"])
 
+    def test_mesh_edit_wrong_part_count_reports_a_paused_failure_without_replay(self):
+        request_id = self.recovered_mesh_edit()
+        source = bpy.context.view_layer.objects.active
+        before = (
+            source.data,
+            set(bpy.data.objects),
+            len(self.calls),
+            len(self.paid),
+            len(self.downloads),
+        )
+        status = self.finish_application(self.prepare_mesh_edit(request_id, mesh_policy="PARTS"))
+        self.assertEqual(status["status"], "apply_failed", status)
+        self.assertTrue(status["delivery_paused"])
+        self.assertEqual(
+            status["error"],
+            "Mesh application stopped; inspect the saved GLB, source and edit policy",
+        )
+        saved = self.store.get(request_id)
+        for _ in range(3):
+            self.runtime.state.model_jobs.poll()
+        self.assertEqual(self.store.get(request_id), saved)
+        self.assertEqual(
+            (
+                source.data,
+                set(bpy.data.objects),
+                len(self.calls),
+                len(self.paid),
+                len(self.downloads),
+            ),
+            before,
+        )
+        self.assertIn("apply_mesh", status["actions"])
+
     def test_mesh_edit_retexture_mismatch_is_a_known_local_failure(self):
         request_id = self.recovered_mesh_edit()
         source = bpy.context.view_layer.objects.active
@@ -2549,6 +2582,7 @@ class ModelGenerationTests(unittest.TestCase):
         self.assertEqual(status["status"], "ready", status)
         self.assertEqual(source.data, previous)
         self.assertTrue(status["delivery_paused"])
+        self.assertIn("Mesh application stopped", status["error"])
 
     def captured_mesh_upload(self, *, live=False):
         session = self.runtime.ensure_job_session()

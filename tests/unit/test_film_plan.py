@@ -147,6 +147,31 @@ def test_explicit_approved_take_ids_preserve_original_task_records():
         mod.validate_film_plan(raw)
 
 
+@pytest.mark.parametrize("kind", ["style", "previs", "video"])
+def test_long_shot_id_reports_the_explicit_take_needed(kind):
+    raw = fixture()
+    shot = raw["shots"][0]
+    shot.update({name + "_task": "approved-" + name for name in ("style", "previs", "video")})
+    field = kind + "_task"
+    del shot[field]
+    shot["id"] = "s" * (96 - len(kind) - 1)
+    assert film_module().validate_film_plan(raw)["shots"][0][field] == shot["id"] + "-" + kind
+    shot["id"] += "s"
+    with pytest.raises(ValueError, match=f"set an explicit {field} of at most 96 characters"):
+        film_module().validate_film_plan(raw)
+
+
+def test_maximum_length_shot_id_accepts_explicit_take_names_without_rewriting():
+    raw = fixture()
+    shot = raw["shots"][0]
+    shot["id"] = "s" * 96
+    takes = {kind + "_task": kind + "x" * (96 - len(kind)) for kind in ("style", "previs", "video")}
+    shot.update(takes)
+    result = film_module().validate_film_plan(raw)["shots"][0]
+    assert result["id"] == shot["id"]
+    assert {field: result[field] for field in takes} == takes
+
+
 def test_approved_master_take_names_are_validated_without_rewriting_original_tasks():
     raw = fixture()
     raw.update({"previs_master_task": "previs-master-v2", "final_master_task": "final-master-v3"})

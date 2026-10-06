@@ -422,6 +422,11 @@ def validate_film_plan(raw: dict) -> dict:
                 raise ValueError("Dialogue offset must be inside the editorial shot.")
         for kind in ("style", "previs", "video"):
             field = kind + "_task"
+            if field not in shot and len(sid) + len(kind) + 1 > 96:
+                raise ValueError(
+                    f"Shot ID is too long to default {field}; "
+                    f"set an explicit {field} of at most 96 characters."
+                )
             val[field] = identifier(shot.get(field, sid + "-" + kind), "Approved take")
         placeholders = shot.get("placeholders", {})
         if not isinstance(placeholders, dict) or len(placeholders) > 150:

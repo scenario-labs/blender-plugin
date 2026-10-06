@@ -20,6 +20,12 @@ of editorial duration. Tasks have explicit names; another take needs another
 task name. Model parameter objects are data and still require the selected
 SDK model schema before a quote.
 
+Shot and task IDs allow up to 96 characters. Omitted `style_task`, `previs_task`
+and `video_task` use the shot ID with `-style`, `-previs` or `-video` appended.
+If that derived name exceeds 96 characters, validation names the field that needs
+an explicit task ID. A 96-character shot ID remains valid with explicit task
+names; validation does not shorten or rewrite task identities.
+
 The adopted scene schema validates primitives, bounded locations/scales/colors,
 camera paths and optional World settings. Its deterministic local templates are
 identified as local templates; they do not call a generator. This schema retains

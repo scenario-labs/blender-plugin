@@ -792,6 +792,10 @@ job...**. Success exposes **Inspect saved jobs** and a paused recovery record;
 download and destination approval remain separate. A sanitized read error allows
 an explicit retry. Legacy cache rows and files cannot substitute their old
 actions or hide this control. Drawing only inspects the current store/facade.
+Saved recovery rows keep their place when prototype jobs report progress or the
+application pump runs again. A shared row takes precedence over a legacy row
+with the same local ID. The prototype's 50-row limit does not trim saved recovery
+rows. These are display rules; they do not delete stored jobs or resume work.
 
 The exact ZIP with SHA-256
 `e572909c23aae8ddd027aa48e489f338eb34dd35b2eacdaf35cbb9a7c57f11ec`

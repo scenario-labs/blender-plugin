@@ -311,6 +311,10 @@ The cloud page itself remains an in-memory browse result. A
 can verify and save one completed model job without fabricating a local quote
 or submitting generation. Native **Save for recovery** and MCP
 `recover_cloud_job` share its bounded pending reads and paused saved-job view.
+Completed MCP results remain bound to their owning facade independently of the
+16-entry display cache. Job rows merge by request ID without periodic reordering;
+shared recovery rows take precedence over legacy collisions and are exempt from
+the prototype's existing 50-row limit.
 Neither uses old cached files, downloads results or applies to the current scene.
 The old MCP `import_result` now rejects prototype files with recovery guidance.
 History rendering ignores legacy file/action projections, including a duplicate

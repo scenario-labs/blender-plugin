@@ -340,6 +340,105 @@ class ModelGenerationTests(unittest.TestCase):
         self.assertEqual(len(self.calls), 2)
         self.assertFalse(self.downloads or self.paid)
 
+    def test_completed_cloud_reads_survive_cache_eviction_before_mcp_delivery(self):
+        self.result_fixture()
+        pending = []
+        for index in range(17):
+            deferred = self.tools.recover_cloud_job(
+                {"job_id": f"cloud-batch-{index}", "model_id": self.model["id"]}
+            )
+            owner = self.runtime.state.model_jobs
+            item = owner.cloud_reads[f"cloud-batch-{index}"]
+            deferred.run()
+            self.generation.process_model_jobs()
+            pending.append((deferred, item))
+        self.assertLessEqual(len(owner.cloud_reads), 16)
+        self.assertNotIn("cloud-batch-0", owner.cloud_reads)
+        foreign = type(owner)(owner.session, owner.store)
+        with self.assertRaisesRegex(self.request_error, "context changed"):
+            foreign.finish_cloud(pending[0][1])
+        for index, (deferred, _) in enumerate(pending):
+            result = deferred.finish(None)
+            self.assertEqual(result["job_id"], f"cloud-batch-{index}")
+            self.assertEqual(result["state"], "succeeded")
+        self.assertEqual(len(self.store.records()), 17)
+        self.assertEqual(len(self.calls), 17)
+        self.assertFalse(self.downloads or self.paid)
+
+    def test_repeated_completed_read_preserves_each_mcp_callers_result(self):
+        self.result_fixture()
+        calls = []
+        for _ in range(2):
+            deferred = self.tools.recover_cloud_job(
+                {"job_id": "cloud-repeat", "model_id": self.model["id"]}
+            )
+            deferred.run()
+            self.generation.process_model_jobs()
+            calls.append(deferred)
+        results = [deferred.finish(None) for deferred in calls]
+        self.assertEqual(results[0], results[1])
+        self.assertEqual(len(self.store.records()), 1)
+        self.assertEqual(len(self.calls), 2)
+        self.assertFalse(self.downloads or self.paid)
+
+    def test_prototype_updates_keep_shared_rows_stable_and_limit_only_prototype_rows(self):
+        owner = self.runtime.ensure_model_jobs()
+        records = submodule("core.jobs.records").JobRecord
+        handlers = submodule("blender.handlers")
+        shared = [
+            records(
+                local_id=f"shared-{index}",
+                lane="model",
+                kind="model",
+                model_id="fixture-model",
+                body={},
+                meta={"shared_job": True},
+            )
+            for index in range(55)
+        ]
+        owner.views.update((record.local_id, record) for record in shared)
+        with patch.object(owner, "poll"):
+            self.generation.process_model_jobs()
+            for index in range(60):
+                prototype = records(
+                    local_id=f"prototype-{index}",
+                    lane="image",
+                    kind="image",
+                    model_id="old",
+                    body={},
+                )
+                handlers._on_job("job_progress", prototype)
+                after_event = tuple(self.runtime.state.jobs_view)
+                self.generation.process_model_jobs()
+                self.assertEqual(tuple(self.runtime.state.jobs_view), after_event)
+            for _ in range(5):
+                self.generation.process_model_jobs()
+                self.assertEqual(tuple(self.runtime.state.jobs_view), after_event)
+        rows = self.runtime.state.jobs_view
+        self.assertEqual(len(rows), 105)
+        self.assertEqual(len({row.local_id for row in rows}), len(rows))
+        self.assertEqual([row for row in rows if row.meta.get("shared_job")], shared[::-1])
+        self.assertEqual(
+            {row.local_id for row in rows if not row.meta.get("shared_job")},
+            {f"prototype-{index}" for index in range(10, 60)},
+        )
+        self.assertFalse(self.calls or self.downloads or self.paid)
+
+    def test_shared_projection_replaces_a_colliding_legacy_row_without_duplicates(self):
+        owner = self.runtime.ensure_model_jobs()
+        records = submodule("core.jobs.records").JobRecord
+        legacy = records(local_id="same-id", lane="image", kind="image", model_id="old", body={})
+        shared = replace(legacy, meta={"shared_job": True})
+        self.runtime.state.jobs_view.append(legacy)
+        owner.views[shared.local_id] = shared
+        with patch.object(owner, "poll"):
+            self.generation.process_model_jobs()
+            submodule("blender.handlers")._on_job("job_progress", legacy)
+            self.generation.process_model_jobs()
+        self.assertEqual(len(self.runtime.state.jobs_view), 1)
+        self.assertIs(self.runtime.state.jobs_view[0], shared)
+        self.assertFalse(self.calls or self.downloads or self.paid)
+
     def test_cloud_read_completion_cannot_follow_changed_credentials(self):
         self.result_fixture()
         deferred = self.tools.recover_cloud_job(

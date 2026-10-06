@@ -68,6 +68,14 @@ reads expose pending/sanitized failure state, and the normal application pump
 attaches a successful saved-job view in paused recovery state. Closing the panel
 does not own the worker. A retired credential context cannot deliver a late read
 into its replacement. No adoption read joins automatic image application.
+The 16-entry limit belongs to the display cache: a completed read's owning MCP
+caller retains its result even after cache eviction or a later read of the same
+job. Completion checks the original facade's ownership and active session.
+
+Shared recovery rows and prototype updates use the same stable display merge.
+A scoped row replaces a colliding legacy row without duplicates, and repeated
+pump ticks preserve order. The existing 50-row prototype limit only trims
+prototype rows; it never drops shared recovery rows or changes durable records.
 
 ## Blockout plan commands
 

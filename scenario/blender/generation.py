@@ -788,9 +788,7 @@ def process_model_jobs():
         return
     _prune_ui_estimates()
     jobs.poll()
-    for view in jobs.views.values():
-        if not any(existing is view for existing in runtime.state.jobs_view):
-            runtime.state.jobs_view.insert(0, view)
+    runtime.show_job_views(jobs.views.values())
     for key, ticket in tuple(runtime.state.model_previews.items()):
         if not ticket.task.done():
             continue
@@ -857,7 +855,7 @@ def submit_generation(context, lane):
         raise ScenarioError(
             0, "Could not submit; inspect saved jobs and request a fresh price"
         ) from None
-    runtime.state.jobs_view.insert(0, rec)
+    runtime.show_job_views((rec,))
     lane_state.estimate_state = "IDLE"
     lane_state.last_error = ""
     runtime.set_message("Generation queued; its submission is saved for recovery")

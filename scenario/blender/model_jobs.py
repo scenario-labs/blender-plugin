@@ -64,6 +64,7 @@ class CloudRecovery:
     job_id: str
     model_id: str
     task: object = field(repr=False)
+    owner: object = field(repr=False)
     record: StoredJob | None = None
     error: str = ""
     pending: bool = True
@@ -169,6 +170,7 @@ class ModelJobs:
         self._mesh_destinations = {}
         self._mesh_edits = {}
         self.cloud_reads = {}
+        self._cloud_read_owner = object()
 
     def recover_cloud(self, job_id, model_id, scene):
         """Save one selected cloud job for explicit recovery, never automatic import."""
@@ -188,7 +190,7 @@ class ModelJobs:
             else:
                 raise ScenarioError(0, "Wait for a cloud recovery read to finish")
         task = self.session.adopt_cloud_job(job_id, expected_model_id=model_id, scene=scene)
-        item = CloudRecovery(job_id, model_id, task)
+        item = CloudRecovery(job_id, model_id, task, self._cloud_read_owner)
         self.cloud_reads[job_id] = item
         return item
 
@@ -210,7 +212,13 @@ class ModelJobs:
                 item.error = "Could not read this cloud job; inspect saved jobs or retry the read"
 
     def finish_cloud(self, item):
-        if not self.session.active or self.cloud_reads.get(item.job_id) is not item:
+        # Completed results can leave the bounded UI cache while a deferred MCP
+        # caller still owns its handle. Cache membership is not request ownership.
+        if (
+            not self.session.active
+            or not isinstance(item, CloudRecovery)
+            or item.owner is not self._cloud_read_owner
+        ):
             raise ScenarioError(0, "The cloud recovery context changed; inspect saved jobs")
         self._poll_cloud_reads()
         if item.pending or item.error:

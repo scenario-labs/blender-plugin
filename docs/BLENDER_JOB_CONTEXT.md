@@ -632,7 +632,10 @@ not image/mesh download or import actions.
 and first-frame upload preparation, and guarded reference removal through the
 existing native form. MCP `render_form` uses these commands; it owns no worker
 pool or paid job engine. Parameter edits are validated before applying them and
-invalidate the visible price. Removing a reference requires a key bound to its
+invalidate the visible price. Multi-select arrays accept each current schema
+choice at most once, bounded by the available choices like the native checkboxes;
+duplicates and unknown choices fail before changing any form field.
+Removing a reference requires a key bound to its
 scene, model, slot and current source; saved upload work remains independent.
 
 Render `estimate_cost` and `generate` rebuild `generation.build_request`, including

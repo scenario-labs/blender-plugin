@@ -486,13 +486,17 @@ results independently of the panel; a transient other-scene context waits for
 the unchanged recipe scene before accepting completion. Actual revision changes
 invalidate it. Cancel signals the owned process; credential/file retirement and
 shutdown signal it too. Cleanup waits until rendering and upload staging finish.
+MCP cancellation also drops a finished result that has not yet been delivered,
+without first accepting it into the current recipe scene.
 
 **Open capture** previews the local output. **Upload capture** separately confirms
 its dimensions, timing, size and full content hash for the selected connection.
 It uses the existing upload runtime. Staging must match that hash before an upload
 intent can authorize initialization; replaced bytes cannot be silently uploaded.
-The capture review consumes upload approval once, and uncertain progress remains
-in **Inspect uploads**. Once imported, select a Film upload task and choose
+The capture review consumes upload approval once. Failed, canceled and uncertain
+uploads require inspection in **Inspect uploads**, without replaying approval.
+After upload work ends, their local capture review can be discarded while keeping
+the durable upload record and staged copy. Once imported, select a Film upload task and choose
 **Use saved upload** to bind the selected saved upload to that recipe task.
 Neither capture nor upload estimates or submits generation.
 

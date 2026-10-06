@@ -119,12 +119,16 @@ def _parameter(spec, value):
     elif spec.ptype == "boolean":
         valid, prop = type(value) is bool, "bool_value"
     elif spec.ptype == "string_array":
-        valid = isinstance(value, list) and all(
-            isinstance(item, str)
-            and item
-            and "," not in item
-            and (not spec.allowed_values or item in spec.allowed_values)
-            for item in value
+        # Match the native checkboxes: each schema choice can be selected once.
+        # Bound the input before iterating or joining caller-supplied values.
+        valid = (
+            isinstance(value, list)
+            and len(value) <= len(spec.allowed_values)
+            and all(
+                isinstance(item, str) and item and "," not in item and item in spec.allowed_values
+                for item in value
+            )
+            and len(set(value)) == len(value)
         )
         prop = "multi_value"
     else:

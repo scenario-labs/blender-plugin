@@ -340,8 +340,8 @@ def render_film_capture(args):
 def film_capture_review(args):
     owner = runtime.ensure_film_jobs().session.film_capture
     action = args.get("action", "status")
-    owner.poll()
     if action == "status":
+        owner.poll()
         return owner.status(args["review_id"])
     if action == "cancel":
         return owner.cancel(args["review_id"])

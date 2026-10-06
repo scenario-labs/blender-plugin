@@ -12,6 +12,7 @@ import bpy
 
 from ..core.jobs.coordinator import LocalCaptureResult
 from ..core.jobs.local_render import RenderSpec, media_tools
+from ..core.jobs.upload_store import UploadState
 from ..core.scene.film_plan import require_plan_scope
 from . import film_jobs, film_scene, local_capture
 from .film_application import _main_thread
@@ -271,12 +272,13 @@ class FilmCaptureCommands:
                     review.completion = None
             if review.phase == "UPLOADING":
                 ticket = review.upload
-                if ticket.error:
+                state = ticket.record.state if ticket.record is not None else None
+                if ticket.error or state in {UploadState.FAILED, UploadState.CANCELED}:
                     review.phase, review.error = (
                         "UPLOAD_REVIEW",
                         "Inspect saved upload progress; do not retry",
                     )
-                elif ticket.record is not None and ticket.record.state.value == "imported":
+                elif state == UploadState.IMPORTED:
                     review.phase = "UPLOADED"
 
     def cancel(self, identifier):

@@ -251,6 +251,88 @@ class FilmCaptureTests(unittest.TestCase):
             self.owner.discard(identifier)
             self.assertFalse(directory.exists())
 
+    def test_mcp_cancel_drops_finished_undelivered_capture_in_current_recipe_scene(self):
+        other = bpy.data.scenes.new("Capture waiting scene")
+        for phase in ("RENDERING", "WAITING"):
+            with self.subTest(phase=phase):
+                identifier = self.prepare()
+                self.owner.approve(identifier)
+                review = self.owner._reviews[identifier]
+                review.task.result(5)
+                if phase == "WAITING":
+                    with bpy.context.temp_override(scene=other):
+                        self.owner.poll()
+                self.assertEqual(review.phase, phase)
+                self.assertIsNone(review.media)
+                self.assertEqual(bpy.context.scene, self.scene)
+                directory = Path(self.owner.status(identifier)["directory"])
+                self.tools.film_capture_review({"review_id": identifier, "action": "cancel"})
+                status = self.settle(identifier)
+                self.assertEqual(status["phase"], "CANCELLED")
+                self.assertEqual(status["path"], "")
+                self.assertIsNone(review.media)
+                self.assertIsNone(review.completion)
+                self.assertIsNone(review.task)
+                with self.assertRaises(ValueError):
+                    self.owner.approve(identifier)
+                self.owner.discard(identifier)
+                self.assertFalse(directory.exists())
+        self.assertEqual(len(self.render_calls), 2)
+        self.assertEqual(self.fixture.calls, [])
+
+    def assert_terminal_upload_can_be_discarded(self, identifier, expected_state):
+        review = self.owner._reviews[identifier]
+        ticket = review.upload
+        self.assertEqual(ticket.record.state.value, expected_state)
+        self.assertFalse(ticket.error)
+        record = ticket.record
+        calls = len(self.fixture.calls)
+        for _ in range(3):
+            self.references.poll()
+            self.owner.poll()
+        self.assertEqual(review.phase, "UPLOAD_REVIEW")
+        self.assertIsNone(ticket.task)
+        with self.assertRaises(ValueError):
+            self.owner.upload(identifier, self.references)
+        directory = Path(self.owner.status(identifier)["directory"])
+        self.tools.film_capture_review({"review_id": identifier, "action": "discard"})
+        self.assertFalse(directory.exists())
+        self.assertNotIn(identifier, self.owner._reviews)
+        self.assertEqual(self.session.inspect_upload(record.intent.request_id), record)
+        self.fixture.sources.verify(record.intent)
+        self.assertEqual(len(self.fixture.calls), calls)
+
+    def test_server_rejected_upload_releases_capture_review_without_retry(self):
+        original = self.fixture.handler
+
+        def reject(request):
+            response = original(request)
+            if request.url.path.endswith("/action"):
+                self.fixture.remote.update(status="failed")
+                self.fixture.remote.pop("entityId", None)
+            return response
+
+        self.fixture.handler = reject
+        identifier = self.captured()
+        self.owner.upload(identifier, self.references)
+        self.assertEqual(self.settle_upload(identifier)["phase"], "UPLOAD_REVIEW")
+        self.assertEqual(sum(r.method == "POST" for r, _ in self.fixture.calls), 2)
+        self.assert_terminal_upload_can_be_discarded(identifier, "failed")
+
+    def test_canceled_prepared_upload_releases_capture_review_without_remote_request(self):
+        identifier = self.captured()
+        self.owner.upload(identifier, self.references)
+        ticket = self.owner._reviews[identifier].upload
+        ticket.task.result(5)
+        with patch.object(self.references, "_online", return_value=False):
+            self.references.poll()
+            self.assertEqual(ticket.record.state.value, "prepared")
+            self.references.recover(
+                ticket.record.intent.request_id, ticket.record.revision, "cancel_prepared"
+            )
+        self.assert_terminal_upload_can_be_discarded(identifier, "canceled")
+        self.assertEqual(self.fixture.calls, [])
+
     def test_retirement_cancels_render_and_shutdown_cleans_owned_files(self):
         entered = threading.Event()
 

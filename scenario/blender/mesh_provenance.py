@@ -11,6 +11,7 @@ import bpy
 from ..core.api.errors import ScenarioError
 from ..core.jobs.mesh_source import MeshSource, MeshSourceObject
 from . import mesh_export, mesh_export_fingerprint
+from .job_session import OriginUnavailable
 
 
 @dataclass(frozen=True)
@@ -25,9 +26,7 @@ class _Source:
     collections: frozenset
 
 
-def _capture(scene, obj, geometry):
-    if scene != bpy.context.scene or obj not in tuple(scene.objects) or obj.type != "MESH":
-        raise ScenarioError(0, "Choose live meshes in the selected scene")
+def _capture(obj, geometry):
     return _Source(
         obj,
         obj.data,
@@ -40,13 +39,18 @@ def _capture(scene, obj, geometry):
     )
 
 
-def _capture_sources(scene, objects):
-    if scene != bpy.context.scene or any(
-        obj not in tuple(scene.objects) or obj.type != "MESH" for obj in objects
-    ):
+def _capture_sources(scene, objects, session):
+    if scene != bpy.context.scene or any(obj.type != "MESH" for obj in objects):
         raise ScenarioError(0, "Choose live meshes in the selected scene")
+    try:
+        identities = session.capture_many(scene, objects)
+    except OriginUnavailable:
+        raise ScenarioError(
+            0, "Source context is unavailable; select live meshes and capture again"
+        ) from None
     hashes = mesh_export_fingerprint.fingerprints(obj.data for obj in objects)
-    return tuple(_capture(scene, obj, digest) for obj, digest in zip(objects, hashes, strict=True))
+    snapshots = tuple(_capture(obj, digest) for obj, digest in zip(objects, hashes, strict=True))
+    return snapshots, identities
 
 
 def export_with_source(context, objects, path, session):
@@ -56,15 +60,14 @@ def export_with_source(context, objects, path, session):
         raise ScenarioError(0, "Choose between one and 64 distinct source meshes")
     scene = context.scene
     context.view_layer.update()
-    before = _capture_sources(scene, objects)
-    identities = tuple(session.capture(scene, obj) for obj in objects)
+    before, identities = _capture_sources(scene, objects, session)
     mesh_export.export_glb(context, objects, path=str(path))
     context.view_layer.update()
-    if _capture_sources(scene, objects) != before:
+    after, current = _capture_sources(scene, objects, session)
+    if after != before:
         raise ScenarioError(0, "Source mesh changed during export; inspect it before uploading")
     # Export temporarily changes selection and can evaluate the graph. Freeze the
     # upload revision after restoration, retaining the exact pre-export identities.
-    current = tuple(session.capture(scene, obj) for obj in objects)
     if any(
         (old.file_id, old.scene_id, old.target_id) != (new.file_id, new.scene_id, new.target_id)
         for old, new in zip(identities, current, strict=True)

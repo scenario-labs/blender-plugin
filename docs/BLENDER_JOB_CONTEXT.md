@@ -611,8 +611,14 @@ handle, new generation request or automatic provider-coordinate mapping.
 ## Source identity in mesh uploads
 
 Mesh capture snapshots the selected source objects before export and rechecks
-their geometry/context after the exporter restores selection. It then captures
-the upload revision, preserving the pre-export file, scene and target identities.
+their geometry/context after the exporter restores selection. The post-export
+origin supplies the upload revision while retaining the pre-export file, scene
+and target identities.
+`capture_many` validates a whole target batch against one fresh scene-membership
+set before recording any origins, retaining the main-thread and active-session
+guards. Mesh export uses one batch before and one after export; membership is
+never cached across passes. The ordinary `capture` method delegates a single
+target through the same checks, without enumerating objects for scene-only origins.
 For a single source the `JobOrigin.target_id` identifies that mesh. Multi-source
 exports persist all IDs in local `mesh_source` metadata without assigning a
 primary target. The exact export hash accompanies the upload through the existing

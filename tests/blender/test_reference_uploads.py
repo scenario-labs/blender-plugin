@@ -668,8 +668,8 @@ class ReferenceUploadTests(unittest.TestCase):
         origin = self.fixture.session.capture(self.fixture.scene, cube)
         with patch.object(
             self.fixture.session,
-            "capture",
-            side_effect=(origin, replace(origin, file_id="changed-file")),
+            "capture_many",
+            side_effect=((origin,), (replace(origin, file_id="changed-file"),)),
         ):
             with self.assertRaisesRegex(self.module.UploadNotStarted, "source context changed"):
                 self.tools.capture_reference({"source": "MESH"})
@@ -720,10 +720,17 @@ class ReferenceUploadTests(unittest.TestCase):
         with (
             patch.object(self.fixture.sources, "_max_bytes", 1024 * 1024),
             patch.object(self.fixture.sources, "_part_bytes", 1024 * 1024),
+            patch.object(
+                self.fixture.session, "capture_many", wraps=self.fixture.session.capture_many
+            ) as capture,
         ):
             result = self.tools.capture_reference({"source": "MESH"})
             ticket = self.owner.references[result["reference_id"]]
             record = ticket.task.result(5)
+        batches = [call.args[1] for call in capture.call_args_list if call.args[1] != (None,)]
+        self.assertEqual(len(batches), 2)
+        self.assertEqual(batches[0], batches[1])
+        self.assertEqual(set(batches[0]), set(meshes))
         self.assertIsNone(record.intent.origin.target_id)
         self.assertEqual(len(record.intent.mesh_source.objects), 2)
         self.assertEqual(
@@ -735,6 +742,27 @@ class ReferenceUploadTests(unittest.TestCase):
         )
         self.assertEqual(set(bpy.context.selected_objects), set(meshes))
         self.assertEqual(self.fixture.calls, [])
+
+    def test_mesh_capture_rechecks_scene_membership_after_export(self):
+        bpy.ops.mesh.primitive_cube_add()
+        obj = bpy.context.active_object
+        self.addCleanup(lambda: bpy.data.objects.remove(obj, do_unlink=True))
+        exporter = submodule("blender.mesh_export")
+        original = exporter.export_glb
+
+        def unlink_source(*args, **kwargs):
+            result = original(*args, **kwargs)
+            self.fixture.scene.collection.objects.unlink(obj)
+            return result
+
+        with patch.object(exporter, "export_glb", side_effect=unlink_source):
+            with self.assertRaisesRegex(
+                self.module.UploadNotStarted, "Source context is unavailable"
+            ):
+                self.tools.capture_reference({"source": "MESH"})
+        self.assertEqual(self.owner.references, {})
+        self.assertEqual(self.fixture.calls, [])
+        self.assertEqual(list(self.fixture.root.glob("reference-*")), [])
 
     def test_dense_mesh_snapshot_is_not_subject_to_mesh_edit_component_limit(self):
         bpy.ops.mesh.primitive_grid_add(x_subdivisions=384, y_subdivisions=384)

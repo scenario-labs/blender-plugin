@@ -509,7 +509,7 @@ class JobCoordinator:
         ]
         if not inputs:
             return ()
-        exports = self._uploads.mesh_sources()
+        exports = {}
         bindings = []
         for spec in inputs:
             value = payload.get(spec["name"])
@@ -520,7 +520,13 @@ class JobCoordinator:
                 else ((None, value),)
             )
             for index, asset_id in values:
-                matching = [record for record in exports if record.asset_id == asset_id]
+                try:
+                    _identity(asset_id)
+                except ValueError:
+                    continue  # Unset or nonopaque inputs cannot match a saved asset identity.
+                if asset_id not in exports:
+                    exports[asset_id] = self._uploads.mesh_sources(asset_id)
+                matching = exports[asset_id]
                 if not matching:
                     continue  # External assets and ordinary uploads have no inferred source.
                 if len(matching) != 1:

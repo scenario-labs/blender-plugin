@@ -566,6 +566,20 @@ uploads remain valid with no mesh provenance; no source is inferred from names.
 The shared model/workflow quote path now binds imported captured sources to
 their typed 3D input parameters and persists them before spending; see
 [generation source bindings](JOB_STORAGE.md#captured-mesh-inputs-in-generation-intents).
+Quotes look up only selected asset IDs within the credential scope, using a
+partial SQLite index of imported captured meshes. Each unique input needs one
+query and at most two decoded records; two matches still reject an ambiguous
+source. Repeated array entries keep their original positions without repeating
+the lookup, and absent optional inputs do not read upload storage. External
+assets and ordinary uploads do not gain an inferred source.
+
+Opening existing schema-2 storage builds the derived index once, without changing
+saved records, revisions, schema version or uncertain claims. SQLite maintains it
+as uploads change; subsequent quotes do not scan retained upload history. Index
+creation can take time for a large existing store. A missing index during lookup
+fails instead of silently falling back to a history scan. Preparation and
+submission still recheck the selected upload's exact identity and revision.
+
 Operation-specific result application remains separate integration.
 Session target IDs are not authority to find an object by name after restart;
 reopened files still require explicit destination review.

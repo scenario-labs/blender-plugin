@@ -481,12 +481,21 @@ def test_captured_mesh_is_bound_to_exact_quote_and_persisted_before_spending(env
 @pytest.mark.parametrize("operation", ["model", "workflow"])
 @pytest.mark.parametrize("file_schema", [{"type": "file_array"}, {"type": "file", "array": True}])
 def test_array_positions_preserve_each_occurrence_without_binding_external_assets(
-    env, operation, file_schema
+    env, monkeypatch, operation, file_schema
 ):
     captured_upload(env)
+    lookups = []
+    mesh_sources = env.upload_store.mesh_sources
+
+    def selected(asset_id):
+        lookups.append(asset_id)
+        return mesh_sources(asset_id)
+
+    monkeypatch.setattr(env.upload_store, "mesh_sources", selected)
     values = ["mesh-asset", "external-asset", "mesh-asset"]
     quote = mesh_quote(env, operation=operation, value=values, file_schema=file_schema)
     assert [source.index for source in quote.mesh_sources] == [0, 2]
+    assert lookups == ["mesh-asset", "external-asset"]
     assert all(source.parameter == "mesh" for source in quote.mesh_sources)
     prepared = env.coordinator.prepare_quote(quote)
     assert (
@@ -696,3 +705,27 @@ def test_absent_or_null_schemas_stop_before_estimation_or_mesh_binding(
     assert len(env.calls) == 1 and env.calls[0].method == "GET"
     assert env.store.records() == ()
     assert env.coordinator._quotes == {}
+
+
+@pytest.mark.parametrize("operation", ["model", "workflow"])
+def test_mesh_quote_never_lists_the_upload_history(env, monkeypatch, operation):
+    upload = captured_upload(env)
+
+    def forbidden():
+        pytest.fail("A quote must not scan the complete upload history")
+
+    monkeypatch.setattr(env.upload_store, "records", forbidden)
+    quote = mesh_quote(env, operation=operation)
+    assert quote.mesh_sources[0].upload_id == upload.intent.request_id
+
+
+def test_unset_optional_mesh_input_does_not_read_upload_history(env, monkeypatch):
+    env.model["inputs"].append({"name": "mesh", "type": "file", "kind": "3d"})
+
+    def forbidden(*args):
+        pytest.fail("An absent reference must not inspect upload history")
+
+    monkeypatch.setattr(env.upload_store, "records", forbidden)
+    monkeypatch.setattr(env.upload_store, "mesh_sources", forbidden)
+    quote = env.coordinator.quote_model("model-one", {"prompt": "fixture"}, origin=env.origin)
+    assert quote.mesh_sources == ()

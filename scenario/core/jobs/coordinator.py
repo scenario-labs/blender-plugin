@@ -22,6 +22,7 @@ from .store import (
     JobScope,
     JobState,
     JobStore,
+    LocalApplicationState,
     StoreConflict,
     StoredJob,
     _identity,
@@ -71,6 +72,14 @@ class ApplicationClaim:
 
     record: StoredJob
     paths: tuple[Path, ...]
+    local_application_id: str | None = None
+
+
+def _local_outcome(state):
+    return {
+        JobState.APPLIED: LocalApplicationState.APPLIED,
+        JobState.APPLY_FAILED: LocalApplicationState.FAILED,
+    }[state]
 
 
 class RecoveryAction(StrEnum):
@@ -297,7 +306,20 @@ class JobCoordinator:
             raise ApplicationError("Capture and approve a current application destination")
         return self._claim_application(verified, destination=destination)
 
-    def _claim_application(self, verified, *, destination=None):
+    def claim_local_application(self, verified, destination, *, purpose, asset_ids):
+        """Claim explicitly approved reuse without reopening the generation job.
+
+        The caller must bind the purpose and selected asset IDs to its review,
+        resolve the captured destination, and apply only those verified assets.
+        No SDK request, download or scene mutation is performed here.
+        """
+        if not isinstance(destination, JobOrigin):
+            raise ApplicationError("Capture and approve a current application destination")
+        return self._claim_application(
+            verified, destination=destination, local=(purpose, asset_ids)
+        )
+
+    def _claim_application(self, verified, *, destination=None, local=None):
         with self._lock:
             if (
                 not self._active
@@ -308,7 +330,10 @@ class JobCoordinator:
             if self._origin_guard is None:
                 raise ApplicationError("Configure an origin guard before applying results")
             record = verified.record
-            if record.state not in {JobState.READY, JobState.APPLY_FAILED}:
+            eligible = (
+                {JobState.APPLIED} if local is not None else {JobState.READY, JobState.APPLY_FAILED}
+            )
+            if record.state not in eligible:
                 raise ApplicationError("This result is not eligible for application")
             destination = destination or record.intent.origin
             with self._origin_guard(destination) as current:
@@ -319,13 +344,24 @@ class JobCoordinator:
                 # A failed durable write can be uncertain. Never reuse this
                 # verification ticket to infer that the claim did not commit.
                 del self._verified_results[id(verified)]
-                claimed = self._store.transition(
-                    record.intent.request_id,
-                    expected_revision=record.revision,
-                    state=JobState.APPLYING,
-                    application_origin=destination,
-                )
-                claim = ApplicationClaim(claimed, verified.paths)
+                local_id = uuid.uuid4().hex if local is not None else None
+                if local is not None:
+                    claimed = self._store.claim_local_application(
+                        record.intent.request_id,
+                        expected_revision=record.revision,
+                        application_id=local_id,
+                        destination=destination,
+                        purpose=local[0],
+                        asset_ids=local[1],
+                    )
+                else:
+                    claimed = self._store.transition(
+                        record.intent.request_id,
+                        expected_revision=record.revision,
+                        state=JobState.APPLYING,
+                        application_origin=destination,
+                    )
+                claim = ApplicationClaim(claimed, verified.paths, local_id)
                 self._application_claims[id(claim)] = claim
                 return claim
 
@@ -347,7 +383,18 @@ class JobCoordinator:
             if not isinstance(claim, ApplicationClaim) or claim not in self._application_receipts:
                 raise ApplicationError("Use an attempted application receipt from this owner")
             state = self._application_receipts[claim]
-            expected = replace(claim.record, state=state, revision=claim.record.revision + 1)
+            if claim.local_application_id is None:
+                expected = replace(claim.record, state=state, revision=claim.record.revision + 1)
+            else:
+                items = claim.record.local_applications
+                expected = replace(
+                    claim.record,
+                    revision=claim.record.revision + 1,
+                    local_applications=(
+                        *items[:-1],
+                        replace(items[-1], state=_local_outcome(state)),
+                    ),
+                )
             current = self._store.get(claim.record.intent.request_id)
             if current == expected:
                 self._application_claims.pop(id(claim), None)
@@ -371,9 +418,17 @@ class JobCoordinator:
                 raise StoreConflict("Application claim changed; inspect saved state")
             # Application itself may invalidate its origin or deactivate its
             # context. Its receipt still belongs only to the original store.
-            finished = self._store.transition(
-                record.intent.request_id, expected_revision=record.revision, state=state
-            )
+            if claim.local_application_id is None:
+                finished = self._store.transition(
+                    record.intent.request_id, expected_revision=record.revision, state=state
+                )
+            else:
+                finished = self._store.finish_local_application(
+                    record.intent.request_id,
+                    expected_revision=record.revision,
+                    application_id=claim.local_application_id,
+                    state=_local_outcome(state),
+                )
             del self._application_claims[id(claim)]
             return finished
 
@@ -604,7 +659,16 @@ class JobCoordinator:
             if not self._active:
                 raise RecoveryError("This job context is inactive")
             return tuple(
-                RecoveryItem(record, _RECOVERY[record.state]) for record in self._store.records()
+                RecoveryItem(
+                    record,
+                    RecoveryAction.REVIEW_APPLICATION
+                    if any(
+                        item.state == LocalApplicationState.APPLYING
+                        for item in record.local_applications
+                    )
+                    else _RECOVERY[record.state],
+                )
+                for record in self._store.records()
             )
 
     def cancel_prepared(self, request_id, *, expected_revision):

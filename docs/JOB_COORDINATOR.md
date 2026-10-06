@@ -483,3 +483,30 @@ native destination remains separate integration.
 `quote_translate` uses the fixed `translate` operation and target, bypassing
 model discovery. Its worker snapshots the prompt and preserves the same bounded
 queue, exact quote identity, origin checks and durable single-use submission.
+
+
+## Explicit local reuse claims
+
+`claim_local_application(verified, destination, purpose=..., asset_ids=...)` is a
+separate local command for an already-applied generation. It requires verified
+results issued by this active owner, an unchanged scoped record and a current
+explicit destination under the existing origin guard. The caller must bind the
+purpose and exact selected IDs to its user review, apply only those assets, and
+recheck actual bytes before decoding. The command consumes verification before
+attempting its durable write; a failed or lost response never returns authority
+to repeat scene work. Ordinary `claim_application` still rejects applied jobs.
+
+The returned owner-local `ApplicationClaim` identifies its separate durable
+[local application record](JOB_STORAGE.md#durable-local-result-reuse).
+`complete_application` and `fail_application` preserve the generation's completed
+state and record only the local outcome. `retry_application_receipt` freezes the
+first reported outcome, recognizes an exact committed successor after a lost
+response, and retries persistence only. Retirement may prevent new application
+while an already-known receipt still finishes in its original scope. Copied
+claims, other owners and a restarted process cannot invent receipt evidence.
+
+`recovery_plan` reports `review_application` for unfinished local reuse even
+though the original generation stays applied. Restart never authorizes replay or
+assumes the scene was unchanged. New destination/selection approval and native
+UI/MCP reuse remain follow-up integration; no Scenario service operation, download,
+paid submission or Blender mutation is performed by these commands.

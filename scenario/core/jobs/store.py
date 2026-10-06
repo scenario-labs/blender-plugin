@@ -22,7 +22,7 @@ from urllib.parse import urlsplit
 from .result_metadata import TEXTURE_ROLES
 from .transfers import DownloadedResult, TransferError, _root, validate_result_name
 
-_VERSION = 4
+_VERSION = 5
 _APPLICATION_ID = 0x53434A42
 
 
@@ -246,6 +246,47 @@ def _validate_results(results):
         raise ValueError("Result asset identities and filenames must be unique")
 
 
+class LocalApplicationState(StrEnum):
+    APPLYING = "applying"
+    APPLIED = "applied"
+    FAILED = "failed"
+
+
+@dataclass(frozen=True)
+class LocalApplication:
+    """One approved local reuse; never an authorization to generate or download."""
+
+    application_id: str
+    source_revision: int
+    destination: JobOrigin
+    purpose: str
+    asset_ids: tuple[str, ...]
+    state: LocalApplicationState = LocalApplicationState.APPLYING
+
+    def __post_init__(self):
+        _identity(self.application_id)
+        if type(self.source_revision) is not int or self.source_revision < 0:
+            raise ValueError("Capture the source job revision before local application")
+        if not isinstance(self.destination, JobOrigin):
+            raise ValueError("Capture the local application destination")
+        if not isinstance(self.purpose, str) or self.purpose not in {
+            "images",
+            "media",
+            "model",
+            "world",
+            "material",
+        }:
+            raise ValueError("Choose a supported local application purpose")
+        if not isinstance(self.asset_ids, tuple) or not 1 <= len(self.asset_ids) <= 128:
+            raise ValueError("Choose a bounded immutable selection of saved assets")
+        for asset_id in self.asset_ids:
+            _identity(asset_id)
+        if len(set(self.asset_ids)) != len(self.asset_ids):
+            raise ValueError("Select each saved asset only once")
+        if not isinstance(self.state, LocalApplicationState):
+            raise ValueError("Use a supported local application state")
+
+
 @dataclass(frozen=True)
 class StoredJob:
     intent: JobIntent
@@ -254,6 +295,35 @@ class StoredJob:
     remote_job_id: str | None = None
     results: tuple[StoredResult, ...] = ()
     application_origin: JobOrigin | None = None
+    local_applications: tuple[LocalApplication, ...] = ()
+
+
+def _validate_local_applications(record):
+    items = record.local_applications
+    if not isinstance(items, tuple) or len(items) > 128:
+        raise ValueError("Use a bounded immutable local application history")
+    if items and record.state != JobState.APPLIED:
+        raise ValueError("Only completed jobs can have local reuse records")
+    identifiers = set()
+    assets = {item.asset.asset_id for item in record.results}
+    revision = -1
+    for index, item in enumerate(items):
+        if not isinstance(item, LocalApplication):
+            raise ValueError("Invalid local application record")
+        if (
+            item.application_id in identifiers
+            or not revision < item.source_revision < record.revision
+            or (index > 0 and item.source_revision != revision + 2)
+            or not set(item.asset_ids) <= assets
+            or (item.state == LocalApplicationState.APPLYING and index != len(items) - 1)
+        ):
+            raise ValueError("Local application identity, revision or assets are inconsistent")
+        identifiers.add(item.application_id)
+        revision = item.source_revision
+    if items and record.revision != revision + (
+        1 if items[-1].state == LocalApplicationState.APPLYING else 2
+    ):
+        raise ValueError("Local application outcome and saved revision are inconsistent")
 
 
 def _json(value):
@@ -276,6 +346,8 @@ def _decode(raw, scope, *, version=_VERSION):
         }
         if version >= 3:
             expected.add("application_origin")
+        if version >= 5:
+            expected.add("local_applications")
         if not isinstance(value, dict) or set(value) != expected:
             raise ValueError
         intent = value.pop("intent")
@@ -319,9 +391,39 @@ def _decode(raw, scope, *, version=_VERSION):
             results.append(StoredResult(ResultAsset(**item["asset"]), receipt))
         results = tuple(results)
         _validate_results(results)
+        raw_applications = value.pop("local_applications", [])
+        if not isinstance(raw_applications, list) or len(raw_applications) > 128:
+            raise ValueError
+        applications = []
+        for item in raw_applications:
+            if not isinstance(item, dict) or set(item) != set(
+                LocalApplication.__dataclass_fields__
+            ):
+                raise ValueError
+            if not isinstance(item["destination"], dict) or set(item["destination"]) != set(
+                JobOrigin.__dataclass_fields__
+            ):
+                raise ValueError
+            if not isinstance(item["asset_ids"], list):
+                raise ValueError
+            applications.append(
+                LocalApplication(
+                    **{
+                        **item,
+                        "destination": JobOrigin(**item["destination"]),
+                        "asset_ids": tuple(item["asset_ids"]),
+                        "state": LocalApplicationState(item["state"]),
+                    }
+                )
+            )
         record = StoredJob(
-            intent=JobIntent(**intent), results=results, application_origin=application, **value
+            intent=JobIntent(**intent),
+            results=results,
+            application_origin=application,
+            local_applications=tuple(applications),
+            **value,
         )
+        _validate_local_applications(record)
         state = JobState(record.state)
         if (application is not None) != (
             state in {JobState.APPLYING, JobState.APPLY_FAILED, JobState.APPLIED}
@@ -414,7 +516,7 @@ class JobStore:
                     )
                     connection.execute(f"PRAGMA application_id = {_APPLICATION_ID}")
                     connection.execute(f"PRAGMA user_version = {_VERSION}")
-                elif version in {2, 3} and application == _APPLICATION_ID:
+                elif version in {2, 3, 4} and application == _APPLICATION_ID:
                     self._upgrade_previous(connection, version)
                 else:
                     self._check_version(connection)
@@ -657,6 +759,80 @@ class JobStore:
                 ),
             )
         return updated
+
+    def _update_local_applications(self, request_id, expected_revision, update):
+        _identity(request_id)
+        if type(expected_revision) is not int or expected_revision < 0:
+            raise ValueError("A nonnegative expected revision is required")
+        with self._connection(write=True) as connection:
+            previous = self._read(connection, request_id)
+            if previous is None or previous.revision != expected_revision:
+                raise StoreConflict("Saved result changed; inspect it before local reuse")
+            if previous.state != JobState.APPLIED:
+                raise ValueError("Local reuse requires a completed original application")
+            updated = replace(
+                previous, revision=previous.revision + 1, local_applications=update(previous)
+            )
+            _validate_local_applications(updated)
+            connection.execute(
+                "UPDATE jobs SET revision=?, record=? WHERE scope=? AND request_id=? AND revision=?",
+                (
+                    updated.revision,
+                    _json(asdict(updated)),
+                    self._key,
+                    request_id,
+                    expected_revision,
+                ),
+            )
+        return updated
+
+    def claim_local_application(
+        self, request_id, *, expected_revision, application_id, destination, purpose, asset_ids
+    ):
+        """Persist one explicit reuse before scene mutation; leave generation completed.
+
+        The coordinator must verify receipts and the approved destination first.
+        This storage primitive cannot establish byte integrity or user approval.
+        An unfinished record survives restart and forbids another reuse claim.
+        """
+        application = LocalApplication(
+            application_id, expected_revision, destination, purpose, asset_ids
+        )
+
+        def update(previous):
+            if any(
+                item.state == LocalApplicationState.APPLYING for item in previous.local_applications
+            ):
+                raise StoreConflict(
+                    "An unfinished local application requires review; do not repeat it"
+                )
+            if any(item.application_id == application_id for item in previous.local_applications):
+                raise StoreConflict("Local application identity was already used")
+            return (*previous.local_applications, application)
+
+        return self._update_local_applications(request_id, expected_revision, update)
+
+    def finish_local_application(self, request_id, *, expected_revision, application_id, state):
+        """Record known success or confirmed no-change/full rollback, never uncertainty.
+
+        A failed write may have committed. Inspect its exact successor or retry
+        only the known outcome; this method never authorizes scene work again.
+        """
+        _identity(application_id)
+        if not isinstance(state, LocalApplicationState) or state == LocalApplicationState.APPLYING:
+            raise ValueError("Record only a known local application outcome")
+
+        def update(previous):
+            items = previous.local_applications
+            if (
+                not items
+                or items[-1].application_id != application_id
+                or items[-1].state != LocalApplicationState.APPLYING
+            ):
+                raise StoreConflict("Use the unfinished local application identity")
+            return (*items[:-1], replace(items[-1], state=state))
+
+        return self._update_local_applications(request_id, expected_revision, update)
 
     def set_results(self, request_id, assets, *, expected_revision):
         """Bind a trusted scoped result manifest once, before any file transfer."""

@@ -123,6 +123,7 @@ class JobStoreTests(unittest.TestCase):
             self.assertEqual(record.results[0].asset.texture_role, "normal")
             with closing(sqlite3.connect(root / "jobs.sqlite3")) as connection, connection:
                 raw = json.loads(connection.execute("SELECT record FROM jobs").fetchone()[0])
+                del raw["local_applications"]
                 del raw["results"][0]["asset"]["texture_role"]
                 connection.execute("UPDATE jobs SET record=?", (json.dumps(raw),))
                 connection.execute("PRAGMA user_version=3")
@@ -135,13 +136,55 @@ class JobStoreTests(unittest.TestCase):
             )
             self.assertEqual(reopened.get("result-request"), record)
             with closing(sqlite3.connect(root / "jobs.sqlite3")) as connection, connection:
-                self.assertEqual(connection.execute("PRAGMA user_version").fetchone()[0], 4)
+                self.assertEqual(connection.execute("PRAGMA user_version").fetchone()[0], 5)
             with self.assertRaises(sqlite3.ProgrammingError):
                 connection.execute("SELECT 1")
             verified = transfers.verify_download(root, record.results[0].receipt)
             self.assertEqual(verified.name, asset.name)
             self.assertTrue(verified.parent.samefile(root))
             self.assertTrue(verified.samefile(root / asset.name))
+            for state in (module.JobState.READY, module.JobState.APPLYING, module.JobState.APPLIED):
+                record = reopened.transition(
+                    "result-request", expected_revision=record.revision, state=state
+                )
+            with closing(sqlite3.connect(root / "jobs.sqlite3")) as connection, connection:
+                raw = json.loads(connection.execute("SELECT record FROM jobs").fetchone()[0])
+                del raw["local_applications"]
+                connection.execute("UPDATE jobs SET record=?", (json.dumps(raw),))
+                connection.execute("PRAGMA user_version=4")
+            reopened = module.JobStore(root / "jobs.sqlite3", scope)
+            self.assertEqual(reopened.get("result-request"), record)
+            original = record
+            destination = module.JobOrigin("new-file", "new-scene", "new-revision")
+            record = reopened.claim_local_application(
+                "result-request",
+                expected_revision=record.revision,
+                application_id="reuse-one",
+                destination=destination,
+                purpose="images",
+                asset_ids=("asset",),
+            )
+            reopened = module.JobStore(root / "jobs.sqlite3", scope)
+            self.assertEqual(reopened.get("result-request"), record)
+            with self.assertRaises(module.StoreConflict):
+                reopened.claim_local_application(
+                    "result-request",
+                    expected_revision=record.revision,
+                    application_id="duplicate",
+                    destination=destination,
+                    purpose="images",
+                    asset_ids=("asset",),
+                )
+            record = reopened.finish_local_application(
+                "result-request",
+                expected_revision=record.revision,
+                application_id="reuse-one",
+                state=module.LocalApplicationState.APPLIED,
+            )
+            self.assertEqual(
+                replace(record, revision=original.revision, local_applications=()), original
+            )
+            self.assertEqual(record.local_applications[0].destination, destination)
             (root / asset.name).write_bytes(b"corrupt")
             with self.assertRaises(transfers.TransferError):
                 transfers.verify_download(root, record.results[0].receipt)

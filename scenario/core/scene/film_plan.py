@@ -24,7 +24,10 @@ def identifier(value: Any, label: str = "Identifier") -> str:
 def _text(value: Any, label: str, maximum: int = 12000) -> str:
     if not isinstance(value, str) or len(value) > maximum:
         raise ValueError(f"{label} must be text of at most {maximum} characters.")
-    return value.replace("\u2014", ", ").strip()
+    value = value.replace("\u2014", ", ").strip()
+    if len(value) > maximum:
+        raise ValueError(f"{label} must be text of at most {maximum} characters.")
+    return value
 
 
 def frame_time(value: Any, label: str, fps: int, low: float, high: float) -> float:
@@ -363,6 +366,8 @@ def validate_film_plan(raw: dict) -> dict:
         duration = frame_time(shot["duration"], "Shot duration", plan["fps"], 1, 30)
         frames = round(duration * plan["fps"])
         trim = frame_time(shot.get("source_trim", 0), "Source trim", plan["fps"], 0, 29)
+        if trim + duration > 30 + 1e-6:
+            raise ValueError("Shot source_trim plus duration cannot exceed 30 seconds.")
         source_duration = _number(
             shot.get("source_duration", max(4, math.ceil(trim + duration))),
             "Source duration",

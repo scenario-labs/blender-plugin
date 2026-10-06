@@ -76,6 +76,55 @@ def test_six_shots_cover_exactly_ninety_seconds_without_overlaps():
 
 
 @pytest.mark.parametrize(
+    "field,maximum",
+    [
+        ("style", 12000),
+        ("story", 12000),
+        ("action", 5000),
+        ("entry", 5000),
+        ("exit", 5000),
+        ("notes", 5000),
+        ("description", 4000),
+        ("dialogue", 4000),
+        ("placeholders", 2000),
+    ],
+)
+def test_normalized_recipe_text_obeys_its_field_limit(field, maximum):
+    raw = fixture()
+    shot = raw["shots"][0]
+    if field in {"style", "story"}:
+        target, key = raw, field
+    elif field == "description":
+        target, key = raw["heroes"]["courier"], field
+    elif field == "dialogue":
+        shot["dialogue"] = {"text": "", "speaker": "Courier", "task": "speech", "offset": 0}
+        target, key = shot["dialogue"], "text"
+    elif field == "placeholders":
+        target, key = shot["placeholders"], "mountain"
+    else:
+        target, key = shot, field
+    target[key] = "x" * (maximum - 3) + "\u2014x"
+    film_module().validate_film_plan(raw)
+    target[key] += "x"
+    with pytest.raises(ValueError, match=f"at most {maximum} characters"):
+        film_module().validate_film_plan(raw)
+
+
+@pytest.mark.parametrize("source_duration", [None, 30])
+def test_impossible_editorial_window_names_trim_and_duration(source_duration):
+    raw = fixture()
+    shot = raw["shots"][0]
+    shot["source_trim"] = 20
+    if source_duration is not None:
+        shot["source_duration"] = source_duration
+    result = film_module().validate_film_plan(raw)
+    assert result["shots"][0]["source_duration"] == 30
+    shot["source_trim"] += 1 / raw["fps"]
+    with pytest.raises(ValueError, match="source_trim plus duration cannot exceed 30 seconds"):
+        film_module().validate_film_plan(raw)
+
+
+@pytest.mark.parametrize(
     "change",
     ["unknown_hero", "duplicate_shot", "nan_duration", "executable_scene", "negative_keyframe"],
 )

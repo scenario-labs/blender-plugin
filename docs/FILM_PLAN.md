@@ -20,6 +20,9 @@ of editorial duration. Tasks have explicit names; another take needs another
 task name. Model parameter objects are data and still require the selected
 SDK model schema before a quote.
 
+Text-field limits apply both before and after punctuation normalization. Replacing
+an em dash with a comma and space cannot produce a value above its field limit.
+
 Shot and task IDs allow up to 96 characters. Omitted `style_task`, `previs_task`
 and `video_task` use the shot ID with `-style`, `-previs` or `-video` appended.
 If that derived name exceeds 96 characters, validation names the field that needs
@@ -38,6 +41,8 @@ cover consecutive frame ranges without gaps. Source duration must cover the
 editorial trim/window; the adopted source-duration contract still permits only
 whole seconds from four to thirty. This inherited restriction is not a claim
 about every provider's current model capabilities.
+An editorial window longer than thirty seconds reports the `source_trim` plus
+`duration` conflict, whether `source_duration` is explicit or omitted.
 
 Audio helpers validate dialogue, sound effects and music tracks, source trims,
 gains, looping and non-overlapping duck intervals. They calculate segments; they

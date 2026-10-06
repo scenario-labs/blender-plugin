@@ -626,4 +626,4 @@ desktop or integrated release acceptance. Catalog loading text is fixture state.
 
 ![Separate World restoration review for the second scene](images/world-scene-restore-approval.png)
 
-![Restoration completed for both scenes](images/world-scenes-restored.png)
+![Restoration finished after each scene recovered its original World](images/world-scenes-restored.png)

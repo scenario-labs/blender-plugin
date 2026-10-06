@@ -16,8 +16,8 @@
       "scenario/blender/world_application.py": "95a10cae5b1ec3fdc758a18dcb4e70a50ffe10961c1ab38e0c5bb9ea6dbe8934",
       "scenario/blender/job_recovery.py": "fe34f477610695ca8631184fa208d736ad49b360617c9cb1b2546ca1832bc926",
       "tests/blender/test_model_generation.py": "c69858a8121cf7090cd5925f87ca843095651a6fbac363ae0c1aa4cd6d019cef",
-      "docs/images/world-scene-restore-approval.png": "bbc827b1f81e4d65f3d4f16c4ac81cfe3ab255dfd7a45828238ce22f1a3a86a2",
-      "docs/images/world-scenes-restored.png": "7d7e36b9c9eaa5980cc5755adc7f6c729fc81646e4133a8cbe77dbbb0269d2e5"
+      "docs/images/world-scene-restore-approval.png": "6c8d6fa28c74cfb53bbf9c2b0786286b57da00c2cc75edaad6f3a843f451e0db",
+      "docs/images/world-scenes-restored.png": "b45bf138e784fa6d93c4519a283b8376aa455174f69a0819917239e2a31d6bb7"
     }
   }
 }

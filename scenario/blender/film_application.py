@@ -11,6 +11,7 @@ import bpy
 
 from ..core.jobs.film_sources import select_shot_sources, shot_records
 from ..core.jobs.results import VerifiedResults
+from ..core.jobs.workers import WorkerError
 from . import film_scene
 
 
@@ -161,14 +162,13 @@ class FilmShotCommands:
         review.phase = "READY"
 
     def poll(self):
+        from .job_session import SessionBusy
+
         _main_thread()
         for review in self._reviews.values():
             if review.phase in {"READY", "VERIFYING"}:
                 try:
                     self._check(review, selected=False)
-                    if review.scene != bpy.context.scene:
-                        # Keep completed work queued for its unchanged source context.
-                        continue
                 except Exception:
                     review.phase, review.error = "ERROR", "Film recipe, scene or connection changed"
                     review.completions.clear()
@@ -186,13 +186,29 @@ class FilmShotCommands:
                         if not any(source.record == record for source in review.sources):
                             raise ValueError("Film verification returned a different saved job")
                         review.completions[record.intent.request_id] = completion
-                        self._advance(review)
                     except Exception:
                         review.phase, review.error = (
                             "ERROR",
                             "Film shot or saved files changed; prepare a new review",
                         )
                         review.completions.clear()
+            if review.phase == "VERIFYING" and review.task is None:
+                try:
+                    if review.scene != bpy.context.scene:
+                        # Drained outcomes stay in this bounded review, without
+                        # occupying shared session slots or approving another scene.
+                        continue
+                    self._advance(review)
+                except (SessionBusy, WorkerError):
+                    # No verification was admitted. Preserve earlier outcomes and
+                    # recheck the recipe, origin and sources on the next pump.
+                    continue
+                except Exception:
+                    review.phase, review.error = (
+                        "ERROR",
+                        "Film shot or saved files changed; prepare a new review",
+                    )
+                    review.completions.clear()
 
     def status(self, identifier):
         _main_thread()

@@ -178,7 +178,9 @@ so an invalidated price requests a fresh estimate without implying a saved job.
 Deleted scene wrappers are
 skipped during read-only panel lookup and retired by the pump. Completed quote
 and association delivery waits while another scene is current, then rechecks the
-unchanged original scene before consuming its completion. Blender dependency
+unchanged original scene before consuming its completion. Finished tasks are
+drained immediately into bounded Film handles, releasing shared session slots
+even while delivery waits for that scene. Blender dependency
 revision changes, including those emitted during scene activation, still reject
 the old quote and require a fresh estimate. **Discard estimate**
 releases an unused current quote for repricing. A saved task cannot be spent again,
@@ -280,7 +282,11 @@ stale revisions and non-GLB selections fail. It never selects an arbitrary first
 variant. API keys keep their credential-bound default project; no discovery is
 required. Receipt verification is serially admitted per distinct source job, so
 hero counts do not require a larger worker pool. A transient other-scene timer
-context defers delivery; real origin changes still invalidate the review.
+context defers delivery, while finished verification is drained into its bounded
+review to release shared session slots. A full queue postpones admission of the
+next verification without discarding earlier results. Every later admission
+rechecks the recipe, origin and source records; real changes still invalidate
+the review. No scene build or paid action is retried by this queue handling.
 
 Separate `approve(review_id)` rechecks the unchanged recipe, destination, source
 records, owned verification tickets and GLB bytes. It consumes the review before

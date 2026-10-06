@@ -252,7 +252,9 @@ class FilmApplicationTests(unittest.TestCase):
         with bpy.context.temp_override(scene=other):
             self.commands.poll()
         self.assertEqual(review.phase, "VERIFYING")
-        self.assertIsNotNone(review.task)
+        self.assertIsNone(review.task)
+        self.assertEqual(len(review.completions), 1)
+        self.assertEqual(self.session._pending, [])
         self.assertEqual(self.settle(identifier)["phase"], "READY")
         self.assertEqual(self.commands.approve(identifier)["phase"], "BUILT")
 
@@ -465,6 +467,43 @@ class FilmApplicationTests(unittest.TestCase):
                 self.prepare()
         self.assertEqual(self.commands._reviews, {})
         self.assertEqual(self.commands.status(self.ready())["phase"], "READY")
+
+    def test_full_completion_queue_preserves_finished_hero_and_resumes_verification(self):
+        identifier = self.prepare()
+        review = self.commands._reviews[identifier]
+        review.task.result(5)
+        blocker = self.session.verify_results(
+            self.rows[0].intent.request_id, expected_revision=self.rows[0].revision
+        )
+        blocker.result(5)
+        self.session._completion_limit = 1
+        self.commands.poll()
+        self.assertEqual(review.phase, "VERIFYING", review.error)
+        self.assertIsNone(review.task)
+        self.assertEqual(len(review.completions), 1)
+        self.assertEqual(self.states(), [self.storage.JobState.READY] * 2)
+        first_completion = next(iter(review.completions.values()))
+        self.session.drain(task=blocker)
+        self.assertEqual(self.settle(identifier)["phase"], "READY")
+        self.assertIs(review.completions[self.rows[0].intent.request_id], first_completion)
+        self.assertEqual(self.commands.approve(identifier)["phase"], "BUILT")
+
+    def test_full_worker_queue_preserves_finished_hero_and_rechecks_changed_source(self):
+        identifier = self.prepare()
+        review = self.commands._reviews[identifier]
+        review.task.result(5)
+        workers = submodule("core.jobs.workers")
+        with patch.object(
+            self.session._workers, "verify_results", side_effect=workers.WorkerError("Full queue")
+        ):
+            self.commands.poll()
+            self.assertEqual(review.phase, "VERIFYING", review.error)
+            self.assertEqual(len(review.completions), 1)
+        self.scene.scenario_film.production_id = "changed-production"
+        self.commands.poll()
+        self.assertEqual(review.phase, "ERROR")
+        self.assertEqual(review.completions, {})
+        self.assertEqual(self.states(), [self.storage.JobState.READY] * 2)
 
     def test_worker_cannot_prepare_or_approve(self):
         identifier = self.ready()

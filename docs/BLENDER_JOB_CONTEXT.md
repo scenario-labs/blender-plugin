@@ -59,6 +59,9 @@ exact values and discard obsolete ready quotes, including captured frame/depende
 revision changes. Approval rechecks before persistence and does not replace a
 submitted task's saved status with a new estimate attempt. The session command still operates
 on a snapshot; no additional worker or job engine is introduced.
+Finished quote and association tasks leave the shared completion queue immediately.
+Their bounded Film handles retain the outcomes until the unchanged source scene
+can receive them, so an unselected scene cannot occupy shared admission slots.
 
 `JobSession.bind_film_upload` queues the local upload-task association with an
 explicit observed upload revision and captured caller origin. It shares normal
@@ -79,9 +82,12 @@ the new shot scene is built; repeated actors do not duplicate a job claim.
 
 Deleted scenes, real origin changes, changed recipes and retired credentials reject
 delivery/application. Temporarily different timer contexts defer delivery to the
-unchanged source scene. Confirmed rollback records failure; partial claims or
-incomplete cleanup remain uncertain. Known success/failure receipt writes can be
-retried without repeating scene work. Explicitly acknowledging inspection can
+unchanged source scene. Finished verification leaves shared session
+slots even while its review waits for the original scene. Temporary admission
+failure preserves earlier verification and retries only the unqueued local read,
+after rechecking the recipe, origin and sources. Confirmed rollback records failure;
+partial claims or incomplete cleanup remain uncertain. Known success/failure
+receipt writes can be retried without repeating scene work. Explicitly acknowledging inspection can
 dismiss an uncertain review only after known receipts have been saved; it never
 clears an uncertain durable claim or rebuilds a scene. Restart requires a fresh review, using the
 same durable results and explicit application recovery policy. The command is

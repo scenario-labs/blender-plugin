@@ -564,7 +564,16 @@ class FilmControlsTests(unittest.TestCase):
         with self.assertRaisesRegex(Exception, "context changed"):
             self.tools.bind_film_upload(dict(args, context_id="stale"))
         deferred = self.tools.bind_film_upload(args)
-        self.assertEqual(deferred.finish(deferred.run())["state"], "bound")
+        result = deferred.run()
+        other = bpy.data.scenes.new("Other upload timer context")
+        try:
+            with bpy.context.temp_override(scene=other):
+                owner.poll()
+                self.assertEqual(owner.current(self.scene, "source").phase, "BINDING")
+                self.assertEqual(owner.session._pending, [])
+            self.assertEqual(deferred.finish(result)["state"], "bound")
+        finally:
+            bpy.data.scenes.remove(other)
         self.scene.scenario_film.task_index = 0
         self.assertNotIn("scenario.bind_film_upload", self.drawn_operators())
         self.assertNotIn("scenario.quote_film", self.drawn_operators())
@@ -687,7 +696,9 @@ class FilmControlsTests(unittest.TestCase):
                 owner.poll()
                 self.assertEqual(item.phase, "QUOTING")
                 self.assertIsNone(item.quote)
-                self.assertTrue(any(task is item.task for task, _ in owner.session._pending))
+                self.assertFalse(any(task is item.task for task, _ in owner.session._pending))
+                owner.session._completion_limit = 1
+                owner.session._check_capacity()
             owner.poll()
             self.assertEqual(item.phase, "READY", item.error)
             self.assertEqual(item.cost, "0.1234567890123456789")

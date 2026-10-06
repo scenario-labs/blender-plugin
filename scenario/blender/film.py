@@ -251,6 +251,10 @@ class SCENARIO_PT_film(bpy.types.Panel):
         item = owner.current(context.scene, task.name) if owner is not None else None
         if item is not None and item.phase in {"QUOTING", "BINDING"}:
             box.label(text="Estimating..." if item.phase == "QUOTING" else "Saving association...")
+        elif item is not None and item.phase == "SUBMITTED":
+            box.label(text="Submission saved", icon="CHECKMARK")
+        elif item is not None and item.phase == "BOUND":
+            box.label(text="Upload associated", icon="CHECKMARK")
         elif task.kind == "upload":
             box.operator("scenario.bind_film_upload", icon="LINKED")
         elif item is not None and item.phase == "READY":
@@ -263,13 +267,8 @@ class SCENARIO_PT_film(bpy.types.Panel):
             box.operator("scenario.discard_film_quote", icon="X").quote_id = item.identifier
         else:
             box.operator("scenario.quote_film", icon="SORTTIME")
-        if item is not None:
-            if item.error:
-                box.label(text="Action needs review. Inspect saved jobs.", icon="ERROR")
-            elif item.phase == "SUBMITTED":
-                box.label(text="Submission saved", icon="CHECKMARK")
-            elif item.phase == "BOUND":
-                box.label(text="Upload associated", icon="CHECKMARK")
+        if item is not None and item.error:
+            box.label(text="Action needs review. Inspect saved jobs.", icon="ERROR")
         layout.operator("scenario.inspect_saved_jobs", icon="FILE_REFRESH")
         layout.label(text="Scene building and Film finishing are not available yet")
 

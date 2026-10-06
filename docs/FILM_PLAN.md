@@ -172,7 +172,10 @@ For a model task, **Estimate task** resolves its saved dependencies and requests
 one exact SDK estimate. **Generate** opens a separate confirmation with the exact
 decimal CU cost. Approval consumes the handle before persistence and dispatch.
 Recipe edits, a different production/scene or retired credentials reject approval;
-the maintenance pump discards obsolete ready estimates. Deleted scene wrappers are
+the maintenance pump discards obsolete ready estimates, including after frame or
+dependency revision changes. Approval checks again before attempting persistence,
+so an invalidated price requests a fresh estimate without implying a saved job.
+Deleted scene wrappers are
 skipped during read-only panel lookup and retired by the pump. Completed quote
 and association delivery waits while another scene is current, then rechecks the
 unchanged original scene before consuming its completion. Blender dependency
@@ -180,6 +183,12 @@ revision changes, including those emitted during scene activation, still reject
 the old quote and require a fresh estimate. **Discard estimate**
 releases an unused current quote for repricing. A saved task cannot be spent again,
 even with a new quote after an uncertain response or restart.
+
+Current submitted model tasks and associated upload tasks show their saved status
+instead of another estimate or association button. A repeated model estimate in
+that active context is refused without replacing the saved status. Explicit MCP
+upload-association retries still revalidate and return the same saved association;
+they never replay an upload.
 
 MCP uses `film_recipe` to load/inspect the same scene data and obtain its stable
 `production_id`. `estimate_film_task` returns the resolved payload and exact cost;

@@ -867,6 +867,11 @@ shows its exact decimal CU price and states that results remain saved for explic
 application. The panel draws cached handles only; it does not open storage or
 contact Scenario.
 
+Current submitted and associated task rows show **Submission saved** or
+**Upload associated**, without offering another estimate or association action.
+The maintenance pump invalidates ready prices when their captured scene revision
+changes, and approval rechecks before persistence. Drawing remains read-only.
+
 Offline desktop acceptance on macOS arm64 Blender 5.1.2 used exact ZIP SHA-256
 `b1ad71d94a1355bc7d8d825b4d1232b7a14cf91c53d8c11aa37737e4a0907590`,
 which separately passed 799 installed tests on each supported Blender series.
@@ -893,5 +898,8 @@ the vendor executable code and extension ZIP were unchanged.
 ![One Film submission is saved while the scene remains unchanged](images/film-task-saved.png)
 
 These are offline interaction checks, not live pricing or provider acceptance.
+The screenshots and desktop evidence above predate the current stale-price and
+saved-row review fixes. Those changes have separate installed native regression
+coverage; fresh physical input and screenshot proof remain pending.
 They do not establish other OS desktop behavior, Film scene construction/capture,
 finishing/export, resolution of #263 or integrated release acceptance.

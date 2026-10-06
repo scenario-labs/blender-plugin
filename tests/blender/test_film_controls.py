@@ -5,7 +5,7 @@
 import copy
 import os
 import unittest
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import bpy
 import test_model_generation as model_tests
@@ -69,6 +69,16 @@ class FilmControlsTests(unittest.TestCase):
             {"quote_id": item.identifier, "approved_cost": item.cost}
         )
 
+    def drawn_operators(self):
+        layout = MagicMock()
+        panel = submodule("blender.film").SCENARIO_PT_film
+        panel.draw(type("Panel", (), {"layout": layout})(), bpy.context)
+        return [
+            call.args[0]
+            for call in layout.mock_calls
+            if call[0] == "operator" or call[0].endswith(".operator")
+        ]
+
     def test_native_quote_mcp_approval_downloads_without_automatic_application(self):
         self.result_fixture()
         before = set(bpy.data.images)
@@ -127,6 +137,72 @@ class FilmControlsTests(unittest.TestCase):
             self.owner().approve(item.identifier, self.scene, approved_cost="0.123")
         self.assertEqual(item.phase, "READY")
         self.assertEqual(self.paid, [])
+
+    def test_ready_quote_is_discarded_after_frame_or_dependency_revision_changes(self):
+        owner = self.owner()
+        for change in ("frame", "dependency"):
+            with self.subTest(change=change):
+                item = self.quote()
+                if change == "frame":
+                    self.scene.frame_set(self.scene.frame_current + 1)
+                else:
+                    owner.session.invalidate_scene(self.scene)
+                calls = len(self.calls)
+                owner.poll()
+                self.assertEqual(item.phase, "DISCARDED")
+                self.assertIsNone(item.quote)
+                self.assertNotIn("scenario.approve_film", self.drawn_operators())
+                self.assertIn("scenario.quote_film", self.drawn_operators())
+                self.assertEqual(len(self.calls), calls)
+                self.assertEqual(self.store.records(), ())
+                self.assertEqual(self.paid, [])
+
+    def test_approval_discards_changed_origin_before_persistence_without_waiting_for_pump(self):
+        item = self.quote()
+        self.scene.frame_set(self.scene.frame_current + 1)
+        with patch.object(
+            self.owner().session, "prepare_quote", side_effect=AssertionError("No stale write")
+        ) as prepare:
+            with self.assertRaisesRegex(Exception, "fresh Film estimate"):
+                self.approve(item)
+            prepare.assert_not_called()
+        self.assertEqual(item.phase, "DISCARDED")
+        self.assertEqual(item.error, "")
+        self.assertEqual(self.store.records(), ())
+        self.assertEqual(self.paid, [])
+
+    def test_ready_quote_waits_through_another_current_scene_without_revision_change(self):
+        other = bpy.data.scenes.new("Temporary current Film scene")
+        try:
+            item = self.quote()
+            with bpy.context.temp_override(scene=other):
+                self.owner().poll()
+                self.assertEqual(item.phase, "READY")
+                self.assertIsNotNone(item.quote)
+            self.approve(item)
+            self.settle()
+            self.assertEqual(len(self.paid), 1)
+        finally:
+            bpy.data.scenes.remove(other)
+
+    def test_submitted_task_keeps_saved_status_when_another_estimate_is_requested(self):
+        item = self.quote()
+        self.approve(item)
+        self.settle()
+        self.assertEqual(item.phase, "SUBMITTED")
+        operators = self.drawn_operators()
+        self.assertNotIn("scenario.quote_film", operators)
+        self.assertNotIn("scenario.approve_film", operators)
+        self.assertIn("scenario.inspect_saved_jobs", operators)
+        count, calls = len(self.owner().actions), len(self.calls)
+        with self.assertRaisesRegex(Exception, "already has saved work"):
+            self.estimate()
+        self.assertIs(self.owner().current(self.scene, "take"), item)
+        self.assertEqual(item.phase, "SUBMITTED")
+        self.assertEqual(item.error, "")
+        self.assertEqual(len(self.owner().actions), count)
+        self.assertEqual(len(self.calls), calls)
+        self.assertEqual(len(self.paid), 1)
 
     def test_reloading_recipe_preserves_identity_but_rejects_changed_quote(self):
         item = self.quote()
@@ -304,6 +380,13 @@ class FilmControlsTests(unittest.TestCase):
             self.tools.bind_film_upload(dict(args, context_id="stale"))
         deferred = self.tools.bind_film_upload(args)
         self.assertEqual(deferred.finish(deferred.run())["state"], "bound")
+        self.scene.scenario_film.task_index = 0
+        self.assertNotIn("scenario.bind_film_upload", self.drawn_operators())
+        self.assertNotIn("scenario.quote_film", self.drawn_operators())
+        # Explicit MCP retries still revalidate and return the same saved association.
+        repeated = self.tools.bind_film_upload(args)
+        self.assertEqual(repeated.finish(repeated.run())["state"], "bound")
+        self.assertEqual(owner.current(self.scene, "source").phase, "BOUND")
         self.assertEqual(self.calls, [])
         changed = copy.deepcopy(self.recipe)
         changed["tasks"][1]["parameters"]["prompt"] = "$source"

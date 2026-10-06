@@ -55,7 +55,9 @@ changed scene or retired credential context. The bound intent uses the same
 `submit` and recovery paths, with its production/task identity committed before
 network dispatch. The shared [Film task controls](FILM_PLAN.md#native-and-mcp-task-controls)
 persist recipe/production identity in scene properties, bind approvals to their
-exact values and discard obsolete ready quotes. The session command still operates
+exact values and discard obsolete ready quotes, including captured frame/dependency
+revision changes. Approval rechecks before persistence and does not replace a
+submitted task's saved status with a new estimate attempt. The session command still operates
 on a snapshot; no additional worker or job engine is introduced.
 
 `JobSession.bind_film_upload` queues the local upload-task association with an

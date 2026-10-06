@@ -93,6 +93,8 @@ class FilmJobs:
                 and scene in tuple(bpy.data.scenes)
                 and snapshot(scene) == item.binding
             )
+            if valid and item.phase == "READY":
+                valid = item.quote is not None and self.session.capture(scene) == item.quote.origin
         except ReferenceError:
             valid = False
         if not valid:
@@ -110,6 +112,10 @@ class FilmJobs:
         if current and current.phase == "READY":
             raise ScenarioError(
                 0, "Approve or discard this Film estimate before requesting another"
+            )
+        if current and current.phase == "SUBMITTED":
+            raise ScenarioError(
+                0, "This Film task already has saved work; inspect it or name a new take"
             )
         if len(self.actions) >= 128:
             for key, old in tuple(self.actions.items()):
@@ -197,6 +203,7 @@ class FilmJobs:
     def approve(self, identifier, scene, *, approved_cost):
         if os.environ.get("SCENARIO_GUI_PROBE") == "1":
             raise PermissionError("Generation is disabled while an automated GUI probe runs")
+        self.poll()
         item = self.actions.get(identifier) if isinstance(identifier, str) else None
         if item is None or item.phase != "READY" or item.quote is None:
             raise ScenarioError(0, "Use a fresh Film estimate; inspect existing tasks first")

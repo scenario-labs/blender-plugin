@@ -38,7 +38,13 @@ def env(tmp_path):
         ],
     }
     env = SimpleNamespace(
-        scope=scope, origin=origin, revisions=revisions, model=model, calls=[], hook=None
+        scope=scope,
+        origin=origin,
+        revisions=revisions,
+        model=model,
+        workflow=None,
+        calls=[],
+        hook=None,
     )
 
     def handler(request):
@@ -49,7 +55,11 @@ def env(tmp_path):
             return httpx.Response(200, json={"model": env.model})
         if request.url.path.endswith("/workflows/workflow-one"):
             return httpx.Response(
-                200, json={"workflow": {"id": "workflow-one", "inputs_definition": model["inputs"]}}
+                200,
+                json={
+                    "workflow": env.workflow
+                    or {"id": "workflow-one", "inputs_definition": model["inputs"]}
+                },
             )
         if request.url.path.endswith("/models"):
             return httpx.Response(200, json={"models": [model]})
@@ -527,3 +537,84 @@ def test_dictionary_input_schema_and_sdk_parameters_fallback_bind_same_source(en
     env.model["parameters"] = {"mesh": {"type": "file", "kind": "3d", "required": True}}
     quote = env.coordinator.quote_model("model-one", {"mesh": upload.asset_id}, origin=env.origin)
     assert quote.mesh_sources[0].upload_id == upload.intent.request_id
+
+
+@pytest.mark.parametrize(
+    "operation,primary,fallback",
+    [("model", "inputs", "parameters"), ("workflow", "inputs_definition", "inputs")],
+)
+@pytest.mark.parametrize("typed_primary", [True, False])
+def test_mesh_binding_uses_the_same_schema_as_sdk_payload_preparation(
+    env, operation, primary, fallback, typed_primary
+):
+    upload = captured_upload(env)
+    mesh = {"name": "mesh", "type": "file", "kind": "3d", "required": True}
+    text = {"name": "mesh", "type": "string", "required": True}
+    metadata = {
+        "id": operation + "-one",
+        "type": "custom",
+        primary: [mesh if typed_primary else text],
+        fallback: [text if typed_primary else mesh],
+    }
+    setattr(env, operation, metadata)
+    quote = getattr(env.coordinator, "quote_" + operation)(
+        metadata["id"], {"mesh": upload.asset_id}, origin=env.origin
+    )
+    assert quote.estimate.payload == {"mesh": upload.asset_id}
+    assert len(quote.mesh_sources) == int(typed_primary)
+    if typed_primary:
+        assert quote.mesh_sources[0].upload_id == upload.intent.request_id
+    prepared = env.coordinator.prepare_quote(quote)
+    result = env.coordinator.submit(
+        prepared,
+        origin=env.origin,
+        operation=operation,
+        target_id=metadata["id"],
+        payload=quote.estimate.payload,
+    )
+    assert result.intent.mesh_sources == quote.mesh_sources
+    assert json.loads(env.calls[-1].content) == quote.estimate.payload
+
+
+@pytest.mark.parametrize(
+    "operation,primary,fallback",
+    [("model", "inputs", "parameters"), ("workflow", "inputs_definition", "inputs")],
+)
+@pytest.mark.parametrize("primary_present", [True, False])
+def test_missing_or_null_primary_schema_uses_sdk_fallback_for_mesh_binding(
+    env, operation, primary, fallback, primary_present
+):
+    upload = captured_upload(env)
+    metadata = {
+        "id": operation + "-one",
+        "type": "custom",
+        fallback: {"mesh": {"type": "file", "kind": "3d", "required": True}},
+    }
+    if primary_present:
+        metadata[primary] = None
+    setattr(env, operation, metadata)
+    quote = getattr(env.coordinator, "quote_" + operation)(
+        metadata["id"], {"mesh": upload.asset_id}, origin=env.origin
+    )
+    assert quote.mesh_sources[0].upload_id == upload.intent.request_id
+    assert env.coordinator.prepare_quote(quote).intent.mesh_sources == quote.mesh_sources
+
+
+@pytest.mark.parametrize(
+    "operation,primary,fallback",
+    [("model", "inputs", "parameters"), ("workflow", "inputs_definition", "inputs")],
+)
+@pytest.mark.parametrize("schemas_present", [True, False])
+def test_absent_or_null_schemas_stop_before_estimation_or_mesh_binding(
+    env, operation, primary, fallback, schemas_present
+):
+    captured_upload(env)
+    metadata = {"id": operation + "-one", "type": "custom"}
+    if schemas_present:
+        metadata.update({primary: None, fallback: None})
+    setattr(env, operation, metadata)
+    with pytest.raises(ValueError, match="current input schema"):
+        getattr(env.coordinator, "quote_" + operation)(metadata["id"], {}, origin=env.origin)
+    assert len(env.calls) == 1 and env.calls[0].method == "GET"
+    assert env.store.records() == ()
+    assert env.coordinator._quotes == {}

@@ -78,7 +78,7 @@ Every connection rechecks that the database is a regular nonsymlink file,
 including after a competing creation. The parent must remain trusted: this check
 and SQLite's path open are separate operations, not an atomic no-follow open.
 
-The database has an application ID and schema version **5**. SQLite transactions
+The database has an application ID and schema version **6**. SQLite transactions
 with `synchronous=FULL` commit the whole change or report `StoreError`; no cached
 in-memory result is reported as saved before commit succeeds. `BEGIN IMMEDIATE`
 serializes writers across threads/processes. Each operation owns a connection,
@@ -282,6 +282,11 @@ provenance. It accompanies the exact normalized payload and quote hashes before
 the submission claim. Metadata stays local; the SDK request still contains only
 the model/workflow parameters.
 
+The shared quote path uses the SDK adapter's schema selection: model `inputs`
+with a missing/null fallback to `parameters`, and workflow `inputs_definition`
+with a missing/null fallback to `inputs`. Bindings use the same selected fields
+as payload preparation; unused alternate schema keys cannot add provenance.
+Absent or null schemas without a usable fallback stop before estimation.
 The shared quote path matches only declared 3D file inputs to completed captured
 uploads in the selected credential/project scope. Prompt strings, unknown assets
 and ordinary file uploads acquire no inferred source. Repeated array values keep

@@ -231,3 +231,27 @@ app copy used a distinct bundle identifier and local ad-hoc signature for window
 targeting; vendor executable code and the extension ZIP were unchanged. This does
 not establish actual HDR/seam quality, other OS desktop support, resolution of
 #263 or release acceptance.
+
+## Saved material approval
+
+**Apply saved material** names the scene, mesh, slot and saved texture roles.
+Explain packing, replacement of that slot only, height-as-bump, retained AO/edge
+nodes and the absence of a global undo entry. Preparation requires a local UV
+mesh with one object user in one scene; drawing reads the prepared snapshot and
+never opens files or changes assignments. Cancel discards its approval. A changed
+mesh, slot or scene revision requires a new review rather than retargeting.
+
+Offline desktop acceptance on macOS arm64 Blender 5.1.2 used exact ZIP
+`b30a62ff2864507ad62dfd8eb743d3b17a17e7487bf1c94185072efcff405f67`,
+which passes 607 full native tests on each of Blender 5.0.1, 5.1.2 and 5.2.1.
+Mouse confirmation applied one synthetic saved albedo map as a packed material
+to the approved mesh slot. The job became applied with mock submission/request
+counts unchanged. Material preview, viewport and Outliner selection, front-view
+and orbit keyboard input, zoom and material-property inspection worked afterward.
+Blender exited cleanly and the normal-profile fingerprint was unchanged. The
+test-only app copy used a distinct bundle identifier and local ad-hoc signature;
+vendor executable code and extension ZIP were unchanged. The earlier attempt
+could not access the window; it was not counted as interaction evidence.
+This check does not establish live provider quality, other OS desktop support,
+full Materials acceptance or resolution of #263. See the
+[user guide](USER_GUIDE.md#materials) for the approval and result screenshots.

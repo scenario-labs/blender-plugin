@@ -314,6 +314,13 @@ def prepare_model_application(context_id, request_id, expected_revision, scene, 
     return jobs, jobs.prepare_model_application(request_id, expected_revision, scene, asset_id)
 
 
+def prepare_material_application(context_id, request_id, expected_revision, scene, obj):
+    jobs = ensure_model_jobs()
+    if context_id != state.job_context_id:
+        raise ScenarioError(0, "Inspect the current connection's jobs before applying a material")
+    return jobs, jobs.prepare_material_application(request_id, expected_revision, scene, obj)
+
+
 def prepare_world_application(
     context_id, request_id, expected_revision, scene, asset_id=None, *, restore=False
 ):

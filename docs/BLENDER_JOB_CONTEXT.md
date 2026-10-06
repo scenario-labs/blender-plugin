@@ -530,3 +530,20 @@ Restoration does not alter the durable completed job or make it re-applicable.
 See [saved World approval](WORLD_APPLICATION.md#saved-result-ui-and-mcp-approval)
 for `ready`/`apply_failed` admission, session-local restoration and already-applied
 Image reuse limits.
+
+## Explicit saved material application
+
+`apply_recovered_material` consumes owned result verification, resolves the
+approved scene/mesh origin, checks the frozen slot/UV/face-index target and the
+unambiguous saved map roles, then claims recovered application before decoding
+or assignment. The [material primitive](MATERIAL_APPLICATION.md) packs new images
+and builds a new material without editing old materials or other slots. Only a
+verified complete cleanup permits a local retry; incomplete cleanup retains an
+uncertain claim. A successful assignment with a failed receipt write retains a
+session-owned handle for `retry_material_receipt`, which never repeats scene work.
+Shutdown clears those handles after workers stop.
+
+Native **Apply saved material** and MCP `prepare_result_application` with
+`purpose: material` use that same destination approval and saved-job command.
+Changing selection cannot retarget it. Multi-object/shared meshes, ambiguous
+texture sets, already-applied image reuse and global undo remain separate work.

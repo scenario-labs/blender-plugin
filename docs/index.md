@@ -23,6 +23,7 @@ For questions, bugs or account help, see [Support](../SUPPORT.md).
 - [Multipart upload lifecycle](SDK_UPLOADS.md)
 - [Reversible mesh application](MESH_APPLICATION.md)
 - [Panoramic World application](WORLD_APPLICATION.md)
+- [Saved material application](MATERIAL_APPLICATION.md)
 - [Source adoption decisions](STUDIO_ADOPTION.md)
 
 ## Development and contributions

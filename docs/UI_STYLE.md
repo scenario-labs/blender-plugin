@@ -373,6 +373,18 @@ normal Blender profile was unchanged and the isolated process exited cleanly.
 
 ![Applied captured source retains its original copy and leaves the other active mesh unchanged](images/captured-mesh-source-result.png)
 
+The same interaction was repeated with the integrated export/quote changes on
+macOS arm64 Blender 5.1.2 using ZIP SHA-256
+`a2254eb9ae5b24608eacf1e850dbbb95d9a1e4ff7b6b4b881bd4de2ef5e56610`.
+Mouse activation again identified the exported source despite a different active
+mesh. Escape preserved the ready job and both meshes; viewport focus and numpad
+front view remained usable. Return applied the three-vertex result to the source,
+kept its original copy and left the other mesh at eight vertices. Mock request,
+submission and download counts stayed unchanged through application; a socket
+guard recorded no network attempts. Installed bytes were verified before and
+after the run, the normal profile was unchanged, and the process exited cleanly.
+The images above remain captures from the earlier named artifact.
+
 This proves the local source-selection, cancellation and confirmation interaction.
 The synthetic form's pending estimate is not live pricing evidence. It does not
 establish provider alignment, other OS desktop behavior, #263 resolution, remaining

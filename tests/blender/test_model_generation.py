@@ -1653,9 +1653,48 @@ class ModelGenerationTests(unittest.TestCase):
                 self.import_args(self.prepare_world(request_id, restore=True))
             )
             self.assertEqual(first.world, previous)
+            owner = self.runtime.state.model_jobs
+            self.assertNotIn("restore_world", owner.status(request_id)["actions"])
+            owner.poll()
+            self.assertNotIn(request_id, owner._worlds)
         finally:
             bpy.context.window.scene = first
             bpy.data.scenes.remove(second)
+
+    def test_world_restore_survives_render_thread_revision_reset(self):
+        request_id = self.recovered_panorama()
+        scene, previous = bpy.context.scene, bpy.context.scene.world
+        self.finish_application(self.prepare_world(request_id))
+        before = len(self.calls), len(self.paid), len(self.downloads)
+        callback = submodule("blender.job_session")._scene_changed
+        with ThreadPoolExecutor(max_workers=1) as pool:
+            pool.submit(callback, None).result(5)
+        self.tools.apply_result_application(
+            self.import_args(self.prepare_world(request_id, restore=True))
+        )
+        self.assertEqual(scene.world, previous)
+        self.assertEqual((len(self.calls), len(self.paid), len(self.downloads)), before)
+
+    def test_history_invalidation_retires_world_restore_without_renewing_authority(self):
+        request_id = self.recovered_panorama()
+        self.finish_application(self.prepare_world(request_id))
+        approval = self.prepare_world(request_id, restore=True)
+        world = bpy.context.scene.world
+        owner = self.runtime.state.model_jobs
+        before = self.store.get(request_id), len(self.calls), len(self.paid), len(self.downloads)
+        submodule("blender.job_session")._history_pre(None)
+        self.assertNotIn("restore_world", owner.status(request_id)["actions"])
+        with self.assertRaises(self.request_error):
+            self.tools.apply_result_application(self.import_args(approval))
+        with self.assertRaises(self.request_error):
+            self.prepare_world(request_id, restore=True)
+        owner.poll()
+        self.assertNotIn(request_id, owner._worlds)
+        self.assertEqual(bpy.context.scene.world, world)
+        self.assertEqual(
+            (self.store.get(request_id), len(self.calls), len(self.paid), len(self.downloads)),
+            before,
+        )
 
     def test_world_restore_preserves_edited_world_data(self):
         request_id = self.recovered_panorama()

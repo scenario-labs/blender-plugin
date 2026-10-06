@@ -624,6 +624,21 @@ process exited cleanly, with no network attempts and an unchanged normal profile
 This is synthetic local restoration proof, not live panorama quality, other-OS
 desktop or integrated release acceptance. Catalog loading text is fixture state.
 
+A subsequent lifecycle correction was checked with exact ZIP
+`24c7731dc6f339d55f826dfd27e68f0b90052b2c987fe9572431d5dbe6c353ca`:
+694 installed native tests passed on each of the same three Blender versions.
+The scene identity survives the render-thread origin revision reset; Undo/Redo
+still retires live ownership, and deleted or retired destinations no longer
+offer restoration. Regression tests invoke the actual render-thread and history
+callbacks, verify rejection of stale approvals and prune expired handles.
+They do not establish physical desktop Undo/Redo behavior.
+The isolated 5.1.2 desktop flow above was repeated after the fixture invoked
+the render-thread callback: cancel, independent confirmations, native scene
+selection and viewport keyboard input all worked. Both original Worlds were
+restored with unchanged applied records and mock counts, no network attempts,
+clean exit and an unchanged normal profile. The screenshots below retain the
+earlier artifact's provenance.
+
 ![Separate World restoration review for the second scene](images/world-scene-restore-approval.png)
 
 ![Restoration finished after each scene recovered its original World](images/world-scenes-restored.png)

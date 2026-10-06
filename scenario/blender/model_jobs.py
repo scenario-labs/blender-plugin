@@ -241,6 +241,7 @@ class ModelJobs:
 
     def poll(self):
         """Advance owned jobs through existing commands; never replay paid work."""
+        self._prune_worlds()
         if not self.session.active:
             return
         for request_id, task in tuple(self.submissions.items()):
@@ -510,7 +511,9 @@ class ModelJobs:
                 pass
             else:
                 actions.append("apply_material")
-        if state == JobState.APPLIED and request_id in self._worlds:
+        if state == JobState.APPLIED and any(
+            self.session.has_scene(scene_id) for scene_id in self._worlds.get(request_id, {})
+        ):
             actions.append("restore_world")
         if request_id in self._receipts:
             actions.append("retry_receipt")
@@ -875,13 +878,19 @@ class ModelJobs:
         return request_id, task
 
     def _remember_world(self, request_id, destination, application):
-        key = destination.file_id, destination.scene_id
-        self._worlds.setdefault(request_id, {})[key] = application
+        self._worlds.setdefault(request_id, {})[destination.scene_id] = application
+
+    def _prune_worlds(self):
+        for request_id, worlds in tuple(self._worlds.items()):
+            for scene_id in tuple(worlds):
+                if not self.session.has_scene(scene_id):
+                    del worlds[scene_id]
+            if not worlds:
+                del self._worlds[request_id]
 
     def _world_application(self, request_id, destination):
-        key = destination.file_id, destination.scene_id
-        application = self._worlds.get(request_id, {}).get(key)
-        if application is None:
+        application = self._worlds.get(request_id, {}).get(destination.scene_id)
+        if application is None or not self.session.has_scene(destination.scene_id):
             raise ScenarioError(0, "Select the scene whose previous World should be restored")
         return application
 
@@ -971,7 +980,7 @@ class ModelJobs:
         if is_world and ticket.restore:
             self._world_application(request_id, ticket.destination).restore()
             worlds = self._worlds[request_id]
-            del worlds[ticket.destination.file_id, ticket.destination.scene_id]
+            del worlds[ticket.destination.scene_id]
             if not worlds:
                 del self._worlds[request_id]
             self._view(record).error = None

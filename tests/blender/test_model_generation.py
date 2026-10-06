@@ -1778,6 +1778,76 @@ class ModelGenerationTests(unittest.TestCase):
         self.assertEqual(len(status["local_applications"]), 2)
         self.assertEqual((len(self.calls), len(self.paid), len(self.downloads)), before)
 
+    def test_material_reuse_scene_switch_before_admission_requires_fresh_approval(self):
+        self.assert_material_reuse_scene_switch_requires_fresh_approval("admission")
+
+    def test_material_reuse_scene_switch_during_verification_requires_fresh_approval(self):
+        self.assert_material_reuse_scene_switch_requires_fresh_approval("verification")
+
+    def assert_material_reuse_scene_switch_requires_fresh_approval(self, phase):
+        request_id = self.recovered_material()
+        self.finish_application(self.prepare_import(request_id))
+        original = self.store.get(request_id)
+        scene, target = bpy.context.scene, bpy.context.active_object
+        other_scene = bpy.data.scenes.new("Unapproved reuse scene")
+        try:
+            approval = self.prepare_material(request_id)
+            before = (
+                set(bpy.data.materials),
+                set(bpy.data.images),
+                len(self.calls),
+                len(self.paid),
+                len(self.downloads),
+            )
+            if phase == "verification":
+                deferred = self.tools.apply_result_application(self.import_args(approval))
+                result = deferred.run()
+            bpy.context.window.scene = other_scene
+            if phase == "admission":
+                args = self.import_args(approval)
+                args.update(request_id=request_id, expected_revision=approval["revision"])
+                with self.assertRaisesRegex(RuntimeError, "Material assignment was not started"):
+                    bpy.ops.scenario.apply_saved_material(**args)
+            else:
+                status = deferred.finish(result)
+                self.assertTrue(status["error"])
+                self.assertFalse(status["local_applications"])
+            self.assertEqual(self.store.get(request_id), original)
+            self.assertIsNone(target.active_material)
+            self.assertEqual(bpy.context.scene, other_scene)
+            self.assertFalse(tuple(other_scene.objects))
+            self.assertEqual(
+                (
+                    set(bpy.data.materials),
+                    set(bpy.data.images),
+                    len(self.calls),
+                    len(self.paid),
+                    len(self.downloads),
+                ),
+                before,
+            )
+            bpy.context.window.scene = scene
+            with self.assertRaises(self.request_error):
+                self.tools.apply_result_application(self.import_args(approval))
+            fresh = self.prepare_material(request_id)
+            args = self.import_args(fresh)
+            args.update(request_id=request_id, expected_revision=fresh["revision"])
+            self.assertEqual(bpy.ops.scenario.apply_saved_material(**args), {"FINISHED"})
+            self.deliver_results()
+            saved = self.store.get(request_id)
+            self.assertEqual(saved.state, self.storemod.JobState.APPLIED)
+            self.assertEqual(len(saved.local_applications), 1)
+            self.assertEqual(saved.local_applications[0].state.value, "applied")
+            self.assertEqual(
+                (saved.intent, saved.application_origin, saved.results),
+                (original.intent, original.application_origin, original.results),
+            )
+            self.assertIsNotNone(target.active_material)
+            self.assertEqual((len(self.calls), len(self.paid), len(self.downloads)), before[2:])
+        finally:
+            bpy.context.window.scene = scene
+            bpy.data.scenes.remove(other_scene)
+
     def test_completed_audio_can_be_reused_at_another_approved_frame(self):
         request_id = self.recovered_media()
         self.finish_application(self.prepare_media(request_id))

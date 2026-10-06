@@ -544,6 +544,10 @@ Shutdown clears those handles after workers stop.
 
 Native **Apply saved material** and MCP `prepare_result_application` with
 `purpose: material` use that same destination approval and saved-job command.
+Like other saved-result commands, admission and delivery require the approved
+scene to remain selected through the shared `_resolve` guard. A scene switch
+stops before the local application claim; it leaves the completed generation,
+saved results and material slots unchanged for fresh approval after returning.
 Changing selection cannot retarget it. Multi-object/shared meshes, ambiguous
 texture sets and global undo remain separate work.
 

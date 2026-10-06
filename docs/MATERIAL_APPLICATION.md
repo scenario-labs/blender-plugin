@@ -52,6 +52,12 @@ Receipt verification runs on the shared worker. Current scene/target revisions
 and slot state are checked again before the durable application claim. A stale
 or changed destination leaves the saved job available for fresh review.
 
+The approved scene must still be selected at admission and after verification,
+as required by the shared session for image, media, model and World application
+too. Switching scenes stops assignment before any durable claim or material
+change. Return to the intended scene and approve it again. Changing only the
+active object within that scene does not redirect the captured mesh target.
+
 Assignment replaces the approved existing slot, or adds the first slot when none
 exists. It leaves geometry, UVs, face indices, transforms, selection, old material
 node graphs and unrelated scene data intact. A failure restores slot bindings and

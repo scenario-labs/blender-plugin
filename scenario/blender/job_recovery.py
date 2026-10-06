@@ -424,6 +424,11 @@ class SCENARIO_OT_apply_saved_mesh(bpy.types.Operator):
                 "Replace with parts",
                 "Keep the source as an empty mesh parent; adopt every mesh in the selected GLB as a part",
             ),
+            (
+                "RIG",
+                "Attach rig",
+                "Preserve source mesh data; attach weights and a compatible returned rig",
+            ),
         ),
         default="REMESH",
         options={"SKIP_SAVE"},
@@ -515,6 +520,12 @@ class SCENARIO_OT_apply_saved_mesh(bpy.types.Operator):
         layout.prop(self, "keep_original")
         if self.policy == "REMESH":
             layout.label(text="Replace this mesh's geometry, UVs and mesh materials.")
+        elif self.policy == "RIG":
+            layout.label(text="Attach bone weights and rig; preserve geometry, UVs and materials.")
+            layout.label(text="Matching geometry required. No morphs or mesh animation.")
+            layout.label(
+                text="Keep rig clips. Move the source and new rig group together afterward."
+            )
         elif self.policy == "PARTS":
             layout.label(text="Replace source geometry with an empty mesh parent and named parts.")
             layout.label(text="Treat every mesh in this GLB as a part, not an alternate variant.")
@@ -527,6 +538,8 @@ class SCENARIO_OT_apply_saved_mesh(bpy.types.Operator):
         layout.label(
             text="One static GLB, 2 to 128 parts. No automatic fitting or scale adjustment."
             if self.policy == "PARTS"
+            else "One GLB mesh and rig. No automatic fitting or scale adjustment."
+            if self.policy == "RIG"
             else "One static GLB mesh only. No automatic fitting or scale adjustment."
         )
         layout.label(text="Keep original makes an unselected copy. Undo follows Blender settings.")

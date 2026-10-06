@@ -530,6 +530,15 @@ Existing source children remain in place. For further editing or mesh export,
 select a child part or the retained original; the empty parent has no surface
 geometry and cannot receive another parts group.
 
+**Attach rig** keeps the source geometry, UVs, materials and other supported mesh
+attributes, then adds matching bone weights and the returned armature with its
+animation clips. It requires one mesh/rig, exactly matching indexed geometry and
+normalized weights. It rejects morphs, mesh animation, constraints and additional
+modifiers. The source must be unrigged. The new named rig group shares the
+source's existing parent; move that group and source together afterward. Clips
+use the scene frame rate without changing the current frame or playback range.
+This does not retarget an existing rig or automatically match different vertices.
+
 Choose **Scene coordinates** to keep the imported result's scene positions, or
 **Object local coordinates** to interpret those positions in the source's local
 axes. The extension does not fit or realign the result automatically. It preserves

@@ -123,8 +123,8 @@ clips and 10,000 total joints or animation channels. This is a bounded policy
 preflight, not a complete glTF validator or proof against every expensive decoder
 input; Blender validates geometry and textures. JSON glTF, FBX, OBJ, splats,
 multiple scenes, external files and pointer-based animation need separate
-integration. Unsupported downloads remain available. In-place mesh policies
-keep the default static-only preflight.
+integration. Unsupported downloads remain available. REMESH, UV, RETEXTURE and PARTS
+keep the default static-only preflight; RIG uses the bounded skin policy below.
 
 [`model_application.apply_model`](../scenario/blender/model_application.py)
 rehashes the exact local receipt, writes a private snapshot and imports into a
@@ -181,8 +181,9 @@ clips match the destination's effective `fps / fps_base` without changing its
 settings. Native coverage includes a fractional frame rate, deformation, multiple
 clips, UI-list restoration and complete cleanup after failed publication.
 
-This imports a complete new character. Applying a returned rig or animation to
-the original captured mesh remains separate #99 work. Native global Undo is not
+This imports a complete new character. The separate [RIG policy](#attach-a-returned-rig)
+can attach a compatible returned skin to a captured static mesh; retargeting an
+existing rig remains outside this import command. Native global Undo is not
 added to this new-group command. See [interaction evidence](UI_STYLE.md#animated-model-import-interaction)
 for the exact packaged desktop check and its limits.
 
@@ -200,11 +201,13 @@ input's identity. Restart/file load requires a fresh explicit destination review
 
 `mesh_result_application.apply_saved_mesh(target, item, path, policy=...,
 result_to_source=..., keep_original=...)` connects the existing primitive to one
-verified static GLB. It shares the new-object importer's receipt/hash preflight,
+verified GLB. It shares the new-object importer's receipt/hash preflight,
 private byte snapshot, isolated staging scene and image packing. It requires
 exactly one mesh with optional Empty parents for `REMESH`, `UV` and `RETEXTURE`.
 The explicit `PARTS` policy accepts 2 to 128 static surface meshes in that one GLB;
-other object types fail. The caller chooses the policy and Keep original.
+other object types fail for these static policies. RIG requires one compatible
+mesh and armature with optional Empty parents. The caller chooses the policy
+and Keep original.
 Multiple result assets are never combined or ranked automatically.
 
 The required finite, orientation-preserving mapping converts **Blender-imported
@@ -214,8 +217,9 @@ centering, scale fitting, alignment guess or source-object movement. This local
 mapping does not prove a provider preserved the input's coordinates or topology.
 UV still requires exact indexed topology/positions after mapping and one UV layer.
 
-The source is revalidated immediately before replacement. Imported staging objects
-are removed; replacement material/image dependencies remain packed. Keep original
+The source is revalidated immediately before replacement. Temporary imported
+objects are removed; RIG retains its armature/parent hierarchy. Replacement
+material/image dependencies remain packed. Keep original
 retains a separate unselected copy, preserving the previous selection and active
 object. Without it, the primitive may release the unchanged, unused original mesh.
 A returned result is finalized and contains the source, optional original and
@@ -248,13 +252,13 @@ Installed synthetic tests cover remesh and exact-topology UV, parented/scaled
 sources, shared originals, packed materials, explicit node-transform mapping,
 selection, source changes, multi-scene/multi-mesh rejection, rollback failure,
 separate local reuse and persistence-only recovery. Provider coordinate contracts
-and rig/segmentation policy remain integration work under #65/#99.
+and remaining provider/retargeting acceptance stay open under #65/#99.
 There are no new service calls or live/provider acceptance claims in this command.
 
 ## Saved mesh edit approval
 
 **Apply mesh edit (N)** and MCP `prepare_result_application` with
-`purpose: mesh_edit` review one saved static GLB against the currently active
+`purpose: mesh_edit` review one saved GLB against the currently active
 mesh. The review names the scene, source and selected asset. `REMESH` replaces
 geometry, UVs and mesh materials; `UV` replaces only active UVs and requires
 exact indexed topology and positions. **Keep original** defaults to enabled.
@@ -285,7 +289,7 @@ Blender history is enabled; see [native history](#native-undo-for-saved-mesh-edi
 
 The generic action reviews a destination selected now. The captured-source action
 below uses the original exported object. Neither establishes provider alignment,
-provider retexture contracts, rig/segmentation policy or end-to-end Edit 3D acceptance.
+provider retexture/rig contracts, semantic parts classification or end-to-end Edit 3D acceptance.
 
 
 ## Applying to the captured mesh source
@@ -358,7 +362,7 @@ when geometry replacement is intended.
 
 The shared saved-mesh command records Blender history immediately before import
 and after successful replacement, staging cleanup and rollback-handle finalization.
-This covers REMESH, UV, RETEXTURE and PARTS from both native review and local MCP. The
+This covers REMESH, UV, RETEXTURE, PARTS and RIG from both native review and local MCP. The
 pre-state includes the latest user edits; neither checkpoint contains temporary
 import scenes or private rollback holders. Undo restores the source data and
 removes any Keep original copy; Redo restores the applied data and that copy.
@@ -431,3 +435,50 @@ rejection, publication/cleanup failures, uncertain rollback, captured-source
 UI/MCP application and native history. See [desktop evidence](UI_STYLE.md#parts-application-interaction).
 Provider alignment, semantic part classification, rigs/animation and integrated
 release acceptance remain separate work.
+
+
+## Attach a returned rig
+
+The explicit `RIG` policy attaches a saved GLB's skin to one captured, unrigged
+source. It requires one mesh, one armature and optional Empty parents, exact
+indexed topology and rest positions under the selected mapping, and normalized
+bone weights for every vertex. Bone group names must match the rig and the rig
+may contain at most 1,024 bones; at most 2,000,000 weight entries are inspected.
+The usual GLB and mesh component bounds still apply. This is a compatible skin
+transfer, not automatic vertex matching, fitting or existing-rig retargeting.
+
+The source receives a private copy of its own mesh with the returned weights,
+plus one Armature modifier. Geometry, UVs, materials and other supported mesh
+attributes remain from the source. Object identity, name, transforms, parenting,
+collections and selection remain intact. The returned armature and parent
+hierarchy, including their clips, are retained under a new named rig group in
+the same collections. That group shares the source's existing parent and uses
+`source_world @ result_to_source`; imported node transforms remain below it.
+Move the source and new rig group together afterward. The rig is not parented
+to the deformed source, avoiding a dependency cycle. Timeline settings stay
+unchanged and clip conversion follows the destination FPS described above.
+
+Morph targets, animation on the returned mesh or its independent animated
+parents, extra mesh modifiers, envelope/partial-modifier weights, rig/pose
+constraints, drivers and armature-data animation are rejected before source
+mutation. Existing source rig/animation data remains outside the capture policy.
+Source materials are deliberately retained; RIG does not adopt returned textures.
+Invalid results remain downloaded for inspection or a separate new-group import.
+
+[`rig_application.py`](../scenario/blender/rig_application.py) stages weights on a
+private source-mesh copy, then uses the existing mesh replacement/Keep original
+boundary. A synchronous internal receipt checks the owned modifier and weights
+before rollback. The saved-result command verifies source restoration and exact
+new-data cleanup before reporting a known failure; uncertainty never authorizes
+another attachment. Native undo/redo restores the rig, weights and retained
+original together. Receipt-only recovery records success without attaching again.
+UI **Attach rig** and MCP `mesh_policy: RIG` use the same captured target and
+optional original-export target guards. Session status exposes `mesh_edit.rig`;
+history invalidation retires that status before dereferencing stale Blender data.
+
+Installed synthetic tests cover parented/nonuniformly scaled sources, retained
+appearance/attributes, bone deformation, invalid weights/modifiers/constraints,
+morph/topology rejection, failed cleanup rollback, captured-source UI/MCP,
+undo/redo and failed-receipt recovery without new requests. Provider coordinate,
+vertex-order and returned-skin contracts still need acceptance; this is not full
+#99 or release completion.

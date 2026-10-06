@@ -465,7 +465,8 @@ original stored record and one to five verbatim, nonempty strings, each limited
 to 64 KiB of UTF-8. It is not an application claim or new spending approval.
 
 Asset references are resolved through `SDKAdapter.asset`. Only successful
-`text/plain` text assets qualify. `properties.preview` is accepted only when
+assets with top-level `kind="text"` and `mimeType="text/plain"` qualify.
+`properties.preview` is accepted only when
 `hasFullPreview` is exactly true. Otherwise the full asset is downloaded with
 a 64 KiB cap through the configured credential-free storage policy, verified,
 decoded as UTF-8 and removed from private temporary staging. Invalid/missing
@@ -479,6 +480,31 @@ writes a prompt on its own. The native prompt facade explicitly delivers to the
 unchanged originating field. MCP `read_prompt_result` can return scoped saved text
 after a scene change, without applying it. Redirecting a recovered result to a new
 native destination remains separate integration.
+
+### Model text recovery
+
+`read_model_text(request_id, expected_revision=..., asset_id=...)` reads one
+explicitly selected text output through the coordinator and its existing worker
+pool. It requires a saved `model` intent with a successful remote outcome: local
+`succeeded`, `download_failed`, `ready`, `apply_failed` or `applied`. Pending,
+uncertain and actively changing download/application states are rejected.
+
+The command retrieves the saved remote job through `SDKAdapter.job`, checks its
+identity and successful status, then validates a bounded, unique
+`metadata.assetIds` list containing the selected asset. A stored result manifest,
+when present, must also contain that asset. `SDKAdapter.asset` retrieves it using
+the same selected credentials and optional project scope. The full-text reader
+above enforces asset identity, successful status, top-level text kind, plain-text
+MIME, explicit preview completeness and the 64 KiB limit. An integral JSON number
+is accepted as the full-body byte count; booleans and fractional sizes are not.
+
+The result contains the unchanged stored record, selected asset ID and text;
+text is excluded from its repr. Retrieval rechecks scope activity and the stored
+revision before returning. It never writes the text or URLs to the job database,
+changes generation/application state, parses a scene plan or submits generation.
+Restart and transfer failure can repeat this read without another paid request.
+This is fresh remote retrieval, not certification of a previously stored download
+receipt. JobSession, native Blockout and MCP command wiring remain separate work.
 
 `quote_translate` uses the fixed `translate` operation and target, bypassing
 model discovery. Its worker snapshots the prompt and preserves the same bounded

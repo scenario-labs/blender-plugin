@@ -296,8 +296,13 @@ current storage even when the displayed page predates a remote acknowledgement.
 MCP status and import lookup likewise prefer scoped saved records to an old
 unscoped cache; ambiguous remote IDs require an explicit local request ID.
 Neither path borrows the old cache's files or silently applies a saved result.
-Drawing and MCP history responses also recheck current saved identities, and
-storage failures do not fall back to the older import path.
+Explicit history reads cache saved remote IDs for drawing; live shared-job views
+cover acknowledgements delivered after the cloud page. Drawing performs no job
+database reads. Native import and MCP history/status/import responses still
+recheck current storage, independently of the display snapshot. A failed saved
+read disables cloud-row actions until an explicit read succeeds; switching
+credentials clears the snapshot. Storage failures do not fall back to the older
+import path.
 MCP import also requires complete selected credentials before consulting either
 store; missing credentials permit cold read-only inspection, never application.
 

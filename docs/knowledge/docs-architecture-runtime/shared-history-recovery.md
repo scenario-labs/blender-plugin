@@ -7,19 +7,19 @@
     "path": "docs/architecture/runtime.md",
     "scope": "shared-history-recovery",
     "coverage": "source-reviewed",
-    "reviewed_at": "2026-10-05",
-    "base_revision": "4589f22964cc9cf99e53ec37bb8c5dbe6948c96b",
-    "limits": "Scoped history lookup and explicit saved-result recovery routing, including unscoped-cache collisions, ambiguous IDs, storage failures, fresh acknowledgement, restart and credential changes. Incomplete credentials permit cold read-only inspection but reject all MCP import dispatch. Synthetic installed functional tests: 749 pass on each macOS arm64 Blender 5.0.1, 5.1.2 and 5.2.1. Desktop input on macOS arm64 Blender 5.1.2 with the same ZIP and a preloaded synthetic cloud page verifies the project-history toggle, matched-row Inspect saved jobs action, unchanged saved record/scene/images/request count, no legacy import dispatch/tracking, and subsequent viewport selection/Home navigation. The disposable profile is removed and the normal profile remains unchanged. This does not prove live cloud refresh, completed download/import or other OS/DPI interaction. No arbitrary-cloud-job adoption, prototype migration, live/paid provider or integrated release acceptance.",
+    "reviewed_at": "2026-10-06",
+    "base_revision": "ea77f3a542be698301bd0a414579d4a9e40650bb",
+    "limits": "Scoped history lookup and explicit saved-result recovery routing. The display uses a saved-ID snapshot from explicit reads plus live shared-job views; drawing performs no job database reads. Native/MCP commands continue to inspect current scoped storage. Storage failures disable row actions until a successful read, and credential changes clear the snapshot. Exact ZIP 27ebeece6da712d7b6fd50a8047736df8351e501679b1a4ad1503b62f82e7ac5 passes 751 installed tests on each macOS arm64 Blender 5.0.1, 5.1.2 and 5.2.1, including repeated-redraw, late-acknowledgement and failure/retry regressions. The canonical guide preserves preceding-artifact desktop/screenshot evidence; fresh desktop input on the changed artifact remains unverified. Unchanged source fingerprints retain their earlier review. No arbitrary-cloud-job adoption, prototype migration, live/paid provider, other OS/DPI desktop or integrated release acceptance.",
     "sources": {
       "scenario/core/history.py": "70f03b84bd4eaa98712332b97ee492180d91f1663825e8f967cfbb7a9cfce781",
-      "scenario/blender/history.py": "01e55d9f4ce82ab82ed29792f51086413272bb051315132241d17786b03360be",
+      "scenario/blender/history.py": "3c9e76a4509b88eb3eccb26f3bb6323c759724b62c5b92f0b0f27f5f665a1b6b",
       "scenario/blender/operators.py": "c702667513650b9008e96e1d6f26addd3923a9a29fa19b929251a079bf7214f0",
-      "scenario/blender/panels.py": "c296255f787e284baa15adb6fd3f478ae7876f71df59b175b50ebb4f40a85673",
+      "scenario/blender/panels.py": "c198d9e91d272024b696ce0f783f555133bc2b84843e133b510d54b786c16a16",
       "scenario/mcp/tools_scenario.py": "23be0918a72222c90fe91e6878d267f2f782f8d2a40a4db93006d2332c8627fb",
-      "scenario/blender/runtime.py": "bbf2a6a457d13db9a8159add5f39f6b927fb055cfaa91008c81930c7d034dd00",
+      "scenario/blender/runtime.py": "0b4dc983c64332991b4e46214ef56e275aaa12c673bb1362827e8a1a76d4163e",
       "scenario/blender/model_jobs.py": "93758190ff21f930cea9f664dbdcd5942459058ac0df7e9914dcf991daf8bfae",
       "tests/unit/test_history.py": "47084c58bb62aa7cfd4d31c163b635ce8f4f65313bd10d1b93679c0773612174",
-      "tests/blender/test_sdk_history.py": "0f5e06746e85b9432448bb584dc9b8be8e41802dd9d074a88a5ea31a329cc6bf",
+      "tests/blender/test_sdk_history.py": "bee03fca7c05032859098a769a554c3b9b7dc8ad9b4244a22c12ec7d3390ba0c",
       "tests/blender/test_mcp_contracts.py": "4ff84c26aaa5bdb76ef7b91f274163c400dc5db43224a6bfeeee6de7ee36a12b"
     }
   }

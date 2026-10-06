@@ -598,16 +598,17 @@ def draw_history(layout, context, shown_ids=()):
     if not runtime.state.history:
         layout.label(text="Press Refresh cloud to list this project's generations", icon="INFO")
         return
-    # Read current storage without activating a session or changing state in draw.
-    # A job may have received its remote ID since the displayed page was loaded.
-    try:
-        store = runtime.state.job_store
-        if store is None:
-            raise ValueError("No selected store")
-        saved_ids = {record.remote_job_id for record in store.records() if record.remote_job_id}
-    except Exception:
+    # Explicit history reads cache this projection. Live shared views also cover
+    # acknowledgements delivered after that page, without storage I/O in draw.
+    cached_ids = runtime.state.history_saved_ids
+    if cached_ids is None:
         layout.label(text="Could not inspect saved jobs; refresh history", icon="ERROR")
         return
+    saved_ids = cached_ids | {
+        view.job_id
+        for view in runtime.state.jobs_view
+        if view.job_id and view.meta.get("shared_job")
+    }
     local_by_job = {}
     manager = runtime.state.manager
     if manager is not None:

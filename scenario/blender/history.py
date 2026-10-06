@@ -14,11 +14,16 @@ from . import runtime
 def saved_records():
     """Read current scoped storage, independently of the displayed cloud page."""
     try:
-        return runtime.ensure_job_store().records()
+        records = runtime.ensure_job_store().records()
     except (StoreError, OSError):
+        runtime.state.history_saved_ids = None
         raise ScenarioError(
             0, "Could not inspect saved jobs; preserve storage for recovery"
         ) from None
+    runtime.state.history_saved_ids = frozenset(
+        record.remote_job_id for record in records if record.remote_job_id
+    )
+    return records
 
 
 def saved_matches(reference):
@@ -97,9 +102,9 @@ def on_history_event(payload):
                 payload["jobs"],
                 manager.registry.all(),
                 kinds=_kinds(),
-                shared_records=runtime.ensure_job_store().records(),
+                shared_records=saved_records(),
             )
-        except (StoreError, OSError):
+        except ScenarioError:
             error = "Could not inspect saved jobs; preserve storage for recovery"
         except (AttributeError, TypeError, ValueError, KeyError):
             error = "Scenario returned an invalid history page"

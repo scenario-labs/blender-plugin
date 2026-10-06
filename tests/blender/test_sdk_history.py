@@ -196,14 +196,71 @@ class SDKHistoryTests(unittest.TestCase):
         self.deliver()
         layout = FakeLayout()
         before = self.runtime.state.job_store.records()
-        with patch.object(
-            self.runtime, "ensure_model_jobs", side_effect=AssertionError("Draw mutation")
+        with (
+            patch.object(
+                self.runtime, "ensure_model_jobs", side_effect=AssertionError("Draw mutation")
+            ),
+            patch.object(
+                self.runtime.state.job_store,
+                "records",
+                side_effect=AssertionError("Storage read during redraw"),
+            ),
         ):
-            submodule("blender.panels").draw_history(layout, bpy.context)
+            for _ in range(30):
+                submodule("blender.panels").draw_history(layout, bpy.context)
         operators = [call[1][0] for node in layout.walk() for call in node.named("operator")]
         self.assertIn("scenario.inspect_saved_jobs", operators)
         self.assertNotIn("scenario.import_result", operators)
         self.assertEqual(self.runtime.state.job_store.records(), before)
+
+    def test_live_saved_view_overrides_history_snapshot_without_storage_read(self):
+        from test_model_picker import FakeLayout
+
+        self.legacy_collision()
+        self.history.refresh()
+        self.deliver()
+        self.assertEqual(self.runtime.state.history_saved_ids, frozenset())
+        saved = self.saved_job()
+        self.runtime.inspect_model_jobs()
+        self.assertEqual(self.runtime.state.jobs_view[0].job_id, saved.remote_job_id)
+        layout = FakeLayout()
+        panels = submodule("blender.panels")
+        with (
+            patch.object(panels, "thumbnail", side_effect=AssertionError("Legacy file read")),
+            patch.object(
+                self.runtime.state.job_store,
+                "records",
+                side_effect=AssertionError("Storage read during redraw"),
+            ),
+        ):
+            panels.draw_history(layout, bpy.context)
+        operators = [call[1][0] for node in layout.walk() for call in node.named("operator")]
+        self.assertIn("scenario.inspect_saved_jobs", operators)
+        self.assertNotIn("scenario.import_result", operators)
+
+    def test_failed_saved_read_disables_history_actions_until_explicit_refresh(self):
+        from test_model_picker import FakeLayout
+
+        self.saved_job()
+        self.history.refresh()
+        self.deliver()
+        store = self.runtime.state.job_store
+        self.assertEqual(self.runtime.state.history_saved_ids, frozenset({"job-fixture"}))
+        with patch.object(store, "records", side_effect=OSError("fixture")):
+            self.history.refresh()
+            self.deliver()
+        self.assertIsNone(self.runtime.state.history_saved_ids)
+        layout = FakeLayout()
+        submodule("blender.panels").draw_history(layout, bpy.context)
+        self.assertFalse([call for node in layout.walk() for call in node.named("operator")])
+        self.assertIn("Could not inspect saved jobs", self.runtime.state.history_error)
+        self.history.refresh()
+        self.deliver()
+        self.assertEqual(self.runtime.state.history_saved_ids, frozenset({"job-fixture"}))
+        self.assertFalse(self.runtime.state.history_error)
+        self.prefs.api_secret = "other-fixture-secret"
+        self.runtime.sync_catalog_context()
+        self.assertIsNone(self.runtime.state.history_saved_ids)
 
     def test_saved_acknowledgement_after_page_load_overrides_stale_legacy_projection(self):
         from test_model_picker import FakeLayout

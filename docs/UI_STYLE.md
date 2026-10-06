@@ -742,10 +742,11 @@ live provider or integrated release acceptance.
 
 A cloud row matched to the current scoped job store offers **Inspect saved jobs**
 instead of **Download and open**. Its saved-job controls retain the explicit
-download and destination-approval steps. Drawing reads current saved identities
-without activating a session, starting a service request or changing scene/job
-data. A changed credential selection hides the old row actions until refresh;
-a storage-read failure shows an error instead of cached import controls.
+download and destination-approval steps. Drawing uses the saved-ID snapshot from
+explicit history reads plus live shared-job views, without database I/O, session
+activation, service requests or scene/job changes. Import commands independently
+recheck current storage. A changed credential selection hides the old row actions
+until refresh; a failed saved read disables those actions until a successful read.
 
 The exact ZIP with SHA-256
 `30b0e2c03268e81a64ad83d0cc2924be9d0afaac8d7aebf9a80b3aafc9349b2c`
@@ -773,3 +774,12 @@ refresh, download/import completion, arbitrary cloud-job adoption, other OS/DPI
 combinations or integrated release acceptance.
 
 ![Shared saved-job recovery offers Resume download while the existing scene remains intact](images/history-saved-job-recovery.png)
+
+The redraw fix uses ZIP SHA-256
+`27ebeece6da712d7b6fd50a8047736df8351e501679b1a4ad1503b62f82e7ac5`.
+All 751 installed tests pass on each of the same three Blender versions.
+Regressions reject database reads during 30 consecutive panel draws, retain
+saved-job routing for late shared-view acknowledgements, and verify storage
+failure/retry and credential-change invalidation. The existing screenshots and
+desktop interaction evidence above belong to the preceding ZIP; desktop input
+on the changed artifact remains unverified.

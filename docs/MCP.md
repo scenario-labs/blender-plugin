@@ -264,7 +264,7 @@ Do not edit this block by hand; run `make mcp-docs`. An asterisk marks a require
 | `reference_upload_status` | Read a reference upload's progress while the shared session advances its already authorized work. | `context_id`*: string<br>`reference_id`*: string | read-only annotation |
 | `list_reference_uploads` | Inspect saved uploads under the selected credential scope, including after restart. | none | read-only annotation |
 | `recover_reference_upload` | Explicitly inspect a known remote upload, cancel unclaimed preparation, or clean its finished private source copy. | `context_id`*: string<br>`request_id`*: string<br>`expected_revision`*: integer<br>`action`*: string (['refresh', 'cancel_prepared', 'cleanup']) | destructive annotation |
-| `prepare_result_application` | Prepare explicit saved image/media/model import, material assignment, panorama World replacement, or session-local World restoration. | `context_id`*: string<br>`request_id`*: string<br>`expected_revision`*: integer<br>`asset_id`: string<br>`purpose`: string (['import', 'material', 'world', 'restore_world', 'mesh_edit'])<br>`mesh_policy`: string (['REMESH', 'UV'])<br>`mesh_placement`: string (['WORLD', 'LOCAL'])<br>`keep_original`: boolean | read-only annotation |
+| `prepare_result_application` | Prepare explicit saved image/media/model import, material assignment, panorama World replacement, or session-local World restoration. | `context_id`*: string<br>`request_id`*: string<br>`expected_revision`*: integer<br>`asset_id`: string<br>`purpose`: string (['import', 'material', 'world', 'restore_world', 'mesh_edit', 'mesh_source'])<br>`mesh_policy`: string (['REMESH', 'UV'])<br>`mesh_placement`: string (['WORLD', 'LOCAL'])<br>`keep_original`: boolean | read-only annotation |
 | `apply_result_application` | Apply or restore saved results after the user approves the prepared destination and operation. | `context_id`*: string<br>`application_id`*: string | destructive annotation |
 | `recover_local_job` | Explicitly recover a saved job without repeating generation or importing into another scene. | `context_id`*: string<br>`request_id`*: string<br>`expected_revision`*: integer<br>`action`*: string (['refresh', 'resume', 'cancel', 'recover_download', 'retry_receipt']) | destructive annotation |
 | `list_local_jobs` | Inspect durable local jobs for the selected API-key pair without network requests. | none | read-only annotation |
@@ -480,3 +480,19 @@ claim. They describe uploaded snapshots and stay out of Scenario request bodies.
 They do not prove the current source is unchanged, establish provider alignment,
 or authorize finding/replacing an object after restart. See
 [the storage contract](JOB_STORAGE.md#captured-mesh-inputs-in-generation-intents).
+
+
+## Applying to an original mesh source
+
+Use `prepare_result_application` with `purpose: mesh_source`, the observed job
+revision and one saved GLB `asset_id`. It resolves the job's single captured mesh
+input against the same session's unchanged live export, ignoring active selection.
+Show the returned target, asset, policy, coordinate placement and Keep original
+choice before calling `apply_result_application`. The generic `mesh_edit` purpose
+continues to review the active mesh as an explicit destination.
+
+Multiple captured inputs/sources, changed sources and missing live guards fail
+before mutation. Undo/load, credential retirement and restart cannot restore a
+guard from saved provenance. This shares the native
+[captured-source action](MESH_APPLICATION.md#applying-to-the-captured-mesh-source),
+including verification, durable claims and no generation or automatic retry.

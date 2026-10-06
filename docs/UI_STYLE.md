@@ -349,3 +349,44 @@ other OS desktop behavior, #263 resolution or release acceptance.
 [approved replacement result](images/saved-mesh-edit-result.png).
 
 ![Native mesh approval identifies the source and replacement policy](images/saved-mesh-edit-approval.png)
+
+
+## Captured mesh source interaction evidence
+
+The saved-job **Apply to captured source (N)** action opens the existing mesh
+review with the original exported object, independently of active selection.
+Its extra line identifies the unchanged captured source. **Apply mesh edit (N)**
+keeps explicit current-destination review; both require confirmation.
+
+On macOS arm64 Blender 5.1.2, an isolated installation of ZIP SHA-256
+`f9f57e8efd3679bf8143713067e938eb4545d433ff5e27cc349a938a61fac976`
+was exercised with synthetic transport and a real source export. With another
+mesh active, mouse activation named `Cube.001` as the captured source. Escape
+canceled without changing the saved ready record or either mesh; viewport focus
+and numpad front view still worked. Reopening and confirming with Return replaced
+the source's eight vertices with the saved three-vertex fixture, retained an
+original copy, and left the other active mesh at eight vertices. The job became
+applied with no additional mock submission, service request or download. The
+normal Blender profile was unchanged and the isolated process exited cleanly.
+
+![Captured source confirmation names the exported cube while another mesh remains active](images/captured-mesh-source-approval.png)
+
+![Applied captured source retains its original copy and leaves the other active mesh unchanged](images/captured-mesh-source-result.png)
+
+The same interaction was repeated with the integrated export/quote changes on
+macOS arm64 Blender 5.1.2 using ZIP SHA-256
+`a2254eb9ae5b24608eacf1e850dbbb95d9a1e4ff7b6b4b881bd4de2ef5e56610`.
+Mouse activation again identified the exported source despite a different active
+mesh. Escape preserved the ready job and both meshes; viewport focus and numpad
+front view remained usable. Return applied the three-vertex result to the source,
+kept its original copy and left the other mesh at eight vertices. Mock request,
+submission and download counts stayed unchanged through application; a socket
+guard recorded no network attempts. Installed bytes were verified before and
+after the run, the normal profile was unchanged, and the process exited cleanly.
+The images above remain captures from the earlier named artifact.
+
+This proves the local source-selection, cancellation and confirmation interaction.
+The synthetic form's pending estimate is not live pricing evidence. It does not
+establish provider alignment, other OS desktop behavior, #263 resolution, remaining
+edit policies, global undo or release acceptance. See
+[the source contract](MESH_APPLICATION.md#applying-to-the-captured-mesh-source).

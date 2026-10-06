@@ -126,6 +126,7 @@ class MeshApplicationApproval:
     placement: str
     mapping: tuple
     keep_original: bool
+    original_source: bool = False
     kind: str = "mesh_edit"
 
 
@@ -486,6 +487,11 @@ class ModelJobs:
             actions.append("cancel")
         if reusable and any(item.asset.media_type == MODEL_MEDIA_TYPE for item in record.results):
             actions.extend(("import_model", "apply_mesh"))
+            if (
+                len(record.intent.mesh_sources) == 1
+                and len(record.intent.mesh_sources[0].mesh_source.objects) == 1
+            ):
+                actions.append("apply_mesh_source")
         if reusable and any(
             item.asset.media_type in {"image/png", "image/exr", "image/x-exr"}
             for item in record.results
@@ -521,6 +527,7 @@ class ModelJobs:
                 "restore_world",
                 "apply_material",
                 "apply_mesh",
+                "apply_mesh_source",
             }
         ):
             raise ScenarioError(0, "The saved job or available action changed; inspect it again")
@@ -719,6 +726,7 @@ class ModelJobs:
         policy="REMESH",
         placement="WORLD",
         keep_original=True,
+        original_source=False,
     ):
         record = self.store.get(request_id)
         if (
@@ -734,7 +742,15 @@ class ModelJobs:
             for item in record.results
         ):
             raise ScenarioError(0, "Choose one saved static GLB result")
-        target = capture_mesh_target(scene, obj)
+        if type(original_source) is not bool:
+            raise ScenarioError(0, "Choose whether to use the captured source")
+        if original_source:
+            if len(record.intent.mesh_sources) != 1:
+                raise ScenarioError(0, "Choose a job with exactly one captured mesh input")
+            target = self.session.mesh_source_target(record.intent.mesh_sources[0])
+            scene, obj = target.scene, target.obj
+        else:
+            target = capture_mesh_target(scene, obj)
         mapping = self._mesh_options(target, policy, placement, keep_original)
         ticket = MeshApplicationApproval(
             uuid.uuid4().hex,
@@ -748,6 +764,7 @@ class ModelJobs:
             placement,
             mapping,
             keep_original,
+            original_source,
         )
         self._application_approvals[ticket.identifier] = ticket
         return ticket

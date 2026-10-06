@@ -12,6 +12,7 @@ from ..core.api.errors import ScenarioError
 from ..core.jobs.mesh_source import MeshSource, MeshSourceObject
 from . import mesh_export, mesh_export_fingerprint
 from .job_session import OriginUnavailable, _main_thread
+from .mesh_application import MeshApplicationError, capture_target, validate_target
 
 
 @dataclass(frozen=True)
@@ -67,6 +68,16 @@ def export_with_source(context, objects, path, session):
     scene = context.scene
     context.view_layer.update()
     before, identities = _capture_sources(scene, objects, session)
+    # A live application guard is stricter than upload provenance: unsupported
+    # rigs/modifiers remain uploadable, but never become an in-place edit target.
+    target = None
+    if len(objects) == 1:
+        try:
+            target = capture_target(scene, objects[0])
+        except MeshApplicationError:
+            # Upload/export supports more sources than in-place replacement.
+            # Preserve the upload without granting a live application guard.
+            pass
     mesh_export.export_glb(context, objects, path=str(path))
     context.view_layer.update()
     after, current = _capture_sources(scene, objects, session)
@@ -74,6 +85,8 @@ def export_with_source(context, objects, path, session):
         raise ScenarioError(0, "Source mesh changed during export; inspect it before uploading")
     # Export temporarily changes selection and can evaluate the graph. Freeze the
     # upload revision after restoration, retaining the exact pre-export identities.
+    if target is not None:
+        validate_target(target)
     if any(
         (old.file_id, old.scene_id, old.target_id) != (new.file_id, new.scene_id, new.target_id)
         for old, new in zip(identities, current, strict=True)
@@ -104,4 +117,6 @@ def export_with_source(context, objects, path, session):
         ),
     )
     origin = current[0] if len(current) == 1 else session.capture(scene)
+    if target is not None:
+        session.retain_mesh_source(origin, source, target)
     return origin, source

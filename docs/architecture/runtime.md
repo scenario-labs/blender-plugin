@@ -318,8 +318,9 @@ known receipt retry only saves persistence. The caller supplies an explicit
 Blender-imported-scene-to-source-local matrix, edit policy and Keep original choice.
 Native **Apply mesh edit** and MCP `purpose: mesh_edit` now prepare the same
 captured target, explicit scene/local placement, policy and Keep original review.
-No service operation or second executor is added. Source export metadata, provider
-mapping contracts and remaining edit policies still need integration; this is not full #99 or release acceptance.
+No service operation or second executor is added. The captured-source flow below
+connects export metadata to this review. Provider mapping contracts and remaining
+edit policies still need integration; this is not full #99 or release acceptance.
 
 ## Mesh upload source identity
 
@@ -335,3 +336,15 @@ persists their source snapshots in
 [generation intents](../JOB_STORAGE.md#captured-mesh-inputs-in-generation-intents).
 This does not change the generation origin or authorize automatic mesh replacement. Provider alignment, operation-specific policies and live acceptance
 remain separate. No SDK request or dependency changes are introduced.
+
+
+## Captured mesh source application
+
+Native **Apply to captured source** and MCP `purpose: mesh_source` connect
+persisted quote/input provenance to an unchanged live source retained during
+export. They ignore active selection and feed the existing explicit mesh review
+and durable application path. Ordinary destination review stays available after
+restart; saved IDs alone cannot recreate original-source ownership. See
+[the mesh contract](../MESH_APPLICATION.md#applying-to-the-captured-mesh-source).
+Multi-source ambiguity, unsupported rigs/modifiers, provider coordinate contracts,
+remaining edit policies and global undo still limit #99 acceptance.

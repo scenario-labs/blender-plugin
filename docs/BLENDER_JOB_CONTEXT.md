@@ -59,9 +59,10 @@ uncertain retained actions require saved-job inspection.
 The application pump polls the known job, lists its single plain-text output and
 reads the complete body through `JobSession.read_model_text`. Delivery validates
 scope, original scene/revision and unchanged inputs before storing a normalized
-array of 1–200 elements. Malformed/truncated arrays are rejected. Delivery never
-creates geometry. A scene switch, edited plan, file load or retired owner cannot
-redirect a late result to the current scene.
+array of 1–200 elements. Complete arrays may have Markdown fences or surrounding
+prose; malformed/truncated arrays are rejected without recovering a partial
+prefix. Delivery never creates geometry. A scene switch, edited plan, file load
+or retired owner cannot redirect a late result to the current scene.
 
 Build plan stages local geometry before replacing the scene's explicitly stored
 collection pointer. It does not adopt collections by name. Unmarked additions,

@@ -23,18 +23,7 @@ def binding(scene):
 
 
 def parse_complete_plan(text):
-    """Never accept the prototype parser's recovery of a truncated JSON prefix."""
-    raw = json.loads(text)
-    if (
-        not isinstance(raw, list)
-        or not 1 <= len(raw) <= blockout.MAX_ELEMENTS
-        or any(not isinstance(item, dict) for item in raw)
-    ):
-        raise ValueError("Expected a complete bounded Blockout array")
-    elements = blockout.parse_plan(json.dumps(raw, allow_nan=False))
-    if len(elements) != len(raw):
-        raise ValueError("The Blockout plan is incomplete")
-    return elements
+    return blockout.parse_complete_plan(text)
 
 
 @dataclass

@@ -2,6 +2,8 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 import json
 
+import pytest
+
 from scenario.core.scene import blockout
 
 
@@ -23,6 +25,43 @@ def test_tolerates_fence_prose_and_fills_defaults():
     assert el["group"] == "Blockout"  # default group
     assert el["position"] == [0.0, 0.0, 1.5]  # sits on the ground (z = size_z / 2)
     assert el["rotation"] == 0.0
+
+
+@pytest.mark.parametrize(
+    "wrapper",
+    [
+        "{}",
+        "```json\n{}\n```",
+        "```\n{}\n```",
+        "Here is the plan:\n{}\nDone.",
+        "Here is the plan:\n```json\n{}\n```\nDone.",
+    ],
+)
+def test_complete_plan_accepts_wrappers_and_preserves_every_element(wrapper):
+    plan = json.dumps([{"name": "Wall", "size": [4, 0.3, 3]}, {"name": "Tower"}])
+    assert blockout.parse_complete_plan(wrapper.format(plan)) == blockout.parse_plan(plan)
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        '[{"name":"Complete prefix"},',
+        '```json\n[{"name":"Complete prefix"}, {"size":[1,2,3]}\n```',
+        'Here is the plan:\n[{"name":"Complete prefix"}, {"size":[1,2,3]}',
+        '```json\n[{"name":"Bad"},]\n```',
+        "{}",
+        '{"plan":[{}]}',
+        '```json\n{"plan":[{}]}\n```',
+        'Here is the plan:\n{"plan":[{}]}',
+        "[]",
+        "[{},2]",
+        '[{"size":[NaN,1,2]}]',
+        json.dumps([{}] * (blockout.MAX_ELEMENTS + 1)),
+    ],
+)
+def test_complete_plan_never_recovers_a_prefix_or_silently_drops_elements(text):
+    with pytest.raises(ValueError):
+        blockout.parse_complete_plan(text)
 
 
 def test_bad_enums_fall_back_and_values_clamp():

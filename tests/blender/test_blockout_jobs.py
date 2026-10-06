@@ -189,6 +189,24 @@ class BlockoutJobsTests(unittest.TestCase):
         self.assertEqual(item.phase, "DONE")
         self.assertEqual(len(self.paid), 1)
 
+    def test_wrapped_complete_plan_delivers_without_resubmission_or_geometry(self):
+        plan = self.result_text
+        for wrapper in ("```json\n{}\n```", "Here is the plan:\n{}\nDone."):
+            with self.subTest(wrapper=wrapper):
+                self.result_text = wrapper.format(plan)
+                objects, paid = tuple(bpy.data.objects), len(self.paid)
+                item = self.quote()
+                self.assertEqual(self.approve(item), {"FINISHED"})
+                self.advance(item)
+                self.assertEqual(item.phase, "DONE", item.error)
+                self.assertEqual(
+                    json.loads(self.scene.scenario_blockout.plan_json), json.loads(plan)
+                )
+                self.assertEqual(tuple(bpy.data.objects), objects)
+                self.assertEqual(len(self.paid), paid + 1)
+                self.assertEqual(self.approve(item), {"CANCELLED"})
+                self.assertEqual(len(self.paid), paid + 1)
+
     def test_changed_inputs_and_rounded_cost_cannot_spend(self):
         for name, value in [
             ("prompt", "new"),
@@ -258,7 +276,13 @@ class BlockoutJobsTests(unittest.TestCase):
         self.assertEqual(self.paid, [])
 
     def test_truncated_or_non_array_plan_preserves_previous_plan(self):
-        for text in ['[{"name":"Partial"},', "{}", "[{}, 2]"]:
+        for text in [
+            '[{"name":"Partial"},',
+            '```json\n[{"name":"Partial"}, {"size":[1,2,3]}\n```',
+            'Here is the plan:\n[{"name":"Partial"}, {"size":[1,2,3]}',
+            "{}",
+            "[{}, 2]",
+        ]:
             with self.subTest(text=text):
                 self.result_text = text
                 item = self.quote()

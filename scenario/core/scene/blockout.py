@@ -116,11 +116,15 @@ def _recover_objects(text):
     return objects
 
 
-def _extract_json_array(text):
+def _extract_json_array(text, *, recover=True):
     text = (text or "").strip()
     fence = re.search(r"```(?:json)?\s*(.+?)```", text, re.DOTALL)
     if fence:
         text = fence.group(1).strip()
+    if not recover:
+        root = re.search(r"[\[{]", text)
+        if root is None or root.group() != "[":
+            return None  # A nested array inside a JSON object is not a plan.
     start, end = text.find("["), text.rfind("]")
     if start != -1 and end != -1 and end > start:
         try:
@@ -128,7 +132,7 @@ def _extract_json_array(text):
         except ValueError:
             pass
     # the array was truncated (a capped output): recover the complete objects written before the cut
-    if start != -1:
+    if recover and start != -1:
         recovered = _recover_objects(text[start:])
         if recovered:
             return recovered
@@ -166,6 +170,24 @@ def parse_plan(text):
                 "group": group,
             }
         )
+    return elements
+
+
+def parse_complete_plan(text):
+    """Accept a complete array with optional prose/fences, never a recovered prefix."""
+    try:
+        raw = json.loads(text)
+    except json.JSONDecodeError:
+        raw = _extract_json_array(text, recover=False)
+    if (
+        not isinstance(raw, list)
+        or not 1 <= len(raw) <= MAX_ELEMENTS
+        or any(not isinstance(item, dict) for item in raw)
+    ):
+        raise ValueError("Expected a complete bounded Blockout array")
+    elements = parse_plan(json.dumps(raw, allow_nan=False))
+    if len(elements) != len(raw):
+        raise ValueError("The Blockout plan is incomplete")
     return elements
 
 

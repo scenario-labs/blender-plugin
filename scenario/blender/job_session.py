@@ -213,21 +213,30 @@ class JobSession:
         return identity
 
     def capture(self, scene, target=None):
+        return self.capture_many(scene, (target,))[0]
+
+    def capture_many(self, scene, targets):
+        """Validate one current scene-membership snapshot before recording any origins."""
         _main_thread()
         if not self._active:
             raise OriginUnavailable("This job context is inactive")
+        targets = tuple(targets)
         try:
             if scene not in tuple(bpy.data.scenes):
                 raise OriginUnavailable("The originating scene is unavailable")
-            if target is not None and target not in tuple(scene.objects):
+            members = set(scene.objects) if any(target is not None for target in targets) else ()
+            if any(target is not None and target not in members for target in targets):
                 raise OriginUnavailable("The target is not in the originating scene")
         except ReferenceError:
             raise OriginUnavailable("The original scene or target was removed") from None
         scene_id = self._identity(self._scenes, scene)
-        target_id = self._identity(self._targets, target) if target is not None else None
-        if target_id is not None:
-            self._target_scenes.setdefault(target_id, set()).add(scene_id)
-        return self._origins.capture(scene_id, target_id)
+        origins = []
+        for target in targets:
+            target_id = self._identity(self._targets, target) if target is not None else None
+            if target_id is not None:
+                self._target_scenes.setdefault(target_id, set()).add(scene_id)
+            origins.append(self._origins.capture(scene_id, target_id))
+        return tuple(origins)
 
     def quote_model(self, identifier, parameters, *, origin):
         return self._quote("model", identifier, parameters, origin)
@@ -324,13 +333,13 @@ class JobSession:
         """Queue explicit offline reconciliation without resolving or applying old targets."""
         return self._record_command("recover_downloads", request_id, expected_revision)
 
-    def prepare_upload(self, source, *, origin, kind, content_type):
+    def prepare_upload(self, source, *, origin, kind, content_type, mesh_source=None):
         """Stage a reference for the origin captured with its source, off the main thread."""
         _main_thread()
         self._check_capacity()
         self._resolve(origin)
         task = self._workers.prepare_upload(
-            source, origin=origin, kind=kind, content_type=content_type
+            source, origin=origin, kind=kind, content_type=content_type, mesh_source=mesh_source
         )
         self._pending.append((task, origin))
         return task

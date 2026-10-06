@@ -58,7 +58,7 @@ class UploadNotStarted(ScenarioError):
 
 def capture_upload(context, *, source="VIEWPORT", camera=None, force_solid=False):
     """Capture into private temporary storage retained through asynchronous staging."""
-    from . import capture, mesh_export, runtime
+    from . import capture, mesh_export, mesh_provenance, runtime
 
     if source not in {"VIEWPORT", "CAMERA", "RENDER", "MESH", "VIEWPORT_CLIP", "CAMERA_CLIP"}:
         raise UploadNotStarted(0, "Choose a viewport, camera, render result or selected mesh")
@@ -67,6 +67,7 @@ def capture_upload(context, *, source="VIEWPORT", camera=None, force_solid=False
         raise UploadNotStarted(0, "Allow Online Access before uploading a reference")
     directory = tempfile.TemporaryDirectory(prefix="reference-", dir=runtime.paths().state_dir)
     admitting = False
+    origin, mesh_source = None, None
     try:
         kind, suffix = (
             ("3d", ".glb")
@@ -80,7 +81,9 @@ def capture_upload(context, *, source="VIEWPORT", camera=None, force_solid=False
             objects = mesh_export.source_objects(context)
             if not objects:
                 raise ScenarioError(0, "Select a mesh before uploading its snapshot")
-            mesh_export.export_glb(context, objects, path=str(path))
+            origin, mesh_source = mesh_provenance.export_with_source(
+                context, objects, path, owner.session
+            )
         elif source == "RENDER":
             image = bpy.data.images.get("Render Result")
             if image is None or not image.has_data:
@@ -107,7 +110,14 @@ def capture_upload(context, *, source="VIEWPORT", camera=None, force_solid=False
                 force_solid=force_solid,
             )
         admitting = True
-        return owner.start(context.scene, path, kind=kind, temporary=directory)
+        return owner.start(
+            context.scene,
+            path,
+            kind=kind,
+            temporary=directory,
+            origin=origin,
+            mesh_source=mesh_source,
+        )
     except BaseException as error:
         directory.cleanup()
         if not admitting and isinstance(error, Exception):
@@ -155,7 +165,7 @@ class ReferenceUploads:
         self.form_errors = deque(maxlen=16)
         self.attachments = {}
 
-    def start(self, scene, path, *, kind="image", temporary=None):
+    def start(self, scene, path, *, kind="image", temporary=None, origin=None, mesh_source=None):
         """Upload the chosen typed reference once; never quote or generate."""
         task = None
         try:
@@ -174,9 +184,12 @@ class ReferenceUploads:
             if scene != bpy.context.scene:
                 raise ScenarioError(0, "Select the originating scene before uploading")
             bpy.context.view_layer.update()
-            origin = self.session.capture(scene)
+            if origin is None:
+                origin = self.session.capture(scene)
+            else:
+                self.session.validate_destination(origin)
             task = self.session.prepare_upload(
-                path, origin=origin, kind=kind, content_type=content_type
+                path, origin=origin, kind=kind, content_type=content_type, mesh_source=mesh_source
             )
             if temporary is not None:
                 self.session.retain_upload_capture(task, temporary)

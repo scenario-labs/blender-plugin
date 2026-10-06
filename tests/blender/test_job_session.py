@@ -7,6 +7,8 @@ import threading
 import unittest
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import patch
 
 import bpy
 from helpers import submodule
@@ -597,6 +599,48 @@ class JobSessionTests(unittest.TestCase):
             self.session.capture(self.scene, removed)
         self.assertEqual(self.session._targets, {})
         self.assertEqual(self.session._target_scenes, {})
+
+    def test_batch_capture_reads_scene_membership_once_for_all_targets(self):
+        targets = tuple(object() for _ in range(64))
+
+        class Scene:
+            reads = 0
+
+            @property
+            def objects(self):
+                self.reads += 1
+                return targets
+
+        scene = Scene()
+        with patch.object(
+            self.module, "bpy", SimpleNamespace(data=SimpleNamespace(scenes=(scene,)))
+        ):
+            origins = self.session.capture_many(scene, targets)
+            self.assertEqual(scene.reads, 1)
+            self.assertEqual(len({origin.target_id for origin in origins}), len(targets))
+            self.assertEqual(len({origin.scene_id for origin in origins}), 1)
+            scene_only = self.session.capture(scene)
+            self.assertIsNone(scene_only.target_id)
+            self.assertEqual(scene.reads, 1)
+
+    def test_batch_capture_rejects_missing_target_without_recording_partial_origins(self):
+        outside = bpy.data.objects.new("Outside capture target", None)
+        self.addCleanup(lambda: bpy.data.objects.remove(outside, do_unlink=True))
+        with self.assertRaises(self.module.OriginUnavailable):
+            self.session.capture_many(self.scene, (self.target, outside))
+        self.assertEqual(self.session._scenes, {})
+        self.assertEqual(self.session._targets, {})
+        self.assertEqual(self.session._target_scenes, {})
+
+    def test_batch_capture_rejects_inactive_session_and_worker_access(self):
+        with ThreadPoolExecutor(max_workers=1) as pool:
+            future = pool.submit(self.session.capture_many, self.scene, (self.target,))
+            with self.assertRaisesRegex(RuntimeError, "main thread"):
+                future.result(5)
+        self.session.deactivate()
+        with self.assertRaisesRegex(self.module.OriginUnavailable, "inactive"):
+            self.session.capture_many(self.scene, (self.target,))
+        self.assertEqual(self.session._targets, {})
 
     def test_capture_removed_scene_reports_origin_unavailable_without_recording_it(self):
         removed = bpy.data.scenes.new("Removed capture scene")

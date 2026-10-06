@@ -607,3 +607,26 @@ cannot be replayed. Delivery rechecks the destination after verification.
 Operation/export metadata and end-to-end edit-lane
 acceptance remain separate integration. It provides no global undo entry, persistent restoration
 handle, new generation request or automatic provider-coordinate mapping.
+
+## Source identity in mesh uploads
+
+Mesh capture snapshots the selected source objects before export and rechecks
+their geometry/context after the exporter restores selection. The post-export
+origin supplies the upload revision while retaining the pre-export file, scene
+and target identities.
+`capture_many` validates a whole target batch against one fresh scene-membership
+set before recording any origins, retaining the main-thread and active-session
+guards. Mesh export uses one batch before and one after export; membership is
+never cached across passes. The ordinary `capture` method delegates a single
+target through the same checks, without enumerating objects for scene-only origins.
+Each pass finishes its fingerprints and source snapshots before registering
+origins. A rejected first-pass snapshot leaves the session registries unchanged;
+deleting its source cannot invalidate other work through target pruning.
+For a single source the `JobOrigin.target_id` identifies that mesh. Multi-source
+exports persist all IDs in local `mesh_source` metadata without assigning a
+primary target. The exact export hash accompanies the upload through the existing
+worker and storage path; ordinary file/capture uploads have no mesh provenance.
+
+See [the upload contract](SDK_UPLOADS.md#captured-mesh-export-provenance) for limits,
+schema upgrade and native roundtrip coverage. These records do not restore target
+authority after restart or bind a later generation quote yet.

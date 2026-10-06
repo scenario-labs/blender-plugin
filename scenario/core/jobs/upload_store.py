@@ -12,6 +12,7 @@ from dataclasses import asdict, dataclass, replace
 from enum import StrEnum
 from pathlib import Path
 
+from .mesh_source import MeshSource, decode_mesh_source
 from .store import (
     JobOrigin,
     JobScope,
@@ -24,7 +25,7 @@ from .store import (
 from .upload_transfers import UploadedPart
 
 _APPLICATION_ID = 0x53435550
-_VERSION = 1
+_VERSION = 2
 
 
 def _digest(value):
@@ -44,6 +45,7 @@ class UploadIntent:
     file_sha256: str
     part_size: int
     part_sha256: tuple[str, ...]
+    mesh_source: MeshSource | None = None
 
     def __post_init__(self):
         _identity(self.request_id)
@@ -84,6 +86,19 @@ class UploadIntent:
             or count > 10000
         ):
             raise ValueError("Use the complete bounded part digest list")
+        if self.mesh_source is not None and (
+            not isinstance(self.mesh_source, MeshSource)
+            or self.kind != "3d"
+            or self.content_type != "model/gltf-binary"
+            or self.mesh_source.file_sha256 != self.file_sha256
+            or self.origin.target_id
+            != (
+                self.mesh_source.objects[0].target_id
+                if len(self.mesh_source.objects) == 1
+                else None
+            )
+        ):
+            raise ValueError("Mesh provenance must match the exact GLB bytes and captured target")
         _digest(self.file_sha256)
         for digest in self.part_sha256:
             _digest(digest)
@@ -182,12 +197,16 @@ def _validate(record):
     return record
 
 
-def _decode(raw, scope):
+def _decode(raw, scope, *, legacy=False):
     try:
         value = json.loads(raw)
         if not isinstance(value, dict) or set(value) != set(StoredUpload.__dataclass_fields__):
             raise ValueError
         intent = value.pop("intent")
+        if legacy:
+            if not isinstance(intent, dict) or "mesh_source" in intent:
+                raise ValueError
+            intent["mesh_source"] = None
         for fields, cls in (
             (intent, UploadIntent),
             (intent["scope"], JobScope),
@@ -200,6 +219,7 @@ def _decode(raw, scope):
         if not isinstance(intent["part_sha256"], list):
             raise ValueError
         intent["part_sha256"] = tuple(intent["part_sha256"])
+        intent["mesh_source"] = decode_mesh_source(intent["mesh_source"])
         raw_receipts = value.pop("receipts")
         if not isinstance(raw_receipts, list) or len(raw_receipts) > 10000:
             raise ValueError
@@ -251,10 +271,37 @@ class UploadStore:
                     )
                     connection.execute(f"PRAGMA application_id={_APPLICATION_ID}")
                     connection.execute(f"PRAGMA user_version={_VERSION}")
+                elif version == 1 and app == _APPLICATION_ID:
+                    self._upgrade_v1(connection)
                 else:
                     self._check_version(connection)
         except OSError:
             raise StoreError("Could not initialize upload storage") from None
+
+    @staticmethod
+    def _upgrade_v1(connection):
+        # Validate every scope before publishing schema 2. The enclosing write
+        # transaction rolls back all rows if any legacy record is malformed.
+        rows = connection.execute(
+            "SELECT scope, request_id, revision, record FROM uploads"
+        ).fetchall()
+        for key, request_id, revision, raw in rows:
+            try:
+                scope = JobScope(**json.loads(raw)["intent"]["scope"])
+                record = _decode(raw, scope, legacy=True)
+            except (TypeError, ValueError, KeyError):
+                raise StoreError("Invalid legacy upload; preserve storage for recovery") from None
+            if (
+                hashlib.sha256(_json(asdict(scope)).encode()).hexdigest() != key
+                or record.intent.request_id != request_id
+                or record.revision != revision
+            ):
+                raise StoreError("Legacy upload identity is invalid; preserve storage")
+            connection.execute(
+                "UPDATE uploads SET record=? WHERE scope=? AND request_id=?",
+                (_json(asdict(record)), key, request_id),
+            )
+        connection.execute(f"PRAGMA user_version={_VERSION}")
 
     @property
     def scope(self):

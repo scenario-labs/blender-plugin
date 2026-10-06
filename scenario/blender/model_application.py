@@ -187,6 +187,8 @@ def staged_model(item, path, previous, *, static_only=True):
         staging.render.fps_base = 1.0 / destination.render.fps_base
         staging.frame_set(destination.frame_current, subframe=destination.frame_subframe)
         layer = staging.view_layers[0]
+        # Supported background CLI sessions retain an off-screen window context.
+        # The glTF armature importer needs it even without a visible desktop.
         window = bpy.context.window
         if window is None:
             raise ModelApplicationError("Model import requires a Blender window context")

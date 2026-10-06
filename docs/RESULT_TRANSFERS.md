@@ -128,3 +128,30 @@ staging beneath the configured result root and removes it on success or failure.
 The strings are returned to the caller; no local prompt cache or automatic paid
 fallback is created. A process crash can leave private temporary staging for
 later cleanup, as with other interrupted transfers.
+
+## Texture result semantics
+
+The selected SDK 2.2.0's public `assets.with_raw_response.retrieve` response keeps
+`mimeType` separate from `metadata.type`. The
+[asset retrieval contract](https://docs.scenario.com/api/python/resources/assets/methods/retrieve)
+names both fields. The shared adapter already preserves that response; no new
+endpoint, raw fallback or service request is needed.
+
+`result_metadata.texture_role` keeps only documented image texture categories:
+base texture, albedo, normal, smoothness, roughness (3D map), metallic, height,
+ambient occlusion and edge. These are semantic labels, not a complete PBR material
+or a guarantee about channel layout, normal convention, seamlessness or color
+space. MIME continues to select file handling and Blender validates actual bytes.
+Missing, malformed or unknown optional metadata stays unclassified. A nonimage
+file, including an archive with a texture label, never gets an image texture role.
+
+The immutable manifest persists only this allowlisted role, not the raw metadata.
+Known roles are rechecked when refreshing an unfinished asset's download URL;
+a changed role stops before transfer. Old/unclassified manifests keep an unknown
+role without blocking otherwise matching downloads or inferring a new role.
+Receipt verification after restart does not contact Scenario to enrich metadata.
+
+This is a prerequisite for explicit material application under #65/#68. It does
+not assign materials or choose between multiple texture sets/variants. A later
+material approval must select unambiguous assets and the intended mesh targets;
+role preservation alone does not authorize a scene mutation.

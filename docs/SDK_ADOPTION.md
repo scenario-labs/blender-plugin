@@ -502,3 +502,16 @@ through `estimate_translate` and `quote_translate`. It accepts only nonempty
 `prompt` text and follows the same dry-run, durable claim and zero-retry policy.
 A successful `translate` job returns `metadata.output.translation`, read through
 the same bounded text-result command. No LLM substitution or raw endpoint is used.
+
+## Saved texture-map roles
+
+The existing `SDKAdapter.asset` path uses SDK 2.2.0
+`assets.with_raw_response.retrieve`, retaining the documented `mimeType` and
+`metadata.type` fields without another API call or fallback. Offline contracts
+exercise those fields through the public wrapper. The result command now stores
+an allowlisted image texture role independently from MIME, for later Materials
+application; unknown semantics remain unknown. See
+[texture result semantics](RESULT_TRANSFERS.md#texture-result-semantics) and the
+[versioned store](JOB_STORAGE.md#atomicity-and-failures) for download guards and
+atomic schema 2/3 upgrades. This does not change authentication, scope, retry
+policy, provider acceptance or the dependency pin.

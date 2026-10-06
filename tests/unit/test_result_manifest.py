@@ -328,3 +328,16 @@ def test_fifo_is_rejected_without_waiting_for_writer(tmp_path):
     os.mkfifo(tmp_path / ASSET.name)
     with pytest.raises(TransferError):
         verify_download(tmp_path, RECEIPT)
+
+
+def test_current_schema_rejects_missing_texture_role_instead_of_guessing(setup, tmp_path):
+    store, record = setup
+    attach(store, record)
+    with sqlite3.connect(tmp_path / "jobs.sqlite3") as connection:
+        raw = json.loads(connection.execute("SELECT record FROM jobs").fetchone()[0])
+        del raw["results"][0]["asset"]["texture_role"]
+        connection.execute("UPDATE jobs SET record=?", (json.dumps(raw),))
+    before = (tmp_path / "jobs.sqlite3").read_bytes()
+    with pytest.raises(StoreError):
+        store.get("request")
+    assert (tmp_path / "jobs.sqlite3").read_bytes() == before

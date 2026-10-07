@@ -38,7 +38,21 @@ pair never borrows from the other source. Secrets are masked in the preferences;
 Test connection runs in the background. Its success status verifies model access
 with the selected credentials, including when the model list is empty. It does
 not identify an account or project. Repeated clicks while checking share the same
-request; changing credentials discards the previous check's result.
+request; changing credentials or project discards the previous check's result.
+
+**Project ID (optional)** applies to both saved and environment credentials. Leave
+it blank to use the API key's server-defined default scope, or enter a project ID
+you are allowed to use. This is an explicit override, not account discovery or an
+access grant. A URL or malformed ID is rejected locally; service permission errors
+remain errors rather than falling back to the default project.
+
+Changing the project clears visible catalog/history and prices and retires pending
+approvals. Already submitted work retains its original credential/project scope.
+Switch back to that same scope to inspect or recover its saved jobs; use a fresh
+quote for new generation. Changing only surrounding whitespace keeps the same
+scope. Legacy unscoped jobs cannot make requests while an override is selected;
+use the shared saved-job recovery controls. The selected ID is saved with Blender
+preferences, independently of the credential source.
 
 Blender saves entered credentials with its preferences, not in an OS keychain.
 The account strip names the selected source when its key or secret is missing.
@@ -128,7 +142,7 @@ retry the action once it is available.
 
 From top to bottom:
 
-- **Account strip**: the connection or credential status, a refresh button for the model list and a shortcut to the preferences. Account/project discovery and switching remain subject to the [known limitations](KNOWN_LIMITATIONS.md).
+- **Account strip**: the connection or credential status, a refresh button for the model list and a shortcut to the preferences. Project overrides are selected in Preferences; browser sign-in and account discovery remain subject to the [known limitations](KNOWN_LIMITATIONS.md).
 - **Model**: a button showing the current model. It opens the model picker, laid out like Scenario's "Choose a Model": modality tabs (Image, Video, Audio, 3D) and the web app's category chips (Image: All, Generate, Edit, Expand, Upscale, Vectorize, Remove Background, Tools; Video: All, Generate, Edit, Lipsync, Upscale, Reframe, Remove Background, Tools; Audio: All, Speech, Music, SFX, Tools; 3D: All, Generate, Splat, Remesh, Retexture, UV Unwrap, Rigging, Animate, Parts), a search field, the list with thumbnails and the description of the highlighted model. Availability depends on the selected credentials and the model catalog. See the [known limitations](KNOWN_LIMITATIONS.md) for trained/custom-model integration boundaries. Picking a model of another modality switches to that lane. The small arrow next to the button is the plain dropdown.
 - **Prompt**: its own box, like Scenario's. The prompt lives in the field; drag the small size control in the header to make the box taller. Below it, three equal full-width buttons with Scenario's icons: **New** (dice, Prompt Spark writes a prompt for the model), **Rewrite** (sparkles, Prompt Spark improves yours), and **Translate** (to English). Each helper first requests a free server price. Review the CU amount below the row, then click **Approve New prompt**, **Approve Rewrite** or **Approve Translate** to submit once. The background result updates only the original, unchanged prompt field; changing its text, model, scene or credentials prevents stale delivery. An uncertain submission stays in saved jobs for inspection and must not be repeated. The trash button confirms before clearing the prompt and is disabled when it is empty.
 - **References**: one box per file input the model accepts (image, video, audio, 3D), with a thumbnail per file. Add offers File, Viewport still, Camera still, Viewport clip, Camera clip and Render Result. Choose **Upload reference** to capture and upload a still or clip before pricing. For an empty 3D input, **Upload selected mesh** exports and uploads the current selection. Render forms provide **Capture and upload scene** and, for a chosen video first frame, **Upload first frame**. Generate never captures or uploads implicitly.

@@ -51,6 +51,7 @@ class RuntimeState:
         self.catalog_loading = False
         self.catalog_error = ""
         self.catalog_credentials = None
+        self.catalog_project_id = None
         self.retired_catalogs = []
         self.account_label = ""
         self.connection_request = None
@@ -150,10 +151,23 @@ def credentials():
     )
 
 
+def project_id():
+    """Read the explicit optional override; never infer a key's server project."""
+    p = prefs()
+    return (getattr(p, "project_id", "") or "").strip() or None
+
+
+def catalog_selection_matches():
+    """Read-only check for drawing and admission; no discovery or storage access."""
+    return state.catalog_credentials == credentials() and state.catalog_project_id == project_id()
+
+
 def make_client():
     creds = credentials()
     if not creds.valid:
         raise ScenarioError(0, "Complete the selected credential source in Scenario Preferences")
+    if project_id() is not None:
+        raise ScenarioError(0, "Legacy jobs have no project scope; use shared saved-job recovery")
     return ScenarioClient(creds.key, creds.secret)
 
 
@@ -192,12 +206,20 @@ def ensure_catalog():
                 0, "The selected credentials are not a valid API key and secret"
             ) from None
         try:
-            store = open_credential_store(paths().state_dir / "shared-jobs", selected)
+            store = open_credential_store(
+                paths().state_dir / "shared-jobs", selected, project_id=project_id()
+            )
         except StoreError as error:
             raise ScenarioError(0, str(error)) from None
+        except ValueError:
+            raise ScenarioError(
+                0,
+                "Project ID must be an opaque ID, not a URL or whitespace; clear it for key scope",
+            ) from None
         state.catalog = SDKCatalog(selected, online=online(), scope=store.scope)
         state.job_store = store
         state.catalog_credentials = creds
+        state.catalog_project_id = store.scope.project_id
     return state.catalog
 
 
@@ -450,13 +472,13 @@ def request_connection_check():
 
 
 def sync_catalog_context():
-    """Refresh the worker-safe permission snapshot and retire changed credentials."""
+    """Refresh the worker-safe permission snapshot and retire changed credentials or project."""
     if not on_main_thread():
         raise RuntimeError("Catalog context must be refreshed on Blender's main thread")
     if state.job_session is not None and not state.job_session.active:
         state.retire_jobs()
     if state.catalog is not None:
-        if state.catalog_credentials != credentials():
+        if not catalog_selection_matches():
             from . import generation
 
             state.retire_jobs()
@@ -465,6 +487,7 @@ def sync_catalog_context():
             state.catalog = None
             state.job_store = None
             state.catalog_credentials = None
+            state.catalog_project_id = None
             state.history = []
             state.history_token = None
             state.history_request = None

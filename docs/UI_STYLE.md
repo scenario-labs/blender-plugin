@@ -2,6 +2,22 @@
 
 The N-panel is drawn with Blender's `UILayout`, so it wears the user's Blender theme (colours, corner radius, fonts). We cannot change those; what we control is structure, spacing, wording and icons. This guide keeps the whole plugin coherent. The floating composer is custom gpu/blf drawing and mirrors the same language.
 
+## Project scope in Preferences
+
+Place **Project ID (optional)** in the Account box after the credential fields,
+with **Blank uses the API key's default scope** below it. The same explicit choice
+applies to saved and environment credentials. Do not populate a project from the
+first discovery result. A changed selection clears prices and connection status;
+new generation requires a fresh quote. Drawing reads the selection only.
+
+Installed tests cover scoped SDK quotes, stale approvals and callback rejection,
+local saved-job isolation, normalized-equivalent edits and invalid IDs. The exact
+candidate ZIP `937f16afc3c7d06e12a8af252c460366d571847beb0f5a5ce651b1540dc3ec7a`
+passes 1,056 installed tests on each macOS arm64 Blender 5.0.1, 5.1.2 and 5.2.1.
+Native desktop input and screenshot acceptance remain pending. These synthetic
+tests do not establish live project permissions or supported-platform interaction
+acceptance.
+
 ## Tabs and segmented choices
 
 A row of mutually exclusive choices (lane tabs, picker modality tabs and category chips, Edit 3D tasks) is a **continuous segmented control**: cells touch (no gaps), each takes an equal share of the full width, and the icon sits next to its label with the pair centred in the cell.

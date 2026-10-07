@@ -118,6 +118,26 @@ GUI ticks and the headless MCP loop reap retired sessions after work finishes.
 Native model form entry points use this session for quote-bound submission, as described below.
 Explicit saved-job controls and active Image transfers use the same session below.
 
+## Optional project selection
+
+Preferences expose an explicit optional Project ID for either credential source.
+`runtime.project_id` trims surrounding whitespace and treats blank as no override;
+the shared JobScope validates nonempty IDs before storage or SDK construction.
+The selected value is passed to `open_credential_store` and therefore to both
+catalog and job SDK pools. Neither discovery nor a guessed server identity is
+required. This uses the existing SDK `project_id` query configuration unchanged.
+
+Project changes follow the same retirement path as credential changes: clear
+catalog/schema/history/quote projections, deactivate the old session and reject
+late callback authority. In-flight receipts remain in their original scoped store.
+Returning to a project reopens its records with fresh session approval identity;
+normalized-equivalent edits keep the current session. Read-only history and Film
+controls check both credentials and project without mutating state in drawing.
+The remaining prototype client rejects a nonempty project override rather than
+operating in an unselected default scope. It cannot infer project ownership for
+legacy jobs. This does not migrate prototype data or establish live project
+permissions, discovery or complete release acceptance.
+
 ## Active SDK cost previews and model submission
 
 Native model forms use [ModelJobs](../../scenario/blender/model_jobs.py), a main-thread

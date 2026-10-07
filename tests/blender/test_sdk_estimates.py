@@ -27,6 +27,7 @@ class SDKEstimateTests(unittest.TestCase):
         self.manager = self.enterContext(isolated_manager())
         self.addCleanup(self.runtime.state.reset)
         self.calls = []
+        self.expected_project = None
         self.response = b'{"creativeUnitsCost":1.1234567890123456789,"costDetails":{"base":1.25,"nested":{"parts":[0.5,2]}}}'
         self.model = {
             "id": "fixture-price",
@@ -40,9 +41,13 @@ class SDKEstimateTests(unittest.TestCase):
         def respond(request):
             self.assertIsNot(threading.current_thread(), threading.main_thread())
             self.calls.append(request)
+            self.assertEqual(request.url.params.get("projectId"), self.expected_project)
             if request.method == "GET":
                 return httpx.Response(200, json={"model": self.model})
-            self.assertEqual(dict(request.url.params), {"dryRun": "true"})
+            expected = {"dryRun": "true"}
+            if self.expected_project is not None:
+                expected["projectId"] = self.expected_project
+            self.assertEqual(dict(request.url.params), expected)
             self.assertEqual(request.url.path, "/v1/generate/custom/fixture-price")
             return httpx.Response(269, content=self.response)
 
@@ -158,6 +163,32 @@ class SDKEstimateTests(unittest.TestCase):
         self.assertEqual(posts[0].content, posts[1].content)
         self.assertEqual(json.loads(posts[0].content), {"prompt": "a teapot"})
         self.assertEqual(len(self.calls), 4)  # Each origin-bound quote fetches current schema.
+
+    def test_selected_project_reaches_both_ui_and_mcp_exact_quotes(self):
+        self.addCleanup(setattr, self.prefs, "project_id", self.prefs.project_id)
+        self.expected_project = "project-a"
+        self.prefs.project_id = "project-a"
+        self.catalog = self.runtime.ensure_catalog()
+        record = submodule("core.api.catalog").ModelRecord.from_api(self.model)
+        self.generation.set_catalog([record], [record])
+        self.test_ui_and_mcp_share_sdk_schema_payload_and_exact_cost()
+        self.assertEqual(self.runtime.state.job_session.scope.project_id, "project-a")
+        self.assertTrue(all(call.url.params["projectId"] == "project-a" for call in self.calls))
+
+    def test_project_switch_discards_completed_quote_before_mcp_delivery(self):
+        self.addCleanup(setattr, self.prefs, "project_id", self.prefs.project_id)
+        deferred = submodule("mcp.tools_scenario").estimate_cost(
+            {"model_id": self.model["id"], "parameters": {"prompt": "a teapot"}}
+        )
+        with ThreadPoolExecutor(max_workers=1) as worker:
+            quote = worker.submit(deferred.run).result(5)
+        self.prefs.project_id = "project-b"
+        with self.assertRaisesRegex(Exception, "context changed"):
+            deferred.finish(quote)
+        self.assertFalse(self.runtime.state.estimates)
+        self.assertFalse(self.runtime.state.model_previews)
+        # The rejected finish may open the new selected session, never reuse the old approval.
+        self.assertEqual(self.runtime.state.job_session.scope.project_id, "project-b")
 
     def test_missing_price_is_an_error_and_zero_is_a_valid_price(self):
         self.response = b"{}"

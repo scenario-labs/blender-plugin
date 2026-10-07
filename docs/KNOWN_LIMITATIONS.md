@@ -51,7 +51,10 @@ establish live generation or full render-lane desktop acceptance.
   [#65](https://github.com/scenario-labs/blender-plugin/issues/65)).
 - Credentials use one explicitly selected pair (saved Blender preferences by
   default, environment only when selected). UI and MCP model jobs use credential-bound
-  local storage; remaining preparation/application integration stays in #65. Browser sign-in in
+  local storage. Preferences also allow an explicit optional project ID; changing
+  it retires approvals and selects separate saved jobs. Blank uses the API key's
+  default scope without discovering its identity. Live project permission and
+  cross-project service acceptance remain under #68; browser sign-in in
   [#67](https://github.com/scenario-labs/blender-plugin/issues/67) is deferred.
 - Trained/custom-model discovery and routing remain incomplete
   ([#97](https://github.com/scenario-labs/blender-plugin/issues/97)).

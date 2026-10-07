@@ -20,7 +20,7 @@ def commands(*, create=True):
         owner is None
         or not owner.session.active
         or owner.session is not runtime.state.job_session
-        or runtime.state.catalog_credentials != runtime.credentials()
+        or not runtime.catalog_selection_matches()
     ):
         return None
     return owner.compositions

@@ -42,6 +42,7 @@ class ModelGenerationTests(unittest.TestCase):
             )
         )
         self.calls, self.paid, self.sessions = [], [], []
+        self.expected_project = None
         self.downloads = []
         self.remote_status = "in-progress"
         self.result_bytes = b""
@@ -114,7 +115,7 @@ class ModelGenerationTests(unittest.TestCase):
             records = self.store.records()
             self.assertTrue(any(r.state == self.storemod.JobState.SUBMITTING for r in records))
             self.assertNotIn("dryRun", request.url.params)
-            self.assertNotIn("projectId", request.url.params)
+            self.assertEqual(request.url.params.get("projectId"), self.expected_project)
             self.paid.append(request)
             self.entered.set()
             self.assertTrue(self.release.wait(5))
@@ -1208,6 +1209,44 @@ class ModelGenerationTests(unittest.TestCase):
         self.assertEqual(self.tools.list_local_jobs({})["jobs"], [])
         self.assertEqual(self.runtime.state.jobs_view, [])
         self.assertEqual(len(self.paid), 1)
+
+    def test_project_change_rejects_both_ready_prices_without_dispatch(self):
+        self.addCleanup(setattr, self.prefs, "project_id", self.prefs.project_id)
+        self.ui_quote()
+        quote = self.mcp_quote()
+        self.prefs.project_id = "project-a"
+        self.assertNotEqual(self.lane.estimate_state, "READY")
+        with self.assertRaises((self.request_error, self.origin_error)):
+            self.mcp_submit(quote)
+        with self.assertRaises((self.request_error, self.origin_error)):
+            self.generation.submit_generation(bpy.context, "image")
+        self.assertEqual(self.paid, [])
+
+    def test_project_submission_retains_original_scope_after_switch_and_return(self):
+        self.addCleanup(setattr, self.prefs, "project_id", self.prefs.project_id)
+        self.expected_project = "project-a"
+        self.prefs.project_id = "project-a"
+        self.store = self.runtime.ensure_job_store()
+        record = submodule("core.api.catalog").ModelRecord.from_api(self.model)
+        self.generation.set_catalog([record], [record])
+        quote = self.mcp_quote()
+        self.release.clear()
+        result = self.mcp_submit(quote)
+        owner = self.runtime.state.model_jobs
+        task = owner.submissions[result["local_id"]]
+        self.assertTrue(self.entered.wait(5))
+        self.prefs.project_id = "project-b"
+        self.release.set()
+        task.result(5)
+        saved = self.store.get(result["local_id"])
+        self.assertEqual(saved.state, self.storemod.JobState.REMOTE)
+        self.assertEqual(saved.intent.scope.project_id, "project-a")
+        self.assertEqual(self.tools.list_local_jobs({})["jobs"], [])
+        self.assertEqual(self.runtime.state.jobs_view, [])
+        self.prefs.project_id = "project-a"
+        self.assertEqual(self.runtime.ensure_job_store().get(result["local_id"]), saved)
+        self.assertEqual(len(self.paid), 1)
+        self.assertEqual(self.paid[0].url.params["projectId"], "project-a")
 
     def test_every_mcp_lane_requires_exact_single_use_quote_before_sdk_submission(self):
         lanes = submodule("core.api.catalog").GENERATION_LANES

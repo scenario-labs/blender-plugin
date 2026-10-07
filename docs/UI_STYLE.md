@@ -12,8 +12,8 @@ new generation requires a fresh quote. Drawing reads the selection only.
 
 Installed tests cover scoped SDK quotes, stale approvals and callback rejection,
 local saved-job isolation, normalized-equivalent edits and invalid IDs. The exact
-candidate ZIP `10cdfd90623081104c936177a3b7fe0445df81e5cbddb4508882a60044970c3a`
-passes 1,057 installed tests on each macOS arm64 Blender 5.0.1, 5.1.2 and 5.2.1.
+candidate ZIP `44d4a61354c8f91e2fe93e93e6834259216787ee1403562308de322d27844b42`
+passes 1,058 installed tests on each macOS arm64 Blender 5.0.1, 5.1.2 and 5.2.1.
 Native desktop input and screenshot acceptance remain pending. These synthetic
 tests do not establish live project permissions or supported-platform interaction
 acceptance.

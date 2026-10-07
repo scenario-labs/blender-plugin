@@ -277,7 +277,9 @@ recovery guidance instead. Shared delivery retains its own scope, receipt and
 scene guards. The removed prototype engine tests are replaced by read-only
 startup/pump and late-event regressions; shared submission, uncertainty,
 transfers and deferred wait tests remain. This retirement does not establish
-live provider acceptance or complete the remaining SDK/helper inventory.
+live provider acceptance or complete retained-capability acceptance. The
+[service operation inventory](../SDK_ADOPTION.md#service-operation-inventory)
+records removal of the unused prototype service helpers.
 
 ## Replacement components already present
 

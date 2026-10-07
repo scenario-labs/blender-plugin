@@ -70,8 +70,9 @@ establish live generation or full render-lane desktop acceptance.
   [#98](https://github.com/scenario-labs/blender-plugin/issues/98).
 - Multi-object mesh export combines the selection. Safe in-place multi-object
   editing needs separate acceptance under #99.
-- Prompt helpers can make paid calls, including an LLM fallback when Prompt
-  Spark yields no usable text. Historical price figures are not current quotes.
+- Prompt helpers require their own exact quote and approval. Unusable Spark
+  output fails without an automatic paid LLM fallback; complete text can be
+  retrieved again without regeneration. Historical prices are not current quotes.
 - Video-to-motion and speech-to-text workflows remain an explicit capability
   request in [#190](https://github.com/scenario-labs/blender-plugin/issues/190);
   model tags alone do not establish supported input and result handling.

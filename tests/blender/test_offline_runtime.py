@@ -33,14 +33,14 @@ class OfflineRuntimeTests(unittest.TestCase):
         self.enterContext(online_access(False))
         self.manager = self.enterContext(isolated_manager())
         self.addCleanup(self.runtime.state.reset)
-        client_class = submodule("core.api.client").ScenarioClient
-        for method in ("get", "post"):
-            tripwire = self.enterContext(
-                patch.object(
-                    client_class, method, side_effect=AssertionError("Unexpected service transport")
-                )
+        tripwire = self.enterContext(
+            patch.object(
+                httpx.HTTPTransport,
+                "handle_request",
+                side_effect=AssertionError("Unexpected service transport"),
             )
-            self.addCleanup(tripwire.assert_not_called)
+        )
+        self.addCleanup(tripwire.assert_not_called)
         self.addCleanup(self.service.stop)
 
     def dispatch_workers(self):

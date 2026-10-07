@@ -10,13 +10,16 @@ limits of its current controls. It does not replace Scenario's service policies.
   and available model parameters while you edit the visible form, before you press
   Generate. The API request uses `?dryRun=true` to request a price without starting
   a generation. Generate sends the completed request again and can spend credits.
-- Attached viewport or camera stills, playblast clips and the Render Result are
-  captured or saved and uploaded when you generate. A selected mesh used as a
-  reference is exported to GLB, including evaluated modifiers and embedded materials.
-  Reference files you attach are uploaded for the requested operation.
-- New, Rewrite and Translate send prompt text and model context to Scenario's
-  prompt services. Prompt Spark in Render Image and Render Video also receives a
-  still of the view. Prompt helpers can spend credits independently of generation.
+- Viewport/camera stills, playblast clips, Render Result and selected-mesh GLB
+  snapshots can be prepared locally. Upload reference is a separate action before
+  the final generation quote. Exports can include evaluated geometry and embedded
+  materials. Local file attachment alone does not start generation. Film capture
+  likewise requires separate capture and upload approval.
+- New, Rewrite and Translate send prompt text and model context for an exact
+  estimate, then require separate approval to submit the prompt operation.
+  Render Image/Video Spark estimates also send uploaded view references and need
+  their own approval before the final render quote. Prompt helpers can spend
+  credits independently of generation.
 - The model catalog is requested automatically when credentials are available;
   opening the model picker can download thumbnails. Test connection requests one
   public-model list page with at most one model to verify model access; it does
@@ -53,8 +56,9 @@ repositories and their update checks separately.
 
 Blender's Allow Online Access setting gates catalog loading, MCP startup and
 interactive network actions. It is not an instantaneous network cutoff: work
-already started can finish, and the current prototype's thumbnail/download paths
-do not all check that setting independently. Close Blender or disconnect the
+already started can finish. Shared SDK requests and result/upload transfers check
+the selected permission snapshot; the retained thumbnail downloader does not
+independently recheck it during a transfer or retry. Close Blender or disconnect the
 network when you need a complete cutoff. These gaps remain part of the
 [shared-runtime integration](https://github.com/scenario-labs/blender-plugin/issues/65).
 
@@ -77,15 +81,25 @@ saved fields and save preferences to remove them there; also check backups and
 how your launcher stores environment variables. Rotate the key in Scenario if
 it leaks or a machine holding it is lost.
 
-Generated files go to the Output Folder, normally `~/Downloads/Scenario`, grouped
-by kind and day. The extension's own user directory under Blender's extensions
-folder holds `state/jobs.json`, including job requests and prompts, and caches:
-`cache/captures`, `cache/exports`, `cache/thumbs`, `cache/models` and
-`cache/list_public.json`. Scene properties, imported media and prompts can also
-be saved in your `.blend` file. Uninstalling is not a promise to erase these files;
-delete the extension's user directory yourself for a clean removal and remove
-outputs or `.blend` copies separately. Local deletion does not delete cloud jobs
-or assets.
+The extension's own user directory under Blender's extensions folder stores
+shared job requests, quotes, prompts and recovery state in
+`state/shared-jobs/jobs.sqlite3`. Keep its `scope.key` alongside the database for
+recovery. The key derives local credential-bound identities; it does not encrypt
+the database or store your API key/secret. An explicit project override selects a
+separate scope in that storage.
+
+Verified result files live under `state/shared-results`; upload intents and
+private source copies live under `state/shared-uploads`, including
+`uploads.sqlite3` and `sources`. Capture/export staging and thumbnails also use
+the extension's user state/cache directories. Explicit local output tools can
+write to the configured Output Folder, normally `~/Downloads/Scenario`.
+Scene properties, imported media and prompts can be saved in your `.blend` file.
+Older `state/jobs.json` or model-cache files may remain from the prototype; local
+record inspection does not resume their cloud jobs or migrate their ownership.
+
+Uninstalling is not a promise to erase these files. Remove extension user data,
+outputs and `.blend` copies separately when no longer needed. Local deletion does
+not delete cloud jobs or assets.
 
 Extension logs go to Blender's console; it does not configure its own log file.
 A terminal or host application may retain that output. Diagnostics can include
@@ -105,9 +119,12 @@ require the local session token. Blender normally generates it for the session;
 an explicitly supplied token must be changed by its owner. This is a local
 connection, not Scenario's API credential, and programs holding it can read the
 scene, take captures and request generation that spends your Scenario credits.
-The prototype's `estimate_cost` and `generate` are separate actions; its current
-MCP interface does not itself enforce approval of a previously displayed quote.
-Only connect agents you authorize to perform those actions.
+MCP `generate` requires the unchanged shared quote ID and exact approved cost.
+Prompt, Blockout and Film commands likewise expose separate estimate/approval
+steps. Recovery cannot resubmit an uncertain generation, and applying recovered
+results requires explicit destination approval. These controls do not establish
+that an agent has obtained your permission: only connect agents you authorize
+to perform those actions.
 
 Arbitrary Python execution is disabled by default. Enabling it gives a connected
 agent code execution in Blender with your user's permissions. That switch is not

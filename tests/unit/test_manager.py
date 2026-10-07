@@ -33,3 +33,16 @@ def test_catalog_worker_lifetime_preserves_unscoped_records(tmp_path):
     assert manager.drain() == manager.drain_catalog() == []
     assert registry.path.read_bytes() == original
     assert [rec.status for rec in registry.all()] == ["submitting", "submitting"]
+
+
+def test_local_record_status_classification():
+    for status in ("success", "succeeded", "completed"):
+        rec = JobRecord.new("image", "image", "fixture", {})
+        rec.status = status
+        assert rec.is_terminal and rec.is_success
+    for status in ("failure", "failed", "canceled", "cancelled", "error"):
+        rec.status = status
+        assert rec.is_terminal and not rec.is_success
+    for status in ("queued", "processing", "submitting", "in-progress"):
+        rec.status = status
+        assert not rec.is_terminal and not rec.is_success

@@ -44,13 +44,6 @@ class SDKConnectionTests(unittest.TestCase):
         self.enterContext(
             patch.object(submodule("core.api.sdk_catalog"), "SDKAdapter", side_effect=factory)
         )
-        self.enterContext(
-            patch.object(
-                submodule("core.api.client"),
-                "ScenarioClient",
-                side_effect=AssertionError("Legacy client used"),
-            )
-        )
 
     def completed(self):
         self.manager.join(5)

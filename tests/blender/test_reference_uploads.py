@@ -38,13 +38,7 @@ class ReferenceUploadTests(unittest.TestCase):
                 self.runtime, "paths", return_value=SimpleNamespace(state_dir=fixture.root)
             )
         )
-        self.enterContext(
-            patch.object(
-                submodule("core.api.client"),
-                "ScenarioClient",
-                side_effect=AssertionError("Prototype upload client used"),
-            )
-        )
+
         self.owner = self.runtime.ensure_reference_uploads()
         original = fixture.handler
 

@@ -476,6 +476,10 @@ class ModelJobs:
         )
         if record.intent.operation in {"prompt", "translate"}:
             return ("refresh",) if state == JobState.REMOTE else ()
+        from .blockout_recovery import available as blockout_available
+
+        if blockout_available(record):
+            return ("recover_blockout",)
         actions = []
         if state in (JobState.REMOTE, JobState.CANCEL_REQUESTED):
             actions += ["refresh", "resume"]
@@ -537,6 +541,7 @@ class ModelJobs:
                 "apply_material",
                 "apply_mesh",
                 "apply_mesh_source",
+                "recover_blockout",
             }
         ):
             raise ScenarioError(0, "The saved job or available action changed; inspect it again")

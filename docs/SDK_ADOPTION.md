@@ -145,8 +145,10 @@ SDK pin change or parallel paid worker. API keys retain credential-bound server
 scope without requiring discovery or a project override.
 
 Offline SDK transport fixtures and installed native tests establish command
-wiring and scope/origin guards. Live model compatibility, recovered-plan import
-into an explicitly selected new scene and release acceptance remain separate.
+wiring and scope/origin guards. Saved-plan recovery reuses these same metadata
+and complete-text reads through the selected JobSession, followed by explicit
+local destination approval. No additional SDK method or exception is introduced.
+Live model compatibility and release acceptance remain separate.
 
 ## Active history reads
 

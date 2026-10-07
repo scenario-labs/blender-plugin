@@ -269,6 +269,13 @@ def ensure_blockout_jobs():
     return state.blockout_jobs
 
 
+def blockout_recovery(context_id):
+    jobs = ensure_blockout_jobs()
+    if context_id != state.job_context_id:
+        raise ScenarioError(0, "The saved-plan context changed; inspect saved jobs again")
+    return jobs.recovery
+
+
 def ensure_reference_uploads():
     from .reference_uploads import ReferenceUploads
 

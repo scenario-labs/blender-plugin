@@ -388,7 +388,14 @@ back to the stored plan and will be replaced on an explicit rebuild.
 After an uncertain submission or read failure, use **Inspect saved jobs**. Do not
 repeat generation to recover a completed result. Local MCP `read_model_text` can
 retrieve the full saved output after restart without applying it to another
-scene. Native import of a recovered plan into a new scene remains separate work.
+scene. For native recovery, select the destination scene, inspect saved jobs and
+choose **Read saved Blockout plan**. When reading finishes, choose **Use saved
+Blockout plan**. The dialog names the destination, shows the element/group counts
+and warns when its existing stored plan will be replaced. Cancel preserves the
+old plan; confirming changes only the stored plan. Blender's **Edit > Undo** and
+**Edit > Redo** restore or reapply that stored-plan change. Use **Build plan**
+separately to update geometry. If you change scenes or edit the destination during
+review, read and review it again. Recovery reads never generate another plan.
 
 ### Generations
 This session's results (collapsible entries with the asset id and a Details dialog), then the project's cloud history: prompt, kind, price, status, asset id. **Import into scene** brings a result into Blender (downloading it if needed), also for generations made on the web app or by an agent. **Load older** pages back in time. This is also the recovery path when a download failed: the job is still there, import it again.

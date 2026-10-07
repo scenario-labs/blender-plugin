@@ -678,3 +678,62 @@ with 732 installed tests passing on each of the same three Blender versions.
 It replaces mixed design/refinement wording with the explicit complete-plan
 update instruction. The desktop interaction and screenshots above use the
 preceding ZIP; no new UI behavior or live provider acceptance is claimed here.
+
+## Saved Blockout plan recovery
+
+Saved jobs expose **Read saved Blockout plan**, followed by **Use saved Blockout
+plan** after complete text validation. The confirmation names the scene and
+element/group counts, warns before replacing an existing plan and explains that
+geometry remains unchanged until a separate Build plan action. Cancellation
+discards the review. Drawing does not read the service or mutate the plan.
+
+The exact package with SHA-256
+`9b9bb818f0ec81e0af4ed95ba6d70390d17e12af72c24b5040d6814316b31ed2`
+passes 740 installed tests on each macOS arm64 Blender 5.0.1, 5.1.2 and 5.2.1.
+These cover native operator execution, MCP parity, restart with and without a
+saved manifest, discarded/single-use reviews, changed fields and scene
+replacement, retired contexts, offline reads and malformed text. Saved-job
+drawing skips invalid scene references, and status reports a deleted scene
+without rebinding a same-name replacement.
+
+![Saved Blockout job offers a separate read action before destination approval](images/blockout-recovery-controls.png)
+
+Desktop interaction with the same ZIP passes on macOS arm64 Blender 5.1.2 in an
+isolated profile, using a synthetic saved job and blocked external networking:
+
+- **Read saved Blockout plan**, then **Use saved Blockout plan**, opens the
+  destination/count/replacement dialog. Escape cancels and discards the review
+  while preserving the previous stored plan and all geometry.
+- After a fresh read, Return confirms the dialog and replaces only the stored
+  plan. Blender's **Edit > Undo** restores the previous plan; **Edit > Redo**
+  reapplies the recovered plan. Geometry stays unchanged throughout.
+- A viewport click selects the existing cube, and Home frames the scene,
+  confirming viewport focus and keyboard navigation after the dialog.
+- A separate **Build plan** click creates the recovered tower and preserves the
+  existing cube, light and camera. Approval, Undo/Redo, viewport interaction and
+  building issue no further service requests or submissions.
+
+![Saved Blockout plan confirmation names the destination and preserves geometry until Build](images/blockout-recovery-approval.png)
+
+![Separate Build plan action creates the recovered tower beside the preserved cube](images/blockout-recovery-built.png)
+
+The test app uses the vendor Blender binary and the unchanged extension ZIP;
+the harness removes its disposable profile after the interaction. The normal
+profile remained unchanged. Transport and plan contents are synthetic, with no
+live generation. This proves the scoped recovery interaction at the tested
+window size, not other OS/DPI combinations, live provider behavior or integrated
+release acceptance.
+
+The recovery review fixes were retested with ZIP SHA-256
+`b0bc4c291aa5d910beb53d34974526c74e5971d3462b326006cb521c697faeec`:
+746 installed tests pass on each macOS arm64 Blender 5.0.1, 5.1.2 and 5.2.1.
+These add deleted-destination review cleanup, pending-read drainage, finished
+action reclamation without retiring uncertain jobs, and guided invalid-plan
+refinement errors before any quote request. Desktop checks on Blender 5.1.2
+repeat Escape cancellation, Return confirmation, stored-plan Undo/Redo and
+separate Build; viewport front-view and zoom input work afterward. The synthetic
+fixture establishes an Undo checkpoint after preparing its starting scene.
+Local approval, Undo/Redo and Build add no service request or submission; both
+disposable runs exit cleanly with the normal profile unchanged. The screenshots
+above retain their original artifact provenance. These checks do not establish
+live provider or integrated release acceptance.

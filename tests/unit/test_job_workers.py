@@ -340,3 +340,113 @@ def test_stopped_workers_remain_observable_when_sdk_close_fails(setup, monkeypat
     assert owner.stopped and not owner._closed
     owner.shutdown()
     assert owner._closed
+
+
+def local_spec(tmp_path):
+    import sys
+    from pathlib import Path
+
+    from scenario.core.jobs.local_render import RenderSpec
+
+    return RenderSpec(
+        tmp_path.resolve(),
+        Path(sys.executable).resolve(),
+        (tmp_path / "worker.py").resolve(),
+        "Fixture",
+        "0" * 64,
+        1,
+        1,
+        24,
+        64,
+        64,
+        "STILL",
+    )
+
+
+def local_media(spec):
+    from scenario.core.jobs.local_render import RenderedMedia
+
+    return RenderedMedia(spec.directory / "capture.png", "0" * 64, 4, "image/png", 1, 24, 64, 64)
+
+
+def test_local_capture_uses_owned_pool_and_returns_bound_scope(setup, tmp_path, monkeypatch):
+    from scenario.core.jobs import local_render
+
+    owner, _, _, _, _, _, calls, _ = setup()
+    spec = local_spec(tmp_path)
+    threads = []
+
+    def render(value, *, cancel):
+        assert value is spec
+        threads.append(threading.current_thread())
+        return local_media(value)
+
+    monkeypatch.setattr(local_render, "render", render)
+    result = owner.render_local(spec, origin=ORIGIN, source_origin=ORIGIN).result(2)
+    assert result.scope == SCOPE and result.origin == result.source_origin == ORIGIN
+    assert result.media == local_media(spec)
+    assert threads[0] in owner._threads
+    assert not calls
+
+
+@pytest.mark.parametrize("retire", [False, True])
+def test_local_capture_cancellation_signals_running_child(setup, tmp_path, monkeypatch, retire):
+    from scenario.core.jobs import local_render
+
+    owner, _, _, _, _, _, calls, _ = setup()
+    entered = threading.Event()
+
+    def render(value, *, cancel):
+        entered.set()
+        assert cancel.wait(3)
+        raise local_render.RenderCancelled("Cancelled")
+
+    monkeypatch.setattr(local_render, "render", render)
+    task = owner.render_local(local_spec(tmp_path), origin=ORIGIN, source_origin=ORIGIN)
+    assert entered.wait(2)
+    with pytest.raises(WorkerError, match="current local capture"):
+        owner.render_local(local_spec(tmp_path), origin=ORIGIN, source_origin=ORIGIN)
+    owner.deactivate() if retire else owner.cancel_local(task)
+    with pytest.raises(local_render.RenderCancelled):
+        task.result(2)
+    assert not calls
+
+
+def test_retirement_cancels_queued_local_render_before_execution(setup, tmp_path, monkeypatch):
+    from scenario.core.jobs import local_render
+
+    owner, _, _, prepare, entered, release, _, _ = setup()
+    network = submit(owner, prepare())
+    assert entered.wait(2)
+    monkeypatch.setattr(local_render, "render", lambda *a, **k: pytest.fail("Queued render ran"))
+    task = owner.render_local(local_spec(tmp_path), origin=ORIGIN, source_origin=ORIGIN)
+    owner.deactivate()
+    release.set()
+    network.result(2)
+    with pytest.raises(CancelledError):
+        task.result(2)
+    assert not owner._local_cancels
+
+
+@pytest.mark.parametrize("late", [False, True])
+def test_capture_origin_guard_rechecks_queued_and_finished_work(setup, tmp_path, monkeypatch, late):
+    from contextlib import nullcontext
+
+    from scenario.core.jobs import local_render
+
+    owner, coordinator, _, _, _, _, calls, _ = setup()
+    current = [late]
+    rendered = []
+    coordinator._origin_guard = lambda origin: nullcontext(current[0])
+
+    def render(value, *, cancel):
+        rendered.append(value)
+        current[0] = False
+        return local_media(value)
+
+    monkeypatch.setattr(local_render, "render", render)
+    task = owner.render_local(local_spec(tmp_path), origin=ORIGIN, source_origin=ORIGIN)
+    with pytest.raises(local_render.RenderCancelled, match="scene changed"):
+        task.result(2)
+    assert bool(rendered) is late
+    assert not calls

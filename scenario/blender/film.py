@@ -12,7 +12,7 @@ from bpy_extras.io_utils import ImportHelper
 
 from ..core.jobs.upload_store import UploadState
 from ..core.ui.costs import format_cu
-from . import film_jobs, film_scene_controls, film_timeline_controls, runtime
+from . import film_capture_controls, film_jobs, film_scene_controls, film_timeline_controls, runtime
 
 
 class ScenarioFilmTask(bpy.types.PropertyGroup):
@@ -278,7 +278,7 @@ class SCENARIO_PT_film(bpy.types.Panel):
         if item is not None and item.error:
             box.label(text="Action needs review. Inspect saved jobs.", icon="ERROR")
         layout.operator("scenario.inspect_saved_jobs", icon="FILE_REFRESH")
-        layout.label(text="Capture and Film finishing are not available yet")
+        layout.label(text="Film finishing and final export are not available yet")
 
 
 CLASSES = (
@@ -297,6 +297,7 @@ CLASSES = (
     SCENARIO_PT_film,
     *film_scene_controls.CLASSES,
     *film_timeline_controls.CLASSES,
+    *film_capture_controls.CLASSES,
 )
 
 

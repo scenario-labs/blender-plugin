@@ -591,6 +591,24 @@ Session target IDs are not authority to find an object by name after restart;
 reopened files still require explicit destination review.
 
 
+## Captured media byte approval
+
+The [Film capture controls](FILM_PLAN.md#shared-capture-and-upload-approval)
+separately approve uploading a completed still/clip through `ReferenceUploads`.
+They pass its rendered `expected_sha256` through the existing session, worker
+and upload command to `UploadSources.stage`. Staging compares the copied whole
+file against that exact hash before publishing an upload intent. A mismatch
+removes only the new staging copy and cannot initialize a remote upload.
+Ordinary file uploads omit this optional additional binding.
+
+No SDK endpoint, authentication, retry or multipart-transfer contract changes.
+After staging, the existing shared initialization, transfer, finalization and
+inspection commands own remote work and uncertainty. The Film capture review
+retains one upload handle and never silently repeats it. It keeps the original
+capture directory alive until work stops; explicit capture discard preserves
+the separate durable upload staging/history. Associating an imported upload with
+a recipe task remains the explicit local action below.
+
 ## Film task association
 
 The [Film shared command](FILM_PLAN.md#saved-upload-tasks) can associate an existing
@@ -603,5 +621,6 @@ imports are not asset uploads.
 Association and idempotent reassociation send no SDK request, transfer bytes or
 read/delete source files. They do not relax initialization, part or completion
 claims. A finished staging cleanup retains the imported record, so the associated
-remote asset remains reusable. Native/MCP Film selection controls remain to be
-connected to these shared commands.
+remote asset remains reusable. The native **Use saved upload** control and local
+MCP `bind_film_upload` command perform this explicit association through the
+selected Film session. Capture upload does not choose a task automatically.

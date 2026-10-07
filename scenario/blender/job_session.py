@@ -15,7 +15,13 @@ from weakref import WeakKeyDictionary, WeakValueDictionary
 import bpy
 from bpy.app.handlers import persistent
 
-from ..core.jobs.coordinator import FilmUploadResult, JobCoordinator, OriginQuote, RemoteSnapshot
+from ..core.jobs.coordinator import (
+    FilmUploadResult,
+    JobCoordinator,
+    LocalCaptureResult,
+    OriginQuote,
+    RemoteSnapshot,
+)
 from ..core.jobs.origins import OriginRevisions
 from ..core.jobs.results import ModelTextResult, PromptResults, VerifiedResults
 from ..core.jobs.store import JobOrigin, JobState, StoredJob
@@ -195,6 +201,9 @@ class JobSession:
         from .film_timeline import FilmTimelineCommands
 
         self.film_timeline = FilmTimelineCommands(self)
+        from .film_capture import FilmCaptureCommands
+
+        self.film_capture = FilmCaptureCommands(self)
         with _sessions_lock:
             _sessions.add(self)
         try:
@@ -451,13 +460,35 @@ class JobSession:
         """Queue explicit offline reconciliation without resolving or applying old targets."""
         return self._record_command("recover_downloads", request_id, expected_revision)
 
-    def prepare_upload(self, source, *, origin, kind, content_type, mesh_source=None):
+    def render_local(self, spec, *, origin, source_origin):
+        _main_thread()
+        self._check_capacity()
+        self._resolve(origin)
+        if not self._origins.current(source_origin):
+            raise OriginUnavailable("The selected capture scene changed")
+        task = self._workers.render_local(spec, origin=origin, source_origin=source_origin)
+        self._pending.append((task, origin))
+        return task
+
+    def cancel_local_render(self, task):
+        _main_thread()
+        if any(pending is task for pending, _ in self._pending):
+            self._workers.cancel_local(task)
+
+    def prepare_upload(
+        self, source, *, origin, kind, content_type, mesh_source=None, expected_sha256=None
+    ):
         """Stage a reference for the origin captured with its source, off the main thread."""
         _main_thread()
         self._check_capacity()
         self._resolve(origin)
         task = self._workers.prepare_upload(
-            source, origin=origin, kind=kind, content_type=content_type, mesh_source=mesh_source
+            source,
+            origin=origin,
+            kind=kind,
+            content_type=content_type,
+            mesh_source=mesh_source,
+            expected_sha256=expected_sha256,
         )
         self._pending.append((task, origin))
         return task
@@ -569,7 +600,7 @@ class JobSession:
                         and record.intent.operation == "model"
                         and record.intent.target_id == model_id
                     )
-                elif isinstance(record, (OriginQuote, FilmUploadResult)):
+                elif isinstance(record, (OriginQuote, FilmUploadResult, LocalCaptureResult)):
                     matches = record.origin == origin and record.scope == self.scope
                 else:
                     matches = record.intent.origin == origin and record.intent.scope == self.scope
@@ -1090,6 +1121,7 @@ class JobSession:
                 self._material_receipts.clear()
                 self.film_shots.close()
                 self.film_timeline.close()
+                self.film_capture.close()
                 with _sessions_lock:
                     _sessions.discard(self)
 

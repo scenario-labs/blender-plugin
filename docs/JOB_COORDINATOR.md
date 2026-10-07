@@ -81,6 +81,22 @@ The store persists result manifests and receipts; connecting download commands,
 main-thread application and UI/MCP remains separate integration work. The low-level adapter hook orders persistence but cannot enforce correct
 behavior by arbitrary callers; product code must use the shared coordinator.
 
+## Local capture queue
+
+`render_local(spec, origin=..., source_origin=..., cancel=...)` renders a private
+snapshot with no Scenario request. It validates the active owner and both
+captured origins before and after local rendering, outside long-held locks.
+Its `LocalCaptureResult` binds the media receipt to the selected scope, recipe
+origin and shot origin for main-thread delivery.
+
+`JobWorkers.render_local` uses the existing bounded queue, admitting at most
+one local renderer per owner. Its cancellation event is separate from network
+commands: explicit local cancellation or owner deactivation signals the renderer,
+while already claimed remote work still preserves original-scope receipts.
+Queued local work is canceled on retirement. Shutdown joins owned workers before
+the Blender session releases capture directories. Local render approval does not
+create a paid generation intent or authorize uploading the output.
+
 ## Film model task quotes
 
 `quote_film_task(recipe, production_id=..., task_id=..., origin=...)` uses the

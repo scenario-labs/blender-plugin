@@ -95,6 +95,31 @@ shared by the [native and MCP shot controls](FILM_PLAN.md#native-and-mcp-shot-co
 The maintenance pump advances its verification independently of an open view.
 Drawing only reads matching cached reviews and hides retired credential contexts.
 
+## Film capture ownership
+
+`JobSession.film_capture` owns the [capture reviews](FILM_PLAN.md#shared-capture-and-upload-approval)
+shared by native controls and MCP. It captures the recipe origin and selected
+shot/camera origin, validates the local scene snapshot on the main thread and
+queues `render_local` on the existing workers. `LocalCaptureResult` includes
+both origins and the selected scope; ordinary `drain` checks scope/recipe identity
+and `deliver` accepts it only in the unchanged original scene. The capture owner
+also checks the shot revision and camera identity. A transient context mismatch
+waits; invalidation prevents delivery and upload.
+
+The normal maintenance pump polls capture reviews independently of UI lifetime.
+At most one queued/running local render occupies a session; capacity and
+completion bounds still apply. A consumed approval cannot be replayed after
+admission failure. Cancellation and owner retirement signal the child; shutdown
+joins workers before removing the owned snapshot, media and diagnostic directory.
+Captured output is session-local, with no new persistent registry or restart replay.
+
+Separate upload approval calls the existing reference facade with the rendered
+content hash. Source staging validates it before creating an upload intent.
+The capture directory stays alive while upload staging/transfer runs, and discard
+does not remove durable upload records or their separate staged copies.
+An imported upload requires its own Film task association; no automatic generation
+or scene application follows capture or upload.
+
 ## Local Film timeline approval
 
 `JobSession.film_timeline` retains bounded live source choices and single-use
@@ -607,7 +632,10 @@ not image/mesh download or import actions.
 and first-frame upload preparation, and guarded reference removal through the
 existing native form. MCP `render_form` uses these commands; it owns no worker
 pool or paid job engine. Parameter edits are validated before applying them and
-invalidate the visible price. Removing a reference requires a key bound to its
+invalidate the visible price. Multi-select arrays accept each current schema
+choice at most once, bounded by the available choices like the native checkboxes;
+duplicates and unknown choices fail before changing any form field.
+Removing a reference requires a key bound to its
 scene, model, slot and current source; saved upload work remains independent.
 
 Render `estimate_cost` and `generate` rebuild `generation.build_request`, including

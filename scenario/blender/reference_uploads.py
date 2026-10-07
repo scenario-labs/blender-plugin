@@ -165,7 +165,17 @@ class ReferenceUploads:
         self.form_errors = deque(maxlen=16)
         self.attachments = {}
 
-    def start(self, scene, path, *, kind="image", temporary=None, origin=None, mesh_source=None):
+    def start(
+        self,
+        scene,
+        path,
+        *,
+        kind="image",
+        temporary=None,
+        origin=None,
+        mesh_source=None,
+        expected_sha256=None,
+    ):
         """Upload the chosen typed reference once; never quote or generate."""
         task = None
         try:
@@ -189,7 +199,12 @@ class ReferenceUploads:
             else:
                 self.session.validate_destination(origin)
             task = self.session.prepare_upload(
-                path, origin=origin, kind=kind, content_type=content_type, mesh_source=mesh_source
+                path,
+                origin=origin,
+                kind=kind,
+                content_type=content_type,
+                mesh_source=mesh_source,
+                expected_sha256=expected_sha256,
             )
             if temporary is not None:
                 self.session.retain_upload_capture(task, temporary)

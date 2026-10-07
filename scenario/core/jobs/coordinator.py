@@ -16,6 +16,7 @@ from weakref import WeakKeyDictionary, WeakValueDictionary
 
 from ..api.sdk_adapter import Estimate, SDKAdapter
 from ..schema.forms import _fields, is_file_field
+from . import local_render
 from .results import ResultCommands, ResultError, VerifiedResults
 from .store import (
     CloudJobIntent,
@@ -66,6 +67,14 @@ class FilmUploadResult:
             or self.reference.scope != self.scope
         ):
             raise ValueError("Film upload result must match its selected scope and origin")
+
+
+@dataclass(frozen=True)
+class LocalCaptureResult:
+    scope: JobScope
+    origin: JobOrigin
+    source_origin: JobOrigin
+    media: local_render.RenderedMedia
 
 
 class SubmissionUncertain(RuntimeError):
@@ -245,9 +254,34 @@ class JobCoordinator:
             raise UploadError("Upload storage and transfer policy are not configured")
         return self._uploads
 
-    def prepare_upload(self, source, *, origin, kind, content_type, mesh_source=None):
+    def render_local(self, spec, *, origin, source_origin, cancel):
+        """Render local bytes outside locks; recheck both origins before and after."""
+
+        def check():
+            with self._lock:
+                if not self._active:
+                    raise local_render.RenderCancelled("The capture context is inactive")
+                for value in (origin, source_origin):
+                    guard = self._origin_guard(value) if self._origin_guard else nullcontext(True)
+                    with guard as current:
+                        if not isinstance(value, JobOrigin) or not current:
+                            raise local_render.RenderCancelled("The capture scene changed")
+
+        check()
+        media = local_render.render(spec, cancel=cancel)
+        check()
+        return LocalCaptureResult(self.scope, origin, source_origin, media)
+
+    def prepare_upload(
+        self, source, *, origin, kind, content_type, mesh_source=None, expected_sha256=None
+    ):
         return self._upload_commands().prepare(
-            source, origin=origin, kind=kind, content_type=content_type, mesh_source=mesh_source
+            source,
+            origin=origin,
+            kind=kind,
+            content_type=content_type,
+            mesh_source=mesh_source,
+            expected_sha256=expected_sha256,
         )
 
     def inspect_upload(self, request_id):

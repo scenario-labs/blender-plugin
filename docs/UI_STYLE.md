@@ -951,6 +951,58 @@ disposable profile and leaves the normal profile unchanged. This establishes the
 synthetic shot-control interaction, not live provider compatibility, motion/audio
 review, other OS/DPI combinations, timeline/capture/finishing or release acceptance.
 
+### Film capture controls
+
+The **Capture** child panel uses the shot selected in **Shots**. **Render capture**
+confirms a matching local scene, still/video, color mode, dimensions and exact
+editorial timing. It names optional video tools and distinguishes generated
+source duration/trim from captured frames. Cancelling is inert. Prepared MCP
+reviews expose **Render prepared capture** with the same exact settings.
+
+Completed output offers **Open capture** and a separate **Upload capture**
+confirmation showing size, timing, dimensions and full content hash.
+**Cancel capture** retains frames after stopping work. **Discard capture**
+confirms deleting only private capture files after work ends; saved uploads
+remain. Failed work exposes its retained directory and wrapped cached error.
+Drawing reads cached review status, never starts work or mutates properties.
+The shared maintenance pump owns progress even with the panel closed.
+
+Installed synthetic tests cover commands, cancellation, read-only drawing and
+byte-checked upload handoff. Exact ZIP SHA-256
+`50ab56cd3e12fa2991fb0cd3189cca3e9a7d3d700f4c9d13cfbee75bf64a4a85`
+passes 892 installed tests on each macOS arm64 Blender 5.0.1, 5.1.2 and 5.2.1.
+
+Desktop interaction with that same ZIP passes on macOS arm64 Blender 5.1.2 in
+an isolated profile. The synthetic fixture blocks external Python sockets and
+uses the real offline child renderer. Native keyboard input edits the dimensions;
+Escape cancels capture approval without rendering, upload or scene changes.
+A fresh dialog accepts a 128 by 128 still with material colors and one frame.
+
+![Film capture approval shows the selected shot, dimensions and timing](images/film-capture-approval.png)
+
+The rendered PNG's bytes match its recorded hash. All original scenes, objects,
+frames and render settings remain unchanged, and no generation job is created.
+Collapsing and reopening Film preserves the completed capture. The separate
+upload dialog shows its size, dimensions, timing and full content hash. Escape
+preserves the local capture without creating an upload or calling the transport.
+
+![Film upload approval identifies the exact captured bytes](images/film-capture-upload-approval.png)
+
+Confirmed upload uses a mocked SDK transport and one synthetic byte transfer;
+the captured, staged and transferred hashes agree. The panel reports Uploaded
+and the saved-upload dialog shows one imported image. Discard cancellation
+preserves the capture. Confirmed discard removes only its private directory,
+leaving the imported upload record and separately staged bytes intact. Native
+viewport selection and zoom work after the dialogs close.
+
+![Film shows the completed upload without automatically associating a task](images/film-capture-uploaded.png)
+
+The run exits cleanly, removes its disposable profile and leaves the normal
+profile unchanged. This proves bounded still-capture interaction and synthetic
+upload handoff. Desktop video cancellation, sustained GPU/audio, human motion
+review, live uploads, other OS/DPI combinations, finishing/export and integrated
+release acceptance remain separate.
+
 ### Film timeline controls
 
 The **Timeline** child panel offers **Build timeline**. Its confirmation lists

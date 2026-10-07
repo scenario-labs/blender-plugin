@@ -11,6 +11,11 @@ import pytest
 ROOT = Path(__file__).resolve().parents[2]
 EXPECTED = {
     "tools_scenario": {
+        "film_capture_sources",
+        "prepare_film_capture",
+        "render_film_capture",
+        "film_capture_review",
+        "upload_film_capture",
         "film_shot_sources",
         "film_timeline_sources",
         "prepare_film_timeline",

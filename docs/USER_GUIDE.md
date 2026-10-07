@@ -625,7 +625,29 @@ sequence and keeps the working scene selected. The strips reference those scenes
 later edits to a shot affect the sequence. Save the blend file. A partial build
 must be inspected before dismissing its review; dismissal never deletes data.
 See [timeline approval](FILM_PLAN.md#editable-timeline-approval) for MCP equivalents.
-Shot capture, finishing and Film export remain unavailable.
 To inspect the result, select the new timeline scene in the Video Sequencer's
 scene selector. Synthetic desktop selection, cancellation and Undo/Redo pass on
 macOS Blender 5.1.2; see [the evidence and limits](UI_STYLE.md#film-timeline-controls).
+
+Under **Capture**, **Render capture** asks you to choose a completed local scene,
+still/video, colors and size for the selected shot. Stills capture its first frame;
+silent clips use its editorial range without padding. Video requires installed
+ffmpeg and ffprobe. You can close the panel while it renders.
+
+Use **Open capture** to review the output, then **Upload capture** to confirm
+sending those exact bytes to your selected Scenario connection. After import,
+select a Film upload task and choose **Use saved upload**. Each later
+generation still needs its own price and approval. Inspect uncertain uploads
+instead of submitting them again.
+
+**Cancel capture** stops local rendering and retains completed frames.
+**Open capture files** shows its diagnostics. **Discard capture** deletes its
+private local files after work stops, preserving saved uploads. Capture files
+also expire when the session shuts down; upload the desired output or copy it
+elsewhere before that. Captures do not resume automatically after restart.
+See [capture approval](FILM_PLAN.md#shared-capture-and-upload-approval) for limits
+and MCP equivalents. Finishing and Film export remain unavailable.
+Desktop still capture, approval cancellation, synthetic upload and cleanup pass
+on macOS Blender 5.1.2; see [the evidence and limits](UI_STYLE.md#film-capture-controls).
+Live uploads, desktop video cancellation, other OS/DPI and integrated release
+acceptance remain separate.

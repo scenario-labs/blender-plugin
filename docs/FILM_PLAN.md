@@ -459,15 +459,68 @@ Blend snapshots still have a separate 1 GiB limit, and the render worker stops
 after staged PNG frames exceed 2 GiB. These are local bounds, not upload approval
 or a guarantee that every maximum-dimension/frame-count combination will fit.
 
-This foundation has no registered capture button or MCP tool yet. The next
-integration must use the existing session workers, bind explicit capture approval
-and delivery to the originating scene/recipe/scope, own cancellation and artifact
-cleanup, and require separate upload approval for the actual resulting bytes.
-Local rendering does not approve upload or generation.
+The shared capture command below now owns this foundation for native controls
+and local MCP. Local rendering does not approve upload or generation.
+
+## Shared capture and upload approval
+
+Under **Film > Capture**, **Render capture** uses the shot selected in **Shots**.
+Its confirmation chooses one matching local shot scene, still/video, Workbench
+color mode and dimensions. Stills use the first shot frame; video uses the exact
+editorial range and has no audio. The dialog distinguishes that range from the
+recipe's generated source duration and trim. Cancelling creates no capture review
+or scene snapshot. A prepared MCP review can also be approved here with
+**Render prepared capture**.
+
+`JobSession.film_capture` keeps up to eight session-local reviews. Opaque choices
+retain live scene/camera identity, recipe binding and revisions for both the
+recipe and shot scenes. Preparation validates settings and optional tools;
+separate approval exports the snapshot and consumes the review once before
+worker admission. Changed origins reject work before and after rendering.
+Confirmed approval cannot be replayed after an admission or render failure.
+
+Rendering uses the existing bounded `JobWorkers` queue, with at most one local
+render queued/running per session. It adds no executor or durable generation
+record. UI closure does not stop it. The main-thread maintenance pump drains
+results independently of the panel; a transient other-scene context waits for
+the unchanged recipe scene before accepting completion. Actual revision changes
+invalidate it. Cancel signals the owned process; credential/file retirement and
+shutdown signal it too. Cleanup waits until rendering and upload staging finish.
+MCP cancellation also drops a finished result that has not yet been delivered,
+without first accepting it into the current recipe scene.
+
+**Open capture** previews the local output. **Upload capture** separately confirms
+its dimensions, timing, size and full content hash for the selected connection.
+It uses the existing upload runtime. Staging must match that hash before an upload
+intent can authorize initialization; replaced bytes cannot be silently uploaded.
+The capture review consumes upload approval once. Failed, canceled and uncertain
+uploads require inspection in **Inspect uploads**, without replaying approval.
+After upload work ends, their local capture review can be discarded while keeping
+the durable upload record and staged copy. Once imported, select a Film upload task and choose
+**Use saved upload** to bind the selected saved upload to that recipe task.
+Neither capture nor upload estimates or submits generation.
+
+**Open capture files** exposes retained diagnostics/frames. **Discard capture**
+confirms deleting only that review's private snapshot/media/log directory, after
+active work ends. Durable upload records and their staged copies remain.
+Session shutdown cleans these local capture directories after joining workers.
+An OS cleanup failure logs a sanitized warning and retains its handle without
+blocking session retirement. Manual discard reports the failure and can be
+retried after files are released; cleanup never restarts a render or upload.
+Capture reviews are not restored after restart and never replay automatically;
+an interrupted process can leave private files for manual inspection.
+
+MCP follows `film_capture_sources`, `prepare_film_capture`, separately approved
+`render_film_capture`, then `film_capture_review` for status/cancel/discard.
+`upload_film_capture` requires separate output approval and returns the ordinary
+reference-upload handle. Use `reference_upload_status` and, after import,
+`bind_film_upload`. These share the native commands. Installed synthetic tests
+cover command behavior; desktop layout/input/focus/viewport and live media
+acceptance remain pending, so the new controls remain draft.
 
 ## Remaining integration and evidence
 
-Shared shot-capture controls and delivery, media finishing,
+Media finishing,
 provider-specific preparation and final export remain separate work. Keep useful
 source capabilities and tests as those paths are connected; do not describe this
 helper adoption as a completed Film workflow.

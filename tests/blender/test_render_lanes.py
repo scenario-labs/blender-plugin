@@ -4,6 +4,7 @@
 
 import json
 import unittest
+from dataclasses import replace
 from unittest.mock import MagicMock, patch
 
 import bpy
@@ -157,6 +158,57 @@ class RenderLanesTests(unittest.TestCase):
         self.assertFalse(result["ready_to_estimate"])
         with self.assertRaises(ValueError):
             self.form("remove", reference_key=key)
+
+    def test_mcp_multi_select_parameters_keep_only_unique_schema_choices(self):
+        self.image_lane.model_id = "model_google-gemini-3-1-flash"
+        params = submodule("core.schema.params")
+        schema = self.generation.schema_for(self.image_lane.model_id)
+        spec = params.ParamSpec(
+            "channels", "Channels", "string_array", allowed_values=("red", "green", "blue")
+        )
+        schema = replace(schema, specs=[*schema.specs, spec])
+        with patch.object(self.generation, "schema_for", return_value=schema):
+            valid = ["blue", "red"]
+            result = self.form("configure", settings={"parameters": {"channels": valid}})
+            self.assertEqual(result["parameters"]["channels"], valid)
+            for value in (
+                ["red", "red"],
+                ["red"] * 10000,
+                ["missing"],
+                [["red"]],
+                "red",
+            ):
+                with self.subTest(value_type=type(value).__name__), self.assertRaises(ValueError):
+                    self.form(
+                        "configure", settings={"look": "bad", "parameters": {"channels": value}}
+                    )
+                self.assertEqual(self.image_lane.prompt, "")
+                self.assertEqual(self.form()["parameters"]["channels"], valid)
+            result = self.form("configure", settings={"parameters": {"channels": []}})
+            self.assertEqual(result["parameters"]["channels"], [])
+            result = self.form("configure", settings={"parameters": {"channels": None}})
+            self.assertNotIn("channels", result["parameters"])
+
+    def test_mcp_multi_select_bound_comes_from_choices_not_style_asset_limit(self):
+        self.image_lane.model_id = "model_google-gemini-3-1-flash"
+        params = submodule("core.schema.params")
+        schema = self.generation.schema_for(self.image_lane.model_id)
+        choices = [f"choice-{index}" for index in range(20)]
+        schema = replace(
+            schema,
+            specs=[
+                *schema.specs,
+                params.ParamSpec("choices", "Choices", "string_array", allowed_values=choices),
+                params.ParamSpec("no_choices", "No choices", "string_array"),
+            ],
+        )
+        with patch.object(self.generation, "schema_for", return_value=schema):
+            result = self.form("configure", settings={"parameters": {"choices": choices}})
+            self.assertEqual(result["parameters"]["choices"], choices)
+            with self.assertRaises(ValueError):
+                self.form("configure", settings={"parameters": {"no_choices": ["invented"]}})
+            result = self.form("configure", settings={"parameters": {"no_choices": []}})
+            self.assertEqual(result["parameters"]["no_choices"], [])
 
     def test_mcp_model_change_preserves_references_until_explicit_removal(self):
         self.image_lane.model_id = "model_google-gemini-3-1-flash"

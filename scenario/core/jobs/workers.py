@@ -58,6 +58,7 @@ class JobWorkers:
         self._limit = pending_limit
         self._condition = threading.Condition()
         self._pending = deque()
+        self._local_cancels = {}
         self._accepting = True
         self._closed = False
         self._shutdown_lock = threading.Lock()
@@ -149,7 +150,35 @@ class JobWorkers:
         snapshot = _snapshot(parameters)
         return self._enqueue(self._coordinator.quote_translate, snapshot, origin=origin)
 
-    def prepare_upload(self, source, *, origin, kind, content_type, mesh_source=None):
+    def render_local(self, spec, *, origin, source_origin):
+        """Use the existing queue; at most one local renderer occupies this owner."""
+        from .local_render import RenderSpec
+
+        if not isinstance(spec, RenderSpec):
+            raise TypeError("Use a local render specification")
+        with self._condition:
+            if self._local_cancels:
+                raise WorkerError("Wait for the current local capture to finish")
+            cancel = threading.Event()
+            task = self._enqueue(
+                self._coordinator.render_local,
+                spec,
+                origin=origin,
+                source_origin=source_origin,
+                cancel=cancel,
+            )
+            self._local_cancels[task] = cancel
+            return task
+
+    def cancel_local(self, task):
+        with self._condition:
+            cancel = self._local_cancels.get(task)
+            if cancel is not None:
+                cancel.set()
+
+    def prepare_upload(
+        self, source, *, origin, kind, content_type, mesh_source=None, expected_sha256=None
+    ):
         return self._enqueue(
             self._coordinator.prepare_upload,
             os.fspath(source),
@@ -157,6 +186,7 @@ class JobWorkers:
             kind=kind,
             content_type=content_type,
             mesh_source=mesh_source,
+            expected_sha256=expected_sha256,
         )
 
     def initialize_upload(self, request_id, *, expected_revision):
@@ -287,6 +317,9 @@ class JobWorkers:
                 else:
                     task._future.set_result(result)
                     del result
+                finally:
+                    with self._condition:
+                        self._local_cancels.pop(task, None)
             # Do not retain payloads/results while the worker waits for more work.
             del task, command, args, kwargs
 
@@ -294,10 +327,13 @@ class JobWorkers:
         """Stop admission/queued work promptly; in-flight work keeps its scope."""
         with self._condition:
             self._accepting = False
+            for cancel in self._local_cancels.values():
+                cancel.set()
             self._coordinator.deactivate()
             while self._pending:
                 task, _, _, _ = self._pending.popleft()
                 task._future.cancel()
+                self._local_cancels.pop(task, None)
             self._condition.notify_all()
 
     def shutdown(self):

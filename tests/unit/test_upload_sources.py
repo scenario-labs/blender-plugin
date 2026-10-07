@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Upload snapshots compare like timestamps without weakening change detection."""
 
+import hashlib
 from types import SimpleNamespace
 
 import pytest
@@ -11,6 +12,32 @@ from scenario.core.jobs.store import JobOrigin, JobScope
 from scenario.core.jobs.transfers import TransferError
 
 DATA = b"abcde"
+
+
+@pytest.mark.parametrize("changed", [False, True])
+def test_approved_capture_digest_is_checked_on_staged_bytes(tmp_path, changed):
+    source = tmp_path / "capture.png"
+    source.write_bytes(b"changed" if changed else DATA)
+    root = tmp_path / "staged"
+    root.mkdir()
+    sources = upload_sources.UploadSources(root)
+    options = dict(
+        request_id="capture",
+        scope=JobScope("https://service.example.invalid/v1", "account"),
+        origin=JobOrigin("file", "scene", "revision"),
+        kind="image",
+        content_type="image/png",
+        expected_sha256=hashlib.sha256(DATA).hexdigest(),
+    )
+    if changed:
+        with pytest.raises(TransferError, match="approved upload bytes"):
+            sources.stage(source, **options)
+        assert list(root.iterdir()) == []
+        assert source.read_bytes() == b"changed"
+    else:
+        intent = sources.stage(source, **options)
+        assert intent.file_sha256 == options["expected_sha256"]
+        sources.verify(intent)
 
 
 def test_upload_metadata_normalizes_name_without_renaming_original(tmp_path):

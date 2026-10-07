@@ -30,7 +30,7 @@ class SCENARIO_OT_build_film_timeline(bpy.types.Operator):
     bl_idname = "scenario.build_film_timeline"
     bl_label = "Build timeline"
     bl_description = "Choose one completed local scene per shot and create a new editable timeline without generating or downloading"
-    bl_options = {"REGISTER", "UNDO"}
+    bl_options = {"UNDO"}
     shots: CollectionProperty(type=ScenarioFilmTimelineShot)
     fps: IntProperty(options={"HIDDEN", "SKIP_SAVE"})
     frames: IntProperty(options={"HIDDEN", "SKIP_SAVE"})
@@ -53,6 +53,9 @@ class SCENARIO_OT_build_film_timeline(bpy.types.Operator):
                     item.name, item.source_id = choice["scene"], choice["source_id"]
         except Exception:
             return _error(self, "Inspect the Film recipe and completed local shot scenes")
+        for shot in self.shots:
+            if not shot.choices:
+                return _error(self, f"Build a matching scene for shot '{shot.title}' first")
         return context.window_manager.invoke_props_dialog(self, width=600)
 
     def draw(self, context):
@@ -77,6 +80,9 @@ class SCENARIO_OT_build_film_timeline(bpy.types.Operator):
         self.layout.label(text="No generation, download, render or export.")
 
     def execute(self, context):
+        for shot in self.shots:
+            if not 0 <= shot.choice_index < len(shot.choices):
+                return _error(self, f"Select a matching scene for shot '{shot.title}' first")
         try:
             owner = runtime.ensure_film_jobs().session.film_timeline
             if (

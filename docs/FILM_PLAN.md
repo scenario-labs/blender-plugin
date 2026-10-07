@@ -379,6 +379,9 @@ rechecks the session, origin, recipe, source revisions, camera references and
 timing before consuming the review and constructing the sequence. Confirmed
 rollback retains an error; incomplete cleanup retains uncertainty and blocks
 another build from that recipe scene until explicit inspection acknowledgement.
+Uncertainty takes priority over newer ready reviews in the panel and blocks their
+approval too. A missing shot scene stops the native dialog with a named build
+instruction; a missing selection cannot create a review.
 Discarding a review never removes Blender data. There is no remote job to
 reconcile or receipt to retry for this local composition action.
 

@@ -165,15 +165,20 @@ class FilmTimelineCommands:
         return self.status(review.identifier)
 
     def current(self, scene):
-        """Read the latest local review, including uncertainty after a recipe edit."""
+        """Keep unresolved uncertainty visible ahead of newer local reviews."""
         _main_thread()
+        latest = None
         for item in reversed(tuple(self._reviews.values())):
             try:
                 if item.scene == scene:
-                    return self.status(item.identifier)
+                    if item.phase == "UNCERTAIN":
+                        return self.status(item.identifier)
+                    if latest is None:
+                        latest = item.identifier
             except ReferenceError:
-                pass
-        return None
+                # Deleted RNA cannot provide a review for the current scene.
+                continue
+        return self.status(latest) if latest is not None else None
 
     def status(self, identifier):
         _main_thread()
@@ -185,7 +190,8 @@ class FilmTimelineCommands:
             try:
                 name = item.result.name
             except ReferenceError:
-                pass
+                # The review remains inspectable after the built scene is deleted.
+                name = ""
         return {
             "review_id": identifier,
             "phase": item.phase,
@@ -212,6 +218,9 @@ class FilmTimelineCommands:
         item = self._reviews.get(identifier)
         if item is None or item.phase != "READY":
             raise ValueError("Approve a fresh ready Film timeline review")
+        current = self.current(item.scene)
+        if current and current["phase"] == "UNCERTAIN":
+            raise ValueError("Inspect and dismiss the uncertain timeline review first")
         self._destination(item.scene, item.binding)
         self.session.validate_destination(item.origin)
         self._check_sources(item.binding, item.sources)

@@ -133,6 +133,32 @@ class FilmTimelineControlTests(unittest.TestCase):
             self.timeline.prepare(self.scene, selections=selections)
         self.assertEqual(self.timeline._reviews, {})
 
+    def test_missing_shot_dialog_names_the_scene_to_build(self):
+        bpy.data.scenes.remove(self.shots["second"])
+        operator = SimpleNamespace(shots=_Choices(), report=Mock())
+        context = SimpleNamespace(
+            scene=self.scene, view_layer=bpy.context.view_layer, window_manager=Mock()
+        )
+        self.assertEqual(
+            self.ui.SCENARIO_OT_build_film_timeline.invoke(operator, context, None), {"CANCELLED"}
+        )
+        context.window_manager.invoke_props_dialog.assert_not_called()
+        operator.report.assert_called_once_with(
+            {"WARNING"}, "Build a matching scene for shot 'Second' first"
+        )
+        self.assertEqual(self.timeline._reviews, {})
+
+    def test_invalid_scene_selection_does_not_prepare_a_timeline(self):
+        operator, context = self.dialog()
+        operator.shots[1].choice_index = 10
+        self.assertEqual(
+            self.ui.SCENARIO_OT_build_film_timeline.execute(operator, context), {"CANCELLED"}
+        )
+        operator.report.assert_called_once_with(
+            {"WARNING"}, "Select a matching scene for shot 'Second' first"
+        )
+        self.assertEqual(self.timeline._reviews, {})
+
     def test_deleted_same_name_replacement_cannot_redirect_ready_review(self):
         identifier = self.prepare()
         name = self.shots["second"].name
@@ -220,6 +246,25 @@ class FilmTimelineControlTests(unittest.TestCase):
         self.assertEqual(self.builder._snapshot(), before)
         with self.assertRaises(ValueError):
             self.timeline.approve(identifier)
+
+    def test_older_uncertainty_stays_visible_and_blocks_another_ready_review(self):
+        first = self.prepare()
+        second = self.prepare()
+
+        def partial(*args, **kwargs):
+            bpy.data.scenes.new("Partial older timeline")
+            raise RuntimeError("Incomplete cleanup")
+
+        with patch.object(self.builder, "build_timeline", side_effect=partial):
+            self.assertEqual(self.timeline.approve(first)["phase"], "UNCERTAIN")
+        self.assertEqual(self.timeline.current(self.scene)["review_id"], first)
+        before = self.builder._snapshot()
+        with self.assertRaisesRegex(ValueError, "uncertain"):
+            self.timeline.approve(second)
+        self.assertEqual(self.builder._snapshot(), before)
+        self.assertEqual(self.timeline.status(second)["phase"], "READY")
+        self.timeline.discard(first, inspected=True)
+        self.assertEqual(self.timeline.current(self.scene)["review_id"], second)
 
     def test_uncertain_mutation_blocks_replay_until_explicit_inspection(self):
         identifier = self.prepare()

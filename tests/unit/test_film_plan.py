@@ -5,6 +5,7 @@
 import copy
 import importlib
 import json
+import sys
 from dataclasses import replace
 
 import pytest
@@ -107,9 +108,9 @@ def test_deep_task_parameters_report_validation_error_after_json_encoding_succee
 @pytest.mark.parametrize("kind", ["list", "dict"])
 def test_deep_reference_input_reports_validation_error(kind):
     value = "ordinary text"
-    for _ in range(600):
+    # Python 3.13 inlines comprehensions, so 600 levels need not exhaust its stack.
+    for _ in range(sys.getrecursionlimit() + 100):
         value = [value] if kind == "list" else {"nested": value}
-    json.dumps(value)
     with pytest.raises(ValueError, match="nesting"):
         film_module().resolve_references(value, {}, scope=SCOPE)
 

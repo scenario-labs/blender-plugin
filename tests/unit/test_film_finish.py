@@ -203,6 +203,45 @@ def test_layer_limit_rejects_an_excessive_mix_without_truncating_it():
     )
 
 
+@pytest.mark.parametrize(
+    ("shot_count", "mode", "with_score", "accepted"),
+    [
+        (49, "final", True, True),
+        (50, "final", True, False),
+        (50, "final", False, True),
+        (50, "previs", True, True),
+    ],
+)
+def test_shots_and_expanded_audio_share_the_composition_layer_budget(
+    shot_count, mode, with_score, accepted
+):
+    recipe, _, _ = fixture()
+    recipe["shots"] = [dict(recipe["shots"][0], id=f"s{i}") for i in range(shot_count)]
+    recipe["tasks"] = [
+        {"id": task_id, "title": task_id, "kind": "upload"}
+        for task_id in [
+            *(f"s{i}-{kind}" for i in range(shot_count) for kind in ("video", "previs")),
+            "score",
+        ]
+    ]
+    records = {task["id"]: TaskAssets(SCOPE, ("asset-" + task["id"],)) for task in recipe["tasks"]}
+    durations = {"score": AudioDuration(SCOPE, "asset-score", Fraction(2 * shot_count))}
+    if not with_score:
+        recipe["audio_tracks"] = []
+    before = copy.deepcopy(recipe)
+    assert len(validate_film_plan(recipe)["shots"]) == shot_count
+    if accepted:
+        draft = compose_recipe(recipe, records, scope=SCOPE, mode=mode, audio_durations=durations)
+        layers = draft["tasks"][-1]["parameters"]["layers"]
+        assert len(layers) == 50
+        assert sum(layer["type"] == "video" for layer in layers) == shot_count
+        assert sum(layer["type"] == "audio" for layer in layers) == (shot_count == 49)
+    else:
+        with pytest.raises(ValueError, match="including score loops and duck segments"):
+            compose_recipe(recipe, records, scope=SCOPE, mode=mode, audio_durations=durations)
+    assert recipe == before
+
+
 def test_existing_master_task_and_full_recipe_are_preserved():
     recipe, records, frames = fixture()
     draft = compose_recipe(recipe, records, scope=SCOPE, audio_durations=frames)

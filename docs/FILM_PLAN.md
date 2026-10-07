@@ -540,6 +540,11 @@ last frame. The same source can serve both kinds without using the wrong
 rounding. Duck boundaries preserve loop phase and use absolute gains. The helper
 emits explicit segments, rejects finite-source overrun and more than 50 combined
 picture/audio layers, and does not truncate an excessive mix.
+The recipe's 50-shot limit is separate from this combined composition budget.
+For example, 49 shots plus one unsegmented score fit; 50 shots plus that score
+are rejected before a draft is returned. Fifty shots still fit in previs mode
+or with explicit `audio_tracks: []`. Score loops and duck boundaries each consume
+additional layers, so reserve room for their expanded segments.
 
 [`film_finishing.py`](../scenario/core/jobs/film_finishing.py) reads the selected
 job/upload stores to prepare an immutable draft. Each source must be the exact

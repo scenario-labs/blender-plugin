@@ -151,7 +151,10 @@ def compose_task(
                     }
                 )
                 if len(layers) > 50:
-                    raise ValueError("The composition exceeds 50 video/audio layers")
+                    raise ValueError(
+                        "The composition exceeds 50 video/audio layers, including score loops "
+                        "and duck segments. Reduce the shot count or audio segments."
+                    )
     suffix = " / Final master" if mode == "final" else " / Previs review"
     return {
         "id": master,

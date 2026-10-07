@@ -120,6 +120,59 @@ class FilmControlsTests(unittest.TestCase):
         )
         self.assertIs(self.owner().models, self.runtime.state.model_jobs)
 
+    def test_film_and_generic_results_cannot_reload_into_an_unrelated_form(self):
+        self.result_fixture()
+        submitted = self.approve(self.quote())
+        self.deliver_results()
+        view = self.owner().models.views[submitted["request_id"]]
+        self.runtime.show_job_views((view,))
+        records = submodule("core.jobs.records")
+        generic = records.JobRecord.new(
+            lane="model", kind="model", model_id="fixture-video", body={"prompt": "a take"}
+        )
+        generic.status = "success"
+        self.runtime.state.jobs_view.append(generic)
+        self.scene.scenario.lane = "video"
+        image = self.scene.scenario.lane_state("image")
+        image.prompt = "Keep my image form"
+        image.model_key = "keep-image-model"
+        before = (image.model_id, image.model_key, image.prompt)
+        panels = submodule("blender.panels")
+        for record in (view, generic):
+            with self.subTest(kind=record.kind):
+                layout = MagicMock()
+                panels.draw_result(layout, record)
+                operators = [
+                    call.args[0]
+                    for call in layout.mock_calls
+                    if call[0] == "operator" or call[0].endswith(".operator")
+                ]
+                self.assertNotIn("scenario.reload_generation", operators)
+                self.assertIn("scenario.result_details", operators)
+                self.assertEqual(
+                    bpy.ops.scenario.reload_generation(local_id=record.local_id),
+                    {"CANCELLED"},
+                )
+                self.assertEqual(self.scene.scenario.lane, "video")
+                self.assertEqual((image.model_id, image.model_key, image.prompt), before)
+        self.assertEqual(len(self.paid), 1)
+
+    def test_result_reload_retains_explicit_generation_lane_and_kind_fallback(self):
+        records = submodule("core.jobs.records")
+        panels = submodule("blender.panels")
+        for lane, kind, expected in (("edit3d", "3d", "edit3d"), ("model", "video", "video")):
+            with self.subTest(lane=lane, kind=kind):
+                record = records.JobRecord.new(lane=lane, kind=kind, model_id="fixture", body={})
+                self.assertEqual(self.generation.reload_lane(record), expected)
+                layout = MagicMock()
+                panels.draw_result(layout, record)
+                self.assertTrue(
+                    any(
+                        call.args and call.args[0] == "scenario.reload_generation"
+                        for call in layout.mock_calls
+                    )
+                )
+
     def test_automated_gui_probe_cannot_approve_through_native_or_mcp(self):
         item = self.quote()
         with patch.dict(os.environ, {"SCENARIO_GUI_PROBE": "1"}):

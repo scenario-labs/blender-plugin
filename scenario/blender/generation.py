@@ -29,6 +29,14 @@ _schemas = {}
 _restoring_models = set()
 
 
+def reload_lane(record):
+    """Return the recorded generation form, without guessing for Film or generic jobs."""
+    return next(
+        (lane for lane in (record.lane, record.kind) if lane in props.GENERATION_LANES),
+        None,
+    )
+
+
 def schema_for(model_id):
     if not model_id or model_id == "NONE":
         return None

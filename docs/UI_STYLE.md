@@ -91,6 +91,10 @@ status until separate Spark approval is integrated. Drawing remains read-only.
 
 ## Generations
 
+**Reload parameters** is available only when a result records a supported
+generation lane or kind. Film tasks and generic jobs without that information
+keep their saved-result controls; they must not overwrite the Image form.
+
 **Remove background** prepares the Image form and never submits directly. Its
 message tells users to upload the reference, review the price and choose
 **Generate**. Validate the file and available model/schema before replacing the

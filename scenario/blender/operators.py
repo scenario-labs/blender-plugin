@@ -752,13 +752,10 @@ class SCENARIO_OT_reload_generation(bpy.types.Operator):
         from ..core.api import catalog
 
         scene = context.scene
-        lane = (
-            rec.lane
-            if rec.lane in props.GENERATION_LANES
-            else rec.kind
-            if rec.kind in props.GENERATION_LANES
-            else "image"
-        )
+        lane = generation.reload_lane(rec)
+        if lane is None:
+            self.report({"WARNING"}, "This job has no generation form to reload")
+            return {"CANCELLED"}
         # The model enum of a 3D lane is gated by a sub-selector (the Edit task, or the Generate input mode). Set it to
         # one that lists this model FIRST, otherwise the model is absent from the enum and cannot be restored.
         if lane == "edit3d":

@@ -11,6 +11,7 @@ from unittest.mock import patch
 import pytest
 
 from scenario.core.jobs.film_finishing import (
+    composition_sources,
     prepare_composition,
     validate_composition_draft,
 )
@@ -139,6 +140,32 @@ def prepare(e):
         inspect_upload=e.uploads.get,
         audio_durations={"score": AudioDuration(e.store.scope, "asset-score", Fraction(2))},
     )
+
+
+def test_source_resolution_computes_dependency_identities_once(env):
+    from scenario.core.jobs import film_tasks
+
+    shot = env.recipe["shots"][0]
+    task = env.recipe["tasks"][0]
+    env.recipe["shots"] = [dict(shot, id=f"shot{i}") for i in range(10)]
+    env.recipe["tasks"] = [dict(task, id=f"shot{i}-video") for i in range(10)] + [
+        env.recipe["tasks"][1]
+    ]
+    for i in range(10):
+        saved_model(env, f"shot{i}-video")
+    saved_upload(env)
+    with (
+        patch.object(
+            film_tasks, "validate_film_plan", wraps=film_tasks.validate_film_plan
+        ) as validate,
+        patch.object(film_tasks, "_digest", wraps=film_tasks._digest) as digest,
+    ):
+        sources = composition_sources(
+            env.store, env.recipe, production_id="production", inspect_upload=env.uploads.get
+        )
+    assert len(sources) == 11
+    validate.assert_called_once()
+    assert digest.call_count == len(env.recipe["tasks"])
 
 
 def test_draft_reads_scoped_saved_sources_and_resolves_through_existing_film_command(env):

@@ -548,7 +548,9 @@ kind, and belong to the selected scope. Imported upload observations must match
 the saved association and revision. Completed model outputs may be available
 without a local download; audio measurement still needs a separate verified
 local source. The draft retains each source's request, revision, asset and task
-digest, and `validate_composition_draft` rejects changed inputs or a newly
+digest. Source resolution validates the recipe scope and computes all transitive
+task digests once, reusing them for every selected source.
+`validate_composition_draft` rejects changed inputs or a newly
 reserved master. Neither helper acquires an approval or an atomic generation
 claim. API-key default scope needs no project discovery.
 

@@ -6,8 +6,8 @@ import json
 from dataclasses import dataclass
 
 from ..scene.film_finish import compose_recipe, required_sources
-from ..scene.film_plan import TaskAssets, require_plan_scope, validate_film_plan
-from .film_tasks import _task_context, _upload_evidence
+from ..scene.film_plan import TaskAssets, validate_film_plan
+from .film_tasks import _recipe_context, _upload_evidence
 from .store import JobScope, JobState, StoreConflict, StoredJob, _identity, _json
 
 
@@ -40,20 +40,16 @@ def composition_sources(
 ):
     """Observe exact typed outputs; metadata is not local file verification."""
     _identity(production_id)
-    plan = validate_film_plan(recipe)
-    require_plan_scope(plan, store.scope)
-    tasks = {item["id"]: item for item in plan["tasks"]}
+    _, tasks, digests, _ = _recipe_context(store, recipe)
     observed = []
     for task_id, media_kind in required_sources(
         recipe, mode=mode, score_task_id=score_task_id
     ).items():
         kind = tasks[task_id]["kind"]
-        binding, _, _, _ = _task_context(
-            store, recipe, production_id=production_id, task_id=task_id, kind=kind
-        )
+        task_sha256 = digests[task_id]
         if kind == "upload":
             attached = store.film_upload(production_id, task_id)
-            if attached is None or attached.film_task.task_sha256 != binding.task_sha256:
+            if attached is None or attached.film_task.task_sha256 != task_sha256:
                 raise ValueError("Choose a matching imported Film upload")
             current = _upload_evidence(
                 inspect_upload,
@@ -78,7 +74,7 @@ def composition_sources(
                 or saved.intent.film_task is None
                 or saved.intent.film_task.production_id != production_id
                 or saved.intent.film_task.task_id != task_id
-                or saved.intent.film_task.task_sha256 != binding.task_sha256
+                or saved.intent.film_task.task_sha256 != task_sha256
                 or saved.intent.target_id != tasks[task_id]["model"]
                 or saved.state
                 not in {
@@ -109,7 +105,7 @@ def composition_sources(
                 revision,
                 asset_id,
                 media_kind,
-                binding.task_sha256,
+                task_sha256,
             )
         )
     return tuple(observed)

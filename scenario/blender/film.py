@@ -309,6 +309,26 @@ CLASSES = (
 )
 
 
+_composition_modes = {}
+
+
+def _composition_mode_get(_owner):
+    scene = bpy.context.scene
+    return _composition_modes.get(scene.session_uid, 0) if scene is not None else 0
+
+
+def _composition_mode_set(_owner, value):
+    # WindowManager stores navigation without tagging scene revisions. Session UIDs
+    # keep scenes (including deleted/recreated names) independent across windows.
+    live = {scene.session_uid for scene in bpy.data.scenes}
+    for identifier in tuple(_composition_modes):
+        if identifier not in live:
+            del _composition_modes[identifier]
+    scene = bpy.context.scene
+    if scene is not None:
+        _composition_modes[scene.session_uid] = value
+
+
 def register():
     for cls in CLASSES:
         bpy.utils.register_class(cls)
@@ -320,10 +340,13 @@ def register():
             ("previs", "Previs", "Review the previs cut without editorial audio"),
         ],
         options={"SKIP_SAVE"},
+        get=_composition_mode_get,
+        set=_composition_mode_set,
     )
 
 
 def unregister():
+    _composition_modes.clear()
     del bpy.types.WindowManager.scenario_film_composition_mode
     del bpy.types.Scene.scenario_film
     for cls in reversed(CLASSES):

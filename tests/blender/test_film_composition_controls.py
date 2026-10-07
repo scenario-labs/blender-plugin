@@ -291,7 +291,7 @@ class FilmCompositionControlsTests(unittest.TestCase):
         before = self.fixture.upload_store.records()
         review = self.prepare()
         review.task.result(5)
-        self.commands.cancel(self.identifier)
+        self.status("cancel")
         self.owner.poll()
         self.assertEqual(review.phase, "CANCELLED")
         self.status("discard")
@@ -303,7 +303,7 @@ class FilmCompositionControlsTests(unittest.TestCase):
         review = self.ready()
         self.commands.estimate(self.identifier)
         review.task.result(5)
-        self.commands.cancel(self.identifier)
+        self.status("cancel")
         self.owner.poll()
         self.assertEqual(review.phase, "CANCELLED")
         self.assertIsNone(review.quote)
@@ -370,6 +370,28 @@ class FilmCompositionControlsTests(unittest.TestCase):
         self.assertEqual(status["error"], "Install ffprobe")
         self.ready()
         self.assertFalse(self.fixture.calls)
+
+    def test_mode_navigation_is_scene_local_and_preserves_a_ready_price(self):
+        review = self.quoted()
+        manager = bpy.context.window_manager
+        other = bpy.data.scenes.new("Other composition navigation")
+        try:
+            self.assertEqual(manager.scenario_film_composition_mode, "final")
+            with bpy.context.temp_override(scene=other):
+                self.assertEqual(manager.scenario_film_composition_mode, "final")
+                manager.scenario_film_composition_mode = "previs"
+                self.assertEqual(manager.scenario_film_composition_mode, "previs")
+            self.assertEqual(manager.scenario_film_composition_mode, "final")
+            self.owner.poll()
+            self.assertEqual(review.phase, "QUOTED", review.error)
+            name = other.name
+            bpy.data.scenes.remove(other)
+            other = bpy.data.scenes.new(name)
+            with bpy.context.temp_override(scene=other):
+                self.assertEqual(manager.scenario_film_composition_mode, "final")
+        finally:
+            bpy.data.scenes.remove(other)
+        self.assertFalse(self.paid)
 
     def test_idle_updates_and_mode_navigation_preserve_price_but_frame_changes_invalidate(self):
         review = self.quoted()

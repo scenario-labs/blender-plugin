@@ -324,13 +324,14 @@ def prepare_film_composition(args):
 
 def film_composition_review(args):
     owner = runtime.ensure_film_jobs().compositions
-    owner.poll()
     action = args.get("action", "status")
-    if action == "status":
-        return owner.status(args["review_id"])
     if action == "cancel":
         return owner.cancel(args["review_id"])
+    if action == "status":
+        owner.poll()
+        return owner.status(args["review_id"])
     if action == "discard":
+        owner.poll()
         return owner.discard(args["review_id"])
     raise ValueError("Choose status, cancel or discard")
 

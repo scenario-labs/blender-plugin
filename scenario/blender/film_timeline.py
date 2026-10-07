@@ -129,7 +129,6 @@ class FilmTimelineCommands:
 
     def prepare(self, scene, *, selections):
         _main_thread()
-        film_scene._main_thread()
         binding = film_jobs.snapshot(scene)
         self._destination(scene, binding)
         for review in self._reviews.values():

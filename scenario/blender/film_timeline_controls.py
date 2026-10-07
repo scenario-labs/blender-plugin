@@ -35,6 +35,13 @@ class SCENARIO_OT_build_film_timeline(bpy.types.Operator):
     fps: IntProperty(options={"HIDDEN", "SKIP_SAVE"})
     frames: IntProperty(options={"HIDDEN", "SKIP_SAVE"})
 
+    @classmethod
+    def poll(cls, context):
+        if context.window is None or context.mode != "OBJECT":
+            cls.poll_message_set("Switch to Object Mode in a Blender window to build a timeline")
+            return False
+        return True
+
     def invoke(self, context, event):
         self._used = False
         try:
@@ -125,6 +132,8 @@ class SCENARIO_PT_film_timeline(bpy.types.Panel):
     def draw(self, context):
         owner = commands(create=False)
         status = owner.session.film_timeline.current(context.scene) if owner else None
+        if status and status["phase"] == "DISCARDED":
+            status = None
         if status and status["phase"] == "UNCERTAIN":
             self.layout.label(text="Inspect the partial timeline before continuing", icon="ERROR")
         else:

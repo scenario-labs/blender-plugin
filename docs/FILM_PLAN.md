@@ -374,7 +374,9 @@ revision; names cannot redirect a selection after deletion. There are at most
 256 choices per inspection and sixteen reviews. A new inspection replaces old
 unprepared choices without invalidating prepared reviews.
 
-Preparation captures the recipe scene and complete selected shot set. Approval
+Preparation captures the recipe scene and complete selected shot set, including
+in Edit Mode. Building still requires a Blender window in Object Mode; the
+native build control is disabled outside that context. Approval
 rechecks the session, origin, recipe, source revisions, camera references and
 timing before consuming the review and constructing the sequence. Confirmed
 rollback retains an error; incomplete cleanup retains uncertainty and blocks
@@ -382,8 +384,10 @@ another build from that recipe scene until explicit inspection acknowledgement.
 Uncertainty takes priority over newer ready reviews in the panel and blocks their
 approval too. A missing shot scene stops the native dialog with a named build
 instruction; a missing selection cannot create a review.
-Discarding a review never removes Blender data. There is no remote job to
-reconcile or receipt to retry for this local composition action.
+Discarding a review removes its status from the panel without deleting Blender
+data; explicit MCP inspection retains its discarded phase and prior error.
+There is no remote job to reconcile or receipt to retry for this local
+composition action.
 
 MCP follows `film_timeline_sources`, `prepare_film_timeline`, then explicitly
 approved `build_film_timeline`. `film_timeline_review` inspects or discards the

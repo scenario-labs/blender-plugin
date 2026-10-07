@@ -113,6 +113,24 @@ class FilmTimelineControlTests(unittest.TestCase):
         self.assertEqual(self.builder._snapshot(), before)
         self.assertFalse(self.calls or self.downloads)
 
+    def test_edit_mode_allows_preparation_but_blocks_timeline_build(self):
+        bpy.ops.mesh.primitive_cube_add()
+        bpy.ops.object.mode_set(mode="EDIT")
+        try:
+            before = self.builder._snapshot()
+            identifier = self.prepare()
+            self.assertEqual(self.timeline.status(identifier)["phase"], "READY")
+            self.assertFalse(bpy.ops.scenario.build_film_timeline.poll())
+            with self.assertRaisesRegex(ValueError, "Object Mode"):
+                self.tools.build_film_timeline({"review_id": identifier})
+            self.assertEqual(self.timeline.status(identifier)["phase"], "READY")
+            self.assertEqual(self.builder._snapshot(), before)
+            self.assertEqual(self.store.records(), self.saved_before)
+            self.assertFalse(self.calls or self.downloads)
+        finally:
+            bpy.ops.object.mode_set(mode="OBJECT")
+        self.assertTrue(bpy.ops.scenario.build_film_timeline.poll())
+
     def test_native_dialog_rejects_changed_recipe_destination(self):
         operator, context = self.dialog()
         self.scene.frame_set(10)
@@ -265,6 +283,42 @@ class FilmTimelineControlTests(unittest.TestCase):
         self.assertEqual(self.timeline.status(second)["phase"], "READY")
         self.timeline.discard(first, inspected=True)
         self.assertEqual(self.timeline.current(self.scene)["review_id"], second)
+
+    def test_dismissed_errors_leave_the_panel_but_remain_inspectable(self):
+        for uncertain in (False, True):
+            with self.subTest(uncertain=uncertain):
+                identifier = self.prepare()
+
+                def fail(*args, uncertain=uncertain, **kwargs):
+                    if uncertain:
+                        bpy.data.scenes.new("Partial dismissed timeline")
+                    raise RuntimeError("Build fixture failure")
+
+                with patch.object(self.builder, "build_timeline", side_effect=fail):
+                    status = self.timeline.approve(identifier)
+                self.assertEqual(status["phase"], "UNCERTAIN" if uncertain else "ERROR")
+                error = status["error"]
+                before = self.builder._snapshot()
+                self.assertEqual(
+                    bpy.ops.scenario.discard_film_timeline(
+                        review_id=identifier, inspected=uncertain
+                    ),
+                    {"FINISHED"},
+                )
+                status = self.tools.film_timeline_review({"review_id": identifier})
+                self.assertEqual((status["phase"], status["error"]), ("DISCARDED", error))
+                layout = Mock()
+                self.ui.SCENARIO_PT_film_timeline.draw(SimpleNamespace(layout=layout), bpy.context)
+                self.assertEqual(
+                    [call.args[0] for call in layout.operator.call_args_list],
+                    ["scenario.build_film_timeline"],
+                )
+                self.assertEqual(
+                    [call.kwargs["text"] for call in layout.label.call_args_list],
+                    ["Choose a completed scene for every shot."],
+                )
+                self.assertEqual(self.builder._snapshot(), before)
+                self.assertEqual(self.store.records(), self.saved_before)
 
     def test_uncertain_mutation_blocks_replay_until_explicit_inspection(self):
         identifier = self.prepare()

@@ -958,11 +958,15 @@ the editorial frame count/rate and a local scene choice for each recipe shot.
 Missing choices explain that the shot must be built first. The dialog explains
 that it creates a new sequence, keeps the working scene selected and references
 live scenes whose later edits affect the timeline. Cancel creates no review.
-The confirmed selection uses the same session command as local MCP.
+The confirmed selection uses the same session command as local MCP. Build is
+disabled outside Object Mode in a Blender window, while MCP preparation remains
+available in Edit Mode.
 
 Known rollback errors remain readable and copyable. Incomplete cleanup hides
 the build action and requires **Discard timeline review** with its inspection
-checkbox; this never deletes Blender data. Drawing only reads cached status.
+checkbox; this never deletes Blender data. Dismissed reviews no longer show
+their status or Copy error action in the panel; MCP can still inspect the saved
+review error. Drawing only reads cached status.
 Native source/destination guards and single-use approval have synthetic installed
 coverage. Exact ZIP SHA-256
 `aef03c55e607a3ea99eb839bd4cdef2cc4c7e6517aa5ca5152d302744874f402`
@@ -997,3 +1001,28 @@ The run records zero service requests and downloads, exits cleanly, removes its
 disposable profile and leaves the normal profile unchanged. This establishes the
 synthetic timeline interaction, not live provider compatibility, human motion/audio
 review, other OS/DPI combinations, capture/finishing/export or release acceptance.
+
+Review follow-up ZIP SHA-256
+`c008687d12a1dc370e841e0daf34abade5d7960d3bbf1458ecb03bca929eba20`
+passes 958 installed tests on each macOS arm64 Blender 5.0.1, 5.1.2 and 5.2.1.
+A fresh isolated desktop check on Blender 5.1.2 supplies a synthetic incomplete
+cleanup. Mouse input opens **Discard timeline review**, checks the inspection
+acknowledgement and Return confirms dismissal. The old error and Copy error
+control disappear, while explicit MCP inspection retains the discarded error.
+Dismissal preserves existing scene data, including the partial fixture scene,
+and saved jobs.
+
+![An uncertain timeline review offers inspection and dismissal](images/film-timeline-error-before-dismissal.png)
+
+![Dismissal clears the old error and restores the build control](images/film-timeline-error-dismissed.png)
+
+Viewport selection and Tab enter Edit Mode, where **Build timeline** is visibly
+disabled. A main-thread probe of the shared command still prepares a ready
+review; approval rejects Object Mode absence without consuming it or building.
+
+![Edit Mode disables building while read-only preparation remains available](images/film-timeline-edit-mode.png)
+
+This follow-up records zero service requests/downloads, clean exit, disposable
+profile cleanup and an unchanged normal profile. Its physical evidence covers
+dismissal, viewport focus and Edit Mode gating; it does not repeat the earlier
+build, Undo/Redo, missing-choice or Sequencer journeys.

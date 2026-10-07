@@ -52,6 +52,13 @@ def main():
     scene.render.image_settings.color_depth = "8"
     scene.render.film_transparent = False
     scene.render.use_sequencer = False
+    scene.render.use_compositing = False
+    scene.render.use_border = False
+    scene.render.use_crop_to_border = False
+    scene.render.use_multiview = False
+    scene.render.use_single_layer = True
+    layer = scene.view_layers[0]
+    layer.use = True
     scene.render.use_file_extension = True
     scene.render.use_stamp = False
     shading = scene.display.shading
@@ -70,7 +77,7 @@ def main():
             raise FileExistsError("Refusing to overwrite a captured frame")
         scene.frame_set(frame)
         scene.render.filepath = str(path)
-        bpy.ops.render.render(write_still=True, scene=scene.name)
+        bpy.ops.render.render(write_still=True, scene=scene.name, layer=layer.name)
         size += path.stat().st_size
         if size > 2 * 1024**3:
             raise ValueError("Rendered frames exceeded the size policy")

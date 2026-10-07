@@ -2,11 +2,14 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Real native snapshot identity/context preservation without invoking GPU rendering."""
 
+import json
+import sys
 import tempfile
 import unittest
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
-from unittest.mock import patch
+from types import SimpleNamespace
+from unittest.mock import Mock, patch
 
 import bpy
 from helpers import reset_scene, submodule
@@ -101,6 +104,61 @@ class LocalCaptureTests(unittest.TestCase):
                     kind="VIDEO",
                 )
         self.assertEqual(list(Path(self.directory).iterdir()), [])
+
+    def test_worker_overrides_snapshot_output_flags_without_changing_source(self):
+        source = self.scene
+        flags = ("use_border", "use_crop_to_border", "use_multiview", "use_compositing")
+        for name in flags:
+            setattr(source.render, name, True)
+        source.view_layers[0].use = False
+        spec = self.snapshot()
+        with bpy.data.libraries.load(str(spec.directory / "snapshot.blend"), link=False) as (
+            _source,
+            target,
+        ):
+            target.scenes = _source.scenes
+        child = target.scenes[0]
+        specification = spec.directory / "worker-test.json"
+        specification.write_text(
+            json.dumps(
+                {
+                    "frame_start": 5,
+                    "frame_end": 5,
+                    "width": 64,
+                    "height": 64,
+                    "color_type": "MATERIAL",
+                    "scene_name": child.name,
+                }
+            )
+        )
+        (spec.directory / "frames").mkdir(exist_ok=True)
+
+        def render(**kwargs):
+            self.assertEqual(
+                kwargs, dict(write_still=True, scene=child.name, layer=child.view_layers[0].name)
+            )
+            self.assertFalse(any(getattr(child.render, name) for name in flags))
+            self.assertTrue(child.render.use_single_layer)
+            self.assertTrue(child.view_layers[0].use)
+            self.assertEqual((child.render.resolution_x, child.render.resolution_y), (64, 64))
+            Path(child.render.filepath).write_bytes(b"fixture frame")
+
+        try:
+            operation = Mock(side_effect=render)
+            with (
+                patch.object(sys, "argv", ["render_worker.py", "--", str(specification)]),
+                patch.object(bpy, "ops", SimpleNamespace(render=SimpleNamespace(render=operation))),
+            ):
+                submodule("blender.render_worker").main()
+            operation.assert_called_once()
+            self.assertTrue(all(getattr(source.render, name) for name in flags))
+            self.assertFalse(source.view_layers[0].use)
+        finally:
+            bpy.context.window.scene = source
+            bpy.data.scenes.remove(child)
+            for name in flags:
+                setattr(source.render, name, False)
+            source.view_layers[0].use = True
 
     def test_missing_camera_rejected_without_files(self):
         self.scene.camera = None

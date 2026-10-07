@@ -417,7 +417,9 @@ factory-startup Blender process with script auto-execution disabled. A disposabl
 profile and temporary directory isolate the child. Inherited Scenario credentials
 and Blender/Python path overrides are removed. The child renders Workbench RGB
 PNGs with explicit dimensions and material, texture or object colors; it never
-registers the extension or uses the parent's UI context.
+registers the extension or uses the parent's UI context. It disables inherited
+border/crop, multiview, compositor and sequencer output, enables the snapshot's
+first view layer and renders that one layer at the approved dimensions.
 
 Stills require no external media tool. Video checks for installed `ffmpeg` and
 `ffprobe` on PATH before export and again before rendering. It encodes the exact

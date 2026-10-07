@@ -67,8 +67,10 @@ passes `ci-ok`, including Python 3.11/3.13 and Linux/Windows Blender 5.0.1,
 the macOS archive above on other platforms. Check the current PR head after
 restacking; a prior green run cannot certify a later change.
 
-A non-submitting live Image model metadata/estimate request succeeded. No paid
-generation, live upload/result round trip or project-override permission journey
+Non-submitting live metadata/estimate requests succeeded for Image, Materials,
+Video, 3D and Audio using one private suite in the configured test key's default
+scope. All five case reports contain zero saved jobs, and no submission-attempt
+marker exists. No paid generation, live upload/result round trip or project-override permission journey
 is included in this record. Quote values and private service evidence are not
 published here.
 

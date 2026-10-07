@@ -584,6 +584,10 @@ class JobSession:
     def _cleanup_film_review(self, prepared, outcome):
         from ..core.jobs.film_review_media import discard
 
+        if outcome in self._film_review_receipts:
+            claims, application, unknown, _ = self._film_review_receipts[outcome]
+            self._film_review_receipts[outcome] = (claims, application, unknown, prepared)
+            return outcome
         try:
             # Preflight can fail before the primitive enters its cleanup block.
             if prepared.directory.exists():
@@ -592,9 +596,6 @@ class JobSession:
             retained = FilmReviewOutcome(
                 "UNCERTAIN", outcome.application, True, outcome.receipt_retry_available
             )
-            if outcome in self._film_review_receipts:
-                claims, application, _ = self._film_review_receipts.pop(outcome)
-                self._film_review_receipts[retained] = (claims, application, True)
             return retained
         return outcome
 
@@ -617,7 +618,7 @@ class JobSession:
             bool(pending),
         )
         if pending:
-            self._film_review_receipts[outcome] = (tuple(pending), application, unknown)
+            self._film_review_receipts[outcome] = (tuple(pending), application, unknown, None)
         return outcome
 
     def retry_film_review_receipt(self, outcome):
@@ -625,7 +626,7 @@ class JobSession:
         _main_thread()
         if outcome not in self._film_review_receipts:
             raise ValueError("No known Film review receipt is available to retry")
-        claims, application, unknown = self._film_review_receipts.pop(outcome)
+        claims, application, unknown, cleanup = self._film_review_receipts.pop(outcome)
         pending = []
         for claim in claims:
             try:
@@ -639,7 +640,9 @@ class JobSession:
             bool(pending),
         )
         if pending:
-            self._film_review_receipts[result] = (tuple(pending), application, unknown)
+            self._film_review_receipts[result] = (tuple(pending), application, unknown, cleanup)
+        elif cleanup is not None:
+            return self._cleanup_film_review(cleanup, result)
         return result
 
     def discard_film_review(self, completion):

@@ -6,6 +6,7 @@ import copy
 import hashlib
 import threading
 from dataclasses import replace
+from pathlib import Path
 
 import pytest
 from test_film_media import env as env
@@ -136,6 +137,92 @@ def test_failed_preparation_cleans_new_files_and_preserves_originals(env, monkey
     assert not list(env.probe_root.iterdir())
     assert not env.owner._film_reviews
     assert env.video.exists() and env.audio.exists()
+
+
+@pytest.mark.parametrize("failure", ["probe", "cancel", "origin", "admission"])
+def test_failed_cleanup_preserves_original_error_and_retries_at_joined_shutdown(
+    env, monkeypatch, failure
+):
+    entered, release = threading.Event(), threading.Event()
+    original_remove = film_review_media.shutil.rmtree
+    original_prepare = film_review_media.prepare
+
+    def denied(path, *args, **kwargs):
+        if Path(path).parent == env.probe_root and Path(path).name.startswith("review-"):
+            raise PermissionError("fixture cleanup denied")
+        return original_remove(path, *args, **kwargs)
+
+    def probe_failure():
+        raise MediaProbeError("fixture probe failed")
+
+    def hold():
+        entered.set()
+        assert release.wait(3)
+
+    def lose_admission(*args, **kwargs):
+        prepared = original_prepare(*args, **kwargs)
+        env.revisions.invalidate("scene")
+        return prepared
+
+    if failure == "probe":
+        env.after_probe = probe_failure
+        expected = MediaProbeError
+    elif failure == "cancel":
+        env.after_probe = hold
+        expected = RenderCancelled
+    else:
+        expected = QuoteError
+        if failure == "origin":
+            env.after_probe = lambda: env.revisions.invalidate("scene")
+    with monkeypatch.context() as patch:
+        patch.setattr(film_review_media.shutil, "rmtree", denied)
+        if failure == "admission":
+            patch.setattr(film_review_media, "prepare", lose_admission)
+        task = prepare(env)
+        if failure == "cancel":
+            assert entered.wait(3)
+            env.workers.cancel_local(task)
+            release.set()
+        with pytest.raises(expected) as caught:
+            task.result(3)
+        assert "retained for shutdown cleanup retry" in caught.value.__notes__[0]
+        if failure == "probe":
+            assert str(caught.value) == "fixture probe failed"
+        (directory,) = env.owner._film_review_cleanup
+        assert directory.exists() and list(directory.iterdir())
+        assert not env.owner._film_reviews
+        with pytest.raises(RuntimeError, match="cleanup inspection"):
+            env.workers.shutdown()
+        assert directory in env.owner._film_review_cleanup
+    env.workers.shutdown()
+    assert not directory.exists() and not env.owner._film_review_cleanup
+    assert env.video.exists() and env.audio.exists()
+
+
+def test_failed_cleanup_counts_toward_the_retained_review_limit(env, monkeypatch):
+    remove = film_review_media.shutil.rmtree
+
+    def denied(path, *args, **kwargs):
+        if Path(path).parent == env.probe_root and Path(path).name.startswith("review-"):
+            raise PermissionError("fixture cleanup denied")
+        return remove(path, *args, **kwargs)
+
+    def fail():
+        raise MediaProbeError("fixture probe failed")
+
+    env.after_probe = fail
+    with monkeypatch.context() as patch:
+        patch.setattr(film_review_media.shutil, "rmtree", denied)
+        with pytest.raises(MediaProbeError):
+            prepare(env).result(3)
+    env.after_probe = None
+    for _ in range(15):
+        prepare(env).result(3)
+    with pytest.raises(ValueError, match="Finish or discard"):
+        prepare(env).result(3)
+    assert len(list(env.probe_root.iterdir())) == 16
+    env.workers.shutdown()
+    assert not list(env.probe_root.iterdir())
 
 
 def test_shutdown_cancels_live_preparation_before_removing_its_files(env):

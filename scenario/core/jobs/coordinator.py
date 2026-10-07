@@ -230,6 +230,7 @@ class JobCoordinator:
         self._quotes = WeakValueDictionary()
         self._compositions = WeakValueDictionary()
         self._film_reviews = {}
+        self._film_review_cleanup = set()
         self._bound_estimates = WeakKeyDictionary()
         self._verified_results = WeakValueDictionary()
         self._application_claims = WeakValueDictionary()
@@ -297,7 +298,7 @@ class JobCoordinator:
         if not isinstance(origin, JobOrigin):
             raise ValueError("Capture the Film review origin before preparing media")
         with self._request_guard(origin):
-            if len(self._film_reviews) >= 16:
+            if len(self._film_reviews) + len(self._film_review_cleanup) >= 16:
                 raise ValueError("Finish or discard an existing Film media review first")
         result = film_review_media.prepare(
             self,
@@ -314,13 +315,26 @@ class JobCoordinator:
             with self._request_guard(origin):
                 if cancel.is_set():
                     raise local_render.RenderCancelled("Film review preparation cancelled")
-                if len(self._film_reviews) >= 16:
+                if len(self._film_reviews) + len(self._film_review_cleanup) >= 16:
                     raise ValueError("Finish or discard an existing Film media review first")
                 self._film_reviews[id(result)] = result
                 return result
-        except BaseException:
-            film_review_media.discard(result)
+        except BaseException as error:
+            self._discard_failed_film_review(result.directory, error)
             raise
+
+    def _discard_failed_film_review(self, directory, error):
+        """Keep failed preparation cleanup owned without masking its original error."""
+        from .film_review_media import discard_directory
+
+        with self._lock:
+            self._film_review_cleanup.add(directory)
+            try:
+                discard_directory(directory)
+            except OSError:
+                error.add_note("Unused Film review media is retained for shutdown cleanup retry")
+            else:
+                self._film_review_cleanup.remove(directory)
 
     def take_film_review(self, prepared, *, origin):
         """Consume owner-issued preparation once; the caller now owns its files."""
@@ -600,6 +614,8 @@ class JobCoordinator:
 
     def close(self):
         """Release the SDK client after the application owner has joined workers."""
+        from .film_review_media import discard_directory
+
         self.deactivate()
         cleanup_failed = False
         try:
@@ -608,6 +624,13 @@ class JobCoordinator:
                     self.discard_film_review(prepared)
                 except Exception:
                     cleanup_failed = True
+            for directory in tuple(self._film_review_cleanup):
+                try:
+                    discard_directory(directory)
+                except OSError:
+                    cleanup_failed = True
+                else:
+                    self._film_review_cleanup.remove(directory)
         finally:
             self._adapter.close()
         if cleanup_failed:

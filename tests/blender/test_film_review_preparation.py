@@ -212,7 +212,18 @@ class FilmReviewPreparationTests(unittest.TestCase):
 
     def test_decoder_failure_rolls_back_and_fails_claim_without_replaying(self):
         completion = self.ready()
-        with patch.object(self.builder, "_sound", side_effect=ValueError("decode fixture failure")):
+        transition = self.store.transition
+
+        def record(*args, **kwargs):
+            if kwargs.get("state") == self.storage.JobState.APPLY_FAILED:
+                self.assertTrue(completion.result.directory.exists())
+                self.assertTrue(all(source.path.exists() for _, source in completion.result.files))
+            return transition(*args, **kwargs)
+
+        with (
+            patch.object(self.builder, "_sound", side_effect=ValueError("decode fixture failure")),
+            patch.object(self.store, "transition", side_effect=record),
+        ):
             result = self.session.apply_film_review(completion)
         self.assertEqual(result.phase, "ERROR")
         self.assertEqual(self.builder._snapshot(), self.before)
@@ -220,6 +231,33 @@ class FilmReviewPreparationTests(unittest.TestCase):
         self.assertEqual(self.store.get("picture").state, self.storage.JobState.APPLY_FAILED)
         with self.assertRaises(self.module.OriginUnavailable):
             self.session.apply_film_review(completion)
+
+    def test_failed_receipt_retains_copies_until_retry_persists_without_rebuilding(self):
+        completion = self.ready()
+        transition = self.store.transition
+
+        def fail_receipt(*args, **kwargs):
+            if kwargs.get("state") == self.storage.JobState.APPLY_FAILED:
+                raise OSError("fixture receipt unavailable")
+            return transition(*args, **kwargs)
+
+        with (
+            patch.object(self.builder, "_sound", side_effect=ValueError("decode fixture failure")),
+            patch.object(self.store, "transition", side_effect=fail_receipt),
+        ):
+            outcome = self.session.apply_film_review(completion)
+        self.assertEqual(self.builder._snapshot(), self.before)
+        self.assertEqual(self.store.get("picture").state, self.storage.JobState.APPLYING)
+        self.assertTrue(outcome.receipt_retry_available)
+        self.assertTrue(completion.result.directory.exists())
+        with patch.object(
+            self.builder, "build_prepared_review", side_effect=AssertionError("rebuild")
+        ):
+            result = self.session.retry_film_review_receipt(outcome)
+        self.assertEqual(result.phase, "ERROR")
+        self.assertFalse(result.receipt_retry_available or completion.result.directory.exists())
+        self.assertEqual(self.store.get("picture").state, self.storage.JobState.APPLY_FAILED)
+        self.assertTrue(self.source.exists())
 
     def test_changed_copy_during_native_decode_rolls_back(self):
         completion = self.ready()
@@ -327,8 +365,11 @@ class FilmReviewPreparationTests(unittest.TestCase):
         ):
             result = self.session.apply_film_review(completion)
         self.assertTrue(result.receipt_retry_available)
-        with patch.object(
-            self.builder, "build_prepared_review", side_effect=AssertionError("rebuild")
+        with (
+            patch.object(
+                self.builder, "build_prepared_review", side_effect=AssertionError("rebuild")
+            ),
+            patch.object(self.builder.shutil, "rmtree", side_effect=OSError("cleanup denied")),
         ):
             recovered = self.session.retry_film_review_receipt(result)
         self.assertEqual(self.store.get("picture").state, self.storage.JobState.APPLY_FAILED)

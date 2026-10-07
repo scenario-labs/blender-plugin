@@ -70,7 +70,16 @@ def check_copies(prepared):
 
 
 def discard(prepared):
-    shutil.rmtree(prepared.directory)
+    discard_directory(prepared.directory)
+
+
+def discard_directory(directory):
+    """Remove an owned unused directory; an already removed root is complete."""
+    try:
+        shutil.rmtree(directory)
+    except FileNotFoundError:
+        if directory.exists() or directory.is_symlink():
+            raise
 
 
 def _master(coordinator, recipe, production_id, mode, score_task_id, sources, files):
@@ -275,6 +284,6 @@ def prepare(
             validate_sources(coordinator, result)
         check_copies(result)
         return result
-    except BaseException:
-        shutil.rmtree(directory)
+    except BaseException as error:
+        coordinator._discard_failed_film_review(directory, error)
         raise

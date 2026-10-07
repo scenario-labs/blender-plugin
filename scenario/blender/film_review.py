@@ -334,7 +334,10 @@ def build_review_scene(
     except Exception:
         # Keep snapshots if rollback itself fails: partial strips may reference them.
         _rollback(before)
-        shutil.rmtree(directory)
+        # Prepared copies belong to the session, which must record failed claims
+        # before deleting them. Only the standalone primitive owns this cleanup.
+        if _prepared is None:
+            shutil.rmtree(directory)
         raise FilmReviewError(
             "Could not build the Film review; saved source media is preserved"
         ) from None

@@ -180,6 +180,17 @@ capability. It omits embedded audio and preserves source frame count at the scen
 frame rate. Sequencer editing, automatic retiming, Film and external encoding
 remain separate; this does not complete the media capability inventory.
 
+## Adopted Film planning contracts
+
+The selected source's pure Film recipe and scene-plan helpers and their tests are
+now relocated into `scenario/core/scene/film_plan.py` and `film_scene_plan.py`.
+Source intake and mechanical normalization remain separate commits with the
+original author preserved. The API-key adaptation makes recipe project selection
+optional and resolves task assets only within the exact selected job scope.
+See the [Film contract guide](FILM_PLAN.md) for timing, audio, scene-schema limits
+and explicit remaining integration. No Studio runner, client, separate storage,
+view registration, media binary or sample media is imported by this step.
+
 ## External media tools
 
 Adopt **external, optional ffmpeg** for Studio's PNG-to-MP4 playblast encoding;

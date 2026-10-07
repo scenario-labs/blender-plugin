@@ -97,3 +97,14 @@ restores the working scene and removes newly created data on failure. See the
 [Film primitive contract](../FILM_PLAN.md#native-shot-and-timeline-primitives) for
 choreography, source identity and remaining shared-command approval requirements.
 It does not bypass those requirements by exposing an unclaimed UI/MCP importer.
+
+## Local render snapshots
+
+[`local_capture.py`](../../scenario/blender/local_capture.py) writes the selected
+local scene and dependencies to a private blend file without saving or changing
+the working file. Only this snapshot step touches the parent's bpy state.
+The [local render primitive](../FILM_PLAN.md#local-capture-foundation) owns its
+offline child process and disposable profile; its standalone worker changes
+render settings only in that child. Still capture does not require ffmpeg.
+Scene/credential approval, the existing session queue, upload handoff and retained
+artifact cleanup belong to the caller and are not wired to Film controls yet.

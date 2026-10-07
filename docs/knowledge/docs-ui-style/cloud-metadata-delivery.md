@@ -19,8 +19,8 @@
       "tests/blender/test_model_generation.py": "f6a40f11ca4a5b84b35f428730e7a241369542b2182eb6e3d06522f63d4373de",
       "tests/blender/test_job_session.py": "745c14eb7cf075f22ef059da1d02c3611f4c08653267cd8fb96b882ed8e937be",
       "tests/unit/test_cloud_job_recovery.py": "6663d26d37a13fba59d3c9e74579e84be0b39a264f4a2f4ee2d243b138da1499",
-      "docs/images/cloud-recovery-edit-mode.png": "1638a4fe8305923bdb05fec27bf539c03ebb31bafba26adc5226be44a53a8ea5",
-      "docs/images/cloud-recovery-scene-switch.png": "32bbf27eedc318118539b99ee786901ba859a931251334fa25a521263c62678e"
+      "docs/images/cloud-recovery-edit-mode.png": "f593f1fe726cff14b5ba75f3cdd3c6ef38661b64bdc71e6b7ba71ee936617f88",
+      "docs/images/cloud-recovery-scene-switch.png": "9b4f2792899f185ad55ef2b6f614b43c5f2b0bf503a3ee913036d74530990ab9"
     }
   }
 }

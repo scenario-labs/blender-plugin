@@ -597,7 +597,7 @@ Edit 3D generation workflow.
 
 ## Film tasks
 
-Expand **Film tasks** in the Scenario sidebar to load a validated JSON recipe,
+Expand **Film** in the Scenario sidebar to load a validated JSON recipe,
 associate saved uploads and estimate/approve individual model tasks. Save the
 blend file to retain the recipe and production identity. Reloading a recipe keeps
 that identity; another take needs another task name. **New production** starts a
@@ -605,6 +605,17 @@ deliberately separate production while retaining old jobs.
 
 Each model task requires its own exact price and separate Generate confirmation.
 Results remain in saved jobs for explicit application. Opening the panel or
-inspecting a recipe never resumes uncertain work. Scene construction, shot capture,
-finishing and Film export remain unavailable. See [Film task controls](FILM_PLAN.md#native-and-mcp-task-controls)
+inspecting a recipe never resumes uncertain work. See [Film task controls](FILM_PLAN.md#native-and-mcp-task-controls)
 for the equivalent MCP commands and recovery boundaries.
+
+Under **Shots**, select a recipe shot and choose **Prepare shot** to select and
+verify its saved hero models. After verification, **Build shot** asks for separate
+approval before creating a new scene; the working scene stays selected. Neither
+action generates or downloads anything. Discard unapproved reviews, save known
+build receipts, or explicitly acknowledge inspection when an outcome is uncertain.
+Unresolved saved claims remain blocked. Full errors are available through
+**Shot error details**. See [shot controls](FILM_PLAN.md#native-and-mcp-shot-controls).
+Timeline assembly, shot capture, finishing and Film export remain unavailable.
+Synthetic desktop checks on macOS Blender 5.1.2 cover these shot controls and
+Undo/Redo; see [the interaction evidence](UI_STYLE.md#film-shot-controls). Live
+provider, other OS/DPI and integrated release acceptance remain separate.

@@ -155,7 +155,7 @@ picker and MCP `bind_film_upload` share this command.
 
 ## Native and MCP task controls
 
-Expand **Film tasks** in the Scenario sidebar and choose **Load recipe**. Loading
+Expand **Film** in the Scenario sidebar and choose **Load recipe**. Loading
 validates the raw JSON before changing scene data. Reloading preserves the
 production identity, including when a title or source filename changes. Save the
 blend file to retain both the recipe and identity. **New production** deliberately
@@ -316,12 +316,48 @@ Dismissal neither changes saved job state nor repeats scene work: unresolved
 application claims still block a fresh review. If a failed claim never reached
 storage and the jobs remain eligible, the user can explicitly prepare again
 without restarting the session.
-There is no new SDK request, download, store, worker pool or UI registration.
-Native/MCP presentation, timeline approval and release acceptance remain separate.
+There is no new SDK request, download, store or worker pool.
+Native/MCP presentation uses the same commands below; timeline approval and
+release acceptance remain separate.
+
+## Native and MCP shot controls
+
+The **Film > Shots** list stores stable shot IDs and titles in the blend file.
+Loading a revised recipe preserves selection by ID when that shot still exists.
+Choose **Prepare shot**, select one saved GLB for each hero, and confirm to verify
+local files. Cancelling the dialog creates no review or application claim.
+The application maintenance pump delivers verification even with the panel closed.
+
+A ready review exposes **Build shot** with a separate confirmation naming its
+shot, recipe scene and number of saved heroes. It creates a new scene and keeps
+the working scene selected. The native operator participates in Blender Undo;
+saved job receipts do not rewind, and replaying a consumed review cannot rebuild.
+Synthetic desktop Undo/Redo interaction passes on macOS Blender 5.1.2; see
+[the evidence and limits](UI_STYLE.md#film-shot-controls). A shot with no heroes
+follows the same explicit approval without inventing a generation job.
+
+**Discard review** retires unapproved work. **Save build receipt** retries only a
+known persistence outcome. **Acknowledge inspection** requires its checkbox after
+the user has inspected the scene and saved jobs; it cannot discard a pending
+receipt or release a durable application claim. **Shot error details** provides
+the full retained error, including a copyable fallback for an expired review.
+Uncertain recovery remains visible for the affected scene/shot after a recipe or
+production change, until its receipt or inspection is acknowledged.
+Drawing reads cached status without starting sessions,
+reading the store, polling workers or changing properties.
+
+Local MCP uses `film_shot_sources` to inspect eligible hero outputs and return
+the selected context token. `prepare_film_shot` requires that token, production
+ID, shot ID and explicit per-hero job revision/asset selections.
+`film_shot_review` polls status, discards unapproved work, retries receipts or
+dismisses an inspected uncertain review with `inspected: true`.
+`build_film_shot` is the separate explicit build approval. All four use the same
+session-owned reviews as the native controls. MCP does not create a native
+operator Undo entry. No tool generates, downloads or silently repeats a build.
 
 ## Remaining integration and evidence
 
-Native/MCP scene-building controls, timeline approval, shot capture, media finishing,
+Timeline approval, shot capture, media finishing,
 provider-specific preparation and final export remain separate work. Keep useful
 source capabilities and tests as those paths are connected; do not describe this
 helper adoption as a completed Film workflow.

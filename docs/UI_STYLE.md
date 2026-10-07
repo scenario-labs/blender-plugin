@@ -859,7 +859,7 @@ The live-provider, other-OS and release limitations above still apply.
 
 ## Film task controls
 
-Film tasks occupy an optional, initially closed Scenario sidebar panel. Loading
+Film tasks occupy an optional, initially closed **Film** sidebar panel. Loading
 a recipe validates it before changing persistent scene properties and preserves
 the production identity. Task rows are saved properties, not transient enums or
 mutations during drawing. **New production** requires confirmation.
@@ -907,3 +907,46 @@ saved-row review fixes. Those changes have separate installed native regression
 coverage; fresh physical input and screenshot proof remain pending.
 They do not establish other OS desktop behavior, Film scene construction/capture,
 finishing/export, resolution of #263 or integrated release acceptance.
+
+### Film shot controls
+
+The **Shots** child panel uses saved shot rows and a stable selected index.
+**Prepare shot** presents saved GLB choices per hero before local verification;
+**Build shot** requires a second confirmation naming the shot, recipe scene and
+hero count. The build preserves the working scene. **Discard review** confirms
+discarding unapproved work. **Save build receipt** never repeats a scene build.
+**Acknowledge inspection** requires a checkbox and cannot clear saved uncertainty.
+**Shot error details** wraps the complete cached error and offers copying.
+Drawing uses cached status and never starts a session or polls storage/workers.
+
+Installed synthetic tests cover UI/MCP handle sharing, source/build cancellation,
+changed destinations, receipt-only recovery, strict inspection acknowledgement,
+saved shot selection and read-only drawing. Exact ZIP SHA-256
+`f590b4ef5a601e984d1d0b950f0b5119b764347bd3e3aa4e2b8cc5b26ab14c09`
+passes 855 installed tests on each macOS arm64 Blender 5.0.1, 5.1.2 and 5.2.1.
+
+Desktop interaction with that same ZIP passes on macOS arm64 Blender 5.1.2 in
+an isolated profile. The fixture supplies two saved synthetic hero GLBs and
+blocks external Python sockets. Native mouse input expands Film and opens the
+source review; Escape cancels it without creating a review or claiming jobs.
+Return confirms local verification. Cancelling the separate Build shot dialog
+preserves the ready review, jobs and scenes. Confirmed Discard review retires
+only that unapproved review.
+
+![Film build approval names the shot and two saved hero models](images/film-shot-approval.png)
+
+Fresh verification and explicit build confirmation create exactly one shot scene
+and save both application receipts while preserving the selected working scene
+and its objects. Edit > Undo removes that shot; Edit > Redo restores it. Neither
+action rewinds the saved job receipts or permits reuse of the consumed review.
+After history invalidates the original scene handles, the panel offers fresh
+preparation. A viewport click selects the light and Home frames the scene,
+confirming focus and keyboard navigation. The native scene selector opens the
+built shot and returns to the intact working scene.
+
+![Film reports the completed shot while keeping the working scene selected](images/film-shot-built.png)
+
+The run records zero service requests and downloads, exits cleanly, removes its
+disposable profile and leaves the normal profile unchanged. This establishes the
+synthetic shot-control interaction, not live provider compatibility, motion/audio
+review, other OS/DPI combinations, timeline/capture/finishing or release acceptance.

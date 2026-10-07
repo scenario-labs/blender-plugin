@@ -354,8 +354,10 @@ recipes and explicit saved GLB receipts. They restore the current scene and roll
 back only new data on failure. The [shared shot application command](../FILM_PLAN.md#shared-shot-application-command)
 now verifies selected credential-bound task outputs, captures the unchanged recipe
 scene, claims every source job before building and supports receipt-only recovery.
-Native/MCP presentation and timeline approval remain to integrate; the existing
-Film controls still prepare/approve model and upload tasks only.
+The [native/MCP shot controls](../FILM_PLAN.md#native-and-mcp-shot-controls) expose
+source inspection, local verification, separate build approval and recovery over
+that command. The maintenance pump owns verification delivery; draw reads cached
+status. Timeline approval, capture and finishing remain to integrate.
 
 ## Shared MCP render preparation
 

@@ -247,7 +247,8 @@ class SCENARIO_OT_film_shot_error(bpy.types.Operator):
             message = owner.status(self.review_id)["error"] if owner else ""
         except ValueError:
             message = ""
-        for line in textwrap.wrap(message or "This review is no longer available", 65):
+        message = message or "This review is no longer available"
+        for line in textwrap.wrap(message, 65):
             self.layout.label(text=line)
         self.layout.operator(
             "scenario.copy_text", text="Copy error", icon="COPYDOWN"

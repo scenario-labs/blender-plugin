@@ -234,18 +234,20 @@ class FilmShotCommands:
 
     def current(self, scene, shot_id):
         """Read the latest matching cached review; never open storage or mutate during draw."""
+        latest = None
         for review in reversed(tuple(self._reviews.values())):
             try:
-                matches = (
-                    review.scene == scene
-                    and review.shot_id == shot_id
-                    and review.binding == _binding(scene)
-                )
+                if review.scene != scene or review.shot_id != shot_id:
+                    continue
+                # Recovery belongs to the affected scene even after its recipe changes.
+                if review.phase == "UNCERTAIN":
+                    return self.status(review.identifier)
+                if latest is None and review.binding == _binding(scene):
+                    latest = review.identifier
             except ReferenceError:
-                matches = False
-            if matches:
-                return self.status(review.identifier)
-        return None
+                # A deleted scene cannot expose a cached review.
+                continue
+        return self.status(latest) if latest is not None else None
 
     def discard(self, identifier):
         _main_thread()

@@ -340,7 +340,10 @@ follows the same explicit approval without inventing a generation job.
 known persistence outcome. **Acknowledge inspection** requires its checkbox after
 the user has inspected the scene and saved jobs; it cannot discard a pending
 receipt or release a durable application claim. **Shot error details** provides
-the full retained error. Drawing reads cached status without starting sessions,
+the full retained error, including a copyable fallback for an expired review.
+Uncertain recovery remains visible for the affected scene/shot after a recipe or
+production change, until its receipt or inspection is acknowledged.
+Drawing reads cached status without starting sessions,
 reading the store, polling workers or changing properties.
 
 Local MCP uses `film_shot_sources` to inspect eligible hero outputs and return

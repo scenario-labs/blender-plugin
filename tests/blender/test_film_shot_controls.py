@@ -213,6 +213,35 @@ class FilmShotControlTests(unittest.TestCase):
         self.assertEqual(self.builder._snapshot(), before)
         self.assertEqual(self.states(), [self.storage.JobState.APPLIED] * 2)
 
+    def test_recipe_and_production_changes_keep_uncertain_recovery_visible(self):
+        identifier = self.ready()
+        selections = self.selections()
+        with patch.object(
+            self.session, "_claim_saved_application", side_effect=OSError("Before write")
+        ):
+            self.commands.approve(identifier)
+        raw = copy.deepcopy(self.raw)
+        raw["title"] = "Changed recipe"
+        self.film.load_recipe(self.scene, raw)
+        for production in (self.production, "new-production"):
+            with self.subTest(production=production):
+                self.scene.scenario_film.production_id = production
+                status = self.commands.current(self.scene, "shot")
+                self.assertEqual((status["review_id"], status["phase"]), (identifier, "UNCERTAIN"))
+                with self.assertRaisesRegex(RuntimeError, "review"):
+                    self.commands.prepare(self.scene, shot_id="shot", selections=selections)
+        self.commands.dismiss_uncertain(identifier, inspected=True)
+        self.assertIsNone(self.commands.current(self.scene, "shot"))
+        self.assertEqual(self.states(), [self.storage.JobState.READY] * 2)
+
+    def test_missing_error_review_copies_the_displayed_fallback(self):
+        layout = Mock()
+        self.ui.SCENARIO_OT_film_shot_error.draw(
+            SimpleNamespace(review_id="missing", layout=layout), bpy.context
+        )
+        layout.label.assert_called_once_with(text="This review is no longer available")
+        self.assertEqual(layout.operator.return_value.text, "This review is no longer available")
+
     def test_shot_list_persists_and_reload_preserves_selection_by_id(self):
         raw = copy.deepcopy(self.raw)
         raw["shots"].append({**raw["shots"][0], "id": "other", "title": "Other"})

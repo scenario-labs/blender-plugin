@@ -465,7 +465,9 @@ and local MCP. Local rendering does not approve upload or generation.
 ## Shared capture and upload approval
 
 Under **Film > Capture**, **Render capture** uses the shot selected in **Shots**.
-Its confirmation chooses one matching local shot scene, still/video, Workbench
+A missing matching shot scene stops before opening confirmation and asks the user
+to build the selected shot. Its confirmation chooses one matching local shot scene,
+still/video, Workbench
 color mode and dimensions. Stills use the first shot frame; video uses the exact
 editorial range and has no audio. The dialog distinguishes that range from the
 recipe's generated source duration and trim. Cancelling creates no capture review

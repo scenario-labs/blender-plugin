@@ -423,6 +423,35 @@ class FilmCaptureTests(unittest.TestCase):
         self.assertEqual((status["frames"], status["fps"]), (120, 30))
         self.assertEqual(status["directory"], "")
 
+    def test_missing_shot_stops_capture_dialog_with_build_instruction(self):
+        bpy.data.scenes.remove(self.shot)
+        operator = SimpleNamespace(choices=_Choices(), report=Mock())
+        context = SimpleNamespace(
+            scene=self.scene, view_layer=bpy.context.view_layer, window_manager=Mock()
+        )
+        self.assertEqual(
+            self.controls.SCENARIO_OT_capture_film_shot.invoke(operator, context, None),
+            {"CANCELLED"},
+        )
+        context.window_manager.invoke_props_dialog.assert_not_called()
+        operator.report.assert_called_once_with(
+            {"WARNING"}, "Build a matching scene for the selected Film shot first"
+        )
+        self.assertEqual(self.owner._reviews, {})
+        self.assertEqual(self.render_calls, [])
+
+    def test_missing_capture_choice_does_not_prepare_or_render(self):
+        operator = SimpleNamespace(choices=_Choices(), choice_index=0, report=Mock())
+        self.assertEqual(
+            self.controls.SCENARIO_OT_capture_film_shot.execute(operator, bpy.context),
+            {"CANCELLED"},
+        )
+        operator.report.assert_called_once_with(
+            {"WARNING"}, "Select a matching shot scene before rendering a capture"
+        )
+        self.assertEqual(self.owner._reviews, {})
+        self.assertEqual(self.render_calls, [])
+
     def test_native_dialog_cancel_is_inert_and_confirmation_uses_shared_command(self):
         operator = SimpleNamespace(
             choices=_Choices(),

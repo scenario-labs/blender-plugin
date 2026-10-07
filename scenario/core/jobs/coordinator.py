@@ -525,6 +525,8 @@ class JobCoordinator:
                 except ValueError:
                     continue  # Unset or nonopaque inputs cannot match a saved asset identity.
                 if asset_id not in exports:
+                    if len(exports) >= 128:
+                        raise QuoteError("Too many distinct 3D input assets")
                     exports[asset_id] = self._uploads.mesh_sources(asset_id)
                 matching = exports[asset_id]
                 if not matching:

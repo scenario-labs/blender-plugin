@@ -485,6 +485,11 @@ marked uploads require explicit removal. Optional scalar parameters accept null
 to disable them; invalid edits fail before changing the form. Final quotes still
 validate conditional and one-of schema requirements.
 
+Inspection returns only the enabled parameters used by the render lane. Its
+`parameters` object can be passed back to `configure`, including numeric choices
+represented by Blender's string enum identifiers. Only declared numeric choices
+accept these strings; other numeric settings still require JSON numbers.
+
 Raw render-lane parameter calls now fail with preparation guidance. Use the
 ordinary Image/Video lanes for direct model parameters. Scene capture, file
 upload, Spark approval and render submission remain separate actions. Offline

@@ -570,6 +570,43 @@ def test_captured_mesh_binding_limit_applies_across_parameters(env, operation, c
         assert env.coordinator.prepare_quote(quote).intent.mesh_sources == quote.mesh_sources
 
 
+@pytest.mark.parametrize("operation", ["model", "workflow"])
+@pytest.mark.parametrize("array", [True, False])
+@pytest.mark.parametrize("count", [128, 129])
+def test_distinct_mesh_lookup_limit_includes_unmatched_assets(
+    env, monkeypatch, operation, array, count
+):
+    lookups = []
+
+    def unmatched(asset_id):
+        lookups.append(asset_id)
+        return ()
+
+    monkeypatch.setattr(env.upload_store, "mesh_sources", unmatched)
+    assets = [f"external-{index}" for index in range(count)]
+    if array:
+        env.model["inputs"] = [{"name": "meshes", "type": "file_array", "kind": "3d"}]
+        payload = {"meshes": [asset for asset in assets for _ in range(2)]}
+    else:
+        env.model["inputs"] = [
+            {"name": f"mesh_{index}", "type": "file", "kind": "3d"} for index in range(count)
+        ]
+        payload = {
+            spec["name"]: asset for spec, asset in zip(env.model["inputs"], assets, strict=True)
+        }
+    command = getattr(env.coordinator, "quote_" + operation)
+    if count > 128:
+        with pytest.raises(QuoteError, match="Too many distinct 3D input assets"):
+            command(operation + "-one", payload, origin=env.origin)
+    else:
+        quote = command(operation + "-one", payload, origin=env.origin)
+        assert quote.mesh_sources == ()
+        assert quote.estimate.payload == payload
+    assert lookups == assets[:128]
+    assert env.store.records() == ()
+    assert [request.url.params.get("dryRun") for request in env.calls] == [None, "true"]
+
+
 def test_prompt_text_and_different_scope_cannot_claim_mesh_provenance(env):
     captured_upload(env, scope=replace(env.scope, account_id="other"))
     quote = mesh_quote(env)

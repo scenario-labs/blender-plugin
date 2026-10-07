@@ -62,6 +62,7 @@ def inspect(scene, lane):
     schema = generation.schema_for(state.model_id)
     styles = render_lanes.style_input(lane, schema) if schema else None
     values, enabled = params_ui.collect_values(state, schema) if schema else ({}, {})
+    hidden = render_lanes.hidden_param_names(schema) if schema and lane == "render_image" else ()
     references = []
     for ref in state.references:
         references.append(
@@ -82,7 +83,9 @@ def inspect(scene, lane):
         "context_id": runtime.state.job_context_id,
         "model_id": state.model_id,
         **{name: getattr(state, prop) for name, (prop, _) in _FIELDS.items()},
-        "parameters": {key: value for key, value in values.items() if enabled.get(key)},
+        "parameters": {
+            key: value for key, value in values.items() if enabled.get(key) and key not in hidden
+        },
         "references": references,
         "errors": result.errors,
         "ready_to_estimate": not (result.errors or result.files or result.captures or result.spark),
@@ -98,6 +101,17 @@ def _parameter(spec, value):
             raise ValueError(f"{spec.name} cannot be disabled")
         return "enabled", False
     if spec.ptype == "number":
+        # Blender stores numeric enum identifiers as strings. Accept only an
+        # exact declared option, then validate its numeric value as usual.
+        if isinstance(value, str) and spec.allowed_values:
+            value = next(
+                (
+                    option
+                    for option in spec.allowed_values
+                    if type(option) in (int, float) and str(option) == value
+                ),
+                value,
+            )
         valid = type(value) in (int, float) and math.isfinite(value)
         valid = valid and (not spec.is_integer or float(value).is_integer())
         valid = valid and (not spec.is_integer or -(2**31) <= value < 2**31)

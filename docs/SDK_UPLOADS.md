@@ -571,11 +571,17 @@ partial SQLite index of imported captured meshes. Each unique input needs one
 query and at most two decoded records; two matches still reject an ambiguous
 source. Repeated array entries keep their original positions without repeating
 the lookup, and absent optional inputs do not read upload storage. External
-assets and ordinary uploads do not gain an inferred source.
+assets and ordinary uploads do not gain an inferred source. Each quote allows at
+most 128 distinct 3D input asset IDs across all parameters, including unmatched
+external assets. A 129th identity fails before another lookup; repeated IDs share
+the same lookup budget.
 
 Opening existing schema-2 storage builds the derived index once, without changing
 saved records, revisions, schema version or uncertain claims. SQLite maintains it
 as uploads change; subsequent quotes do not scan retained upload history. Index
+entries require valid JSON, so a malformed record cannot prevent other records
+or credential scopes from opening or querying storage. Reading that damaged
+record directly still fails and preserves it for recovery. Index
 creation can take time for a large existing store. A missing index during lookup
 fails instead of silently falling back to a history scan. Preparation and
 submission still recheck the selected upload's exact identity and revision.

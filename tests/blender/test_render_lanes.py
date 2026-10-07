@@ -101,7 +101,7 @@ class RenderLanesTests(unittest.TestCase):
         commands = submodule("blender.render_commands")
         state = commands.configure(self.scene, "render_video", {"parameters": {"duration": 4}})
         self.assertEqual(int(state["parameters"]["duration"]), 4)
-        for value in (True, float("nan"), 4.5, 999):
+        for value in (True, float("nan"), 4.5, 999, "999", "4.5", "NaN", "", " 4"):
             with self.subTest(value=value), self.assertRaises(ValueError):
                 commands.configure(
                     self.scene, "render_video", {"look": "bad", "parameters": {"duration": value}}
@@ -110,6 +110,39 @@ class RenderLanesTests(unittest.TestCase):
             self.assertEqual(
                 int(commands.inspect(self.scene, "render_video")["parameters"]["duration"]), 4
             )
+
+    def test_mcp_render_image_inspection_round_trips_visible_parameters(self):
+        self.image_lane.model_id = "model_google-gemini-3-1-flash"
+        schema = self.generation.schema_for(self.image_lane.model_id)
+        hidden = self.render_lanes.hidden_param_names(schema)
+        self.assertIn("videoFps", hidden)
+        before = self.form()
+        self.assertTrue(before["parameters"])
+        self.assertFalse(hidden.intersection(before["parameters"]))
+        after = self.form("configure", settings={"parameters": before["parameters"]})
+        self.assertEqual(after["parameters"], before["parameters"])
+        with self.assertRaisesRegex(ValueError, "not used by Render Image"):
+            self.form("configure", settings={"parameters": {"videoFps": 1}})
+
+    def test_mcp_render_video_inspection_round_trips_numeric_choices(self):
+        self.video_lane.model_id = "model_bytedance-seedance-2-0"
+        tools = submodule("mcp.tools_scenario")
+        before = tools.render_form({"lane": "render_video", "action": "inspect"})
+        self.assertIsInstance(before["parameters"]["duration"], str)
+        after = tools.render_form(
+            {
+                "lane": "render_video",
+                "action": "configure",
+                "settings": {"parameters": before["parameters"]},
+            }
+        )
+        self.assertEqual(after["parameters"], before["parameters"])
+        self.video_lane.prompt = "painted copper"
+        self.uploaded("render_video")
+        self.uploaded("render_video", role="first_frame", asset="uploaded-first-frame")
+        payload = self.generation.build_request(self.scene, "render_video").body
+        self.assertIs(type(payload["duration"]), int)
+        self.assertEqual(payload["duration"], int(before["parameters"]["duration"]))
 
     def test_mcp_reference_removal_rejects_changed_binding_and_does_not_cancel_upload(self):
         self.image_lane.model_id = "model_google-gemini-3-1-flash"

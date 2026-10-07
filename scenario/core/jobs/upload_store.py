@@ -27,7 +27,7 @@ from .upload_transfers import UploadedPart
 _APPLICATION_ID = 0x53435550
 _VERSION = 2
 _MESH_ASSET_FILTER = (
-    "json_extract(record, '$.state') = 'imported' "
+    "json_valid(record) AND json_extract(record, '$.state') = 'imported' "
     "AND json_extract(record, '$.intent.mesh_source') IS NOT NULL"
 )
 

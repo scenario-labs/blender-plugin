@@ -966,7 +966,9 @@ Known rollback errors remain readable and copyable. Incomplete cleanup hides
 the build action and requires **Discard timeline review** with its inspection
 checkbox; this never deletes Blender data. Dismissed reviews no longer show
 their status or Copy error action in the panel; MCP can still inspect the saved
-review error. Drawing only reads cached status.
+review error. Ordinary status matches the current production and recipe; a
+reload hides prior built/error status without hiding unresolved partial cleanup.
+Drawing only reads cached status.
 Native source/destination guards and single-use approval have synthetic installed
 coverage. Exact ZIP SHA-256
 `aef03c55e607a3ea99eb839bd4cdef2cc4c7e6517aa5ca5152d302744874f402`
@@ -1026,3 +1028,20 @@ This follow-up records zero service requests/downloads, clean exit, disposable
 profile cleanup and an unchanged normal profile. Its physical evidence covers
 dismissal, viewport focus and Edit Mode gating; it does not repeat the earlier
 build, Undo/Redo, missing-choice or Sequencer journeys.
+
+Recipe-status validation uses exact ZIP SHA-256
+`eea65caf46764ed36dae6717c5339da472127d668b389f0564e156c9b8024bc8`,
+with 960 installed tests passing on each macOS arm64 Blender 5.0.1, 5.1.2 and
+5.2.1. The isolated 5.1.2 desktop fixture displays a built timeline, then calls
+the MCP recipe-load handler on the main thread with a replacement recipe. The
+old Built label disappears; the prior review and scene data remain inspectable.
+Viewport selection and Home framing work. A synthetic incomplete cleanup stays
+visible and blocks preparation across another recipe reload. Mouse input opens
+its discard dialog, checks inspection and Return dismisses it, clearing the panel.
+
+![Reloading a recipe removes the prior timeline confirmation](images/film-timeline-recipe-reloaded.png)
+
+Saved jobs remain unchanged, with zero service requests/downloads, clean exit,
+disposable-profile cleanup and normal-profile preservation. This check covers
+recipe-status filtering and retained uncertainty, not a new build/Undo journey
+or the native recipe file chooser.

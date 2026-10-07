@@ -170,9 +170,10 @@ class FilmTimelineCommands:
         for item in reversed(tuple(self._reviews.values())):
             try:
                 if item.scene == scene:
+                    # Partial cleanup belongs to the scene even after its recipe changes.
                     if item.phase == "UNCERTAIN":
                         return self.status(item.identifier)
-                    if latest is None:
+                    if latest is None and item.binding == film_jobs.snapshot(scene):
                         latest = item.identifier
             except ReferenceError:
                 # Deleted RNA cannot provide a review for the current scene.

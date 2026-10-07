@@ -382,7 +382,8 @@ timing before consuming the review and constructing the sequence. Confirmed
 rollback retains an error; incomplete cleanup retains uncertainty and blocks
 another build from that recipe scene until explicit inspection acknowledgement.
 Uncertainty takes priority over newer ready reviews in the panel and blocks their
-approval too. A missing shot scene stops the native dialog with a named build
+approval too, even after a recipe reload. Ordinary panel status belongs only to
+the current production and recipe; prior reviews remain explicitly inspectable. A missing shot scene stops the native dialog with a named build
 instruction; a missing selection cannot create a review.
 Discarding a review removes its status from the panel without deleting Blender
 data; explicit MCP inspection retains its discarded phase and prior error.

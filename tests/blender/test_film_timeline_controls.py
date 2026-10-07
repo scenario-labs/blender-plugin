@@ -320,6 +320,69 @@ class FilmTimelineControlTests(unittest.TestCase):
                 self.assertEqual(self.builder._snapshot(), before)
                 self.assertEqual(self.store.records(), self.saved_before)
 
+    def test_recipe_reload_hides_old_status_without_losing_review_history(self):
+        replacement = copy.deepcopy(self.raw)
+        replacement["title"] = "Replacement recipe"
+        for phase in ("READY", "BUILT", "ERROR", "DISCARDED"):
+            with self.subTest(phase=phase):
+                self.tools.film_recipe({"action": "load", "recipe": self.raw})
+                identifier = self.prepare()
+                if phase == "BUILT":
+                    self.timeline.approve(identifier)
+                elif phase == "ERROR":
+                    with patch.object(self.builder, "build_timeline", side_effect=RuntimeError):
+                        self.timeline.approve(identifier)
+                elif phase == "DISCARDED":
+                    self.timeline.discard(identifier)
+                original = self.timeline.status(identifier)
+                self.assertEqual(original["phase"], phase)
+                self.assertEqual(self.timeline.current(self.scene), original)
+                self.tools.film_recipe({"action": "load", "recipe": replacement})
+                before = self.builder._snapshot()
+                self.assertIsNone(self.timeline.current(self.scene))
+                layout = Mock()
+                self.ui.SCENARIO_PT_film_timeline.draw(SimpleNamespace(layout=layout), bpy.context)
+                self.assertEqual(
+                    [call.args[0] for call in layout.operator.call_args_list],
+                    ["scenario.build_film_timeline"],
+                )
+                self.assertEqual(
+                    [call.kwargs["text"] for call in layout.label.call_args_list],
+                    ["Choose a completed scene for every shot."],
+                )
+                self.assertEqual(
+                    self.tools.film_timeline_review({"review_id": identifier}), original
+                )
+                self.assertEqual(self.builder._snapshot(), before)
+                self.assertEqual(self.store.records(), self.saved_before)
+                self.assertFalse(self.calls or self.downloads)
+
+    def test_recipe_reload_keeps_uncertain_cleanup_visible_and_blocking(self):
+        first, second = self.prepare(), self.prepare()
+
+        def partial(*args, **kwargs):
+            bpy.data.scenes.new("Partial previous recipe timeline")
+            raise RuntimeError("Incomplete cleanup")
+
+        with patch.object(self.builder, "build_timeline", side_effect=partial):
+            self.assertEqual(self.timeline.approve(first)["phase"], "UNCERTAIN")
+        replacement = copy.deepcopy(self.raw)
+        replacement["title"] = "Replacement recipe"
+        self.tools.film_recipe({"action": "load", "recipe": replacement})
+        before = self.builder._snapshot()
+        self.assertEqual(self.timeline.current(self.scene)["review_id"], first)
+        with self.assertRaisesRegex(ValueError, "uncertain"):
+            self.timeline.prepare(self.scene, selections={})
+        with self.assertRaisesRegex(ValueError, "uncertain"):
+            self.timeline.approve(second)
+        with self.assertRaisesRegex(ValueError, "Inspect"):
+            self.timeline.discard(first)
+        self.timeline.discard(first, inspected=True)
+        self.assertIsNone(self.timeline.current(self.scene))
+        self.assertEqual(self.builder._snapshot(), before)
+        self.assertEqual(self.store.records(), self.saved_before)
+        self.assertFalse(self.calls or self.downloads)
+
     def test_uncertain_mutation_blocks_replay_until_explicit_inspection(self):
         identifier = self.prepare()
 

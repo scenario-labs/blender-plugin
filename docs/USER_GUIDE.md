@@ -676,3 +676,25 @@ use **Inspect saved jobs** instead of repeating an uncertain generation. See
 [composition controls](FILM_PLAN.md#native-and-mcp-composition-controls) for MCP,
 source requirements and acceptance limits. Synthetic desktop interaction passes
 on macOS Blender 5.1.2; live provider and other OS/DPI acceptance remain pending.
+
+
+## Expanded Studio view
+
+Choose **Studio** beside **Scenario** in the 3D viewport header to open expanded
+controls. It opens only when requested. Create uses the same prompt, model,
+references and settings as the composer and sidebar. Film groups task, shot,
+capture, timeline and composition controls; Jobs and Results expose the same
+saved work and explicit apply actions. Connection shows the selected credential
+source and optional project and provides Preferences and local agent setup.
+
+Page changes preserve the form and saved work. Press Escape or click outside to
+return to Blender; admitted jobs keep running. Actions that need a separate
+picker or approval use their existing native dialogs. Reopen Studio from the
+header to continue with the same form. If a pending composer edit conflicts with
+a changed form or scene, finish editing its original prompt before opening Studio.
+
+The view's physical input, layout, focus, small-window and DPI acceptance is still
+pending. Workflow forms and asset-library search are not available in this view;
+[local MCP workflow commands](MCP.md#workflow-execution) provide scoped discovery,
+exact estimates and explicit execution separately. This is not complete Studio
+or release acceptance.

@@ -194,13 +194,35 @@ These results validate the new MCP command entry points and shared lifecycle;
 they do not replace the preceding candidate's update evidence or establish a
 completed Studio view, live workflow acceptance or a release-ready 0.10.0 ZIP.
 
+## Expanded Studio validation slice
+
+The explicit native Studio view above #324 uses ZIP SHA-256
+`28af5535b3f3755391c7009f29ccdb0c2e47265be4f0ef606fdd09ec6a7984d9`.
+All 136 packaged Python sources match that layer. It passes 1,076 installed tests
+on each macOS arm64 Blender 5.0.1, 5.1.2 and 5.2.1, with two Windows-specific
+skips per run, and 3,801 offline unit tests with the known SDK authentication
+expected failure. Nine Studio regressions cover unsaved navigation, shared
+forms/quotes, continued admitted work, guarded focused-prompt transfer, scene
+ownership, requested width and native popup invocation. Mocked layout calls and
+direct property assignments do not prove physical interaction or visual layout.
+
+A desktop attempt used the preceding Studio archive
+`aa82cd233a1f2be2830b47292c562fad43411ae5dc1a1b60ce6e1461d27a0eaf`.
+The isolated application launched, but computer control returned
+`cgWindowNotFound` before input or screenshots. The fixture exited cleanly,
+removed its disposable profile and preserved the normal profile, with no external
+requests. The Studio PR remains draft pending the native interaction proof
+required by the [UI guide](../UI_STYLE.md). Workflow/library forms and complete
+retained-capability acceptance remain open; these tests do not establish a
+release-ready candidate or replace earlier update evidence.
+
 ## Remaining release gates
 
 | Gate | Current limit | Next evidence and owner |
 | --- | --- | --- |
 | Complete SDK adoption | The unscoped prototype engine and unused raw service clients are removed. The [SDK operation inventory](../SDK_ADOPTION.md#service-operation-inventory) maps maintained service paths and the existing discovery exception; offline/native checks pass. | Finish retained-capability and live provider acceptance under #64/#65; the call-site audit alone does not establish those product contracts. |
 | Credentials and project scope | Merged #316 exposes an optional project ID. Scoped synthetic desktop input passed on the identified earlier ZIP; the final runtime ZIP has native regression coverage. The SDK service-retirement archive identified above also passes saved preference reload and local project isolation. | Complete fresh onboarding, permission failures, live override behavior and final-candidate update/desktop acceptance under #65/#68. |
-| Compact and expanded creation | The expanded composer remains a generation card; the optional expanded Studio and its workflow/asset-library forms are not implemented. Earlier screenshots also do not establish the complete candidate journey. | Complete retained Studio presentation under #66, then native select/capture/estimate/generate/inspect/apply and library reuse; focus, text input, viewport, small-window and DPI checks under #66/#68. |
+| Compact and expanded creation | A draft explicit native Studio view now reuses Create, Film, Jobs, Results and Connection controls. Workflow and asset-library forms remain absent; physical Studio input/layout proof is pending. The compact composer still needs complete retained-capability acceptance. | Complete retained Studio presentation under #66, then native select/capture/estimate/generate/inspect/apply and library reuse; focus, text input, viewport, small-window and DPI checks under #66/#68. |
 | Workflows | Local MCP discovery, exact quote approval and durable execution now use the shared SDK session. Expanded Studio forms, interactive nodes and general workflow cancellation remain absent. | Complete retained workflow presentation and authorized live output/recovery acceptance under #64/#65/#66/#68; the new commands do not close those issues. |
 | Retained lanes | Offline receipts and MIME checks do not establish usable live results. | Authorized scoped checks for Image, Video, 3D, Materials, audio, render/edit and Film paths; inspect actual outputs and record limitations under #68. |
 | Recovery and switching | Synthetic tests cover lost acknowledgement, stale quotes, scope changes and application claims. | Candidate-level UI/MCP parity, cancellation/restart races and failed download/import journeys with recorded outcomes under #65/#68. |

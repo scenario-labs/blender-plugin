@@ -315,3 +315,18 @@ This inventory preserves capability decisions and scoped implementation updates.
 The [release acceptance record](maintenance/release-acceptance.md) identifies
 current candidate tests and remaining gates; the source inventory alone does not
 establish complete Studio, live API or paid-generation acceptance.
+
+
+## Expanded native presentation
+
+The first-party `scenario/blender/studio.py` view implements explicit expanded
+navigation while reusing the current native creation, Film, job, result and
+connection controls. It retains their scene form and shared runtime rather than
+importing StudioApp's view-owned task runner or separate storage. Its page state
+is unsaved WindowManager data, and no startup/file-load hook opens the view.
+No selected-source runtime, font or icon is copied by this presentation layer.
+
+This is a bounded adaptation of the retained expanded-view responsibility, not
+complete source/UI adoption. Workflow forms, library search and broader compact
+composer replacement remain; native interaction and screenshot acceptance are
+pending. The [UI guide](UI_STYLE.md#explicit-studio-view) records that boundary.

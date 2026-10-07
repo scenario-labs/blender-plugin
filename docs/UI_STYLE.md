@@ -1186,3 +1186,39 @@ SDK transport and media metadata were mocked, and external socket/DNS calls were
 disabled. This proves the scoped native interaction flow, not real media probing,
 live provider quality, other OS/DPI behavior, local final assembly/export or
 complete Film/release acceptance.
+
+
+## Explicit Studio view
+
+The viewport header has a separate **Studio** button. It opens a native popup
+with Create, Film, Jobs, Results and Connection pages. Opening, closing or
+switching pages does not start a job or select another account/project. No
+startup or file-load handler opens it. The existing **Scenario** button still
+opens the sidebar; the compact composer remains the default creation surface.
+
+Studio reuses the actual native panel controls and their operators. Create keeps
+the same scene form, model, prompt, references and parameters. Film separates
+Tasks, Shots, Capture, Timeline and Composition; each keeps its existing
+confirmation boundary. Results reuse the saved-result and explicit application
+controls. Connection names the selected credential source/project and links to
+Preferences and local agent setup without displaying credentials.
+
+Navigation is an unsaved WindowManager property group. Native navigation edits
+must not tag a scene or invalidate its exact quote. Before opening, focused
+composer text is committed only if its original scene, lane and previously
+synchronized prompt still match. A conflicting form rejects opening and retains
+both texts. Opening Studio never commits pending text into another scene with
+an identical old prompt.
+
+The requested popup width is bounded by the invoking area, window and UI scale;
+narrow requests use two rows of equal navigation segments. Native popup focus,
+scrolling and dismissal still require desktop acceptance. Installed tests cover
+registration, shared drawing, quote preservation, pending-text ownership and
+continued admitted work; they are not pointer, keyboard, Unicode/IME or visual
+layout proof. The isolated desktop attempt could not target the running window
+(`cgWindowNotFound`), so screenshot, focus, small-window and DPI proof remain
+pending. Keep this UI change in draft until that evidence is supplied.
+
+This view exposes existing creation/Film/result controls. Workflow input forms,
+asset-library search and complete retained Studio acceptance remain separate;
+local workflow commands alone do not provide those forms.

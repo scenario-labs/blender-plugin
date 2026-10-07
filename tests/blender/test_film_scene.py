@@ -305,6 +305,17 @@ class FilmSceneTests(unittest.TestCase):
                         for strip in strips:
                             self.assertAlmostEqual(strip.frame_end, frame, places=4)
 
+    def test_conflicting_hero_dimensions_fail_before_import_or_scene_mutation(self):
+        self.actors(width=2, height=3)
+        source = self.source()
+        before = self.builder._snapshot()
+        with patch.object(self.builder.model_application, "apply_model") as apply:
+            with self.assertRaisesRegex(ValueError, "either width or height, not both"):
+                self.build(heroes={"hero": source})
+        apply.assert_not_called()
+        self.assertEqual(self.builder._snapshot(), before)
+        self.unchanged_context()
+
     def test_tampered_hero_fails_before_creating_data(self):
         self.actors()
         source = self.source()

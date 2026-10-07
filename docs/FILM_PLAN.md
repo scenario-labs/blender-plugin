@@ -236,8 +236,11 @@ Each hero needs an explicitly selected `HeroSource` containing a saved GLB resul
 and its download receipt/path. The existing model importer rechecks bounded,
 embedded GLB bytes and packs textures. Preflight verifies every source before
 mutation, and import rehashes it again. Actors have independent geometry, rigs,
-morph data and animation instances. Width/height normalization, asset orientation,
-actor transforms, trajectories and imported hold/loop animation are separate.
+morph data and animation instances. A hero can specify either `width` or `height`
+for uniform, proportion-preserving sizing, or omit both to keep its imported size.
+Specifying both fails recipe validation before scene creation. Size normalization,
+asset orientation, actor transforms, trajectories and imported hold/loop animation
+are separate.
 Placement measures evaluated rig/morph deformation at the selected initial pose.
 Action stops use the same continuous editorial frame mapping as motion keys.
 Hold/loop uses the importer's active clip or first stored NLA clip; other clip data

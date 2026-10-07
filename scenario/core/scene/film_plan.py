@@ -328,6 +328,10 @@ def _validate_film_plan(raw: dict) -> dict:
             "reference": identifier(hero["reference"]),
             "rotation": _vector(hero.get("rotation", [0, 0, 0]), "Hero rotation", -360, 360),
         }
+        if "width" in hero and "height" in hero:
+            raise ValueError(
+                "Choose either width or height, not both, to preserve hero proportions."
+            )
         for dimension in ("height", "width"):
             if dimension in hero:
                 val[dimension] = _number(hero[dimension], dimension, 0.01, 200)

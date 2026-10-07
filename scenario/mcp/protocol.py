@@ -18,7 +18,8 @@ PARSE_ERROR, INVALID_REQUEST, METHOD_NOT_FOUND, INVALID_PARAMS, INTERNAL_ERROR, 
 INSTRUCTIONS = (
     "Blender is open on the user's machine. Start with scene_summary, prefer the specific tools over execute_python, "
     "quote the CU cost (estimate_cost) before generating, and place results where the user is working. "
-    "For platform-wide work (collections, training, workflows, usage) use the mcp.scenario.com server when it is connected."
+    "Use estimate_workflow then run_workflow for an explicitly approved workflow in this local scope. "
+    "For platform-wide work (collections, training, workflow authoring, usage) use the mcp.scenario.com server when it is connected."
 )
 
 

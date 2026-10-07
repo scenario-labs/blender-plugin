@@ -524,3 +524,21 @@ now assembles independent receipt-bound picture/audio sequences. Its
 prepares copies on existing workers, then separately checks original recipe/scene
 approval and durable generated-source application claims. Native/MCP presentation
 and approval controls still need wiring. Portable export remains unimplemented.
+
+
+## Active workflow commands
+
+Local MCP `list_workflows` and `workflow_schema` queue SDK metadata reads on the
+selected JobSession. Exact-task ownership distinguishes metadata from saved job
+completions, and delivery still checks the originating scene and connection.
+`estimate_workflow` and `run_workflow` reuse ModelJobs' bounded quote ownership,
+durable submission and polling; the issued estimate determines the SDK operation.
+An explicit operation tag prevents a model approval from authorizing a workflow
+or vice versa. Failed workflow quotes release their retained approval capacity.
+
+The original parameters, normalized payload/defaults and exact decimal price are
+separate fields. Approval consumes the handle before persistence and requires
+unchanged input, scene and connection. Results stay saved for explicit application;
+there is no workflow-specific worker pool, store or automatic import. Native
+workflow forms, expanded Studio, interactive nodes, general cancellation and live
+output acceptance remain separate integration gates under #64/#65/#66/#68.

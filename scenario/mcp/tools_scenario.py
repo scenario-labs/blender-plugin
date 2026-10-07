@@ -153,6 +153,120 @@ def estimate_cost(args):
     return DeferredTool(ticket.task.result, finish_model)
 
 
+def _wait_workflow(task):
+    try:
+        task.result()
+    except Exception:
+        # Deliver the owned completion on the main thread, including errors.
+        pass
+
+
+def _workflow_metadata(args, *, detail=False):
+    privacy = args.get("privacy", "private")
+    if privacy not in {"private", "public"}:
+        raise ValueError("Choose private or public workflows")
+    offset, limit = args.get("offset", 0), args.get("limit", 40)
+    query = args.get("query", "")
+    if (
+        type(offset) is not int
+        or offset < 0
+        or type(limit) is not int
+        or not 1 <= limit <= 40
+        or not isinstance(query, str)
+    ):
+        raise ValueError("Use a nonnegative offset, limit from 1 to 40 and text query")
+    session = runtime.ensure_job_session()
+    task = session.workflow_metadata(
+        bpy.context.scene, identifier=args["workflow_id"] if detail else None, privacy=privacy
+    )
+
+    def finish(_):
+        if runtime.ensure_job_session() is not session:
+            raise ScenarioError(0, "The workflow context changed; inspect again")
+        outcomes = session.drain(task=task)
+        if not outcomes:
+            raise ScenarioError(0, "Workflow metadata is still loading")
+        result = session.deliver(outcomes[0], lambda value, *_: value)
+        if detail:
+            return {
+                "workflow_id": result["id"],
+                "name": result.get("name", ""),
+                "description": result.get("description", ""),
+                "inputs": result.get("inputs_definition", result.get("inputs")),
+            }
+        rows = [
+            {
+                "id": row["id"],
+                "name": row.get("name", ""),
+                "description": row.get("description", ""),
+            }
+            for row in result
+        ]
+        rows = [
+            row
+            for row in rows
+            if query.lower() in " ".join(str(value) for value in row.values()).lower()
+        ]
+        end = offset + limit
+        return {
+            "privacy": privacy,
+            "workflows": rows[offset:end],
+            "total": len(rows),
+            "next_offset": end if end < len(rows) else None,
+        }
+
+    return DeferredTool(lambda: _wait_workflow(task), finish)
+
+
+def list_workflows(args):
+    return _workflow_metadata(args)
+
+
+def workflow_schema(args):
+    return _workflow_metadata(args, detail=True)
+
+
+def estimate_workflow(args):
+    jobs = runtime.ensure_model_jobs()
+    ticket = jobs.quote_workflow(bpy.context.scene, args["workflow_id"], args.get("parameters", {}))
+
+    def finish(_):
+        if runtime.ensure_model_jobs() is not jobs:
+            raise ScenarioError(0, "The workflow context changed; estimate again")
+        estimate = jobs.finish_quote(ticket)
+        return {
+            "workflow_id": ticket.model_id,
+            "quote_id": ticket.identifier,
+            "parameters": json.loads(ticket.inputs),
+            "payload": estimate.payload,
+            "cu_cost_exact": str(estimate.cost),
+            "mesh_sources": [asdict(source) for source in ticket.quote.mesh_sources],
+        }
+
+    return DeferredTool(lambda: _wait_workflow(ticket.task), finish)
+
+
+def run_workflow(args):
+    jobs = runtime.ensure_model_jobs()
+    view = jobs.submit_workflow(
+        args["quote_id"],
+        bpy.context.scene,
+        args["workflow_id"],
+        args.get("parameters", {}),
+        approved_cost=args["approved_cost"],
+    )
+    return {
+        "local_id": view.local_id,
+        "state": view.status,
+        "note": "One workflow submission saved. Inspect job_status; never repeat uncertain work. Results require explicit application. General workflow cancellation is unavailable.",
+    }
+
+
+def discard_workflow_estimate(args):
+    runtime.ensure_model_jobs().discard_workflow_quote(args["quote_id"])
+    return {"discarded": True}
+
+
 def film_recipe(args):
     from ..blender import film_jobs
 
@@ -1097,6 +1211,90 @@ _JOB_REF = {
 
 
 SPECS = (
+    ToolSpec(
+        "list_workflows",
+        (
+            "List workflows in the selected credential/project scope without spending.\n"
+            "Args: privacy is private (default) or public; query filters id/name/description; offset defaults to 0 and limit is 1 to 40 (default 40).\n"
+            "Returns: workflows, total matching rows and next_offset, or an explicit catalog error.\n"
+            'Example: {"privacy": "public", "query": "image", "limit": 20}.\n'
+            "Each call reads the bounded complete catalog before local filtering/paging; ordering can change between calls. Context changes reject delivery. No upload or generation.\n"
+            "Platform equivalent: workflows_list."
+        ),
+        _schema(
+            {
+                "privacy": {"type": "string", "enum": ["private", "public"]},
+                "query": {"type": "string"},
+                "offset": {"type": "integer", "minimum": 0},
+                "limit": {"type": "integer", "minimum": 1, "maximum": 40},
+            }
+        ),
+        list_workflows,
+        {"readOnlyHint": True},
+    ),
+    ToolSpec(
+        "workflow_schema",
+        (
+            "Read a workflow's declared input definitions without spending.\n"
+            "Args: workflow_id is required.\n"
+            "Returns: workflow_id, name, description and original inputs with conditional/default/file definitions.\n"
+            'Example: {"workflow_id": "workflow-example"}.\n'
+            "This does not prove every workflow feature is supported; estimate_workflow validates supported input forms with fresh metadata before pricing. Use uploaded Scenario asset IDs for file inputs.\n"
+            "Platform equivalent: workflow_get."
+        ),
+        _schema({"workflow_id": {"type": "string"}}, ["workflow_id"]),
+        workflow_schema,
+        {"readOnlyHint": True},
+    ),
+    ToolSpec(
+        "estimate_workflow",
+        (
+            "Request a free exact workflow price bound to the selected scene and connection.\n"
+            "Args: workflow_id is required; parameters is an input object (default empty).\n"
+            "Returns: quote_id, workflow_id, original parameters, normalized payload, cu_cost_exact and mesh_sources.\n"
+            'Example: {"workflow_id": "workflow-example", "parameters": {"prompt": "a cup"}}.\n'
+            "No paid submission or upload. Review the normalized payload and exact price; run_workflow requires the same original parameters and explicit approved_cost. Scene, file, credential or project changes require a fresh estimate.\n"
+            "Platform equivalent: dry_run on workflow_run."
+        ),
+        _schema(
+            {"workflow_id": {"type": "string"}, "parameters": {"type": "object"}}, ["workflow_id"]
+        ),
+        estimate_workflow,
+    ),
+    ToolSpec(
+        "run_workflow",
+        (
+            "Approve one unchanged workflow estimate and persist its identity before paid dispatch.\n"
+            "Args: workflow_id, quote_id and approved_cost are required; parameters must match estimate_workflow's original parameters. approved_cost must be its exact cu_cost_exact string.\n"
+            "Returns: local_id and saved state; use job_status, wait_for_job and explicit result application.\n"
+            'Example: {"workflow_id": "workflow-example", "quote_id": "approved-quote", "parameters": {"prompt": "a cup"}, "approved_cost": "1.25"}.\n'
+            "Consumes the quote before persistence. Never repeat an uncertain submission; inspect saved jobs. Closing views does not stop it. No automatic scene import. General workflow cancellation and interactive approval/selection nodes are not supported here.\n"
+            "Platform equivalent: workflow_run."
+        ),
+        _schema(
+            {
+                "workflow_id": {"type": "string"},
+                "parameters": {"type": "object"},
+                "quote_id": {"type": "string"},
+                "approved_cost": {"type": "string"},
+            },
+            ["workflow_id", "quote_id", "approved_cost"],
+        ),
+        run_workflow,
+    ),
+    ToolSpec(
+        "discard_workflow_estimate",
+        (
+            "Discard one ready unsubmitted workflow approval without changing saved jobs.\n"
+            "Args: quote_id is required.\n"
+            "Returns: discarded=true.\n"
+            'Example: {"quote_id": "unused-workflow-quote"}.\n'
+            "This only releases local approval authority; it does not cancel remote work, upload inputs or request another price. Used quotes remain unusable.\n"
+            "Platform equivalent: none; local estimate lifecycle."
+        ),
+        _schema({"quote_id": {"type": "string"}}, ["quote_id"]),
+        discard_workflow_estimate,
+    ),
     ToolSpec(
         "prepare_film_composition",
         (

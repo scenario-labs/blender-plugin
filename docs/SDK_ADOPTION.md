@@ -630,3 +630,19 @@ are repeated around price preparation and dispatch. The current composition
 payload is a template subject to fresh schema validation, not a verified live
 provider contract. Offline tests use synthetic metadata and transport responses;
 no service or paid check is implied. See [the composition contract](FILM_PLAN.md#quoted-composition-generation).
+
+
+### Local workflow command integration
+
+Local MCP now exposes public/private listing and input retrieval through the
+existing adapter's `workflows.list` and `workflows.retrieve` wrappers. Estimates
+and single approved submissions call `workflows.with_raw_response.run`; the
+selected SDK 2.2.0 resource was inspected for its workflow-specific body,
+`dry_run` and `project_id` query mapping. No adapter, dependency or raw-API
+exception is added. The same JobSession and ModelJobs own scoped metadata,
+approvals, persisted identity, uncertainty, polling and explicit saved results.
+
+Installed synthetic tests exercise pagination, schema retention, exact prices,
+model/workflow approval isolation, changed scenes/projects, failed persistence
+and uncertain dispatch. They do not establish live workflow output acceptance,
+interactive node handling, general workflow cancellation or expanded Studio.

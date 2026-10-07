@@ -178,13 +178,30 @@ reload and local isolation, not native text entry or live project permissions.
 passed `ci-ok`, including Python 3.11/3.13 and Linux/Windows Blender 5.0.1,
 5.1.2 and 5.2.1, for its own source and separately built archives.
 
+## Workflow command validation slice
+
+The workflow command layer above #323 uses a separate exact development ZIP:
+SHA-256 `6181b1208b924e073f46cfc646fe268cf016d5319a723678e4eaa631e5c4a1f3`.
+All 135 packaged Python sources match that layer. It passes 1,066 installed tests
+on each macOS arm64 Blender 5.0.1, 5.1.2 and 5.2.1, with two Windows-specific
+skips per run, and 3,801 offline unit tests with the same known SDK authentication
+expected failure. The fifteen workflow regressions cover catalog paging, schemas,
+exact approval, operation isolation, changed price/input/scene/project, failed
+persistence, lost-response uncertainty, discard and read-only restart recovery.
+Service responses are synthetic and no paid requests or live uploads were made.
+
+These results validate the new MCP command entry points and shared lifecycle;
+they do not replace the preceding candidate's update evidence or establish a
+completed Studio view, live workflow acceptance or a release-ready 0.10.0 ZIP.
+
 ## Remaining release gates
 
 | Gate | Current limit | Next evidence and owner |
 | --- | --- | --- |
 | Complete SDK adoption | The unscoped prototype engine and unused raw service clients are removed. The [SDK operation inventory](../SDK_ADOPTION.md#service-operation-inventory) maps maintained service paths and the existing discovery exception; offline/native checks pass. | Finish retained-capability and live provider acceptance under #64/#65; the call-site audit alone does not establish those product contracts. |
 | Credentials and project scope | Merged #316 exposes an optional project ID. Scoped synthetic desktop input passed on the identified earlier ZIP; the final runtime ZIP has native regression coverage. The SDK service-retirement archive identified above also passes saved preference reload and local project isolation. | Complete fresh onboarding, permission failures, live override behavior and final-candidate update/desktop acceptance under #65/#68. |
-| Compact and expanded creation | Earlier screenshots and isolated controls do not establish the complete journey on this candidate. | Native select/capture/estimate/generate/inspect/apply and library reuse; focus, text input, viewport, small-window and DPI checks under #66/#68. |
+| Compact and expanded creation | The expanded composer remains a generation card; the optional expanded Studio and its workflow/asset-library forms are not implemented. Earlier screenshots also do not establish the complete candidate journey. | Complete retained Studio presentation under #66, then native select/capture/estimate/generate/inspect/apply and library reuse; focus, text input, viewport, small-window and DPI checks under #66/#68. |
+| Workflows | Local MCP discovery, exact quote approval and durable execution now use the shared SDK session. Expanded Studio forms, interactive nodes and general workflow cancellation remain absent. | Complete retained workflow presentation and authorized live output/recovery acceptance under #64/#65/#66/#68; the new commands do not close those issues. |
 | Retained lanes | Offline receipts and MIME checks do not establish usable live results. | Authorized scoped checks for Image, Video, 3D, Materials, audio, render/edit and Film paths; inspect actual outputs and record limitations under #68. |
 | Recovery and switching | Synthetic tests cover lost acknowledgement, stale quotes, scope changes and application claims. | Candidate-level UI/MCP parity, cancellation/restart races and failed download/import journeys with recorded outcomes under #65/#68. |
 | GPU, motion and audio | Headless counts and media metadata do not establish sustained playback or human review. | Native rendering/playback, sustained GPU/audio checks and human motion/audio review under #68. |

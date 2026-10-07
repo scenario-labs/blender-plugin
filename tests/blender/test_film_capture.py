@@ -369,11 +369,13 @@ class FilmCaptureTests(unittest.TestCase):
     def test_failed_cleanup_preserves_discard_handle_for_explicit_retry(self):
         identifier = self.captured()
         temporary = self.owner._reviews[identifier].temporary
-        with patch.object(temporary, "cleanup", side_effect=OSError("File still open")):
+        # Exercise cleanup() itself so the first failure detaches its finalizer.
+        with patch.object(type(temporary), "_rmtree", side_effect=OSError("File still open")):
             with self.assertLogs("scenario.film_capture", level="WARNING"):
                 with self.assertRaisesRegex(ValueError, "discard again"):
                     self.owner.discard(identifier)
         self.assertIs(self.owner._reviews[identifier].temporary, temporary)
+        self.assertFalse(temporary._finalizer.alive)
         self.assertTrue(Path(temporary.name).exists())
         self.owner.discard(identifier)
         self.assertFalse(Path(temporary.name).exists())
@@ -381,10 +383,11 @@ class FilmCaptureTests(unittest.TestCase):
     def test_failed_cleanup_does_not_block_session_retirement(self):
         identifier = self.captured()
         temporary = self.owner._reviews[identifier].temporary
-        with patch.object(temporary, "cleanup", side_effect=OSError("File still open")):
+        with patch.object(type(temporary), "_rmtree", side_effect=OSError("File still open")):
             with self.assertLogs("scenario.film_capture", level="WARNING"):
                 self.session.shutdown()
         self.assertNotIn(self.session, submodule("blender.job_session")._sessions)
+        self.assertFalse(temporary._finalizer.alive)
         self.assertIs(self.owner._reviews[identifier].temporary, temporary)
         self.assertEqual(self.owner._sources, {})
         self.owner.close()

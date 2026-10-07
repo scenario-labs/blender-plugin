@@ -91,6 +91,10 @@ status until separate Spark approval is integrated. Drawing remains read-only.
 
 ## Generations
 
+**Reload parameters** is available only when a result records a supported
+generation lane or kind. Film tasks and generic jobs without that information
+keep their saved-result controls; they must not overwrite the Image form.
+
 **Remove background** prepares the Image form and never submits directly. Its
 message tells users to upload the reference, review the price and choose
 **Generate**. Validate the file and available model/schema before replacing the
@@ -852,3 +856,54 @@ The live-provider, other-OS and release limitations above still apply.
 ![Save for recovery is enabled in Edit Mode](images/cloud-recovery-edit-mode.png)
 
 ![The paused cloud record survives switching to another scene](images/cloud-recovery-scene-switch.png)
+
+## Film task controls
+
+Film tasks occupy an optional, initially closed Scenario sidebar panel. Loading
+a recipe validates it before changing persistent scene properties and preserves
+the production identity. Task rows are saved properties, not transient enums or
+mutations during drawing. **New production** requires confirmation.
+
+**Use saved upload** opens a cached list of imported uploads and confirms the
+unchanged task, recipe, production, scene and connection before association.
+**Estimate task** makes a free quote request; the separate **Generate** confirmation
+shows its exact decimal CU price and states that results remain saved for explicit
+application. The panel draws cached handles only; it does not open storage or
+contact Scenario.
+
+Current submitted and associated task rows show **Submission saved** or
+**Upload associated**, without offering another estimate or association action.
+The maintenance pump invalidates ready prices when their captured scene revision
+changes, and approval rechecks before persistence. Drawing remains read-only.
+
+Offline desktop acceptance on macOS arm64 Blender 5.1.2 used exact ZIP SHA-256
+`b1ad71d94a1355bc7d8d825b4d1232b7a14cf91c53d8c11aa37737e4a0907590`,
+which separately passed 799 installed tests on each supported Blender series.
+Native mouse input loaded the JSON through Blender's file picker and selected
+both task rows. Escape cancelled upload association without saving it; Return
+confirmed the separate association. The Generate dialog displayed the full
+synthetic price `0.1234567890123456789 CU`. Escape preserved the ready estimate
+without submitting; the automated-GUI-probe guard also rejected approval without
+creating a job. Discarding released that estimate.
+
+With the fixture's SDK transport and result bytes mocked and external sockets
+blocked, a fresh quote and explicit confirmation produced exactly one saved job
+and one downloaded result. The result stayed ready for explicit application;
+objects and image datablocks were unchanged. Re-estimating the reserved task was
+rejected without another submission. Cancelling New production preserved its
+identity; confirming changed it while retaining the recipe and previous job.
+Viewport Light selection and Home framing worked after the dialogs. The isolated
+run exited cleanly, removed its test profile and left the normal profile unchanged.
+The test-only Blender app copy had a distinct bundle identifier and local signature;
+the vendor executable code and extension ZIP were unchanged.
+
+![Film approval displays the exact synthetic price before confirmation](images/film-task-approval.png)
+
+![One Film submission is saved while the scene remains unchanged](images/film-task-saved.png)
+
+These are offline interaction checks, not live pricing or provider acceptance.
+The screenshots and desktop evidence above predate the current stale-price and
+saved-row review fixes. Those changes have separate installed native regression
+coverage; fresh physical input and screenshot proof remain pending.
+They do not establish other OS desktop behavior, Film scene construction/capture,
+finishing/export, resolution of #263 or integrated release acceptance.

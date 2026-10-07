@@ -279,11 +279,22 @@ class ModelJobs:
         # Consumption precedes persistence: an error may occur after a committed
         # write. A second click must never prepare another intent from this quote.
         ticket.used = True
-        prepared = self.session.prepare_quote(ticket.quote)
+        return self._submit_quote(ticket.quote, lane=lane, kind=LANE_KIND[lane], meta=meta)
+
+    def submit_film(self, quote, *, approved_cost):
+        """Dispatch an owned Film approval through the ordinary saved-job lifecycle."""
+        if quote.film_task is None or approved_cost != str(quote.estimate.cost):
+            raise ScenarioError(0, "Approve a Film task's unchanged exact price")
+        return self._submit_quote(quote, lane="film", kind="film")
+
+    def _submit_quote(self, quote, *, lane, kind, meta=None):
+        estimate = quote.estimate
+        model_id = estimate.target_id
+        prepared = self.session.prepare_quote(quote)
         view = JobRecord(
             local_id=prepared.intent.request_id,
             lane=lane,
-            kind=LANE_KIND[lane],
+            kind=kind,
             model_id=model_id,
             body=estimate.payload,
             status="prepared",

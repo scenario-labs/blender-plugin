@@ -154,6 +154,94 @@ def estimate_cost(args):
     return DeferredTool(ticket.task.result, finish_model)
 
 
+def film_recipe(args):
+    from ..blender import film_jobs
+
+    action = args.get("action", "inspect")
+    scene = bpy.context.scene
+    if action == "inspect":
+        return runtime.ensure_film_jobs().inspect(scene)
+    if action == "load":
+        plan = film_jobs.load_recipe(scene, args["recipe"])
+    elif action == "new_production":
+        import uuid
+
+        _, plan = film_jobs.recipe(scene)
+        scene.scenario_film.production_id = uuid.uuid4().hex
+    else:
+        raise ValueError("Choose inspect, load or new_production")
+    return {
+        "production_id": scene.scenario_film.production_id,
+        "title": plan["title"],
+        "tasks": plan["tasks"],
+    }
+
+
+def _film_owner(args):
+    owner = runtime.ensure_film_jobs()
+    if args["production_id"] != bpy.context.scene.scenario_film.production_id:
+        raise ScenarioError(0, "The Film production changed; inspect the recipe again")
+    return owner
+
+
+def estimate_film_task(args):
+    owner = _film_owner(args)
+    scene = bpy.context.scene
+    item = owner.quote(scene, args["task_id"])
+
+    def finish(_):
+        if runtime.ensure_film_jobs() is not owner or bpy.context.scene != scene:
+            raise ScenarioError(
+                0, "The Film context changed; return to its scene and inspect the recipe"
+            )
+        owner.finish(item, scene)
+        return owner.quote_details(item, scene)
+
+    return DeferredTool(item.task.result, finish)
+
+
+def approve_film_task(args):
+    owner = runtime.ensure_film_jobs()
+    view = owner.approve(args["quote_id"], bpy.context.scene, approved_cost=args["approved_cost"])
+    return {
+        "request_id": view.local_id,
+        "local_id": view.local_id,
+        "state": view.status,
+        "note": "One submission saved. Use job_status and explicit recovery/application; never repeat uncertain work.",
+    }
+
+
+def discard_film_estimate(args):
+    runtime.ensure_film_jobs().discard(args["quote_id"], bpy.context.scene)
+    return {"discarded": True}
+
+
+def bind_film_upload(args):
+    owner = _film_owner(args)
+    if args["context_id"] != runtime.state.job_context_id:
+        raise ScenarioError(0, "The upload context changed; inspect uploads again")
+    scene = bpy.context.scene
+    item = owner.bind_upload(
+        scene,
+        args["task_id"],
+        request_id=args["request_id"],
+        expected_revision=args["expected_revision"],
+    )
+
+    def finish(_):
+        if runtime.ensure_film_jobs() is not owner or bpy.context.scene != scene:
+            raise ScenarioError(0, "The Film context changed; inspect saved associations")
+        owner.finish(item, scene)
+        return {
+            "production_id": item.binding[0],
+            "task_id": item.task_id,
+            "upload_request_id": item.request_id,
+            "state": "bound",
+        }
+
+    return DeferredTool(item.task.result, finish)
+
+
 def estimate_prompt(args):
     """Quote the current native prompt field through the shared prompt facade."""
     jobs = runtime.ensure_prompt_jobs()
@@ -874,6 +962,93 @@ _JOB_REF = {
 
 
 SPECS = (
+    ToolSpec(
+        "film_recipe",
+        (
+            "Inspect or load the current scene's Film recipe, or explicitly start a new production.\n"
+            "Args: action is inspect (default), load or new_production; recipe is a raw Film JSON object required for load.\n"
+            "Returns: stable production_id, title and tasks; inspection adds saved job/upload identities and states. A quoted task includes quote_id, model_id, parameters and cu_cost_exact for its existing approval.\n"
+            'Example: {"action": "inspect"}.\n'
+            "Load validates before mutation and preserves identity. Save the blend file to retain it. New production deliberately gives the same task names a fresh identity; it does not submit or recover work.\n"
+            "After a scene-switch error, return to the original scene and inspect to recover an unchanged quote or saved upload association. Inspection only completes already-admitted preparation; it never reprices, resumes saved jobs or submits. Stale quotes are omitted.\n"
+            "Platform equivalent: none; local Film recipe and saved-task inspection."
+        ),
+        _schema(
+            {
+                "action": {"type": "string", "enum": ["inspect", "load", "new_production"]},
+                "recipe": {"type": "object"},
+            }
+        ),
+        film_recipe,
+    ),
+    ToolSpec(
+        "estimate_film_task",
+        (
+            "Request the exact server price for one model task in the loaded Film recipe.\n"
+            "Args: production_id and task_id are required strings from film_recipe.\n"
+            "Returns: quote_id, production_id, task_id, model_id, resolved parameters and cu_cost_exact.\n"
+            'Example: {"production_id": "saved-production", "task_id": "shot-one"}.\n'
+            "Uses saved scoped dependencies and the shared SDK model quote; never submits. Existing task identities cannot be spent again. Discard an unused quote before repricing.\n"
+            "Platform equivalent: estimate_cost for the recipe model's resolved inputs."
+        ),
+        _schema(
+            {"production_id": {"type": "string"}, "task_id": {"type": "string"}},
+            ["production_id", "task_id"],
+        ),
+        estimate_film_task,
+        {"readOnlyHint": True},
+    ),
+    ToolSpec(
+        "approve_film_task",
+        (
+            "Approve one unchanged Film estimate and save its identity before one paid submission.\n"
+            "Args: quote_id and approved_cost are required strings; approve the returned cu_cost_exact verbatim.\n"
+            "Returns: request_id/local_id, state and recovery note.\n"
+            'Example: {"quote_id": "returned-quote", "approved_cost": "0.10000000000000001"}.\n'
+            "Requires explicit spending approval. Results download through the shared model lifecycle and remain saved for explicit application. Never repeat an uncertain submission.\n"
+            "Platform equivalent: generate for the approved Film model task."
+        ),
+        _schema(
+            {"quote_id": {"type": "string"}, "approved_cost": {"type": "string"}},
+            ["quote_id", "approved_cost"],
+        ),
+        approve_film_task,
+    ),
+    ToolSpec(
+        "discard_film_estimate",
+        (
+            "Release one unsubmitted Film estimate so its task can be repriced.\n"
+            "Args: quote_id is the required string from estimate_film_task.\n"
+            "Returns: discarded.\n"
+            'Example: {"quote_id": "returned-quote"}.\n'
+            "Does not cancel or change saved jobs.\n"
+            "Platform equivalent: none; local approval handle."
+        ),
+        _schema({"quote_id": {"type": "string"}}, ["quote_id"]),
+        discard_film_estimate,
+    ),
+    ToolSpec(
+        "bind_film_upload",
+        (
+            "Associate one imported saved upload with a Film upload task without sending bytes.\n"
+            "Args: production_id/task_id identify the loaded Film task; context_id, request_id and integer expected_revision come from list_reference_uploads. All required.\n"
+            "Returns: production_id, task_id, upload_request_id and bound state.\n"
+            'Example: {"production_id": "saved-production", "task_id": "reference", "context_id": "current", "request_id": "upload", "expected_revision": 4}.\n'
+            "Requires an unchanged imported upload in the selected scope. The association is durable and immutable; choose a new task name for a different source.\n"
+            "Platform equivalent: none; local reference to an already imported asset."
+        ),
+        _schema(
+            {
+                "production_id": {"type": "string"},
+                "task_id": {"type": "string"},
+                "context_id": {"type": "string"},
+                "request_id": {"type": "string"},
+                "expected_revision": {"type": "integer", "minimum": 0},
+            },
+            ["production_id", "task_id", "context_id", "request_id", "expected_revision"],
+        ),
+        bind_film_upload,
+    ),
     ToolSpec(
         "upload_reference",
         (

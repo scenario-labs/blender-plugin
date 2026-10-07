@@ -490,8 +490,9 @@ def draw_result(layout, rec):
         return
     row = box.row(align=True)
     row.label(text=rec.meta.get("model_name") or rec.model_id, icon="NODE_MATERIAL")
-    reload = row.operator("scenario.reload_generation", text="", icon="FILE_REFRESH")
-    reload.local_id = rec.local_id
+    if generation.reload_lane(rec) is not None:
+        reload = row.operator("scenario.reload_generation", text="", icon="FILE_REFRESH")
+        reload.local_id = rec.local_id
     details = row.operator("scenario.result_details", text="", icon="INFO")
     details.local_id = rec.local_id
     asset_id = _primary_asset(rec)

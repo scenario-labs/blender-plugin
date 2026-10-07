@@ -25,7 +25,9 @@ establish live generation or full render-lane desktop acceptance.
   use explicit uploads before the final quote. Render forms accept a written look
   or the default look with automatic Spark disabled. An empty automatic look
   requires its own exact Spark quote, approval and guarded result delivery before
-  the final render quote. Film retains a separate path. Complete runtime adoption
+  the final render quote. Film task quotes, approvals and saved-upload associations
+  now share these jobs through native controls and MCP; Film scene building,
+  capture, finishing and export remain unavailable. Complete runtime adoption
   and live/native acceptance remain open
   ([#64](https://github.com/scenario-labs/blender-plugin/issues/64),
   [#65](https://github.com/scenario-labs/blender-plugin/issues/65)).

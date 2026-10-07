@@ -167,7 +167,12 @@ to the change; documentation work needs link, instruction and checker validation
 not a new Blender runtime run. Native acceptance uses the exact packaged ZIP in
 an isolated profile. Never run development builds in the user's normal profile.
 
-Target `main` from a short-lived conventional branch. The final diff determines
+Use short-lived conventional branches. Independent PRs and the bottom of a stack
+target `main`; dependent PRs target their immediate parent branch. Follow the
+[stack workflow](docs/development/contributions.md#stacked-pull-requests), preserve
+the recorded dependency order, and validate each PR's incremental diff after
+rebasing. Stacking does not authorize merging any PR or the whole stack.
+The final diff determines
 the PR title and commit type; `commitlint.config.ts` defines the allowed types,
 scopes and 120-character header limit. Preserve attribution. Do not bump versions
 or edit release notes in unrelated work.

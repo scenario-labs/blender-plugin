@@ -131,6 +131,7 @@ class FilmCaptureTests(unittest.TestCase):
             try:
                 review.task.result(5)
             except Exception:
+                # poll() records failed render outcomes for the assertions below.
                 pass
         self.owner.poll()
         return self.owner.status(identifier)
@@ -149,13 +150,14 @@ class FilmCaptureTests(unittest.TestCase):
                 try:
                     ticket.task.result(5)
                 except Exception:
+                    # Upload polling owns worker errors, including intentional failures.
                     pass
             ticket.next_poll = 0
             self.references.poll()
             self.owner.poll()
             if review.phase in {"UPLOADED", "UPLOAD_REVIEW"}:
                 return self.owner.status(identifier)
-        self.fail("Capture upload did not settle")
+        raise AssertionError("Capture upload did not settle")
 
     def test_mcp_separates_preparation_render_and_upload_and_consumes_approvals(self):
         identifier = self.prepare()
@@ -363,6 +365,31 @@ class FilmCaptureTests(unittest.TestCase):
             self.owner.approve(identifier)
         self.owner.discard(identifier)
         self.assertFalse(directory.exists())
+
+    def test_failed_cleanup_preserves_discard_handle_for_explicit_retry(self):
+        identifier = self.captured()
+        temporary = self.owner._reviews[identifier].temporary
+        with patch.object(temporary, "cleanup", side_effect=OSError("File still open")):
+            with self.assertLogs("scenario.film_capture", level="WARNING"):
+                with self.assertRaisesRegex(ValueError, "discard again"):
+                    self.owner.discard(identifier)
+        self.assertIs(self.owner._reviews[identifier].temporary, temporary)
+        self.assertTrue(Path(temporary.name).exists())
+        self.owner.discard(identifier)
+        self.assertFalse(Path(temporary.name).exists())
+
+    def test_failed_cleanup_does_not_block_session_retirement(self):
+        identifier = self.captured()
+        temporary = self.owner._reviews[identifier].temporary
+        with patch.object(temporary, "cleanup", side_effect=OSError("File still open")):
+            with self.assertLogs("scenario.film_capture", level="WARNING"):
+                self.session.shutdown()
+        self.assertNotIn(self.session, submodule("blender.job_session")._sessions)
+        self.assertIs(self.owner._reviews[identifier].temporary, temporary)
+        self.assertEqual(self.owner._sources, {})
+        self.owner.close()
+        self.assertFalse(Path(temporary.name).exists())
+        self.assertEqual(self.owner._reviews, {})
 
     def test_discard_keeps_staged_upload_and_unrelated_files(self):
         identifier = self.captured()

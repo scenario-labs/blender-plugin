@@ -504,6 +504,9 @@ Neither capture nor upload estimates or submits generation.
 confirms deleting only that review's private snapshot/media/log directory, after
 active work ends. Durable upload records and their staged copies remain.
 Session shutdown cleans these local capture directories after joining workers.
+An OS cleanup failure logs a sanitized warning and retains its handle without
+blocking session retirement. Manual discard reports the failure and can be
+retried after files are released; cleanup never restarts a render or upload.
 Capture reviews are not restored after restart and never replay automatically;
 an interrupted process can leave private files for manual inspection.
 

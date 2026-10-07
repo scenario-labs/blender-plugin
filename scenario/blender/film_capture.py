@@ -3,6 +3,7 @@
 """Film capture approval and upload handoff on the existing selected job owner."""
 
 import json
+import logging
 import tempfile
 import uuid
 from dataclasses import dataclass, field
@@ -16,6 +17,8 @@ from ..core.jobs.upload_store import UploadState
 from ..core.scene.film_plan import require_plan_scope
 from . import film_jobs, film_scene, local_capture
 from .film_application import _main_thread
+
+_log = logging.getLogger("scenario.film_capture")
 
 
 @dataclass(frozen=True)
@@ -330,21 +333,27 @@ class FilmCaptureCommands:
             raise ValueError("Wait for capture or upload staging before discarding its files")
         if review.upload is not None and review.upload.task is not None:
             raise ValueError("Wait for upload work before discarding the capture")
-        self._cleanup(review)
+        if not self._cleanup(review):
+            raise ValueError("Capture cleanup failed; close files using it and discard again")
         del self._reviews[identifier]
         return {"review_id": identifier, "phase": "DISCARDED"}
 
     @staticmethod
     def _cleanup(review):
         if review.temporary is not None:
-            review.temporary.cleanup()
+            try:
+                review.temporary.cleanup()
+            except OSError:
+                _log.warning("Film capture cleanup failed; retained for cleanup")
+                return False
             review.temporary = None
+        return True
 
     def close(self):
         """Called only after the session workers (including upload staging) have joined."""
-        for review in self._reviews.values():
-            self._cleanup(review)
-        self._reviews.clear()
+        for identifier, review in tuple(self._reviews.items()):
+            if self._cleanup(review):
+                del self._reviews[identifier]
         self._sources.clear()
 
     def current(self, scene, shot_id):

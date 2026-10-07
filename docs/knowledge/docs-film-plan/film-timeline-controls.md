@@ -21,9 +21,9 @@
       "tests/blender/test_film_scene.py": "66f01c87597d360d041efe53f8dd8cd19e560b77477dae0e9ac1028866591b54",
       "tests/blender/test_mcp_contracts.py": "af79316f475b7d7071f8802f417d3d485d673d0e3fa3cf07318ecd56cf497087",
       "tests/unit/test_mcp_descriptions.py": "cfee3fac81daac4d2f9aa7525b68091cf73448509a84f6db96207fa5e9fbce84",
-      "docs/images/film-timeline-error-before-dismissal.png": "5c24a1258fb158d56eca54e7a8f9d1f0b379f40ffc73491c502cfdb6e44b5940",
-      "docs/images/film-timeline-error-dismissed.png": "2809a0a6982e7cb13aadf8e6e5d6a71b19b04f164020ce8d558ae22040d5ca2d",
-      "docs/images/film-timeline-edit-mode.png": "a714de960b17f39c9d06a31f048137f19fc929b72e46d6915e90bbc0096fe62b"
+      "docs/images/film-timeline-error-before-dismissal.png": "9fb1bba54ac2d431dcfa224eb018c6f553150c9899d6001bdd80c950099dbc8d",
+      "docs/images/film-timeline-error-dismissed.png": "2ece4968f8d5ac9e9fb78c6c09da4d280232ea35a8f7ef4a903fff3c5df0122a",
+      "docs/images/film-timeline-edit-mode.png": "4388196fb95c217fe7318d5b4f9e0df948d8edc5ea29cfdc0e1a23fa8c146412"
     }
   }
 }

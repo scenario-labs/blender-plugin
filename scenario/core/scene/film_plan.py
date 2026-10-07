@@ -436,10 +436,11 @@ def validate_film_plan(raw: dict) -> dict:
         placeholders = shot.get("placeholders", {})
         if not isinstance(placeholders, dict) or len(placeholders) > 150:
             raise ValueError("Placeholder legend must map names to intended finished objects.")
-        val["placeholders"] = {
-            _label(k, "Placeholder"): _text(v, "Interpretation", 2000)
-            for k, v in placeholders.items()
-        }
+        for name, meaning in placeholders.items():
+            name = _label(name, "Placeholder")
+            if name in val["placeholders"]:
+                raise ValueError("Placeholder names must be unique after trimming whitespace.")
+            val["placeholders"][name] = _text(meaning, "Interpretation", 2000)
         actors = shot.get("actors", [])
         if not isinstance(actors, list) or len(actors) > 30:
             raise ValueError("Use at most thirty actors per shot.")

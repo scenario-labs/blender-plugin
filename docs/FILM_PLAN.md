@@ -22,6 +22,8 @@ SDK model schema before a quote.
 
 Text-field limits apply both before and after punctuation normalization. Replacing
 an em dash with a comma and space cannot produce a value above its field limit.
+Placeholder names are trimmed; names that then collide are rejected so no legend
+entry is silently overwritten. Distinct names retain their order and meanings.
 
 Shot and task IDs allow up to 96 characters. Omitted `style_task`, `previs_task`
 and `video_task` use the shot ID with `-style`, `-previs` or `-video` appended.

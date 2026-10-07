@@ -14,10 +14,7 @@ SCOPE = JobScope("https://api.cloud.scenario.com", "synthetic-account")
 
 
 def film_module():
-    try:
-        return importlib.import_module("scenario.core.scene.film_plan")
-    except ModuleNotFoundError:
-        pytest.fail("The plugin does not yet support a bounded film plan")
+    return importlib.import_module("scenario.core.scene.film_plan")
 
 
 def fixture():
@@ -73,6 +70,25 @@ def test_six_shots_cover_exactly_ninety_seconds_without_overlaps():
     assert plan["total_frames"] == 2160
     assert plan["duration"] == 90
     assert value == before
+
+
+@pytest.mark.parametrize("first,second", [("Prop A", " Prop A "), (" Prop A", "Prop A ")])
+def test_placeholder_legend_rejects_normalized_name_collisions(first, second):
+    raw = fixture()
+    raw["shots"][0]["placeholders"] = {first: "stone tower", second: "wooden bridge"}
+    before = copy.deepcopy(raw)
+    with pytest.raises(ValueError, match="Placeholder names must be unique after trimming"):
+        film_module().validate_film_plan(raw)
+    assert raw == before
+
+
+def test_placeholder_legend_preserves_distinct_normalized_entries():
+    raw = fixture()
+    raw["shots"][0]["placeholders"] = {" Prop A ": "stone tower", "Prop B ": "wooden bridge"}
+    before = copy.deepcopy(raw)
+    plan = film_module().validate_film_plan(raw)
+    assert plan["shots"][0]["placeholders"] == {"Prop A": "stone tower", "Prop B": "wooden bridge"}
+    assert raw == before
 
 
 @pytest.mark.parametrize(

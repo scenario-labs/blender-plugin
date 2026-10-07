@@ -323,3 +323,13 @@ class WorkflowCommandTests(unittest.TestCase):
         self.assertEqual((rows[0].lane, rows[0].kind), ("workflow", "workflow"))
         self.assertEqual(len(self.calls), count)
         self.assertEqual(len(self.paid), 1)
+
+    def test_schema_null_definition_falls_back_but_empty_definition_is_preserved(self):
+        self.workflow["inputs_definition"] = None
+        result = self.finish(self.tools.workflow_schema(self.args))
+        self.assertEqual(result["inputs"], self.workflow["inputs"])
+        self.workflow["inputs_definition"] = []
+        result = self.finish(self.tools.workflow_schema(self.args))
+        self.assertEqual(result["inputs"], [])
+        self.assertFalse(self.store.records())
+        self.assertFalse(self.paid)

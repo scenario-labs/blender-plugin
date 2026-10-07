@@ -181,11 +181,11 @@ passed `ci-ok`, including Python 3.11/3.13 and Linux/Windows Blender 5.0.1,
 ## Workflow command validation slice
 
 The workflow command layer above #323 uses a separate exact development ZIP:
-SHA-256 `6181b1208b924e073f46cfc646fe268cf016d5319a723678e4eaa631e5c4a1f3`.
-All 135 packaged Python sources match that layer. It passes 1,066 installed tests
+SHA-256 `30b2aa7f7448805beec2910435b9ee9fd33c04982c1ebb0b92731488aaf8d089`.
+All 135 packaged Python sources match that layer. It passes 1,067 installed tests
 on each macOS arm64 Blender 5.0.1, 5.1.2 and 5.2.1, with two Windows-specific
 skips per run, and 3,801 offline unit tests with the same known SDK authentication
-expected failure. The fifteen workflow regressions cover catalog paging, schemas,
+expected failure. The sixteen workflow regressions cover catalog paging, absent/null/empty input definitions,
 exact approval, operation isolation, changed price/input/scene/project, failed
 persistence, lost-response uncertainty, discard and read-only restart recovery.
 Service responses are synthetic and no paid requests or live uploads were made.

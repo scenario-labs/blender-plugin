@@ -188,11 +188,14 @@ def _workflow_metadata(args, *, detail=False):
             raise ScenarioError(0, "Workflow metadata is still loading")
         result = session.deliver(outcomes[0], lambda value, *_: value)
         if detail:
+            fields = result.get("inputs_definition")
+            if fields is None:
+                fields = result.get("inputs")
             return {
                 "workflow_id": result["id"],
                 "name": result.get("name", ""),
                 "description": result.get("description", ""),
-                "inputs": result.get("inputs_definition", result.get("inputs")),
+                "inputs": fields,
             }
         rows = [
             {

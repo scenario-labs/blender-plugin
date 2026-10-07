@@ -103,7 +103,6 @@ class FilmShotCommands:
 
     def prepare(self, scene, *, shot_id, selections):
         _main_thread()
-        film_scene._main_thread()
         if scene != bpy.context.scene or scene.library or scene.override_library:
             raise ValueError("Choose the current local Film recipe scene")
         self.poll()

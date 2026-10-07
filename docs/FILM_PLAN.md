@@ -271,6 +271,8 @@ capture/encoding, finishing or export.
 downloaded GLB outputs for the selected scene's recipe and shot. `prepare` requires
 an explicit hero-to-output selection with each observed request ID and revision;
 it captures the current scene/revision, production identity and exact saved recipe.
+Local verification may run in Edit Mode; approval still requires Object Mode
+before claiming jobs or building a scene.
 `poll` advances local receipt verification on the existing bounded worker queue.
 `status` reads a cached review; neither inspection nor preparation builds a scene.
 

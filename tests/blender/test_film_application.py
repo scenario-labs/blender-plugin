@@ -143,12 +143,13 @@ class FilmApplicationTests(unittest.TestCase):
                 try:
                     review.task.result(5)
                 except Exception:
+                    # poll() records worker failures; assertions inspect that outcome.
                     pass
             self.commands.poll()
             status = self.commands.status(identifier)
             if status["phase"] != "VERIFYING":
                 return status
-        self.fail("Film verification did not settle")
+        raise AssertionError("Film verification did not settle")
 
     def ready(self):
         identifier = self.prepare()
@@ -157,6 +158,19 @@ class FilmApplicationTests(unittest.TestCase):
 
     def states(self):
         return [self.store.get(row.intent.request_id).state for row in self.rows]
+
+    def test_verification_can_run_in_edit_mode_but_scene_build_still_requires_object_mode(self):
+        bpy.ops.mesh.primitive_cube_add()
+        bpy.ops.object.mode_set(mode="EDIT")
+        try:
+            identifier = self.ready()
+            with self.assertRaisesRegex(ValueError, "Object Mode"):
+                self.commands.approve(identifier)
+            self.assertEqual(self.commands.status(identifier)["phase"], "READY")
+            self.assertEqual(self.states(), [self.storage.JobState.READY] * 2)
+            self.assertEqual(self.calls, [])
+        finally:
+            bpy.ops.object.mode_set(mode="OBJECT")
 
     def test_all_jobs_claimed_before_build_and_repeat_requires_new_local_claims(self):
         identifier = self.ready()

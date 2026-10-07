@@ -415,6 +415,9 @@ Windows `MAX_PATH` limit, including Blender's temporary export suffix and the
 terminating NUL. An overlong snapshot path fails before export with a request
 for shorter paths, and removes its new staging directory. Merely stripping the
 namespace does not make deep paths compatible with Blender.
+The actual child profile and temporary paths are validated before creating the
+exclusive start marker. If either is too long, their temporary directory is
+removed and the snapshot remains unclaimed, with no frame directory created.
 
 [`local_render.render`](../scenario/core/jobs/local_render.py) is a blocking,
 bpy-free worker primitive. It verifies the snapshot and admits that capture

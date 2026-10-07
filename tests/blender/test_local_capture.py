@@ -190,6 +190,38 @@ output.write_bytes(bytes.fromhex("89504e470d0a1a0a0000000d49484452")
             export.assert_not_called()
             self.assertEqual(list(root.iterdir()), [])
 
+    @unittest.skipUnless(os.name == "nt", "Windows child-path admission regression")
+    def test_windows_child_path_overflow_preserves_unclaimed_snapshot(self):
+        with tempfile.TemporaryDirectory(dir=self.capture._root(self.directory)) as directory:
+            base = Path(directory)
+            base_length = len(self.render.blender_path(base).encode("utf-16-le")) // 2
+            # Allow the real snapshot export, but leave too little room for
+            # the longer worker-*/profile and worker-*/tmp descendants.
+            self.assertLess(base_length, 224)
+            root = base / ("p" * (224 - base_length))
+            root.mkdir()
+            spec = self.capture.snapshot(
+                self.scene,
+                root,
+                frame_start=5,
+                frame_end=5,
+                kind="STILL",
+                width=64,
+                height=64,
+            )
+            before = set(spec.directory.iterdir())
+            with patch.object(self.render, "_run") as process:
+                for _ in range(2):
+                    with self.assertRaisesRegex(
+                        self.render.LocalRenderError, "shorter absolute paths"
+                    ):
+                        self.render.render(spec)
+                    self.assertEqual(set(spec.directory.iterdir()), before)
+            process.assert_not_called()
+            self.assertEqual(
+                self.render.digest(spec.directory / "snapshot.blend"), spec.snapshot_sha256
+            )
+
     def test_worker_overrides_snapshot_output_flags_without_changing_source(self):
         source = self.scene
         flags = ("use_border", "use_crop_to_border", "use_multiview", "use_compositing")

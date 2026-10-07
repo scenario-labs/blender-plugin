@@ -263,17 +263,18 @@ def render(spec, *, cancel=None):
         raise LocalRenderError("The captured scene snapshot changed")
     if not spec.binary.is_file() or not spec.worker.is_file():
         raise LocalRenderError("The Blender executable or bundled render worker is unavailable")
-    # Exclusive admission prevents a repeated caller from overwriting/replaying this capture.
-    with (spec.directory / "started.json").open("x", encoding="utf-8") as stream:
-        json.dump(spec.parameters(), stream)
-    frames = spec.directory / "frames"
-    frames.mkdir(mode=0o700)
     with tempfile.TemporaryDirectory(prefix="worker-", dir=spec.directory) as owned:
         root = Path(owned)
         profile, temporary = root / "profile", root / "tmp"
         profile.mkdir()
         temporary.mkdir()
         env = _environment(profile, temporary)
+        # Validate the actual child paths before consuming this capture's admission.
+        # Exclusive admission still prevents overwriting/replaying a started capture.
+        with (spec.directory / "started.json").open("x", encoding="utf-8") as stream:
+            json.dump(spec.parameters(), stream)
+        frames = spec.directory / "frames"
+        frames.mkdir(mode=0o700)
         _run(
             [
                 binary_argument,

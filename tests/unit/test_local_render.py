@@ -184,6 +184,33 @@ def test_tampered_snapshot_never_starts(monkeypatch, spec):
     assert not (spec.directory / "started.json").exists()
 
 
+@pytest.mark.parametrize("invalid_child_path", ["profile", "tmp"])
+def test_invalid_child_paths_leave_capture_unclaimed(monkeypatch, spec, invalid_child_path):
+    calls = fixture_runner(monkeypatch, spec)
+    original = render.blender_path
+    before = set(spec.directory.iterdir())
+
+    def reject_child_path(path):
+        if path.name == invalid_child_path:
+            # Exercise the Windows validator even when the test host is POSIX.
+            return original(PureWindowsPath("C:/") / ("x" * 256) / path.name)
+        return original(path)
+
+    with monkeypatch.context() as scoped:
+        scoped.setattr(render, "blender_path", reject_child_path)
+        with pytest.raises(render.LocalRenderError, match="shorter absolute paths"):
+            render.render(spec)
+    assert calls == []
+    assert set(spec.directory.iterdir()) == before
+    assert render.digest(spec.directory / "snapshot.blend") == spec.snapshot_sha256
+    # With usable paths, the same capture can still be claimed exactly once.
+    assert render.render(spec).frames == spec.frames
+    with pytest.raises(FileExistsError):
+        render.render(spec)
+    assert len(calls) == 3
+    assert not list(spec.directory.glob("worker-*"))
+
+
 @pytest.mark.parametrize("missing,wrong_rate", [(True, False), (False, True)])
 def test_invalid_outputs_retain_frames_and_remove_private_profile(
     monkeypatch, spec, missing, wrong_rate

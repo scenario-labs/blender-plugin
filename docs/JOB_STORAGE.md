@@ -345,7 +345,11 @@ through `film_job` and cannot be repeated.
 
 `film_job(production_id, task_id)` returns only the selected credential scope's
 record, rejecting ambiguous matches. It never reconstructs a quote or changes
-state. The [Film command](FILM_PLAN.md#durable-model-tasks) verifies completed
+state. A derived index selects the exact scope, production and task without
+decoding unrelated history. It checks at most two matches, preserving ambiguity
+rejection and the existing transaction's atomic reservation. Index creation
+preserves records and skips malformed JSON; direct reads still reject damaged
+records. The [Film command](FILM_PLAN.md#durable-model-tasks) verifies completed
 results and matching task/dependency digests before reference reuse. Low-level
 store calls trust the coordinator's binding; a caller-supplied digest is not
 proof of recipe validation or permission. Existing submission, transfer and

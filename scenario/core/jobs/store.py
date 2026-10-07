@@ -28,6 +28,7 @@ if TYPE_CHECKING:
 
 _VERSION = 8
 _APPLICATION_ID = 0x53434A42
+_FILM_TASK_FILTER = "json_valid(record) AND json_extract(record, '$.intent.film_task') IS NOT NULL"
 
 
 class StoreError(RuntimeError):
@@ -678,6 +679,13 @@ class JobStore:
                     self._upgrade_previous(connection, version)
                 else:
                     self._check_version(connection)
+                # Derived metadata only; keep saved records and spend claims intact.
+                connection.execute(
+                    "CREATE INDEX IF NOT EXISTS job_film_task ON jobs "
+                    "(scope, json_extract(record, '$.intent.film_task.production_id'), "
+                    "json_extract(record, '$.intent.film_task.task_id')) "
+                    f"WHERE {_FILM_TASK_FILTER}"
+                )
         except OSError:
             raise StoreError("Could not initialize job storage") from None
 
@@ -835,16 +843,16 @@ class JobStore:
             return self._film_job(connection, production_id, task_id)
 
     def _film_job(self, connection, production_id, task_id):
-        matches = [
-            record
-            for record in self._records(connection)
-            if record.intent.film_task is not None
-            and record.intent.film_task.production_id == production_id
-            and record.intent.film_task.task_id == task_id
-        ]
-        if len(matches) > 1:
+        rows = connection.execute(
+            "SELECT request_id FROM jobs INDEXED BY job_film_task WHERE scope=? "
+            "AND json_extract(record, '$.intent.film_task.production_id')=? "
+            "AND json_extract(record, '$.intent.film_task.task_id')=? "
+            f"AND {_FILM_TASK_FILTER} LIMIT 2",
+            (self._key, production_id, task_id),
+        ).fetchall()
+        if len(rows) > 1:
             raise StoreError("Film task matches multiple saved jobs; preserve them for recovery")
-        return matches[0] if matches else None
+        return self._read(connection, rows[0][0]) if rows else None
 
     def adopt_cloud_job(self, intent: CloudJobIntent, remote_job_id):
         """Save authoritative successful-job evidence supplied by the coordinator."""

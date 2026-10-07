@@ -427,6 +427,56 @@ def test_corrupt_current_binding_fails_closed(env, damage):
         env.store.get(prepared.intent.request_id)
 
 
+def test_film_dependency_lookup_uses_index_without_decoding_unrelated_history(env, monkeypatch):
+    from scenario.core.jobs import store as module
+
+    saved = complete(env)
+    for index in range(200):
+        env.store.create(replace(saved.intent, request_id=f"ordinary-{index}", film_task=None))
+    queries, decoded = [], []
+    connect, decode = sqlite3.connect, module._decode
+
+    def traced(*args, **kwargs):
+        connection = connect(*args, **kwargs)
+        connection.set_trace_callback(queries.append)
+        return connection
+
+    def counted(raw, *args, **kwargs):
+        decoded.append(json.loads(raw)["intent"]["request_id"])
+        return decode(raw, *args, **kwargs)
+
+    monkeypatch.setattr(sqlite3, "connect", traced)
+    monkeypatch.setattr(module, "_decode", counted)
+    assert quote(env, "motion").estimate.payload == {"prompt": "design-1"}
+    assert decoded == [saved.intent.request_id]
+    selects = [sql for sql in queries if "INDEXED BY job_film_task" in sql]
+    assert len(selects) == 2  # New-take reservation check and selected dependency.
+    with connect(env.store._path) as connection:
+        for sql in selects:
+            plan = connection.execute("EXPLAIN QUERY PLAN " + sql).fetchall()
+            assert any("USING INDEX job_film_task" in row[3] for row in plan)
+
+
+def test_building_film_index_preserves_records_and_isolates_malformed_json(env):
+    saved = complete(env)
+    foreign = JobStore(env.store._path, replace(env.scope, account_id="other"))
+    foreign.create(replace(saved.intent, scope=foreign.scope, request_id="damaged"))
+    with sqlite3.connect(env.store._path) as connection:
+        connection.execute("DROP INDEX job_film_task")
+        connection.execute("UPDATE jobs SET record='{' WHERE request_id='damaged'")
+        before = connection.execute("SELECT * FROM jobs ORDER BY scope, request_id").fetchall()
+    reopened = JobStore(env.store._path, env.scope)
+    assert reopened.film_job("production", "design") == saved
+    assert reopened.film_job("other-production", "design") is None
+    assert reopened.film_job("production", "absent") is None
+    with pytest.raises(StoreError):
+        JobStore(env.store._path, foreign.scope).get("damaged")
+    with sqlite3.connect(env.store._path) as connection:
+        assert (
+            connection.execute("SELECT * FROM jobs ORDER BY scope, request_id").fetchall() == before
+        )
+
+
 def test_duplicate_task_records_fail_inspection_instead_of_selecting_one(env):
     prepared = env.coordinator.prepare_quote(quote(env))
     row = env.store.get(prepared.intent.request_id)

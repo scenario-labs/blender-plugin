@@ -438,11 +438,11 @@ the explicit image import approval above, without inferring a material or World
 assignment from their media type. Supported video/audio uses the explicit
 asset and scene/frame approval above. Embedded GLBs use the corresponding
 scene/cursor approval; in-place editing is separate. `import_result` accepts prototype records only;
-shared jobs reject it with guidance for explicit PNG/EXR application. A cold
-session identifies saved prototype records from the local registry before
-accessing shared jobs, so inspecting or importing an already downloaded
-completed prototype result does not require Scenario credentials or create a
-manager that resumes unrelated pending jobs. Non-terminal prototype lookups
+shared jobs reject it with guidance for explicit saved-result application.
+Import requires complete selected credentials so the scoped store can be checked
+before dispatch. Read-only inspection of a downloaded completed prototype result
+can still use the cold local registry without credentials or creating a manager
+that resumes unrelated pending jobs. Non-terminal prototype lookups
 still use the manager-owned record so active waits observe its progress.
 
 Render lanes take the explicit model parameters supplied by the caller. They do
@@ -577,3 +577,18 @@ plan stays in memory until approval; no result text is stored in job metadata.
 Use native **Build plan** separately for geometry. Native plan application has
 Undo; MCP consumers retain the same scope and destination guards without a
 promise of native Undo for direct tool calls.
+
+## Cloud history and scoped saved results
+
+`list_generations` returns `local_request_ids` for cloud rows matched to the
+selected credential-bound store. Such rows expose no legacy `local_files`; use
+`list_local_jobs` and the returned request identity for current status/revision
+and explicit result preparation/approval. Matching is refreshed even when the
+cloud page was loaded before a local remote-job acknowledgement.
+
+`job_status`, `wait_for_job` and the old `import_result` lookup prefer a matching
+scoped record to an old unscoped cache. `import_result` rejects direct application
+of saved jobs. Ambiguous remote IDs require a local request ID, and a failed
+store read never falls back to cached import. Cold prototype-only local reads
+retain their existing behavior; this is not migration or adoption of arbitrary
+cloud jobs.

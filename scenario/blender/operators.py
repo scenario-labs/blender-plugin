@@ -281,7 +281,16 @@ class SCENARIO_OT_import_result(bpy.types.Operator):
 
     def execute(self, context):
         from ..core.jobs.records import JobRecord
-        from . import handlers
+        from . import handlers, history
+
+        try:
+            if history.saved_matches(self.job_id):
+                runtime.inspect_model_jobs()
+                self.report({"INFO"}, "Inspect the saved job and approve its result destination")
+                return {"FINISHED"}
+        except Exception:
+            self.report({"ERROR"}, "Could not inspect saved jobs; preserve storage for recovery")
+            return {"CANCELLED"}
 
         manager = runtime.ensure_manager()
         existing = next(

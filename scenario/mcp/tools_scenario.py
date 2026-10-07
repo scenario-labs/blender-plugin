@@ -368,6 +368,17 @@ def _status(rec):
 
 
 def _saved_status(reference):
+    from ..blender import history
+
+    if runtime.credentials().valid:
+        matches = history.saved_matches(reference)
+        if len(matches) > 1:
+            raise ValueError("Several saved jobs match; use a request_id from list_local_jobs")
+        if matches:
+            status = runtime.ensure_model_jobs().status(matches[0].intent.request_id)
+            if status is None:
+                raise ValueError("The saved job changed; inspect list_local_jobs again")
+            return status
     # Cold local imports must not require credentials or resume a job engine.
     if any(reference in (record.local_id, record.job_id) for record in _local_registry().all()):
         return None
@@ -645,10 +656,14 @@ def import_result(args):
     from ..blender import handlers
 
     reference = _job_ref(args)
+    if not runtime.credentials().valid:
+        raise ScenarioError(
+            0, "Select complete credentials before importing; inspect saved jobs first"
+        )
     if _saved_status(reference) is not None:
         raise ValueError(
-            "Use prepare_result_application for saved PNG/EXR images; "
-            "other saved result types do not yet support scene application"
+            "Use prepare_result_application and explicit destination approval for saved results; "
+            "use prepare_blockout_plan for saved Blockout text"
         )
     rec = _find(reference)
     if not rec.files:
@@ -764,6 +779,10 @@ def list_generations(args):
             history.refresh()
         return {"generations": [], "note": "history requested, call again in a few seconds"}
     limit = int(args.get("limit", 20))
+    saved_ids = {}
+    for record in history.saved_records():
+        if record.remote_job_id:
+            saved_ids.setdefault(record.remote_job_id, []).append(record.intent.request_id)
     result = {
         "generations": [
             {
@@ -773,7 +792,10 @@ def list_generations(args):
                 "prompt": e.prompt,
                 "status": e.status,
                 "cu_cost": e.cu_cost,
-                "local_files": e.local_files,
+                "local_files": []
+                if e.job_id in saved_ids or e.local_request_ids
+                else e.local_files,
+                "local_request_ids": saved_ids.get(e.job_id, list(e.local_request_ids)),
             }
             for e in runtime.state.history[:limit]
         ]
@@ -1279,7 +1301,7 @@ SPECS = (
             "Args:\n"
             "  - limit: optional integer, default 20, maximum number of rows to return.\n"
             "  - refresh: optional boolean, request a new cloud page or retry a failed read; then poll without refresh.\n"
-            "Returns: generations[] with job_id, kind, model_id, prompt, status, cu_cost and local_files. The first call may return an empty list and a note while history loads; call again after loading.\n"
+            "Returns: generations[] with job_id, kind, model_id, prompt, status, cu_cost, local_files and local_request_ids. Matching scoped saved jobs expose request IDs instead of unverified legacy file paths; inspect list_local_jobs and use explicit result approval. The first call may return an empty list and a note while history loads; call again after loading.\n"
             'Example: {"limit": 10}.\n'
             "Prefer job_status for a tracked active generation; this is not a fresh platform-wide history query on every call.\n"
             "Platform equivalent: jobs_list."

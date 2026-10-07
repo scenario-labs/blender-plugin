@@ -289,10 +289,27 @@ MCP refresh requests reuse a pending history read instead of starting more worke
 The MCP `refresh` argument accepts only JSON booleans; other types fail before
 starting or delivering history work.
 
-This is in-memory browsing, not durable history or submission recovery. Local
-files are attached only to jobs returned by the current cloud page. Importing a
-history result and prototype job polling still use their existing paths; this
-change does not establish their credential or application safety.
+Cloud rows now identify matching jobs in the selected credential-bound store.
+Those rows offer **Inspect saved jobs**, which exposes the existing recovery and
+destination-approval controls. The native history import entry point rechecks
+current storage even when the displayed page predates a remote acknowledgement.
+MCP status and import lookup likewise prefer scoped saved records to an old
+unscoped cache; ambiguous remote IDs require an explicit local request ID.
+Neither path borrows the old cache's files or silently applies a saved result.
+Explicit history reads cache saved remote IDs for drawing; live shared-job views
+cover acknowledgements delivered after the cloud page. Drawing performs no job
+database reads. Native import and MCP history/status/import responses still
+recheck current storage, independently of the display snapshot. A failed saved
+read disables cloud-row actions until an explicit read succeeds; switching
+credentials clears the snapshot. Storage failures do not fall back to the older
+import path.
+MCP import also requires complete selected credentials before consulting either
+store; missing credentials permit cold read-only inspection, never application.
+
+The cloud page itself remains an in-memory browse result. Jobs with no matching
+scoped record still use the existing prototype history/import path. Importing
+arbitrary cloud jobs into durable storage remains separate work; this change
+does not establish that path's credential/application safety or full acceptance.
 
 ## Where to make a change
 

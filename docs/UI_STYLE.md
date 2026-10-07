@@ -737,3 +737,49 @@ Local approval, Undo/Redo and Build add no service request or submission; both
 disposable runs exit cleanly with the normal profile unchanged. The screenshots
 above retain their original artifact provenance. These checks do not establish
 live provider or integrated release acceptance.
+
+## Cloud history recovery controls
+
+A cloud row matched to the current scoped job store offers **Inspect saved jobs**
+instead of **Download and open**. Its saved-job controls retain the explicit
+download and destination-approval steps. Drawing uses the saved-ID snapshot from
+explicit history reads plus live shared-job views, without database I/O, session
+activation, service requests or scene/job changes. Import commands independently
+recheck current storage. A changed credential selection hides the old row actions
+until refresh; a failed saved read disables those actions until a successful read.
+
+The exact ZIP with SHA-256
+`30b0e2c03268e81a64ad83d0cc2924be9d0afaac8d7aebf9a80b3aafc9349b2c`
+passes 749 installed tests on each macOS arm64 Blender 5.0.1, 5.1.2 and 5.2.1.
+Regressions cover native operator execution, read-only draw routing, stale-page
+acknowledgement, old-cache collisions, missing storage, restart and credential
+changes, including rejecting MCP import with incomplete credentials. These are
+synthetic installed tests.
+
+Desktop input with the same ZIP passes on macOS arm64 Blender 5.1.2 in an isolated
+profile. The fixture preloads a synthetic cloud page, a matching scoped saved
+job and a colliding old cache entry. Clicking **Project history (cloud)** shows
+**Inspect saved jobs** on the matching row. Clicking it opens the shared recovery
+controls with a separate **Resume download** action. It does not import the old
+file or change the saved record, scene objects or images. The request count stays
+unchanged, and neither legacy import dispatch nor job tracking runs.
+
+![Matching cloud history row offers Inspect saved jobs before any download or import](images/history-saved-job-row.png)
+
+A viewport click selects the light, and Home frames the scene, confirming focus
+and keyboard navigation after inspection. The harness closes the test and removes
+its disposable profile; the normal profile remains unchanged. External networking
+is blocked. This proves the scoped row-to-recovery interaction, not a live cloud
+refresh, download/import completion, arbitrary cloud-job adoption, other OS/DPI
+combinations or integrated release acceptance.
+
+![Shared saved-job recovery offers Resume download while the existing scene remains intact](images/history-saved-job-recovery.png)
+
+The redraw fix uses ZIP SHA-256
+`27ebeece6da712d7b6fd50a8047736df8351e501679b1a4ad1503b62f82e7ac5`.
+All 751 installed tests pass on each of the same three Blender versions.
+Regressions reject database reads during 30 consecutive panel draws, retain
+saved-job routing for late shared-view acknowledgements, and verify storage
+failure/retry and credential-change invalidation. The existing screenshots and
+desktop interaction evidence above belong to the preceding ZIP; desktop input
+on the changed artifact remains unverified.

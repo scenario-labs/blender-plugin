@@ -1,6 +1,7 @@
 # SPDX-FileCopyrightText: 2026 Scenario Inc.
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Merge the cloud job list with local job records for the Generations panel. No bpy."""
+
 from dataclasses import dataclass, field
 
 
@@ -15,6 +16,7 @@ class HistoryEntry:
     cu_cost: float = None
     asset_ids: list = field(default_factory=list)
     local_files: list = field(default_factory=list)
+    local_request_ids: tuple[str, ...] = ()
 
     @property
     def is_success(self):
@@ -45,9 +47,13 @@ def resolve_prompts(jobs, texts):
     return jobs
 
 
-def entries_from_jobs(jobs, local_records, kinds=None):
+def entries_from_jobs(jobs, local_records, kinds=None, *, shared_records=()):
     kinds = kinds or {}
     local_by_job = {r.job_id: r for r in local_records if r.job_id}
+    shared_by_job = {}
+    for record in shared_records:
+        if record.remote_job_id:
+            shared_by_job.setdefault(record.remote_job_id, []).append(record.intent.request_id)
     entries = []
     for job in jobs:
         if job.get("jobType") != "custom":
@@ -55,22 +61,27 @@ def entries_from_jobs(jobs, local_records, kinds=None):
         meta = job.get("metadata") or {}
         inp = meta.get("input") or {}
         job_id = job.get("jobId") or job.get("id")
-        local = local_by_job.get(job_id)
+        shared = tuple(shared_by_job.get(job_id, ()))
+        # An old unscoped cache must never supply files or bypass saved-result approval.
+        local = None if shared else local_by_job.get(job_id)
         model_id = inp.get("modelId") or (local.model_id if local else "")
         billing = job.get("billing") or {}
         prompt = inp.get("prompt")
         if is_prompt_asset(prompt):
             prompt = local.meta.get("prompt") if local else ""
-        entries.append(HistoryEntry(
-            job_id=job_id,
-            kind=(local.kind if local else kinds.get(model_id, "image")),
-            model_id=model_id,
-            prompt=str(prompt or (local.meta.get("prompt") if local else "") or ""),
-            status=(job.get("status") or "").lower(),
-            created_at=job.get("createdAt") or "",
-            cu_cost=float(billing["cuCost"]) if billing.get("cuCost") is not None else None,
-            asset_ids=list(meta.get("assetIds") or []),
-            local_files=list(local.files) if local else [],
-        ))
+        entries.append(
+            HistoryEntry(
+                job_id=job_id,
+                kind=(local.kind if local else kinds.get(model_id, "image")),
+                model_id=model_id,
+                prompt=str(prompt or (local.meta.get("prompt") if local else "") or ""),
+                status=(job.get("status") or "").lower(),
+                created_at=job.get("createdAt") or "",
+                cu_cost=float(billing["cuCost"]) if billing.get("cuCost") is not None else None,
+                asset_ids=list(meta.get("assetIds") or []),
+                local_files=list(local.files) if local else [],
+                local_request_ids=shared,
+            )
+        )
     entries.sort(key=lambda e: e.created_at, reverse=True)
     return entries

@@ -6,6 +6,7 @@ import threading
 import unittest
 from unittest.mock import patch
 
+import bpy
 import httpx
 from helpers import isolated_manager, online_access, reset_scene, submodule, temp_credentials
 
@@ -68,6 +69,229 @@ class SDKHistoryTests(unittest.TestCase):
         self.manager.join(5)
         self.assertFalse(self.manager.has_active())
         self.generation.process_catalog_events()
+
+    def saved_job(self, request_id="saved-request"):
+        module = submodule("core.jobs.store")
+        store = self.runtime.ensure_job_store()
+        intent = module.JobIntent(
+            request_id,
+            store.scope,
+            module.JobOrigin("file", "scene", "revision"),
+            "model",
+            "fixture-model",
+            "a" * 64,
+            "b" * 64,
+            "1.25",
+        )
+        store.create(intent)
+        store.transition(request_id, state=module.JobState.SUBMITTING, expected_revision=0)
+        store.transition(
+            request_id,
+            state=module.JobState.REMOTE,
+            expected_revision=1,
+            remote_job_id="job-fixture",
+        )
+        return store.transition(request_id, state=module.JobState.SUCCEEDED, expected_revision=2)
+
+    def legacy_collision(self):
+        record = submodule("core.jobs.records").JobRecord.new(
+            lane="image",
+            kind="image",
+            model_id="fixture-model",
+            body={},
+        )
+        record.job_id, record.status, record.files = "job-fixture", "success", ["unverified.png"]
+        self.manager.registry.add(record)
+        return record
+
+    def test_cloud_history_exposes_saved_request_ids_without_legacy_files(self):
+        saved = self.saved_job()
+        self.legacy_collision()
+        self.history.refresh()
+        self.deliver()
+        entry = self.runtime.state.history[0]
+        self.assertEqual(entry.local_request_ids, (saved.intent.request_id,))
+        self.assertEqual(entry.local_files, [])
+        row = self.tools.list_generations({})["generations"][0]
+        self.assertEqual(row["local_request_ids"], [saved.intent.request_id])
+        self.assertEqual(row["local_files"], [])
+        self.assertEqual(len(self.calls), 2)
+
+    def test_native_history_import_routes_saved_job_to_explicit_recovery(self):
+        saved = self.saved_job()
+        legacy = self.legacy_collision()
+        before = tuple(bpy.data.objects)
+        with (
+            patch.object(self.manager, "track") as track,
+            patch.object(self.handlers, "dispatch") as dispatch,
+        ):
+            self.assertEqual(bpy.ops.scenario.import_result(job_id="job-fixture"), {"FINISHED"})
+            track.assert_not_called()
+            dispatch.assert_not_called()
+        self.assertEqual(tuple(bpy.data.objects), before)
+        self.assertEqual(self.runtime.state.job_store.get(saved.intent.request_id), saved)
+        self.assertEqual(self.manager.registry.all(), [legacy])
+        self.assertEqual(self.runtime.state.jobs_view[0].local_id, saved.intent.request_id)
+        self.assertFalse(self.calls)
+
+    def test_mcp_saved_job_precedes_legacy_collision_and_never_imports_directly(self):
+        saved = self.saved_job()
+        self.legacy_collision()
+        with patch.object(self.handlers, "dispatch") as dispatch:
+            for reference in (saved.intent.request_id, saved.remote_job_id):
+                status = self.tools.job_status({"job_id": reference})
+                self.assertEqual(status["local_id"], saved.intent.request_id)
+                self.assertEqual(status["files"], [])
+                with self.assertRaisesRegex(ValueError, "explicit destination approval"):
+                    self.tools.import_result({"job_id": reference})
+            dispatch.assert_not_called()
+        self.assertFalse(self.calls)
+
+    def test_incomplete_credentials_cannot_import_a_colliding_legacy_result(self):
+        saved = self.saved_job()
+        store = self.runtime.state.job_store
+        self.legacy_collision()
+        self.prefs.api_secret = ""
+        with patch.object(self.handlers, "dispatch") as dispatch:
+            with self.assertRaisesRegex(
+                submodule("core.api.errors").ScenarioError, "complete credentials"
+            ):
+                self.tools.import_result({"job_id": "job-fixture"})
+            dispatch.assert_not_called()
+        self.assertEqual(store.get(saved.intent.request_id), saved)
+        self.assertFalse(self.calls)
+
+    def test_ambiguous_saved_remote_id_does_not_fall_back_to_legacy_import(self):
+        self.saved_job("first")
+        self.saved_job("second")
+        self.legacy_collision()
+        with self.assertRaisesRegex(ValueError, "Several saved jobs"):
+            self.tools.import_result({"job_id": "job-fixture"})
+        self.assertEqual(self.tools.job_status({"job_id": "first"})["local_id"], "first")
+        self.assertFalse(self.calls)
+
+    def test_failed_storage_read_does_not_fall_back_to_legacy(self):
+        self.saved_job()
+        self.legacy_collision()
+        with (
+            patch.object(self.runtime.state.job_store, "records", side_effect=OSError("fixture")),
+            patch.object(self.manager, "track") as track,
+            patch.object(self.handlers, "dispatch") as dispatch,
+        ):
+            with self.assertRaisesRegex(RuntimeError, "Could not inspect saved jobs"):
+                bpy.ops.scenario.import_result(job_id="job-fixture")
+            with self.assertRaisesRegex(
+                submodule("core.api.errors").ScenarioError, "Could not inspect saved jobs"
+            ):
+                self.tools.import_result({"job_id": "job-fixture"})
+            track.assert_not_called()
+            dispatch.assert_not_called()
+
+    def test_history_draw_offers_saved_controls_without_files_or_mutation(self):
+        from test_model_picker import FakeLayout
+
+        self.saved_job()
+        self.legacy_collision()
+        self.history.refresh()
+        self.deliver()
+        layout = FakeLayout()
+        before = self.runtime.state.job_store.records()
+        with (
+            patch.object(
+                self.runtime, "ensure_model_jobs", side_effect=AssertionError("Draw mutation")
+            ),
+            patch.object(
+                self.runtime.state.job_store,
+                "records",
+                side_effect=AssertionError("Storage read during redraw"),
+            ),
+        ):
+            for _ in range(30):
+                submodule("blender.panels").draw_history(layout, bpy.context)
+        operators = [call[1][0] for node in layout.walk() for call in node.named("operator")]
+        self.assertIn("scenario.inspect_saved_jobs", operators)
+        self.assertNotIn("scenario.import_result", operators)
+        self.assertEqual(self.runtime.state.job_store.records(), before)
+
+    def test_live_saved_view_overrides_history_snapshot_without_storage_read(self):
+        from test_model_picker import FakeLayout
+
+        self.legacy_collision()
+        self.history.refresh()
+        self.deliver()
+        self.assertEqual(self.runtime.state.history_saved_ids, frozenset())
+        saved = self.saved_job()
+        self.runtime.inspect_model_jobs()
+        self.assertEqual(self.runtime.state.jobs_view[0].job_id, saved.remote_job_id)
+        layout = FakeLayout()
+        panels = submodule("blender.panels")
+        with (
+            patch.object(panels, "thumbnail", side_effect=AssertionError("Legacy file read")),
+            patch.object(
+                self.runtime.state.job_store,
+                "records",
+                side_effect=AssertionError("Storage read during redraw"),
+            ),
+        ):
+            panels.draw_history(layout, bpy.context)
+        operators = [call[1][0] for node in layout.walk() for call in node.named("operator")]
+        self.assertIn("scenario.inspect_saved_jobs", operators)
+        self.assertNotIn("scenario.import_result", operators)
+
+    def test_failed_saved_read_disables_history_actions_until_explicit_refresh(self):
+        from test_model_picker import FakeLayout
+
+        self.saved_job()
+        self.history.refresh()
+        self.deliver()
+        store = self.runtime.state.job_store
+        self.assertEqual(self.runtime.state.history_saved_ids, frozenset({"job-fixture"}))
+        with patch.object(store, "records", side_effect=OSError("fixture")):
+            self.history.refresh()
+            self.deliver()
+        self.assertIsNone(self.runtime.state.history_saved_ids)
+        layout = FakeLayout()
+        submodule("blender.panels").draw_history(layout, bpy.context)
+        self.assertFalse([call for node in layout.walk() for call in node.named("operator")])
+        self.assertIn("Could not inspect saved jobs", self.runtime.state.history_error)
+        self.history.refresh()
+        self.deliver()
+        self.assertEqual(self.runtime.state.history_saved_ids, frozenset({"job-fixture"}))
+        self.assertFalse(self.runtime.state.history_error)
+        self.prefs.api_secret = "other-fixture-secret"
+        self.runtime.sync_catalog_context()
+        self.assertIsNone(self.runtime.state.history_saved_ids)
+
+    def test_saved_acknowledgement_after_page_load_overrides_stale_legacy_projection(self):
+        from test_model_picker import FakeLayout
+
+        self.legacy_collision()
+        self.history.refresh()
+        self.deliver()
+        self.assertEqual(self.runtime.state.history[0].local_files, ["unverified.png"])
+        self.saved_job()
+        row = self.tools.list_generations({})["generations"][0]
+        self.assertEqual(row["local_request_ids"], ["saved-request"])
+        self.assertEqual(row["local_files"], [])
+        layout = FakeLayout()
+        panels = submodule("blender.panels")
+        with patch.object(panels, "thumbnail", side_effect=AssertionError("Legacy file read")):
+            panels.draw_history(layout, bpy.context)
+        operators = [call[1][0] for node in layout.walk() for call in node.named("operator")]
+        self.assertIn("scenario.inspect_saved_jobs", operators)
+        self.assertNotIn("scenario.import_result", operators)
+        self.prefs.api_secret = "replacement-fixture-secret"
+        layout = FakeLayout()
+        submodule("blender.panels").draw_history(layout, bpy.context)
+        self.assertFalse([call for node in layout.walk() for call in node.named("operator")])
+
+    def test_saved_history_binding_survives_restart_but_not_credential_switch(self):
+        saved = self.saved_job()
+        self.runtime.state.reset()
+        self.assertEqual(self.history.saved_matches("job-fixture"), (saved,))
+        self.prefs.api_secret = "other-fixture-secret"
+        self.assertEqual(self.history.saved_matches("job-fixture"), ())
+        self.assertFalse(self.calls)
 
     def test_ui_refresh_and_headless_mcp_share_resolved_history(self):
         self.history.refresh()

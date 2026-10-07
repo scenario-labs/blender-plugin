@@ -664,6 +664,15 @@ verbatim CU cost before durable submission. `discard_film_estimate` releases an
 unused quote. `bind_film_upload` saves an immutable reference to an unchanged
 imported upload observed through `list_reference_uploads`.
 
+If a scene switch interrupted the estimate response, return to the original scene
+and call `film_recipe` with `action: inspect`. A `quoted` task returns the existing
+`quote_id`, `model_id`, `parameters` and `cu_cost_exact` for approval or discard.
+Inspection completes already-admitted preparation but never requests a new price;
+stale quotes are omitted. Pending preparation appears as `quoting` or `binding`.
+Saved upload associations remain visible as `bound` after an interrupted response.
+Identical binding retries are revalidated; a different upload or revision is
+rejected before replacing an already-bound task's displayed status.
+
 Recipe management, inspection and upload association are local operations with
 no platform equivalent. Estimate/approval use the same model operations as
 `estimate_cost`/`generate`, through the shared session. Use `job_status`,

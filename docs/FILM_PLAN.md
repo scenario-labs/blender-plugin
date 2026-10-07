@@ -189,6 +189,8 @@ instead of another estimate or association button. A repeated model estimate in
 that active context is refused without replacing the saved status. Explicit MCP
 upload-association retries still revalidate and return the same saved association;
 they never replay an upload.
+A different upload or observed revision is rejected before starting another action,
+so a conflicting retry does not replace the task's saved association status.
 Saved status survives eviction from the 128-action cache. Its separate read-only
 projection retains at most the current recipe tasks for each live scene and owns
 no worker, approval or reservation authority.
@@ -198,7 +200,15 @@ MCP uses `film_recipe` to load/inspect the same scene data and obtain its stable
 `approve_film_task` requires that cost verbatim. `discard_film_estimate` releases
 an unused approval. `bind_film_upload` requires the context, request and revision
 returned by `list_reference_uploads`. Inspection reads local records without
-resuming work. See [MCP contracts](MCP.md#local-server-and-mcpscenariocom).
+resuming saved jobs. If another scene was current when an MCP response finished,
+return to the original scene and inspect again. Inspection completes already-admitted
+preparation and exposes an unchanged ready estimate as a `quoted` task, including
+its existing `quote_id`, `model_id`, `parameters` and `cu_cost_exact`. Approve that
+exact quote or discard it before requesting another. Pending preparation appears
+as `quoting` or `binding`; saved upload associations remain inspectable as `bound`.
+Inspection never requests a new price, submits, or applies a result, and it omits
+quotes whose recipe, scene revision or credential context changed.
+See [MCP contracts](MCP.md#local-server-and-mcpscenariocom).
 
 `FilmJobs` owns bounded presentation handles, not an executor or another store.
 Approved tasks enter the existing `ModelJobs` polling/download path. Results stay

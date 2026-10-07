@@ -81,6 +81,68 @@ class FilmControlsTests(unittest.TestCase):
             if call[0] == "operator" or call[0].endswith(".operator")
         ]
 
+    def interrupted_estimate(self):
+        owner = self.owner()
+        deferred = self.tools.estimate_film_task(
+            {"production_id": self.production, "task_id": "take"}
+        )
+        completed = deferred.run()
+        item = owner.current(self.scene, "take")
+        other = bpy.data.scenes.new("Other current Film scene")
+        try:
+            self.film.load_recipe(other, self.recipe)
+            # Even a copied production must not expose another scene's quote.
+            other.scenario_film.production_id = self.production
+            with bpy.context.temp_override(scene=other):
+                with self.assertRaisesRegex(self.request_error, "context changed"):
+                    deferred.finish(completed)
+                inspection = self.tools.film_recipe({})
+                self.assertNotIn("quote_id", inspection["tasks"][1])
+                self.assertEqual(item.phase, "QUOTING")
+        finally:
+            bpy.data.scenes.remove(other)
+        return item
+
+    def test_inspection_recovers_interrupted_quote_for_discard_without_repricing(self):
+        item = self.interrupted_estimate()
+        calls = len(self.calls)
+        inspection = self.tools.film_recipe({})
+        row = inspection["tasks"][1]
+        self.assertEqual(row["state"], "quoted")
+        self.assertEqual(row["quote_id"], item.identifier)
+        self.assertEqual(row["model_id"], self.model["id"])
+        self.assertEqual(row["parameters"], {"prompt": "a teapot"})
+        self.assertEqual(row["cu_cost_exact"], "0.1234567890123456789")
+        self.assertEqual(self.tools.film_recipe({}), inspection)
+        self.assertEqual(len(self.calls), calls)
+        self.assertEqual(self.store.records(), ())
+        self.tools.discard_film_estimate({"quote_id": row["quote_id"]})
+        self.assertNotIn("quote_id", self.tools.film_recipe({})["tasks"][1])
+        self.assertNotEqual(self.estimate()["quote_id"], item.identifier)
+        self.assertEqual(self.paid, [])
+
+    def test_inspection_recovers_interrupted_quote_for_one_exact_approval(self):
+        self.interrupted_estimate()
+        row = self.tools.film_recipe({})["tasks"][1]
+        args = {"quote_id": row["quote_id"], "approved_cost": row["cu_cost_exact"]}
+        self.tools.approve_film_task(args)
+        self.settle()
+        with self.assertRaises(self.request_error):
+            self.tools.approve_film_task(args)
+        self.assertNotIn("quote_id", self.tools.film_recipe({})["tasks"][1])
+        self.assertEqual(len(self.paid), 1)
+
+    def test_inspection_never_exposes_an_interrupted_quote_after_origin_change(self):
+        self.interrupted_estimate()
+        self.scene.frame_set(self.scene.frame_current + 1)
+        calls = len(self.calls)
+        row = self.tools.film_recipe({})["tasks"][1]
+        self.assertEqual(row["state"], "unstarted")
+        self.assertNotIn("quote_id", row)
+        self.assertEqual(len(self.calls), calls)
+        self.assertEqual(self.store.records(), ())
+        self.assertEqual(self.paid, [])
+
     def test_native_quote_mcp_approval_downloads_without_automatic_application(self):
         self.result_fixture()
         before = set(bpy.data.images)
@@ -460,13 +522,13 @@ class FilmControlsTests(unittest.TestCase):
         finally:
             bpy.data.scenes.remove(loaded)
 
-    def test_imported_upload_binding_is_local_and_feeds_price(self):
+    def imported_upload(self, request_id="film-upload", asset_id="source-asset"):
         owner = self.owner()
         uploads = submodule("core.jobs.upload_store")
         store = owner.session._coordinator._uploads._store
         saved = store.create(
             uploads.UploadIntent(
-                "film-upload",
+                request_id,
                 store.scope,
                 owner.session.capture(self.scene),
                 "image",
@@ -481,11 +543,16 @@ class FilmControlsTests(unittest.TestCase):
         for state, values in [
             (uploads.UploadState.INITIALIZING, {}),
             (uploads.UploadState.UPLOADING, {"upload_id": "remote-upload"}),
-            (uploads.UploadState.IMPORTED, {"asset_id": "source-asset"}),
+            (uploads.UploadState.IMPORTED, {"asset_id": asset_id}),
         ]:
             saved = store.transition(
-                "film-upload", expected_revision=saved.revision, state=state, **values
+                request_id, expected_revision=saved.revision, state=state, **values
             )
+        return saved
+
+    def test_imported_upload_binding_is_local_and_feeds_price(self):
+        owner = self.owner()
+        saved = self.imported_upload()
         info = self.tools.list_reference_uploads({})
         args = dict(
             production_id=self.production,
@@ -510,6 +577,85 @@ class FilmControlsTests(unittest.TestCase):
         changed["tasks"][1]["parameters"]["prompt"] = "$source"
         self.film.load_recipe(self.scene, changed)
         self.assertEqual(self.estimate()["parameters"], {"prompt": "source-asset"})
+        self.assertEqual(self.paid, [])
+
+    def test_conflicting_upload_retry_preserves_bound_status_without_starting_work(self):
+        owner = self.owner()
+        saved = self.imported_upload()
+        other = self.imported_upload("other-upload", "other-asset")
+        args = dict(
+            production_id=self.production,
+            task_id="source",
+            context_id=self.runtime.state.job_context_id,
+            request_id=saved.intent.request_id,
+            expected_revision=saved.revision,
+        )
+        deferred = self.tools.bind_film_upload(args)
+        deferred.finish(deferred.run())
+        item = owner.current(self.scene, "source")
+        reference = self.store.film_upload(self.production, "source")
+        self.scene.scenario_film.task_index = 0
+        for evicted in (False, True):
+            with self.subTest(evicted=evicted):
+                if evicted:
+                    owner._retain_saved_status(item)
+                    del owner.actions[item.identifier]
+                count = len(owner.actions)
+                for changes in (
+                    {"request_id": other.intent.request_id},
+                    {"expected_revision": saved.revision + 1},
+                ):
+                    with self.subTest(changes=changes):
+                        with patch.object(
+                            owner.session,
+                            "bind_film_upload",
+                            side_effect=AssertionError("No new work"),
+                        ) as bind:
+                            with self.assertRaisesRegex(self.request_error, "already bound"):
+                                self.tools.bind_film_upload(dict(args, **changes))
+                            bind.assert_not_called()
+                        self.assertEqual(len(owner.actions), count)
+                        current = owner.current(self.scene, "source")
+                        self.assertEqual(
+                            (current.phase, current.request_id), ("BOUND", "film-upload")
+                        )
+                        self.assertEqual(current.error, "")
+                        self.assertNotIn("scenario.bind_film_upload", self.drawn_operators())
+                        self.assertEqual(
+                            self.store.film_upload(self.production, "source"), reference
+                        )
+        self.assertEqual(self.calls, [])
+        self.assertEqual(self.paid, [])
+
+    def test_interrupted_upload_association_is_inspectable_and_retryable(self):
+        saved = self.imported_upload()
+        args = dict(
+            production_id=self.production,
+            task_id="source",
+            context_id=self.runtime.state.job_context_id,
+            request_id=saved.intent.request_id,
+            expected_revision=saved.revision,
+        )
+        deferred = self.tools.bind_film_upload(args)
+        completed = deferred.run()
+        other = bpy.data.scenes.new("Other current upload scene")
+        try:
+            with bpy.context.temp_override(scene=other):
+                with self.assertRaisesRegex(self.request_error, "context changed"):
+                    deferred.finish(completed)
+                self.owner().poll()
+                self.assertEqual(self.owner().current(self.scene, "source").phase, "BINDING")
+        finally:
+            bpy.data.scenes.remove(other)
+        reference = self.store.film_upload(self.production, "source")
+        row = self.tools.film_recipe({})["tasks"][0]
+        self.assertEqual(row["state"], "bound")
+        self.assertEqual(row["upload_request_id"], saved.intent.request_id)
+        self.assertEqual(self.owner().current(self.scene, "source").phase, "BOUND")
+        retry = self.tools.bind_film_upload(args)
+        self.assertEqual(retry.finish(retry.run())["state"], "bound")
+        self.assertEqual(self.store.film_upload(self.production, "source"), reference)
+        self.assertEqual(self.calls, [])
         self.assertEqual(self.paid, [])
 
     def test_deleted_scene_does_not_break_lookup_or_panel_drawing(self):

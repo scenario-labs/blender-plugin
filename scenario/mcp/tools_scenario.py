@@ -191,16 +191,11 @@ def estimate_film_task(args):
 
     def finish(_):
         if runtime.ensure_film_jobs() is not owner or bpy.context.scene != scene:
-            raise ScenarioError(0, "The Film context changed; estimate again")
+            raise ScenarioError(
+                0, "The Film context changed; return to its scene and inspect the recipe"
+            )
         owner.finish(item, scene)
-        return {
-            "quote_id": item.identifier,
-            "production_id": item.binding[0],
-            "task_id": item.task_id,
-            "model_id": item.quote.estimate.target_id,
-            "parameters": item.quote.estimate.payload,
-            "cu_cost_exact": item.cost,
-        }
+        return owner.quote_details(item, scene)
 
     return DeferredTool(item.task.result, finish)
 
@@ -972,9 +967,10 @@ SPECS = (
         (
             "Inspect or load the current scene's Film recipe, or explicitly start a new production.\n"
             "Args: action is inspect (default), load or new_production; recipe is a raw Film JSON object required for load.\n"
-            "Returns: stable production_id, title and tasks; inspection adds saved job/upload identities and states.\n"
+            "Returns: stable production_id, title and tasks; inspection adds saved job/upload identities and states. A quoted task includes quote_id, model_id, parameters and cu_cost_exact for its existing approval.\n"
             'Example: {"action": "inspect"}.\n'
             "Load validates before mutation and preserves identity. Save the blend file to retain it. New production deliberately gives the same task names a fresh identity; it does not submit or recover work.\n"
+            "After a scene-switch error, return to the original scene and inspect to recover an unchanged quote or saved upload association. Inspection only completes already-admitted preparation; it never reprices, resumes saved jobs or submits. Stale quotes are omitted.\n"
             "Platform equivalent: none; local Film recipe and saved-task inspection."
         ),
         _schema(

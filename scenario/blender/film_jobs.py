@@ -142,6 +142,15 @@ class FilmJobs:
             raise ScenarioError(
                 0, "This Film task already has saved work; inspect it or name a new take"
             )
+        if current and current.phase == "BOUND":
+            saved = self.store.film_upload(current.binding[0], task_id)
+            if (
+                phase != "BINDING"
+                or saved is None
+                or upload.get("request_id") != saved.upload_request_id
+                or upload.get("expected_revision") != saved.upload_revision
+            ):
+                raise ScenarioError(0, "This Film upload task is already bound; name a new task")
         if len(self.actions) >= 128:
             for key, old in tuple(self.actions.items()):
                 if old.phase not in {"QUOTING", "BINDING", "READY"}:
@@ -226,6 +235,20 @@ class FilmJobs:
             raise ScenarioError(0, item.error or "The Film action is still running")
         return item
 
+    def quote_details(self, item, scene):
+        """Describe an existing approval without repricing or changing its origin."""
+        self._check(item, scene)
+        if item.phase != "READY" or item.quote is None:
+            raise ScenarioError(0, "Use a ready Film estimate")
+        return {
+            "quote_id": item.identifier,
+            "production_id": item.binding[0],
+            "task_id": item.task_id,
+            "model_id": item.quote.estimate.target_id,
+            "parameters": item.quote.estimate.payload,
+            "cu_cost_exact": item.cost,
+        }
+
     def approve(self, identifier, scene, *, approved_cost):
         if os.environ.get("SCENARIO_GUI_PROBE") == "1":
             raise PermissionError("Generation is disabled while an automated GUI probe runs")
@@ -246,9 +269,12 @@ class FilmJobs:
         return view
 
     def inspect(self, scene):
-        """Read saved task identities locally; never resume, submit or apply anything."""
+        """Inspect saved work and existing quotes; never start network or scene work."""
         _, plan = recipe(scene)
         require_plan_scope(plan, self.store.scope)
+        # Finish already-admitted preparation only in its unchanged source scene.
+        # A deferred MCP response can fail while another scene is current.
+        self.poll()
         production_id = scene.scenario_film.production_id
         rows = []
         for task in plan["tasks"]:
@@ -271,5 +297,10 @@ class FilmJobs:
                 )
             else:
                 row["state"] = "unstarted"
+                item = self.current(scene, task["id"])
+                if item is not None and item.phase == "READY":
+                    row.update(self.quote_details(item, scene), state="quoted")
+                elif item is not None and item.phase in {"QUOTING", "BINDING"}:
+                    row["state"] = item.phase.lower()
             rows.append(row)
         return {"production_id": production_id, "title": plan["title"], "tasks": rows}

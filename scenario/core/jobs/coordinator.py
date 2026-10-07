@@ -783,7 +783,9 @@ class JobCoordinator:
             origin,
             expected_model_id,
         )
-        with self._request_guard(origin):
+        # This read saves metadata, not a quote or application approval. Keep
+        # its captured provenance even if the scene changes while it is queued.
+        with self._request_guard():
             pass
         response = self._adapter.job(identifier)
         metadata = response.get("metadata")
@@ -808,7 +810,7 @@ class JobCoordinator:
             raise RecoveryError(
                 "Scenario returned invalid completed-job asset identities"
             ) from None
-        with self._request_guard(origin):
+        with self._request_guard():
             return self._store.adopt_cloud_job(intent, identifier)
 
     def _observe_remote(self, current, response):

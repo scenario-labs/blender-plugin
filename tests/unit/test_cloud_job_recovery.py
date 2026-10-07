@@ -163,14 +163,27 @@ def test_offline_permission_failure_and_retirement_leave_storage_untouched(setup
     assert len(calls) == 2 and not store.records()
 
 
-def test_changed_origin_during_read_cannot_bind_result_to_another_scene(setup):
+@pytest.mark.parametrize("initially_current", [True, False])
+def test_changed_origin_before_or_during_read_preserves_metadata_provenance(
+    setup, initially_current
+):
     coordinator, store, _, _, state = setup
-    current = [True]
+    current = [initially_current]
     coordinator._origin_guard = lambda origin: nullcontext(current[0])
     state["after"] = lambda: current.__setitem__(0, False)
+    record = adopt(coordinator)
+    assert store.records() == (record,)
+    assert record.intent.origin == ORIGIN
+    assert record.application_origin is None
+    assert record.state == JobState.SUCCEEDED and not record.results
+
+
+def test_retired_coordinator_rejects_cloud_read_before_dispatch(setup):
+    coordinator, store, calls, _, _ = setup
+    coordinator.deactivate()
     with pytest.raises(QuoteError):
         adopt(coordinator)
-    assert not store.records()
+    assert not calls and not store.records()
 
 
 def test_existing_generation_intent_wins_without_losing_quote_or_state(setup):

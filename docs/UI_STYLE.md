@@ -101,7 +101,7 @@ Each result collapses on its own; the panel header has a **Collapse all / Expand
 
 ## Wording
 
-- Verbs on buttons say exactly what happens: `Generate`, `Add to scene`, `Use as reference`, `Refresh cloud`, `Download and open`.
+- Verbs on buttons say exactly what happens: `Generate`, `Add to scene`, `Use as reference`, `Refresh cloud`, `Save for recovery`.
 - Singular/plural is correct: `1 Job` / `3 Jobs`, `Applies to 1 selected mesh`.
 - Prompt helpers request a free exact server price first. Show the formatted CU amount below the tools with a separate action-labelled approval button. Do not use a fixed price or a tooltip as spending authorization. Keep pending/error text readable; an uncertain job offers inspection, never automatic resubmission.
 - CU labels follow the web generation indicator: up to three decimal places,
@@ -783,3 +783,72 @@ saved-job routing for late shared-view acknowledgements, and verify storage
 failure/retry and credential-change invalidation. The existing screenshots and
 desktop interaction evidence above belong to the preceding ZIP; desktop input
 on the changed artifact remains unverified.
+
+## Completed cloud job recovery controls
+
+A successful cloud row without a scoped record offers **Save for recovery**.
+The metadata read is available in Edit, Sculpt and Pose modes as well as Object
+mode, subject to the same online-access and credential checks. Switching scenes
+while it runs does not discard the saved record or authorize scene application.
+Admission errors show their actionable reason, such as a different model read
+already pending for that job; unexpected failures keep a generic sanitized message.
+While its shared worker reads the job, the disabled label is **Reading cloud
+job...**. Success exposes **Inspect saved jobs** and a paused recovery record;
+download and destination approval remain separate. A sanitized read error allows
+an explicit retry. Legacy cache rows and files cannot substitute their old
+actions or hide this control. Drawing only inspects the current store/facade.
+Saved recovery rows keep their place when prototype jobs report progress or the
+application pump runs again. A shared row takes precedence over a legacy row
+with the same local ID. The prototype's 50-row limit does not trim saved recovery
+rows. These are display rules; they do not delete stored jobs or resume work.
+
+The exact ZIP with SHA-256
+`e572909c23aae8ddd027aa48e489f338eb34dd35b2eacdaf35cbb9a7c57f11ec`
+passes 760 installed tests on each macOS arm64 Blender 5.0.1, 5.1.2 and 5.2.1.
+Native desktop interaction with that same ZIP passes on macOS arm64 Blender
+5.1.2 in a disposable profile. The fixture preloads one synthetic cloud row and
+uses the real installed SDK adapter with a GET-only mock transport; external
+Python network connections are blocked.
+
+![Cloud history offers Save for recovery while the scene remains unchanged](images/cloud-history-recovery-controls.png)
+
+Clicking **Save for recovery** starts one job read and disables the pending
+control. Pressing N closes the sidebar while that read is held by the fixture.
+Releasing the synthetic response delivers one paused cloud record with the
+sidebar still closed. Reopening it shows **Resume download**. Repeated
+**Inspect saved jobs** does not alter the record or issue another request.
+The scene's objects and images remain unchanged, with zero downloads or paid
+submissions. A subsequent viewport click selects the light, and Home frames
+the scene, confirming mouse focus and keyboard navigation after recovery.
+
+![Recovered cloud job waits for Resume download without importing any result into the scene](images/cloud-history-recovery-saved.png)
+
+A separate run exercised a sanitized read rejection after selection changed
+while the read was pending; explicit retry saved one paused record without a
+submission or download. Both completed runs exit through harness cleanup, remove
+their disposable profiles and leave the normal profile unchanged. The isolated
+application has a test-only identifier to distinguish its window; the extension
+ZIP is unchanged. These checks establish native recovery controls with synthetic
+responses, not live cloud history, provider latency, completed result application,
+other OS/DPI combinations or integrated release acceptance.
+
+Scene-independent metadata delivery has separate native input proof on macOS
+arm64 Blender 5.1.2, using exact ZIP SHA-256
+`38f0a51edea77643f4988c737090e759b578c4b1844cdfd25f4ec43c3f3183d6`.
+That ZIP passes 822 installed tests on each Blender 5.0.1, 5.1.2 and 5.2.1.
+With external network connections blocked and a GET-only SDK fixture, clicking
+**Save for recovery** in Edit Mode starts one metadata read. While it is held,
+Tab exits Edit Mode, the scene selector switches to another scene, and N hides
+the sidebar. The response saves one paused record while that sidebar is closed.
+Reopening it shows **Resume download** in the second scene. Repeated inspection
+leaves the record and request count unchanged; neither scene receives a result.
+Returning to the original scene, selecting the light and pressing Home confirms
+viewport mouse focus and keyboard framing. There are zero downloads or paid
+submissions, cleanup removes the disposable profile, and the normal profile is
+unchanged. Sculpt/Pose admission and actionable admission errors have installed
+regression coverage; this desktop run exercised Edit Mode and scene switching.
+The live-provider, other-OS and release limitations above still apply.
+
+![Save for recovery is enabled in Edit Mode](images/cloud-recovery-edit-mode.png)
+
+![The paused cloud record survives switching to another scene](images/cloud-recovery-scene-switch.png)

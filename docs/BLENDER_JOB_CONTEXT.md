@@ -51,17 +51,35 @@ receipt-only retry to UI/MCP while its original owner retains the outcome handle
 captures the selected scene on the main thread and queues the
 [shared cloud read](JOB_COORDINATOR.md#adopting-a-completed-cloud-job).
 It captures no mesh target, mutates no scene data and creates no second worker
-pool. Normal delivery guards reject retired owners and changed scenes.
-Repeating a read from another scene preserves the original saved intent. Its
-completion is bound to the new reader's captured scene and verified job/model
-identity, while result application still requires a separate destination claim.
+pool. `deliver_cloud_read` consumes only a cloud-read completion issued by the
+same active session, after checking its job/model identity and credential scope.
+Switching, editing or removing the reader's scene does not discard this metadata.
+Repeating a read from another scene preserves the original saved intent.
+This delivery path returns a saved record only; it cannot deliver quotes or
+apply results. Ordinary delivery and result application retain their scene,
+revision and destination-approval guards. Retiring credentials or loading another
+file still prevents late delivery through the old session.
 
 Once saved, cloud records survive restart and use the existing inspection,
 explicit download and fresh destination-approval commands. Status distinguishes
 `source: cloud` from `generation`; cloud costs remain unknown (`None`), never a
 synthetic zero. The native recovery view omits the missing cost. A cloud record
-cannot recover original mesh-source ownership from remote metadata. History and
-MCP adoption entry points still need to call this command explicitly.
+cannot recover original mesh-source ownership from remote metadata.
+
+`ModelJobs.recover_cloud` connects native history and MCP to this command.
+Pending reads of the same remote job/model share one task. Up to 16 retained
+reads expose pending/sanitized failure state, and the normal application pump
+attaches a successful saved-job view in paused recovery state. Closing the panel
+does not own the worker. A retired credential context cannot deliver a late read
+into its replacement. No adoption read joins automatic image application.
+The 16-entry limit belongs to the display cache: a completed read's owning MCP
+caller retains its result even after cache eviction or a later read of the same
+job. Completion checks the original facade's ownership and active session.
+
+Shared recovery rows and prototype updates use the same stable display merge.
+A scoped row replaces a colliding legacy row without duplicates, and repeated
+pump ticks preserve order. The existing 50-row prototype limit only trims
+prototype rows; it never drops shared recovery rows or changes durable records.
 
 ## Blockout plan commands
 

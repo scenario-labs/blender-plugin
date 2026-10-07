@@ -293,11 +293,32 @@ def cancel_prepared_job(context_id, request_id, expected_revision):
     return session.cancel_prepared(request_id, expected_revision=expected_revision)
 
 
+def show_job_views(records):
+    """Merge display rows stably; the prototype limit never evicts scoped jobs."""
+    records = tuple(records)
+    order = list(dict.fromkeys(row.local_id for row in state.jobs_view))
+    existing = set(order)
+    added = list(dict.fromkeys(row.local_id for row in records if row.local_id not in existing))
+    rows = {}
+    for row in (*state.jobs_view, *records):
+        previous = rows.get(row.local_id)
+        if previous is None or row.meta.get("shared_job") or not previous.meta.get("shared_job"):
+            rows[row.local_id] = row
+    visible = []
+    prototype_count = 0
+    for identifier in (*reversed(added), *order):
+        row = rows[identifier]
+        if not row.meta.get("shared_job"):
+            prototype_count += 1
+            if prototype_count > 50:
+                continue
+        visible.append(row)
+    state.jobs_view[:] = visible
+
+
 def inspect_model_jobs():
     jobs = ensure_model_jobs()
-    for view in jobs.inspect():
-        if not any(existing is view for existing in state.jobs_view):
-            state.jobs_view.insert(0, view)
+    show_job_views(jobs.inspect())
     return jobs
 
 
@@ -307,8 +328,7 @@ def control_model_job(context_id, request_id, expected_revision, action):
         raise ScenarioError(0, "The selected job context changed; list local jobs again")
     task = jobs.control(request_id, expected_revision, action)
     view = jobs.views[request_id]
-    if not any(existing is view for existing in state.jobs_view):
-        state.jobs_view.insert(0, view)
+    show_job_views((view,))
     return jobs, task
 
 
@@ -382,8 +402,7 @@ def apply_saved_result(context_id, application_id):
         raise ScenarioError(0, "The selected job context changed; list local jobs again")
     request_id, task = jobs.apply_saved_result(application_id)
     view = jobs.views[request_id]
-    if not any(existing is view for existing in state.jobs_view):
-        state.jobs_view.insert(0, view)
+    show_job_views((view,))
     return jobs, request_id, task
 
 
@@ -392,9 +411,7 @@ def apply_saved_images(context_id, application_id):
     if context_id != state.job_context_id:
         raise ScenarioError(0, "The selected job context changed; review the import again")
     request_id, task = jobs.apply_saved_images(application_id)
-    for view in jobs.views.values():
-        if not any(existing is view for existing in state.jobs_view):
-            state.jobs_view.insert(0, view)
+    show_job_views(jobs.views.values())
     return jobs, request_id, task
 
 

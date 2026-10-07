@@ -14,7 +14,7 @@ from mathutils import Matrix
 from ..core.api.catalog import GENERATION_LANES, LANE_KIND
 from ..core.api.errors import ScenarioError
 from ..core.jobs.records import JobRecord
-from ..core.jobs.store import JobOrigin, JobState, LocalApplicationState, StoredJob
+from ..core.jobs.store import JobOrigin, JobState, LocalApplicationState, StoredJob, _identity
 from .job_session import (
     ImageResultUncertain,
     MaterialResultUncertain,
@@ -57,6 +57,17 @@ class ModelQuote:
     lane: str = "image"
     quote: object = field(default=None, repr=False)
     used: bool = False
+
+
+@dataclass
+class CloudRecovery:
+    job_id: str
+    model_id: str
+    task: object = field(repr=False)
+    owner: object = field(repr=False)
+    record: StoredJob | None = None
+    error: str = ""
+    pending: bool = True
 
 
 @dataclass(frozen=True)
@@ -158,6 +169,61 @@ class ModelJobs:
         self._materials = {}
         self._mesh_destinations = {}
         self._mesh_edits = {}
+        self.cloud_reads = {}
+        self._cloud_read_owner = object()
+
+    def recover_cloud(self, job_id, model_id, scene):
+        """Save one selected cloud job for explicit recovery, never automatic import."""
+        _identity(job_id)
+        _identity(model_id)
+        self._poll_cloud_reads()
+        existing = self.cloud_reads.get(job_id)
+        if existing is not None and existing.pending:
+            if existing.model_id != model_id:
+                raise ScenarioError(0, "This cloud job already has a different model read pending")
+            return existing
+        if len(self.cloud_reads) >= 16 and job_id not in self.cloud_reads:
+            for key, item in tuple(self.cloud_reads.items()):
+                if not item.pending:
+                    del self.cloud_reads[key]
+                    break
+            else:
+                raise ScenarioError(0, "Wait for a cloud recovery read to finish")
+        task = self.session.adopt_cloud_job(job_id, expected_model_id=model_id, scene=scene)
+        item = CloudRecovery(job_id, model_id, task, self._cloud_read_owner)
+        self.cloud_reads[job_id] = item
+        return item
+
+    def _poll_cloud_reads(self):
+        if not self.session.active:
+            return
+        for item in self.cloud_reads.values():
+            if not item.pending or not item.task.done():
+                continue
+            item.pending = False
+            try:
+                completions = self.session.drain(task=item.task)
+                if not completions:
+                    raise RuntimeError("Missing cloud read completion")
+                record = self.session.deliver_cloud_read(completions[0])
+                item.record = record
+                self._view(record)
+            except Exception:
+                item.error = "Could not read this cloud job; inspect saved jobs or retry the read"
+
+    def finish_cloud(self, item):
+        # Completed results can leave the bounded UI cache while a deferred MCP
+        # caller still owns its handle. Cache membership is not request ownership.
+        if (
+            not self.session.active
+            or not isinstance(item, CloudRecovery)
+            or item.owner is not self._cloud_read_owner
+        ):
+            raise ScenarioError(0, "The cloud recovery context changed; inspect saved jobs")
+        self._poll_cloud_reads()
+        if item.pending or item.error:
+            raise ScenarioError(0, item.error or "The cloud job read is still running")
+        return item.record
 
     def quote(self, scene, model_id, body, *, lane="image"):
         if lane not in GENERATION_LANES:
@@ -244,6 +310,7 @@ class ModelJobs:
         self._prune_worlds()
         if not self.session.active:
             return
+        self._poll_cloud_reads()
         for request_id, task in tuple(self.submissions.items()):
             if task.done():
                 outcomes = self.session.drain(task=task)

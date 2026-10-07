@@ -609,18 +609,11 @@ def draw_history(layout, context, shown_ids=()):
         for view in runtime.state.jobs_view
         if view.job_id and view.meta.get("shared_job")
     }
-    local_by_job = {}
-    manager = runtime.state.manager
-    if manager is not None:
-        local_by_job = {r.job_id: r for r in manager.registry.all() if r.job_id and r.files}
+    owner = runtime.state.model_jobs
     for entry in runtime.state.history[:24]:
         if entry.job_id in shown_ids:
             continue  # already listed among this session's results
         saved = bool(entry.local_request_ids) or entry.job_id in saved_ids
-        local = None if saved else local_by_job.get(entry.job_id)
-        if local is not None:
-            draw_result(layout, local)  # same entry, same actions as a session result
-            continue
         box = layout.box()
         header = box.row()
         header.label(
@@ -634,16 +627,22 @@ def draw_history(layout, context, shown_ids=()):
                 "scenario.copy_text", text=entry.asset_ids[0], icon="COPYDOWN"
             )
             op.text, op.what = entry.asset_ids[0], "asset id"
-        if not saved and entry.local_files and entry.kind == "image":
-            icon_id = thumbnail(entry.local_files[0])
-            if icon_id:
-                box.template_icon(icon_value=icon_id, scale=3.0)
         if saved:
             box.operator(
                 "scenario.inspect_saved_jobs", text="Inspect saved jobs", icon="FILE_REFRESH"
             )
         elif entry.is_success:
-            op = box.operator("scenario.import_result", text="Download and open", icon="IMPORT")
+            read = owner.cloud_reads.get(entry.job_id) if owner else None
+            pending = read is not None and read.pending
+            if read is not None and read.error:
+                box.label(text="Cloud read failed; inspect saved jobs or retry", icon="ERROR")
+            row = box.row()
+            row.enabled = not pending and bool(entry.model_id)
+            op = row.operator(
+                "scenario.import_result",
+                text="Reading cloud job..." if pending else "Save for recovery",
+                icon="FILE_REFRESH",
+            )
             op.job_id, op.kind, op.model_id, op.prompt = (
                 entry.job_id,
                 entry.kind,
@@ -824,7 +823,8 @@ class SCENARIO_PT_generations(bpy.types.Panel):
             if not rec.is_terminal:
                 continue
             draw_result(layout, rec)
-            shown_ids.add(rec.job_id)
+            if rec.meta.get("shared_job"):
+                shown_ids.add(rec.job_id)
             shown += 1
             if shown >= 12:
                 break

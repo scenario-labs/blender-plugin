@@ -122,10 +122,7 @@ def _on_estimate(result):
 
 
 def _on_job(name, rec):
-    view = runtime.state.jobs_view
-    if not any(r.local_id == rec.local_id for r in view):
-        view.insert(0, rec)
-    del view[50:]
+    runtime.show_job_views((rec,))
     if name == "job_done":
         from . import render_lanes
 

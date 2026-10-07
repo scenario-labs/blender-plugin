@@ -29,7 +29,8 @@ but does not import prototype records or refresh remote jobs.
 Rows identify `source: generation` or `cloud`. A record created through the
 [cloud adoption foundation](JOB_COORDINATOR.md#adopting-a-completed-cloud-job)
 has `cu_cost_exact: null`, because no local quote exists. `job_status` preserves
-the same distinction. There is not yet an MCP tool for adopting a cloud job.
+the same distinction. Use `recover_cloud_job` to save a completed cloud model
+job before explicit download and result approval.
 `cancel_prepared_job` cancels only an unsubmitted durable intent, using the context
 token and revision from inspection. A reset, file load or credential switch invalidates that
 token. Claimed or uncertain submissions require reconciliation, never blind retry.
@@ -290,7 +291,8 @@ Do not edit this block by hand; run `make mcp-docs`. An asterisk marks a require
 | `generate` | Submit a generation that spends the user's credits. Every model lane uses durable shared jobs. | `lane`*: string (enum: see tools/list)<br>`quote_id`*: string<br>`approved_cost`*: string<br>`model_id`*: string<br>`parameters`: object; Model parameters; file parameters take Scenario asset ids | spends credits |
 | `job_status` | Read one local generation's status and cost without spending credits. Active model jobs advance through shared remote polling and verified downloads; restarted jobs remain inspection-only. | `job_id`: string; Scenario job id (job_...) or the local_id returned by generate<br>`id`: string; Same as job_id, kept for compatibility | read-only annotation |
 | `wait_for_job` | Wait for a generation while Blender remains responsive. Shared jobs return when delivery finishes, pauses for review, or the wait expires. Restarted jobs remain inspection-only until explicitly resumed. | `job_id`: string; Scenario job id (job_...) or the local_id returned by generate<br>`id`: string; Same as job_id, kept for compatibility<br>`timeout`: number | read-only annotation |
-| `import_result` | Apply a downloaded prototype generation again to the current Blender scene and selection. | `job_id`: string; Scenario job id (job_...) or the local_id returned by generate<br>`id`: string; Same as job_id, kept for compatibility | - |
+| `recover_cloud_job` | Read one completed cloud model job into the selected credential-scoped saved jobs. | `job_id`*: string<br>`model_id`*: string | - |
+| `import_result` | Reject direct cached-file import and explain the required saved-result approval flow. | `job_id`: string; Scenario job id (job_...) or the local_id returned by generate<br>`id`: string; Same as job_id, kept for compatibility | - |
 | `capture_reference` | Capture a viewport/camera still or clip, or export selected meshes, and upload the snapshot as a Scenario reference asset. | `source`: string (['VIEWPORT', 'CAMERA', 'VIEWPORT_CLIP', 'CAMERA_CLIP', 'MESH']) | - |
 | `list_generations` | List recent cloud generations using this Blender runtime's loaded history. | `limit`: integer<br>`refresh`: boolean | read-only annotation |
 <!-- tools:end -->
@@ -362,7 +364,7 @@ behavior interchangeable. Remote names below were checked against the
 | Reference upload | `upload_reference(path, kind)` or `capture_reference(source)`, then `reference_upload_status(context_id, reference_id)` until imported | `upload_asset`, `upload_asset_complete` for an existing file |
 | Saved upload recovery | `list_reference_uploads`, then `recover_reference_upload(context_id, request_id, expected_revision, action)` | Known-upload status retrieval; local cancellation/cleanup have no platform equivalent |
 | History | `list_generations(limit)` | `jobs_list` |
-| Apply an existing result | `import_result(job_id or id)` | No Blender scene access |
+| Recover a cloud result | `recover_cloud_job`, then explicit saved-result approval | No Blender scene access |
 | Prompt assistance | `estimate_prompt(lane, action)` then `approve_prompt(quote_id, approved_cost)`; same native prompt field and exact-price approval | `prompt_spark` for generation; SDK `generate.translate` for English translation |
 | Saved prompt text | `read_prompt_result(context_id, request_id, expected_revision)` | `job_get` and `asset_get`; read-only recovery without Blender mutation |
 | Inspect scene | `scene_summary`, `object_detail`, `datablocks_summary`, `blender_api_help` | Local only |
@@ -441,10 +443,10 @@ or authorize scene application. Recovered display records use generic
 the explicit image import approval above, without inferring a material or World
 assignment from their media type. Supported video/audio uses the explicit
 asset and scene/frame approval above. Embedded GLBs use the corresponding
-scene/cursor approval; in-place editing is separate. `import_result` accepts prototype records only;
-shared jobs reject it with guidance for explicit saved-result application.
-Import requires complete selected credentials so the scoped store can be checked
-before dispatch. Read-only inspection of a downloaded completed prototype result
+scene/cursor approval; in-place editing is separate. `import_result` rejects
+direct cached-file import, including prototype records, with guidance for scoped
+recovery and explicit destination approval. It requires complete selected
+credentials to inspect the saved store. Read-only inspection of a completed prototype result
 can still use the cold local registry without credentials or creating a manager
 that resumes unrelated pending jobs. Non-terminal prototype lookups
 still use the manager-owned record so active waits observe its progress.
@@ -585,14 +587,24 @@ promise of native Undo for direct tool calls.
 ## Cloud history and scoped saved results
 
 `list_generations` returns `local_request_ids` for cloud rows matched to the
-selected credential-bound store. Such rows expose no legacy `local_files`; use
+selected credential-bound store. All cloud rows expose empty `local_files`; use
 `list_local_jobs` and the returned request identity for current status/revision
 and explicit result preparation/approval. Matching is refreshed even when the
 cloud page was loaded before a local remote-job acknowledgement.
 
 `job_status`, `wait_for_job` and the old `import_result` lookup prefer a matching
 scoped record to an old unscoped cache. `import_result` rejects direct application
-of saved jobs. Ambiguous remote IDs require a local request ID, and a failed
-store read never falls back to cached import. Cold prototype-only local reads
-retain their existing behavior; this is not migration or adoption of arbitrary
-cloud jobs.
+of both saved jobs and prototype cache entries. Ambiguous remote IDs require a
+local request ID, and a failed store read never falls back to cached import.
+Cold prototype-only status reads retain their existing behavior; no prototype
+registry migration is performed.
+
+For an unsaved successful model row, call `recover_cloud_job(job_id, model_id)`.
+The shared SDK read verifies the current remote job/model and saves a scoped
+cloud result. Pending UI/MCP reads for that job/model share one worker. Repeated
+reads preserve the existing intent, result receipts and application history,
+including after restart. The response returns context, request ID and revision.
+Read failures may be explicitly retried; this never retries generation.
+Use `recover_local_job(action: resume)` to download, then prepare and approve the
+result destination. The recovery read does not download files or mutate a scene,
+and it rejects delivery into a changed credential context.

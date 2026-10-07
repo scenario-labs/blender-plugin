@@ -32,15 +32,14 @@ class McpContractTests(unittest.TestCase):
                         self.assertEqual(result["local_id"], rec.local_id)
                         self.assertEqual(result["job_id"], rec.job_id)
                         self.assertEqual(self.tools.wait_for_job(args)["status"], "success")
-                        # Resolving the alias succeeds before the no-files guard.
-                        with self.assertRaisesRegex(ValueError, "no downloaded files"):
+                        with self.assertRaisesRegex(ValueError, "recover_cloud_job"):
                             self.tools.import_result(args)
             self.assertEqual(
                 self.tools.job_status({"job_id": rec.job_id, "id": "missing"})["local_id"],
                 rec.local_id,
             )
 
-    def test_import_alias_dispatches_the_same_tracked_result(self):
+    def test_import_alias_rejects_cached_prototype_files_without_dispatch(self):
         records = submodule("core.jobs.records")
         handlers = submodule("blender.handlers")
         with isolated_manager() as manager, patch.object(handlers, "dispatch") as dispatch:
@@ -51,10 +50,9 @@ class McpContractTests(unittest.TestCase):
             rec.files = ["synthetic-image.png"]
             manager.registry.add(rec)
             for args in ({"job_id": rec.job_id}, {"id": rec.local_id}):
-                result = self.tools.import_result(args)
-                self.assertEqual(result, {"applied": "image", "files": rec.files})
-                dispatch.assert_called_with(("job_done", rec))
-            self.assertEqual(dispatch.call_count, 2)
+                with self.assertRaisesRegex(ValueError, "cached prototype files"):
+                    self.tools.import_result(args)
+            dispatch.assert_not_called()
 
     def test_cold_local_reads_need_no_credentials_but_import_requires_scope(self):
         runtime = submodule("blender.runtime")
@@ -165,8 +163,13 @@ class McpContractTests(unittest.TestCase):
             )
             with urllib.request.urlopen(request, timeout=5) as response:
                 tools = json.load(response)["result"]["tools"]
-            self.assertEqual(len(tools), 37)
-            for name in ("estimate_blockout", "approve_blockout", "read_model_text"):
+            self.assertEqual(len(tools), 38)
+            for name in (
+                "estimate_blockout",
+                "approve_blockout",
+                "read_model_text",
+                "recover_cloud_job",
+            ):
                 self.assertIn(name, {tool["name"] for tool in tools})
             for tool in tools:
                 self.assertIn("Args:", tool["description"])

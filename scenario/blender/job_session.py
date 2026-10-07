@@ -126,6 +126,7 @@ class JobCompletion:
     origin: object
     result: object = field(default=None, repr=False)
     error: Exception | None = field(default=None, repr=False)
+    cloud_read: bool = False
 
 
 @dataclass(frozen=True)
@@ -511,6 +512,7 @@ class JobSession:
             if (selected is not None and task is not selected) or not task.done():
                 continue
             self._pending.remove((task, origin))
+            cloud_read = task in self._cloud_reads
             try:
                 result = task.result()
                 record = (
@@ -520,13 +522,13 @@ class JobSession:
                     )
                     else result
                 )
-                if task in self._cloud_reads:
+                if cloud_read:
                     identifier, model_id = self._cloud_reads[task]
                     # A repeat read preserves the saved job's original origin.
-                    # Delivery belongs to this read's captured scene; applying
-                    # the saved result still requires its own approval/claim.
+                    # Metadata delivery needs the reader's active session, not
+                    # its scene; application still needs destination approval.
                     matches = (
-                        isinstance(record, StoredJob)
+                        isinstance(result, StoredJob)
                         and record.intent.scope == self.scope
                         and record.remote_job_id == identifier
                         and record.intent.operation == "model"
@@ -539,15 +541,29 @@ class JobSession:
                 if not matches:
                     raise OriginUnavailable("Worker returned a different job origin or scope")
             except Exception as exc:
-                completion = JobCompletion(origin, error=exc)
+                completion = JobCompletion(origin, error=exc, cloud_read=cloud_read)
             else:
-                completion = JobCompletion(origin, result=result)
+                completion = JobCompletion(origin, result=result, cloud_read=cloud_read)
             finally:
                 self._cloud_reads.pop(task, None)
                 self._cleanup_upload_capture(task)
             self._issued[id(completion)] = completion
             completions.append(completion)
         return tuple(completions)
+
+    def deliver_cloud_read(self, completion):
+        """Consume owned cloud metadata without granting any scene application."""
+        _main_thread()
+        if (
+            not self._active
+            or self._issued.get(id(completion)) is not completion
+            or not completion.cloud_read
+        ):
+            raise OriginUnavailable("Use an unconsumed cloud read from this active session")
+        del self._issued[id(completion)]
+        if completion.error is not None:
+            raise completion.error
+        return completion.result
 
     def _resolve(self, origin):
         if not self._active or not self._origins.current(origin):

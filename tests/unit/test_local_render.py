@@ -10,11 +10,33 @@ import sys
 import threading
 import time
 from dataclasses import replace
-from pathlib import Path
+from pathlib import Path, PurePosixPath, PureWindowsPath
 
 import pytest
 
 from scenario.core.jobs import local_render as render
+
+
+@pytest.mark.parametrize(
+    "source,expected",
+    [
+        (PureWindowsPath(r"\\?\C:\private\snapshot.blend"), r"C:\private\snapshot.blend"),
+        (
+            PureWindowsPath(r"\\?\UNC\server\share\snapshot.blend"),
+            r"\\server\share\snapshot.blend",
+        ),
+        (PureWindowsPath(r"C:\private\snapshot.blend"), r"C:\private\snapshot.blend"),
+        (PurePosixPath("/private/snapshot.blend"), "/private/snapshot.blend"),
+    ],
+)
+def test_blender_paths_preserve_drive_unc_and_posix_identity(source, expected):
+    assert render.blender_path(source) == expected
+
+
+@pytest.mark.parametrize("part", ["a" * 256, "\U0001f3ac" * 128])
+def test_blender_paths_reject_windows_overflow_in_utf16_units(part):
+    with pytest.raises(render.LocalRenderError, match="shorter absolute paths"):
+        render.blender_path(PureWindowsPath("C:/") / part)
 
 
 @pytest.fixture

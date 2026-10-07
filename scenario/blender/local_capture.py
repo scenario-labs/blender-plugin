@@ -14,7 +14,7 @@ from pathlib import Path
 
 import bpy
 
-from ..core.jobs.local_render import RenderSpec, digest, media_tools
+from ..core.jobs.local_render import RenderSpec, blender_path, digest, media_tools
 from ..core.jobs.transfers import _root
 
 
@@ -69,7 +69,7 @@ def snapshot(
     previous = bpy.data.filepath
     try:
         path = private / "snapshot.blend"
-        bpy.data.libraries.write(str(path), {scene}, path_remap="ABSOLUTE", compress=True)
+        bpy.data.libraries.write(blender_path(path), {scene}, path_remap="ABSOLUTE", compress=True)
         os.chmod(path, 0o600)
         if bpy.data.filepath != previous:
             raise RuntimeError("Capture unexpectedly changed the working file")

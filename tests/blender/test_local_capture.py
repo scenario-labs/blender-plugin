@@ -164,7 +164,7 @@ output.write_bytes(bytes.fromhex("89504e470d0a1a0a0000000d49484452")
         self.check_snapshot_child_handoff(self.directory)
 
     @unittest.skipUnless(os.name == "nt", "Windows extended-path regression")
-    def test_deep_windows_snapshot_is_loaded_by_the_owned_blender_child(self):
+    def test_deep_windows_capture_fails_before_export_with_clear_error(self):
         # The owner also cleans up through the extended namespace.
         with tempfile.TemporaryDirectory(dir=self.capture._root(self.directory)) as directory:
             root = Path(directory)
@@ -172,7 +172,23 @@ output.write_bytes(bytes.fromhex("89504e470d0a1a0a0000000d49484452")
                 root /= component
                 root.mkdir()
             self.assertGreater(len(str(root)), 260)
-            self.check_snapshot_child_handoff(root)
+            export = Mock()
+            native = SimpleNamespace(
+                app=bpy.app,
+                context=bpy.context,
+                data=SimpleNamespace(
+                    scenes=bpy.data.scenes,
+                    filepath=bpy.data.filepath,
+                    libraries=SimpleNamespace(write=export),
+                ),
+            )
+            with patch.object(self.capture, "bpy", native):
+                with self.assertRaisesRegex(self.render.LocalRenderError, "shorter absolute paths"):
+                    self.capture.snapshot(
+                        self.scene, root, frame_start=5, frame_end=5, kind="STILL"
+                    )
+            export.assert_not_called()
+            self.assertEqual(list(root.iterdir()), [])
 
     def test_worker_overrides_snapshot_output_flags_without_changing_source(self):
         source = self.scene

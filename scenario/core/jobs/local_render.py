@@ -18,7 +18,7 @@ import threading
 import time
 from dataclasses import dataclass
 from fractions import Fraction
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 
 from .upload_sources import _open
 
@@ -29,6 +29,24 @@ class LocalRenderError(RuntimeError):
 
 class RenderCancelled(LocalRenderError):
     pass
+
+
+def blender_path(path):
+    """Keep Python's extended storage namespace out of Blender's path boundary."""
+    value = str(path)
+    if isinstance(path, PureWindowsPath):
+        if value.startswith("\\\\?\\UNC\\"):
+            value = "\\\\" + value[8:]
+        elif value.startswith("\\\\?\\"):
+            value = value[4:]
+        # Blender can write a deep temporary blend but fail to finalize it.
+        # Check the ordinary Win32 path, including room for its '@' suffix and
+        # terminating NUL, before asking Blender to export or open anything.
+        if not PureWindowsPath(value).is_absolute() or len(value.encode("utf-16-le")) // 2 > 258:
+            raise LocalRenderError(
+                "Use shorter absolute paths for local Blender capture on Windows"
+            )
+    return value
 
 
 def digest(path, *, maximum=1024**3):
@@ -161,10 +179,12 @@ def _environment(profile, temporary):
         and key.upper() not in {"HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "NO_PROXY"}
     }
     env.update(
-        BLENDER_USER_RESOURCES=str(profile), PYTHONNOUSERSITE="1", PYTHONDONTWRITEBYTECODE="1"
+        BLENDER_USER_RESOURCES=blender_path(profile),
+        PYTHONNOUSERSITE="1",
+        PYTHONDONTWRITEBYTECODE="1",
     )
     for key in ("TMPDIR", "TMP", "TEMP"):
-        env[key] = str(temporary)
+        env[key] = blender_path(temporary)
     return env
 
 
@@ -181,7 +201,7 @@ def _run(command, *, log, env, timeout, cancel, stdout=None):
                 stdout=output,
                 stderr=errors if stdout is not None else subprocess.STDOUT,
                 env=env,
-                cwd=log.parent,
+                cwd=blender_path(log.parent),
             )
             try:
                 deadline = time.monotonic() + timeout
@@ -229,6 +249,10 @@ def render(spec, *, cancel=None):
     cancel = cancel if cancel is not None else threading.Event()
     tools = media_tools() if spec.kind == "VIDEO" else None
     snapshot = spec.directory / "snapshot.blend"
+    snapshot_argument = blender_path(snapshot)
+    binary_argument = blender_path(spec.binary)
+    worker_argument = blender_path(spec.worker)
+    parameters_argument = blender_path(spec.directory / "started.json")
     if spec.directory.is_symlink() or not spec.directory.is_dir():
         raise LocalRenderError("The owned capture directory is unavailable")
     if digest(snapshot) != spec.snapshot_sha256:
@@ -248,18 +272,18 @@ def render(spec, *, cancel=None):
         env = _environment(profile, temporary)
         _run(
             [
-                str(spec.binary),
+                binary_argument,
                 "--offline-mode",
                 "--factory-startup",
                 "--disable-autoexec",
                 "--background",
-                str(snapshot),
+                snapshot_argument,
                 "--python-exit-code",
                 "1",
                 "--python",
-                str(spec.worker),
+                worker_argument,
                 "--",
-                str(spec.directory / "started.json"),
+                parameters_argument,
             ],
             log=spec.directory / "render.log",
             env=env,

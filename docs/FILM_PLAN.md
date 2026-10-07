@@ -409,6 +409,13 @@ explicit still frame or inclusive video range. The snapshot is hashed before
 handoff; external resources retain absolute references, so their bytes are not
 frozen by exporting the blend file.
 
+On Windows, Python storage retains its extended-length namespace, while paths
+passed to Blender use ordinary drive or UNC syntax. Capture paths must fit the
+Windows `MAX_PATH` limit, including Blender's temporary export suffix and the
+terminating NUL. An overlong snapshot path fails before export with a request
+for shorter paths, and removes its new staging directory. Merely stripping the
+namespace does not make deep paths compatible with Blender.
+
 [`local_render.render`](../scenario/core/jobs/local_render.py) is a blocking,
 bpy-free worker primitive. It verifies the snapshot and admits that capture
 directory once, then runs the bundled

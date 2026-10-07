@@ -78,7 +78,7 @@ Every connection rechecks that the database is a regular nonsymlink file,
 including after a competing creation. The parent must remain trusted: this check
 and SQLite's path open are separate operations, not an atomic no-follow open.
 
-The database has an application ID and schema version **8**. SQLite transactions
+The database has an application ID and schema version **9**. SQLite transactions
 with `synchronous=FULL` commit the whole change or report `StoreError`; no cached
 in-memory result is reported as saved before commit succeeds. `BEGIN IMMEDIATE`
 serializes writers across threads/processes. Each operation owns a connection,
@@ -94,7 +94,7 @@ another request or resend. Intent fields and a known remote job ID cannot change
 Foreign databases, unsupported versions, malformed records and mismatched stored
 identities/revisions raise errors. They are preserved for explicit recovery,
 never silently replaced with empty history. An already-open store also fails if
-its database disappears. Previous shared schemas 2 through 7 upgrade in one
+its database disappears. Previous shared schemas 2 through 8 upgrade in one
 transaction that validates every scope, record, identity and revision. A corrupt
 row or failed commit preserves all previous rows and the old version. This is
 not a prototype import; version 1 and foreign databases remain rejected. Schema 2/3
@@ -105,7 +105,7 @@ Schemas before 5 receive an empty local-application history; schema 5 preserves
 its existing claims, including unfinished applications. Schemas before 6
 receive empty mesh input bindings; schema 6 preserves its captured mesh sources.
 Schema 7 cloud results remain cloud records without synthetic spend or Film
-bindings. Older extension builds reject schema 8; stop older Blender processes before
+bindings. Older extension builds reject schema 9; stop older Blender processes before
 upgrading and do not expect an older build to open the upgraded store.
 
 ## Explicit cloud result records
@@ -354,3 +354,37 @@ results and matching task/dependency digests before reference reuse. Low-level
 store calls trust the coordinator's binding; a caller-supplied digest is not
 proof of recipe validation or permission. Existing submission, transfer and
 application states remain unchanged.
+
+
+## Film upload associations
+
+Schema 9 adds a `film_uploads` table in the same job database. It associates a
+Film production/task binding with an existing imported upload's local request ID,
+observed revision, remote asset ID, upload kind and source SHA256. The selected
+scope is explicit. This is local reference metadata, with no upload state machine,
+worker, remote request, path, prompt, signed URL or source bytes. The existing
+upload database and its mutation/recovery rules remain unchanged.
+
+`bind_film_upload` saves this immutable association inside the same immediate
+transaction used by model-task reservation. Upload and model tasks share the
+scope/production/task namespace: competing writers cannot assign both meanings
+to one name. A conflicting source, revision or task digest requires a new task
+name. Repeating the same association returns the original record unchanged,
+including its recipe digest; appending unrelated recipe tasks can therefore
+retain the original source. A lost write acknowledgement permits inspecting or
+repeating this local association, never replaying an upload.
+
+`film_upload` inspects one selected-scope association. Malformed fields, mismatched
+SQL/record identities and conflicting model/upload records fail closed. The store
+trusts the coordinator to supply verified evidence. Before binding and before
+quoting a dependent task, the [Film command](FILM_PLAN.md#saved-upload-tasks) reads
+the original upload in the selected scope and requires the exact imported state,
+revision, source identity, kind and asset. Missing or uncertain uploads are not
+adopted. Source cleanup may remove verified staging bytes without changing the
+imported record or its remote asset association.
+
+Shared schemas 2–8 upgrade in one transaction: all jobs are validated and preserved,
+including schema-8 Film model reservations, and the new table starts empty. A
+corrupt row or failed commit preserves the old version and data. No associations
+are guessed from asset names, request similarity or old prototype files. Older
+builds reject schema 9; stop old extension processes before upgrading.

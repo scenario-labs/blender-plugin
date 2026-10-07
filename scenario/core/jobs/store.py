@@ -26,7 +26,7 @@ from .transfers import DownloadedResult, TransferError, _root, validate_result_n
 if TYPE_CHECKING:
     from .mesh_source import MeshSource
 
-_VERSION = 8
+_VERSION = 9
 _APPLICATION_ID = 0x53434A42
 _FILM_TASK_FILTER = "json_valid(record) AND json_extract(record, '$.intent.film_task') IS NOT NULL"
 
@@ -175,6 +175,67 @@ class FilmTaskBinding:
         for value in (self.recipe_sha256, self.task_sha256):
             if not isinstance(value, str) or not re.fullmatch(r"[0-9a-f]{64}", value):
                 raise ValueError("Film recipe and task require SHA-256 identities")
+
+
+@dataclass(frozen=True)
+class FilmUploadReference:
+    """Immutable association to an already imported scoped upload, without URLs."""
+
+    scope: JobScope
+    film_task: FilmTaskBinding
+    upload_request_id: str
+    upload_revision: int
+    asset_id: str
+    file_sha256: str
+    kind: str
+
+    def __post_init__(self):
+        if (
+            not isinstance(self.scope, JobScope)
+            or not isinstance(self.film_task, FilmTaskBinding)
+            or type(self.upload_revision) is not int
+            or self.upload_revision < 0
+            or not isinstance(self.kind, str)
+            or self.kind not in {"3d", "asset", "audio", "avatar", "image", "text", "video"}
+            or not isinstance(self.file_sha256, str)
+            or not re.fullmatch(r"[0-9a-f]{64}", self.file_sha256)
+        ):
+            raise ValueError("Use a scoped imported asset upload and its exact source identity")
+        _identity(self.upload_request_id)
+        _identity(self.asset_id)
+
+
+def _decode_film_upload(raw, scope):
+    try:
+        value = json.loads(raw)
+        if not isinstance(value, dict) or set(value) != set(
+            FilmUploadReference.__dataclass_fields__
+        ):
+            raise ValueError
+        for fields, cls in ((value["scope"], JobScope), (value["film_task"], FilmTaskBinding)):
+            if not isinstance(fields, dict) or set(fields) != set(cls.__dataclass_fields__):
+                raise ValueError
+        reference = FilmUploadReference(
+            **{
+                **value,
+                "scope": JobScope(**value["scope"]),
+                "film_task": FilmTaskBinding(**value["film_task"]),
+            }
+        )
+        if reference.scope != scope:
+            raise ValueError
+        return reference
+    except (ValueError, TypeError, KeyError, AttributeError):
+        raise StoreError(
+            "Stored Film upload is invalid; preserve its database for recovery"
+        ) from None
+
+
+def _create_film_uploads(connection):
+    connection.execute(
+        "CREATE TABLE film_uploads (scope TEXT NOT NULL, production_id TEXT NOT NULL, "
+        "task_id TEXT NOT NULL, record TEXT NOT NULL, PRIMARY KEY (scope, production_id, task_id))"
+    )
 
 
 @dataclass(frozen=True)
@@ -673,9 +734,10 @@ class JobStore:
                         "revision INTEGER NOT NULL, record TEXT NOT NULL, "
                         "PRIMARY KEY (scope, request_id))"
                     )
+                    _create_film_uploads(connection)
                     connection.execute(f"PRAGMA application_id = {_APPLICATION_ID}")
                     connection.execute(f"PRAGMA user_version = {_VERSION}")
-                elif version in {2, 3, 4, 5, 6, 7} and application == _APPLICATION_ID:
+                elif version in {2, 3, 4, 5, 6, 7, 8} and application == _APPLICATION_ID:
                     self._upgrade_previous(connection, version)
                 else:
                     self._check_version(connection)
@@ -696,6 +758,7 @@ class JobStore:
     @staticmethod
     def _upgrade_previous(connection, version):
         """Upgrade supported shared stores atomically without guessing missing roles."""
+        film_tasks = set()
         for key, request_id, revision, raw in connection.execute(
             "SELECT scope, request_id, revision, record FROM jobs"
         ).fetchall():
@@ -713,10 +776,17 @@ class JobStore:
                 or revision != record.revision
             ):
                 raise StoreError("Stored job identity or revision is inconsistent")
+            if record.intent.film_task is not None:
+                binding = record.intent.film_task
+                identity = (key, binding.production_id, binding.task_id)
+                if identity in film_tasks:
+                    raise StoreError("Film task has multiple saved jobs; preserve storage")
+                film_tasks.add(identity)
             connection.execute(
                 "UPDATE jobs SET record=? WHERE scope=? AND request_id=?",
                 (_json(asdict(record)), key, request_id),
             )
+        _create_film_uploads(connection)
         connection.execute(f"PRAGMA user_version = {_VERSION}")
 
     @contextmanager
@@ -840,7 +910,13 @@ class JobStore:
         _identity(production_id)
         _identity(task_id)
         with self._connection() as connection:
-            return self._film_job(connection, production_id, task_id)
+            record = self._film_job(connection, production_id, task_id)
+            if (
+                record is not None
+                and self._film_upload(connection, production_id, task_id) is not None
+            ):
+                raise StoreError("Film task has conflicting saved identities; inspect storage")
+            return record
 
     def _film_job(self, connection, production_id, task_id):
         rows = connection.execute(
@@ -853,6 +929,55 @@ class JobStore:
         if len(rows) > 1:
             raise StoreError("Film task matches multiple saved jobs; preserve them for recovery")
         return self._read(connection, rows[0][0]) if rows else None
+
+    def _film_upload(self, connection, production_id, task_id):
+        row = connection.execute(
+            "SELECT record FROM film_uploads WHERE scope=? AND production_id=? AND task_id=?",
+            (self._key, production_id, task_id),
+        ).fetchone()
+        if row is None:
+            return None
+        reference = _decode_film_upload(row[0], self.scope)
+        if (reference.film_task.production_id, reference.film_task.task_id) != (
+            production_id,
+            task_id,
+        ):
+            raise StoreError("Film upload identity is inconsistent; preserve storage")
+        return reference
+
+    def film_upload(self, production_id, task_id):
+        _identity(production_id)
+        _identity(task_id)
+        with self._connection() as connection:
+            reference = self._film_upload(connection, production_id, task_id)
+            if (
+                reference is not None
+                and self._film_job(connection, production_id, task_id) is not None
+            ):
+                raise StoreError("Film task has conflicting saved identities; inspect storage")
+            return reference
+
+    def bind_film_upload(self, reference: FilmUploadReference):
+        """Save verified imported-upload evidence supplied by the coordinator."""
+        if not isinstance(reference, FilmUploadReference) or reference.scope != self.scope:
+            raise ValueError("Film upload belongs to another scope")
+        binding = reference.film_task
+        with self._connection(write=True) as connection:
+            if self._film_job(connection, binding.production_id, binding.task_id) is not None:
+                raise StoreConflict("Film task already has a saved job; name a new upload task")
+            previous = self._film_upload(connection, binding.production_id, binding.task_id)
+            if previous is not None:
+                # Appending a new take changes the recipe, not this chosen source.
+                if replace(previous, film_task=binding) != reference or (
+                    previous.film_task.task_sha256 != binding.task_sha256
+                ):
+                    raise StoreConflict("Film upload task is already bound; name a new task")
+                return previous
+            connection.execute(
+                "INSERT INTO film_uploads VALUES (?, ?, ?, ?)",
+                (self._key, binding.production_id, binding.task_id, _json(asdict(reference))),
+            )
+        return reference
 
     def adopt_cloud_job(self, intent: CloudJobIntent, remote_job_id):
         """Save authoritative successful-job evidence supplied by the coordinator."""
@@ -891,9 +1016,10 @@ class JobStore:
         with self._connection(write=True) as connection:
             if self._read(connection, intent.request_id) is not None:
                 raise StoreConflict("Request identity already exists; do not resubmit")
-            if (
-                intent.film_task is not None
-                and self._film_job(
+            if intent.film_task is not None and (
+                self._film_job(connection, intent.film_task.production_id, intent.film_task.task_id)
+                is not None
+                or self._film_upload(
                     connection, intent.film_task.production_id, intent.film_task.task_id
                 )
                 is not None

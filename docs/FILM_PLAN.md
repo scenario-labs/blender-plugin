@@ -73,8 +73,8 @@ output. Missing tasks, invalid/negative/ambiguous indexes and foreign-scope
 observations fail. Asset identifiers are opaque and need no `asset_` prefix.
 
 The shared Film model-task command now constructs these observations from
-matching completed scoped model jobs, as described below. Upload-task binding
-remains separate integration work. The pure helper itself does not read storage
+matching completed scoped model jobs and explicitly associated imported uploads,
+as described below. The pure helper itself does not read storage
 or certify completion of a caller-supplied observation. Resolved parameters still
 need a fresh exact quote, explicit approval and a durable task/submission binding;
 resolution is not spending authorization. No separate Film runner, client or
@@ -113,7 +113,7 @@ other production, cloud-only record or foreign credential/project scope fails.
 Local download or Blender application is not required to reuse remote asset IDs;
 existing transfer/application failures do not erase a successful remote output.
 Literal asset IDs still pass through the selected SDK/model validation and remote
-permissions. Upload-task references are currently rejected explicitly.
+permissions. Upload-task references require the saved association described below.
 
 Recipe text and parameters are not persisted by this binding; the caller must
 retain/reload the recipe separately. Quotes are immutable snapshots. A future
@@ -121,11 +121,43 @@ view must invalidate its displayed quote when the recipe or production changes
 and pass the exact approved request to submission. No recipe field supplies
 spending approval, authorizes scene application or infers an API key's project.
 
+## Saved upload tasks
+
+`JobCoordinator.bind_film_upload` associates a recipe's upload task with an
+explicitly selected local upload request ID and observed revision. The upload must
+already be `imported` in the selected credential scope, with a valid asset ID.
+The command does not stage a file, send bytes, initialize/finalize an upload,
+refresh remote status or remove sources. Use the existing upload/recovery commands
+first. SDK model imports cannot supply asset references.
+
+The shared [job database](JOB_STORAGE.md#film-upload-associations) retains the
+association atomically with its task reservation. A model intent and an upload
+association cannot reserve the same scope/production/task name. Replacing the
+source or changing the task requires a new task name. Repeating the same local
+association returns the original record; a new recipe digest from appended tasks
+does not overwrite its history. Restart can inspect the association without any
+network call or upload replay.
+
+A dependent model quote resolves `$upload-task` or `$upload-task:0` only after
+checking the unchanged imported upload again. Pending, failed, uncertain, missing,
+stale-revision and foreign-scope uploads fail before estimation. The association
+retains the source SHA256, asset ID and kind and rejects a changed observation.
+Completed staging cleanup does not invalidate the remote asset; no local byte
+read is needed for reuse. Output indexes above zero fail for an upload's single
+asset. Existing model schema and service permissions still decide whether that
+asset is a valid input for a particular operation.
+
+`JobWorkers` snapshots recipes on the existing queue. `JobSession` captures the
+association caller's origin and rejects a changed scene or retired context at
+delivery. Repeating an association from another scene returns the same saved
+reference to the new reader without retargeting or applying it. No native Film
+picker or MCP Film tool invokes these commands yet.
+
 ## Remaining integration and evidence
 
 Next integration must expose these preparation/approval commands to native views
-and local MCP, retain the production identity when reopening a recipe, and bind
-upload tasks to the existing upload records. Scene construction, shot capture, media finishing,
+and local MCP, retain the production identity when reopening a recipe, and offer
+explicit selection/association of uploads from the existing upload workflow. Scene construction, shot capture, media finishing,
 provider-specific preparation and final export remain separate work. Keep useful
 source capabilities and tests as those paths are connected; do not describe this
 helper adoption as a completed Film workflow.
@@ -134,6 +166,10 @@ helper adoption as a completed Film workflow.
 reservations, committed-but-unacknowledged writes, uncertain submissions, scope
 isolation and transitive dependency changes. Native session tests cover installed
 Film quote/submission and changed-scene rejection.
+[Upload association tests](../tests/unit/test_film_uploads.py) exercise scope,
+imported-state checks, immutable source selection, competing model/upload
+reservations and cleanup/restart reuse; native tests verify quote resolution and
+late/repeated main-thread delivery.
 
 [Recipe tests](../tests/unit/test_film_plan.py) and
 [scene-plan tests](../tests/unit/test_film_scene_plan.py) cover source timing,

@@ -389,10 +389,11 @@ def legacy_store(path, version):
                 "UPDATE jobs SET record=? WHERE scope=? AND request_id=?",
                 (json.dumps(value), scope, request_id),
             )
+        connection.execute("DROP TABLE film_uploads")
         connection.execute(f"PRAGMA user_version={version}")
 
 
-@pytest.mark.parametrize("version", [2, 3, 4, 5, 6, 7])
+@pytest.mark.parametrize("version", [2, 3, 4, 5, 6, 7, 8])
 def test_shared_store_upgrade_preserves_all_scopes_states_and_receipts(tmp_path, intent, version):
     path = tmp_path / "jobs.sqlite3"
     expected = {}
@@ -424,11 +425,11 @@ def test_shared_store_upgrade_preserves_all_scopes_states_and_receipts(tmp_path,
     for scope, records in expected.items():
         assert JobStore(path, scope).records() == records
     with sqlite3.connect(path) as connection:
-        assert connection.execute("PRAGMA user_version").fetchone()[0] == 8
+        assert connection.execute("PRAGMA user_version").fetchone()[0] == 9
 
 
 @pytest.mark.parametrize("damage", ["commit", "scope", "revision", "record", "foreign", "v1"])
-@pytest.mark.parametrize("version", [2, 3, 4, 5, 6, 7])
+@pytest.mark.parametrize("version", [2, 3, 4, 5, 6, 7, 8])
 def test_shared_store_upgrade_failure_preserves_every_row_and_version(
     tmp_path, intent, monkeypatch, damage, version
 ):
@@ -1008,3 +1009,39 @@ def test_schema_seven_cloud_results_survive_upgrade(tmp_path, intent):
     assert upgraded.get(intent.request_id) == local
     assert upgraded.get("cloud") == cloud
     assert cloud.intent.film_task is None
+
+
+def test_schema_eight_preserves_uncertain_film_identity_and_adds_empty_uploads(tmp_path, intent):
+    from scenario.core.jobs.store import FilmTaskBinding
+
+    path = tmp_path / "jobs.sqlite3"
+    store = JobStore(path, intent.scope)
+    bound = replace(intent, film_task=FilmTaskBinding("production", "take", "a" * 64, "b" * 64))
+    row = advance(store, store.create(bound), JobState.SUBMITTING)
+    row = advance(store, row, JobState.UNCERTAIN)
+    legacy_store(path, 8)
+    reopened = JobStore(path, intent.scope)
+    assert reopened.film_job("production", "take") == row
+    assert reopened.film_upload("production", "take") is None
+    with pytest.raises(StoreConflict):
+        reopened.create(replace(bound, request_id="duplicate"))
+
+
+def test_schema_eight_ambiguous_film_jobs_roll_back_upgrade(tmp_path, intent):
+    from scenario.core.jobs.store import FilmTaskBinding
+
+    path = tmp_path / "jobs.sqlite3"
+    store = JobStore(path, intent.scope)
+    bound = replace(intent, film_task=FilmTaskBinding("production", "take", "a" * 64, "b" * 64))
+    row = store.create(bound)
+    duplicate = replace(row, intent=replace(bound, request_id="duplicate"))
+    with sqlite3.connect(path) as connection:
+        connection.execute(
+            "INSERT INTO jobs VALUES (?, ?, ?, ?)",
+            (store._key, "duplicate", 0, json.dumps(asdict(duplicate))),
+        )
+    legacy_store(path, 8)
+    before = path.read_bytes()
+    with pytest.raises(StoreError, match="multiple"):
+        JobStore(path, intent.scope)
+    assert path.read_bytes() == before

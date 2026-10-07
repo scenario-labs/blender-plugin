@@ -589,3 +589,19 @@ submission still recheck the selected upload's exact identity and revision.
 Operation-specific result application remains separate integration.
 Session target IDs are not authority to find an object by name after restart;
 reopened files still require explicit destination review.
+
+
+## Film task association
+
+The [Film shared command](FILM_PLAN.md#saved-upload-tasks) can associate an existing
+`imported` upload with an explicit production/task in the job database. It requires
+the selected upload scope and exact observed revision, then retains the asset,
+kind and source digest. A dependent Film quote rechecks this evidence locally.
+Pending or uncertain upload states cannot become references, and SDK model
+imports are not asset uploads.
+
+Association and idempotent reassociation send no SDK request, transfer bytes or
+read/delete source files. They do not relax initialization, part or completion
+claims. A finished staging cleanup retains the imported record, so the associated
+remote asset remains reusable. Native/MCP Film selection controls remain to be
+connected to these shared commands.

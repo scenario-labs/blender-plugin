@@ -20,6 +20,7 @@ from .results import ResultCommands, ResultError, VerifiedResults
 from .store import (
     CloudJobIntent,
     FilmTaskBinding,
+    FilmUploadReference,
     JobIntent,
     JobMeshSource,
     JobOrigin,
@@ -47,6 +48,24 @@ class OriginQuote:
     estimate: Estimate = field(repr=False)
     mesh_sources: tuple[JobMeshSource, ...] = ()
     film_task: FilmTaskBinding | None = None
+
+
+@dataclass(frozen=True)
+class FilmUploadResult:
+    """A saved association delivered to this caller's current captured origin."""
+
+    scope: JobScope
+    origin: JobOrigin
+    reference: FilmUploadReference
+
+    def __post_init__(self):
+        if (
+            not isinstance(self.scope, JobScope)
+            or not isinstance(self.origin, JobOrigin)
+            or not isinstance(self.reference, FilmUploadReference)
+            or self.reference.scope != self.scope
+        ):
+            raise ValueError("Film upload result must match its selected scope and origin")
 
 
 class SubmissionUncertain(RuntimeError):
@@ -574,9 +593,33 @@ class JobCoordinator:
 
         with self._request_guard(origin):
             binding, model, parameters = model_task_request(
-                self._store, recipe, production_id=production_id, task_id=task_id
+                self._store,
+                recipe,
+                production_id=production_id,
+                task_id=task_id,
+                inspect_upload=self._uploads.inspect if self._uploads else None,
             )
         return self._quote("model", model, parameters, origin, film_task=binding)
+
+    def bind_film_upload(
+        self, recipe, *, production_id, task_id, request_id, expected_revision, origin
+    ):
+        from .film_tasks import upload_task_reference
+
+        if not isinstance(origin, JobOrigin):
+            raise QuoteError("Capture the Film association origin before saving it")
+        with self._request_guard(origin):
+            reference = upload_task_reference(
+                self._store,
+                recipe,
+                production_id=production_id,
+                task_id=task_id,
+                inspect_upload=self._upload_commands().inspect,
+                request_id=request_id,
+                expected_revision=expected_revision,
+            )
+            saved = self._store.bind_film_upload(reference)
+            return FilmUploadResult(self.scope, origin, saved)
 
     def quote_workflow(self, identifier, parameters, *, origin):
         return self._quote("workflow", identifier, parameters, origin)

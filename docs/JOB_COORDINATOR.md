@@ -98,7 +98,21 @@ The command reuses `SDKAdapter.model`, `estimate_model` and `submit_estimate`
 It adds no endpoint or raw fallback. API-key default project scope remains valid.
 `JobWorkers` snapshots recipe data before queueing. `JobSession` captures/delivers
 the existing origin; a changed scene or retired owner rejects the quote before
-preparation. Native/MCP Film controls and upload-task associations remain unwired.
+preparation. Native/MCP Film controls remain unwired.
+
+`bind_film_upload(recipe, production_id=..., task_id=..., request_id=...,
+expected_revision=..., origin=...)` validates an upload task and reads the selected
+scope's existing imported upload locally. It saves an immutable
+[association](JOB_STORAGE.md#film-upload-associations) under the origin guard and
+returns a `FilmUploadResult` for that caller's captured origin. Repeated equivalent
+associations preserve the first binding while allowing delivery to the current
+reader. A retired owner or stale scene cannot write a new association.
+
+Dependent model quotes recheck the saved upload's imported state, exact revision,
+source digest, kind and asset before resolving its single output. The command
+uses `UploadCommands.inspect`, adding no SDK call, transfer or raw fallback.
+Upload initialization/completion, cleanup and uncertainty retain their existing
+commands. Binding is not permission to send another upload or apply a result.
 
 ## Adopting a completed cloud job
 

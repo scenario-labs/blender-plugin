@@ -276,6 +276,41 @@ class ModelGenerationTests(unittest.TestCase):
         self.assertEqual(self.paid, [])
         self.assertTrue(all(request.method == "GET" for request in self.calls))
 
+    def test_model_pump_replaces_stale_rows_and_retains_shared_history_stably(self):
+        record = submodule("core.jobs.records").JobRecord
+        rows = [
+            record(
+                str(index),
+                "image",
+                "image",
+                "fixture",
+                {},
+                created_at=index,
+                meta={"shared_job": True},
+            )
+            for index in range(70)
+        ]
+        rows[-1] = replace(rows[-1], status="running", created_at=0)
+        owner = SimpleNamespace(views={row.local_id: row for row in rows}, poll=Mock())
+        self.runtime.state.model_jobs = owner
+        self.runtime.state.jobs_view = [
+            replace(rows[-1], status="stale"),
+            replace(rows[-1], status="duplicate"),
+        ]
+        try:
+            for _ in range(3):
+                self.generation.process_model_jobs()
+                self.assertEqual(self.runtime.state.jobs_view, [*reversed(rows[:-1]), rows[-1]])
+                self.assertIs(self.runtime.state.jobs_view[-1], rows[-1])
+            # Inspection retains shared jobs without waiting for another tick.
+            owner.inspect = Mock(return_value=tuple(rows))
+            self.runtime.state.jobs_view.clear()
+            with patch.object(self.runtime, "ensure_model_jobs", return_value=owner):
+                self.runtime.inspect_model_jobs()
+            self.assertEqual(self.runtime.state.jobs_view, list(reversed(rows)))
+        finally:
+            self.runtime.state.model_jobs = None
+
     def test_native_cloud_recovery_and_mcp_repeat_use_one_saved_record_without_application(self):
         self.result_fixture()
         before = set(bpy.data.images)

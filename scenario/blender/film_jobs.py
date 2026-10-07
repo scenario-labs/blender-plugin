@@ -61,6 +61,7 @@ class FilmAction:
     cost: str = ""
     request_id: str = ""
     error: str = ""
+    completion: object = field(default=None, repr=False)
 
 
 class FilmApprovalUnavailable(ScenarioError):
@@ -204,15 +205,18 @@ class FilmJobs:
             if item.phase not in {"QUOTING", "BINDING"} or not item.task.done():
                 continue
             try:
+                if item.completion is None:
+                    completions = self.session.drain(task=item.task)
+                    if len(completions) != 1:
+                        raise ScenarioError(0, "The Film completion is unavailable")
+                    item.completion = completions[0]
                 self._check(item, item.scene)
                 if item.scene != bpy.context.scene:
-                    # Session delivery requires the current source scene. Keep its
-                    # completed task queued until that unchanged scene is selected.
+                    # Keep the bounded outcome here, freeing shared admission slots.
+                    # Delivery still requires the unchanged source scene.
                     continue
-                completions = self.session.drain(task=item.task)
-                if not completions:
-                    raise ScenarioError(0, "The Film completion is unavailable")
-                result = self.session.deliver(completions[0], lambda value, *_: value)
+                result = self.session.deliver(item.completion, lambda value, *_: value)
+                item.completion = None
                 if item.phase == "QUOTING":
                     item.quote = result
                     item.cost, item.phase = str(result.estimate.cost), "READY"
@@ -221,6 +225,7 @@ class FilmJobs:
                     item.phase = "BOUND"
             except Exception:
                 self.session.drain(task=item.task)
+                item.completion = None
                 item.phase, item.error = (
                     "ERROR",
                     (

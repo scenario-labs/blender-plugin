@@ -156,6 +156,12 @@ results through the coordinator. Saved state is projected into the existing Jobs
 not registered with the prototype manager. Closing a panel does not stop work;
 credential/file changes retire the owner while in-flight receipts stay in the
 original store. Local MCP status can inspect these records after restart.
+The model-job pump and explicit inspection retain scoped shared sidebar rows,
+deduplicated by local job ID, with the owner's current projection replacing stale
+copies. Existing rows keep their order while newly observed rows appear first;
+shared rows take precedence over prototype collisions. Only prototype rows have
+a fifty-row display limit. Active recovered jobs remain visible even without
+creation timestamps. These display rules do not delete saved jobs or stop workers.
 
 This is a pre-release integration slice. Image local-file/capture references
 must be uploaded before pricing/submission. Local MCP now uses the
@@ -345,8 +351,10 @@ bytes and never replays uncertain uploads. See [durable Film tasks](../FILM_PLAN
 The [native Film scene primitives](../FILM_PLAN.md#native-shot-and-timeline-primitives)
 now construct complete new shot scenes and editable timelines from validated
 recipes and explicit saved GLB receipts. They restore the current scene and roll
-back only new data on failure. Shared credential/task selection, application
-claims and native/MCP scene-building approval remain to integrate; the existing
+back only new data on failure. The [shared shot application command](../FILM_PLAN.md#shared-shot-application-command)
+now verifies selected credential-bound task outputs, captures the unchanged recipe
+scene, claims every source job before building and supports receipt-only recovery.
+Native/MCP presentation and timeline approval remain to integrate; the existing
 Film controls still prepare/approve model and upload tasks only.
 
 ## Shared MCP render preparation

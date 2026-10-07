@@ -91,8 +91,7 @@ do not require explicit tenant selection or a generated SDK discovery method.
 Opening the store does not activate shared job workers or paid submission.
 [Runtime integration status](architecture/runtime.md#active-sdk-catalog) records
 the remaining shared-job and paid-flow boundaries. The original raw `Catalog`
-class remains used by historical smoke scripts; the active Blender path no
-longer constructs it. This partial adoption does not approve those remaining
+class is no longer constructed by the active Blender path or model smoke scripts. This partial adoption does not approve those remaining
 prototype API operations as SDK exceptions.
 
 The active **Test connection** operator also uses `SDKCatalog` and the adapter's
@@ -119,6 +118,24 @@ their existing boundaries. UI and MCP model quotes instead use fresh model metad
 the selected JobSession, preserving the same raw SDK estimate. Explicit shared model
 submission consumes that quote through the coordinator; no endpoint exception,
 new dependency or retry policy is introduced.
+
+## Model acceptance commands
+
+All model smoke entry points now use `tools.smoke_image` as their shared engine;
+`tools.smoke_model` selects Image, Material, Video, GLB or audio result checks.
+Fresh metadata uses SDK 2.2.0 `models.with_raw_response.retrieve`, exact estimates
+and one paid submission use `generate.with_raw_response.run_model`, and saved-job
+polling/download metadata use `jobs.with_raw_response.retrieve` and
+`assets.with_raw_response.retrieve`. The shared coordinator retains the existing
+query-only dry run, exact Decimal cost, selected credentials/project and disabled
+submission retries. No raw fallback or SDK dependency change is added.
+
+The quote digest includes the expected result kind. Offline SDK-transport tests
+exercise all five kinds, uncertainty, cost/schema drift, scope changes and receipt
+recovery. Result checks use verified nonempty bytes, MIME metadata and known
+texture roles; they do not establish decoding, local reference upload, Film,
+native interaction, live provider acceptance or a protected aggregate CI budget.
+See [the command reference](../tests/smoke/README.md).
 
 ## Shared model text reads
 

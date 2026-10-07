@@ -1,11 +1,11 @@
 ---
 {
   "type": "Evidence",
-  "id": "contributing.image-acceptance",
-  "title": "CONTRIBUTING.md: shared model acceptance commands",
+  "id": "docs-sdk-adoption.model-smoke",
+  "title": "SDK adoption: shared model acceptance commands",
   "evidence": {
-    "path": "CONTRIBUTING.md",
-    "scope": "image-acceptance",
+    "path": "docs/SDK_ADOPTION.md",
+    "scope": "model-smoke",
     "coverage": "source-reviewed",
     "reviewed_at": "2026-10-07",
     "base_revision": "03b070b9cb663b63cf8a411f6126efb40d4c66d0",
@@ -21,11 +21,11 @@
       "tests/unit/test_smoke_image.py": "5203164bd0001afe4fad53779ce6d1d36983c209295c201049bbea87f7e0d9e7",
       "tests/unit/test_dev_config.py": "d711ffc9c81186de3ab53c9ea8ce072fa3b09059907b8e3d40b60ed023ce322a",
       "tools/dev_config.py": "c3dbb5a4fb5c96a695f17cb436d15992f7b5efd11238c839d9ab44b9e9c7ac52",
-      "scenario/core/jobs/result_metadata.py": "5a454fcd5024e015dc4b4ae5ff40909f6b121ef6d73a4bdd70def58985da17c4"
+      "scenario/core/jobs/result_metadata.py": "5a454fcd5024e015dc4b4ae5ff40909f6b121ef6d73a4bdd70def58985da17c4",
+      "scenario/core/api/sdk_adapter.py": "6cc3758eebf05f066a0aa11ed4d5c6ec96fb87b72f02f3d609cfdd97b88b044e"
     }
   }
 }
 ---
 
-Evidence for [the contributor guide](../../../CONTRIBUTING.md#live-commands) and
-[model command reference](../../../tests/smoke/README.md).
+Evidence for [model acceptance commands](../../SDK_ADOPTION.md#model-acceptance-commands).

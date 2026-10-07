@@ -46,13 +46,32 @@ class Downloads(ResultDownloader):
         return DownloadedResult(name, len(DATA), smoke.digest(DATA))
 
 
-@pytest.fixture
-def run(tmp_path):
+@pytest.fixture(params=smoke.RESULT_KINDS)
+def run(tmp_path, request):
+    kind = request.param
     root = tmp_path / "run"
     inputs = tmp_path / "parameters.json"
     inputs.write_text('{"prompt":"private fixture prompt"}')
     calls = []
     behavior = {"cost": COST, "model": MODEL, "status": "success", "fail": None}
+    media_types = {
+        "image": [("image/png", None)],
+        "video": [("video/mp4", None)],
+        "audio": [("audio/wav", None)],
+        "model": [("model/gltf-binary", None), ("image/png", None)],
+        "material": [("image/png", "texture-albedo"), ("image/png", "texture-normal")],
+    }
+    behavior["assets"] = [
+        {
+            "id": f"asset-{index}",
+            "status": "success",
+            "mimeType": mime,
+            "properties": {"size": len(DATA)},
+            "metadata": {"type": role},
+            "url": "https://cdn.scenario.com/result?secret=redact",
+        }
+        for index, (mime, role) in enumerate(media_types[kind])
+    ]
     downloads = Downloads()
 
     def store(settings=SETTINGS):
@@ -94,23 +113,13 @@ def run(tmp_path):
                     "job": {
                         "jobId": "remote",
                         "status": behavior["status"],
-                        "metadata": {"assetIds": ["asset"]},
+                        "metadata": {"assetIds": [asset["id"] for asset in behavior["assets"]]},
                     }
                 },
             )
-        if request.url.path == "/v1/assets/asset":
-            return httpx.Response(
-                200,
-                json={
-                    "asset": {
-                        "id": "asset",
-                        "status": "success",
-                        "mimeType": "image/png",
-                        "properties": {"size": len(DATA)},
-                        "url": "https://cdn.scenario.com/result?secret=redact",
-                    }
-                },
-            )
+        if request.url.path.startswith("/v1/assets/"):
+            asset = next(a for a in behavior["assets"] if request.url.path.endswith("/" + a["id"]))
+            return httpx.Response(200, json={"asset": asset})
         raise AssertionError("Unexpected SDK request")
 
     def args(command, **overrides):
@@ -126,7 +135,7 @@ def run(tmp_path):
                 "--max-cu",
                 COST,
             ]
-        result = smoke.parser().parse_args(values)
+        result = smoke.parser(default_result_kind=kind).parse_args(values)
         for name, value in overrides.items():
             setattr(result, name, value)
         return result
@@ -159,7 +168,7 @@ def test_quote_submit_restart_verify_exact_cost_and_scope_without_project(run, c
     assert execute("resume") == 0 and len(calls) == before
     with pytest.raises(smoke.SmokeError, match="already exists"):
         execute("submit")
-    assert len(paid(calls)) == 1 and len(downloads.paths) == 1
+    assert len(paid(calls)) == 1 and len(downloads.paths) == len(store().records()[0].results)
     output = capsys.readouterr().out + (root / "report.json").read_text()
     for private in (
         "fixture-key",
@@ -174,7 +183,9 @@ def test_quote_submit_restart_verify_exact_cost_and_scope_without_project(run, c
         if private != "remote":
             assert private not in output
     report = json.loads((root / "report.json").read_text())
-    assert report["jobs"][0]["results"] == [{"size": len(DATA), "sha256": smoke.digest(DATA)}]
+    assert report["jobs"][0]["results"] == [
+        {"size": len(DATA), "sha256": smoke.digest(DATA)} for _ in downloads.paths
+    ]
     assert "remote" not in (root / "report.json").read_text()
 
 
@@ -378,8 +389,13 @@ def test_opt_in_missing_and_private_errors_are_sanitized(monkeypatch, capsys):
     assert "private response" not in capsys.readouterr().out
 
 
-def test_compatibility_entry_point_checks_credentials_before_network(tmp_path, monkeypatch, capsys):
-    script = Path(__file__).resolve().parents[1] / "smoke" / "smoke_image.py"
+@pytest.mark.parametrize(
+    "script_name", ["smoke_image", "smoke_video", "smoke_material", "smoke_image_to_3d"]
+)
+def test_compatibility_entry_point_checks_credentials_before_network(
+    tmp_path, monkeypatch, capsys, script_name
+):
+    script = Path(__file__).resolve().parents[1] / "smoke" / (script_name + ".py")
     monkeypatch.setattr(
         "sys.argv",
         [
@@ -432,9 +448,14 @@ def test_polling_deadline_preserves_known_job_for_resume(run, monkeypatch):
     original = smoke.follow
     ticks = iter((0, 0, 1, 2))
 
-    def bounded(coordinator, storage, *, timeout):
+    def bounded(coordinator, storage, *, timeout, result_kind):
         return original(
-            coordinator, storage, timeout=1, clock=lambda: next(ticks), sleep=lambda _: None
+            coordinator,
+            storage,
+            timeout=1,
+            result_kind=result_kind,
+            clock=lambda: next(ticks),
+            sleep=lambda _: None,
         )
 
     monkeypatch.setattr(smoke, "follow", bounded)
@@ -501,3 +522,86 @@ def test_main_uses_selected_test_pair_despite_ambient_runtime_values(tmp_path, m
         == 0
     )
     assert len(calls) == 2 and not paid(calls)
+
+
+def test_wrong_result_kind_never_counts_as_success_or_regenerates(run):
+    _, calls, behavior, _, store, _, execute = run
+    execute("quote")
+    for asset in behavior["assets"]:
+        asset["mimeType"] = "application/octet-stream"
+    with pytest.raises(smoke.SmokeError, match="approved result kind"):
+        execute("submit")
+    assert store().records()[0].state == JobState.READY
+    before = len(calls)
+    with pytest.raises(smoke.SmokeError, match="approved result kind"):
+        execute("resume")
+    assert len(calls) == before and len(paid(calls)) == 1
+
+
+def test_result_kind_is_bound_to_quote_and_cannot_switch_wrappers(run):
+    root, calls, _, _, _, args, execute = run
+    execute("quote")
+    approved = args("submit")
+    plan = json.loads((root / "quote.json").read_text())
+    other = "audio" if plan["result_kind"] != "audio" else "video"
+    for command in ("submit", "resume"):
+        with pytest.raises(smoke.SmokeError, match="matching this run"):
+            execute(command, expected_result_kind=other)
+    plan["result_kind"] = other
+    (root / "quote.json").write_bytes(smoke.json_bytes(plan))
+    approved.expected_result_kind = None
+    with pytest.raises(smoke.SmokeError, match="record changed"):
+        smoke.execute(approved, SETTINGS)
+    assert len(calls) == 2 and not (root / "submission-attempt").exists()
+
+
+def test_generic_entry_point_requires_explicit_result_kind_before_credentials(monkeypatch):
+    monkeypatch.setattr(smoke, "live_settings", lambda: pytest.fail("credentials accessed"))
+    with pytest.raises(SystemExit) as error:
+        smoke.main(
+            ["quote", "--run-dir", "unused", "--model", "model", "--parameters", "unused"],
+            default_result_kind=None,
+        )
+    assert error.value.code == 2
+
+
+def test_original_image_quote_can_resume_and_submit_without_migration(run):
+    root, calls, _, _, _, _, execute = run
+    execute("quote")
+    plan = json.loads((root / "quote.json").read_text())
+    if plan["result_kind"] != "image":
+        return
+    plan.pop("result_kind")
+    plan["schema_version"] = 1
+    (root / "quote.json").write_bytes(smoke.json_bytes(plan))
+    assert execute("submit") == 0
+    assert execute("resume") == 0 and len(paid(calls)) == 1
+
+
+@pytest.mark.parametrize(
+    "script_name", ["smoke_image", "smoke_video", "smoke_material", "smoke_image_to_3d"]
+)
+@pytest.mark.parametrize("command", ["bare", "submit"])
+def test_every_script_blocks_unapproved_spending_before_credentials(
+    script_name, command, monkeypatch
+):
+    script = Path(__file__).resolve().parents[1] / "smoke" / (script_name + ".py")
+    monkeypatch.delenv("SCENARIO_SMOKE", raising=False)
+    monkeypatch.setattr(smoke, "live_settings", lambda: pytest.fail("credentials accessed"))
+    argv = [str(script)]
+    if command == "submit":
+        argv += [
+            "submit",
+            "--run-dir",
+            "unused",
+            "--approved-quote",
+            "0" * 64,
+            "--approved-cost",
+            "1",
+            "--max-cu",
+            "1",
+        ]
+    monkeypatch.setattr("sys.argv", argv)
+    with pytest.raises(SystemExit) as error:
+        runpy.run_path(str(script), run_name="__main__")
+    assert error.value.code == 2

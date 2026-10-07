@@ -1,6 +1,6 @@
 # SPDX-FileCopyrightText: 2026 Scenario Inc.
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""Explicit Image acceptance through shared SDK jobs; see tests/smoke/README.md."""
+"""Quote, approve and recover model checks through shared SDK jobs."""
 
 import argparse
 import hashlib
@@ -20,6 +20,8 @@ from scenario.core.jobs.credential_storage import open_credential_store
 from scenario.core.jobs.store import JobOrigin, JobState
 from scenario.core.jobs.transfers import ResultDownloader, StoragePolicy
 from tools.dev_config import live_settings
+
+RESULT_KINDS = ("image", "material", "video", "model", "audio")
 
 
 class SmokeError(RuntimeError):
@@ -70,8 +72,8 @@ def create_file(path, data):
     sync_directory(path.parent)
 
 
-def report(root, store):
-    value = {"schema_version": 1, "jobs": []}
+def report(root, store, result_kind):
+    value = {"schema_version": 2, "result_kind": result_kind, "jobs": []}
     for record in store.records():
         value["jobs"].append(
             {
@@ -97,7 +99,32 @@ def report(root, store):
             os.unlink(temporary)
 
 
-def follow(coordinator, store, *, timeout, clock=time.monotonic, sleep=time.sleep):
+def verify_result_kind(record, result_kind):
+    """Check saved metadata after receipt verification; this does not decode media."""
+    assets = [item.asset for item in record.results]
+    if not assets or any(item.receipt is None or item.receipt.size <= 0 for item in record.results):
+        raise SmokeError("Downloaded results contain no usable bytes", 1)
+    media_types = [item.media_type for item in assets]
+    if result_kind == "image":
+        matches = all(mime.startswith("image/") for mime in media_types)
+    elif result_kind == "material":
+        roles = {item.texture_role for item in assets if item.texture_role is not None}
+        matches = (
+            all(mime.startswith("image/") for mime in media_types)
+            and bool(roles & {"base", "albedo"})
+            and bool(roles - {"base", "albedo"})
+        )
+    elif result_kind == "model":
+        matches = "model/gltf-binary" in media_types
+    else:
+        matches = any(mime.startswith(result_kind + "/") for mime in media_types)
+    if not matches:
+        raise SmokeError("Downloaded results do not match the approved result kind", 1)
+
+
+def follow(
+    coordinator, store, *, timeout, result_kind="image", clock=time.monotonic, sleep=time.sleep
+):
     """Follow one saved request; never estimate, prepare, submit or apply."""
     records = store.records()
     if len(records) != 1:
@@ -126,14 +153,13 @@ def follow(coordinator, store, *, timeout, clock=time.monotonic, sleep=time.slee
             verified = coordinator.verify_results(
                 record.intent.request_id, expected_revision=record.revision
             )
-            if not verified.paths or any(
-                not item.asset.media_type.startswith("image/") for item in record.results
-            ):
-                raise SmokeError("Downloaded results are not an Image result set", 1)
-            print(f"Verified {len(verified.paths)} image result file(s); no Blender application")
+            if not verified.paths:
+                raise SmokeError("Downloaded results contain no usable files", 1)
+            verify_result_kind(verified.record, result_kind)
+            print(f"Verified {len(verified.paths)} result file(s); no Blender application")
             return 0
         elif record.state in {JobState.FAILED, JobState.CANCELED}:
-            raise SmokeError("Saved remote job ended without successful image results", 1)
+            raise SmokeError("Saved remote job ended without successful results", 1)
         else:
             raise SmokeError("Saved request needs review; generation will not be replayed", 4)
 
@@ -144,6 +170,7 @@ def execute(args, settings, *, transport=None, downloader=None):
     if root != root.resolve() or (root.exists() and not root.is_dir()):
         raise SmokeError("Use a private run directory without symlink components")
     if args.command == "quote":
+        result_kind = args.result_kind
         parameters = json.loads(read_bytes(args.parameters))
         if not isinstance(parameters, dict):
             raise SmokeError("Parameters must be one JSON object")
@@ -158,8 +185,13 @@ def execute(args, settings, *, transport=None, downloader=None):
             raise SmokeError("Run storage is incomplete; preserve it for review", 4)
         raw = read_bytes(root / "quote.json")
         plan = json.loads(raw)
-        if plan.get("schema_version") != 1:
+        if plan.get("schema_version") not in (1, 2):
             raise SmokeError("Unsupported quote record")
+        result_kind = "image" if plan["schema_version"] == 1 else plan.get("result_kind")
+        if result_kind not in RESULT_KINDS:
+            raise SmokeError("Unsupported saved result kind")
+        if args.expected_result_kind and result_kind != args.expected_result_kind:
+            raise SmokeError("Use the entry point matching this run's approved result kind")
         if args.command == "submit":
             if digest(raw) != args.approved_quote:
                 raise SmokeError("Quote record changed; approve its current exact contents")
@@ -193,10 +225,11 @@ def execute(args, settings, *, transport=None, downloader=None):
             result_root=result_root,
         )
         if args.command == "quote":
-            origin = JobOrigin(uuid.uuid4().hex, "image-smoke", "1", "download-only")
+            origin = JobOrigin(uuid.uuid4().hex, "model-smoke", "1", "download-only")
             quote = coordinator.quote_model(args.model, parameters, origin=origin)
             plan = {
-                "schema_version": 1,
+                "schema_version": 2,
+                "result_kind": result_kind,
                 "scope": asdict(store.scope),
                 "origin": asdict(origin),
                 "model": args.model,
@@ -239,19 +272,24 @@ def execute(args, settings, *, transport=None, downloader=None):
                 target_id=prepared.intent.target_id,
                 payload=prepared.estimate.payload,
             )
-        return follow(coordinator, store, timeout=args.timeout)
+        return follow(coordinator, store, timeout=args.timeout, result_kind=result_kind)
     finally:
         adapter.close()
-        report(root, store)
+        report(root, store, result_kind)
 
 
-def parser():
+def parser(*, default_result_kind="image"):
     result = argparse.ArgumentParser(description=__doc__)
+    result.set_defaults(expected_result_kind=default_result_kind)
     commands = result.add_subparsers(dest="command", required=True)
     for command in ("quote", "submit", "resume"):
         item = commands.add_parser(command)
         item.add_argument("--run-dir", type=Path, required=True)
         if command == "quote":
+            if default_result_kind is None:
+                item.add_argument("--result-kind", choices=RESULT_KINDS, required=True)
+            else:
+                item.set_defaults(result_kind=default_result_kind)
             item.add_argument("--model", required=True)
             item.add_argument("--parameters", type=Path, required=True)
         else:
@@ -265,8 +303,8 @@ def parser():
     return result
 
 
-def main(argv=None):
-    args = parser().parse_args(argv)
+def main(argv=None, *, default_result_kind="image"):
+    args = parser(default_result_kind=default_result_kind).parse_args(argv)
     if args.command == "submit" and os.environ.get("SCENARIO_SMOKE") != "1":
         print("Set SCENARIO_SMOKE=1 on the command line only after spending authorization")
         return 2
@@ -281,7 +319,7 @@ def main(argv=None):
         return 2
     except Exception:
         # Raw exceptions may carry private paths, parameters, IDs or signed URLs.
-        print("Image check stopped; preserve the private run directory and inspect saved state")
+        print("Model check stopped; preserve the private run directory and inspect saved state")
         return 1
 
 

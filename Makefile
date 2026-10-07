@@ -9,8 +9,9 @@ SITE_ARGS ?=
 LANE ?= image
 UV ?= uv
 LINT_PATHS ?= .
+SMOKE_ARGS ?= --help
 
-.PHONY: sync test test-blender build repo install install-isolated gui-check lint format knowledge mcp-docs check-rules docs site hooks images images-check
+.PHONY: sync test smoke test-blender build repo install install-isolated gui-check lint format knowledge mcp-docs check-rules docs site hooks images images-check
 check-rules:
 	$(UV) run --locked --no-env-file python tools/check_rules.py
 knowledge:
@@ -19,6 +20,8 @@ sync:
 	$(UV) sync --locked
 test:
 	$(UV) run --locked --no-env-file python -m pytest
+smoke:
+	$(UV) run --locked --no-env-file python -m tools.smoke_suite $(SMOKE_ARGS)
 lint:
 	$(UV) run --locked ruff check -- $(LINT_PATHS)
 	$(UV) run --locked ruff format --check -- $(LINT_PATHS)

@@ -209,6 +209,42 @@ gh api orgs/scenario-labs/teams/platform/repos/scenario-labs/blender-plugin \
   -H 'Accept: application/vnd.github.v3.repository+json' --jq .role_name
 ```
 
+### Smoke lane
+
+The [paid smoke workflow](../.github/workflows/smoke.yml) requires the existing
+`smoke` environment, at least one required reviewer and a custom deployment
+policy allowing exactly the `main` branch. Its read-only admission checks use
+GitHub's [environment API](https://docs.github.com/en/rest/deployments/environments#get-an-environment)
+and [branch-policy API](https://docs.github.com/en/rest/deployments/branch-policies#list-deployment-branch-policies).
+These checks run before the protected job and again after approval. A missing or
+unreadable gate fails closed. The environment was absent at the latest inspection;
+this workflow does not create it or establish hosted acceptance.
+
+An administrator must configure a dedicated test key and its explicit intended
+scope/budget, required reviewers, the main-only branch rule and these environment
+secrets through private input (never command arguments containing values):
+
+- `SCENARIO_TEST_API_KEY` and `SCENARIO_TEST_API_SECRET`.
+- Optional `SCENARIO_TEST_PROJECT_ID`; blank is the key's default scope.
+- `SMOKE_PLAN_JSON`, following the [private suite format](../tests/smoke/README.md#one-aggregate-budget-for-a-suite).
+- `SMOKE_RECOVERY_PASSPHRASE`, a randomly generated secret of at least 32 characters,
+  retained privately for decrypting artifacts after rotation.
+
+Set the repository variable `SMOKE_MAX_TOTAL_CU` only after agreeing on the monthly
+scheduled plan and per-run aggregate allowance. It has no positive default.
+Configure any provider-side project/monthly budget separately; the workflow's cap
+is per run, and manual runs do not share a monthly ledger. The approval job shows
+the cap frozen by admission. Review that amount and the configured private plan
+and scope before approving. Do not put paid secrets at repository scope merely
+to bypass this environment; the free API audit remains separate.
+
+Actions reruns are refused, even after an apparently early failure. Recover from
+the encrypted archive with the original scope using the non-submitting resume
+command. A new dispatch requires a new spending decision, never an assumed retry.
+See [hosted recovery and limits](../tests/smoke/README.md#protected-hosted-execution-and-recovery).
+Hosted positive/negative gate checks, encryption download/decryption and authorized
+live results remain #40/#68. Do not mark them complete from synthetic unit tests.
+
 ## Project and labels
 
 [Blender Plugin project 31](https://github.com/orgs/scenario-labs/projects/31)
@@ -252,6 +288,7 @@ These tasks retain their existing owner issues. Read back the result and update
 this guide after an authorized change; do not treat the checklist as permission
 to perform it.
 
+- [ ] Configure and validate the protected smoke environment, private plan, recovery key, test scope and budget, then run authorized hosted acceptance: #40.
 - [ ] Add/reconcile the `ci-ok` required check after verifying its reported identity; retain the existing `pr-title`, `commits`, CodeQL and code-quality rules unless an explicit reviewed decision changes them: #45.
 - [ ] Verify the first automated release, then remove the repository-admin tag bypass while retaining release App integration `4751046`, both tag patterns and all protection rules; enable immutable releases only after publication and download verification: #36.
 - [ ] Decide restricted allowed actions and require SHA pinning after workflow pins and update behavior are verified: #39.

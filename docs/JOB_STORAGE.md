@@ -78,7 +78,7 @@ Every connection rechecks that the database is a regular nonsymlink file,
 including after a competing creation. The parent must remain trusted: this check
 and SQLite's path open are separate operations, not an atomic no-follow open.
 
-The database has an application ID and schema version **6**. SQLite transactions
+The database has an application ID and schema version **7**. SQLite transactions
 with `synchronous=FULL` commit the whole change or report `StoreError`; no cached
 in-memory result is reported as saved before commit succeeds. `BEGIN IMMEDIATE`
 serializes writers across threads/processes. Each operation owns a connection,
@@ -94,7 +94,7 @@ another request or resend. Intent fields and a known remote job ID cannot change
 Foreign databases, unsupported versions, malformed records and mismatched stored
 identities/revisions raise errors. They are preserved for explicit recovery,
 never silently replaced with empty history. An already-open store also fails if
-its database disappears. Previous shared schemas 2, 3, 4 and 5 upgrade in one
+its database disappears. Previous shared schemas 2 through 6 upgrade in one
 transaction that validates every scope, record, identity and revision. A corrupt
 row or failed commit preserves all previous rows and the old version. This is
 not a prototype import; version 1 and foreign databases remain rejected. Schema 2/3
@@ -102,10 +102,32 @@ results receive an unknown (`None`) texture role; schema 4 roles are preserved. 
 Scenario or infers semantics from filenames. Schema 3 application destinations
 are preserved, while schema 2 retains its original-origin application semantics.
 Schemas before 5 receive an empty local-application history; schema 5 preserves
-its existing claims, including unfinished applications. All previous records
-receive empty mesh input bindings.
-Older extension builds reject schema 6; stop older Blender processes before
+its existing claims, including unfinished applications. Schemas before 6
+receive empty mesh input bindings; schema 6 preserves its captured mesh sources.
+Older extension builds reject schema 7; stop older Blender processes before
 upgrading and do not expect an older build to open the upgraded store.
+
+## Explicit cloud result records
+
+Schema 7 adds `CloudJobIntent` for a completed model job retrieved using the
+selected SDK connection. It retains a local recovery ID, exact scope, locally
+captured scene origin, model ID and `source: cloud`. It has no payload or quote
+hashes, no quoted cost and no captured mesh source. Selecting a cloud result
+cannot invent proof of a local generation or authorize another submission.
+
+The [coordinator](JOB_COORDINATOR.md#adopting-a-completed-cloud-job) verifies
+the remote job before calling `adopt_cloud_job`. The store inserts it directly
+as `succeeded`, with the confirmed remote ID and no result manifest. Only the
+existing download and application states are valid for this intent type;
+`create` and submission reject it. Result retrieval and destination approval
+remain separate commands.
+
+Adoption checks the selected scope for the remote ID within the same write
+transaction. One existing record with the same model is returned unchanged,
+preserving its original quote, origin, state and receipts. Ambiguous remote IDs,
+conflicting models and local-ID collisions fail explicitly. Repeated or competing
+reads cannot overwrite a saved application or create a second recovery record.
+This is an explicit cloud read, not bulk import of the prototype registry.
 
 ## State boundaries
 

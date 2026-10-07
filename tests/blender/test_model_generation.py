@@ -75,9 +75,10 @@ class ModelGenerationTests(unittest.TestCase):
                                 "status": self.remote_status,
                                 "jobType": "custom",
                                 "metadata": {
+                                    "input": {"modelId": self.model["id"]},
                                     "assetIds": list(
                                         getattr(self, "result_assets", ["result-image"])
-                                    )
+                                    ),
                                 },
                             }
                         },
@@ -231,6 +232,46 @@ class ModelGenerationTests(unittest.TestCase):
                 "/fixture.png",
                 headers={"Accept-Encoding": "identity", "Connection": "close"},
             )
+
+    def test_cloud_job_adoption_restarts_and_uses_explicit_download_and_application(self):
+        self.result_fixture()
+        before = set(bpy.data.images)
+        session = self.runtime.ensure_job_session()
+        task = session.adopt_cloud_job(
+            "cloud-job", expected_model_id=self.model["id"], scene=bpy.context.scene
+        )
+        saved = task.result(5)
+        self.assertIsNone(session.drain(task=task)[0].error)
+        self.assertEqual(saved.intent.source, "cloud")
+        self.assertIsNone(saved.intent.quote_cost)
+        self.assertEqual(self.paid, [])
+        self.assertEqual(self.downloads, [])
+        self.assertEqual(set(bpy.data.images), before)
+        self.runtime.state.reset()
+        row = self.tools.list_local_jobs({})["jobs"][0]
+        self.assertEqual(row["source"], "cloud")
+        self.assertIsNone(row["cu_cost_exact"])
+        owner = self.runtime.inspect_model_jobs()
+        status = owner.status(saved.intent.request_id)
+        self.assertIsNone(status["cu_cost"])
+        self.assertTrue(status["delivery_paused"])
+        with self.assertRaisesRegex(ValueError, "explicit destination approval"):
+            self.tools.import_result({"job_id": "cloud-job"})
+        owner.control(saved.intent.request_id, saved.revision, "resume")
+        self.deliver_results()
+        ready = owner.store.get(saved.intent.request_id)
+        self.assertEqual(ready.state, self.storemod.JobState.READY)
+        self.assertEqual(set(bpy.data.images), before)
+        ticket = owner.prepare_image_application(
+            saved.intent.request_id, ready.revision, bpy.context.scene
+        )
+        owner.apply_saved_images(ticket.identifier)
+        self.deliver_results()
+        applied = owner.store.get(saved.intent.request_id)
+        self.assertEqual(applied.state, self.storemod.JobState.APPLIED)
+        self.assertEqual(len(set(bpy.data.images) - before), 1)
+        self.assertEqual(self.paid, [])
+        self.assertTrue(all(request.method == "GET" for request in self.calls))
 
     def test_stale_origin_downloads_but_does_not_apply_or_resubmit(self):
         self.result_fixture()

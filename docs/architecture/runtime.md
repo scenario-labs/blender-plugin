@@ -307,9 +307,12 @@ MCP import also requires complete selected credentials before consulting either
 store; missing credentials permit cold read-only inspection, never application.
 
 The cloud page itself remains an in-memory browse result. Jobs with no matching
-scoped record still use the existing prototype history/import path. Importing
-arbitrary cloud jobs into durable storage remains separate work; this change
-does not establish that path's credential/application safety or full acceptance.
+scoped record still use the existing prototype history/import path. A
+[shared cloud adoption command](../JOB_COORDINATOR.md#adopting-a-completed-cloud-job)
+can verify and save one completed model job without fabricating a local quote
+or submitting generation. Native history and MCP adoption entry points still
+need wiring; this foundation does not establish that older import path's
+credential/application safety or full acceptance.
 
 ## Where to make a change
 

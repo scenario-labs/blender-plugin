@@ -81,6 +81,27 @@ The store persists result manifests and receipts; connecting download commands,
 main-thread application and UI/MCP remains separate integration work. The low-level adapter hook orders persistence but cannot enforce correct
 behavior by arbitrary callers; product code must use the shared coordinator.
 
+## Adopting a completed cloud job
+
+`adopt_cloud_job(identifier, expected_model_id=..., origin=...)` retrieves one
+explicitly selected model job through the existing `SDKAdapter.job` method.
+It checks the exact job ID, successful status, `custom`/`inference` job type,
+`metadata.input.modelId` and a bounded unique list of output asset IDs.
+The selected scope and captured origin must remain active before the read and
+at the final durable write. HTTP work does not hold the origin lock.
+
+The command creates a [cloud result record](JOB_STORAGE.md#explicit-cloud-result-records)
+with no fabricated quote, request payload or source-object provenance. A matching
+existing record is preserved. No estimate, paid submission, download or Blender
+mutation occurs. Failed verification writes nothing. Storage errors do not
+report successful adoption; a later explicit read preserves any committed
+record and can safely retry without spending.
+
+`JobWorkers` and `JobSession` queue this command through their existing bounded
+pool. A saved record then uses ordinary manifest/download recovery and explicit
+destination approval. This foundation does not yet expose a native history
+action or MCP adoption tool, and does not establish provider/live acceptance.
+
 ## Restart inspection and known-job refresh
 
 `recovery_plan()` returns immutable records and their suggested next action for

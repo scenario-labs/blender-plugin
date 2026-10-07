@@ -45,6 +45,24 @@ These methods never rebind a restarted job by scene name. Explicit recovered
 image imports use a separately approved destination as described below. The Image facade exposes
 receipt-only retry to UI/MCP while its original owner retains the outcome handle.
 
+## Cloud result adoption command
+
+`JobSession.adopt_cloud_job(identifier, expected_model_id=..., scene=...)`
+captures the selected scene on the main thread and queues the
+[shared cloud read](JOB_COORDINATOR.md#adopting-a-completed-cloud-job).
+It captures no mesh target, mutates no scene data and creates no second worker
+pool. Normal delivery guards reject retired owners and changed scenes.
+Repeating a read from another scene preserves the original saved intent. Its
+completion is bound to the new reader's captured scene and verified job/model
+identity, while result application still requires a separate destination claim.
+
+Once saved, cloud records survive restart and use the existing inspection,
+explicit download and fresh destination-approval commands. Status distinguishes
+`source: cloud` from `generation`; cloud costs remain unknown (`None`), never a
+synthetic zero. The native recovery view omits the missing cost. A cloud record
+cannot recover original mesh-source ownership from remote metadata. History and
+MCP adoption entry points still need to call this command explicitly.
+
 ## Blockout plan commands
 
 `BlockoutJobs` is a presentation facade over the selected session, not another

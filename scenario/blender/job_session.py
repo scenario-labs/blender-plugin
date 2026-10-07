@@ -167,6 +167,7 @@ class JobSession:
         self._targets = {}
         self._target_scenes = {}
         self._pending = []
+        self._cloud_reads = {}
         self._issued = WeakValueDictionary()
         self._world_receipts = WeakKeyDictionary()
         self._image_receipts = WeakKeyDictionary()
@@ -363,6 +364,18 @@ class JobSession:
     def refresh_remote(self, request_id, *, expected_revision):
         return self._record_command("refresh_remote", request_id, expected_revision)
 
+    def adopt_cloud_job(self, identifier, *, expected_model_id, scene):
+        """Queue an explicit cloud-result read; this never approves scene application."""
+        _main_thread()
+        self._check_capacity()
+        origin = self.capture(scene)
+        task = self._workers.adopt_cloud_job(
+            identifier, expected_model_id=expected_model_id, origin=origin
+        )
+        self._cloud_reads[task] = (identifier, expected_model_id)
+        self._pending.append((task, origin))
+        return task
+
     def recovery_plan(self):
         """Inspect this connection's saved jobs without resolving old Blender targets."""
         _main_thread()
@@ -507,7 +520,19 @@ class JobSession:
                     )
                     else result
                 )
-                if isinstance(record, OriginQuote):
+                if task in self._cloud_reads:
+                    identifier, model_id = self._cloud_reads[task]
+                    # A repeat read preserves the saved job's original origin.
+                    # Delivery belongs to this read's captured scene; applying
+                    # the saved result still requires its own approval/claim.
+                    matches = (
+                        isinstance(record, StoredJob)
+                        and record.intent.scope == self.scope
+                        and record.remote_job_id == identifier
+                        and record.intent.operation == "model"
+                        and record.intent.target_id == model_id
+                    )
+                elif isinstance(record, OriginQuote):
                     matches = record.origin == origin and record.scope == self.scope
                 else:
                     matches = record.intent.origin == origin and record.intent.scope == self.scope
@@ -518,6 +543,7 @@ class JobSession:
             else:
                 completion = JobCompletion(origin, result=result)
             finally:
+                self._cloud_reads.pop(task, None)
                 self._cleanup_upload_capture(task)
             self._issued[id(completion)] = completion
             completions.append(completion)
@@ -1004,6 +1030,7 @@ class JobSession:
                 for task in tuple(self._upload_captures):
                     self._cleanup_upload_capture(task)
                 self._pending.clear()
+                self._cloud_reads.clear()
                 self._issued.clear()
                 self._world_receipts.clear()
                 self._image_receipts.clear()

@@ -26,7 +26,7 @@ from .transfers import DownloadedResult, TransferError, _root, validate_result_n
 if TYPE_CHECKING:
     from .mesh_source import MeshSource
 
-_VERSION = 6
+_VERSION = 7
 _APPLICATION_ID = 0x53434A42
 
 
@@ -204,6 +204,42 @@ class JobIntent:
             ) from None
 
 
+@dataclass(frozen=True)
+class CloudJobIntent:
+    """A verified cloud result selected locally, never a quoted spend intent."""
+
+    request_id: str
+    scope: JobScope
+    origin: JobOrigin
+    target_id: str
+    source: str = "cloud"
+
+    def __post_init__(self):
+        _identity(self.request_id)
+        _identity(self.target_id)
+        if (
+            self.source != "cloud"
+            or not isinstance(self.scope, JobScope)
+            or not isinstance(self.origin, JobOrigin)
+            or self.origin.target_id is not None
+        ):
+            raise ValueError(
+                "Use a scoped cloud result and a local scene without source provenance"
+            )
+
+    @property
+    def operation(self):
+        return "model"
+
+    @property
+    def quote_cost(self):
+        return None
+
+    @property
+    def mesh_sources(self):
+        return ()
+
+
 class JobState(StrEnum):
     PREPARED = "prepared"
     SUBMITTING = "submitting"
@@ -355,7 +391,7 @@ class LocalApplication:
 
 @dataclass(frozen=True)
 class StoredJob:
-    intent: JobIntent
+    intent: JobIntent | CloudJobIntent
     state: JobState = JobState.PREPARED
     revision: int = 0
     remote_job_id: str | None = None
@@ -417,12 +453,17 @@ def _decode(raw, scope, *, version=_VERSION):
         if not isinstance(value, dict) or set(value) != expected:
             raise ValueError
         intent = value.pop("intent")
+        intent_type = (
+            CloudJobIntent
+            if version >= 7 and isinstance(intent, dict) and intent.get("source") == "cloud"
+            else JobIntent
+        )
         if version < 6:
             if not isinstance(intent, dict) or "mesh_sources" in intent:
                 raise ValueError
             intent["mesh_sources"] = []
         for fields, cls in (
-            (intent, JobIntent),
+            (intent, intent_type),
             (intent["scope"], JobScope),
             (intent["origin"], JobOrigin),
         ):
@@ -430,10 +471,11 @@ def _decode(raw, scope, *, version=_VERSION):
                 raise ValueError
         intent["scope"] = JobScope(**intent["scope"])
         intent["origin"] = JobOrigin(**intent["origin"])
-        bindings = intent["mesh_sources"]
-        if not isinstance(bindings, list) or len(bindings) > 128:
-            raise ValueError
-        intent["mesh_sources"] = tuple(_decode_mesh_binding(binding) for binding in bindings)
+        if intent_type is JobIntent:
+            bindings = intent["mesh_sources"]
+            if not isinstance(bindings, list) or len(bindings) > 128:
+                raise ValueError
+            intent["mesh_sources"] = tuple(_decode_mesh_binding(binding) for binding in bindings)
         application = value.pop("application_origin", None)
         if version == 2 and value["state"] in {"applying", "apply_failed", "applied"}:
             application = asdict(intent["origin"])
@@ -491,7 +533,7 @@ def _decode(raw, scope, *, version=_VERSION):
                 )
             )
         record = StoredJob(
-            intent=JobIntent(**intent),
+            intent=intent_type(**intent),
             results=results,
             application_origin=application,
             local_applications=tuple(applications),
@@ -529,6 +571,8 @@ def _decode(raw, scope, *, version=_VERSION):
             JobState.APPLY_FAILED,
             JobState.APPLIED,
         }
+        if intent_type is CloudJobIntent and not has_results:
+            raise ValueError
         needs_results = has_results and state != JobState.SUCCEEDED
         needs_receipts = state in {
             JobState.READY,
@@ -590,7 +634,7 @@ class JobStore:
                     )
                     connection.execute(f"PRAGMA application_id = {_APPLICATION_ID}")
                     connection.execute(f"PRAGMA user_version = {_VERSION}")
-                elif version in {2, 3, 4, 5} and application == _APPLICATION_ID:
+                elif version in {2, 3, 4, 5, 6} and application == _APPLICATION_ID:
                     self._upgrade_previous(connection, version)
                 else:
                     self._check_version(connection)
@@ -735,10 +779,43 @@ class JobStore:
 
     def records(self):
         with self._connection() as connection:
-            identifiers = connection.execute(
-                "SELECT request_id FROM jobs WHERE scope=? ORDER BY request_id", (self._key,)
-            ).fetchall()
-            return tuple(self._read(connection, row[0]) for row in identifiers)
+            return self._records(connection)
+
+    def _records(self, connection):
+        identifiers = connection.execute(
+            "SELECT request_id FROM jobs WHERE scope=? ORDER BY request_id", (self._key,)
+        ).fetchall()
+        return tuple(self._read(connection, row[0]) for row in identifiers)
+
+    def adopt_cloud_job(self, intent: CloudJobIntent, remote_job_id):
+        """Save authoritative successful-job evidence supplied by the coordinator."""
+        if not isinstance(intent, CloudJobIntent) or intent.scope != self.scope:
+            raise ValueError("Use a cloud result intent belonging to this scope")
+        _identity(remote_job_id)
+        with self._connection(write=True) as connection:
+            existing = [
+                record
+                for record in self._records(connection)
+                if record.remote_job_id == remote_job_id
+            ]
+            if existing:
+                if (
+                    len(existing) != 1
+                    or existing[0].intent.operation != "model"
+                    or existing[0].intent.target_id != intent.target_id
+                ):
+                    raise StoreConflict(
+                        "Remote job matches conflicting local records; inspect them"
+                    )
+                return existing[0]
+            if self._read(connection, intent.request_id) is not None:
+                raise StoreConflict("Local recovery identity already exists")
+            record = StoredJob(intent, state=JobState.SUCCEEDED, remote_job_id=remote_job_id)
+            connection.execute(
+                "INSERT INTO jobs VALUES (?, ?, ?, ?)",
+                (self._key, intent.request_id, 0, _json(asdict(record))),
+            )
+        return record
 
     def create(self, intent: JobIntent):
         if not isinstance(intent, JobIntent) or intent.scope != self.scope:

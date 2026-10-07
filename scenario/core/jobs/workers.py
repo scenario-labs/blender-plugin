@@ -186,6 +186,14 @@ class JobWorkers:
             self._coordinator.refresh_remote, request_id, expected_revision=expected_revision
         )
 
+    def adopt_cloud_job(self, identifier, *, expected_model_id, origin):
+        return self._enqueue(
+            self._coordinator.adopt_cloud_job,
+            identifier,
+            expected_model_id=expected_model_id,
+            origin=origin,
+        )
+
     def read_prompt_results(self, request_id, *, expected_revision):
         return self._enqueue(
             self._coordinator.read_prompt_results, request_id, expected_revision=expected_revision

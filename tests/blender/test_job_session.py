@@ -6,6 +6,7 @@ import tempfile
 import threading
 import unittest
 from concurrent.futures import ThreadPoolExecutor
+from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -88,6 +89,80 @@ class JobSessionTests(unittest.TestCase):
         )
         with self.assertRaises(self.module.OriginUnavailable):
             self.session.deliver(completion, lambda *args: self.fail("Delivered twice"))
+
+    def cloud_task(self, scene=None):
+        import httpx
+
+        def respond(request):
+            self.assertIsNot(threading.current_thread(), threading.main_thread())
+            self.assertEqual(request.method, "GET")
+            return httpx.Response(
+                200,
+                json={
+                    "job": {
+                        "jobId": "cloud-job",
+                        "jobType": "custom",
+                        "status": "success",
+                        "metadata": {"input": {"modelId": "model"}, "assetIds": ["asset"]},
+                    }
+                },
+            )
+
+        self.handler = respond
+        return self.session.adopt_cloud_job(
+            "cloud-job", expected_model_id="model", scene=scene or self.scene
+        )
+
+    def test_cloud_read_stays_off_main_thread_and_does_not_mutate_scene(self):
+        before = tuple(self.scene.objects)
+        task = self.cloud_task()
+        record = task.result(5)
+        outcomes = self.session.drain(task=task)
+        self.assertIsNone(outcomes[0].error)
+        self.assertEqual(outcomes[0].result, record)
+        self.assertEqual(tuple(self.scene.objects), before)
+        self.assertIsNone(record.intent.origin.target_id)
+        self.assertIsNone(record.intent.quote_cost)
+
+    def test_repeated_cloud_read_preserves_saved_origin_and_delivers_to_current_reader(self):
+        first = self.cloud_task()
+        saved = first.result(5)
+        self.session.drain(task=first)
+        bpy.context.window.scene = self.previous
+        second = self.cloud_task(self.previous)
+        self.assertEqual(second.result(5), saved)
+        completion = self.session.drain(task=second)[0]
+        self.assertIsNone(completion.error)
+        self.assertNotEqual(completion.origin, saved.intent.origin)
+        self.assertEqual(
+            self.session.deliver(completion, lambda result, scene, target: (result, scene, target)),
+            (saved, self.previous, None),
+        )
+        self.assertEqual(self.store.get(saved.intent.request_id), saved)
+        self.assertFalse(self.session._cloud_reads)
+
+    def test_cloud_read_delivery_rejects_changed_job_model_or_scope(self):
+        for damage in ("job", "model", "scope"):
+            with self.subTest(damage=damage):
+                task = self.cloud_task()
+                record = task.result(5)
+                if damage == "job":
+                    invalid = replace(record, remote_job_id="different")
+                elif damage == "model":
+                    invalid = replace(record, intent=replace(record.intent, target_id="different"))
+                else:
+                    invalid = replace(
+                        record,
+                        intent=replace(
+                            record.intent,
+                            scope=replace(record.intent.scope, project_id="different"),
+                        ),
+                    )
+                with patch.object(task, "result", return_value=invalid):
+                    completion = self.session.drain(task=task)[0]
+                with self.assertRaises(self.module.OriginUnavailable):
+                    self.session.deliver(completion, lambda *_: self.fail("Delivered wrong job"))
+                self.assertFalse(self.session._cloud_reads)
 
     def test_real_dependency_update_invalidates_quote_and_result(self):
         completion = self.completion()

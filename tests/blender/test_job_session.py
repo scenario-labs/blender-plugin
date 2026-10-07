@@ -161,8 +161,49 @@ class JobSessionTests(unittest.TestCase):
                 with patch.object(task, "result", return_value=invalid):
                     completion = self.session.drain(task=task)[0]
                 with self.assertRaises(self.module.OriginUnavailable):
-                    self.session.deliver(completion, lambda *_: self.fail("Delivered wrong job"))
+                    self.session.deliver_cloud_read(completion)
                 self.assertFalse(self.session._cloud_reads)
+                self.assertNotIn(id(completion), self.session._issued)
+
+    def test_cloud_metadata_delivery_survives_changed_and_removed_origin_once(self):
+        task = self.cloud_task()
+        saved = task.result(5)
+        completion = self.session.drain(task=task)[0]
+        self.scene.frame_set(self.scene.frame_current + 1)
+        bpy.context.window.scene = self.previous
+        bpy.data.scenes.remove(self.scene)
+        before = tuple(bpy.data.objects), tuple(bpy.data.images)
+        self.assertEqual(self.session.deliver_cloud_read(completion), saved)
+        self.assertEqual((tuple(bpy.data.objects), tuple(bpy.data.images)), before)
+        self.assertEqual(self.store.get(saved.intent.request_id), saved)
+        with self.assertRaises(self.module.OriginUnavailable):
+            self.session.deliver_cloud_read(completion)
+
+    def test_cloud_metadata_delivery_rejects_foreign_copied_and_non_cloud_completions(self):
+        ordinary = self.completion()
+        task = self.cloud_task()
+        task.result(5)
+        completion = self.session.drain(task=task)[0]
+        with self.assertRaises(self.module.OriginUnavailable):
+            self.session.deliver_cloud_read(replace(completion))
+        with patch.object(self.session, "_issued", {}):
+            with self.assertRaises(self.module.OriginUnavailable):
+                self.session.deliver_cloud_read(completion)
+        with self.assertRaises(self.module.OriginUnavailable):
+            self.session.deliver_cloud_read(ordinary)
+        self.assertIn(id(ordinary), self.session._issued)
+        with ThreadPoolExecutor(max_workers=1) as pool:
+            with self.assertRaises(RuntimeError):
+                pool.submit(self.session.deliver_cloud_read, completion).result(5)
+        self.assertIs(self.session.deliver_cloud_read(completion), completion.result)
+
+    def test_cloud_metadata_delivery_rejects_retired_session(self):
+        task = self.cloud_task()
+        task.result(5)
+        completion = self.session.drain(task=task)[0]
+        self.session.deactivate()
+        with self.assertRaises(self.module.OriginUnavailable):
+            self.session.deliver_cloud_read(completion)
 
     def test_real_dependency_update_invalidates_quote_and_result(self):
         completion = self.completion()

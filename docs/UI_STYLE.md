@@ -787,6 +787,11 @@ on the changed artifact remains unverified.
 ## Completed cloud job recovery controls
 
 A successful cloud row without a scoped record offers **Save for recovery**.
+The metadata read is available in Edit, Sculpt and Pose modes as well as Object
+mode, subject to the same online-access and credential checks. Switching scenes
+while it runs does not discard the saved record or authorize scene application.
+Admission errors show their actionable reason, such as a different model read
+already pending for that job; unexpected failures keep a generic sanitized message.
 While its shared worker reads the job, the disabled label is **Reading cloud
 job...**. Success exposes **Inspect saved jobs** and a paused recovery record;
 download and destination approval remain separate. A sanitized read error allows
@@ -826,3 +831,24 @@ application has a test-only identifier to distinguish its window; the extension
 ZIP is unchanged. These checks establish native recovery controls with synthetic
 responses, not live cloud history, provider latency, completed result application,
 other OS/DPI combinations or integrated release acceptance.
+
+Scene-independent metadata delivery has separate native input proof on macOS
+arm64 Blender 5.1.2, using exact ZIP SHA-256
+`38f0a51edea77643f4988c737090e759b578c4b1844cdfd25f4ec43c3f3183d6`.
+That ZIP passes 822 installed tests on each Blender 5.0.1, 5.1.2 and 5.2.1.
+With external network connections blocked and a GET-only SDK fixture, clicking
+**Save for recovery** in Edit Mode starts one metadata read. While it is held,
+Tab exits Edit Mode, the scene selector switches to another scene, and N hides
+the sidebar. The response saves one paused record while that sidebar is closed.
+Reopening it shows **Resume download** in the second scene. Repeated inspection
+leaves the record and request count unchanged; neither scene receives a result.
+Returning to the original scene, selecting the light and pressing Home confirms
+viewport mouse focus and keyboard framing. There are zero downloads or paid
+submissions, cleanup removes the disposable profile, and the normal profile is
+unchanged. Sculpt/Pose admission and actionable admission errors have installed
+regression coverage; this desktop run exercised Edit Mode and scene switching.
+The live-provider, other-OS and release limitations above still apply.
+
+![Save for recovery is enabled in Edit Mode](images/cloud-recovery-edit-mode.png)
+
+![The paused cloud record survives switching to another scene](images/cloud-recovery-scene-switch.png)

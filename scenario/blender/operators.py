@@ -279,7 +279,7 @@ class SCENARIO_OT_import_result(bpy.types.Operator):
 
     @classmethod
     def poll(cls, context):
-        return _network_poll(cls, context) and context.mode == "OBJECT"
+        return _network_poll(cls, context)
 
     def execute(self, context):
         from . import history
@@ -291,6 +291,9 @@ class SCENARIO_OT_import_result(bpy.types.Operator):
                 return {"FINISHED"}
             jobs = runtime.ensure_model_jobs()
             jobs.recover_cloud(self.job_id, self.model_id, context.scene)
+        except ScenarioError as err:
+            self.report({"ERROR"}, err.reason)
+            return {"CANCELLED"}
         except Exception:
             self.report({"ERROR"}, "Could not inspect saved jobs or start the cloud read")
             return {"CANCELLED"}

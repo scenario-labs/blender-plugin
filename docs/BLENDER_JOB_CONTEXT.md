@@ -51,10 +51,14 @@ receipt-only retry to UI/MCP while its original owner retains the outcome handle
 captures the selected scene on the main thread and queues the
 [shared cloud read](JOB_COORDINATOR.md#adopting-a-completed-cloud-job).
 It captures no mesh target, mutates no scene data and creates no second worker
-pool. Normal delivery guards reject retired owners and changed scenes.
-Repeating a read from another scene preserves the original saved intent. Its
-completion is bound to the new reader's captured scene and verified job/model
-identity, while result application still requires a separate destination claim.
+pool. `deliver_cloud_read` consumes only a cloud-read completion issued by the
+same active session, after checking its job/model identity and credential scope.
+Switching, editing or removing the reader's scene does not discard this metadata.
+Repeating a read from another scene preserves the original saved intent.
+This delivery path returns a saved record only; it cannot deliver quotes or
+apply results. Ordinary delivery and result application retain their scene,
+revision and destination-approval guards. Retiring credentials or loading another
+file still prevents late delivery through the old session.
 
 Once saved, cloud records survive restart and use the existing inspection,
 explicit download and fresh destination-approval commands. Status distinguishes

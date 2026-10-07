@@ -323,6 +323,102 @@ class ModelGenerationTests(unittest.TestCase):
         self.assertEqual(result["state"], "succeeded")
         self.assertFalse(self.downloads or self.paid)
 
+    def test_cloud_recovery_operator_works_in_edit_sculpt_and_pose_modes(self):
+        self.result_fixture()
+        for mode in ("EDIT", "SCULPT", "POSE"):
+            with self.subTest(mode=mode):
+                if mode == "POSE":
+                    bpy.ops.object.armature_add()
+                else:
+                    bpy.ops.mesh.primitive_cube_add()
+                obj = bpy.context.object
+                bpy.ops.object.mode_set(mode=mode)
+                try:
+                    before = tuple(bpy.data.objects), tuple(bpy.data.images), bpy.context.mode
+                    self.assertTrue(bpy.ops.scenario.import_result.poll())
+                    self.assertEqual(
+                        bpy.ops.scenario.import_result(job_id=mode, model_id=self.model["id"]),
+                        {"FINISHED"},
+                    )
+                    owner = self.runtime.state.model_jobs
+                    item = owner.cloud_reads[mode]
+                    item.task.result(5)
+                    self.generation.process_model_jobs()
+                    self.assertIs(owner.finish_cloud(item), item.record)
+                    self.assertTrue(owner.status(item.record.intent.request_id)["delivery_paused"])
+                    self.assertEqual(
+                        (tuple(bpy.data.objects), tuple(bpy.data.images), bpy.context.mode), before
+                    )
+                    self.assertIs(bpy.context.object, obj)
+                finally:
+                    bpy.ops.object.mode_set(mode="OBJECT")
+        self.assertEqual(len(self.calls), 3)
+        self.assertFalse(self.downloads or self.paid)
+        with online_access(False):
+            self.assertFalse(bpy.ops.scenario.import_result.poll())
+        with patch.object(self.runtime, "credentials", return_value=SimpleNamespace(valid=False)):
+            self.assertFalse(bpy.ops.scenario.import_result.poll())
+
+    def test_native_and_mcp_cloud_read_deliver_after_scene_switch_without_application(self):
+        self.result_fixture()
+        original = bpy.context.scene
+        other = bpy.data.scenes.new("Other cloud reader scene")
+        self.block_cloud_read = True
+        self.release.clear()
+        try:
+            bpy.ops.scenario.import_result(job_id="cloud-switch", model_id=self.model["id"])
+            self.assertTrue(self.entered.wait(5))
+            deferred = self.tools.recover_cloud_job(
+                {"job_id": "cloud-switch", "model_id": self.model["id"]}
+            )
+            owner = self.runtime.state.model_jobs
+            item = owner.cloud_reads["cloud-switch"]
+            bpy.context.window.scene = other
+            self.runtime.sync_catalog_context()
+            before = tuple(bpy.data.objects), tuple(bpy.data.images)
+            self.release.set()
+            deferred.run()
+            self.generation.process_model_jobs()
+            result = deferred.finish(None)
+            self.assertEqual(result["request_id"], item.record.intent.request_id)
+            self.assertEqual(item.error, "")
+            self.assertTrue(owner.status(result["request_id"])["delivery_paused"])
+            self.assertEqual(self.runtime.state.jobs_view[0].local_id, result["request_id"])
+            self.assertEqual((tuple(bpy.data.objects), tuple(bpy.data.images)), before)
+            self.assertIs(bpy.context.scene, other)
+            self.assertEqual(len(self.calls), 1)
+            self.assertFalse(self.downloads or self.paid)
+        finally:
+            self.release.set()
+            bpy.context.window.scene = original
+            bpy.data.scenes.remove(other)
+
+    def test_cloud_recovery_operator_reports_pending_conflict_and_sanitizes_unexpected_errors(self):
+        self.result_fixture()
+        operator = submodule("blender.operators").SCENARIO_OT_import_result
+        self.block_cloud_read = True
+        self.release.clear()
+        owner = self.runtime.ensure_model_jobs()
+        try:
+            item = owner.recover_cloud("cloud-conflict", self.model["id"], bpy.context.scene)
+            self.assertTrue(self.entered.wait(5))
+            op = SimpleNamespace(job_id="cloud-conflict", model_id="another-model", report=Mock())
+            self.assertEqual(operator.execute(op, bpy.context), {"CANCELLED"})
+            op.report.assert_called_once_with(
+                {"ERROR"}, "This cloud job already has a different model read pending"
+            )
+            self.assertEqual(len(self.calls), 1)
+        finally:
+            self.release.set()
+        item.task.result(5)
+        op = SimpleNamespace(job_id="cloud-unexpected", model_id=self.model["id"], report=Mock())
+        with patch.object(owner, "recover_cloud", side_effect=RuntimeError("private fixture")):
+            self.assertEqual(operator.execute(op, bpy.context), {"CANCELLED"})
+        op.report.assert_called_once_with(
+            {"ERROR"}, "Could not inspect saved jobs or start the cloud read"
+        )
+        self.assertFalse(self.downloads or self.paid)
+
     def test_cloud_read_failure_is_sanitized_and_explicit_retry_is_read_only(self):
         self.result_fixture()
         deferred = self.tools.recover_cloud_job(

@@ -87,8 +87,11 @@ behavior by arbitrary callers; product code must use the shared coordinator.
 explicitly selected model job through the existing `SDKAdapter.job` method.
 It checks the exact job ID, successful status, `custom`/`inference` job type,
 `metadata.input.modelId` and a bounded unique list of output asset IDs.
-The selected scope and captured origin must remain active before the read and
-at the final durable write. HTTP work does not hold the origin lock.
+The selected coordinator must remain active before the read and at the final
+durable write. Scene changes before or during the read do not discard metadata;
+the saved origin remains provenance, never destination approval. HTTP work does
+not hold the coordinator lock. Quote, submission and application commands retain
+their separate origin guards.
 
 The command creates a [cloud result record](JOB_STORAGE.md#explicit-cloud-result-records)
 with no fabricated quote, request payload or source-object provenance. A matching

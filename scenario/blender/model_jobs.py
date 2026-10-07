@@ -205,7 +205,7 @@ class ModelJobs:
                 completions = self.session.drain(task=item.task)
                 if not completions:
                     raise RuntimeError("Missing cloud read completion")
-                record = self.session.deliver(completions[0], lambda value, *_: value)
+                record = self.session.deliver_cloud_read(completions[0])
                 item.record = record
                 self._view(record)
             except Exception:

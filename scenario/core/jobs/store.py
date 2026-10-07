@@ -26,8 +26,9 @@ from .transfers import DownloadedResult, TransferError, _root, validate_result_n
 if TYPE_CHECKING:
     from .mesh_source import MeshSource
 
-_VERSION = 7
+_VERSION = 8
 _APPLICATION_ID = 0x53434A42
+_FILM_TASK_FILTER = "json_valid(record) AND json_extract(record, '$.intent.film_task') IS NOT NULL"
 
 
 class StoreError(RuntimeError):
@@ -157,6 +158,26 @@ def _decode_mesh_binding(value):
 
 
 @dataclass(frozen=True)
+class FilmTaskBinding:
+    """Local production/task identity, never a remote identifier or spend approval."""
+
+    production_id: str
+    task_id: str
+    recipe_sha256: str
+    task_sha256: str
+
+    def __post_init__(self):
+        _identity(self.production_id)
+        if not isinstance(self.task_id, str) or not re.fullmatch(
+            r"[a-zA-Z0-9][a-zA-Z0-9_-]{0,95}", self.task_id
+        ):
+            raise ValueError("Use a bounded Film task name")
+        for value in (self.recipe_sha256, self.task_sha256):
+            if not isinstance(value, str) or not re.fullmatch(r"[0-9a-f]{64}", value):
+                raise ValueError("Film recipe and task require SHA-256 identities")
+
+
+@dataclass(frozen=True)
 class JobIntent:
     request_id: str
     scope: JobScope
@@ -167,6 +188,7 @@ class JobIntent:
     quote_sha256: str
     quote_cost: str
     mesh_sources: tuple[JobMeshSource, ...] = ()
+    film_task: FilmTaskBinding | None = None
 
     def __post_init__(self):
         _identity(self.request_id)
@@ -192,6 +214,10 @@ class JobIntent:
             or (self.mesh_sources and self.operation not in {"model", "workflow"})
         ):
             raise ValueError("Use unique bounded mesh input bindings for a model or workflow")
+        if self.film_task is not None and (
+            not isinstance(self.film_task, FilmTaskBinding) or self.operation != "model"
+        ):
+            raise ValueError("Film task bindings require a model generation intent")
         try:
             if not isinstance(self.quote_cost, str) or len(self.quote_cost) > 128:
                 raise ValueError
@@ -238,6 +264,10 @@ class CloudJobIntent:
     @property
     def mesh_sources(self):
         return ()
+
+    @property
+    def film_task(self):
+        return None
 
 
 class JobState(StrEnum):
@@ -458,6 +488,10 @@ def _decode(raw, scope, *, version=_VERSION):
             if version >= 7 and isinstance(intent, dict) and intent.get("source") == "cloud"
             else JobIntent
         )
+        if version < 8 and intent_type is JobIntent:
+            if not isinstance(intent, dict) or "film_task" in intent:
+                raise ValueError
+            intent["film_task"] = None
         if version < 6:
             if not isinstance(intent, dict) or "mesh_sources" in intent:
                 raise ValueError
@@ -472,6 +506,13 @@ def _decode(raw, scope, *, version=_VERSION):
         intent["scope"] = JobScope(**intent["scope"])
         intent["origin"] = JobOrigin(**intent["origin"])
         if intent_type is JobIntent:
+            film = intent["film_task"]
+            if film is not None:
+                if not isinstance(film, dict) or set(film) != set(
+                    FilmTaskBinding.__dataclass_fields__
+                ):
+                    raise ValueError
+                intent["film_task"] = FilmTaskBinding(**film)
             bindings = intent["mesh_sources"]
             if not isinstance(bindings, list) or len(bindings) > 128:
                 raise ValueError
@@ -634,10 +675,17 @@ class JobStore:
                     )
                     connection.execute(f"PRAGMA application_id = {_APPLICATION_ID}")
                     connection.execute(f"PRAGMA user_version = {_VERSION}")
-                elif version in {2, 3, 4, 5, 6} and application == _APPLICATION_ID:
+                elif version in {2, 3, 4, 5, 6, 7} and application == _APPLICATION_ID:
                     self._upgrade_previous(connection, version)
                 else:
                     self._check_version(connection)
+                # Derived metadata only; keep saved records and spend claims intact.
+                connection.execute(
+                    "CREATE INDEX IF NOT EXISTS job_film_task ON jobs "
+                    "(scope, json_extract(record, '$.intent.film_task.production_id'), "
+                    "json_extract(record, '$.intent.film_task.task_id')) "
+                    f"WHERE {_FILM_TASK_FILTER}"
+                )
         except OSError:
             raise StoreError("Could not initialize job storage") from None
 
@@ -787,6 +835,25 @@ class JobStore:
         ).fetchall()
         return tuple(self._read(connection, row[0]) for row in identifiers)
 
+    def film_job(self, production_id, task_id):
+        """Inspect one reserved take in this scope; never reconstruct authorization."""
+        _identity(production_id)
+        _identity(task_id)
+        with self._connection() as connection:
+            return self._film_job(connection, production_id, task_id)
+
+    def _film_job(self, connection, production_id, task_id):
+        rows = connection.execute(
+            "SELECT request_id FROM jobs INDEXED BY job_film_task WHERE scope=? "
+            "AND json_extract(record, '$.intent.film_task.production_id')=? "
+            "AND json_extract(record, '$.intent.film_task.task_id')=? "
+            f"AND {_FILM_TASK_FILTER} LIMIT 2",
+            (self._key, production_id, task_id),
+        ).fetchall()
+        if len(rows) > 1:
+            raise StoreError("Film task matches multiple saved jobs; preserve them for recovery")
+        return self._read(connection, rows[0][0]) if rows else None
+
     def adopt_cloud_job(self, intent: CloudJobIntent, remote_job_id):
         """Save authoritative successful-job evidence supplied by the coordinator."""
         if not isinstance(intent, CloudJobIntent) or intent.scope != self.scope:
@@ -824,6 +891,16 @@ class JobStore:
         with self._connection(write=True) as connection:
             if self._read(connection, intent.request_id) is not None:
                 raise StoreConflict("Request identity already exists; do not resubmit")
+            if (
+                intent.film_task is not None
+                and self._film_job(
+                    connection, intent.film_task.production_id, intent.film_task.task_id
+                )
+                is not None
+            ):
+                raise StoreConflict(
+                    "Film task already has a saved job; inspect it or name a new take"
+                )
             connection.execute(
                 "INSERT INTO jobs VALUES (?, ?, ?, ?)",
                 (self._key, intent.request_id, 0, _json(asdict(record))),

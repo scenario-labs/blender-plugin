@@ -307,6 +307,19 @@ class JobSession:
     def quote_model(self, identifier, parameters, *, origin):
         return self._quote("model", identifier, parameters, origin)
 
+    def quote_film_task(self, recipe, *, production_id, task_id, origin):
+        _main_thread()
+        self._check_capacity()
+        self._resolve(origin)
+        task = self._workers.quote_film_task(
+            recipe,
+            production_id=production_id,
+            task_id=task_id,
+            origin=origin,
+        )
+        self._pending.append((task, origin))
+        return task
+
     def quote_workflow(self, identifier, parameters, *, origin):
         return self._quote("workflow", identifier, parameters, origin)
 

@@ -78,7 +78,7 @@ Every connection rechecks that the database is a regular nonsymlink file,
 including after a competing creation. The parent must remain trusted: this check
 and SQLite's path open are separate operations, not an atomic no-follow open.
 
-The database has an application ID and schema version **7**. SQLite transactions
+The database has an application ID and schema version **8**. SQLite transactions
 with `synchronous=FULL` commit the whole change or report `StoreError`; no cached
 in-memory result is reported as saved before commit succeeds. `BEGIN IMMEDIATE`
 serializes writers across threads/processes. Each operation owns a connection,
@@ -94,7 +94,7 @@ another request or resend. Intent fields and a known remote job ID cannot change
 Foreign databases, unsupported versions, malformed records and mismatched stored
 identities/revisions raise errors. They are preserved for explicit recovery,
 never silently replaced with empty history. An already-open store also fails if
-its database disappears. Previous shared schemas 2 through 6 upgrade in one
+its database disappears. Previous shared schemas 2 through 7 upgrade in one
 transaction that validates every scope, record, identity and revision. A corrupt
 row or failed commit preserves all previous rows and the old version. This is
 not a prototype import; version 1 and foreign databases remain rejected. Schema 2/3
@@ -104,7 +104,8 @@ are preserved, while schema 2 retains its original-origin application semantics.
 Schemas before 5 receive an empty local-application history; schema 5 preserves
 its existing claims, including unfinished applications. Schemas before 6
 receive empty mesh input bindings; schema 6 preserves its captured mesh sources.
-Older extension builds reject schema 7; stop older Blender processes before
+Schema 7 cloud results remain cloud records without synthetic spend or Film
+bindings. Older extension builds reject schema 8; stop older Blender processes before
 upgrading and do not expect an older build to open the upgraded store.
 
 ## Explicit cloud result records
@@ -322,3 +323,34 @@ an object. Their origin may differ from the generation's current scene context.
 They neither retarget the job nor authorize automatic application, provider
 alignment or original-object recovery after restart. Reopening keeps the source
 history available for explicit review; no paid request is replayed.
+
+
+## Film task reservations
+
+Schema 8 adds optional `JobIntent.film_task`: the opaque production ID, bounded
+task name, normalized recipe SHA256 and task/dependency SHA256. Only model intents
+may carry it. Existing schemas 2 through 7 receive `None` after full validation;
+cloud result records remain unchanged. Current records require the field, even
+when null. Invalid/truncated bindings fail closed. No raw recipe, prompt, path,
+credential or signed URL is added to storage.
+
+`create` checks the selected scope for the same production/task inside its existing
+`BEGIN IMMEDIATE` transaction, then inserts the intent and binding together. A
+competing owner cannot reserve the same task even with a different recipe digest,
+request ID, origin or model. Every existing state keeps its reservation, including
+an unsubmitted cancellation or failed generation. A new take requires a new task
+name and separately reviewed fresh quote. Failed commits roll back both identity
+and reservation; a committed write with a lost acknowledgement is discoverable
+through `film_job` and cannot be repeated.
+
+`film_job(production_id, task_id)` returns only the selected credential scope's
+record, rejecting ambiguous matches. It never reconstructs a quote or changes
+state. A derived index selects the exact scope, production and task without
+decoding unrelated history. It checks at most two matches, preserving ambiguity
+rejection and the existing transaction's atomic reservation. Index creation
+preserves records and skips malformed JSON; direct reads still reject damaged
+records. The [Film command](FILM_PLAN.md#durable-model-tasks) verifies completed
+results and matching task/dependency digests before reference reuse. Low-level
+store calls trust the coordinator's binding; a caller-supplied digest is not
+proof of recipe validation or permission. Existing submission, transfer and
+application states remain unchanged.

@@ -374,6 +374,8 @@ def legacy_store(path, version):
             "SELECT scope, request_id, record FROM jobs"
         ).fetchall():
             value = json.loads(raw)
+            if version < 8 and "film_task" in value["intent"]:
+                del value["intent"]["film_task"]
             if version < 6:
                 del value["intent"]["mesh_sources"]
             if version < 5:
@@ -390,7 +392,7 @@ def legacy_store(path, version):
         connection.execute(f"PRAGMA user_version={version}")
 
 
-@pytest.mark.parametrize("version", [2, 3, 4, 5, 6])
+@pytest.mark.parametrize("version", [2, 3, 4, 5, 6, 7])
 def test_shared_store_upgrade_preserves_all_scopes_states_and_receipts(tmp_path, intent, version):
     path = tmp_path / "jobs.sqlite3"
     expected = {}
@@ -422,11 +424,11 @@ def test_shared_store_upgrade_preserves_all_scopes_states_and_receipts(tmp_path,
     for scope, records in expected.items():
         assert JobStore(path, scope).records() == records
     with sqlite3.connect(path) as connection:
-        assert connection.execute("PRAGMA user_version").fetchone()[0] == 7
+        assert connection.execute("PRAGMA user_version").fetchone()[0] == 8
 
 
 @pytest.mark.parametrize("damage", ["commit", "scope", "revision", "record", "foreign", "v1"])
-@pytest.mark.parametrize("version", [2, 3, 4, 5, 6])
+@pytest.mark.parametrize("version", [2, 3, 4, 5, 6, 7])
 def test_shared_store_upgrade_failure_preserves_every_row_and_version(
     tmp_path, intent, monkeypatch, damage, version
 ):
@@ -989,3 +991,20 @@ def test_schema_six_upgrade_preserves_mesh_sources_and_unfinished_reuse(
     assert unfinished.local_applications[-1].state == LocalApplicationState.APPLYING
     with pytest.raises(StoreConflict, match="unfinished"):
         reuse(reopened, unfinished, application_id="repeat")
+
+
+def test_schema_seven_cloud_results_survive_upgrade(tmp_path, intent):
+    from scenario.core.jobs.store import CloudJobIntent
+
+    path = tmp_path / "jobs.sqlite3"
+    store = JobStore(path, intent.scope)
+    local = store.create(intent)
+    cloud = store.adopt_cloud_job(
+        CloudJobIntent("cloud", intent.scope, replace(intent.origin, target_id=None), "model"),
+        "cloud-remote",
+    )
+    legacy_store(path, 7)
+    upgraded = JobStore(path, intent.scope)
+    assert upgraded.get(intent.request_id) == local
+    assert upgraded.get("cloud") == cloud
+    assert cloud.intent.film_task is None

@@ -19,6 +19,7 @@ from ..schema.forms import _fields, is_file_field
 from .results import ResultCommands, ResultError, VerifiedResults
 from .store import (
     CloudJobIntent,
+    FilmTaskBinding,
     JobIntent,
     JobMeshSource,
     JobOrigin,
@@ -45,6 +46,7 @@ class OriginQuote:
     origin: JobOrigin
     estimate: Estimate = field(repr=False)
     mesh_sources: tuple[JobMeshSource, ...] = ()
+    film_task: FilmTaskBinding | None = None
 
 
 class SubmissionUncertain(RuntimeError):
@@ -567,6 +569,15 @@ class JobCoordinator:
     def quote_model(self, identifier, parameters, *, origin):
         return self._quote("model", identifier, parameters, origin)
 
+    def quote_film_task(self, recipe, *, production_id, task_id, origin):
+        from .film_tasks import model_task_request
+
+        with self._request_guard(origin):
+            binding, model, parameters = model_task_request(
+                self._store, recipe, production_id=production_id, task_id=task_id
+            )
+        return self._quote("model", model, parameters, origin, film_task=binding)
+
     def quote_workflow(self, identifier, parameters, *, origin):
         return self._quote("workflow", identifier, parameters, origin)
 
@@ -576,7 +587,7 @@ class JobCoordinator:
     def quote_translate(self, parameters, *, origin):
         return self._quote("translate", "translate", parameters, origin)
 
-    def _quote(self, operation, identifier, parameters, origin):
+    def _quote(self, operation, identifier, parameters, origin, *, film_task=None):
         if not isinstance(origin, JobOrigin):
             raise QuoteError("Capture the request origin before estimation")
         snapshot = json.loads(_payload(parameters))
@@ -592,7 +603,7 @@ class JobCoordinator:
             estimate = getattr(self._adapter, f"estimate_{operation}")(record, snapshot)
         with self._request_guard(origin):
             bindings = self._mesh_bindings(operation, record, estimate.payload)
-            quote = OriginQuote(self.scope, origin, estimate, bindings)
+            quote = OriginQuote(self.scope, origin, estimate, bindings, film_task)
             self._quotes[id(quote)] = quote
             self._bound_estimates[estimate] = True
             return quote
@@ -609,7 +620,12 @@ class JobCoordinator:
             if self._quotes.get(id(quote)) is not quote or quote.scope != self.scope:
                 raise QuoteError("Use an unchanged quote issued by this context")
             self._validate_mesh_bindings(quote.mesh_sources)
-            prepared = self._prepare(quote.estimate, quote.origin, mesh_sources=quote.mesh_sources)
+            prepared = self._prepare(
+                quote.estimate,
+                quote.origin,
+                mesh_sources=quote.mesh_sources,
+                film_task=quote.film_task,
+            )
             del self._quotes[id(quote)]
             return prepared
 
@@ -622,7 +638,7 @@ class JobCoordinator:
                 raise QuoteError("Use prepare_quote for an estimate bound to an origin")
             return self._prepare(estimate, origin)
 
-    def _prepare(self, estimate: Estimate, origin: JobOrigin, *, mesh_sources=()):
+    def _prepare(self, estimate: Estimate, origin: JobOrigin, *, mesh_sources=(), film_task=None):
         """Persist after ownership was checked outside the coordinator lock.
 
         Preparation does not reserve or consume an estimate. Submission rechecks
@@ -641,6 +657,7 @@ class JobCoordinator:
                 quote_sha256=hashlib.sha256(estimate.response_json).hexdigest(),
                 quote_cost=str(estimate.cost),
                 mesh_sources=mesh_sources,
+                film_task=film_task,
             )
             expires_at = estimate.issued_at + self._ttl
             now = self._clock()

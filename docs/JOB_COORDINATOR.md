@@ -81,6 +81,25 @@ The store persists result manifests and receipts; connecting download commands,
 main-thread application and UI/MCP remains separate integration work. The low-level adapter hook orders persistence but cannot enforce correct
 behavior by arbitrary callers; product code must use the shared coordinator.
 
+## Film model task quotes
+
+`quote_film_task(recipe, production_id=..., task_id=..., origin=...)` uses the
+[Film task contract](FILM_PLAN.md#durable-model-tasks) to resolve model-task
+references from the selected store and obtain an ordinary SDK model estimate.
+It captures the production/task and recipe/dependency digests in the owned
+`OriginQuote`. `prepare_quote` carries this binding into the same atomic intent
+creation, whose unique take reservation is the final concurrency check before
+submission. Two estimates do not authorize two attempts of the same take.
+The generic `submit` command retains its exact payload, cost, ownership, expiry,
+origin and no-retry boundaries. Film metadata never enters the service payload.
+
+The command reuses `SDKAdapter.model`, `estimate_model` and `submit_estimate`
+(public `models.with_raw_response.retrieve` and `generate.with_raw_response.run_model`).
+It adds no endpoint or raw fallback. API-key default project scope remains valid.
+`JobWorkers` snapshots recipe data before queueing. `JobSession` captures/delivers
+the existing origin; a changed scene or retired owner rejects the quote before
+preparation. Native/MCP Film controls and upload-task associations remain unwired.
+
 ## Adopting a completed cloud job
 
 `adopt_cloud_job(identifier, expected_model_id=..., origin=...)` retrieves one

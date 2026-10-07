@@ -410,6 +410,14 @@ class ResultCommands:
         """Inspect one downloaded receipt on a worker without applying or fetching it."""
         from .media_probe import measure
 
+        pending_download = {JobState.SUCCEEDED, JobState.DOWNLOADING, JobState.DOWNLOAD_FAILED}
+        current = self._current(
+            request_id,
+            expected_revision,
+            {JobState.READY, JobState.APPLY_FAILED, JobState.APPLIED} | pending_download,
+        )
+        if current.state in pending_download:
+            raise ResultError("Download the selected model result before inspecting its media")
         verified = self.verify_ready(request_id, expected_revision=expected_revision)
         chosen = [
             (item, path)

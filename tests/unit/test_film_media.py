@@ -204,6 +204,53 @@ def test_composition_measures_saved_bytes_off_thread_without_network_or_mutation
     assert prepare(env).result(3) == result
 
 
+@pytest.mark.parametrize(
+    "state", [JobState.SUCCEEDED, JobState.DOWNLOADING, JobState.DOWNLOAD_FAILED]
+)
+def test_remote_result_without_completed_download_explains_required_action(env, state):
+    env.recipe["tasks"][0]["id"] = "fresh-video"
+    env.recipe["shots"][0]["video_task"] = "fresh-video"
+    binding, *_ = _task_context(
+        env.store, env.recipe, production_id="production", task_id="fresh-video", kind="model"
+    )
+    row = env.store.create(
+        JobIntent(
+            "pending-media",
+            env.scope,
+            env.origin,
+            "model",
+            "model",
+            "a" * 64,
+            "b" * 64,
+            "1",
+            film_task=binding,
+        )
+    )
+    for target in (JobState.SUBMITTING, JobState.REMOTE, JobState.SUCCEEDED):
+        row = env.store.transition(
+            "pending-media",
+            expected_revision=row.revision,
+            state=target,
+            remote_job_id="pending-remote" if target == JobState.REMOTE else None,
+        )
+    row = env.store.set_results(
+        "pending-media",
+        (ResultAsset("asset-pending", "pending.mp4", "video/mp4"),),
+        expected_revision=row.revision,
+    )
+    if state != JobState.SUCCEEDED:
+        row = env.store.transition(
+            "pending-media", expected_revision=row.revision, state=JobState.DOWNLOADING
+        )
+    if state == JobState.DOWNLOAD_FAILED:
+        env.store.transition("pending-media", expected_revision=row.revision, state=state)
+    before = env.store.records()
+    with pytest.raises(ResultError, match="Download the selected model result"):
+        prepare(env).result(3)
+    assert env.store.records() == before
+    assert env.probes == []
+
+
 @pytest.mark.parametrize("source", ["video", "audio"])
 @pytest.mark.parametrize("mutation", ["changed", "missing"])
 def test_changed_or_missing_saved_bytes_never_prepare_or_refetch(env, source, mutation):

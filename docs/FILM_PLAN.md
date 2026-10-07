@@ -552,10 +552,12 @@ current production/task dependency, contain one output of the expected media
 kind, and belong to the selected scope. Imported upload observations must match
 the saved association and revision. Completed model outputs may be available
 without a local download; audio measurement still needs a separate verified
-local source. The draft retains each source's request, revision, asset and task
-digest. Source resolution validates the recipe scope and computes all transitive
-task digests once, reusing them for every selected source.
-`validate_composition_draft` rejects changed inputs or a newly
+local source. Actual media inspection requires completed local downloads.
+A succeeded, downloading or download-failed model result reports that it must
+be downloaded first, without probing files or requesting a download. The draft
+retains each source's request, revision, asset and task digest. Source resolution
+validates the recipe scope and computes all transitive task digests once, reusing
+them for every selected source. `validate_composition_draft` rejects changed inputs or a newly
 reserved master. Neither helper acquires an approval or an atomic generation
 claim. API-key default scope needs no project discovery.
 

@@ -311,14 +311,19 @@ class FilmControlsTests(unittest.TestCase):
         self.assertNotIn("scenario.quote_film", operators)
         self.assertNotIn("scenario.approve_film", operators)
         self.assertIn("scenario.inspect_saved_jobs", operators)
-        count, calls = len(self.owner().actions), len(self.calls)
-        with self.assertRaisesRegex(Exception, "already has saved work"):
-            self.estimate()
+        owner = self.owner()
+        count = len(owner.actions)
+        # The submitted job can still poll; only a new quote must be blocked.
+        with patch.object(
+            owner.session, "quote_film_task", wraps=owner.session.quote_film_task
+        ) as quote:
+            with self.assertRaisesRegex(Exception, "already has saved work"):
+                self.estimate()
+            quote.assert_not_called()
         self.assertIs(self.owner().current(self.scene, "take"), item)
         self.assertEqual(item.phase, "SUBMITTED")
         self.assertEqual(item.error, "")
         self.assertEqual(len(self.owner().actions), count)
-        self.assertEqual(len(self.calls), calls)
         self.assertEqual(len(self.paid), 1)
 
     def test_reloading_recipe_preserves_identity_but_rejects_changed_quote(self):

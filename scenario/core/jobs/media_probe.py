@@ -32,6 +32,7 @@ FORMATS = {
     "audio/flac": ("audio", ".flac", "flac"),
     "audio/x-flac": ("audio", ".flac", "flac"),
     "audio/mp4": ("audio", ".m4a", "mov"),
+    "audio/m4a": ("audio", ".m4a", "mov"),
     "audio/aac": ("audio", ".aac", "aac"),
 }
 

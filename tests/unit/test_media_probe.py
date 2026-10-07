@@ -64,6 +64,19 @@ def test_only_verified_private_copy_reaches_forced_offline_demuxer(fixture, monk
     assert list(root.iterdir()) == [] and path.read_bytes() == b"saved media fixture"
 
 
+@pytest.mark.parametrize("media_type", ["audio/m4a", "audio/mp4"])
+def test_m4a_upload_and_container_types_use_the_same_verified_demuxer(fixture, media_type):
+    path, receipt, root, calls = fixture
+    result = probe.measure(path, receipt, media_type, root=root)
+    assert result.kind == "audio"
+    assert result.duration == Fraction(48001, 48000)
+    assert (result.sha256, result.size) == (receipt.sha256, receipt.size)
+    command, _ = calls[0]
+    assert command[command.index("-f") + 1] == "mov"
+    assert Path(command[command.index("-i") + 1]).suffix == ".m4a"
+    assert list(root.iterdir()) == [] and path.read_bytes() == b"saved media fixture"
+
+
 @pytest.mark.parametrize("change", ["bytes", "size", "symlink", "missing"])
 def test_changed_unavailable_or_linked_sources_never_reach_probe(fixture, change):
     path, receipt, root, calls = fixture

@@ -598,7 +598,8 @@ scratch is removed on success or failure; original results/staging stay intact.
 No binary is fetched or bundled.
 
 Supported MIME types cover MP4/MOV, WebM/Matroska, AVI, WAV, MP3, Ogg, FLAC, M4A
-and AAC. Ambiguous multiple picture/sound streams are rejected; audio cover art is
+and AAC. M4A accepts both uploaded `audio/m4a` and container `audio/mp4` types.
+Ambiguous multiple picture/sound streams are rejected; audio cover art is
 ignored. Picture and sound use their own exact rational duration where present;
 a container-wide fallback is allowed only for a single primary media stream.
 Measurements describe container metadata, not a full decode, constant-frame-rate

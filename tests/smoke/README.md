@@ -161,9 +161,8 @@ them; their original digest, attempt marker and durable state still apply.
 For Video and image-to-3D, prepare/upload references explicitly through the shared
 native or MCP upload commands and put the resulting authorized asset IDs in the
 input JSON. These smoke commands do not upload a path argument, perform captures,
-or run extra multi-view estimates. Reference upload/recovery automation still
-needs its own acceptance work; removing the old unscoped uploader does not prove
-that journey. Material receipts retain the shared runtime's documented texture
+or run extra multi-view estimates. The [explicit reference plan](#prepare-reference-inputs) below also automates
+shared upload commands; live upload acceptance remains separate. Material receipts retain the shared runtime's documented texture
 roles; this tool does not construct or apply Blender materials.
 
 Omit `--env-file` and use `--no-env-file` when the shell supplies credentials.
@@ -197,10 +196,10 @@ default scope; a string must exactly match `SCENARIO_TEST_PROJECT_ID`.
 Add cases for the other result kinds using current supported model IDs and their
 actual schemas. The plan is private: inputs may contain uploaded asset IDs. It
 must not contain local file paths as substitutes for uploaded references. This
-runner still needs references prepared through shared native/MCP uploads; it does
-not yet automate the upload/capture portion of #40/#68. Case names are unique
-lowercase labels, not paths; `suite-attempt` is reserved for internal state.
-Console output uses case numbers, not those labels.
+version-1 plan consumes already imported references. Version 2 below can prepare
+explicitly authorized local files; Blender capture and live acceptance remain
+separate. Case names are unique lowercase labels, not paths; `suite-attempt` is
+reserved for internal state. Console output uses case numbers, not those labels.
 
 ```sh
 make smoke SMOKE_ARGS="quote --plan workdir/smoke-plan.json --run-dir workdir/suite"
@@ -241,6 +240,89 @@ approval is for the specified plan/project and total budget. Do not invoke it
 when authorization only covers an earlier exact quote or another plan. There is
 no default allowance. `--timeout` bounds polling per case, as in the model engine.
 
+## Prepare reference inputs
+
+A version-2 plan adds one to eight `inputs`, each with an exact SHA-256 of the
+reviewed file. Cases refer to them with an object containing only
+`{"$input": "reference-name"}`, including within arrays. Every input must be used.
+For example, replace the illustrative hash, model ID and parameter name below
+with the actual reviewed file/model contract:
+
+```json
+{
+  "schema_version": 2,
+  "project_id": null,
+  "inputs": [
+    {
+      "name": "reference",
+      "file": "reference.png",
+      "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "kind": "image",
+      "content_type": "image/png"
+    }
+  ],
+  "cases": [
+    {
+      "name": "edit",
+      "result_kind": "image",
+      "model": "MODEL_ID",
+      "parameters": {"images": [{"$input": "reference"}]}
+    }
+  ]
+}
+```
+
+`file` is relative to an explicit input directory, uses forward slashes and
+cannot escape that directory or traverse symbolic links. Each regular file must
+be nonempty and at most 32 MiB. Supported kinds are `image`, `video`, `audio`,
+`3d`, `asset` and `text`; these declarations do not establish provider support
+for a format or a particular model parameter. There is no model upload/import.
+
+Review the plan, source bytes, destination test scope and permission to send
+those files. Compute the plan file's SHA-256 and supply it only after that upload
+authorization. Upload approval does not approve generation:
+
+```sh
+SCENARIO_SMOKE=1 uv run --locked --env-file .env.local python -m tools.smoke_inputs upload \
+  --plan workdir/reference-plan.json --approved-plan PLAN_SHA256 \
+  --input-root workdir/reviewed-inputs --run-dir workdir/suite-inputs
+make smoke SMOKE_ARGS="quote --plan workdir/suite-inputs/prepared-plan.json --run-dir workdir/suite"
+```
+
+The upload command privately stages and hashes **all** sources before the first
+remote initialization. It saves every input/request/scope binding, then uses the
+existing coordinator's SDK upload initialization/retrieval/completion and signed
+S3 part transport. A changed file, project or approval fails before remote work;
+any upload failure or uncertainty stops subsequent inputs. No mutation is
+retried. A new run directory is required and must not be created as a workaround
+for uncertainty. On complete import, `prepared-plan.json` contains version-1
+cases with exact asset IDs; it remains private. Model quotes/schema validation
+then run normally. Uploads can complete even when a later model schema or budget
+check prevents generation.
+
+Recovery requires the original directory, scope key, stores and credentials:
+
+```sh
+uv run --locked --env-file .env.local python -m tools.smoke_inputs resume \
+  --run-dir workdir/suite-inputs
+```
+
+This command can only poll known uploads or read imported records. It never
+initializes, transfers, finalizes or submits generation. Unknown initialization,
+incomplete transfer or unattempted inputs require explicit inspection; it cannot
+finish them by replaying writes. Fully imported records recreate the same
+prepared plan without service requests. Keep source snapshots and private state
+until uncertainty and acceptance evidence are resolved. `--timeout` bounds
+polling per input, not the transport's own request duration.
+
+For a separately authorized version-2 automation plan, `budget-run` additionally
+requires `--upload-inputs --input-root DIRECTORY`. Authorization must cover the
+exact listed source bytes and uploads as well as the generation plan, scope and
+total cap. Input state lives beside the suite in `SUITE_DIRECTORY-inputs`.
+All inputs must import before any case is quoted; every quote must fit the same
+aggregate budget before generation begins. Ordinary `quote` never uploads, and
+version-1 automation is unchanged.
+
 ## Protected hosted execution and recovery
 
 The `smoke` workflow dispatches on `main` or on the first of each month. Forks,
@@ -256,13 +338,17 @@ execution. Monthly dispatch uses the repository variable `SMOKE_MAX_TOTAL_CU`;
 missing or zero also fails. Admission validates and freezes the cap into a job
 output. The approval job name and execution use that same value, so environment
 variables cannot change it after review. Approving means authorizing the private
-plan, configured test scope and displayed total cap. Decline if those are unclear.
+plan, configured test scope and displayed total cap, including the exact input
+files/hashes when using version 2. Hosted input paths are relative to the checked-out
+repository; use reviewed fixtures and preserve their licenses. Decline if these
+inputs or authorization are unclear.
 The job never prints the plan, account/project, asset/job IDs or raw exceptions.
 
 Before any service request, GnuPG must encrypt and decrypt a test file using a
 private temporary home. The workflow preserves only `smoke-recovery.gpg`, an
 AES-256 OpenPGP archive with integrity protection, retained for seven days.
-It includes the private plan, quotes, attempt markers, stores and results; keep
+It includes the private plan, uploaded-input snapshots/state, prepared asset
+references, quotes, attempt markers, stores and results; keep
 the recovery passphrase outside public logs and artifacts. A setup failure cannot
 spend. A normal failed suite still reaches encryption/upload. A hard runner kill,
 job timeout or artifact service failure can prevent preservation; inspect cloud
@@ -281,7 +367,11 @@ tar -xf recovery.tar
 ```
 
 With the original test credentials/project, run `tools.smoke_suite resume` against
-`smoke/suite` from the repository's pinned environment. Do not publish decrypted
+`smoke/suite` from the repository's pinned environment. For version-2 input
+recovery, use `tools.smoke_inputs resume --run-dir smoke/suite-inputs`; this does
+not start or resume generation. If model quoting never completed, inspect and
+obtain a new explicit generation decision rather than rerunning `budget-run`.
+Do not publish decrypted
 contents or remove attempt markers. Keep the old passphrase for each retained
 artifact when rotating the environment secret. No hosted run, live upload,
 paid provider output, native application or motion/audio review is implied by

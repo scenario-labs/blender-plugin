@@ -235,7 +235,11 @@ scheduled plan and per-run aggregate allowance. It has no positive default.
 Configure any provider-side project/monthly budget separately; the workflow's cap
 is per run, and manual runs do not share a monthly ledger. The approval job shows
 the cap frozen by admission. Review that amount and the configured private plan
-and scope before approving. Do not put paid secrets at repository scope merely
+and scope before approving. Version-2 plans also authorize exact input files and
+hashes from the checked-out repository; the protected job stages them privately
+and uploads through shared durable commands before quoting. Approval covers
+those uploads even if model validation or the cap later prevents generation.
+Do not put paid secrets at repository scope merely
 to bypass this environment; the free API audit remains separate.
 
 Actions reruns are refused, even after an apparently early failure. Recover from

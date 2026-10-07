@@ -46,7 +46,7 @@ records, lane/schema helpers and local display status classification remain.
 | Result and complete prompt/model-text metadata | Shared coordinator: `assets.with_raw_response.retrieve`; bounded complete text uses the signed result transport |
 | Reference upload metadata, progress and completion | Shared upload coordinator: `uploads.with_raw_response.create/retrieve/trigger_action` |
 | Optional team/project discovery | Adapter-owned `SDKResourceExtensions`, the named [SDK issue #29 exception](https://github.com/scenario-labs/scenario-sdk-python/issues/29) below; no new raw exception |
-| Developer model audit, fixture recorder and smoke tools | The same `SDKAdapter`, with smoke submission through the shared coordinator |
+| Developer model audit, fixture recorder and smoke tools | The same `SDKAdapter`; smoke generation and explicit reference-plan uploads use shared coordinator commands. [Reference automation](../tests/smoke/README.md#prepare-reference-inputs) reuses the upload SDK methods above and signed-part transport. |
 
 Workflow adapter primitives also use the pinned public SDK methods documented
 below; their presence is not acceptance of a user-facing Film workflow service.

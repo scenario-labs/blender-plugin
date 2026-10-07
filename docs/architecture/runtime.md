@@ -342,6 +342,13 @@ scoped upload and saves its immutable source/asset identity in the same job
 database. Dependent quotes recheck that upload locally; association sends no
 bytes and never replays uncertain uploads. See [durable Film tasks](../FILM_PLAN.md#durable-model-tasks).
 
+The [native Film scene primitives](../FILM_PLAN.md#native-shot-and-timeline-primitives)
+now construct complete new shot scenes and editable timelines from validated
+recipes and explicit saved GLB receipts. They restore the current scene and roll
+back only new data on failure. Shared credential/task selection, application
+claims and native/MCP scene-building approval remain to integrate; the existing
+Film controls still prepare/approve model and upload tasks only.
+
 ## Shared MCP render preparation
 
 Local MCP `render_form` edits and inspects the native Render Image/Video form,

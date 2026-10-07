@@ -56,6 +56,27 @@ def fixture():
     }
 
 
+def test_hero_size_rejects_both_dimensions_without_changing_recipe():
+    raw = fixture()
+    raw["heroes"]["courier"]["width"] = 2
+    before = copy.deepcopy(raw)
+    with pytest.raises(ValueError, match="either width or height, not both"):
+        film_module().validate_film_plan(raw)
+    assert raw == before
+
+
+@pytest.mark.parametrize("size", [{}, {"width": 2}, {"height": 1.8}])
+def test_hero_size_accepts_one_dimension_or_original_size(size):
+    raw = fixture()
+    hero = raw["heroes"]["courier"]
+    hero.pop("height")
+    hero.update(size)
+    before = copy.deepcopy(raw)
+    plan = film_module().validate_film_plan(raw)
+    assert {k: v for k, v in plan["heroes"]["courier"].items() if k in {"width", "height"}} == size
+    assert raw == before
+
+
 def test_six_shots_cover_exactly_ninety_seconds_without_overlaps():
     mod = film_module()
     value = fixture()

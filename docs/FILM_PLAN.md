@@ -24,6 +24,9 @@ Text-field limits apply both before and after punctuation normalization. Replaci
 an em dash with a comma and space cannot produce a value above its field limit.
 Placeholder names are trimmed; names that then collide are rejected so no legend
 entry is silently overwritten. Distinct names retain their order and meanings.
+Scene object names must also be unique after normalization so motion targets are
+unambiguous. Non-string names/kinds and excessively nested input report
+`ValueError`, including recursion during copying or task-reference resolution.
 
 Shot and task IDs allow up to 96 characters. Omitted `style_task`, `previs_task`
 and `video_task` use the shot ID with `-style`, `-previs` or `-video` appended.

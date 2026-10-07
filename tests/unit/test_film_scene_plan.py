@@ -59,6 +59,15 @@ def test_normalizes_without_mutating_input(plan: dict) -> None:
     assert isinstance(result["camera"]["lens"], float)
 
 
+@pytest.mark.parametrize("name", ["Hero", " Hero "])
+def test_duplicate_normalized_object_names_are_rejected(plan: dict, name: str) -> None:
+    plan["objects"].append({**copy.deepcopy(plan["objects"][0]), "name": name, "type": "sphere"})
+    original = copy.deepcopy(plan)
+    with pytest.raises(ValueError, match="object names must be unique"):
+        scene_plan.validate_scene_plan(plan)
+    assert plan == original
+
+
 @pytest.mark.parametrize(
     "value",
     [float("nan"), float("inf"), -float("inf"), True, False, "2", None, 10**1000],
@@ -182,6 +191,7 @@ def test_exact_boundaries_and_all_primitives(plan: dict) -> None:
     plan["objects"] = [
         {
             **plan["objects"][0],
+            "name": kind,
             "type": kind,
             "location": [-1000, 0, 1000],
             "scale": [0.01, 1, 100],

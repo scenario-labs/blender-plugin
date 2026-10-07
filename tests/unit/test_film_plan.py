@@ -4,6 +4,7 @@
 
 import copy
 import importlib
+import json
 from dataclasses import replace
 
 import pytest
@@ -70,6 +71,47 @@ def test_six_shots_cover_exactly_ninety_seconds_without_overlaps():
     assert plan["total_frames"] == 2160
     assert plan["duration"] == 90
     assert value == before
+
+
+@pytest.mark.parametrize("field", ["hero", "object", "audio_kind", "task_kind"])
+@pytest.mark.parametrize("value", [[], {}])
+def test_unhashable_names_and_kinds_raise_validation_errors(field, value):
+    raw = fixture()
+    if field == "hero":
+        raw["shots"][0]["actors"][0]["hero"] = value
+    elif field == "object":
+        raw["shots"][0]["motion"] = [{"object": value, "keyframes": []}]
+    elif field == "audio_kind":
+        raw["audio_tracks"] = [
+            {"id": "score", "task": "score", "kind": value, "start": 0, "end": 1}
+        ]
+    else:
+        raw["tasks"] = [{"id": "task", "title": "Task", "kind": value}]
+    with pytest.raises(ValueError):
+        film_module().validate_film_plan(raw)
+
+
+def test_deep_task_parameters_report_validation_error_after_json_encoding_succeeds():
+    parameters = {"prompt": "fixture"}
+    for _ in range(600):
+        parameters = {"nested": parameters}
+    raw = fixture()
+    raw["tasks"] = [
+        {"id": "task", "title": "Task", "kind": "model", "model": "model", "parameters": parameters}
+    ]
+    json.dumps(raw, allow_nan=False)
+    with pytest.raises(ValueError, match="nesting"):
+        film_module().validate_film_plan(raw)
+
+
+@pytest.mark.parametrize("kind", ["list", "dict"])
+def test_deep_reference_input_reports_validation_error(kind):
+    value = "ordinary text"
+    for _ in range(600):
+        value = [value] if kind == "list" else {"nested": value}
+    json.dumps(value)
+    with pytest.raises(ValueError, match="nesting"):
+        film_module().resolve_references(value, {}, scope=SCOPE)
 
 
 @pytest.mark.parametrize("first,second", [("Prop A", " Prop A "), (" Prop A", "Prop A ")])

@@ -126,13 +126,18 @@ def validate_scene_plan(plan: dict[str, Any]) -> dict[str, Any]:
         raise ValueError("Plan objects must be a list with 1 to 150 objects.")
     required = {"name", "type", "location", "scale", "rotation", "color", "role"}
     normalized: list[dict[str, Any]] = []
+    names = set()
     for index, raw in enumerate(items):
         label = f"objects[{index}]"
         item = _keys(raw, required | {"bevel"}, label, required)
         rotation = _vector(item["rotation"], f"{label}.rotation", -math.inf, math.inf)
+        name = _label(item["name"], f"{label}.name")
+        if name in names:
+            raise ValueError("Scene object names must be unique after normalization.")
+        names.add(name)
         normalized.append(
             {
-                "name": _label(item["name"], f"{label}.name"),
+                "name": name,
                 "type": _choice(item["type"], PRIMITIVES, f"{label}.type"),
                 "location": _vector(item["location"], f"{label}.location"),
                 "scale": _vector(item["scale"], f"{label}.scale", 0.01, 100),

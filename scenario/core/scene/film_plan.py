@@ -113,7 +113,7 @@ def validate_audio_tracks(raw: Any, fps: int, duration: float) -> list[dict]:
         if tid in used:
             raise ValueError("Audio track IDs must be unique.")
         used.add(tid)
-        if item["kind"] not in {"dialogue", "sfx", "music"}:
+        if not isinstance(item["kind"], str) or item["kind"] not in {"dialogue", "sfx", "music"}:
             raise ValueError("Audio track kind must be dialogue, sfx or music.")
         start = frame_time(item["start"], "Audio start", fps, 0, duration)
         end = frame_time(item["end"], "Audio end", fps, 0, duration)
@@ -249,6 +249,13 @@ def _keys_for_motion(raw: dict, duration: float) -> list[dict]:
 
 def validate_film_plan(raw: dict) -> dict:
     """Validate the whole recipe before the first Blender mutation or cloud job."""
+    try:
+        return _validate_film_plan(raw)
+    except RecursionError:
+        raise ValueError("Film recipe nesting is too deep") from None
+
+
+def _validate_film_plan(raw: dict) -> dict:
     try:
         encoded = json.dumps(raw, allow_nan=False, ensure_ascii=False).encode("utf-8")
     except (TypeError, ValueError, RecursionError):
@@ -462,7 +469,7 @@ def validate_film_plan(raw: dict) -> dict:
                 "Actor",
                 {"hero", "location"},
             )
-            if actor["hero"] not in plan["heroes"]:
+            if not isinstance(actor["hero"], str) or actor["hero"] not in plan["heroes"]:
                 raise ValueError("Every actor must refer to a named hero.")
             normalized = {
                 "hero": actor["hero"],
@@ -489,7 +496,7 @@ def validate_film_plan(raw: dict) -> dict:
             moving = _keys(
                 moving, {"object", "keyframes"}, "Placeholder motion", {"object", "keyframes"}
             )
-            if moving["object"] not in names:
+            if not isinstance(moving["object"], str) or moving["object"] not in names:
                 raise ValueError("Animated placeholder must exist in the scene plan.")
             val["motion"].append(
                 {"object": moving["object"], "keyframes": _keys_for_motion(moving, duration)}
@@ -519,7 +526,7 @@ def validate_film_plan(raw: dict) -> dict:
         if tid in used:
             raise ValueError("Task IDs must be unique.")
         used.add(tid)
-        if task["kind"] not in {"upload", "model"}:
+        if not isinstance(task["kind"], str) or task["kind"] not in {"upload", "model"}:
             raise ValueError("Tasks support upload or model generation.")
         value = copy.deepcopy(task)
         value["title"] = _label(task["title"], "Task title")
@@ -572,10 +579,17 @@ def resolve_references(value: Any, records: dict[str, TaskAssets], *, scope: Job
     """
     if not isinstance(scope, JobScope):
         raise ValueError("Select the credential-bound job scope")
+    try:
+        return _resolve_references(value, records, scope=scope)
+    except RecursionError:
+        raise ValueError("Task reference nesting is too deep") from None
+
+
+def _resolve_references(value: Any, records: dict[str, TaskAssets], *, scope: JobScope) -> Any:
     if isinstance(value, dict):
-        return {key: resolve_references(item, records, scope=scope) for key, item in value.items()}
+        return {key: _resolve_references(item, records, scope=scope) for key, item in value.items()}
     if isinstance(value, list):
-        return [resolve_references(item, records, scope=scope) for item in value]
+        return [_resolve_references(item, records, scope=scope) for item in value]
     if isinstance(value, str) and value.startswith("$"):
         match = re.fullmatch(r"\$([a-zA-Z0-9][a-zA-Z0-9_-]{0,95})(?::(0|[1-9][0-9]{0,2}))?", value)
         if match is None:

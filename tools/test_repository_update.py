@@ -312,7 +312,12 @@ def run(args):
             report["update"] = json.loads(evidence.read_text())
             expected = {"before": before_version, "after": after_version, "enabled": True}
             if package_mode:
-                expected.update(state_preserved=True, scene_preserved=True, service_requests=0)
+                expected.update(
+                    state_preserved=True,
+                    scene_preserved=True,
+                    project_scope_preserved=True,
+                    service_requests=0,
+                )
             if report["update"] != expected:
                 raise ValueError("Missing native update and enabled-state evidence")
             verify_installed(second, installed)

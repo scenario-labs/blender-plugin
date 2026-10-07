@@ -489,3 +489,63 @@ def test_package_probe_detects_lost_uncertainty_or_allowed_replay(
     monkeypatch.setattr(selected, "claim_local_application", lambda *a, **kw: expected)
     with pytest.raises(RuntimeError, match="permitted replay"):
         package_probe.check_local_applications(selected)
+
+
+@pytest.mark.parametrize("project_id", [None, "", "update-other-project"])
+def test_package_probe_rejects_lost_preference_or_runtime_project(package_probe, project_id):
+    selected = SimpleNamespace(scope=SimpleNamespace(project_id=project_id))
+    prefs = SimpleNamespace(project_id=package_probe.PROJECT_ID)
+    with pytest.raises(RuntimeError, match="project preference or runtime scope"):
+        package_probe.check_project_scope(None, prefs, selected)
+    selected.scope.project_id = package_probe.PROJECT_ID
+    prefs.project_id = project_id
+    with pytest.raises(RuntimeError, match="project preference or runtime scope"):
+        package_probe.check_project_scope(None, prefs, selected)
+
+
+@pytest.mark.parametrize("other_project", [None, "update-other-project"])
+@pytest.mark.parametrize("record_kind", ["job", "upload"])
+def test_package_probe_detects_records_outside_saved_project(
+    package_probe, tmp_path, other_project, record_kind
+):
+    from scenario.core.api.sdk_adapter import Credentials
+    from scenario.core.jobs.credential_storage import open_credential_store
+    from scenario.core.jobs.store import JobIntent, JobOrigin
+    from scenario.core.jobs.upload_sources import UploadSources
+    from scenario.core.jobs.upload_store import UploadStore
+
+    paths = SimpleNamespace(state_dir=tmp_path)
+    prefs = SimpleNamespace(
+        project_id=package_probe.PROJECT_ID, api_key="fixture-key", api_secret="fixture-secret"
+    )
+    credentials = Credentials(prefs.api_key, prefs.api_secret)
+    selected = open_credential_store(
+        tmp_path / "shared-jobs", credentials, project_id=prefs.project_id
+    )
+    origin = JobOrigin("file", "scene", "revision")
+    selected.create(
+        JobIntent("selected", selected.scope, origin, "model", "model", "a" * 64, "b" * 64, "1")
+    )
+    (tmp_path / "shared-uploads").mkdir()
+    package_probe.check_project_scope(paths, prefs, selected)
+    other = open_credential_store(tmp_path / "shared-jobs", credentials, project_id=other_project)
+    if record_kind == "job":
+        other.create(
+            JobIntent("escaped", other.scope, origin, "model", "model", "a" * 64, "b" * 64, "1")
+        )
+    else:
+        source = tmp_path / "source.png"
+        source.write_bytes(b"synthetic update reference")
+        sources_root = tmp_path / "sources"
+        sources_root.mkdir()
+        intent = UploadSources(sources_root).stage(
+            source,
+            request_id="escaped",
+            scope=other.scope,
+            origin=origin,
+            kind="image",
+            content_type="image/png",
+        )
+        UploadStore(tmp_path / "shared-uploads/uploads.sqlite3", other.scope).create(intent)
+    with pytest.raises(RuntimeError, match="job or upload project isolation"):
+        package_probe.check_project_scope(paths, prefs, selected)

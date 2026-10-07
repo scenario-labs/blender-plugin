@@ -188,6 +188,11 @@ def _environment(profile, temporary):
     return env
 
 
+def _check_diagnostics(log, stdout):
+    if log.stat().st_size > 8 * 1024**2 or (stdout is not None and stdout.stat().st_size > 65536):
+        raise LocalRenderError("Local render diagnostics exceeded the size policy")
+
+
 def _run(command, *, log, env, timeout, cancel, stdout=None):
     """Reap the owned child on cancellation, timeout, log overflow and exceptions."""
     if cancel.is_set():
@@ -210,11 +215,10 @@ def _run(command, *, log, env, timeout, cancel, stdout=None):
                         raise RenderCancelled("Local capture cancelled; inspect retained frames")
                     if time.monotonic() >= deadline:
                         raise LocalRenderError("Local capture timed out; inspect retained frames")
-                    if log.stat().st_size > 8 * 1024**2 or (
-                        stdout is not None and stdout.stat().st_size > 65536
-                    ):
-                        raise LocalRenderError("Local render diagnostics exceeded the size policy")
+                    _check_diagnostics(log, stdout)
                     cancel.wait(0.1)
+                # The child can finish writing and exit between polling checks.
+                _check_diagnostics(log, stdout)
                 if process.returncode:
                     raise LocalRenderError("Local media process failed; inspect its retained log")
             finally:

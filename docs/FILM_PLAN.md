@@ -436,6 +436,10 @@ before expensive work; encoding failure preserves usable PNGs and logs.
 Cancellation, timeout and process failure reap the child and remove its scratch
 profile. Snapshot, frames, output and diagnostics remain in the caller-owned
 capture directory; the caller must manage their eventual cleanup.
+Process logs are checked against an 8 MiB limit and separate probe stdout against
+64 KiB, both during polling and after child exit. An oversized final write fails
+capture while retaining the diagnostics; polling does not cap disk usage between
+checks.
 
 The primitive accepts one to 1,800 frames, frame rates from 1 to 120 and dimensions
 from 64 to 4,096. MP4 dimensions must be even. It returns a content hash, size,

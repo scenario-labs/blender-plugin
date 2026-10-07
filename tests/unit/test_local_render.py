@@ -272,6 +272,55 @@ def test_pre_cancelled_command_does_not_spawn(monkeypatch, tmp_path):
         render._run(["ignored"], log=tmp_path / "cancel.log", env={}, timeout=1, cancel=event)
 
 
+@pytest.mark.parametrize("channel", ["combined", "stderr", "stdout"])
+@pytest.mark.parametrize("overflow", [False, True])
+def test_diagnostic_size_policy_after_child_exit(monkeypatch, tmp_path, channel, overflow):
+    original = subprocess.Popen
+
+    def completed_child(*args, **kwargs):
+        child = original(*args, **kwargs)
+        try:
+            # Force the final write and successful exit before the first poll.
+            child.wait(timeout=5)
+        finally:
+            if child.poll() is None:
+                child.kill()
+                child.wait()
+        assert child.returncode == 0
+        return child
+
+    monkeypatch.setattr(render.subprocess, "Popen", completed_child)
+    log = tmp_path / "child.log"
+    stdout = None if channel == "combined" else tmp_path / "stdout.json"
+    limit = 65536 if channel == "stdout" else 8 * 1024**2
+    size = limit + int(overflow)
+    stream = "stderr" if channel == "stderr" else "stdout"
+
+    def run():
+        render._run(
+            [
+                sys.executable,
+                "-c",
+                f"import sys; stream = sys.{stream}.buffer; "
+                f"stream.write(b'x' * {size}); stream.flush()",
+            ],
+            log=log,
+            stdout=stdout,
+            env=dict(os.environ),
+            timeout=5,
+            cancel=threading.Event(),
+        )
+
+    if overflow:
+        with pytest.raises(render.LocalRenderError, match="diagnostics exceeded the size policy"):
+            run()
+    else:
+        run()
+    # Failures retain the child's completed diagnostics for inspection.
+    diagnostics = stdout if channel == "stdout" else log
+    assert diagnostics.stat().st_size == size
+
+
 def test_real_child_failure_is_reported_with_retained_log(tmp_path):
     with pytest.raises(render.LocalRenderError, match="process failed"):
         render._run(

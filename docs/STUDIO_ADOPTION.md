@@ -77,7 +77,7 @@ relative to `src/scenario_studio/` at the selected revision.
 | Compact composer, sidebar and expanded view | Replace the old composer presentation with Studio controls/layout/text input adapted to the compact-default contract; retain a useful native sidebar. | #66. Native focus, Unicode/IME, resizing, DPI, viewport passthrough and view switching remain required. Opening a view must not start another job engine. |
 | Exact estimates and paid submission | Retain Studio quote fingerprint/invalidation and ambiguous-submission behavior; replace transport and spend boundary with shared SDK commands. | #64/#65. Preserve exact decimal quote data, scope and payload; persist request identity before dispatch; no blind retry. |
 | Jobs, cancellation and history | Replace `studio.py`/`tasks.py` lifetime ownership and `scenario/core/jobs/manager.py` with one shared runtime; retain progress, results and recovery capabilities. | #65. Atomic versioned persistence, write failures, cancellation races, restart and UI-close tests are acceptance gates. |
-| API keys, OAuth and project selection | Replace Studio `storage.py` credential/path handling and canonical preference-only auth with explicitly scoped adapter configuration and browser sign-in. | #67 and roadmap#692. API-key project ID stays optional and is passed when supplied; OAuth token acceptance requires its own verification. |
+| API keys, OAuth and project selection | Replace Studio `storage.py` credential/path handling with explicitly selected API-key credentials and scoped adapter configuration. The current preferences expose an optional Project ID. | #65/#68 own API-key runtime acceptance. Browser sign-in is deferred under #67 and roadmap#692; OAuth token acceptance requires separate verification. |
 | Authenticated local MCP | Retain `scenario/mcp/{protocol,server,stdio_shim,sandbox}.py`, scene tools and `scenario/blender/mcp_service.py`; replace service-tool internals with shared commands. | #65; related #15/#17/#43/#44/#52/#53. Main-thread bpy, session auth, opt-in Python and safe captures remain mandatory. Studio's remote-MCP client is not this server. |
 | Capture and references | Retain viewport/camera stills, selected-mesh export and reference attachment from `scenario/blender/{capture,mesh_export}.py` and Studio `scene.py`/`studio.py`. | #64/#65. Preserve render/selection state, private temporary files, main-thread capture and upload/result scope. |
 | Render Image / Render Video | Retain `scenario/blender/render_lanes.py`, capture duration/frame planning and reference/prompt wiring; combine with Studio background render support. | #64/#65. Preserve first-frame/style inputs and model duration constraints; test encoding failures separately from service failures. |
@@ -89,7 +89,7 @@ relative to `src/scenario_studio/` at the selected revision.
 | PBR materials | Retain canonical typed-map assignment, color spaces, smoothness inversion, normal/displacement nodes and Studio `materials.py`/`scene.apply_pbr_maps`. | #64. Reconcile map semantics with `test_material_plan`, `test_apply_material` and Studio material tests before removing either path. |
 | HDRI/world application | Retain Studio `scene.apply_world`/`restore_world` and supported HDR image handling. | #64; roadmap#674 G03 owns complete skybox generation/application acceptance. Verify restoration and world-node behavior natively. |
 | Video/audio preview and sequencer | Retain `scenario/blender/apply_video.py`/`apply_audio.py`, Studio media imports and preview controls. | #64; roadmap#674 G06/G22 own deeper sequencer/audio work. Test actual Blender APIs and missing external tools. |
-| Prompt Spark, rewrite and translation | Retain canonical `scenario/core/api/{spark,llm}.py` behavior and `scenario/blender/prompt_tools.py`, plus Studio's quoted Spark flow. Replace service calls. | #64/#65. Prompt helpers can spend; UI and MCP must share preparation and approval semantics. |
+| Prompt Spark, rewrite and translation | Retain New, Rewrite and Translate through `scenario/blender/prompt_jobs.py`, shared SDK commands and complete text retrieval in `scenario/core/jobs/results.py`. Obsolete Spark/LLM service modules and automatic paid fallback are removed. | #64/#65. Prompt helpers share explicit quote/approval and durable submission across UI/MCP; live output acceptance remains. |
 | Asset library, search and organization | Retain Studio library/search/result organization (`studio.py`, `organization.py`) through typed adapter operations. Replace generic remote catalog execution. | #64 adapter; #65 scope. Verify collection/tag writes and uncertain outcomes without replaying a write automatically. |
 | Workflows | Retain Studio workflow catalog, input form and estimate/run capabilities. Replace the remote-MCP and public-workflow raw HTTP paths. | #64/#65; roadmap#674 G09 owns broader workflow work. Verify public/private pagination, workflow schema and cancellation independently. |
 | Automatic previews and progress | Retain 0.1.5 progress/result feedback and `previews.py`/`preview_worker.py`; route downloads through shared transfer policy. | #64/#65/#66. Bound resources, isolate child Blender profiles and keep job processing independent of preview/view lifetime. |
@@ -306,9 +306,12 @@ production ledger is imported.
 3. Package pinned SDK/transitive wheels and licenses, then exercise the actual
    installed bundle with Blender 5.0, 5.1 and 5.2. Retain the isolated exact-ZIP
    test runner and its profile/network protections throughout adoption.
-4. Complete #65 scoped commands/persistence and #66/#67 UI/auth work before
-   claiming UI/MCP parity. #68 owns integrated acceptance; #32/#45 and Windows,
-   GUI, dependency OS/CPU coverage remain explicit follow-ups.
+4. Complete #65 scoped commands/persistence and #66 UI acceptance before
+   claiming complete UI/MCP parity. API-key authentication is the release path;
+   #67 OAuth is deferred. #32 native baseline CI is closed; #45 required-check
+   administration and #68 desktop/live/dependency acceptance remain separate.
 
-This inventory is source inspection and planning evidence only. No Studio
-runtime, bundled dependency, live API or paid-generation acceptance is claimed.
+This inventory preserves capability decisions and scoped implementation updates.
+The [release acceptance record](maintenance/release-acceptance.md) identifies
+current candidate tests and remaining gates; the source inventory alone does not
+establish complete Studio, live API or paid-generation acceptance.

@@ -6,26 +6,9 @@ import logging
 
 import bpy
 
-from . import (
-    apply_3d,
-    apply_audio,
-    apply_image,
-    apply_material,
-    apply_video,
-    generation,
-    props,
-    runtime,
-)
+from . import generation, props, runtime
 
 log = logging.getLogger("scenario.handlers")
-
-RESULT_HANDLERS = {
-    "image": apply_image.on_image_result,
-    "material": apply_material.on_material_result,
-    "3d": apply_3d.on_3d_result,
-    "video": apply_video.on_video_result,
-    "audio": apply_audio.on_audio_result,
-}
 
 
 def dispatch(event):
@@ -124,19 +107,9 @@ def _on_estimate(result):
 def _on_job(name, rec):
     runtime.show_job_views((rec,))
     if name == "job_done":
-        from . import render_lanes
-
-        render_lanes.on_result(rec)
-        handler = RESULT_HANDLERS.get(rec.kind)
-        if handler is None:
-            runtime.set_message(
-                f"{rec.kind} result ready in {rec.files[0] if rec.files else 'the output folder'}"
-            )
-            return
-        try:
-            handler(rec)
-        except Exception as err:  # keep the pump alive, surface the failure
-            log.exception("applying result failed")
-            runtime.set_message(f"Result downloaded but could not be applied: {err}")
+        runtime.set_message(
+            "Prototype result was not applied. Recover the cloud job in the selected "
+            "account, then approve its destination."
+        )
     elif name == "job_failed":
         runtime.set_message(f"Generation failed: {rec.error or rec.status}")

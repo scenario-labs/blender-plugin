@@ -179,7 +179,7 @@ def test_worker_routes_history_to_headless_read_queue_and_sanitizes_errors(failu
         return httpx.Response(200, json={"jobs": [job()], "nextPaginationToken": "next"})
 
     context, _ = catalog(respond)
-    manager = JobManager(None, None, None)  # No prototype client is available.
+    manager = JobManager(None, None)  # No prototype client is available.
     try:
         manager.fetch_history(context, "request", "opaque", append=True)
         manager.join(5)

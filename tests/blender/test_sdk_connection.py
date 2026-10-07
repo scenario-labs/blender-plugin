@@ -46,7 +46,9 @@ class SDKConnectionTests(unittest.TestCase):
         )
         self.enterContext(
             patch.object(
-                self.runtime, "make_client", side_effect=AssertionError("Legacy client used")
+                submodule("core.api.client"),
+                "ScenarioClient",
+                side_effect=AssertionError("Legacy client used"),
             )
         )
 

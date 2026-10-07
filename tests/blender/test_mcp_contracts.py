@@ -72,7 +72,9 @@ class McpContractTests(unittest.TestCase):
             with (
                 patch.object(runtime, "online", return_value=True),
                 patch.object(
-                    runtime, "make_client", side_effect=AssertionError("Credentials used")
+                    submodule("core.api.client"),
+                    "ScenarioClient",
+                    side_effect=AssertionError("Credentials used"),
                 ),
                 patch.object(
                     runtime, "ensure_model_jobs", side_effect=AssertionError("Shared session used")
@@ -101,25 +103,22 @@ class McpContractTests(unittest.TestCase):
                         self.tools.import_result({"job_id": reference})
             dispatch.assert_not_called()
 
-    def test_cold_active_lookup_keeps_the_manager_owned_record(self):
+    def test_cold_active_lookup_is_a_read_only_snapshot(self):
         runtime = submodule("blender.runtime")
         records = submodule("core.jobs.records")
-        with isolated_manager() as manager, patch.object(runtime, "online", return_value=False):
+        with isolated_manager() as manager, patch.object(runtime, "online", return_value=True):
             rec = records.JobRecord.new(lane="image", kind="image", model_id="fixture", body={})
             rec.job_id, rec.status = "job_pending", "running"
             manager.registry.add(rec)
             manager.registry.save()
-            runtime.state.manager = None
-            try:
+            saved = manager.paths.registry_file.read_bytes()
+            with patch.object(runtime.state, "manager", None):
                 found = self.tools._find(rec.job_id)
-                self.assertIs(found, runtime.state.manager.registry.by_local_id(rec.local_id))
-                found.status = "success"
-                self.assertEqual(self.tools.wait_for_job({"id": rec.local_id})["status"], "success")
-            finally:
-                if runtime.state.manager is not None:
-                    runtime.state.manager.shutdown()
-                    runtime.state.manager.join(timeout=5)
-                runtime.state.manager = manager
+                self.assertEqual(found.job_id, rec.job_id)
+                result = self.tools.wait_for_job({"id": rec.local_id})
+                self.assertIn("local snapshot", result["note"])
+                self.assertIsNone(runtime.state.manager)
+                self.assertEqual(manager.paths.registry_file.read_bytes(), saved)
 
     def test_missing_or_nonstring_reference_fails_before_runtime_access(self):
         runtime = submodule("blender.runtime")

@@ -40,8 +40,8 @@ class ReferenceUploadTests(unittest.TestCase):
         )
         self.enterContext(
             patch.object(
-                self.runtime,
-                "make_client",
+                submodule("core.api.client"),
+                "ScenarioClient",
                 side_effect=AssertionError("Prototype upload client used"),
             )
         )

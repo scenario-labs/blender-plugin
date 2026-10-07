@@ -31,7 +31,7 @@ class CredentialTests(unittest.TestCase):
                 del os.environ["SCENARIO_API_SECRET"]
                 self.assertFalse(runtime.credentials().valid)
                 with self.assertRaisesRegex(Exception, "selected credential source"):
-                    runtime.make_client()
+                    runtime.ensure_catalog()
                 with patch.object(runtime, "prefs", return_value=None):
                     self.assertFalse(runtime.credentials().valid)
                 prefs.credential_source = "PREFERENCES"
@@ -106,19 +106,3 @@ class CredentialTests(unittest.TestCase):
         finally:
             prefs.credential_source, prefs.api_key, prefs.api_secret = saved
             bpy.ops.wm.save_userpref()
-
-    def test_project_selection_cannot_fall_back_to_unscoped_legacy_client(self):
-        runtime = submodule("blender.runtime")
-        prefs = runtime.prefs()
-        saved = prefs.credential_source, prefs.api_key, prefs.api_secret, prefs.project_id
-        try:
-            prefs.credential_source = "PREFERENCES"
-            prefs.api_key, prefs.api_secret = "fixture-key", "fixture-secret"
-            prefs.project_id = "project-a"
-            with patch.object(
-                runtime, "ScenarioClient", side_effect=AssertionError("Legacy client constructed")
-            ):
-                with self.assertRaisesRegex(Exception, "Legacy jobs have no project scope"):
-                    runtime.make_client()
-        finally:
-            prefs.credential_source, prefs.api_key, prefs.api_secret, prefs.project_id = saved

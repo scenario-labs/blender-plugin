@@ -3,7 +3,6 @@
 """MCP tools that talk to Scenario through the add-on: catalog, cost, generate, results into the scene."""
 
 import json
-import time
 from dataclasses import asdict
 
 import bpy
@@ -635,9 +634,6 @@ def _local_registry():
 def _find(local_or_job_id):
     for rec in _local_registry().all():
         if rec.local_id == local_or_job_id or rec.job_id == local_or_job_id:
-            if runtime.state.manager is None and not rec.is_terminal:
-                # Active prototype waits still need the manager-owned mutable record.
-                return runtime.ensure_manager().registry.by_local_id(rec.local_id)
             return rec
     raise ValueError(f"Unknown job {local_or_job_id}")
 
@@ -903,41 +899,13 @@ def wait_for_job(args):
             finish_shared,
         )
     rec = _find(ref)
-    if rec.is_terminal:
-        return _status(rec)
-    if timeout == 0:
-        return dict(_status(rec), note="still running, call again")
-    manager, state = runtime.state.manager, runtime.state
-    credentials = runtime.credentials()
-    server = state.mcp
-    deadline = time.monotonic() + timeout
-
-    def run():
-        # Only captured Python objects are read here, never Blender state or bpy.
-        while not rec.is_terminal:
-            if manager._stop.is_set() or (server is not None and not server.running):
-                raise RuntimeError("The job wait stopped; generation was not cancelled")
-            remaining = deadline - time.monotonic()
-            if remaining <= 0:
-                break
-            manager._stop.wait(min(0.1, remaining))
-
-    def finish(_):
-        if (
-            runtime.state is not state
-            or runtime.state.manager is not manager
-            or runtime.credentials() != credentials
-            or manager._stop.is_set()
-            or (server is not None and (state.mcp is not server or not server.running))
-            or manager.registry.by_local_id(rec.local_id) is not rec
-        ):
-            raise RuntimeError("The job context changed while waiting; query its status again")
-        result = _status(rec)
-        if not rec.is_terminal:
-            result["note"] = "still running, call again"
-        return result
-
-    return DeferredTool(run, finish)
+    result = _status(rec)
+    if not rec.is_terminal:
+        result["note"] = (
+            "Prototype status is a local snapshot; automatic polling is retired. "
+            "Use recover_cloud_job in the selected account, then approve its destination."
+        )
+    return result
 
 
 def import_result(args):
@@ -1997,7 +1965,7 @@ SPECS = (
     ToolSpec(
         "wait_for_job",
         (
-            "Wait for a generation while Blender remains responsive. Shared jobs return when delivery finishes, pauses for review, or the wait expires. Restarted jobs remain inspection-only until explicitly resumed.\n"
+            "Wait for a generation while Blender remains responsive. Shared jobs return when delivery finishes, pauses for review, or the wait expires. Restarted shared jobs remain inspection-only until explicitly resumed. Prototype records return a local snapshot immediately with scoped recovery guidance.\n"
             "Args:\n"
             "  - job_id: optional string, a Scenario job id or local_id returned by generate.\n"
             "  - id: optional string, compatibility alias; provide job_id or id. job_id takes precedence.\n"

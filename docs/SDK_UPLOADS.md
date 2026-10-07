@@ -466,6 +466,11 @@ file. An active marked upload that has not attached blocks request construction,
 preventing duplicate prototype upload while it is pending or uncertain. A disabled
 render first frame is excluded from the request and does not block it. Explicit clips and mesh snapshots use these same guards; unmarked
 implicit generation-time preparation is not used by native model forms.
+MCP `render_form(action=prepare)` uses these same role-tagged slots and guarded
+uploads. Configure and inspect are local form actions; quote and submission do
+not initiate an upload. Explicit reference removal requires its current slot key
+and leaves saved upload work intact. See the
+[MCP render sequence](MCP.md#preparing-render-image-and-render-video).
 An unloaded or list-only model schema is a temporary state, not an edited input.
 In-flight bindings wait for model inputs before attachment and recheck the kind
 when they load. Saved assets retain their scope checks; request construction
@@ -561,6 +566,26 @@ uploads remain valid with no mesh provenance; no source is inferred from names.
 The shared model/workflow quote path now binds imported captured sources to
 their typed 3D input parameters and persists them before spending; see
 [generation source bindings](JOB_STORAGE.md#captured-mesh-inputs-in-generation-intents).
+Quotes look up only selected asset IDs within the credential scope, using a
+partial SQLite index of imported captured meshes. Each unique input needs one
+query and at most two decoded records; two matches still reject an ambiguous
+source. Repeated array entries keep their original positions without repeating
+the lookup, and absent optional inputs do not read upload storage. External
+assets and ordinary uploads do not gain an inferred source. Each quote allows at
+most 128 distinct 3D input asset IDs across all parameters, including unmatched
+external assets. A 129th identity fails before another lookup; repeated IDs share
+the same lookup budget.
+
+Opening existing schema-2 storage builds the derived index once, without changing
+saved records, revisions, schema version or uncertain claims. SQLite maintains it
+as uploads change; subsequent quotes do not scan retained upload history. Index
+entries require valid JSON, so a malformed record cannot prevent other records
+or credential scopes from opening or querying storage. Reading that damaged
+record directly still fails and preserves it for recovery. Index
+creation can take time for a large existing store. A missing index during lookup
+fails instead of silently falling back to a history scan. Preparation and
+submission still recheck the selected upload's exact identity and revision.
+
 Operation-specific result application remains separate integration.
 Session target IDs are not authority to find an object by name after restart;
 reopened files still require explicit destination review.

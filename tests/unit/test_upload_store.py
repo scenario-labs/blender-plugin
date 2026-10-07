@@ -449,3 +449,116 @@ def test_schema_two_requires_explicit_mesh_metadata_field(store, intent):
         connection.execute("UPDATE uploads SET record=?", (json.dumps(value),))
     with pytest.raises(StoreError):
         store.get(intent.request_id)
+
+
+def imported(store, intent, asset_id):
+    record = uploading(store, intent)
+    for _ in intent.part_sha256:
+        record = send_part(store, record)
+    record = advance(store, record, UploadState.FINALIZING)
+    return advance(store, record, UploadState.IMPORTED, asset_id=asset_id)
+
+
+def test_selected_mesh_lookup_uses_index_and_decodes_only_matching_scope(
+    store, intent, monkeypatch
+):
+    from scenario.core.jobs import upload_store as module
+
+    chosen = imported(store, mesh_intent(intent), "chosen-asset")
+    for index in range(200):
+        store.create(replace(intent, request_id=f"ordinary-{index}"))
+    imported(store, replace(intent, request_id="ordinary-import"), "chosen-asset")
+    imported(store, replace(mesh_intent(intent), request_id="other-mesh"), "other-asset")
+    other_scope = replace(intent.scope, account_id="other-account")
+    other = UploadStore(store._path, other_scope)
+    imported(other, replace(mesh_intent(intent), scope=other_scope), "chosen-asset")
+    queries, decoded = [], []
+    connect, decode = sqlite3.connect, module._decode
+
+    def traced(*args, **kwargs):
+        connection = connect(*args, **kwargs)
+        connection.set_trace_callback(queries.append)
+        return connection
+
+    def counted(*args, **kwargs):
+        decoded.append(args[0])
+        return decode(*args, **kwargs)
+
+    monkeypatch.setattr(sqlite3, "connect", traced)
+    monkeypatch.setattr(module, "_decode", counted)
+    assert store.mesh_sources("chosen-asset") == (chosen,)
+    assert len(decoded) == 1
+    selects = [sql for sql in queries if sql.startswith("SELECT ")]
+    assert len(selects) == 1
+    with connect(store._path) as connection:
+        plan = connection.execute("EXPLAIN QUERY PLAN " + selects[0]).fetchall()
+    assert any("USING INDEX upload_mesh_asset" in row[3] for row in plan)
+
+
+def test_mesh_lookup_bounds_ambiguous_matches_without_hiding_ambiguity(store, intent):
+    for index in range(5):
+        imported(store, replace(mesh_intent(intent), request_id=f"mesh-{index}"), "same-asset")
+    matches = store.mesh_sources("same-asset")
+    assert len(matches) == 2
+    assert len({record.intent.request_id for record in matches}) == 2
+    assert all(record.asset_id == "same-asset" for record in matches)
+
+
+def test_adding_mesh_index_preserves_existing_schema_two_records(store, intent):
+    mesh = imported(store, mesh_intent(intent), "chosen-asset")
+    uncertain = uploading(store, replace(intent, request_id="uncertain"))
+    uncertain = store.claim_part(uncertain.intent.request_id, expected_revision=uncertain.revision)
+    uncertain = advance(store, uncertain, UploadState.PART_UNCERTAIN)
+    with sqlite3.connect(store._path) as connection:
+        connection.execute("DROP INDEX upload_mesh_asset")
+        before = connection.execute("SELECT * FROM uploads ORDER BY request_id").fetchall()
+    reopened = UploadStore(store._path, intent.scope)
+    assert reopened.mesh_sources("chosen-asset") == (mesh,)
+    assert reopened.get(uncertain.intent.request_id) == uncertain
+    with sqlite3.connect(store._path) as connection:
+        assert connection.execute("PRAGMA user_version").fetchone()[0] == 2
+        assert connection.execute("SELECT * FROM uploads ORDER BY request_id").fetchall() == before
+
+
+def test_indexed_mesh_lookup_rejects_inconsistent_selected_record(store, intent):
+    mesh = imported(store, mesh_intent(intent), "chosen-asset")
+    with sqlite3.connect(store._path) as connection:
+        connection.execute(
+            "UPDATE uploads SET revision=revision+1 WHERE request_id=?", (mesh.intent.request_id,)
+        )
+    with pytest.raises(StoreError, match="inconsistent"):
+        store.mesh_sources("chosen-asset")
+
+
+@pytest.mark.parametrize("same_scope", [True, False])
+@pytest.mark.parametrize("existing_index", [True, False])
+def test_malformed_json_stays_isolated_when_opening_and_querying_mesh_index(
+    store, intent, same_scope, existing_index
+):
+    mesh = imported(store, mesh_intent(intent), "chosen-asset")
+    damaged_scope = intent.scope if same_scope else replace(intent.scope, account_id="other")
+    damaged = UploadStore(store._path, damaged_scope)
+    damaged.create(replace(intent, request_id="damaged", scope=damaged_scope))
+    with sqlite3.connect(store._path) as connection:
+        if not existing_index:
+            connection.execute("DROP INDEX upload_mesh_asset")
+        connection.execute("UPDATE uploads SET record='{' WHERE request_id='damaged'")
+        before = connection.execute("SELECT * FROM uploads ORDER BY request_id").fetchall()
+    reopened = UploadStore(store._path, intent.scope)
+    assert reopened.get(mesh.intent.request_id) == mesh
+    assert reopened.mesh_sources("chosen-asset") == (mesh,)
+    assert reopened.mesh_sources("absent-asset") == ()
+    damaged = UploadStore(store._path, damaged_scope)
+    with pytest.raises(StoreError, match="Stored upload is invalid"):
+        damaged.get("damaged")
+    with sqlite3.connect(store._path) as connection:
+        assert connection.execute("SELECT * FROM uploads ORDER BY request_id").fetchall() == before
+    fresh = reopened.create(replace(intent, request_id="fresh"))
+    assert reopened.get("fresh") == fresh
+
+
+def test_missing_mesh_index_fails_instead_of_falling_back_to_a_history_scan(store):
+    with sqlite3.connect(store._path) as connection:
+        connection.execute("DROP INDEX upload_mesh_asset")
+    with pytest.raises(StoreError):
+        store.mesh_sources("chosen-asset")

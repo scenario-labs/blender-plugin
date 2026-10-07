@@ -373,6 +373,26 @@ class PromptToolsTests(unittest.TestCase):
         style.param_name, style.source, style.asset_id = "referenceImages", "ASSET", "asset_style"
         return lane
 
+    def test_mcp_render_spark_requires_separate_exact_approval_and_delivers_the_look(self):
+        for lane_name in ("render_image", "render_video"):
+            with self.subTest(lane=lane_name):
+                lane = self.render_lane(lane_name)
+                form = self.mcp.render_form({"lane": lane_name})
+                self.assertTrue(form["spark_required"])
+                deferred = self.mcp.estimate_prompt({"lane": lane_name, "action": "GENERATE"})
+                quote = deferred.finish(deferred.run())
+                paid = len(self.paid)
+                with self.assertRaises(submodule("core.api.errors").ScenarioError):
+                    self.mcp.approve_prompt({"quote_id": quote["quote_id"], "approved_cost": "0"})
+                self.assertEqual(len(self.paid), paid)
+                self.mcp.approve_prompt(
+                    {"quote_id": quote["quote_id"], "approved_cost": quote["cu_cost_exact"]}
+                )
+                self.advance(self.jobs().current(self.scene, lane_name))
+                self.assertEqual(lane.prompt, self.result_text)
+                self.assertTrue(self.mcp.render_form({"lane": lane_name})["ready_to_estimate"])
+                self.assertEqual(len(self.paid), paid + 1)
+
     def test_render_automatic_preparation_quotes_once_then_requires_approval(self):
         lane = self.render_lane()
         generation = submodule("blender.generation")

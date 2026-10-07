@@ -223,8 +223,8 @@ through fresh UI/MCP approval and a separate durable local claim, preserving the
 original generation outcome. Interrupted local claims block another application.
 Saved texture sets also offer explicit one-mesh material-slot approval, using
 [stored roles and packed material construction](../MATERIAL_APPLICATION.md).
-Render-lane MCP parameters are caller-supplied, without UI capture/style/Spark
-preparation. Do not describe this slice as
+Render-lane MCP calls use the native form preparation described below, including
+uploaded inputs, prompt decoration and separate Spark approval. Do not describe this slice as
 complete generation, supported release acceptance, or completion of #65.
 
 For prototype jobs, local MCP `wait_for_job` captures a local record on the main thread and waits
@@ -321,6 +321,23 @@ History rendering ignores legacy file/action projections, including a duplicate
 session row, while explicit saved-result commands retain their byte verification
 and destination approval. Desktop interaction and live provider acceptance remain
 separate; this does not complete #65 or #68.
+
+## Shared MCP render preparation
+
+Local MCP `render_form` edits and inspects the native Render Image/Video form,
+explicitly prepares its scene/first-frame uploads, and removes only a freshly
+identified reference. The existing upload session owns work after the tool
+returns. Model changes require explicit removal of previous references; an
+occupied or uncertain slot cannot start another upload implicitly.
+
+Render `estimate_cost` and `generate` use the same native request builder,
+including prompt decoration and uploaded input ordering. Callers omit raw model
+parameters and configure the form first. Empty automatic looks require the
+existing separate Spark quote/approval/delivery before the final render price.
+No capture, upload or paid Spark call occurs during render generation. Result
+application remains explicit. See the [MCP sequence](../MCP.md#preparing-render-image-and-render-video)
+and [context contract](../BLENDER_JOB_CONTEXT.md#mcp-render-form-commands).
+This completes this local command integration, not live or desktop acceptance.
 
 ## Where to make a change
 

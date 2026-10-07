@@ -20,6 +20,7 @@ EXPECTED = {
         "list_models",
         "model_schema",
         "estimate_cost",
+        "render_form",
         "estimate_prompt",
         "estimate_blockout",
         "approve_blockout",

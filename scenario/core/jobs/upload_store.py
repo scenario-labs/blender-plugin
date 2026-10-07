@@ -26,6 +26,10 @@ from .upload_transfers import UploadedPart
 
 _APPLICATION_ID = 0x53435550
 _VERSION = 2
+_MESH_ASSET_FILTER = (
+    "json_valid(record) AND json_extract(record, '$.state') = 'imported' "
+    "AND json_extract(record, '$.intent.mesh_source') IS NOT NULL"
+)
 
 
 def _digest(value):
@@ -275,6 +279,13 @@ class UploadStore:
                     self._upgrade_v1(connection)
                 else:
                     self._check_version(connection)
+                # Derived metadata only: preserve schema-2 records and claims.
+                # SQLite maintains this index for existing compatible writers too.
+                connection.execute(
+                    "CREATE INDEX IF NOT EXISTS upload_mesh_asset "
+                    "ON uploads (scope, json_extract(record, '$.asset_id')) "
+                    f"WHERE {_MESH_ASSET_FILTER}"
+                )
         except OSError:
             raise StoreError("Could not initialize upload storage") from None
 
@@ -358,6 +369,24 @@ class UploadStore:
                 "SELECT request_id FROM uploads WHERE scope=? ORDER BY request_id", (self._key,)
             ).fetchall()
             return tuple(self._read(connection, row[0]) for row in rows)
+
+    def mesh_sources(self, asset_id):
+        """Read a selected captured asset; two matches suffice to detect ambiguity."""
+        _identity(asset_id)
+        with self._connection() as connection:
+            rows = connection.execute(
+                "SELECT request_id, revision, record FROM uploads INDEXED BY upload_mesh_asset "
+                "WHERE scope=? AND json_extract(record, '$.asset_id')=? "
+                f"AND {_MESH_ASSET_FILTER} LIMIT 2",
+                (self._key, asset_id),
+            ).fetchall()
+            records = []
+            for request_id, revision, raw in rows:
+                record = _decode(raw, self.scope)
+                if record.intent.request_id != request_id or record.revision != revision:
+                    raise StoreError("Stored upload identity or revision is inconsistent")
+                records.append(record)
+            return tuple(records)
 
     def create(self, intent):
         if not isinstance(intent, UploadIntent) or intent.scope != self.scope:

@@ -925,8 +925,17 @@ class ModelGenerationTests(unittest.TestCase):
         return state
 
     def mcp_quote(self, lane="image"):
+        parameters = {"prompt": "a teapot"}
+        if lane in {"render_image", "render_video"}:
+            state = self.configure_ui_lane(lane)
+            references = submodule("blender.render_references")
+            if not references.slot(state, references.SCENE):
+                ref = state.references.add()
+                ref.param_name, ref.source, ref.asset_id = "reference", "ASSET", "scene-snapshot"
+                ref[references.ROLE] = references.SCENE
+            parameters = {}
         deferred = self.tools.estimate_cost(
-            {"model_id": self.model["id"], "parameters": {"prompt": "a teapot"}, "lane": lane}
+            {"model_id": self.model["id"], "parameters": parameters, "lane": lane}
         )
         return deferred.finish(deferred.run())
 
@@ -934,7 +943,9 @@ class ModelGenerationTests(unittest.TestCase):
         args = dict(
             lane=quote["lane"],
             model_id=self.model["id"],
-            parameters={"prompt": "a teapot"},
+            parameters={}
+            if quote["lane"] in {"render_image", "render_video"}
+            else {"prompt": "a teapot"},
             quote_id=quote["quote_id"],
             approved_cost=quote["cu_cost_exact"],
         )
@@ -1181,7 +1192,12 @@ class ModelGenerationTests(unittest.TestCase):
                 self.assertEqual(saved.state, self.storemod.JobState.REMOTE)
                 self.assertEqual(saved.intent.quote_cost, quote["cu_cost_exact"])
                 self.assertEqual(len(self.paid), count)
-                self.assertEqual(json.loads(self.paid[-1].content), {"prompt": "a teapot"})
+                expected = (
+                    self.generation.build_request(bpy.context.scene, lane, for_estimate=True).body
+                    if lane in {"render_image", "render_video"}
+                    else {"prompt": "a teapot"}
+                )
+                self.assertEqual(json.loads(self.paid[-1].content), expected)
                 self.assertEqual(self.runtime.state.jobs_view[0].lane, lane)
         self.assertIsNone(self.runtime.state.manager)
 
@@ -1438,6 +1454,57 @@ class ModelGenerationTests(unittest.TestCase):
                 with self.assertRaises(self.request_error):
                     self.generation.submit_generation(bpy.context, lane_name)
         self.assertEqual(len(self.paid), 2)
+
+    def test_mcp_render_form_and_native_submit_identical_prepared_bodies(self):
+        for lane_name in ("render_image", "render_video"):
+            with self.subTest(lane=lane_name):
+                quote = self.mcp_quote(lane_name)
+                self.mcp_submit(quote)
+                self.settle()
+                payload = self.paid[-1].content
+                self.ui_quote(lane_name)
+                self.generation.submit_generation(bpy.context, lane_name)
+                self.settle()
+                self.assertEqual(self.paid[-1].content, payload)
+                saved = self.store.records()[-1]
+                self.assertEqual(saved.intent.quote_cost, quote["cu_cost_exact"])
+                self.assertEqual(json.loads(payload)["reference"], ["scene-snapshot"])
+        self.assertEqual(len(self.paid), 4)
+
+    def test_mcp_render_rechecks_form_at_quote_delivery_and_submission(self):
+        for lane_name in ("render_image", "render_video"):
+            with self.subTest(lane=lane_name):
+                quote = self.mcp_quote(lane_name)
+                lane = bpy.context.scene.scenario.lane_state(lane_name)
+                lane.prompt = "changed look"
+                with self.assertRaises(self.request_error):
+                    self.mcp_submit(quote)
+                lane.prompt = "a teapot"
+                deferred = self.tools.estimate_cost(
+                    {"lane": lane_name, "model_id": self.model["id"]}
+                )
+                result = deferred.run()
+                lane.references[0].asset_id = "new-snapshot"
+                with self.assertRaisesRegex(self.request_error, "changed"):
+                    deferred.finish(result)
+        self.assertEqual(self.paid, [])
+        self.assertEqual(self.store.records(), ())
+
+    def test_mcp_render_cannot_skip_scene_upload_or_automatic_spark_approval(self):
+        lane_name = "render_image"
+        state = self.configure_ui_lane(lane_name)
+        args = {"lane": lane_name, "model_id": self.model["id"]}
+        with self.assertRaises(self.request_error):
+            self.tools.estimate_cost(args)
+        quote = self.mcp_quote(lane_name)
+        state.prompt = ""
+        state.spark_enabled = True
+        with self.assertRaisesRegex(self.request_error, "Prompt Spark"):
+            self.tools.estimate_cost(args)
+        with self.assertRaisesRegex(self.request_error, "Prompt Spark"):
+            self.mcp_submit(quote)
+        self.assertEqual(self.paid, [])
+        self.assertEqual(self.store.records(), ())
 
     def test_render_reference_change_invalidates_approved_request(self):
         prepared = submodule("blender.render_references")

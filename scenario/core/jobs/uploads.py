@@ -79,14 +79,10 @@ class UploadCommands:
         with self._guard():
             return self._store.get(request_id)
 
-    def mesh_sources(self):
-        """Read completed captured exports in this scope; never infer a primary source."""
+    def mesh_sources(self, asset_id):
+        """Read selected captured exports in this scope; never infer a primary source."""
         with self._guard():
-            return tuple(
-                record
-                for record in self._store.records()
-                if record.state == UploadState.IMPORTED and record.intent.mesh_source is not None
-            )
+            return self._store.mesh_sources(asset_id)
 
     def recovery_plan(self):
         """Inspect saved progress without writes, file verification or dispatch.

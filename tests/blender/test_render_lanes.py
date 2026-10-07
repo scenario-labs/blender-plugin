@@ -50,6 +50,200 @@ class RenderLanesTests(unittest.TestCase):
             ref.filepath = lane.first_frame_path
         return ref
 
+    def form(self, action="inspect", **args):
+        return submodule("mcp.tools_scenario").render_form(
+            {"lane": "render_image", "action": action, **args}
+        )
+
+    def test_mcp_configures_native_form_without_capture_or_submission(self):
+        self.image_lane.model_id = "model_google-gemini-3-1-flash"
+        before = list(self.image_lane.references)
+        result = self.form(
+            "configure",
+            settings={
+                "look": "copper sculpture",
+                "capture_source": "VIEWPORT",
+                "force_solid": True,
+                "spark_enabled": False,
+                "style_assets": ["style-one"],
+            },
+        )
+        self.assertEqual(before, [])
+        self.assertEqual(result["look"], "copper sculpture")
+        self.assertEqual(result["capture_source"], "VIEWPORT")
+        self.assertTrue(result["force_solid"])
+        self.assertFalse(result["ready_to_estimate"])
+        self.assertEqual(len(result["references"]), 1)
+        self.assertEqual(result["references"][0]["asset_id"], "style-one")
+        self.uploaded("render_image")
+        self.assertTrue(self.form()["ready_to_estimate"])
+        payload = self.generation.build_request(self.scene, "render_image").body
+        self.assertEqual(payload["referenceImages"], ["uploaded-scene", "style-one"])
+        self.assertIn("copper sculpture", payload["prompt"])
+
+    def test_mcp_bad_settings_do_not_partially_edit_the_form(self):
+        self.image_lane.model_id = "model_google-gemini-3-1-flash"
+        self.image_lane.prompt = "original"
+        for extra in (
+            {"capture_source": "wrong"},
+            {"force_solid": 1},
+            {"parameters": {"missing": 2}},
+            {"style_assets": [""]},
+            {"parameters": {"referenceImages": ["asset"]}},
+        ):
+            with self.subTest(extra=extra), self.assertRaises(ValueError):
+                self.form("configure", settings={"look": "changed", **extra})
+            self.assertEqual(self.image_lane.prompt, "original")
+            self.assertEqual(len(self.image_lane.references), 0)
+
+    def test_mcp_parameter_edits_validate_before_native_assignment(self):
+        self.video_lane.model_id = "model_bytedance-seedance-2-0"
+        commands = submodule("blender.render_commands")
+        state = commands.configure(self.scene, "render_video", {"parameters": {"duration": 4}})
+        self.assertEqual(int(state["parameters"]["duration"]), 4)
+        for value in (True, float("nan"), 4.5, 999, "999", "4.5", "NaN", "", " 4"):
+            with self.subTest(value=value), self.assertRaises(ValueError):
+                commands.configure(
+                    self.scene, "render_video", {"look": "bad", "parameters": {"duration": value}}
+                )
+            self.assertEqual(self.video_lane.prompt, "")
+            self.assertEqual(
+                int(commands.inspect(self.scene, "render_video")["parameters"]["duration"]), 4
+            )
+
+    def test_mcp_render_image_inspection_round_trips_visible_parameters(self):
+        self.image_lane.model_id = "model_google-gemini-3-1-flash"
+        schema = self.generation.schema_for(self.image_lane.model_id)
+        hidden = self.render_lanes.hidden_param_names(schema)
+        self.assertIn("videoFps", hidden)
+        before = self.form()
+        self.assertTrue(before["parameters"])
+        self.assertFalse(hidden.intersection(before["parameters"]))
+        after = self.form("configure", settings={"parameters": before["parameters"]})
+        self.assertEqual(after["parameters"], before["parameters"])
+        with self.assertRaisesRegex(ValueError, "not used by Render Image"):
+            self.form("configure", settings={"parameters": {"videoFps": 1}})
+
+    def test_mcp_render_video_inspection_round_trips_numeric_choices(self):
+        self.video_lane.model_id = "model_bytedance-seedance-2-0"
+        tools = submodule("mcp.tools_scenario")
+        before = tools.render_form({"lane": "render_video", "action": "inspect"})
+        self.assertIsInstance(before["parameters"]["duration"], str)
+        after = tools.render_form(
+            {
+                "lane": "render_video",
+                "action": "configure",
+                "settings": {"parameters": before["parameters"]},
+            }
+        )
+        self.assertEqual(after["parameters"], before["parameters"])
+        self.video_lane.prompt = "painted copper"
+        self.uploaded("render_video")
+        self.uploaded("render_video", role="first_frame", asset="uploaded-first-frame")
+        payload = self.generation.build_request(self.scene, "render_video").body
+        self.assertIs(type(payload["duration"]), int)
+        self.assertEqual(payload["duration"], int(before["parameters"]["duration"]))
+
+    def test_mcp_reference_removal_rejects_changed_binding_and_does_not_cancel_upload(self):
+        self.image_lane.model_id = "model_google-gemini-3-1-flash"
+        ref = self.uploaded("render_image")
+        key = self.form()["references"][0]["reference_key"]
+        ref.asset_id = "changed"
+        with self.assertRaises(ValueError):
+            self.form("remove", reference_key=key)
+        key = self.form()["references"][0]["reference_key"]
+        result = self.form("remove", reference_key=key)
+        self.assertEqual(result["references"], [])
+        self.assertFalse(result["ready_to_estimate"])
+        with self.assertRaises(ValueError):
+            self.form("remove", reference_key=key)
+
+    def test_mcp_model_change_preserves_references_until_explicit_removal(self):
+        self.image_lane.model_id = "model_google-gemini-3-1-flash"
+        self.uploaded("render_image")
+        with self.assertRaisesRegex(ValueError, "Remove"):
+            self.form("configure", settings={"model_id": "model_openai-gpt-image-2"})
+        self.assertEqual(self.image_lane.model_id, "model_google-gemini-3-1-flash")
+        self.form("remove", reference_key=self.form()["references"][0]["reference_key"])
+        self.form("configure", settings={"model_id": "model_openai-gpt-image-2"})
+        self.assertEqual(self.image_lane.model_id, "model_openai-gpt-image-2")
+
+    def test_mcp_inspection_and_quote_never_prepare_missing_references(self):
+        self.image_lane.model_id = "model_google-gemini-3-1-flash"
+        commands = submodule("blender.render_commands")
+        error = submodule("core.api.errors").ScenarioError
+        with patch.object(
+            commands.render_references, "prepare", side_effect=AssertionError("Implicit upload")
+        ):
+            self.assertFalse(self.form()["ready_to_estimate"])
+            with self.assertRaises(error):
+                commands.request(self.scene, "render_image", self.image_lane.model_id)
+        self.assertEqual(len(self.image_lane.references), 0)
+
+    def test_mcp_style_replacement_preserves_other_inputs_and_their_upload_markers(self):
+        self.video_lane.model_id = "model_bytedance-seedance-2-0"
+        schema = self.generation.schema_for(self.video_lane.model_id)
+        style = self.render_lanes.style_input("render_video", schema)
+        self.assertIsNotNone(style)
+        for marked in (False, True):
+            with self.subTest(marked=marked):
+                self.video_lane.references.clear()
+                other = []
+                for name in ("referenceAudios", "referenceVideos", "lastFrameImage"):
+                    ref = self.video_lane.references.add()
+                    ref.param_name, ref.source, ref.asset_id = name, "ASSET", "asset-" + name
+                    if marked:
+                        ref[submodule("blender.reference_form")._MARKER] = "pending-" + name
+                    other.append((name, ref.asset_id, dict(ref.items())))
+                ref = self.video_lane.references.add()
+                ref.param_name, ref.source, ref.asset_id = style.name, "ASSET", "old-style"
+                commands = submodule("blender.render_commands")
+                result = commands.configure(
+                    self.scene, "render_video", {"style_assets": ["new-style"]}
+                )
+                self.assertEqual(
+                    [
+                        (r.param_name, r.asset_id, dict(r.items()))
+                        for r in list(self.video_lane.references)[:3]
+                    ],
+                    other,
+                )
+                self.assertEqual(self.video_lane.references[-1].asset_id, "new-style")
+                self.assertEqual(
+                    [r["role"] for r in result["references"]], ["input", "input", "input", "style"]
+                )
+                commands.configure(self.scene, "render_video", {"style_assets": []})
+                self.assertEqual(
+                    [
+                        (r.param_name, r.asset_id, dict(r.items()))
+                        for r in self.video_lane.references
+                    ],
+                    other,
+                )
+
+    def test_mcp_styles_preserve_reserved_first_frame_without_an_image_array(self):
+        self.video_lane.model_id = "model_minimax-h3"
+        schema = self.generation.schema_for(self.video_lane.model_id)
+        params = submodule("core.schema.params")
+        first = self.render_lanes.first_frame_spec(schema)
+        self.assertIsNotNone(first)
+        scene = self.render_lanes.scene_spec("render_video", schema)
+        schema = params.Schema([first, scene])
+        commands = submodule("blender.render_commands")
+        with patch.object(self.generation, "schema_for", return_value=schema):
+            self.assertIsNone(self.render_lanes.style_input("render_video", schema))
+            with self.assertRaisesRegex(ValueError, "no style input"):
+                commands.configure(
+                    self.scene, "render_video", {"look": "changed", "style_assets": ["style"]}
+                )
+            self.assertEqual(self.video_lane.prompt, "")
+            self.assertEqual(len(self.video_lane.references), 0)
+            ref = self.video_lane.references.add()
+            ref.param_name, ref.source, ref.asset_id = first.name, "ASSET", "first-frame"
+            commands.configure(self.scene, "render_video", {"style_assets": []})
+            self.assertEqual(len(self.video_lane.references), 1)
+            self.assertEqual(self.video_lane.references[0].asset_id, "first-frame")
+
     def test_lane_tabs_have_no_generations_or_mcp(self):
         props = submodule("blender.props")
         ids = [item[0] for item in props.LANE_ITEMS]

@@ -55,7 +55,12 @@ def _process():
                 handlers.dispatch(event)
             except Exception:  # one bad event must not drop the rest of the batch
                 log.exception("event %s failed", event[0] if event else event)
-        if manager.resume_pending and runtime.credentials().valid and runtime.online():
+        if (
+            manager.resume_pending
+            and runtime.project_id() is None
+            and runtime.credentials().valid
+            and runtime.online()
+        ):
             manager.retry_resume()
     if (
         not runtime.state.catalog_loaded

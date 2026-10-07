@@ -135,8 +135,10 @@ normalized-equivalent edits keep the current session. Read-only history and Film
 controls check both credentials and project without mutating state in drawing.
 The remaining prototype client rejects a nonempty project override rather than
 operating in an unselected default scope. It cannot infer project ownership for
-legacy jobs. This does not migrate prototype data or establish live project
-permissions, discovery or complete release acceptance.
+legacy jobs. The pump keeps pending prototype resumes suspended while an override
+is selected; it does not retry the refused client every tick. Clearing the override
+restores the existing default-scope retry gate. This does not migrate prototype
+data or establish live project permissions, discovery or complete release acceptance.
 
 ## Active SDK cost previews and model submission
 

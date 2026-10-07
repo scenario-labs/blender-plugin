@@ -389,3 +389,25 @@ class OfflineRuntimeTests(unittest.TestCase):
             with online_access(True):
                 self.pump._process()
                 retry.assert_called_once_with()
+
+    def test_project_override_keeps_prototype_resume_suspended_across_ticks(self):
+        job = self.saved_job()
+        self.manager.resume_pending = [job]
+        registry_bytes = self.manager.paths.registry_file.read_bytes()
+        self.runtime.state.catalog_loaded = True
+        with (
+            online_access(True),
+            patch.object(self.runtime, "project_id", return_value="fixture-project") as project,
+            patch.object(self.generation, "process_catalog_events", return_value=False),
+            patch.object(self.service, "process_pending"),
+            patch.object(self.manager, "retry_resume") as retry,
+        ):
+            for _ in range(5):
+                self.pump._process()
+            retry.assert_not_called()
+            self.assertEqual(self.manager.resume_pending, [job])
+            self.assertEqual(self.manager.paths.registry_file.read_bytes(), registry_bytes)
+            self.assertEqual(self.manager.drain(), [])
+            project.return_value = None
+            self.pump._process()
+            retry.assert_called_once_with()

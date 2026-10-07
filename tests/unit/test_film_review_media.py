@@ -141,7 +141,7 @@ def test_failed_preparation_cleans_new_files_and_preserves_originals(env, monkey
 
 @pytest.mark.parametrize("failure", ["probe", "cancel", "origin", "admission"])
 def test_failed_cleanup_preserves_original_error_and_retries_at_joined_shutdown(
-    env, monkeypatch, failure
+    env, monkeypatch, caplog, failure
 ):
     entered, release = threading.Event(), threading.Event()
     original_remove = film_review_media.shutil.rmtree
@@ -194,6 +194,12 @@ def test_failed_cleanup_preserves_original_error_and_retries_at_joined_shutdown(
         with pytest.raises(RuntimeError, match="cleanup inspection"):
             env.workers.shutdown()
         assert directory in env.owner._film_review_cleanup
+        messages = [
+            record.getMessage()
+            for record in caplog.records
+            if record.getMessage().startswith("Unused Film review media needs cleanup inspection:")
+        ]
+        assert messages == [f"Unused Film review media needs cleanup inspection: {directory}"]
     env.workers.shutdown()
     assert not directory.exists() and not env.owner._film_review_cleanup
     assert env.video.exists() and env.audio.exists()

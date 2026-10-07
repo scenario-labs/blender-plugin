@@ -334,6 +334,59 @@ class FilmReviewPreparationTests(unittest.TestCase):
         self.assertFalse(completion.result.directory.exists())
         self.assertTrue(self.source.exists())
 
+    def test_reaper_retains_cleanup_owner_logs_location_and_spaces_retries(self):
+        completion = self.ready()
+        self.session.deactivate()
+        with (
+            patch.object(
+                self.media, "discard_directory", side_effect=PermissionError("locked")
+            ) as cleanup,
+            patch.object(self.module.time, "monotonic", return_value=100),
+            self.assertLogs("scenario", level="WARNING") as logged,
+        ):
+            self.module._reap_inactive()
+            self.assertIn(self.session, self.module._session_snapshot())
+            self.assertEqual(self.session._film_cleanup_retry_at, 105)
+            self.module._reap_inactive()
+            self.assertEqual(cleanup.call_count, 1)
+        self.assertIn(str(completion.result.directory), "\n".join(logged.output))
+        self.assertTrue(completion.result.directory.exists())
+        with patch.object(self.module.time, "monotonic", return_value=106):
+            self.module._reap_inactive()
+        self.assertNotIn(self.session, self.module._session_snapshot())
+        self.assertFalse(completion.result.directory.exists())
+        self.assertFalse(self.calls or self.downloads)
+
+    def test_disable_retains_failed_preparation_cleanup_and_enable_resumes_it(self):
+        bpy.context.view_layer.update()
+        with (
+            patch.object(
+                self.probe, "_run", side_effect=self.probe.MediaProbeError("probe failed")
+            ),
+            patch.object(self.media, "discard_directory", side_effect=PermissionError("locked")),
+            self.assertLogs("scenario", level="WARNING") as logged,
+        ):
+            task = self.session.prepare_film_review(
+                self.raw, production_id=self.production, origin=self.session.capture(self.scene)
+            )
+            with self.assertRaises(self.probe.MediaProbeError):
+                task.result(5)
+            (directory,) = self.session._coordinator._film_review_cleanup
+            self.module.unregister()
+        self.assertIn(str(directory), "\n".join(logged.output))
+        self.assertIn(self.session, self.module._session_snapshot())
+        self.assertFalse(bpy.app.timers.is_registered(self.module._reap_inactive))
+        self.module.register()
+        self.assertTrue(bpy.app.timers.is_registered(self.module._reap_inactive))
+        with patch.object(
+            self.module.time, "monotonic", return_value=self.session._film_cleanup_retry_at + 1
+        ):
+            self.module._reap_inactive()
+        self.assertFalse(directory.exists())
+        self.assertNotIn(self.session, self.module._session_snapshot())
+        self.assertTrue(self.source.exists())
+        self.assertFalse(self.calls or self.downloads)
+
     def test_cleanup_failure_after_native_rollback_still_saves_failed_claim(self):
         completion = self.ready()
         with (

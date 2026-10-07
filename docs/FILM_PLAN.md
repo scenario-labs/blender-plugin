@@ -808,6 +808,11 @@ original error is preserved with a cleanup note. The coordinator retains those
 unused directories, counts them toward its 16-review bound and retries removal
 after workers join at shutdown. Failed shutdown cleanup remains owned for another
 shutdown attempt. No failed-preparation directory is a generation or application approval.
+The local log names each retained directory once, without copying transport errors.
+An inactive session stays registered while unused Film media needs cleanup; enabled
+reaping retries at most once every five seconds. Disabling the extension stops its
+timer while retaining in-process ownership; registering again resumes cleanup.
+Process exit or module reload can still require manual inspection of logged files.
 
 Installed tests cover real movie/audio strips from worker copies, generated job
 claims, reuse, stale recipe/origin/copy rejection, rollback, uncertain claims and

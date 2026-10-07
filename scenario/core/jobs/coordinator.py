@@ -4,6 +4,7 @@
 
 import hashlib
 import json
+import logging
 import math
 import threading
 import time
@@ -231,6 +232,7 @@ class JobCoordinator:
         self._compositions = WeakValueDictionary()
         self._film_reviews = {}
         self._film_review_cleanup = set()
+        self._film_review_cleanup_reported = set()
         self._bound_estimates = WeakKeyDictionary()
         self._verified_results = WeakValueDictionary()
         self._application_claims = WeakValueDictionary()
@@ -333,8 +335,24 @@ class JobCoordinator:
                 discard_directory(directory)
             except OSError:
                 error.add_note("Unused Film review media is retained for shutdown cleanup retry")
+                self._report_film_review_cleanup(directory)
             else:
                 self._film_review_cleanup.remove(directory)
+                self._film_review_cleanup_reported.discard(directory)
+
+    @property
+    def film_review_cleanup_pending(self):
+        with self._lock:
+            return bool(self._film_reviews or self._film_review_cleanup)
+
+    def _report_film_review_cleanup(self, directory):
+        if directory not in self._film_review_cleanup_reported:
+            # This local diagnostic names only our owned directory, never a
+            # transport exception, credential or remote URL.
+            logging.getLogger("scenario").warning(
+                "Unused Film review media needs cleanup inspection: %s", directory
+            )
+            self._film_review_cleanup_reported.add(directory)
 
     def take_film_review(self, prepared, *, origin):
         """Consume owner-issued preparation once; the caller now owns its files."""
@@ -359,6 +377,7 @@ class JobCoordinator:
             if self._film_reviews.get(id(prepared)) is not prepared:
                 raise ValueError("Use this connection's unconsumed Film review")
             discard(prepared)
+            self._film_review_cleanup_reported.discard(prepared.directory)
             del self._film_reviews[id(prepared)]
 
     def render_local(self, spec, *, origin, source_origin, cancel):
@@ -624,13 +643,16 @@ class JobCoordinator:
                     self.discard_film_review(prepared)
                 except Exception:
                     cleanup_failed = True
+                    self._report_film_review_cleanup(prepared.directory)
             for directory in tuple(self._film_review_cleanup):
                 try:
                     discard_directory(directory)
                 except OSError:
                     cleanup_failed = True
+                    self._report_film_review_cleanup(directory)
                 else:
                     self._film_review_cleanup.remove(directory)
+                    self._film_review_cleanup_reported.discard(directory)
         finally:
             self._adapter.close()
         if cleanup_failed:

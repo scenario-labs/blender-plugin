@@ -8,6 +8,7 @@ runtime starts until an integration explicitly creates a JobSession.
 
 import logging
 import threading
+import time
 import uuid
 from dataclasses import dataclass, field
 from weakref import WeakKeyDictionary, WeakValueDictionary
@@ -193,6 +194,7 @@ class JobSession:
         self._model_receipts = WeakKeyDictionary()
         self._material_receipts = WeakKeyDictionary()
         self._film_review_receipts = WeakKeyDictionary()
+        self._film_cleanup_retry_at = 0.0
         self._upload_captures = {}
         self._mesh_sources = {}
         self._history_revision = 0
@@ -1327,8 +1329,11 @@ class JobSession:
                 self.film_shots.close()
                 self.film_timeline.close()
                 self.film_capture.close()
-                with _sessions_lock:
-                    _sessions.discard(self)
+                if self._coordinator.film_review_cleanup_pending:
+                    self._film_cleanup_retry_at = time.monotonic() + 5.0
+                else:
+                    with _sessions_lock:
+                        _sessions.discard(self)
 
 
 def _session_snapshot():
@@ -1347,7 +1352,11 @@ def _reap_inactive():
     for session in _session_snapshot():
         try:
             session.prune_missing_scenes()
-            if not session._active and all(task.done() for task, _ in session._pending):
+            if (
+                not session._active
+                and time.monotonic() >= session._film_cleanup_retry_at
+                and all(task.done() for task, _ in session._pending)
+            ):
                 session.shutdown()
         except Exception:
             # Do not include transport errors/tracebacks that may contain secrets.
@@ -1410,6 +1419,8 @@ def register():
         if callback not in handlers:
             handlers.append(callback)
     _registered = True
+    if _session_snapshot() and not bpy.app.timers.is_registered(_reap_inactive):
+        bpy.app.timers.register(_reap_inactive, first_interval=0.25, persistent=True)
 
 
 def unregister():

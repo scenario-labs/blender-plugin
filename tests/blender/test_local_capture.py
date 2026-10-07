@@ -3,10 +3,12 @@
 """Real native snapshot identity/context preservation without invoking GPU rendering."""
 
 import json
+import os
 import sys
 import tempfile
 import unittest
 from concurrent.futures import ThreadPoolExecutor
+from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
@@ -104,6 +106,73 @@ class LocalCaptureTests(unittest.TestCase):
                     kind="VIDEO",
                 )
         self.assertEqual(list(Path(self.directory).iterdir()), [])
+
+    def check_snapshot_child_handoff(self, root):
+        self.scene.frame_set(9)
+        before = (bpy.data.filepath, bpy.context.scene, self.scene.frame_current)
+        spec = self.capture.snapshot(
+            self.scene,
+            root,
+            frame_start=5,
+            frame_end=5,
+            kind="STILL",
+            width=64,
+            height=64,
+            timeout=60,
+        )
+        if os.name == "nt":
+            self.assertTrue(str(spec.directory).startswith("\\\\?\\"))
+        # Exercise the real render() subprocess handoff without requiring GPU
+        # rendering in CI. The child reads Blender's loaded snapshot, then emits
+        # a synthetic header and an inspection receipt from its private worker.
+        worker = spec.directory / "handoff_worker.py"
+        worker.write_text(
+            """import json
+import struct
+import sys
+from pathlib import Path
+import bpy
+
+spec_path = Path(sys.argv[sys.argv.index("--") + 1]).resolve()
+parameters = json.loads(spec_path.read_text())
+scene = bpy.data.scenes[parameters["scene_name"]]
+assert scene.camera in tuple(scene.objects)
+assert scene.frame_current == 9
+assert Path(bpy.data.filepath).samefile(spec_path.parent / "snapshot.blend")
+output = spec_path.parent / "frames" / "Frame-000001.png"
+output.write_bytes(bytes.fromhex("89504e470d0a1a0a0000000d49484452")
+                   + struct.pack(">II", parameters["width"], parameters["height"]))
+(spec_path.parent / "handoff.json").write_text(json.dumps({
+    "scene": scene.name, "camera": scene.camera.name,
+    "frame": scene.frame_current, "offline": not bpy.app.online_access,
+}))
+""",
+            encoding="utf-8",
+        )
+        result = self.render.render(replace(spec, worker=worker))
+        receipt = json.loads((spec.directory / "handoff.json").read_text())
+        self.assertEqual(
+            receipt,
+            dict(scene=self.scene.name, camera=self.scene.camera.name, frame=9, offline=True),
+        )
+        self.assertEqual((result.frames, result.width, result.height), (1, 64, 64))
+        self.assertEqual(result.sha256, self.render.digest(result.path))
+        self.assertEqual(before, (bpy.data.filepath, bpy.context.scene, self.scene.frame_current))
+        self.assertFalse(list(spec.directory.glob("worker-*")))
+
+    def test_snapshot_is_loaded_by_the_owned_blender_child(self):
+        self.check_snapshot_child_handoff(self.directory)
+
+    @unittest.skipUnless(os.name == "nt", "Windows extended-path regression")
+    def test_deep_windows_snapshot_is_loaded_by_the_owned_blender_child(self):
+        # The owner also cleans up through the extended namespace.
+        with tempfile.TemporaryDirectory(dir=self.capture._root(self.directory)) as directory:
+            root = Path(directory)
+            for component in ("a" * 64, "b" * 64, "c" * 64):
+                root /= component
+                root.mkdir()
+            self.assertGreater(len(str(root)), 260)
+            self.check_snapshot_child_handoff(root)
 
     def test_worker_overrides_snapshot_output_flags_without_changing_source(self):
         source = self.scene

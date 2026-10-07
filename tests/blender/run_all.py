@@ -56,6 +56,7 @@ BASELINE = (
     "test_sdk_estimates",
     "test_job_store",
     "test_result_transfers",
+    "test_local_capture",
     "test_job_session",
     "test_session_results",
     "test_session_uploads",

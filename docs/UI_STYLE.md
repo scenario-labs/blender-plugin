@@ -950,3 +950,98 @@ The run records zero service requests and downloads, exits cleanly, removes its
 disposable profile and leaves the normal profile unchanged. This establishes the
 synthetic shot-control interaction, not live provider compatibility, motion/audio
 review, other OS/DPI combinations, timeline/capture/finishing or release acceptance.
+
+### Film timeline controls
+
+The **Timeline** child panel offers **Build timeline**. Its confirmation lists
+the editorial frame count/rate and a local scene choice for each recipe shot.
+Missing choices explain that the shot must be built first. The dialog explains
+that it creates a new sequence, keeps the working scene selected and references
+live scenes whose later edits affect the timeline. Cancel creates no review.
+The confirmed selection uses the same session command as local MCP. Build is
+disabled outside Object Mode in a Blender window, while MCP preparation remains
+available in Edit Mode.
+
+Known rollback errors remain readable and copyable. Incomplete cleanup hides
+the build action and requires **Discard timeline review** with its inspection
+checkbox; this never deletes Blender data. Dismissed reviews no longer show
+their status or Copy error action in the panel; MCP can still inspect the saved
+review error. Ordinary status matches the current production and recipe; a
+reload hides prior built/error status without hiding unresolved partial cleanup.
+Drawing only reads cached status.
+Native source/destination guards and single-use approval have synthetic installed
+coverage. Exact ZIP SHA-256
+`aef03c55e607a3ea99eb839bd4cdef2cc4c7e6517aa5ca5152d302744874f402`
+passes 869 installed tests on each macOS arm64 Blender 5.0.1, 5.1.2 and 5.2.1.
+
+Desktop interaction with that same ZIP passes on macOS arm64 Blender 5.1.2 in
+an isolated profile. The local fixture supplies two recipe shots and a second
+take for one shot, with external Python sockets blocked. Native mouse input
+opens the panel and confirmation, which displays 180 frames at 30 fps. Selecting
+the nondefault scene for the second shot and pressing Escape leaves every scene
+and saved job unchanged and creates no review. A fresh dialog accepts the same explicit scene
+choice, and Return confirms the build.
+
+![Timeline approval shows the frame count and an explicit choice between takes](images/film-timeline-approval.png)
+
+Exactly one new timeline contains the selected shots at frames 1–120 and 121–180,
+with the working scene still selected and its objects intact. Saved jobs and
+application receipts are unchanged. Edit > Undo removes only the new timeline;
+Edit > Redo restores the exact scene sources and frame boundaries. The consumed
+review stays consumed. After history invalidates its scene handle, the panel
+requires a fresh approval for another build.
+
+![Film reports the built timeline while preserving the working scene](images/film-timeline-built.png)
+
+Viewport Light selection and Home framing work after the dialogs. The native
+scene selector opens the built timeline. Selecting that scene in the Video
+Sequencer's own scene selector displays the two editable scene strips.
+
+![The Video Sequencer displays the selected 120-frame and 60-frame shots](images/film-timeline-sequencer.png)
+
+The run records zero service requests and downloads, exits cleanly, removes its
+disposable profile and leaves the normal profile unchanged. This establishes the
+synthetic timeline interaction, not live provider compatibility, human motion/audio
+review, other OS/DPI combinations, capture/finishing/export or release acceptance.
+
+Review follow-up ZIP SHA-256
+`c008687d12a1dc370e841e0daf34abade5d7960d3bbf1458ecb03bca929eba20`
+passes 958 installed tests on each macOS arm64 Blender 5.0.1, 5.1.2 and 5.2.1.
+A fresh isolated desktop check on Blender 5.1.2 supplies a synthetic incomplete
+cleanup. Mouse input opens **Discard timeline review**, checks the inspection
+acknowledgement and Return confirms dismissal. The old error and Copy error
+control disappear, while explicit MCP inspection retains the discarded error.
+Dismissal preserves existing scene data, including the partial fixture scene,
+and saved jobs.
+
+![An uncertain timeline review offers inspection and dismissal](images/film-timeline-error-before-dismissal.png)
+
+![Dismissal clears the old error and restores the build control](images/film-timeline-error-dismissed.png)
+
+Viewport selection and Tab enter Edit Mode, where **Build timeline** is visibly
+disabled. A main-thread probe of the shared command still prepares a ready
+review; approval rejects Object Mode absence without consuming it or building.
+
+![Edit Mode disables building while read-only preparation remains available](images/film-timeline-edit-mode.png)
+
+This follow-up records zero service requests/downloads, clean exit, disposable
+profile cleanup and an unchanged normal profile. Its physical evidence covers
+dismissal, viewport focus and Edit Mode gating; it does not repeat the earlier
+build, Undo/Redo, missing-choice or Sequencer journeys.
+
+Recipe-status validation uses exact ZIP SHA-256
+`eea65caf46764ed36dae6717c5339da472127d668b389f0564e156c9b8024bc8`,
+with 960 installed tests passing on each macOS arm64 Blender 5.0.1, 5.1.2 and
+5.2.1. The isolated 5.1.2 desktop fixture displays a built timeline, then calls
+the MCP recipe-load handler on the main thread with a replacement recipe. The
+old Built label disappears; the prior review and scene data remain inspectable.
+Viewport selection and Home framing work. A synthetic incomplete cleanup stays
+visible and blocks preparation across another recipe reload. Mouse input opens
+its discard dialog, checks inspection and Return dismisses it, clearing the panel.
+
+![Reloading a recipe removes the prior timeline confirmation](images/film-timeline-recipe-reloaded.png)
+
+Saved jobs remain unchanged, with zero service requests/downloads, clean exit,
+disposable-profile cleanup and normal-profile preservation. This check covers
+recipe-status filtering and retained uncertainty, not a new build/Undo journey
+or the native recipe file chooser.

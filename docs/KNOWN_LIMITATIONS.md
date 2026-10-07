@@ -28,9 +28,13 @@ establish live generation or full render-lane desktop acceptance.
   the final render quote. Film task quotes, approvals and saved-upload associations
   now share these jobs through native controls and MCP. Film shot construction
   uses separate saved-model verification and build approval. Synthetic desktop
-  interaction, including Undo/Redo, passes on macOS Blender 5.1.2; live provider,
-  other OS/DPI and motion/audio acceptance remain separate. Timeline approval,
-  capture, finishing and export remain unavailable. Complete runtime adoption
+  shot interaction, including Undo/Redo, passes on macOS Blender 5.1.2; live
+  provider, other OS/DPI and motion/audio acceptance remain separate. Local
+  timeline assembly requires explicit selection of completed shot scenes and
+  confirmation; it creates editable scene strips without generation or rendering.
+  Synthetic timeline selection, cancellation, Undo/Redo and Sequencer inspection
+  pass on macOS Blender 5.1.2; see [the evidence and limits](UI_STYLE.md#film-timeline-controls).
+  Capture, finishing and export remain unavailable. Complete runtime adoption
   and live/native acceptance remain open
   ([#64](https://github.com/scenario-labs/blender-plugin/issues/64),
   [#65](https://github.com/scenario-labs/blender-plugin/issues/65)).

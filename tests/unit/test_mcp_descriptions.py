@@ -12,6 +12,10 @@ ROOT = Path(__file__).resolve().parents[2]
 EXPECTED = {
     "tools_scenario": {
         "film_shot_sources",
+        "film_timeline_sources",
+        "prepare_film_timeline",
+        "film_timeline_review",
+        "build_film_timeline",
         "prepare_film_shot",
         "film_shot_review",
         "build_film_shot",

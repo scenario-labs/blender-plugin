@@ -12,7 +12,7 @@ from bpy_extras.io_utils import ImportHelper
 
 from ..core.jobs.upload_store import UploadState
 from ..core.ui.costs import format_cu
-from . import film_jobs, film_scene_controls, runtime
+from . import film_jobs, film_scene_controls, film_timeline_controls, runtime
 
 
 class ScenarioFilmTask(bpy.types.PropertyGroup):
@@ -296,6 +296,7 @@ CLASSES = (
     SCENARIO_UL_film_tasks,
     SCENARIO_PT_film,
     *film_scene_controls.CLASSES,
+    *film_timeline_controls.CLASSES,
 )
 
 

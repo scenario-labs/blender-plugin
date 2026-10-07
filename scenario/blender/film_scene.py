@@ -458,34 +458,47 @@ def build_shot(raw_recipe, *, production_id, shot_id, heroes=None):
     return result
 
 
-def build_timeline(raw_recipe, *, production_id, shots):
-    """Compose explicit matching shot scenes into a new editable scene-strip timeline."""
-    _main_thread()
+def timeline_recipe(raw_recipe, production_id):
+    """Validate the local recipe identity shared by source discovery and assembly."""
     _identity(production_id)
     plan = validate_film_plan(raw_recipe)
     digest = hashlib.sha256(
         json.dumps(plan, sort_keys=True, separators=(",", ":"), allow_nan=False).encode()
     ).hexdigest()
+    return plan, digest
+
+
+def matching_shot(scene, *, production_id, digest, shot, fps):
+    """Read whether this live local scene can supply the recipe's editorial shot."""
+    try:
+        return (
+            scene in tuple(bpy.data.scenes)
+            and not scene.library
+            and not scene.override_library
+            and scene.get("scenario_film_production_id") == production_id
+            and scene.get("scenario_film_shot_id") == shot["id"]
+            and scene.get("scenario_film_recipe_sha256") == digest
+            and scene.camera is not None
+            and scene.camera in tuple(scene.objects)
+            and scene.render.fps == fps
+            and scene.render.fps_base == 1
+            and (scene.frame_start, scene.frame_end) == (1, shot["frames"])
+        )
+    except ReferenceError:
+        return False
+
+
+def build_timeline(raw_recipe, *, production_id, shots):
+    """Compose explicit matching shot scenes into a new editable scene-strip timeline."""
+    _main_thread()
+    plan, digest = timeline_recipe(raw_recipe, production_id)
     if not isinstance(shots, dict) or set(shots) != {shot["id"] for shot in plan["shots"]}:
         raise ValueError("Build and select every shot in this Film recipe")
     for shot in plan["shots"]:
         item = shots[shot["id"]]
-        try:
-            valid = (
-                isinstance(item, ShotScene)
-                and item.scene in tuple(bpy.data.scenes)
-                and not item.scene.library
-                and not item.scene.override_library
-                and item.scene.get("scenario_film_production_id") == production_id
-                and item.scene.get("scenario_film_shot_id") == shot["id"]
-                and item.scene.get("scenario_film_recipe_sha256") == digest
-                and item.scene.camera is not None
-                and item.scene.render.fps == plan["fps"]
-                and item.scene.render.fps_base == 1
-                and (item.scene.frame_start, item.scene.frame_end) == (1, shot["frames"])
-            )
-        except ReferenceError:
-            valid = False
+        valid = isinstance(item, ShotScene) and matching_shot(
+            item.scene, production_id=production_id, digest=digest, shot=shot, fps=plan["fps"]
+        )
         if not valid:
             raise ValueError("Choose matching live Film shot scenes with unchanged timing")
     previous = _snapshot()

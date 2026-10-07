@@ -260,7 +260,7 @@ These are main-thread local primitives, with no SDK, network, paid submission,
 file save, activation control or separate job storage. A receipt proves bytes,
 not credential ownership or approval. The shared shot command below supplies the
 source/destination checks and application claims. Native/MCP scene-building controls
-must use that command; timeline approval remains separate. Primitive tests establish
+must use that command; local timeline approval is described below. Primitive tests establish
 synthetic shot, model and sequence behavior, not visual motion acceptance,
 capture/encoding, finishing or export.
 
@@ -317,7 +317,7 @@ application claims still block a fresh review. If a failed claim never reached
 storage and the jobs remain eligible, the user can explicitly prepare again
 without restarting the session.
 There is no new SDK request, download, store or worker pool.
-Native/MCP presentation uses the same commands below; timeline approval and
+Native/MCP presentation uses the same commands below; full Film workflow and
 release acceptance remain separate.
 
 ## Native and MCP shot controls
@@ -355,9 +355,53 @@ dismisses an inspected uncertain review with `inspected: true`.
 session-owned reviews as the native controls. MCP does not create a native
 operator Undo entry. No tool generates, downloads or silently repeats a build.
 
+## Editable timeline approval
+
+Under **Film > Timeline**, **Build timeline** presents one local scene choice
+for every shot and the exact editorial frame count/rate. Confirming creates a
+new scene-strip sequence and preserves the working scene and existing timelines.
+Strips reference the selected live scenes, so later scene edits affect the
+sequence. This assembles existing Blender data; it does not generate, download,
+render, export, import hero files or change any saved job/application receipt.
+Save the blend file to retain the resulting scene.
+
+`JobSession.film_timeline` owns bounded source choices and single-use reviews.
+Source discovery accepts only local scenes with matching production, recipe,
+shot, camera and timing metadata, including explicitly selected saved/reloaded
+scenes. Those editable markers establish compatibility, not service provenance.
+Opaque source handles retain live scene/camera identity and the captured scene
+revision; names cannot redirect a selection after deletion. There are at most
+256 choices per inspection and sixteen reviews. A new inspection replaces old
+unprepared choices without invalidating prepared reviews.
+
+Preparation captures the recipe scene and complete selected shot set, including
+in Edit Mode. Building still requires a Blender window in Object Mode; the
+native build control is disabled outside that context. Approval
+rechecks the session, origin, recipe, source revisions, camera references and
+timing before consuming the review and constructing the sequence. Confirmed
+rollback retains an error; incomplete cleanup retains uncertainty and blocks
+another build from that recipe scene until explicit inspection acknowledgement.
+Uncertainty takes priority over newer ready reviews in the panel and blocks their
+approval too, even after a recipe reload. Ordinary panel status belongs only to
+the current production and recipe; prior reviews remain explicitly inspectable. A missing shot scene stops the native dialog with a named build
+instruction; a missing selection cannot create a review.
+Discarding a review removes its status from the panel without deleting Blender
+data; explicit MCP inspection retains its discarded phase and prior error.
+There is no remote job to reconcile or receipt to retry for this local
+composition action.
+
+MCP follows `film_timeline_sources`, `prepare_film_timeline`, then explicitly
+approved `build_film_timeline`. `film_timeline_review` inspects or discards the
+review; discarding uncertainty requires `inspected: true`. Native confirmation
+calls the same prepare/approve methods. Cancelling the dialog creates no review
+or timeline. The native build participates in Undo, while its consumed approval
+cannot replay; MCP does not create an operator Undo entry. Synthetic desktop
+selection, cancellation, Undo/Redo and Sequencer inspection pass on macOS Blender
+5.1.2; see [the evidence and limits](UI_STYLE.md#film-timeline-controls).
+
 ## Remaining integration and evidence
 
-Timeline approval, shot capture, media finishing,
+Shot capture, media finishing,
 provider-specific preparation and final export remain separate work. Keep useful
 source capabilities and tests as those paths are connected; do not describe this
 helper adoption as a completed Film workflow.

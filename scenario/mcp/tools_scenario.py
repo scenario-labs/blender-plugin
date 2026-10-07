@@ -281,6 +281,35 @@ def build_film_shot(args):
     return runtime.ensure_film_jobs().session.film_shots.approve(args["review_id"])
 
 
+def film_timeline_sources(args):
+    owner = _film_owner(args)
+    return {
+        "context_id": runtime.state.job_context_id,
+        **owner.session.film_timeline.inspect(bpy.context.scene),
+    }
+
+
+def prepare_film_timeline(args):
+    owner = _film_owner(args)
+    if args["context_id"] != runtime.state.job_context_id:
+        raise ScenarioError(0, "The Film connection changed; inspect timeline sources again")
+    return owner.session.film_timeline.prepare(bpy.context.scene, selections=args["selections"])
+
+
+def film_timeline_review(args):
+    commands = runtime.ensure_film_jobs().session.film_timeline
+    action = args.get("action", "status")
+    if action == "status":
+        return commands.status(args["review_id"])
+    if action == "discard":
+        return commands.discard(args["review_id"], inspected=args.get("inspected", False))
+    raise ValueError("Choose status or discard")
+
+
+def build_film_timeline(args):
+    return runtime.ensure_film_jobs().session.film_timeline.approve(args["review_id"])
+
+
 def estimate_prompt(args):
     """Quote the current native prompt field through the shared prompt facade."""
     jobs = runtime.ensure_prompt_jobs()
@@ -1001,6 +1030,73 @@ _JOB_REF = {
 
 
 SPECS = (
+    ToolSpec(
+        "film_timeline_sources",
+        (
+            "Inspect matching local scenes for every shot in the current Film recipe.\n"
+            "Args: production_id is required from film_recipe.\n"
+            "Returns: context_id, production_id, fps, total_frames and shots with source_id/scene choices.\n"
+            'Example: {"production_id": "saved-production"}.\n'
+            "Choices are owner-issued live references, not scene names. Fresh inspection replaces previous choices but keeps prepared reviews. Existing scene markers identify recipe compatibility, not generation provenance; the user explicitly selects local scenes. No service call or scene mutation.\n"
+            "Platform equivalent: none; local editable timeline planning."
+        ),
+        _schema({"production_id": {"type": "string"}}, ["production_id"]),
+        film_timeline_sources,
+        {"readOnlyHint": True},
+    ),
+    ToolSpec(
+        "prepare_film_timeline",
+        (
+            "Prepare explicit completed shot choices for separate timeline build approval.\n"
+            "Args: context_id and production_id from film_timeline_sources; selections maps every shot ID to one returned source_id.\n"
+            "Returns: review_id, phase, scene, shot_count, fps, total_frames and error.\n"
+            'Example: {"context_id": "current", "production_id": "saved-production", "selections": {"shot-one": "returned-source"}}.\n'
+            "Captures current recipe/destination and unchanged local scenes. No generation, download, render or scene build; build_film_timeline requires separate approval.\n"
+            "Platform equivalent: none; local timeline review."
+        ),
+        _schema(
+            {
+                "context_id": {"type": "string"},
+                "production_id": {"type": "string"},
+                "selections": {"type": "object", "additionalProperties": {"type": "string"}},
+            },
+            ["context_id", "production_id", "selections"],
+        ),
+        prepare_film_timeline,
+    ),
+    ToolSpec(
+        "film_timeline_review",
+        (
+            "Inspect or discard an owner-local Film timeline review.\n"
+            "Args: review_id is required; action is status (default) or discard; inspected=true is required to dismiss uncertain partial cleanup.\n"
+            "Returns: review_id, phase, scene, shot_count, fps, total_frames and error.\n"
+            'Example: {"review_id": "returned-review", "action": "status"}.\n'
+            "Never builds, cleans Blender data or changes saved jobs. Handles expire when the session closes. Inspect uncertain local data before starting another review.\n"
+            "Platform equivalent: none; local timeline review."
+        ),
+        _schema(
+            {
+                "review_id": {"type": "string"},
+                "action": {"type": "string", "enum": ["status", "discard"]},
+                "inspected": {"type": "boolean"},
+            },
+            ["review_id"],
+        ),
+        film_timeline_review,
+    ),
+    ToolSpec(
+        "build_film_timeline",
+        (
+            "Approve one READY Film timeline review and create a new editable scene-strip sequence.\n"
+            "Args: review_id is the required string from prepare_film_timeline.\n"
+            "Returns: review_id, phase, scene, shot_count, fps, total_frames and error.\n"
+            'Example: {"review_id": "returned-review"}.\n'
+            "Requires explicit build approval. Rechecks chosen scenes and consumes the review before mutation. Preserves the working scene and existing timelines. Strips reference live shot scenes; later edits affect the sequence. No generation, download, render, export, saved-job mutation or native operator Undo entry. Never repeat an uncertain build.\n"
+            "Platform equivalent: none; local Blender timeline assembly."
+        ),
+        _schema({"review_id": {"type": "string"}}, ["review_id"]),
+        build_film_timeline,
+    ),
     ToolSpec(
         "film_shot_sources",
         (

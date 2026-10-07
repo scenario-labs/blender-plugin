@@ -1,0 +1,29 @@
+---
+{
+  "type": "Evidence",
+  "id": "docs-known-limitations.film-timeline-controls",
+  "title": "Explicit editable Film timeline approval",
+  "evidence": {
+    "path": "docs/KNOWN_LIMITATIONS.md",
+    "scope": "film-timeline-controls",
+    "coverage": "source-reviewed",
+    "reviewed_at": "2026-10-05",
+    "base_revision": "e4da254583900a68da7414e0ac2744656831e47f",
+    "limits": "Shared local scene inspection, single-use timeline review and native/MCP approval over the existing JobSession. Synthetic native tests exercise exact editorial order, live reference identity, deleted/replaced sources, changed timing/camera/revisions, deleted-camera replacement and invalidated RNA rejection, credential retirement, cancellation, saved/reloaded scenes and uncertain cleanup requiring explicit inspection. Existing scenes are explicitly chosen local data; editable recipe markers do not attest generation provenance. No SDK operation, download, result import, job mutation, new worker or store. Exact packaged desktop interaction passes on macOS arm64 Blender 5.1.2: explicit take selection, Escape cancellation, Return confirmation, working-scene preservation, native Undo/Redo, viewport selection/Home navigation and Video Sequencer inspection. Existing scenes and saved jobs remain unchanged. External sockets blocked; zero service requests/downloads; clean exit, isolated-profile cleanup and normal-profile preservation verified. Other OS/DPI, live provider and human motion/audio acceptance remain pending. Capture, finishing/export and integrated release acceptance remain separate.",
+    "sources": {
+      "scenario/blender/film_timeline.py": "d9b2def3199b3887164ecd8b99a65bdccb3d105b1e80bc7d8407786727079d30",
+      "scenario/blender/film_timeline_controls.py": "a19afcdbefac45a301d16348eda4c2d4033cf6f062e5f117e30dd977674e4d88",
+      "scenario/blender/film_scene.py": "ae866981d0d94b9ecd825d4f042693b6a62c45633be0bc03f8c2e346d7e9f9c2",
+      "scenario/blender/film.py": "bdf7ab9914baca20d50c035439f84af7dbdeec9d348b6adbc4a756b6f66a5693",
+      "scenario/blender/job_session.py": "e025e66d5cd43843d27daa0558ffcf3ebca281b02167ee32932b3a211a0de7fc",
+      "scenario/mcp/tools_scenario.py": "cf8fe32d3a227fbf77d4127157f9fd81458087599865db0ae2aea0baed3fd318",
+      "tests/blender/test_film_timeline_controls.py": "d988c844882279c8541335d2a0dac41ee3bf0aec038786dfca87d678848c6005",
+      "tests/blender/test_film_scene.py": "66f01c87597d360d041efe53f8dd8cd19e560b77477dae0e9ac1028866591b54",
+      "tests/blender/test_mcp_contracts.py": "af79316f475b7d7071f8802f417d3d485d673d0e3fa3cf07318ecd56cf497087",
+      "tests/unit/test_mcp_descriptions.py": "cfee3fac81daac4d2f9aa7525b68091cf73448509a84f6db96207fa5e9fbce84"
+    }
+  }
+}
+---
+
+Source evidence for [the canonical guide](../../KNOWN_LIMITATIONS.md).

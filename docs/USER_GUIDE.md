@@ -615,7 +615,17 @@ action generates or downloads anything. Discard unapproved reviews, save known
 build receipts, or explicitly acknowledge inspection when an outcome is uncertain.
 Unresolved saved claims remain blocked. Full errors are available through
 **Shot error details**. See [shot controls](FILM_PLAN.md#native-and-mcp-shot-controls).
-Timeline assembly, shot capture, finishing and Film export remain unavailable.
 Synthetic desktop checks on macOS Blender 5.1.2 cover these shot controls and
 Undo/Redo; see [the interaction evidence](UI_STYLE.md#film-shot-controls). Live
 provider, other OS/DPI and integrated release acceptance remain separate.
+
+Under **Timeline**, **Build timeline** lets you choose a completed local scene
+for every shot and confirm the frame count/rate. It creates a new editable
+sequence and keeps the working scene selected. The strips reference those scenes;
+later edits to a shot affect the sequence. Save the blend file. A partial build
+must be inspected before dismissing its review; dismissal never deletes data.
+See [timeline approval](FILM_PLAN.md#editable-timeline-approval) for MCP equivalents.
+Shot capture, finishing and Film export remain unavailable.
+To inspect the result, select the new timeline scene in the Video Sequencer's
+scene selector. Synthetic desktop selection, cancellation and Undo/Redo pass on
+macOS Blender 5.1.2; see [the evidence and limits](UI_STYLE.md#film-timeline-controls).

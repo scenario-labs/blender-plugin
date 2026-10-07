@@ -267,6 +267,10 @@ Do not edit this block by hand; run `make mcp-docs`. An asterisk marks a require
 
 | Tool | Description | Arguments | Notes |
 | --- | --- | --- | --- |
+| `film_timeline_sources` | Inspect matching local scenes for every shot in the current Film recipe. | `production_id`*: string | read-only annotation |
+| `prepare_film_timeline` | Prepare explicit completed shot choices for separate timeline build approval. | `context_id`*: string<br>`production_id`*: string<br>`selections`*: object | - |
+| `film_timeline_review` | Inspect or discard an owner-local Film timeline review. | `review_id`*: string<br>`action`: string (['status', 'discard'])<br>`inspected`: boolean | - |
+| `build_film_timeline` | Approve one READY Film timeline review and create a new editable scene-strip sequence. | `review_id`*: string | - |
 | `film_shot_sources` | Inspect eligible downloaded hero models for one shot in the current Film recipe. | `production_id`*: string<br>`shot_id`*: string | read-only annotation |
 | `prepare_film_shot` | Verify explicit saved hero selections and prepare a shot for separate build approval. | `context_id`*: string<br>`production_id`*: string<br>`shot_id`*: string<br>`selections`*: object | - |
 | `film_shot_review` | Inspect or discard a Film shot review, or retry only its known persistence receipts. | `review_id`*: string<br>`action`: string (['status', 'discard', 'retry_receipts', 'dismiss_uncertain'])<br>`inspected`: boolean | - |
@@ -698,4 +702,21 @@ working scene. It must not be repeated after uncertainty.
 
 These four local Blender commands have no platform equivalent and make no
 generation/download request. They share native UI review handles but do not add a
-native operator Undo entry. Timeline approval, capture and export remain separate.
+native operator Undo entry. Timeline approval uses the commands below;
+capture and export remain separate.
+
+### Editable Film timeline commands
+
+`film_timeline_sources` returns current-context opaque scene choices for every
+recipe shot. `prepare_film_timeline` requires that context, production and a
+complete shot-to-source-ID mapping. `build_film_timeline` separately approves
+the resulting review, rechecks unchanged local scenes and creates a new editable
+scene-strip sequence. The working scene stays selected. Later edits to the
+referenced shots affect the timeline.
+
+`film_timeline_review` reads status or discards a review; uncertain partial
+cleanup requires `inspected: true` and must never be replayed automatically.
+These four local commands have no platform equivalent, make no service call and
+never change saved jobs or import result files. Local scene markers establish
+recipe compatibility, not service provenance. They share the native command
+owner but do not create a native operator Undo entry. Capture/export remain separate.

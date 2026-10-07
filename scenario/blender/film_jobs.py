@@ -5,7 +5,7 @@
 import json
 import os
 import uuid
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 
 import bpy
 
@@ -63,6 +63,10 @@ class FilmAction:
     error: str = ""
 
 
+class FilmApprovalUnavailable(ScenarioError):
+    """A preflight rejection before any submission persistence was attempted."""
+
+
 class FilmJobs:
     """Retain bounded presentation handles only; jobs/uploads keep their existing owners."""
 
@@ -71,10 +75,11 @@ class FilmJobs:
         self.session, self.store = model_jobs.session, model_jobs.store
         self._online = online
         self.actions = {}
+        self._saved_actions = {}
 
     def current(self, scene, task_id):
         binding = snapshot(scene)
-        for item in reversed(tuple(self.actions.values())):
+        for item in reversed((*self._saved_actions.values(), *self.actions.values())):
             try:
                 if item.scene == scene and item.task_id == task_id and item.binding == binding:
                     return item
@@ -83,6 +88,26 @@ class FilmJobs:
                 # the maintenance pump still owns draining and retiring its action.
                 continue
         return None
+
+    def _retain_saved_status(self, item):
+        if item.phase in {"SUBMITTED", "BOUND"}:
+            try:
+                key = (item.scene.session_uid, item.binding, item.task_id)
+                self._saved_actions[key] = replace(item, task=None, quote=None)
+            except ReferenceError:
+                # Deleted scenes do not need presentation state.
+                return
+        # At most the current recipe's tasks for each live scene. This cache
+        # carries no approval, worker or persistent reservation authority.
+        for key, saved in tuple(self._saved_actions.items()):
+            try:
+                current = (
+                    saved.scene in tuple(bpy.data.scenes) and snapshot(saved.scene) == saved.binding
+                )
+            except ReferenceError:
+                current = False
+            if not current:
+                del self._saved_actions[key]
 
     def _check(self, item, scene):
         try:
@@ -120,6 +145,7 @@ class FilmJobs:
         if len(self.actions) >= 128:
             for key, old in tuple(self.actions.items()):
                 if old.phase not in {"QUOTING", "BINDING", "READY"}:
+                    self._retain_saved_status(old)
                     del self.actions[key]
                     break
             else:
@@ -203,13 +229,16 @@ class FilmJobs:
     def approve(self, identifier, scene, *, approved_cost):
         if os.environ.get("SCENARIO_GUI_PROBE") == "1":
             raise PermissionError("Generation is disabled while an automated GUI probe runs")
-        self.poll()
-        item = self.actions.get(identifier) if isinstance(identifier, str) else None
-        if item is None or item.phase != "READY" or item.quote is None:
-            raise ScenarioError(0, "Use a fresh Film estimate; inspect existing tasks first")
-        self._check(item, scene)
-        if approved_cost != item.cost or not self._online():
-            raise ScenarioError(0, "Approve the unchanged exact Film price while online")
+        try:
+            self.poll()
+            item = self.actions.get(identifier) if isinstance(identifier, str) else None
+            if item is None or item.phase != "READY" or item.quote is None:
+                raise ScenarioError(0, "Use a fresh Film estimate; inspect existing tasks first")
+            self._check(item, scene)
+            if approved_cost != item.cost or not self._online():
+                raise ScenarioError(0, "Approve the unchanged exact Film price while online")
+        except ScenarioError as error:
+            raise FilmApprovalUnavailable(0, error.reason) from None
         # Consume before persistence, including a committed write with a lost acknowledgement.
         item.phase, item.error = "ERROR", "Submission needs review; inspect saved Film tasks"
         view = self.models.submit_film(item.quote, approved_cost=approved_cost)

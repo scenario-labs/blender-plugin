@@ -138,6 +138,8 @@ class SCENARIO_OT_approve_film(bpy.types.Operator):
             runtime.ensure_film_jobs().approve(
                 self.quote_id, context.scene, approved_cost=self.approved_cost
             )
+        except film_jobs.FilmApprovalUnavailable:
+            return _error(self, "The estimate changed or is unavailable; review the task again")
         except Exception:
             return _error(
                 self, "Submission needs review; inspect saved Film tasks before continuing"

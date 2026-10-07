@@ -189,6 +189,9 @@ instead of another estimate or association button. A repeated model estimate in
 that active context is refused without replacing the saved status. Explicit MCP
 upload-association retries still revalidate and return the same saved association;
 they never replay an upload.
+Saved status survives eviction from the 128-action cache. Its separate read-only
+projection retains at most the current recipe tasks for each live scene and owns
+no worker, approval or reservation authority.
 
 MCP uses `film_recipe` to load/inspect the same scene data and obtain its stable
 `production_id`. `estimate_film_task` returns the resolved payload and exact cost;

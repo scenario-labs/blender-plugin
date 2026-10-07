@@ -5,6 +5,8 @@
 import copy
 import os
 import unittest
+from dataclasses import replace
+from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 import bpy
@@ -213,6 +215,69 @@ class FilmControlsTests(unittest.TestCase):
         with self.assertRaisesRegex(self.request_error, "fresh Film estimate"):
             self.approve(item)
         self.assertEqual(self.paid, [])
+
+    def test_stale_native_approval_reports_a_preflight_rejection(self):
+        item = self.quote()
+        self.scene.frame_set(self.scene.frame_current + 1)
+        operator = SimpleNamespace(
+            quote_id=item.identifier, approved_cost=item.cost, report=MagicMock()
+        )
+        self.assertEqual(
+            submodule("blender.film").SCENARIO_OT_approve_film.execute(operator, bpy.context),
+            {"CANCELLED"},
+        )
+        operator.report.assert_called_once_with(
+            {"WARNING"}, "The estimate changed or is unavailable; review the task again"
+        )
+        self.assertEqual(self.store.records(), ())
+        self.assertFalse(self.paid)
+
+    def test_submitted_status_survives_action_eviction_without_storage_reads_during_draw(self):
+        raw = copy.deepcopy(self.recipe)
+        raw["tasks"].append({**raw["tasks"][1], "id": "next"})
+        self.film.load_recipe(self.scene, raw)
+        item = self.quote()
+        self.approve(item)
+        self.settle()
+        owner = self.owner()
+        for index in range(127):
+            filler = replace(
+                item, identifier=f"expired-{index}", phase="DISCARDED", task_id="expired"
+            )
+            owner.actions[filler.identifier] = filler
+        next_action = owner.quote(self.scene, "next")
+        next_action.task.result(5)
+        owner.finish(next_action, self.scene)
+        self.assertNotIn(item.identifier, owner.actions)
+        self.assertEqual(len(owner.actions), 128)
+        with patch.object(self.store, "film_job", side_effect=AssertionError("No draw I/O")):
+            saved = owner.current(self.scene, "take")
+            self.assertEqual((saved.phase, saved.request_id), ("SUBMITTED", item.request_id))
+            self.assertIsNone(saved.task)
+            self.assertIsNone(saved.quote)
+            self.assertNotIn("scenario.quote_film", self.drawn_operators())
+        with self.assertRaisesRegex(Exception, "already has saved work"):
+            owner.quote(self.scene, "take")
+        self.assertEqual(len(self.paid), 1)
+
+    def test_bound_status_cache_is_scene_local_and_retires_changed_recipes(self):
+        item = self.quote()
+        owner = self.owner()
+        item.phase, item.request_id = "BOUND", "saved-upload"
+        owner._retain_saved_status(item)
+        del owner.actions[item.identifier]
+        self.assertEqual(owner.current(self.scene, "take").phase, "BOUND")
+        other = bpy.data.scenes.new("Other Film status scene")
+        try:
+            self.film.load_recipe(other, self.recipe)
+            self.assertIsNone(owner.current(other, "take"))
+        finally:
+            bpy.data.scenes.remove(other)
+        changed = copy.deepcopy(self.recipe)
+        changed["title"] = "Edited recipe"
+        self.film.load_recipe(self.scene, changed)
+        owner._retain_saved_status(replace(item, phase="DISCARDED"))
+        self.assertEqual(owner._saved_actions, {})
 
     def test_observed_recipe_change_discards_old_approval_even_if_reverted(self):
         item = self.quote()

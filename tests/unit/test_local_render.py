@@ -51,7 +51,7 @@ def fixture_runner(monkeypatch, spec, *, missing=False, wrong_rate=False):
         log.write_text("fixture")
         if "--background" in command:
             for index in range(1, spec.frames + (0 if missing else 1)):
-                png(spec.directory / "frames" / f"Frame-{index:06d}.png")
+                png(spec.directory / "frames" / f"Frame-{index:06d}.png", spec.width, spec.height)
         elif stdout is None:
             Path(command[-1]).write_bytes(b"fixture encoded media")
         else:
@@ -60,8 +60,8 @@ def fixture_runner(monkeypatch, spec, *, missing=False, wrong_rate=False):
                     {
                         "streams": [
                             {
-                                "width": 64,
-                                "height": 64,
+                                "width": spec.width,
+                                "height": spec.height,
                                 "nb_read_frames": str(spec.frames),
                                 "avg_frame_rate": "25/1" if wrong_rate else "30/1",
                             }
@@ -108,6 +108,42 @@ def test_still_does_not_require_ffmpeg_or_ffprobe(monkeypatch, spec):
     assert len(calls) == 1
     assert result.content_type == "image/png"
     assert result.frames == 1
+
+
+@pytest.mark.parametrize("frames,accepted", [(32, True), (1, False)])
+def test_large_video_uses_capture_bound_and_retains_rejected_output(
+    monkeypatch, spec, frames, accepted
+):
+    spec = replace(spec, width=4096, height=4096, frame_end=spec.frame_start + frames - 1)
+    calls = fixture_runner(monkeypatch, spec)
+    original = render._run
+    output = spec.directory / "capture.mp4"
+    size = 1024**3 + 1
+
+    def large_encode(command, **kwargs):
+        original(command, **kwargs)
+        if command[0].endswith("ffmpeg"):
+            # A sparse file exercises real size checks and streaming hashing
+            # without allocating a gigabyte buffer or invoking a media encoder.
+            with output.open("r+b") as stream:
+                stream.truncate(size)
+
+    monkeypatch.setattr(render, "_run", large_encode)
+    if accepted:
+        result = render.render(spec)
+        assert result.path == output and result.size == size
+        assert len(result.sha256) == 64
+        assert result.frames == frames
+    else:
+        with pytest.raises(render.LocalRenderError, match="size policy"):
+            render.render(spec)
+    assert len(calls) == 3  # Rendering, encoding and probe validation all completed.
+    assert output.stat().st_size == size
+    assert len(list((spec.directory / "frames").glob("*.png"))) == frames
+    assert not list(spec.directory.glob("worker-*"))
+    # Snapshot hashing keeps its independent 1 GiB policy.
+    with pytest.raises(render.LocalRenderError, match="size policy"):
+        render.digest(output)
 
 
 def test_missing_encoder_fails_before_process_or_admission(monkeypatch, spec):

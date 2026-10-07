@@ -437,6 +437,14 @@ trims or retimes a shot to satisfy a provider. Film shot scenes use editorial
 duration; recipe `source_duration` describes the separate generated clip, with
 `source_trim` selecting its editorial window.
 
+Completed-media hashing permits the larger of 1 GiB or
+`frames * (width * height * 4 + 65536)` bytes: four bytes per pixel and 64 KiB
+of encoding/container headroom per frame. This keeps the existing allowance for
+small captures while allowing larger validated videos to exceed 1 GiB.
+Blend snapshots still have a separate 1 GiB limit, and the render worker stops
+after staged PNG frames exceed 2 GiB. These are local bounds, not upload approval
+or a guarantee that every maximum-dimension/frame-count combination will fit.
+
 This foundation has no registered capture button or MCP tool yet. The next
 integration must use the existing session workers, bind explicit capture approval
 and delivery to the originating scene/recipe/scope, own cancellation and artifact

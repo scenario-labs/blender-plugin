@@ -112,6 +112,13 @@ class RenderSpec:
     def frames(self):
         return self.frame_end - self.frame_start + 1
 
+    @property
+    def max_output_bytes(self):
+        """Retain the existing allowance and scale it for larger local captures."""
+        # Four bytes per pixel plus per-frame encoding/container headroom.
+        # This bounds completed media, independently of snapshot/upload limits.
+        return max(1024**3, self.frames * (self.width * self.height * 4 + 65536))
+
     def parameters(self):
         return {
             "scene_name": self.scene_name,
@@ -346,7 +353,7 @@ def render(spec, *, cancel=None):
         raise RenderCancelled("Local capture cancelled; inspect retained output")
     return RenderedMedia(
         output,
-        digest(output),
+        digest(output, maximum=spec.max_output_bytes),
         output.stat().st_size,
         content_type,
         spec.frames,

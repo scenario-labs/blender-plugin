@@ -11,6 +11,8 @@ import pytest
 ROOT = Path(__file__).resolve().parents[2]
 EXPECTED = {
     "tools_scenario": {
+        "list_assets",
+        "search_assets",
         "list_workflows",
         "workflow_schema",
         "estimate_workflow",

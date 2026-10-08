@@ -42,6 +42,61 @@ SDK_ENV = (
 )
 
 
+def test_asset_list_raw_wrapper_preserves_scope_filters_and_cursor(client_factory):
+    calls = []
+
+    def respond(request):
+        calls.append(request)
+        return httpx.Response(
+            200, json={"assets": [{"id": "fixture-asset"}], "nextPaginationToken": "next"}
+        )
+
+    client = client_factory(respond)
+    raw = client.assets.with_raw_response.list(
+        project_id=PROJECT,
+        page_size=7,
+        pagination_token="cursor",
+        collection_id="fixture-collection",
+        privacy="public",
+    )
+    assert json.loads(raw.read())["assets"][0]["id"] == "fixture-asset"
+    assert len(calls) == 1
+    assert calls[0].method == "GET"
+    assert dict(calls[0].url.params) == {
+        "projectId": PROJECT,
+        "pageSize": "7",
+        "paginationToken": "cursor",
+        "collectionId": "fixture-collection",
+        "privacy": "public",
+    }
+
+
+def test_asset_search_raw_wrapper_keeps_offset_in_body(client_factory):
+    calls = []
+
+    def respond(request):
+        calls.append(request)
+        return httpx.Response(
+            200, json={"hits": [{"id": "fixture-asset"}], "offset": 4, "estimatedTotalHits": 10}
+        )
+
+    client = client_factory(respond)
+    raw = client.search.with_raw_response.asset_search(
+        query="ceramic", public=False, limit=2, offset=4, project_id=PROJECT
+    )
+    assert json.loads(raw.read())["hits"][0]["id"] == "fixture-asset"
+    assert len(calls) == 1
+    assert calls[0].method == "POST"
+    assert calls[0].url.path == "/v1/search/assets"
+    assert dict(calls[0].url.params) == {"projectId": PROJECT}
+    assert json.loads(calls[0].content) == {
+        "query": "ceramic",
+        "public": False,
+        "limit": 2,
+        "offset": 4,
+    }
+
+
 @pytest.fixture(autouse=True)
 def offline_environment(monkeypatch):
     # Test isolation only. Production must not mutate process-wide credentials.

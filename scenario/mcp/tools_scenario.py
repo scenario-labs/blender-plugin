@@ -161,6 +161,56 @@ def _wait_workflow(task):
         pass
 
 
+def _asset_summary(row):
+    """Expose reference metadata without signed URLs, previews or account records."""
+    metadata = row.get("metadata")
+    metadata = metadata if isinstance(metadata, dict) else {}
+    return {
+        "asset_id": row["id"],
+        "name": row.get("name", ""),
+        "description": row.get("description", ""),
+        "mime_type": row.get("mimeType", ""),
+        "type": metadata.get("type", ""),
+        "tags": row.get("tags", []),
+        "collection_ids": row.get("collectionIds", []),
+    }
+
+
+def _asset_library(args, *, search=False):
+    options = {"public": args.get("public", False)}
+    if search:
+        options.update(
+            query=args["query"], limit=args.get("limit", 40), offset=args.get("offset", 0)
+        )
+    else:
+        options.update(
+            page_size=args.get("page_size", 40),
+            pagination_token=args.get("pagination_token"),
+            collection_id=args.get("collection_id"),
+        )
+    session = runtime.ensure_job_session()
+    task = session.asset_library(bpy.context.scene, **options)
+
+    def finish(_):
+        if runtime.ensure_job_session() is not session:
+            raise ScenarioError(0, "The asset library context changed; read it again")
+        outcomes = session.drain(task=task)
+        if not outcomes:
+            raise ScenarioError(0, "The asset library is still loading")
+        page = session.deliver(outcomes[0], lambda value, *_: value)
+        return {**page, "assets": [_asset_summary(row) for row in page["assets"]]}
+
+    return DeferredTool(lambda: _wait_workflow(task), finish)
+
+
+def list_assets(args):
+    return _asset_library(args)
+
+
+def search_assets(args):
+    return _asset_library(args, search=True)
+
+
 def _workflow_metadata(args, *, detail=False):
     privacy = args.get("privacy", "private")
     if privacy not in {"private", "public"}:
@@ -1214,6 +1264,49 @@ _JOB_REF = {
 
 
 SPECS = (
+    ToolSpec(
+        "list_assets",
+        (
+            "Read one asset-library page using the selected credentials and optional project scope.\n"
+            "Args: public defaults to false (owned assets); page_size is 1 to 100, default 40; pagination_token and collection_id are optional.\n"
+            "Returns: asset IDs, names, descriptions, MIME types, generation types, tags, collection IDs and next_pagination_token.\n"
+            'Example: {"page_size": 20}.\n'
+            "Reuse the same filters with the returned cursor. Ordering can change between reads. No download URLs, file bytes, complete text previews, upload or generation are returned or started.\n"
+            "Platform equivalent: SDK assets.list through the shared adapter."
+        ),
+        _schema(
+            {
+                "public": {"type": "boolean"},
+                "page_size": {"type": "integer", "minimum": 1, "maximum": 100},
+                "pagination_token": {"type": "string"},
+                "collection_id": {"type": "string"},
+            }
+        ),
+        list_assets,
+        {"readOnlyHint": True},
+    ),
+    ToolSpec(
+        "search_assets",
+        (
+            "Search asset-library metadata through the shared SDK session.\n"
+            "Args: query is required nonempty text, at most 4096 characters; public defaults to false; limit is 1 to 100 (default 40), offset is nonnegative (default 0).\n"
+            "Returns: reusable asset metadata, estimated_total and next_offset; a total is an estimate, not a stable snapshot.\n"
+            'Example: {"query": "ceramic cup", "limit": 20}.\n'
+            "Continue with the same query/public selection and returned offset. Signed URLs, indexed text bodies and account identifiers are omitted. No upload, generation, file download or organization write.\n"
+            "Platform equivalent: SDK search.asset_search through the shared adapter."
+        ),
+        _schema(
+            {
+                "query": {"type": "string", "minLength": 1, "maxLength": 4096},
+                "public": {"type": "boolean"},
+                "limit": {"type": "integer", "minimum": 1, "maximum": 100},
+                "offset": {"type": "integer", "minimum": 0},
+            },
+            ["query"],
+        ),
+        search_assets,
+        {"readOnlyHint": True},
+    ),
     ToolSpec(
         "list_workflows",
         (

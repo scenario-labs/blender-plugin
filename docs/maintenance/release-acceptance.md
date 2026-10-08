@@ -264,6 +264,23 @@ remain pending under #66/#68 as acceptance follow-ups. Review readiness is
 separate from complete product acceptance; the earlier update and release
 artifact limitations still apply.
 
+## Asset library command validation slice
+
+The library command layer above #326 uses ZIP SHA-256
+`56e0608d3d4b937c27ed05d7033132d702aac427ba511e340e48b523f279533e`.
+All 137 packaged Python sources match that layer. It passes 1,100 installed tests
+on each macOS arm64 Blender 5.0.1, 5.1.2 and 5.2.1, with two Windows-specific
+skips per run. The unit suite passes 3,821 tests with the known SDK authentication
+expected failure; 208 focused SDK/adapter/MCP checks pass with the same expected
+failure. Seven installed library tests cover scoped pagination, search bodies,
+metadata projection, stale scene/project rejection and failed-read cleanup.
+The authenticated MCP discovery test verifies both newly registered tools.
+
+No live library search, file transfer, organization write or generation was
+performed. Native Library presentation, integrated reference attachment and
+collection/tag editing remain open. These command checks do not replace desktop
+or live release acceptance, or the final published-artifact/update gates.
+
 ## Remaining release gates
 
 | Gate | Current limit | Next evidence and owner |
@@ -272,6 +289,7 @@ artifact limitations still apply.
 | Credentials and project scope | Merged #316 exposes an optional project ID. Scoped synthetic desktop input passed on the identified earlier ZIP; the final runtime ZIP has native regression coverage. The SDK service-retirement archive identified above also passes saved preference reload and local project isolation. | Complete fresh onboarding, permission failures, live override behavior and final-candidate update/desktop acceptance under #65/#68. |
 | Compact and expanded creation | An explicit native Studio view now reuses Create, Film, Jobs, Results and Connection controls. Workflow input/approval controls now share the job session; asset-library forms and workflow interaction acceptance remain open. Offline prompt handoff/editing, populated forms, scrolling, quote-preserving navigation, continued saved-job polling, small-window fit and viewport return have desktop proof; alternate-DPI and IME checks remain pending. The compact composer still needs complete retained-capability acceptance. | Complete retained Studio presentation under #66, then native select/capture/estimate/generate/inspect/apply and library reuse; focus, text input, viewport, small-window and DPI checks under #66/#68. |
 | Workflows | Local MCP discovery, exact quote approval and durable execution now use the shared SDK session. Expanded Studio now has saved inputs and a separate exact-price confirmation; interactive nodes and general workflow cancellation remain absent. | Complete retained workflow presentation and authorized live output/recovery acceptance under #64/#65/#66/#68; the new commands do not close those issues. |
+| Asset library | Local MCP list/search now use scoped SDK reads with explicit pagination and reusable reference metadata. | Complete native Library presentation, reference attachment, collection/tag organization and live acceptance under #64/#65/#66/#68. |
 | Retained lanes | Offline receipts and MIME checks do not establish usable live results. | Authorized scoped checks for Image, Video, 3D, Materials, audio, render/edit and Film paths; inspect actual outputs and record limitations under #68. |
 | Recovery and switching | Synthetic tests cover lost acknowledgement, stale quotes, scope changes and application claims. | Candidate-level UI/MCP parity, cancellation/restart races and failed download/import journeys with recorded outcomes under #65/#68. |
 | GPU, motion and audio | Headless counts and media metadata do not establish sustained playback or human review. | Native rendering/playback, sustained GPU/audio checks and human motion/audio review under #68. |

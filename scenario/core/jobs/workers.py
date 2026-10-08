@@ -104,6 +104,12 @@ class JobWorkers:
     def workflows(self, *, privacy="private", max_pages=100):
         return self._enqueue(self._coordinator.workflows, privacy=privacy, max_pages=max_pages)
 
+    def asset_page(self, **options):
+        return self._enqueue(self._coordinator.asset_page, **_snapshot(options))
+
+    def search_assets(self, query, **options):
+        return self._enqueue(self._coordinator.search_assets, query, **_snapshot(options))
+
     def model(self, identifier):
         return self._enqueue(self._coordinator.model, identifier)
 

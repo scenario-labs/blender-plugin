@@ -559,6 +559,78 @@ Use the dedicated build/install/test/capture tools for those checks. Run only
 trusted scripts: a private profile and Blender's offline flag are not a sandbox
 for arbitrary Python file or socket access.
 
+### Interactive desktop review on macOS
+
+Use [desktop_review.py](tools/desktop_review.py) when a human or desktop-control
+agent needs to interact with an exact installed ZIP. This command currently
+supports macOS only; Linux/Windows window attachment needs separate validation.
+It requires a graphical login, a trusted Blender `.app`, the locked uv environment,
+and Apple's `/usr/bin/codesign`. Allow disk space for a full copy of Blender.
+
+```sh
+uv run --locked --no-env-file python tools/desktop_review.py \
+  --blender /Applications/Blender.app/Contents/MacOS/Blender \
+  --zip /path/to/scenario-candidate.zip
+```
+
+Each invocation creates a unique directory under `workdir/desktop-review`
+(`--artifacts PATH` overrides the parent), copies the application, gives it a
+unique bundle identifier, and applies an ad-hoc development signature to that
+copy only. Its native executable is renamed to the unique app name and remains the bundle
+executable; a wrapper executable can prevent desktop-control tools from attaching
+correctly.
+The copy does not claim `.blend` file associations. The source application and
+candidate ZIP are not modified. Do not move the generated app or profile.
+
+The runner uses a minimal child environment and disposable home, configuration,
+scripts, extensions, data and temporary directories. The copied app also embeds
+these profile paths for Launch Services launches. It validates the exact ZIP,
+installs and verifies its bytes, saves offline preferences with the first-run
+splash disabled, and opens a uniquely named `Scenario-Review-…blend` fixture.
+There are no credentials, simulated input events or automatic screenshots.
+Offline mode, the generation probe flag and a Python socket guard support this
+trusted local test; they are not an OS sandbox for arbitrary extensions.
+
+Before sending input:
+
+1. Read the printed app identifier, scene filename and PID, plus `ready.json` in
+   the printed artifact directory. Its PID must match the runner, its paths must
+   be inside that directory, and `online_access` must be false.
+2. Attach using the **printed bundle identifier**, then inspect the window title
+   and screenshot. The title must contain the printed fixture filename and the
+   Scenario UI must be present. Do not select another Blender window by name alone.
+3. Refresh the desktop tool's window state before keyboard actions. Stop if it
+   reports a different/untitled window or the supervised process exits. A tool
+   can relaunch an app; a replacement window is not evidence for the original run.
+4. Attachment/focus failures can still occur in the desktop-control service.
+   If attachment stalls or input has no visible effect, use a human reviewer in
+   this same isolated window; do not record attempted input as passing.
+5. Exercise the intended UI flow and record visible results. For a basic input
+   check, edit the timeline's current-frame field and compare the visible value
+   with `observed.json`. This smoke check does not establish full UI acceptance.
+
+Quit the test Blender when finished. The default maximum GUI lifetime is
+900 seconds (`--duration SECONDS`); creating an empty `stop` file in the artifact
+directory also requests a clean exit. Setup steps use `--timeout SECONDS`
+(default 300). The host terminates and reaps its owned child on timeout or
+interruption. It never kills other Blender processes.
+
+`report.json` records ZIP SHA-256, app identity, PID, runtime version, process
+exit and the normal profile's before/after metadata comparison. `ready.json`
+records startup identity; `observed.json` records the latest frame, offline state
+and rejected Python network attempts. `status: finished` means the supervised
+process and isolation checks passed; `interaction_acceptance: not_assessed`
+always requires separate human/agent evidence. A forced host timeout, missing
+identity record, changed package or profile, or observed network activity fails
+the command. A normal duration/stop-file exit alone does not prove interaction.
+
+Artifacts, the copied application and disposable profile are retained for
+inspection on success and failure. They can contain local paths and scene data;
+keep them private and untracked. After all test windows/processes are closed,
+remove only that run's directory. Rerun the repository command for a fresh review
+rather than launching a retained app independently. This procedure establishes
+neither release approval nor supported-platform acceptance for the extension.
+
 ### Repeatable GUI screenshots
 
 Use an interactive desktop session (the command opens and closes its own Blender

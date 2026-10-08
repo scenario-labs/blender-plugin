@@ -63,6 +63,26 @@ ffmpeg -f lavfi -i color=c=0x6b88a4:s=32x32:r=24 -frames:v 6 -an \
   -c:v libvpx-vp9 -map_metadata -1 tests/fixtures/synthetic/video-six-frames.webm
 ```
 
+## Synthetic Film review media
+
+`synthetic/film-four-seconds.mp4` and `film-four-seconds-audio.mp4` are
+first-party GPL-3.0-or-later fixtures: four seconds of 32x32 generated color at
+24 fps, respectively silent and with a generated 440 Hz tone. They contain no
+recording or provider output. Native Film tests use their actual bundled-decoder
+frames/sound to verify trims, independent copies and muted-master assembly.
+The tests do not invoke the external encoder. Reproduce with:
+
+```sh
+ffmpeg -f lavfi -i color=c=0x6b88a4:s=32x32:r=24 -t 4 -an \
+  -c:v mpeg4 -q:v 5 -fflags +bitexact -flags:v +bitexact -map_metadata -1 \
+  tests/fixtures/synthetic/film-four-seconds.mp4
+ffmpeg -f lavfi -i color=c=0x6b88a4:s=32x32:r=24 \
+  -f lavfi -i sine=frequency=440:sample_rate=48000:duration=4 -t 4 \
+  -c:v mpeg4 -q:v 5 -c:a aac -b:a 32k -fflags +bitexact \
+  -flags:v +bitexact -flags:a +bitexact -map_metadata -1 \
+  tests/fixtures/synthetic/film-four-seconds-audio.mp4
+```
+
 ## Identifiers and URLs
 
 The recorder replaces string-valued account fields `userId`, `authorId`,

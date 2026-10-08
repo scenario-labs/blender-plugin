@@ -63,6 +63,7 @@ BASELINE = (
     "test_film_capture",
     "test_film_composition_controls",
     "test_film_finishing",
+    "test_film_review",
     "test_reference_uploads",
     "test_reference_form",
     "test_background_removal",

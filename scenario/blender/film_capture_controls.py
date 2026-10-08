@@ -56,6 +56,8 @@ class SCENARIO_OT_capture_film_shot(bpy.types.Operator):
             self._used = False
         except Exception:
             return _error(self, "Inspect the Film recipe and completed shot scenes")
+        if not self.choices:
+            return _error(self, "Build a matching scene for the selected Film shot first")
         return context.window_manager.invoke_props_dialog(self, width=520)
 
     def draw(self, context):
@@ -78,6 +80,8 @@ class SCENARIO_OT_capture_film_shot(bpy.types.Operator):
         layout.label(text="Local capture only. Review the output before uploading.")
 
     def execute(self, context):
+        if not 0 <= self.choice_index < len(self.choices):
+            return _error(self, "Select a matching shot scene before rendering a capture")
         try:
             if owner() is not self._owner or context.scene != self._scene or self._used:
                 raise ValueError("Capture owner changed")

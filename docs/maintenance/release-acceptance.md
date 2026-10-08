@@ -162,8 +162,9 @@ Enabled state, scoped saved state and scene survive, with zero service requests,
 unchanged normal profiles, stopped servers and cleaned disposable profiles.
 This is synthetic lifecycle evidence, not a published release-pair, physical
 desktop or live-provider check.
-[Hosted CI for its preceding #319 head](https://github.com/scenario-labs/blender-plugin/actions/runs/37696824103)
-passed for its own source and separately built Linux/Windows archives.
+[Hosted CI for #320 head `3ae726b`](https://github.com/scenario-labs/blender-plugin/actions/runs/37697911675)
+passed `ci-ok`, including Python 3.11/3.13 and Linux/Windows Blender 5.0.1,
+5.1.2 and 5.2.1, for its own source and separately built archives.
 
 ## Remaining release gates
 
@@ -179,6 +180,27 @@ passed for its own source and separately built Linux/Windows archives.
 | Required checks | Read-only main-branch rules checked on 2026-10-08 report `pr-title` and `commits` as required, plus CodeQL scanning. `ci-ok` is absent. | Complete #45's administration and negative merge-gate checks while preserving existing protections. |
 | Final release artifact | Current candidate retains development version 0.9.9. Local update checks use a synthetic predecessor. | Validate release-please's exact 0.10.0 ZIP, licenses, provenance/checksum and extension index; exercise public native installation/update under #36/#68 and the release procedure. |
 
+## Issue disposition
+
+GitHub state reviewed on 2026-10-07 is separate from candidate acceptance:
+
+| Scope | State and release implication |
+| --- | --- |
+| #64, #65, #66, #68 | Open. SDK service-path cleanup and shared commands are implemented in the candidate; complete retained-capability, native journey and live provider acceptance still need evidence. |
+| #97, #98, #99 | Open. Trained/custom-model routing, panoramic generation, and provider-specific mesh edit/rig/parts contracts remain incomplete. Local schema/application primitives do not close these scopes. |
+| #67 | Open and explicitly deferred. Browser OAuth is not required for this API-key release. |
+| #31, #32, #42 | Closed for portable tooling, native baseline CI and weekly platform CI. Their infrastructure is a basis for validation, not proof of every product journey. |
+| #15, #17, #43, #47, #52 | Closed for their headless CLI, capture cleanup, local MCP security, hosted link monitoring and generated MCP documentation scopes. Keep these resolved foundations closed. |
+| #37 | Closed for the native update repository foundation. Exact 0.10.0 public delivery and update evidence still belong to #36/#68. |
+| #36, #39, #40, #45 | Open. Publication/provenance administration, action pinning, protected paid smoke acceptance and required-check enforcement retain their own gates. |
+| #189 | Open. A local PCM WAV waveform preview exists; broader audio preview and native listening acceptance are not complete. |
+| #263 | Closed on 2026-10-04. Its public record has no documented root cause or verified fix for the historical desktop crash. Preserve the [diagnostic limits](../KNOWN_LIMITATIONS.md) and obtain current-candidate sustained desktop evidence under #68; closure alone supplies no new runtime evidence. |
+
+Read-only administration checks found no open **CodeQL** alerts. The six open
+code-scanning alerts were from **Scorecard**, which is advisory under the
+[maintainer baseline](../MAINTAINERS.md). Do not treat the aggregate alert count
+as six CodeQL blockers. Preserve required CodeQL/code-quality and review policies
+when adding `ci-ok`; no repository settings were changed by this audit.
 
 ## Merge and release decision
 

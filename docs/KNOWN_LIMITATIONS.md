@@ -10,9 +10,12 @@ a ready quote, accepted text edits, submitted once through a synthetic transport
 and retained viewport navigation. It later crashed with the native traceback in
 a background SQLite job read. Subsequent diagnostic polling, screenshot and
 144-second native interaction probes on that same ZIP completed cleanly, including
-shutdown and normal-profile preservation. The cause remains unresolved under
-[#263](https://github.com/scenario-labs/blender-plugin/issues/263); clean reruns and
-passing headless tests do not clear this failure. These synthetic probes do not
+shutdown and normal-profile preservation.
+[#263](https://github.com/scenario-labs/blender-plugin/issues/263) was closed on
+2026-10-04; its public record does not document a root cause or verified fix.
+The historical failure and clean reruns are evidence limits, not a claim that
+the current candidate reproduces the crash. Current-candidate sustained desktop
+acceptance remains under #68; synthetic probes and passing headless tests do not
 establish live generation or full render-lane desktop acceptance.
 
 ## Runtime and authentication

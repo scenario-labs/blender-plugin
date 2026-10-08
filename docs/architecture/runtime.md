@@ -14,7 +14,7 @@ is Blender 5.0; dependency and runtime acceptance have separate gates.
 | UI generation | [generation.py](../../scenario/blender/generation.py) | Every native model form consumes a lane-bound session quote before durable submission; unfinished file/capture/Spark inputs block final pricing and submission. |
 | Main-thread application | [pump.py](../../scenario/blender/pump.py) | Drains SDK catalog events and maintains shared job delivery. Unbound prototype completions cannot apply results. GUI timer handling differs from headless execution. |
 | Local MCP | [server.py](../../scenario/mcp/server.py), [tools_scenario.py](../../scenario/mcp/tools_scenario.py), [mcp_service.py](../../scenario/blender/mcp_service.py) | Queues scene tools for main-thread execution; model listing/schema use the same SDK catalog as the UI, all model generation lanes use the shared session; prototype records remain local snapshots. |
-| Credentials | [config.py](../../scenario/core/config.py), [prefs.py](../../scenario/prefs.py) | Credentials default to the saved Blender pair; environment credentials require explicit selection and cannot mix with preferences. OAuth is deferred; shared runtime scope/project integration remains #65. |
+| Credentials | [config.py](../../scenario/core/config.py), [prefs.py](../../scenario/prefs.py) | Credentials default to the saved Blender pair; environment credentials require explicit selection and cannot mix with preferences. Optional project selection scopes both catalog and shared jobs; OAuth and live permission acceptance remain separate. |
 
 These are source-inspection findings. Do not infer UI/MCP parity from the shared
 adapter's test coverage, or promote prototype transport usage into an approved
@@ -89,11 +89,11 @@ the API. The catalog's adapter carries the same scope. Credential changes retire
 both selections; switching back or restarting reopens the original records.
 Missing/corrupt local scope keys and storage failures block context creation with
 an explicit error rather than silently replacing history. Model/schema caches
-remain in memory. No shared `JobSession` or job workers are activated by opening
-the store. Durable quotes, submission,
-uploads and result application still need active SDK adoption under
-#65. Invalidating a visible quote does not establish safe migration of those
-prototype paid jobs or their late callbacks.
+remain in memory. Opening the store alone does not activate a `JobSession` or
+job workers. Quote, submission, upload and recovery entry points lazily activate
+the shared session described below. They use the same selected scope while the
+catalog retains its own metadata pool. Prototype jobs are not migrated or resumed;
+[local prototype records](#local-prototype-records) remain read-only snapshots.
 
 **Test connection** uses the same SDK context for one fresh model-list page of
 size one. It runs on a worker, leaves cached models intact, and shares a pending
@@ -116,7 +116,7 @@ File loading retires the selected owner and invalidates its context token; the
 next recovery call creates a fresh session against the same scoped store.
 GUI ticks and the headless MCP loop reap retired sessions after work finishes.
 Native model form entry points use this session for quote-bound submission, as described below.
-Explicit saved-job controls and active Image transfers use the same session below.
+Explicit saved-job controls and result transfers across model lanes use the same session below.
 
 ## Optional project selection
 
@@ -189,9 +189,10 @@ must be uploaded before pricing/submission. Local MCP now uses the
 [shared reference upload path](../SDK_UPLOADS.md#active-reference-uploads);
 generation forms expose **Upload reference** for typed local files and image
 stills, with guarded lane/input attachment and saved inspection.
-Render forms now prepare scene snapshots and optional first-frame uploads in
-explicit role-bound slots. Video/audio result application is explicit; mesh and
-material and in-place edit application remain separate integration.
+Render forms prepare scene snapshots and optional first-frame uploads in
+explicit role-bound slots. Saved video/audio, GLB models, material maps and supported
+mesh edits use explicit destination approval through the shared session; their
+format and target limits are described below and in the application guides.
 Explicit viewport/camera clips and selected-mesh GLB uploads now share the typed
 reference lifecycle through both forms and MCP. They stage private snapshots;
 clips preserve the preview/scene range without duration padding, and mesh export
@@ -281,21 +282,27 @@ live provider acceptance or complete retained-capability acceptance. The
 [service operation inventory](../SDK_ADOPTION.md#service-operation-inventory)
 records removal of the unused prototype service helpers.
 
-## Replacement components already present
+## Shared runtime components
 
-| Component | Source and contract | Integration still required |
+The table describes implemented connections in this checkout. It does not certify
+live provider behavior, physical interaction or the release acceptance gates in
+[#68](https://github.com/scenario-labs/blender-plugin/issues/68). See the
+[candidate evidence](../maintenance/release-acceptance.md) for tested artifacts
+and environments.
+
+| Component | Current connection | Remaining boundary |
 | --- | --- | --- |
-| Scoped SDK commands | [sdk_adapter.py](../../scenario/core/api/sdk_adapter.py), [SDK guide](../SDK_ADOPTION.md) | Route every adopted service operation through the adapter; establish live authentication and provider contracts. |
-| Shared catalog and quotes | [coordinator.py](../../scenario/core/jobs/coordinator.py), [workers.py](../../scenario/core/jobs/workers.py), [job guide](../JOB_COORDINATOR.md#shared-catalog-and-origin-bound-quotes) | Scoped current-schema reads and exact origin-bound quotes use the shared queue. Active UI/MCP catalog reads now use the SDK adapter, but their adoption of this durable coordinator/quote path still requires credential-bound local persistence and origin integration. |
-| Durable intent and coordination | [store.py](../../scenario/core/jobs/store.py), [coordinator.py](../../scenario/core/jobs/coordinator.py), [job guide](../JOB_COORDINATOR.md) | Replace view/prototype-owned jobs with one application runtime for UI and MCP; complete recovery UX. |
-| Worker ownership | [workers.py](../../scenario/core/jobs/workers.py) | Attach lifecycle to the application context, not a panel; integrate shutdown and delivery. |
-| Origin and stale-result protection | [job_session.py](../../scenario/blender/job_session.py), [context guide](../BLENDER_JOB_CONTEXT.md) | Bind actual entry points to the selected account, scene and targets, including explicit restart recovery. |
-| Bounded result downloads | [transfers.py](../../scenario/core/jobs/transfers.py), [transfer guide](../RESULT_TRANSFERS.md) | Active Image jobs use configured CDN hosts, persisted receipts and guarded image import. Explicit interrupted-download recovery verifies saved receipts under a cross-process lock without service calls. Recovery controls, orphan-file reconciliation and other lanes remain. |
-| Durable application claims | [application commands](../JOB_COORDINATOR.md#durable-application-claims), [World command](../BLENDER_JOB_CONTEXT.md#explicit-saved-result-world-application) | Owner-issued verification tickets can claim the original result and persist an explicit application outcome. Optional JobSession World application binds one saved asset's decoded bytes and scene assignment to that claim. Explicit receipt retry can save or acknowledge a known completed assignment without repeating scene work; restart reconciliation, other result types, recovery UX and active UI/MCP wiring remain separate. |
-| Prompt Spark commands | [SDK guide](../SDK_ADOPTION.md#prompt-spark-command-boundary), [coordinator](../JOB_COORDINATOR.md#prompt-spark-commands) | Exact SDK quotes, durable single-use submission and full-text recovery through the existing JobSession pool. New, Rewrite and Translate share native/MCP approval and unchanged-field delivery; render look preparation uses uploaded image snapshots and its own approval before the final render quote. |
-| Upload commands | [upload guide](../SDK_UPLOADS.md) | Local MCP and generation-form typed files/image stills use private staging, signed S3 PUT parts and durable SDK commands on the existing workers. Guarded form attachment invalidates old prices. UI/MCP recovery survives restart; saved-reference attachment requires a matching input kind and fresh destination confirmation. Live acceptance remains. |
-| Strict model forms | [forms.py](../../scenario/core/schema/forms.py) | Complete trained/custom-model discovery and verified REST routing under #97. |
-| Mesh and World application | [mesh guide](../MESH_APPLICATION.md), [World guide](../WORLD_APPLICATION.md) | User-facing generation/history/apply flows under #99 and #98. |
+| Scoped SDK commands | [SDKAdapter](../../scenario/core/api/sdk_adapter.py) serves the selected catalog and job pools. Adopted service operations and tracked exceptions are listed in the [SDK guide](../SDK_ADOPTION.md#service-operation-inventory). | Live authentication/provider acceptance; unsupported operations are not implied by SDK availability. |
+| Catalog and quotes | [SDKCatalog](../../scenario/core/api/sdk_catalog.py) owns model browsing; [ModelJobs](../../scenario/blender/model_jobs.py) routes UI/MCP exact quotes through the selected JobSession coordinator and workers. | Catalog browsing alone creates no quote or spending approval. Full retained-lane live acceptance remains. |
+| Durable intent and coordination | [JobSession](../../scenario/blender/job_session.py) uses the scoped [store](../../scenario/core/jobs/store.py) and [coordinator](../../scenario/core/jobs/coordinator.py). Model forms, workflows, Film generation and recovery share this application owner. | Uncertain submissions require reconciliation; they cannot be retried as new paid requests. |
+| Worker ownership | [RuntimeState](../../scenario/blender/runtime.py) selects one active session; its [workers](../../scenario/core/jobs/workers.py) outlive panel closure. Retirement stops admission while old owners retain in-flight persistence and cleanup. | Retired owners cannot deliver into a replacement connection or scene; cleanup failures may retain ownership for retry. |
+| Origin and stale-result protection | [JobSession](../../scenario/blender/job_session.py) binds entry points to the selected credentials/project and captured scene/target. Restart recovery uses fresh context and destination approval. | Saved names or IDs cannot restore live scene authority; see the [context contract](../BLENDER_JOB_CONTEXT.md). |
+| Result downloads | [ModelJobs](../../scenario/blender/model_jobs.py) drives saved manifests, bounded transfers and explicit interrupted-download recovery for model lanes. [Transfers](../RESULT_TRANSFERS.md) retain verified receipts and configured storage hosts. | Only admitted Image jobs automatically apply supported images to their original scene; other model results need explicit destination approval. Unsupported formats and uncertain states remain saved for inspection. |
+| Application claims | Native [saved-job controls](../../scenario/blender/job_recovery.py) and [MCP result commands](../MCP.md) prepare and apply image, media, GLB, material, World and supported mesh-edit destinations through ModelJobs/JobSession. Claims precede scene mutation; known receipt retries do not repeat it. | Restarted uncertain claims require inspection. Format, target, rollback and undo limits differ by application; no atomic blend-file save is promised. |
+| Prompt Spark | [Prompt commands](../SDK_ADOPTION.md#prompt-spark-command-boundary) use exact quotes, durable submission and complete text recovery on the shared workers. Native/MCP New, Rewrite and Translate require unchanged-field approval; render preparation has a separate Spark approval. | Live provider acceptance remains; Spark approval does not authorize the subsequent render generation. |
+| Uploads | [Reference uploads](../SDK_UPLOADS.md) use private staging, signed storage transfers and durable SDK commands on the shared workers. Native/MCP recovery and saved-reference attachment require the selected scope and fresh destination approval. | Workflow direct-file upload integration and live upload/result journeys remain open. |
+| Model forms | [Schema forms](../../scenario/core/schema/forms.py) validate adopted model inputs before shared pricing and submission. | Trained/custom-model discovery and verified routing remain under #97. |
+| Mesh and World | [Mesh](../MESH_APPLICATION.md) and [World](../WORLD_APPLICATION.md) application have explicit UI/MCP destination flows for supported saved results. | Provider-specific mesh contracts under #99 and panoramic generation under #98 remain incomplete; local application does not close them. |
 
 The job lifecycle records intent before submission, binds an exact estimate to
 scope and origin, and treats transport uncertainty as recoverable uncertainty.
@@ -314,7 +321,8 @@ without waiting for an unrelated tool to finish.
 A timeout after the handler starts reports an unknown outcome. The executor neither
 interrupts nor replays the handler, and a completed result wins a concurrent timeout
 observation. This local boundary does not replace durable request identity or remote
-job recovery, and does not make the prototype paid runtime accepted.
+job recovery. Prototype records remain local snapshots and cannot authorize new
+service work or result application.
 
 ## Active SDK history
 

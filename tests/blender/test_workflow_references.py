@@ -75,9 +75,15 @@ class WorkflowReferenceTests(unittest.TestCase):
         self.form = self.scene.scenario_workflow
         self.ui.load_form(self.form, self.record)
         self.view = bpy.context.window_manager.scenario_library_view
-        self.addCleanup(setattr, self.view, "target", self.view.target)
+        self._previous_target = self.view.target
+        self.addCleanup(self.restore_target)
         self.view.target = "WORKFLOW"
         self.load()
+
+    def restore_target(self):
+        # Loading a blend replaces WindowManager RNA. Never write through the
+        # pre-load PropertyGroup wrapper during fixture cleanup.
+        bpy.context.window_manager.scenario_library_view.target = self._previous_target
 
     def load(self, asset_id="fixture-asset"):
         self.fixture.asset["id"] = asset_id
@@ -242,6 +248,10 @@ class WorkflowReferenceTests(unittest.TestCase):
             bpy.ops.wm.save_as_mainfile(filepath=path)
             bpy.ops.wm.open_mainfile(filepath=path)
             form = bpy.context.scene.scenario_workflow
+            view = bpy.context.window_manager.scenario_library_view
+            view.target = "WORKFLOW"
+            self.restore_target()
+            self.assertEqual(view.target, self._previous_target)
             self.assertEqual(form.inputs["image"].asset_scope, scope)
             self.runtime.ensure_job_store()
             self.assertEqual(self.ui.parameters(form)["image"], "fixture-asset")

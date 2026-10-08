@@ -17,7 +17,7 @@
       "scenario/blender/library_view.py": "e4dcca18c81a3c34456e9f76194f59d55200c637c1554daa8524b29cb9751e7e",
       "scenario/blender/registry.py": "0d024ec188c190acda096aa68387ce3270c60a3bc4a47344603f1bb775c0c31c",
       "scenario/core/schema/forms.py": "44a8c60ee69907f2587aa56debddfbddc7a6416720d9789eeee5abf0aa55bb4a",
-      "tests/blender/test_workflow_references.py": "fb8bc67a2ca42a50b83d626ae9830b5e903145ab673bd00291b21f561b291276",
+      "tests/blender/test_workflow_references.py": "a7ffecef7e1b0315431703fb8d2422f4587312800044010a059926a94b76968a",
       "tests/unit/test_forms.py": "d0584646e97efb89b425809aec50fddf90a51c001d026adeecdb820fa2ce7c4d",
       "tests/blender/run_all.py": "0c167da4d582bd9eda230638ec4259ba22357c857ffd240b58485cbdd07a26a1"
     }

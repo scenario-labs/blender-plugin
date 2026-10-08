@@ -605,7 +605,10 @@ Ambiguous multiple picture/sound streams are rejected; audio cover art is
 ignored. Picture and sound use their own exact rational duration where present;
 a container-wide fallback is allowed only for a single primary media stream.
 Measurements describe container metadata, not a full decode, constant-frame-rate
-proof or human motion/audio acceptance. A later source replacement cannot alter
+proof or human motion/audio acceptance. An absent or unavailable average frame
+rate remains unknown; a composition draft can still use the verified duration.
+No frame rate is inferred, and missing duration, invalid reported rates or
+insufficient cut coverage still fail. A later source replacement cannot alter
 the already inspected private copy, but this read does not lock the saved file
 or authorize later use of changed bytes.
 

@@ -54,6 +54,7 @@ def env(tmp_path, monkeypatch):
         root=tmp_path,
         after_probe=None,
         video_seconds="4",
+        video_frame_rate="30/1",
         audio_seconds="2",
     )
     source_root, result_root, probe_root = (tmp_path / p for p in ("sources", "results", "probes"))
@@ -162,7 +163,7 @@ def env(tmp_path, monkeypatch):
                 "codec_type": "video",
                 "width": 64,
                 "height": 64,
-                "avg_frame_rate": "30/1",
+                "avg_frame_rate": e.video_frame_rate,
                 "duration": e.video_seconds,
             }
             if content == b"picture"
@@ -202,6 +203,21 @@ def test_composition_measures_saved_bytes_off_thread_without_network_or_mutation
     assert not tuple(env.probe_root.iterdir())
     # Completion releases local admission before waking a waiting caller.
     assert prepare(env).result(3) == result
+
+
+@pytest.mark.parametrize("rate", [None, "0/0"])
+def test_unknown_video_rate_allows_composition_but_still_requires_cut_coverage(env, rate):
+    env.video_frame_rate = rate
+    before = env.store.records(), env.uploads.records()
+    result = prepare(env).result(3)
+    picture = dict(result.media)["shot-video"]
+    assert picture.frame_rate is None and picture.duration == 4
+    assert result.draft.recipe["tasks"][-1]["id"] == "final-master"
+    env.video_seconds = "3.99"
+    with pytest.raises(media_probe.MediaProbeError, match="editorial cut"):
+        prepare(env).result(3)
+    assert before == (env.store.records(), env.uploads.records())
+    assert not tuple(env.probe_root.iterdir())
 
 
 @pytest.mark.parametrize(

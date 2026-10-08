@@ -123,8 +123,10 @@ def _metadata(raw, kind, receipt):
         width, height = picture["width"], picture["height"]
         if any(type(n) is not int or not 1 <= n <= 16384 for n in (width, height)):
             raise ValueError("Invalid media dimensions")
-        fps = _fraction(picture.get("avg_frame_rate"))
-        if not 0 < fps <= 240:
+        # Duration can cover a composition cut even when the average rate is unknown.
+        rate = picture.get("avg_frame_rate")
+        fps = None if rate in (None, "0/0", "N/A") else _fraction(rate)
+        if fps is not None and not 0 < fps <= 240:
             raise ValueError("Invalid media frame rate")
         return MediaInfo(
             kind,

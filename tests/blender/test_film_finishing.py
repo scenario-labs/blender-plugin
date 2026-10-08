@@ -168,6 +168,7 @@ class FilmMediaSessionTests(unittest.TestCase):
             patch.object(self.media, "probe_tool", return_value=fixture.root / "ffprobe")
         )
         self.probes = []
+        self.video_frame_rate = "30/1"
 
         def run(command, *, stdout, **kwargs):
             self.assertIsNot(threading.current_thread(), threading.main_thread())
@@ -183,7 +184,7 @@ class FilmMediaSessionTests(unittest.TestCase):
                                 "duration": "4",
                                 "width": 128,
                                 "height": 128,
-                                "avg_frame_rate": "30/1",
+                                "avg_frame_rate": self.video_frame_rate,
                             }
                         ]
                     }
@@ -225,6 +226,18 @@ class FilmMediaSessionTests(unittest.TestCase):
         )
         self.assertFalse(self.fixture.calls)
         self.assertTrue(self.probes and all(not path.exists() for path in self.probes))
+
+    def test_unknown_video_rate_can_deliver_a_duration_verified_draft(self):
+        self.video_frame_rate = "0/0"
+        result = self.prepare().result(5)
+        (completion,) = self.session.drain()
+        delivered = self.session.deliver(completion, lambda result, scene, target: result)
+        self.assertIs(delivered, result)
+        picture = dict(result.media)["shot-video"]
+        self.assertEqual(picture.duration, Fraction(4))
+        self.assertIsNone(picture.frame_rate)
+        self.assertFalse(self.fixture.calls)
+        self.assertTrue(all(not path.exists() for path in self.probes))
 
     def test_scene_invalidated_after_completion_cannot_receive_draft(self):
         task = self.prepare()

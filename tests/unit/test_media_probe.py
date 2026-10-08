@@ -157,6 +157,40 @@ def test_video_requires_its_own_stream_duration_when_audio_is_present(tmp_path):
     assert result.frame_rate == Fraction(30000, 1001)
 
 
+@pytest.mark.parametrize(
+    "rate", [{}, {"avg_frame_rate": None}, {"avg_frame_rate": "0/0"}, {"avg_frame_rate": "N/A"}]
+)
+def test_unknown_video_frame_rate_preserves_duration_without_guessing(tmp_path, rate):
+    _, receipt = file_receipt(tmp_path)
+    picture = {
+        "codec_type": "video",
+        "width": 128,
+        "height": 128,
+        "tags": {"DURATION": "00:00:04.004000000"},
+        **rate,
+    }
+    result = probe._metadata(json.dumps({"streams": [picture]}), "video", receipt)
+    assert result.duration == Fraction(1001, 250)
+    assert result.frame_rate is None
+    del picture["tags"]
+    with pytest.raises(probe.MediaProbeError):
+        probe._metadata(json.dumps({"streams": [picture]}), "video", receipt)
+
+
+@pytest.mark.parametrize("rate", [False, -1, "-30/1", "0/1", "241/1", "30/0", "invalid"])
+def test_invalid_reported_video_frame_rate_is_not_treated_as_unknown(tmp_path, rate):
+    _, receipt = file_receipt(tmp_path)
+    picture = {
+        "codec_type": "video",
+        "width": 128,
+        "height": 128,
+        "duration": "4",
+        "avg_frame_rate": rate,
+    }
+    with pytest.raises(probe.MediaProbeError):
+        probe._metadata(json.dumps({"streams": [picture]}), "video", receipt)
+
+
 def test_audio_cover_art_does_not_become_an_ambiguous_video(tmp_path):
     _, receipt = file_receipt(tmp_path)
     value = audio_metadata()

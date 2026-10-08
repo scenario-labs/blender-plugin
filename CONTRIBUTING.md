@@ -612,8 +612,10 @@ Before sending input:
 Quit the test Blender when finished. The default maximum GUI lifetime is
 900 seconds (`--duration SECONDS`); creating an empty `stop` file in the artifact
 directory also requests a clean exit. Setup steps use `--timeout SECONDS`
-(default 300). The host terminates and reaps its owned child on timeout or
-interruption. It never kills other Blender processes.
+(default 300). The host attempts to terminate and reap its owned child on timeout
+or interruption. If cleanup fails, the command exits unsuccessfully and records
+`cleanup_error` in the final report; check the recorded PID before removing the
+run's artifacts. It never kills other Blender processes.
 
 `report.json` records ZIP SHA-256, app identity, PID, runtime version, process
 exit and the normal profile's before/after metadata comparison. `ready.json`

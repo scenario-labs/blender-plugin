@@ -224,7 +224,11 @@ def run_review(args):
         report.update(status="interrupted")
     finally:
         if child is not None:
-            stop_child(child)
+            try:
+                stop_child(child)
+            except (OSError, subprocess.SubprocessError) as error:
+                report.update(status="failed", cleanup_error=str(error))
+                print(f"Desktop review cleanup failed: {error}", file=sys.stderr)
         if before is not None:
             report["normal_profile_unchanged"] = profile_snapshot(normal) == before
             if not report["normal_profile_unchanged"]:

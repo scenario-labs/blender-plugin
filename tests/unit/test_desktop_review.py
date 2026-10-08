@@ -66,7 +66,20 @@ def test_copy_keeps_real_executable_and_does_not_modify_source(review, tmp_path,
 
 
 @pytest.mark.parametrize(
-    "failure", [None, "pid", "online", "network", "missing", "exit", "timeout", "normal", "install"]
+    "failure",
+    [
+        None,
+        "pid",
+        "online",
+        "network",
+        "missing",
+        "exit",
+        "timeout",
+        "normal",
+        "install",
+        "cleanup-timeout",
+        "cleanup-oserror",
+    ],
 )
 def test_review_rejects_invalid_evidence_and_reaps_child(review, tmp_path, monkeypatch, failure):
     monkeypatch.setattr(review.platform, "system", lambda: "Darwin")
@@ -113,12 +126,16 @@ def test_review_rejects_invalid_evidence_and_reaps_child(review, tmp_path, monke
         return child
 
     def wait(timeout):
+        if failure in ("cleanup-timeout", "cleanup-oserror"):
+            raise subprocess.TimeoutExpired("Blender", timeout)
         if failure == "timeout" and timeout > 10:
             raise subprocess.TimeoutExpired("Blender", timeout)
         child.poll.return_value = 3 if failure == "exit" else 0
         return child.poll.return_value
 
     child.wait.side_effect = wait
+    if failure == "cleanup-oserror":
+        child.kill.side_effect = OSError("Could not signal owned child")
     monkeypatch.setattr(review.subprocess, "Popen", launch)
     args = SimpleNamespace(
         blender=None, artifacts=tmp_path / "out", zip=candidate, timeout=60, duration=5
@@ -132,6 +149,10 @@ def test_review_rejects_invalid_evidence_and_reaps_child(review, tmp_path, monke
         child.terminate.assert_called_once()
     if failure == "install":
         child.wait.assert_not_called()
+    if failure in ("cleanup-timeout", "cleanup-oserror"):
+        assert report["cleanup_error"]
+        assert child.poll() is None
+        child.kill.assert_called()
 
 
 def test_refuses_normal_profile_output_and_other_platforms(review, tmp_path, monkeypatch):

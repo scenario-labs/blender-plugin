@@ -458,3 +458,13 @@ restart; saved IDs alone cannot recreate original-source ownership. See
 [the mesh contract](../MESH_APPLICATION.md#applying-to-the-captured-mesh-source).
 Multi-source ambiguity, unsupported rigs/modifiers, provider coordinate contracts,
 remaining edit policies and global undo still limit #99 acceptance.
+
+## Composition preparation component
+
+The [unpaid Film composition helpers](../FILM_PLAN.md#unpaid-composition-drafts)
+can prepare and revalidate final/previs task drafts from scoped saved outputs.
+They preserve cut and audio timing without mutating the recipe, reserving a job
+or making service requests. This component is not connected to active UI/MCP
+controls. Its next boundary is verified media-duration measurement and session
+ownership through draft review and quote delivery, followed by separate generation
+approval. Native final-review assembly and export remain unimplemented.

@@ -33,8 +33,8 @@ def _references(value):
         yield match[1]
 
 
-def _task_context(store, recipe, *, production_id, task_id, kind):
-    """Validate the recipe and compute exact task/dependency identities."""
+def _recipe_context(store, recipe):
+    """Validate scope and compute the recipe's transitive task identities once."""
     plan = validate_film_plan(recipe)
     require_plan_scope(plan, store.scope)
     tasks, digests, dependencies = {}, {}, {}
@@ -47,6 +47,12 @@ def _task_context(store, recipe, *, production_id, task_id, kind):
             {"task": task, "dependencies": {key: digests[key] for key in sorted(refs)}}
         )
         tasks[task["id"]] = task
+    return plan, tasks, digests, dependencies
+
+
+def _task_context(store, recipe, *, production_id, task_id, kind):
+    """Validate the recipe and compute exact task/dependency identities."""
+    plan, tasks, digests, dependencies = _recipe_context(store, recipe)
     if not isinstance(task_id, str) or task_id not in tasks or tasks[task_id]["kind"] != kind:
         raise ValueError(f"Choose a {kind} task from the Film recipe")
     binding = FilmTaskBinding(production_id, task_id, _digest(plan), digests[task_id])

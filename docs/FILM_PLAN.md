@@ -518,6 +518,57 @@ reference-upload handle. Use `reference_upload_status` and, after import,
 cover command behavior; desktop layout/input/focus/viewport and live media
 acceptance remain pending, so the new controls remain draft.
 
+## Unpaid composition drafts
+
+[`film_finish.py`](../scenario/core/scene/film_finish.py) adapts Studio's final
+and previs composition planning into a pure helper. It validates the raw recipe,
+uses the contiguous editorial cut, preserves explicit selected take names, and
+builds an unpaid `model_scenario-compose-video` task on a 1920 x 1080 canvas.
+Final layers preserve source trim and native audio volume; previs layers use
+zero trim and exclude editorial audio. No helper submits, estimates, uploads,
+downloads, reserves a take or changes a Blender scene.
+
+`compose_recipe` returns a separate JSON recipe with a new master task. Existing
+tasks and the caller's recipe remain unchanged; an existing master name is
+rejected. `audio_tracks: []` explicitly omits a score. An omitted track list
+retains the recipe contract's looping score at volume 0.4. All final audio needs
+an `AudioDuration` observation bound to its selected asset and exact scope.
+The caller must obtain that observation from verified saved media; supplying a
+value does not prove its duration or validate its bytes. Exact rational seconds
+are converted per track: floor for whole-frame loops, ceil for a finite partial
+last frame. The same source can serve both kinds without using the wrong
+rounding. Duck boundaries preserve loop phase and use absolute gains. The helper
+emits explicit segments, rejects finite-source overrun and more than 50 combined
+picture/audio layers, and does not truncate an excessive mix.
+The recipe's 50-shot limit is separate from this combined composition budget.
+For example, 49 shots plus one unsegmented score fit; 50 shots plus that score
+are rejected before a draft is returned. Fifty shots still fit in previs mode
+or with explicit `audio_tracks: []`. Score loops and duck boundaries each consume
+additional layers, so reserve room for their expanded segments.
+
+[`film_finishing.py`](../scenario/core/jobs/film_finishing.py) reads the selected
+job/upload stores to prepare an immutable draft. Each source must be the exact
+current production/task dependency, contain one output of the expected media
+kind, and belong to the selected scope. Imported upload observations must match
+the saved association and revision. Completed model outputs may be available
+without a local download; audio measurement still needs a separate verified
+local source. The draft retains each source's request, revision, asset and task
+digest. Source resolution validates the recipe scope and computes all transitive
+task digests once, reusing them for every selected source.
+`validate_composition_draft` rejects changed inputs or a newly
+reserved master. Neither helper acquires an approval or an atomic generation
+claim. API-key default scope needs no project discovery.
+
+The resulting model task resolves through the existing Film task command and
+SDK `generate.with_raw_response.run_model` path. Its eventual estimate must fetch
+current model metadata, validate the payload and preserve the server's exact
+cost; this template is not evidence that a provider currently accepts it. The
+active UI/MCP do not yet install or quote these drafts. Their future session
+owner must preserve source/scene/scope identity through review and quote delivery,
+then require explicit generation approval. Media probing, native final-review
+assembly, export, live provider acceptance and human motion/audio review remain
+separate. These helpers alone do not complete Film finishing.
+
 ## Remaining integration and evidence
 
 Media finishing,

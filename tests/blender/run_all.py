@@ -61,6 +61,7 @@ BASELINE = (
     "test_session_results",
     "test_session_uploads",
     "test_film_capture",
+    "test_film_finishing",
     "test_reference_uploads",
     "test_reference_form",
     "test_background_removal",

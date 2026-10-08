@@ -213,15 +213,21 @@ the existing validator, and verifies installed bytes before and after upgrade.
 Only the index and the two explicit archive filenames are served on loopback.
 The default invocation still runs the small synthetic fixture above.
 
-The package probe seeds synthetic saved preferences and credentials, six durable
-job states (prepared, uncertain, remote, download failed, ready and applied), a
-second isolated credential scope, result manifests/receipts and local result bytes,
+The package probe seeds synthetic saved preferences, credentials and a nonempty
+Project ID, six durable job states (prepared, uncertain, remote, download failed, ready and applied), a
+second credential scope with the same project, result manifests/receipts and
+local result bytes,
 three image upload states plus an imported captured-mesh upload with verified
 staged bytes, and a saved blend with a reference.
 It compares these after native upgrade in the same process and after reopening
 the blend in a second, offline Blender process. Exact quote strings, nonempty texture roles, application
 origins, upload markers and the installation's scope key must survive. Original
-reference bytes are checked too. Ready/applied jobs retain the exact mesh input
+reference bytes are checked too. The saved project preference and runtime job scope
+must agree; the same key with default scope or another project must see no jobs,
+uploads or Film upload association. Both native reports require
+`project_scope_preserved: true`. Packages without the optional project preference
+need their matching historical probe and cannot establish this coverage.
+Ready/applied jobs retain the exact mesh input
 binding, export hash, source transform and upload revision. The completed job
 retains successful, confirmed-failed and unfinished local application claims;
 the probe attempts another claim and requires rejection without changing the

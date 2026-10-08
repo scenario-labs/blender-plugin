@@ -19,6 +19,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from repository_update import checked_repository, owned_profile
 
 PACKAGE = "bl_ext.update_fixture.scenario"
+PROJECT_ID = "update-fixture-project"
 
 
 def module(name):
@@ -108,7 +109,9 @@ def stores():
     binding = module("core.jobs.credential_storage")
     api = module("core.api.sdk_adapter")
     other = binding.open_credential_store(
-        paths.state_dir / "shared-jobs", api.Credentials("update-other-key", "update-other-secret")
+        paths.state_dir / "shared-jobs",
+        api.Credentials("update-other-key", "update-other-secret"),
+        project_id=PROJECT_ID,
     )
     upload_root = paths.state_dir / "shared-uploads"
     upload_root.mkdir(parents=True, exist_ok=True)
@@ -277,6 +280,7 @@ def seed(profile):
     prefs = bpy.context.preferences.addons[PACKAGE].preferences
     prefs.credential_source = "PREFERENCES"
     prefs.api_key, prefs.api_secret = "update-fixture-key", "update-fixture-secret"
+    prefs.project_id = PROJECT_ID
     prefs.output_dir = str(profile / "output")
     prefs.composer_enabled = False
     prefs.composer_offset_x, prefs.composer_offset_y = 23.0, 47.0
@@ -399,6 +403,24 @@ def seed(profile):
     bpy.ops.wm.save_as_mainfile(filepath=str(profile / "state.blend"), check_existing=False)
 
 
+def check_project_scope(paths, prefs, selected):
+    """A saved override must still select its original jobs after update/restart."""
+    if prefs.project_id != PROJECT_ID or selected.scope.project_id != PROJECT_ID:
+        raise RuntimeError("Update lost the selected project preference or runtime scope")
+    binding = module("core.jobs.credential_storage")
+    credentials = module("core.api.sdk_adapter").Credentials(prefs.api_key, prefs.api_secret)
+    for project_id in (None, "update-other-project"):
+        other = binding.open_credential_store(
+            paths.state_dir / "shared-jobs", credentials, project_id=project_id
+        )
+        uploads = module("core.jobs.upload_store").UploadStore(
+            paths.state_dir / "shared-uploads/uploads.sqlite3", other.scope
+        )
+        film_upload_snapshot(selected, other)
+        if other.records() or uploads.records():
+            raise RuntimeError("Update lost job or upload project isolation")
+
+
 def snapshot(profile):
     import bpy
 
@@ -406,6 +428,7 @@ def snapshot(profile):
     prefs = bpy.context.preferences.addons[PACKAGE].preferences
     if not paths.state_dir.resolve().is_relative_to(profile):
         raise RuntimeError("Scenario storage escaped the disposable profile")
+    check_project_scope(paths, prefs, selected)
     records = selected.records()
     if len(records) != 6 or selected.get("other-scope") is not None or len(other.records()) != 1:
         raise RuntimeError("Update lost durable records or credential isolation")
@@ -455,6 +478,7 @@ def snapshot(profile):
         name: getattr(prefs, name)
         for name in (
             "credential_source",
+            "project_id",
             "output_dir",
             "composer_enabled",
             "composer_offset_x",
@@ -531,6 +555,7 @@ def main():
                     "enabled": True,
                     "state_preserved": True,
                     "scene_preserved": True,
+                    "project_scope_preserved": True,
                     "service_requests": 0,
                 }
             )

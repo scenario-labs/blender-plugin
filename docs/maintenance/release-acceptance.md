@@ -162,6 +162,18 @@ Enabled state, scoped saved state and scene survive, with zero service requests,
 unchanged normal profiles, stopped servers and cleaned disposable profiles.
 This is synthetic lifecycle evidence, not a published release-pair, physical
 desktop or live-provider check.
+The extended project-aware probe also passes this exact archive/predecessor pair
+on all three macOS Blender versions above. It seeds a nonempty saved Project ID,
+checks the installed runtime selects that scope before/after upgrade and after
+offline restart, and verifies the same key in default/alternate project scopes
+cannot read its jobs, uploads or Film upload association. The other credential
+fixture uses the same project, preserving the independent credential-isolation
+check. All six selected jobs, the other credential job, four uploads and nonempty
+Film association survive; both reports require `project_scope_preserved: true`.
+These runs again record zero service requests, unchanged normal profiles,
+stopped servers and removed disposable profiles. This verifies saved preference
+reload and local isolation, not native text entry or live project permissions.
+
 [Hosted CI for #320 head `3ae726b`](https://github.com/scenario-labs/blender-plugin/actions/runs/37697911675)
 passed `ci-ok`, including Python 3.11/3.13 and Linux/Windows Blender 5.0.1,
 5.1.2 and 5.2.1, for its own source and separately built archives.
@@ -171,7 +183,7 @@ passed `ci-ok`, including Python 3.11/3.13 and Linux/Windows Blender 5.0.1,
 | Gate | Current limit | Next evidence and owner |
 | --- | --- | --- |
 | Complete SDK adoption | The unscoped prototype engine and unused raw service clients are removed. The [SDK operation inventory](../SDK_ADOPTION.md#service-operation-inventory) maps maintained service paths and the existing discovery exception; offline/native checks pass. | Finish retained-capability and live provider acceptance under #64/#65; the call-site audit alone does not establish those product contracts. |
-| Credentials and project scope | Merged #316 exposes an optional project ID. Scoped synthetic desktop input passed on the identified earlier ZIP; the final runtime ZIP has native regression coverage. | Complete fresh onboarding, permission failures, live override behavior, saved preference reload and final-candidate desktop acceptance under #65/#68. |
+| Credentials and project scope | Merged #316 exposes an optional project ID. Scoped synthetic desktop input passed on the identified earlier ZIP; the final runtime ZIP has native regression coverage. The SDK service-retirement archive identified above also passes saved preference reload and local project isolation. | Complete fresh onboarding, permission failures, live override behavior and final-candidate update/desktop acceptance under #65/#68. |
 | Compact and expanded creation | Earlier screenshots and isolated controls do not establish the complete journey on this candidate. | Native select/capture/estimate/generate/inspect/apply and library reuse; focus, text input, viewport, small-window and DPI checks under #66/#68. |
 | Retained lanes | Offline receipts and MIME checks do not establish usable live results. | Authorized scoped checks for Image, Video, 3D, Materials, audio, render/edit and Film paths; inspect actual outputs and record limitations under #68. |
 | Recovery and switching | Synthetic tests cover lost acknowledgement, stale quotes, scope changes and application claims. | Candidate-level UI/MCP parity, cancellation/restart races and failed download/import journeys with recorded outcomes under #65/#68. |

@@ -15,8 +15,8 @@ the active UI and local MCP now share SDK model listing/detail reads and model
 cost previews through [SDKCatalog](../scenario/core/api/sdk_catalog.py). Cloud
 history also uses this connection as described below. UI and MCP model quote and
 submission now use the selected shared JobSession and existing adapter
-`models.retrieve` / `generate.with_raw_response.run_model` contracts. The remaining service operations
-still use the prototype client pending shared-job integration. See
+`models.retrieve` / `generate.with_raw_response.run_model` contracts. The prototype service client and its unused endpoint helpers have been removed;
+[the service operation inventory](#service-operation-inventory) records their replacements. See
 [SDK_BUNDLE.md](SDK_BUNDLE.md) for exact artifact/notice pinning,
 supported wheel targets, staging and installed-runtime verification.
 
@@ -28,6 +28,46 @@ the adapter's record. Offline transport tests cover exact credentials/project,
 page parameters, sanitization and failed-refresh behavior. This does not establish
 live recording acceptance or ownership of existing fixture media; see the
 [fixture inventory](../tests/fixtures/README.md).
+
+## Service operation inventory
+
+The source audit covers native UI, local MCP and the maintained development/smoke
+entry points. The retired `ScenarioClient`, urllib service transport, raw
+catalog cache, generation/job/asset/upload endpoints, Spark and LLM clients are
+removed. No compatibility client or second job engine remains. Useful pure model
+records, lane/schema helpers and local display status classification remain.
+
+| Service operation | Shared implementation and selected SDK 2.2.0 method |
+| --- | --- |
+| Model catalog, schemas, connection check | `SDKCatalog` / `SDKAdapter`: `models.with_raw_response.list/retrieve` |
+| Exact model quote and submission, including render, Blockout and Film models | `JobCoordinator` / `SDKAdapter`: `generate.with_raw_response.run_model`, with `dry_run="true"` only for quotes |
+| New/Rewrite and Translate | Shared prompt commands: `generate.with_raw_response.prompt/translate`, including separate exact estimates and submission claims |
+| Cloud history, known-job recovery, polling and inference cancellation | Shared catalog/coordinator: `jobs.with_raw_response.list/retrieve/trigger_action` |
+| Result and complete prompt/model-text metadata | Shared coordinator: `assets.with_raw_response.retrieve`; bounded complete text uses the signed result transport |
+| Reference upload metadata, progress and completion | Shared upload coordinator: `uploads.with_raw_response.create/retrieve/trigger_action` |
+| Optional team/project discovery | Adapter-owned `SDKResourceExtensions`, the named [SDK issue #29 exception](https://github.com/scenario-labs/scenario-sdk-python/issues/29) below; no new raw exception |
+| Developer model audit, fixture recorder and smoke tools | The same `SDKAdapter`, with smoke submission through the shared coordinator |
+
+Workflow adapter primitives also use the pinned public SDK methods documented
+below; their presence is not acceptance of a user-facing Film workflow service.
+All paid SDK submissions retain `max_retries=0`, exact approval and durable claim
+requirements. Removing old retrying code does not alter those existing contracts.
+
+Network protocols outside the Scenario service API remain distinct: guarded
+result downloads and signed upload parts use `jobs/transfers.py` and
+`jobs/upload_transfers.py`; model thumbnails use the credential-free downloader
+in `api/assets.py`. Blender owns public update downloads. Local MCP's stdio bridge
+uses authenticated loopback HTTP. None is an alternative Scenario service client.
+The extension User-Agent now lives in `api/user_agent.py`, so SDK and thumbnail
+requests retain the same package version without importing a retired client.
+
+Regression coverage follows the retained SDK catalog, adapter, coordinator,
+upload, prompt-result and native entry points. Tests of the deleted client and
+its retry/upload/partial-preview behavior are retired with it; complete-text
+recovery continues to reject incomplete or unusable answers rather than falling
+back to a truncated preview. Signed thumbnail byte, URL and retry tests remain.
+This is a source and offline/native wiring inventory, not live provider, OAuth,
+thumbnail transfer hardening, desktop or full #64/#65/#68 acceptance.
 
 ## Executable contracts
 
@@ -90,9 +130,9 @@ without claiming a server identity or adding it to API requests. API-key request
 do not require explicit tenant selection or a generated SDK discovery method.
 Opening the store does not activate shared job workers or paid submission.
 [Runtime integration status](architecture/runtime.md#active-sdk-catalog) records
-the remaining shared-job and paid-flow boundaries. The original raw `Catalog`
-class is no longer constructed by the active Blender path or model smoke scripts. This partial adoption does not approve those remaining
-prototype API operations as SDK exceptions.
+the remaining shared-job and paid-flow boundaries. The original raw `Catalog` class and its unscoped disk cache writer are removed.
+Pure model records, lane filters and schema hints remain in `api/catalog.py`; all
+service model reads use the scoped SDK catalog.
 
 The active **Test connection** operator also uses `SDKCatalog` and the adapter's
 `models.with_raw_response.list` wrapper. It requests one fresh page with
@@ -103,21 +143,14 @@ check, and failures use sanitized SDK errors with no automatic retry. Success
 proves only model access, including a valid empty list. It does not establish
 account/project identity or resolve SDK issue #29.
 
-For the lanes still on the catalog preview path, cost previews use
-`generate.with_raw_response.run_model(dry_run="true")`
-after the existing strict model-form preparation. They share the selected
-connection's cached schema, credentials, HTTP pool and online-access gate. UI
-workers snapshot nested inputs and deliver exact `Estimate` objects only to the
-matching current form and connection. MCP performs the network read off Blender's
-main thread and rechecks the connection on main-thread delivery; `cu_cost_exact`
-preserves the decimal string. Missing/invalid cost data is an error, while an
-explicit zero remains valid. These are in-memory previews, not durable job quotes
-or authorization for the prototype submission path. Reference uploads, partial
-preview labels, authoritative account/project identity and paid integration retain
-their existing boundaries. UI and MCP model quotes instead use fresh model metadata and
-the selected JobSession, preserving the same raw SDK estimate. Explicit shared model
-submission consumes that quote through the coordinator; no endpoint exception,
-new dependency or retry policy is introduced.
+The catalog preview worker remains a non-spending SDK helper using
+`generate.with_raw_response.run_model(dry_run="true")`, captured nested inputs,
+selected credentials and the connection's online-access gate. Its exact
+`Estimate` object is an in-memory preview, not a durable approval. Missing or
+invalid cost data is an error; explicit zero remains valid. Native UI and MCP
+model quotes use fresh metadata through the selected JobSession instead;
+submission consumes that quote through the coordinator with the same raw SDK
+estimate and no automatic retry.
 
 ## Model acceptance commands
 

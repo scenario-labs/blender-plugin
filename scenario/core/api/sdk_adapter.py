@@ -20,8 +20,8 @@ from urllib.parse import urlsplit
 from weakref import WeakValueDictionary
 
 from ..schema.forms import prepare_run
-from .client import user_agent_string
 from .sdk_extensions import SDKResourceExtensions
+from .user_agent import user_agent_string
 
 API_URL = "https://api.cloud.scenario.com/v1"
 

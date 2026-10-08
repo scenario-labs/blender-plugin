@@ -134,11 +134,42 @@ or live-provider check.
 [Hosted CI for its preceding #318 head](https://github.com/scenario-labs/blender-plugin/actions/runs/37695088983)
 passed for its own source and separately built Linux/Windows archives.
 
+## SDK service retirement candidate
+
+The earlier service-retirement candidate, reviewed on 2026-10-07, has source
+`3105bb9ff0c7a01926faef3cf43640fa23356ea8` and ZIP SHA-256
+`8d6c57231e35df5fe4349616875efe612de9039720d7b3df11eb014d872e915a`.
+It combines stack #314 through #309 at
+`cb99a289ad2cf12242f4cbff49237ef36538f225`, the earlier #315–#319 layers
+and removal of the unused prototype service clients. Later parent fixes and
+the rebased branch are outside this exact source identity.
+
+That source passes **3,776 unit tests**, with the known SDK authentication
+expected failure. All 155 packaged source files match; the five retired
+service modules are absent. The same ZIP passes **1,051 installed tests per
+version** on macOS 27.0.1 arm64, with two Windows-only skips, using Blender
+5.0.1 / Python 3.11.13, 5.1.2 / Python 3.13.9 and 5.2.1 / Python 3.13.13.
+The lower unit count reflects retirement of obsolete client tests; shared SDK,
+complete-text, upload, scope, transfer and recovery coverage remains.
+
+Native update/restart passes on all three versions from the preceding #319
+archive `f4376ab6616e3dbfa59138416379fae9b58ed5663e2f6f53e226b6ac2b3b1fbb`.
+The runner's `fixture_predecessor` helper changes only its two version
+declarations to `0.0.0`, producing synthetic predecessor SHA-256
+`ca6ffddc82a8a59d523255db76a27534973db6e6b15c8951fc4467ebcfa9f090`.
+Exact installed-file comparison verifies removal of the old service modules.
+Enabled state, scoped saved state and scene survive, with zero service requests,
+unchanged normal profiles, stopped servers and cleaned disposable profiles.
+This is synthetic lifecycle evidence, not a published release-pair, physical
+desktop or live-provider check.
+[Hosted CI for its preceding #319 head](https://github.com/scenario-labs/blender-plugin/actions/runs/37696824103)
+passed for its own source and separately built Linux/Windows archives.
+
 ## Remaining release gates
 
 | Gate | Current limit | Next evidence and owner |
 | --- | --- | --- |
-| Complete SDK adoption | The unscoped prototype job engine and native raw-client factory are retired. Shared model jobs and scoped recovery pass regression checks; unused service helpers and retained capabilities still need inventory reconciliation. | Reconcile the runtime map and remaining call sites against #64/#65; identify each SDK method or documented exception. |
+| Complete SDK adoption | The unscoped prototype engine and unused raw service clients are removed. The [SDK operation inventory](../SDK_ADOPTION.md#service-operation-inventory) maps maintained service paths and the existing discovery exception; offline/native checks pass. | Finish retained-capability and live provider acceptance under #64/#65; the call-site audit alone does not establish those product contracts. |
 | Credentials and project scope | Merged #316 exposes an optional project ID. Scoped synthetic desktop input passed on the identified earlier ZIP; the final runtime ZIP has native regression coverage. | Complete fresh onboarding, permission failures, live override behavior, saved preference reload and final-candidate desktop acceptance under #65/#68. |
 | Compact and expanded creation | Earlier screenshots and isolated controls do not establish the complete journey on this candidate. | Native select/capture/estimate/generate/inspect/apply and library reuse; focus, text input, viewport, small-window and DPI checks under #66/#68. |
 | Retained lanes | Offline receipts and MIME checks do not establish usable live results. | Authorized scoped checks for Image, Video, 3D, Materials, audio, render/edit and Film paths; inspect actual outputs and record limitations under #68. |

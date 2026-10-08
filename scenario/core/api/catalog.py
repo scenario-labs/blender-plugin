@@ -1,12 +1,11 @@
 # SPDX-FileCopyrightText: 2026 Scenario Inc.
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""Model catalog: fetch, cache on disk, filter by lane, curated ordering."""
+"""Model records, schema hints, lane filtering and curated ordering.
 
-import json
-import pathlib
+Service reads and connection-local caches belong to SDKCatalog.
+"""
+
 from dataclasses import dataclass, field
-
-PAGE_TOKEN_PARAM = "paginationToken"
 
 GENERATION_LANES = (
     "image",
@@ -323,70 +322,3 @@ def mesh_param(record):
         if raw.get("type") in ("file", "file_array") and (raw.get("kind") or "").lower() == "3d":
             return raw.get("name")
     return None
-
-
-class Catalog:
-    def __init__(self, client, cache_dir):
-        self.client = client
-        self.cache_dir = pathlib.Path(cache_dir)
-
-    # -- lists ------------------------------------------------------------
-    def fetch_list(self, privacy="public", page_size=100, max_pages=20):
-        records, token = [], None
-        for _ in range(max_pages):
-            query = {"privacy": privacy, "pageSize": page_size}
-            if token:
-                query[PAGE_TOKEN_PARAM] = token
-            data = self.client.get("/models", query=query)
-            records.extend(ModelRecord.from_api(m) for m in data.get("models") or [])
-            token = data.get("nextPaginationToken")
-            if not token:
-                break
-        self._write(self._list_file(privacy), [r.raw for r in records])
-        return records
-
-    def load_list_cached(self, privacy="public"):
-        path = self._list_file(privacy)
-        if not path.exists():
-            return None
-        try:
-            return [ModelRecord.from_api(m) for m in json.loads(path.read_text(encoding="utf-8"))]
-        except (ValueError, OSError, KeyError, TypeError):
-            path.unlink(missing_ok=True)  # a corrupt cache is a miss; the next fetch rewrites it
-            return None
-
-    # -- single records -----------------------------------------------------
-    def load_cached(self, model_id):
-        path = self.cache_dir / "models" / f"{model_id}.json"
-        if not path.exists():
-            return None
-        try:
-            return ModelRecord.from_api(json.loads(path.read_text(encoding="utf-8")))
-        except (ValueError, OSError):
-            return None
-
-    def get(self, model_id, refresh=False):
-        path = self.cache_dir / "models" / f"{model_id}.json"
-        if path.exists() and not refresh:
-            try:
-                return ModelRecord.from_api(json.loads(path.read_text(encoding="utf-8")))
-            except (ValueError, OSError, KeyError, TypeError):
-                path.unlink(missing_ok=True)  # corrupt cache: fall through and re-fetch
-        data = self.client.get(f"/models/{model_id}")
-        model = data.get("model") or data
-        self._write(path, model)
-        return ModelRecord.from_api(model)
-
-    def models_for_lane(self, lane, records):
-        return models_for_lane(lane, records)
-
-    # -- helpers ------------------------------------------------------------
-    def _list_file(self, privacy):
-        return self.cache_dir / f"list_{privacy}.json"
-
-    @staticmethod
-    def _write(path, payload):
-        path.parent.mkdir(parents=True, exist_ok=True)
-        tmp = path.with_suffix(path.suffix + ".tmp")
-        tmp.write_text(json.dumps(payload), encoding="utf-8")
-        tmp.replace(path)

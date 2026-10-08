@@ -42,7 +42,7 @@ private anecdotes or treating old live observations as current service contracts
 | Motion, speech-to-text and standalone text lanes | Existing lane choices in props do not establish these product workflows. Video-to-motion and speech-to-text input/result paths are tracked in [#190](https://github.com/scenario-labs/blender-plugin/issues/190), subject to verified SDK/provider support. Broader capability adoption remains #64 and view acceptance #66; no standalone text workflow is implied. |
 | Categories from names/tags | [model_filter](../../scenario/core/api/model_filter.py) contains heuristics. #97 owns catalog acceptance; provider taxonomy needs current evidence. |
 | Native versus custom theme | [UI style](../UI_STYLE.md) explains Blender widgets and custom compositor presentation. This is a design boundary, not a runtime bug. |
-| Spark returns unusable asset references | The [Spark parser](../../scenario/core/api/spark.py) and prompt_tools reject unusable answers and use a fallback. The old provider-specific live failure is not freshly reproduced; shared spending semantics remain #65. |
+| Spark returns unusable asset references | The [shared text-result reader](../../scenario/core/jobs/results.py) rejects unusable asset references and retrieves complete bounded text through the SDK. The old Spark client and partial-preview fallback are removed. The provider-specific live failure is not freshly reproduced; live acceptance remains #65/#68. |
 | Capture FPS follows scene | [capture.py](../../scenario/blender/capture.py) derives capture timing from scene settings. Separate capture controls require explicit product scope under #66. |
 
 ## Review limits and next work

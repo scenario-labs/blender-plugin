@@ -65,13 +65,6 @@ class SDKEstimateTests(unittest.TestCase):
         self.assertFalse(
             self.generation.build_request(bpy.context.scene, "image", for_estimate=True).errors
         )
-        self.enterContext(
-            patch.object(
-                submodule("core.api.client"),
-                "ScenarioClient",
-                side_effect=AssertionError("Legacy client used"),
-            )
-        )
 
     def wait_quotes(self):
         for ticket in tuple(self.runtime.state.model_previews.values()):

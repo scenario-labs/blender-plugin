@@ -72,11 +72,6 @@ class McpContractTests(unittest.TestCase):
             with (
                 patch.object(runtime, "online", return_value=True),
                 patch.object(
-                    submodule("core.api.client"),
-                    "ScenarioClient",
-                    side_effect=AssertionError("Credentials used"),
-                ),
-                patch.object(
                     runtime, "ensure_model_jobs", side_effect=AssertionError("Shared session used")
                 ),
             ):

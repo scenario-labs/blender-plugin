@@ -43,7 +43,7 @@ def _tick():
 
 
 def _process():
-    from . import mcp_service
+    from . import mcp_service, studio
 
     changed = generation.process_catalog_events()
     mcp_service.process_pending()
@@ -80,6 +80,7 @@ def _process():
                     changed = True
     if changed:
         redraw()
+    studio.redraw_popups()
 
 
 def redraw():

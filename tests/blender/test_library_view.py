@@ -285,3 +285,35 @@ class LibraryViewTests(unittest.TestCase):
         with self.assertRaises(submodule("blender.job_session").OriginUnavailable):
             self.owner.attach(approval)
         self.assertFalse(replacement.scenario.image.references)
+
+    def test_native_operator_properties_resolve_only_their_live_menu(self):
+        module = self.module
+        test = self
+
+        class SCENARIO_OT_library_enum_probe(bpy.types.Operator):
+            bl_idname = "scenario.library_enum_probe"
+            bl_label = "Library enum regression probe"
+            __annotations__ = module.SCENARIO_OT_library_reference.__annotations__.copy()
+
+            def execute(self, context):
+                self._menu = module.ReferenceMenu(
+                    [("image", "Image", ""), ("images", "Images", "")]
+                )
+                self.menu_id = "enum-probe"
+                module._reference_menus[self.menu_id] = self._menu
+                self.input_name = "image"
+                test.assertEqual(self.properties.input_name, "image")
+                self.properties.input_name = "images"
+                test.assertEqual(self.input_name, "images")
+                test.assertIs(module._inputs(self.properties, context), self._menu.items)
+                self.menu_id = "unknown-menu"
+                test.assertEqual(module._inputs(self.properties, context), module._NO_INPUTS)
+                return {"FINISHED"}
+
+        bpy.utils.register_class(SCENARIO_OT_library_enum_probe)
+        try:
+            self.assertEqual(bpy.ops.scenario.library_enum_probe(), {"FINISHED"})
+        finally:
+            bpy.utils.unregister_class(SCENARIO_OT_library_enum_probe)
+        gc.collect()
+        self.assertNotIn("enum-probe", module._reference_menus)

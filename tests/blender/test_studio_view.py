@@ -245,3 +245,29 @@ class StudioViewTests(unittest.TestCase):
         manager.invoke_popup.assert_called_once_with(operator, width=operator._width)
         self.assertFalse(self.workflow.sessions)
         self.assertFalse(self.workflow.calls)
+
+    def test_popup_refresh_uses_temporary_region_without_owning_operator_lifetime(self):
+        import gc
+
+        class Owner:
+            pass
+
+        owner = Owner()
+        region = MagicMock()
+        self.studio._popups[owner] = region
+        self.studio.redraw_popups()
+        region.tag_refresh_ui.assert_called_once_with()
+        del owner
+        gc.collect()
+        self.assertFalse(self.studio._popups)
+
+    def test_popup_refresh_discards_removed_region(self):
+        class Owner:
+            pass
+
+        owner = Owner()
+        region = MagicMock()
+        region.tag_refresh_ui.side_effect = ReferenceError("closed popup")
+        self.studio._popups[owner] = region
+        self.studio.redraw_popups()
+        self.assertFalse(self.studio._popups)

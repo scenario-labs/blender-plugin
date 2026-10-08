@@ -1292,6 +1292,15 @@ Page search/navigation use unsaved WindowManager state; scene form edits require
 a new price. The maintenance pump completes metadata and quote requests even
 after the popup closes. Saved jobs use the existing Jobs and Results controls.
 
+Always-required fields use the shared parsed requirement rules, including
+`required: {always: true}`, and start included. Catalog lists have session-only
+delivery authority: editing a form while listing does not discard the catalog
+or permit it to overwrite the form. Input loads and prices keep their original
+scene/form checks. At the 32-view cache limit, opening another scene reclaims an
+idle projection and its unused price; saved inputs and admitted jobs remain.
+Pending requests are never evicted. Returning to an evicted price requires a
+fresh estimate.
+
 Installed tests verify synthetic native registration, shared UI/MCP quote use,
 changed-input rejection, view changes, continued work and saved-form reload.
 These do not establish physical editing, native dropdown/confirmation behavior,

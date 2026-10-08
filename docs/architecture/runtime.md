@@ -568,7 +568,10 @@ and complete #66 remain pending.
 [workflow_controls.py](../../scenario/blender/workflow_controls.py) owns only
 scene form data and session-bound UI projections. Explicit catalog/detail actions
 use `JobSession.workflow_metadata`; the application maintenance pump drains them
-on the main thread. Changed scene/form snapshots reject late delivery. The form
+on the main thread. Changed scene/form snapshots reject late input-load and price
+delivery. Catalog lists can instead use `deliver_workflow_catalog`, which consumes
+only an issued listing from the active session and grants no scene/form authority.
+Unrelated form edits therefore do not reject native catalog refreshes. The form
 persists its raw schema and reconstructs dynamic choices after reopening without
 network access or mutation during drawing.
 
@@ -582,3 +585,8 @@ Closing Studio owns no cancellation or teardown. No new transport, store or
 worker pool is introduced. Interactive nodes, general workflow cancellation,
 integrated workflow reference upload/library selection and physical/live
 acceptance remain separate.
+
+The 32-entry UI projection cache reclaims idle entries under pressure, discarding
+any unused price but preserving saved scene inputs and independently owned jobs.
+Pending reads/quotes are never evicted. Required-field inclusion uses the same
+parsed `required_always` rules as model forms.

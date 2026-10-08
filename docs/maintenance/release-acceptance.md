@@ -235,13 +235,14 @@ and IME acceptance remain open.
 ## Native workflow validation slice
 
 The native workflow form above #325 uses ZIP SHA-256
-`fbc7f30d3ca51f890fa9c63275c64c018683fb20b06d7da88c1e812d063c1766`.
-All 137 packaged Python sources match that layer. It passes 1,089 installed tests
+`86894bcd18bb0df4b678b32c5785e2829f44d2f2c4a622345ee6f6663455ff2b`.
+All 137 packaged Python sources match that layer. It passes 1,093 installed tests
 on each macOS arm64 Blender 5.0.1, 5.1.2 and 5.2.1, with two Windows-specific
 skips per run. The unit suite passes 3,801 tests with the known SDK authentication
-expected failure. Thirteen new native regressions cover input/schema loading,
+expected failure. Seventeen native regressions cover input/schema loading,
 UI/MCP quote sharing, exact confirmation, single use, late metadata/price
-rejection, scope retirement, continued jobs and saved-form/enum reconstruction.
+rejection, scope retirement, continued jobs, saved-form/enum reconstruction,
+structured always-required fields, idle cache reclamation and catalog-only delivery.
 Workflow commands, Studio navigation and workflow controls are now explicitly
 included in the hosted baseline's module selection; inspect the current CI run
 for each platform rather than inferring those results from macOS.

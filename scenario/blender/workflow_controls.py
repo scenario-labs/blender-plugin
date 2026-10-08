@@ -5,6 +5,7 @@
 import json
 import textwrap
 from dataclasses import dataclass
+from types import SimpleNamespace
 
 import bpy
 from bpy.props import (
@@ -17,6 +18,7 @@ from bpy.props import (
 
 from ..core.api.errors import ScenarioError
 from ..core.schema.forms import display_label, schema_defaults, validate_parameters
+from ..core.schema.params import parse_schema
 from . import runtime
 
 
@@ -74,6 +76,12 @@ def load_form(form, record):
     schema = fields_for(record)
     defaults = schema_defaults(schema)
     serialized = _json(schema)
+    required = {
+        spec.name: spec.required_always
+        for spec in parse_schema(
+            SimpleNamespace(parameters=schema["parameters"], ui_config={})
+        ).specs
+    }
     rows = []
     for field in schema["parameters"]:
         name, kind = field["name"], field.get("type", "string")
@@ -94,7 +102,7 @@ def load_form(form, record):
         item.label = str(field.get("label") or display_label(item.name))
         item.kind = kind
         item.description = str(field.get("description") or "")
-        item.enabled = enabled or field.get("required") is True
+        item.enabled = enabled or required[item.name]
         item.text = value
         item.boolean = defaults.get(item.name) is True
         choices = field.get("allowedValues", field.get("allowed_values", field.get("enum")))
@@ -185,11 +193,20 @@ class WorkflowControls:
             value = None
         if value is None and create:
             if len(self.views) >= 32:
-                raise ValueError("Finish existing workflow forms before opening more")
+                for old_key, old in tuple(self.views.items()):
+                    if old.task is not None:
+                        continue
+                    if old.ticket is not None and not old.ticket.used:
+                        self.jobs.discard_workflow_quote(old.ticket.identifier)
+                    del self.views[old_key]
+                    break
+                else:
+                    raise ValueError("Wait for a running workflow request to finish")
             value = self.views[key] = WorkflowView(scene)
         return value
 
     def start(self, scene, action, *, privacy="private"):
+        self.poll()
         view = self.view(scene, create=True)
         if view.task is not None:
             raise ValueError("Wait for the current workflow request")
@@ -232,15 +249,16 @@ class WorkflowControls:
                     outcomes = self.jobs.session.drain(task=task)
                     if not outcomes:
                         raise ValueError("Missing workflow completion")
-                    result = self.jobs.session.deliver(outcomes[0], lambda value, *_: value)
-                    if signature(view.scene.scenario_workflow) != view.signature:
-                        raise ValueError("Inputs changed")
                     if view.action == "load":
+                        result = self.jobs.session.deliver(outcomes[0], lambda value, *_: value)
+                        if signature(view.scene.scenario_workflow) != view.signature:
+                            raise ValueError("Inputs changed")
                         if view.ticket is not None and not view.ticket.used:
                             self.jobs.discard_workflow_quote(view.ticket.identifier)
                         load_form(view.scene.scenario_workflow, result)
                         view.cost = ""
                     else:
+                        result = self.jobs.session.deliver_workflow_catalog(outcomes[0])
                         self.catalog = result
                         self.catalog_privacy = view.action.split(":", 1)[1]
             except Exception:

@@ -145,6 +145,7 @@ class JobCompletion:
     result: object = field(default=None, repr=False)
     error: Exception | None = field(default=None, repr=False)
     cloud_read: bool = False
+    workflow_catalog: bool = False
 
 
 @dataclass(frozen=True)
@@ -789,6 +790,7 @@ class JobSession:
                 continue
             self._pending.remove((task, origin))
             cloud_read = task in self._cloud_reads
+            workflow_catalog = task in self._workflow_reads and self._workflow_reads[task] is None
             try:
                 result = task.result()
                 record = (
@@ -836,9 +838,13 @@ class JobSession:
                 if not matches:
                     raise OriginUnavailable("Worker returned a different job origin or scope")
             except Exception as exc:
-                completion = JobCompletion(origin, error=exc, cloud_read=cloud_read)
+                completion = JobCompletion(
+                    origin, error=exc, cloud_read=cloud_read, workflow_catalog=workflow_catalog
+                )
             else:
-                completion = JobCompletion(origin, result=result, cloud_read=cloud_read)
+                completion = JobCompletion(
+                    origin, result=result, cloud_read=cloud_read, workflow_catalog=workflow_catalog
+                )
             finally:
                 self._cloud_reads.pop(task, None)
                 self._workflow_reads.pop(task, None)
@@ -846,6 +852,20 @@ class JobSession:
             self._issued[id(completion)] = completion
             completions.append(completion)
         return tuple(completions)
+
+    def deliver_workflow_catalog(self, completion):
+        """Consume only an owned catalog listing; grant no scene/form authority."""
+        _main_thread()
+        if (
+            not self._active
+            or self._issued.get(id(completion)) is not completion
+            or not completion.workflow_catalog
+        ):
+            raise OriginUnavailable("Use an unconsumed workflow catalog from this active session")
+        del self._issued[id(completion)]
+        if completion.error is not None:
+            raise completion.error
+        return completion.result
 
     def deliver_cloud_read(self, completion):
         """Consume owned cloud metadata without granting any scene application."""

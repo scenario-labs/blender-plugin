@@ -235,3 +235,56 @@ class WorkflowControlTests(unittest.TestCase):
             self.assertEqual(form.loaded_id, "fixture-enum")
             self.assertIsNone(self.ui.controls(create=False))
         self.assertFalse(self.fixture.paid)
+
+    def test_structured_always_required_input_starts_enabled(self):
+        self.ui.load_form(
+            self.form,
+            {
+                "id": "required",
+                "inputs": [
+                    {"name": "prompt", "type": "string", "required": {"always": True}},
+                ],
+            },
+        )
+        self.assertTrue(self.form.inputs["prompt"].enabled)
+        self.form.inputs["prompt"].text = "Café 雪"
+        self.assertEqual(self.ui.parameters(self.form), {"prompt": "Café 雪"})
+
+    def test_catalog_completion_survives_native_form_edit_without_overwriting_it(self):
+        self.load()
+        view = self.owner.start(self.scene, "list", privacy="public")
+        self.form.inputs["prompt"].text = "edited while loading"
+        self.scene.update_tag()
+        bpy.context.view_layer.update()
+        self.wait(view)
+        self.assertFalse(view.error)
+        self.assertTrue(self.owner.catalog)
+        self.assertEqual(self.form.inputs["prompt"].text, "edited while loading")
+
+    def test_catalog_delivery_cannot_consume_schema_or_quote_completion(self):
+        session = self.owner.jobs.session
+        task = session.workflow_metadata(self.scene, identifier="fixture-workflow")
+        task.result(5)
+        completion = session.drain(task=task)[0]
+        with self.assertRaises(submodule("blender.job_session").OriginUnavailable):
+            session.deliver_workflow_catalog(completion)
+        self.assertEqual(
+            session.deliver(completion, lambda value, *_: value)["id"], "fixture-workflow"
+        )
+
+    def test_idle_view_capacity_reclaims_quote_without_losing_saved_inputs(self):
+        ticket = self.price().ticket
+        scenes = []
+        try:
+            for index in range(32):
+                scene = bpy.data.scenes.new(f"Workflow capacity {index}")
+                scenes.append(scene)
+                self.owner.view(scene, create=True)
+            self.assertEqual(len(self.owner.views), 32)
+            self.assertIsNone(self.owner.view(self.scene))
+            self.assertTrue(ticket.used)
+            self.assertEqual(self.ui.parameters(self.form)["prompt"], "a cup")
+            self.assertFalse(self.fixture.paid)
+        finally:
+            for scene in scenes:
+                bpy.data.scenes.remove(scene)

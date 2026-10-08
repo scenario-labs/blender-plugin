@@ -73,7 +73,7 @@ jobs:
           SMOKE_PLAN_JSON: ${{ secrets.SMOKE_PLAN_JSON }}
           SMOKE_RECOVERY_PASSPHRASE: ${{ secrets.SMOKE_RECOVERY_PASSPHRASE }}
         run: uv run --locked --no-env-file python -m tools.smoke_ci prepare --root "$RUNNER_TEMP/private-smoke"
-      - name: Quote all cases and execute within the approved aggregate budget
+      - name: Upload authorized inputs, quote all cases and enforce the aggregate budget
         env:
           SCENARIO_SMOKE: "1"
           SCENARIO_TEST_API_KEY: ${{ secrets.SCENARIO_TEST_API_KEY }}
@@ -83,7 +83,8 @@ jobs:
         run: |
           uv run --locked --no-env-file python -m tools.smoke_suite budget-run \
             --plan "$RUNNER_TEMP/private-smoke/plan.json" \
-            --run-dir "$RUNNER_TEMP/private-smoke/suite" --max-cu "$MAX_TOTAL_CU"
+            --run-dir "$RUNNER_TEMP/private-smoke/suite" --max-cu "$MAX_TOTAL_CU" \
+            --upload-inputs --input-root "$GITHUB_WORKSPACE"
       - name: Encrypt the private recovery state
         if: always()
         env:

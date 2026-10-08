@@ -137,6 +137,10 @@ def test_encrypted_recovery_round_trip_and_wrong_passphrase(tmp_path, capsys):
     job.mkdir(parents=True)
     (job / "scope.key").write_bytes(b"synthetic scope key")
     (job / "jobs.sqlite3").write_bytes(b"synthetic private job id marker")
+    inputs = root / "suite-inputs"
+    inputs.mkdir()
+    (inputs / "source.bin").write_bytes(b"private staged input marker")
+    (inputs / "inputs.json").write_bytes(b"private upload binding marker")
     sealed = tmp_path / "recovery.gpg"
     ci.seal(root, sealed, environ)
     assert sealed.is_file()
@@ -150,6 +154,14 @@ def test_encrypted_recovery_round_trip_and_wrong_passphrase(tmp_path, capsys):
         assert (
             saved.extractfile("smoke/suite/image/jobs.sqlite3").read()
             == b"synthetic private job id marker"
+        )
+        assert (
+            saved.extractfile("smoke/suite-inputs/source.bin").read()
+            == b"private staged input marker"
+        )
+        assert (
+            saved.extractfile("smoke/suite-inputs/inputs.json").read()
+            == b"private upload binding marker"
         )
     with pytest.raises(subprocess.CalledProcessError):
         ci.crypt(sealed, tmp_path / "wrong.tar", b"wrong test phrase\n", decrypt=True)
@@ -173,6 +185,7 @@ def test_workflow_never_spends_on_pr_or_uploads_plaintext():
     assert "needs: gate" in workflow
     assert workflow.count("python -m tools.smoke_ci gate") == 2
     assert workflow.index("smoke_ci prepare") < workflow.index("smoke_suite budget-run")
+    assert '--upload-inputs --input-root "$GITHUB_WORKSPACE"' in workflow
     assert "path: ${{ runner.temp }}/smoke-recovery.gpg" in workflow
     assert "retention-days: 7" in workflow
     assert "persist-credentials: true" not in workflow

@@ -41,8 +41,7 @@ def total_cost(values):
         return sum((model.decimal_cost(value) for value in values), Decimal(0))
 
 
-def quote(args, settings, execute):
-    plan = json.loads(model.read_bytes(args.plan))
+def validate_plan(plan, settings):
     if not isinstance(plan, dict) or set(plan) != {"schema_version", "project_id", "cases"}:
         raise model.SmokeError("Plan requires schema_version, explicit project_id and cases")
     if plan["schema_version"] != 1 or plan["project_id"] != settings.project_id:
@@ -58,6 +57,11 @@ def quote(args, settings, execute):
         ):
             raise model.SmokeError("Each case requires a model, result kind and input object")
         model.json_bytes(case)
+    return entries
+
+
+def quote(args, settings, execute):
+    entries = validate_plan(json.loads(model.read_bytes(args.plan)), settings)
     root = args.run_dir
     root.mkdir(mode=0o700)
     model.sync_directory(root.parent)
@@ -186,6 +190,28 @@ def run(args, settings, *, execute=model.execute):
             raise model.SmokeError(
                 "Budget-authorized execution requires a positive explicit cap", 3
             )
+        plan_raw = model.read_bytes(args.plan)
+        plan = json.loads(plan_raw)
+        if isinstance(plan, dict) and plan.get("schema_version") == 2:
+            if args.command != "budget-run" or not args.upload_inputs or args.input_root is None:
+                raise model.SmokeError(
+                    "Upload input plans explicitly before quoting, or authorize automation uploads"
+                )
+            if root.exists():
+                raise model.SmokeError("Existing suites cannot prepare or upload new inputs", 4)
+            from tools import smoke_inputs
+
+            args.plan = smoke_inputs.execute(
+                SimpleNamespace(
+                    command="upload",
+                    plan=args.plan,
+                    approved_plan=model.digest(plan_raw),
+                    input_root=args.input_root,
+                    run_dir=root.with_name(root.name + "-inputs"),
+                    timeout=args.timeout,
+                ),
+                settings,
+            )
         raw = quote(args, settings, execute)
         if args.command == "quote":
             return 0
@@ -208,12 +234,17 @@ def parser():
         if command in {"quote", "budget-run"}:
             item.add_argument("--plan", type=Path, required=True)
         if command != "quote":
-            item.add_argument("--timeout", type=int, default=300, choices=range(1, 3601))
+            item.add_argument(
+                "--timeout", type=int, default=300, choices=range(1, 3601), metavar="SECONDS"
+            )
         if command in {"submit", "budget-run"}:
             item.add_argument("--max-cu", type=model.decimal_cost, required=True)
         if command == "submit":
             item.add_argument("--approved-suite", required=True)
             item.add_argument("--approved-total", type=model.decimal_cost, required=True)
+        if command == "budget-run":
+            item.add_argument("--upload-inputs", action="store_true")
+            item.add_argument("--input-root", type=Path)
     return result
 
 

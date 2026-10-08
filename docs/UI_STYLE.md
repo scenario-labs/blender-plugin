@@ -12,11 +12,37 @@ new generation requires a fresh quote. Drawing reads the selection only.
 
 Installed tests cover scoped SDK quotes, stale approvals and callback rejection,
 local saved-job isolation, normalized-equivalent edits and invalid IDs. The exact
-candidate ZIP `44d4a61354c8f91e2fe93e93e6834259216787ee1403562308de322d27844b42`
-passes 1,058 installed tests on each macOS arm64 Blender 5.0.1, 5.1.2 and 5.2.1.
-Native desktop input and screenshot acceptance remain pending. These synthetic
-tests do not establish live project permissions or supported-platform interaction
-acceptance.
+candidate ZIP `3bd0a4b03ec9afe792e9bc36ed8805f1c5df06c38dccc46d5e98bdea2d831764`
+passes 1,065 installed tests on each macOS arm64 Blender 5.0.1, 5.1.2 and 5.2.1
+(two Windows-only skips per run).
+
+Native mouse/keyboard input and screenshot inspection pass on macOS 27.0.1 arm64,
+Blender 5.1.2, using that unchanged ZIP from source `29de2245b22e64bde6f1713797fd40d3eeb844c9`
+in an isolated offline profile. The fixture contains synthetic credentials and
+one saved job per default/project scope. Native edits exercise blank → project A
+→ project B → project A → blank; a store observation confirms only the
+selected scope's saved job is returned. Enter and Tab commit edits, Tab moves
+focus to the next field, Escape preserves the previous value, and surrounding
+whitespace selects the same normalized scope. A URL entered as the project ID
+fails local validation with no catalog and no silent default fallback.
+
+Changing the selection clears the fixture's prior connection status. Switching
+to Environment keeps the explicit project field and selection; clearing it
+returns to the default saved job. After closing Preferences, native viewport
+selection, wheel zoom and the front-view key work. Captures show the complete
+field label and helper text without overlap, at the tested default scale and
+window size. The installed package and archive remain byte-identical, no Python
+socket connection/bind attempts occur, and the normal Blender profile is unchanged.
+Two preliminary input runs exited through an automation select-all shortcut;
+the completed run uses Home/Shift-End selection instead.
+
+These synthetic checks do not establish live project permissions, other OS/DPI
+interaction, paid generation, or integrated release acceptance under #68.
+
+![Blank Project ID restores API-key default scope](images/project-scope-default.png)
+![Saved credentials with an explicit project selection](images/project-scope-project-a.png)
+![Environment credentials retain the optional project selection](images/project-scope-environment.png)
+![Viewport selection and front view remain usable after editing Preferences](images/project-scope-viewport.png)
 
 ## Tabs and segmented choices
 

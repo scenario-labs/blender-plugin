@@ -7,9 +7,9 @@
     "path": "docs/UI_STYLE.md",
     "scope": "project-scope",
     "coverage": "source-reviewed",
-    "reviewed_at": "2026-10-07",
-    "base_revision": "d18a95212410a8babc37145b4ff2007e5e2cc011",
-    "limits": "Inspected the optional saved Project ID, normalized selection, shared SDK catalog/job scope configuration, context retirement, read-only projection guards and refusal of unscoped legacy requests under an override. Exact candidate 44d4a61354c8f91e2fe93e93e6834259216787ee1403562308de322d27844b42 passes 1058 installed tests on each macOS arm64 Blender 5.0.1/5.1.2/5.2.1 with unchanged normal profiles. Regressions cover selected UI/MCP quote and submission queries, stale approvals/delivery, in-flight receipts, returning to saved scope, invalid IDs no silent default fallback, and suspended prototype resumes while a project override is selected. 3807 offline unit tests pass with the known SDK authentication xfail. Native desktop input/screenshot acceptance remains pending because computer control could enumerate but not target the owned window. No live project permissions, account discovery, cross-platform desktop, paid run, production update or integrated release acceptance is claimed. Adjacent topics are not refreshed.",
+    "reviewed_at": "2026-10-08",
+    "base_revision": "fa6136ea1a5eb648eea6c2e359bc6ed3aeee3558",
+    "limits": "Optional Project ID behavior and native desktop interaction reviewed for source 29de2245b22e64bde6f1713797fd40d3eeb844c9, exact ZIP 3bd0a4b03ec9afe792e9bc36ed8805f1c5df06c38dccc46d5e98bdea2d831764. Installed matrix: 1065 tests per macOS arm64 Blender 5.0.1/5.1.2/5.2.1 run, two Windows-only skips. Native mouse/keyboard edits and inspected screenshots on macOS 27.0.1 arm64 Blender 5.1.2 verify blank/A/B/A/blank scoped saved-job selection, Enter/Tab commit, Escape cancellation, whitespace normalization, local URL rejection without default fallback, connection-status clearing, environment-source layout and viewport selection/zoom/front view. Synthetic credentials/jobs; offline mode and socket audit guard; exact installed bytes and normal profile unchanged. Preliminary automation select-all shortcuts exited Blender; completed using Home/Shift-End selection. Does not claim live project permissions, other OS/DPI desktop coverage, paid service, production updates or integrated release acceptance. Adjacent topics and their evidence are not refreshed.",
     "sources": {
       "scenario/prefs.py": "b0fa6fe1f3f946ca8194980f8de31e6be1b080464be1b9107592b29d23dc939c",
       "scenario/blender/runtime.py": "fa9b138a024e088250b2783eedb4a7a8b1acb22b0a22756ad7a9e1a04d361fbe",
@@ -23,7 +23,13 @@
       "tests/blender/test_sdk_estimates.py": "e3aae1a387ae8cefefee5b2107c9685d872322a567f9bbcbc2ad6d9050ba5a57",
       "tests/blender/test_model_generation.py": "0ea4f5ef5c1211f922d453df93b0ef98d886c19c20faea2bf477ff6c2ce57b52",
       "scenario/blender/pump.py": "6ffaf1a2a943d63796cf2d31d68e297b88c6ffd8a5389fb07605a9b8c51134d8",
-      "tests/blender/test_offline_runtime.py": "108f24d3d0837765b6fc63962487c804a6335cba8f91f11bc5483b66e2d52a98"
+      "tests/blender/test_offline_runtime.py": "108f24d3d0837765b6fc63962487c804a6335cba8f91f11bc5483b66e2d52a98",
+      "tools/desktop_review.py": "beb0d426d252667a787d211966f921e8ff796535e81b4e2558915c8d6dbc1095",
+      "tools/desktop_review_scene.py": "40d0cdf90289a286c44e70dc4d3ea5ad70337a849c7d578f161de2933f9bdfc8",
+      "docs/images/project-scope-default.png": "07d760a8e2a0dc9dede30234135b201e41ee43ecf60206a4f91d382bc3da9db0",
+      "docs/images/project-scope-project-a.png": "e1d746c96d02d27dadfe737db891626ff85ede05a4a2ce4c2ab3daa805151bf6",
+      "docs/images/project-scope-environment.png": "01e7d526df17307b75a2d277ab384cdebd2f6b682e1b0db073379d58c7d90e01",
+      "docs/images/project-scope-viewport.png": "7881647b37f6fc1727bc87415d197a837888ff21bca6832823252a5236a1be27"
     }
   }
 }

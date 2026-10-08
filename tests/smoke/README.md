@@ -199,7 +199,8 @@ actual schemas. The plan is private: inputs may contain uploaded asset IDs. It
 must not contain local file paths as substitutes for uploaded references. This
 runner still needs references prepared through shared native/MCP uploads; it does
 not yet automate the upload/capture portion of #40/#68. Case names are unique
-lowercase labels, not paths. Console output uses case numbers, not those labels.
+lowercase labels, not paths; `suite-attempt` is reserved for internal state.
+Console output uses case numbers, not those labels.
 
 ```sh
 make smoke SMOKE_ARGS="quote --plan workdir/smoke-plan.json --run-dir workdir/suite"

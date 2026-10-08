@@ -16,6 +16,7 @@ from tools.dev_config import live_settings
 NAME = re.compile(r"[a-z][a-z0-9_-]{0,39}")
 SHA256 = re.compile(r"[a-f0-9]{64}")
 MAX_CASES = 8
+ATTEMPT_MARKER = "suite-attempt"
 
 
 def cases(value):
@@ -26,6 +27,8 @@ def cases(value):
         name = case.get("name") if isinstance(case, dict) else None
         if not isinstance(name, str) or not NAME.fullmatch(name) or name in names:
             raise model.SmokeError("Use distinct lowercase case names without paths")
+        if name == ATTEMPT_MARKER:
+            raise model.SmokeError("This case name is reserved for suite state")
         names.append(name)
     return value
 
@@ -129,7 +132,7 @@ def submit(args, settings, execute):
     # Reserve the whole suite once, before any individual paid request. Failures
     # leave this marker even when a later case never starts. Recovery cannot spend.
     try:
-        model.create_file(args.run_dir / "suite-attempt", b"Never repeat this suite submission.\n")
+        model.create_file(args.run_dir / ATTEMPT_MARKER, b"Never repeat this suite submission.\n")
     except FileExistsError:
         raise model.SmokeError(
             "Suite submission was attempted; resume or inspect instead", 4

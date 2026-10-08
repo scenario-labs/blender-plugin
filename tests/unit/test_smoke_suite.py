@@ -274,6 +274,16 @@ def test_invalid_plan_rejected_before_network(fixture, change):
     assert not root.exists() and not calls
 
 
+@pytest.mark.parametrize("command", ["quote", "budget-run"])
+def test_reserved_case_name_fails_before_storage_or_network(fixture, command):
+    root, plan, value, calls, _, _, _, run = fixture
+    value["cases"][-1]["name"] = "suite-attempt"
+    plan.write_bytes(model.json_bytes(value))
+    with pytest.raises(model.SmokeError, match="reserved"):
+        run(command)
+    assert not root.exists() and not calls
+
+
 def test_budget_run_requires_positive_cap_and_reserves_total_before_spend(fixture):
     root, _, _, calls, _, _, _, run = fixture
     with pytest.raises(model.SmokeError, match="positive"):

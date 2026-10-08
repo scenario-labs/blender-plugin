@@ -288,9 +288,11 @@ scoped receipts, measured metadata, independent hashed copies and transactional
 rollback that preserves the working scene. Silent video is handled without an
 invalid sound strip. Matching movie/cut frame rates are required until explicit
 normalization is implemented. The [contract](FILM_PLAN.md#native-saved-media-review-primitive)
-records limits and installed synthetic tests. Shared current-source approval,
-worker preparation, active controls, portable export and provider/desktop
-acceptance remain separate; no prototype client or production ledger is imported.
+records limits and installed synthetic tests. The shared session now prepares
+independent copies on existing workers and separately approves native application
+with generated-source claims and receipt-only recovery. Active controls, portable
+export and provider/desktop acceptance remain separate; no prototype client or
+production ledger is imported.
 
 ## Next implementation gates
 

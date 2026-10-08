@@ -122,5 +122,7 @@ scene and removes only new data on a fully rolled-back failure. Copies persist
 for successful sequences and remain available after uncertain cleanup. Native
 trims, audio loop/duck segments and optional muted masters are covered by installed
 fixtures. It requires matching movie/cut frame rates. The [review contract](../FILM_PLAN.md#native-saved-media-review-primitive)
-describes byte/strip limits and pending shared preparation/approval, controls,
-portable export and live/desktop acceptance; this primitive supplies no job claim.
+describes byte/strip limits. Its shared session command now supplies worker
+preparation and generated-source claims before native decoding. Private copy
+identities are rechecked around decoding without GUI-thread copying or hashing.
+Native/MCP controls, portable export and live/desktop acceptance remain pending.

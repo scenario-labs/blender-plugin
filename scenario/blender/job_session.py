@@ -8,6 +8,7 @@ runtime starts until an integration explicitly creates a JobSession.
 
 import logging
 import threading
+import time
 import uuid
 from dataclasses import dataclass, field
 from weakref import WeakKeyDictionary, WeakValueDictionary
@@ -23,6 +24,7 @@ from ..core.jobs.coordinator import (
     RemoteSnapshot,
 )
 from ..core.jobs.film_media import VerifiedComposition
+from ..core.jobs.film_review_media import PreparedFilmReview
 from ..core.jobs.origins import OriginRevisions
 from ..core.jobs.results import ModelTextResult, PromptResults, VerifiedResults
 from ..core.jobs.store import JobOrigin, JobState, StoredJob
@@ -59,6 +61,14 @@ class OriginUnavailable(RuntimeError):
 
 class SessionBusy(RuntimeError):
     """Admission did not queue work because completed outcomes still need draining."""
+
+
+@dataclass(frozen=True, eq=False)
+class FilmReviewOutcome:
+    phase: str
+    application: object = field(default=None, repr=False)
+    inspection_required: bool = False
+    receipt_retry_available: bool = False
 
 
 class ImageResultUncertain(RuntimeError):
@@ -183,6 +193,8 @@ class JobSession:
         self._media_receipts = WeakKeyDictionary()
         self._model_receipts = WeakKeyDictionary()
         self._material_receipts = WeakKeyDictionary()
+        self._film_review_receipts = WeakKeyDictionary()
+        self._film_cleanup_retry_at = 0.0
         self._upload_captures = {}
         self._mesh_sources = {}
         self._history_revision = 0
@@ -491,6 +503,159 @@ class JobSession:
         self._pending.append((task, origin))
         return task
 
+    def prepare_film_review(
+        self,
+        recipe,
+        *,
+        production_id,
+        origin,
+        mode="final",
+        score_task_id="score",
+        include_master=False,
+    ):
+        _main_thread()
+        self._check_capacity()
+        self._resolve(origin)
+        root = bpy.utils.extension_path_user(
+            __package__.rsplit(".", 1)[0], path="film-review", create=True
+        )
+        task = self._workers.prepare_film_review(
+            recipe,
+            production_id=production_id,
+            origin=origin,
+            mode=mode,
+            score_task_id=score_task_id,
+            include_master=include_master,
+            root=root,
+        )
+        self._pending.append((task, origin))
+        return task
+
+    def apply_film_review(self, completion):
+        """Explicitly approve this owner's prepared cut once in its original scene."""
+        from ..core.jobs.store import _json
+        from . import film_jobs, film_review
+
+        _main_thread()
+        film_review._main_thread()
+        if self._issued.get(id(completion)) is not completion or completion.error is not None:
+            raise OriginUnavailable("Use an unconsumed Film review completion")
+        prepared = completion.result
+        if not isinstance(prepared, PreparedFilmReview):
+            raise OriginUnavailable("Prepare saved Film review media first")
+        scene, _ = self._resolve(prepared.origin)
+        raw, _ = film_jobs.recipe(scene)
+        if (
+            scene.scenario_film.production_id != prepared.production_id
+            or _json(raw) != prepared.recipe_json
+        ):
+            raise OriginUnavailable("The Film recipe changed; prepare a new review")
+        sources = dict(prepared.files)
+        master = sources.pop(prepared.master_task) if prepared.master_task is not None else None
+        film_review._plan(
+            prepared.recipe, self.scope, sources, prepared.mode, prepared.score_task_id, master
+        )
+        self._coordinator.take_film_review(prepared, origin=prepared.origin)
+        del self._issued[id(completion)]
+        claims = []
+        try:
+            for verified in prepared.jobs:
+                claims.append(
+                    self._claim_saved_application(
+                        verified,
+                        prepared.origin,
+                        "media",
+                        tuple(item.asset.asset_id for item in verified.record.results),
+                    )
+                )
+        except Exception:
+            # A lost claim response may have committed. Never build or replay it.
+            outcome = self._finish_film_review(claims, application=None, unknown=True)
+            return self._cleanup_film_review(prepared, outcome)
+        before = film_review._snapshot()
+        try:
+            application = film_review.build_prepared_review(prepared)
+        except Exception:
+            if film_review._snapshot() != before:
+                return FilmReviewOutcome("UNCERTAIN", inspection_required=True)
+            # Save the confirmed native outcome before attempting file cleanup.
+            outcome = self._finish_film_review(claims, application=None)
+            return self._cleanup_film_review(prepared, outcome)
+        return self._finish_film_review(claims, application=application)
+
+    def _cleanup_film_review(self, prepared, outcome):
+        if outcome in self._film_review_receipts:
+            # File ownership must outlive weak receipt handles and retirement.
+            self._coordinator.cleanup_film_review(prepared, defer=True)
+            claims, application, unknown, _ = self._film_review_receipts[outcome]
+            self._film_review_receipts[outcome] = (claims, application, unknown, prepared)
+            return outcome
+        try:
+            # Preflight can fail before the primitive enters its cleanup block.
+            self._coordinator.cleanup_film_review(prepared)
+        except OSError:
+            retained = FilmReviewOutcome(
+                "UNCERTAIN", outcome.application, True, outcome.receipt_retry_available
+            )
+            return retained
+        return outcome
+
+    def _finish_film_review(self, claims, *, application, unknown=False):
+        pending = []
+        command = (
+            self._coordinator.complete_application
+            if application is not None
+            else self._coordinator.fail_application
+        )
+        for claim in claims:
+            try:
+                command(claim)
+            except Exception:
+                pending.append(claim)
+        outcome = FilmReviewOutcome(
+            "UNCERTAIN" if unknown or pending else "BUILT" if application is not None else "ERROR",
+            application,
+            unknown,
+            bool(pending),
+        )
+        if pending:
+            self._film_review_receipts[outcome] = (tuple(pending), application, unknown, None)
+        return outcome
+
+    def retry_film_review_receipt(self, outcome):
+        """Retry only known saved outcomes; never copy media or invoke the builder."""
+        _main_thread()
+        if outcome not in self._film_review_receipts:
+            raise ValueError("No known Film review receipt is available to retry")
+        claims, application, unknown, cleanup = self._film_review_receipts.pop(outcome)
+        pending = []
+        for claim in claims:
+            try:
+                self._coordinator.retry_application_receipt(claim)
+            except Exception:
+                pending.append(claim)
+        result = FilmReviewOutcome(
+            "UNCERTAIN" if unknown or pending else "BUILT" if application is not None else "ERROR",
+            application,
+            unknown,
+            bool(pending),
+        )
+        if pending:
+            self._film_review_receipts[result] = (tuple(pending), application, unknown, cleanup)
+        elif cleanup is not None:
+            return self._cleanup_film_review(cleanup, result)
+        return result
+
+    def discard_film_review(self, completion):
+        """Discard an unused issued result even after its scene context changed."""
+        _main_thread()
+        if self._issued.get(id(completion)) is not completion or not isinstance(
+            completion.result, PreparedFilmReview
+        ):
+            raise ValueError("Use an unused Film media completion")
+        self._coordinator.discard_film_review(completion.result)
+        del self._issued[id(completion)]
+
     def render_local(self, spec, *, origin, source_origin):
         _main_thread()
         self._check_capacity()
@@ -632,7 +797,14 @@ class JobSession:
                         and record.intent.target_id == model_id
                     )
                 elif isinstance(
-                    record, (OriginQuote, FilmUploadResult, LocalCaptureResult, VerifiedComposition)
+                    record,
+                    (
+                        OriginQuote,
+                        FilmUploadResult,
+                        LocalCaptureResult,
+                        VerifiedComposition,
+                        PreparedFilmReview,
+                    ),
                 ):
                     matches = record.origin == origin and record.scope == self.scope
                 else:
@@ -1152,11 +1324,15 @@ class JobSession:
                 self._media_receipts.clear()
                 self._model_receipts.clear()
                 self._material_receipts.clear()
+                self._film_review_receipts.clear()
                 self.film_shots.close()
                 self.film_timeline.close()
                 self.film_capture.close()
-                with _sessions_lock:
-                    _sessions.discard(self)
+                if self._coordinator.film_review_cleanup_pending:
+                    self._film_cleanup_retry_at = time.monotonic() + 5.0
+                else:
+                    with _sessions_lock:
+                        _sessions.discard(self)
 
 
 def _session_snapshot():
@@ -1175,7 +1351,11 @@ def _reap_inactive():
     for session in _session_snapshot():
         try:
             session.prune_missing_scenes()
-            if not session._active and all(task.done() for task, _ in session._pending):
+            if (
+                not session._active
+                and time.monotonic() >= session._film_cleanup_retry_at
+                and all(task.done() for task, _ in session._pending)
+            ):
                 session.shutdown()
         except Exception:
             # Do not include transport errors/tracebacks that may contain secrets.
@@ -1238,6 +1418,8 @@ def register():
         if callback not in handlers:
             handlers.append(callback)
     _registered = True
+    if _session_snapshot() and not bpy.app.timers.is_registered(_reap_inactive):
+        bpy.app.timers.register(_reap_inactive, first_interval=0.25, persistent=True)
 
 
 def unregister():

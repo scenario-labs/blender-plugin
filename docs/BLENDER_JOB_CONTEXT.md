@@ -839,6 +839,27 @@ receipt authority; restart does not authorize replay of an unfinished claim.
 Completed jobs can use a separate `mesh_edit` local claim without changing their
 original generation outcome. Its target identifies the explicitly selected source.
 
+## Prepared Film review application
+
+`prepare_film_review` queues scoped saved-media copies/probes off the main thread
+and returns an issued completion in its original scene. Separate
+`apply_film_review` verifies the production, recipe and current origin, consumes
+the worker preparation once, and claims every generated source before building
+a new independent sequence. Imported-upload sources retain their upload records.
+The active scene, selection and frame stay unchanged. No second execution owner,
+service request or generation is introduced.
+
+Successful builds complete the existing generated-source claims; complete rollback
+fails them. Lost claim responses and partial cleanup remain uncertain without
+another build. `retry_film_review_receipt` accepts only this session's known
+outcome and retries persistence, never decoding or mutation. Unused completion
+discard and joined shutdown clean preparation copies; successful/uncertain scenes
+retain their files. See [the detailed contract](FILM_PLAN.md#shared-native-review-preparation-and-application)
+for copy identity assumptions, limits, pending controls and acceptance boundaries.
+Failed copy cleanup cannot suppress a known rollback receipt or its retry handle.
+The result retains inspection-required status after receipt recovery until the
+remaining files have been inspected; it never repeats native application.
+
 Native **Apply mesh edit** and MCP `prepare_result_application` with
 `purpose: mesh_edit` share this command and its captured target. The
 [review](MESH_APPLICATION.md#saved-mesh-edit-approval) binds policy, coordinate

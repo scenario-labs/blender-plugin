@@ -477,6 +477,8 @@ through local inspection after restart. Synthetic native composition interaction
 passes on macOS Blender 5.1.2; see [the evidence and limits](../UI_STYLE.md#film-composition-controls).
 Live provider and other OS/DPI acceptance remain pending.
 The [native review primitive](../FILM_PLAN.md#native-saved-media-review-primitive)
-now assembles independent receipt-bound picture/audio sequences, but shared
-worker preparation, current-source approval and active controls remain to wire.
-Portable export is unimplemented; no assembly entry point bypasses those gates.
+now assembles independent receipt-bound picture/audio sequences. Its
+[shared command layer](../FILM_PLAN.md#shared-native-review-preparation-and-application)
+prepares copies on existing workers, then separately checks original recipe/scene
+approval and durable generated-source application claims. Native/MCP presentation
+and approval controls still need wiring. Portable export remains unimplemented.

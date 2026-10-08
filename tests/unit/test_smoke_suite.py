@@ -6,6 +6,7 @@ import json
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
 from decimal import Decimal
+from pathlib import Path
 from threading import Event
 
 import httpx
@@ -45,12 +46,18 @@ def fixture(tmp_path):
                 "name": kind,
                 "result_kind": kind,
                 "model": kind,
-                "parameters": {"prompt": "private fixture prompt marker"},
+                "parameters": {
+                    "prompt": "private fixture prompt marker",
+                    **({"maps": ["basecolor", "normal"]} if kind == "material" else {}),
+                },
             }
             for kind in model.RESULT_KINDS
         ],
     }
     plan.write_bytes(model.json_bytes(value))
+    material_model = json.loads(
+        (Path(__file__).parents[1] / "fixtures/models/model_patina-material.json").read_text()
+    )["model"]
     calls = []
     behavior = {"cost": "0.10000000000000000000000000001", "fail": None, "hold": None}
 
@@ -60,13 +67,20 @@ def fixture(tmp_path):
         path = request.url.path
         kind = path.rsplit("/", 1)[1]
         if "/models/" in path:
+            inputs = [{"name": "prompt", "type": "string"}]
+            if kind == "material":
+                inputs += [
+                    field
+                    for field in material_model["inputs"]
+                    if field["name"] in {"maps", "numOutputs"}
+                ]
             return httpx.Response(
                 200,
                 json={
                     "model": {
                         "id": kind,
                         "type": "custom",
-                        "inputs": [{"name": "prompt", "type": "string"}],
+                        "inputs": inputs,
                     }
                 },
             )

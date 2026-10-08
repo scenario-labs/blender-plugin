@@ -8,6 +8,9 @@ onboarding gate, not the mandatory SDK-first, scope, spend or scene-safety rules
 
 ## Candidate acceptance
 
+The [candidate evidence record](release-acceptance.md) identifies the tested
+archive, completed checks and remaining release gates.
+
 [#68](https://github.com/scenario-labs/blender-plugin/issues/68) owns the release
 candidate evidence. The candidate must demonstrate:
 

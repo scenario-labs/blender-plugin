@@ -181,7 +181,8 @@ class ResultDownloader:
     """One attempt per explicit download, with no credentials or ambient proxies.
 
     The stdlib HTTPS connection has no cookie jar, netrc, authorization, proxy,
-    redirect, retry or URL-logging behavior. Debug output remains disabled.
+    automatic retry or URL-logging behavior. At most two same-host HTTPS
+    redirects are validated explicitly. Debug output remains disabled.
     The application must supply its online-access predicate and a private root
     under extension_path_user. This primitive does not mutate job state.
     """
@@ -240,28 +241,48 @@ class ResultDownloader:
             deadline = time.monotonic() + self._policy.total_timeout
             context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
             context.load_verify_locations(cafile=certifi.where())
-            connection = http.client.HTTPSConnection(
-                host,
-                timeout=min(self._policy.timeout, self._policy.total_timeout),
-                context=context,
-            )
-            connection.set_debuglevel(0)
-            connection.connect()
-            transfer_socket = connection.sock
+            transfer_socket = None
 
             def check_permission_and_deadline():
                 remaining = deadline - time.monotonic()
                 if remaining <= 0 or not self._online_access():
                     raise TransferError("Storage transfer interrupted")
-                if transfer_socket.fileno() != -1:
+                if transfer_socket is not None and transfer_socket.fileno() != -1:
                     transfer_socket.settimeout(min(self._policy.timeout, remaining))
+                return remaining
 
-            check_permission_and_deadline()
-            connection.request(
-                "GET", target, headers={"Accept-Encoding": "identity", "Connection": "close"}
-            )
-            check_permission_and_deadline()
-            response = connection.getresponse()
+            visited = {target}
+            for redirects in range(3):
+                remaining = check_permission_and_deadline()
+                connection = http.client.HTTPSConnection(
+                    host, timeout=min(self._policy.timeout, remaining), context=context
+                )
+                connection.set_debuglevel(0)
+                connection.connect()
+                transfer_socket = connection.sock
+                check_permission_and_deadline()
+                connection.request(
+                    "GET", target, headers={"Accept-Encoding": "identity", "Connection": "close"}
+                )
+                check_permission_and_deadline()
+                response = connection.getresponse()
+                if response.status not in {301, 302, 303, 307, 308}:
+                    break
+                try:
+                    if redirects == 2:
+                        raise TransferError("Storage redirect limit exceeded")
+                    next_host, next_target = self._policy.destination(
+                        response.getheader("Location")
+                    )
+                    if next_host != host or next_target in visited:
+                        raise TransferError("Storage redirect destination rejected")
+                    visited.add(next_target)
+                    target = next_target
+                finally:
+                    _cleanup(response.close)
+                    _cleanup(connection.close)
+                    connection = None
+                    transfer_socket = None
             with ExitStack() as cleanup:
                 cleanup.callback(_cleanup, response.close)
                 staging_directory = tempfile.TemporaryDirectory(

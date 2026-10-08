@@ -210,7 +210,7 @@ the default unit-test collection and are not added to PR workflows.
 | `SCENARIO_TEST_PROJECT_ID` | `tools/dev_config.py`: `live_settings` | Optional; unset/blank omits project selection. When supplied, sent as `projectId` in live-tool request queries | Developer or project-specific fixture |
 | `SCENARIO_API_KEY`, `SCENARIO_API_SECRET` | `scenario/core/config.py`: `resolve_credentials` | Used only when **Credentials > Environment** is explicitly selected in Scenario Preferences. Both values must come from that source; saved Blender credentials are the default. Not used by live-tool credential selection | Developer launching Blender |
 | `SCENARIO_API_BASE` | `tools/audit_payloads.py`: `run` | Audit-only REST base URL; default `https://api.cloud.scenario.com/v1` | Developer |
-| `SCENARIO_SMOKE` | `tools/smoke_image.py`; prototype `tests/smoke/*.py` | `=1` allows a paid smoke to run; keep this out of dotenv files | Developer, on the command line after authorization |
+| `SCENARIO_SMOKE` | `tools/smoke_image.py` (shared model smoke engine) | `=1` allows a paid smoke to run; keep this out of dotenv files | Developer, on the command line after authorization |
 | `SCENARIO_GUI_PROBE` | `scenario/blender/operators.py`: `probe_mode`; `scenario/mcp/tools_scenario.py`: `generate`; `tools/gui_screenshot.py`; `tools/capture_gui.py`; `tools/capture_gui_scene.py` | `=1` gates panel Generate and MCP generation during screenshots; it is not a general network or spending sandbox | Screenshot tool |
 | `SCENARIO_PROBE_MODEL` | `tools/gui_screenshot.py` | Selects a model for 3D-tab screenshots | Test tools |
 | `SCENARIO_SHOT_SOURCE` | `tests/blender/test_shot_planner.py` | `=1` loads the shot planner from source rather than the installed extension; unsuitable as evidence of ZIP acceptance | Test tools |
@@ -266,7 +266,7 @@ not account records, request inputs or signed URLs. It has no paid submission
 command and is never invoked by offline tests or PR CI. Live endpoint acceptance
 must be recorded separately from synthetic SDK contract results.
 
-The Image acceptance command uses the shared SDK adapter and durable job
+The model acceptance command uses the shared SDK adapter and durable job
 coordinator. Start with its non-submitting quote command, then review the exact
 cost, request and selected account/project before authorizing any paid action:
 
@@ -276,16 +276,20 @@ uv run --locked --env-file .env.local python -m tools.smoke_image quote \
 ```
 
 The parent directory must already exist; the run directory must be new. Follow
-[the Image check instructions](tests/smoke/README.md) for explicit quote-digest,
+[the model check instructions](tests/smoke/README.md) for explicit quote-digest,
 exact-cost and budget approval, single submission and restart recovery. API keys
 can use their default scope without a project ID; confirm the intended test scope
 before spending. Preserve the private run directory after uncertainty and use
 `resume`, never another submission. This tool verifies downloaded receipts, not
-Blender UI interaction, image decoding or scene application.
+Blender UI interaction, media decoding or scene application.
 
-The material, video and image-to-3D scripts remain prototype checks with incomplete
-budget/uncertain-submission protections. The protected multi-suite CI lane remains
-#40; none of these scripts runs in offline verification. uv loads every variable
+Use `tools.smoke_model quote --result-kind image|material|video|model|audio`
+with the same arguments for other result kinds. The expected kind is part of the
+saved approval. Existing Material, Video and image-to-3D scripts now accept the
+same quote/submit/resume commands through this shared engine; local references
+must first be uploaded explicitly through the native/MCP shared upload path.
+Protected multi-suite CI and its aggregate budget remain #40; none of these
+scripts runs live in offline verification. uv loads every variable
 in a dotenv file, so keep `SCENARIO_SMOKE=1` on the command line only. Credentials,
 an opt-in flag or a prepared quote alone do not authorize spending.
 

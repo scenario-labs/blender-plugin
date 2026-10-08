@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Installed worker copies, explicit native approval and receipt-only recovery."""
 
+import gc
 import hashlib
 import json
 import threading
@@ -256,6 +257,7 @@ class FilmReviewPreparationTests(unittest.TestCase):
             result = self.session.retry_film_review_receipt(outcome)
         self.assertEqual(result.phase, "ERROR")
         self.assertFalse(result.receipt_retry_available or completion.result.directory.exists())
+        self.assertFalse(self.session._coordinator.film_review_cleanup_pending)
         self.assertEqual(self.store.get("picture").state, self.storage.JobState.APPLY_FAILED)
         self.assertTrue(self.source.exists())
 
@@ -333,6 +335,93 @@ class FilmReviewPreparationTests(unittest.TestCase):
         self.session.shutdown()
         self.assertFalse(completion.result.directory.exists())
         self.assertTrue(self.source.exists())
+
+    def failed_review_receipt(self):
+        completion = self.ready()
+        original = self.store.transition
+
+        def fail_receipt(*args, **kwargs):
+            if kwargs.get("state") == self.storage.JobState.APPLY_FAILED:
+                raise OSError("receipt unavailable")
+            return original(*args, **kwargs)
+
+        with (
+            patch.object(self.builder, "_sound", side_effect=ValueError("decode failed")),
+            patch.object(self.store, "transition", side_effect=fail_receipt),
+        ):
+            outcome = self.session.apply_film_review(completion)
+        self.assertTrue(outcome.receipt_retry_available)
+        self.assertEqual(self.builder._snapshot(), self.before)
+        self.assertTrue(completion.result.directory.exists())
+        return completion, outcome
+
+    def test_retirement_cleans_rolled_back_media_without_retrying_receipt(self):
+        completion, outcome = self.failed_review_receipt()
+        with (
+            patch.object(
+                self.builder, "build_prepared_review", side_effect=AssertionError("rebuild")
+            ),
+            patch.object(self.store, "transition", side_effect=AssertionError("receipt replay")),
+        ):
+            self.module._load_pre(None)
+            self.module._reap_inactive()
+        self.assertFalse(completion.result.directory.exists())
+        self.assertNotIn(self.session, self.module._session_snapshot())
+        self.assertFalse(self.session._film_review_receipts)
+        with self.assertRaises(ValueError):
+            self.session.retry_film_review_receipt(outcome)
+        self.assertEqual(self.store.get("picture").state, self.storage.JobState.APPLYING)
+        self.assertTrue(self.source.exists())
+
+    def test_retired_receipt_cleanup_failure_keeps_owner_until_retry(self):
+        completion, _ = self.failed_review_receipt()
+        self.session.deactivate()
+        with (
+            patch.object(self.media, "discard_directory", side_effect=PermissionError("locked")),
+            patch.object(self.module.time, "monotonic", return_value=100),
+            self.assertLogs("scenario", level="WARNING") as logged,
+        ):
+            self.module._reap_inactive()
+        self.assertIn(str(completion.result.directory), "\n".join(logged.output))
+        self.assertIn(self.session, self.module._session_snapshot())
+        self.assertTrue(self.session._coordinator.film_review_cleanup_pending)
+        self.assertFalse(self.session._film_review_receipts)
+        with patch.object(self.module.time, "monotonic", return_value=106):
+            self.module._reap_inactive()
+        self.assertFalse(completion.result.directory.exists())
+        self.assertNotIn(self.session, self.module._session_snapshot())
+        self.assertEqual(self.store.get("picture").state, self.storage.JobState.APPLYING)
+        self.assertTrue(self.source.exists())
+
+    def test_dropped_receipt_handle_does_not_drop_unused_media_ownership(self):
+        completion, outcome = self.failed_review_receipt()
+        del outcome
+        gc.collect()
+        self.assertFalse(self.session._film_review_receipts)
+        self.assertTrue(self.session._coordinator.film_review_cleanup_pending)
+        self.session.shutdown()
+        self.assertFalse(completion.result.directory.exists())
+        self.assertNotIn(self.session, self.module._session_snapshot())
+        self.assertEqual(self.store.get("picture").state, self.storage.JobState.APPLYING)
+
+    def test_retirement_keeps_built_media_with_pending_success_receipt(self):
+        completion = self.ready()
+        original = self.store.transition
+
+        def fail_receipt(*args, **kwargs):
+            if kwargs.get("state") == self.storage.JobState.APPLIED:
+                raise OSError("receipt unavailable")
+            return original(*args, **kwargs)
+
+        with patch.object(self.store, "transition", side_effect=fail_receipt):
+            outcome = self.session.apply_film_review(completion)
+        self.assertTrue(outcome.receipt_retry_available)
+        self.assertIsNotNone(outcome.application)
+        self.session.shutdown()
+        self.assertTrue(completion.result.directory.exists())
+        self.assertFalse(self.session._coordinator.film_review_cleanup_pending)
+        self.assertNotIn(self.session, self.module._session_snapshot())
+        self.assertEqual(self.store.get("picture").state, self.storage.JobState.APPLYING)
 
     def test_reaper_retains_cleanup_owner_logs_location_and_spaces_retries(self):
         completion = self.ready()

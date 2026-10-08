@@ -380,6 +380,26 @@ class JobCoordinator:
             self._film_review_cleanup_reported.discard(prepared.directory)
             del self._film_reviews[id(prepared)]
 
+    def cleanup_film_review(self, prepared, *, defer=False):
+        """Own consumed, unused copies until deletion or joined shutdown cleanup.
+
+        Defer deletion while the caller can still retry a rollback receipt.
+        Scene-referenced media must never enter this cleanup ownership.
+        """
+        from .film_review_media import discard
+
+        with self._lock:
+            self._film_review_cleanup.add(prepared.directory)
+            if defer:
+                return
+            try:
+                discard(prepared)
+            except OSError:
+                self._report_film_review_cleanup(prepared.directory)
+                raise
+            self._film_review_cleanup.remove(prepared.directory)
+            self._film_review_cleanup_reported.discard(prepared.directory)
+
     def render_local(self, spec, *, origin, source_origin, cancel):
         """Render local bytes outside locks; recheck both origins before and after."""
 

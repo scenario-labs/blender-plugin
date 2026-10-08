@@ -584,16 +584,15 @@ class JobSession:
         return self._finish_film_review(claims, application=application)
 
     def _cleanup_film_review(self, prepared, outcome):
-        from ..core.jobs.film_review_media import discard
-
         if outcome in self._film_review_receipts:
+            # File ownership must outlive weak receipt handles and retirement.
+            self._coordinator.cleanup_film_review(prepared, defer=True)
             claims, application, unknown, _ = self._film_review_receipts[outcome]
             self._film_review_receipts[outcome] = (claims, application, unknown, prepared)
             return outcome
         try:
             # Preflight can fail before the primitive enters its cleanup block.
-            if prepared.directory.exists():
-                discard(prepared)
+            self._coordinator.cleanup_film_review(prepared)
         except OSError:
             retained = FilmReviewOutcome(
                 "UNCERTAIN", outcome.application, True, outcome.receipt_retry_available

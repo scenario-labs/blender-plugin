@@ -801,7 +801,12 @@ can retire an unused completion after its original context changes.
 Prepared copies remain owned by the session during native rollback. Known rollback
 outcomes are saved before file deletion; pending receipts retain those copies until
 `retry_film_review_receipt` saves the outcome and then retries cleanup, without
-building again. A deletion failure requires cleanup inspection and never leaves
+building again. The coordinator owns these unused copies independently of the
+receipt handle. Retirement removes them after workers join even if a rollback
+receipt remains unsaved, without retrying that receipt or changing durable
+inspection state. Dropping a receipt handle cannot abandon file ownership.
+Successful or uncertain native scenes never transfer their media to this cleanup.
+A deletion failure requires cleanup inspection and never leaves
 an otherwise confirmed rollback applying solely because files could not be removed.
 If preparation or its final admission fails and file deletion also fails, the
 original error is preserved with a cleanup note. The coordinator retains those

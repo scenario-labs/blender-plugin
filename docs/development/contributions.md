@@ -1,8 +1,10 @@
 # Commits and pull requests
 
-Use a short-lived `type/issue-description` branch and target `main`. Respect the
-recorded base of an existing stacked PR; do not silently retarget it. Review the
-complete PR diff and dependencies. Preserve unrelated work in other branches.
+Use a short-lived `type/issue-description` branch. Independent PRs and the bottom
+of a stack target `main`; dependent PRs target their immediate parent branch.
+Respect the recorded base of an existing stacked PR; do not silently retarget it.
+Review the complete incremental diff and dependencies. Preserve unrelated work
+in other branches.
 
 `commitlint.config.ts` is authoritative for Conventional Commit types, scopes,
 the 120-character header limit and the no-em-dash rule. Choose the type from the
@@ -103,6 +105,44 @@ Do not manually bump package versions or edit release notes in an unrelated PR.
 Read the actual release workflow/configuration before describing release behavior.
 New release tags use `blender-plugin-vX.Y.Z`; package versions stay `X.Y.Z` and
 release ZIPs stay `scenario-X.Y.Z.zip`. Preserve historical `v*` tags and releases.
+
+## Stacked pull requests
+
+Use a stack when a change needs another unmerged PR. For example,
+`main <- first <- second <- third` gives each PR an incremental review diff.
+Unrelated changes remain independent PRs targeting `main`.
+
+Record the parent PR, exact parent commit used for validation and merge order in
+each description. Describe and validate that PR's own changes against its parent;
+keep inherited work out of its summary and squash message. Preserve existing
+review discussions, contributor trailers and artifact-specific validation limits.
+Knowledge evidence still uses a durable main ancestor as
+[`base_revision`](../maintenance/knowledge.md#topic-concepts-and-okf).
+
+Before retargeting an existing chain, fetch its current heads and inspect their
+ancestry. Changing the base alone cannot repair diverged history. Rebase from the
+bottom upward, replaying only each child's commits after its recorded old parent
+onto the new parent. Reconcile copied fixes against the resulting code and tests
+instead of reintroducing obsolete versions. Inspect the incremental diff, run
+appropriate validation, and push rewritten branches with an explicit
+`--force-with-lease=<ref>:<observed-sha>`. Stop if a remote head changed; inspect
+that work before retrying. Retarget only to the verified immediate dependency.
+
+When available, register the chain as a
+[native GitHub stack](https://docs.github.com/en/pull-requests/reference/stacked-pull-requests)
+using the [stack API](https://docs.github.com/en/rest/pulls/stacks). Confirm its
+order, trunk and current heads after registration. GitHub applies trunk protections
+and checks to native stacks. Check the actual required statuses after restacking;
+local validation and earlier approvals do not establish approval of a new head.
+
+Merge only the scope explicitly authorized by the maintainer. In our usual
+one-at-a-time workflow, start with the bottom PR. GitHub can merge a selected
+native-stack PR together with its unmerged ancestors, so choosing a higher PR
+requires authorization for all of them. After a squash merge, fetch and inspect
+GitHub's updated targets and heads before doing any local rebase. Reconcile
+remaining descendants in order if automatic restacking did not finish, verify
+that merged changes no longer appear in their diffs, and refresh affected checks,
+descriptions and requested reviews. Stacking never authorizes release publication.
 
 ## Local hook maintenance
 

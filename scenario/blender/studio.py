@@ -15,11 +15,13 @@ from . import (
     film_timeline_controls,
     panels,
     runtime,
+    workflow_controls,
 )
 
 PAGES = (
     ("CREATE", "Create", "Use the same model, prompt, references and settings as the composer"),
     ("FILM", "Film", "Prepare Film tasks, shots, captures, timeline and composition"),
+    ("WORKFLOWS", "Workflows", "Choose a workflow, edit its inputs and approve its exact price"),
     ("JOBS", "Jobs", "Inspect running and saved jobs in the selected connection"),
     ("RESULTS", "Results", "Inspect results, reuse references and explicitly apply saved assets"),
     ("CONNECTION", "Connection", "Inspect account/project selection and local agent setup"),
@@ -100,6 +102,8 @@ def draw_view(layout, context, *, width):
         draw_panel(layout, context, FILM_PANELS[view.film_page])
     elif view.page == "JOBS":
         draw_panel(layout, context, panels.SCENARIO_PT_jobs)
+    elif view.page == "WORKFLOWS":
+        workflow_controls.draw(layout, context)
     elif view.page == "RESULTS":
         draw_panel(layout, context, panels.SCENARIO_PT_generations)
     else:

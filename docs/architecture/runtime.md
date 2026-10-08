@@ -540,8 +540,8 @@ The original parameters, normalized payload/defaults and exact decimal price are
 separate fields. Approval consumes the handle before persistence and requires
 unchanged input, scene and connection. Results stay saved for explicit application;
 there is no workflow-specific worker pool, store or automatic import. Native
-workflow forms, expanded Studio, interactive nodes, general cancellation and live
-output acceptance remain separate integration gates under #64/#65/#66/#68.
+workflow controls below now share those commands. Interactive nodes, general
+cancellation and live output acceptance remain open under #64/#65/#66/#68.
 
 
 ## Explicit expanded native view
@@ -560,5 +560,25 @@ tagging, read-only drawing and continued jobs. The composer commits on blur and
 passes the same outside click to native controls. Offline desktop evidence covers
 first-click Studio opening, Unicode prompt edits, populated-form scrolling,
 quote-preserving navigation, continued saved-job polling, small-window fit,
-Escape and viewport return. Alternate-DPI/IME acceptance, workflow/library forms
+Escape and viewport return. Alternate-DPI/IME acceptance, workflow interaction/library forms
 and complete #66 remain pending.
+
+## Native workflow controls
+
+[workflow_controls.py](../../scenario/blender/workflow_controls.py) owns only
+scene form data and session-bound UI projections. Explicit catalog/detail actions
+use `JobSession.workflow_metadata`; the application maintenance pump drains them
+on the main thread. Changed scene/form snapshots reject late delivery. The form
+persists its raw schema and reconstructs dynamic choices after reopening without
+network access or mutation during drawing.
+
+Pricing and confirmation use the existing `ModelJobs.quote_workflow` and
+`submit_workflow` commands. Native and MCP entry points share the same quote
+registry, exact-price check, operation tag, durable submission and results.
+The confirmation shows normalized payload values, including service defaults.
+Credential/project retirement discards the UI controller with the shared owner;
+file-load retirement removes approval handles while saved scene inputs survive.
+Closing Studio owns no cancellation or teardown. No new transport, store or
+worker pool is introduced. Interactive nodes, general workflow cancellation,
+integrated workflow reference upload/library selection and physical/live
+acceptance remain separate.

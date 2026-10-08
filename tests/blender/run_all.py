@@ -71,6 +71,9 @@ BASELINE = (
     "test_sdk_uploads",
     "test_model_payload_validation",
     "test_world_application",
+    "test_workflow_commands",
+    "test_studio_view",
+    "test_workflow_controls",
 )
 
 

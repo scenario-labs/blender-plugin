@@ -1271,6 +1271,30 @@ the correct fixture, but control-tool clicks did not visibly activate the compos
 or Studio. It supplies no new physical-input acceptance; the screenshots and
 interaction results above remain evidence for their explicitly identified ZIP.
 
-This view exposes existing creation/Film/result controls. Workflow input forms,
-asset-library search and complete retained Studio acceptance remain separate;
-local workflow commands alone do not provide those forms.
+This view exposes existing creation/Film/result controls and the workflow form
+below. Asset-library search, interactive workflow nodes and complete retained
+Studio acceptance remain separate.
+
+### Workflow controls
+
+Studio's Workflows page has explicit private/public refresh actions, a local
+name search and a Workflow ID fallback. Loading inputs asks for confirmation
+before replacing the form. A saved per-scene schema drives labeled text, numeric,
+boolean, fixed-choice and structured fields. Structured values remain editable
+as JSON; file fields name the requirement for uploaded asset IDs. A field's
+inclusion checkbox omits it from the request, allowing declared defaults.
+
+**Request workflow price** starts a shared session quote. **Generate** opens a
+separate confirmation with normalized inputs, scene and the full exact CU price.
+Cancel submits nothing; confirmation rechecks the form, scene, selected session
+and original quote. Drawing is read-only and never starts catalog or job workers.
+Page search/navigation use unsaved WindowManager state; scene form edits require
+a new price. The maintenance pump completes metadata and quote requests even
+after the popup closes. Saved jobs use the existing Jobs and Results controls.
+
+Installed tests verify synthetic native registration, shared UI/MCP quote use,
+changed-input rejection, view changes, continued work and saved-form reload.
+These do not establish physical editing, native dropdown/confirmation behavior,
+scrolling, screenshots, DPI or viewport focus. Keep this UI layer in draft until
+that desktop proof is supplied. Interactive nodes, integrated workflow reference
+upload/library selection and live outputs remain outside this implementation.

@@ -327,9 +327,10 @@ is unsaved WindowManager data, and no startup/file-load hook opens the view.
 No selected-source runtime, font or icon is copied by this presentation layer.
 
 This is a bounded adaptation of the retained expanded-view responsibility, not
-complete source/UI adoption. Workflow forms, library search and broader compact
-composer replacement remain. Offline native interaction and screenshots cover
-prompt handoff/editing, populated-form scrolling, quote-preserving navigation,
-continued saved-job polling, small-window fit and viewport return. Alternate-DPI
-and IME acceptance remain pending. The [UI guide](UI_STYLE.md#explicit-studio-view)
-records that boundary.
+complete source/UI adoption. Native workflow input/approval controls now reuse
+the shared session. Library search and broader compact composer replacement
+remain. Earlier Studio interaction evidence covers prompt handoff/editing,
+populated-form scrolling, quote-preserving navigation, continued saved-job
+polling, small-window fit and viewport return. The new workflow controls still
+need native interaction proof; alternate-DPI and IME acceptance remain pending.
+The [UI guide](UI_STYLE.md#explicit-studio-view) records those boundaries.

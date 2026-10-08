@@ -1,0 +1,476 @@
+# SPDX-FileCopyrightText: 2026 Scenario Inc.
+# SPDX-License-Identifier: GPL-3.0-or-later
+"""Native workflow forms over the shared session, quotes and durable jobs."""
+
+import json
+import textwrap
+from dataclasses import dataclass
+
+import bpy
+from bpy.props import (
+    BoolProperty,
+    CollectionProperty,
+    EnumProperty,
+    PointerProperty,
+    StringProperty,
+)
+
+from ..core.api.errors import ScenarioError
+from ..core.schema.forms import display_label, schema_defaults, validate_parameters
+from . import runtime
+
+
+def _json(value):
+    return json.dumps(value, sort_keys=True, ensure_ascii=False, allow_nan=False)
+
+
+def _choices(self, context):
+    # Keep enum strings alive after reopening a saved form. Only this plain
+    # Python cache changes during drawing, never RNA or request state.
+    key = ("workflow_choices", self.options)
+    if key not in runtime.state.enum_cache:
+        values = json.loads(self.options or "[]")
+        runtime.state.enum_cache[key] = [
+            (str(i), str(value), "") for i, value in enumerate(values)
+        ] or [("NONE", "No choices", "")]
+    return runtime.state.enum_cache[key]
+
+
+class ScenarioWorkflowInput(bpy.types.PropertyGroup):
+    name: StringProperty()
+    label: StringProperty()
+    kind: StringProperty()
+    description: StringProperty()
+    enabled: BoolProperty(name="Include input", default=True)
+    text: StringProperty(name="Value")
+    boolean: BoolProperty(name="Value")
+    options: StringProperty()
+    choice: EnumProperty(name="Value", items=_choices)
+
+
+class ScenarioWorkflowForm(bpy.types.PropertyGroup):
+    workflow_id: StringProperty(name="Workflow ID")
+    loaded_id: StringProperty()
+    title: StringProperty()
+    schema_json: StringProperty()
+    inputs: CollectionProperty(type=ScenarioWorkflowInput)
+
+
+def fields_for(record):
+    fields = record.get("inputs_definition")
+    if fields is None:
+        fields = record.get("inputs")
+    if isinstance(fields, dict):
+        fields = [dict(value, name=name) for name, value in fields.items()]
+    schema = {"parameters": fields}
+    # Validate names, types and conditional relationships before changing the form.
+    schema_defaults(schema)
+    if len(fields) > 128:
+        raise ValueError("This workflow has too many inputs for the native form")
+    return schema
+
+
+def load_form(form, record):
+    schema = fields_for(record)
+    defaults = schema_defaults(schema)
+    serialized = _json(schema)
+    rows = []
+    for field in schema["parameters"]:
+        name, kind = field["name"], field.get("type", "string")
+        value = defaults.get(name)
+        is_text = kind in {"string", "file", "model"}
+        rows.append(
+            (
+                field,
+                kind,
+                name in defaults,
+                "" if value is None else str(value) if is_text else _json(value),
+            )
+        )
+    form.inputs.clear()
+    for field, kind, enabled, value in rows:
+        item = form.inputs.add()
+        item.name = field["name"]
+        item.label = str(field.get("label") or display_label(item.name))
+        item.kind = kind
+        item.description = str(field.get("description") or "")
+        item.enabled = enabled or field.get("required") is True
+        item.text = value
+        item.boolean = defaults.get(item.name) is True
+        choices = field.get("allowedValues", field.get("allowed_values", field.get("enum")))
+        if isinstance(choices, list) and choices and not kind.endswith("_array"):
+            item.options = _json(choices)
+            default = _json(defaults.get(item.name))
+            item.choice = str(next((i for i, v in enumerate(choices) if _json(v) == default), 0))
+    form.schema_json = serialized
+    form.loaded_id = form.workflow_id = record["id"]
+    form.title = str(record.get("name") or record["id"])
+
+
+def parameters(form):
+    if not form.loaded_id or form.loaded_id != form.workflow_id or not form.schema_json:
+        raise ValueError("Load the selected workflow's inputs first")
+    values = {}
+    for item in form.inputs:
+        if not item.enabled:
+            continue
+        if item.options:
+            choices = json.loads(item.options)
+            index = int(item.choice)
+            if not 0 <= index < len(choices):
+                raise ValueError(f"Choose a value for {item.label}")
+            value = choices[index]
+        elif item.kind == "boolean":
+            value = item.boolean
+        elif item.kind in {"string", "file", "model"}:
+            value = item.text
+        else:
+            try:
+                value = json.loads(item.text)
+            except (ValueError, TypeError) as error:
+                raise ValueError(f"Check the value for {item.label}") from error
+        values[item.name] = value
+    errors = validate_parameters(json.loads(form.schema_json), values)
+    if errors:
+        raise ValueError("\n".join(errors))
+    return values
+
+
+def signature(form):
+    return _json(
+        [
+            form.workflow_id,
+            form.loaded_id,
+            form.schema_json,
+            [
+                (
+                    x.name,
+                    x.kind,
+                    x.enabled,
+                    x.text,
+                    x.boolean,
+                    x.options,
+                    x.choice if x.options else "",
+                )
+                for x in form.inputs
+            ],
+        ]
+    )
+
+
+@dataclass
+class WorkflowView:
+    scene: object
+    task: object = None
+    action: str = ""
+    signature: str = ""
+    ticket: object = None
+    cost: str = ""
+    error: str = ""
+
+
+class WorkflowControls:
+    """Own only UI projections; workers and durable jobs belong to ModelJobs."""
+
+    def __init__(self, jobs):
+        self.jobs = jobs
+        self.views = {}
+        self.catalog = []
+        self.catalog_privacy = ""
+
+    def view(self, scene, *, create=False):
+        key = scene.as_pointer()
+        value = self.views.get(key)
+        if value is not None and value.scene != scene:
+            value = None
+        if value is None and create:
+            if len(self.views) >= 32:
+                raise ValueError("Finish existing workflow forms before opening more")
+            value = self.views[key] = WorkflowView(scene)
+        return value
+
+    def start(self, scene, action, *, privacy="private"):
+        view = self.view(scene, create=True)
+        if view.task is not None:
+            raise ValueError("Wait for the current workflow request")
+        form = scene.scenario_workflow
+        view.error = ""
+        if action == "price":
+            values = parameters(form)
+            if view.ticket is not None and not view.ticket.used:
+                self.jobs.discard_workflow_quote(view.ticket.identifier)
+            view.ticket = self.jobs.quote_workflow(scene, form.workflow_id, values)
+            view.task = view.ticket.task
+            view.cost = ""
+        elif action in {"load", "list"}:
+            if action == "load" and not form.workflow_id.strip():
+                raise ValueError("Choose a workflow first")
+            view.task = self.jobs.session.workflow_metadata(
+                scene, identifier=form.workflow_id if action == "load" else None, privacy=privacy
+            )
+        else:
+            raise ValueError("Unknown workflow action")
+        view.signature = signature(form)
+        view.action = action + (":" + privacy if action == "list" else "")
+        return view
+
+    def poll(self):
+        if not self.jobs.session.active:
+            return
+        for view in self.views.values():
+            if view.task is None or not view.task.done():
+                continue
+            task, view.task = view.task, None
+            try:
+                if view.action == "price":
+                    estimate = self.jobs.finish_quote(view.ticket)
+                    if signature(view.scene.scenario_workflow) != view.signature:
+                        self.jobs.discard_workflow_quote(view.ticket.identifier)
+                        raise ValueError("Inputs changed")
+                    view.cost = str(estimate.cost)
+                else:
+                    outcomes = self.jobs.session.drain(task=task)
+                    if not outcomes:
+                        raise ValueError("Missing workflow completion")
+                    result = self.jobs.session.deliver(outcomes[0], lambda value, *_: value)
+                    if signature(view.scene.scenario_workflow) != view.signature:
+                        raise ValueError("Inputs changed")
+                    if view.action == "load":
+                        if view.ticket is not None and not view.ticket.used:
+                            self.jobs.discard_workflow_quote(view.ticket.identifier)
+                        load_form(view.scene.scenario_workflow, result)
+                        view.cost = ""
+                    else:
+                        self.catalog = result
+                        self.catalog_privacy = view.action.split(":", 1)[1]
+            except Exception:
+                view.error = "Could not finish this workflow request. Check the connection and unchanged inputs, then try again."
+                view.cost = ""
+
+    def ready(self, scene):
+        view = self.view(scene)
+        if (
+            view is None
+            or view.task is not None
+            or not view.cost
+            or view.ticket is None
+            or view.ticket.used
+            or signature(scene.scenario_workflow) != view.signature
+        ):
+            raise ValueError("Request a fresh workflow price")
+        self.jobs.require_quote(view.ticket.identifier)
+        return view
+
+    def approve(self, scene, quote_id, cost):
+        view = self.ready(scene)
+        if view.ticket.identifier != quote_id or view.cost != cost:
+            raise ValueError("The workflow approval changed")
+        form = scene.scenario_workflow
+        return self.jobs.submit_workflow(
+            quote_id, scene, form.workflow_id, parameters(form), approved_cost=cost
+        )
+
+
+def controls(*, create=True):
+    if create:
+        jobs = runtime.ensure_model_jobs()
+        if runtime.state.workflow_controls is None:
+            runtime.state.workflow_controls = WorkflowControls(jobs)
+    owner = runtime.state.workflow_controls
+    if (
+        owner is None
+        or owner.jobs is not runtime.state.model_jobs
+        or not owner.jobs.session.active
+        or not runtime.catalog_selection_matches()
+    ):
+        return None
+    return owner
+
+
+def _error(operator, message):
+    operator.report({"WARNING"}, message)
+    return {"CANCELLED"}
+
+
+class SCENARIO_OT_workflow_catalog(bpy.types.Operator):
+    bl_idname = "scenario.workflow_catalog"
+    bl_label = "Refresh workflows"
+    privacy: StringProperty(default="private", options={"HIDDEN", "SKIP_SAVE"})
+
+    def execute(self, context):
+        try:
+            if self.privacy not in {"private", "public"}:
+                raise ValueError("Invalid privacy")
+            controls().start(context.scene, "list", privacy=self.privacy)
+        except Exception:
+            return _error(self, "Enable online access and wait for any workflow request to finish")
+        return {"FINISHED"}
+
+
+class SCENARIO_OT_load_workflow(bpy.types.Operator):
+    bl_idname = "scenario.load_workflow"
+    bl_label = "Load workflow inputs"
+    bl_description = "Read this workflow and replace its input form with the saved defaults"
+    workflow_id: StringProperty(options={"HIDDEN", "SKIP_SAVE"})
+
+    def invoke(self, context, event):
+        return context.window_manager.invoke_confirm(self, event)
+
+    def execute(self, context):
+        try:
+            owner = controls()
+            view = owner.view(context.scene)
+            if view is not None and view.task is not None:
+                raise ValueError("Pending workflow request")
+            if self.workflow_id:
+                context.scene.scenario_workflow.workflow_id = self.workflow_id
+            # Flush this explicit selection before capturing the read's scene revision.
+            context.view_layer.update()
+            owner.start(context.scene, "load")
+        except Exception:
+            return _error(self, "Choose a workflow and wait for any pending request")
+        return {"FINISHED"}
+
+
+class SCENARIO_OT_estimate_workflow(bpy.types.Operator):
+    bl_idname = "scenario.estimate_workflow"
+    bl_label = "Request workflow price"
+
+    def execute(self, context):
+        try:
+            controls().start(context.scene, "price")
+        except ValueError as error:
+            return _error(self, str(error))
+        except Exception:
+            return _error(self, "Check online access, the workflow and its inputs")
+        return {"FINISHED"}
+
+
+class SCENARIO_OT_generate_workflow(bpy.types.Operator):
+    bl_idname = "scenario.generate_workflow"
+    bl_label = "Generate workflow"
+    bl_description = "Approve the exact displayed price and save one workflow job"
+
+    def invoke(self, context, event):
+        try:
+            self._owner = controls()
+            view = self._owner.ready(context.scene)
+            self._scene = context.scene
+            self._scene_name = context.scene.name
+            self._quote_id, self._cost = view.ticket.identifier, view.cost
+            self._title = context.scene.scenario_workflow.title
+            self._payload = view.ticket.quote.estimate.payload
+        except Exception:
+            return _error(self, "Request a current workflow price first")
+        return context.window_manager.invoke_props_dialog(self, width=540)
+
+    def draw(self, context):
+        self.layout.label(text=self._title)
+        self.layout.label(text=f"Scene: {self._scene_name}")
+        for name, value in self._payload.items():
+            for line in textwrap.wrap(f"{display_label(name)}: {_json(value)}", 70):
+                self.layout.label(text=line)
+        self.layout.label(text=f"Exact price: {self._cost} CU")
+        self.layout.label(text="Submit once. Inspect saved jobs after an uncertain response.")
+        self.layout.label(
+            text="Results require separate application. Running workflows cannot be cancelled here."
+        )
+
+    def execute(self, context):
+        try:
+            if controls() is not self._owner or context.scene != self._scene:
+                raise ValueError("Context changed")
+            self._owner.approve(self._scene, self._quote_id, self._cost)
+        except Exception:
+            return _error(self, "Review this workflow and inspect saved jobs before continuing")
+        return {"FINISHED"}
+
+
+def draw(layout, context):
+    form = context.scene.scenario_workflow
+    owner = controls(create=False)
+    box = layout.box()
+    box.label(text="Workflow", icon="NODETREE")
+    row = box.row(align=True)
+    for privacy in ("private", "public"):
+        row.operator("scenario.workflow_catalog", text=privacy.title()).privacy = privacy
+    if owner is not None:
+        query = context.window_manager.scenario_workflow_query
+        box.prop(context.window_manager, "scenario_workflow_query", text="Search")
+        rows = [
+            r for r in owner.catalog if query.casefold() in str(r.get("name") or r["id"]).casefold()
+        ]
+        for record in rows[:40]:
+            box.operator(
+                "scenario.load_workflow", text=str(record.get("name") or record["id"])
+            ).workflow_id = record["id"]
+        if len(rows) > 40:
+            box.label(text="Refine the search to show more workflows")
+    box.prop(form, "workflow_id")
+    box.operator("scenario.load_workflow")
+    if form.loaded_id:
+        box = layout.box()
+        box.label(text=form.title or "Inputs", icon="PREFERENCES")
+        box.label(text="Unchecked inputs use the workflow defaults when available")
+        schema = json.loads(form.schema_json)
+        for item, field in zip(form.inputs, schema["parameters"], strict=False):
+            row = box.row()
+            row.prop(item, "enabled", text="")
+            value = row.row()
+            value.enabled = item.enabled
+            prop = "choice" if item.options else "boolean" if item.kind == "boolean" else "text"
+            value.prop(item, prop, text=item.label)
+            if item.kind in {"file", "file_array"}:
+                box.label(text="Use uploaded asset IDs; local files must be uploaded separately")
+            if item.kind not in {"string", "file", "model", "boolean", "number", "integer"}:
+                box.label(text="Structured value (JSON)")
+            allowed = field.get("allowedValues", field.get("allowed_values", field.get("enum")))
+            if allowed:
+                box.label(text="Choices: " + ", ".join(str(v) for v in allowed))
+    view = owner.view(context.scene) if owner is not None else None
+    if view is not None and view.task is not None:
+        layout.label(text="Loading workflow request...", icon="TIME")
+    elif view is not None and view.error:
+        layout.label(text="Workflow request needs review", icon="ERROR")
+    row = layout.row()
+    row.enabled = runtime.online() and (view is None or view.task is None)
+    row.operator("scenario.estimate_workflow")
+    ready = False
+    if owner is not None:
+        try:
+            view = owner.ready(context.scene)
+            ready = True
+        except (ValueError, ReferenceError, ScenarioError):
+            pass
+    row = layout.row()
+    row.scale_y = 1.5
+    row.enabled = ready and runtime.online()
+    row.operator(
+        "scenario.generate_workflow",
+        text=f"Generate ({view.cost} CU)" if ready else "Generate (request price)",
+        icon="PLAY",
+    )
+
+
+CLASSES = (
+    ScenarioWorkflowInput,
+    ScenarioWorkflowForm,
+    SCENARIO_OT_workflow_catalog,
+    SCENARIO_OT_load_workflow,
+    SCENARIO_OT_estimate_workflow,
+    SCENARIO_OT_generate_workflow,
+)
+
+
+def register():
+    for cls in CLASSES:
+        bpy.utils.register_class(cls)
+    bpy.types.Scene.scenario_workflow = PointerProperty(type=ScenarioWorkflowForm)
+    bpy.types.WindowManager.scenario_workflow_query = StringProperty(options={"SKIP_SAVE"})
+
+
+def unregister():
+    del bpy.types.WindowManager.scenario_workflow_query
+    del bpy.types.Scene.scenario_workflow
+    for cls in reversed(CLASSES):
+        bpy.utils.unregister_class(cls)

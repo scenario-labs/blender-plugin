@@ -130,7 +130,13 @@ polling/download metadata use `jobs.with_raw_response.retrieve` and
 query-only dry run, exact Decimal cost, selected credentials/project and disabled
 submission retries. No raw fallback or SDK dependency change is added.
 
-The quote digest includes the expected result kind. Offline SDK-transport tests
+The quote digest includes the expected result kind. Material quotes additionally
+retain the exact normalized SDK payload, binding selectable map roles, schema
+defaults and output count to the approval and saved job digest. Missing requested
+maps fail submission-result and recovery checks without regenerating. Old material
+quotes can recover results for inspection but cannot establish map completeness
+or authorize new submission; unsubmitted runs need a fresh quote.
+Offline SDK-transport tests
 exercise all five kinds, uncertainty, cost/schema drift, scope changes and receipt
 recovery. Result checks use verified nonempty bytes, MIME metadata and known
 texture roles; they do not establish decoding, local reference upload, Film,

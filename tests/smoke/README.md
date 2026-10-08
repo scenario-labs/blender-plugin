@@ -119,10 +119,29 @@ metadata checks apply:
 | Result kind | Required saved result metadata |
 | --- | --- |
 | `image` | Every result is an image |
-| `material` | Every result is an image; a base/albedo role and at least one additional known texture role are present |
+| `material` | Every result is an image; base/albedo and every quoted map role meet the quoted output count |
 | `video` | At least one video result; companion files remain verified |
 | `model` | At least one binary glTF result (`model/gltf-binary`); companion files remain verified |
 | `audio` | At least one audio result; companion files remain verified |
+
+Material quotes use schema version 3 and retain the exact normalized SDK payload
+inside the approval digest. Checks use its `maps` selection, including model-schema
+defaults, and `numOutputs` (one through four, default one). Supported map names are
+`basecolor`, `normal`, `roughness`, `metalness` and `height`, as in the recorded
+Patina schemas. Roughness accepts the shared runtime's roughness or inverse
+smoothness role. Explicit subsets require only the selected maps; `maps: []`
+checks texture-only output. Missing or unsupported map contracts cannot create a
+material approval. Role counts do not establish which maps belong to each variant,
+image decoding or material quality.
+
+Before accepting recovered material results, the retained payload must match the
+saved job's immutable payload digest. A changed quote cannot weaken its map checks.
+Older version-2 material quotes lack normalized map expectations: they cannot
+submit, and need a new quote in a new run directory if still unsubmitted. For an
+existing job, keep its original run and use `resume`; polling/download and receipt
+recovery still work, but completion exits 4 for manual inspection instead of
+claiming map completeness. Never start another generation to recover that job.
+Non-material version-1/2 compatibility is unchanged.
 
 A mismatch fails the check while preserving downloaded results for inspection.
 `resume` rechecks them without submitting again. MIME metadata alone does not

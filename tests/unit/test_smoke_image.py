@@ -54,12 +54,33 @@ def run(tmp_path, request):
     inputs.write_text('{"prompt":"private fixture prompt"}')
     calls = []
     behavior = {"cost": COST, "model": MODEL, "status": "success", "fail": None}
+    if kind == "material":
+        recorded = json.loads(
+            (Path(__file__).parents[1] / "fixtures/models/model_patina-material.json").read_text()
+        )["model"]
+        behavior["model"] = {
+            **MODEL,
+            "inputs": [
+                *MODEL["inputs"],
+                *(field for field in recorded["inputs"] if field["name"] in {"maps", "numOutputs"}),
+            ],
+        }
     media_types = {
         "image": [("image/png", None)],
         "video": [("video/mp4", None)],
         "audio": [("audio/wav", None)],
         "model": [("model/gltf-binary", None), ("image/png", None)],
-        "material": [("image/png", "texture-albedo"), ("image/png", "texture-normal")],
+        "material": [
+            ("image/png", role)
+            for role in (
+                "texture",
+                "texture-albedo",
+                "texture-normal",
+                "texture-smoothness",
+                "texture-metallic",
+                "texture-height",
+            )
+        ],
     }
     behavior["assets"] = [
         {
@@ -448,12 +469,13 @@ def test_polling_deadline_preserves_known_job_for_resume(run, monkeypatch):
     original = smoke.follow
     ticks = iter((0, 0, 1, 2))
 
-    def bounded(coordinator, storage, *, timeout, result_kind):
+    def bounded(coordinator, storage, *, timeout, result_kind, material_payload=None):
         return original(
             coordinator,
             storage,
             timeout=1,
             result_kind=result_kind,
+            material_payload=material_payload,
             clock=lambda: next(ticks),
             sleep=lambda _: None,
         )
@@ -605,3 +627,140 @@ def test_every_script_blocks_unapproved_spending_before_credentials(
     with pytest.raises(SystemExit) as error:
         runpy.run_path(str(script), run_name="__main__")
     assert error.value.code == 2
+
+
+@pytest.mark.parametrize("run", ["material"], indirect=True)
+@pytest.mark.parametrize(
+    "missing",
+    [
+        "texture-albedo",
+        "texture-normal",
+        "texture-smoothness",
+        "texture-metallic",
+        "texture-height",
+    ],
+)
+def test_material_defaults_require_every_quoted_map_on_submit_and_resume(run, missing):
+    root, calls, behavior, _, store, _, execute = run
+    execute("quote")
+    plan = json.loads((root / "quote.json").read_text())
+    assert plan["schema_version"] == 3
+    assert json.loads(plan["material_payload_json"])["maps"] == [
+        "basecolor",
+        "normal",
+        "roughness",
+        "metalness",
+        "height",
+    ]
+    behavior["assets"] = [a for a in behavior["assets"] if a["metadata"]["type"] != missing]
+    with pytest.raises(smoke.SmokeError, match="approved result kind"):
+        execute("submit")
+    assert store().records()[0].state == JobState.READY
+    before = len(calls)
+    with pytest.raises(smoke.SmokeError, match="approved result kind"):
+        execute("resume")
+    assert len(calls) == before and len(paid(calls)) == 1
+
+
+@pytest.mark.parametrize("run", ["material"], indirect=True)
+@pytest.mark.parametrize("maps", [[], ["normal"], ["basecolor", "normal"]])
+def test_material_explicit_subset_and_texture_only_do_not_require_other_maps(run, maps):
+    root, calls, behavior, _, _, _, execute = run
+    (root.parent / "parameters.json").write_text(json.dumps({"prompt": "fixture", "maps": maps}))
+    selected = {
+        "texture",
+        *("texture-albedo" if name == "basecolor" else "texture-" + name for name in maps),
+    }
+    behavior["assets"] = [a for a in behavior["assets"] if a["metadata"]["type"] in selected]
+    execute("quote")
+    assert execute("submit") == execute("resume") == 0
+    assert len(paid(calls)) == 1
+
+
+@pytest.mark.parametrize("run", ["material"], indirect=True)
+@pytest.mark.parametrize("complete", [False, True])
+def test_material_requires_each_requested_map_for_the_quoted_output_count(run, complete):
+    root, calls, behavior, _, _, _, execute = run
+    (root.parent / "parameters.json").write_text(json.dumps({"prompt": "fixture", "numOutputs": 2}))
+    second = [{**a, "id": a["id"] + "-second"} for a in behavior["assets"]]
+    if not complete:
+        second = [a for a in second if a["metadata"]["type"] != "texture-height"]
+    behavior["assets"] += second
+    execute("quote")
+    if complete:
+        assert execute("submit") == execute("resume") == 0
+    else:
+        with pytest.raises(smoke.SmokeError, match="approved result kind"):
+            execute("submit")
+    assert len(paid(calls)) == 1
+
+
+@pytest.mark.parametrize("run", ["material"], indirect=True)
+def test_material_resume_rejects_expectations_rewritten_after_submission(run):
+    root, calls, behavior, _, _, _, execute = run
+    execute("quote")
+    behavior["assets"] = behavior["assets"][:3]
+    with pytest.raises(smoke.SmokeError, match="approved result kind"):
+        execute("submit")
+    plan = json.loads((root / "quote.json").read_text())
+    payload = json.loads(plan["material_payload_json"])
+    payload["maps"] = ["basecolor", "normal"]
+    plan["material_payload_json"] = json.dumps(payload)
+    plan["payload_sha256"] = smoke.digest(plan["material_payload_json"].encode())
+    (root / "quote.json").write_bytes(smoke.json_bytes(plan))
+    before = len(calls)
+    with pytest.raises(smoke.SmokeError, match="differ from the saved request"):
+        execute("resume")
+    assert len(calls) == before and len(paid(calls)) == 1
+
+
+@pytest.mark.parametrize("run", ["material"], indirect=True)
+def test_material_old_quote_cannot_spend_or_claim_completeness_but_can_recover(run):
+    root, calls, behavior, _, store, _, execute = run
+    execute("quote")
+    quote_path = root / "quote.json"
+    current = quote_path.read_bytes()
+    plan = json.loads(current)
+    plan["schema_version"] = 2
+    plan.pop("material_payload_json")
+    quote_path.write_bytes(smoke.json_bytes(plan))
+    before = len(calls)
+    with pytest.raises(smoke.SmokeError, match="create a new quote"):
+        execute("submit")
+    assert len(calls) == before and not (root / "submission-attempt").exists()
+    quote_path.write_bytes(current)
+    behavior["fail"] = "poll"
+    with pytest.raises(AdapterError):
+        execute("submit")
+    quote_path.write_bytes(smoke.json_bytes(plan))
+    behavior["fail"] = None
+    with pytest.raises(smoke.SmokeError, match="inspect saved results"):
+        execute("resume")
+    assert store().records()[0].state == JobState.READY
+    assert all(item.receipt for item in store().records()[0].results)
+    assert len(paid(calls)) == 1
+
+
+@pytest.mark.parametrize("run", ["material"], indirect=True)
+def test_material_changed_schema_map_defaults_require_new_approval(run):
+    _, calls, behavior, _, store, _, execute = run
+    execute("quote")
+    behavior["model"] = {
+        **behavior["model"],
+        "inputs": [
+            {**field, "default": ["basecolor", "normal"]} if field["name"] == "maps" else field
+            for field in behavior["model"]["inputs"]
+        ],
+    }
+    with pytest.raises(smoke.SmokeError, match="Fresh quote or payload changed"):
+        execute("submit")
+    assert not paid(calls) and not store().records()
+
+
+@pytest.mark.parametrize("run", ["material"], indirect=True)
+def test_material_model_without_supported_map_contract_cannot_produce_approval(run):
+    root, calls, behavior, _, _, _, execute = run
+    behavior["model"] = MODEL
+    with pytest.raises(smoke.SmokeError, match="supported maps"):
+        execute("quote")
+    assert not (root / "quote.json").exists() and not paid(calls)

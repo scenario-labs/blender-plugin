@@ -10,6 +10,7 @@ import re
 import tempfile
 import time
 import uuid
+from collections import Counter
 from dataclasses import asdict
 from decimal import Decimal
 from pathlib import Path
@@ -22,6 +23,15 @@ from scenario.core.jobs.transfers import ResultDownloader, StoragePolicy
 from tools.dev_config import live_settings
 
 RESULT_KINDS = ("image", "material", "video", "model", "audio")
+# Patina's selectable maps use these input names. Smoothness is the inverse
+# representation supported by the shared material application contract.
+MATERIAL_MAP_ROLES = {
+    "basecolor": {"albedo"},
+    "normal": {"normal"},
+    "roughness": {"roughness", "smoothness"},
+    "metalness": {"metallic"},
+    "height": {"height"},
+}
 
 
 class SmokeError(RuntimeError):
@@ -99,7 +109,28 @@ def report(root, store, result_kind):
             os.unlink(temporary)
 
 
-def verify_result_kind(record, result_kind):
+def material_requirements(payload_json):
+    """Derive output checks from the exact normalized, quoted model payload."""
+    try:
+        payload = json.loads(payload_json)
+        maps = payload["maps"]
+        count = payload.get("numOutputs", 1)
+        if (
+            not isinstance(maps, list)
+            or any(not isinstance(name, str) or name not in MATERIAL_MAP_ROLES for name in maps)
+            or len(maps) != len(set(maps))
+            or type(count) is not int
+            or not 1 <= count <= 4
+        ):
+            raise ValueError
+    except (TypeError, ValueError, KeyError):
+        raise SmokeError(
+            "Material checks require supported maps and output count in the quote", 4
+        ) from None
+    return maps, count
+
+
+def verify_result_kind(record, result_kind, *, material_payload=None):
     """Check saved metadata after receipt verification; this does not decode media."""
     assets = [item.asset for item in record.results]
     if not assets or any(item.receipt is None or item.receipt.size <= 0 for item in record.results):
@@ -108,11 +139,16 @@ def verify_result_kind(record, result_kind):
     if result_kind == "image":
         matches = all(mime.startswith("image/") for mime in media_types)
     elif result_kind == "material":
-        roles = {item.texture_role for item in assets if item.texture_role is not None}
+        if material_payload is None:
+            raise SmokeError("Material quote lacks map expectations; inspect saved results", 4)
+        if digest(material_payload.encode()) != record.intent.payload_sha256:
+            raise SmokeError("Material expectations differ from the saved request", 4)
+        maps, count = material_requirements(material_payload)
+        roles = Counter(item.texture_role for item in assets)
         matches = (
             all(mime.startswith("image/") for mime in media_types)
-            and bool(roles & {"base", "albedo"})
-            and bool(roles - {"base", "albedo"})
+            and max(roles["base"], roles["albedo"]) >= count
+            and all(sum(roles[role] for role in MATERIAL_MAP_ROLES[name]) >= count for name in maps)
         )
     elif result_kind == "model":
         matches = "model/gltf-binary" in media_types
@@ -123,7 +159,14 @@ def verify_result_kind(record, result_kind):
 
 
 def follow(
-    coordinator, store, *, timeout, result_kind="image", clock=time.monotonic, sleep=time.sleep
+    coordinator,
+    store,
+    *,
+    timeout,
+    result_kind="image",
+    material_payload=None,
+    clock=time.monotonic,
+    sleep=time.sleep,
 ):
     """Follow one saved request; never estimate, prepare, submit or apply."""
     records = store.records()
@@ -155,7 +198,7 @@ def follow(
             )
             if not verified.paths:
                 raise SmokeError("Downloaded results contain no usable files", 1)
-            verify_result_kind(verified.record, result_kind)
+            verify_result_kind(verified.record, result_kind, material_payload=material_payload)
             print(f"Verified {len(verified.paths)} result file(s); no Blender application")
             return 0
         elif record.state in {JobState.FAILED, JobState.CANCELED}:
@@ -166,6 +209,7 @@ def follow(
 
 def execute(args, settings, *, transport=None, downloader=None):
     """Use a private run directory; injected transports are for offline tests only."""
+    material_payload = None
     root = args.run_dir.absolute()
     if root != root.resolve() or (root.exists() and not root.is_dir()):
         raise SmokeError("Use a private run directory without symlink components")
@@ -185,16 +229,27 @@ def execute(args, settings, *, transport=None, downloader=None):
             raise SmokeError("Run storage is incomplete; preserve it for review", 4)
         raw = read_bytes(root / "quote.json")
         plan = json.loads(raw)
-        if plan.get("schema_version") not in (1, 2):
+        if plan.get("schema_version") not in (1, 2, 3):
             raise SmokeError("Unsupported quote record")
         result_kind = "image" if plan["schema_version"] == 1 else plan.get("result_kind")
         if result_kind not in RESULT_KINDS:
             raise SmokeError("Unsupported saved result kind")
         if args.expected_result_kind and result_kind != args.expected_result_kind:
             raise SmokeError("Use the entry point matching this run's approved result kind")
+        if args.command == "submit" and digest(raw) != args.approved_quote:
+            raise SmokeError("Quote record changed; approve its current exact contents")
+        if plan["schema_version"] == 3:
+            material_payload = plan.get("material_payload_json")
+            if (
+                result_kind != "material"
+                or not isinstance(material_payload, str)
+                or digest(material_payload.encode()) != plan["payload_sha256"]
+            ):
+                raise SmokeError("Invalid saved material expectations", 4)
+            material_requirements(material_payload)
         if args.command == "submit":
-            if digest(raw) != args.approved_quote:
-                raise SmokeError("Quote record changed; approve its current exact contents")
+            if result_kind == "material" and material_payload is None:
+                raise SmokeError("Material quote lacks map expectations; create a new quote", 4)
             cost = decimal_cost(plan["cost"])
             if cost != args.approved_cost:
                 raise SmokeError("The approved cost differs from the saved quote", 3)
@@ -237,6 +292,11 @@ def execute(args, settings, *, transport=None, downloader=None):
                 "payload_sha256": digest(quote.estimate.payload_json),
                 "cost": format(quote.estimate.cost, "f"),
             }
+            if result_kind == "material":
+                material_payload = quote.estimate.payload_json.decode()
+                material_requirements(material_payload)
+                plan["schema_version"] = 3
+                plan["material_payload_json"] = material_payload
             raw = json_bytes(plan)
             create_file(root / "quote.json", raw)
             print(f"Exact quote: {quote.estimate.cost} CU")
@@ -272,7 +332,13 @@ def execute(args, settings, *, transport=None, downloader=None):
                 target_id=prepared.intent.target_id,
                 payload=prepared.estimate.payload,
             )
-        return follow(coordinator, store, timeout=args.timeout, result_kind=result_kind)
+        return follow(
+            coordinator,
+            store,
+            timeout=args.timeout,
+            result_kind=result_kind,
+            material_payload=material_payload,
+        )
     finally:
         adapter.close()
         report(root, store, result_kind)

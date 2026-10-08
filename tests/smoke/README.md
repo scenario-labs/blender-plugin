@@ -4,8 +4,9 @@ All model checks use the same SDK adapter, exact quotes, credential-scoped job
 store and result transfers as the adopted runtime. The former Image, Material,
 Video and image-to-3D entry points now share one quote/submit/resume implementation.
 The generic entry point also supports audio. No smoke runs in ordinary tests or
-PR CI. The protected GitHub environment, aggregate budget and scheduled multi-suite
-CI in [#40](https://github.com/scenario-labs/blender-plugin/issues/40) remain pending.
+PR CI. The aggregate suite and protected workflow below implement the shared
+budget path for [#40](https://github.com/scenario-labs/blender-plugin/issues/40);
+environment setup and authorized hosted/live acceptance remain pending.
 
 These commands verify service round-trips and saved result receipts. They do not
 establish native UI/MCP interaction, scene application, playback quality, Film
@@ -169,3 +170,119 @@ Omit `--env-file` and use `--no-env-file` when the shell supplies credentials.
 Keep the spending flag out of dotenv files. Offline tests use synthetic SDK
 responses and never spend. Separate runs have separate approvals and caps; their
 sum is not enforced by an account-wide budget ledger.
+
+
+## One aggregate budget for a suite
+
+`tools.smoke_suite` coordinates one to eight cases through the same model engine.
+It does not introduce another SDK adapter or submission implementation. Create a
+private plan with an explicit `project_id`: JSON `null` means the test key's
+default scope; a string must exactly match `SCENARIO_TEST_PROJECT_ID`.
+
+```json
+{
+  "schema_version": 1,
+  "project_id": null,
+  "cases": [
+    {
+      "name": "image",
+      "result_kind": "image",
+      "model": "MODEL_ID",
+      "parameters": {"prompt": "A blue ceramic cup on a white background"}
+    }
+  ]
+}
+```
+
+Add cases for the other result kinds using current supported model IDs and their
+actual schemas. The plan is private: inputs may contain uploaded asset IDs. It
+must not contain local file paths as substitutes for uploaded references. This
+runner still needs references prepared through shared native/MCP uploads; it does
+not yet automate the upload/capture portion of #40/#68. Case names are unique
+lowercase labels, not paths; `suite-attempt` is reserved for internal state.
+Console output uses case numbers, not those labels.
+
+```sh
+make smoke SMOKE_ARGS="quote --plan workdir/smoke-plan.json --run-dir workdir/suite"
+```
+
+The command validates every case before contacting Scenario, quotes every case
+without submitting, and writes one `suite.json` binding all quote hashes and the
+exact total. No rounded float is used for the total. Review the private plan,
+selected credentials/project, each quote and aggregate cost before approval:
+
+```sh
+SCENARIO_SMOKE=1 make smoke SMOKE_ARGS="submit --run-dir workdir/suite --approved-suite SUITE_SHA256 --approved-total EXACT_TOTAL --max-cu APPROVED_TOTAL_CAP"
+```
+
+Every saved quote and the total must match before the first submission. The
+suite exclusively reserves its entire budget with a persistent attempt marker;
+each case still obtains a fresh exact quote and uses the shared durable claim.
+A price/payload change, lost response or failed case stops the suite immediately.
+Uncertain costs are not refunded to allow another case. Do not retry `submit` or
+start another suite to recover an interrupted one. Resume only cases that were
+already attempted:
+
+```sh
+make smoke SMOKE_ARGS="resume --run-dir workdir/suite"
+```
+
+Unattempted cases remain unsubmitted and require review; resume cannot spend.
+Preserve the complete suite directory, individual databases and scope keys.
+A directory copied or edited outside the command is not another authorization.
+Independent suites still do not share an account-wide or monthly budget ledger.
+
+`budget-run --plan PLAN --run-dir NEW_DIRECTORY --max-cu CAP` is for separately
+budget-authorized automation. It requires `SCENARIO_SMOKE=1` and a positive,
+explicit aggregate cap. It quotes all cases and automatically binds those exact
+quotes only if their total fits the previously authorized budget. This mode does
+not require a human to approve each subsequently fetched price; the separate
+approval is for the specified plan/project and total budget. Do not invoke it
+when authorization only covers an earlier exact quote or another plan. There is
+no default allowance. `--timeout` bounds polling per case, as in the model engine.
+
+## Protected hosted execution and recovery
+
+The `smoke` workflow dispatches on `main` or on the first of each month. Forks,
+other branches, PR events and Actions reruns cannot execute the paid job. The
+unprivileged admission job reads the existing environment and requires reviewers
+plus exactly a `main` branch policy; it never creates an unprotected environment.
+The paid job waits for the `smoke` environment approval, then reads that policy
+again before using any Scenario credential. An API error fails closed.
+
+Configure the [maintainer prerequisites](../../docs/MAINTAINERS.md#smoke-lane)
+first. Manual dispatch requires `max_cu`; its default is zero and fails before
+execution. Monthly dispatch uses the repository variable `SMOKE_MAX_TOTAL_CU`;
+missing or zero also fails. Admission validates and freezes the cap into a job
+output. The approval job name and execution use that same value, so environment
+variables cannot change it after review. Approving means authorizing the private
+plan, configured test scope and displayed total cap. Decline if those are unclear.
+The job never prints the plan, account/project, asset/job IDs or raw exceptions.
+
+Before any service request, GnuPG must encrypt and decrypt a test file using a
+private temporary home. The workflow preserves only `smoke-recovery.gpg`, an
+AES-256 OpenPGP archive with integrity protection, retained for seven days.
+It includes the private plan, quotes, attempt markers, stores and results; keep
+the recovery passphrase outside public logs and artifacts. A setup failure cannot
+spend. A normal failed suite still reaches encryption/upload. A hard runner kill,
+job timeout or artifact service failure can prevent preservation; inspect cloud
+history and uncertainty before authorizing any new run. A rerun is not recovery.
+
+Download the encrypted artifact before it expires. On a trusted machine, decrypt
+interactively into a private directory and inspect the archive before extracting:
+
+```sh
+umask 077
+mkdir smoke-recovery
+cd smoke-recovery
+gpg --output recovery.tar --decrypt /path/to/smoke-recovery.gpg
+tar -tf recovery.tar
+tar -xf recovery.tar
+```
+
+With the original test credentials/project, run `tools.smoke_suite resume` against
+`smoke/suite` from the repository's pinned environment. Do not publish decrypted
+contents or remove attempt markers. Keep the old passphrase for each retained
+artifact when rotating the environment secret. No hosted run, live upload,
+paid provider output, native application or motion/audio review is implied by
+offline runner and encryption tests.

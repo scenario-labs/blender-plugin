@@ -67,8 +67,10 @@ passes `ci-ok`, including Python 3.11/3.13 and Linux/Windows Blender 5.0.1,
 the macOS archive above on other platforms. Check the current PR head after
 restacking; a prior green run cannot certify a later change.
 
-A non-submitting live Image model metadata/estimate request succeeded. No paid
-generation, live upload/result round trip or project-override permission journey
+Non-submitting live metadata/estimate requests succeeded for Image, Materials,
+Video, 3D and Audio using one private suite in the configured test key's default
+scope. All five case reports contain zero saved jobs, and no submission-attempt
+marker exists. No paid generation, live upload/result round trip or project-override permission journey
 is included in this record. Quote values and private service evidence are not
 published here.
 
@@ -112,7 +114,7 @@ results or integrated release acceptance.
 | Retained lanes | Offline receipts and MIME checks do not establish usable live results. | Authorized scoped checks for Image, Video, 3D, Materials, audio, render/edit and Film paths; inspect actual outputs and record limitations under #68. |
 | Recovery and switching | Synthetic tests cover lost acknowledgement, stale quotes, scope changes and application claims. | Candidate-level UI/MCP parity, cancellation/restart races and failed download/import journeys with recorded outcomes under #65/#68. |
 | GPU, motion and audio | Headless counts and media metadata do not establish sustained playback or human review. | Native rendering/playback, sustained GPU/audio checks and human motion/audio review under #68. |
-| Paid CI | #315 unifies quote/submit/resume and per-run exact approval. There is no protected multi-suite workflow or aggregate budget gate; a read-only 2026-10-08 check finds no `smoke` environment. | Complete #40's protected workflow, explicit project/budget policy, environment reviewers and dedicated credentials; then perform authorized hosted acceptance. |
+| Paid CI | The suite runner and protected workflow now quote all cases and enforce one aggregate cap. A read-only 2026-10-08 check finds no `smoke` environment; live reference-upload automation is incomplete. | Configure #40's explicit project/budget policy, environment reviewers, private plan, recovery encryption secret and dedicated credentials; complete upload coverage and authorized hosted acceptance. |
 | Required checks | Read-only main-branch rules checked on 2026-10-08 report `pr-title` and `commits` as required, plus CodeQL scanning. `ci-ok` is absent. | Complete #45's administration and negative merge-gate checks while preserving existing protections. |
 | Final release artifact | Current candidate retains development version 0.9.9. Local update checks use a synthetic predecessor. | Validate release-please's exact 0.10.0 ZIP, licenses, provenance/checksum and extension index; exercise public native installation/update under #36/#68 and the release procedure. |
 

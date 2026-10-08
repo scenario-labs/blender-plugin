@@ -1,0 +1,103 @@
+# SPDX-FileCopyrightText: 2026 Scenario Inc.
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Paid execution requires the protected environment and an explicit total cap.
+name: smoke
+
+on:
+  workflow_dispatch:
+    inputs:
+      max_cu:
+        description: Authorized total CU cap for every case in the private smoke plan
+        type: string
+        required: true
+        default: "0"
+  schedule:
+    - cron: "0 6 1 * *"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: scenario-paid-smoke
+  cancel-in-progress: false
+
+jobs:
+  gate:
+    if: github.repository == 'scenario-labs/blender-plugin' && github.ref == 'refs/heads/main' && github.run_attempt == 1
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      actions: read
+    outputs:
+      max_cu: ${{ steps.gate.outputs.max_cu }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+        with:
+          version-file: pyproject.toml
+          enable-cache: false
+      - name: Verify the protected smoke environment exists
+        id: gate
+        env:
+          GH_TOKEN: ${{ github.token }}
+          MAX_TOTAL_CU: ${{ inputs.max_cu || vars.SMOKE_MAX_TOTAL_CU || '0' }}
+        run: uv run --locked --no-env-file python -m tools.smoke_ci gate --max-cu "$MAX_TOTAL_CU"
+
+  smoke:
+    needs: gate
+    if: github.repository == 'scenario-labs/blender-plugin' && github.ref == 'refs/heads/main' && github.run_attempt == 1
+    name: Budget approval (${{ needs.gate.outputs.max_cu }} CU total)
+    runs-on: ubuntu-24.04
+    environment: smoke
+    permissions:
+      contents: read
+      actions: read
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+        with:
+          version-file: pyproject.toml
+          enable-cache: false
+      - name: Recheck protection after approval
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: uv run --locked --no-env-file python -m tools.smoke_ci gate
+      - name: Verify encrypted recovery before any service request
+        env:
+          SMOKE_PLAN_JSON: ${{ secrets.SMOKE_PLAN_JSON }}
+          SMOKE_RECOVERY_PASSPHRASE: ${{ secrets.SMOKE_RECOVERY_PASSPHRASE }}
+        run: uv run --locked --no-env-file python -m tools.smoke_ci prepare --root "$RUNNER_TEMP/private-smoke"
+      - name: Quote all cases and execute within the approved aggregate budget
+        env:
+          SCENARIO_SMOKE: "1"
+          SCENARIO_TEST_API_KEY: ${{ secrets.SCENARIO_TEST_API_KEY }}
+          SCENARIO_TEST_API_SECRET: ${{ secrets.SCENARIO_TEST_API_SECRET }}
+          SCENARIO_TEST_PROJECT_ID: ${{ secrets.SCENARIO_TEST_PROJECT_ID }}
+          MAX_TOTAL_CU: ${{ needs.gate.outputs.max_cu }}
+        run: |
+          uv run --locked --no-env-file python -m tools.smoke_suite budget-run \
+            --plan "$RUNNER_TEMP/private-smoke/plan.json" \
+            --run-dir "$RUNNER_TEMP/private-smoke/suite" --max-cu "$MAX_TOTAL_CU"
+      - name: Encrypt the private recovery state
+        if: always()
+        env:
+          SMOKE_RECOVERY_PASSPHRASE: ${{ secrets.SMOKE_RECOVERY_PASSPHRASE }}
+        run: |
+          if [ -d "$RUNNER_TEMP/private-smoke" ]; then
+            uv run --locked --no-env-file python -m tools.smoke_ci seal \
+              --root "$RUNNER_TEMP/private-smoke" --output "$RUNNER_TEMP/smoke-recovery.gpg"
+          fi
+      - name: Preserve only encrypted recovery state
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: smoke-recovery-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/smoke-recovery.gpg
+          retention-days: 7
+          if-no-files-found: warn

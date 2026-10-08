@@ -620,8 +620,18 @@ stores. It produces a [composition draft](FILM_PLAN.md#unpaid-composition-drafts
 without reserving a master or sending an estimate. Revalidation compares each
 request/revision/asset/kind/task digest and rejects an already reserved master.
 A draft is immutable review data, not a quote or spend authorization; its helper
-performs no atomic dispatch claim. Active session/UI/MCP ownership remains to be
-connected, including unchanged source checks through quote delivery. The existing
+performs no atomic dispatch claim. Active UI/MCP review and unchanged source
+checks through quote delivery remain to be connected. The existing
 Film model-task command resolves the draft's references before the ordinary fresh
 schema/estimate and single-dispatch path. No new worker pool or SDK endpoint is
 introduced.
+
+`prepare_film_composition` now wraps that reader with receipt-bound saved-media
+measurement through the existing result/upload owners. It snapshots recipe JSON,
+checks the captured origin before and after each probe, and compares all source
+observations again before returning `VerifiedComposition`. Process/file work runs
+outside the coordinator and origin locks, so scene invalidation and cancellation
+can proceed. The existing worker pool admits one local capture or inspection at
+a time and frees this slot before publishing completion. Its cancellation signals
+also stop the probe on retirement. This is an unpaid read; no SDK endpoint or
+new store is introduced. See [the measurement limits](FILM_PLAN.md#verified-media-preparation).

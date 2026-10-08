@@ -254,6 +254,26 @@ class JobCoordinator:
             raise UploadError("Upload storage and transfer policy are not configured")
         return self._uploads
 
+    def prepare_film_composition(
+        self, recipe, *, production_id, mode, score_task_id, root, origin, cancel
+    ):
+        """Verify saved media and prepare an unpaid draft through this scoped owner."""
+        from .film_media import prepare_media
+
+        if not isinstance(origin, JobOrigin):
+            raise QuoteError("Capture the composition origin before inspecting media")
+        snapshot = json.loads(_payload(recipe))
+        return prepare_media(
+            self,
+            snapshot,
+            production_id=production_id,
+            mode=mode,
+            score_task_id=score_task_id,
+            root=root,
+            origin=origin,
+            cancel=cancel,
+        )
+
     def render_local(self, spec, *, origin, source_origin, cancel):
         """Render local bytes outside locks; recheck both origins before and after."""
 

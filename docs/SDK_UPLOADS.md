@@ -624,3 +624,13 @@ claims. A finished staging cleanup retains the imported record, so the associate
 remote asset remains reusable. The native **Use saved upload** control and local
 MCP `bind_film_upload` command perform this explicit association through the
 selected Film session. Capture upload does not choose a task automatically.
+
+## Retained upload media measurement
+
+`UploadCommands.measure_media` accepts the exact current revision of an imported
+upload and inspects a private copy of its retained staging bytes. The saved intent's
+whole-file size and SHA256 must match; the imported record is rechecked after
+inspection. A missing or explicitly discarded staging source cannot be measured,
+even though its remote asset association remains valid. Inspection never refetches,
+reuploads, repairs or removes the original source. No SDK operation changes.
+See [Film media preparation](FILM_PLAN.md#verified-media-preparation).

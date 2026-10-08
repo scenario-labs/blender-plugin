@@ -203,6 +203,20 @@ class UploadSources:
         except OSError:
             raise TransferError("Could not verify the staged upload") from None
 
+    def measure_media(self, intent, *, root, cancel):
+        """Probe a receipt-bound private copy; preserve staging and its stored intent."""
+        from .media_probe import measure
+        from .transfers import DownloadedResult
+
+        try:
+            stream, _ = self._source(intent)
+            stream.close()
+            source = _root(self._directory(intent.scope, intent.request_id)) / "source.bin"
+        except (OSError, TransferError):
+            raise TransferError("Saved upload media is missing or changed") from None
+        receipt = DownloadedResult("source.bin", intent.file_size, intent.file_sha256)
+        return measure(source, receipt, intent.content_type, root=root, cancel=cancel)
+
     def part(self, intent, number):
         """Return only the next bounded immutable part after identity verification."""
         size = intent.part_bytes(number)

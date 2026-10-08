@@ -156,17 +156,28 @@ class JobWorkers:
 
         if not isinstance(spec, RenderSpec):
             raise TypeError("Use a local render specification")
+        return self._enqueue_local(
+            self._coordinator.render_local, spec, origin=origin, source_origin=source_origin
+        )
+
+    def prepare_film_composition(self, recipe, *, production_id, mode, score_task_id, root, origin):
+        return self._enqueue_local(
+            self._coordinator.prepare_film_composition,
+            _snapshot(recipe),
+            production_id=production_id,
+            mode=mode,
+            score_task_id=score_task_id,
+            root=os.fspath(root),
+            origin=origin,
+        )
+
+    def _enqueue_local(self, command, *args, **kwargs):
+        """Bound local render/inspection processes on the same existing worker pool."""
         with self._condition:
             if self._local_cancels:
-                raise WorkerError("Wait for the current local capture to finish")
+                raise WorkerError("Wait for the current local media operation to finish")
             cancel = threading.Event()
-            task = self._enqueue(
-                self._coordinator.render_local,
-                spec,
-                origin=origin,
-                source_origin=source_origin,
-                cancel=cancel,
-            )
+            task = self._enqueue(command, *args, cancel=cancel, **kwargs)
             self._local_cancels[task] = cancel
             return task
 
@@ -307,19 +318,22 @@ class JobWorkers:
                 try:
                     result = command(*args, **kwargs)
                 except Exception as exc:
+                    with self._condition:
+                        self._local_cancels.pop(task, None)
                     task._future.set_exception(exc)
                 except BaseException as exc:
                     # Settle the handle and stop queued work before propagating
                     # thread-control exceptions; never leave a running future.
+                    with self._condition:
+                        self._local_cancels.pop(task, None)
                     task._future.set_exception(exc)
                     self.deactivate()
                     raise
                 else:
-                    task._future.set_result(result)
-                    del result
-                finally:
                     with self._condition:
                         self._local_cancels.pop(task, None)
+                    task._future.set_result(result)
+                    del result
             # Do not retain payloads/results while the worker waits for more work.
             del task, command, args, kwargs
 

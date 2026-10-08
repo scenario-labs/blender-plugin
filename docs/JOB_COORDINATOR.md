@@ -620,9 +620,9 @@ stores. It produces a [composition draft](FILM_PLAN.md#unpaid-composition-drafts
 without reserving a master or sending an estimate. Revalidation compares each
 request/revision/asset/kind/task digest and rejects an already reserved master.
 A draft is immutable review data, not a quote or spend authorization; its helper
-performs no atomic dispatch claim. Active UI/MCP review and unchanged source
-checks through quote delivery remain to be connected. The existing
-Film model-task command resolves the draft's references before the ordinary fresh
+performs no atomic dispatch claim. Active UI/MCP review remains to be connected;
+the source guards for composition quote delivery and dispatch are described below.
+The existing Film model-task command resolves the draft's references before the ordinary fresh
 schema/estimate and single-dispatch path. No new worker pool or SDK endpoint is
 introduced.
 
@@ -635,3 +635,20 @@ can proceed. The existing worker pool admits one local capture or inspection at
 a time and frees this slot before publishing completion. Its cancellation signals
 also stop the probe on retirement. This is an unpaid read; no SDK endpoint or
 new store is introduced. See [the measurement limits](FILM_PLAN.md#verified-media-preparation).
+
+## Verified composition quote ownership
+
+`prepare_film_composition` registers its immutable result as an owner-issued,
+weakly held inspection ticket. `quote_film_composition` rejects fabricated/copy
+objects, foreign scopes and changed origins before service reads. It resolves
+only the draft's declared master, then uses the ordinary model schema/estimate
+path. `OriginQuote.composition` and `PreparedJob.composition` carry its immutable
+source observations. Checks run after schema retrieval and estimation, before
+saving preparation and under the existing origin/submission claim guard.
+
+Before preparation, source validation also requires an unused master. At dispatch,
+`validate_composition_sources` checks the same source records while the existing
+prepared intent check authorizes this already reserved master. No second store,
+worker pool, submission command or SDK fallback is added. Guard data is in memory;
+only the existing exact payload/quote digests and Film task intent are persisted.
+Restart cannot resurrect a prior owner's quote. See [the composition boundary](FILM_PLAN.md#quoted-composition-generation).

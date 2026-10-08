@@ -558,3 +558,19 @@ application; unknown semantics remain unknown. See
 [versioned store](JOB_STORAGE.md#atomicity-and-failures) for download guards and
 atomic schema 2/3 upgrades. This does not change authentication, scope, retry
 policy, provider acceptance or the dependency pin.
+
+## Verified Film composition quotes
+
+`JobSession.quote_film_composition` uses the existing shared adapter
+`models.with_raw_response.retrieve` and `generate.with_raw_response.run_model`
+methods with SDK 2.2.0. The former supplies current model inputs; the latter uses `dry_run="true"`
+for estimation, query-only optional project scope and unchanged model parameters.
+Approval submits the same exact estimate once through the existing durable
+coordinator and adapter. Paid retries remain disabled. No raw endpoint or SDK
+extension is introduced for composition.
+
+Local receipt inspection and current-source checks precede those calls; guards
+are repeated around price preparation and dispatch. The current composition
+payload is a template subject to fresh schema validation, not a verified live
+provider contract. Offline tests use synthetic metadata and transport responses;
+no service or paid check is implied. See [the composition contract](FILM_PLAN.md#quoted-composition-generation).

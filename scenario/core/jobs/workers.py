@@ -114,6 +114,9 @@ class JobWorkers:
         snapshot = _snapshot(parameters)
         return self._enqueue(self._coordinator.quote_model, identifier, snapshot, origin=origin)
 
+    def quote_film_composition(self, verified, *, origin):
+        return self._enqueue(self._coordinator.quote_film_composition, verified, origin=origin)
+
     def quote_film_task(self, recipe, *, production_id, task_id, origin):
         snapshot = _snapshot(recipe)
         return self._enqueue(

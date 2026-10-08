@@ -467,5 +467,8 @@ They preserve cut and audio timing without mutating the recipe, reserving a job
 or making service requests. This component is not connected to active UI/MCP
 controls. The existing `JobSession.prepare_film_composition` and worker pool now provide
 [receipt-bound media measurement](../FILM_PLAN.md#verified-media-preparation),
-current-source rechecks and guarded delivery. Active draft review and quote
-delivery still need controls, followed by separate generation approval. Native final-review assembly and export remain unimplemented.
+current-source rechecks and guarded delivery. The session also exposes
+[composition quoting](../FILM_PLAN.md#quoted-composition-generation) with saved-source
+checks through the existing exact-price preparation and single-dispatch claim.
+Active draft review/recipe installation still need native/MCP controls and separate
+generation approval. Native final-review assembly and export remain unimplemented.

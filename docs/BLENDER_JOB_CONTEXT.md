@@ -130,8 +130,11 @@ the selected scene and its revision before exposing the draft once. A completed
 probe cannot deliver to a changed scene. The existing local cancellation handle
 and retirement signal stop owned processes; no panel owns their lifetime.
 
-This is an integration command with no native/MCP presentation yet. It does not
-install a new recipe or approve spending. See [media prerequisites and limits](FILM_PLAN.md#verified-media-preparation).
+`quote_film_composition` queues a fresh exact price for the same issued inspection
+and original origin. The ordinary `drain`/`deliver` checks apply to that quote;
+`prepare_quote` and submission retain the composition source guards in the
+coordinator. These are integration commands with no native/MCP presentation yet.
+They do not install a new recipe or approve spending. See [media prerequisites and limits](FILM_PLAN.md#verified-media-preparation).
 
 ## Local Film timeline approval
 

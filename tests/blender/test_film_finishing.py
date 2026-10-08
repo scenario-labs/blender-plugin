@@ -271,3 +271,86 @@ class FilmMediaSessionTests(unittest.TestCase):
         self.assertIsNone(completion.result)
         self.assertEqual(before, self.fixture.upload_store.records())
         self.assertFalse(self.fixture.calls)
+
+    def quoted(self):
+        import json
+        import threading
+
+        import httpx
+
+        measured = self.prepare().result(5)
+        (completion,) = self.session.drain()
+        self.session.deliver(completion, lambda *_: None)
+        parameters = measured.draft.recipe["tasks"][-1]["parameters"]
+
+        def respond(request):
+            self.fixture.calls.append((request, threading.current_thread()))
+            self.assertIsNot(threading.current_thread(), threading.main_thread())
+            self.assertEqual(request.url.params.get("projectId"), self.session.scope.project_id)
+            if request.method == "GET":
+                fields = []
+                for name, value in parameters.items():
+                    kind = (
+                        "array"
+                        if isinstance(value, list)
+                        else "string"
+                        if isinstance(value, str)
+                        else "number"
+                    )
+                    fields.append({"name": name, "type": kind, "required": True})
+                return httpx.Response(
+                    200,
+                    json={
+                        "model": {
+                            "id": "model_scenario-compose-video",
+                            "type": "custom",
+                            "inputs": fields,
+                        }
+                    },
+                )
+            self.assertEqual(json.loads(request.content)["layers"][0]["source"], "picture")
+            if request.url.params.get("dryRun") == "true":
+                return httpx.Response(269, content=b'{"creativeUnitsCost":0.10000000000000001}')
+            saved = self.fixture.store.film_job("production", "final-master")
+            self.assertEqual(saved.state, self.fixture.jobs.JobState.SUBMITTING)
+            return httpx.Response(200, json={"job": {"jobId": "composition"}})
+
+        self.fixture.handler = respond
+        task = self.session.quote_film_composition(measured, origin=self.origin)
+        result = task.result(5)
+        (completion,) = self.session.drain()
+        self.assertIsNone(completion.error)
+        return measured, result, completion
+
+    def test_installed_composition_quote_uses_shared_exact_price_and_single_dispatch(self):
+        measured, quote, completion = self.quoted()
+        self.assertEqual(str(quote.estimate.cost), "0.10000000000000001")
+        self.assertIs(quote.composition, measured.draft)
+        self.assertIs(self.session.deliver(completion, lambda result, *_: result), quote)
+        self.assertIsNone(self.fixture.store.film_job("production", "final-master"))
+        prepared = self.session.prepare_quote(quote)
+
+        def submit():
+            return self.session.submit(
+                prepared,
+                operation="model",
+                target_id=quote.estimate.target_id,
+                payload=quote.estimate.payload,
+            ).result(5)
+
+        self.assertEqual(submit().state, self.fixture.jobs.JobState.REMOTE)
+        self.assertEqual(len(self.fixture.calls), 3)
+        with self.assertRaises(ValueError):
+            submit()
+        self.assertEqual(len(self.fixture.calls), 3)
+        self.session.drain()
+
+    def test_completed_composition_quote_cannot_prepare_after_scene_change(self):
+        _, quote, completion = self.quoted()
+        self.session.invalidate_scene(self.scene)
+        with self.assertRaises(self.fixture.module.OriginUnavailable):
+            self.session.deliver(completion, lambda *_: self.fail("Stale quote delivered"))
+        with self.assertRaises(self.fixture.module.OriginUnavailable):
+            self.session.prepare_quote(quote)
+        self.assertIsNone(self.fixture.store.film_job("production", "final-master"))
+        self.assertEqual(len(self.fixture.calls), 2)

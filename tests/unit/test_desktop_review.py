@@ -19,6 +19,38 @@ def review(monkeypatch):
     return importlib.import_module("desktop_review")
 
 
+def test_application_identity_survives_new_runs_and_builds(review, tmp_path):
+    binary = tmp_path / "Blender.app/Contents/MacOS/Blender"
+    binary.parent.mkdir(parents=True)
+    binary.write_bytes(b"first build")
+    artifacts = tmp_path / "reviews"
+    first = review.Session(None, artifacts)
+    identity = review.application_identity(binary, first.directory.parent)
+    binary.write_bytes(b"updated build")
+    second = review.Session(None, artifacts)
+    assert first.directory != second.directory
+    assert first.profile != second.profile
+    assert review.application_identity(binary, second.directory.parent) == identity
+    alias = artifacts / ".." / artifacts.name
+    assert review.application_identity(binary, alias) == identity
+    assert review.application_identity(binary, tmp_path / "parallel") != identity
+    assert (
+        review.application_identity(tmp_path / "Other.app/Contents/MacOS/Blender", artifacts)
+        != identity
+    )
+
+
+def test_application_lock_rejects_overlap_and_allows_reuse(review, tmp_path):
+    pytest.importorskip("fcntl")
+    with review.lock_application(tmp_path, "same"):
+        with pytest.raises(ValueError, match="already uses this app identity"):
+            review.lock_application(tmp_path, "same")
+        with review.lock_application(tmp_path, "other"):
+            pass
+    with review.lock_application(tmp_path, "same"):
+        pass
+
+
 def test_environment_does_not_inherit_credentials_or_paths(review, tmp_path, monkeypatch):
     monkeypatch.setenv("SCENARIO_API_SECRET", "fixture-only")
     monkeypatch.setenv("PYTHONPATH", "/untrusted")
@@ -88,6 +120,8 @@ def test_review_rejects_invalid_evidence_and_reaps_child(review, tmp_path, monke
     (normal / "keep").write_text("original")
     monkeypatch.setattr(review, "normal_profile_root", lambda: normal)
     monkeypatch.setattr(review, "find_blender", lambda _: Path("Blender"))
+    application_lock = Mock()
+    monkeypatch.setattr(review, "lock_application", lambda *args: application_lock)
     monkeypatch.setattr(review, "copy_application", lambda *args: (Path("Blender"), "unique"))
     monkeypatch.setattr(review, "validate", lambda *args: {"id": "scenario", "version": "0.9.9"})
     verifies = Mock()
@@ -141,6 +175,7 @@ def test_review_rejects_invalid_evidence_and_reaps_child(review, tmp_path, monke
         blender=None, artifacts=tmp_path / "out", zip=candidate, timeout=60, duration=5
     )
     assert review.run_review(args) == (0 if failure is None else 1)
+    application_lock.close.assert_called_once()
     report = json.loads(next(args.artifacts.glob("desktop-*/report.json")).read_text())
     assert report["interaction_acceptance"] == "not_assessed"
     assert report["status"] == ("finished" if failure is None else "failed")

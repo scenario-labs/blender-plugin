@@ -3,6 +3,7 @@
 """Launch an exact ZIP for offline, isolated macOS desktop interaction review."""
 
 import argparse
+import hashlib
 import json
 import math
 import os
@@ -26,6 +27,32 @@ from blender_env import (
 from build import Session, validate
 
 SCENE_SCRIPT = Path(__file__).with_name("desktop_review_scene.py")
+
+
+def application_identity(binary, artifacts):
+    """Keep approval identity stable across runs, independent of ZIP/profile bytes."""
+    scope = json.dumps([str(binary.resolve()), str(artifacts.resolve())])
+    return hashlib.sha256(scope.encode("utf-8")).hexdigest()[:12]
+
+
+def lock_application(artifacts, identity):
+    """Prevent two supervised windows from sharing an attachment identity."""
+    import fcntl  # The desktop runner is macOS-only; keep other tool imports portable.
+
+    artifacts.mkdir(parents=True, exist_ok=True)
+    lock = (artifacts / f".application-{identity}.lock").open("a+b")
+    try:
+        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError as error:
+        lock.close()
+        raise ValueError(
+            "A desktop review already uses this app identity; finish it or use another --artifacts directory"
+        ) from error
+    except BaseException:
+        lock.close()
+        raise
+    # Do not unlink: another process may already have opened the same inode.
+    return lock
 
 
 def review_environment(session):
@@ -101,6 +128,7 @@ def run_review(args):
     session = None
     before = None
     child = None
+    application_lock = None
     report = {"status": "failed", "interaction_acceptance": "not_assessed"}
     normal = normal_profile_root().resolve()
     try:
@@ -111,10 +139,11 @@ def run_review(args):
         binary = find_blender(args.blender)
         if args.artifacts.resolve().is_relative_to(binary.parent.parent.parent):
             raise ValueError("Artifacts cannot be inside the source Blender application")
+        identity = application_identity(binary, args.artifacts)
+        application_lock = lock_application(args.artifacts, identity)
         before = profile_snapshot(normal)
         session = Session(None, args.artifacts, args.timeout, prefix="desktop-")
         session.env = review_environment(session)
-        identity = uuid.uuid4().hex[:12]
         session.binary, bundle_id = copy_application(
             binary, session.directory, session.env, identity
         )
@@ -156,7 +185,7 @@ def run_review(args):
         verify_installed(candidate, installed)
         # Copy the fixture so this run does not depend on later checkout edits.
         shutil.copyfile(SCENE_SCRIPT, session.directory / "scene.py")
-        fixture = session.directory / f"Scenario-Review-{identity}.blend"
+        fixture = session.directory / f"Scenario-Review-{uuid.uuid4().hex[:12]}.blend"
         config = {
             "profile": str(session.profile),
             "installed": str(installed),
@@ -229,6 +258,8 @@ def run_review(args):
             except (OSError, subprocess.SubprocessError) as error:
                 report.update(status="failed", cleanup_error=str(error))
                 print(f"Desktop review cleanup failed: {error}", file=sys.stderr)
+        if application_lock is not None:
+            application_lock.close()
         if before is not None:
             report["normal_profile_unchanged"] = profile_snapshot(normal) == before
             if not report["normal_profile_unchanged"]:

@@ -579,8 +579,17 @@ uv run --locked --no-env-file python tools/desktop_review.py \
 
 Each invocation creates a unique directory under `workdir/desktop-review`
 (`--artifacts PATH` overrides the parent), copies the application, gives it a
-unique bundle identifier, and applies an ad-hoc development signature to that
-copy only. Its native executable is renamed to the unique app name and remains the bundle
+stable bundle identifier, and applies an ad-hoc development signature to that
+copy only. The `ScenarioReview-…` suffix is a hash of the resolved source Blender
+executable path and artifact parent directory. Repeated runs with those same paths
+keep the app name, executable name and bundle identifier, so desktop-control
+approval can recognize the app across runs. Changing the ZIP, Blender bytes or
+disposable profile does not change that identity. Permission persistence still
+depends on the desktop-control service; a stable identity does not guarantee it.
+Moving either path creates a new identity. Concurrent reviews of the same source
+must use different `--artifacts` parents; an advisory lock rejects overlapping
+runs with the same identity and is released when the runner exits.
+Its native executable is renamed to the stable app name and remains the bundle
 executable; a wrapper executable can prevent desktop-control tools from attaching
 correctly.
 The copy does not claim `.blend` file associations. The source application and
@@ -602,7 +611,9 @@ Before sending input:
    be inside that directory, and `online_access` must be false.
 2. Attach using the **printed bundle identifier**, then inspect the window title
    and screenshot. The title must contain the printed fixture filename and the
-   Scenario UI must be present. Do not select another Blender window by name alone.
+   Scenario UI must be present. The bundle identifier is reused across runs, so
+   verify the current PID and unique fixture even after a remembered approval.
+   Do not select another Blender window by name alone.
 3. Refresh the desktop tool's window state before keyboard actions. Stop if it
    reports a different/untitled window or the supervised process exits. A tool
    can relaunch an app; a replacement window is not evidence for the original run.

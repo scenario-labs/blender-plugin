@@ -228,6 +228,41 @@ def _validate_value(
     return errors
 
 
+def append_file_reference(schema, name, asset_id, kind, current=None):
+    """Prepare one file-input edit; complete required/minimum checks belong to pricing."""
+    field = next((field for field in _fields(schema) if field["name"] == name), None)
+    if field is None or not is_file_field(field):
+        raise ValueError("Choose a file input")
+    if (
+        kind not in {"image", "audio", "video", "3d"}
+        or str(field.get("kind") or "image").lower() != kind
+    ):
+        raise ValueError("Choose an input matching the reference file type")
+    if not isinstance(asset_id, str) or not asset_id.strip():
+        raise ValueError("Choose a nonempty asset ID")
+    draft = dict(field)
+    if field["type"] == "file":
+        if current not in (None, ""):
+            raise ValueError("Clear the existing reference before replacing it")
+        value = asset_id
+    else:
+        if current is None:
+            current = []
+        if not isinstance(current, list):
+            raise ValueError("Use an array of asset IDs")
+        if asset_id in current:
+            raise ValueError("This reference is already in the input")
+        value = [*current, asset_id]
+        # An artist must be able to add the first reference to a multi-file
+        # minimum. Preserve maximum, item types and allowed-value constraints.
+        for key in ("min_length", "minLength", "minItems"):
+            draft.pop(key, None)
+    errors = _validate_value(draft, value, str(field.get("label") or display_label(name)))
+    if errors:
+        raise ValueError("\n".join(errors))
+    return value
+
+
 def _required_arguments(schema: dict[str, Any]) -> dict[str, Any]:
     routing = schema.get("run_with", {})
     arguments = routing.get("required_arguments", {}) if isinstance(routing, dict) else {}

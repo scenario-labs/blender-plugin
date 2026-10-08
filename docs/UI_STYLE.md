@@ -1306,7 +1306,7 @@ changed-input rejection, view changes, continued work and saved-form reload.
 These do not establish physical editing, native dropdown/confirmation behavior,
 scrolling, screenshots, DPI or viewport focus. Track that desktop acceptance
 under #66/#68 without treating unverified configurations as automatic draft gates.
-Interactive nodes, integrated workflow reference upload/library selection and
+Interactive nodes, integrated workflow reference upload and
 live outputs remain outside this implementation.
 
 ## Native Library controls
@@ -1325,8 +1325,29 @@ known file inputs respect their kind and capacity. Confirmation checks the
 unchanged destination, adds a scoped asset reference and invalidates its price.
 The dialog displays a captured scene name, so deleting the scene while it is
 open cannot break redraw; confirmation still rejects the unavailable destination.
-Drawing never starts requests or mutates RNA. Workflow inputs and organization
-writes are separate work. Installed synthetic tests establish these state and
+Drawing never starts requests or mutates RNA. Organization writes are separate
+work. Installed synthetic tests establish these state and
 command boundaries, not physical input, focus, viewport, screenshot or DPI proof;
 track the remaining desktop acceptance under #66/#68 separately from review
 readiness.
+
+## Workflow reference selection
+
+Library's **Reference destination** dropdown explicitly chooses Model or Workflow.
+Choosing Workflow needs a loaded workflow form, not a selected generation model.
+The reference dialog names the original scene, workflow and matching input before
+attachment. Preserve existing file values; only empty single inputs and arrays
+with capacity can receive a selection. Adding an array item may leave the form
+incomplete, but Request workflow price must still enforce its full requirements.
+
+Workflow file inputs use asset text/JSON plus Library selection; allowed-value
+constraints remain active even when a file field declares enumerated IDs. Each
+Library-managed input stores its selected connection and canonical value. Edited
+or cross-connection marked values require explicit clearing and selection again;
+unchecked inputs retain the binding for re-enabling. **Clear reference(s)** asks
+for confirmation of the original unchanged form, empties and unchecks the input,
+and states that unchecked inputs use workflow defaults. A saved file retains the
+binding, while price/confirmation handles retain their existing session lifetime.
+No attachment, clearing or drawing action starts a generation or transfer.
+Native physical input, focus, viewport, screenshot and DPI proof remain pending;
+installed fixtures do not replace that acceptance.

@@ -256,9 +256,9 @@ tests with the same known SDK authentication expected failure. These runs retain
 the merged Studio handoff checks and all seventeen workflow regressions; they
 do not add physical workflow interaction or live acceptance.
 
-Structured fields currently use JSON and file fields accept already uploaded
-asset IDs. Direct workflow reference upload/library selection, interactive nodes
-and general cancellation remain incomplete. No live request or paid generation
+At that workflow-control boundary, structured fields use JSON and file fields
+accept already uploaded asset IDs. Direct reference upload/Library selection,
+interactive nodes and general cancellation were incomplete. No live request or paid generation
 was performed. Physical input, screenshots, layout, focus and viewport acceptance
 remain pending under #66/#68 as acceptance follow-ups. Review readiness is
 separate from complete product acceptance; the earlier update and release
@@ -288,9 +288,9 @@ published-artifact/update gates.
 | --- | --- | --- |
 | Complete SDK adoption | The unscoped prototype engine and unused raw service clients are removed. The [SDK operation inventory](../SDK_ADOPTION.md#service-operation-inventory) maps maintained service paths and the existing discovery exception; offline/native checks pass. | Finish retained-capability and live provider acceptance under #64/#65; the call-site audit alone does not establish those product contracts. |
 | Credentials and project scope | Merged #316 exposes an optional project ID. Scoped synthetic desktop input passed on the identified earlier ZIP; the final runtime ZIP has native regression coverage. The SDK service-retirement archive identified above also passes saved preference reload and local project isolation. | Complete fresh onboarding, permission failures, live override behavior and final-candidate update/desktop acceptance under #65/#68. |
-| Compact and expanded creation | An explicit native Studio view now reuses Create, Film, Jobs, Results and Connection controls. Workflow input/approval controls now share the job session; native Library search and confirmed model-reference reuse are present, with workflow and Library interaction acceptance still open. Offline prompt handoff/editing, populated forms, scrolling, quote-preserving navigation, continued saved-job polling, small-window fit and viewport return have desktop proof; alternate-DPI and IME checks remain pending. The compact composer still needs complete retained-capability acceptance. | Complete retained Studio presentation under #66, then native select/capture/estimate/generate/inspect/apply and library reuse; focus, text input, viewport, small-window and DPI checks under #66/#68. |
+| Compact and expanded creation | An explicit native Studio view now reuses Create, Film, Jobs, Results and Connection controls. Workflow input/approval controls now share the job session; native Library search and confirmed model/workflow-reference reuse are present, with workflow and Library interaction acceptance still open. Offline prompt handoff/editing, populated forms, scrolling, quote-preserving navigation, continued saved-job polling, small-window fit and viewport return have desktop proof; alternate-DPI and IME checks remain pending. The compact composer still needs complete retained-capability acceptance. | Complete retained Studio presentation under #66, then native select/capture/estimate/generate/inspect/apply and library reuse; focus, text input, viewport, small-window and DPI checks under #66/#68. |
 | Workflows | Local MCP discovery, exact quote approval and durable execution now use the shared SDK session. Expanded Studio now has saved inputs and a separate exact-price confirmation; interactive nodes and general workflow cancellation remain absent. | Complete retained workflow presentation and authorized live output/recovery acceptance under #64/#65/#66/#68; the new commands do not close those issues. |
-| Asset library | Local MCP and native Library list/search use scoped SDK reads with explicit pagination and reusable reference metadata. Native model-reference confirmation preserves scope and destination. | Complete workflow reference selection, collection/tag organization, physical/native presentation and live acceptance under #64/#65/#66/#68. |
+| Asset library | Local MCP and native Library list/search use scoped SDK reads with explicit pagination and reusable reference metadata. Native model/workflow-reference confirmation preserves scope and destination. | Complete direct workflow uploads, collection/tag organization, physical/native presentation and live acceptance under #64/#65/#66/#68. |
 | Retained lanes | Offline receipts and MIME checks do not establish usable live results. | Authorized scoped checks for Image, Video, 3D, Materials, audio, render/edit and Film paths; inspect actual outputs and record limitations under #68. |
 | Recovery and switching | Synthetic tests cover lost acknowledgement, stale quotes, scope changes and application claims. | Candidate-level UI/MCP parity, cancellation/restart races and failed download/import journeys with recorded outcomes under #65/#68. |
 | GPU, motion and audio | Headless counts and media metadata do not establish sustained playback or human review. | Native rendering/playback, sustained GPU/audio checks and human motion/audio review under #68. |
@@ -332,6 +332,32 @@ and the merged Studio/workflow checks; physical Library acceptance remains open.
 
 No live or paid service calls were made. These are headless installed checks,
 not physical Library interaction or release-candidate acceptance.
+
+## Workflow Library reference validation slice
+
+The layer above #328 adds explicit Library selection into a loaded workflow's
+compatible file input. Its confirmation preserves the scene, workflow, input,
+full form and selected connection; single inputs are not replaced, arrays respect
+capacity, and complete requirements still apply before pricing. Persisted bindings
+reject edited or cross-connection values. Clear reference(s) requires a separate
+unchanged-form confirmation and keeps the documented unchecked/default semantics.
+
+Direct workflow uploads, interactive nodes, general workflow cancellation, asset
+organization and physical/live acceptance remain pending. The layer remains a
+draft UI change, with partial references to #64/#65/#66/#68 rather than closure.
+
+Exact ZIP SHA-256
+`eaec050ff2c5ba67a25ac55ee9fb9eefb1e546cec7fe0cc6ea632c5a87c74d5d`
+passes 1,129 installed tests on each macOS 27.0.1 arm64 Blender 5.0.1, 5.1.2 and
+5.2.1, with two Windows-only skips per run. All 140 packaged Python files match
+the checkout; each isolated profile was removed and normal profiles were unchanged.
+Fourteen native workflow-reference tests cover incremental arrays, full validation,
+shared SDK pricing and exact MCP approval, persistent scope binding/reopen, stale
+forms/prices, disabled inputs, file enums, clear confirmation and removed-scene
+safety. Eleven additional unit cases cover draft file edits without weakening
+complete validation. The full unit suite passes 3,832 tests with the existing SDK
+authentication expected failure. Synthetic transport confirms the exact reference
+payload and a single approved submission without live calls or spending.
 
 ## Issue disposition
 

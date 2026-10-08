@@ -33,6 +33,7 @@ def _modules():
         shot_planner,
         studio,
         workflow_controls,
+        workflow_references,
     )
 
     modules = [
@@ -49,6 +50,7 @@ def _modules():
         model_picker,
         panels,
         workflow_controls,
+        workflow_references,
         library_view,
         studio,
         popover,

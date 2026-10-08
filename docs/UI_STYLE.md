@@ -39,9 +39,9 @@ the completed run uses Home/Shift-End selection instead.
 These synthetic checks do not establish live project permissions, other OS/DPI
 interaction, paid generation, or integrated release acceptance under #68.
 
-![Blank Project ID restores API-key default scope](images/project-scope-default.png)
-![Saved credentials with an explicit project selection](images/project-scope-project-a.png)
-![Environment credentials retain the optional project selection](images/project-scope-environment.png)
+![Blank Project ID restores the API key default scope](images/project-scope-default.png)
+![Saved Blender credentials with an explicit project A selection](images/project-scope-project-a.png)
+![Environment credentials retain the explicit optional project B selection](images/project-scope-environment.png)
 ![Viewport selection and front view remain usable after editing Preferences](images/project-scope-viewport.png)
 
 ## Tabs and segmented choices

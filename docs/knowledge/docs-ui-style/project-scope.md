@@ -26,10 +26,10 @@
       "tests/blender/test_offline_runtime.py": "108f24d3d0837765b6fc63962487c804a6335cba8f91f11bc5483b66e2d52a98",
       "tools/desktop_review.py": "beb0d426d252667a787d211966f921e8ff796535e81b4e2558915c8d6dbc1095",
       "tools/desktop_review_scene.py": "40d0cdf90289a286c44e70dc4d3ea5ad70337a849c7d578f161de2933f9bdfc8",
-      "docs/images/project-scope-default.png": "07d760a8e2a0dc9dede30234135b201e41ee43ecf60206a4f91d382bc3da9db0",
-      "docs/images/project-scope-project-a.png": "e1d746c96d02d27dadfe737db891626ff85ede05a4a2ce4c2ab3daa805151bf6",
-      "docs/images/project-scope-environment.png": "01e7d526df17307b75a2d277ab384cdebd2f6b682e1b0db073379d58c7d90e01",
-      "docs/images/project-scope-viewport.png": "7881647b37f6fc1727bc87415d197a837888ff21bca6832823252a5236a1be27"
+      "docs/images/project-scope-default.png": "94cc4214a3b295eabfb31bee6eba49f21c1fd75b7a2be57d0c9a59e9a6098437",
+      "docs/images/project-scope-project-a.png": "2799f1410728a9abd1d7c7c6de326bd5683afc4071c78e527719aa590fcfbdac",
+      "docs/images/project-scope-environment.png": "78a51f41167237669b2d40a3cee77c8e83540f052327b3128014d2345930765c",
+      "docs/images/project-scope-viewport.png": "42cf5ee3e97b80719e73dc8fc77a1f88707734b113ba572cf18aeda2827771f5"
     }
   }
 }

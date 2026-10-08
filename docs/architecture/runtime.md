@@ -616,7 +616,8 @@ Both surfaces use the same URL-free metadata projection in `core/api/library.py`
 
 Reference confirmations capture the original scene, model, lane, input and complete
 reference destination. Weakly held approval identity and fresh destination checks
-prevent forged/repeated/stale application. Attachment adds only a matching,
+prevent forged/repeated/stale application. Display names are captured at review
+time; drawing does not dereference a removed scene. Attachment adds only a matching,
 unoccupied model reference, preserves existing slots, records the selected scope,
 and invalidates the old price. It does not start a transfer or paid submission.
 The existing persisted reference-scope guard applies after reopening as well.

@@ -268,3 +268,18 @@ class LibraryViewTests(unittest.TestCase):
         self.assertTrue(self.owner.error)
         self.assertEqual(self.owner.index, 1)
         self.assertEqual(len(self.fixture.calls), 2)
+
+    def test_deleted_scene_keeps_confirmation_draw_safe_and_cannot_attach(self):
+        self.load()
+        approval = self.approval()
+        scene_name = self.scene.name
+        operator = SimpleNamespace(_approvals=[approval], layout=MagicMock())
+        replacement = bpy.data.scenes.new("Replacement Library scene")
+        bpy.context.window.scene = replacement
+        bpy.data.scenes.remove(self.scene)
+        self.module.SCENARIO_OT_library_reference.draw(operator, bpy.context)
+        labels = [call.kwargs.get("text") for call in operator.layout.label.call_args_list]
+        self.assertIn("Scene: " + scene_name, labels)
+        with self.assertRaises(submodule("blender.job_session").OriginUnavailable):
+            self.owner.attach(approval)
+        self.assertFalse(replacement.scenario.image.references)

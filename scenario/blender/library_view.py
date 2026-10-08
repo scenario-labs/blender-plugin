@@ -37,6 +37,7 @@ class ReferenceApproval:
     label: str
     kind: str
     scene: object
+    scene_name: str
     origin: object
     lane_name: str
     model_id: str
@@ -154,6 +155,7 @@ class LibraryView:
                 str(asset.get("name") or asset_id),
                 asset_kind(asset),
                 context.scene,
+                context.scene.name,
                 origin,
                 lane_name,
                 lane.model_id,
@@ -272,7 +274,7 @@ class SCENARIO_OT_library_reference(bpy.types.Operator):
     def draw(self, context):
         approval = self._approvals[0]
         self.layout.label(text="Asset: " + approval.label)
-        self.layout.label(text="Scene: " + approval.scene.name)
+        self.layout.label(text="Scene: " + approval.scene_name)
         self.layout.label(text="Model: " + approval.model_label)
         self.layout.label(text="Form: " + approval.lane_name.replace("_", " ").title())
         self.layout.prop(self, "input_name")

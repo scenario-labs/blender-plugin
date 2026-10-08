@@ -309,14 +309,16 @@ remain pending under #66/#68 separately from review readiness. This UI layer
 does not close #64/#65/#66/#68.
 
 Exact ZIP SHA-256
-`f385a1b3f6c1fa69ca487370b4c611a38d4479b00163cf6a2d85c137f878bf48`
-passes 1,114 installed tests on each macOS 27.0.1 arm64 Blender 5.0.1, 5.1.2 and
+`5bd1bc29213abb62951cd69efe9e1ea9156bd6e0983e258de7cb35dcc67f7eef`
+passes 1,115 installed tests on each macOS 27.0.1 arm64 Blender 5.0.1, 5.1.2 and
 5.2.1, with two Windows-only skips per run. All 139 packaged Python sources match
 the checkout. Each profile was isolated; normal profiles were unchanged and no
-external network violations occurred. Fourteen Library regressions cover explicit
+external network violations occurred. Fifteen Library regressions cover explicit
 pages, filter changes, single-use owned delivery, unrelated scene edits, readonly
 drawing, native confirmation dispatch, cancellation, reference type/capacity,
-exact destination, selected-scene and credential/project guards. The locked unit
+exact destination, selected-scene and credential/project guards. A deleted-scene
+regression verifies safe dialog redraw from captured display text and rejection
+of attachment to the unavailable destination. The locked unit
 suite also passes with the existing SDK bearer-precedence expected failure.
 No live or paid service calls were made. These are headless installed checks,
 not physical Library interaction or release-candidate acceptance.

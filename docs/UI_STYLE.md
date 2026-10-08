@@ -1323,6 +1323,8 @@ confirmation for the selected scene, generation form, model and compatible input
 No existing reference is silently replaced. Unknown MIME types cannot attach;
 known file inputs respect their kind and capacity. Confirmation checks the
 unchanged destination, adds a scoped asset reference and invalidates its price.
+The dialog displays a captured scene name, so deleting the scene while it is
+open cannot break redraw; confirmation still rejects the unavailable destination.
 Drawing never starts requests or mutates RNA. Workflow inputs and organization
 writes are separate work. Installed synthetic tests establish these state and
 command boundaries, not physical input, focus, viewport, screenshot or DPI proof;

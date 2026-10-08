@@ -12,7 +12,6 @@ import bpy
 
 from .. import prefs as prefs_module
 from ..core import config
-from ..core.api.client import ScenarioClient
 from ..core.api.errors import ScenarioError
 from ..core.api.sdk_adapter import Credentials as SDKCredentials
 from ..core.api.sdk_catalog import SDKCatalog
@@ -163,15 +162,6 @@ def catalog_selection_matches():
     return state.catalog_credentials == credentials() and state.catalog_project_id == project_id()
 
 
-def make_client():
-    creds = credentials()
-    if not creds.valid:
-        raise ScenarioError(0, "Complete the selected credential source in Scenario Preferences")
-    if project_id() is not None:
-        raise ScenarioError(0, "Legacy jobs have no project scope; use shared saved-job recovery")
-    return ScenarioClient(creds.key, creds.secret)
-
-
 _MAIN_THREAD = threading.main_thread()
 
 
@@ -183,9 +173,7 @@ def ensure_manager():
     p = paths()
     if state.manager is None:
         registry = JobRegistry(p.registry_file).load()
-        state.manager = JobManager(make_client, registry, p)
-        if online():
-            state.manager.resume()
+        state.manager = JobManager(registry, p)
     else:
         state.manager.paths = p  # the output folder preference may have changed
     return state.manager

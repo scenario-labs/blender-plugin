@@ -313,7 +313,7 @@ Do not edit this block by hand; run `make mcp-docs`. An asterisk marks a require
 | `estimate_cost` | Get the exact CU cost with a dry run that spends no credits. | `model_id`*: string<br>`parameters`: object<br>`lane`: string (enum: see tools/list) | read-only annotation |
 | `generate` | Submit a generation that spends the user's credits. Every model lane uses durable shared jobs. | `lane`*: string (enum: see tools/list)<br>`quote_id`*: string<br>`approved_cost`*: string<br>`model_id`*: string<br>`parameters`: object; Model parameters; file parameters take Scenario asset ids | spends credits |
 | `job_status` | Read one local generation's status and cost without spending credits. Active model jobs advance through shared remote polling and verified downloads; restarted jobs remain inspection-only. | `job_id`: string; Scenario job id (job_...) or the local_id returned by generate<br>`id`: string; Same as job_id, kept for compatibility | read-only annotation |
-| `wait_for_job` | Wait for a generation while Blender remains responsive. Shared jobs return when delivery finishes, pauses for review, or the wait expires. Restarted jobs remain inspection-only until explicitly resumed. | `job_id`: string; Scenario job id (job_...) or the local_id returned by generate<br>`id`: string; Same as job_id, kept for compatibility<br>`timeout`: number | read-only annotation |
+| `wait_for_job` | Wait for a generation while Blender remains responsive. Shared jobs return when delivery finishes, pauses for review, or the wait expires. Restarted shared jobs remain inspection-only until explicitly resumed. Prototype records return a local snapshot immediately with scoped recovery guidance. | `job_id`: string; Scenario job id (job_...) or the local_id returned by generate<br>`id`: string; Same as job_id, kept for compatibility<br>`timeout`: number | read-only annotation |
 | `recover_cloud_job` | Read one completed cloud model job into the selected credential-scoped saved jobs. | `job_id`*: string<br>`model_id`*: string | - |
 | `import_result` | Reject direct cached-file import and explain the required saved-result approval flow. | `job_id`: string; Scenario job id (job_...) or the local_id returned by generate<br>`id`: string; Same as job_id, kept for compatibility | - |
 | `capture_reference` | Capture a viewport/camera still or clip, or export selected meshes, and upload the snapshot as a Scenario reference asset. | `source`: string (['VIEWPORT', 'CAMERA', 'VIEWPORT_CLIP', 'CAMERA_CLIP', 'MESH']) | - |
@@ -411,13 +411,15 @@ source copy, without replaying upload mutations or deleting the original file.
 See [upload limits and destination policy](SDK_UPLOADS.md#active-reference-uploads).
 
 `wait_for_job` accepts a finite timeout from 0 to 170 seconds (default 170).
-A zero timeout reads status immediately. Other waits observe the captured local
-record on the HTTP thread; they do not submit, retry, cancel or poll the remote
-service. The main thread prepares the wait and returns its final status. Runtime
-shutdown and server stop interrupt waiting; a changed credential context, manager
-or record rejects the old completion. This does not establish account-scoped
-persistence for the prototype job registry or guarantee that automatic scene
-application has finished when a remote job reaches a terminal status.
+A zero timeout reads status immediately. Shared waits observe their scoped session
+on the HTTP thread while main-thread maintenance performs delivery. Server stop
+interrupts waiting; a changed session rejects the old completion. Waiting does
+not approve generation, cancellation or scene application.
+
+Prototype registry records have no automatic service engine. Their waits return
+the saved local snapshot immediately, including nonterminal records, with
+`recover_cloud_job` guidance. Their saved status is not a fresh remote status.
+No credentials, service requests or registry writes are needed for cold reads.
 
 ## Troubleshooting
 
@@ -469,10 +471,9 @@ asset and scene/frame approval above. Embedded GLBs use the corresponding
 scene/cursor approval; in-place editing is separate. `import_result` rejects
 direct cached-file import, including prototype records, with guidance for scoped
 recovery and explicit destination approval. It requires complete selected
-credentials to inspect the saved store. Read-only inspection of a completed prototype result
-can still use the cold local registry without credentials or creating a manager
-that resumes unrelated pending jobs. Non-terminal prototype lookups
-still use the manager-owned record so active waits observe its progress.
+credentials to inspect the saved store. Read-only inspection of any prototype record
+uses its local snapshot without credentials, polling or manager creation. No
+prototype result event automatically applies cached files into the current scene.
 
 ### Preparing Render Image and Render Video
 

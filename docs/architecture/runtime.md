@@ -1,7 +1,7 @@
 # Runtime map and integration status
 
-The extension package is [scenario/](../../scenario/). It currently contains the
-active prototype runtime and separately tested components for its replacement.
+The extension package is [scenario/](../../scenario/). It uses the scoped SDK runtime for generation and recovery, alongside retained
+local helpers and separately tested application components.
 The supported minimum in the [manifest](../../scenario/blender_manifest.toml)
 is Blender 5.0; dependency and runtime acceptance have separate gates.
 
@@ -12,8 +12,8 @@ is Blender 5.0; dependency and runtime acceptance have separate gates.
 | Registration | [registry.py](../../scenario/blender/registry.py) | Registers properties, panels, operators, composer, pump and local server integration. The `scenario_blender` headless command serves local MCP on the main thread. |
 | UI lifetime and state | [runtime.py](../../scenario/blender/runtime.py) | Owns the credential-bound SDK catalog and process-wide UI/MCP state; native form quote/submission and Film task/capture/composition controls use the selected `JobSession`; local Film final assembly/export remain to integrate. |
 | UI generation | [generation.py](../../scenario/blender/generation.py) | Every native model form consumes a lane-bound session quote before durable submission; unfinished file/capture/Spark inputs block final pricing and submission. |
-| Main-thread application | [pump.py](../../scenario/blender/pump.py) | Drains prototype events and applies results to Blender. GUI timer handling differs from headless execution. |
-| Local MCP | [server.py](../../scenario/mcp/server.py), [tools_scenario.py](../../scenario/mcp/tools_scenario.py), [mcp_service.py](../../scenario/blender/mcp_service.py) | Queues scene tools for main-thread execution; model listing/schema use the same SDK catalog as the UI, all model generation lanes now use the shared session; ancillary service tools still call the prototype runtime. |
+| Main-thread application | [pump.py](../../scenario/blender/pump.py) | Drains SDK catalog events and maintains shared job delivery. Unbound prototype completions cannot apply results. GUI timer handling differs from headless execution. |
+| Local MCP | [server.py](../../scenario/mcp/server.py), [tools_scenario.py](../../scenario/mcp/tools_scenario.py), [mcp_service.py](../../scenario/blender/mcp_service.py) | Queues scene tools for main-thread execution; model listing/schema use the same SDK catalog as the UI, all model generation lanes use the shared session; prototype records remain local snapshots. |
 | Credentials | [config.py](../../scenario/core/config.py), [prefs.py](../../scenario/prefs.py) | Credentials default to the saved Blender pair; environment credentials require explicit selection and cannot mix with preferences. OAuth is deferred; shared runtime scope/project integration remains #65. |
 
 These are source-inspection findings. Do not infer UI/MCP parity from the shared
@@ -133,12 +133,11 @@ late callback authority. In-flight receipts remain in their original scoped stor
 Returning to a project reopens its records with fresh session approval identity;
 normalized-equivalent edits keep the current session. Read-only history and Film
 controls check both credentials and project without mutating state in drawing.
-The remaining prototype client rejects a nonempty project override rather than
-operating in an unselected default scope. It cannot infer project ownership for
-legacy jobs. The pump keeps pending prototype resumes suspended while an override
-is selected; it does not retry the refused client every tick. Clearing the override
-restores the existing default-scope retry gate. This does not migrate prototype
-data or establish live project permissions, discovery or complete release acceptance.
+Prototype jobs have no reliable credential or project ownership. Their automatic
+service engine is retired for every selection, including the default project;
+clearing the override cannot resume it. See [local prototype records](#local-prototype-records).
+This does not migrate prototype data or establish live project permissions,
+discovery or complete release acceptance.
 
 ## Active SDK cost previews and model submission
 
@@ -255,11 +254,30 @@ Render-lane MCP calls use the native form preparation described below, including
 uploaded inputs, prompt decoration and separate Spark approval. Do not describe this slice as
 complete generation, supported release acceptance, or completion of #65.
 
-For prototype jobs, local MCP `wait_for_job` captures a local record on the main thread and waits
-on the HTTP thread. Other scene tools and the GUI pump remain available. Its
-completion rechecks the manager, credentials and record identity; shutdown
-interrupts the wait without cancelling or resubmitting the generation. This
-responsive read does not migrate prototype jobs into the durable scoped runtime.
+## Local prototype records
+
+The catalog worker manager retains read-only local registry access for saved
+media tools and status inspection. It has no client factory, paid submission,
+raw estimate, polling, upload, download or automatic resume methods. Starting it
+or changing online access, credentials or project does not modify old records or
+send requests for them. New generation and remote recovery belong to the scoped
+SDK JobSession. No second job engine or prototype migration is provided.
+
+Local MCP `job_status` reads the saved prototype snapshot. `wait_for_job` returns
+that snapshot immediately, even for a nonterminal record, with guidance to use
+`recover_cloud_job` under explicitly selected credentials. It does not imply the
+saved remote status is current. Cold lookups need no manager or complete credentials.
+Known cloud jobs can be recovered through the SDK; applying their results still
+requires a separately approved destination. Local video insertion and audio
+preview continue to use their existing explicit file controls.
+
+An unbound `job_done` event may project a local status row but cannot invoke an
+image, material, mesh, media or render-lane application callback. It displays
+recovery guidance instead. Shared delivery retains its own scope, receipt and
+scene guards. The removed prototype engine tests are replaced by read-only
+startup/pump and late-event regressions; shared submission, uncertainty,
+transfers and deferred wait tests remain. This retirement does not establish
+live provider acceptance or complete the remaining SDK/helper inventory.
 
 ## Replacement components already present
 

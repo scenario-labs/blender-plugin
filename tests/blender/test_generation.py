@@ -248,14 +248,32 @@ class GenerationTests(unittest.TestCase):
         self.assertIn("referenceImages", request.array_params)
         self.assertEqual(request.errors, [])
 
-    def test_job_done_event_for_image_loads_images(self):
+    def test_unbound_job_done_events_cannot_apply_prototype_results(self):
         records = submodule("core.jobs.records")
-        rec = records.JobRecord.new(lane="image", kind="image", model_id="model_x", body={})
-        rec.job_id, rec.status = "job_done_1", "success"
-        rec.files = [str(FIXTURES / "patina-copper-512" / "albedo.png")]
-        self.handlers.dispatch(("job_done", rec))
-        self.assertTrue(any(img.filepath.endswith("albedo.png") for img in bpy.data.images))
-        self.assertTrue(any(r.job_id == "job_done_1" for r in self.runtime.state.jobs_view))
+        images = tuple(bpy.data.images)
+        objects = tuple(bpy.data.objects)
+        for kind, module, callback in (
+            ("image", "apply_image", "on_image_result"),
+            ("material", "apply_material", "on_material_result"),
+            ("3d", "apply_3d", "on_3d_result"),
+            ("video", "apply_video", "on_video_result"),
+            ("audio", "apply_audio", "on_audio_result"),
+        ):
+            rec = records.JobRecord.new(lane=kind, kind=kind, model_id="model_x", body={})
+            rec.job_id, rec.status = "job_done_" + kind, "success"
+            rec.files = [str(FIXTURES / "patina-copper-512" / "albedo.png")]
+            with (
+                self.subTest(kind=kind),
+                patch.object(submodule("blender." + module), callback) as apply,
+                patch.object(submodule("blender.render_lanes"), "on_result") as render,
+            ):
+                self.handlers.dispatch(("job_done", rec))
+                apply.assert_not_called()
+                render.assert_not_called()
+                self.assertEqual(tuple(bpy.data.images), images)
+                self.assertEqual(tuple(bpy.data.objects), objects)
+                self.assertIn(rec, self.runtime.state.jobs_view)
+                self.assertIn("was not applied", self.runtime.state.last_message)
 
     def test_estimate_dirty_timestamp_fits_a_float_property(self):
         props = submodule("blender.props")

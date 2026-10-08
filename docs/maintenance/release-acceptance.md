@@ -104,11 +104,41 @@ archive has a new native update/restart result in this record. These checks do
 not establish live project permissions, other OS/DPI desktop acceptance, paid
 results or integrated release acceptance.
 
+## Prototype job retirement candidate
+
+The earlier retirement candidate, reviewed on 2026-10-07, has source
+`412e504a81721ded9369c7bedd887913e6bb8c92` and ZIP SHA-256
+`f4376ab6616e3dbfa59138416379fae9b58ed5663e2f6f53e226b6ac2b3b1fbb`.
+It combines stack #314 through #309 at
+`cb99a289ad2cf12242f4cbff49237ef36538f225`, the earlier #315–#318 layers
+and retirement of the unscoped prototype job engine. Later parent fixes are
+outside that exact source identity; this archive does not replace the distinct
+project-scope archives above or certify the rebased retirement branch.
+
+That source passes **3,839 unit tests**, with the known SDK authentication
+expected failure. All 159 packaged source files match. The same ZIP passes
+**1,051 installed tests per version** on macOS 27.0.1 arm64, with two
+Windows-only skips, using Blender 5.0.1 / Python 3.11.13,
+5.1.2 / Python 3.13.9 and 5.2.1 / Python 3.13.13.
+The lower native count reflects replacement of obsolete prototype-engine tests
+with read-only startup/pump, local MCP snapshot and unbound-result checks.
+Shared SDK submission, uncertainty, transfer and deferred-wait coverage remains.
+
+Same-archive native install/update and offline restart pass on all three
+versions using synthetic predecessor SHA-256
+`ca6ffddc82a8a59d523255db76a27534973db6e6b15c8951fc4467ebcfa9f090`.
+The scoped state and scene survive, with zero service requests, unchanged normal
+profiles, stopped loopback servers and cleaned disposable profiles. This is
+synthetic lifecycle evidence, not a published release-pair, physical desktop
+or live-provider check.
+[Hosted CI for its preceding #318 head](https://github.com/scenario-labs/blender-plugin/actions/runs/37695088983)
+passed for its own source and separately built Linux/Windows archives.
+
 ## Remaining release gates
 
 | Gate | Current limit | Next evidence and owner |
 | --- | --- | --- |
-| Complete SDK adoption | Shared model jobs and scoped recovery have extensive regression coverage; that alone does not audit every ancillary call site or retained capability. | Reconcile the runtime map and remaining call sites against #64/#65; identify each SDK method or documented exception. |
+| Complete SDK adoption | The unscoped prototype job engine and native raw-client factory are retired. Shared model jobs and scoped recovery pass regression checks; unused service helpers and retained capabilities still need inventory reconciliation. | Reconcile the runtime map and remaining call sites against #64/#65; identify each SDK method or documented exception. |
 | Credentials and project scope | Merged #316 exposes an optional project ID. Scoped synthetic desktop input passed on the identified earlier ZIP; the final runtime ZIP has native regression coverage. | Complete fresh onboarding, permission failures, live override behavior, saved preference reload and final-candidate desktop acceptance under #65/#68. |
 | Compact and expanded creation | Earlier screenshots and isolated controls do not establish the complete journey on this candidate. | Native select/capture/estimate/generate/inspect/apply and library reuse; focus, text input, viewport, small-window and DPI checks under #66/#68. |
 | Retained lanes | Offline receipts and MIME checks do not establish usable live results. | Authorized scoped checks for Image, Video, 3D, Materials, audio, render/edit and Film paths; inspect actual outputs and record limitations under #68. |

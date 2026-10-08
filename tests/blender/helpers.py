@@ -93,9 +93,7 @@ def isolated_manager():
     with tempfile.TemporaryDirectory(prefix="scenario-test-jobs-") as directory:
         root = pathlib.Path(directory)
         paths = config.Paths(root / "state", root / "cache", root / "output")
-        manager = manager_module.JobManager(
-            runtime.make_client, records.JobRegistry(paths.registry_file).load(), paths
-        )
+        manager = manager_module.JobManager(records.JobRegistry(paths.registry_file).load(), paths)
         with patch.object(runtime, "paths", return_value=paths):
             runtime.state.manager = manager
             try:

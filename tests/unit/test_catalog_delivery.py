@@ -27,11 +27,8 @@ def test_cost_preview_captures_nested_inputs_and_returns_exact_quote_without_leg
             bodies.append((model_id, body))
             return quote
 
-    def no_legacy_client():
-        raise AssertionError("Legacy client must not be constructed")
-
     context = Catalog()
-    manager = JobManager(no_legacy_client, None, None)
+    manager = JobManager(None, None)
     body = {"images": ["asset-original"]}
     manager.preview_cost(context, "quote", "fixture", body)
     try:
@@ -76,7 +73,7 @@ def test_malformed_shared_refresh_preserves_cache_and_delivers_catalog_failures(
         return httpx.Response(200, json={"models": [{"id": "invalid", **malformed}]})
 
     context, _ = catalog(respond)
-    manager = JobManager(None, None, None)
+    manager = JobManager(None, None)
     try:
         context.fetch_list(privacy)
         refresh = True
@@ -129,7 +126,7 @@ def test_catalog_and_completed_schema_are_published_before_slow_detail():
             return model_id
 
     context = Catalog()
-    manager = JobManager(None, None, None)
+    manager = JobManager(None, None)
     manager.fetch_catalog(context, model_ids=("first", "slow", "last"))
     try:
         assert entered.wait(5)
@@ -173,7 +170,7 @@ def test_shutdown_stops_schema_warmup_after_current_request():
             assert release.wait(5)
             return model_id
 
-    manager = JobManager(None, None, None)
+    manager = JobManager(None, None)
     manager.fetch_catalog(Catalog(), model_ids=("first", "must-not-start"))
     try:
         assert entered.wait(5)
@@ -190,7 +187,7 @@ def test_background_schema_request_keeps_its_quote_intent():
         def get(self, model_id, refresh=False):
             return model_id
 
-    manager = JobManager(None, None, None)
+    manager = JobManager(None, None)
     manager.fetch_models(Catalog(), ["background"], mark_dirty=False)
     manager.join(5)
     assert not manager.has_active()

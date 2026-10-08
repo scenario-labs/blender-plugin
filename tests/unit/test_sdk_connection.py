@@ -50,7 +50,7 @@ def test_failed_probe_delivers_safe_error_without_retrying(status, page):
         return httpx.Response(status, json={**page, "private": "do-not-expose"})
 
     context, _ = catalog(respond)
-    manager = JobManager(None, None, None)
+    manager = JobManager(None, None)
     key = object()
     try:
         manager.check_connection(context, key)

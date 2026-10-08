@@ -25,24 +25,20 @@ class McpWaitTests(unittest.TestCase):
         self.rec.job_id, self.rec.status = "job_fixture", "running"
         self.manager.registry.add(self.rec)
 
-    def pending(self, timeout=0.01):
-        result = self.tools.wait_for_job({"job_id": self.rec.job_id, "timeout": timeout})
-        self.assertIsInstance(result, submodule("mcp.protocol").DeferredTool)
-        return result
+    def test_prototype_wait_returns_snapshot_immediately_without_resubmitting(self):
+        self.manager.registry.save()
+        original = self.manager.paths.registry_file.read_bytes()
+        for timeout in (0, 0.01, 170):
+            result = self.tools.wait_for_job({"job_id": self.rec.job_id, "timeout": timeout})
+            self.assertIsInstance(result, dict)
+            self.assertEqual(result["status"], "running")
+            self.assertIn("local snapshot", result["note"])
+            self.assertIn("recover_cloud_job", result["note"])
+            self.assertEqual(self.manager.registry.all(), [self.rec])
+            self.assertEqual(self.manager.paths.registry_file.read_bytes(), original)
+            self.assertFalse(self.manager.has_active())
 
-    def test_timeout_reports_current_status_without_cancelling_or_resubmitting(self):
-        pending = self.pending()
-        with ThreadPoolExecutor(max_workers=1) as worker:
-            worker.submit(pending.run).result(2)
-        result = pending.finish(None)
-        self.assertEqual(result["status"], "running")
-        self.assertIn("still running", result["note"])
-        self.assertEqual(self.manager.registry.all(), [self.rec])
-        self.assertFalse(self.manager.has_active())
-
-    def test_zero_timeout_and_terminal_jobs_return_immediately(self):
-        result = self.tools.wait_for_job({"id": self.rec.local_id, "timeout": 0})
-        self.assertIn("note", result)
+    def test_terminal_prototype_jobs_return_their_saved_status(self):
         for status in ("success", "failed", "cancelled"):
             self.rec.status = status
             result = self.tools.wait_for_job({"id": self.rec.local_id})
@@ -56,48 +52,6 @@ class McpWaitTests(unittest.TestCase):
                     with self.assertRaisesRegex(ValueError, "finite number"):
                         self.tools.wait_for_job({"job_id": self.rec.job_id, "timeout": value})
             manager.assert_not_called()
-
-    def test_waiter_reads_only_captured_python_records(self):
-        pending = self.pending(1)
-        with (
-            patch.object(self.runtime, "credentials", side_effect=AssertionError("Worker bpy")),
-            patch.object(self.runtime, "ensure_manager", side_effect=AssertionError("Worker bpy")),
-            ThreadPoolExecutor(max_workers=1) as worker,
-        ):
-            future = worker.submit(pending.run)
-            self.rec.status, self.rec.files = "success", ["fixture.png"]
-            future.result(2)
-        result = pending.finish(None)
-        self.assertEqual(result["files"], ["fixture.png"])
-        self.assertNotIn("note", result)
-
-    def test_credentials_changed_before_delivery_reject_old_status(self):
-        pending = self.pending()
-        pending.run()
-        self.prefs.api_secret = "replacement-secret"
-        with self.assertRaisesRegex(RuntimeError, "context changed"):
-            pending.finish(None)
-
-    def test_reset_or_record_replacement_rejects_old_status(self):
-        pending = self.pending()
-        pending.run()
-        replacement = self.records.JobRecord.from_dict(self.rec.to_dict())
-        self.manager.registry.add(replacement)
-        with self.assertRaisesRegex(RuntimeError, "context changed"):
-            pending.finish(None)
-        self.manager.registry.add(self.rec)
-        self.runtime.state.reset()
-        with self.assertRaisesRegex(RuntimeError, "context changed"):
-            pending.finish(None)
-
-    def test_manager_shutdown_releases_waiter_without_cancelling_job(self):
-        pending = self.pending(170)
-        with ThreadPoolExecutor(max_workers=1) as worker:
-            future = worker.submit(pending.run)
-            self.manager.shutdown()
-            with self.assertRaisesRegex(RuntimeError, "not cancelled"):
-                future.result(2)
-        self.assertEqual(self.rec.status, "running")
 
     def test_authenticated_wait_keeps_scene_executor_available(self):
         protocol = submodule("mcp.protocol")
@@ -159,30 +113,11 @@ class McpWaitTests(unittest.TestCase):
             self.assertLess(time.monotonic() - started, 0.5)
             scene = worker.submit(request, "scene_probe")
             pump_until(scene.done)
-            self.assertFalse(waiting.done())
             self.assertEqual(scene_calls, [True])
             self.assertNotIn("error", scene.result())
-            self.rec.status = "success"
             pump_until(waiting.done)
             result = waiting.result()
         self.assertFalse(result["result"].get("isError"), result)
         status = json.loads(result["result"]["content"][0]["text"])
-        self.assertEqual(status["status"], "success")
-
-    def test_stopped_server_releases_worker_and_rejects_late_delivery(self):
-        server = submodule("mcp.server").McpServer(
-            "127.0.0.1", 0, "fixture-wait-token", submodule("mcp.protocol").Registry(), {}
-        )
-        server.start()
-        server.port = server._httpd.server_address[1]
-        self.addCleanup(server.stop)
-        self.runtime.state.mcp = server
-        pending = self.pending(170)
-        with ThreadPoolExecutor(max_workers=1) as worker:
-            future = worker.submit(pending.run)
-            server.stop()
-            with self.assertRaisesRegex(RuntimeError, "not cancelled"):
-                future.result(2)
-        self.rec.status = "success"
-        with self.assertRaisesRegex(RuntimeError, "context changed"):
-            pending.finish(None)
+        self.assertEqual(status["status"], "running")
+        self.assertIn("local snapshot", status["note"])

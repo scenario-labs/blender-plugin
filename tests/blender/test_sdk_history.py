@@ -56,7 +56,9 @@ class SDKHistoryTests(unittest.TestCase):
         )
         self.enterContext(
             patch.object(
-                self.runtime, "make_client", side_effect=AssertionError("Legacy client used")
+                submodule("core.api.client"),
+                "ScenarioClient",
+                side_effect=AssertionError("Legacy client used"),
             )
         )
 
@@ -122,11 +124,10 @@ class SDKHistoryTests(unittest.TestCase):
         legacy = self.legacy_collision()
         before = tuple(bpy.data.objects)
         with (
-            patch.object(self.manager, "track") as track,
             patch.object(self.handlers, "dispatch") as dispatch,
         ):
             self.assertEqual(bpy.ops.scenario.import_result(job_id="job-fixture"), {"FINISHED"})
-            track.assert_not_called()
+            self.assertFalse(self.manager.has_active())
             dispatch.assert_not_called()
         self.assertEqual(tuple(bpy.data.objects), before)
         self.assertEqual(self.runtime.state.job_store.get(saved.intent.request_id), saved)
@@ -175,7 +176,6 @@ class SDKHistoryTests(unittest.TestCase):
         self.legacy_collision()
         with (
             patch.object(self.runtime.state.job_store, "records", side_effect=OSError("fixture")),
-            patch.object(self.manager, "track") as track,
             patch.object(self.handlers, "dispatch") as dispatch,
         ):
             with self.assertRaisesRegex(RuntimeError, "Could not inspect saved jobs"):
@@ -184,7 +184,7 @@ class SDKHistoryTests(unittest.TestCase):
                 submodule("core.api.errors").ScenarioError, "Could not inspect saved jobs"
             ):
                 self.tools.import_result({"job_id": "job-fixture"})
-            track.assert_not_called()
+            self.assertFalse(self.manager.has_active())
             dispatch.assert_not_called()
 
     def test_history_draw_offers_saved_controls_without_files_or_mutation(self):

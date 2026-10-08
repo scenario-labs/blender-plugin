@@ -405,60 +405,45 @@ class OfflineRuntimeTests(unittest.TestCase):
         self.manager.registry.save()
         return job
 
-    def test_offline_manager_loads_saved_job_without_resuming_it(self):
+    def test_manager_loads_prototype_records_without_requests_in_any_scope(self):
         job = self.saved_job()
         registry_bytes = self.manager.paths.registry_file.read_bytes()
-        with patch.object(self.runtime.state, "manager", None):
-            manager_class = submodule("core.jobs.manager").JobManager
-            with patch.object(manager_class, "resume", autospec=True) as resume:
-                restored = self.runtime.ensure_manager()
-                try:
-                    resume.assert_not_called()
-                    self.assertEqual(
-                        [rec.job_id for rec in restored.registry.active()], [job.job_id]
-                    )
-                    self.assertEqual(restored.paths.registry_file.read_bytes(), registry_bytes)
-                    self.assertFalse(restored.has_active())
-                finally:
-                    restored.shutdown()
-                    restored.join(timeout=5)
-        # Control branch: the same saved job does reach resume when online.
-        with online_access(True), patch.object(self.runtime.state, "manager", None):
-            with patch.object(manager_class, "resume", autospec=True) as resume:
-                restored = self.runtime.ensure_manager()
-                resume.assert_called_once_with(restored)
-                restored.shutdown()
+        for allowed in (False, True):
+            for project in (None, "fixture-project"):
+                with (
+                    self.subTest(online=allowed, project=project),
+                    online_access(allowed),
+                    patch.object(self.runtime, "project_id", return_value=project),
+                    patch.object(self.runtime.state, "manager", None),
+                ):
+                    restored = self.runtime.ensure_manager()
+                    try:
+                        self.assertEqual(
+                            [rec.job_id for rec in restored.registry.active()], [job.job_id]
+                        )
+                        self.assertEqual(restored.paths.registry_file.read_bytes(), registry_bytes)
+                        self.assertFalse(restored.has_active())
+                        self.assertEqual(restored.drain(), [])
+                    finally:
+                        restored.shutdown()
+                        restored.join(timeout=5)
 
-    def test_pump_does_not_retry_suspended_jobs_until_online(self):
+    def test_pump_never_resumes_prototype_jobs_after_scope_or_online_changes(self):
         job = self.saved_job()
-        self.manager.resume_pending = [job]
-        self.runtime.state.catalog_loaded = True
-        with patch.object(self.manager, "retry_resume") as retry:
-            self.pump._process()
-            retry.assert_not_called()
-            self.assertEqual(self.manager.resume_pending, [job])
-            with online_access(True):
-                self.pump._process()
-                retry.assert_called_once_with()
-
-    def test_project_override_keeps_prototype_resume_suspended_across_ticks(self):
-        job = self.saved_job()
-        self.manager.resume_pending = [job]
         registry_bytes = self.manager.paths.registry_file.read_bytes()
         self.runtime.state.catalog_loaded = True
         with (
-            online_access(True),
-            patch.object(self.runtime, "project_id", return_value="fixture-project") as project,
             patch.object(self.generation, "process_catalog_events", return_value=False),
             patch.object(self.service, "process_pending"),
-            patch.object(self.manager, "retry_resume") as retry,
+            patch.object(self.runtime, "project_id") as project,
         ):
-            for _ in range(5):
-                self.pump._process()
-            retry.assert_not_called()
-            self.assertEqual(self.manager.resume_pending, [job])
-            self.assertEqual(self.manager.paths.registry_file.read_bytes(), registry_bytes)
-            self.assertEqual(self.manager.drain(), [])
-            project.return_value = None
-            self.pump._process()
-            retry.assert_called_once_with()
+            for selected in (None, "fixture-project", None):
+                project.return_value = selected
+                for allowed in (False, True):
+                    with online_access(allowed):
+                        for _ in range(5):
+                            self.pump._process()
+                    self.assertEqual(self.manager.paths.registry_file.read_bytes(), registry_bytes)
+                    self.assertEqual(self.manager.registry.active(), [job])
+                    self.assertEqual(self.manager.drain(), [])
+                    self.assertFalse(self.manager.has_active())

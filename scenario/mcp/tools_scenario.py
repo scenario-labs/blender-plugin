@@ -160,7 +160,8 @@ def film_recipe(args):
     action = args.get("action", "inspect")
     scene = bpy.context.scene
     if action == "inspect":
-        return runtime.ensure_film_jobs().inspect(scene)
+        owner = runtime.ensure_film_jobs()
+        return {"context_id": runtime.state.job_context_id, **owner.inspect(scene)}
     if action == "load":
         plan = film_jobs.load_recipe(scene, args["recipe"])
     elif action == "new_production":
@@ -308,6 +309,56 @@ def film_timeline_review(args):
 
 def build_film_timeline(args):
     return runtime.ensure_film_jobs().session.film_timeline.approve(args["review_id"])
+
+
+def prepare_film_composition(args):
+    owner = _film_owner(args).compositions
+    if args["context_id"] != runtime.state.job_context_id:
+        raise ValueError("The composition connection changed; inspect the recipe again")
+    return owner.prepare(
+        bpy.context.scene,
+        mode=args.get("mode", "final"),
+        score_task_id=args.get("score_task_id", "score"),
+    )
+
+
+def film_composition_review(args):
+    owner = runtime.ensure_film_jobs().compositions
+    action = args.get("action", "status")
+    if action == "cancel":
+        return owner.cancel(args["review_id"])
+    if action == "status":
+        owner.poll()
+        return owner.status(args["review_id"])
+    if action == "discard":
+        owner.poll()
+        return owner.discard(args["review_id"])
+    raise ValueError("Choose status, cancel or discard")
+
+
+def estimate_film_composition(args):
+    owner = runtime.ensure_film_jobs().compositions
+    scene = bpy.context.scene
+    identifier = args["review_id"]
+    owner.estimate(identifier)
+    task = owner._get(identifier).task
+
+    def finish(_):
+        if runtime.ensure_film_jobs().compositions is not owner or bpy.context.scene != scene:
+            raise ScenarioError(0, "The Film context changed; inspect the composition review")
+        owner.poll()
+        status = owner.status(identifier)
+        if status["phase"] != "QUOTED":
+            raise ScenarioError(0, status["error"] or "The composition price is unavailable")
+        return status
+
+    return DeferredTool(task.result, finish)
+
+
+def generate_film_composition(args):
+    return runtime.ensure_film_jobs().compositions.approve(
+        args["review_id"], approved_cost=args["approved_cost"]
+    )
 
 
 def film_capture_sources(args):
@@ -1079,6 +1130,76 @@ _JOB_REF = {
 
 SPECS = (
     ToolSpec(
+        "prepare_film_composition",
+        (
+            "Inspect saved Film media and prepare a final or previs composition without spending.\n"
+            "Args: context_id and production_id are required from film_recipe inspection; mode is final (default) or previs, score_task_id defaults to score.\n"
+            "Returns: review_id and PREPARING phase; poll film_composition_review until READY.\n"
+            'Example: {"context_id": "current-context", "production_id": "saved-production", "mode": "final"}.\n'
+            "Requires retained upload files or downloaded results and installed ffprobe. Uses the existing selected connection and recipe; no upload, download, scene mutation or generation. Reviews are session-local.\n"
+            "Platform equivalent: none; local composition source verification."
+        ),
+        _schema(
+            {
+                "context_id": {"type": "string"},
+                "production_id": {"type": "string"},
+                "mode": {"type": "string", "enum": ["final", "previs"]},
+                "score_task_id": {"type": "string"},
+            },
+            ["context_id", "production_id"],
+        ),
+        prepare_film_composition,
+    ),
+    ToolSpec(
+        "film_composition_review",
+        (
+            "Inspect, cancel or discard a session-local Film composition review.\n"
+            "Args: review_id is required; action is status (default), cancel or discard.\n"
+            "Returns: phase, original scene/production/master, frames/fps, sources/layers, parameters, exact price, saved request_id and sanitized error when available.\n"
+            'Example: {"review_id": "current-composition", "action": "status"}.\n'
+            "Cancel stops local inspection or discards a pending price after it finishes. Discard releases only the review after active work ends; media and saved jobs remain. Neither action cancels or repeats a generation. After restart inspect film_recipe and saved jobs.\n"
+            "Platform equivalent: none; local composition review lifecycle."
+        ),
+        _schema(
+            {
+                "review_id": {"type": "string"},
+                "action": {"type": "string", "enum": ["status", "cancel", "discard"]},
+            },
+            ["review_id"],
+        ),
+        film_composition_review,
+    ),
+    ToolSpec(
+        "estimate_film_composition",
+        (
+            "Request the exact server price for one READY verified Film composition.\n"
+            "Args: review_id is required from prepare_film_composition.\n"
+            "Returns: QUOTED review with exact cu_cost_exact, model parameters and original master identity.\n"
+            'Example: {"review_id": "ready-composition"}.\n'
+            "Rechecks saved sources, original recipe, scene and connection. No generation. Review the returned payload and obtain explicit spending approval before generate_film_composition.\n"
+            "Platform equivalent: estimate_cost for model_scenario-compose-video."
+        ),
+        _schema({"review_id": {"type": "string"}}, ["review_id"]),
+        estimate_film_composition,
+        {"readOnlyHint": True},
+    ),
+    ToolSpec(
+        "generate_film_composition",
+        (
+            "Approve one exact Film composition price and save its master identity before a single submission.\n"
+            "Args: review_id and approved_cost are required strings; approve cu_cost_exact verbatim.\n"
+            "Returns: SUBMITTED review with request_id for job_status and saved-job recovery.\n"
+            'Example: {"review_id": "quoted-composition", "approved_cost": "0.10000000000000001"}.\n'
+            "Requires explicit approval of the reviewed payload and exact cost. Consumes approval before preparation. On an error or lost response inspect film_recipe and saved jobs; never repeat uncertain submission. Downloads remain saved for separate application; no recipe or scene edit.\n"
+            "Platform equivalent: generate with model_scenario-compose-video through the shared model runtime."
+        ),
+        _schema(
+            {"review_id": {"type": "string"}, "approved_cost": {"type": "string"}},
+            ["review_id", "approved_cost"],
+        ),
+        generate_film_composition,
+    ),
+    ToolSpec(
         "film_capture_sources",
         (
             "Inspect matching local scenes for one Film shot before capture.\n"
@@ -1323,7 +1444,7 @@ SPECS = (
         (
             "Inspect or load the current scene's Film recipe, or explicitly start a new production.\n"
             "Args: action is inspect (default), load or new_production; recipe is a raw Film JSON object required for load.\n"
-            "Returns: stable production_id, title, tasks and shots; inspection adds saved job/upload identities and states. A quoted task includes quote_id, model_id, parameters and cu_cost_exact for its existing approval.\n"
+            "Returns: stable production_id, title, tasks and shots; inspection adds context_id and saved job/upload identities and states, including declared master jobs. A quoted task includes quote_id, model_id, parameters and cu_cost_exact for its existing approval.\n"
             'Example: {"action": "inspect"}.\n'
             "Load validates before mutation and preserves identity. Save the blend file to retain it. New production deliberately gives the same task names a fresh identity; it does not submit or recover work.\n"
             "After a scene-switch error, return to the original scene and inspect to recover an unchanged quote or saved upload association. Inspection only completes already-admitted preparation; it never reprices, resumes saved jobs or submits. Stale quotes are omitted.\n"

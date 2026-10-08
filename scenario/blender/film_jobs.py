@@ -87,6 +87,9 @@ class FilmJobs:
         self._online = online
         self.actions = {}
         self._saved_actions = {}
+        from .film_composition import FilmCompositionCommands
+
+        self.compositions = FilmCompositionCommands(self)
 
     def current(self, scene, task_id):
         binding = snapshot(scene)
@@ -205,6 +208,7 @@ class FilmJobs:
     def poll(self):
         if not self.session.active:
             return
+        self.compositions.poll()
         for item in self.actions.values():
             if item.phase == "READY":
                 try:
@@ -292,7 +296,14 @@ class FilmJobs:
         self.poll()
         production_id = scene.scenario_film.production_id
         rows = []
-        for task in plan["tasks"]:
+        tasks = list(plan["tasks"])
+        names = {task["id"] for task in tasks}
+        for mode in ("previs", "final"):
+            master = plan[mode + "_master_task"]
+            if master not in names and self.store.film_job(production_id, master) is not None:
+                tasks.append({"id": master, "title": mode.title() + " master", "kind": "model"})
+                names.add(master)
+        for task in tasks:
             row = {"task_id": task["id"], "title": task["title"], "kind": task["kind"]}
             job = self.store.film_job(production_id, task["id"])
             upload = self.store.film_upload(production_id, task["id"])

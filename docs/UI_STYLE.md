@@ -1097,3 +1097,50 @@ Saved jobs remain unchanged, with zero service requests/downloads, clean exit,
 disposable-profile cleanup and normal-profile preservation. This check covers
 recipe-status filtering and retained uncertainty, not a new build/Undo journey
 or the native recipe file chooser.
+
+### Film composition controls
+
+The **Composition** child panel uses equal Final/Previs segments, then **Prepare
+composition**, **Request price** and a separate **Generate** confirmation. The
+confirmation shows the original scene, timing, source/layer counts and full exact
+CU cost. Discard requires confirmation; cancellation affects only preparation or
+the pending price. Saved jobs remain available after either action. Error details
+wrap the complete cached error and support copying. Drawing only reads cached
+status; the existing runtime maintenance owns progress.
+
+Installed synthetic tests exercise native operator execution/dialog construction,
+MCP parity and read-only drawing. The corrected navigation implementation passes
+916 installed tests on each of Blender 5.0.1, 5.1.2 and 5.2.1 on macOS arm64.
+
+Final/Previs is temporary WindowManager UI state, shared across the current
+Blender session and excluded from saved scene data. Native edits to a scene-owned
+custom property tag its owning scene, which invalidated retained quotes even
+though the recipe was unchanged. Direct Python assignment in the earlier
+regression did not reproduce that native update. The corrected installed
+regression also tags the property's owner, preserving the same quote without
+service requests after navigation. Frame changes still invalidate the captured
+scene revision; that guard is unchanged.
+
+An isolated macOS arm64 Blender 5.1.2 desktop check installed exact ZIP SHA-256
+`6f932e81a802f8569378c38ad3d4b820da779a1f86090272585c9b1db8e1335f`.
+All 136 packaged Python files matched the reviewed source. Native input cancelled
+preparation, cancelled and confirmed discard, prepared a fresh review and requested
+its exact synthetic price. Final → Previs → Final preserved the same review,
+quote, scene and request count. Editing the current frame invalidated the review
+without another request; the full error was readable in its details dialog.
+
+The separate Generate confirmation displayed the original destination, 120 frames
+at 30 fps, one source/layer and full synthetic price `0.10000000000000001` CU.
+Cancelling preserved the quote with no submission. Confirming created exactly one
+mocked durable master; discarding its review preserved that job, visible through
+**Inspect saved jobs**. Viewport selection and zoom worked after leaving the
+controls. Recipe and source bytes stayed unchanged. The process exited cleanly,
+removed its disposable profile and left the normal profile unchanged.
+
+![Film composition confirmation showing exact price before mocked submission](images/film-composition-approval.png)
+![Saved Film composition job after discarding its review](images/film-composition-saved.png)
+
+SDK transport and media metadata were mocked, and external socket/DNS calls were
+disabled. This proves the scoped native interaction flow, not real media probing,
+live provider quality, other OS/DPI behavior, local final assembly/export or
+complete Film/release acceptance.

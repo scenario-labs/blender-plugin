@@ -2,6 +2,48 @@
 
 The N-panel is drawn with Blender's `UILayout`, so it wears the user's Blender theme (colours, corner radius, fonts). We cannot change those; what we control is structure, spacing, wording and icons. This guide keeps the whole plugin coherent. The floating composer is custom gpu/blf drawing and mirrors the same language.
 
+## Project scope in Preferences
+
+Place **Project ID (optional)** in the Account box after the credential fields,
+with **Blank uses the API key's default scope** below it. The same explicit choice
+applies to saved and environment credentials. Do not populate a project from the
+first discovery result. A changed selection clears prices and connection status;
+new generation requires a fresh quote. Drawing reads the selection only.
+
+Installed tests cover scoped SDK quotes, stale approvals and callback rejection,
+local saved-job isolation, normalized-equivalent edits and invalid IDs. The exact
+candidate ZIP `3bd0a4b03ec9afe792e9bc36ed8805f1c5df06c38dccc46d5e98bdea2d831764`
+passes 1,065 installed tests on each macOS arm64 Blender 5.0.1, 5.1.2 and 5.2.1
+(two Windows-only skips per run).
+
+Native mouse/keyboard input and screenshot inspection pass on macOS 27.0.1 arm64,
+Blender 5.1.2, using that unchanged ZIP from source `29de2245b22e64bde6f1713797fd40d3eeb844c9`
+in an isolated offline profile. The fixture contains synthetic credentials and
+one saved job per default/project scope. Native edits exercise blank → project A
+→ project B → project A → blank; a store observation confirms only the
+selected scope's saved job is returned. Enter and Tab commit edits, Tab moves
+focus to the next field, Escape preserves the previous value, and surrounding
+whitespace selects the same normalized scope. A URL entered as the project ID
+fails local validation with no catalog and no silent default fallback.
+
+Changing the selection clears the fixture's prior connection status. Switching
+to Environment keeps the explicit project field and selection; clearing it
+returns to the default saved job. After closing Preferences, native viewport
+selection, wheel zoom and the front-view key work. Captures show the complete
+field label and helper text without overlap, at the tested default scale and
+window size. The installed package and archive remain byte-identical, no Python
+socket connection/bind attempts occur, and the normal Blender profile is unchanged.
+Two preliminary input runs exited through an automation select-all shortcut;
+the completed run uses Home/Shift-End selection instead.
+
+These synthetic checks do not establish live project permissions, other OS/DPI
+interaction, paid generation, or integrated release acceptance under #68.
+
+![Blank Project ID restores the API key default scope](images/project-scope-default.png)
+![Saved Blender credentials with an explicit project A selection](images/project-scope-project-a.png)
+![Environment credentials retain the explicit optional project B selection](images/project-scope-environment.png)
+![Viewport selection and front view remain usable after editing Preferences](images/project-scope-viewport.png)
+
 ## Tabs and segmented choices
 
 A row of mutually exclusive choices (lane tabs, picker modality tabs and category chips, Edit 3D tasks) is a **continuous segmented control**: cells touch (no gaps), each takes an equal share of the full width, and the icon sits next to its label with the pair centred in the cell.

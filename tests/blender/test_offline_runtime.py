@@ -60,6 +60,57 @@ class OfflineRuntimeTests(unittest.TestCase):
         self.assertIsNone(self.runtime.state.catalog)
         self.assertFalse(self.manager.has_active())
 
+    def test_invalid_project_catalog_error_stops_ticks_and_recovers_after_edit(self):
+        _, calls = self.catalog_client()
+        self.addCleanup(setattr, self.prefs, "project_id", self.prefs.project_id)
+        self.prefs.project_id = "https://example.invalid/project"
+        with (
+            online_access(True),
+            patch.object(
+                self.generation, "request_catalog", wraps=self.generation.request_catalog
+            ) as request,
+        ):
+            for _ in range(5):
+                self.pump._process()
+            self.assertEqual(request.call_count, 1)
+            self.assertIn("Project ID must be an opaque ID", self.runtime.state.catalog_error)
+            self.assertFalse(self.runtime.state.catalog_loading)
+            self.assertIsNone(self.runtime.state.catalog)
+            self.assertEqual(calls, [])
+            # An explicit refresh remains possible, without enabling automatic retries.
+            self.assertFalse(self.generation.request_catalog())
+            self.pump._process()
+            self.assertEqual(request.call_count, 2)
+            # The callback must clear the failure even though no catalog was created.
+            self.prefs.project_id = "fixture-project"
+            self.assertEqual(self.runtime.state.catalog_error, "")
+            self.pump._process()
+            self.dispatch_workers()
+            self.assertEqual(request.call_count, 3)
+            self.assertTrue(self.runtime.state.catalog_loaded)
+            self.assertEqual(self.runtime.state.catalog.scope.project_id, "fixture-project")
+            self.assertEqual(self.runtime.state.catalog_error, "")
+
+    def test_catalog_local_error_recovers_when_environment_credentials_change(self):
+        _, calls = self.catalog_client()
+        source = self.prefs.credential_source
+        self.addCleanup(setattr, self.prefs, "credential_source", source)
+        self.prefs.credential_source = "ENVIRONMENT"
+        with (
+            patch.dict("os.environ", SCENARIO_API_KEY="bad:key", SCENARIO_API_SECRET="fixture"),
+            online_access(True),
+        ):
+            self.pump._process()
+            self.assertIn("not a valid API key", self.runtime.state.catalog_error)
+            self.assertIsNone(self.runtime.state.catalog)
+            self.assertEqual(calls, [])
+            # Environment edits have no RNA preference callback.
+            with patch.dict("os.environ", SCENARIO_API_KEY="fixture-key"):
+                self.pump._process()
+                self.dispatch_workers()
+                self.assertTrue(self.runtime.state.catalog_loaded)
+                self.assertEqual(self.runtime.state.catalog_error, "")
+
     def catalog_client(self, fail=False):
         model = json.loads((FIXTURES / "models/model_google-gemini-3-1-flash.json").read_text())[
             "model"
@@ -389,3 +440,25 @@ class OfflineRuntimeTests(unittest.TestCase):
             with online_access(True):
                 self.pump._process()
                 retry.assert_called_once_with()
+
+    def test_project_override_keeps_prototype_resume_suspended_across_ticks(self):
+        job = self.saved_job()
+        self.manager.resume_pending = [job]
+        registry_bytes = self.manager.paths.registry_file.read_bytes()
+        self.runtime.state.catalog_loaded = True
+        with (
+            online_access(True),
+            patch.object(self.runtime, "project_id", return_value="fixture-project") as project,
+            patch.object(self.generation, "process_catalog_events", return_value=False),
+            patch.object(self.service, "process_pending"),
+            patch.object(self.manager, "retry_resume") as retry,
+        ):
+            for _ in range(5):
+                self.pump._process()
+            retry.assert_not_called()
+            self.assertEqual(self.manager.resume_pending, [job])
+            self.assertEqual(self.manager.paths.registry_file.read_bytes(), registry_bytes)
+            self.assertEqual(self.manager.drain(), [])
+            project.return_value = None
+            self.pump._process()
+            retry.assert_called_once_with()

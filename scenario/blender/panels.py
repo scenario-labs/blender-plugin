@@ -593,7 +593,7 @@ def draw_result(layout, rec):
 
 
 def draw_history(layout, context, shown_ids=()):
-    if runtime.state.catalog_credentials != runtime.credentials():
+    if not runtime.catalog_selection_matches():
         layout.label(text="Refresh cloud history for the selected connection", icon="INFO")
         return
     if not runtime.state.history:

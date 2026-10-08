@@ -158,6 +158,57 @@ class RuntimeJobTests(unittest.TestCase):
         self.prefs.api_secret = secret
         self.assertEqual(self.tools.list_local_jobs({})["jobs"][0]["state"], "prepared")
 
+    def test_project_changes_isolate_jobs_and_invalidate_prior_context(self):
+        self.addCleanup(setattr, self.prefs, "project_id", self.prefs.project_id)
+        default_store, original = self.seed()
+        old = self.tools.list_local_jobs({})
+        session = self.runtime.state.job_session
+        self.prefs.project_id = " project-a "
+        self.assertFalse(session.active)
+        self.assertIsNone(self.runtime.state.job_store)
+        self.assertEqual(self.tools.list_local_jobs({})["jobs"], [])
+        project_store, project_record = self.seed()
+        self.assertEqual(project_store.scope.project_id, "project-a")
+        self.assertEqual(project_store.scope.account_id, default_store.scope.account_id)
+        with self.assertRaisesRegex(Exception, "context changed"):
+            self.tools.cancel_prepared_job(
+                dict(
+                    context_id=old["context_id"],
+                    request_id="request",
+                    expected_revision=original.revision,
+                )
+            )
+        self.prefs.project_id = "project-b"
+        self.assertEqual(self.tools.list_local_jobs({})["jobs"], [])
+        self.prefs.project_id = "project-a"
+        self.assertEqual(self.runtime.ensure_job_store().get("request"), project_record)
+        self.prefs.project_id = ""
+        self.assertEqual(self.runtime.ensure_job_store().get("request"), original)
+        self.assertEqual(self.requests, [])
+
+    def test_normalized_project_does_not_retire_unchanged_selection(self):
+        self.addCleanup(setattr, self.prefs, "project_id", self.prefs.project_id)
+        self.prefs.project_id = "project-a"
+        first = self.runtime.ensure_job_session()
+        catalog = self.runtime.state.catalog
+        self.prefs.project_id = " project-a "
+        self.assertIs(first, self.runtime.ensure_job_session())
+        self.assertIs(catalog, self.runtime.state.catalog)
+        self.assertTrue(first.active)
+
+    def test_invalid_project_retires_old_context_without_opening_an_adapter(self):
+        self.addCleanup(setattr, self.prefs, "project_id", self.prefs.project_id)
+        previous = self.runtime.ensure_job_session()
+        self.prefs.project_id = "https://private.invalid/project"
+        before = len(self.adapters)
+        with self.assertRaisesRegex(Exception, "Project ID must be an opaque ID"):
+            self.runtime.ensure_catalog()
+        self.assertFalse(previous.active)
+        self.assertIsNone(self.runtime.state.catalog)
+        self.assertIsNone(self.runtime.state.job_store)
+        self.assertEqual(len(self.adapters), before)
+        self.assertEqual(self.requests, [])
+
     def test_local_cancellation_is_revision_guarded_and_rejects_claimed_work(self):
         store, record = self.seed()
         context = self.tools.list_local_jobs({})["context_id"]

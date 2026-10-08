@@ -45,6 +45,12 @@ class ScenarioPreferences(bpy.types.AddonPreferences):
         subtype="PASSWORD",
         description="Shown once when the key is created",
     )
+    project_id: StringProperty(
+        name="Project ID (optional)",
+        description="Leave blank to use the API key's default scope; otherwise use this project",
+        default="",
+        update=credentials_changed,
+    )
     output_dir: StringProperty(
         name="Output Folder",
         subtype="DIR_PATH",
@@ -104,6 +110,8 @@ class ScenarioPreferences(bpy.types.AddonPreferences):
         else:
             box.label(text="SCENARIO_API_KEY + SCENARIO_API_SECRET", icon="CONSOLE")
             box.label(text="From the environment used to launch Blender")
+        box.prop(self, "project_id")
+        box.label(text="Blank uses the API key's default scope", icon="INFO")
         if not runtime.credentials().valid:
             box.label(text="The selected source needs both a key and a secret", icon="ERROR")
         row = box.row(align=True)

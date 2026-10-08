@@ -21,11 +21,7 @@ def commands(*, create=True):
     if create:
         return runtime.ensure_film_jobs().session.film_shots
     session = runtime.state.job_session
-    if (
-        session is None
-        or not session.active
-        or runtime.state.catalog_credentials != runtime.credentials()
-    ):
+    if session is None or not session.active or not runtime.catalog_selection_matches():
         return None
     return session.film_shots
 

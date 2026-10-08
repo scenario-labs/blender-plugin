@@ -388,3 +388,15 @@ including schema-8 Film model reservations, and the new table starts empty. A
 corrupt row or failed commit preserves the old version and data. No associations
 are guessed from asset names, request similarity or old prototype files. Older
 builds reject schema 9; stop old extension processes before upgrading.
+
+### Legacy mesh size correction
+
+`record_download(..., allow_mesh_size_correction=True)` is an internal recovery
+exception for `model/obj` and `model/mtl` only. The result command verifies a
+complete bounded storage response before enabling it. In the same revision-checked
+transaction as the first receipt, the store replaces the stale expected size
+with the receipt's actual size; identity, name, MIME, digest, role, intent and
+previous receipts stay fixed. Other media, a wrong digest/name, an existing
+receipt, a stale revision or a missing download claim are rejected. Ordinary
+recording remains strict. This uses the existing schema and never alters remote
+metadata; see [legacy mesh transfers](RESULT_TRANSFERS.md#legacy-obj-and-mtl-byte-counts).

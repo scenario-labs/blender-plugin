@@ -8,7 +8,7 @@ from dataclasses import asdict, dataclass, field, replace
 from pathlib import Path
 
 from ..config import ext_for_mime
-from .result_metadata import texture_role
+from .result_metadata import REWRITTEN_MESH_TYPES, texture_role
 from .store import JobState, ResultAsset, StoreConflict, StoredJob, StoreError, _identity, _json
 from .transfers import ResultDownloader, TransferError, _root
 
@@ -336,6 +336,11 @@ class ResultCommands:
                     continue
                 response = self._request(self._adapter.asset, item.asset.asset_id)
                 fresh = _asset(response, item.asset.asset_id, item.asset.name)
+                rewritten_mesh = item.asset.media_type in REWRITTEN_MESH_TYPES
+                if rewritten_mesh:
+                    # Legacy ingestion rewrote file references without updating
+                    # properties.size; identity/type/digest checks remain exact.
+                    fresh = replace(fresh, expected_size=item.asset.expected_size)
                 if item.asset.texture_role is None:
                     # Legacy/unclassified results keep unknown semantics. A later
                     # response may not grant a new material role to saved bytes.
@@ -351,10 +356,15 @@ class ResultCommands:
                     name=item.asset.name,
                     expected_size=item.asset.expected_size,
                     expected_sha256=item.asset.expected_sha256,
+                    **({"allow_size_mismatch": True} if rewritten_mesh else {}),
                 )
                 self._downloader.verify(directory, receipt)
                 current = self._store.record_download(
-                    request_id, item.asset.asset_id, receipt, expected_revision=current.revision
+                    request_id,
+                    item.asset.asset_id,
+                    receipt,
+                    expected_revision=current.revision,
+                    **({"allow_mesh_size_correction": True} if rewritten_mesh else {}),
                 )
             return self._store.transition(
                 request_id, expected_revision=current.revision, state=JobState.READY

@@ -652,3 +652,61 @@ def test_unclassified_saved_results_download_without_acquiring_new_semantics(set
     result = coordinator.download_results("request", expected_revision=manifest.revision)
     assert result.state == JobState.READY
     assert all(item.asset.texture_role is None for item in result.results)
+
+
+@pytest.mark.parametrize("mime", ["model/mtl", "model/obj"])
+def test_legacy_mesh_resume_corrects_only_local_size_and_keeps_prior_receipt(
+    setup, monkeypatch, mime
+):
+    import io
+    from unittest.mock import Mock
+
+    from scenario.core.jobs import transfers
+
+    coordinator, store, current, _, assets, _, calls, root = setup
+    assets["asset-two"]["mimeType"] = mime
+    assets["asset-two"]["properties"]["size"] = 1
+    complete = False
+
+    class Response(io.BytesIO):
+        status = 200
+
+        def getheader(self, key, default=None):
+            if key == "Content-Length" and (complete or self.first):
+                return str(len(DATA))
+            return default
+
+    count = 0
+
+    def response():
+        nonlocal count
+        count += 1
+        result = Response(DATA)
+        result.first = count == 1
+        return result
+
+    connection = Mock()
+    connection.getresponse.side_effect = response
+    monkeypatch.setattr(transfers.http.client, "HTTPSConnection", Mock(return_value=connection))
+    coordinator._results._downloader = ResultDownloader(
+        StoragePolicy(frozenset({"storage.example.invalid"})), online_access=lambda: True
+    )
+    with pytest.raises(ResultError):
+        coordinator.download_results("request", expected_revision=current.revision)
+    failed = store.get("request")
+    assert failed.state == JobState.DOWNLOAD_FAILED
+    assert failed.results[0].receipt is not None and failed.results[1].receipt is None
+    assert failed.results[1].asset.expected_size == 1
+    complete = True
+    # Even a separately corrected server size must not strand an older manifest.
+    assets["asset-two"]["properties"]["size"] = 2
+    ready = coordinator.download_results("request", expected_revision=failed.revision)
+    assert ready.state == JobState.READY
+    assert ready.results[0] == failed.results[0]
+    assert ready.results[1].asset.expected_size == len(DATA)
+    assert ready.results[1].receipt.size == len(DATA)
+    assert ready.intent == failed.intent and count == 3
+    assert all(call.method == "GET" for call in calls)
+    assert assets["asset-two"]["properties"]["size"] == 2
+    verified = coordinator.verify_results("request", expected_revision=ready.revision)
+    assert all(path.read_bytes() == DATA for path in verified.paths)

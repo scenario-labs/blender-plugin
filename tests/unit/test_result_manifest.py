@@ -341,3 +341,56 @@ def test_current_schema_rejects_missing_texture_role_instead_of_guessing(setup, 
     with pytest.raises(StoreError):
         store.get("request")
     assert (tmp_path / "jobs.sqlite3").read_bytes() == before
+
+
+@pytest.mark.parametrize("mime", ["model/obj", "model/mtl"])
+def test_mesh_size_correction_is_atomic_with_receipt_and_survives_reopen(setup, tmp_path, mime):
+    store, record = setup
+    asset = replace(ASSET, media_type=mime, expected_size=1)
+    record = attach(store, record, (asset,))
+    record = advance(store, record, JobState.DOWNLOADING)
+    with pytest.raises(ValueError):
+        download(store, record, asset)
+    with pytest.raises(ValueError):
+        store.record_download(
+            "request",
+            asset.asset_id,
+            replace(RECEIPT, sha256="0" * 64),
+            expected_revision=record.revision,
+            allow_mesh_size_correction=True,
+        )
+    assert store.get("request") == record
+    saved = store.record_download(
+        "request",
+        asset.asset_id,
+        RECEIPT,
+        expected_revision=record.revision,
+        allow_mesh_size_correction=True,
+    )
+    assert saved.results[0].asset == replace(asset, expected_size=RECEIPT.size)
+    assert saved.results[0].receipt == RECEIPT
+    assert saved.intent == record.intent and saved.remote_job_id == record.remote_job_id
+    assert JobStore(tmp_path / "jobs.sqlite3", store.scope).get("request") == saved
+    with pytest.raises(StoreConflict):
+        store.record_download(
+            "request",
+            asset.asset_id,
+            RECEIPT,
+            expected_revision=record.revision,
+            allow_mesh_size_correction=True,
+        )
+
+
+def test_size_correction_cannot_change_other_media(setup):
+    store, record = setup
+    record = attach(store, record)
+    record = advance(store, record, JobState.DOWNLOADING)
+    with pytest.raises(ValueError, match="Only rewritten"):
+        store.record_download(
+            "request",
+            ASSET.asset_id,
+            RECEIPT,
+            expected_revision=record.revision,
+            allow_mesh_size_correction=True,
+        )
+    assert store.get("request") == record

@@ -404,7 +404,7 @@ def _deliver_binding(owner, token, binding):
 
 
 def scope_error(lane_state, *, references=None):
-    """Persisted uploaded asset IDs may only be quoted in their selected scope."""
+    """Persisted scoped asset IDs may only be quoted in their selected scope."""
     for ref in lane_state.references if references is None else references:
         if ref.get(_MARKER) and ref.source != "ASSET":
             return "Finish the reference upload or inspect its saved progress before generating"
@@ -417,7 +417,7 @@ def scope_error(lane_state, *, references=None):
             or ref.asset_id != ref.get(_ASSET)
             or _kind_matches(lane_state, ref.param_name, ref.get(_KIND, "image")) is False
         ):
-            return "This uploaded reference belongs to another connection or was edited; choose it again"
+            return "This reference belongs to another connection or was edited; choose it again"
     return None
 
 

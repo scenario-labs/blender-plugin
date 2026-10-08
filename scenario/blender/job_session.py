@@ -146,6 +146,7 @@ class JobCompletion:
     error: Exception | None = field(default=None, repr=False)
     cloud_read: bool = False
     workflow_catalog: bool = False
+    asset_library: bool = False
 
 
 @dataclass(frozen=True)
@@ -856,11 +857,19 @@ class JobSession:
                     raise OriginUnavailable("Worker returned a different job origin or scope")
             except Exception as exc:
                 completion = JobCompletion(
-                    origin, error=exc, cloud_read=cloud_read, workflow_catalog=workflow_catalog
+                    origin,
+                    error=exc,
+                    cloud_read=cloud_read,
+                    workflow_catalog=workflow_catalog,
+                    asset_library=task in self._asset_reads,
                 )
             else:
                 completion = JobCompletion(
-                    origin, result=result, cloud_read=cloud_read, workflow_catalog=workflow_catalog
+                    origin,
+                    result=result,
+                    cloud_read=cloud_read,
+                    workflow_catalog=workflow_catalog,
+                    asset_library=task in self._asset_reads,
                 )
             finally:
                 self._cloud_reads.pop(task, None)
@@ -870,6 +879,20 @@ class JobSession:
             self._issued[id(completion)] = completion
             completions.append(completion)
         return tuple(completions)
+
+    def deliver_asset_library(self, completion):
+        """Consume scoped library metadata without granting destination authority."""
+        _main_thread()
+        if (
+            not self._active
+            or self._issued.get(id(completion)) is not completion
+            or not completion.asset_library
+        ):
+            raise OriginUnavailable("Use an unconsumed asset library page from this active session")
+        del self._issued[id(completion)]
+        if completion.error is not None:
+            raise completion.error
+        return completion.result
 
     def deliver_workflow_catalog(self, completion):
         """Consume only an owned catalog listing; grant no scene/form authority."""

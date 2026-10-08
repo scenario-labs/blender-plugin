@@ -560,8 +560,7 @@ tagging, read-only drawing and continued jobs. The composer commits on blur and
 passes the same outside click to native controls. Offline desktop evidence covers
 first-click Studio opening, Unicode prompt edits, populated-form scrolling,
 quote-preserving navigation, continued saved-job polling, small-window fit,
-Escape and viewport return. Alternate-DPI/IME acceptance, workflow interaction,
-library forms and complete #66 remain pending.
+Escape and viewport return. Alternate-DPI/IME acceptance, workflow and Library interaction and complete #66 remain pending.
 
 ## Native workflow controls
 
@@ -602,5 +601,24 @@ and session; retirement cannot route metadata into a replacement connection.
 Local MCP `list_assets` and `search_assets` expose bounded pages with explicit
 continuation. Their projection omits signed download URLs, indexed previews and
 account identifiers. Reads do not initialize ModelJobs, persist generation jobs
-or grant download/application authority. Native Library controls and scoped
-attachment, collection/tag editing and live acceptance remain separate.
+or grant download/application authority. Native Library controls use these same reads. Collection/tag editing and live
+acceptance remain separate.
+
+## Native Library projection and attachment
+
+[library_view.py](../../scenario/blender/library_view.py) retains one bounded page
+and at most 128 continuation positions, with explicit refresh/search/navigation.
+Its filters are unsaved WindowManager properties. The runtime maintenance pump
+uses `deliver_asset_library` to consume only owned library metadata from the active
+session without granting scene application authority. This permits unrelated
+scene edits during a read; MCP retains its existing scene-bound delivery contract.
+Both surfaces use the same URL-free metadata projection in `core/api/library.py`.
+
+Reference confirmations capture the original scene, model, lane, input and complete
+reference destination. Weakly held approval identity and fresh destination checks
+prevent forged/repeated/stale application. Attachment adds only a matching,
+unoccupied model reference, preserves existing slots, records the selected scope,
+and invalidates the old price. It does not start a transfer or paid submission.
+The existing persisted reference-scope guard applies after reopening as well.
+Workflow reference selection, organization mutations and physical/live acceptance
+remain outside this UI layer. No new SDK transport, worker pool or job store is added.

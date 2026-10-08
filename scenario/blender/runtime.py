@@ -38,6 +38,7 @@ class RuntimeState:
         self.job_context_id = None
         self.model_jobs = None
         self.workflow_controls = None
+        self.library_view = None
         self.prompt_jobs = None
         self.blockout_jobs = None
         self.film_jobs = None
@@ -117,6 +118,7 @@ class RuntimeState:
             ]
         self.model_jobs = None
         self.workflow_controls = None
+        self.library_view = None
         self.prompt_jobs = None
         self.blockout_jobs = None
         self.film_jobs = None
@@ -508,6 +510,8 @@ def sync_catalog_context():
     from . import generation
 
     generation.process_model_jobs()
+    if state.library_view is not None:
+        state.library_view.poll()
     if state.workflow_controls is not None:
         state.workflow_controls.poll()
     if state.job_session is not None:

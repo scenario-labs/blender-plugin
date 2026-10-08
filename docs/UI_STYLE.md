@@ -1191,7 +1191,7 @@ complete Film/release acceptance.
 ## Explicit Studio view
 
 The viewport header has a separate **Studio** button. It opens a native popup
-with Create, Film, Jobs, Results and Connection pages. Opening, closing or
+with Create, Film, Workflows, Library, Jobs, Results and Connection pages. Opening, closing or
 switching pages does not start a job or select another account/project. No
 startup or file-load handler opens it. The existing **Scenario** button still
 opens the sidebar; the compact composer remains the default creation surface.
@@ -1211,7 +1211,7 @@ both texts. Opening Studio never commits pending text into another scene with
 an identical old prompt.
 
 The requested popup width is bounded by the invoking area, window and UI scale;
-narrow requests use two rows of equal navigation segments. Clicking outside a
+narrow requests use rows of at most three equal navigation segments. Clicking outside a
 focused composer commits its text and passes that same click to Blender, so the
 Studio header button opens on the first click. Installed tests cover this handoff,
 registration, shared drawing, quote preservation, pending-text ownership and
@@ -1272,8 +1272,8 @@ or Studio. It supplies no new physical-input acceptance; the screenshots and
 interaction results above remain evidence for their explicitly identified ZIP.
 
 This view exposes existing creation/Film/result controls and the workflow form
-below. Asset-library search, interactive workflow nodes and complete retained
-Studio acceptance remain separate.
+below, plus Library browsing and model-reference reuse. Interactive workflow
+nodes and complete retained Studio acceptance remain separate.
 
 ### Workflow controls
 
@@ -1308,3 +1308,22 @@ scrolling, screenshots, DPI or viewport focus. Track that desktop acceptance
 under #66/#68 without treating unverified configurations as automatic draft gates.
 Interactive nodes, integrated workflow reference upload/library selection and
 live outputs remain outside this implementation.
+
+## Native Library controls
+
+Studio's explicit **Library** page has Search, Public assets and Collection ID
+filters, Refresh, and separate Previous/Next actions. Native navigation uses at
+most three tabs per row in narrow views. Filter edits do not start a read or tag
+the scene; changed filters require Refresh before page continuation. Reads use
+the shared session and application pump, so unrelated scene edits and closing the
+view do not discard the requested page. Connection retirement clears the view.
+
+Each asset shows its name and MIME type. **Use as reference** opens a separate
+confirmation for the selected scene, generation form, model and compatible input.
+No existing reference is silently replaced. Unknown MIME types cannot attach;
+known file inputs respect their kind and capacity. Confirmation checks the
+unchanged destination, adds a scoped asset reference and invalidates its price.
+Drawing never starts requests or mutates RNA. Workflow inputs and organization
+writes are separate work. Installed synthetic tests establish these state and
+command boundaries, not physical input, focus, viewport, screenshot or DPI proof;
+track the remaining desktop acceptance under #66/#68 separately from review readiness.

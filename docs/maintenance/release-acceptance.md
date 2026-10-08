@@ -9,7 +9,7 @@ publication. OAuth remains deferred under #67.
 
 ## Candidate identity
 
-Reviewed on 2026-10-07:
+Initial candidate reviewed on 2026-10-07; later evidence is identified separately below:
 
 | Item | Identity |
 | --- | --- |
@@ -72,27 +72,50 @@ generation, live upload/result round trip or project-override permission journey
 is included in this record. Quote values and private service evidence are not
 published here.
 
+## Later project-scope evidence
+
+Reviewed on 2026-10-08: [#316](https://github.com/scenario-labs/blender-plugin/pull/316)
+is merged as `27bfb023b4cb90a06a0db0bdc8803038ae9145ee`.
+Its later checks cover distinct archives and do not replace the initial
+candidate's synthetic update/restart evidence above.
+
+- Native mouse/keyboard and inspected screenshots pass on macOS 27.0.1 arm64,
+  Blender 5.1.2, source `29de2245b22e64bde6f1713797fd40d3eeb844c9`, ZIP SHA-256
+  `3bd0a4b03ec9afe792e9bc36ed8805f1c5df06c38dccc46d5e98bdea2d831764`.
+  Synthetic fixtures verify project/default saved-job selection, Enter/Tab/Escape,
+  focus, whitespace normalization, invalid-ID rejection, environment credentials
+  and viewport interaction. The normal profile and installed bytes are unchanged;
+  no Python socket connection/bind attempts occur. See the
+  [screenshots and limits](../UI_STYLE.md#project-scope-in-preferences).
+- The final runtime source `cec73ad75e5b5315db8db91fc340d2f5e1353317` passes
+  **3,856 unit tests**, with the existing SDK authentication expected failure,
+  and **1,067 installed tests per version** on macOS arm64 Blender 5.0.1, 5.1.2
+  and 5.2.1 (two Windows-only skips each). All three runs use ZIP SHA-256
+  `bb4b7765050cf8ded9c7f6da1e5cac12e0ab7b0722bc3c5e627522aa971f8c74`.
+  Native regressions cover retained local catalog errors, stopped idle retries
+  and recovery after correcting project or environment credentials.
+  [Hosted CI for this head](https://github.com/scenario-labs/blender-plugin/actions/runs/37833758649)
+  also passes; its jobs build their own archives.
+
+The desktop check was not repeated for the final runtime archive. Neither later
+archive has a new native update/restart result in this record. These checks do
+not establish live project permissions, other OS/DPI desktop acceptance, paid
+results or integrated release acceptance.
+
 ## Remaining release gates
 
 | Gate | Current limit | Next evidence and owner |
 | --- | --- | --- |
 | Complete SDK adoption | Shared model jobs and scoped recovery have extensive regression coverage; that alone does not audit every ancillary call site or retained capability. | Reconcile the runtime map and remaining call sites against #64/#65; identify each SDK method or documented exception. |
-| Credentials and project scope | #316 exposes an optional project ID and tests scope switching, stale approvals and in-flight receipt ownership. | Complete fresh native setup/input, permission failures, live override behavior and saved preference reload under #65/#68. |
+| Credentials and project scope | Merged #316 exposes an optional project ID. Scoped synthetic desktop input passed on the identified earlier ZIP; the final runtime ZIP has native regression coverage. | Complete fresh onboarding, permission failures, live override behavior, saved preference reload and final-candidate desktop acceptance under #65/#68. |
 | Compact and expanded creation | Earlier screenshots and isolated controls do not establish the complete journey on this candidate. | Native select/capture/estimate/generate/inspect/apply and library reuse; focus, text input, viewport, small-window and DPI checks under #66/#68. |
 | Retained lanes | Offline receipts and MIME checks do not establish usable live results. | Authorized scoped checks for Image, Video, 3D, Materials, audio, render/edit and Film paths; inspect actual outputs and record limitations under #68. |
 | Recovery and switching | Synthetic tests cover lost acknowledgement, stale quotes, scope changes and application claims. | Candidate-level UI/MCP parity, cancellation/restart races and failed download/import journeys with recorded outcomes under #65/#68. |
 | GPU, motion and audio | Headless counts and media metadata do not establish sustained playback or human review. | Native rendering/playback, sustained GPU/audio checks and human motion/audio review under #68. |
-| Paid CI | #315 unifies quote/submit/resume and per-run exact approval. There is no protected multi-suite workflow or aggregate budget gate; the repository has no `smoke` environment. | Complete #40's protected workflow, explicit project/budget policy, environment reviewers and dedicated credentials; then perform authorized hosted acceptance. |
-| Required checks | Read-only main-branch rules report `pr-title` and `commits` as required, plus CodeQL scanning. `ci-ok` is absent. | Complete #45's administration and negative merge-gate checks while preserving existing protections. |
+| Paid CI | #315 unifies quote/submit/resume and per-run exact approval. There is no protected multi-suite workflow or aggregate budget gate; a read-only 2026-10-08 check finds no `smoke` environment. | Complete #40's protected workflow, explicit project/budget policy, environment reviewers and dedicated credentials; then perform authorized hosted acceptance. |
+| Required checks | Read-only main-branch rules checked on 2026-10-08 report `pr-title` and `commits` as required, plus CodeQL scanning. `ci-ok` is absent. | Complete #45's administration and negative merge-gate checks while preserving existing protections. |
 | Final release artifact | Current candidate retains development version 0.9.9. Local update checks use a synthetic predecessor. | Validate release-please's exact 0.10.0 ZIP, licenses, provenance/checksum and extension index; exercise public native installation/update under #36/#68 and the release procedure. |
 
-The #316 desktop attempt used the preceding candidate
-`4d85cd66cde982d71ff012c942db95c25615628cde072fed1a0e8e61b927cc89`.
-It opened an isolated fixture, but computer control failed to target the window
-for native input or screenshots (`cgWindowNotFound`). A separate test-only app
-identifier had the same limitation. Successful fixture exits preserved the normal
-profile and made no external requests. This is a recorded environment limitation,
-not a pass; #316 remains draft until native proof is supplied.
 
 ## Merge and release decision
 

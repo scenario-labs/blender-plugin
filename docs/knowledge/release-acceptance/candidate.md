@@ -7,9 +7,9 @@
     "path": "docs/maintenance/release-acceptance.md",
     "scope": "candidate",
     "coverage": "source-reviewed",
-    "reviewed_at": "2026-10-07",
-    "base_revision": "d18a95212410a8babc37145b4ff2007e5e2cc011",
-    "limits": "Records the identified development archive and directly observed unit, installed native, synthetic predecessor/update/restart and non-submitting estimate results. Reviewed current issue acceptance and read-only hosted branch/environment configuration. No physical desktop, paid result, live project override, published release pair, public delivery or complete release acceptance is claimed. GitHub state is an observation on the review date and must be rechecked before release. Local reports remain private; hosted evidence is linked for its own commits and archives.",
+    "reviewed_at": "2026-10-08",
+    "base_revision": "27bfb023b4cb90a06a0db0bdc8803038ae9145ee",
+    "limits": "Preserves the initial development archive and its observed unit, installed native, synthetic predecessor/update/restart and non-submitting estimate results. Separately records the merged project-scope desktop archive and final runtime archive with their exact source/checksum identities; desktop and update proof are not transferred between archives. Reviewed current issue acceptance, parent CI and read-only branch/environment configuration. No paid result, live project override, other OS/DPI desktop, published release pair, public delivery or complete release acceptance is claimed. GitHub state is an observation on the review date and must be rechecked before release. Earlier source fingerprints retain their artifact-specific scope; local reports remain private.",
     "sources": {
       "docs/maintenance/release-plan.md": "55b496a4efc32a5294f4ffb38dc029227b0d5196c73f2267c184d688bf77f9fc",
       "docs/RELEASING.md": "12895529af30035fb49375bbc624043c8d8dedea9a5c5fe67be72af283ebe386",
@@ -20,7 +20,8 @@
       "tools/smoke_model.py": "cf65eae775a588b784706505c8fe98169d83169fab026fc55d75e7739c16119b",
       "tools/smoke_image.py": "fc9d8b8494e8a125908702c9c09f72129f6aeb46ce91b21e5a67bb8b8ed63c9b",
       ".github/workflows/blender-baseline.yml": "831c887cf2b56795e934a60d40fa3c9cd93de7d7d8cf2977589548ed01413022",
-      "tests/blender/run_all.py": "3caa22c1a3e84b870c8c6f0c6ba51e7e9f503e1db1512073fde4e17ff0d15cd8"
+      "tests/blender/run_all.py": "3caa22c1a3e84b870c8c6f0c6ba51e7e9f503e1db1512073fde4e17ff0d15cd8",
+      "docs/UI_STYLE.md": "a4d4afcbe008f1f50696560c369a19c470bc2daa14182dc2fce12df344a9b825"
     }
   }
 }

@@ -316,6 +316,12 @@ def run(args):
                     state_preserved=True,
                     scene_preserved=True,
                     project_scope_preserved=True,
+                    workflow_references_preserved=(
+                        json.loads((session.directory / "expected-state.json").read_text())[
+                            "workflow"
+                        ]
+                        is not None
+                    ),
                     service_requests=0,
                 )
             if report["update"] != expected:

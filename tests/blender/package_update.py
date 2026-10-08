@@ -274,6 +274,61 @@ def check_local_applications(selected):
         raise RuntimeError("Update permitted replay of an unfinished local application")
 
 
+def workflow_form(scene):
+    form = getattr(scene, "scenario_workflow", None)
+    if form is None:
+        return None
+    fields = form.bl_rna.properties["inputs"].fixed_type.properties
+    return form if "asset_scope" in fields and "asset_value" in fields else None
+
+
+def seed_workflow(scene, selected):
+    form = workflow_form(scene)
+    if form is None:
+        return
+    controls = module("blender.workflow_controls")
+    controls.load_form(
+        form,
+        {
+            "id": "update-workflow",
+            "name": "Preserved workflow",
+            "inputs": [
+                {"name": "prompt", "type": "string", "default": "Preserve Café 雪"},
+                {"name": "image", "type": "file", "kind": "image"},
+                {"name": "images", "type": "file_array", "kind": "image", "minItems": 2},
+            ],
+        },
+    )
+    scope = module("blender.reference_form").scope_key(selected.scope)
+    for name, value in {
+        "image": "update-workflow-image",
+        "images": ["update-workflow-first", "update-workflow-second"],
+    }.items():
+        item = form.inputs[name]
+        item.text = value if isinstance(value, str) else controls._json(value)
+        item.enabled = True
+        item.asset_scope = scope
+        item.asset_value = controls._json(value)
+
+
+def workflow_snapshot(scene, other=None):
+    form = workflow_form(scene)
+    if form is None or not form.loaded_id:
+        return None
+    controls = module("blender.workflow_controls")
+    values = controls.parameters(form)
+    if other is not None:
+        runtime = module("blender.runtime")
+        with patch.object(runtime.state, "job_store", other):
+            try:
+                controls.parameters(form)
+            except ValueError:
+                pass
+            else:
+                raise RuntimeError("Workflow references escaped their selected connection")
+    return {"signature": controls.signature(form), "parameters": values}
+
+
 def seed(profile):
     import bpy
 
@@ -399,11 +454,12 @@ def seed(profile):
     ref["_scenario_reference_scope"] = module("blender.reference_form").scope_key(selected.scope)
     ref["_scenario_reference_request"] = "upload-imported"
     ref["_scenario_reference_asset"] = "update-asset"
+    seed_workflow(scene, selected)
     bpy.ops.wm.save_userpref()
     bpy.ops.wm.save_as_mainfile(filepath=str(profile / "state.blend"), check_existing=False)
 
 
-def check_project_scope(paths, prefs, selected):
+def check_project_scope(paths, prefs, selected, *, scene=None):
     """A saved override must still select its original jobs after update/restart."""
     if prefs.project_id != PROJECT_ID or selected.scope.project_id != PROJECT_ID:
         raise RuntimeError("Update lost the selected project preference or runtime scope")
@@ -417,6 +473,8 @@ def check_project_scope(paths, prefs, selected):
             paths.state_dir / "shared-uploads/uploads.sqlite3", other.scope
         )
         film_upload_snapshot(selected, other)
+        if scene is not None:
+            workflow_snapshot(scene, other)
         if other.records() or uploads.records():
             raise RuntimeError("Update lost job or upload project isolation")
 
@@ -428,7 +486,7 @@ def snapshot(profile):
     prefs = bpy.context.preferences.addons[PACKAGE].preferences
     if not paths.state_dir.resolve().is_relative_to(profile):
         raise RuntimeError("Scenario storage escaped the disposable profile")
-    check_project_scope(paths, prefs, selected)
+    check_project_scope(paths, prefs, selected, scene=bpy.context.scene)
     records = selected.records()
     if len(records) != 6 or selected.get("other-scope") is not None or len(other.records()) != 1:
         raise RuntimeError("Update lost durable records or credential isolation")
@@ -497,6 +555,7 @@ def snapshot(profile):
         "film_upload": film_upload_snapshot(selected, other),
         "files": files,
         "scene": scene,
+        "workflow": workflow_snapshot(bpy.context.scene, other),
         "original_source": digest((profile / "reference.png").read_bytes()),
         "original_mesh_source": digest((profile / "reference.glb").read_bytes()),
     }
@@ -532,7 +591,8 @@ def main():
         if args.restart:
             check_version(profile, args.after)
             bpy.ops.wm.open_mainfile(filepath=str(profile / "state.blend"))
-            if snapshot(profile) != json.loads(expected_path.read_text()):
+            expected = json.loads(expected_path.read_text())
+            if snapshot(profile) != expected:
                 raise RuntimeError("Scenario state changed after restart")
         else:
             check_version(profile, args.before)
@@ -556,6 +616,7 @@ def main():
                     "state_preserved": True,
                     "scene_preserved": True,
                     "project_scope_preserved": True,
+                    "workflow_references_preserved": expected["workflow"] is not None,
                     "service_requests": 0,
                 }
             )

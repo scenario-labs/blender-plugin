@@ -178,6 +178,38 @@ reload and local isolation, not native text entry or live project permissions.
 passed `ci-ok`, including Python 3.11/3.13 and Linux/Windows Blender 5.0.1,
 5.1.2 and 5.2.1, for its own source and separately built archives.
 
+## Workflow-reference update validation slice
+
+An earlier integrated source `8197cbb16599a9c9b1ecad010947e63da635a50f`
+produced ZIP SHA-256
+`449a737bdd7a0d97c1190ccd6e6ee654cb4de3c1baa2036fca86e9969fd5b9d5`.
+It includes the Film cleanup fix and release layers through the earlier #329
+candidate. All 140 packaged Python sources matched that checkout. Its locked
+unit suite passed 3,832 tests with the known SDK authentication expected failure;
+the focused update runner suite passed 29 tests. Its installed suite ran 1,131
+tests on each macOS 27.0.1 arm64 Blender 5.0.1, 5.1.2 and 5.2.1, comprising
+1,129 passes and two Windows-only skips per run.
+
+Native update and offline restart passed on those three versions using synthetic
+predecessor `e863e7bc27b2a978ed41b4464d7b6cd41a67201be829ca57635751937c2ac406`,
+derived from #329 ZIP
+`eaec050ff2c5ba67a25ac55ee9fb9eefb1e546cec7fe0cc6ea632c5a87c74d5d`
+by changing only its two version declarations. The probe preserves the complete
+workflow schema/form, Unicode prompt and single/array Library references and
+bindings, alongside existing jobs, uploads, captured-mesh provenance, Film state
+and scene. Other credentials and default/alternate projects cannot use the marked
+references. Both update and restart reports require
+`workflow_references_preserved: true` when the predecessor seeds a workflow.
+
+A separate Blender 5.1.2 run with older predecessor
+`ca6ffddc82a8a59d523255db76a27534973db6e6b15c8951fc4467ebcfa9f090`
+passed existing state checks but recorded `workflow_references_preserved: false`
+because it has no workflow properties. All runs recorded zero service requests,
+stopped servers, removed successful profiles and unchanged normal profiles.
+These are synthetic package pairs, not published-release/public HTTPS evidence.
+Later sources and archives need their own validation; this evidence supplies no
+physical input, live provider journey, spending or complete release acceptance.
+
 ## Workflow command validation slice
 
 The workflow command layer above #323 uses a separate exact development ZIP:

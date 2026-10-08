@@ -58,8 +58,12 @@ def request_catalog():
         manager = runtime.ensure_manager()
         catalog = runtime.ensure_catalog()
     except ScenarioError as err:
+        runtime.state.catalog_error = err.reason
+        runtime.state.catalog_error_selection = (runtime.credentials(), runtime.project_id())
         runtime.set_message(err.reason)
         return False
+    runtime.state.catalog_error = ""
+    runtime.state.catalog_error_selection = None
     wanted = [m for lane in DEFAULT_MODELS for m in DEFAULT_MODELS[lane]]
     cached = catalog.load_list_cached("public")
     if cached:
@@ -87,6 +91,7 @@ def clear_catalog():
     runtime.state.catalog_loaded = False
     runtime.state.catalog_loading = False
     runtime.state.catalog_error = ""
+    runtime.state.catalog_error_selection = None
     for scene in bpy.data.scenes:
         if not hasattr(scene, "scenario"):
             continue

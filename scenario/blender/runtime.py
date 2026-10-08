@@ -50,6 +50,7 @@ class RuntimeState:
         self.catalog_loaded = False
         self.catalog_loading = False
         self.catalog_error = ""
+        self.catalog_error_selection = None
         self.catalog_credentials = None
         self.catalog_project_id = None
         self.retired_catalogs = []
@@ -475,6 +476,12 @@ def sync_catalog_context():
     """Refresh the worker-safe permission snapshot and retire changed credentials or project."""
     if not on_main_thread():
         raise RuntimeError("Catalog context must be refreshed on Blender's main thread")
+    if state.catalog_error_selection is not None and state.catalog_error_selection != (
+        credentials(),
+        project_id(),
+    ):
+        state.catalog_error = ""
+        state.catalog_error_selection = None
     if state.job_session is not None and not state.job_session.active:
         state.retire_jobs()
     if state.catalog is not None:

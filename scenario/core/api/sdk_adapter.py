@@ -34,6 +34,24 @@ class AdapterError(RuntimeError):
     """Safe text for UI/worker boundaries; never include response bodies or URLs."""
 
 
+class AdapterStatusError(AdapterError):
+    """Scenario replied with a non-success HTTP status; the text stays sanitized.
+
+    The status separates a service reply from a lost response. Callers decide
+    which statuses are definitive refusals; a 5xx can follow an applied change.
+    A model description read's HTTP 403 or 404 raises AdapterUnavailable instead.
+    """
+
+    def __init__(self, status_code, message):
+        super().__init__(message)
+        self.status_code = status_code
+
+    def __reduce__(self):
+        # args holds only the message, so copy and pickle must pass the status too.
+        # The text can depend on the request's project, so keep it rather than rebuild it.
+        return type(self), (self.status_code, str(self))
+
+
 class AdapterUnavailable(AdapterError):
     """The selected credentials or project cannot read a known model (HTTP 403 or 404)."""
 
@@ -61,6 +79,17 @@ def _unavailable_on_denial(method):
             raise
 
     return call
+
+
+# Waiting workflow step types and the actions their documented endpoints accept.
+_STEP_ACTIONS = {
+    "user-approval": frozenset({"approve", "reject"}),
+    "user-selection": frozenset({"select", "reject"}),
+}
+# The API reference's default maximum pick count for a user-selection step.
+_MAX_SELECTED_ITEMS = 100
+# Larger JSON integers lose precision in parsers that read numbers as doubles.
+_MAX_JSON_INTEGER = 2**53 - 1
 
 
 @dataclass(frozen=True)
@@ -153,6 +182,40 @@ def _identifier(value):
     if any(char in value for char in "/\\?#%") or any(ord(char) < 33 for char in value):
         raise ValueError("Identifier contains unsupported characters")
     return value
+
+
+def _printable(value):
+    """Reject controls, format characters such as bidi overrides and lone surrogates.
+
+    A lone surrogate cannot be encoded as UTF-8, so it would otherwise fail
+    inside SDK serialization instead of in this validation.
+    """
+    if not value.isprintable():
+        raise ValueError("Identifier contains unsupported characters")
+    return value
+
+
+def _node_identifier(value):
+    """Flow node IDs travel only in a JSON body, so path-unsafe characters are acceptable."""
+    if not isinstance(value, str) or not value or value.strip() != value or len(value) > 1024:
+        raise ValueError("A nonempty workflow step identifier is required")
+    return _printable(value)
+
+
+def _selected_indices(values):
+    """Keep 1-100 zero-based picks in order; the step's own min/max is the caller's check."""
+    if not isinstance(values, (list, tuple)):
+        raise ValueError("Selected items must be a list of indices")
+    picks = list(values)
+    if not picks:
+        raise ValueError("Select at least one item")
+    if len(picks) > _MAX_SELECTED_ITEMS:
+        raise ValueError(f"Select at most {_MAX_SELECTED_ITEMS} items")
+    if any(type(value) is not int or not 0 <= value <= _MAX_JSON_INTEGER for value in picks):
+        raise ValueError("Selected items must be nonnegative integer indices")
+    if len(set(picks)) != len(picks):
+        raise ValueError("Select each item at most once")
+    return picks
 
 
 def _upload_identifier(value):
@@ -315,7 +378,7 @@ class SDKAdapter:
         return self._unscoped_request(method, *args, **kwargs)
 
     def _unscoped_request(self, method, *args, **kwargs):
-        from scenario_sdk import APIConnectionError, APIStatusError
+        from scenario_sdk import APIConnectionError, APIStatusError, omit
 
         if self._closed:
             raise AdapterError("Scenario client is closed")
@@ -325,9 +388,12 @@ class SDKAdapter:
             response = method(*args, **kwargs)
             return response.read()
         except APIStatusError as error:
-            # Only a request that carried the override can blame the Project ID.
-            project = kwargs.get("project_id") is not None
-            raise AdapterError(_status_text(error.status_code, project=project)) from None
+            # Only a request that carried the override can blame the Project ID;
+            # the SDK's omit sentinel means the request sent no projectId.
+            project_id = kwargs.get("project_id")
+            project = project_id is not None and project_id is not omit
+            status = error.status_code
+            raise AdapterStatusError(status, _status_text(status, project=project)) from None
         except APIConnectionError:
             raise AdapterError("Could not reach Scenario") from None
 
@@ -502,6 +568,52 @@ class SDKAdapter:
         job = response.get("job")
         if not isinstance(job, dict) or job.get("jobId") != identifier:
             raise AdapterError("Scenario returned no matching cancellation acknowledgement")
+        return job
+
+    def workflow_decision(
+        self, workflow_id, workflow_job_id, node_id, node_type, action, selected_indices=None
+    ):
+        """Send one decision for a waiting workflow approval or selection step.
+
+        A decision can resume paid steps or stop the workflow, so it is never
+        retried. ValueError means nothing was sent. AdapterStatusError is a
+        service reply. Treat every other AdapterError as an unknown outcome
+        until the job is read again: offline and closed-client refusals happen
+        before sending but share that type with a lost response or a malformed
+        acknowledgement. The acknowledgement is not terminal-state evidence and
+        may contain signed asset URLs, which callers must not persist or log.
+        """
+        from scenario_sdk import omit
+
+        workflow_id = _printable(_identifier(workflow_id))
+        workflow_job_id = _printable(_identifier(workflow_job_id))
+        node_id = _node_identifier(node_id)
+        actions = _STEP_ACTIONS.get(node_type) if isinstance(node_type, str) else None
+        if actions is None:
+            raise ValueError("Choose a user-approval or user-selection workflow step")
+        if not isinstance(action, str) or action not in actions:
+            raise ValueError("Choose an action this workflow step accepts")
+        if action != "select" and selected_indices is not None:
+            raise ValueError("Only a selection sends selected items")
+        if node_type == "user-approval":
+            # An omitted action approves, so send it explicitly. projectId stays
+            # omitted unless this connection has a project override.
+            raw = self._request(
+                self._sdk.workflows.with_raw_response.user_approval,
+                workflow_id,
+                project_id=omit,
+                node_id=node_id,
+                workflow_job_id=workflow_job_id,
+                action=action,
+            )
+        else:
+            body = {"action": action, "nodeId": node_id, "workflowJobId": workflow_job_id}
+            if action == "select":
+                body["selectedIndices"] = _selected_indices(selected_indices)
+            raw = self._request(self._extensions.workflow_user_selection, workflow_id, body=body)
+        job = _json(raw).get("job")
+        if not isinstance(job, dict) or job.get("jobId") != workflow_job_id:
+            raise AdapterError("Scenario returned no matching workflow decision acknowledgement")
         return job
 
     def create_upload(self, *, kind, file_name, content_type, file_size, parts, asset_options=None):

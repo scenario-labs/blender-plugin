@@ -115,10 +115,12 @@ account strip shows pending, error or success independently of cached models.
 Credential changes and runtime reset
 discard late success and failure. The result confirms model access; it does not
 derive account/project identity or activate durable jobs. Failures carry the
-adapter's fixed status text for every SDK request: HTTP 401 and 403 ask to check
-the selected key and secret, a 403 names the Project ID only when that request
-carried the override, and 429 asks for a later retry. Other statuses keep the
-generic HTTP text; no message includes response bodies, URLs or identifiers.
+adapter's fixed status text: HTTP 401 and 403 ask to check the selected key and
+secret, a 403 names the Project ID only when that request carried the override,
+and 429 asks for a later retry. Other statuses keep the generic HTTP text. Model
+record reads through `SDKAdapter.model` are the exception: their HTTP 403 or 404
+reports that the model is not available to the selected credentials or project.
+No message includes response bodies, URLs or identifiers.
 
 Explicit local MCP recovery calls now lazily activate the selected
 [JobSession](../BLENDER_JOB_CONTEXT.md). `list_local_jobs` reads its durable

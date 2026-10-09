@@ -43,10 +43,11 @@ records, lane/schema helpers and local display status classification remain.
 | Exact model quote and submission, including render, Blockout and Film models | `JobCoordinator` / `SDKAdapter`: `generate.with_raw_response.run_model`, with `dry_run="true"` only for quotes |
 | New/Rewrite and Translate | Shared prompt commands: `generate.with_raw_response.prompt/translate`, including separate exact estimates and submission claims |
 | Cloud history, known-job recovery, polling and inference cancellation | Shared catalog/coordinator: `jobs.with_raw_response.list/retrieve/trigger_action` |
+| Waiting workflow step decisions (adapter only; no job, UI or MCP caller yet) | `SDKAdapter.workflow_decision`: `workflows.with_raw_response.user_approval`; selection uses the named [SDK issue #33 exception](#workflow-step-decisions) |
 | Result and complete prompt/model-text metadata | Shared coordinator: `assets.with_raw_response.retrieve`; bounded complete text uses the signed result transport |
 | Asset library browsing and text search | Shared coordinator: `assets.with_raw_response.list` and `search.with_raw_response.asset_search`; explicit single-page reads with selected project scope |
 | Reference upload metadata, progress and completion | Shared upload coordinator: `uploads.with_raw_response.create/retrieve/trigger_action` |
-| Optional team/project discovery | Adapter-owned `SDKResourceExtensions`, the named [SDK issue #29 exception](https://github.com/scenario-labs/scenario-sdk-python/issues/29) below; no new raw exception |
+| Optional team/project discovery | Adapter-owned `SDKResourceExtensions`, the named [SDK issue #29 exception](https://github.com/scenario-labs/scenario-sdk-python/issues/29) below |
 | Developer model audit, fixture recorder and smoke tools | The same `SDKAdapter`; smoke generation and explicit reference-plan uploads use shared coordinator commands. [Reference automation](../tests/smoke/README.md#prepare-reference-inputs) reuses the upload SDK methods above and signed-part transport. |
 
 Workflow adapter primitives also use the pinned public SDK methods documented
@@ -95,7 +96,8 @@ using the locked environment.
 | Trained-model discovery | `models.with_raw_response.list(privacy="private", status="trained")` keeps the filter, page size, cursor and project in the query; `models.with_raw_response.get_bulk`: POST `/models/get-bulk` with only `modelIds` in JSON, project in the query, original `models` bytes and parsed `uiConfig.lorasComponent`; a `models.retrieve` 403 or 404 is one status error |
 | Multipart upload lifecycle | `uploads.create/retrieve/trigger_action`: project query, asset-option aliases, part URLs and processing/result fields; creation does not transfer bytes |
 | Job discovery | `jobs.list`: `jobs` page wrapper, filters, comma-separated `types`, opaque cursor and project/filter preservation on the next page |
-| Workflow approval rejection | `workflows.user_approval(action="reject")`: workflow, job and node identity; this is not general workflow cancellation |
+| Workflow approval decisions | `workflows.with_raw_response.user_approval`: one PUT with workflow, job and node identity and an explicit `approve` or `reject` action; `projectId` only when supplied, because `omit` drops it. Rejection stops a waiting step; it is not general workflow cancellation |
+| Workflow selection gap | 2.2.0 has no `workflows.user_selection` ([#33](https://github.com/scenario-labs/scenario-sdk-python/issues/33)); the low-level `put` sends one PUT with the documented body and optional `projectId`, and a per-request `max_retries=0` holds even on a client configured to retry |
 | Remote cancellation | `jobs.trigger_action(action="cancel")`: POST action and project query; acknowledgements can remain in progress or report a completion race; upload/cancel failures make one attempt |
 | Uncertain submissions | `max_retries=0` makes one attempt for model/workflow transport errors and retryable HTTP statuses, even with `Retry-After` |
 | Redirect handling | An explicit HTTP client with `follow_redirects=False` prevents a second request; also use `trust_env=False` to avoid ambient proxy configuration |
@@ -326,7 +328,8 @@ and multipart upload metadata commands are mapped in
 | Discover jobs | `jobs.list`: GET `/jobs`; supports `authorId`, `workflowId`, `status`, `type` or comma-separated `types`, `hideResults`, `pageSize`, `paginationToken` and `projectId`; `jobs` array plus `nextPaginationToken` |
 | Retrieve known job | `jobs.retrieve`: GET `/jobs/{id}`, `projectId` query, `job` wrapper |
 | Request inference cancellation | `jobs.trigger_action(action="cancel")`: POST `/jobs/{id}/action`, `projectId` query, `job` wrapper |
-| Reject workflow approval | `workflows.user_approval(action="reject")`: PUT `/workflows/{id}/user-approval`, `projectId` query, `nodeId`/`workflowJobId`/`action` body, `job` wrapper |
+| Decide workflow approval | `workflows.user_approval(action="approve" or "reject")`: PUT `/workflows/{id}/user-approval`, `projectId` query (typed required), `nodeId`/`workflowJobId`/`action` body, `job` wrapper; an omitted action approves |
+| Decide workflow selection | Absent from 2.2.0. The [API reference](https://docs.scenario.com/api/resources/workflows/methods/user_selection) documents PUT `/workflows/{workflowId}/user-selection`, a `projectId` query marked required, `action` (`select` or `reject`), `nodeId`, `workflowJobId` and, for `select`, ordered zero-based `selectedIndices`; `job` wrapper |
 
 ### Uploads and signed storage
 
@@ -388,10 +391,13 @@ model-generation record in `tests/fixtures/patina-copper-512/job.json` uses
 `jobType=custom`; the pinned retrieve-response enum includes both `custom` and
 `inference`. The coordinator accepts these two kinds only for persisted model
 operations, with a durable `cancel_requested` claim before its single action.
-No general
-workflow-cancel method appears in the inspected workflow resource. Rejection
-requires a user-approval node and has node/loop-specific semantics; it must not
-be repurposed as general cancellation. A response may still be `in-progress` or
+No general workflow-cancel method appears in the inspected workflow resource,
+and the job action documentation supports cancelling inference jobs only. Rejecting a
+waiting user-approval or user-selection step is the only documented way for a
+client to stop a workflow. The SDK documents a loop-scoped effect for a rejected
+approval inside a ForEach iteration, so callers must trust the refreshed job
+status. Rejection cannot stop an executing step and must not be presented as
+general cancellation. A response may still be `in-progress` or
 already `success`; the SDK preserves it without forcing `canceled`. Live support
 remains acceptance work under #65; the coordinator tests completion races and
 known-ID restart polling offline.
@@ -425,15 +431,17 @@ existing SDK client and HTTP pool:
 | --- | --- | --- |
 | `teams()` | `Scenario.get("/teams", cast_to=httpx.Response)` | No team/project query, including when the adapter has a selected project. |
 | `projects(team_id)` | `Scenario.get("/projects", cast_to=httpx.Response)` | Only the explicitly requested `teamId`; never inherit `projectId`. |
+| `workflow_user_selection(workflow_id, body=...)` | `Scenario.put("/workflows/{workflowId}/user-selection", cast_to=httpx.Response)` with per-request `max_retries=0`; [SDK issue #33](https://github.com/scenario-labs/scenario-sdk-python/issues/33) | The adapter's project override as `projectId` when configured; otherwise no query, as for workflow runs. See [workflow step decisions](#workflow-step-decisions). |
 
 These are explicit raw endpoint exceptions, not generated resource methods.
 They retain the SDK's configured credentials, base URL, timeout, zero retries,
-redirect policy and adapter online/lifetime checks and sanitized errors. The
-adapter validates the named list and each record's ID while preserving unknown
-fields and the full response wrapper. Each method returns one response; no
-exhaustive pagination contract is inferred. Neither method selects the first
-project, changes adapter scope, nor claims that listed projects identify the
-key's default project. Nested metadata remains unvalidated service data.
+redirect policy and adapter online/lifetime checks and sanitized errors. For
+discovery, the adapter validates the named list and each record's ID while
+preserving unknown fields and the full response wrapper. Each discovery method
+returns one response; no exhaustive pagination contract is inferred. Neither
+selects the first project, changes adapter scope, nor claims that listed
+projects identify the key's default project. Nested metadata remains unvalidated
+service data.
 
 Team discovery is optional. In the OAuth flow the backend may provision a
 personal team/default project for a user without teams during `GET /teams`, so
@@ -445,15 +453,68 @@ an upstream issue, then add a named extension with a verified endpoint/body/quer
 contract and offline transport tests. Keep generated SDK methods for operations
 already covered. Do not expose an arbitrary-URL bypass to UI, jobs or local MCP.
 Replace each fallback when the selected SDK provides an equivalent method and
-its contract tests pass; the dependency test flags newly available discovery
-resources for that review. No dependency upgrade is required for this layer.
+its contract tests pass; the dependency tests flag newly available discovery
+resources and `workflows.user_selection` for that review. No dependency upgrade
+is required for this layer.
 
 [Extension tests](../tests/unit/test_sdk_extensions.py) cover selected Basic and
 Bearer credentials despite conflicting environment values, stale-project
-discovery, permission/lifetime checks, malformed data and single-attempt errors.
-They also exercise API-key estimate/submission without discovery or tenant IDs.
-These synthetic checks and the installed-bundle test do not claim live service
-acceptance or complete active durable-generation integration under #65.
+discovery, permission/lifetime checks, malformed data and single-attempt errors,
+including the selection fallback on an SDK client configured to retry.
+They also exercise API-key estimate/submission without discovery or tenant IDs,
+and the workflow decisions below. These synthetic checks and the installed-bundle
+test do not claim live service acceptance or complete active durable-generation
+integration under #65.
+
+### Workflow step decisions
+
+`SDKAdapter.workflow_decision` answers one waiting workflow step. A
+`user-approval` step accepts `approve` or `reject` through the generated
+`workflows.with_raw_response.user_approval`. A `user-selection` step accepts
+`select` or `reject` through `workflow_user_selection`, because SDK 2.2.0 lacks
+the generated method. The [API reference](https://docs.scenario.com/api/resources/workflows/methods/user_selection)
+documents that route and SDK `main` already has it, but no published release
+does ([SDK issue #33](https://github.com/scenario-labs/scenario-sdk-python/issues/33)).
+Remove the extension when the pinned SDK provides `workflows.user_selection` and
+these contracts pass with its raw-response wrapper.
+
+- **Request shape.** Workflow and job IDs use the adapter's path-safe identifier
+  rules; the selection path uses the same segment encoding as the generated
+  approval route. Node IDs travel only in the JSON body, so they need only be
+  printable text of at most 1,024 characters without surrounding whitespace;
+  the format of loop-iteration node IDs is not documented. All three IDs must
+  pass Python's `str.isprintable`, which rejects control and format characters,
+  such as bidi overrides, and lone surrogates before any request is built. The
+  action is always explicit, because an omitted approval action approves.
+- **Selection.** A selection sends 1 to 100 unique nonnegative integer indices,
+  in the caller's order, which the node output preserves. The cap is the API
+  reference's default maximum, and indices stay within the exact JSON integer
+  range. The step's own min/max bounds and candidate count remain the caller's
+  check.
+- **Scope.** Both endpoints document `projectId` as required, and SDK 2.2.0
+  types it as required for approvals. A decision uses the scope of the run it
+  answers: the adapter's explicit project override when configured, otherwise
+  API-key credential-bound scope with `projectId` omitted, as for `workflows.run`.
+  Omission for these two endpoints is not yet live-verified. If a key needs the
+  explicit project, decisions must require a project override instead.
+- **One attempt.** A decision can resume paid steps or stop the workflow, so it
+  is never retried, including after `Retry-After`. `AdapterStatusError` carries
+  the HTTP status of a service reply with the adapter's sanitized status text,
+  separating it from a lost response. A 403 names the Project ID only when the
+  decision sent the project override. Callers decide which statuses are
+  definitive refusals. A `ValueError` means nothing was sent. Treat every other
+  `AdapterError` as an unknown outcome until the job is retrieved again: offline
+  and closed-client refusals happen before sending, but share that type with a
+  lost response and a malformed or mismatched acknowledgement. The status error
+  keeps its status and text through `copy` and `pickle`.
+- **Acknowledgement.** The returned `job` must name the same workflow job. It is
+  not terminal-state evidence and may carry signed asset URLs, which callers must
+  not persist or log.
+
+This adapter primitive grants no spending or decision authority. Exact quotes,
+explicit user approval, a selection that feeds a ForEach loop, and durable
+records belong to the job runtime that will call it; no job, UI or MCP path calls
+it yet. Offline contracts do not establish live endpoint acceptance.
 
 ## Known authentication failure
 
@@ -499,7 +560,8 @@ a separate durable local claim without calling Scenario. Explicit saved texture 
 [material approval](MATERIAL_APPLICATION.md) and verified bytes, with no new API call.
 Generated operations use public SDK methods
 with `max_retries=0`; their `with_raw_response` wrappers preserve wire JSON.
-The named discovery exceptions also use the same zero-retry SDK client.
+The named discovery and selection exceptions also use the same zero-retry SDK
+client; the selection request also disables retries on its own options.
 
 | Adapter operation | SDK 2.2.0 method and contract |
 | --- | --- |
@@ -508,6 +570,7 @@ The named discovery exceptions also use the same zero-retry SDK client.
 | Inaccessible model detail | `models.retrieve`: HTTP 403 or 404 raises `AdapterUnavailable`, an `AdapterError` carrying the status and fixed text; other reads and statuses keep the generic error |
 | Public/private workflow catalog | `workflows.list`: SDK REST catalog replaces the need for Studio's public-workflow HTTP bypass; pagination and scope are tested synthetically |
 | Known model-job cancellation | `jobs.trigger_action(action="cancel")` through its public raw-response wrapper: one attempt, selected project, no terminal-state assumption from acknowledgement; coordinator retrieves before and after the action |
+| Waiting workflow step decision | `workflows.user_approval` through its public raw-response wrapper, or the named [selection extension](#workflow-step-decisions): explicit action, one attempt, project override only, status-carrying errors and a matching `job` acknowledgement; no runtime caller yet |
 | Scoped job discovery | `jobs.list` through the public raw-response wrapper: optional author/workflow/type/status filters, 1–200 items per page, bounded pagination and explicit errors instead of partial or conflicting history |
 | Multipart upload metadata | `uploads.create/retrieve/trigger_action(action="complete")`: immutable project scope, strict input/receipt identity, retained processing/future fields; no byte transfer, retry or automatic completion |
 | Model/workflow/asset/job records | `models.retrieve`, `workflows.retrieve`, `assets.retrieve`, `jobs.retrieve`: unwrap the named record and retain unknown fields |
@@ -584,8 +647,11 @@ tests do not claim live service acceptance or authorize a paid operation.
 The inspected 2.2.0 wheel retains the same required dependency closure and
 byte-identical MIT notice as 2.1.0. Client/authentication and transport sources
 are unchanged, so both the #26 header workaround and #29 discovery extensions
-remain necessary. Resource/type updates include stricter query annotations and
-additional model/job metadata; raw-response parsing preserves those fields.
+remain necessary. 2.2.0 also lacks `workflows.user_selection`, so the
+[#33 selection extension](#workflow-step-decisions) is required too; the
+dependency tests flag each missing method for review on upgrade. Resource/type
+updates include stricter query annotations and additional model/job metadata;
+raw-response parsing preserves those fields.
 
 Model and workflow `dry_run` now declare `"true"` or `"api"`. The adapter uses
 `"true"` for existing estimates and omits the parameter for actual submissions,
@@ -616,8 +682,9 @@ Before the adopted extension is accepted:
   multipart upload/finalization, signed downloads, asset search and collection
   operations. Do not infer coverage from a similar method name.
 - Reproduce each uncovered operation and link an upstream SDK issue before a
-  narrow raw API fallback in the shared adapter. The named discovery extensions
-  above are the current exception, with issue and removal condition recorded.
+  narrow raw API fallback in the shared adapter. The named discovery (#29) and
+  workflow selection (#33) extensions above are the current exceptions, each
+  with its issue and removal condition recorded.
 - Bind exact quotes to payload/account/project, persist request identity before
   paid dispatch, and preserve an uncertain state after a lost response. SDK
   retry settings alone do not provide application persistence or prevent a

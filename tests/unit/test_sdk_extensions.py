@@ -1,13 +1,25 @@
 # SPDX-FileCopyrightText: 2026 Scenario Inc.
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""Named discovery fallbacks use the real selected SDK, without network calls."""
+"""Named SDK fallbacks use the real selected SDK, without network calls.
+
+Covers discovery and the workflow step decisions that pair the generated
+approval method with the user-selection fallback.
+"""
 
 import base64
+import json
 
 import httpx
 import pytest
+from scenario_sdk import APIStatusError, APITimeoutError, Scenario
 
-from scenario.core.api.sdk_adapter import AdapterError, Credentials, SDKAdapter
+from scenario.core.api.sdk_adapter import (
+    AdapterError,
+    AdapterStatusError,
+    Credentials,
+    SDKAdapter,
+)
+from scenario.core.api.sdk_extensions import SDKResourceExtensions
 
 
 @pytest.fixture
@@ -178,3 +190,301 @@ def test_api_key_generation_needs_no_discovery_or_explicit_tenant(adapter):
 def test_empty_discovery_list_is_valid(adapter, kind):
     client = adapter(lambda request: httpx.Response(200, json={kind: []}))
     assert discovery(client, kind) == {kind: []}
+
+
+WORKFLOW_JOB = "fixture-workflow-job"
+DECISIONS = {
+    "approve": ("user-approval", "approve", None),
+    "approval-reject": ("user-approval", "reject", None),
+    "select": ("user-selection", "select", [2, 0]),
+    "selection-reject": ("user-selection", "reject", None),
+}
+
+
+def decide(client, case, workflow_id="fixture-workflow"):
+    node_type, action, indices = DECISIONS[case]
+    return client.workflow_decision(
+        workflow_id, WORKFLOW_JOB, "fixture-node", node_type, action, selected_indices=indices
+    )
+
+
+def acknowledged(request):
+    return httpx.Response(200, json={"job": {"jobId": WORKFLOW_JOB, "status": "in-progress"}})
+
+
+@pytest.mark.parametrize("case", DECISIONS)
+@pytest.mark.parametrize("bearer", [False, True])
+@pytest.mark.parametrize("project", [None, "selected-project"])
+def test_workflow_decisions_send_one_documented_request_in_selected_scope(
+    adapter, monkeypatch, case, bearer, project
+):
+    monkeypatch.setenv("SCENARIO_SDK_API_KEY", "ambient-key")
+    monkeypatch.setenv("SCENARIO_SDK_API_SECRET", "ambient-secret")
+    monkeypatch.setenv("SCENARIO_BASE_URL", "https://wrong.invalid")
+    monkeypatch.setenv(
+        "SCENARIO_CUSTOM_HEADERS", "Authorization: Bearer ambient\nX-Project-Id: wrong"
+    )
+    requests = []
+
+    def respond(request):
+        requests.append(request)
+        return acknowledged(request)
+
+    credentials = (
+        Credentials(bearer_token="selected-token") if bearer else Credentials("key", "secret")
+    )
+    client = adapter(respond, credentials=credentials, project_id=project)
+    job = decide(client, case)
+    assert job == {"jobId": WORKFLOW_JOB, "status": "in-progress"}
+    assert len(requests) == 1
+    request = requests[0]
+    node_type, action, indices = DECISIONS[case]
+    assert request.method == "PUT"
+    assert request.url.host == "service.example.invalid"
+    assert request.url.path == f"/v1/workflows/fixture-workflow/{node_type}"
+    # Only the adapter's explicit project override is sent; API-key scope otherwise.
+    assert dict(request.url.params) == ({} if project is None else {"projectId": project})
+    expected = {"nodeId": "fixture-node", "workflowJobId": WORKFLOW_JOB, "action": action}
+    if indices is not None:
+        expected["selectedIndices"] = indices
+    assert json.loads(request.content) == expected
+    authorization = (
+        "Bearer selected-token" if bearer else "Basic " + base64.b64encode(b"key:secret").decode()
+    )
+    assert request.headers["Authorization"] == authorization
+    assert "X-Project-Id" not in request.headers
+
+
+def test_selection_path_uses_the_generated_approval_encoding(adapter):
+    requests = []
+
+    def respond(request):
+        requests.append(request)
+        return acknowledged(request)
+
+    client = adapter(respond)
+    for case in ("approve", "select"):
+        decide(client, case, workflow_id="workflow:é@team")
+    approval, selection = (request.url.raw_path for request in requests)
+    assert approval == b"/v1/workflows/workflow:%C3%A9@team/user-approval"
+    assert selection == b"/v1/workflows/workflow:%C3%A9@team/user-selection"
+
+
+@pytest.mark.parametrize("case", DECISIONS)
+@pytest.mark.parametrize("state", ["offline", "closed"])
+def test_workflow_decisions_respect_permission_and_client_lifetime(adapter, case, state):
+    requests = []
+    client = adapter(lambda request: requests.append(request), online=lambda: state != "offline")
+    if state == "closed":
+        client.close()
+    with pytest.raises(AdapterError, match="disabled|closed"):
+        decide(client, case)
+    assert not requests
+
+
+@pytest.mark.parametrize("case", DECISIONS)
+@pytest.mark.parametrize("failure", [400, 409, 429, 503, 302, "timeout"])
+def test_workflow_decision_failures_are_single_attempt_and_keep_status(adapter, case, failure):
+    requests = []
+
+    def respond(request):
+        requests.append(request)
+        if failure == "timeout":
+            raise httpx.ReadTimeout("private response and credential", request=request)
+        return httpx.Response(
+            failure,
+            json={"error": "private response and credential"},
+            headers={"Retry-After": "0", "Location": "https://wrong.invalid"},
+        )
+
+    client = adapter(respond)
+    with pytest.raises(AdapterError) as error:
+        decide(client, case)
+    assert len(requests) == 1
+    assert "private" not in str(error.value)
+    assert "wrong.invalid" not in str(error.value)
+    if failure == "timeout":
+        # A lost response is not a service reply: the decision may have applied.
+        assert not isinstance(error.value, AdapterStatusError)
+    else:
+        assert isinstance(error.value, AdapterStatusError)
+        assert error.value.status_code == failure
+        generic = f"Scenario request failed (HTTP {failure})"
+        limited = "Too many requests (HTTP 429). Try again shortly."
+        assert str(error.value) == (limited if failure == 429 else generic)
+
+
+@pytest.mark.parametrize("case", DECISIONS)
+@pytest.mark.parametrize("project", [None, "selected-project"])
+def test_workflow_decision_denial_names_the_project_only_when_one_was_sent(adapter, case, project):
+    # An approval passes the SDK's omit sentinel when there is no override; that
+    # request carries no projectId, so its 403 must not blame the Project ID.
+    requests = []
+
+    def respond(request):
+        requests.append(request)
+        return httpx.Response(403, json={"error": "private response and credential"})
+
+    client = adapter(respond, project_id=project)
+    with pytest.raises(AdapterStatusError) as error:
+        decide(client, case)
+    assert len(requests) == 1
+    assert dict(requests[0].url.params) == ({} if project is None else {"projectId": project})
+    assert error.value.status_code == 403
+    message = str(error.value)
+    assert message.startswith("Access denied (HTTP 403).")
+    assert ("Project ID" in message) is (project is not None)
+
+
+@pytest.mark.parametrize("action", ["select", "reject"])
+@pytest.mark.parametrize("failure", [503, "timeout"])
+def test_selection_fallback_stays_single_attempt_on_a_retrying_client(action, failure):
+    # The adapter's client has zero retries, so the adapter tests above cannot
+    # tell whether the fallback's own max_retries=0 option still holds.
+    requests = []
+
+    def respond(request):
+        requests.append(request)
+        if failure == "timeout":
+            raise httpx.ReadTimeout("fixture lost response", request=request)
+        return httpx.Response(failure, json={"error": "fixture"}, headers={"Retry-After-Ms": "1"})
+
+    sdk = Scenario(
+        base_url="https://service.example.invalid/v1",
+        api_key="fixture-key",
+        api_secret="fixture-secret",
+        max_retries=2,
+        timeout=5.0,
+        http_client=httpx.Client(
+            transport=httpx.MockTransport(respond), follow_redirects=False, trust_env=False
+        ),
+    )
+    body = {"action": action, "nodeId": "fixture-node", "workflowJobId": WORKFLOW_JOB}
+    if action == "select":
+        body["selectedIndices"] = [1, 0]
+    expected = APITimeoutError if failure == "timeout" else APIStatusError
+    try:
+        with pytest.raises(expected):
+            SDKResourceExtensions(sdk).workflow_user_selection("fixture-workflow", body=body)
+        assert len(requests) == 1
+        if failure != "timeout":
+            # Control: the same client retries a request without that option.
+            with pytest.raises(APIStatusError):
+                sdk.put(
+                    "/workflows/fixture-workflow/user-selection",
+                    cast_to=httpx.Response,
+                    body=body,
+                )
+            assert len(requests) == 4
+    finally:
+        sdk.close()
+
+
+@pytest.mark.parametrize("case", DECISIONS)
+@pytest.mark.parametrize(
+    "raw",
+    [
+        b"not json",
+        b"[]",
+        b"{}",
+        b'{"job":null}',
+        b'{"job":{}}',
+        b'{"job":{"jobId":"another-job"}}',
+    ],
+)
+def test_workflow_decision_requires_the_matching_job_acknowledgement(adapter, case, raw):
+    requests = []
+
+    def respond(request):
+        requests.append(request)
+        return httpx.Response(200, content=raw)
+
+    with pytest.raises(AdapterError) as error:
+        decide(adapter(respond), case)
+    assert not isinstance(error.value, AdapterStatusError)
+    assert len(requests) == 1
+
+
+@pytest.mark.parametrize(
+    "arguments",
+    [
+        ("../workflow", WORKFLOW_JOB, "node", "user-approval", "approve", None),
+        ("workflow/one", WORKFLOW_JOB, "node", "user-approval", "approve", None),
+        ("workflow?projectId=wrong", WORKFLOW_JOB, "node", "user-selection", "reject", None),
+        ("workflow", "", "node", "user-approval", "approve", None),
+        ("workflow", "job/other", "node", "user-selection", "reject", None),
+        ("workflow", WORKFLOW_JOB, "", "user-approval", "approve", None),
+        ("workflow", WORKFLOW_JOB, " node", "user-approval", "approve", None),
+        ("workflow", WORKFLOW_JOB, "node\n", "user-selection", "reject", None),
+        # C1 control, bidi override and a lone surrogate, which UTF-8 cannot encode.
+        ("workflow", WORKFLOW_JOB, "no\u0085de", "user-approval", "approve", None),
+        ("workflow", WORKFLOW_JOB, "node\u202e", "user-selection", "reject", None),
+        ("workflow", WORKFLOW_JOB, "\ud800", "user-selection", "select", [0]),
+        ("workflow", WORKFLOW_JOB, "n" * 1025, "user-approval", "approve", None),
+        ("workflow\ud800", WORKFLOW_JOB, "node", "user-approval", "approve", None),
+        ("workflow", "job\u202e", "node", "user-selection", "reject", None),
+        ("workflow", WORKFLOW_JOB, None, "user-approval", "approve", None),
+        ("workflow", WORKFLOW_JOB, "node", "model", "approve", None),
+        ("workflow", WORKFLOW_JOB, "node", None, "approve", None),
+        ("workflow", WORKFLOW_JOB, "node", "user-approval", None, None),
+        ("workflow", WORKFLOW_JOB, "node", "user-approval", "select", [0]),
+        ("workflow", WORKFLOW_JOB, "node", "user-approval", "cancel", None),
+        ("workflow", WORKFLOW_JOB, "node", "user-selection", "approve", None),
+        ("workflow", WORKFLOW_JOB, "node", "user-approval", "approve", [0]),
+        ("workflow", WORKFLOW_JOB, "node", "user-approval", "reject", []),
+        ("workflow", WORKFLOW_JOB, "node", "user-selection", "reject", [0]),
+        ("workflow", WORKFLOW_JOB, "node", "user-selection", "select", None),
+        ("workflow", WORKFLOW_JOB, "node", "user-selection", "select", "0,1"),
+        ("workflow", WORKFLOW_JOB, "node", "user-selection", "select", {0}),
+        ("workflow", WORKFLOW_JOB, "node", "user-selection", "select", [1, 1]),
+        ("workflow", WORKFLOW_JOB, "node", "user-selection", "select", [-1]),
+        ("workflow", WORKFLOW_JOB, "node", "user-selection", "select", [True]),
+        ("workflow", WORKFLOW_JOB, "node", "user-selection", "select", [1.0]),
+        ("workflow", WORKFLOW_JOB, "node", "user-selection", "select", []),
+        ("workflow", WORKFLOW_JOB, "node", "user-selection", "select", list(range(101))),
+        ("workflow", WORKFLOW_JOB, "node", "user-selection", "select", [2**53]),
+    ],
+)
+def test_invalid_workflow_decisions_never_reach_transport(adapter, arguments):
+    requests = []
+    client = adapter(lambda request: requests.append(request))
+    workflow_id, job_id, node_id, node_type, action, indices = arguments
+    with pytest.raises(ValueError) as error:
+        client.workflow_decision(
+            workflow_id, job_id, node_id, node_type, action, selected_indices=indices
+        )
+    # The adapter's own validation, not a codec failure during SDK serialization.
+    assert not isinstance(error.value, UnicodeError)
+    assert not requests
+
+
+def test_node_ids_travel_only_in_the_body(adapter):
+    requests = []
+
+    def respond(request):
+        requests.append(request)
+        return acknowledged(request)
+
+    client = adapter(respond)
+    client.workflow_decision(
+        "fixture-workflow", WORKFLOW_JOB, "loop/node#1?x", "user-selection", "select", (1,)
+    )
+    assert requests[0].url.raw_path == b"/v1/workflows/fixture-workflow/user-selection"
+    assert json.loads(requests[0].content)["nodeId"] == "loop/node#1?x"
+    assert json.loads(requests[0].content)["selectedIndices"] == [1]
+
+
+def test_selection_accepts_the_documented_default_maximum(adapter):
+    requests = []
+
+    def respond(request):
+        requests.append(request)
+        return acknowledged(request)
+
+    picks = [2**53 - 1, *range(99)]
+    adapter(respond).workflow_decision(
+        "fixture-workflow", WORKFLOW_JOB, "étape 1", "user-selection", "select", picks
+    )
+    body = json.loads(requests[0].content)
+    assert body["selectedIndices"] == picks
+    assert body["nodeId"] == "étape 1"

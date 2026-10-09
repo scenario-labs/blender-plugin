@@ -3,8 +3,11 @@
 """Packed PBR graph, exact mesh-slot targeting and rollback in Blender."""
 
 import hashlib
+import struct
 import tempfile
 import unittest
+import zlib
+from dataclasses import replace
 from pathlib import Path
 from unittest.mock import patch
 
@@ -130,6 +133,57 @@ class MaterialApplicationTests(unittest.TestCase):
                 self.assertEqual(bsdf.inputs["Base Color"].links[0].from_node.label, "Albedo")
                 self.assertTrue(all(image.packed_file for image in result.images))
                 self.assertEqual({path: path.read_bytes() for path in verified.paths}, before)
+
+    def test_grayscale_scalar_maps_decode_pack_and_connect_without_conversion(self):
+        def chunk(kind, payload):
+            body = kind + payload
+            return struct.pack(">I", len(payload)) + body + struct.pack(">I", zlib.crc32(body))
+
+        for depth in (8, 16):
+            with self.subTest(depth=depth):
+                verified = self.fixture(
+                    ("base", "albedo", "normal", "smoothness", "metallic", "height")
+                )
+                items = list(verified.record.results)
+                for index, item in enumerate(items):
+                    if item.asset.texture_role not in {"smoothness", "metallic", "height"}:
+                        continue
+                    sample = b"\x80" if depth == 8 else b"\x80\x00"
+                    data = (
+                        b"\x89PNG\r\n\x1a\n"
+                        + chunk(b"IHDR", struct.pack(">IIBBBBB", 2, 2, depth, 0, 0, 0, 0))
+                        + chunk(b"IDAT", zlib.compress((b"\x00" + sample * 2) * 2))
+                        + chunk(b"IEND", b"")
+                    )
+                    verified.paths[index].write_bytes(data)
+                    items[index] = replace(
+                        item,
+                        asset=replace(item.asset, expected_size=len(data)),
+                        receipt=self.transfers.DownloadedResult(
+                            item.receipt.name, len(data), hashlib.sha256(data).hexdigest()
+                        ),
+                    )
+                verified = replace(verified, record=replace(verified.record, results=tuple(items)))
+                before = [path.read_bytes() for path in verified.paths]
+                result = self.module.apply_material(
+                    verified, self.module.capture_target(self.scene, self.obj)
+                )
+                self.assertEqual(self.obj.data.materials[0], result.material)
+                textures = {
+                    node.label: node.image
+                    for node in result.material.node_tree.nodes
+                    if node.type == "TEX_IMAGE"
+                }
+                self.assertEqual(len(textures), 5)
+                for label in ("Smoothness", "Metallic", "Height"):
+                    image = textures[label]
+                    self.assertTrue(image.packed_file)
+                    self.assertEqual(image.colorspace_settings.name, "Non-Color")
+                    self.assertAlmostEqual(
+                        image.pixels[0], 128 / 255 if depth == 8 else 32768 / 65535, places=3
+                    )
+                    self.assertEqual(tuple(image.pixels[:3]), (image.pixels[0],) * 3)
+                self.assertEqual([path.read_bytes() for path in verified.paths], before)
 
     def test_shared_mesh_is_rejected_without_changing_either_object(self):
         other = bpy.data.objects.new("Shared data user", self.obj.data)

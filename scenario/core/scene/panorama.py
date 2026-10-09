@@ -57,12 +57,14 @@ def _png(data, *, panorama=True):
             )
             if (
                 depth not in (8, 16)
-                or color not in (2, 6)
+                or color not in ((2, 6) if panorama else (0, 2, 6))
                 or compression
                 or filtering
                 or interlace > 1
             ):
-                raise PanoramaError("Use a standard RGB or RGBA PNG panorama")
+                if panorama:
+                    raise PanoramaError("Use a standard RGB or RGBA PNG panorama")
+                raise PanoramaError("Use an 8- or 16-bit grayscale, RGB or RGBA PNG image")
             info = _dimensions("PNG", width, height, panorama=panorama)
         elif kind == b"IHDR":
             raise PanoramaError("PNG has conflicting dimensions")
@@ -193,4 +195,6 @@ def inspect_image(data):
         return _png(data, panorama=False)
     if data.startswith(b"\x76\x2f\x31\x01"):
         return _exr(data, panorama=False)
-    raise PanoramaError("Automatic application supports RGB/RGBA PNG and scanline OpenEXR images")
+    raise PanoramaError(
+        "Automatic application supports grayscale/RGB/RGBA PNG and scanline OpenEXR images"
+    )

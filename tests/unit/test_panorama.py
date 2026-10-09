@@ -4,11 +4,16 @@
 
 import struct
 import zlib
+from pathlib import Path
 from unittest.mock import patch
 
 import pytest
 
 from scenario.core.scene import panorama
+
+PROGRESSIVE_JPEG = (
+    Path(__file__).resolve().parents[1] / "fixtures" / "synthetic" / "panorama-progressive.jpg"
+)
 
 
 def chunk(kind, payload=b""):
@@ -454,6 +459,103 @@ def test_jpeg_scan_count_ignores_stuffed_data_and_pre_scan_segments():
     stuffed = b"\xff\x00" * panorama.MAX_JPEG_SCANS
     data = jpeg(before=thumbnail, scan=stuffed + EXTRA_SCAN * (panorama.MAX_JPEG_SCANS - 1))
     assert panorama.inspect_panorama(data).file_format == "JPEG"
+
+
+def test_progressive_fixture_with_tables_between_scans_is_accepted():
+    data = PROGRESSIVE_JPEG.read_bytes()
+    assert data.count(b"\xff\xda") == 10
+    assert b"\xff\xc4" in data[data.index(b"\xff\xda") :]
+    assert panorama.inspect_panorama(data) == panorama.PanoramaInfo("JPEG", 32, 16, False)
+
+
+def test_jpeg_segment_limit_counts_segments_after_the_first_scan():
+    # Blender keeps comment markers, and libjpeg walks its whole saved-marker
+    # list for each one, so a comment flood after a scan costs quadratic time.
+    comments = segment(0xFE) * (panorama.MAX_JPEG_SEGMENTS - 5)
+    assert panorama.inspect_panorama(jpeg(scan=b"\x12\x34" + comments)).file_format == "JPEG"
+    with pytest.raises(panorama.PanoramaError, match="segment limit"):
+        panorama.inspect_panorama(jpeg(scan=b"\x12\x34" + comments + segment(0xFE)))
+
+
+@pytest.mark.parametrize("count", [4097, 160_000])
+def test_comment_flood_after_progressive_scans_rejected_before_decode(count):
+    data = PROGRESSIVE_JPEG.read_bytes()
+    middle = data.index(b"\xff\xda", data.index(b"\xff\xda") + 2)
+    flood = segment(0xFE) * count
+    for flooded in (data[:-2] + flood + b"\xff\xd9", data[:middle] + flood + data[middle:]):
+        assert len(flooded) < panorama.MAX_FILE_BYTES
+        with pytest.raises(panorama.PanoramaError, match="segment limit"):
+            panorama.inspect_panorama(flooded)
+
+
+def test_excess_segments_after_a_scan_rejected_before_further_header_work():
+    data = jpeg(scan=b"\x12\x34" + segment(0xFE) * (panorama.MAX_JPEG_SEGMENTS * 2))
+    with patch.object(panorama.struct, "unpack_from", wraps=struct.unpack_from) as unpack:
+        with pytest.raises(panorama.PanoramaError, match="segment limit"):
+            panorama.inspect_panorama(data)
+    lengths = [call for call in unpack.call_args_list if call.args[0] == ">H"]
+    assert len(lengths) == panorama.MAX_JPEG_SEGMENTS
+
+
+def test_entropy_coded_stuffing_fill_bytes_and_restarts_are_not_segments():
+    # ITU-T T.81 B.1.1.5 and B.1.1.2: FF00 is a stuffed data byte, RSTn sits
+    # inside entropy-coded data and fill bytes may precede any marker.
+    restarts = b"".join(
+        b"\x12\xff\x00\x34\xff" + bytes((0xD0 + index % 8,)) for index in range(5000)
+    )
+    fill = b"\xff" * 64
+    scans = (fill + EXTRA_SCAN + restarts) * (panorama.MAX_JPEG_SCANS - 1)
+    data = jpeg(marker=0xC2, scan=b"\x12\x34" + restarts + scans + fill)
+    assert data.count(b"\xff") > panorama.MAX_JPEG_SEGMENTS * 8
+    assert panorama.inspect_panorama(data) == panorama.PanoramaInfo("JPEG", 4, 2, False)
+
+
+def test_segment_payloads_after_a_scan_are_skipped_not_counted():
+    # Comment text and tables are not byte-stuffed; only marker segments count.
+    payload = (b"\xff\xda" + b"\xff\xfe" + b"\xff\xd9") * panorama.MAX_JPEG_SEGMENTS
+    data = jpeg(scan=b"\x12\x34" + segment(0xFE, payload[:65_000]) + segment(0xC4, bytes(20)))
+    assert panorama.inspect_panorama(data).file_format == "JPEG"
+
+
+@pytest.mark.parametrize(
+    "after",
+    [
+        b"\xff\xd8\x00\x02",
+        b"\xff\x01\x00\x02",
+        segment(0x02, b"reserved"),
+        b"\xff\xfe\x01\x00truncated",
+        b"\xff\xfe\x00\x01",
+    ],
+)
+def test_invalid_or_truncated_segments_after_a_scan_rejected(after):
+    with pytest.raises(panorama.PanoramaError, match="incomplete or invalid"):
+        panorama.inspect_panorama(jpeg(scan=b"\x12\x34" + after))
+
+
+@pytest.mark.parametrize(
+    "after,message",
+    [
+        (segment(0xC2, frame()), "conflicting frame"),
+        (segment(0xC9, frame()), "baseline or progressive"),
+        (exif(6), "EXIF-rotated or mirrored"),
+        (exif() + exif(), "conflicting EXIF"),
+    ],
+)
+def test_frame_and_exif_rules_also_apply_after_a_scan(after, message):
+    with pytest.raises(panorama.PanoramaError, match=message):
+        panorama.inspect_panorama(jpeg(marker=0xC2, scan=b"\x12\x34" + after))
+
+
+@pytest.mark.parametrize(
+    "scan",
+    [
+        b"\x12\x34" + segment(0xDA, b"\x01\x01\x00\x00\x00\x00"),
+        b"\x12\x34\xff\xd9" + EXTRA_SCAN,
+    ],
+)
+def test_empty_later_scan_or_early_end_marker_rejected(scan):
+    with pytest.raises(panorama.PanoramaError, match="incomplete or has trailing"):
+        panorama.inspect_panorama(jpeg(marker=0xC2, scan=scan))
 
 
 @pytest.mark.parametrize("order", [b"MM", b"II"])

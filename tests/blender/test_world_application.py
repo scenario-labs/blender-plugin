@@ -4,6 +4,7 @@
 
 import hashlib
 import os
+import re
 import struct
 import tempfile
 import threading
@@ -250,6 +251,42 @@ class WorldApplicationTests(unittest.TestCase):
             with self.assertRaisesRegex(self.module.PanoramaError, "scan limit"):
                 self.module.apply_world(self.scene, path, media_type="image/jpeg")
             decode.assert_not_called()
+        self.assert_original()
+
+    def test_comment_flood_after_the_first_scan_rejected_before_blender_decodes(self):
+        data = PROGRESSIVE_JPEG.read_bytes()
+        segments = len(re.findall(rb"\xff[^\x00\xd0-\xd7\xff]", data)) - 2  # SOI and EOI
+        second_scan = data.index(b"\xff\xda", data.index(b"\xff\xda") + 2)
+        comment = b"\xff\xfe\x00\x02"
+        # Blender keeps JPEG comments and libjpeg walks its saved-marker list to
+        # append each one, so 160,000 of them would stall the main thread.
+        flood = comment * 160_000
+        for name, flooded in (
+            ("after.jpg", data[:-2] + flood + data[-2:]),
+            ("between.jpg", data[:second_scan] + flood + data[second_scan:]),
+        ):
+            path = self.write(name, flooded)
+            with (
+                self.subTest(name=name),
+                unittest.mock.patch.object(self.module, "_load_image") as decode,
+            ):
+                with self.assertRaisesRegex(self.module.PanoramaError, "segment limit"):
+                    self.module.apply_world(self.scene, path, media_type="image/jpeg")
+                decode.assert_not_called()
+            self.assert_original()
+        # Up to the shared segment budget, Blender still decodes the same pixels.
+        room = self.panorama.MAX_JPEG_SEGMENTS - segments
+        pixels = []
+        for count in (0, room):
+            flooded = data[:second_scan] + comment * count + data[second_scan:]
+            path = self.write(f"comments-{count}.jpg", flooded)
+            receipt = self.module.apply_world(self.scene, path, media_type="image/jpeg")
+            pixels.append(tuple(receipt._image.pixels))
+            self.assertTrue(receipt.restore())
+        self.assertEqual(pixels[0], pixels[1])
+        flooded = data[:second_scan] + comment * (room + 1) + data[second_scan:]
+        with self.assertRaisesRegex(self.module.PanoramaError, "segment limit"):
+            self.module.apply_world(self.scene, self.write("over.jpg", flooded))
         self.assert_original()
 
     def test_aces_ap0_exr_uses_aces2065_1_and_restore_guards_colorspace(self):

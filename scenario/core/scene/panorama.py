@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Bounded container preflight; Blender must still decode and verify the image."""
 
+import re
 import struct
 import zlib
 from dataclasses import dataclass, replace
@@ -9,6 +10,9 @@ from dataclasses import dataclass, replace
 MAX_FILE_BYTES = 128 * 1024 * 1024
 MAX_PIXELS = 32 * 1024 * 1024
 MAX_PNG_CHUNKS = 4096
+# Every JPEG marker segment, before or between scans, counts. Blender keeps
+# comment markers, and libjpeg walks its whole saved-marker list to append each
+# one, so a flood of them costs quadratic main-thread time.
 MAX_JPEG_SEGMENTS = 4096
 # Each progressive scan makes libjpeg revisit every block of the frame, so a
 # small file with thousands of scans can stall Blender's main thread. Typical
@@ -44,6 +48,10 @@ _PRIMARY_TOLERANCE = 0.001
 # they are left to the decoded color space check.
 _INTEROP_IDS = {b"lin_rec709_scene": "rec709", b"lin_ap0_scene": "aces_ap0"}
 
+# ITU-T T.81 B.1.1.2 and B.1.1.5: after a scan header, entropy-coded data runs
+# to the next marker. It stores a 0xFF data byte as FF00 and may contain
+# restart markers (RST0-RST7), and fill bytes (0xFF) may precede any marker.
+_JPEG_MARKER_AFTER_SCAN = re.compile(rb"\xff[^\x00\xd0-\xd7\xff]")
 # ITU-T T.81 frame markers: baseline, extended sequential and progressive Huffman.
 _JPEG_FRAMES = {0xC0, 0xC1, 0xC2}
 # Lossless, hierarchical, arithmetic and reserved JPG frames fail closed.
@@ -299,19 +307,38 @@ def _exif_orientation(payload):
 
 
 def _jpeg(data):
-    # ITU-T T.81 Annex B: marker segments precede the first scan. A small file
-    # can declare billions of pixels, so read only the frame header before
-    # Blender allocates a decoded buffer. Tables, entropy-coded data, color
-    # transforms and APPn metadata other than EXIF orientation stay Blender's.
-    offset, info, exif = 2, None, False
-    for _ in range(MAX_JPEG_SEGMENTS):
+    # ITU-T T.81 Annex B: marker segments precede the first scan and may sit
+    # between later scans. A small file can declare billions of pixels, so read
+    # only the frame header before Blender allocates a decoded buffer, and
+    # charge every marker segment, before or after the first scan, to one
+    # budget. Tables, entropy-coded data, color transforms and APPn metadata
+    # other than EXIF orientation stay Blender's.
+    offset, info, exif, marker, segments, scans = 2, None, False, None, 0, 0
+    while True:
+        if scans:
+            # Find the marker that ends this entropy-coded data (or segment).
+            match = _JPEG_MARKER_AFTER_SCAN.search(data, offset)
+            # libjpeg conceals an empty or truncated scan with gray pixels;
+            # requiring scan data and the end-of-image marker as the final
+            # bytes catches simple truncation, not every malformed scan.
+            if match is None or (marker == 0xDA and match.start() == offset):
+                raise PanoramaError("JPEG data is incomplete or has trailing bytes")
+            offset = match.start()
+            if data[offset + 1] == 0xD9:
+                if match.end() != len(data):
+                    raise PanoramaError("JPEG data is incomplete or has trailing bytes")
+                return info
+        segments += 1
+        if segments > MAX_JPEG_SEGMENTS:
+            raise PanoramaError("JPEG exceeds the supported segment limit")
         if offset + 4 > len(data) or data[offset] != 0xFF:
             raise PanoramaError("JPEG header is incomplete or invalid")
         marker = data[offset + 1]
         size = struct.unpack_from(">H", data, offset + 2)[0]
         end = offset + 2 + size
         # Accept no fill bytes, standalone markers or reserved codes before the
-        # first scan; libjpeg also rejects reserved markers.
+        # first scan, nor SOI or reserved codes later; libjpeg also rejects
+        # reserved markers.
         if marker < 0xC0 or 0xD0 <= marker <= 0xD9 or marker == 0xFF or size < 2:
             raise PanoramaError("JPEG header is incomplete or invalid")
         if end > len(data):
@@ -319,16 +346,9 @@ def _jpeg(data):
         if marker == 0xDA:
             if info is None:
                 raise PanoramaError("JPEG dimensions are unavailable")
-            # Scan data follows. libjpeg conceals a truncated scan with gray
-            # pixels; requiring the end-of-image marker as the final bytes
-            # catches simple truncation, not every malformed or appended scan.
-            if end + 2 >= len(data) or not data.endswith(b"\xff\xd9"):
-                raise PanoramaError("JPEG data is incomplete or has trailing bytes")
-            # Entropy-coded data stuffs 0xFF as FF00, so counting later SOS
-            # marker bytes can only over-count and fail closed.
-            if data.count(b"\xff\xda", end) >= MAX_JPEG_SCANS:
+            scans += 1
+            if scans > MAX_JPEG_SCANS:
                 raise PanoramaError("JPEG exceeds the supported scan limit")
-            return info
         if marker == 0xE1 and data.startswith(b"Exif\0\0", offset + 4, end):
             if exif:
                 raise PanoramaError("JPEG has conflicting EXIF metadata")
@@ -351,7 +371,6 @@ def _jpeg(data):
                 raise PanoramaError("Use a standard 8-bit color JPEG panorama")
             info = _dimensions("JPEG", width, height)
         offset = end
-    raise PanoramaError("JPEG exceeds the supported segment limit")
 
 
 def inspect_panorama(data):

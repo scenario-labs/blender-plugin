@@ -45,13 +45,15 @@ primitive for one selected saved result.
   application limit are rejected before decoding; it is not a PNG format limit.
 - Baseline, extended-sequential or progressive Huffman JPEG with 8-bit samples
   and three color components. Lossless, hierarchical, arithmetic-coded, 12-bit,
-  grayscale and CMYK files are rejected. A maximum of 4,096 marker segments up
-  to the first scan bounds header work, and at most 64 scans are accepted. The
-  file must end with an end-of-image marker. This catches simple truncation,
-  which libjpeg would conceal with gray pixels, but not a damaged scan or
-  appended data that itself ends with that marker. An EXIF orientation other
-  than 1 is rejected. Blender must decode the result as a JPEG image; Blender
-  5.0, 5.1 and 5.2 use `sRGB` (see below on ICC profiles).
+  grayscale and CMYK files are rejected. A maximum of 4,096 marker segments,
+  counted before, between and after scans, bounds marker work, and at most 64
+  scans are accepted. A scan header followed directly by another marker is
+  rejected, and the end-of-image marker that ends the scans must be the last
+  bytes of the file. This catches simple truncation, which libjpeg would
+  conceal with gray pixels, but not a damaged scan or appended data that itself
+  ends with that marker. An EXIF orientation other than 1 is rejected. Blender
+  must decode the result as a JPEG image; Blender 5.0, 5.1 and 5.2 use `sRGB`
+  (see below on ICC profiles).
 - Single-part, non-deep OpenEXR version 2 scanline files (compression types 0–9), with matching data
   and display windows. Explicit cubemap metadata is rejected. Blender must decode
   the result as a floating-point image.
@@ -69,17 +71,33 @@ The parser checks structural completeness, not compressed-payload integrity; the
 optional receipt check above binds the source bytes separately. This preflight is
 not another image decoder: Blender's decoder remains authoritative.
 The byte, pixel, chunk, segment and scan limits bound input size, decoded
-dimensions and the known amplification cases, not decoder CPU time in general.
+dimensions and the two JPEG amplification cases described below, which were
+measured during review. They do not bound decoder CPU time in general, and other
+slow inputs within these limits may exist.
 Radiance HDR, WebP, tiled/layered/multipart/deep EXR and other formats remain unsupported.
 
 The JPEG check reads only what must be known before Blender allocates pixels
 or spends decoding time. A few kilobytes of JPEG can declare billions of pixels,
 and Blender exposes no header-only dimension query, so the marker walk reads the
-frame header and stops at the first scan. Each progressive scan makes libjpeg
-revisit every block of the frame, so a few hundred kilobytes of tiny scans could
-stall Blender's main thread for minutes. A byte search therefore counts the later
-scan markers. Entropy-coded data stuffs every `0xFF` byte, so the count can only
-over-estimate and fail closed. Typical encoders write about a dozen scans.
+frame header before the first scan. It then follows the file to its end without
+decoding it. Entropy-coded data runs to the next marker; stuffed `0xFF` data
+bytes (`FF00`), fill bytes and restart markers inside it are skipped by a linear
+byte search. Every other marker segment, before, between or after scans, counts
+toward the segment limit, and its payload is skipped by its declared length.
+Each scan marker also counts toward the scan limit. After the first scan, a
+second frame header, an unsupported frame type, a start-of-image or reserved
+marker, a scan header followed directly by another marker or data after the
+end-of-image marker is rejected.
+
+Both limits stop a measured main-thread stall. Each progressive scan makes
+libjpeg revisit every block of the frame: a 257 KB file with 4,010 tiny scans
+took about 8 s to load on Blender 5.1.2. Blender keeps JPEG comment markers,
+and libjpeg walks its whole saved-marker list to append each one, so the cost
+grows with the square of their number. Appending 160,000 empty comments before
+the end-of-image marker of the 541-byte progressive fixture (a 640 KB file) made
+Blender 5.1.2 take more than 50 s to load it; the 4,072 that fit within the
+segment limit took 0.04 s. Typical encoders write about a dozen scans and a few
+dozen marker segments.
 
 The walk also reads one EXIF value: the IFD0 Orientation tag of an APP1 EXIF
 segment. Blender 5.0, 5.1 and 5.2 ignore EXIF orientation, so a rotated or
@@ -170,8 +188,9 @@ shared users, restoration, edited/deleted data, thread rejection,
 corrupt/truncated files, saved-receipt and media-type mismatches, source
 replacement after snapshotting and rollback after decode. A committed
 first-party progressive JPEG and an extended-sequential copy of a Blender-written
-baseline JPEG decode natively; a scan flood built from the progressive file is
-rejected before decoding. Directly written EXR fixtures declare Rec.709, ACES AP0
+baseline JPEG decode natively; a scan flood and comment floods after its first
+scan are rejected before decoding, while comments up to the segment limit
+decode to the same pixels. Directly written EXR fixtures declare Rec.709, ACES AP0
 or ACEScg AP1 primaries, an ACES container flag or a `colorInteropID`. The AP0
 cases check the `ACES2065-1` color space and its pixel conversion, and one checks
 the restore guard on a color space edit. Other native cases show Blender

@@ -41,7 +41,8 @@ token. Claimed or uncertain submissions require reconciliation, never blind retr
 resume/download, known model-job cancellation, interrupted-download reconciliation
 or pending import-receipt retry. Resuming a restarted job does not import it into
 the current scene. Shared `wait_for_job` waits without blocking Blender's main
-thread and returns when delivery finishes, needs review, or reaches its timeout.
+thread and returns when delivery finishes, needs review, is held by disabled
+Online Access, or reaches its timeout.
 See [job contexts](BLENDER_JOB_CONTEXT.md) for lifetime and remaining integration.
 
 Shared `job_status` and `wait_for_job` results add the native Jobs projection as
@@ -60,11 +61,21 @@ is not a time estimate. A restarted job reports progress only after explicit
 
 `delivery_active` is `true` while this Blender session still advances the job by
 itself: submission, polling, download or an Image lane's automatic import. It is
-`false` once delivery finishes, pauses for review (`delivery_paused`) or the job
-is only inspected after a restart. A `wait_for_job` result with `delivery_active`
-`true` means the wait expired, including while an automatic import is pending in
+`false` once delivery finishes, pauses for review (`delivery_paused`), is held by
+disabled Online Access, or the job is only inspected after a restart or was
+prepared but never queued. A `wait_for_job` result with `delivery_active` `true`
+means the wait expired, including while an automatic import is pending in
 `ready` or `applying`; call it again. Prepare no result application while it is
 `true`.
+
+`delivery_offline` is `true` while Blender's Online Access is disabled and the
+job's next step needs Scenario: status polling in `remote` or `cancel_requested`,
+or the result download in `succeeded`. Blender sends nothing meanwhile, so
+`delivery_active` is `false` and `wait_for_job` returns without waiting for its
+timeout. Ask the user to allow Online Access instead of calling it again; an
+unpaused job then resumes by itself, with no recovery action. The native Jobs
+row shows the same hold as `Status paused while online access is disabled` or
+`Download paused while online access is disabled`.
 
 To import recovered PNG/EXR results, call `prepare_result_application` with the
 current context, request and revision, then show its destination and image list
@@ -347,7 +358,7 @@ Do not edit this block by hand; run `make mcp-docs`. An asterisk marks a require
 | `estimate_cost` | Get the exact CU cost with a dry run that spends no credits. | `model_id`*: string<br>`parameters`: object<br>`lane`: string (enum: see tools/list) | read-only annotation |
 | `generate` | Submit a generation that spends the user's credits. Every model lane uses durable shared jobs. | `lane`*: string (enum: see tools/list)<br>`quote_id`*: string<br>`approved_cost`*: string<br>`model_id`*: string<br>`parameters`: object; Model parameters; file parameters take Scenario asset ids | spends credits |
 | `job_status` | Read one local generation's status and cost without spending credits. Active model jobs advance through shared remote polling and verified downloads; restarted jobs remain inspection-only. | `job_id`: string; Scenario job id (job_...) or the local_id returned by generate<br>`id`: string; Same as job_id, kept for compatibility | read-only annotation |
-| `wait_for_job` | Wait for a generation while Blender remains responsive. Shared jobs return when delivery finishes, pauses for review, or the wait expires. Restarted shared jobs remain inspection-only until explicitly resumed. Prototype records return a local snapshot immediately with scoped recovery guidance. | `job_id`: string; Scenario job id (job_...) or the local_id returned by generate<br>`id`: string; Same as job_id, kept for compatibility<br>`timeout`: number | read-only annotation |
+| `wait_for_job` | Wait for a generation while Blender remains responsive. Shared jobs return when delivery finishes, pauses for review, is held by disabled Online Access, or the wait expires. Restarted shared jobs remain inspection-only until explicitly resumed. Prototype records return a local snapshot immediately with scoped recovery guidance. | `job_id`: string; Scenario job id (job_...) or the local_id returned by generate<br>`id`: string; Same as job_id, kept for compatibility<br>`timeout`: number | read-only annotation |
 | `recover_cloud_job` | Read one completed cloud model job into the selected credential-scoped saved jobs. | `job_id`*: string<br>`model_id`*: string | - |
 | `import_result` | Reject direct cached-file import and explain the required saved-result approval flow. | `job_id`: string; Scenario job id (job_...) or the local_id returned by generate<br>`id`: string; Same as job_id, kept for compatibility | - |
 | `capture_reference` | Capture a viewport/camera still or clip, or export selected meshes, and upload the snapshot as a Scenario reference asset. | `source`: string (['VIEWPORT', 'CAMERA', 'VIEWPORT_CLIP', 'CAMERA_CLIP', 'MESH']) | - |
@@ -493,8 +504,9 @@ All MCP model submissions persist intent before SDK dispatch. `job_status`,
 `wait_for_job` and `list_local_jobs` expose saved state across restart. Active
 jobs poll and download through the shared session; restarted jobs need explicit
 recovery. `wait_for_job` lets the main thread advance work and returns at a
-terminal/review state or its timeout. Cancellation and interrupted download
-recovery use the same scoped revision guards as Image.
+terminal/review state, while disabled Online Access holds delivery, or at its
+timeout. Cancellation and interrupted download recovery use the same scoped
+revision guards as Image.
 
 Only the Image lane automatically imports verified PNG/EXR images into its
 unchanged original scene. Other lanes stop at `ready` after saving downloads;

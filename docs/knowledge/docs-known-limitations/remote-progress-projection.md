@@ -13,7 +13,7 @@
     "limits": "Reviewed that readings and bindings live only in ModelJobs memory and view meta, that unknown and zero fractions draw no percentage, and that restarted views need an explicit refresh or resume before a reading exists. Which providers report intermediate fractions, desktop review and other platforms are not established.",
     "sources": {
       "scenario/core/jobs/progress.py": "bf8bea9be0d1ba3c6ca7c2495fecf61eb67481ffb7499d1e30633cc154871af5",
-      "scenario/blender/model_jobs.py": "ba849a84b2a3d80ad307e64f77ebd17945f22fde83325ad0ae987bf004e65629",
+      "scenario/blender/model_jobs.py": "2daeab1ce44043c115f8956bd70e08ad19a73d2e70140f72f4e8fbda7a3e524f",
       "scenario/blender/panels.py": "18b655d47e620589b822b643248d81135d7dd37aa1c23350ccfd020b797b2fdf"
     }
   }

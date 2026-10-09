@@ -57,6 +57,19 @@ _SETTLED = frozenset(
         JobState.APPLIED,
     }
 )
+# Saved states whose next automatic step contacts Scenario: status polling or
+# the result download. Disabled Online Access holds them until it is allowed
+# again; Jobs rows draw an offline line and MCP reports `delivery_offline`.
+NEEDS_SCENARIO = frozenset({JobState.REMOTE, JobState.CANCEL_REQUESTED, JobState.SUCCEEDED})
+# Prototype display statuses of shared views, which the Jobs and Generations
+# panels split with JobRecord.is_terminal. A SUCCEEDED job has no saved results
+# yet, so it must not read as the terminal "succeeded": it stays a Jobs row with
+# its saved state and offline line until delivery settles.
+_DISPLAY_STATUS = {
+    JobState.REMOTE: "in-progress",
+    JobState.SUCCEEDED: "awaiting-download",
+    JobState.APPLIED: "success",
+}
 
 
 def _snapshot(body):
@@ -193,6 +206,9 @@ class ModelJobs:
         self.views = {}
         self._bindings = {}
         self._online = online
+        # Online Access as the main thread last saw it. `wait` runs on the MCP
+        # HTTP worker, which must not read bpy, so it uses this copy.
+        self._online_seen = online()
         self._commands = {}
         self._next_poll = {}
         self._paused = set()
@@ -571,7 +587,7 @@ class ModelJobs:
                 # Display only: outside the delivery error mapping, so a failed
                 # projection can never pause delivery or skip the next poll.
                 self._observe(request_id, observed)
-        online = self._online()
+        online = self._online_seen = self._online()
         for request_id, view in self.views.items():
             record = self.store.get(request_id)
             if record is None:
@@ -579,10 +595,7 @@ class ModelJobs:
                     0, "The saved job is unavailable; preserve storage for recovery"
                 )
             view.job_id = record.remote_job_id
-            view.status = {
-                JobState.REMOTE: "in-progress",
-                JobState.APPLIED: "success",
-            }.get(record.state, record.state.value)
+            view.status = _DISPLAY_STATUS.get(record.state, record.state.value)
             view.asset_ids = [item.asset.asset_id for item in record.results]
             view.asset_types = {
                 item.asset.asset_id: item.asset.media_type for item in record.results
@@ -1295,15 +1308,23 @@ class ModelJobs:
     def _delivering(self, request_id, record):
         """Whether this session still advances the job without an explicit action.
 
-        False once it is settled, paused for review or not owned by this
-        session; `wait` returns then, and MCP reports it as `delivery_active`.
+        False once it is settled, paused for review, held by disabled Online
+        Access, prepared but never queued, or not owned by this session; `wait`
+        returns then, and MCP reports it as `delivery_active`. `wait` calls this
+        on the HTTP worker, so it reads only in-memory state, never bpy.
         """
         return (
             request_id in self.views
             and request_id not in self._paused
             and record.state not in _SETTLED
+            and not self._offline(record)
+            and (record.state != JobState.PREPARED or request_id in self.submissions)
             and (record.state != JobState.READY or request_id in self._automatic_application)
         )
+
+    def _offline(self, record):
+        """Whether disabled Online Access holds the job's next automatic step."""
+        return not self._online_seen and record.state in NEEDS_SCENARIO
 
     def _mesh_status(self, request_id):
         saved = self._mesh_edits.get(request_id)
@@ -1388,6 +1409,7 @@ class ModelJobs:
             ],
             "delivery_paused": record.intent.request_id in self._paused,
             "delivery_active": self._delivering(record.intent.request_id, record),
+            "delivery_offline": self._offline(record),
             "actions": self.actions(record),
             "error": self.views[record.intent.request_id].error
             if record.intent.request_id in self.views

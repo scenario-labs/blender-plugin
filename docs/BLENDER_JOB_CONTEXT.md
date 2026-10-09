@@ -633,8 +633,14 @@ returning status. Shared `wait_for_job` reads saved state on the HTTP worker whi
 the main thread advances delivery; pause, failure, completion or timeout returns
 the current result without canceling or regenerating. MCP status reports
 `delivery_active` from the same predicate the wait uses: the job is owned by this
-session, not paused and not in a terminal or failed state, and `ready` counts
-only while an Image lane automatic import is pending. A returned result with
+session, not paused and not in a terminal or failed state, `prepared` counts only
+while its submission is queued, and `ready` counts only while an Image lane
+automatic import is pending. A job whose next step needs Scenario (`remote`,
+`cancel_requested` or `succeeded`) does not count while Online Access is
+disabled; MCP reports that hold as `delivery_offline`, and delivery resumes by
+itself once access is allowed. The wait runs on the HTTP worker, so the
+predicate reads only in-memory state, including the Online Access value the
+last main-thread maintenance poll observed, never `bpy`. A returned result with
 `delivery_active` set is therefore an expired wait. Stopping the MCP server
 interrupts its wait without canceling the generation.
 

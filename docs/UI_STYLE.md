@@ -166,27 +166,30 @@ Each result collapses on its own; the panel header has a **Collapse all / Expand
 ## Jobs status and remote progress
 
 A shared Jobs row names its saved state in words (`waiting to submit`,
-`submitted`, `canceling`, `downloading results`, `download failed`), never a raw
-state identifier. While a known remote job is polled, the latest validated
-Scenario status replaces `submitted`: `waiting`, `queued`, `starting`,
-`generating` or `finishing`. Draw a native progress bar with its whole percentage
-only when Scenario reports a measured fraction above zero; never draw a
-percentage for zero, unknown or queued states, and never show an estimated time.
-With online access disabled, a `submitted` or `canceling` row adds `Status paused
-while online access is disabled` and a `finished on Scenario` row adds `Download
-paused while online access is disabled`, whether or not a reading exists yet.
-Otherwise, when the reading is not being kept current, add one information line:
-`Status is not updating`. Drawing reads only the projected view; it performs no
-I/O, store read, session creation or property write. The pump redraws when the
-drawn rows or online access change, so the bar moves without hovering, but it
-does not redraw for the brief in-flight refresh that hides saved-job controls.
-Studio Jobs reuses the same draw.
+`submitted`, `canceling`, `finished on Scenario`, `downloading results`,
+`download failed`), never a raw state identifier. A job that finished on
+Scenario stays in Jobs until its results are saved; it never appears in
+Generations as a success before its download. While a known remote job is
+polled, the latest validated Scenario status replaces `submitted`: `waiting`,
+`queued`, `starting`, `generating` or `finishing`. Draw a native progress bar
+with its whole percentage only when Scenario reports a measured fraction above
+zero; never draw a percentage for zero, unknown or queued states, and never show
+an estimated time. With online access disabled, a `submitted` or `canceling` row
+adds `Status paused while online access is disabled` and a `finished on
+Scenario` row adds `Download paused while online access is disabled`, whether or
+not a reading exists yet. Otherwise, when the reading is not being kept current,
+add one information line: `Status is not updating`. Drawing reads only the
+projected view; it performs no I/O, store read, session creation or property
+write. The pump redraws when the drawn rows or online access change, so the bar
+moves without hovering, but it does not redraw for the brief in-flight refresh
+that hides saved-job controls. Studio Jobs reuses the same draw.
 
 Installed tests on macOS arm64 Blender 5.0.1, 5.1.2 and 5.2.1 check the drawn
-label, bar factor and text, the offline and stale lines, the absence of storage
-reads and writes during draw, and one redraw per projected or online access
-change. No desktop interaction or screenshot of the bar is claimed yet; that
-remains #66 acceptance.
+label, bar factor and text, the offline and stale lines, a finished job drawn
+through the real Jobs panel with its offline download line and absent from
+Generations, the absence of storage reads and writes during draw, and one redraw
+per projected or online access change. No desktop interaction or screenshot of
+the bar is claimed yet; that remains #66 acceptance.
 
 ## Wording
 

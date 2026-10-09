@@ -1161,6 +1161,133 @@ class ModelGenerationTests(unittest.TestCase):
         self.assertEqual(waited, self.tools.job_status({"job_id": result["local_id"]}))
         self.assertEqual(len(self.paid), 1)
 
+    def wait_briefly(self, request_id, timeout=8):
+        """Run one shared MCP wait on a worker and return its result and duration."""
+        deferred = self.tools.wait_for_job({"job_id": request_id, "timeout": timeout})
+        started = time.monotonic()
+        with ThreadPoolExecutor(max_workers=1) as worker:
+            worker.submit(deferred.run).result(timeout + 10)
+        return deferred.finish(None), time.monotonic() - started
+
+    def test_finished_job_stays_in_jobs_with_its_offline_download_line(self):
+        panels = submodule("blender.panels")
+        model_jobs = submodule("blender.model_jobs")
+        # The panel's offline lines and the MCP hold name the same saved states.
+        self.assertEqual(
+            set(panels.SHARED_OFFLINE_TEXT), {state.value for state in model_jobs.NEEDS_SCENARIO}
+        )
+        result = self.mcp_submit(self.mcp_quote())
+        self.deliver_results()
+        owner = self.runtime.state.model_jobs
+        request_id = result["local_id"]
+        view = owner.views[request_id]
+        # Scenario now reports success; the refresh completes while online.
+        self.result_fixture()
+        owner._next_poll[request_id] = 0.0
+        self.runtime.sync_catalog_context()
+        command, task = owner._commands[request_id]
+        self.assertEqual(command, "refresh_remote")
+        task.result(5)
+        calls = len(self.calls)
+        with online_access(False):
+            # Draining that refresh offline leaves the download held, not started.
+            self.runtime.sync_catalog_context()
+            self.assertEqual(self.store.get(request_id).state, self.storemod.JobState.SUCCEEDED)
+            self.assertNotIn(request_id, owner._commands)
+            self.assertIn(view, self.runtime.state.jobs_view)
+            header, jobs, generations = Mock(), Mock(), Mock()
+            with (
+                patch.object(self.store, "get", side_effect=AssertionError("Store read in draw")),
+                patch.object(self.store, "records", side_effect=AssertionError("Store read")),
+                patch.object(panels, "draw_result") as draw_result,
+            ):
+                panels.SCENARIO_PT_jobs.draw_header(SimpleNamespace(layout=header), bpy.context)
+                panels.SCENARIO_PT_jobs.draw(SimpleNamespace(layout=jobs), bpy.context)
+                panels.SCENARIO_PT_generations.draw(
+                    SimpleNamespace(layout=generations), bpy.context
+                )
+            header.label.assert_called_once_with(text="1 Job")
+            box = jobs.box.return_value
+            box.label.assert_any_call(text="Shared image: finished on Scenario", icon="TIME")
+            box.label.assert_any_call(
+                text="Download paused while online access is disabled", icon="INFO"
+            )
+            box.progress.assert_not_called()
+            # A job without saved results is never listed as a finished generation.
+            self.assertNotIn(view, [call.args[1] for call in draw_result.call_args_list])
+            status = self.tools.job_status({"job_id": request_id})
+            self.assertEqual(
+                (status["status"], status["delivery_active"], status["delivery_offline"]),
+                ("succeeded", False, True),
+            )
+            self.assertEqual(len(self.calls), calls)
+            self.assertEqual(self.downloads, [])
+        # Allowing Online Access again resumes the download without any action.
+        self.deliver_results()
+        status = self.tools.job_status({"job_id": request_id})
+        self.assertEqual(
+            (status["status"], status["delivery_active"], status["delivery_offline"]),
+            ("applied", False, False),
+        )
+        self.assertEqual(len(self.downloads), 1)
+        self.assertEqual(len(self.paid), 1)
+
+    def test_offline_hold_is_reported_and_ends_the_wait_without_polling(self):
+        self.remote_progress = 0.5
+        result = self.mcp_submit(self.mcp_quote())
+        self.deliver_results()
+        request_id = result["local_id"]
+        online = self.tools.job_status({"job_id": request_id})
+        self.assertEqual((online["delivery_active"], online["delivery_offline"]), (True, False))
+        calls = len(self.calls)
+        with online_access(False):
+            waited, elapsed = self.wait_briefly(request_id)
+            # An offline agent is told why nothing moves instead of being told to wait again.
+            self.assertLess(elapsed, 4)
+            self.assertEqual(
+                (
+                    waited["status"],
+                    waited["delivery_paused"],
+                    waited["delivery_active"],
+                    waited["delivery_offline"],
+                    waited["remote_stale"],
+                ),
+                ("remote", False, False, True, True),
+            )
+            self.assertEqual(waited, self.tools.job_status({"job_id": request_id}))
+            self.assertEqual(len(self.calls), calls)
+        self.poll_now(request_id)
+        self.assertEqual(len(self.calls), calls + 1)
+        status = self.tools.job_status({"job_id": request_id})
+        self.assertEqual((status["delivery_active"], status["delivery_offline"]), (True, False))
+        self.assertEqual(len(self.paid), 1)
+
+    def test_prepared_job_that_was_never_queued_is_not_reported_as_delivering(self):
+        quote = self.mcp_quote()
+        session = self.runtime.ensure_job_session()
+        with (
+            patch.object(session, "submit", side_effect=self.origin_error("Fixture origin gone")),
+            self.assertRaises(self.origin_error),
+        ):
+            self.mcp_submit(quote)
+        (record,) = self.store.records()
+        request_id = record.intent.request_id
+        self.assertEqual(record.state, self.storemod.JobState.PREPARED)
+        self.assertNotIn(request_id, self.runtime.state.model_jobs.submissions)
+        waited, elapsed = self.wait_briefly(request_id)
+        self.assertLess(elapsed, 4)
+        self.assertEqual(
+            (
+                waited["status"],
+                waited["delivery_paused"],
+                waited["delivery_active"],
+                waited["delivery_offline"],
+                tuple(waited["actions"]),
+            ),
+            ("prepared", False, False, False, ("cancel_prepared",)),
+        )
+        self.assertEqual(self.paid, [])
+
     def test_pump_redraws_on_projected_progress_change_and_not_on_idle_ticks(self):
         pump = submodule("blender.pump")
         self.remote_progress = 0.1

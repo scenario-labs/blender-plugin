@@ -194,8 +194,8 @@ validated remote status and progress fraction, and submissions record a
 display-only scene and lane binding; both stay in memory and MCP `job_status`
 reports the same values ([projection rules](../BLENDER_JOB_CONTEXT.md#remote-progress-and-scene-lane-binding)).
 The GUI pump compares the drawn job rows and online access each tick and
-redraws 3D viewport regions only when they change, so progress and the offline
-line update without hovering. Closing a
+redraws the 3D viewport and Preferences regions only when they change, so
+progress and the offline line update without hovering. Closing a
 panel does not stop work; credential/file changes retire the owner while
 in-flight receipts stay in the original store. Local MCP status can inspect
 these records after restart.

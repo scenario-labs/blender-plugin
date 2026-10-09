@@ -63,6 +63,29 @@ class StudioViewTests(unittest.TestCase):
         self.assertFalse(self.workflow.paid)
         self.assertEqual(len(self.workflow.calls), 2)
 
+    def test_jobs_and_results_pages_draw_the_sidebar_saved_job_controls(self):
+        records = submodule("core.jobs.records")
+        active = records.JobRecord("active", "model", "model", "fixture", {}, status="queued")
+        done = records.JobRecord("done", "model", "model", "fixture", {}, status="success")
+        self.runtime.state.jobs_view[:] = [active, done]
+        recovery, panels = submodule("blender.job_recovery"), submodule("blender.panels")
+        with patch.object(recovery, "draw_controls") as controls:
+            for panel in (panels.SCENARIO_PT_jobs, panels.SCENARIO_PT_generations):
+                panel.draw(SimpleNamespace(layout=MagicMock()), bpy.context)
+            sidebar = [call.args[1] for call in controls.call_args_list]
+            controls.reset_mock()
+            for page in ("JOBS", "RESULTS"):
+                self.view.page = page
+                self.studio.draw_view(MagicMock(), bpy.context, width=960)
+            studio = [call.args[1] for call in controls.call_args_list]
+        # One descriptor source: Studio reuses the sidebar rows for the same views.
+        self.assertEqual(len(sidebar), 2)
+        self.assertIs(sidebar[0], active)
+        self.assertIs(sidebar[1], done)
+        self.assertEqual(len(studio), 2)
+        self.assertTrue(all(a is b for a, b in zip(sidebar, studio, strict=True)))
+        self.assertFalse(self.workflow.calls)
+
     def test_surface_navigation_preserves_admitted_work_and_results_owner(self):
         result = self.workflow.approve(self.workflow.quote())
         owner = self.runtime.state.model_jobs

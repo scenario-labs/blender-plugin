@@ -9,10 +9,10 @@
     "scope": "prepared-job-cancellation",
     "coverage": "source-reviewed",
     "reviewed_at": "2026-10-09",
-    "base_revision": "b57c398f35fb2148c82fb8b26f6a40564d3f52ef",
-    "limits": "Reviewed the cancel_prepared saved-job action for every prepared intent (model, workflow, Film task, prompt and translate), including submissions queued in the current session. The native operator confirms through invoke_confirm with the title Cancel prepared job?, the confirm text Discard unsent job and, for an intent with a Film task binding, a note that the task stays reserved. It then calls runtime.cancel_prepared_job, the command used by MCP cancel_prepared_job, with the context token and observed revision; ModelJobs.control rejects it. The shared command updates an existing view. A queued model submission rejected by a canceled record is not reported as a failed submission, and the prompt field reports a local cancellation instead of a stopped action. The store keeps a canceled Film task identity reserved. The MCP job_status description maps cancel_prepared to cancel_prepared_job. Installed native tests on macOS arm64 Blender 5.1.2 cover offered states including prompt and translate, the mocked confirmation call with its exact text leaving the record prepared at the same revision, zero service requests, persisted cancellation, stale revision and changed context rejection, a shared command call path, and queued model and translate submissions that never dispatch. No desktop confirmation-dialog interaction, screenshot, Blender 5.0/5.2 run, remote cancellation change or live acceptance is claimed. Other document claims retain their separate evidence.",
+    "base_revision": "fb699b8555f7cee62147794516cc7aaa224864f7",
+    "limits": "Reviewed the cancel_prepared saved-job action for every prepared intent (model including Blockout, workflow, Film task, prompt and translate), including submissions queued in the current session. The native operator confirms through invoke_confirm with the title Cancel prepared job?, the confirm text Discard unsent job and, for an intent with a Film task binding, a note that the task stays reserved. It then calls runtime.cancel_prepared_job, the command used by MCP cancel_prepared_job, with the context token and observed revision; ModelJobs.control rejects it. The shared command updates an existing view. A queued model submission rejected by a canceled record is not reported as a failed submission, and the prompt field and the Blockout panel report a local cancellation instead of a stopped action. The store keeps a canceled Film task identity reserved. The MCP job_status description maps cancel_prepared to cancel_prepared_job. Installed native tests on macOS arm64 Blender 5.1.2 cover offered states including prompt and translate, the mocked confirmation call with its exact text leaving the record prepared at the same revision, zero service requests, persisted cancellation, stale revision and changed context rejection, a shared command call path, and queued model, translate and Blockout submissions that never dispatch. No desktop confirmation-dialog interaction, screenshot, Blender 5.0/5.2 run, remote cancellation change or live acceptance is claimed. Other document claims retain their separate evidence.",
     "sources": {
-      "scenario/blender/runtime.py": "3f7a1467c516c11642bc81dfba323efa972fc5a6305e26f0d3f324dad3844981",
+      "scenario/blender/runtime.py": "fb83ceaa622cbbfbea25210d2bb8d480231510d11712f58df34f45f41c13cf59",
       "scenario/blender/job_recovery.py": "4d4e1fc7bf4556f037a6abe9ca09ff3f76a0713950db334b63e8d376211e5370",
       "scenario/blender/model_jobs.py": "871f776b493890d35a74f4aaa67888b15ac6d33a1cdcaa0519eed0ce11140aab",
       "scenario/blender/prompt_jobs.py": "76cdeec9ee7c6db233634eff4825515a7d80961a32fe35f76a80386227ab55bf",
@@ -24,7 +24,9 @@
       "tests/blender/test_runtime_jobs.py": "9cbc0a763541264ae1c3f291a7754c09755066f60dc11f03206ba1fe8f398cf3",
       "tests/blender/test_model_generation.py": "05a97189a433b036e7cae5dc41ddbbe40374f4fa632eecec0e341819914e3a62",
       "tests/blender/test_prompt_tools.py": "f66677160a495f6d9cc9ed21fcb4a21d7df21835c427d7e13a11e7edbf9bf861",
-      "tests/unit/test_job_workers.py": "f5210455f75ae2144c4e3dda971c1dca9dc8693691e10e5c067af5381250f7ad"
+      "tests/unit/test_job_workers.py": "f5210455f75ae2144c4e3dda971c1dca9dc8693691e10e5c067af5381250f7ad",
+      "scenario/blender/blockout_jobs.py": "aefd6c26282c1c83201b3204de30abf58bb367c89d9143132becdcb408c55b18",
+      "tests/blender/test_blockout_jobs.py": "f869b85b1f6b5138573cdc0af34cd8aa77a38076d6d261c06e2592110ff4d464"
     }
   }
 }

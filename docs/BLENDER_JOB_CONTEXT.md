@@ -592,15 +592,16 @@ revision. Queued commands retain their original scope.
   without network access or import.
 - `retry_receipt` saves an already completed image import's outcome without any
   scene mutation. The exact pending owner-local handle must still exist.
-- `cancel_prepared` is offered for any unsent prepared intent: model, workflow,
-  Film task, prompt or translate, including one queued behind other work. Prompt,
-  translate and restarted intents get a Jobs panel view after inspection. After
+- `cancel_prepared` is offered for any unsent prepared intent: model (including
+  Blockout), workflow, Film task, prompt or translate, including one queued behind
+  other work. Prompt, translate, Blockout and restarted intents get a Jobs panel
+  view after inspection. After
   native confirmation (**Discard unsent job**) it calls the same
   `runtime.cancel_prepared_job` command as MCP `cancel_prepared_job`, not
   `ModelJobs.control`, with the context token and observed revision. It sends no
   service request. The queued submission then fails its stored-state check and the
-  job shows as canceled; the prompt field reports the local cancellation instead of
-  a stopped action. A claimed request or stale revision is rejected. The dialog
+  job shows as canceled; the prompt field and the Blockout panel report the local
+  cancellation instead of a stopped action. A claimed request or stale revision is rejected. The dialog
   warns that a canceled Film task stays reserved, so another take needs a new name.
   MCP `job_status` lists the same `cancel_prepared` action name, and its
   description maps that name to `cancel_prepared_job`.

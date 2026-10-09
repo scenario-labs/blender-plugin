@@ -33,6 +33,13 @@ _SOURCES = (
     ("MESH", "Selected mesh", "Upload the selected meshes as one GLB"),
 )
 _LABELS = {source: label for source, label, _ in _SOURCES}
+# Why a stopped upload that never reached Scenario released its input, by the
+# state of its saved record (None: staging failed before any record was saved).
+_NOTHING_SENT = {
+    None: "The file could not be staged and nothing was uploaded; choose it again",
+    UploadState.PREPARED: "The upload stopped before sending; nothing was uploaded",
+    UploadState.CANCELED: "Preparation was canceled; nothing was uploaded",
+}
 _CAPTURES = {
     "image": (("VIEWPORT", "VIEW3D"), ("CAMERA", "CAMERA_DATA"), ("RENDER", "RENDER_RESULT")),
     "video": (("VIEWPORT_CLIP", "VIEW3D"), ("CAMERA_CLIP", "CAMERA_DATA")),
@@ -146,21 +153,100 @@ def _binding(owner, scene, item):
     return None
 
 
+def _live(owner, scene, item):
+    """Whether an in-memory delivery can still attach this input's upload."""
+    binding = _binding(owner, scene, item)
+    return (
+        binding is not None
+        and not binding.error
+        and not (binding.ticket is not None and binding.ticket.error)
+    )
+
+
 def _release(owner, token, binding):
     if binding.error:
         owner.form_errors.append(binding.error)
     owner.workflow_forms.pop(token, None)
 
 
-def release(scene, name, token):
-    """Stop delivering an admitted upload; its saved record remains inspectable."""
-    owner = runtime.state.reference_uploads
-    binding = owner.workflow_forms.get(token) if owner is not None else None
+def _drop_binding(owner, scene, name, token):
+    binding = owner.workflow_forms.get(token)
     try:
         if binding is not None and binding.scene == scene and binding.input_name == name:
             owner.workflow_forms.pop(token, None)
     except (ReferenceError, RuntimeError):
         owner.workflow_forms.pop(token, None)
+
+
+def release(scene, name, token):
+    """Stop delivering an admitted upload; its saved record remains inspectable."""
+    owner = runtime.state.reference_uploads
+    if owner is not None:
+        _drop_binding(owner, scene, name, token)
+
+
+def _remember(owner, scene, item, message):
+    """Explain on the freed input, until its value changes, why nothing was sent."""
+    owner.workflow_notices.append((scene, item.name, _values(item), message))
+
+
+def _notice(owner, scene, item):
+    if owner is None:
+        return ""
+    values = _values(item)
+    for notice_scene, name, notice_values, message in reversed(owner.workflow_notices):
+        try:
+            if notice_scene == scene and name == item.name and notice_values == values:
+                return message
+        except (ReferenceError, RuntimeError):
+            continue
+    return ""
+
+
+def release_canceled(owner, record):
+    """Free inputs still waiting for a canceled preparation; keep their values.
+
+    Called on the main thread after explicit cancellation. A canceled record never
+    sent anything. The marker is matched through this connection's ticket for its
+    token, or through the saved request link when undo or a restart dropped it.
+    """
+    if record is None or record.state != UploadState.CANCELED:
+        return
+    request_id = record.intent.request_id
+    for scene in tuple(bpy.data.scenes):
+        for item in scene.scenario_workflow.inputs:
+            token = item.get(_MARKER)
+            if not token:
+                continue
+            ticket = owner.workflow_tickets.get(token)
+            if ticket is not None:
+                linked = ticket.record.intent.request_id if ticket.record is not None else None
+            else:
+                linked = item.get(_REQUEST)
+            if linked != request_id:
+                continue
+            del item[_MARKER]
+            if item.get(_REQUEST) == request_id:
+                del item[_REQUEST]
+            _drop_binding(owner, scene, item.name, token)
+            owner.form_errors.append(_NOTHING_SENT[UploadState.CANCELED])
+            _remember(owner, scene, item, _NOTHING_SENT[UploadState.CANCELED])
+
+
+def stop_waiting(scene, name, token):
+    """Release a stopped upload's marker; the values and saved upload are kept."""
+    item = scene.scenario_workflow.inputs.get(name)
+    if item is None or not token or item.get(_MARKER) != token:
+        raise ScenarioError(0, "The input changed; review it again")
+    owner = runtime.state.reference_uploads
+    if _live(owner, scene, item):
+        raise ScenarioError(0, "The upload is still running; wait for it or clear the input")
+    for key in (_MARKER, _REQUEST):
+        if key in item:
+            del item[key]
+    if owner is not None:
+        _drop_binding(owner, scene, name, token)
+    return item
 
 
 @dataclass(frozen=True)
@@ -194,8 +280,8 @@ def review(context, name, source):
         raise ScenarioError(
             0,
             "This input already has an upload; inspect its saved progress"
-            if _binding(owner, context.scene, item) is not None
-            else "This input has a saved upload; inspect it and confirm the destination",
+            if _live(owner, context.scene, item)
+            else "This input has a saved upload; inspect it or stop waiting for it",
         )
     kind = input_kind(form, name)
     if kind is None:
@@ -285,6 +371,7 @@ def start(context, reviewed):
         binding.error = "Upload did not start; inspect progress before choosing another reference"
         _release(owner, token, binding)
         raise ScenarioError(0, binding.error) from None
+    owner.workflow_tickets[token] = binding.ticket
     return binding
 
 
@@ -296,40 +383,50 @@ def deliver(owner):
             _release(owner, token, binding)
 
 
-def _clear_own_marker(binding, token):
+def _clear_own_marker(binding, token, record):
+    """Remove only this upload's marker and request link; return the freed input."""
     try:
         item = binding.item()
-        if item is not None and item.get(_MARKER) == token:
-            del item[_MARKER]
+        if item is None or item.get(_MARKER) != token:
+            return None
+        del item[_MARKER]
+        if record is not None and item.get(_REQUEST) == record.intent.request_id:
+            del item[_REQUEST]
+        return item
     except (ReferenceError, RuntimeError):
-        pass
+        return None
 
 
 def _deliver_binding(owner, token, binding):
     ticket = binding.ticket
     if binding.attached or binding.error or ticket is None:
         return
-    if ticket.error and ticket.sent_nothing:
-        # ReferenceUploads proves local staging failed before any request, so
+    record = ticket.record
+    if ticket.sent_nothing:
+        # ReferenceUploads proves this stopped upload never reached Scenario (failed
+        # staging, an admission refused while still prepared, or cancellation), so
         # release this upload's own marker and keep existing values for a retry.
-        binding.error = "The file could not be staged and nothing was uploaded; choose it again"
-        _clear_own_marker(binding, token)
+        binding.error = _NOTHING_SENT[record.state if record is not None else None]
+        item = _clear_own_marker(binding, token, record)
+        if item is not None:
+            _remember(owner, binding.scene, item, binding.error)
         return
     if not binding.current(token):
         binding.error = "The scene, workflow or input changed; the upload was not attached"
         return
+    item = binding.item()
+    if record is not None and item.get(_REQUEST) != record.intent.request_id:
+        # Link the marker to its saved record at first observation, even when the
+        # upload then stops, so cancelling that record can still free the input.
+        item[_REQUEST] = record.intent.request_id
     if ticket.error:
         binding.error = ticket.error
         return
-    record = ticket.record
     if record is not None and record.state in {UploadState.FAILED, UploadState.CANCELED}:
         binding.error = "Upload finished without an asset; inspect saved progress"
         return
     if binding.scene != bpy.context.scene:
         return  # Transient timer context pauses attachment.
-    item = binding.item()
-    if record is not None and item.get(_REQUEST) != record.intent.request_id:
-        item[_REQUEST] = record.intent.request_id
     if record is None or record.state != UploadState.IMPORTED:
         return
     try:
@@ -428,18 +525,27 @@ def summary(approval):
 
 def draw(layout, scene, item, field):
     """Read-only upload controls for one workflow file input."""
+    owner = runtime.state.reference_uploads
     if item.get(_MARKER):
-        binding = _binding(runtime.state.reference_uploads, scene, item)
+        binding = _binding(owner, scene, item)
+        live = _live(owner, scene, item)
         row = layout.row(align=True)
         if binding is None:
             row.label(text="Saved upload: inspect before continuing", icon="INFO")
-        elif binding.error or (binding.ticket is not None and binding.ticket.error):
+        elif not live:
             row.label(text="Upload needs review", icon="ERROR")
         else:
             row.label(text="Uploading reference…", icon="TIME")
         op = row.operator("scenario.inspect_uploads", text="Inspect uploads", icon="VIEWZOOM")
         op.lane, op.param_name = reference_form.WORKFLOW_LANE, item.name
+        if not live:
+            # Nothing can attach automatically any more; free the input explicitly.
+            op = row.operator("scenario.release_workflow_upload", text="Stop waiting", icon="X")
+            op.input_name = item.name
         return
+    notice = _notice(owner, scene, item)
+    if notice:
+        layout.label(text=notice, icon="INFO")
     # The caller passes the parsed field; reparse the schema only on a mismatch.
     if not isinstance(field, dict) or field.get("name") != item.name:
         field = _field(scene.scenario_workflow, item.name) or {}
@@ -499,20 +605,77 @@ class SCENARIO_OT_upload_workflow_input(bpy.types.Operator):
         if reviewed is None or reviewed.input_name != self.input_name:
             self.report({"WARNING"}, "Review the workflow input upload first")
             return {"CANCELLED"}
+        item = context.scene.scenario_workflow.inputs.get(self.input_name)
+        before = item.get(_MARKER) if item is not None else None
         try:
             start(context, reviewed)
+        except Exception as error:
+            reason = (
+                error.reason
+                if isinstance(error, ScenarioError)
+                else "Upload could not start; inspect saved uploads"
+            )
+            self.report({"ERROR"}, reason)
+            # A failure after admission keeps the new marker. Finishing records its
+            # undo step, so undoing a later edit keeps the guard.
+            marked = item is not None and item.get(_MARKER) not in {None, before}
+            return {"FINISHED"} if marked else {"CANCELLED"}
+        return {"FINISHED"}
+
+
+class SCENARIO_OT_release_workflow_upload(bpy.types.Operator):
+    bl_idname = "scenario.release_workflow_upload"
+    bl_label = "Stop waiting for upload"
+    bl_description = (
+        "Stop waiting for this input's stopped upload; its values stay and the upload "
+        "stays in saved uploads"
+    )
+    bl_options = {"UNDO"}
+    input_name: StringProperty(options={"HIDDEN", "SKIP_SAVE"})
+
+    def invoke(self, context, event):
+        form = context.scene.scenario_workflow
+        item = form.inputs.get(self.input_name)
+        token = item.get(_MARKER) if item is not None else None
+        if not token or _live(runtime.state.reference_uploads, context.scene, item):
+            self.report({"ERROR"}, "Only a stopped upload can be released; inspect uploads")
+            return {"CANCELLED"}
+        self._scene, self._token = context.scene, token
+        return context.window_manager.invoke_confirm(
+            self,
+            event,
+            message=(
+                f"Stop waiting for the upload into {item.label} in "
+                f"{form.title or 'this workflow'}? Its current values stay, and the upload "
+                "stays in saved uploads."
+            ),
+            confirm_text="Stop waiting",
+        )
+
+    def execute(self, context):
+        scene, token = getattr(self, "_scene", None), getattr(self, "_token", None)
+        self._scene = self._token = None
+        try:
+            if scene is None or context.scene != scene:
+                raise ScenarioError(0, "Review the input from its original scene")
+            stop_waiting(scene, self.input_name, token)
         except ScenarioError as error:
             self.report({"ERROR"}, error.reason)
             return {"CANCELLED"}
         except Exception:
-            self.report({"ERROR"}, "Upload could not start; inspect saved uploads")
+            self.report({"ERROR"}, "The input was not released; inspect saved uploads")
             return {"CANCELLED"}
         return {"FINISHED"}
 
 
+_CLASSES = (SCENARIO_OT_upload_workflow_input, SCENARIO_OT_release_workflow_upload)
+
+
 def register():
-    bpy.utils.register_class(SCENARIO_OT_upload_workflow_input)
+    for cls in _CLASSES:
+        bpy.utils.register_class(cls)
 
 
 def unregister():
-    bpy.utils.unregister_class(SCENARIO_OT_upload_workflow_input)
+    for cls in reversed(_CLASSES):
+        bpy.utils.unregister_class(cls)

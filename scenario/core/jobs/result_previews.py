@@ -435,9 +435,12 @@ def _open_regular(path):
     except BaseException:
         os.close(descriptor)
         raise
-    if not stat.S_ISREG(os.fstat(stream.fileno()).st_mode):
+    try:
+        if not stat.S_ISREG(os.fstat(stream.fileno()).st_mode):
+            raise PreviewError("Preview files must be regular local files")
+    except BaseException:
         stream.close()
-        raise PreviewError("Preview files must be regular local files")
+        raise
     return stream
 
 
@@ -576,9 +579,9 @@ class PreviewCache:
             # WaveformError is a ValueError: an invalid envelope is a cache miss.
             return None
         try:
-            os.utime(sidecar)  # Recency for eviction; failure only affects ordering.
+            os.utime(sidecar)
         except OSError:
-            pass
+            pass  # Recency for eviction only: a failed touch still returns the entry.
         return result
 
     def _write_sidecar(self, entry, rendition, value):
@@ -594,7 +597,7 @@ class PreviewCache:
             try:
                 temporary.unlink()
             except OSError:
-                pass
+                pass  # Best effort: the original error matters; a stray .tmp file is ignored.
             raise
 
     def _sidecar(self, key, rendition, state, **values):

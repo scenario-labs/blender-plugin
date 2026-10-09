@@ -99,7 +99,7 @@ using the locked environment.
 | Workflow approval rejection | `workflows.user_approval(action="reject")`: workflow, job and node identity; this is not general workflow cancellation |
 | Remote cancellation | `jobs.trigger_action(action="cancel")`: POST action and project query; acknowledgements can remain in progress or report a completion race; upload/cancel failures make one attempt |
 | Collection and tag writes | `collections.assets.add/remove`: PUT and DELETE with a JSON `assetIds` body; `collections.create`: POST `name`; `assets.update_tags`: PUT `add`/`delete` with explicit `strict=false`; `projectId` stays in the query. Timeouts, lost connections and 408/409/429/5xx make one attempt even with `x-should-retry: true`, and no idempotency header is sent |
-| Collection pages and organization read-back | `collections.list/retrieve`: `collections` page wrapper, opaque cursor with unchanged scope and `collection` wrapper; `assets.get_bulk`: POST `assetIds` body, `projectId` query, `tags` and `collectionIds` retained, and a requested asset may be absent |
+| Collection pages and organization read-back | `collections.list/retrieve`: `collections` page wrapper, opaque cursor with unchanged scope and `collection` wrapper; `assets.get_bulk`: POST `assetIds` body, `projectId` query, `tags` and `collectionIds` retained, and a synthetic partial response passes through unchanged |
 | Uncertain submissions | `max_retries=0` makes one attempt for model/workflow transport errors and retryable HTTP statuses, even with `Retry-After` |
 | Redirect handling | An explicit HTTP client with `follow_redirects=False` prevents a second request; also use `trust_env=False` to avoid ambient proxy configuration |
 | Authentication | Explicit Basic credentials take precedence over ambient Basic credentials; explicit Bearer precedence has the known failure below |
@@ -516,7 +516,7 @@ The named discovery exceptions also use the same zero-retry SDK client.
 | Scoped job discovery | `jobs.list` through the public raw-response wrapper: optional author/workflow/type/status filters, 1–200 items per page, bounded pagination and explicit errors instead of partial or conflicting history |
 | Multipart upload metadata | `uploads.create/retrieve/trigger_action(action="complete")`: immutable project scope, strict input/receipt identity, retained processing/future fields; no byte transfer, retry or automatic completion |
 | Collection and tag writes | `collections.create`, `collections.assets.add/remove` and `assets.update_tags(strict=false)` through public raw-response wrappers: one attempt, selected project, acknowledged identity checks, and `WriteRejected` or `WriteUncertain` after dispatch |
-| Collection pages and organization read-back | `collections.list/retrieve` and `assets.get_bulk`: one bounded collection page with cursor-loop failure, matching collection identity, and requested-only asset records with `tags`/`collectionIds` |
+| Collection pages and organization read-back | `collections.list/retrieve` and `assets.get_bulk`: one bounded collection page with cursor-loop failure, matching collection identity, and requested-only asset records whose `tags` and `collectionIds` must be lists of strings |
 | Model/workflow/asset/job records | `models.retrieve`, `workflows.retrieve`, `assets.retrieve`, `jobs.retrieve`: unwrap the named record and retain unknown fields |
 | Custom-model estimate | `generate.run_model(dry_run="true")`: adopted form value validation plus retained conditional/one-of rules; inputs in JSON and dry-run/project in query |
 | Prompt translation quote/submission | `generate.with_raw_response.translate`: POST `/generate/translate`, exact `dry_run="true"` response; optional selected `project_id` in the query; prompt in JSON; no raw API fallback |
@@ -772,8 +772,8 @@ Blender Undo.
 | --- | --- | --- |
 | `collection_page` | `collections.with_raw_response.list` | One page of 1 to 100 records and an opaque cursor. IDs are validated, identical duplicates are dropped, and conflicting duplicates, oversized pages or a repeated cursor fail. An empty page is valid. |
 | `collection` | `collections.with_raw_response.retrieve` | The returned `collection.id` must equal the requested ID. |
-| `asset_records` | `assets.with_raw_response.get_bulk` | POST with 1 to 200 IDs in the body; repeated IDs are read once. Found records are returned by ID in request order, with unknown fields kept. A missing asset is absent, not an error. Unrequested or conflicting records and non-list `tags`/`collectionIds` fail. |
-| `create_collection` | `collections.with_raw_response.create` | POST `{"name": ...}`. The acknowledged `collection.name` must match exactly and its ID must be valid. |
+| `asset_records` | `assets.with_raw_response.get_bulk` | POST with 1 to 200 IDs in the body; repeated IDs are read once. Found records are returned by ID in request order, with unknown fields kept. When a response omits a requested asset, the result leaves it out and the caller treats it as unverified; this is adapter handling, not a documented service contract. Unrequested or conflicting records fail, and so do `tags` or `collectionIds` that are absent, null or not lists of strings: SDK 2.2.0 declares both required, so missing metadata never reads as empty. |
+| `create_collection` | `collections.with_raw_response.create` | POST `{"name": ...}`. The acknowledged `collection.name` must match exactly and its ID must be valid. A valid ID with another name raises `WriteUncertain` with that `collection_id`. |
 | `add_collection_assets`, `remove_collection_assets` | `collections.with_raw_response.assets.add/remove` | PUT or DELETE with a JSON `assetIds` body of 1 to 49 unique IDs, the documented maximum. The acknowledged `collection.id` must match. |
 | `update_asset_tags` | `assets.with_raw_response.update_tags` | PUT with explicit `strict=false` and a nonempty `add` and/or `delete` list. The reported `added` and `deleted` lists must be subsets of the request and may be empty for documented non-strict no-ops. |
 
@@ -781,8 +781,10 @@ Every request uses the adapter's selected credentials, its optional project
 override in the query and its online-access predicate. Reads keep the existing
 sanitized `AdapterError` behavior. Write outcomes are classified as follows:
 
-- **Not sent.** Invalid input raises `ValueError`. A closed client or disabled
-  online access raises a plain `AdapterError`. No request is made.
+- **Not sent.** Invalid input raises `ValueError`, including an identifier or
+  label that cannot be encoded as UTF-8, such as a lone surrogate from a JSON
+  client. A closed client or disabled online access raises a plain
+  `AdapterError`. No request is made.
 - **One attempt.** The client keeps `max_retries=0`. The SDK would otherwise
   retry 408, 409, 429 and 5xx responses, the Scenario client sends no
   idempotency key, and the API reference documents no idempotency or
@@ -795,9 +797,15 @@ sanitized `AdapterError` behavior. Write outcomes are classified as follows:
   425, 429 and 5xx responses, timeouts, lost connections, other transport
   failures, and a 2xx response with invalid JSON, a missing wrapper, a
   different collection ID or name, or tag lists that were not requested.
+- **`WriteUncertain.collection_id`** is set only when a create acknowledgement
+  has a valid collection ID but another name, for example after service
+  normalization. That collection exists, so the caller reconciles by this ID,
+  because an exact-name lookup would miss it. It is otherwise `None`.
+  `WriteRejected` and `WriteUncertain` keep their attributes through copy and
+  pickle.
 - Messages contain at most the HTTP status code. They never include response
-  bodies, URLs, credentials, project or asset IDs, collection names or tags,
-  and the original SDK exception is suppressed.
+  bodies, URLs, credentials, project, asset or collection IDs, collection
+  names or tags, and the original SDK exception is suppressed.
 
 The adapter never resends a write. A caller reconciles an uncertain outcome by
 reading the assets back with `asset_records`, not with search, whose index may
@@ -816,12 +824,24 @@ and still needs authorized live evidence:
 - **Collection names.** No uniqueness or idempotent create is documented.
   Callers must look up the exact name before creating and must not create
   again after an uncertain outcome.
+- **Bulk read coverage.** The
+  [get_bulk reference](https://docs.scenario.com/api/python/resources/assets/methods/get_bulk)
+  describes IDs the team has read access to, with a limit of 200. It does not
+  say whether a deleted or inaccessible ID is omitted or fails the whole batch
+  with a 4xx. The adapter treats an omitted asset as unverified and a failed
+  read as a sanitized `AdapterError`; neither is evidence of the asset's
+  state. The 200-ID cap is enforced locally and is unverified live.
 - **Local label limits.** Tag and name limits are undocumented. The adapter
-  accepts exact labels of at most 200 characters, without surrounding
-  whitespace or control characters, and at most 30 tags per list, matching the
-  Film plan's existing task tags. A tag cannot be added and removed in the same
-  change. Commas are allowed at this layer. The service may normalize case or
-  spelling; a normalized acknowledgement is uncertain and must be read back.
+  accepts exact single-line labels of at most 200 characters and at most 30
+  tags per list, matching the Film plan's existing task tags. Labels cannot
+  have surrounding whitespace, control characters, lone surrogates, line or
+  paragraph separators, bidirectional embedding, override or isolate controls
+  (U+202A to U+202E, U+2066 to U+2069) or invisible separators (U+200B,
+  U+2060, U+FEFF), which could spoof or break Library and MCP rows. Joiners
+  (U+200C, U+200D) remain valid for scripts and emoji sequences. A tag cannot
+  be added and removed in the same change. Commas are allowed at this layer.
+  The service may normalize case or spelling; a normalized acknowledgement is
+  uncertain and must be read back.
 - Collection deletion and rename, model collections and tag listing are not
   adopted.
 

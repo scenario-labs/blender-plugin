@@ -7,8 +7,10 @@ so the contract is one attempt, a definite rejection or an uncertain outcome,
 and reconciliation by reading the assets back, never by sending again.
 """
 
+import copy
 import json
 import os
+import pickle
 import socket
 
 import httpx
@@ -302,6 +304,51 @@ def test_mismatched_acknowledgements_are_uncertain(adapter, operation, reply):
     assert len(requests) == 1
 
 
+@pytest.mark.parametrize("returned", ["Hero Props", "hero props", "He\u0301ro props"])
+def test_created_collection_with_another_name_carries_its_id(adapter, returned):
+    # A valid acknowledgement proves the collection exists. An exact-name lookup
+    # would miss a normalized name, so the caller reconciles by this ID.
+    requests, handler = recorder(
+        httpx.Response(200, json={"collection": {**COLLECTION, "name": returned}})
+    )
+    with pytest.raises(WriteUncertain) as error:
+        adapter(handler).create_collection("Hero props")
+    assert error.value.collection_id == "fixture-collection"
+    assert error.value.status is None
+    assert len(requests) == 1
+    assert_sanitized(error.value)
+
+
+@pytest.mark.parametrize(
+    "reply",
+    [
+        {"collection": {**COLLECTION, "id": "bad/id", "name": "Other"}},
+        {"collection": {"name": "Other"}},
+        {"collection": {**COLLECTION, "id": None}},
+    ],
+)
+def test_create_without_a_valid_acknowledged_id_carries_none(adapter, reply):
+    _, handler = recorder(httpx.Response(200, json=reply))
+    with pytest.raises(WriteUncertain) as error:
+        adapter(handler).create_collection("Hero props")
+    assert error.value.collection_id is None
+
+
+@pytest.mark.parametrize(
+    "error",
+    [
+        WriteRejected("Scenario rejected this organization change (HTTP 422)", 422),
+        WriteUncertain("Scenario did not confirm this change", 503),
+        WriteUncertain("Scenario did not confirm this change", collection_id="fixture-collection"),
+    ],
+)
+def test_write_outcomes_survive_copy_and_pickle(error):
+    for clone in (copy.copy(error), copy.deepcopy(error), pickle.loads(pickle.dumps(error))):
+        assert type(clone) is type(error)
+        assert str(clone) == str(error)
+        assert vars(clone) == vars(error)
+
+
 def test_non_strict_tag_no_ops_are_valid_acknowledgements(adapter):
     reply = {"added": [], "deleted": [], "futureField": True}
     requests, handler = recorder(httpx.Response(200, json=reply))
@@ -351,6 +398,24 @@ def test_non_strict_tag_no_ops_are_valid_acknowledgements(adapter):
             "asset-a", add=[f"tag-{i}" for i in range(MAX_TAG_CHANGES + 1)]
         ),
         lambda c: c.update_asset_tags("../asset", add=["hero"]),
+        # Lone surrogates (for example from a JSON MCP client) cannot be
+        # encoded, so they are invalid input rather than an uncertain write.
+        lambda c: c.update_asset_tags("asset-a", add=["tag\ud800"]),
+        lambda c: c.update_asset_tags("asset-a", remove=["tag\udfff"]),
+        lambda c: c.update_asset_tags("asset\ud800", add=["hero"]),
+        lambda c: c.create_collection("Hero\ud800props"),
+        lambda c: c.add_collection_assets("fixture-collection", ["asset\ud800"]),
+        lambda c: c.add_collection_assets("fixture\ud800collection", ["asset-a"]),
+        lambda c: c.remove_collection_assets("fixture-collection", ["asset\udc00"]),
+        # Single-line display labels: no bidi controls, invisible separators
+        # or line and paragraph separators.
+        lambda c: c.create_collection("Hero\u202eprops"),
+        lambda c: c.create_collection("Hero\u2066props\u2069"),
+        lambda c: c.update_asset_tags("asset-a", add=["he\u200bro"]),
+        lambda c: c.update_asset_tags("asset-a", add=["he\ufeffro"]),
+        lambda c: c.update_asset_tags("asset-a", add=["he\u2060ro"]),
+        lambda c: c.create_collection("Hero\u2028props"),
+        lambda c: c.update_asset_tags("asset-a", add=["he\u2029ro"]),
     ],
 )
 def test_invalid_writes_never_reach_transport(adapter, call):
@@ -360,7 +425,11 @@ def test_invalid_writes_never_reach_transport(adapter, call):
 
 def test_write_limits_accept_their_bounds_and_unicode_labels(adapter):
     assets = [f"asset-{i}" for i in range(MAX_COLLECTION_ASSETS)]
-    tags = [f"tag-{i}" for i in range(MAX_TAG_CHANGES - 1)] + ["café, 東京"]
+    tags = [f"tag-{i}" for i in range(MAX_TAG_CHANGES - 2)] + [
+        "café, 東京",
+        # Joiners are part of scripts and emoji sequences, not hidden spoofing.
+        "\U0001f469\u200d\U0001f3a8 \u0645\u06cc\u200c\u062e\u0648\u0627\u0647\u0645",
+    ]
     name = "Accessoires d'été " + "x" * 182
 
     def respond(request):
@@ -483,13 +552,12 @@ def test_asset_records_return_requested_order_and_omit_missing_assets(adapter, p
     assert dict(requests[0].url.params) == ({"projectId": project} if project else {})
 
 
-def test_asset_records_accept_an_empty_result_and_absent_metadata(adapter):
+def test_asset_records_accept_empty_results_and_empty_metadata(adapter):
     _, empty = recorder(httpx.Response(200, json={"assets": []}))
     assert adapter(empty).asset_records(["asset-a"]) == {}
-    _, sparse = recorder(httpx.Response(200, json={"assets": [{"id": "asset-a", "tags": None}]}))
-    assert adapter(sparse).asset_records(("asset-a",)) == {
-        "asset-a": {"id": "asset-a", "tags": None}
-    }
+    record = {"id": "asset-a", "tags": [], "collectionIds": []}
+    _, bare = recorder(httpx.Response(200, json={"assets": [record]}))
+    assert adapter(bare).asset_records(("asset-a",)) == {"asset-a": record}
 
 
 @pytest.mark.parametrize(
@@ -500,8 +568,13 @@ def test_asset_records_accept_an_empty_result_and_absent_metadata(adapter):
         {"assets": [None]},
         {"assets": [{"id": "asset-other"}]},
         {"assets": [{"id": "asset-a"}, {"id": "asset-a", "tags": ["conflict"]}]},
-        {"assets": [{"id": "asset-a", "tags": "hero"}]},
-        {"assets": [{"id": "asset-a", "collectionIds": [1]}]},
+        {"assets": [{"id": "asset-a", "tags": "hero", "collectionIds": []}]},
+        {"assets": [{"id": "asset-a", "tags": [], "collectionIds": [1]}]},
+        # Absent or null metadata is unverified, never an empty verified state.
+        {"assets": [{"id": "asset-a"}]},
+        {"assets": [{"id": "asset-a", "tags": None, "collectionIds": []}]},
+        {"assets": [{"id": "asset-a", "tags": []}]},
+        {"assets": [{"id": "asset-a", "tags": [], "collectionIds": None}]},
     ],
 )
 def test_asset_records_reject_unrequested_or_malformed_records(adapter, page):
@@ -516,6 +589,7 @@ def test_asset_records_reject_unrequested_or_malformed_records(adapter, page):
         "asset-a",
         [None],
         ["bad/id"],
+        ["asset\ud800"],
         [f"asset-{i}" for i in range(MAX_ASSET_RECORDS + 1)],
     ],
 )

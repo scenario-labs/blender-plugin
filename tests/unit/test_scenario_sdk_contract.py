@@ -953,7 +953,8 @@ def test_asset_bulk_read_keeps_ids_in_body_and_organization_fields(client_factor
     raw = sdk.assets.with_raw_response.get_bulk(
         asset_ids=["fixture-a", "fixture-missing"], project_id=PROJECT
     )
-    # A requested asset can be absent from the response; it is not an error here.
+    # A synthetic partial response passes through the raw wrapper unchanged. How
+    # the service answers a missing or inaccessible ID is not documented.
     assert json.loads(raw.read()) == fixture
     assert len(requests) == 1
     assert (requests[0].method, requests[0].url.path) == ("POST", "/v1/assets/get-bulk")

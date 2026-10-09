@@ -73,17 +73,24 @@ class WriteRejected(AdapterError):
     assets back with ``asset_records`` before reporting that nothing changed.
     """
 
-    def __init__(self, message, status):
+    # Keyword defaults keep copy and pickle working: BaseException rebuilds the
+    # instance from the message alone, then restores these attributes.
+    def __init__(self, message, status=None):
         super().__init__(message)
         self.status = status
 
 
 class WriteUncertain(AdapterError):
-    """An organization write may have been applied; read it back, never resend it."""
+    """An organization write may have been applied; read it back, never resend it.
 
-    def __init__(self, message, status=None):
+    ``collection_id`` is set only when a create was acknowledged with a valid
+    collection ID but another name, so the caller can reconcile by that ID.
+    """
+
+    def __init__(self, message, status=None, *, collection_id=None):
         super().__init__(message)
         self.status = status
+        self.collection_id = collection_id
 
 
 # Local bounds. The SDK documents 49 assets per membership change and 200 per
@@ -93,6 +100,13 @@ MAX_COLLECTION_ASSETS = 49
 MAX_ASSET_RECORDS = 200
 MAX_ORGANIZATION_LABEL = 200
 MAX_TAG_CHANGES = 30
+# Labels are single-line display text. Reject control characters, unencodable
+# surrogates and line or paragraph separators by category, and bidirectional
+# embeddings, overrides and isolates plus invisible separators by code point.
+_LABEL_CATEGORIES = frozenset({"Cc", "Cs", "Zl", "Zp"})
+_HIDDEN_LABEL_CHARACTERS = frozenset(
+    "\u200b\u2060\ufeff\u202a\u202b\u202c\u202d\u202e\u2066\u2067\u2068\u2069"
+)
 # 408, 425 and 429 can arrive after the service accepted the work, and 409 has
 # no documented meaning for these endpoints (duplicate member, name or lock).
 _UNCERTAIN_CLIENT_STATUSES = frozenset({408, 409, 425, 429})
@@ -186,7 +200,11 @@ def _status_text(status, *, project):
 def _identifier(value):
     if not isinstance(value, str) or not value or value in {".", ".."} or value.strip() != value:
         raise ValueError("A nonempty identifier is required")
-    if any(char in value for char in "/\\?#%") or any(ord(char) < 33 for char in value):
+    # Lone surrogates cannot be encoded as UTF-8; the SDK would fail while
+    # building the request, so reject them here as invalid input.
+    if any(char in value for char in "/\\?#%") or any(
+        ord(char) < 33 or 0xD800 <= ord(char) <= 0xDFFF for char in value
+    ):
         raise ValueError("Identifier contains unsupported characters")
     return value
 
@@ -218,7 +236,12 @@ def _upload_record(raw, identifier=None):
 
 
 def _organization_label(value, field):
-    """Accept an exact bounded label; never strip or rewrite what is sent."""
+    """Accept an exact bounded single-line label; never strip or rewrite what is sent.
+
+    Lone surrogates would fail inside the SDK; bidirectional controls, invisible
+    separators and line breaks could spoof or break Library and MCP rows.
+    Joiners (U+200C, U+200D) stay valid for scripts and emoji sequences.
+    """
     if (
         not isinstance(value, str)
         or not value.strip()
@@ -229,8 +252,11 @@ def _organization_label(value, field):
             f"{field} must be nonempty, at most {MAX_ORGANIZATION_LABEL} characters "
             "and without surrounding spaces"
         )
-    if any(unicodedata.category(char) == "Cc" for char in value):
-        raise ValueError(f"{field} cannot contain control characters")
+    if any(
+        char in _HIDDEN_LABEL_CHARACTERS or unicodedata.category(char) in _LABEL_CATEGORIES
+        for char in value
+    ):
+        raise ValueError(f"{field} cannot contain control, invisible or unencodable characters")
     return value
 
 
@@ -267,7 +293,7 @@ def _unique_rows(rows, limit, noun):
         except ValueError:
             raise AdapterError(f"Scenario returned an invalid {noun} record") from None
         if identifier in records and records[identifier] != row:
-            raise AdapterError(f"Scenario returned conflicting {noun} records; refresh")
+            raise AdapterError(f"Scenario returned conflicting {noun} records; refresh the library")
         records[identifier] = row
     return records
 
@@ -471,8 +497,12 @@ class SDKAdapter:
                 status,
             ) from None
         except Exception:
-            # Timeouts, lost connections and unexpected transport failures can
-            # follow an applied change. Classify them as unknown, never unsent.
+            # The SDK wraps every send failure, including timeouts and lost
+            # connections, in APIConnectionError; those can follow an applied
+            # change. It also processes the response outside that wrapper, so
+            # an unexpected failure cannot be proven unsent. Every write method
+            # validates its input, including UTF-8 encodability, before calling
+            # this, so a local request-building failure is not expected here.
             raise WriteUncertain(_UNCONFIRMED) from None
 
     def _discovery(self, method, wrapper, *args):
@@ -558,23 +588,6 @@ class SDKAdapter:
     def asset(self, identifier):
         return self._retrieve("assets", identifier, "asset")
 
-    @staticmethod
-    def _asset_rows(rows, limit):
-        if not isinstance(rows, list) or len(rows) > limit:
-            raise AdapterError("Scenario returned an invalid asset page")
-        records = {}
-        for row in rows:
-            try:
-                identifier = _identifier(row.get("id") if isinstance(row, dict) else None)
-            except ValueError:
-                raise AdapterError("Scenario returned an invalid asset record") from None
-            if identifier in records and records[identifier] != row:
-                raise AdapterError(
-                    "Scenario returned conflicting asset records; refresh the library"
-                )
-            records[identifier] = row
-        return list(records.values())
-
     def asset_page(self, *, public=False, page_size=40, pagination_token=None, collection_id=None):
         """Read one SDK asset page in the selected scope, without automatic traversal."""
         if type(public) is not bool or type(page_size) is not int or not 1 <= page_size <= 100:
@@ -589,7 +602,7 @@ class SDKAdapter:
         if collection_id is not None:
             options["collection_id"] = _identifier(collection_id)
         page = _json(self._request(self._sdk.assets.with_raw_response.list, **options))
-        rows = self._asset_rows(page.get("assets"), page_size)
+        rows = list(_unique_rows(page.get("assets"), page_size, "asset").values())
         token = page.get("nextPaginationToken")
         if token not in (None, "") and (not isinstance(token, str) or token == pagination_token):
             raise AdapterError("Scenario repeated or returned an invalid asset cursor")
@@ -619,7 +632,7 @@ class SDKAdapter:
             )
         )
         hits = page.get("hits")
-        rows = self._asset_rows(hits, limit)
+        rows = list(_unique_rows(hits, limit, "asset").values())
         total = page.get("estimatedTotalHits")
         returned_offset = page.get("offset")
         if (total is not None and (type(total) is not int or total < 0)) or (
@@ -661,7 +674,10 @@ class SDKAdapter:
         This is the verification read after organization writes; search indexes
         may lag. Duplicate requested IDs are read once. Assets the service does
         not return are absent from the result, which the caller must treat as
-        unverified rather than unchanged. Unrequested records are an error.
+        unverified rather than unchanged. Unrequested records are an error, and
+        so is a record whose ``tags`` or ``collectionIds`` is not a list of
+        strings: SDK 2.2.0 declares both required, and absent metadata must
+        never read as an empty, verified state.
         """
         identifiers = _asset_ids(asset_ids, MAX_ASSET_RECORDS, unique=False)
         page = _json(
@@ -673,9 +689,7 @@ class SDKAdapter:
         for record in records.values():
             for key in ("tags", "collectionIds"):
                 values = record.get(key)
-                if values is not None and (
-                    not isinstance(values, list) or any(not isinstance(v, str) for v in values)
-                ):
+                if not isinstance(values, list) or any(not isinstance(v, str) for v in values):
                     raise AdapterError("Scenario returned invalid asset organization metadata")
         return {
             identifier: records[identifier] for identifier in identifiers if identifier in records
@@ -687,16 +701,21 @@ class SDKAdapter:
         The API documents no name uniqueness. Callers must look the exact name up
         first and, after WriteUncertain, reconcile by reading instead of
         creating again. Returns the acknowledged record, whose name must match.
+        A valid acknowledged ID with another name, for example after service
+        normalization, raises WriteUncertain carrying ``collection_id`` so the
+        caller reconciles by ID; an exact-name lookup would miss it.
         """
         name = _organization_label(name, "Collection name")
         raw = self._write(self._sdk.collections.with_raw_response.create, name=name)
         record = _confirmed(raw).get("collection")
-        if not isinstance(record, dict) or record.get("name") != name:
+        if not isinstance(record, dict):
             raise WriteUncertain(_UNCONFIRMED)
         try:
-            _identifier(record.get("id"))
+            identifier = _identifier(record.get("id"))
         except ValueError:
             raise WriteUncertain(_UNCONFIRMED) from None
+        if record.get("name") != name:
+            raise WriteUncertain(_UNCONFIRMED, collection_id=identifier)
         return record
 
     def _membership(self, method, collection_id, asset_ids):

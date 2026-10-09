@@ -5,8 +5,11 @@
 Every external reference either resolves to a member of the selected import unit
 under a canonical snapshot name or is removed (OBJ/MTL) or rejected (glTF).
 Provider names, absolute paths, traversal and URLs never reach an importer, and the
-importer's own file search never sees a name outside the snapshot. Functions take
-and return bytes or binary streams, so a worker can run them on verified copies.
+importer's own file search never sees a name outside the snapshot. Every physical
+line is classified on its own: Blender's MTL reader has no line continuation, and
+Blender 5.0 and 5.1 can read an OBJ continuation line by itself at a read-buffer
+boundary. Functions take and return bytes or binary streams, so a worker can run
+them on verified copies.
 """
 
 import base64
@@ -35,6 +38,8 @@ MAX_OBJ_LINE_BYTES = 1024 * 1024
 MAX_MTL_LINE_BYTES = 64 * 1024
 MAX_REPORTED_REFERENCES = 100
 MAX_GLTF_FILES = 256
+# Streaming checks cancellation at least this often, whatever the line length.
+CANCEL_CHECK_BYTES = 4 * 1024 * 1024
 
 # Reasons for dropped OBJ/MTL statements.
 MATERIAL_NOT_IN_PACKAGE = "material-not-in-package"
@@ -54,7 +59,11 @@ class PackageCancelled(RuntimeError):
 
 @dataclass(frozen=True)
 class DroppedReference:
-    """One removed statement; the original reference text is never retained."""
+    """One removed statement; the original reference text is never retained.
+
+    ``keyword`` is a fixed lowercase statement name. An unknown keyword reports only
+    its matched prefix, such as ``map_``, because a reference may be glued to it.
+    """
 
     line: int
     keyword: str
@@ -67,6 +76,44 @@ class ReferenceReport:
     dropped_total: int
 
 
+_OBJ_DROPPED = frozenset({b"maplib", b"usemap", b"call", b"csh", b"shadow_obj", b"trace_obj"})
+_OBJ_REFERENCES = _OBJ_DROPPED | {b"mtllib"}
+# Statements a prefix-matching reader could treat as texture references.
+_REFERENCE_PREFIXES = (b"map_", b"refl", b"bump", b"norm", b"disp", b"decal")
+# MTL texture statements reported by name.
+_MTL_REFERENCES = frozenset(
+    {
+        b"map_ka",
+        b"map_kd",
+        b"map_ks",
+        b"map_ke",
+        b"map_ns",
+        b"map_d",
+        b"map_tr",
+        b"map_aat",
+        b"map_bump",
+        b"map_refl",
+        b"map_pr",
+        b"map_pm",
+        b"map_ps",
+        b"map_pc",
+        b"map_pcr",
+        b"bump",
+        b"norm",
+        b"disp",
+        b"decal",
+        b"refl",
+    }
+)
+
+
+def _reported_keyword(keyword):
+    if keyword in _OBJ_REFERENCES or keyword in _MTL_REFERENCES:
+        return keyword.decode("ascii")
+    prefix = next((p for p in _REFERENCE_PREFIXES if keyword.startswith(p)), b"reference")
+    return prefix.decode("ascii")
+
+
 class _Report:
     def __init__(self):
         self.dropped, self.total = [], 0
@@ -74,8 +121,7 @@ class _Report:
     def drop(self, line, keyword, reason):
         self.total += 1
         if len(self.dropped) < MAX_REPORTED_REFERENCES:
-            keyword = keyword.decode("ascii", "replace")[:32]
-            self.dropped.append(DroppedReference(line, keyword, reason))
+            self.dropped.append(DroppedReference(line, _reported_keyword(keyword), reason))
 
     def freeze(self):
         return ReferenceReport(tuple(self.dropped), self.total)
@@ -89,57 +135,74 @@ def _snapshot_name(value):
     return value.encode("ascii")
 
 
-# Lines end at LF and a backslash before the line ending continues a statement.
-# Every byte up to space separates tokens, so a reader that treats any control
-# byte as whitespace cannot find a keyword that this classification missed.
+# Lines end at LF. Every byte up to space separates tokens, so a reader that
+# treats any control byte as whitespace cannot find a keyword that this
+# classification missed.
 _CONTROL = bytes(range(33))
 _SPACES = bytes.maketrans(_CONTROL, b" " * len(_CONTROL))
 
 
-def _continued(line):
-    return line.endswith((b"\\\n", b"\\\r\n"))
+def _tokens(text):
+    return text.translate(_SPACES).split()
 
 
-def _tokens(statement):
-    return re.sub(rb"\\\r?\n", b" ", statement).translate(_SPACES).split()
-
-
-def _keyword(statement):
-    """Lowercase first token of a logical line."""
-    words = _tokens(statement)
+def _keyword(line):
+    """Lowercase first token of one physical line."""
+    words = _tokens(line)
     return words[0].lower() if words else b""
 
 
-def _statements(read, limit, cancel):
-    """Yield (first physical line number, physical lines) for each logical line.
+def _obj_continued(line):
+    """Blender continues an OBJ statement after a backslash and optional whitespace."""
+    return line.endswith(b"\n") and line[:-1].rstrip(_CONTROL).endswith(b"\\")
 
-    A carriage return is accepted only before a line feed: a reader that also
-    splits lines at a bare CR could otherwise see a statement this one copied.
+
+def _obj_keyword(line):
+    """Lowercase first token of a physical OBJ line that could read a file, else b"".
+
+    Geometry statements start with other letters. Blender turns a continuation
+    backslash into a space, so it never extends the keyword.
+    """
+    head = line.lstrip(_CONTROL)[:1].lower()
+    if not head or head not in b"mcstu":
+        return b""
+    if _obj_continued(line):
+        line = line[:-1].rstrip(_CONTROL)[:-1]
+    return _keyword(line)
+
+
+def _lines(read, limit, cancel, continued=None):
+    """Yield (first physical line number, physical lines) for each statement.
+
+    Without ``continued`` every physical line is its own statement. A carriage
+    return is accepted only before a line feed: a reader that also splits lines at
+    a bare CR could otherwise see a statement this one copied. Cancellation is
+    checked every 65,536 lines and every ``CANCEL_CHECK_BYTES``.
     """
     number, lines, size, start, total = 0, [], 0, 1, 0
+    checkpoint = CANCEL_CHECK_BYTES
     while True:
         line = read(limit + 1)
         if not line:
             break
         number += 1
-        if cancel is not None and number % 65536 == 0 and cancel.is_set():
-            raise PackageCancelled("Model package preparation cancelled")
         size += len(line)
         total += len(line)
+        if cancel is not None and (number % 65536 == 0 or total >= checkpoint):
+            checkpoint = total + CANCEL_CHECK_BYTES
+            if cancel.is_set():
+                raise PackageCancelled("Model package preparation cancelled")
         if size > limit or total > MAX_MEMBER_BYTES:
             raise ModelPackageError("A model package line or file exceeds the supported limit")
         body = line[:-2] if line.endswith(b"\r\n") else line.rstrip(b"\n")
         if b"\0" in body or b"\r" in body:
             raise ModelPackageError("Use model package text with LF or CRLF line endings")
         lines.append(line)
-        if not _continued(line):
+        if continued is None or not continued(line):
             yield start, lines
             lines, size, start = [], 0, number + 1
     if lines:
         yield start, lines
-
-
-_OBJ_DROPPED = frozenset({b"maplib", b"usemap", b"call", b"csh", b"shadow_obj", b"trace_obj"})
 
 
 @dataclass(frozen=True)
@@ -153,20 +216,19 @@ def rewrite_obj(source, target, *, material_name=None, cancel=None):
     """Stream an OBJ, pointing its first ``mtllib`` at ``material_name`` or dropping it.
 
     Other ``mtllib`` statements and file-reading statements (``maplib``, ``usemap``,
-    ``call``, ``csh``, ``shadow_obj``, ``trace_obj``) are removed. Geometry lines are
-    copied unchanged. A reference statement continued across lines is rejected,
-    because removing its continuation could change how the importer reads the
-    next statement.
+    ``call``, ``csh``, ``shadow_obj``, ``trace_obj``) are removed. Other statements,
+    including continued geometry, are copied unchanged. A continued statement is
+    rejected when any of its physical lines starts with one of these keywords:
+    removing it could change how the importer reads the next statement, and
+    Blender 5.0 and 5.1 can read a continuation line by itself.
     """
     material = _snapshot_name(material_name) if material_name is not None else None
     report, linked, written = _Report(), False, 0
-    for number, lines in _statements(source.readline, MAX_OBJ_LINE_BYTES, cancel):
-        # Geometry statements start with other letters; only these can read files.
-        head = lines[0].lstrip(_CONTROL)[:1].lower()
-        keyword = _keyword(b"".join(lines)) if head and head in b"mcstu\\" else b""
-        if keyword == b"mtllib" or keyword in _OBJ_DROPPED:
-            if len(lines) > 1:
-                raise ModelPackageError("OBJ file references cannot continue across lines")
+    for number, lines in _lines(source.readline, MAX_OBJ_LINE_BYTES, cancel, _obj_continued):
+        keyword = _obj_keyword(lines[0])
+        if len(lines) > 1 and any(_obj_keyword(line) in _OBJ_REFERENCES for line in lines):
+            raise ModelPackageError("OBJ file references cannot continue across lines")
+        if keyword in _OBJ_REFERENCES:
             if keyword != b"mtllib":
                 report.drop(number, keyword, UNSUPPORTED_REFERENCE)
                 continue
@@ -199,8 +261,6 @@ _CANONICAL_MAP = {
     "roughness": b"map_Pr",
     "normal": b"map_Bump",
 }
-# Statements a prefix-matching reader could treat as texture references.
-_REFERENCE_PREFIXES = (b"map_", b"refl", b"bump", b"norm", b"disp", b"decal")
 # Option arities from the MTL texture statement grammar; only numeric
 # scale/offset and bump multiplier options are retained.
 _OPTION_ARITY = {
@@ -271,7 +331,9 @@ def rewrite_mtl(data, *, textures):
     bind by slot. Within one material the last statement for a slot wins. If
     materials name different files for one slot, that slot is ambiguous and all its
     statements are dropped rather than sharing one texture. Other map, ``refl``,
-    ``disp`` and ``decal`` statements are dropped.
+    ``disp`` and ``decal`` statements are dropped. Blender's MTL reader has no line
+    continuation, so each physical line is classified and a trailing backslash
+    never hides the next one.
     """
     names = {}
     for slot, name in dict(textures).items():
@@ -281,13 +343,13 @@ def rewrite_mtl(data, *, textures):
     data = bytes(data)
     if len(data) > MAX_MTL_BYTES:
         raise ModelPackageError("Material library exceeds the supported import limit")
-    statements = []
-    for number, physical in _statements(io.BytesIO(data).readline, MAX_MTL_LINE_BYTES, None):
-        statement = b"".join(physical)
-        statements.append((number, physical, statement, _keyword(statement)))
+    statements = [
+        (number, line, _keyword(line))
+        for number, (line,) in _lines(io.BytesIO(data).readline, MAX_MTL_LINE_BYTES, None)
+    ]
     # First pass: the last statement naming a file per (material, slot).
     material, effective, references = None, {}, {}
-    for position, (_, _, statement, keyword) in enumerate(statements):
+    for position, (_, statement, keyword) in enumerate(statements):
         if keyword == b"newmtl":
             material = position
         elif keyword in _MAP_SLOTS and material is not None:
@@ -299,11 +361,11 @@ def rewrite_mtl(data, *, textures):
     ambiguous = {slot for slot, values in references.items() if len(values) > 1}
     effective = {key: position for key, (position, _) in effective.items()}
     report, output, bound, material = _Report(), [], set(), None
-    for position, (number, physical, statement, keyword) in enumerate(statements):
+    for position, (number, statement, keyword) in enumerate(statements):
         if keyword == b"newmtl":
             material = position
         if not keyword.startswith(_REFERENCE_PREFIXES):
-            output += physical
+            output.append(statement)
             continue
         slot = _MAP_SLOTS.get(keyword)
         kept, reference = _map_statement(statement) if slot else ([], b"")

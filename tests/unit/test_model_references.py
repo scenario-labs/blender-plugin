@@ -12,6 +12,7 @@ from pathlib import Path
 import pytest
 
 from scenario.core.scene import model_references as refs
+from scenario.core.scene.glb import MAX_ACCESSOR_ENTRIES, GLBError, inspect_glb
 from scenario.core.scene.model_formats import ModelPackageError, PackageMember
 from scenario.core.scene.model_references import (
     PackageCancelled,
@@ -72,9 +73,9 @@ def test_obj_without_a_bound_material_drops_every_library_and_file_statement():
 
 
 def test_obj_keeps_one_library_and_copies_crlf_geometry_and_continuations():
-    text = b"mtllib a.mtl\r\nmtllib b.mtl\r\nf 1 2 \\\r\n 3\r\nv 0 0 0"
+    text = b"mtllib a.mtl\r\nmtllib b.mtl\r\nf 1 2 \\\r\n 3\r\nf 1 \\ \t\n2 3\nv 0 0 0"
     result, data = obj(text)
-    assert data == b"mtllib material.mtl\nf 1 2 \\\r\n 3\r\nv 0 0 0"
+    assert data == b"mtllib material.mtl\nf 1 2 \\\r\n 3\r\nf 1 \\ \t\n2 3\nv 0 0 0"
     assert reasons(result.report) == [(2, "mtllib", refs.DUPLICATE_LIBRARY)]
 
 
@@ -82,6 +83,8 @@ def test_obj_keeps_one_library_and_copies_crlf_geometry_and_continuations():
     "text",
     [
         b"mtllib a.mtl \\\n b.mtl\n",
+        b"mtllib a.mtl \\ \n b.mtl\n",
+        b"mtllib\\\na.mtl\n",
         b"  \\\nmtllib a.mtl\n",
         b"call \\\n other.obj\n",
         b"v 0 0 0\0\n",
@@ -91,6 +94,8 @@ def test_obj_keeps_one_library_and_copies_crlf_geometry_and_continuations():
     ],
     ids=[
         "continued-library",
+        "continued-library-trailing-space",
+        "continued-glued-keyword",
         "continued-keyword",
         "continued-call",
         "nul",
@@ -102,6 +107,20 @@ def test_obj_keeps_one_library_and_copies_crlf_geometry_and_continuations():
 def test_obj_ambiguous_or_unbounded_text_fails_closed(text):
     with pytest.raises(ModelPackageError):
         obj(text)
+
+
+@pytest.mark.parametrize(
+    "keyword",
+    [b"mtllib", b"MTLLIB", b"maplib", b"usemap", b"call", b"csh", b"shadow_obj", b"trace_obj"],
+)
+@pytest.mark.parametrize("ending", [b"\\\n", b"\\\r\n", b"\\ \n", b"\\\t\r\n"])
+@pytest.mark.parametrize("statement", [b"v 0 0 0    ", b"f 1 2 3 ", b"# note "])
+def test_a_reference_on_an_obj_continuation_line_fails_closed(statement, ending, keyword):
+    # Blender 5.0 and 5.1 can read a continuation line by itself at a buffer boundary.
+    text = GEOMETRY + statement + ending + keyword + b" ../outside.mtl\n" + GEOMETRY
+    for material in ("material.mtl", None):
+        with pytest.raises(ModelPackageError, match="continue across lines"):
+            obj(text, material=material)
 
 
 @pytest.mark.parametrize("name", ["../material.mtl", "/tmp/m.mtl", "Material.MTL", "m", ""])
@@ -117,6 +136,17 @@ def test_obj_rewrite_honors_cancellation():
         obj(GEOMETRY, cancel=cancel)
     with pytest.raises(PackageCancelled):
         obj(b"v 0 0 0\n" * 65536, cancel=cancel)
+
+
+def test_obj_rewrite_checks_cancellation_between_long_lines():
+    cancel = threading.Event()
+    cancel.set()
+    line = b"v " + b"0" * (refs.MAX_OBJ_LINE_BYTES - 4) + b"\n"
+    text, target = line * 6, io.BytesIO()
+    with pytest.raises(PackageCancelled):
+        rewrite_obj(io.BytesIO(text), target, cancel=cancel)
+    # Stopped by bytes read, well before the end-of-file check.
+    assert len(target.getvalue()) < refs.CANCEL_CHECK_BYTES < len(text)
 
 
 TEXTURES = {"albedo": "texture-albedo.png", "normal": "texture-normal.png"}
@@ -251,6 +281,47 @@ def test_mtl_output_never_contains_an_original_reference():
     text = b"newmtl M\n" + b"".join(b"map_Kd " + path + b"\nnewmtl M2\n" for path in hostile)
     data = mtl(text).data
     assert all(token not in data for token in UNSAFE)
+
+
+@pytest.mark.parametrize("newline", [b"\n", b"\r\n"])
+@pytest.mark.parametrize(
+    ("statement", "reference", "bound"),
+    [
+        (b"Ns 1 \\", b"map_Kd ../outside.png", ("albedo",)),
+        (b"Kd 1 1 1\\", b"map_Kd /abs/outside.png", ("albedo",)),
+        (b"Ns 1 \\ ", b"bump -bm 1 ../../outside.png", ("normal",)),
+        (b"Kd 1 1 1 \\", b"refl -type sphere /etc/outside.png", ()),
+        (b"Ns 1 \\", b"map_Ks ../outside.png", ()),
+        (b"# note \\", b"map_Kd C:\\outside.png", ("albedo",)),
+    ],
+)
+def test_a_trailing_backslash_never_hides_the_next_mtl_line(statement, reference, bound, newline):
+    # Blender's MTL reader has no line continuation: it reads each line by itself.
+    prefix = b"newmtl M" + newline + statement + newline
+    result = mtl(prefix + reference + newline)
+    assert result.bound == bound and result.report.dropped_total == (0 if bound else 1)
+    assert result.data.startswith(prefix)
+    assert all(token not in result.data for token in (*UNSAFE, b"outside", b"/abs"))
+
+
+def test_reports_name_fixed_keywords_never_glued_reference_text():
+    text = (
+        b"newmtl M\n"
+        b"map_Kd../../home/user/secret.png\n"
+        b"refl\xa0https://cdn.example/x?sig=abc\n"
+        b"MAP_KS spec.png\n"
+        b"bumpy b.png\n"
+        b"decal\x7fsecret.png\n"
+    )
+    result = rewrite_mtl(text, textures={})
+    assert result.data == b"newmtl M\n"
+    assert reasons(result.report) == [
+        (2, "map_", refs.UNSUPPORTED_MAP),
+        (3, "refl", refs.UNSUPPORTED_MAP),
+        (4, "map_ks", refs.UNSUPPORTED_MAP),
+        (5, "bump", refs.UNSUPPORTED_MAP),
+        (6, "decal", refs.UNSUPPORTED_MAP),
+    ]
 
 
 @pytest.mark.parametrize(
@@ -402,6 +473,68 @@ def test_animated_gltf_uses_the_bounded_new_group_policy():
     document["animations"][0]["channels"][0]["target"]["path"] = "pointer"
     with pytest.raises(ModelPackageError, match="morph-weight"):
         inspect_gltf_json(encode(document), resources=resources(binary), static_only=False)
+
+
+def pack_glb(document, binary):
+    text = json.dumps(document).encode()
+    text += b" " * (-len(text) % 4)
+    body = binary + b"\0" * (-len(binary) % 4)
+    size = 28 + len(text) + len(body)
+    return b"".join(
+        [
+            struct.pack("<4sII", b"glTF", 2, size),
+            struct.pack("<I4s", len(text), b"JSON"),
+            text,
+            struct.pack("<I4s", len(body), b"BIN\0"),
+            body,
+        ]
+    )
+
+
+def channel(path="translation", node=0):
+    return {"channels": [{"target": {"node": node, "path": path}}]}
+
+
+@pytest.mark.parametrize("static_only", [True, False])
+@pytest.mark.parametrize(
+    "change",
+    [
+        lambda d: None,
+        lambda d: d["asset"].update(version="1.0"),
+        lambda d: d.update(animations=[channel()]),
+        lambda d: d.update(skins=[{"joints": [0]}]),
+        lambda d: d.update(skins=[{"joints": [9]}]),
+        lambda d: d.update(animations=[channel("pointer")]),
+        lambda d: d.update(animations=[channel(node=9)]),
+        lambda d: d.update(animations=[channel()] * 129),
+        lambda d: d["scenes"].append({"nodes": [0]}),
+        lambda d: d.update(scene=1),
+        lambda d: d.update(nodes=[]),
+        lambda d: d.update(nodes=d["nodes"] * 10_001),
+        lambda d: d["accessors"][0].update(count=0),
+        lambda d: d["accessors"][0].update(count="3"),
+        lambda d: d["accessors"][0].update(count=MAX_ACCESSOR_ENTRIES + 1),
+    ],
+)
+def test_gltf_document_checks_stay_aligned_with_inspect_glb(change, static_only):
+    """The JSON glTF policy duplicates GLB document checks; they must not drift."""
+    embedded, binary = gltf_parts()
+    external_document, _ = external(image_uri=None)
+    change(embedded)
+    change(external_document)
+    outcomes = []
+    for check in (
+        lambda: inspect_glb(pack_glb(embedded, binary), static_only=static_only),
+        lambda: inspect_gltf_json(
+            encode(external_document), resources=resources(binary), static_only=static_only
+        ),
+    ):
+        try:
+            check()
+            outcomes.append(True)
+        except (GLBError, ModelPackageError):
+            outcomes.append(False)
+    assert outcomes[0] == outcomes[1]
 
 
 @pytest.mark.parametrize(

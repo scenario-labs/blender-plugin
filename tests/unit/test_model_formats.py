@@ -193,6 +193,13 @@ def test_ambiguous_maps_and_materials_stay_saved_and_are_reported():
     assert reasons["asset_alb"] == mf.NO_MATERIAL
 
 
+def test_a_model_child_of_the_material_is_its_own_unit_not_an_unbound_companion():
+    job = meshy_job() + [member("asset_glb2", "model/glb", kind="3d23d", parent="asset_mtl")]
+    plan = classify_packages(job)
+    assert [u.key for u in plan.units] == ["asset_glb", "asset_glb2", "asset_obj"]
+    assert len(plan.unit("asset_obj").textures) == 4 and plan.findings == ()
+
+
 def test_material_without_an_obj_parent_is_reported_unbound():
     plan = classify_packages(
         [
@@ -237,6 +244,37 @@ def test_legacy_manifest_with_several_obj_files_binds_nothing():
     }
 
 
+def test_an_oversized_peer_still_prevents_sole_package_binding():
+    plan = classify_packages(
+        [
+            member("asset_big", "model/obj", size=300 * MiB),
+            member("asset_obj", "model/obj"),
+            member("asset_mtl", "model/mtl"),
+            member("asset_alb", "image/png", role="albedo"),
+        ]
+    )
+    assert [(u.key, u.binding, u.material, u.textures) for u in plan.units] == [
+        ("asset_obj", mf.BINDING_SINGLE, None, ())
+    ]
+    assert {f.asset_id: f.reason for f in plan.findings} == {
+        "asset_big": mf.TOO_LARGE,
+        "asset_mtl": mf.AMBIGUOUS_PACKAGE,
+        "asset_alb": mf.AMBIGUOUS_PACKAGE,
+    }
+    plan = classify_packages(
+        [
+            member("asset_big", "model/gltf+json", size=8 * MiB + 1),
+            member("asset_gltf", "model/gltf+json"),
+            member("asset_bin", "application/octet-stream"),
+        ]
+    )
+    assert (plan.primary.key, plan.primary.binding, plan.primary.resources) == (
+        "asset_gltf",
+        mf.BINDING_SINGLE,
+        (),
+    )
+
+
 def test_partial_lineage_is_ignored_rather_than_mixed():
     job = meshy_job()
     job[3] = PackageMember("asset_alb", "image/png", 1000, "albedo", None, "asset_obj")
@@ -279,6 +317,27 @@ def test_rank_orders_formats_then_manifest_and_marks_one_primary():
     assert classify_packages(job, ply_kinds={"asset_ply_mesh": "mesh"}) == classify_packages(
         list(job), ply_kinds={"asset_ply_mesh": "mesh"}
     )
+
+
+def test_ties_prefer_more_bound_companions_then_larger_files():
+    job = [
+        member("asset_obj_a", "model/obj", kind="txt23d", parent="asset_input"),
+        member("asset_obj_b", "model/obj", kind="txt23d", parent="asset_input"),
+        member("asset_mtl_b", "model/mtl", kind="3d-texture-mtl", parent="asset_obj_b"),
+    ]
+    assert [u.key for u in classify_packages(job).units] == ["asset_obj_b", "asset_obj_a"]
+    job = [
+        member("asset_unknown", "model/x-fbx", size=None),
+        member("asset_small", "model/x-fbx", size=10),
+        member("asset_large", "model/x-fbx", size=20),
+        member("asset_twin", "model/x-fbx", size=20),
+    ]
+    assert [u.key for u in classify_packages(job).units] == [
+        "asset_large",
+        "asset_twin",
+        "asset_small",
+        "asset_unknown",
+    ]
 
 
 def test_generated_root_output_precedes_a_better_ranked_derived_format():
@@ -517,10 +576,22 @@ def test_an_empty_face_element_and_any_comment_encoding_keep_the_splat_route():
     assert inspect_ply_header(header).kind is UnitKind.SPLAT
 
 
+@pytest.mark.parametrize("separator", ["\x85", "\x0b", "\x0c", "\x1c", "\x1d", "\x1e", "\r"])
+def test_ply_header_lines_split_only_at_line_feeds(separator):
+    comment = f"a{separator}element face 3{separator}property list uchar int vertex_indices"
+    header = ply().replace(b"is only a word here", comment.encode("latin-1"))
+    result = inspect_ply_header(header)
+    assert (result.kind, result.faces) == (UnitKind.SPLAT, 0)
+
+
 @pytest.mark.parametrize(
     "data",
     [
         b"obj\n",
+        ply(extra="element vertex 2|property float x"),
+        ply(extra="element face 0|element face 1"),
+        ply().replace(b"element vertex 3", b"element vertex 3\x0c"),
+        ply().replace(b"element vertex 3", b"element\x1cvertex 3"),
         ply().replace(b"end_header", b"end_head"),
         ply().replace(b"format binary_little_endian 1.0", b"format binary_little_endian 2.0"),
         ply().replace(b"element vertex 3", b"element vertex -3"),

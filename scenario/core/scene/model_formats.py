@@ -129,7 +129,7 @@ class PackageMember:
 
     ``size`` is the verified receipt size when available. ``asset_type`` and
     ``parent_id`` are SDK ``AssetMetadata.type`` and ``AssetMetadata.parent_id``;
-    the current store does not persist them, so they are None until it does.
+    the store does not persist them, so they are None unless a caller supplies them.
     """
 
     asset_id: str
@@ -279,7 +279,11 @@ class _Classifier:
             if candidate is not material:
                 self.report(candidate, AMBIGUOUS_MATERIAL if len(materials) > 1 else TOO_LARGE)
         if material is not None and self.lineage:
-            pool += [m for m in self.children(material) if m.asset_id not in claimed]
+            pool += [
+                m
+                for m in self.children(material)
+                if m.asset_id not in claimed and model_format(m.media_type) is None
+            ]
         slots = {}
         for member in pool:
             slot = _texture_slot(member)
@@ -312,20 +316,22 @@ class _Classifier:
         return binding, tuple(resources)
 
     def classify(self):
-        candidates = []
+        candidates, peers = [], {}
         for member in self.members:
             fmt = model_format(member.media_type)
             if fmt is None:
                 if unsupported_model(member.media_type):
                     self.report(member, UNSUPPORTED_FORMAT)
                 continue
+            # Oversized files still count, so companions never bind to the other one.
+            peers.setdefault(fmt, []).append(member)
             limit = MAX_GLTF_JSON_BYTES if fmt is ModelFormat.GLTF else MAX_MEMBER_BYTES
             if _too_large(member, limit):
                 self.report(member, TOO_LARGE)
                 continue
             candidates.append((member, fmt))
-        objs = [m for m, fmt in candidates if fmt is ModelFormat.OBJ]
-        gltfs = [m for m, fmt in candidates if fmt is ModelFormat.GLTF]
+        objs = peers.get(ModelFormat.OBJ, [])
+        gltfs = peers.get(ModelFormat.GLTF, [])
         claimed, units = set(), []
         # OBJ packages bind first; glTF candidates exclude their companions.
         ordered = sorted(candidates, key=lambda entry: entry[1] is not ModelFormat.OBJ)
@@ -354,9 +360,16 @@ class _Classifier:
                 and member.asset_type in MAIN_ASSET_TYPES
                 and member.parent_id not in self.index
             )
+            order = (
+                not main,
+                _rank(fmt, kind),
+                -(len(bound) - 1),
+                -(member.size or 0),
+                self.index[member.asset_id],
+            )
             units.append(
                 (
-                    (not main, _rank(fmt, kind), self.index[member.asset_id]),
+                    order,
                     dict(
                         key=member.asset_id,
                         format=fmt,
@@ -401,8 +414,9 @@ def classify_packages(members, *, ply_kinds=None):
 
     With SDK lineage (every member has ``asset_type``), companions bind only through
     ``parent_id`` and generated root outputs of a main 3D type sort first. Without
-    it, an OBJ or glTF binds companions only when it is the job's sole such unit.
-    Within each group units sort by format, then manifest order. Ambiguous, unsupported
+    it, an OBJ or glTF binds companions only when it is the job's only file of that
+    format, oversized ones included. Within each group units sort by format, then
+    more bound companions, larger size and manifest order. Ambiguous, unsupported
     and oversized files stay saved and are reported, never guessed.
     ``ply_kinds`` optionally maps PLY asset IDs to "mesh" or "splat" from
     :func:`inspect_ply_header` on verified bytes.
@@ -504,7 +518,8 @@ def inspect_ply_header(data, *, size=None):
 
     The splat route needs binary little-endian float32 x, y, z, f_dc_0..2, opacity
     and scale_0..2 scalar vertex properties, no face data and, when ``size`` is
-    known, an exact body length. Any other well-formed header is a mesh PLY.
+    known, an exact body length. Any other well-formed header is a mesh PLY. Lines
+    end at LF only and element names must be unique.
     """
     data = bytes(data[:MAX_PLY_HEADER_BYTES])
     if not data.startswith((b"ply\n", b"ply\r\n")):
@@ -515,19 +530,24 @@ def inspect_ply_header(data, *, size=None):
     header_bytes = terminator.end()
     encoding, elements = None, []
     try:
-        # Comments may use any encoding; structural lines are ASCII.
-        for line in data[: terminator.start()].decode("latin-1").splitlines()[1:]:
-            words = line.split()
-            if not words or words[0] in {"comment", "obj_info"}:
+        # PLY readers split header lines at LF only. Comments may use any
+        # encoding; structural lines are printable ASCII separated by spaces or tabs.
+        for raw in data[: terminator.start()].split(b"\n")[1:]:
+            line = raw[:-1] if raw.endswith(b"\r") else raw
+            if line.split()[:1] in ([b"comment"], [b"obj_info"], []):
                 continue
-            if not line.isascii():
+            if re.search(rb"[^\t\x20-\x7e]", line):
                 raise ValueError
+            words = line.decode("ascii").split()
             if words[0] == "format" and encoding is None and not elements:
                 if words[1:] not in ([name, "1.0"] for name in _PLY_ENCODINGS):
                     raise ValueError
                 encoding = words[1]
             elif words[0] == "element" and len(words) == 3 and len(elements) < 16:
                 if not words[2].isdigit() or len(words[2]) > 10 or int(words[2]) > 2**31 - 1:
+                    raise ValueError
+                # One element per name, so counts and properties describe the same one.
+                if any(name == words[1] for name, _, _ in elements):
                     raise ValueError
                 elements.append((words[1], int(words[2]), []))
             elif words[0] == "property" and elements and len(elements[-1][2]) < 256:

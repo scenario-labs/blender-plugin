@@ -485,6 +485,43 @@ the caller must recapture inputs and request a new estimate. The quote cannot be
 rebound through the older direct-estimate preparation method. These APIs do not
 authorize paid dispatch or replace the active UI/MCP call sites by themselves.
 
+## Asset organization reviews
+
+Collection and tag changes alter Scenario metadata, not Blender data, so they
+are bound to the session's connection rather than a scene. `JobSession`
+admits `organization_snapshot`, `organize` and `collection_page` to its existing
+workers on the main thread and records no scene origin for them. `drain`
+accepts only a snapshot or result of the session's own scope, or a collection
+page, for each issued task. `deliver_asset_organization` consumes that completion
+once from the active session without resolving a scene; the generic `deliver`
+and the asset library delivery refuse it.
+
+[AssetOrganization](../scenario/blender/asset_organization.py), attached as
+`session.asset_organization`, is the single entry point for the native Library
+and local MCP. `prepare` validates the request immediately and queues the fresh
+read, returning a review ID. `poll` moves finished worker outcomes into the
+[pure reviews](JOB_COORDINATOR.md#asset-organization-commands); the runtime pump
+calls it, and MCP can wait on `task(review_id)` off the main thread before
+polling. `status` and `discard` return a JSON-safe projection without URLs,
+owner IDs or service text, including the per-asset change, the number of writes
+apply may send and the no-credit, no-undo notice. `apply` consumes a READY
+review once; if the command cannot even be queued, the review returns to READY
+because nothing was sent. `collections` and `take_collections` read one page
+of collections without thumbnails or owner IDs.
+
+A review moves from PREPARING to READY, UNCHANGED (nothing to change) or
+REJECTED, then from READY to APPLYING and FINISHED or NOT_SENT; it can also be
+DISCARDED or EXPIRED. A READY review expires after 10 minutes. At most 32 reviews
+are kept, evicting only finished or discarded ones, and only one review applies
+at a time per session. A worker failure after apply is reported as an unknown,
+unconfirmed outcome, never as unsent. Undo and scene switches keep reviews.
+Loading a file, a credential or project change, or a reset retires the session
+as before: its reviews are discarded, queued work is cancelled unsent, a write
+in flight finishes but the guard refuses later ones, and the late outcome cannot
+be delivered to the replacement session. Inspect the assets in the Library of
+the right connection; nothing is resent automatically. No native or MCP control
+uses this owner yet.
+
 ## Upload references
 
 The session optionally accepts `upload_store`, `upload_sources` and

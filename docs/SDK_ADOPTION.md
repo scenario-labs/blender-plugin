@@ -45,7 +45,7 @@ records, lane/schema helpers and local display status classification remain.
 | Cloud history, known-job recovery, polling and inference cancellation | Shared catalog/coordinator: `jobs.with_raw_response.list/retrieve/trigger_action` |
 | Result and complete prompt/model-text metadata | Shared coordinator: `assets.with_raw_response.retrieve`; bounded complete text uses the signed result transport |
 | Asset library browsing and text search | Shared coordinator: `assets.with_raw_response.list` and `search.with_raw_response.asset_search`; explicit single-page reads with selected project scope |
-| Collection and tag organization (adapter methods only; no UI, MCP or job command calls them yet) | `SDKAdapter`: `collections.with_raw_response.list/retrieve/create`, `collections.with_raw_response.assets.add/remove`, `assets.with_raw_response.update_tags/get_bulk`; see [asset organization writes](#asset-organization-writes) |
+| Collection and tag organization (shared review commands; no UI or MCP control yet) | Shared organization commands / `SDKAdapter`: `collections.with_raw_response.list/retrieve/create`, `collections.with_raw_response.assets.add/remove`, `assets.with_raw_response.update_tags/get_bulk`; see [asset organization writes](#asset-organization-writes) |
 | Reference upload metadata, progress and completion | Shared upload coordinator: `uploads.with_raw_response.create/retrieve/trigger_action` |
 | Optional team/project discovery | Adapter-owned `SDKResourceExtensions`, the named [SDK issue #29 exception](https://github.com/scenario-labs/scenario-sdk-python/issues/29) below; no new raw exception |
 | Developer model audit, fixture recorder and smoke tools | The same `SDKAdapter`; smoke generation and explicit reference-plan uploads use shared coordinator commands. [Reference automation](../tests/smoke/README.md#prepare-reference-inputs) reuses the upload SDK methods above and signed-part transport. |
@@ -482,8 +482,8 @@ Token serialization does not establish browser OAuth acceptance by REST.
 ## Adapter coverage
 
 The adapter provides reads/estimates, a coordinator-only submission hook and
-unpaid [asset organization writes](#asset-organization-writes) that no runtime
-surface calls yet.
+unpaid [asset organization writes](#asset-organization-writes) used only by the
+shared organization review commands so far.
 The [job coordinator](JOB_COORDINATOR.md) commits a scoped intent before dispatch,
 consumes each issued quote once and preserves uncertain outcomes. Inference
 cancellation is available through the coordinator. UI and MCP model submission now
@@ -875,9 +875,11 @@ and still needs authorized live evidence:
 - Collection deletion and rename, model collections and tag listing are not
   adopted.
 
-These are adapter methods only. No coordinator, worker, JobSession, local MCP
-tool or native Library control calls them yet. Shared review and verification
-commands, user-facing confirmation and live acceptance remain under
+The shared [organization review commands](JOB_COORDINATOR.md#asset-organization-commands)
+call these methods through the coordinator, its workers and the JobSession
+review owner, with a guard before each write and a `get_bulk` read-back. No
+local MCP tool or native Library control calls them yet. User-facing
+confirmation and live acceptance remain under
 [#64](https://github.com/scenario-labs/blender-plugin/issues/64),
 [#65](https://github.com/scenario-labs/blender-plugin/issues/65),
 [#66](https://github.com/scenario-labs/blender-plugin/issues/66) and

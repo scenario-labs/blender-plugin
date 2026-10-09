@@ -628,7 +628,27 @@ Local MCP `list_assets` and `search_assets` expose bounded pages with explicit
 continuation. Their projection omits signed download URLs, indexed previews and
 account identifiers. Reads do not initialize ModelJobs, persist generation jobs
 or grant download/application authority. Native Library controls use these same
-reads. Collection/tag editing and live acceptance remain separate.
+reads. Collection and tag changes use the separate organization reviews below.
+
+## Shared asset organization reviews
+
+[organization.py](../../scenario/core/jobs/organization.py) holds the pure,
+bpy-free contract: validated requests, fresh snapshots, guarded single writes,
+read-back classification and the review state machine. The coordinator and
+existing workers run it through the selected SDK adapter, and
+[asset_organization.py](../../scenario/blender/asset_organization.py) gives the
+native Library and local MCP one session-owned entry point. The runtime
+maintenance pump polls it, so progress does not depend on an open view.
+Reviews are connection-scoped and session-local: undo and scene switches keep
+them, while file load and credential or project changes retire them with the
+session. No job, upload or store schema change is involved, and no credits are
+spent. See [the command contract](../JOB_COORDINATOR.md#asset-organization-commands)
+and [session ownership](../BLENDER_JOB_CONTEXT.md#asset-organization-reviews).
+Native and MCP controls, desktop interaction and live acceptance remain under
+[#64](https://github.com/scenario-labs/blender-plugin/issues/64),
+[#65](https://github.com/scenario-labs/blender-plugin/issues/65),
+[#66](https://github.com/scenario-labs/blender-plugin/issues/66) and
+[#68](https://github.com/scenario-labs/blender-plugin/issues/68).
 
 ## Native Library projection and attachment
 

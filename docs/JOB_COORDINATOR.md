@@ -469,6 +469,58 @@ to old-origin records. The [upload guide](SDK_UPLOADS.md#shared-worker-commands)
 describes rejected staging and already-claimed response behavior.
 
 
+## Asset organization commands
+
+`organization_snapshot`, `organize` and `collection_page` add unpaid collection
+and tag changes to the same coordinator and worker queue through the adapter's
+[organization methods](SDK_ADOPTION.md#asset-organization-writes). The pure
+contract is [organization.py](../scenario/core/jobs/organization.py).
+`build_request` binds the selected `JobScope` and validates the operation (add to
+or remove from a collection, change tags, or create a collection), 1 to 49
+unique asset IDs (optional for a create), the collection ID or name, and tags.
+Tags and names are stripped and must pass the adapter's label rules; tags are
+deduplicated, at most 30 per list, without commas, and a tag cannot be added and
+removed together. The coordinator refuses a request for another scope before
+any request is made.
+
+A snapshot reads the assets' tags and memberships with `get_bulk`, the target
+collection, or for a create an exact-name lookup of at most 20 pages of 100.
+Missing assets, an existing name (returned with its IDs) or a name whose create
+outcome is unknown in this session make it unappliable; a request with nothing
+to change sends nothing. Each issued snapshot is held weakly, and `organize`
+accepts only an unused snapshot of its own scope, once.
+
+`OrganizationCommands.execute` calls the active-context guard immediately before
+every write and never after the last one, so deactivation stops later writes
+and still reports those already sent. Membership changes send one request for
+the assets that need it. Tag changes send one non-strict request per asset in
+order: a definite rejection continues with the next independent asset, while
+the first uncertain outcome, disabled online access or a failed guard stops
+further writes and leaves the rest NOT_SENT. A create repeats the exact-name
+lookup and posts once. After an uncertain create, one read reconciles it, by the
+acknowledged ID when the service renamed it, otherwise by exact name; only a
+confirmed collection with the requested name continues to the add step. The
+name otherwise stays in this session's uncertain set and is never created again
+here.
+
+When anything was sent, one `get_bulk` read classifies every asset: VERIFIED when
+it shows the requested state, REJECTED with the status for a refusal the read
+confirms, UNCONFIRMED for an uncertain write or an acknowledgement the read does
+not show (for example a dropped DELETE body), NOT_SENT for writes never sent and
+UNVERIFIED when the read failed or omitted the asset. A created collection is
+read back by ID. The result is VERIFIED, PARTIAL, UNCONFIRMED or REJECTED.
+`execute` raises `OrganizationNotSent` only when nothing was sent, and nothing
+is ever replayed: the user prepares a new review after inspecting.
+
+`deactivate()` clears issued snapshots and the uncertain create names; queued
+organization commands are cancelled unsent with other queued work. Nothing is
+persisted and the job store schema is unchanged. The exact-name dedup, no-replay
+and read-back rules and their tests adapt Studio's `organization.py` at the
+[recorded source revision](STUDIO_ADOPTION.md#source-intake-and-provenance).
+[JobSession reviews](BLENDER_JOB_CONTEXT.md#asset-organization-reviews) own
+review state and delivery; native and MCP controls and live acceptance remain.
+
+
 ## Shared catalog and origin-bound quotes
 
 The coordinator and its existing worker queue expose `models`, `model`,

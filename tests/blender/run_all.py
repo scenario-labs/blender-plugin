@@ -61,6 +61,7 @@ BASELINE = (
     "test_local_capture",
     "test_job_session",
     "test_preview_decode",
+    "test_organization_session",
     "test_session_results",
     "test_result_previews",
     "test_waveform_worker",

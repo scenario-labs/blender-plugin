@@ -360,10 +360,15 @@ class FilmExportPrimitiveTests(unittest.TestCase):
 
     @unittest.skipUnless(os.name == "nt", "Windows extended-path regression")
     def test_deep_windows_staging_fails_before_snapshot(self):
-        root = self.capture._root(self.directory)
-        for component in ("a" * 64, "b" * 64, "c" * 64, "d" * 64):
-            root /= component
-            root.mkdir()
-        with self.assertRaisesRegex(self.render.LocalRenderError, "shorter absolute paths"):
-            self.capture.export_snapshot(self.review, root)
-        self.assertEqual(list(root.iterdir()), [])
+        # Created and removed through the extended namespace: the profile's own
+        # cleanup uses ordinary Win32 paths, which cannot remove this deep tree.
+        with tempfile.TemporaryDirectory(dir=self.capture._root(self.directory)) as directory:
+            root = Path(directory)
+            for component in ("a" * 64, "b" * 64, "c" * 64, "d" * 64):
+                root /= component
+                root.mkdir()
+            self.assertGreater(len(str(root)), 260)
+            with self.assertRaisesRegex(self.render.LocalRenderError, "shorter absolute paths"):
+                self.capture.export_snapshot(self.review, root)
+            self.assertEqual(list(root.iterdir()), [])
+        self.assertEqual(list(self.directory.glob("tmp*")), [])

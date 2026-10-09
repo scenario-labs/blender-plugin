@@ -6,6 +6,7 @@ import hashlib
 import io
 import json
 import os
+import shutil
 import struct
 import threading
 import time
@@ -72,7 +73,29 @@ def wav(frames=800, rate=8000):
     return stream.getvalue()
 
 
-JPEG = b"\xff\xd8\xff\xe0\x00\x10JFIF\x00" + b"\x00" * 64
+def jpeg(width, height):
+    """A minimal baseline JPEG: SOI, a JFIF APP0 segment, SOF0 and EOI."""
+    app0 = b"\xff\xe0\x00\x10JFIF\x00\x01\x01\x00\x00\x01\x00\x01\x00\x00"
+    frame = struct.pack(">HH", height, width) + b"\x03\x01\x11\x00\x02\x11\x01\x03\x11\x01"
+    return b"\xff\xd8" + app0 + b"\xff\xc0\x00\x11\x08" + frame + b"\xff\xd9"
+
+
+def webp(width, height, kind=b"VP8 "):
+    """A WebP container whose first chunk declares the given canvas."""
+    if kind == b"VP8 ":
+        payload = b"\x00\x00\x00\x9d\x01\x2a" + struct.pack("<HH", width, height)
+    elif kind == b"VP8L":
+        payload = b"\x2f" + struct.pack("<I", (width - 1) | (height - 1) << 14)
+    else:
+        payload = (
+            b"\x00" * 4 + (width - 1).to_bytes(3, "little") + (height - 1).to_bytes(3, "little")
+        )
+    payload += b"\x00" * 10
+    chunk = kind + struct.pack("<I", len(payload)) + payload
+    return b"RIFF" + struct.pack("<I", 4 + len(chunk)) + b"WEBP" + chunk
+
+
+JPEG = jpeg(32, 24)
 MP4 = b"\x00\x00\x00\x18ftypisom\x00\x00\x02\x00isomiso2" + b"\x00" * 64
 GLB = b"glTF\x02\x00\x00\x00" + b"\x00" * 64
 GIF = b"GIF89a" + b"\x00" * 64
@@ -119,7 +142,7 @@ def env(tmp_path):
     cache = tmp_path / "previews"
     results.mkdir()
     cache.mkdir()
-    state = SimpleNamespace(assets={}, calls=[], online=True, gate=None)
+    state = SimpleNamespace(assets={}, calls=[], online=True, gate=None, status=None)
 
     def respond(request):
         assert request.url.params["projectId"] == "project"
@@ -132,6 +155,8 @@ def env(tmp_path):
         state.calls.append((request.method, request.url.path, threading.current_thread()))
         if state.gate is not None:
             state.gate()
+        if state.status is not None:
+            return httpx.Response(state.status, json={"error": "fixture"})
         if request.method == "POST" and request.url.path == "/v1/assets/get-bulk":
             identifiers = json.loads(request.content)["assetIds"]
             rows = [state.assets[name] for name in identifiers if name in state.assets]
@@ -264,9 +289,11 @@ def test_server_still_is_verified_cached_and_reused_without_urls(env):
     result = outcome(batch)
     assert result.state == State.READY and result.preview.media_type == "image/jpeg"
     assert result.preview.path.read_bytes() == JPEG
+    assert (result.preview.width, result.preview.height) == (32, 24)
     assert result.preview.path.is_relative_to(env.cache)
     assert batch.scope == SCOPE
-    assert [call[:2] for call in env.calls] == [("GET", "/v1/assets/asset-video")]
+    # One target still uses get_bulk, so absent assets mean the same at any size.
+    assert [call[:2] for call in env.calls] == [("POST", "/v1/assets/get-bulk")]
     assert len(env.downloader.calls) == 1  # The clip was not requested.
     stored = cache_bytes(env.cache)
     assert b"Signature" not in stored and b"https" not in stored
@@ -323,17 +350,45 @@ def test_late_thumbnail_is_pending_then_missing_until_forced_retry(env):
     assert len(env.calls) == calls
     url = f"{CDN}/late.webp"
     env.assets["asset-model"] = asset_record("asset-model", "model/gltf-binary", thumbnail=url)
-    env.downloader.files[url] = b"RIFF\x10\x00\x00\x00WEBPVP8 " + b"\x00" * 32
+    env.downloader.files[url] = webp(16, 9)
     retried = outcome(run(env, work(env, "request", [STILL], force=True)))
     assert retried.state == State.READY and retried.preview.media_type == "image/webp"
+    assert (retried.preview.width, retried.preview.height) == (16, 9)
 
 
 def test_metadata_failure_is_pending_then_failed_at_window_end(env):
     ready_job(env, "request", [("asset-video", "video/mp4", MP4)])
-    first = outcome(run(env, work(env, "request", [STILL])))  # Retrieve returns 404.
+    env.status = 503
+    first = outcome(run(env, work(env, "request", [STILL])))
     assert first.state == State.PENDING and "metadata" in first.reason
     final = outcome(run(env, work(env, "request", [STILL], final=True)))
     assert final.state == State.FAILED
+    assert previews.PreviewCache(env.cache).read(final_key(env), STILL) is None
+
+
+def final_key(env, asset_id="asset-video"):
+    return env.coordinator.result_preview_targets("request", [asset_id])[0].key
+
+
+@pytest.mark.parametrize("count", [1, 2])
+def test_absent_asset_is_classified_the_same_for_one_or_several_targets(env, count):
+    assets = [("asset-video", "video/mp4", MP4), ("asset-model", "model/gltf-binary", GLB)]
+    ready_job(env, "request", assets[:count])
+    if count == 2:
+        url = f"{CDN}/model.png"
+        env.assets["asset-model"] = asset_record("asset-model", "model/gltf-binary", thumbnail=url)
+        env.downloader.files[url] = png(4, 4)
+    # The server omits the deleted asset-video in both cases.
+    pending = outcome(run(env, work(env, "request", [STILL])))
+    assert pending.state == State.PENDING and "Waiting" in pending.reason
+    final = run(env, work(env, "request", [STILL], final=True))
+    assert outcome(final).state == State.MISSING
+    assert isinstance(
+        previews.PreviewCache(env.cache).read(final_key(env), STILL), previews.MissingPreview
+    )
+    assert {call[:2] for call in env.calls} == {("POST", "/v1/assets/get-bulk")}
+    if count == 2:
+        assert outcome(final, 1).state == State.READY
 
 
 def test_offline_preview_serves_cache_and_local_work_without_network(env):
@@ -427,6 +482,13 @@ def test_audio_still_and_envelope_use_server_and_local_paths(env):
         ("https://other.example.invalid/thumb.png", png(2, 2), "download"),
         (f"{CDN}/thumb.gif", GIF, "unsupported"),
         (f"{CDN}/huge.png", b"\x89PNG\r\n\x1a\n" + b"\x00" * previews.STILL_MAX_BYTES, "download"),
+        (f"{CDN}/wide.png", png(previews.STILL_MAX_EDGE + 1, 1), "larger"),
+        (f"{CDN}/tall.jpg", jpeg(16, previews.STILL_MAX_EDGE + 1), "larger"),
+        (f"{CDN}/lossy.webp", webp(previews.STILL_MAX_EDGE + 1, 8), "larger"),
+        (f"{CDN}/lossless.webp", webp(8, previews.STILL_MAX_EDGE + 1, b"VP8L"), "larger"),
+        (f"{CDN}/canvas.webp", webp(20000, 20000, b"VP8X"), "larger"),
+        (f"{CDN}/frameless.jpg", jpeg(4, 4).replace(b"\xff\xc0", b"\xff\xe1"), "dimensions"),
+        (f"{CDN}/empty.jpg", jpeg(0, 4), "dimensions"),
     ],
 )
 def test_untrusted_hosts_formats_and_sizes_fail_without_caching(env, thumbnail, data, reason):
@@ -441,19 +503,21 @@ def test_untrusted_hosts_formats_and_sizes_fail_without_caching(env, thumbnail, 
 
 
 @pytest.mark.parametrize(
-    "change",
+    "change,first",
     [
-        {"mimeType": "video/webm"},
-        {"id": "asset-other"},
-        {"thumbnail": "https://cdn.cloud.scenario.com/x"},
-        {"thumbnail": {"assetId": "bad/id", "url": f"{CDN}/x"}},
+        ({"mimeType": "video/webm"}, State.FAILED),
+        # The adapter rejects an unrequested bulk row as an unreadable response.
+        ({"id": "asset-other"}, State.PENDING),
+        ({"thumbnail": "https://cdn.cloud.scenario.com/x"}, State.FAILED),
+        ({"thumbnail": {"assetId": "bad/id", "url": f"{CDN}/x"}}, State.FAILED),
     ],
 )
-def test_changed_or_malformed_metadata_fails(env, change):
+def test_changed_or_malformed_metadata_fails(env, change, first):
     ready_job(env, "request", [("asset-video", "video/mp4", MP4)])
     env.assets["asset-video"] = {**asset_record("asset-video", "video/mp4"), **change}
-    result = outcome(run(env, work(env, "request", [STILL])))
-    assert result.state == State.FAILED and env.downloader.calls == []
+    assert outcome(run(env, work(env, "request", [STILL]))).state == first
+    final = outcome(run(env, work(env, "request", [STILL], final=True)))
+    assert final.state == State.FAILED and env.downloader.calls == []
 
 
 def test_receipt_and_scope_binding_reject_changed_targets(env):
@@ -547,6 +611,8 @@ def test_eviction_and_sweep_remove_only_owned_stale_entries(env, tmp_path):
             media_type="image/jpeg",
             size=len(JPEG),
             sha256=hashlib.sha256(JPEG).hexdigest(),
+            width=32,
+            height=24,
         )
         cache.discard(staged.parent)
         stamp = time.time() - 1000 + index
@@ -573,6 +639,8 @@ def test_publish_keeps_an_existing_valid_entry(env):
         media_type="image/jpeg",
         size=len(JPEG),
         sha256=hashlib.sha256(JPEG).hexdigest(),
+        width=32,
+        height=24,
     )
     second = cache.workspace() / "second"
     second.write_bytes(png(2, 2))
@@ -583,5 +651,106 @@ def test_publish_keeps_an_existing_valid_entry(env):
         media_type="image/png",
         size=len(png(2, 2)),
         sha256=hashlib.sha256(png(2, 2)).hexdigest(),
+        width=2,
+        height=2,
     )
     assert again == published and published.path.read_bytes() == JPEG
+
+
+@pytest.mark.parametrize(
+    "rendition,details",
+    [
+        (STILL, {}),
+        (STILL, {"width": previews.STILL_MAX_EDGE + 1, "height": 1}),
+        (STILL, {"width": 2.0, "height": 2}),
+        (CLIP, {"width": 2, "height": 2}),
+    ],
+)
+def test_publish_requires_bounded_still_dimensions(env, rendition, details):
+    cache = previews.PreviewCache(env.cache)
+    key = previews.PreviewKey("a" * 64, "b" * 64, "asset", "video/mp4", "c" * 64, 1)
+    staged = cache.workspace() / "staged"
+    data = JPEG if rendition == STILL else MP4
+    staged.write_bytes(data)
+    with pytest.raises(previews.PreviewError, match="dimensions"):
+        cache.publish(
+            key,
+            rendition,
+            staged,
+            media_type="image/jpeg" if rendition == STILL else "video/mp4",
+            size=len(data),
+            sha256=hashlib.sha256(data).hexdigest(),
+            **details,
+        )
+    assert not (env.cache / "v1").exists()
+
+
+def test_cached_still_without_bounded_dimensions_is_a_miss(env):
+    ready_job(env, "request", [("asset-video", "video/mp4", MP4)])
+    url = f"{CDN}/thumb.jpg"
+    env.assets["asset-video"] = asset_record("asset-video", "video/mp4", thumbnail=url)
+    env.downloader.files[url] = JPEG
+    target = env.coordinator.result_preview_targets("request")[0]
+    preview = outcome(run(env, [previews.PreviewWork(target, (STILL,))])).preview
+    sidecar = preview.path.parent / "still.json"
+    value = json.loads(sidecar.read_text())
+    value["width"] = previews.STILL_MAX_EDGE + 1
+    sidecar.write_text(json.dumps(value))
+    assert previews.PreviewCache(env.cache).read(target.key, STILL) is None
+
+
+@pytest.mark.parametrize(
+    "data,size",
+    [
+        (png(7, 5), (7, 5)),
+        (jpeg(640, 480), (640, 480)),
+        (b"\xff\xd8\xff\xff\xe0\x00\x04\x00\x00\xff\xd0" + jpeg(9, 3)[2:], (9, 3)),
+        (webp(31, 17), (31, 17)),
+        (webp(31, 17, b"VP8L"), (31, 17)),
+        (webp(4096, 2048, b"VP8X"), (4096, 2048)),
+        (png(7, 5)[:30], None),
+        (b"\xff\xd8\xff\xda\x00\x08" + b"\x00" * 16, None),
+        (b"\xff\xd8\xff\xc0\x00\x01" + b"\x00" * 16, None),
+        (webp(4, 4)[:24], None),
+        (GIF, None),
+    ],
+)
+def test_still_size_reads_declared_header_dimensions(data, size):
+    assert previews.still_size(data) == size
+
+
+def test_deleted_cache_root_is_recreated_between_batches(env):
+    ready_job(env, "request", [("asset-video", "video/mp4", MP4)])
+    url = f"{CDN}/thumb.jpg"
+    env.assets["asset-video"] = asset_record("asset-video", "video/mp4", thumbnail=url)
+    env.downloader.files[url] = JPEG
+    assert outcome(run(env, work(env, "request", [STILL]))).state == State.READY
+    shutil.rmtree(env.cache)
+    again = outcome(run(env, work(env, "request", [STILL])))
+    assert again.state == State.READY and again.preview.path.read_bytes() == JPEG
+    assert len(env.downloader.calls) == 2
+    if os.name == "posix":
+        assert env.cache.stat().st_mode & 0o777 == 0o700
+    # Only the root itself is recreated; its parent must still exist.
+    with pytest.raises(previews.PreviewError, match="unavailable"):
+        previews.PreviewCache(env.cache.parent / "absent" / "previews")
+    assert not (env.cache.parent / "absent").exists()
+
+
+def test_canceled_preview_transfer_stops_without_caching(env, monkeypatch):
+    ready_job(env, "request", [("asset-video", "video/mp4", MP4)])
+    url = f"{CDN}/clip.mp4"
+    env.assets["asset-video"] = asset_record("asset-video", "video/mp4", preview=url)
+    cancel, seen = threading.Event(), []
+
+    def download(url, *, root, name, max_bytes=None, cancel=None):
+        # Retirement sets the lane's event; the real downloader stops at its next check.
+        seen.append(cancel)
+        cancel.set()
+        raise TransferError("Storage transfer interrupted")
+
+    monkeypatch.setattr(env.downloader, "download", download)
+    with pytest.raises(previews.PreviewCanceled):
+        run(env, work(env, "request", [CLIP]), cancel=cancel)
+    assert seen == [cancel]
+    assert work_directories(env) == [] and list(env.cache.rglob("clip.*")) == []

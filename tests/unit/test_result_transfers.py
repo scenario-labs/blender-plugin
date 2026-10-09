@@ -6,6 +6,7 @@ import hashlib
 import io
 import logging
 import ssl
+import threading
 from dataclasses import asdict
 from pathlib import Path, PurePosixPath, PureWindowsPath
 from unittest.mock import Mock
@@ -309,6 +310,25 @@ def test_revoked_permission_during_read_never_publishes(tmp_path, storage):
     with pytest.raises(transfers.TransferError, match="interrupted"):
         client.download(URL, root=tmp_path, name="x")
     assert not list(tmp_path.iterdir())
+
+
+def test_cancel_event_during_read_never_publishes(tmp_path, storage):
+    cancel = threading.Event()
+    original_read = storage[0].getresponse.return_value.read1
+
+    def read(size):
+        cancel.set()
+        return original_read(size)
+
+    storage[0].getresponse.return_value.read1 = read
+    with pytest.raises(transfers.TransferError, match="interrupted"):
+        downloader().download(URL, root=tmp_path, name="x", cancel=cancel)
+    assert not list(tmp_path.iterdir())
+    with pytest.raises(transfers.TransferError, match="disabled"):
+        downloader().download(URL, root=tmp_path, name="x", cancel=cancel)
+    assert storage[1].call_count == 1
+    with pytest.raises(transfers.TransferError, match="cancellation"):
+        downloader().download(URL, root=tmp_path, name="x", cancel=True)
 
 
 def test_total_deadline_applies_after_read_before_publish(tmp_path, storage, monkeypatch):

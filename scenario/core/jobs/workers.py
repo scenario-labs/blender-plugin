@@ -71,6 +71,7 @@ class JobWorkers:
         self._previews = deque()
         self._preview_cancels = {}
         self._preview_accepting = True
+        self._preview_running = False
         self._closed = False
         self._shutdown_lock = threading.Lock()
         self._threads = [
@@ -101,6 +102,16 @@ class JobWorkers:
     def stopped(self):
         """Whether every owned worker has exited, independently of SDK close success."""
         return all(not thread.is_alive() for thread in self._threads)
+
+    @property
+    def previews_idle(self):
+        """Whether the preview lane has no queued or running command.
+
+        A running SDK read or storage transfer can outlast its cancellation, so
+        a main-thread owner checks this before ``shutdown`` joins the lane.
+        """
+        with self._preview_condition:
+            return not self._previews and not self._preview_running
 
     def _enqueue(self, command, *args, **kwargs):
         with self._condition:
@@ -426,25 +437,30 @@ class JobWorkers:
                 if not self._previews:
                     return
                 task, command, args, kwargs = self._previews.popleft()
+                self._preview_running = True
             if task._future.set_running_or_notify_cancel():
                 try:
                     result = command(*args, **kwargs)
                 except Exception as exc:
-                    with self._preview_condition:
-                        self._preview_cancels.pop(task, None)
+                    self._finish_preview(task)
                     task._future.set_exception(exc)
                 except BaseException as exc:
-                    with self._preview_condition:
-                        self._preview_cancels.pop(task, None)
+                    self._finish_preview(task)
                     task._future.set_exception(exc)
                     self.deactivate()
                     raise
                 else:
-                    with self._preview_condition:
-                        self._preview_cancels.pop(task, None)
+                    self._finish_preview(task)
                     task._future.set_result(result)
                     del result
+            else:
+                self._finish_preview(task)
             del task, command, args, kwargs
+
+    def _finish_preview(self, task):
+        with self._preview_condition:
+            self._preview_cancels.pop(task, None)
+            self._preview_running = False
 
     def deactivate(self):
         """Stop admission/queued work promptly; in-flight work keeps its scope."""

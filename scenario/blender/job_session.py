@@ -1478,6 +1478,9 @@ def _reap_inactive():
                 not session._active
                 and time.monotonic() >= session._film_cleanup_retry_at
                 and all(task.done() for task, _ in session._pending)
+                # A preview SDK read or transfer can outlast its cancellation;
+                # never let shutdown join it on Blender's main thread.
+                and session._workers.previews_idle
             ):
                 session.shutdown()
         except Exception:

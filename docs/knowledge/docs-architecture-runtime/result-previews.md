@@ -8,13 +8,13 @@
     "scope": "result-previews",
     "coverage": "source-reviewed",
     "reviewed_at": "2026-10-09",
-    "base_revision": "fb699b8555f7cee62147794516cc7aaa224864f7",
-    "limits": "Inspected the shared-runtime connection of the preview scheduler, preview lane and cache root. No view schedules previews; UI, MCP and live acceptance remain open.",
+    "base_revision": "ad143c8e2406123217888301badcb49638033fd8",
+    "limits": "Inspected the shared-runtime connection of the preview scheduler, preview lane and cache root, including retirement that waits for an idle preview lane before shutdown. No view schedules previews; UI, MCP and live acceptance remain open.",
     "sources": {
-      "scenario/blender/job_session.py": "a4a5a108a4b500ce09448f027243973a6116f8e615bcc7444902a561741a772d",
+      "scenario/blender/job_session.py": "f8ea693820df79a9e51d103873349f0e5d6512996841f0536dd091b15438757c",
       "scenario/blender/runtime.py": "5c7d192dcdc8cbfc0b3e3d13d4e786d8bbaee67b855d6deaad80eaf0b08d746d",
-      "scenario/core/jobs/workers.py": "ff77957be1e66ca7f24abc04b9378a39ca9f3db7959e00abc326f5fb6b0b2f66",
-      "scenario/core/jobs/preview_scheduler.py": "4a8d4924e4e959be28ab314ddce976f5e7290cf461ae8e784475e185da0d28f7"
+      "scenario/core/jobs/workers.py": "39e769705a7ae81582906460f01efe648390149f67aa99352ca77e2cb6f6e98f",
+      "scenario/core/jobs/preview_scheduler.py": "f9e20eaa003f7baafee3d8ddb78730b459741b2330bc8a21e9b6dff140efdc03"
     }
   }
 }

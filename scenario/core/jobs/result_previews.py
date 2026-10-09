@@ -36,6 +36,9 @@ FORMAT = 1
 STILL, CLIP, ENVELOPE = "still", "clip", "envelope"
 RENDITIONS = (STILL, CLIP, ENVELOPE)
 PREVIEW_EDGE = 256
+# Server stills are decoded on Blender's main thread later: bound pixels, not
+# only bytes, so a small compressed file cannot declare a huge decode.
+STILL_MAX_EDGE = 4096
 STILL_MAX_BYTES = 8 * 1024 * 1024
 CLIP_MAX_BYTES = 64 * 1024 * 1024
 DECODED_STILL_MAX_BYTES = 4 * 1024 * 1024
@@ -81,6 +84,84 @@ def _webp(head):
 
 def _exr(head):
     return head.startswith(b"\x76\x2f\x31\x01")
+
+
+def _png_header(data):
+    """Width, height, bit depth and color type from a PNG's checked IHDR chunk."""
+    if len(data) < 33 or not _png(data) or data[8:16] != b"\x00\x00\x00\rIHDR":
+        return None
+    if zlib.crc32(data[12:29]) != struct.unpack(">I", data[29:33])[0]:
+        return None
+    return struct.unpack(">IIBB", data[16:26])
+
+
+# Start-of-frame markers; DHT (C4), JPG (C8) and DAC (CC) share the range.
+_JPEG_FRAMES = frozenset(range(0xC0, 0xD0)) - {0xC4, 0xC8, 0xCC}
+
+
+def _jpeg_size(data):
+    """Frame dimensions from the first JPEG start-of-frame segment."""
+    index = 2
+    while index + 4 <= len(data):
+        if data[index] != 0xFF:
+            return None
+        marker = data[index + 1]
+        if marker == 0xFF:  # Fill byte before a marker.
+            index += 1
+            continue
+        if marker == 0x01 or 0xD0 <= marker <= 0xD7:  # Markers without a length.
+            index += 2
+            continue
+        if marker in {0xD8, 0xD9, 0xDA}:  # No frame before the image or scan ended.
+            return None
+        length = int.from_bytes(data[index + 2 : index + 4], "big")
+        if length < 2:
+            return None
+        if marker in _JPEG_FRAMES:
+            if length < 8 or index + 9 > len(data):
+                return None
+            height = int.from_bytes(data[index + 5 : index + 7], "big")
+            width = int.from_bytes(data[index + 7 : index + 9], "big")
+            return width, height
+        index += 2 + length
+    return None
+
+
+def _webp_size(data):
+    """Canvas dimensions from a WebP VP8, VP8L or VP8X first chunk."""
+    if len(data) < 30:
+        return None
+    chunk = data[12:16]
+    if chunk == b"VP8 " and data[23:26] == b"\x9d\x01\x2a":
+        return (
+            int.from_bytes(data[26:28], "little") & 0x3FFF,
+            int.from_bytes(data[28:30], "little") & 0x3FFF,
+        )
+    if chunk == b"VP8L" and data[20] == 0x2F:
+        bits = int.from_bytes(data[21:25], "little")
+        return (bits & 0x3FFF) + 1, ((bits >> 14) & 0x3FFF) + 1
+    if chunk == b"VP8X":
+        return (
+            int.from_bytes(data[24:27], "little") + 1,
+            int.from_bytes(data[27:30], "little") + 1,
+        )
+    return None
+
+
+def still_size(data):
+    """Declared pixel dimensions of a PNG, JPEG or WebP still, or None."""
+    if _png(data):
+        header = _png_header(data)
+        return None if header is None else header[:2]
+    if _jpeg(data):
+        return _jpeg_size(data)
+    if _webp(data):
+        return _webp_size(data)
+    return None
+
+
+def _bounded_edges(width, height, limit=STILL_MAX_EDGE):
+    return all(type(value) is int and 1 <= value <= limit for value in (width, height))
 
 
 # ISO media brands for still images; a clip or audio container must not use them.
@@ -393,14 +474,27 @@ def discard_directory(directory):
 class PreviewCache:
     """Private preview files below a caller-owned root, written by one lane per process.
 
-    The root must already exist under Blender's extension user directory. Entries
-    are partitioned by the job scope digest and keyed by the exact saved receipt,
+    The root's parent must already exist under Blender's extension user
+    directory. The cache is disposable: a root deleted while Blender runs is
+    recreated as a private directory on the next lane command. Entries are
+    partitioned by the job scope digest and keyed by the exact saved receipt,
     so another credential, project, request or byte content never shares them.
     Signed URLs are never written; only content digests and asset identities are.
     """
 
     def __init__(self, root):
-        self._root = _root(root)
+        path = Path(root)
+        if path.is_absolute():
+            try:
+                path.mkdir(mode=0o700)
+            except FileExistsError:
+                pass
+            except OSError:
+                raise PreviewError("Preview cache is unavailable") from None
+        try:
+            self._root = _root(path)
+        except TransferError:
+            raise PreviewError("Preview cache is unavailable") from None
 
     @property
     def root(self):
@@ -465,9 +559,10 @@ class PreviewCache:
                     size != value["size"]
                     or digest != value["sha256"]
                     or not check(head)
-                    or any(
-                        item is not None and (type(item) is not int or not 1 <= item <= 16384)
-                        for item in (width, height)
+                    or not (
+                        _bounded_edges(width, height)
+                        if rendition == STILL
+                        else width is None and height is None
                     )
                 ):
                     return None
@@ -507,7 +602,17 @@ class PreviewCache:
         }
 
     def publish(self, key, rendition, staged, *, media_type, size, sha256, **details):
-        """Link a validated staged file into its entry; never replace a valid entry."""
+        """Link a validated staged file into its entry; never replace a valid entry.
+
+        Stills record their checked pixel dimensions; clips record none.
+        """
+        width, height = details.get("width"), details.get("height")
+        if not (
+            _bounded_edges(width, height)
+            if rendition == STILL
+            else width is None and height is None
+        ):
+            raise PreviewError("Preview images need bounded pixel dimensions")
         existing = self.read(key, rendition)
         if isinstance(existing, CachedPreview):
             return existing
@@ -536,15 +641,7 @@ class PreviewCache:
             )
         except OSError:
             raise PreviewError("Could not save the preview in the private cache") from None
-        return CachedPreview(
-            rendition,
-            media_type,
-            target,
-            size,
-            sha256,
-            details.get("width"),
-            details.get("height"),
-        )
+        return CachedPreview(rendition, media_type, target, size, sha256, width, height)
 
     def publish_envelope(self, key, envelope):
         if not isinstance(envelope, AudioEnvelope):
@@ -676,13 +773,18 @@ def server_sources(record, target):
     return sources
 
 
-def fetch(cache, downloader, target, rendition, source):
-    """Download one server still or clip with the bounded result transfer, then cache it."""
+def fetch(cache, downloader, target, rendition, source, cancel=None):
+    """Download one server still or clip with the bounded result transfer, then cache it.
+
+    ``cancel`` stops the transfer at its next permission check, so retirement
+    does not wait for a whole clip. A still must declare at most
+    ``STILL_MAX_EDGE`` pixels per side before it is cached.
+    """
     source_asset_id, url = source
     directory = cache.workspace()
     try:
         receipt = downloader.download(
-            url, root=directory, name="preview.bin", max_bytes=_CAPS[rendition]
+            url, root=directory, name="preview.bin", max_bytes=_CAPS[rendition], cancel=cancel
         )
         path = downloader.verify(directory, receipt)
         with _open_regular(path) as stream:
@@ -692,6 +794,16 @@ def fetch(cache, downloader, target, rendition, source):
         )
         if media_type is None:
             raise PreviewError("Scenario returned a preview in an unsupported format")
+        details = {}
+        if rendition == STILL:
+            size = still_size(_read_small(path, STILL_MAX_BYTES))
+            if size is None or 0 in size:
+                raise PreviewError("Scenario returned a preview image without valid dimensions")
+            if not _bounded_edges(*size):
+                raise PreviewError(
+                    f"Scenario returned a preview image larger than {STILL_MAX_EDGE} pixels"
+                )
+            details = {"width": size[0], "height": size[1]}
         return cache.publish(
             target.key,
             rendition,
@@ -700,8 +812,11 @@ def fetch(cache, downloader, target, rendition, source):
             size=receipt.size,
             sha256=receipt.sha256,
             source_asset_id=source_asset_id,
+            **details,
         )
     except TransferError:
+        if cancel is not None and cancel.is_set():
+            raise PreviewCanceled("Preview preparation was canceled") from None
         raise PreviewError("The preview download did not complete; use Retry") from None
     except OSError:
         raise PreviewError("The preview download could not be checked") from None
@@ -757,16 +872,15 @@ def _decoded_png(path, max_edge):
     data = _read_small(path, DECODED_STILL_MAX_BYTES)
     if len(data) < 33 or not _png(data) or data[8:16] != b"\x00\x00\x00\rIHDR":
         raise PreviewError("Decoded preview is not a PNG image")
-    width, height, depth, color = struct.unpack(">IIBB", data[16:26])
-    crc = struct.unpack(">I", data[29:33])[0]
+    header = _png_header(data)
     if (
-        zlib.crc32(data[12:29]) != crc
-        or not 1 <= width <= max_edge
-        or not 1 <= height <= max_edge
-        or depth not in {8, 16}
-        or color not in {0, 2, 3, 4, 6}
+        header is None
+        or not _bounded_edges(*header[:2], limit=max_edge)
+        or header[2] not in {8, 16}
+        or header[3] not in {0, 2, 3, 4, 6}
     ):
         raise PreviewError("Decoded preview exceeds its size limit or is malformed")
+    width, height = header[:2]
     return width, height, len(data), hashlib.sha256(data).hexdigest()
 
 

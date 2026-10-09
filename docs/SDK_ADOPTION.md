@@ -44,7 +44,7 @@ records, lane/schema helpers and local display status classification remain.
 | New/Rewrite and Translate | Shared prompt commands: `generate.with_raw_response.prompt/translate`, including separate exact estimates and submission claims |
 | Cloud history, known-job recovery, polling and inference cancellation | Shared catalog/coordinator: `jobs.with_raw_response.list/retrieve/trigger_action` |
 | Result and complete prompt/model-text metadata | Shared coordinator: `assets.with_raw_response.retrieve`; bounded complete text uses the signed result transport |
-| Saved-result preview metadata | Shared coordinator on the preview lane: `assets.with_raw_response.retrieve` for one asset, `assets.with_raw_response.get_bulk` for batches; stills and clips use the signed result transport ([result previews](RESULT_PREVIEWS.md)) |
+| Saved-result preview metadata | Shared coordinator on the preview lane: `assets.with_raw_response.get_bulk` for every batch, one asset included, so an omitted asset means the same at any size; stills and clips use the signed result transport ([result previews](RESULT_PREVIEWS.md)) |
 | Asset library browsing and text search | Shared coordinator: `assets.with_raw_response.list` and `search.with_raw_response.asset_search`; explicit single-page reads with selected project scope |
 | Reference upload metadata, progress and completion | Shared upload coordinator: `uploads.with_raw_response.create/retrieve/trigger_action` |
 | Optional team/project discovery | Adapter-owned `SDKResourceExtensions`, the named [SDK issue #29 exception](https://github.com/scenario-labs/scenario-sdk-python/issues/29) below; no new raw exception |

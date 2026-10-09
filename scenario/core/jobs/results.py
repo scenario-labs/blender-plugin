@@ -560,16 +560,19 @@ class ResultCommands:
         return previews.RenditionOutcome(rendition, state.DECODE, request=request)
 
     def _preview_metadata(self, identifiers):
+        """Bulk reads for every batch size, so an absent asset has one meaning.
+
+        A deleted or unavailable asset is omitted from ``get_bulk`` whether the
+        batch holds one target or many; it is then polled like a late preview
+        and marked missing at the window's end, never failed by batch size.
+        """
         records = {}
         for start in range(0, len(identifiers), PREVIEW_METADATA_CHUNK):
             chunk = identifiers[start : start + PREVIEW_METADATA_CHUNK]
             with self._guard():
                 pass
             try:
-                if len(chunk) == 1:
-                    records[chunk[0]] = self._adapter.asset(chunk[0])
-                else:
-                    records.update(self._adapter.bulk_assets(chunk))
+                records.update(self._adapter.bulk_assets(chunk))
             except ValueError:
                 raise ResultError("Scenario preview metadata could not be retrieved") from None
         return records
@@ -611,7 +614,7 @@ class ResultCommands:
                     settle(index, rendition, state.OFFLINE, reason="Online access is disabled")
                 elif source is not None:
                     preview = previews.fetch(
-                        cache, self._downloader, item.target, rendition, source
+                        cache, self._downloader, item.target, rendition, source, cancel
                     )
                     settle(index, rendition, state.READY, preview=preview)
                 elif item.final:
@@ -639,8 +642,8 @@ class ResultCommands:
 
         Verified cache entries are reused. Images and audio get decode requests
         holding a private copy rehashed against the saved receipt. Server stills
-        and clips read SDK asset metadata once per batch, then use the bounded
-        result downloader and its storage hosts. The caller owns returned decode
+        and clips read SDK asset metadata once per batch with ``get_bulk``, then
+        use the bounded result downloader and its storage hosts. The caller owns returned decode
         requests and must finish or discard them.
         """
         if self._downloader is None:

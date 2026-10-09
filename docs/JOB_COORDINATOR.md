@@ -209,9 +209,11 @@ One more non-daemon thread, `ScenarioPreview`, runs only the
 and job workers never run preview commands, so a slow preview poll or download
 cannot delay remote refresh, result downloads or submission. Preview admission
 is also independent of the single local media slot. `deactivate()` cancels
-queued previews and signals the running one; `shutdown()` joins this thread with
-the job workers. A thread-control exception in either kind of thread retires the
-whole owner.
+queued previews and signals the running one; a running SDK read can still take
+until its client timeout. `previews_idle` reports when no preview command is
+queued or running, so a main-thread owner can wait for it before `shutdown()`
+joins this thread with the job workers. A thread-control exception in either
+kind of thread retires the whole owner.
 
 `cancel_prepared` persists local cancellation immediately. If a queued command
 later runs, the coordinator rejects it before network dispatch. If dispatch has
@@ -384,16 +386,17 @@ The [preview lane](#application-owned-workers) runs three commands with the cach
 root supplied by the application. `prepare_result_previews(work, root=...)`
 rechecks that each target still holds the same receipt, reads verified cache
 entries, issues private decode copies for images and audio, and reads server
-preview metadata once per batch through the adapter's `assets.retrieve` or
-`assets.get_bulk`. Available stills and clips are downloaded with the configured
-result downloader and its storage hosts. Without online access those renditions
-report `offline`; no other request is made. Receipts are checked again before the
-batch returns, and every issued copy is removed if the batch fails, is canceled
-or reaches an inactive coordinator. `finish_result_preview` validates and caches
-Blender's decoded output for an owned request; `discard_result_preview` removes
-an unused copy. None of these commands transitions a job, changes its revision,
-claims application or submits work. See [result previews](RESULT_PREVIEWS.md) for
-renditions, limits and the polling window.
+preview metadata once per batch through the adapter's `assets.get_bulk`, whatever
+the batch size. Available stills and clips are downloaded with the configured
+result downloader and its storage hosts, passing the task's cancellation event.
+Without online access those renditions report `offline`; no other request is
+made. Receipts are checked again before the batch returns, and every issued copy
+is removed if the batch fails, is canceled or reaches an inactive coordinator.
+`finish_result_preview` validates and caches Blender's decoded output for an
+owned request; `discard_result_preview` removes an unused copy. None of these
+commands transitions a job, changes its revision, claims application or submits
+work. See [result previews](RESULT_PREVIEWS.md) for renditions, limits and the
+polling window.
 
 ## Durable application claims
 

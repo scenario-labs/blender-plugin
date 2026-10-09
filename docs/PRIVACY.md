@@ -97,10 +97,10 @@ private source copies live under `state/shared-uploads`, including
 `cache/result-previews`: server preview images and clips, decoded stills, audio
 envelopes, temporary private copies of saved results awaiting decoding, and
 digests and asset IDs, without signed URLs. Unused entries beyond 512 MiB are
-evicted, and the directory is safe to delete. Capture/export staging and
-thumbnails also use the extension's user state/cache directories. Explicit local
-output tools can
-write to the configured Output Folder, normally `~/Downloads/Scenario`.
+evicted, and the directory is safe to delete, even while Blender runs.
+Capture/export staging and thumbnails also use the extension's user state/cache
+directories. Explicit local output tools can write to the configured Output
+Folder, normally `~/Downloads/Scenario`.
 Scene properties, imported media and prompts can be saved in your `.blend` file.
 Older `state/jobs.json` or model-cache files may remain from the prototype; local
 record inspection does not resume their cloud jobs or migrate their ownership.

@@ -192,8 +192,14 @@ rules, online-access predicate and receipt verification, with per-request caps o
 `work/preview-*` directory of the preview cache, not in `shared-results`, and the
 directory is removed after publication or failure. The URL is not persisted.
 Downloaded bytes are accepted only when their content is a supported image or
-video container. Local image and audio previews make no transfer; they copy the
-saved file while rehashing it against its receipt.
+video container, and a still only within its pixel bound. Local image and audio
+previews make no transfer; they copy the saved file while rehashing it against
+its receipt.
+
+`download` also accepts an optional `cancel` event, checked with online
+permission before each connection and chunk. Preview transfers pass their lane
+task's event, so retirement stops a clip download at its next chunk without
+publishing it. Result downloads do not pass one and are unchanged.
 
 ## Legacy OBJ and MTL byte counts
 

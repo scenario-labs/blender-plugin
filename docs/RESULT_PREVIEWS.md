@@ -30,22 +30,33 @@ which are undocumented CDN behavior.
 ## Server stills and clips
 
 Metadata uses the selected SDK 2.2.0 through the shared
-[adapter](../scenario/core/api/sdk_adapter.py): `assets.with_raw_response.retrieve`
-for one asset and `assets.with_raw_response.get_bulk` for several, in chunks of
-100 identities (the SDK documents a 200-identity limit). Both carry the selected
-project, use the client's `max_retries=0` and check online access before each
-request. One batch reads its metadata once. The published wheel's
-`types/asset_retrieve_response.py` documents the optional `thumbnail` and `preview`
-objects, each with an `assetId` and a signed `url`; see the
+[adapter](../scenario/core/api/sdk_adapter.py):
+`assets.with_raw_response.get_bulk` for every batch, a single asset included, in
+chunks of 100 identities (the SDK documents a 200-identity limit). It carries the
+selected project, uses the client's `max_retries=0` and checks online access
+before each request. One batch reads its metadata once. The published wheel's
+`types/asset_get_bulk_response.py`, like `types/asset_retrieve_response.py`,
+documents the optional `thumbnail` and `preview` objects, each with an `assetId`
+and a signed `url`; see the
 [asset retrieval contract](https://docs.scenario.com/api/python/resources/assets/methods/retrieve).
 The record must match the saved asset identity and MIME type. Signed URLs stay in
 memory and are never written, logged or returned in errors.
+
+Using one method for every batch size gives an absent asset one meaning. An
+asset the server omits, for example one deleted after the job, is treated like
+a preview that has not appeared yet: it is polled within the window, then marked
+`missing`. A failed or malformed response, including an unrequested record,
+remains a read failure, described under the polling window.
 
 Bytes use the existing [signed result transfer](RESULT_TRANSFERS.md) with the same
 configured storage hosts, redirect rules and online-access predicate, and smaller
 caps: 8 MiB for a still and 64 MiB for a clip. The content, not the URL or a
 declared type, must be PNG, JPEG or WebP for a still and MP4 or WebM for a clip.
-A host outside the policy, an oversized or unsupported file, or a metadata
+Blender will decode stills on its main thread, so the byte cap alone does not
+bound decode memory. A still must also declare at most 4096 pixels per side in
+its PNG `IHDR` chunk, JPEG start-of-frame segment or WebP `VP8`, `VP8L` or
+`VP8X` header; the checked dimensions are stored in its sidecar. A host outside
+the policy, an oversized, unsupported or dimensionless file, or a metadata
 mismatch fails that rendition with a sanitized reason and caches nothing.
 
 Server previews are bound to the saved asset identity and receipt digest. Their
@@ -56,16 +67,25 @@ not a content attestation of the result.
 
 Server previews can appear minutes after a result is saved. The scheduler polls
 missing ones on the preview lane with backoff delays of 5, 10, 20, 40 and then
-60 seconds. The window lasts 300 seconds from the first online poll; the last poll
-lands at its end. If no preview appeared, the cache records a `missing` marker for
-that receipt and later requests show it without polling again. An explicit
-`retry` clears the marker and opens a new window.
+60 seconds. The window measures 300 seconds of online polling: it opens at the
+first online poll and the last poll lands at its end. If no preview appeared,
+the cache records a `missing` marker for that receipt and later requests show it
+without polling again. An explicit `retry` clears the marker and opens a new
+window. A retry received while that result's batch is on the lane is recorded
+and applied when the batch returns, so the late outcome cannot undo it.
 
 Without online access, renditions report `offline` and are checked every five
-seconds without consuming the window. Metadata read failures stay `pending` with
-the same backoff and become `failed` at the window's end, as do repeated lane task
-failures. No result state is persisted in `jobs.sqlite3`: the window starts in
-memory, and the `missing` marker is what prevents a new window after a restart.
+seconds. An offline poll pauses the window, keeping the time already used since
+it opened, and the next online poll resumes it instead of starting a new one.
+Metadata read failures stay `pending` with the same backoff and become `failed`
+at the window's end, as do repeated lane task failures. No result state is
+persisted in `jobs.sqlite3`: the window starts in memory, and the `missing`
+marker is what prevents a new window after a restart.
+
+The backoff applies only to `pending` and `offline` renditions. A rendition
+that was not sent with a batch, because the decode limit below held it back or
+because it was requested while the batch ran, stays `queued` and goes with the
+next pump.
 
 ## Local images and audio
 
@@ -103,7 +123,8 @@ valid entry. At most every ten minutes the lane removes abandoned work
 directories older than a day and evicts the least recently used entries beyond
 512 MiB, keeping entries used in the last minute. A ready status can therefore
 outlive its file; an explicit retry reads or fetches it again. The cache is safe
-to delete.
+to delete, even while Blender runs: each lane command recreates the root as a
+private directory when its parent still exists.
 
 ## Lane and ownership
 
@@ -111,9 +132,11 @@ to delete.
 queue of eight tasks and per-task cancellation. Preview polling, copies and
 downloads therefore never occupy the job workers used by remote refresh, result
 downloads and submissions, and never use the single local media slot.
-Deactivation cancels queued previews and signals the running one; shutdown joins
-the lane with the other workers. A transfer already in flight finishes or times
-out under the storage policy.
+Deactivation cancels queued previews and signals the running one. A storage
+transfer stops at its next permission check once signaled, before publishing
+anything; an SDK metadata read cannot be interrupted and finishes or times out
+under the client policy. `JobWorkers.previews_idle` reports when no preview
+command is queued or running. Shutdown joins the lane with the other workers.
 
 `ResultPreviewScheduler` runs on its owner thread, normally Blender's main
 thread, and performs no I/O. `request`, `retry`, `status`, `decode_requests`,
@@ -123,14 +146,17 @@ assets at a time.
 
 `JobSession(preview_root=...)` exposes it as `result_previews` while the session
 is active. The session's existing maintenance timer, and `reap_retired` in
-headless loops, call `service_previews`. Deactivation closes the scheduler;
-shutdown removes remaining private copies after the workers stop. See the
-[job context contract](BLENDER_JOB_CONTEXT.md#saved-result-preview-ownership).
+headless loops, call `service_previews`. Deactivation closes the scheduler. The
+timer shuts a retired session down only once its preview lane is idle, so an
+in-flight preview read never blocks Blender's main thread; the session stays
+registered until then. Shutdown removes remaining private copies after the
+workers stop. Extension disable or exit still joins any running preview command.
+See the [job context contract](BLENDER_JOB_CONTEXT.md#saved-result-preview-ownership).
 
 ## Boundaries
 
 These are offline contracts with synthetic SDK and storage fixtures. Which asset
-kinds receive server thumbnails or previews, their sizes, signed URL lifetime and
-hosts, and their timing after a job succeeds are not established by live
-evidence. Blender-side decoding, the user interface, MCP parity and native
+kinds receive server thumbnails or previews, their sizes and dimensions, signed
+URL lifetime and hosts, their timing after a job succeeds, and how `get_bulk`
+reports a deleted asset are not established by live evidence. Blender-side decoding, the user interface, MCP parity and native
 desktop acceptance remain open under #189, #65 and #66.

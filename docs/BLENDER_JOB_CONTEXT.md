@@ -428,10 +428,15 @@ scene or application authority.
 
 The existing session maintenance timer, and `reap_retired` in headless loops,
 call `service_previews` to collect lane results and queue due polls. Preview
-tasks are not session completions, so `drain` never returns them and retirement
-does not wait for them. `deactivate` closes the scheduler and cancels its lane
-work. After `shutdown` joins the workers, it removes private copies still owned
-by outstanding decode requests. Worker threads cannot call these methods.
+tasks are not session completions, so `drain` never returns them. `deactivate`
+closes the scheduler and cancels its lane work, but an SDK metadata read already
+in flight cannot be interrupted. The timer therefore shuts a retired session
+down only once its preview lane is idle as well as its tracked tasks are done:
+the session stays registered meanwhile, and the main thread never joins
+preview I/O. After `shutdown` joins the workers, it removes private copies still
+owned by outstanding decode requests. Extension disable or exit calls `shutdown`
+directly and still waits for a running preview command. Worker threads cannot
+call these methods.
 
 ## Explicit saved-result World application
 

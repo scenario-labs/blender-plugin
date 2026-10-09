@@ -207,6 +207,7 @@ class ResultDownloader:
         expected_sha256=None,
         max_bytes=None,
         allow_size_mismatch=False,
+        cancel=None,
     ):
         """Publish complete verified bytes atomically without replacing a result.
 
@@ -218,10 +219,15 @@ class ResultDownloader:
         .scenario-download-* directories can be removed by
         the application after all its workers stop; never infer successful jobs
         from partial files or replay generation to recover a download.
+
+        An optional ``cancel`` event is checked with online permission before
+        each connection and chunk; once set, the transfer stops unpublished.
         """
         limit = self._policy.max_bytes
         if type(allow_size_mismatch) is not bool:
             raise TransferError("Choose an explicit result size policy")
+        if cancel is not None and not callable(getattr(cancel, "is_set", None)):
+            raise TransferError("Use a cancellation event")
         if max_bytes is not None:
             if type(max_bytes) is not int or max_bytes < 1:
                 raise TransferError("Invalid result byte limit")
@@ -240,13 +246,17 @@ class ResultDownloader:
             raise TransferError("Invalid expected result digest")
         if expected_sha256 is not None:
             expected_sha256 = expected_sha256.lower()
+
+        def permitted():
+            return self._online_access() and (cancel is None or not cancel.is_set())
+
         connection = None
         try:
             root = _root(root)
             destination = root / validate_result_name(name)
             if destination.exists() or destination.is_symlink():
                 raise TransferError("Result filename already exists")
-            if not self._online_access():
+            if not permitted():
                 raise TransferError("Online access is disabled")
             deadline = time.monotonic() + self._policy.total_timeout
             context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
@@ -255,7 +265,7 @@ class ResultDownloader:
 
             def check_permission_and_deadline():
                 remaining = deadline - time.monotonic()
-                if remaining <= 0 or not self._online_access():
+                if remaining <= 0 or not permitted():
                     raise TransferError("Storage transfer interrupted")
                 if transfer_socket is not None and transfer_socket.fileno() != -1:
                     transfer_socket.settimeout(min(self._policy.timeout, remaining))

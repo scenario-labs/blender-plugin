@@ -153,7 +153,7 @@ CU labels use up to three decimal places without trailing zeros, with compact
 notation from 10,000 CU (`12.3K CU`). The approval retains the original server
 quote even when its displayed amount is rounded.
 
-New form generations appear in the shared saved jobs. Image imports supported PNG/EXR results into its original scene; other lanes retain downloaded results for explicit application. Saved video/audio results now offer the confirmed strip insertion described below. The lane descriptions below also describe retained prototype capabilities whose shared result application is still being integrated. Live Prompt Spark acceptance, result application and Film acceptance remain release blockers.
+New form generations appear in the shared saved jobs. Image imports supported PNG/EXR results into its original scene; other lanes retain downloaded results for explicit application. Saved video/audio results now offer the confirmed strip insertion described below. The lane descriptions below also describe retained prototype capabilities whose shared result application is still being integrated. See the [known limitations](KNOWN_LIMITATIONS.md#creation-and-scene-application) for current import and application limits.
 
 ![The model picker: Image, Video, Audio and 3D tabs with icons, category chips, search, the model list and the description of GPT Image 2](images/model-picker.png)
 
@@ -438,7 +438,7 @@ record. A read error permits another read, never another paid generation.
 Cloud recovery does not recover an original mesh-edit target from another session.
 Native desktop interaction and live provider acceptance remain separate checks.
 
-![Generations list with result prompts, credit amounts and Import into scene buttons](images/panel-generations.png)
+![An earlier Generations panel layout listing past generation prompts and their credit amounts](images/panel-generations.png)
 
 ### Agents (MCP)
 The local `scenario-blender` server connects agents to the open scene and
@@ -502,9 +502,9 @@ that limit disables additional reuse without discarding the history.
 
 ## The floating composer
 
-The pill at the bottom of the viewport shows the current prompt in a field and a Generate button, in the same style as the expanded card. Drag it anywhere in the viewport; a click without moving expands it. The expanded card moves the same way (drag its background), resizes from the grip in its bottom-right corner, and a double-click on its background puts it back in place; the position is remembered in the preferences. Click the pill to expand: lane tabs (Image, Video, 3D, Materials, Render Image, Render Video), the prompt, the model chip (opens the model picker), a **Settings** chip (opens a dialog with the lane's full form: model, prompt, references, parameters) and Generate with the price. Audio, the 3D Edit mode and Blockout live in the sidebar. The composer is the quick path: it uses the settings of the current lane as they stand in the sidebar or in that dialog. The bottom-right corner resizes the card (a resize cursor appears when the pointer reaches it).
+The pill at the bottom of the viewport shows the current prompt in a field and a Generate button, in the same style as the expanded card. Drag it anywhere in the viewport; a click without moving expands it. The expanded card moves the same way (drag its background), resizes from the grip in its bottom-right corner, and a double-click on its background puts it back in place; the position is remembered in the preferences. Click the pill to expand: lane tabs (Image, Video, 3D, Materials, Render Image, Render Video), the prompt, the model chip (opens the model picker), a **Settings** chip (opens a dialog with the lane's full form: model, prompt, references, parameters) and Generate with the price. Audio and Blockout live in the sidebar. For 3D Edit mode, choose the 3D tab, open **Settings** and select **Edit**. The composer is the quick path: it uses the settings of the current lane as they stand in the sidebar or in that dialog. The bottom-right corner resizes the card (a resize cursor appears when the pointer reaches it).
 
-Editing the prompt: click to place the caret, drag or Shift+arrows to select, double-click selects a word, Home/End, Ctrl/Cmd+A selects all, Ctrl/Cmd+C copies, Ctrl/Cmd+X cuts, Ctrl/Cmd+V pastes, typing replaces the selection, Enter generates, Esc leaves. The minus button in the top-right corner collapses the card; clicking outside also does. If drawing ever fails repeatedly the composer switches itself off; re-enable it in Preferences (Floating composer in the viewport).
+Editing the prompt: click to place the caret, drag or Shift+arrows to select, double-click selects a word, Home/End, Ctrl/Cmd+A selects all, Ctrl/Cmd+C copies, Ctrl/Cmd+X cuts, Ctrl/Cmd+V pastes, typing replaces the selection, Enter generates, Esc leaves. Only the minus button in the top-right corner collapses the card. Clicking outside keeps it open: an edited prompt is saved to its lane and the click passes to Blender. If drawing ever fails repeatedly the composer switches itself off; re-enable it in Preferences (Floating composer in the viewport).
 
 ![The collapsed composer: the prompt field and a Generate button in the card's style](images/composer-collapsed.png)
 
@@ -529,7 +529,7 @@ confirmation and shared-runtime boundaries.
 - **"Prompt is required" / "Add a reference to see the cost"**: the quote needs a valid form; fill the prompt or add the required reference.
 - **"Select the mesh to edit" / "Price shown after the upload"**: the 3D tab in Edit mode needs a mesh object selected (or active) in the viewport.
 - **"This model takes no image/video input"**: the picked model cannot receive the capture; choose another one in the Render lane.
-- **The result does not appear**: open Generations. A job that failed shows a warning marker and the reason; Details lists the download errors; use Import into scene to fetch it again. After installing an update, restart Blender so the new version loads.
+- **The result does not appear**: open Generations. A job that failed shows a warning marker and the reason; Details lists the download errors. To recover a saved job, choose **Inspect saved jobs** at the top of the Jobs panel. A job whose download failed or was interrupted is listed under Jobs with **Resume download** or **Check interrupted download**; use these instead of generating again. After installing an update, restart Blender so the new version loads.
 - **A 3D model looks untextured**: switch the viewport to Material Preview (the add-on does this on import), and check Details for the imported file name.
 - **The rendered image moved things around**: the prompt already freezes the layout; give the model a cleaner capture (Grey clay capture, a camera view rather than a wide viewport) and fewer style images, and keep the look description about materials and light, not about content.
 - **The sidebar and the dialogs do not look like the composer**: they are drawn by Blender with your Blender theme; the composer is custom drawing. Their layout follows the composer (tabs, chips, header rows) but their colours are the theme's.

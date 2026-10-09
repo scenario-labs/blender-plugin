@@ -94,6 +94,27 @@ def _json(raw, *, exact=False):
     return result
 
 
+def _status_text(status, *, project):
+    """Short first sentence for clipped status lines, then fixed guidance.
+
+    Never include response bodies, URLs, identifiers or credentials.
+    """
+    if status == 401:
+        return (
+            "Scenario rejected the API key or secret (HTTP 401). Check both values in Preferences."
+        )
+    if status == 403 and project:
+        return (
+            "Scenario denied access (HTTP 403). Check the API key and secret, and that the "
+            "Project ID belongs to this key, or clear it to use the key's default scope."
+        )
+    if status == 403:
+        return "Scenario denied access (HTTP 403). Check the API key and secret in Preferences."
+    if status == 429:
+        return "Scenario is limiting requests (HTTP 429). Try again shortly."
+    return f"Scenario request failed (HTTP {status})"
+
+
 def _identifier(value):
     if not isinstance(value, str) or not value or value in {".", ".."} or value.strip() != value:
         raise ValueError("A nonempty identifier is required")
@@ -261,7 +282,9 @@ class SDKAdapter:
             response = method(*args, **kwargs)
             return response.read()
         except APIStatusError as error:
-            raise AdapterError(f"Scenario request failed (HTTP {error.status_code})") from None
+            # Only a request that carried the override can blame the Project ID.
+            project = kwargs.get("project_id") is not None
+            raise AdapterError(_status_text(error.status_code, project=project)) from None
         except APIConnectionError:
             raise AdapterError("Could not reach Scenario") from None
 

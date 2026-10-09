@@ -252,6 +252,68 @@ def test_errors_are_sanitized_redirects_blocked_and_no_retries(adapter, failure)
     assert len(calls) == 1
 
 
+PRIVATE_PROJECT = "private-project-7f3a"
+REJECTED = "Scenario rejected the API key or secret (HTTP 401). Check both values in Preferences."
+DENIED = "Scenario denied access (HTTP 403). Check the API key and secret in Preferences."
+DENIED_PROJECT = (
+    "Scenario denied access (HTTP 403). Check the API key and secret, and that the "
+    "Project ID belongs to this key, or clear it to use the key's default scope."
+)
+LIMITED = "Scenario is limiting requests (HTTP 429). Try again shortly."
+
+
+@pytest.mark.parametrize(
+    "status,project,expected",
+    [
+        (401, None, REJECTED),
+        (401, PRIVATE_PROJECT, REJECTED),
+        (403, None, DENIED),
+        (403, PRIVATE_PROJECT, DENIED_PROJECT),
+        (429, None, LIMITED),
+        (429, PRIVATE_PROJECT, LIMITED),
+        (404, PRIVATE_PROJECT, "Scenario request failed (HTTP 404)"),
+        (500, None, "Scenario request failed (HTTP 500)"),
+    ],
+)
+def test_status_errors_are_actionable_without_private_details(adapter, status, project, expected):
+    calls = []
+
+    def handler(request):
+        calls.append(request)
+        return httpx.Response(
+            status,
+            json={"error": "selected-secret do-not-expose", "projectId": PRIVATE_PROJECT},
+            headers={"Location": "https://elsewhere.example.invalid", "Retry-After": "0"},
+        )
+
+    credentials = Credentials("selected-key", "selected-secret")
+    client = adapter(handler, credentials=credentials, project_id=project)
+    with pytest.raises(AdapterError) as error:
+        client.model_page(page_size=1)
+    message = str(error.value)
+    assert message == expected
+    assert error.value.__cause__ is None and error.value.__suppress_context__
+    private = (
+        "selected-key",
+        "selected-secret",
+        credentials.authorization().split()[1],
+        PRIVATE_PROJECT,
+        "do-not-expose",
+        "example.invalid",
+        "/v1/models",
+    )
+    assert not [value for value in private if value in message]
+    assert dict(calls[0].url.params).get("projectId") == project
+    assert len(calls) == 1
+
+
+def test_unscoped_discovery_never_blames_the_project_override(adapter):
+    client = adapter(lambda request: httpx.Response(403), project_id=PRIVATE_PROJECT)
+    with pytest.raises(AdapterError) as error:
+        client.teams()
+    assert str(error.value) == DENIED
+
+
 @pytest.mark.parametrize("cost", [None, True, -1, "1.23", float("nan"), float("inf")])
 def test_estimate_requires_a_valid_server_cost(adapter, cost):
     with pytest.raises(AdapterError):

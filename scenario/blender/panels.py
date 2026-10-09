@@ -4,6 +4,7 @@
 back, here and in the cloud), "Agents" (the MCP server). Lane tabs only cover generation."""
 
 import os
+import textwrap
 
 import bpy
 
@@ -313,7 +314,10 @@ def draw_generate_row(layout, lane_state, lane):
 
 def draw_loading(layout):
     if runtime.state.catalog_error:
-        layout.label(text=runtime.state.catalog_error[:70], icon="ERROR")
+        # Sidebar labels clip; wrap so permission guidance is not cut mid-sentence.
+        lines = textwrap.wrap(runtime.state.catalog_error, 36, max_lines=6, placeholder="...")
+        for index, line in enumerate(lines):
+            layout.label(text=line, icon="ERROR" if index == 0 else "NONE")
         layout.operator(
             "scenario.refresh_catalog", text="Retry loading models", icon="FILE_REFRESH"
         )

@@ -39,6 +39,11 @@ Test connection runs in the background. Its success status verifies model access
 with the selected credentials, including when the model list is empty. It does
 not identify an account or project. Repeated clicks while checking share the same
 request; changing credentials or project discards the previous check's result.
+A failure names what to check: HTTP 401 means Scenario rejected the key or secret,
+and HTTP 403 means access was denied. With a Project ID set, a 403 also asks you
+to confirm that the project belongs to the key or to clear it. HTTP 429 means
+Scenario is limiting requests; try again shortly. Preferences wraps the full
+message; the messages never include service responses, credentials or IDs.
 
 **Project ID (optional)** applies to both saved and environment credentials. Leave
 it blank to use the API key's server-defined default scope, or enter a project ID
@@ -526,6 +531,7 @@ confirmation and shared-runtime boundaries.
 ## Troubleshooting
 
 - **"Loading models..." does not end**: check the key and secret in Preferences (Test connection), and Blender's Allow Online Access. A Retry button appears when the catalog request failed.
+- **"Scenario denied access (HTTP 403)"**: check the key and secret. If Project ID is set, make sure that project belongs to the key, or clear it to use the key's default scope.
 - **"Prompt is required" / "Add a reference to see the cost"**: the quote needs a valid form; fill the prompt or add the required reference.
 - **"Select the mesh to edit" / "Price shown after the upload"**: the 3D tab in Edit mode needs a mesh object selected (or active) in the viewport.
 - **"This model takes no image/video input"**: the picked model cannot receive the capture; choose another one in the Render lane.

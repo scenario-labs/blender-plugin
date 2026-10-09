@@ -5,6 +5,7 @@
 import os
 import threading
 import unittest
+from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
 import bpy
@@ -80,6 +81,7 @@ class SDKConnectionTests(unittest.TestCase):
         self.deliver()
         self.assertIn("Connection failed", self.runtime.state.account_label)
         self.assertIn("403", self.runtime.state.account_label)
+        self.assertIn("Check the API key and secret", self.runtime.state.account_label)
         self.assertNotIn("do-not-expose", self.runtime.state.account_label)
         self.status = 200
         self.runtime.request_connection_check()
@@ -179,3 +181,45 @@ class SDKConnectionTests(unittest.TestCase):
                 layout = Mock()
                 self.assertTrue(panels.draw_account_strip(layout, bpy.context))
                 self.assertEqual(layout.row.return_value.label.call_args.kwargs["icon"], expected)
+
+    def test_permission_guidance_wraps_instead_of_clipping(self):
+        message = (
+            "Scenario denied access (HTTP 403). Check the API key and secret, and that the "
+            "Project ID belongs to this key, or clear it to use the key's default scope."
+        )
+        label = f"Connection failed: {message}"
+        prefs = submodule("prefs")
+        panels = submodule("blender.panels")
+        self.runtime.state.connection_status = "error"
+        self.runtime.state.account_label = label
+        self.runtime.state.catalog_error = message
+        owner = SimpleNamespace(
+            layout=Mock(), credential_source="PREFERENCES", composer_enabled=True
+        )
+        with patch.object(prefs.updates, "draw"):
+            prefs.ScenarioPreferences.draw(owner, bpy.context)
+        sidebar = Mock()
+        panels.draw_loading(sidebar)
+        for drawn, text, width in (
+            (owner.layout.box.return_value.label, label, 70),
+            (sidebar.label, message, 36),
+        ):
+            with self.subTest(width=width):
+                texts = [entry.kwargs.get("text", "") for entry in drawn.call_args_list]
+                start = next(i for i, line in enumerate(texts) if line and text.startswith(line))
+                end = next(
+                    i for i in range(start + 1, len(texts) + 1) if " ".join(texts[start:i]) == text
+                )
+                lines = drawn.call_args_list[start:end]
+                self.assertGreater(len(lines), 2)
+                self.assertTrue(all(len(entry.kwargs["text"]) <= width for entry in lines))
+                icons = [entry.kwargs["icon"] for entry in lines]
+                self.assertEqual(icons, ["ERROR"] + ["NONE"] * (len(lines) - 1))
+        self.runtime.state.connection_status = "pending"
+        self.runtime.state.account_label = "Checking Scenario connection..."
+        owner.layout = Mock()
+        with patch.object(prefs.updates, "draw"):
+            prefs.ScenarioPreferences.draw(owner, bpy.context)
+        owner.layout.box.return_value.label.assert_any_call(
+            text="Checking Scenario connection...", icon="INFO"
+        )

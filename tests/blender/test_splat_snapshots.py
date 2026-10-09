@@ -1,12 +1,17 @@
 # SPDX-FileCopyrightText: 2026 Scenario Inc.
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""Installed splat decoders run on Blender's Python and feed buffer-based mesh writes."""
+"""Installed splat decoders run on Blender's Python and feed buffer-based mesh writes.
+
+The prototype Add to scene operator reports SPZ files the decoder rejects.
+"""
 
 import gzip
 import io
 import struct
+import tempfile
 import threading
 import unittest
+from pathlib import Path
 
 import bpy
 from helpers import reset_scene, submodule
@@ -95,6 +100,28 @@ class SplatSnapshotTests(unittest.TestCase):
                 options=self.splats.SplatOptions(10, "OPENCV"),
                 size=len(bare),
             )
+
+    def test_add_to_scene_reports_rejected_spz_files_without_a_traceback(self):
+        folder = Path(tempfile.mkdtemp(prefix="scenario-spz-reject-"))
+        cases = (
+            # Version 1 stored float16 positions; it is rejected rather than misread.
+            ("legacy.spz", 1, 1, "SPZ v1 (float16 positions) is not supported; the saved file is"),
+            ("empty.spz", 2, 0, "point count is empty"),
+        )
+        for name, version, count, message in cases:
+            with self.subTest(name=name):
+                path = folder / name
+                header = struct.pack("<IIIBBBB", 0x5053474E, version, count, 0, 12, 0, 0)
+                path.write_bytes(gzip.compress(header + bytes(16 * count)))
+                before = set(bpy.data.objects.keys())
+                # Blender raises an operator's ERROR report to a Python caller.
+                with self.assertRaises(RuntimeError) as caught:
+                    bpy.ops.scenario.import_mesh_file(filepath=str(path))
+                report = str(caught.exception)
+                self.assertIn(message, report)
+                self.assertNotIn("Traceback", report)
+                self.assertEqual(set(bpy.data.objects.keys()), before)
+                self.assertTrue(path.exists())
 
 
 if __name__ == "__main__":

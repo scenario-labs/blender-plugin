@@ -53,6 +53,7 @@ MAX_SH_DEGREE = 4
 MAX_FRACTIONAL_BITS = 23
 MAX_COMPRESSION_RATIO = 1024
 MIN_BYTES_PER_POINT = 9
+_KEPT = "; the saved file is kept"
 _SH_DIMENSIONS = {0: 0, 1: 3, 2: 8, 3: 15, 4: 24}
 _SIGN = bytes(0xFF if value & 0x80 else 0 for value in range(256))
 _INT32 = "i" if array("i").itemsize == 4 else "l"
@@ -103,7 +104,7 @@ def decode_spz(stream, *, options, size=None, cancel=None):
             break
         prefix += data
     if prefix == b"NGSP":
-        raise SpzError("SPZ v4 (ZSTD) cannot be decoded in this release; the saved file is kept")
+        raise SpzError("SPZ v4 (ZSTD) cannot be decoded in this release" + _KEPT)
     if prefix[:2] != b"\x1f\x8b":
         raise SpzError("Not an SPZ file")
     reader = GzipReader(stream, cancel=cancel, prefix=prefix)
@@ -113,9 +114,9 @@ def decode_spz(stream, *, options, size=None, cancel=None):
     if magic != MAGIC:
         raise SpzError("Not an SPZ file")
     if version == 1:
-        raise SpzError("SPZ v1 (float16 positions) is not supported; use version 2 or 3")
+        raise SpzError("SPZ v1 (float16 positions) is not supported" + _KEPT)
     if version not in (2, 3):
-        raise SpzError("Unsupported SPZ version; only versions 2 and 3 can be decoded")
+        raise SpzError("Only SPZ versions 2 and 3 can be decoded" + _KEPT)
     if sh_degree > MAX_SH_DEGREE or fractional_bits > MAX_FRACTIONAL_BITS:
         raise SpzError("The SPZ header has an unsupported layout")
     if size is not None and count > size * MAX_COMPRESSION_RATIO // MIN_BYTES_PER_POINT:

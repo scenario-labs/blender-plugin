@@ -623,6 +623,73 @@ def test_asset_records_validate_ids_before_dispatch(adapter, asset_ids):
         adapter(deny).asset_records(asset_ids)
 
 
+# Asset and model bulk reads share identifier and record validation.
+BULK_READS = {
+    "assets": (lambda client, ids: client.asset_records(ids), "assets", "assetIds"),
+    "models": (lambda client, ids: client.models_bulk(ids), "models", "modelIds"),
+}
+
+
+def bulk_row(kind, identifier, **changes):
+    row = {"id": identifier, **({"tags": [], "collectionIds": []} if kind == "assets" else {})}
+    return {**row, **changes}
+
+
+@pytest.mark.parametrize("kind", sorted(BULK_READS))
+def test_bulk_reads_share_order_duplicate_and_omission_rules(adapter, kind):
+    read, wrapper, body = BULK_READS[kind]
+    first, second = bulk_row(kind, "item-a"), bulk_row(kind, "item-b", futureField=1)
+    rows = [second, first, first, second, first]
+    requests, handler = recorder(httpx.Response(200, json={wrapper: rows}))
+    found = read(adapter(handler), ["item-a", "item-missing", "item-b", "item-a"])
+    assert list(found) == ["item-a", "item-b"]
+    assert found == {"item-a": first, "item-b": second}
+    assert len(requests) == 1
+    assert json.loads(requests[0].content) == {body: ["item-a", "item-missing", "item-b"]}
+
+
+@pytest.mark.parametrize("kind", sorted(BULK_READS))
+@pytest.mark.parametrize(
+    "rows",
+    [
+        None,
+        {"id": "item-a"},
+        [None],
+        [{"id": ""}],
+        [{"id": "../item-a"}],
+        [{"id": "item\ud800"}],
+        ["item-a"],
+        "unrequested",
+        "conflicting",
+    ],
+)
+def test_bulk_reads_share_record_rejections(adapter, kind, rows):
+    read, wrapper, _ = BULK_READS[kind]
+    if rows == "unrequested":
+        rows = [bulk_row(kind, "item-a"), bulk_row(kind, "item-other")]
+    elif rows == "conflicting":
+        rows = [bulk_row(kind, "item-a"), bulk_row(kind, "item-a", futureField=2)]
+    # The escaped JSON body carries a lone surrogate that UTF-8 cannot encode.
+    body = json.dumps({wrapper: rows}).encode()
+    requests, handler = recorder(httpx.Response(200, content=body))
+    with pytest.raises(AdapterError) as error:
+        read(adapter(handler), ["item-a", "item-b"])
+    assert not isinstance(error.value, (WriteRejected, WriteUncertain))
+    assert "item-" not in str(error.value)
+    assert len(requests) == 1
+
+
+@pytest.mark.parametrize("kind", sorted(BULK_READS))
+@pytest.mark.parametrize(
+    "identifiers",
+    ["item-a", b"item-a", {"item-a"}, None, [None], [""], ["bad/id"], ["padded "], ["item\ud800"]],
+)
+def test_bulk_reads_share_identifier_rules_before_dispatch(adapter, kind, identifiers):
+    read = BULK_READS[kind][0]
+    with pytest.raises(ValueError):
+        read(adapter(deny), identifiers)
+
+
 @pytest.mark.parametrize("read", sorted(READS))
 @pytest.mark.parametrize("state", ["offline", "closed"])
 def test_unsent_reads_raise_plain_adapter_errors(adapter, read, state):

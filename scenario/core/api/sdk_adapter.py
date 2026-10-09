@@ -277,31 +277,61 @@ def _tag_changes(values, field):
     return tags
 
 
+def _identifier_list(values, noun):
+    """Valid identifiers in request order with repeats removed; ValueError otherwise."""
+    if isinstance(values, (str, bytes)) or not isinstance(values, (list, tuple)):
+        raise ValueError(f"Use a list of {noun} identifiers")
+    return list(dict.fromkeys(_identifier(value) for value in values))
+
+
 def _asset_ids(values, limit, *, unique):
     if not isinstance(values, (list, tuple)) or not 1 <= len(values) <= limit:
         raise ValueError(f"Use a list of 1 to {limit} asset identifiers")
-    identifiers = [_identifier(value) for value in values]
-    if len(set(identifiers)) != len(identifiers):
-        if unique:
-            raise ValueError("Asset identifiers must be unique")
-        identifiers = list(dict.fromkeys(identifiers))
+    identifiers = _identifier_list(values, "asset")
+    if unique and len(identifiers) != len(values):
+        raise ValueError("Asset identifiers must be unique")
     return identifiers
 
 
-def _unique_rows(rows, limit, noun):
-    """Validate record IDs; drop identical duplicates and fail on conflicting ones."""
-    if not isinstance(rows, list) or len(rows) > limit:
-        raise AdapterError(f"Scenario returned an invalid {noun} page")
+def _records_by_id(rows, noun, hint, requested=None):
+    """Map rows by valid ID; drop identical duplicates and fail on conflicting ones.
+
+    With ``requested``, every row must carry one of those IDs.
+    """
     records = {}
     for row in rows:
         try:
             identifier = _identifier(row.get("id") if isinstance(row, dict) else None)
         except ValueError:
             raise AdapterError(f"Scenario returned an invalid {noun} record") from None
+        if requested is not None and identifier not in requested:
+            article = "an" if noun[0] in "aeiou" else "a"
+            raise AdapterError(f"Scenario returned {article} {noun} that was not requested")
         if identifier in records and records[identifier] != row:
-            raise AdapterError(f"Scenario returned conflicting {noun} records; refresh the library")
+            raise AdapterError(f"Scenario returned conflicting {noun} records; {hint}")
         records[identifier] = row
     return records
+
+
+def _unique_rows(rows, limit, noun):
+    """Validate one page of at most ``limit`` records by ID."""
+    if not isinstance(rows, list) or len(rows) > limit:
+        raise AdapterError(f"Scenario returned an invalid {noun} page")
+    return _records_by_id(rows, noun, "refresh the library")
+
+
+def _bulk_records(rows, requested, noun):
+    """Records of one bulk read by requested ID, in request order.
+
+    Shared by ``models_bulk`` and ``asset_records``. Every record must carry a
+    requested ID, so identical duplicates collapse and the request bounds the
+    result. IDs the response omits stay absent: the API reference does not say
+    whether a missing or inaccessible ID is omitted or fails the request.
+    """
+    if not isinstance(rows, list):
+        raise AdapterError(f"Scenario returned an invalid bulk {noun} list")
+    records = _records_by_id(rows, noun, "refresh", frozenset(requested))
+    return {identifier: records[identifier] for identifier in requested if identifier in records}
 
 
 def _write_rejected(status):
@@ -374,9 +404,7 @@ def model_identifiers(values):
     Callers that share pending reads by identifier check a request here first,
     so an invalid identifier fails only the request that contains it.
     """
-    if isinstance(values, (str, bytes)) or not isinstance(values, (list, tuple)):
-        raise ValueError("Use a list of model identifiers")
-    return list(dict.fromkeys(_identifier(value) for value in values))
+    return _identifier_list(values, "model")
 
 
 class SDKAdapter:
@@ -574,22 +602,10 @@ class SDKAdapter:
             page = _json(
                 self._request(self._sdk.models.with_raw_response.get_bulk, model_ids=batch)
             )
-            rows = page.get("models")
-            if not isinstance(rows, list):
-                raise AdapterError("Scenario returned an invalid bulk model list")
-            for row in rows:
-                try:
-                    identifier = _identifier(row.get("id") if isinstance(row, dict) else None)
-                except ValueError:
-                    raise AdapterError("Scenario returned an invalid model record") from None
-                if identifier not in batch:
-                    raise AdapterError("Scenario returned a model that was not requested")
-                if identifier in records and records[identifier] != row:
-                    raise AdapterError("Scenario returned conflicting model records; refresh")
-                records[identifier] = row
-        return {
-            identifier: records[identifier] for identifier in requested if identifier in records
-        }
+            # Batches are disjoint and each record must belong to its own batch,
+            # so merging them keeps request order and cannot hide a conflict.
+            records.update(_bulk_records(page.get("models"), batch, "model"))
+        return records
 
     def workflow(self, identifier):
         return self._retrieve("workflows", identifier, "workflow")
@@ -692,17 +708,13 @@ class SDKAdapter:
         page = _json(
             self._request(self._sdk.assets.with_raw_response.get_bulk, asset_ids=identifiers)
         )
-        records = _unique_rows(page.get("assets"), MAX_ASSET_RECORDS, "asset")
-        if not records.keys() <= set(identifiers):
-            raise AdapterError("Scenario returned an asset that was not requested")
+        records = _bulk_records(page.get("assets"), identifiers, "asset")
         for record in records.values():
             for key in ("tags", "collectionIds"):
                 values = record.get(key)
                 if not isinstance(values, list) or any(not isinstance(v, str) for v in values):
                     raise AdapterError("Scenario returned invalid asset organization metadata")
-        return {
-            identifier: records[identifier] for identifier in identifiers if identifier in records
-        }
+        return records
 
     def create_collection(self, name):
         """Create one collection; this POST is not idempotent.

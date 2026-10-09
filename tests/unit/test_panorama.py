@@ -57,6 +57,29 @@ def test_standard_png_is_ldr_container(depth, color):
     )
 
 
+@pytest.mark.parametrize("depth", [8, 16])
+def test_grayscale_images_are_supported_without_expanding_panorama_formats(depth):
+    data = png(width=4, height=2, depth=depth, color=0)
+    assert panorama.inspect_image(data) == panorama.PanoramaInfo("PNG", 4, 2, False)
+    with pytest.raises(panorama.PanoramaError, match="RGB"):
+        panorama.inspect_panorama(data)
+
+
+@pytest.mark.parametrize("depth,color", [(1, 0), (2, 0), (4, 0), (32, 0), (8, 3), (8, 4)])
+def test_general_images_still_reject_unaccepted_png_encodings(depth, color):
+    with pytest.raises(panorama.PanoramaError):
+        panorama.inspect_image(png(depth=depth, color=color))
+
+
+def test_grayscale_images_keep_integrity_and_pixel_limits():
+    damaged = bytearray(png(color=0))
+    damaged[20] ^= 1
+    with pytest.raises(panorama.PanoramaError, match="integrity"):
+        panorama.inspect_image(bytes(damaged))
+    with pytest.raises(panorama.PanoramaError, match="pixel limit"):
+        panorama.inspect_image(png(width=16384, height=8192, color=0))
+
+
 @pytest.mark.parametrize("version", [2, 0x402])
 def test_supported_single_part_exr_flags(version):
     assert panorama.inspect_panorama(exr(version=version)) == panorama.PanoramaInfo(

@@ -18,6 +18,10 @@ asset order. Application does not select the first variant, infer roles from
 filenames or combine multiple texture sets. Unclassified assets remain saved and unused.
 Each selected map needs a verified receipt and a supported PNG/EXR media type;
 Blender must decode the same bounded bytes and pack the image before assignment.
+PNG maps may use 8- or 16-bit grayscale, RGB or RGBA samples. Scalar maps such as
+metallic, smoothness and height can therefore retain their grayscale encoding;
+no file conversion or regeneration is required. Palette and grayscale-alpha PNGs
+remain unsupported. Receipt, CRC, byte, pixel and chunk limits still apply.
 
 UI and MCP offer material application only when the saved metadata passes the
 same texture-selection check used by approval. An unsupported JPEG/WebP map,

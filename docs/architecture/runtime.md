@@ -203,7 +203,7 @@ form changes requires a fresh destination confirmation and invalidates old price
 Existing Scenario asset IDs are supported. Downloaded images
 are receipt-verified again on the main thread, decoded from private snapshots and
 packed as image datablocks after a durable application claim. Automatic import
-supports bounded RGB/RGBA PNG and scanline OpenEXR; other formats remain saved
+supports bounded 8-/16-bit grayscale/RGB/RGBA PNG and scanline OpenEXR; other formats remain saved
 without import. It does not assign textures or replace scene targets. A stale
 origin, read/download error or uncertain application stops automatic delivery
 without another generation. The [transfer policy](../RESULT_TRANSFERS.md#active-image-delivery)

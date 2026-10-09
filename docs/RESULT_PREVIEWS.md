@@ -71,8 +71,12 @@ missing ones on the preview lane with backoff delays of 5, 10, 20, 40 and then
 first online poll and the last poll lands at its end. If no preview appeared,
 the cache records a `missing` marker for that receipt and later requests show it
 without polling again. An explicit `retry` clears the marker and opens a new
-window. A retry received while that result's batch is on the lane is recorded
-and applied when the batch returns, so the late outcome cannot undo it.
+window. Requesting a rendition the result did not have yet, such as a clip after
+its still, also opens a new window and restarts the backoff for that result, so
+the clip is not judged by a window the still already used. Renditions still
+polling share the new window. A retry received while that result's batch is on
+the lane is recorded and applied when the batch returns, so the late outcome
+cannot undo it.
 
 Without online access, renditions report `offline` and are checked every five
 seconds. An offline poll pauses the window, keeping the time already used since

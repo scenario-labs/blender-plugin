@@ -206,6 +206,31 @@ def test_clip_requested_during_an_inflight_still_poll_is_fetched(lane):
     assert len(service.calls) == 2 and len(service.downloader.calls) == 2
 
 
+def test_clip_requested_after_the_still_window_ended_gets_a_full_window(lane):
+    service, clock, scheduler = lane.env, lane.clock, lane.scheduler
+    ready_job(service, "request", [("asset-video", "video/mp4", MP4)])
+    service.assets["asset-video"] = asset_record("asset-video", "video/mp4")
+    scheduler.request("request")
+    for _ in range(320):
+        drive(scheduler)
+        clock.now += 1
+    assert state(lane, "asset-video").state == State.MISSING and len(service.calls) == 9
+    clock.now += 100
+    (status,) = scheduler.request("request", clip=True)
+    assert status.get(CLIP).state == State.QUEUED
+    start, polls = clock.now, []
+    for _ in range(420):
+        before = len(service.calls)
+        drive(scheduler)
+        if len(service.calls) > before:
+            polls.append(clock.now - start)
+        clock.now += 1
+    # The clip's first poll is not its last: it gets the full backoff and window.
+    assert polls == [0, 5, 15, 35, 75, 135, 195, 255, 300]
+    assert state(lane, "asset-video", CLIP).state == State.MISSING
+    assert state(lane, "asset-video").state == State.MISSING
+
+
 def test_retry_during_an_inflight_batch_applies_when_it_returns(lane):
     service, scheduler = lane.env, lane.scheduler
     ready_job(service, "request", [("asset-model", "model/gltf-binary", GLB)])

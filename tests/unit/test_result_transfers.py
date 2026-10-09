@@ -640,3 +640,44 @@ def test_two_redirects_can_complete_without_reading_redirect_bodies(tmp_path, st
     downloader().download(URL, root=tmp_path, name="x")
     assert constructor.call_count == 3 and conn.close.call_count == 3
     assert (tmp_path / "x").read_bytes() == DATA
+
+
+@pytest.mark.parametrize("declared", [1, len(DATA) + 5])
+def test_legacy_size_policy_keeps_actual_length_and_receipt(tmp_path, storage, declared):
+    result = downloader().download(
+        URL,
+        root=tmp_path,
+        name="legacy.mtl",
+        expected_size=declared,
+        allow_size_mismatch=True,
+    )
+    assert result.size == len(DATA)
+    assert result.sha256 == hashlib.sha256(DATA).hexdigest()
+
+
+@pytest.mark.parametrize("headers", [{}, {"Content-Length": "100"}, {"Content-Length": "1"}])
+def test_legacy_size_policy_rejects_missing_or_incomplete_length(tmp_path, storage, headers):
+    storage[0].getresponse.return_value = Response(headers=headers)
+    with pytest.raises(transfers.TransferError):
+        downloader().download(
+            URL,
+            root=tmp_path,
+            name="legacy.mtl",
+            expected_size=1,
+            allow_size_mismatch=True,
+        )
+    assert not list(tmp_path.iterdir())
+
+
+@pytest.mark.parametrize("options", [{"max_bytes": len(DATA) - 1}, {"expected_sha256": "0" * 64}])
+def test_legacy_size_policy_cannot_bypass_byte_cap_or_digest(tmp_path, storage, options):
+    with pytest.raises(transfers.TransferError):
+        downloader().download(
+            URL,
+            root=tmp_path,
+            name="legacy.mtl",
+            expected_size=1,
+            allow_size_mismatch=True,
+            **options,
+        )
+    assert not list(tmp_path.iterdir())

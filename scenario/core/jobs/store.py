@@ -20,7 +20,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 from urllib.parse import urlsplit
 
-from .result_metadata import TEXTURE_ROLES
+from .result_metadata import REWRITTEN_MESH_TYPES, TEXTURE_ROLES
 from .transfers import DownloadedResult, TransferError, _root, validate_result_name
 
 if TYPE_CHECKING:
@@ -1202,11 +1202,21 @@ class JobStore:
 
         return self._update_results(request_id, expected_revision, update)
 
-    def record_download(self, request_id, asset_id, receipt, *, expected_revision):
+    def record_download(
+        self,
+        request_id,
+        asset_id,
+        receipt,
+        *,
+        expected_revision,
+        allow_mesh_size_correction=False,
+    ):
         """Save one immutable verified receipt; a failure never authorizes generation."""
         _identity(asset_id)
         if not isinstance(receipt, DownloadedResult):
             raise ValueError("A verified download receipt is required")
+        if type(allow_mesh_size_correction) is not bool:
+            raise ValueError("Choose an explicit mesh size policy")
 
         def update(previous):
             if previous.state != JobState.DOWNLOADING:
@@ -1216,7 +1226,12 @@ class JobStore:
             )
             if found is None or found.receipt is not None:
                 raise ValueError("Result is absent or already has a receipt")
-            recorded = StoredResult(found.asset, receipt)
+            asset = found.asset
+            if allow_mesh_size_correction:
+                if asset.media_type not in REWRITTEN_MESH_TYPES:
+                    raise ValueError("Only rewritten OBJ/MTL results accept a size correction")
+                asset = replace(asset, expected_size=receipt.size)
+            recorded = StoredResult(asset, receipt)
             return tuple(recorded if item is found else item for item in previous.results)
 
         return self._update_results(request_id, expected_revision, update)

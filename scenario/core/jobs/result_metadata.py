@@ -25,6 +25,9 @@ _TEXTURE_ROLES = {
 }
 TEXTURE_ROLES = frozenset(_TEXTURE_ROLES.values())
 
+# Filename rewriting during ingestion left legacy OBJ/MTL byte counts stale.
+REWRITTEN_MESH_TYPES = frozenset({"model/obj", "model/mtl"})
+
 
 def texture_role(record):
     """Use documented semantic metadata only for delivered image files."""

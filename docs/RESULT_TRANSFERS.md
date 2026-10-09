@@ -182,3 +182,27 @@ refresh, download, repair or scene application. A missing or changed saved file
 fails before a composition draft can be prepared; source bytes are preserved.
 See [Film media limits](FILM_PLAN.md#verified-media-preparation), including the
 optional installed ffprobe and metadata-only timing guarantee.
+
+## Legacy OBJ and MTL byte counts
+
+Asset ingestion can rewrite OBJ material-library names and MTL texture names
+without updating `properties.size`. For exactly `model/obj` and `model/mtl`,
+result recovery treats that size as advisory. It still checks the selected
+scope, asset identity, success status, MIME type and any expected SHA-256.
+Only a size change may differ from the saved manifest; other metadata checks
+are unchanged. No API write, production backfill or generation is required.
+
+The storage call explicitly enables this exception and requires a numeric
+`Content-Length` within the configured byte cap. The complete streamed body
+must match that header before atomic publication. Missing lengths, truncated
+bodies, encoded responses, disallowed destinations, permission revocation,
+timeouts and digest mismatches still fail. Other MIME types retain the exact
+metadata-size requirement. This is a transport-completeness check, not a remote
+cryptographic content attestation: the asset retrieval response supplies no
+expected content digest. The computed SHA-256 protects subsequent local reads.
+
+After verification, the store atomically saves the actual size in the local
+OBJ/MTL manifest together with its immutable receipt. Existing failed jobs use
+the same resume command, retain completed receipts and cannot resubmit. The
+remote asset and stored bytes are unchanged. A crash between file publication
+and receipt persistence still requires explicit interrupted-transfer recovery.

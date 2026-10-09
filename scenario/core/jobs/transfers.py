@@ -198,7 +198,15 @@ class ResultDownloader:
         return verify_download(root, receipt, max_bytes=self._policy.max_bytes)
 
     def download(
-        self, url, *, root, name, expected_size=None, expected_sha256=None, max_bytes=None
+        self,
+        url,
+        *,
+        root,
+        name,
+        expected_size=None,
+        expected_sha256=None,
+        max_bytes=None,
+        allow_size_mismatch=False,
     ):
         """Publish complete verified bytes atomically without replacing a result.
 
@@ -212,6 +220,8 @@ class ResultDownloader:
         from partial files or replay generation to recover a download.
         """
         limit = self._policy.max_bytes
+        if type(allow_size_mismatch) is not bool:
+            raise TransferError("Choose an explicit result size policy")
         if max_bytes is not None:
             if type(max_bytes) is not int or max_bytes < 1:
                 raise TransferError("Invalid result byte limit")
@@ -297,11 +307,17 @@ class ResultDownloader:
                 if response.getheader("Transfer-Encoding") is not None:
                     raise TransferError("Transfer-encoded storage responses are unsupported")
                 length = response.getheader("Content-Length")
+                if allow_size_mismatch and length is None:
+                    raise TransferError("Storage response needs a complete byte count")
                 if length is not None:
                     if not re.fullmatch(r"[0-9]{1,20}", length) or int(length) > limit:
                         raise TransferError("Storage response size is invalid")
                     length = int(length)
-                    if expected_size is not None and length != expected_size:
+                    if (
+                        not allow_size_mismatch
+                        and expected_size is not None
+                        and length != expected_size
+                    ):
                         raise TransferError("Storage response size does not match")
                 size, digest = 0, hashlib.sha256()
                 temporary = Path(staging) / "result.part"
@@ -320,7 +336,9 @@ class ResultDownloader:
                         digest.update(chunk)
                         output.write(chunk)
                     if (length is not None and size != length) or (
-                        expected_size is not None and size != expected_size
+                        not allow_size_mismatch
+                        and expected_size is not None
+                        and size != expected_size
                     ):
                         raise TransferError("Storage response is incomplete")
                     if expected_sha256 is not None and digest.hexdigest() != expected_sha256:

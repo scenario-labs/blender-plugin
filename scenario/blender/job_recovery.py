@@ -7,25 +7,17 @@ from bpy.props import BoolProperty, EnumProperty, FloatVectorProperty, IntProper
 
 from ..core.api.errors import ScenarioError
 from ..core.scene.panorama import WORLD_MEDIA_TYPES, describe_world_media
+from ..core.ui import saved_job_actions
 from . import runtime
 from .media_application import MEDIA_TYPES
 from .model_application import MODEL_MEDIA_TYPE
 
-LABELS = {
-    "refresh": "Refresh status",
-    "resume": "Resume download",
-    "cancel": "Cancel generation",
-    "cancel_prepared": "Cancel prepared job",
-    "recover_download": "Check interrupted download",
-    "retry_receipt": "Save import receipt",
-    "import_images": "Import saved images",
-    "import_media": "Add media strip",
-    "import_model": "Import model",
-    "apply_world": "Set panorama as World",
-    "restore_world": "Restore previous World",
-    "apply_material": "Apply saved material",
-    "recover_blockout": "Read saved Blockout plan",
-}
+# Saved media types offered per application; describe() owns no media policy.
+RESULT_TYPES = saved_job_actions.ResultTypes(
+    model=MODEL_MEDIA_TYPE,
+    media={media_type: value[0] for media_type, value in MEDIA_TYPES.items()},
+    world=WORLD_MEDIA_TYPES,
+)
 
 
 class SCENARIO_OT_inspect_saved_jobs(bpy.types.Operator):
@@ -66,18 +58,8 @@ class SCENARIO_OT_recover_job(bpy.types.Operator):
     expected_revision: IntProperty(min=0, options={"HIDDEN"})
     action: EnumProperty(
         items=[
-            (key, label, label)
-            for key, label in LABELS.items()
-            if key
-            not in {
-                "import_images",
-                "import_media",
-                "import_model",
-                "apply_world",
-                "restore_world",
-                "apply_material",
-                "recover_blockout",
-            }
+            (key, saved_job_actions.LABELS[key], saved_job_actions.LABELS[key])
+            for key in saved_job_actions.RECOVERY_ACTIONS
         ]
     )
 
@@ -679,136 +661,30 @@ class SCENARIO_OT_apply_saved_mesh(bpy.types.Operator):
         return {"FINISHED"}
 
 
-def draw_controls(layout, record):
-    if not record.meta.get("shared_job"):
+def result_actions(record):
+    """Describe one view's saved-job controls from in-memory state, without I/O."""
+    review = None
+    if "recover_blockout" in record.meta.get("recovery_actions", ()):
+        jobs = runtime.state.blockout_jobs
+        review = jobs.recovery.current(record.local_id, bpy.context.scene) if jobs else None
+    return saved_job_actions.describe(
+        record, runtime.state.job_context_id, RESULT_TYPES, blockout_review=review
+    )
+
+
+def draw_action(layout, item):
+    """Draw one descriptor; its operator performs any confirmation or review."""
+    if item.operator is None:
+        layout.label(text=item.label, icon=item.icon)
         return
-    actions = record.meta.get("recovery_actions", ())
-    if record.meta.get("saved_state") == "applied" and any(
-        action not in {"restore_world", "retry_receipt"} for action in actions
-    ):
-        layout.label(text="Reuse saved results", icon="FILE_REFRESH")
-    for action in actions:
-        if action == "recover_blockout":
-            jobs = runtime.state.blockout_jobs
-            review = jobs.recovery.current(record.local_id, bpy.context.scene) if jobs else None
-            if review is not None and review.task is not None:
-                layout.label(text="Reading saved plan...", icon="TIME")
-            elif review is not None and review.phase == "READY":
-                operator = layout.operator(
-                    "scenario.use_saved_blockout", text="Use saved Blockout plan"
-                )
-                operator.context_id = runtime.state.job_context_id
-                operator.review_id = review.identifier
-            else:
-                if review is not None and review.phase == "ERROR":
-                    layout.label(text="Plan needs review; check job and destination", icon="ERROR")
-                operator = layout.operator(
-                    "scenario.read_saved_blockout", text="Read saved Blockout plan"
-                )
-                operator.context_id, operator.request_id = (
-                    runtime.state.job_context_id,
-                    record.local_id,
-                )
-                operator.expected_revision = record.meta["saved_revision"]
-            continue
-        if action == "apply_material":
-            operator = layout.operator("scenario.apply_saved_material", text="Apply saved material")
-            operator.context_id, operator.request_id = runtime.state.job_context_id, record.local_id
-            operator.expected_revision = record.meta["saved_revision"]
-            continue
-        if action in {"apply_world", "restore_world"}:
-            identifiers = (
-                [""]
-                if action == "restore_world"
-                else [
-                    key
-                    for key in record.asset_ids
-                    if record.asset_types.get(key) in WORLD_MEDIA_TYPES
-                ]
-            )
-            for index, asset_id in enumerate(identifiers, 1):
-                label = (
-                    "Restore previous World"
-                    if action == "restore_world"
-                    else f"Set panorama as World ({index})"
-                )
-                operator = layout.operator("scenario.apply_saved_world", text=label)
-                operator.context_id, operator.request_id = (
-                    runtime.state.job_context_id,
-                    record.local_id,
-                )
-                operator.expected_revision, operator.asset_id = (
-                    record.meta["saved_revision"],
-                    asset_id,
-                )
-                operator.purpose = "restore_world" if action == "restore_world" else "world"
-            continue
-        if action in {"apply_mesh", "apply_mesh_source"}:
-            for index, asset_id in enumerate(record.asset_ids, 1):
-                if record.asset_types.get(asset_id) != MODEL_MEDIA_TYPE:
-                    continue
-                operator = layout.operator(
-                    "scenario.apply_saved_mesh",
-                    text=(
-                        f"Apply to captured source ({index})"
-                        if action == "apply_mesh_source"
-                        else f"Apply mesh edit ({index})"
-                    ),
-                )
-                operator.context_id, operator.request_id = (
-                    runtime.state.job_context_id,
-                    record.local_id,
-                )
-                operator.original_source = action == "apply_mesh_source"
-                operator.expected_revision, operator.asset_id = (
-                    record.meta["saved_revision"],
-                    asset_id,
-                )
-            continue
-        if action == "import_model":
-            for index, asset_id in enumerate(record.asset_ids, 1):
-                if record.asset_types.get(asset_id) != MODEL_MEDIA_TYPE:
-                    continue
-                operator = layout.operator(
-                    "scenario.import_saved_model", text=f"Import model ({index})"
-                )
-                operator.context_id, operator.request_id = (
-                    runtime.state.job_context_id,
-                    record.local_id,
-                )
-                operator.expected_revision, operator.asset_id = (
-                    record.meta["saved_revision"],
-                    asset_id,
-                )
-            continue
-        if action == "import_media":
-            for index, asset_id in enumerate(record.asset_ids, 1):
-                media = MEDIA_TYPES.get(record.asset_types.get(asset_id))
-                if media is None:
-                    continue
-                operator = layout.operator(
-                    "scenario.import_saved_media", text=f"Add {media[0]} strip ({index})"
-                )
-                operator.context_id, operator.request_id = (
-                    runtime.state.job_context_id,
-                    record.local_id,
-                )
-                operator.expected_revision, operator.asset_id = (
-                    record.meta["saved_revision"],
-                    asset_id,
-                )
-            continue
-        operator = layout.operator(
-            "scenario.import_saved_images" if action == "import_images" else "scenario.recover_job",
-            text=LABELS[action],
-        )
-        operator.context_id = runtime.state.job_context_id
-        operator.request_id = record.local_id
-        operator.expected_revision = record.meta["saved_revision"]
-        if action != "import_images":
-            operator.action = action
-    if record.meta.get("saved_state") in ("ready", "apply_failed"):
-        layout.label(text="Downloaded result awaits application review", icon="INFO")
+    operator = layout.operator(item.operator, text=item.label, icon=item.icon)
+    for name, value in item.properties:
+        setattr(operator, name, value)
+
+
+def draw_controls(layout, record):
+    for item in result_actions(record):
+        draw_action(layout, item)
 
 
 CLASSES = (

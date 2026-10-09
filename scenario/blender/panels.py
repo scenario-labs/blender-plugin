@@ -787,6 +787,25 @@ STATUS_TEXT = {
 }
 
 
+def draw_active_job(layout, rec):
+    """One unfinished job: its status, any review error and its saved-job controls."""
+    box = layout.box()
+    row = box.row(align=True)
+    row.label(text=_short_prompt(rec, 44), icon=KIND_ICON.get(rec.kind, "TIME"))
+    status = STATUS_TEXT.get(rec.status, rec.status)
+    progress = (
+        f" {int(rec.progress * 100)}%"
+        if rec.status == "in-progress" and not rec.meta.get("shared_job")
+        else ""
+    )
+    box.label(text=f"{rec.meta.get('model_name', rec.model_id)}: {status}{progress}", icon="TIME")
+    if rec.error:
+        box.operator(
+            "scenario.error_details", text="Job needs review", icon="ERROR"
+        ).local_id = rec.local_id
+    job_recovery.draw_controls(box, rec)
+
+
 class SCENARIO_PT_jobs(bpy.types.Panel):
     bl_space_type = "VIEW_3D"
     bl_region_type = "UI"
@@ -810,23 +829,7 @@ class SCENARIO_PT_jobs(bpy.types.Panel):
             layout.label(text="No job running", icon="CHECKMARK")
             return
         for rec in active:
-            box = layout.box()
-            row = box.row(align=True)
-            row.label(text=_short_prompt(rec, 44), icon=KIND_ICON.get(rec.kind, "TIME"))
-            status = STATUS_TEXT.get(rec.status, rec.status)
-            progress = (
-                f" {int(rec.progress * 100)}%"
-                if rec.status == "in-progress" and not rec.meta.get("shared_job")
-                else ""
-            )
-            box.label(
-                text=f"{rec.meta.get('model_name', rec.model_id)}: {status}{progress}", icon="TIME"
-            )
-            if rec.error:
-                box.operator(
-                    "scenario.error_details", text="Job needs review", icon="ERROR"
-                ).local_id = rec.local_id
-            job_recovery.draw_controls(box, rec)
+            draw_active_job(layout, rec)
 
 
 class SCENARIO_PT_generations(bpy.types.Panel):

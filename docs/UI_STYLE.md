@@ -144,6 +144,13 @@ status until separate Spark approval is integrated. Drawing remains read-only.
 
 ## Generations
 
+Saved-job controls in Jobs, Generations and every view that reuses them come
+from the shared [action descriptors](BLENDER_JOB_CONTEXT.md#active-saved-job-controls):
+the same label, icon and operator properties for the same job. Add a saved-job
+action as one descriptor, never as a surface-specific button. Hide an action
+that is not offered rather than drawing it disabled, and keep its approval in
+the operator's own dialog.
+
 **Reload parameters** is available only when a result records a supported
 generation lane or kind. Film tasks and generic jobs without that information
 keep their saved-result controls; they must not overwrite the Image form.

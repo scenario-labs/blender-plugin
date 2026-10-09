@@ -186,20 +186,29 @@ def release(scene, name, token):
 
 
 def _remember(owner, scene, item, message):
-    """Explain on the freed input, until its value changes, why nothing was sent."""
-    owner.workflow_notices.append((scene, item.name, _values(item), message))
+    """Explain on the freed input, while it keeps these values, why nothing was sent.
+
+    Undo and redo invalidate Python scene references but keep the scene's session
+    UID, so the note follows history until another upload targets the input.
+    """
+    owner.workflow_notices.append((scene.session_uid, item.name, _values(item), message))
+
+
+def _forget(owner, scene, name):
+    """Retire earlier notes for an input that a new upload now targets."""
+    key = (scene.session_uid, name)
+    kept = [notice for notice in owner.workflow_notices if notice[:2] != key]
+    owner.workflow_notices.clear()
+    owner.workflow_notices.extend(kept)
 
 
 def _notice(owner, scene, item):
     if owner is None:
         return ""
-    values = _values(item)
-    for notice_scene, name, notice_values, message in reversed(owner.workflow_notices):
-        try:
-            if notice_scene == scene and name == item.name and notice_values == values:
-                return message
-        except (ReferenceError, RuntimeError):
-            continue
+    key = (scene.session_uid, item.name, _values(item))
+    for *notice_key, message in reversed(owner.workflow_notices):
+        if tuple(notice_key) == key:
+            return message
     return ""
 
 
@@ -346,6 +355,8 @@ def start(context, reviewed):
     token = uuid.uuid4().hex
     # Mark before capturing the origin so a second click cannot start another upload.
     item[_MARKER] = token
+    # An earlier note described another upload; this one reports its own outcome.
+    _forget(owner, context.scene, item.name)
     binding = WorkflowUpload(
         context.scene,
         form.workflow_id,

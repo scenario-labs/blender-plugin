@@ -72,7 +72,9 @@ class RemoteProgress:
         """Whole percent to display, only while measured and above zero."""
         if self.status not in _MEASURED or not self.fraction:
             return None
-        return math.floor(self.fraction * 100)
+        # Binary floats put 0.29 * 100 just below 29; snap to the reported
+        # decimal before flooring so the bar never shows one percent too low.
+        return math.floor(round(self.fraction * 100, 6))
 
     @property
     def observed_utc(self):

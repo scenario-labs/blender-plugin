@@ -284,15 +284,16 @@ Edit mode:
 ### Materials
 Patina turns a prompt (or a photo) into a seamless PBR set: base color, normal, roughness, metalness, height.
 
-![Materials lane with a copper prompt, texture map choices and settings for the selected mesh](images/panel-materials.png)
+![Materials lane with a copper prompt, texture map choices and settings](images/panel-materials.png)
 
-Select the meshes to texture, describe the material, choose the maps and size, Generate. The material arrives as a Principled BSDF with UV mapping and displacement and is applied to the meshes you had selected. **Tiling** in Generations scales the mapping. Three models: PATINA Material (prompt, with variation and inpainting), PATINA Image to Maps (a flat texture or photo to maps), PATINA Material Extract (isolate one material from a photo).
+Describe the material, choose the maps and size, review the price and choose **Generate**. The job saves the texture set without changing your scene, materials or selection; meshes selected while generating are not textured. Three models: PATINA Material (prompt, with variation and inpainting), PATINA Image to Maps (a flat texture or photo to maps), PATINA Material Extract (isolate one material from a photo).
 
-For an unapplied saved texture set, select a local mesh with UVs and choose
-**Apply saved material**. Confirm its scene, mesh, material slot and listed maps.
-The new material packs the verified images and replaces only that slot. Existing
-material datablocks and other slots stay unchanged. Height uses bump; AO/edge
-maps are retained for manual wiring. This does not regenerate or spend credits.
+For an unapplied saved texture set, make a local mesh with UVs active and choose
+**Apply saved material** on its job in Jobs. Confirm its scene, mesh, material
+slot and listed maps. The new material packs the verified images and replaces
+only that slot. Existing material datablocks and other slots stay unchanged.
+Height uses bump; AO/edge maps are retained for manual wiring. This does not
+regenerate or spend credits.
 
 The mesh must have one object user and belong to one scene. Duplicate map roles,
 multiple texture sets, missing base color, unsupported files and changed targets

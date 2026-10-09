@@ -4,7 +4,6 @@ import json
 import unittest
 
 import bpy
-
 from helpers import FIXTURES, reset_scene, submodule
 
 
@@ -27,17 +26,46 @@ class MaterialLaneTests(unittest.TestCase):
         lane.prompt = "mossy stone"
         request = self.generation.build_request(bpy.context.scene, "material")
         self.assertEqual(request.model_id, "model_patina-material")
-        self.assertEqual(request.body["maps"], ["basecolor", "normal", "roughness", "metalness", "height"])
+        self.assertEqual(
+            request.body["maps"], ["basecolor", "normal", "roughness", "metalness", "height"]
+        )
         self.assertEqual(request.errors, [])
         meta = self.generation.request_meta(bpy.context, "material")
         self.assertEqual(meta["target_objects"], [cube.name])
+
+    def test_lane_hint_describes_explicit_saved_application(self):
+        # Shared material jobs stop at saved results; only Apply saved material assigns them.
+        from test_model_picker import FakeLayout
+
+        panels = submodule("blender.panels")
+        bpy.ops.mesh.primitive_cube_add()
+        cube = bpy.context.active_object
+        for selected in (True, False):
+            with self.subTest(selected=selected):
+                cube.select_set(selected)
+                layout = FakeLayout()
+                panels.draw_generate_lane(layout, bpy.context, "material")
+                labels = [
+                    call[2].get("text") or ""
+                    for node in layout.walk()
+                    for call in node.named("label")
+                ]
+                self.assertIn(
+                    "Results are saved; apply them to a mesh material slot from Jobs",
+                    labels,
+                )
+                self.assertFalse(
+                    [text for text in labels if "selected mesh" in text or "arrival" in text]
+                )
 
     def test_retile_operator_changes_mapping_scale(self):
         mp = submodule("core.scene.material_plan")
         apply_material = submodule("blender.apply_material")
         manifest = json.loads((FIXTURES / "patina-copper-512" / "manifest.json").read_text())
-        files = [(a["type"], str(FIXTURES / "patina-copper-512" / a["file"])) for a in manifest["assets"]]
+        files = [
+            (a["type"], str(FIXTURES / "patina-copper-512" / a["file"])) for a in manifest["assets"]
+        ]
         mat = apply_material.build_material(mp.plan_material("T", files))
         bpy.ops.scenario.retile_material(material_name=mat.name, scale=2.5)
-        mapping = next(n for n in mat.node_tree.nodes if n.type == 'MAPPING')
+        mapping = next(n for n in mat.node_tree.nodes if n.type == "MAPPING")
         self.assertEqual(tuple(mapping.inputs["Scale"].default_value), (2.5, 2.5, 2.5))

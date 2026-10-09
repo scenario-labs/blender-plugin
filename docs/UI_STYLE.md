@@ -148,7 +148,7 @@ Each result collapses on its own; the panel header has a **Collapse all / Expand
 ## Wording
 
 - Verbs on buttons say exactly what happens: `Generate`, `Add to scene`, `Use as reference`, `Refresh cloud`, `Save for recovery`.
-- Singular/plural is correct: `1 Job` / `3 Jobs`, `Applies to 1 selected mesh`.
+- Singular/plural is correct: `1 Job` / `3 Jobs`, `1 marker` / `3 markers`.
 - Prompt helpers request a free exact server price first. Show the formatted CU amount below the tools with a separate action-labelled approval button. Do not use a fixed price or a tooltip as spending authorization. Keep pending/error text readable; an uncertain job offers inspection, never automatic resubmission.
 - CU labels follow the web generation indicator: up to three decimal places,
   no trailing zeros, and thousands separators below 10,000; at or above 10,000,

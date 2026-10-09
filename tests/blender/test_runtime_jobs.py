@@ -453,6 +453,18 @@ class RuntimeJobTests(unittest.TestCase):
         self.assertEqual(request.source.read_bytes(), data)
         self.assertEqual(self.requests, [])
 
+    def test_unusable_preview_cache_leaves_jobs_available_without_previews(self):
+        # A regular file where the disposable cache directory belongs.
+        (self.root / "cache").mkdir()
+        (self.root / "cache" / "result-previews").write_bytes(b"not a directory")
+        session = self.runtime.ensure_job_session()
+        self.assertIs(self.runtime.state.job_session, session)
+        self.assertFalse(session.service_previews())
+        with self.assertRaisesRegex(submodule("blender.job_session").OriginUnavailable, "config"):
+            session.result_previews  # noqa: B018 - the property enforces configuration
+        self.assertEqual(session.recovery_plan(), ())
+        self.assertEqual(self.requests, [])
+
     def test_session_factory_failure_closes_adapter(self):
         with patch.object(self.runtime, "JobSession", side_effect=RuntimeError("fixture")):
             with self.assertRaisesRegex(RuntimeError, "fixture"):

@@ -113,13 +113,14 @@ discarded request removes its private copy.
 ## Cache
 
 The runtime passes `cache/result-previews` under Blender's extension user
-directory. Entries live in `v1/<scope digest>/<key digest>/`; the scope digest
-matches the saved result partition and the key also binds the request, asset,
-MIME type and receipt digest and size. Another credential, project, request or
-byte content therefore never shares an entry. Stills and clips have a data file
-and a JSON sidecar holding digests, sizes, dimensions and the server preview
-asset ID, never a URL, credential or prompt. Envelopes and `missing` markers are
-sidecars only.
+directory. If that directory cannot be created, the session still runs jobs and
+`result_previews` reports that previews are not configured. Entries live in
+`v1/<scope digest>/<key digest>/`; the scope digest matches the saved result
+partition and the key also binds the request, asset, MIME type and receipt
+digest and size. Another credential, project, request or byte content therefore
+never shares an entry. Stills and clips have a data file and a JSON sidecar
+holding digests, sizes, dimensions and the server preview asset ID, never a URL,
+credential or prompt. Envelopes and `missing` markers are sidecars only.
 
 Like saved results, the paths the cache returns, including decode requests,
 use the canonical spelling of its root: on Windows, the extended-length `\\?\`

@@ -1227,7 +1227,7 @@ The test app used a distinct bundle identity and development signature; the
 installed extension and ZIP stayed unchanged. The process exited cleanly with
 no Python network violations and the normal profile unchanged.
 
-![Focused Unicode prompt before opening Studio](images/studio-composer-focused.png)
+![Focused Unicode prompt in the compact composer before opening Studio](images/studio-composer-focused.png)
 ![Studio opens on the first click and retains the composer prompt](images/studio-prompt-handoff.png)
 ![Viewport selection and front view after dismissing Studio](images/studio-viewport-return.png)
 

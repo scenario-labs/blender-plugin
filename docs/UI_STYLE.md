@@ -93,11 +93,12 @@ as for several Edit 3D tasks, the field reads *This model takes no prompt* and
 takes no focus, as the sidebar hides its prompt row.
 
 Installed tests on the packaged ZIP run the real composer draw function, with
-recording drawing primitives, and the real modal handler. They reproduce the
-former mismatch, in which a 1.5 CU Text price was displayed while Generate charged
-the Edit form's 7.25 CU quote. They also reproduce a Text prompt typed into the
-Edit form after a mode switch, and cover both fixes. An offline GUI check ran
-the exact ZIP `d209e483e4c4a6db0283aa5a63e42ff010912a50903050c1a18ad3b7d8bbccd2`
+recording drawing primitives, and the real modal handler. Run against the previous
+composer, they fail where a 1.5 CU Text price labeled the Generate that the
+operator routes to the Edit form's 7.25 CU quote, and where keys typed after a
+mode switch still edited the Text prompt. They also cover the replaced-form rules
+above. An offline GUI check ran the exact ZIP
+`89c07a5b0642ca02b53d5c1fcb57968f03fde32b3ae942ac7f048690f9272011`
 on macOS 27.0.1 arm64 with Blender 5.0.1, 5.1.2 and 5.2.1. It drove the composer through
 Blender's own event queue (`--enable-event-simulate`, a window opened without
 focus, no OS input injected). The steps were: typing into the Text form, Settings

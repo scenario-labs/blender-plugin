@@ -17,7 +17,7 @@ from weakref import WeakKeyDictionary, WeakValueDictionary
 
 from ..api.sdk_adapter import Estimate, SDKAdapter
 from ..schema.forms import _fields, is_file_field
-from . import local_render
+from . import local_export, local_render
 from .film_finishing import (
     CompositionDraft,
     validate_composition_draft,
@@ -83,6 +83,17 @@ class LocalCaptureResult:
     origin: JobOrigin
     source_origin: JobOrigin
     media: local_render.RenderedMedia
+
+
+@dataclass(frozen=True)
+class LocalExportResult:
+    """A published local video receipt; it grants no scene, upload or spend authority."""
+
+    scope: JobScope
+    origin: JobOrigin
+    source_origin: JobOrigin
+    export: local_export.PublishedExport
+    staged: local_export.StagedExport = field(repr=False)
 
 
 class SubmissionUncertain(RuntimeError):
@@ -233,6 +244,7 @@ class JobCoordinator:
         self._film_reviews = {}
         self._film_review_cleanup = set()
         self._film_review_cleanup_reported = set()
+        self._staged_exports = WeakValueDictionary()
         self._bound_estimates = WeakKeyDictionary()
         self._verified_results = WeakValueDictionary()
         self._application_claims = WeakValueDictionary()
@@ -417,6 +429,67 @@ class JobCoordinator:
         media = local_render.render(spec, cancel=cancel)
         check()
         return LocalCaptureResult(self.scope, origin, source_origin, media)
+
+    def _check_export(self, *origins):
+        with self._lock:
+            if not self._active:
+                raise local_render.RenderCancelled("The export context is inactive")
+            for value in origins:
+                guard = self._origin_guard(value) if self._origin_guard else nullcontext(True)
+                with guard as current:
+                    if not isinstance(value, JobOrigin) or not current:
+                        raise local_render.RenderCancelled("The export scene changed")
+
+    def export_film(self, spec, destination, *, origin, source_origin, cancel, progress=None):
+        """Render, verify and publish local video bytes; no Scenario request or spend.
+
+        Both origins must be current before the destination is reserved. A scene
+        edit after the snapshot does not discard the approved bytes, but owner
+        retirement before publishing releases the placeholder and keeps staging.
+        """
+        if not isinstance(spec, local_export.ExportSpec):
+            raise TypeError("Use an approved Film export specification")
+        self._check_export(origin, source_origin)
+        local_export.check_space(spec, destination)
+        reservation = local_export.reserve(destination)
+        try:
+            staged = local_export.render(spec, cancel=cancel, progress=progress)
+        except BaseException:
+            local_export.release(reservation)
+            raise
+        with self._lock:
+            self._staged_exports[id(staged)] = staged
+        try:
+            self._check_export()
+        except local_render.RenderCancelled:
+            local_export.release(reservation)
+            raise local_export.ExportPublishCancelled(
+                "The export context is inactive; the destination was not written", staged
+            ) from None
+        published = local_export.publish(
+            staged, destination, reservation, cancel=cancel, progress=progress
+        )
+        self._log_export(published)
+        return LocalExportResult(self.scope, origin, source_origin, published, staged)
+
+    def publish_film_export(
+        self, staged, destination, *, origin, source_origin, cancel, progress=None
+    ):
+        """Copy this owner's verified staged video to a new destination without rendering."""
+        with self._lock:
+            if self._staged_exports.get(id(staged)) is not staged:
+                raise ValueError("Use this connection's verified staged Film export")
+        self._check_export()
+        published = local_export.publish(staged, destination, cancel=cancel, progress=progress)
+        self._log_export(published)
+        return LocalExportResult(self.scope, origin, source_origin, published, staged)
+
+    @staticmethod
+    def _log_export(published):
+        # Local diagnostics name only the chosen basename and content hash.
+        logging.getLogger("scenario").info(
+            "Exported Film video %s (SHA-256 %s)", published.destination.name, published.sha256
+        )
 
     def prepare_upload(
         self, source, *, origin, kind, content_type, mesh_source=None, expected_sha256=None
@@ -650,6 +723,7 @@ class JobCoordinator:
             self._quotes.clear()
             self._compositions.clear()
             self._verified_results.clear()
+            self._staged_exports.clear()
 
     def close(self):
         """Release the SDK client after the application owner has joined workers."""

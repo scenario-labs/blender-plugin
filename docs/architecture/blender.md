@@ -125,4 +125,20 @@ fixtures. It requires matching movie/cut frame rates. The [review contract](../F
 describes byte/strip limits. Its shared session command now supplies worker
 preparation and generated-source claims before native decoding. Private copy
 identities are rechecked around decoding without GUI-thread copying or hashing.
-Native/MCP controls, portable export and live/desktop acceptance remain pending.
+Native/MCP controls, the portable case-study bundle and live/desktop acceptance
+remain pending.
+
+## Film video export
+
+[`local_capture.export_snapshot`](../../scenario/blender/local_capture.py)
+synchronizes one sequencer scene's own view layers, stamps its external media
+and writes a private snapshot on the main thread without changing the working
+file, scene or frame. The bundled
+[`film_export_worker.py`](../../scenario/blender/film_export_worker.py) changes
+render settings only in an offline child, encoding H.264/AAC MP4 with Blender's
+built-in FFmpeg, and in verification mode decodes the result in a fresh child.
+Rendering, verification and no-overwrite publishing stay in bpy-free core code on
+a session-owned export thread; no bpy runs there. See the
+[export contract](../FILM_PLAN.md#offline-film-video-export-primitive) for bounds,
+verification levels, cancellation and crash leftovers. Native/MCP export controls
+remain pending.

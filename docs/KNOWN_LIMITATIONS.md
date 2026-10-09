@@ -98,6 +98,10 @@ establish live generation or full render-lane desktop acceptance.
   accepts baseline or progressive JPEG and ACES-labelled OpenEXR panoramas.
   Other image results, such as WebP, or JPEG and ACES-labelled OpenEXR outside
   World, stay saved with the job without import.
+- Saved Gaussian splats (SPZ v2/v3, 3DGS PLY and .splat) can be decoded off the
+  main thread, but no saved-job import control uses this yet (#65). SPZ v4 (ZSTD)
+  and the pre-release v1 cannot be decoded; their files are kept. Splats will be
+  shown as coloured point clouds, not rendered as Gaussian splats.
 - Prompt helpers require their own exact quote and approval. Unusable Spark
   output fails without an automatic paid LLM fallback; complete text can be
   retrieved again without regeneration. Historical prices are not current quotes.

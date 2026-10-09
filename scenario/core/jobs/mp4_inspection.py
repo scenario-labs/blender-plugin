@@ -22,7 +22,6 @@ MAX_TRACKS = 16
 # permits monochrome. Higher profiles can carry 10-bit or 4:2:2/4:4:4 video.
 H264_420_PROFILES = frozenset({66, 77, 88, 100})
 AAC_OBJECT_TYPE = 0x40
-_CONTAINERS = frozenset({b"moov", b"trak", b"mdia", b"minf", b"stbl"})
 
 
 class Mp4Error(ValueError):

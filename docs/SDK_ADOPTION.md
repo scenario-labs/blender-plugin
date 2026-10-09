@@ -42,7 +42,7 @@ records, lane/schema helpers and local display status classification remain.
 | Model catalog, schemas, connection check | `SDKCatalog` / `SDKAdapter`: `models.with_raw_response.list/retrieve`; [trained-model discovery](#trained-model-catalog-reads) adds `models.with_raw_response.get_bulk` |
 | Exact model quote and submission, including render, Blockout and Film models | `JobCoordinator` / `SDKAdapter`: `generate.with_raw_response.run_model`, with `dry_run="true"` only for quotes |
 | New/Rewrite and Translate | Shared prompt commands: `generate.with_raw_response.prompt/translate`, including separate exact estimates and submission claims |
-| Cloud history, known-job recovery, polling and inference cancellation | Shared catalog/coordinator: `jobs.with_raw_response.list/retrieve/trigger_action` |
+| Cloud history, known-job recovery, polling, remote progress and inference cancellation | Shared catalog/coordinator: `jobs.with_raw_response.list/retrieve/trigger_action`; progress reads `Job.status` and `Job.progress` from the same polling retrieve, with no extra request |
 | Result and complete prompt/model-text metadata | Shared coordinator: `assets.with_raw_response.retrieve`; bounded complete text uses the signed result transport |
 | Asset library browsing and text search | Shared coordinator: `assets.with_raw_response.list` and `search.with_raw_response.asset_search`; explicit single-page reads with selected project scope |
 | Reference upload metadata, progress and completion | Shared upload coordinator: `uploads.with_raw_response.create/retrieve/trigger_action` |
@@ -91,6 +91,7 @@ using the locked environment.
 | Workflow estimate and submission | `workflows.run`: PUT, unchanged workflow-specific body, `dryRun` and `projectId` in the query |
 | Exact quote preservation | `generate.with_raw_response.run_model` retains JSON bytes for decimal parsing; this is a public SDK wrapper, not a custom endpoint call |
 | Model, asset and job retrieval | `models.retrieve`, `assets.retrieve`, `jobs.retrieve`: project query and response wrappers, including unrecognized fields |
+| Remote job progress | `jobs.with_raw_response.retrieve`: raw JSON keeps a fractional `progress`, active `status` and `statusHistory`; the parsed `Job` exposes `progress` and `status` |
 | Active UI/MCP model catalog | `models.with_raw_response.list/retrieve`: public privacy, opaque pagination cursor and original response fields; `status=trained` is used only for private model lists, as documented in the published wheel's `resources/models/models.py` |
 | Trained-model discovery | `models.with_raw_response.list(privacy="private", status="trained")` keeps the filter, page size, cursor and project in the query; `models.with_raw_response.get_bulk`: POST `/models/get-bulk` with only `modelIds` in JSON, project in the query, original `models` bytes and parsed `uiConfig.lorasComponent`; a `models.retrieve` 403 or 404 is one status error |
 | Multipart upload lifecycle | `uploads.create/retrieve/trigger_action`: project query, asset-option aliases, part URLs and processing/result fields; creation does not transfer bytes |

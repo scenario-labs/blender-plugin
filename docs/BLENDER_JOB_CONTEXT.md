@@ -634,6 +634,43 @@ the main thread advances delivery; pause, failure, completion or timeout returns
 the current result without canceling or regenerating. Stopping the MCP server
 interrupts its wait without canceling the generation.
 
+## Remote progress and scene lane binding
+
+Automatic and explicit `refresh_remote`/`cancel_remote` completions already carry
+the coordinator's `RemoteSnapshot` from SDK `jobs.retrieve`. `ModelJobs._observe`
+is their single consumer: [`progress.observe`](../scenario/core/jobs/progress.py)
+turns an active snapshot into one `RemoteProgress` reading (status, fraction,
+UTC and monotonic time) bound to the record's remote job ID and saved revision.
+The fraction must be a finite number from 0 to 1; booleans, strings, missing,
+non-finite and out-of-range values are unknown, never 0. Providers may still
+report 0 until completion, so a percentage is shown only for `in-progress` or
+`finalizing` above zero. A terminal snapshot clears the reading. Later
+interpretations of the same snapshots extend this hook rather than draining the
+completions again.
+
+The reading lives only in the view's `meta["remote"]`, the projection the Jobs
+views and MCP `job_status` both read. Each maintenance poll drops it when the
+record leaves `remote`/`cancel_requested` or its remote ID or revision changes,
+and marks it stale when automatic polling is not keeping it current: Online
+Access is off, delivery is paused (including after an explicit one-time
+refresh) or the scheduled refresh is overdue by `STALE_GRACE`. Staleness follows
+each job's scheduled poll time, so a longer scheduled interval is not stale
+merely for being longer. Polling cadence, online gating and saved revisions are
+unchanged: an active refresh writes nothing and nothing about progress is
+persisted. After a restart, readings appear only after an explicit **Refresh
+status** or **Resume download**.
+
+`ModelJobs.submit` records a display-only `JobBinding`: the submitting scene's
+`session_uid` and the submitted generation lane, for UI forms and MCP `generate`
+alike, before dispatch. `bound_views(scene, lane)` returns that scene lane's
+views newest first from in-memory dictionaries only, so drawing code such as a
+compact composer strip can find the current job without guessing. A binding
+grants no destination, origin or application authority; results still apply
+only through their own approvals and origin checks. Workflow and Film
+submissions are unbound. Bindings and readings retire with their owner on a
+credential, project or file change. Lanes are not persisted: restarted and
+recovered jobs are unbound, and MCP reports `lane: null` for them.
+
 ## Explicit recovered Image application
 
 For downloaded PNG/EXR results in `ready` or confirmed `apply_failed` state,

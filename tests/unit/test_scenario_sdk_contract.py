@@ -219,6 +219,43 @@ def test_retrieve_keeps_scope_and_response_extensions(
     assert result.to_dict()[wrapper]["futureField"] == {"retain": True}
 
 
+def test_job_retrieve_raw_wrapper_keeps_fractional_progress_and_active_status(client_factory):
+    # Shared-job progress reads this same scoped retrieve (SDKAdapter.job); no new request.
+    requests = []
+    job = {
+        "jobId": "fixture-job",
+        "jobType": "custom",
+        "status": "finalizing",
+        "progress": 0.4217,
+        "statusHistory": [
+            {"status": "queued", "date": "2026-01-01T00:00:00.000Z"},
+            {"status": "in-progress", "date": "2026-01-01T00:00:01.000Z"},
+            {"status": "finalizing", "date": "2026-01-01T00:00:02.000Z"},
+        ],
+        "createdAt": "2026-01-01T00:00:00.000Z",
+        "updatedAt": "2026-01-01T00:00:02.000Z",
+        "metadata": {},
+    }
+
+    def respond(request):
+        requests.append(request)
+        return httpx.Response(200, json={"job": job})
+
+    sdk = client_factory(respond)
+    raw = sdk.jobs.with_raw_response.retrieve("fixture-job", project_id=PROJECT)
+    assert json.loads(raw.read())["job"] == job
+    parsed = raw.parse().job
+    assert (parsed.progress, parsed.status) == (0.4217, "finalizing")
+    assert [item.status for item in parsed.status_history] == [
+        "queued",
+        "in-progress",
+        "finalizing",
+    ]
+    assert len(requests) == 1
+    assert (requests[0].method, requests[0].url.path) == ("GET", "/v1/jobs/fixture-job")
+    assert dict(requests[0].url.params) == {"projectId": PROJECT}
+
+
 def test_cancel_uses_remote_action_and_keeps_acknowledged_status(client_factory):
     requests = []
 

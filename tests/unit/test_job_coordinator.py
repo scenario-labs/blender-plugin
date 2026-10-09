@@ -14,6 +14,7 @@ import httpx
 import pytest
 
 from scenario.core.api.sdk_adapter import AdapterError, Credentials, SDKAdapter
+from scenario.core.jobs import progress
 from scenario.core.jobs.coordinator import (
     JobCoordinator,
     QuoteError,
@@ -384,6 +385,35 @@ def test_malformed_receipt_persistence_failure_stays_unreplayable(setup, monkeyp
     with pytest.raises(ValueError):
         submit(coordinator, prepared)
     assert len(requests) == 2
+
+
+def test_active_refresh_yields_progress_without_changing_or_persisting_the_record(setup, tmp_path):
+    def respond(request):
+        return httpx.Response(
+            200,
+            json={
+                "job": {
+                    "jobId": "remote",
+                    "jobType": "custom",
+                    "status": "in-progress",
+                    "progress": 0.4217,
+                }
+            },
+        )
+
+    coordinator, store, prepared, requests, _ = setup(respond)
+    remote = submit(coordinator, prepared)
+    snapshot = coordinator.refresh_remote(
+        remote.intent.request_id, expected_revision=remote.revision
+    )
+    assert snapshot.record == remote == store.get(remote.intent.request_id)
+    assert (requests[-1].method, requests[-1].url.path) == ("GET", "/v1/jobs/remote")
+    reading = progress.observe(snapshot)
+    assert (reading.status, reading.fraction, reading.percent) == ("in-progress", 0.4217, 42)
+    assert (reading.remote_job_id, reading.revision) == ("remote", remote.revision)
+    # The reading stays in memory; no database file holds the response or fraction.
+    saved = b"".join(path.read_bytes() for path in tmp_path.glob("jobs.sqlite3*"))
+    assert b"0.4217" not in saved and b"in-progress" not in saved
 
 
 def test_prompt_restart_observes_known_id_without_resubmission_or_cancellation(setup, tmp_path):

@@ -14,6 +14,7 @@ from mathutils import Matrix
 
 from ..core.api.catalog import GENERATION_LANES, LANE_KIND
 from ..core.api.errors import ScenarioError
+from ..core.jobs import progress
 from ..core.jobs.records import JobRecord
 from ..core.jobs.store import JobOrigin, JobState, LocalApplicationState, StoredJob, _identity
 from ..core.scene.panorama import WORLD_MEDIA_TYPES
@@ -35,6 +36,12 @@ from .mesh_result_application import validate_request as validate_mesh_request
 from .model_application import MODEL_MEDIA_TYPE
 from .model_application import validate_destination as validate_model_destination
 from .world_application import PanoramaError, WorldApplicationError
+
+# Seconds between automatic refreshes of a known remote job. A reading becomes
+# stale once its scheduled refresh is overdue by the grace, so a longer
+# scheduled interval never reads as stale merely because it is longer.
+POLL_INTERVAL = 2.0
+STALE_GRACE = 2 * POLL_INTERVAL
 
 
 def _snapshot(body):
@@ -60,6 +67,20 @@ class ModelQuote:
     quote: object = field(default=None, repr=False)
     used: bool = False
     operation: str = "model"
+
+
+@dataclass(frozen=True)
+class JobBinding:
+    """Display-only origin of a model-lane submission in this session.
+
+    `scene_uid` is Blender's session identifier of the submitting scene, stable
+    across renames and undo, and `lane` is the submitted generation lane. A
+    binding grants no destination, origin or application authority. It is never
+    persisted, so restarted and recovered jobs remain unbound.
+    """
+
+    scene_uid: int
+    lane: str
 
 
 @dataclass
@@ -155,6 +176,7 @@ class ModelJobs:
         self.quotes = {}
         self.submissions = {}
         self.views = {}
+        self._bindings = {}
         self._online = online
         self._commands = {}
         self._next_poll = {}
@@ -299,7 +321,13 @@ class ModelJobs:
         # Consumption precedes persistence: an error may occur after a committed
         # write. A second click must never prepare another intent from this quote.
         ticket.used = True
-        return self._submit_quote(ticket.quote, lane=lane, kind=LANE_KIND[lane], meta=meta)
+        return self._submit_quote(
+            ticket.quote,
+            lane=lane,
+            kind=LANE_KIND[lane],
+            meta=meta,
+            binding=JobBinding(scene.session_uid, lane),
+        )
 
     def submit_workflow(self, quote_id, scene, workflow_id, body, *, approved_cost):
         if os.environ.get("SCENARIO_GUI_PROBE") == "1":
@@ -332,7 +360,7 @@ class ModelJobs:
             raise ScenarioError(0, "Approve a Film task's unchanged exact price")
         return self._submit_quote(quote, lane="film", kind="film")
 
-    def _submit_quote(self, quote, *, lane, kind, meta=None):
+    def _submit_quote(self, quote, *, lane, kind, meta=None, binding=None):
         estimate = quote.estimate
         model_id = estimate.target_id
         prepared = self.session.prepare_quote(quote)
@@ -348,6 +376,9 @@ class ModelJobs:
             meta=dict(meta or {}),
         )
         self.views[view.local_id] = view
+        # Bind before dispatch so a job that could not be queued stays findable.
+        if binding is not None:
+            self._bindings[view.local_id] = binding
         view.meta["shared_job"] = True
         if lane == "image":
             self._automatic_application.add(view.local_id)
@@ -462,7 +493,9 @@ class ModelJobs:
                     )
                     _remember(self._images, request_id, result.images, bpy.data.images)
                     self._paused.discard(request_id)
-                self._next_poll[request_id] = time.monotonic() + 2.0
+                elif command in ("refresh_remote", "cancel_remote"):
+                    self._observe(request_id, completion.result)
+                self._next_poll[request_id] = time.monotonic() + POLL_INTERVAL
             except MaterialResultUncertain as error:
                 if error.application is not None:
                     self._receipts[request_id] = error
@@ -518,6 +551,7 @@ class ModelJobs:
                     request_id,
                     "Result delivery stopped; review the saved job before retrying",
                 )
+        online = self._online()
         for request_id, view in self.views.items():
             record = self.store.get(request_id)
             if record is None:
@@ -536,6 +570,7 @@ class ModelJobs:
             view.meta["saved_revision"] = record.revision
             view.meta["saved_state"] = record.state.value
             view.meta["recovery_actions"] = self.actions(record)
+            self._project_remote(request_id, record, view, online=online)
             if record.state in (JobState.SUBMITTING, JobState.UNCERTAIN):
                 view.error = "Submission outcome is not confirmed; do not submit it again"
             elif any(
@@ -552,9 +587,9 @@ class ModelJobs:
                 continue
             command = None
             if record.state in (JobState.REMOTE, JobState.CANCEL_REQUESTED):
-                if self._online() and time.monotonic() >= self._next_poll.get(request_id, 0):
+                if online and time.monotonic() >= self._next_poll.get(request_id, 0):
                     command = "refresh_remote"
-            elif record.state == JobState.SUCCEEDED and self._online():
+            elif record.state == JobState.SUCCEEDED and online:
                 command = "download_results"
             elif record.state == JobState.READY and request_id in self._automatic_application:
                 command = "verify_results"
@@ -570,6 +605,58 @@ class ModelJobs:
     def _pause(self, request_id, message):
         self._paused.add(request_id)
         self.views[request_id].error = message
+
+    def _observe(self, request_id, snapshot):
+        """Project one validated remote reading; terminal or other snapshots clear it.
+
+        This is the only consumer of refresh/cancel snapshots. Later remote
+        interpretations extend this hook instead of draining them separately.
+        """
+        reading = progress.observe(snapshot)
+        meta = self.views[request_id].meta
+        if reading is None:
+            meta.pop("remote", None)
+        else:
+            meta["remote"] = reading
+
+    def _project_remote(self, request_id, record, view, *, online):
+        """Keep a reading only for its unchanged known job, and mark it stale.
+
+        Stale means automatic polling is not keeping the reading current:
+        delivery is paused, Online Access is off or the scheduled refresh is
+        overdue by the grace. It is display state; nothing is persisted.
+        """
+        reading = view.meta.get("remote")
+        if reading is None:
+            return
+        if (
+            record.state not in (JobState.REMOTE, JobState.CANCEL_REQUESTED)
+            or record.remote_job_id != reading.remote_job_id
+            or record.revision != reading.revision
+        ):
+            del view.meta["remote"]
+            return
+        due = max(self._next_poll.get(request_id, 0.0), reading.observed_monotonic)
+        stale = not online or request_id in self._paused or time.monotonic() > due + STALE_GRACE
+        if stale != reading.stale:
+            view.meta["remote"] = replace(reading, stale=stale)
+
+    def bound_views(self, scene, lane):
+        """Return this session's views submitted from one scene lane, newest first.
+
+        Reads only in-memory bindings and views, so drawing code may call it.
+        A binding identifies where a job came from; it never authorizes applying
+        a result there.
+        """
+        try:
+            key = JobBinding(scene.session_uid, lane)
+        except ReferenceError:
+            return ()
+        return tuple(
+            self.views[request_id]
+            for request_id, binding in reversed(self._bindings.items())
+            if binding == key and request_id in self.views
+        )
 
     def inspect(self):
         """Attach saved display projections without resuming or applying old work."""
@@ -1223,11 +1310,20 @@ class ModelJobs:
         if len(matches) != 1:
             return None
         record = matches[0]
+        view = self.views.get(record.intent.request_id)
+        reading = view.meta.get("remote") if view is not None else None
+        binding = self._bindings.get(record.intent.request_id)
         return {
             "local_id": record.intent.request_id,
             "job_id": record.remote_job_id,
             "status": record.state.value,
             "revision": record.revision,
+            # In-memory projection shared with the Jobs views; never persisted.
+            "lane": binding.lane if binding is not None else None,
+            "remote_status": reading.status if reading is not None else None,
+            "progress": reading.fraction if reading is not None else None,
+            "remote_observed_at": reading.observed_utc if reading is not None else None,
+            "remote_stale": reading.stale if reading is not None else None,
             "mesh_sources": [asdict(source) for source in record.intent.mesh_sources],
             "cu_cost": float(record.intent.quote_cost)
             if record.intent.quote_cost is not None

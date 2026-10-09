@@ -163,6 +163,27 @@ Existing jobs and admitted uploads keep their own lifetime and origin guards.
 
 Each result collapses on its own; the panel header has a **Collapse all / Expand all** toggle. A failed result shows a red error control in its header whose tooltip is the whole message (with the Error ID) and which opens the full text with a Copy button on click (a `description()`-driven operator, since Blender labels have no per-instance tooltip). Never truncate an error to a single clipped line as the only way to read it. The prompt box carries a trash button that deletes its text, greyed out when empty.
 
+## Jobs status and remote progress
+
+A shared Jobs row names its saved state in words (`waiting to submit`,
+`submitted`, `canceling`, `downloading results`, `download failed`), never a raw
+state identifier. While a known remote job is polled, the latest validated
+Scenario status replaces `submitted`: `waiting`, `queued`, `starting`,
+`generating` or `finishing`. Draw a native progress bar with its whole percentage
+only when Scenario reports a measured fraction above zero; never draw a
+percentage for zero, unknown or queued states, and never show an estimated time.
+When the reading is not being kept current, add one information line: `Status is
+not updating`, or `Status paused while online access is disabled`. Drawing reads
+only the projected view; it performs no I/O, store read, session creation or
+property write. The pump redraws when the drawn rows change, so the bar moves
+without hovering, but it does not redraw for the brief in-flight refresh that
+hides saved-job controls. Studio Jobs reuses the same draw.
+
+Installed Blender 5.1.2 tests on macOS arm64 check the drawn label, bar factor
+and text, the stale lines, the absence of storage reads and writes during draw,
+and one redraw per projected change. No desktop interaction or screenshot of the
+bar is claimed yet; that remains #66 acceptance.
+
 ## Wording
 
 - Verbs on buttons say exactly what happens: `Generate`, `Add to scene`, `Use as reference`, `Refresh cloud`, `Save for recovery`.

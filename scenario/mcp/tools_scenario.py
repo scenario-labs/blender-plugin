@@ -2239,6 +2239,7 @@ SPECS = (
             "  - job_id: optional string, a Scenario job id or the local_id returned by generate.\n"
             "  - id: optional string, compatibility alias; provide job_id or id. job_id takes precedence if both are supplied.\n"
             "Returns: local_id, job_id, status, cu_cost, files, error and kind. Shared jobs also return revision, cu_cost_exact, results (asset_id, name, media_type, size, downloaded), actions, images and mesh_sources. actions name explicit follow-ups that never run automatically: cancel_prepared maps to the cancel_prepared_job tool; refresh, resume, cancel, recover_download and retry_receipt map to recover_local_job. Source records describe uploaded snapshots; they do not authorize finding or replacing an object after restart. Recovered jobs report kind=model; result media types remain available. Unknown jobs raise ValueError.\n"
+            "Shared jobs also return the same advisory in-memory projection as the native Jobs views, never persisted: lane is the model lane that submitted the job in this Blender session (null for workflow, Film, restarted and recovered jobs; it grants no destination). While a known remote job is active, remote_status is its latest validated Scenario status (pending, queued, warming-up, in-progress or finalizing), progress is the reported fraction from 0 to 1 or null when missing or invalid, remote_observed_at is that reading's UTC time and remote_stale is true when automatic polling is not keeping it current (delivery paused, Online Access off or a refresh overdue). All four are null otherwise. Providers may keep progress at 0 until completion, so it is never a time estimate.\n"
             'Example: {"job_id": "job_example"}.\n'
             "Prefer this for one status check; it only knows jobs tracked by this Blender runtime.\n"
             "Platform equivalent: job_get."
@@ -2255,7 +2256,7 @@ SPECS = (
             "  - job_id: optional string, a Scenario job id or local_id returned by generate.\n"
             "  - id: optional string, compatibility alias; provide job_id or id. job_id takes precedence.\n"
             "  - timeout: optional finite number of seconds from 0 to 170, default 170.\n"
-            "Returns: local_id, job_id, status, progress, cu_cost, files, error and kind; on timeout, also note: still running, call again.\n"
+            "Returns: shared jobs return the job_status fields, including lane, remote_status, progress, remote_observed_at and remote_stale, when delivery finishes, pauses for review or the wait expires. If delivery_paused is false and status is still prepared, submitting, remote, cancel_requested, succeeded or downloading, the wait expired; call again. Prototype records return local_id, job_id, status, progress, cu_cost, files, error and kind, with a recovery note while unfinished.\n"
             'Example: {"job_id": "job_example", "timeout": 30}.\n'
             "Prefer job_status for a quick check. Waiting runs off the main thread; it does not cancel, retry or submit generation. Context changes require a fresh status query.\n"
             "Platform equivalent: jobs_wait."

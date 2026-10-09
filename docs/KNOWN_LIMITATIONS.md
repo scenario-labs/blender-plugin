@@ -67,6 +67,14 @@ establish live generation or full render-lane desktop acceptance.
   them; check their outcome in the Scenario web app.
 - Trained/custom-model discovery and routing remain incomplete
   ([#97](https://github.com/scenario-labs/blender-plugin/issues/97)).
+- Remote job progress is advisory and kept only in memory. Providers may report
+  no fraction, or 0 until completion, so a job may show only `generating`; no
+  time estimate is given. Readings and the submitting scene/lane binding are not
+  persisted: after a restart, progress appears only after an explicit refresh or
+  resume, and recovered jobs remain unbound. Which providers report intermediate
+  fractions, and desktop review of the progress bar, still need live and
+  [#66](https://github.com/scenario-labs/blender-plugin/issues/66)/[#68](https://github.com/scenario-labs/blender-plugin/issues/68)
+  evidence. See [the projection rules](BLENDER_JOB_CONTEXT.md#remote-progress-and-scene-lane-binding).
 
 ## Creation and scene application
 

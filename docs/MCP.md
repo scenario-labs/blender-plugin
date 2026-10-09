@@ -44,6 +44,18 @@ the current scene. Shared `wait_for_job` waits without blocking Blender's main
 thread and returns when delivery finishes, needs review, or reaches its timeout.
 See [job contexts](BLENDER_JOB_CONTEXT.md) for lifetime and remaining integration.
 
+Shared `job_status` and `wait_for_job` results add the native Jobs projection as
+flat fields. `lane` is the model lane that submitted the job in this Blender
+session, or `null` for workflow, Film, restarted and recovered jobs; it never
+selects a destination. While a known remote job is active, `remote_status` is its
+latest validated Scenario status, `progress` its reported fraction from 0 to 1
+(`null` when missing or invalid), `remote_observed_at` the reading's UTC time and
+`remote_stale` whether automatic polling has stopped keeping it current. They are
+`null` otherwise and are never persisted. Providers may keep `progress` at 0 until
+completion, so it is not a time estimate. A restarted job reports progress only
+after explicit `recover_local_job` `refresh` or `resume`; see
+[the projection rules](BLENDER_JOB_CONTEXT.md#remote-progress-and-scene-lane-binding).
+
 To import recovered PNG/EXR results, call `prepare_result_application` with the
 current context, request and revision, then show its destination and image list
 to the user. After approval, `apply_result_application` consumes the returned

@@ -420,7 +420,8 @@ recover those downloads, but its completion cannot rebind an old scene or target
 The optional `preview_root` constructor argument gives the session a
 [result preview scheduler](RESULT_PREVIEWS.md) over its own coordinator and the
 workers' dedicated preview lane. The runtime supplies `cache/result-previews`
-under extension user data. On the main thread, `result_previews` returns the
+under extension user data; if it cannot create that directory, the session still
+runs jobs without previews. On the main thread, `result_previews` returns the
 scheduler only while the session is active and configured; otherwise it raises
 `OriginUnavailable`. Previews are keyed by the saved job, asset and receipt, not
 by a captured origin: they work after a scene switch or restart and never grant

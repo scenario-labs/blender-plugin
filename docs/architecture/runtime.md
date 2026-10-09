@@ -146,7 +146,11 @@ Project changes follow the same retirement path as credential changes: clear
 catalog/schema/history/quote projections, deactivate the old session and reject
 late callback authority. In-flight receipts remain in their original scoped store.
 Returning to a project reopens its records with fresh session approval identity;
-normalized-equivalent edits keep the current session. Read-only history and Film
+normalized-equivalent edits keep the current session. Explicit trained-model lane
+defaults follow the same selection: `ensure_model_defaults` opens an owner of the
+selected store's scope without any service request, and this retirement path
+retires it, so a default reviewed under the old selection cannot be written into
+the new one ([runtime owner](../JOB_STORAGE.md#runtime-owner)). Read-only history and Film
 controls check both credentials and project without mutating state in drawing.
 Prototype jobs have no reliable credential or project ownership. Their automatic
 service engine is retired for every selection, including the default project;

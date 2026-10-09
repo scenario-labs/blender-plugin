@@ -13,7 +13,7 @@
     "sources": {
       "docs/development/validation.md": "5fb9e3ed4103b27add6db69b2128fe637ca98dfd8bd0f8d364b708966f5505aa",
       "scenario/blender/workflow_controls.py": "86e56c432f605e8c2532b82565a180735dc5eabe28db3e0d877adceb620090d8",
-      "scenario/blender/workflow_uploads.py": "e25e38afef2d7144b0793846477ac8cc65ca474399e97cb57d285336f78074f8",
+      "scenario/blender/workflow_uploads.py": "6d7b5f83e6bd3856414fcab8bce194d9c6adc561406e06e69bc89073b7bba18e",
       "tests/blender/package_update.py": "397aec773589cd484841c891f69d9e72b29e3fd4ae39c06fc6be0dfb26f04197",
       "tools/test_repository_update.py": "7ef5bfca46f27305a528ec309c1907434bb97d79c81356be37b1f3e272d9abaa"
     }

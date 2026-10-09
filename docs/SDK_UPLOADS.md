@@ -534,9 +534,11 @@ observed, an admission was refused while the record was still `prepared` (it
 reaches `initializing` before the first service request), or the record was
 canceled. Delivery then removes only its own marker, keeps existing input values
 and leaves a note on the input. Each input keeps only its latest note, stored by
-the scene's session UID and input name and shown while the input keeps the values
-it was recorded with. It survives undo and redo, notes on other inputs never
-evict it, and starting another upload into the input retires it. The upload operator returns `FINISHED`
+the scene's session UID and input name, and shown only while the loaded workflow,
+its schema and the input's values match those it was recorded with. It survives
+undo and redo, notes on other inputs never evict it, and another upload admitted
+into the input retires it; a retry refused before admission keeps it. The upload
+operator returns `FINISHED`
 whenever a new marker remains after a start failure, so its undo step is recorded.
 
 The maintenance pump attaches only after an imported observation and a fresh

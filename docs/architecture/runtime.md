@@ -245,8 +245,11 @@ scene, preserves existing selection and packs its textures. Rigs, weights and
 node/morph animation clips remain in the new group; timing uses scene FPS without
 changing the current frame or timeline range. Its separate durable claim/receipt
 recovery follows the same session; in-place rig/animation transfer remains open.
-Saved PNG/EXR results also offer explicit World replacement, with a separate
-guarded restore in the current session. Completed jobs can reuse saved results
+Saved PNG, JPEG and OpenEXR results, including `image/aces`, also offer explicit
+World replacement, with a separate guarded restore in the current session.
+Application refuses a file whose container differs from its saved media type;
+[World application](../WORLD_APPLICATION.md#accepted-local-files) lists the
+accepted variants. Completed jobs can reuse saved results
 through fresh UI/MCP approval and a separate durable local claim, preserving the
 original generation outcome. Interrupted local claims block another application.
 Saved texture sets also offer explicit one-mesh material-slot approval, using

@@ -34,9 +34,10 @@ edited target pass.
 loads and packs the image, and installs a new World on an explicit scene.
 Its restoration checks protect later user changes. The explicit JobSession World
 command wraps one verified saved asset with original-context checks and a durable
-application claim. Recovered unapplied results now have shared native/MCP
-World approval and guarded session-local restoration. Already-applied image
-reuse, panorama-specific generation and global undo integration remain.
+application claim. Recovered unapplied results, and completed results through a
+separate reuse claim, now have shared native/MCP World approval and guarded
+session-local restoration for saved PNG, JPEG and OpenEXR panoramas.
+Panorama-specific generation and global undo integration remain.
 
 Existing [image](../../scenario/blender/apply_image.py),
 [3D import](../../scenario/blender/apply_3d.py),

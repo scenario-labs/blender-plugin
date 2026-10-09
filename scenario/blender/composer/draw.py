@@ -304,12 +304,12 @@ def draw_composer():
     layout = composer_layout(context, state)
     scale = layout.scale
     state.layout = layout
+    # The tab stays highlighted; prompt, model, price and Generate follow the form it drives.
+    tab = state.lane_for(scene)
+    lane = state.generation_lane(scene)
     lane_state = (
-        state.sync_from_lane(scene)
-        if not state.focused
-        else scene.scenario.lane_state(state.lane_for(scene))
+        state.sync_from_lane(scene) if not state.focused else scene.scenario.lane_state(lane)
     )
-    lane = state.lane_for(scene)
     enabled = panels.generate_enabled(lane_state, lane)
     font_px = int(12 * scale)
     gpu.state.blend_set("ALPHA")
@@ -358,7 +358,7 @@ def draw_composer():
         # full labels when they fit, else the short ones; the layout clips only as a last resort, never to nothing
         labels = layout.tab_labels(_measure(font_px))
         for tab_lane, tr in layout.tab_rects.items():
-            active = tab_lane == lane
+            active = tab_lane == tab
             _chip(
                 tr,
                 labels[tab_lane],

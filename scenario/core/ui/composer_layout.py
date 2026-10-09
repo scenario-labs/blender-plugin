@@ -40,6 +40,7 @@ PLACEHOLDERS = {
     "material": "Describe the material (weathered copper, mossy stone...)",
     "render_image": "Describe the look to render the viewport with (empty: Prompt Spark writes it)",
     "render_video": "Describe the look of the video (empty: Prompt Spark writes it)",
+    "edit3d": "Describe the edit to the selected mesh",
 }
 
 

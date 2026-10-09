@@ -78,6 +78,7 @@ def test_prompt_placeholder_and_lane_labels():
         "render_image"
     ) and "Prompt Spark" in cl.placeholder_for("render_video")
     assert cl.placeholder_for("unknown") == "Type a prompt"
+    assert "selected mesh" in cl.placeholder_for("edit3d")  # the 3D tab in Edit mode
 
 
 def test_shift_arrows_extend_and_shrink_the_selection():

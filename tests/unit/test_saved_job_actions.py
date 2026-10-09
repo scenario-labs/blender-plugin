@@ -10,13 +10,14 @@ from types import SimpleNamespace
 
 import pytest
 
+from scenario.core.scene.panorama import WORLD_MEDIA_TYPES
 from scenario.core.ui import saved_job_actions as sja
 
 ROOT = Path(__file__).resolve().parents[2]
 TYPES = sja.ResultTypes(
     model="model/gltf-binary",
     media={"video/mp4": "video", "video/webm": "video", "audio/wav": "audio"},
-    world=frozenset({"image/png", "image/exr", "image/x-exr"}),
+    world=WORLD_MEDIA_TYPES,
 )
 CONTEXT = "context-token"
 JOB = (("context_id", CONTEXT), ("request_id", "request"), ("expected_revision", 7))
@@ -123,7 +124,12 @@ def test_recovery_controls_dispatch_the_recovery_operator_with_their_action():
 
 
 def test_ready_images_offer_import_world_and_material_then_await_review():
-    assets = (("first", "image/png"), ("depth", "image/jpeg"), ("second", "image/x-exr"))
+    assets = (
+        ("first", "image/png"),
+        ("depth", "image/webp"),
+        ("second", "image/jpeg"),
+        ("third", "image/x-exr"),
+    )
     actions = ("import_images", "apply_world", "apply_material")
     items = sja.describe(view(actions, "ready", assets), CONTEXT, TYPES)
     world = "scenario.apply_saved_world"
@@ -132,6 +138,7 @@ def test_ready_images_offer_import_world_and_material_then_await_review():
         # World numbering counts only panorama candidates, unlike per-asset imports.
         asset("apply_world", world, "Set panorama as World (1)", "first", purpose="world"),
         asset("apply_world", world, "Set panorama as World (2)", "second", purpose="world"),
+        asset("apply_world", world, "Set panorama as World (3)", "third", purpose="world"),
         ("apply_material", "apply", "scenario.apply_saved_material", "Apply saved material", "NONE", dict(JOB)),
         AWAITING,
     ]  # fmt: skip

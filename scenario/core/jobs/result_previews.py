@@ -687,7 +687,7 @@ class PreviewCache:
             try:
                 (self._entry(key) / f"{rendition}.json").unlink()
             except (OSError, TypeError):
-                pass
+                pass  # Already gone, or the entry vanished: the retry polls either way.
 
     def workspace(self):
         """A new private work directory on the cache filesystem for staging.

@@ -45,6 +45,8 @@ VIDEO_NAME = "film.mp4"
 AUDIO_RATE = 48000
 AUDIO_CHANNELS = 2
 _PROGRESS = re.compile(rb"SCENARIO_PROGRESS (\d{1,6})/(\d{1,6})")
+# An open Windows handle would block the user's delete and our replace.
+_PIN_PLACEHOLDERS = os.name != "nt"
 # Windows naming rules apply everywhere so a chosen name stays portable. These
 # mirror Python 3.13's ntpath.isreserved, which Blender 5.0's Python 3.11 lacks.
 _RESERVED_CHARACTERS = frozenset('<>:"|?*\\/')
@@ -255,13 +257,42 @@ class PublishedExport:
     media: tuple[MediaReceipt, ...] = field(repr=False)
 
 
+class _Pin:
+    """An open placeholder descriptor; closing it more than once is harmless."""
+
+    def __init__(self, fd):
+        self._fd = fd
+        self._lock = threading.Lock()
+
+    def close(self):
+        with self._lock:
+            fd, self._fd = self._fd, None
+        if fd is not None:
+            try:
+                os.close(fd)
+            except OSError:
+                # The descriptor only pinned the identity; nothing remains to undo.
+                pass
+
+    def __del__(self):
+        self.close()
+
+
 @dataclass(frozen=True)
 class Reservation:
-    """A zero-byte placeholder created exclusively before a long render."""
+    """A zero-byte placeholder created exclusively before a long render.
+
+    On POSIX the reservation keeps the placeholder open until it is released or
+    replaced. Linux file systems reuse a freed inode number at once, so an empty
+    file recreated at the same path would otherwise match by device and inode.
+    Windows keeps no handle, so the placeholder stays deletable there; NTFS file
+    IDs carry a reuse sequence number.
+    """
 
     path: Path
     device: int
     inode: int
+    pin: _Pin | None = field(default=None, repr=False, compare=False)
 
 
 def portable_name(name):
@@ -354,28 +385,43 @@ def reserve(destination):
         raise LocalExportError("The destination already exists; choose a new file name") from None
     except OSError:
         raise LocalExportError("Cannot create the destination file; check its folder") from None
+    pin = _Pin(fd)
     try:
         info = os.fstat(fd)
-    finally:
-        os.close(fd)
-    return Reservation(Path(destination), info.st_dev, info.st_ino)
+    except BaseException:
+        pin.close()
+        raise
+    if not _PIN_PLACEHOLDERS:
+        pin.close()
+        pin = None
+    return Reservation(Path(destination), info.st_dev, info.st_ino, pin)
+
+
+def _unpin(reservation):
+    if reservation.pin is not None:
+        reservation.pin.close()
 
 
 def release(reservation):
     """Remove only our own still-empty placeholder; keep anything else in place."""
     try:
-        info = os.lstat(reservation.path)
-    except OSError:
-        return
-    if (
-        stat.S_ISREG(info.st_mode)
-        and info.st_size == 0
-        and (info.st_dev, info.st_ino) == (reservation.device, reservation.inode)
-    ):
         try:
-            os.unlink(reservation.path)
+            info = os.lstat(reservation.path)
         except OSError:
-            pass
+            return
+        if (
+            stat.S_ISREG(info.st_mode)
+            and info.st_size == 0
+            and (info.st_dev, info.st_ino) == (reservation.device, reservation.inode)
+        ):
+            try:
+                os.unlink(reservation.path)
+            except OSError:
+                # Best effort: a placeholder that cannot be removed stays for the user.
+                pass
+    finally:
+        # Unpin only after the identity check so the inode number stayed ours.
+        _unpin(reservation)
 
 
 def estimated_bytes(spec):
@@ -801,6 +847,7 @@ def _fsync_directory(path):
     try:
         os.fsync(fd)
     except OSError:
+        # Durability is best effort; some file systems refuse a directory fsync.
         pass
     finally:
         os.close(fd)
@@ -880,6 +927,7 @@ def publish(staged, destination, reservation=None, *, cancel=None, progress=None
                 "Could not move the verified video into place", staged
             ) from None
         created = None
+        _unpin(reservation)
         _fsync_directory(destination.parent)
     except BaseException:
         if created is not None:

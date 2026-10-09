@@ -1271,6 +1271,12 @@ the correct fixture, but control-tool clicks did not visibly activate the compos
 or Studio. It supplies no new physical-input acceptance; the screenshots and
 interaction results above remain evidence for their explicitly identified ZIP.
 
+The main-thread pump refreshes the live temporary popup region with
+`tag_refresh_ui()`: normal area redraw alone can leave a completed asynchronous
+quote showing as loading. Popup ownership is weak and removed regions are
+discarded. The [desktop regression checks](#studio-and-library-desktop-regression-checks)
+record the earlier scoped input evidence for this behavior.
+
 This view exposes existing creation/Film/result controls and the workflow form
 below, plus Library browsing and model-reference reuse. Interactive workflow
 nodes and complete retained Studio acceptance remain separate.
@@ -1303,9 +1309,10 @@ fresh estimate.
 
 Installed tests verify synthetic native registration, shared UI/MCP quote use,
 changed-input rejection, view changes, continued work and saved-form reload.
-These do not establish physical editing, native dropdown/confirmation behavior,
-scrolling, screenshots, DPI or viewport focus. Track that desktop acceptance
-under #66/#68 without treating unverified configurations as automatic draft gates.
+The desktop regression checks below record prompt editing, exact price refresh,
+cancel/confirm and saved-job visibility with a synthetic service on their named
+candidate. Broader DPI, IME and platform acceptance remains tracked under #66/#68
+separately from review readiness.
 Interactive nodes, integrated workflow reference upload and live outputs remain
 outside this implementation.
 
@@ -1326,10 +1333,13 @@ unchanged destination, adds a scoped asset reference and invalidates its price.
 The dialog displays a captured scene name, so deleting the scene while it is
 open cannot break redraw; confirmation still rejects the unavailable destination.
 Drawing never starts requests or mutates RNA. Organization writes are separate
-work. Installed synthetic tests establish these state and command boundaries,
-not physical input, focus, viewport, screenshot or DPI proof;
-track the remaining desktop acceptance under #66/#68 separately from review
-readiness.
+work. Dynamic input choices are retained by the live dialog and resolved through
+its RNA properties; Blender passes `OperatorProperties` to the enum callback,
+not the Python operator carrying the prepared approvals. Installed tests exercise
+that registered callback as well as state and command boundaries. The desktop
+checks below record native browsing and reference confirmation for their named
+candidate. Remaining desktop acceptance stays under #66/#68 separately from
+review readiness.
 
 ## Workflow reference selection
 
@@ -1353,5 +1363,31 @@ for confirmation of the original unchanged form, empties and unchecks the input,
 and states that unchecked inputs use workflow defaults. A saved file retains the
 binding, while price/confirmation handles retain their existing session lifetime.
 No attachment, clearing or drawing action starts a generation or transfer.
-Native physical input, focus, viewport, screenshot and DPI proof remain pending;
-installed fixtures do not replace that acceptance.
+Native reference selection has the scoped desktop evidence below. Installed
+fixtures and that single environment do not establish full DPI/platform acceptance.
+
+
+### Studio and Library desktop regression checks
+
+The exact candidate ZIP SHA-256
+`024b7654346463d89cb80e149c278254d9ac9de022447b90b1101f6d9c915351`
+passed 1,132 installed tests with two Windows-only skips on each macOS arm64
+Blender 5.0.1, 5.1.2 and 5.2.1. On macOS 27.0.1 / Blender 5.1.2, native desktop
+clicks and keyboard input in an isolated profile reproduced and then verified
+fixes for the Library enum error and Studio's stale loading display.
+
+The same open popup now displays a completed workflow quote's full decimal
+price. Editing its prompt disables the old approval; Cancel submits nothing,
+and confirming a fresh quote creates one synthetic saved job. Native Library
+search, Next/Previous, destination selection, reference Cancel/Confirm and
+attachment to both workflow and model forms worked. Unicode prompt text survived
+closing and reopening Studio. Escape restored viewport selection and keyboard
+frame navigation. The popup also retained its shared form in a resized
+2,214 by 1,456 pixel window, after scrolling the native viewport header to Studio.
+Screenshots were inspected during these interactions.
+
+These desktop checks use synthetic service responses with external sockets
+blocked. They establish native input and popup refresh behavior, not live
+workflow quality, full compact capture-to-apply acceptance, IME composition,
+multiple DPI settings, other OS interaction, sustained GPU/audio behavior or
+human media review. Those remain separate release gates under #68.

@@ -3,8 +3,9 @@
 """Explicit asset browsing and confirmed model references over shared workers."""
 
 import textwrap
+import uuid
 from dataclasses import dataclass
-from weakref import WeakSet
+from weakref import WeakSet, WeakValueDictionary
 
 import bpy
 from bpy.props import BoolProperty, EnumProperty, PointerProperty, StringProperty
@@ -265,8 +266,19 @@ class SCENARIO_OT_library_page(bpy.types.Operator):
         return {"FINISHED"}
 
 
+@dataclass
+class ReferenceMenu:
+    items: list
+
+
+_reference_menus = WeakValueDictionary()
+_NO_INPUTS = [("NONE", "Review a Library asset first", "")]
+
+
 def _inputs(self, context):
-    return getattr(self, "_input_choices", [("NONE", "Review a Library asset first", "")])
+    # Blender passes OperatorProperties here, not the Python operator instance.
+    menu = _reference_menus.get(self.menu_id)
+    return menu.items if menu is not None else _NO_INPUTS
 
 
 class SCENARIO_OT_library_reference(bpy.types.Operator):
@@ -274,6 +286,7 @@ class SCENARIO_OT_library_reference(bpy.types.Operator):
     bl_label = "Use as reference"
     bl_description = "Review the scene, model and input before adding this asset as a reference"
     asset_id: StringProperty(options={"HIDDEN", "SKIP_SAVE"})
+    menu_id: StringProperty(options={"HIDDEN", "SKIP_SAVE"})
     input_name: EnumProperty(name="Input", items=_inputs)
 
     def invoke(self, context, event):
@@ -285,7 +298,9 @@ class SCENARIO_OT_library_reference(bpy.types.Operator):
             self._approvals = self._owner.prepare(
                 context, self.asset_id, target=getattr(view, "target", "MODEL")
             )
-            self._input_choices = [(x.param_name, x.input_label, "") for x in self._approvals]
+            self._menu = ReferenceMenu([(x.param_name, x.input_label, "") for x in self._approvals])
+            self.menu_id = uuid.uuid4().hex
+            _reference_menus[self.menu_id] = self._menu
             self.input_name = self._approvals[0].param_name
         except ValueError as error:
             self.report({"WARNING"}, str(error))

@@ -3,6 +3,7 @@
 """Explicit expanded creation view over the existing native controls and jobs."""
 
 from types import SimpleNamespace
+from weakref import WeakKeyDictionary
 
 import bpy
 from bpy.props import EnumProperty, PointerProperty
@@ -18,6 +19,18 @@ from . import (
     runtime,
     workflow_controls,
 )
+
+_popups = WeakKeyDictionary()
+
+
+def redraw_popups():
+    """Temporary popup regions are not among an area's normal regions."""
+    for operator, region in list(_popups.items()):
+        try:
+            region.tag_refresh_ui()
+        except ReferenceError:
+            del _popups[operator]
+
 
 PAGES = (
     ("CREATE", "Create", "Use the same model, prompt, references and settings as the composer"),
@@ -147,6 +160,8 @@ class SCENARIO_OT_open_studio(bpy.types.Operator):
         return context.window_manager.invoke_popup(self, width=self._width)
 
     def draw(self, context):
+        if context.region_popup is not None:
+            _popups[self] = context.region_popup
         draw_view(self.layout, context, width=self._width)
 
     def execute(self, context):
@@ -165,6 +180,7 @@ def register():
 
 
 def unregister():
+    _popups.clear()
     del bpy.types.WindowManager.scenario_studio_view
     for cls in reversed(CLASSES):
         bpy.utils.unregister_class(cls)

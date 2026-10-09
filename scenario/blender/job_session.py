@@ -25,6 +25,11 @@ from ..core.jobs.coordinator import (
 )
 from ..core.jobs.film_media import VerifiedComposition
 from ..core.jobs.film_review_media import PreparedFilmReview
+from ..core.jobs.organization import (
+    OrganizationRequest,
+    OrganizationResult,
+    OrganizationSnapshot,
+)
 from ..core.jobs.origins import OriginRevisions
 from ..core.jobs.results import ModelTextResult, PromptResults, VerifiedResults
 from ..core.jobs.store import JobOrigin, JobState, StoredJob
@@ -147,6 +152,7 @@ class JobCompletion:
     cloud_read: bool = False
     workflow_catalog: bool = False
     asset_library: bool = False
+    asset_organization: bool = False
 
 
 @dataclass(frozen=True)
@@ -191,6 +197,7 @@ class JobSession:
         self._cloud_reads = {}
         self._workflow_reads = {}
         self._asset_reads = set()
+        self._organization_tasks = {}
         self._issued = WeakValueDictionary()
         self._world_receipts = WeakKeyDictionary()
         self._image_receipts = WeakKeyDictionary()
@@ -221,6 +228,9 @@ class JobSession:
         from .film_capture import FilmCaptureCommands
 
         self.film_capture = FilmCaptureCommands(self)
+        from .asset_organization import AssetOrganization
+
+        self.asset_organization = AssetOrganization(self)
         with _sessions_lock:
             _sessions.add(self)
         try:
@@ -403,6 +413,40 @@ class JobSession:
         self._asset_reads.add(task)
         self._pending.append((task, origin))
         return task
+
+    def _organization_command(self, kind, command, *args, **options):
+        """Admit connection-scoped organization work; it records no scene origin.
+
+        Organization changes Scenario metadata, not Blender data, so scene
+        switches and undo do not affect it. Retirement still stops admission
+        and rejects late delivery into a replacement connection.
+        """
+        _main_thread()
+        if not self._active:
+            raise OriginUnavailable("This job context is inactive")
+        self._check_capacity()
+        task = getattr(self._workers, command)(*args, **options)
+        self._organization_tasks[task] = kind
+        self._pending.append((task, None))
+        return task
+
+    def organization_snapshot(self, request):
+        """Queue the fresh read an organization review shows; it sends no write."""
+        if not isinstance(request, OrganizationRequest) or request.scope != self.scope:
+            raise OriginUnavailable("The organization request belongs to another connection")
+        return self._organization_command("snapshot", "organization_snapshot", request)
+
+    def organize(self, snapshot):
+        """Queue one approved organization change on this session's workers."""
+        if not isinstance(snapshot, OrganizationSnapshot) or snapshot.scope != self.scope:
+            raise OriginUnavailable("The organization review belongs to another connection")
+        return self._organization_command("apply", "organize", snapshot)
+
+    def collection_page(self, *, page_size=50, pagination_token=None):
+        """Queue one collection page read in the selected connection."""
+        return self._organization_command(
+            "collections", "collection_page", page_size=page_size, pagination_token=pagination_token
+        )
 
     def quote_workflow(self, identifier, parameters, *, origin):
         return self._quote("workflow", identifier, parameters, origin)
@@ -830,6 +874,18 @@ class JobSession:
                     )
                 elif task in self._asset_reads:
                     matches = isinstance(result, dict) and isinstance(result.get("assets"), list)
+                elif task in self._organization_tasks:
+                    # Connection-scoped: the result names its scope, not a scene.
+                    kind = self._organization_tasks[task]
+                    if kind == "collections":
+                        matches = isinstance(result, dict) and isinstance(
+                            result.get("collections"), list
+                        )
+                    else:
+                        expected = (
+                            OrganizationSnapshot if kind == "snapshot" else OrganizationResult
+                        )
+                        matches = isinstance(result, expected) and result.scope == self.scope
                 elif task in self._workflow_reads:
                     # Metadata has no job intent. Its exact task belongs to this
                     # scoped coordinator, which checks admission around the read;
@@ -862,6 +918,7 @@ class JobSession:
                     cloud_read=cloud_read,
                     workflow_catalog=workflow_catalog,
                     asset_library=task in self._asset_reads,
+                    asset_organization=task in self._organization_tasks,
                 )
             else:
                 completion = JobCompletion(
@@ -870,11 +927,13 @@ class JobSession:
                     cloud_read=cloud_read,
                     workflow_catalog=workflow_catalog,
                     asset_library=task in self._asset_reads,
+                    asset_organization=task in self._organization_tasks,
                 )
             finally:
                 self._cloud_reads.pop(task, None)
                 self._workflow_reads.pop(task, None)
                 self._asset_reads.discard(task)
+                self._organization_tasks.pop(task, None)
                 self._cleanup_upload_capture(task)
             self._issued[id(completion)] = completion
             completions.append(completion)
@@ -889,6 +948,26 @@ class JobSession:
             or not completion.asset_library
         ):
             raise OriginUnavailable("Use an unconsumed asset library page from this active session")
+        del self._issued[id(completion)]
+        if completion.error is not None:
+            raise completion.error
+        return completion.result
+
+    def deliver_asset_organization(self, completion):
+        """Consume one owned organization outcome; it never resolves a scene.
+
+        A retired session rejects delivery, so a late outcome cannot reach a
+        replacement connection. Writes already sent keep their service effect.
+        """
+        _main_thread()
+        if (
+            not self._active
+            or self._issued.get(id(completion)) is not completion
+            or not completion.asset_organization
+        ):
+            raise OriginUnavailable(
+                "Use an unconsumed organization outcome from this active session"
+            )
         del self._issued[id(completion)]
         if completion.error is not None:
             raise completion.error
@@ -1392,6 +1471,8 @@ class JobSession:
         self._active = False
         self.invalidate_all()
         self._workers.deactivate()
+        # Session-local reviews end with their connection, including on file load.
+        self.asset_organization.close()
 
     def shutdown(self):
         _main_thread()
@@ -1408,6 +1489,7 @@ class JobSession:
                 self._cloud_reads.clear()
                 self._workflow_reads.clear()
                 self._asset_reads.clear()
+                self._organization_tasks.clear()
                 self._issued.clear()
                 self._world_receipts.clear()
                 self._image_receipts.clear()

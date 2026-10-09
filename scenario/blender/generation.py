@@ -27,6 +27,8 @@ log = logging.getLogger("scenario.generation")
 
 _schemas = {}
 _restoring_models = set()
+MODEL_OFFLINE = "Online access is disabled; the model description cannot load"
+_MODEL_FAILED = "Could not load this model: "
 
 
 def reload_lane(record):
@@ -184,7 +186,7 @@ def set_models(detailed, failed, *, mark_dirty=True):
     # A form without its description keeps the sanitized failure until a new
     # read, a success, another model or retired credentials replaces it.
     unavailable = {
-        model_id: f"Could not load this model: {reason}"
+        model_id: f"{_MODEL_FAILED}{reason}"
         for model_id, reason in failed.items()
         if model_id not in succeeded and schema_for(model_id) is None
     }
@@ -229,26 +231,36 @@ _pending_models = set()
 _pending_dirty_models = set()
 
 
+def is_loading(model_id):
+    """Whether this model's description read is in flight; read-only for drawing."""
+    return model_id in _pending_models
+
+
 def request_model(model_id, *, mark_dirty=True):
     """Fetch a model record in the background; the 'models' event finishes the job.
 
     Returns whether a read for this model is in flight.
     """
+    return not _start_model_read(model_id, mark_dirty)
+
+
+def _start_model_read(model_id, mark_dirty):
+    """Queue one description read; return why none can start, or "" while one is in flight."""
     runtime.sync_catalog_context()
     if model_id in _pending_models:
-        return True
+        return ""
     if not runtime.online():
-        return False
+        return MODEL_OFFLINE
     try:
         manager = runtime.ensure_manager()
         catalog = runtime.ensure_catalog()
     except ScenarioError as err:
         runtime.set_message(err.reason)
-        return False
+        return err.reason or "Could not read the model description"
     _pending_models.add(model_id)
     _clear_model_failures((model_id,))
     manager.fetch_models(catalog, [model_id], mark_dirty=mark_dirty)
-    return True
+    return ""
 
 
 def _image_inputs(record):
@@ -369,7 +381,17 @@ def ensure_record(model_id, *, mark_dirty=True):
         _schemas.pop(model_id, None)
         _clear_model_failures((model_id,))
         return cached
-    request_model(model_id, mark_dirty=mark_dirty)
+    failure = runtime.state.model_errors.get(model_id)
+    refusal = _start_model_read(model_id, mark_dirty)
+    if refusal:
+        raise ScenarioError(0, refusal)  # nothing is loading, so callers must not wait for it
+    if failure is not None:
+        # The new read replaces the failure the form showed. Report it once so
+        # MCP callers see the same reason before polling the new read.
+        reason = failure.removeprefix(_MODEL_FAILED)
+        raise ScenarioError(
+            0, f"Loading the model description again; the last read failed: {reason}"
+        )
     raise ScenarioError(0, "Loading the model description")
 
 
@@ -385,12 +407,14 @@ def on_model_changed(context, lane_state, mark_dirty=True):
     try:
         ensure_record(model_id, mark_dirty=mark_dirty)
     except ScenarioError as err:
-        loading = err.reason.startswith("Loading")
-        if loading and mark_dirty:
+        # A pending read and disabled online access are drawn from live state;
+        # neither persists as the lane's error once access or the read changes.
+        deferred = err.reason.startswith("Loading") or err.reason == MODEL_OFFLINE
+        if deferred and mark_dirty:
             # The estimate debounce may observe the missing schema before its
             # background completion. Re-arm pricing when that detail arrives.
             _pending_dirty_models.add(model_id)
-        lane_state.last_error = "" if loading else err.reason
+        lane_state.last_error = "" if deferred else err.reason
         return
     lane_state.last_error = ""
     schema = schema_for(model_id)

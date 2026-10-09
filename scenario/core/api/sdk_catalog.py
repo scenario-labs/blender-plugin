@@ -9,6 +9,7 @@ from contextlib import contextmanager
 
 from .. import history
 from ..jobs.store import JobScope
+from ..schema.params import parse_schema
 from .catalog import ModelRecord
 from .errors import ScenarioError
 from .sdk_adapter import AdapterError, SDKAdapter
@@ -255,8 +256,9 @@ class SDKCatalog:
             if row.get("id") != model_id:
                 raise ScenarioError(0, "Scenario returned a different model identity")
             try:
-                ModelRecord.from_api(row)
-            except (AttributeError, TypeError, ValueError):
+                # Forms parse this schema on the main thread; reject it before caching.
+                parse_schema(ModelRecord.from_api(row))
+            except (AttributeError, KeyError, TypeError, ValueError):
                 raise ScenarioError(0, "Scenario returned an invalid model description") from None
             with self._condition:
                 self._check_active()

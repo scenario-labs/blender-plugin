@@ -11,6 +11,13 @@ from helpers import FIXTURES, isolated_manager, reset_scene, submodule, temp_cre
 
 UNAVAILABLE = "Scenario request failed (HTTP 503)"
 FAILED_MESSAGE = f"Could not load this model: {UNAVAILABLE}"
+NOT_LOADED = ("The model description is not loaded", "INFO")
+LOADING = ("Loading the model description...", "TIME")
+
+
+def fixture_record(name):
+    data = json.loads((FIXTURES / "models" / f"{name}.json").read_text())["model"]
+    return submodule("core.api.catalog").ModelRecord.from_api(data)
 
 
 class RecordingLayout:
@@ -447,9 +454,14 @@ class GenerationTests(unittest.TestCase):
         self.handlers.dispatch(
             ("models", {"detailed": [], "failed": {model_id: UNAVAILABLE}, "mark_dirty": False})
         )
-        layout = self.draw("render_image")
+        with patch.object(self.runtime, "online", return_value=True):
+            layout = self.draw("render_image")
         self.assertIn((FAILED_MESSAGE, "ERROR"), layout.labels())
         self.assertEqual(layout.retries(), ["render_image"])
+        with patch.object(self.runtime, "online", return_value=False):
+            offline = self.draw("render_image")  # a retry cannot read until access returns
+        self.assertEqual(offline.labels()[-1], (self.generation.MODEL_OFFLINE, "ERROR"))
+        self.assertEqual(offline.retries(), [])
 
     def test_credential_retirement_clears_failed_schema_and_rejects_late_events(self):
         lane = bpy.context.scene.scenario.lane_state("material")
@@ -476,3 +488,174 @@ class GenerationTests(unittest.TestCase):
             self.handlers.dispatch(("models", failure))
             self.assertEqual(lane.last_error, "")
             self.assertEqual(self.runtime.state.model_errors, {})
+
+    def failure_event(self, model_id, mark_dirty=False):
+        return (
+            "models",
+            {"detailed": [], "failed": {model_id: UNAVAILABLE}, "mark_dirty": mark_dirty},
+        )
+
+    def test_offline_form_is_not_loading_and_returning_access_offers_retry(self):
+        lane = bpy.context.scene.scenario.lane_state("image")
+        model_id = "model_patina-material"
+        self.unload_schema(model_id)
+        context = Mock()
+        context.load_cached.return_value = None
+        manager = self.runtime.state.manager
+        offline = self.generation.MODEL_OFFLINE
+        with (
+            patch.object(self.runtime, "ensure_catalog", return_value=context),
+            patch.object(self.runtime, "online", return_value=False),
+            patch.object(manager, "fetch_models") as fetch,
+        ):
+            lane.model_id = model_id
+            # Access is live state; the lane keeps no refusal after it returns.
+            self.assertEqual(lane.last_error, "")
+            self.assertFalse(self.generation.is_loading(model_id))
+            layout = self.draw("image")
+            self.assertEqual(layout.labels()[-1], (offline, "ERROR"))
+            self.assertNotIn(LOADING, layout.labels())
+            self.assertEqual(layout.retries(), [])
+            with self.assertRaises(submodule("core.api.errors").ScenarioError) as raised:
+                submodule("mcp.tools_scenario").model_schema({"model_id": model_id})
+            self.assertEqual(raised.exception.reason, offline)
+            self.runtime.state.last_message = "An earlier unrelated message"
+            retry = types.SimpleNamespace(lane="image", report=Mock())
+            operator = submodule("blender.operators").SCENARIO_OT_retry_model
+            self.assertEqual(operator.execute(retry, bpy.context), {"CANCELLED"})
+            retry.report.assert_called_once_with({"WARNING"}, offline)
+            fetch.assert_not_called()
+        with (
+            patch.object(self.runtime, "ensure_catalog", return_value=context),
+            patch.object(self.runtime, "online", return_value=True),
+            patch.object(manager, "fetch_models") as fetch,
+        ):
+            for _ in range(2):  # Drawing never starts the read it offers.
+                idle = self.draw("image")
+                self.assertEqual(idle.labels()[-1], NOT_LOADED)
+                self.assertEqual(idle.retries(), ["image"])
+            fetch.assert_not_called()
+            with temp_credentials():
+                self.assertEqual(bpy.ops.scenario.retry_model(lane="image"), {"FINISHED"})
+                fetch.assert_called_once_with(context, [model_id], mark_dirty=True)
+                self.assertTrue(self.generation.is_loading(model_id))
+                loading = self.draw("image")
+                self.assertEqual(loading.labels()[-1], LOADING)
+                self.assertEqual(loading.retries(), [])
+
+    def test_saved_lane_error_is_not_drawn_as_a_current_failure(self):
+        lane = bpy.context.scene.scenario.lane_state("image")
+        self.unload_schema(lane.model_id)
+        lane.last_error = FAILED_MESSAGE  # as saved in a file reopened in a new session
+        self.assertEqual(self.runtime.state.model_errors, {})
+        with patch.object(self.runtime, "online", return_value=True):
+            layout = self.draw("image")
+        self.assertNotIn((FAILED_MESSAGE, "ERROR"), layout.labels())
+        self.assertEqual(layout.labels()[-1], NOT_LOADED)
+        self.assertEqual(layout.retries(), ["image"])
+
+    def test_form_without_a_model_is_not_described_as_loading(self):
+        layout = RecordingLayout()
+        lane_state = types.SimpleNamespace(model_id="NONE", last_error=FAILED_MESSAGE)
+        with patch.object(self.runtime, "online", return_value=True):
+            submodule("blender.panels").draw_schema_status(layout, lane_state, "image")
+        self.assertEqual(layout.labels(), [("Pick a model to show its settings", "INFO")])
+        self.assertEqual(layout.retries(), [])
+
+    def test_mcp_reports_a_recorded_failure_once_while_reading_again(self):
+        lane = bpy.context.scene.scenario.lane_state("image")
+        model_id = "model_patina-material"
+        detailed = self.unload_schema(model_id)
+        context = Mock()
+        context.load_cached.return_value = None
+        manager = self.runtime.state.manager
+        tools = submodule("mcp.tools_scenario")
+        error = submodule("core.api.errors").ScenarioError
+        with (
+            patch.object(self.runtime, "ensure_catalog", return_value=context),
+            patch.object(self.runtime, "online", return_value=True),
+            patch.object(manager, "fetch_models") as fetch,
+        ):
+            lane.model_id = model_id
+            self.handlers.dispatch(self.failure_event(model_id, mark_dirty=True))
+            self.assertEqual(lane.last_error, FAILED_MESSAGE)
+            with self.assertRaises(error) as first:
+                tools.model_schema({"model_id": model_id})
+            self.assertEqual(
+                first.exception.reason,
+                f"Loading the model description again; the last read failed: {UNAVAILABLE}",
+            )
+            # The new read is shared: the form and MCP both wait for it now.
+            self.assertEqual(fetch.call_count, 2)
+            self.assertEqual(fetch.call_args.args, (context, [model_id]))
+            self.assertEqual(lane.last_error, "")
+            self.assertEqual(self.runtime.state.model_errors, {})
+            self.assertEqual(self.draw("image").labels()[-1], LOADING)
+            with self.assertRaises(error) as again:
+                tools.model_schema({"model_id": model_id})
+            self.assertEqual(again.exception.reason, "Loading the model description")
+            self.assertEqual(fetch.call_count, 2)
+        self.handlers.dispatch(("models", {"detailed": [detailed], "failed": {}}))
+        self.assertEqual(tools.model_schema({"model_id": model_id})["model_id"], model_id)
+
+    def test_catalog_and_cached_descriptions_clear_recorded_failures(self):
+        lane = bpy.context.scene.scenario.lane_state("image")
+        model_id = "model_patina-material"
+        detailed = self.unload_schema(model_id)
+        neighbor = self.runtime.state.records["model_google-gemini-3-1-flash"]
+        context = Mock()
+        context.load_cached.return_value = None
+        manager = self.runtime.state.manager
+        with (
+            patch.object(self.runtime, "ensure_catalog", return_value=context),
+            patch.object(self.runtime, "online", return_value=True),
+            patch.object(manager, "fetch_models") as fetch,
+        ):
+            lane.model_id = model_id
+            self.handlers.dispatch(self.failure_event(model_id))
+            self.assertEqual(lane.last_error, FAILED_MESSAGE)
+            records = [detailed, neighbor]
+            self.handlers.dispatch(
+                ("catalog", {"privacy": "public", "records": records, "detailed": records})
+            )
+            self.assertEqual(lane.last_error, "")
+            self.assertEqual(self.runtime.state.model_errors, {})
+            self.assertIsNotNone(self.generation.schema_for(model_id))
+            self.unload_schema(model_id)
+            self.handlers.dispatch(self.failure_event(model_id))
+            self.assertEqual(lane.last_error, FAILED_MESSAGE)
+            reads = fetch.call_count
+            context.load_cached.return_value = detailed
+            self.assertIs(self.generation.ensure_record(model_id), detailed)
+            self.assertEqual(fetch.call_count, reads)  # the cache answers without a read
+            self.assertEqual(lane.last_error, "")
+            self.assertEqual(self.runtime.state.model_errors, {})
+            self.assertEqual(self.draw("image").retries(), [])
+
+    def test_edit3d_failed_schema_retries_the_edit3d_lane(self):
+        scenario = bpy.context.scene.scenario
+        model_id = "model_meshy-7-retexture"
+        records = [*self.runtime.state.records.values(), fixture_record(model_id)]
+        self.handlers.dispatch(
+            ("catalog", {"privacy": "public", "records": records, "detailed": records})
+        )
+        scenario.three_d_mode = "EDIT"
+        lane = scenario.lane_state("edit3d")
+        self.assertEqual(lane.model_id, model_id)
+        self.unload_schema(model_id)
+        self.handlers.dispatch(self.failure_event(model_id))
+        self.assertEqual(lane.last_error, FAILED_MESSAGE)
+        context = Mock()
+        context.load_cached.return_value = None
+        with (
+            patch.object(self.runtime, "ensure_catalog", return_value=context),
+            patch.object(self.runtime, "online", return_value=True),
+            patch.object(self.runtime.state.manager, "fetch_models") as fetch,
+        ):
+            layout = self.draw("3d")
+            self.assertIn((FAILED_MESSAGE, "ERROR"), layout.labels())
+            self.assertEqual(layout.retries(), ["edit3d"])
+            with temp_credentials():
+                self.assertEqual(bpy.ops.scenario.retry_model(lane="edit3d"), {"FINISHED"})
+            fetch.assert_called_once_with(context, [model_id], mark_dirty=True)
+        self.assertEqual(lane.last_error, "")

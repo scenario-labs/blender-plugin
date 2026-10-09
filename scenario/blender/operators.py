@@ -64,10 +64,14 @@ class SCENARIO_OT_retry_model(bpy.types.Operator):
         if not model_id or model_id == "NONE":
             self.report({"WARNING"}, "Choose a model first")
             return {"CANCELLED"}
+        if not runtime.online():  # access can change after poll; no earlier message applies
+            self.report({"WARNING"}, generation.MODEL_OFFLINE)
+            return {"CANCELLED"}
         # The same background read as a selection; its event clears or restores the error.
         if generation.request_model(model_id):
             self.report({"INFO"}, "Loading the model description")
             return {"FINISHED"}
+        # Only a selection or service error refuses an online read; it was just reported.
         self.report({"WARNING"}, runtime.state.last_message or "Could not retry loading the model")
         return {"CANCELLED"}
 

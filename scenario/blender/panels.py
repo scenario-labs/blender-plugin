@@ -321,16 +321,30 @@ def draw_loading(layout):
 
 
 def draw_schema_status(layout, lane_state, lane):
-    """Explain a form without its description; a failed read offers an explicit retry."""
-    failure = runtime.state.model_errors.get(lane_state.model_id)
-    error = lane_state.last_error or failure
+    """Explain a form without its description; drawing reads state and never retries.
+
+    Only a pending read is described as loading. While online, the form offers an
+    explicit retry, with the failure recorded this session if there is one. A lane
+    error saved in a reopened file is not drawn as a current failure.
+    """
+    model_id = lane_state.model_id
+    if not model_id or model_id == "NONE":
+        layout.label(text="Pick a model to show its settings", icon="INFO")
+        return
+    if generation.is_loading(model_id):
+        layout.label(text="Loading the model description...", icon="TIME")
+        return
+    if not runtime.online():
+        layout.label(text=generation.MODEL_OFFLINE, icon="ERROR")
+        return
+    failure = runtime.state.model_errors.get(model_id)
     layout.label(
-        text=error or "Loading the model description...", icon="ERROR" if error else "TIME"
+        text=failure or "The model description is not loaded",
+        icon="ERROR" if failure else "INFO",
     )
-    if failure is not None:
-        layout.operator(
-            "scenario.retry_model", text="Retry loading model", icon="FILE_REFRESH"
-        ).lane = lane
+    layout.operator(
+        "scenario.retry_model", text="Retry loading model", icon="FILE_REFRESH"
+    ).lane = lane
 
 
 def draw_generate_lane(layout, context, lane):

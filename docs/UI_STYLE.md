@@ -79,6 +79,11 @@ A form is described as loading its model only while that description read is
 pending. A failed read shows its sanitized reason in the form and composer note,
 with **Retry loading model** repeating the same background read. A later read,
 success, another model or changed credentials clear it; drawing never retries.
+Online, a form with neither a pending read nor a failure recorded this session,
+such as one in a reopened file, offers the same retry instead of a saved error.
+With online access disabled, the form says so and offers no retry. An MCP call
+needing the description, such as `model_schema`, reports a recorded failure once
+while it starts the next read.
 
 ## Duration and Match timeline
 

@@ -505,8 +505,12 @@ def capture(client, *, project_override):
     # so only identifiers are registered as private values.
     private_values = [project_override] if isinstance(project_override, str) else []
     private_values += [asset["id"] for asset in scope_page["assets"]]
+    # A private copy of a public model names a public parent, which stays
+    # readable; registering it would make the leak check refuse the capture.
     for row in private_rows:
-        private_values += [row["id"], row.get("parentModelId")]
+        private_values += [
+            value for value in (row["id"], row.get("parentModelId")) if value not in public
+        ]
     scrubber = Scrubber(public, private_values)
 
     bases = {model_id: client.model(model_id) for model_id in BASE_IDS}

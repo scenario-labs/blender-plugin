@@ -291,11 +291,12 @@ shared form preparation (`forms.prepare_run`) on the captured schema:
 | Two LoRAs with one strength | Accepted | Rejects |
 | LoRAs without `lorasScale` | Accepted; the strength the service then applies is unknown | Accepts and adds none |
 
-LoRA and composition selections did not change the FLUX.1 Dev or FLUX.2 Dev
-quote, whose `loras` input declares `costImpact: false`; the Kontext LoRA raised
-the Kontext quote, as its `costImpact: true` declares. `estimate_model` quoted
-every accepted base-model selection at the same price as the minimal request,
-after adding the schema defaults.
+LoRA and composition selections did not change the FLUX.1 Dev quote, whose
+`loras` input declares `costImpact: false`; the Kontext LoRA raised the Kontext
+quote, as its `costImpact: true` declares. FLUX.2 Dev also declares
+`costImpact: false`, but the capture has no FLUX.2 Dev quote without a LoRA to
+compare. `estimate_model` quoted every accepted base-model selection at the
+same price as the minimal request, after adding the schema defaults.
 
 For [#97](https://github.com/scenario-labs/blender-plugin/issues/97), routing
 may therefore offer LoRA stacks and single LoRAs through a base model's

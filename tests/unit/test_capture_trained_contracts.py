@@ -326,6 +326,18 @@ def test_decisions_record_dry_run_outcomes(service):
     assert contracts["routes"] == capture.decide(contracts["dryRuns"])
 
 
+def test_a_private_copy_of_a_captured_public_model_keeps_the_public_id(service, capsys):
+    # The public parent is not a private value, so the leak check must not
+    # refuse a capture that records it; the private copy itself stays hidden.
+    service.private[0]["parentModelId"] = LORA
+    assert capture.main([]) == 0
+    text = "\n".join(written(service.root).values())
+    assert LORA in text
+    output = capsys.readouterr()
+    assert PRIVATE_LORA not in text + output.out + output.err
+    assert PRIVATE_NAME not in text + output.out + output.err
+
+
 def test_a_reply_echoing_a_readable_private_id_is_scrubbed(service):
     # A slug-like private ID escapes the random-identifier pattern, so it is
     # replaced only because the private list registered it.

@@ -1302,7 +1302,9 @@ class JobSession:
             else self._claim_saved_application(verified, destination, "world", (asset_id,))
         )
         try:
-            application = apply_world(scene, path, expected_receipt=item.receipt)
+            application = apply_world(
+                scene, path, expected_receipt=item.receipt, media_type=item.asset.media_type
+            )
         except (WorldApplicationError, PanoramaError):
             try:
                 restored = (

@@ -288,11 +288,15 @@ in-place editing, other OS desktop behavior, release readiness or #263 resolutio
 
 ## Saved panorama approval and restoration
 
-**Set panorama as World (N)** prepares one PNG/EXR result and identifies the
-selected scene and current World. Explain the 2:1/equirectangular requirement,
-packed image, preserved original World, LDR/HDR distinction and session-local
-restore limit. The action's presence is a media-type offer; byte compatibility is
-checked during application, never in drawing. Cancel discards the prepared handle.
+**Set panorama as World (N)** prepares one PNG, JPEG or OpenEXR result and
+identifies the selected scene and current World. A **Selected** line states the
+saved media type's declared format, using the same wording as MCP `format`:
+PNG or JPEG as LDR, or OpenEXR as float with ACES AP0 in ACES2065-1.
+Invoke computes that text; drawing only displays it. Explain the
+2:1/equirectangular requirement, packed image, preserved original World, LDR/HDR
+distinction and session-local restore limit. The action's presence is a
+media-type offer; byte compatibility is checked during application, never in
+drawing. Cancel discards the prepared handle.
 
 After completed application, **Restore previous World** uses a separate prepared
 approval. It names the current scene/World and explains that edited owned data
@@ -311,7 +315,11 @@ exited cleanly and the normal-profile fingerprint was unchanged. The test-only
 app copy used a distinct bundle identifier and local ad-hoc signature for window
 targeting; vendor executable code and the extension ZIP were unchanged. This does
 not establish actual HDR/seam quality, other OS desktop support, resolution of
-#263 or release acceptance.
+#263 or release acceptance. That capture predates the **Selected** format line
+and the JPEG and `image/aces` offers. Headless native tests cover their invoke,
+draw and cancel handling, and every new dialog line stays within 59 characters,
+the longest line verified in that capture. Desktop interaction with the new
+wording is not yet recorded; that check is an open follow-up under #98.
 
 ## Saved material approval
 

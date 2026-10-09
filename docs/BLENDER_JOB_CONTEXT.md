@@ -427,7 +427,8 @@ names or another file session. An invalid selection does not consume the outcome
 Immediately before mutation, it consumes the completion and acquires the
 [durable application claim](JOB_COORDINATOR.md#durable-application-claims).
 The [World primitive](WORLD_APPLICATION.md) checks the selected saved receipt
-against the exact decoded bytes. Other results from a multi-asset job remain
+against the exact decoded bytes and its saved media type against the actual
+PNG, JPEG or OpenEXR container. Other results from a multi-asset job remain
 available on disk; this command applies only the selected asset, then marks the
 job APPLIED. It performs no service call, download, generation or blend-file save.
 `AppliedWorldResult` contains the final stored record and the primitive's guarded

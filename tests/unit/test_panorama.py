@@ -4,11 +4,16 @@
 
 import struct
 import zlib
+from pathlib import Path
 from unittest.mock import patch
 
 import pytest
 
 from scenario.core.scene import panorama
+
+PROGRESSIVE_JPEG = (
+    Path(__file__).resolve().parents[1] / "fixtures" / "synthetic" / "panorama-progressive.jpg"
+)
 
 
 def chunk(kind, payload=b""):
@@ -47,6 +52,66 @@ def exr(width=4, height=2, version=2, extra=b"", display=None):
     start = len(header) + count * 8
     table = b"".join(struct.pack("<Q", start + index * 15) for index in range(count))
     return header + table + b"".join(chunks)
+
+
+def segment(marker, payload=b""):
+    return bytes((0xFF, marker)) + struct.pack(">H", len(payload) + 2) + payload
+
+
+def frame(width=4, height=2, precision=8, components=3):
+    header = struct.pack(">BHHB", precision, height, width, components)
+    return header + b"\x01\x11\x00" * components
+
+
+def jpeg(width=4, height=2, *, marker=0xC0, sof=None, before=b"", scan=b"\x12\x34", tail=b""):
+    # Five header segments: APP0, DQT, frame, DHT and scan. Only the frame header
+    # is interpreted; Blender decodes tables and entropy-coded data natively.
+    return (
+        b"\xff\xd8"
+        + segment(0xE0, b"JFIF\0\x01\x01\0\0\x01\0\x01\0\0")
+        + before
+        + segment(0xDB, bytes(65))
+        + segment(marker, frame(width, height) if sof is None else sof)
+        + segment(0xC4, bytes(20))
+        + segment(0xDA, b"\x03\x01\x00\x02\x11\x03\x11\x00\x3f\x00")
+        + scan
+        + b"\xff\xd9"
+        + tail
+    )
+
+
+# Each later scan: an SOS header for one component and one entropy-coded byte.
+EXTRA_SCAN = segment(0xDA, b"\x01\x01\x00\x00\x00\x00") + b"\x00"
+
+
+def exif(orientation=1, *, order=b"MM", tag=0x0112, kind=3, count=1, entries=None):
+    """APP1 EXIF segment with one IFD0 entry; orientation None omits the tag."""
+    endian = "<" if order == b"II" else ">"
+    # A camera-make tag stands in when orientation is omitted.
+    value = struct.pack(endian + "HH", orientation or 0, 0)
+    entry = struct.pack(endian + "HHI", 0x010F if orientation is None else tag, kind, count)
+    entry += value
+    number = 1 if entries is None else entries
+    tiff = order + struct.pack(endian + "HIH", 42, 8, number) + entry + bytes(4)
+    return segment(0xE1, b"Exif\0\0" + tiff)
+
+
+def chromaticities(values):
+    return attribute(b"chromaticities", b"chromaticities", struct.pack("<8f", *values))
+
+
+def container_flag(value, kind=b"int"):
+    return attribute(b"acesImageContainerFlag", kind, struct.pack("<i", value))
+
+
+def interop(value, kind=b"string"):
+    return attribute(b"colorInteropID", kind, value)
+
+
+REC709 = (0.64, 0.33, 0.30, 0.60, 0.15, 0.06, 0.3127, 0.3290)
+ACES_AP0 = (0.7347, 0.2653, 0.0, 1.0, 0.0001, -0.0770, 0.32168, 0.33767)
+ACES_AP1 = (0.713, 0.293, 0.165, 0.830, 0.128, 0.044, 0.32168, 0.33767)
+REC2020 = (0.708, 0.292, 0.170, 0.797, 0.131, 0.046, 0.3127, 0.3290)
 
 
 @pytest.mark.parametrize("depth", [8, 16])
@@ -104,17 +169,18 @@ def test_missing_truncated_and_unknown_containers_rejected(data):
         panorama.inspect_panorama(data)
 
 
-@pytest.mark.parametrize("make", [png, exr])
-@pytest.mark.parametrize("size", [(1, 1), (2, 1), (4, 3), (0, 2), (16384, 8192)])
+@pytest.mark.parametrize("make", [png, jpeg, exr])
+@pytest.mark.parametrize("size", [(1, 1), (2, 1), (4, 3), (0, 2), (4, 0), (16384, 8192)])
 def test_dimensions_bounded_before_decode(make, size):
     with pytest.raises(panorama.PanoramaError, match="2:1"):
         panorama.inspect_panorama(make(*size))
 
 
-def test_byte_limit(monkeypatch):
+@pytest.mark.parametrize("make", [png, jpeg, exr])
+def test_byte_limit(monkeypatch, make):
     monkeypatch.setattr(panorama, "MAX_FILE_BYTES", 8)
     with pytest.raises(panorama.PanoramaError, match="byte limit"):
-        panorama.inspect_panorama(png())
+        panorama.inspect_panorama(make())
 
 
 @pytest.mark.parametrize("make", [png, exr])
@@ -272,3 +338,384 @@ def test_exr_duplicate_block_cannot_hide_missing_pixels():
     struct.pack_into("<QQ", data, start - 16, start, start)
     with pytest.raises(panorama.PanoramaError):
         panorama.inspect_panorama(bytes(data))
+
+
+@pytest.mark.parametrize("marker", [0xC0, 0xC1, 0xC2])
+def test_baseline_extended_and_progressive_jpeg_are_ldr_containers(marker):
+    assert panorama.inspect_panorama(jpeg(marker=marker)) == panorama.PanoramaInfo(
+        "JPEG", 4, 2, False
+    )
+
+
+@pytest.mark.parametrize("marker", [0xC3, 0xC5, 0xC7, 0xC8, 0xC9, 0xCA, 0xCB, 0xCD, 0xCF])
+def test_lossless_hierarchical_and_arithmetic_jpeg_fail_closed(marker):
+    with pytest.raises(panorama.PanoramaError, match="baseline or progressive"):
+        panorama.inspect_panorama(jpeg(marker=marker))
+
+
+@pytest.mark.parametrize("marker", [0xDE, 0xDF])
+def test_hierarchical_jpeg_markers_fail_closed_before_any_frame(marker):
+    with pytest.raises(panorama.PanoramaError, match="baseline or progressive"):
+        panorama.inspect_panorama(jpeg(before=segment(marker, bytes(5))))
+
+
+@pytest.mark.parametrize("precision,components", [(12, 3), (16, 3), (8, 1), (8, 4)])
+def test_jpeg_requires_8bit_three_component_color(precision, components):
+    data = jpeg(sof=frame(precision=precision, components=components))
+    with pytest.raises(panorama.PanoramaError, match="8-bit color"):
+        panorama.inspect_panorama(data)
+
+
+@pytest.mark.parametrize("sof", [frame()[:-1], frame() + b"\0", frame()[:5]])
+def test_jpeg_frame_length_must_match_its_components(sof):
+    with pytest.raises(panorama.PanoramaError, match="frame header is invalid"):
+        panorama.inspect_panorama(jpeg(sof=sof))
+
+
+def test_duplicate_jpeg_frame_rejected():
+    with pytest.raises(panorama.PanoramaError, match="conflicting"):
+        panorama.inspect_panorama(jpeg(before=segment(0xC0, frame())))
+
+
+def test_jpeg_scan_without_preceding_frame_rejected():
+    data = b"\xff\xd8" + segment(0xDA, bytes(10)) + b"\x12\x34\xff\xd9"
+    with pytest.raises(panorama.PanoramaError, match="dimensions are unavailable"):
+        panorama.inspect_panorama(data)
+
+
+@pytest.mark.parametrize(
+    "before",
+    [
+        b"\xff" + segment(0xFE, b"fill byte before a marker"),
+        segment(0xD0),
+        b"\xff\x01\x00\x02",
+        segment(0x02, b"reserved"),
+        b"\xff\xd8\x00\x02",
+        b"\xff\xe1\x00\x01",
+        b"\x00\x00\x00\x00",
+    ],
+)
+def test_jpeg_invalid_markers_before_scan_rejected(before):
+    with pytest.raises(panorama.PanoramaError, match="incomplete or invalid"):
+        panorama.inspect_panorama(jpeg(before=before))
+
+
+@pytest.mark.parametrize(
+    "data",
+    [
+        jpeg()[:-1],
+        jpeg()[:-2],
+        jpeg(scan=b""),
+        jpeg(tail=b"trailing"),
+        jpeg(tail=b"\xff\xd9\x00"),
+    ],
+)
+def test_jpeg_truncated_scan_or_trailing_data_rejected(data):
+    with pytest.raises(panorama.PanoramaError, match="incomplete or has trailing"):
+        panorama.inspect_panorama(data)
+
+
+@pytest.mark.parametrize("cut", [3, 6, 30, 90])
+def test_jpeg_truncated_header_rejected(cut):
+    with pytest.raises(panorama.PanoramaError, match="incomplete or invalid"):
+        panorama.inspect_panorama(jpeg()[:cut])
+
+
+def test_jpeg_segment_limit_includes_all_segments_and_accepts_boundary():
+    comments = segment(0xFE, b"fixture") * (panorama.MAX_JPEG_SEGMENTS - 5)
+    assert panorama.inspect_panorama(jpeg(before=comments)).file_format == "JPEG"
+    with pytest.raises(panorama.PanoramaError, match="segment limit"):
+        panorama.inspect_panorama(jpeg(before=comments + segment(0xFE)))
+
+
+def test_jpeg_excess_segments_rejected_before_further_header_work():
+    data = jpeg(before=segment(0xFE) * (panorama.MAX_JPEG_SEGMENTS * 2))
+    assert len(data) < panorama.MAX_FILE_BYTES
+    with patch.object(panorama.struct, "unpack_from", wraps=struct.unpack_from) as unpack:
+        with pytest.raises(panorama.PanoramaError, match="segment limit"):
+            panorama.inspect_panorama(data)
+        assert unpack.call_count == panorama.MAX_JPEG_SEGMENTS
+
+
+@pytest.mark.parametrize("scans", [1, 2, panorama.MAX_JPEG_SCANS])
+def test_jpeg_scans_up_to_the_limit_are_accepted(scans):
+    data = jpeg(marker=0xC2, scan=b"\x12\x34" + EXTRA_SCAN * (scans - 1))
+    assert data.count(b"\xff\xda") == scans
+    assert panorama.inspect_panorama(data) == panorama.PanoramaInfo("JPEG", 4, 2, False)
+
+
+@pytest.mark.parametrize("scans", [panorama.MAX_JPEG_SCANS + 1, 4010])
+def test_jpeg_scans_beyond_the_limit_rejected_before_decode(scans):
+    # About 15 bytes per scan; each makes libjpeg revisit every frame block.
+    data = jpeg(marker=0xC2, scan=b"\x12\x34" + EXTRA_SCAN * (scans - 1))
+    with pytest.raises(panorama.PanoramaError, match="scan limit"):
+        panorama.inspect_panorama(data)
+
+
+def test_jpeg_scan_count_ignores_stuffed_data_and_pre_scan_segments():
+    # FF00 stuffing is not a marker, and SOS bytes inside APPn metadata such as
+    # an EXIF thumbnail precede the first scan.
+    thumbnail = segment(0xE2, b"\xff\xda" * panorama.MAX_JPEG_SCANS)
+    stuffed = b"\xff\x00" * panorama.MAX_JPEG_SCANS
+    data = jpeg(before=thumbnail, scan=stuffed + EXTRA_SCAN * (panorama.MAX_JPEG_SCANS - 1))
+    assert panorama.inspect_panorama(data).file_format == "JPEG"
+
+
+def test_progressive_fixture_with_tables_between_scans_is_accepted():
+    data = PROGRESSIVE_JPEG.read_bytes()
+    assert data.count(b"\xff\xda") == 10
+    assert b"\xff\xc4" in data[data.index(b"\xff\xda") :]
+    assert panorama.inspect_panorama(data) == panorama.PanoramaInfo("JPEG", 32, 16, False)
+
+
+def test_jpeg_segment_limit_counts_segments_after_the_first_scan():
+    # Blender keeps comment markers, and libjpeg walks its whole saved-marker
+    # list for each one, so a comment flood after a scan costs quadratic time.
+    comments = segment(0xFE) * (panorama.MAX_JPEG_SEGMENTS - 5)
+    assert panorama.inspect_panorama(jpeg(scan=b"\x12\x34" + comments)).file_format == "JPEG"
+    with pytest.raises(panorama.PanoramaError, match="segment limit"):
+        panorama.inspect_panorama(jpeg(scan=b"\x12\x34" + comments + segment(0xFE)))
+
+
+@pytest.mark.parametrize("count", [4097, 160_000])
+def test_comment_flood_after_progressive_scans_rejected_before_decode(count):
+    data = PROGRESSIVE_JPEG.read_bytes()
+    middle = data.index(b"\xff\xda", data.index(b"\xff\xda") + 2)
+    flood = segment(0xFE) * count
+    for flooded in (data[:-2] + flood + b"\xff\xd9", data[:middle] + flood + data[middle:]):
+        assert len(flooded) < panorama.MAX_FILE_BYTES
+        with pytest.raises(panorama.PanoramaError, match="segment limit"):
+            panorama.inspect_panorama(flooded)
+
+
+def test_excess_segments_after_a_scan_rejected_before_further_header_work():
+    data = jpeg(scan=b"\x12\x34" + segment(0xFE) * (panorama.MAX_JPEG_SEGMENTS * 2))
+    with patch.object(panorama.struct, "unpack_from", wraps=struct.unpack_from) as unpack:
+        with pytest.raises(panorama.PanoramaError, match="segment limit"):
+            panorama.inspect_panorama(data)
+    lengths = [call for call in unpack.call_args_list if call.args[0] == ">H"]
+    assert len(lengths) == panorama.MAX_JPEG_SEGMENTS
+
+
+def test_entropy_coded_stuffing_fill_bytes_and_restarts_are_not_segments():
+    # ITU-T T.81 B.1.1.5 and B.1.1.2: FF00 is a stuffed data byte, RSTn sits
+    # inside entropy-coded data and fill bytes may precede any marker.
+    restarts = b"".join(
+        b"\x12\xff\x00\x34\xff" + bytes((0xD0 + index % 8,)) for index in range(5000)
+    )
+    fill = b"\xff" * 64
+    scans = (fill + EXTRA_SCAN + restarts) * (panorama.MAX_JPEG_SCANS - 1)
+    data = jpeg(marker=0xC2, scan=b"\x12\x34" + restarts + scans + fill)
+    assert data.count(b"\xff") > panorama.MAX_JPEG_SEGMENTS * 8
+    assert panorama.inspect_panorama(data) == panorama.PanoramaInfo("JPEG", 4, 2, False)
+
+
+def test_segment_payloads_after_a_scan_are_skipped_not_counted():
+    # Comment text and tables are not byte-stuffed; only marker segments count.
+    payload = (b"\xff\xda" + b"\xff\xfe" + b"\xff\xd9") * panorama.MAX_JPEG_SEGMENTS
+    data = jpeg(scan=b"\x12\x34" + segment(0xFE, payload[:65_000]) + segment(0xC4, bytes(20)))
+    assert panorama.inspect_panorama(data).file_format == "JPEG"
+
+
+@pytest.mark.parametrize(
+    "after",
+    [
+        b"\xff\xd8\x00\x02",
+        b"\xff\x01\x00\x02",
+        segment(0x02, b"reserved"),
+        b"\xff\xfe\x01\x00truncated",
+        b"\xff\xfe\x00\x01",
+    ],
+)
+def test_invalid_or_truncated_segments_after_a_scan_rejected(after):
+    with pytest.raises(panorama.PanoramaError, match="incomplete or invalid"):
+        panorama.inspect_panorama(jpeg(scan=b"\x12\x34" + after))
+
+
+@pytest.mark.parametrize(
+    "after,message",
+    [
+        (segment(0xC2, frame()), "conflicting frame"),
+        (segment(0xC9, frame()), "baseline or progressive"),
+        (exif(6), "EXIF-rotated or mirrored"),
+        (exif() + exif(), "conflicting EXIF"),
+    ],
+)
+def test_frame_and_exif_rules_also_apply_after_a_scan(after, message):
+    with pytest.raises(panorama.PanoramaError, match=message):
+        panorama.inspect_panorama(jpeg(marker=0xC2, scan=b"\x12\x34" + after))
+
+
+@pytest.mark.parametrize(
+    "scan",
+    [
+        b"\x12\x34" + segment(0xDA, b"\x01\x01\x00\x00\x00\x00"),
+        b"\x12\x34\xff\xd9" + EXTRA_SCAN,
+    ],
+)
+def test_empty_later_scan_or_early_end_marker_rejected(scan):
+    with pytest.raises(panorama.PanoramaError, match="incomplete or has trailing"):
+        panorama.inspect_panorama(jpeg(marker=0xC2, scan=scan))
+
+
+@pytest.mark.parametrize("order", [b"MM", b"II"])
+@pytest.mark.parametrize("orientation", [None, 1])
+def test_upright_jpeg_exif_and_other_metadata_are_left_to_blender(order, orientation):
+    xmp = segment(0xE1, b"http://ns.adobe.com/xap/1.0/\0<x:xmpmeta/>")
+    before = exif(orientation, order=order) + xmp + segment(0xE2, b"ICC_PROFILE\0")
+    data = jpeg(before=before)
+    assert panorama.inspect_panorama(data) == panorama.PanoramaInfo("JPEG", 4, 2, False)
+
+
+@pytest.mark.parametrize("order", [b"MM", b"II"])
+@pytest.mark.parametrize("orientation", [0, 2, 3, 4, 5, 6, 7, 8, 9])
+def test_rotated_or_mirrored_jpeg_rejected_before_decode(order, orientation):
+    # Blender 5.0-5.2 ignore EXIF orientation and would apply stored pixel order.
+    with pytest.raises(panorama.PanoramaError, match="EXIF-rotated or mirrored"):
+        panorama.inspect_panorama(jpeg(before=exif(orientation, order=order)))
+
+
+@pytest.mark.parametrize(
+    "segment_bytes",
+    [
+        exif(order=b"XX"),
+        exif(kind=4),
+        exif(count=2),
+        exif(entries=2),
+        segment(0xE1, b"Exif\0\0MM\x00\x2a"),
+        segment(0xE1, b"Exif\0\0MM\x00\x2b\x00\x00\x00\x08\x00\x00"),
+        segment(0xE1, b"Exif\0\0MM\x00\x2a\x00\x00\x00\x40\x00\x00"),
+        segment(0xE1, b"Exif\0\0MM\x00\x2a\x00\x00\x00\x04\x00\x00"),
+    ],
+)
+def test_unreadable_jpeg_exif_orientation_fails_closed(segment_bytes):
+    with pytest.raises(panorama.PanoramaError, match="EXIF metadata is invalid"):
+        panorama.inspect_panorama(jpeg(before=segment_bytes))
+
+
+def test_jpeg_with_several_exif_segments_rejected():
+    with pytest.raises(panorama.PanoramaError, match="conflicting EXIF"):
+        panorama.inspect_panorama(jpeg(before=exif() + exif()))
+
+
+def test_general_image_preflight_does_not_accept_jpeg():
+    with pytest.raises(panorama.PanoramaError, match="PNG and scanline OpenEXR"):
+        panorama.inspect_image(jpeg())
+
+
+@pytest.mark.parametrize(
+    "values,expected",
+    [
+        (REC709, "rec709"),
+        ((0.64, 0.33, 0.30, 0.60, 0.15, 0.06, 0.31271, 0.32902), "rec709"),
+        (ACES_AP0, "aces_ap0"),
+    ],
+)
+def test_exr_declared_primaries_are_classified(values, expected):
+    info = panorama.inspect_panorama(exr(extra=chromaticities(values)))
+    assert info == panorama.PanoramaInfo("OPEN_EXR", 4, 2, True, expected)
+
+
+def test_exr_without_primaries_keeps_blender_default():
+    assert panorama.inspect_panorama(exr()).chromaticities is None
+
+
+@pytest.mark.parametrize(
+    "extra,expected",
+    [
+        # Blender 5.0-5.2 select ACES2065-1 for a container flag of 1 alone.
+        (container_flag(1), "aces_ap0"),
+        (container_flag(1) + chromaticities(ACES_AP0), "aces_ap0"),
+        (container_flag(0), None),
+        (container_flag(2), None),
+        (container_flag(0) + chromaticities(ACES_AP0), "aces_ap0"),
+        (container_flag(0) + chromaticities(REC709), "rec709"),
+        (interop(b"lin_ap0_scene"), "aces_ap0"),
+        (interop(b"lin_rec709_scene"), "rec709"),
+        (interop(b"lin_ap0_scene") + container_flag(1), "aces_ap0"),
+        (interop(b"lin_ap0_scene") + chromaticities(ACES_AP0), "aces_ap0"),
+        (interop(b"lin_rec709_scene") + chromaticities(REC709), "rec709"),
+    ],
+)
+def test_exr_container_flag_and_interop_id_are_classified(extra, expected):
+    assert panorama.inspect_panorama(exr(extra=extra)).chromaticities == expected
+
+
+@pytest.mark.parametrize(
+    "extra",
+    [
+        # Blender would decode these as ACES2065-1 or by colorInteropID.
+        container_flag(1) + chromaticities(REC709),
+        interop(b"lin_ap0_scene") + chromaticities(REC709),
+        interop(b"lin_rec709_scene") + chromaticities(ACES_AP0),
+        interop(b"lin_rec709_scene") + container_flag(1),
+    ],
+)
+def test_conflicting_exr_color_declarations_rejected(extra):
+    with pytest.raises(panorama.PanoramaError, match="declarations conflict"):
+        panorama.inspect_panorama(exr(extra=extra))
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        b"lin_ap1_scene",
+        b"lin_rec2020_scene",
+        b"srgb_rec709_display",
+        b"data",
+        b"fixture_unknown",
+        b"",
+    ],
+)
+def test_other_exr_interop_ids_are_left_to_the_decoded_colorspace_check(value):
+    # Blender writes srgb_rec709_display itself and ignores it when decoding, but
+    # selects ACEScg for lin_ap1_scene; the World primitive verifies the result.
+    assert panorama.inspect_panorama(exr(extra=interop(value))).chromaticities is None
+    data = exr(extra=interop(value) + chromaticities(REC709))
+    assert panorama.inspect_panorama(data).chromaticities == "rec709"
+
+
+@pytest.mark.parametrize(
+    "values",
+    [ACES_AP1, REC2020, ACES_AP0[:6] + REC709[6:], (float("nan"),) * 8],
+)
+def test_exr_other_primaries_fail_closed_for_world(values):
+    with pytest.raises(panorama.PanoramaError, match="Rec.709 or ACES AP0"):
+        panorama.inspect_panorama(exr(extra=chromaticities(values)))
+
+
+@pytest.mark.parametrize(
+    "extra",
+    [
+        attribute(b"chromaticities", b"v2f", struct.pack("<8f", *ACES_AP0)),
+        attribute(b"chromaticities", b"chromaticities", struct.pack("<7f", *ACES_AP0[:7])),
+        container_flag(1, kind=b"string"),
+        attribute(b"acesImageContainerFlag", b"int", b"\x01\x00"),
+        interop(struct.pack("<i", 1), kind=b"int"),
+    ],
+)
+def test_malformed_exr_primaries_rejected(extra):
+    with pytest.raises(panorama.PanoramaError, match="primaries are invalid"):
+        panorama.inspect_panorama(exr(extra=extra))
+
+
+def test_general_image_preflight_does_not_classify_exr_primaries():
+    extra = chromaticities(ACES_AP1) + container_flag(1) + interop(b"lin_ap1_scene")
+    info = panorama.inspect_image(exr(3, 5, extra=extra))
+    assert info == panorama.PanoramaInfo("OPEN_EXR", 3, 5, True)
+
+
+def test_world_media_types_name_their_required_container_and_wording():
+    assert panorama.WORLD_MEDIA_TYPES == set(panorama.WORLD_MEDIA_FORMATS)
+    assert set(panorama.WORLD_MEDIA_FORMATS.values()) == {"PNG", "JPEG", "OPEN_EXR"}
+    assert panorama.WORLD_MEDIA_FORMATS["image/aces"] == "OPEN_EXR"
+    for media_type, container in panorama.WORLD_MEDIA_FORMATS.items():
+        label = panorama.describe_world_media(media_type)
+        assert ("LDR" in label) == (container != "OPEN_EXR")
+        assert ("ACES2065-1" in label) == (container == "OPEN_EXR")
+    assert panorama.describe_world_media("image/aces").startswith("ACES-labelled OpenEXR")
+    # The 520 px confirmation was verified on the desktop with 59-character lines.
+    assert max(len(f"Selected: {label}") for label in panorama._WORLD_MEDIA_LABELS.values()) <= 59
+    for unsupported in ("image/webp", "image/vnd.radiance", "image/jpg", ""):
+        assert unsupported not in panorama.WORLD_MEDIA_TYPES
+        assert panorama.describe_world_media(unsupported) == "Unsupported media type"

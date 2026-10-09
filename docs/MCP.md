@@ -72,10 +72,13 @@ See [model import](MESH_APPLICATION.md#explicit-saved-glb-import)
 for bounds and recovery. This never replaces an existing mesh.
 
 For one unapplied saved panorama, pass `purpose: world` and its `asset_id` to
-`prepare_result_application`; show the scene and current World before approval.
-The same apply command verifies and packs a supported 2:1 PNG/EXR as an explicitly
-chosen equirectangular environment. It preserves the previous World. This is not
-a seamless-content or actual HDR-range guarantee.
+`prepare_result_application`; show the scene, current World and returned `format`
+before approval. `format` states the saved media type's declared format, such as
+`JPEG (LDR)` or an OpenEXR whose ACES AP0 primaries use ACES2065-1; restoration
+returns `null`. The same apply command verifies and packs a supported 2:1 PNG,
+JPEG or scanline OpenEXR as an explicitly chosen equirectangular environment.
+The actual container must match the saved media type. It preserves the previous
+World. This is not a seamless-content or actual HDR-range guarantee.
 
 After a completed World assignment, `purpose: restore_world` prepares a separate
 session-local restore without an asset ID. Show that operation before consuming
@@ -390,7 +393,7 @@ behavior interchangeable. Remote names below were checked against the
 | Review saved Image import | `prepare_result_application(context_id, request_id, expected_revision)` | Local destination capture; show the returned scene and images for approval |
 | Review one saved video/audio strip | `prepare_result_application(context_id, request_id, expected_revision, asset_id)` | Local scene/frame capture; show returned destination for approval |
 | Review one saved GLB | `prepare_result_application(context_id, request_id, expected_revision, asset_id)` | Local scene/cursor capture; show the returned destination for approval |
-| Review panorama World or restore | `prepare_result_application(context_id, request_id, expected_revision, purpose, asset_id)` | Use `world` with one asset or `restore_world` for the retained session handle |
+| Review panorama World or restore | `prepare_result_application(context_id, request_id, expected_revision, purpose, asset_id)` | Use `world` with one PNG/JPEG/OpenEXR asset and show its `format`, or `restore_world` for the retained session handle |
 | Apply approved saved results | `apply_result_application(context_id, application_id)` | Local verified import or strip insertion into the captured destination; no platform call |
 | Wait | `wait_for_job(job_id or id, timeout)`, one job without blocking Blender | `jobs_wait` |
 | Reference upload | `upload_reference(path, kind)` or `capture_reference(source)`, then `reference_upload_status(context_id, reference_id)` until imported | `upload_asset`, `upload_asset_complete` for an existing file |

@@ -3,7 +3,7 @@
   "type": "Evidence",
   "id": "docs-known-limitations.image-application-formats",
   "title": "Image, World and material application formats",
-  "description": "Automatic Image-lane import and saved image, World and material application accept PNG and scanline OpenEXR only.",
+  "description": "Automatic Image-lane import and saved image and material application accept PNG and scanline OpenEXR only; World application also accepts baseline or progressive JPEG and ACES-labelled OpenEXR panoramas.",
   "evidence": {
     "path": "docs/KNOWN_LIMITATIONS.md",
     "scope": "image-application-formats",

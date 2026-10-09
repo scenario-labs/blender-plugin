@@ -682,10 +682,15 @@ class PreviewCache:
                 pass
 
     def workspace(self):
-        """A new private work directory on the cache filesystem for staging."""
+        """A new private work directory on the cache filesystem for staging.
+
+        Only its name comes from ``mkdtemp``. Python 3.12 and later return that
+        path through ``abspath``, so the canonical root's spelling, which is the
+        extended namespace on Windows, is kept for ``discard`` and decode checks.
+        """
         try:
             work = self._directory("work", create=True)
-            return Path(tempfile.mkdtemp(prefix="preview-", dir=work))
+            return work / Path(tempfile.mkdtemp(prefix="preview-", dir=work)).name
         except OSError:
             raise PreviewError("Preview cache is unavailable") from None
 

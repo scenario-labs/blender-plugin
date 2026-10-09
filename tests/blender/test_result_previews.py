@@ -4,6 +4,7 @@
 
 import hashlib
 import json
+import os
 import struct
 import tempfile
 import threading
@@ -194,11 +195,16 @@ class SessionPreviewTests(unittest.TestCase):
         still = self.status("asset-video").preview
         self.assertEqual(still.path.read_bytes(), JPEG)
         self.assertEqual((still.width, still.height), (32, 24))
-        self.assertTrue(still.path.is_relative_to(self.cache))
+        # Like saved results, cache paths use the root's canonical storage
+        # spelling: Windows' extended \\?\ namespace, so deep entries stay usable.
+        canonical = self.transfers._root(self.cache)
+        if os.name == "nt":
+            self.assertTrue(str(still.path).startswith("\\\\?\\"))
+        self.assertTrue(still.path.is_relative_to(canonical))
         self.assertEqual([thread.name for _, thread in self.calls], ["ScenarioPreview"])
         self.assertEqual([thread.name for thread in self.downloads], ["ScenarioPreview"])
         (request,) = self.session.result_previews.decode_requests()
-        self.assertTrue(request.source.is_relative_to(self.cache / "work"))
+        self.assertTrue(request.source.is_relative_to(canonical / "work"))
         self.assertEqual(request.source.read_bytes(), png(8, 4))
         request.output.write_bytes(png(4, 2))
         self.session.result_previews.finish_decode(request)

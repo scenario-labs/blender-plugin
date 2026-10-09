@@ -447,7 +447,9 @@ class RuntimeJobTests(unittest.TestCase):
             session.service_previews()
             time.sleep(0.02)
         (request,) = previews.decode_requests()
-        self.assertTrue(request.source.is_relative_to(root / "work"))
+        # Windows spells the cache's canonical root in the extended namespace.
+        canonical = submodule("core.jobs.transfers")._root(root)
+        self.assertTrue(request.source.is_relative_to(canonical / "work"))
         self.assertEqual(request.source.read_bytes(), data)
         self.assertEqual(self.requests, [])
 

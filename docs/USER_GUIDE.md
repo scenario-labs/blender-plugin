@@ -43,9 +43,11 @@ Only HTTP 401, 403 and 429 failures add guidance. A 401 (key or secret rejected)
 or 403 (access denied) asks you to check the selected key and secret. When the
 failing request used the Project ID, a 403 also asks you to confirm that the
 project belongs to the key, or to clear it. A 429 (too many requests) asks you to
-try again shortly. Other statuses show only the HTTP code. Preferences wraps the
-connection result, and the sidebar wraps model-loading, price and generation errors.
-Messages never include service responses, credentials or IDs.
+try again shortly. One exception: when reading one model's description gets an
+HTTP 403 or 404, the form says the model is not available to the selected
+credentials or project. Other statuses show only the HTTP code. Preferences wraps
+the connection result, and the sidebar wraps model-loading, price and generation
+errors. Messages never include service responses, credentials or IDs.
 
 **Project ID (optional)** applies to both saved and environment credentials. Leave
 it blank to use the API key's server-defined default scope, or enter a project ID

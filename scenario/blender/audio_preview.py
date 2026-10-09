@@ -303,7 +303,10 @@ def draw(layout, record, index):
         return
     box = layout.box()
     box.label(text=Path(selected.path).name, icon="SOUND")
-    scale = context.preferences.view.ui_scale * context.preferences.system.pixel_size
+    # Blender's custom-interface multiplier already includes the resolution scale;
+    # the pixel size is a line width derived from the same DPI, so multiplying it
+    # by view.ui_scale would count that scale twice. Background mode reports 0.
+    scale = context.preferences.system.ui_scale or 1.0
     width = context.region.width if context.region is not None else 300
     columns = max(12, int((width / scale - 80) / 7))
     for line in textwrap.wrap(selected.message, width=columns):

@@ -3,6 +3,7 @@
 """Installed local-result UI admission and completion tests; no service or playback."""
 
 import tempfile
+import textwrap
 import threading
 import time
 import unittest
@@ -13,6 +14,25 @@ from unittest.mock import patch
 
 import bpy
 from helpers import isolated_manager, submodule, temp_credentials
+
+
+class _Layout:
+    """Records the preview box's draw calls; draw() must only read cached state."""
+
+    def __init__(self):
+        self.calls = []
+
+    def box(self):
+        return self
+
+    def label(self, *, text, icon):
+        self.calls.append(("label", text, icon))
+
+    def operator(self, idname, *, text, icon):
+        self.calls.append(("operator", idname))
+
+    def template_icon(self, *, icon_value, scale):
+        self.calls.append(("icon", icon_value, scale))
 
 
 class AudioPreviewTests(unittest.TestCase):
@@ -113,6 +133,56 @@ class AudioPreviewTests(unittest.TestCase):
         pixels = self.preview.controller._previews["waveform"].image_pixels_float
         self.assertEqual(len(pixels), 256 * 96 * 4)
         self.assertGreater(max(pixels), 0)
+
+    def draw_with(self, preferences, width=800):
+        layout = _Layout()
+        context = SimpleNamespace(
+            scene=bpy.context.scene,
+            window=bpy.context.window,
+            region=SimpleNamespace(width=width),
+            preferences=preferences,
+        )
+        with patch.object(self.preview, "bpy", SimpleNamespace(context=context)):
+            self.preview.draw(layout, self.record, 0)
+        return layout.calls
+
+    def test_draw_sizes_text_and_waveform_with_blenders_custom_ui_scale(self):
+        self.select()
+        selected = self.ready()
+        self.assertEqual(selected.status, "READY")
+        # Blender 5.2.1 on Retina at a Preferences resolution scale of 2 reports
+        # system.ui_scale 4 and pixel size 4, a line width derived from DPI 288.
+        # Multiplying that pixel size by the resolution scale would size for 8.
+        retina = SimpleNamespace(
+            system=SimpleNamespace(ui_scale=4.0, pixel_size=4.0),
+            view=SimpleNamespace(ui_scale=2.0),
+        )
+        calls = self.draw_with(retina)
+        # Only the custom-interface scale exists here; reading anything else fails.
+        custom = SimpleNamespace(system=SimpleNamespace(ui_scale=4.0))
+        self.assertEqual(calls, self.draw_with(custom))
+        columns = int((800 / 4 - 80) / 7)
+        self.assertEqual(columns, 17)
+        lines = textwrap.wrap(selected.message, width=columns)
+        # Scale 8 would wrap at the 12-column minimum with the smallest waveform.
+        self.assertNotEqual(lines, textwrap.wrap(selected.message, width=12))
+        self.assertEqual(
+            calls,
+            [
+                ("label", Path(selected.path).name, "SOUND"),
+                *(("label", line, "INFO") for line in lines),
+                ("icon", selected.icon_id, 6.0),
+            ],
+        )
+        # Background Blender reports a custom-interface scale of 0; draw uses 1.
+        self.assertEqual(
+            self.draw_with(SimpleNamespace(system=SimpleNamespace(ui_scale=0.0))),
+            self.draw_with(SimpleNamespace(system=SimpleNamespace(ui_scale=1.0))),
+        )
+        layout = _Layout()
+        self.preview.draw(layout, self.record, 0)
+        self.assertEqual(layout.calls[0], ("label", Path(selected.path).name, "SOUND"))
+        self.assertEqual(layout.calls[-1][0], "icon")
 
     def test_cancel_rejects_late_completion_and_preserves_result(self):
         release, _ = self.blocked_read()

@@ -86,18 +86,26 @@ the model chip commit and blur a focused prompt before their dialogs open, becau
 either can switch the form. If the form is still replaced while the prompt is
 focused (another window or a tool), the composer never writes into the new form.
 The card keeps describing the original form, disables **Generate** and notes
-*The form changed: press Esc to show it*. Typing is refused with a warning; Esc,
-Enter, Generate, collapse and dragging leave focus without writing either form,
-and Enter or Generate then submit nothing. When the form's model takes no prompt,
-as for several Edit 3D tasks, the field reads *This model takes no prompt* and
-takes no focus, as the sidebar hides its prompt row.
+*The form changed: press Esc to show it*. Typing is refused with a warning, and a
+click or double-click in the field keeps the original text. Esc, Enter, Generate,
+a lane tab, collapse and dragging leave focus without writing either form; Enter
+or Generate then submit nothing, and the tab shows its current form. Otherwise a
+lane tab commits the text and keeps the prompt focused on the new tab's form.
+When the form's model takes no prompt, as for several Edit 3D tasks, the field
+reads *This model takes no prompt* and takes no focus, as the sidebar hides its
+prompt row: a click or double-click does not focus it, and a lane tab that shows
+such a form leaves focus. If another window or a tool loads such a model while
+the prompt is focused, the next text key leaves focus with that warning and
+writes nothing.
 
 Installed tests on the packaged ZIP run the real composer draw function, with
 recording drawing primitives, and the real modal handler. Run against the previous
 composer, they fail where a 1.5 CU Text price labeled the Generate that the
 operator routes to the Edit form's 7.25 CU quote, and where keys typed after a
-mode switch still edited the Text prompt. They also cover the replaced-form rules
-above. An offline GUI check ran the exact ZIP
+mode switch still edited the Text prompt. They also cover the replaced-form and
+no-prompt rules above. The lane tab, double-click and model-change rules came
+after the GUI check below; their installed tests fail on the composer code that
+check ran. An offline GUI check ran the exact ZIP
 `89c07a5b0642ca02b53d5c1fcb57968f03fde32b3ae942ac7f048690f9272011`
 on macOS 27.0.1 arm64 with Blender 5.0.1, 5.1.2 and 5.2.1. It drove the composer through
 Blender's own event queue (`--enable-event-simulate`, a window opened without

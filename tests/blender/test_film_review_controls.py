@@ -258,6 +258,52 @@ class FilmReviewControlTests(unittest.TestCase):
         self.assertEqual(self.state(), self.storage.JobState.READY)
         self.assertFalse(self.media.calls or self.media.downloads)
 
+    def test_selection_or_history_invalidates_preparing_reviews(self):
+        history = submodule("blender.job_session")._history_pre
+        target = self.media.target
+        measured = self.probe._run
+        # Running: probing is blocked. Finished: its worker returned before any maintenance.
+        for timing in ("running", "finished"):
+            for change in ("selection", "undo", "redo"):
+                with self.subTest(timing=timing, change=change):
+                    started, release = threading.Event(), threading.Event()
+
+                    def blocked(command, started=started, release=release, **kwargs):
+                        started.set()
+                        release.wait(5)
+                        return measured(command, **kwargs)
+
+                    with patch.object(self.probe, "_run", side_effect=blocked):
+                        identifier = self.mcp_prepare()
+                        self.assertTrue(started.wait(5))
+                        if timing == "finished":
+                            release.set()
+                            self.commands._reviews[identifier].task.result(5)
+                        self.assertEqual(self.commands.status(identifier)["phase"], "PREPARING")
+                        if change == "selection":
+                            target.select_set(not target.select_get())
+                            bpy.context.view_layer.update()
+                        else:
+                            self.assertIn(history, getattr(bpy.app.handlers, change + "_pre"))
+                            history(self.scene)
+                        # The first maintenance fails the review before its worker settles.
+                        status = self.tools.film_review_status({"review_id": identifier})
+                        self.assertEqual(status["phase"], "ERROR")
+                        self.assertIn("prepare again", status["error"])
+                        release.set()
+                        status = self.settle(identifier)
+                    self.assertEqual(status["phase"], "ERROR")
+                    self.assertIn("prepare again", status["error"])
+                    self.assertIsNone(self.commands._reviews[identifier].task)
+                    self.assertIsNone(self.commands._reviews[identifier].completion)
+                    self.assertFalse(self.copies())
+                    self.assertFalse(self.session._coordinator.film_review_cleanup_pending)
+                    with self.assertRaisesRegex(ValueError, "fresh ready"):
+                        self.tools.build_film_review({"review_id": identifier})
+        self.assertEqual(self.state(), self.storage.JobState.READY)
+        self.ready()  # The single local media slot is free again.
+        self.assertFalse(self.media.calls or self.media.downloads)
+
     def test_selecting_the_recipe_scene_again_requires_fresh_preparation(self):
         # The scene selector assigns window.scene; Blender then runs frame_change_pre
         # for the newly selected scene, which a context override never does.

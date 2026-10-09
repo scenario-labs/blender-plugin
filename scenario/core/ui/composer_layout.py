@@ -27,7 +27,14 @@ PLACEHOLDERS = {
     "material": "Describe the material (weathered copper, mossy stone...)",
     "render_image": "Describe the look to render the viewport with (empty: Prompt Spark writes it)",
     "render_video": "Describe the look of the video (empty: Prompt Spark writes it)",
+    "edit3d": "Describe the edit to the selected mesh",
 }
+# Forms whose model takes no prompt (several Edit 3D tasks) offer nothing to type.
+NO_PROMPT = "This model takes no prompt"
+# A focused prompt whose form another one replaced (a mode switch, a model pick, another window).
+FORM_REPLACED_NOTE = "The form changed: press Esc to show it"
+FORM_REPLACED_TYPING = "The form behind the composer changed. Press Esc to show it; your text stays in its original form"
+FORM_REPLACED_GENERATE = "The form behind the composer changed. Check its prompt, then generate"
 
 
 def placeholder_for(lane):

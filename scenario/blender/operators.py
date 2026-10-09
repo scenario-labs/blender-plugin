@@ -87,9 +87,7 @@ class SCENARIO_OT_generate(bpy.types.Operator):
         return _network_poll(cls, context)
 
     def execute(self, context):
-        lane = self.lane
-        if lane == "3d" and context.scene.scenario.three_d_mode == "EDIT":
-            lane = "edit3d"  # the 3D tab in Edit mode drives the edit3d lane
+        lane = props.effective_lane(context.scene, self.lane)
         try:
             rec = generation.submit_generation(context, lane)
         except ScenarioError as err:

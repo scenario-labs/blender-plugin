@@ -285,6 +285,18 @@ def generate_enabled(lane_state, lane):
     return lane_state.estimate_state == "READY" and ticket is not None and ticket.lane == lane
 
 
+def form_takes_prompt(lane_state, lane):
+    """Whether the form shows a prompt, as the sidebar draws it.
+
+    Render lanes always edit their look. Other forms hide the prompt when the loaded model takes
+    none, as several Edit 3D tasks (retopology, rigging) do; an unloaded model keeps it.
+    """
+    if lane in ("render_image", "render_video"):
+        return True
+    schema = generation.schema_for(lane_state.model_id)
+    return schema is None or bool(schema.prompt_name)
+
+
 def model_button_text(lane_state):
     record = runtime.state.records.get(lane_state.model_id)
     if record is not None:
@@ -358,12 +370,14 @@ def draw_schema_status(layout, lane_state, lane):
 
 
 def draw_generate_lane(layout, context, lane):
-    lane_state = context.scene.scenario.lane_state(lane)
+    scene = context.scene
     if lane == "3d":
-        layout.row(align=True).prop(context.scene.scenario, "three_d_mode", expand=True)
-        if context.scene.scenario.three_d_mode == "EDIT":
-            draw_edit3d_lane(layout, context)
-            return
+        layout.row(align=True).prop(scene.scenario, "three_d_mode", expand=True)
+    # The same lane rule as pricing, the composer and the Generate operator.
+    if props.effective_lane(scene, lane) == "edit3d":
+        draw_edit3d_lane(layout, context)
+        return
+    lane_state = scene.scenario.lane_state(lane)
     draw_model_row(layout, lane_state, lane)
     schema = generation.schema_for(lane_state.model_id)
     if schema is None:
@@ -411,9 +425,8 @@ def draw_edit3d_lane(layout, context):
     else:
         box.label(text="Select the mesh to edit in the viewport", icon="ERROR")
     tasks = [t[0] for t in props.EDIT3D_TASK_ITEMS]
-    draw_enum_tabs(
-        layout, scene.scenario, "edit3d_task", (tasks[:4], tasks[4:])
-    )  # continuous segmented rows, like the lane tabs
+    # continuous segmented rows, like the lane tabs
+    draw_enum_tabs(layout, scene.scenario, "edit3d_task", (tasks[:4], tasks[4:]))
     task = edit3d_task(scene.scenario.edit3d_task)
     layout.label(text=task[2], icon="INFO")
     if not runtime.state.lane_models.get("edit3d"):
@@ -435,9 +448,8 @@ def draw_edit3d_lane(layout, context):
         fixed_first={mesh_name: "Selected mesh (upload before pricing)"} if mesh_name else None,
     )
     params_ui.draw_params(layout, lane_state, schema)
-    draw_generate_row(
-        layout, lane_state, "3d"
-    )  # the operator routes the 3D tab in Edit mode to the edit3d lane
+    # Enablement and submission use the Edit form's own lane-bound quote.
+    draw_generate_row(layout, lane_state, "edit3d")
 
 
 def draw_mcp_lane(layout, context):

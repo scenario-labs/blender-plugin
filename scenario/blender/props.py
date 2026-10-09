@@ -166,12 +166,26 @@ def lane_of(lane_state):
     return ATTR_LANE.get(attr, lane_state.lane or "image")
 
 
-def active_lane(scene):
-    """The lane the visible form builds requests for: the 3D tab in Edit mode drives the edit3d lane."""
-    lane = scene.scenario.lane
+def effective_lane(scene, lane=None):
+    """The lane whose form `lane` (default: the visible tab) prices and submits.
+
+    The 3D tab in Edit mode drives the edit3d lane. The pricing pump, the sidebar and Settings
+    forms, the composer and the Generate operator share this rule.
+    """
+    lane = scene.scenario.lane if lane is None else lane
     if lane == "3d" and scene.scenario.three_d_mode == "EDIT":
         return "edit3d"
     return lane
+
+
+def form_tab(lane):
+    """The tab that shows `lane`'s form: the inverse of effective_lane (Edit 3D is the 3D tab)."""
+    return "3d" if lane == "edit3d" else lane
+
+
+def active_lane(scene):
+    """The lane the visible form builds requests for: the 3D tab in Edit mode drives the edit3d lane."""
+    return effective_lane(scene)
 
 
 def _lane_items(self, context):

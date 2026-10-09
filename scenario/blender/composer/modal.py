@@ -58,6 +58,55 @@ def _save_layout():
     save_layout()
 
 
+def _generate(operator, scene, state):
+    """Submit the form the composer shows, only with that form's own ready quote."""
+    if not state.owns_form(scene):
+        # The card described another form (one replaced while focused): show this one first.
+        operator.report({"WARNING"}, cl.FORM_REPLACED_GENERATE)
+        return
+    lane = state.generation_lane(scene)
+    if not panels.generate_enabled(scene.scenario.lane_state(lane), lane):
+        return
+    try:
+        bpy.ops.scenario.generate(lane=lane)
+    except RuntimeError as error:
+        # Operator error reports arrive as exceptions; the form keeps the reason. Keep this handler alive.
+        message = str(error).strip()
+        reason = message.removeprefix("Error:").strip() if message.startswith("Error:") else ""
+        operator.report({"WARNING"}, reason or "Generation is not available right now")
+
+
+def _takes_prompt(scene, state):
+    lane = state.generation_lane(scene)
+    return panels.form_takes_prompt(scene.scenario.lane_state(lane), lane)
+
+
+def _edits_text(event, command):
+    """Keys that change the prompt text; caret moves, selection and copy only read it."""
+    if event.type in ("BACK_SPACE", "DEL"):
+        return True
+    if command:
+        return event.type in ("V", "X")
+    return bool(event.unicode) and not event.alt
+
+
+def _open_dialog(context, scene, state, kind):
+    if kind == "model":
+        # the model chip opens the search dialog for the form it shows; the sidebar shows the rest
+        _open_sidebar(context)
+        try:
+            bpy.ops.scenario.pick_model("INVOKE_DEFAULT", lane=state.generation_lane(scene))
+        except (RuntimeError, AttributeError):
+            # No dialog in this context: the sidebar opened above still holds the model chooser.
+            pass
+        return
+    # the tab's settings in a dialog right here (the 3D tab includes its Edit mode form)
+    try:
+        bpy.ops.scenario.quick_settings("INVOKE_DEFAULT", lane=state.lane_for(scene))
+    except (RuntimeError, AttributeError):
+        _open_sidebar(context)
+
+
 class SCENARIO_OT_composer_modal(bpy.types.Operator):
     bl_idname = "scenario.composer_modal"
     bl_label = "Scenario composer"
@@ -168,9 +217,8 @@ class SCENARIO_OT_composer_modal(bpy.types.Operator):
             hit = layout.hit(*state.mouse)
             if hit != state.hover:
                 if hit == ("resize",):
-                    _cursor(
-                        context, "MOVE_X"
-                    )  # the corner shows a resize cursor instead of a permanent grip
+                    # the corner shows a resize cursor instead of a permanent grip
+                    _cursor(context, "MOVE_X")
                 elif state.hover == ("resize",):
                     _cursor(context, None)
                 state.hover = hit
@@ -187,13 +235,17 @@ class SCENARIO_OT_composer_modal(bpy.types.Operator):
         if event.type == "LEFTMOUSE" and event.value == "DOUBLE_CLICK":
             hit = layout.hit(event.mouse_region_x, event.mouse_region_y)
             if hit == ("prompt",) and state.expanded:
-                state.sync_from_lane(scene)
-                state.focused = True
-                state.field.select_word_at(
-                    _caret_index(context, state, layout, event.mouse_region_x)
-                )
-                state.dragging = False
-                _redraw(context)
+                # The press before it already explained a form without a prompt. A focused field
+                # keeps the form it was synchronized from, even one that was replaced.
+                if state.focused or _takes_prompt(scene, state):
+                    if not state.focused:
+                        state.sync_from_lane(scene)
+                    state.focused = True
+                    state.field.select_word_at(
+                        _caret_index(context, state, layout, event.mouse_region_x)
+                    )
+                    state.dragging = False
+                    _redraw(context)
             elif hit in (("drag",), ("resize",)):
                 # double-click on the card background puts the composer back at its default place and size
                 state.cancel_drag()
@@ -217,20 +269,27 @@ class SCENARIO_OT_composer_modal(bpy.types.Operator):
                 state.begin_drag((event.mouse_region_x, event.mouse_region_y), "expand")
             elif kind == "drag":
                 if state.focused:
-                    state.focused = False
-                    state.commit_to_lane(scene)
+                    state.leave_focus(scene)
                 state.begin_drag((event.mouse_region_x, event.mouse_region_y), "drag")
             elif kind == "resize":
                 state.begin_drag((event.mouse_region_x, event.mouse_region_y), "resize")
                 _cursor(context, "MOVE_X")
             elif kind == "collapse":
-                state.focused = False
-                state.commit_to_lane(scene)
+                state.leave_focus(scene)
                 state.expanded = False
             elif kind == "tab":
-                state.commit_to_lane(scene)
+                if state.form_replaced(scene):
+                    # Like Esc: leave the original form without writing to either form.
+                    state.leave_focus(scene)
+                else:
+                    state.commit_to_lane(scene)
                 scene.scenario.lane = hit[1]
+                if state.focused and not _takes_prompt(scene, state):
+                    # The new form takes no prompt: its field explains why instead of keeping focus.
+                    state.leave_focus(scene)
                 state.sync_from_lane(scene)
+            elif kind == "prompt" and not state.focused and not _takes_prompt(scene, state):
+                self.report({"INFO"}, cl.NO_PROMPT)
             elif kind == "prompt":
                 if not state.focused:
                     state.sync_from_lane(scene)
@@ -240,24 +299,16 @@ class SCENARIO_OT_composer_modal(bpy.types.Operator):
                 )
                 state.dragging = True
             elif kind == "generate":
-                state.commit_to_lane(scene)
-                state.focused = False
-                lane = state.lane_for(scene)
-                if panels.generate_enabled(scene.scenario.lane_state(lane), lane):
-                    bpy.ops.scenario.generate(lane=lane)
-            elif kind == "model":
-                # the model chip opens the search dialog; the sidebar shows the rest of the form
-                _open_sidebar(context)
+                state.leave_focus(scene)
+                _generate(self, scene, state)
+            elif kind in ("model", "settings"):
+                # Their dialogs can switch the form (3D mode, model lane): commit and blur first.
                 try:
-                    bpy.ops.scenario.pick_model("INVOKE_DEFAULT", lane=state.lane_for(scene))
-                except (RuntimeError, AttributeError):
-                    pass
-            elif kind == "settings":
-                # the generation settings of the current lane, in a dialog right here
-                try:
-                    bpy.ops.scenario.quick_settings("INVOKE_DEFAULT", lane=state.lane_for(scene))
-                except (RuntimeError, AttributeError):
-                    _open_sidebar(context)
+                    state.flush_focused_prompt(scene)
+                except RuntimeError as error:
+                    self.report({"WARNING"}, str(error))
+                else:
+                    _open_dialog(context, scene, state, kind)
             _redraw(context)
             return {"RUNNING_MODAL"}
         if not state.focused:
@@ -267,17 +318,23 @@ class SCENARIO_OT_composer_modal(bpy.types.Operator):
         field = state.field
         command = event.ctrl or event.oskey
         if event.type == "ESC":
-            state.focused = False
-            state.dragging = False
-            state.commit_to_lane(scene)
+            # Leaves a replaced form without writing to either one; the next draw shows the new form.
+            state.leave_focus(scene)
             _redraw(context)
             return {"RUNNING_MODAL"}
         if event.type in ("RET", "NUMPAD_ENTER"):
-            state.commit_to_lane(scene)
-            state.focused = False
-            lane = state.lane_for(scene)
-            if panels.generate_enabled(scene.scenario.lane_state(lane), lane):
-                bpy.ops.scenario.generate(lane=lane)
+            state.leave_focus(scene)
+            _generate(self, scene, state)
+            _redraw(context)
+            return {"RUNNING_MODAL"}
+        if state.form_replaced(scene) and _edits_text(event, command):
+            # Keep the keys away from the viewport, but never type into the form that replaced it.
+            self.report({"WARNING"}, cl.FORM_REPLACED_TYPING)
+            return {"RUNNING_MODAL"}
+        if _edits_text(event, command) and not _takes_prompt(scene, state):
+            # Another window or a tool loaded a model without a prompt into this form: write nothing.
+            state.focused = state.dragging = False
+            self.report({"WARNING"}, cl.NO_PROMPT)
             _redraw(context)
             return {"RUNNING_MODAL"}
         if event.type == "BACK_SPACE":

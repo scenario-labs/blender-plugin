@@ -162,7 +162,7 @@ def status_note(lane_state):
     return runtime.state.last_message or ""
 
 
-def _prompt_field(pr, field, focused, lane, scale):
+def _prompt_field(pr, field, focused, lane, scale, placeholder=None):
     rect(pr.x, pr.y, pr.w, pr.h, FIELD, 6 * scale)
     font_px, start, end, x0 = prompt_metrics(pr, field, scale)
     text_y = pr.y + (pr.h - font_px) / 2 + 2 * scale
@@ -171,7 +171,7 @@ def _prompt_field(pr, field, focused, lane, scale):
             x0,
             text_y,
             font_px,
-            cl.placeholder_for(lane),
+            placeholder or cl.placeholder_for(lane),
             MUTED,
             max_width=pr.w - 2 * PROMPT_INSET * scale,
         )
@@ -219,13 +219,20 @@ def draw_composer():
         width=state.width if state.expanded else None,
     )
     state.layout = layout
+    # The tab stays highlighted; prompt, model, price and Generate follow the form it drives.
+    tab = state.lane_for(scene)
+    lane = state.generation_lane(scene)
+    replaced = state.form_replaced(scene)
+    original = state.replaced_form(scene)
+    if original is not None:
+        # Until Esc, the card keeps describing the form the focused text belongs to.
+        tab, lane = original
     lane_state = (
-        state.sync_from_lane(scene)
-        if not state.focused
-        else scene.scenario.lane_state(state.lane_for(scene))
+        state.sync_from_lane(scene) if not state.focused else scene.scenario.lane_state(lane)
     )
-    lane = state.lane_for(scene)
-    enabled = panels.generate_enabled(lane_state, lane)
+    enabled = not replaced and panels.generate_enabled(lane_state, lane)
+    # A form whose model takes no prompt shows why there is nothing to type.
+    no_prompt = not state.focused and not panels.form_takes_prompt(lane_state, lane)
     font_px = int(12 * scale)
     gpu.state.blend_set("ALPHA")
     try:
@@ -237,13 +244,14 @@ def draw_composer():
             inset = 6 * scale
             field_rect = cl.Rect(r.x + inset, r.y + inset, r.w - gen_w - 3 * inset, r.h - 2 * inset)
             rect(field_rect.x, field_rect.y, field_rect.w, field_rect.h, FIELD, 6 * scale)
-            label = lane_state.prompt or cl.placeholder_for(lane)
+            shown = "" if no_prompt else lane_state.prompt
+            label = shown or (cl.NO_PROMPT if no_prompt else cl.placeholder_for(lane))
             text(
                 field_rect.x + 10 * scale,
                 r.y + (r.h - font_px) / 2 + 2 * scale,
                 font_px,
                 label,
-                TEXT if lane_state.prompt else MUTED,
+                TEXT if shown else MUTED,
                 max_width=field_rect.w - 20 * scale,
             )
             gx = r.right - inset - gen_w
@@ -270,7 +278,7 @@ def draw_composer():
         card = layout.card_rect
         rect(card.x, card.y, card.w, card.h, CARD, 12 * scale)
         for tab_lane, tr in layout.tab_rects.items():
-            active = tab_lane == lane
+            active = tab_lane == tab
             _chip(
                 tr,
                 cl.LANE_LABELS[tab_lane],
@@ -281,7 +289,10 @@ def draw_composer():
                 centered=True,
             )
         _minus_button(layout.collapse_rect, scale, hovered=(state.hover == ("collapse",)))
-        _prompt_field(layout.prompt_rect, state.field, state.focused, lane, scale)
+        if no_prompt:
+            _prompt_field(layout.prompt_rect, cl.TextField(""), False, lane, scale, cl.NO_PROMPT)
+        else:
+            _prompt_field(layout.prompt_rect, state.field, state.focused, lane, scale)
         mr = layout.model_rect
         model_name = panels.model_button_text(lane_state)
         _chip(mr, model_name, scale, font_px, hovered=(state.hover == ("model",)))
@@ -310,13 +321,12 @@ def draw_composer():
             TEXT if enabled else MUTED,
             max_width=gr.w - 12 * scale,
         )
+        # the corner only shows itself when the pointer reaches it
         if layout.resize_rect is not None and (
             (state.hover == ("resize",)) or state.drag_mode == "resize"
         ):
-            _grip(
-                layout.resize_rect, scale, hovered=True
-            )  # the corner only shows itself when the pointer reaches it
-        note = status_note(lane_state)
+            _grip(layout.resize_rect, scale, hovered=True)
+        note = cl.FORM_REPLACED_NOTE if replaced else status_note(lane_state)
         if note and gr.x - note_x > 40 * scale:
             text(
                 note_x,

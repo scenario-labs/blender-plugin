@@ -278,20 +278,27 @@ TRAINED_UNSUPPORTED = "unsupported"
 TRAINED_KINDS = (TRAINED_LORA, TRAINED_COMPOSITION, PRIVATE_CUSTOM, TRAINED_UNSUPPORTED)
 # Kinds a later route may run through a compatible base model's REST schema (#97).
 USABLE_TRAINED_KINDS = (TRAINED_LORA, TRAINED_COMPOSITION)
+# Kinds the base lanes and picker leave out, as the former blanket LoRA exclusion did. A private
+# custom model is an ordinary runnable model and keeps its former lane and picker behavior.
+EXCLUDED_KINDS = (TRAINED_LORA, TRAINED_COMPOSITION, TRAINED_UNSUPPORTED)
 
 
-def trained_kind(record):
+def trained_kind(record, *, private_list=False):
     """Classify a model record by its REST `type`, training lineage and privacy.
 
-    Returns None for an ordinary catalog model: `type` custom (or absent in
-    older synthetic records), public or unlisted, with no parent, training
-    images or concepts. Otherwise returns one of TRAINED_KINDS:
+    A plain record is a `custom` type (or one without a type, in older
+    synthetic records) with no parent, training images or concepts. Returns
+    None for a plain record that is not private. Otherwise returns one of
+    TRAINED_KINDS:
 
     - lora: a `*-lora` type (Flux, Flux 2, Kontext, Krea, Qwen and Z-Image LoRAs);
     - composition: a `*-composition` type, which combines LoRA concepts;
-    - custom_private: a private `custom` record from the selected scope;
+    - custom_private: a plain record that is private. Either its `privacy`
+      field says so or, with `private_list`, the selected scope's private model
+      list returned it, whatever its privacy field says;
     - unsupported: any other type (for example a voice clone or a hosted base
-      type) or a `custom` record trained on a parent model.
+      type), a type that is not a string, or a `custom` record trained on a
+      parent model.
 
     A kind is not a route. Running a LoRA or composition needs a base model
     whose own REST schema declares a compatible model input; no route is
@@ -299,6 +306,8 @@ def trained_kind(record):
     """
     raw = record.raw
     kind = record.type or "custom"
+    if not isinstance(kind, str):
+        return TRAINED_UNSUPPORTED
     if kind.endswith("-composition"):
         return TRAINED_COMPOSITION
     if kind.endswith("-lora"):
@@ -307,7 +316,7 @@ def trained_kind(record):
         raw.get(name) for name in ("parentModelId", "trainingImagesNumber", "concepts")
     ):
         return TRAINED_UNSUPPORTED
-    if record.privacy == "private":
+    if private_list or record.privacy == "private":
         return PRIVATE_CUSTOM
     return None
 
@@ -315,27 +324,26 @@ def trained_kind(record):
 def is_trained(record):
     """True for records the base lanes and picker do not list.
 
-    This covers trained LoRAs, compositions and other trained types, plus
-    private custom models from the selected scope. Listing any of them as a
-    runnable model needs a verified route or an explicit product decision.
+    This covers LoRAs, compositions and other trained or unsupported types,
+    which need a verified route before they can run. A private custom model
+    is an ordinary runnable model and stays listed, as before.
     """
-    return trained_kind(record) is not None
+    return trained_kind(record) in EXCLUDED_KINDS
 
 
 def trained_models(private_records, public_records):
     """(kind, record) pairs to offer later, in listing order and unique by ID.
 
     Every record of the selected scope's private trained list comes first, so
-    its kind can explain an unavailable model; an ordinary custom record from
-    that list is a private custom model whatever its privacy field says.
-    Public records add only LoRAs and compositions; public base models stay in
-    the lane lists.
+    its kind can explain an unavailable model; a plain record from that list
+    is custom_private (trained_kind with `private_list`). Public records add
+    only LoRAs and compositions; public base models stay in the lane lists.
     """
     result, seen = [], set()
     for record in private_records:
         if record.id not in seen:
             seen.add(record.id)
-            result.append((trained_kind(record) or PRIVATE_CUSTOM, record))
+            result.append((trained_kind(record, private_list=True), record))
     for record in public_records:
         kind = trained_kind(record)
         if record.id not in seen and kind in USABLE_TRAINED_KINDS:

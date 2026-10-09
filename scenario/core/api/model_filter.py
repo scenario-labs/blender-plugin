@@ -3,8 +3,9 @@
 """Scenario's model taxonomy for the picker dialog: modality tabs, category chips, search, recents. No bpy.
 
 Mirrors "Choose a Model" in the web app (2026-08-28): tabs Image / Video / Audio / 3D and, per tab, the category
-chips listed in CATEGORIES. Trained models (LoRAs, compositions, private custom models) and deprecated
-models never appear here: catalog.is_trained classifies them for separate routing work."""
+chips listed in CATEGORIES. Trained models (LoRAs, compositions and other trained or unsupported types) and
+deprecated models never appear here: catalog.is_trained classifies them for separate routing work. A private
+custom model is an ordinary model and stays visible."""
 
 import json
 import pathlib

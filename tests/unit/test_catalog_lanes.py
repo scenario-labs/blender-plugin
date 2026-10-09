@@ -154,11 +154,92 @@ def test_trained_records_are_excluded_from_every_lane():
     )
     kinds = [catalog.trained_kind(r) for r in (lora, trained, composition, private)]
     assert kinds == ["lora", "unsupported", "composition", "custom_private"]
-    assert all(catalog.is_trained(r) for r in (lora, trained, composition, private))
+    assert all(catalog.is_trained(r) for r in (lora, trained, composition))
     assert not catalog.is_trained(RECORDS[0])
-    got = ids(catalog.models_for_lane("image", RECORDS + [lora, trained, composition, private]))
+    got = ids(catalog.models_for_lane("image", RECORDS + [lora, trained, composition]))
     assert got == ids(catalog.models_for_lane("image", RECORDS))
     assert "model_lora1" not in ids(catalog.models_for_lane("render_image", RECORDS + [lora]))
+
+
+def test_private_custom_models_keep_their_former_lane_behavior():
+    # A plain private model is an ordinary runnable model: the former LoRA exclusion listed it
+    # once a saved selection or MCP read added it to the records, and so does is_trained.
+    private = catalog.ModelRecord.from_api(
+        {
+            "id": "model_private",
+            "name": "Team model",
+            "type": "custom",
+            "privacy": "private",
+            "capabilities": ["txt2img", "img2img"],
+            "status": "trained",
+        }
+    )
+    mesh_edit = catalog.ModelRecord.from_api(
+        {
+            "id": "model_private-retexture",
+            "name": "Team retexture",
+            "type": "custom",
+            "privacy": "private",
+            "capabilities": ["3d23d"],
+            "status": "trained",
+        }
+    )
+    assert catalog.trained_kind(private) == "custom_private"
+    assert not catalog.is_trained(private) and not catalog.is_trained(mesh_edit)
+    assert ids(catalog.models_for_lane("image", RECORDS + [private])) == [
+        *ids(catalog.models_for_lane("image", RECORDS)),
+        "model_private",
+    ]
+    assert "model_private" in ids(catalog.models_for_lane("render_image", RECORDS + [private]))
+    assert "model_private-retexture" in ids(catalog.edit3d_models("ALL", RECORDS + [mesh_edit]))
+
+
+def _former_lora_exclusion(record):
+    """The blanket exclusion catalog.is_lora applied before trained kinds existed."""
+    raw = record.raw
+    if record.type and record.type != "custom":
+        return True
+    return bool(raw.get("parentModelId") or raw.get("trainingImagesNumber") or raw.get("concepts"))
+
+
+def test_is_trained_matches_the_former_lane_exclusion():
+    lineages = (
+        {},
+        {"parentModelId": "model_base"},
+        {"trainingImagesNumber": 3},
+        {"concepts": [{}]},
+    )
+    types = sorted(_sdk_model_types()) + ["", "future-model-type"]
+    for model_type in types:
+        for privacy in ("", "public", "unlisted", "private"):
+            for lineage in lineages:
+                record = catalog.ModelRecord.from_api(
+                    {"id": "m", "type": model_type, "privacy": privacy, **lineage}
+                )
+                assert catalog.is_trained(record) == _former_lora_exclusion(record), (
+                    model_type,
+                    privacy,
+                    lineage,
+                )
+    for malformed in ({"name": "future"}, ["flux.1-lora"], 5, True):
+        record = catalog.ModelRecord.from_api({"id": "m", "type": malformed})
+        assert catalog.is_trained(record) and _former_lora_exclusion(record)
+
+
+def test_malformed_record_types_are_unsupported_without_failing_lanes():
+    malformed = [
+        catalog.ModelRecord.from_api(
+            {"id": f"model_odd{index}", "name": "Odd", "type": value, "capabilities": ["txt2img"]}
+        )
+        for index, value in enumerate(({"name": "future"}, ["flux.1-lora"], 5))
+    ]
+    assert [catalog.trained_kind(r) for r in malformed] == ["unsupported"] * 3
+    assert [catalog.trained_kind(r, private_list=True) for r in malformed] == ["unsupported"] * 3
+    assert ids(catalog.models_for_lane("image", RECORDS + malformed)) == ids(
+        catalog.models_for_lane("image", RECORDS)
+    )
+    pairs = catalog.trained_models(malformed[:1], malformed[1:])
+    assert [(kind, r.id) for kind, r in pairs] == [("unsupported", "model_odd0")]
 
 
 def _sdk_model_types():
@@ -234,6 +315,9 @@ def test_trained_kind_classifies_every_pinned_sdk_model_type():
             else:
                 expected = "unsupported"
             assert catalog.trained_kind(record) == expected, (model_type, privacy)
+            # Membership of the selected scope's private list makes a plain record private.
+            listed = "custom_private" if model_type == "custom" else expected
+            assert catalog.trained_kind(record, private_list=True) == listed, model_type
 
 
 def test_custom_lineage_and_unknown_types_are_unsupported_not_routes():
@@ -251,7 +335,9 @@ def test_custom_lineage_and_unknown_types_are_unsupported_not_routes():
         {"type": "custom", "trainingImagesNumber": 0},
         {"type": "custom", "privacy": "unlisted"},
     ):
-        assert catalog.trained_kind(catalog.ModelRecord.from_api({"id": "m", **raw})) is None
+        record = catalog.ModelRecord.from_api({"id": "m", **raw})
+        assert catalog.trained_kind(record) is None
+        assert catalog.trained_kind(record, private_list=True) == "custom_private"
 
 
 def test_trained_models_lists_private_scope_then_public_loras_once():
@@ -285,6 +371,11 @@ def test_trained_models_lists_private_scope_then_public_loras_once():
         ("lora", "public-lora"),
         ("composition", "public-mix"),
     ]
+    # One definition: each pair's kind is trained_kind in its list's privacy context.
+    private_ids = {r.id for r in private}
+    assert all(
+        kind == catalog.trained_kind(r, private_list=r.id in private_ids) for kind, r in pairs
+    )
     assert pairs[0][1].privacy == "private"
     assert catalog.trained_models([], []) == []
 

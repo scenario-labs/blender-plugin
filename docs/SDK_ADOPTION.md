@@ -174,14 +174,18 @@ their REST fields:
 | --- | --- |
 | `lora` | A `*-lora` type, such as `flux.1-lora`, `flux.2-klein-4b-edit-lora`, `qwen-image-lora` or `zimage-lora` |
 | `composition` | A `*-composition` type; SDK 2.2.0 declares `flux.1-composition` |
-| `custom_private` | A private `custom` record with no parent, training images or concepts |
-| `unsupported` | Any other type, such as `elevenlabs-voice`, `gpt-image-1` or `flux.1-pro`, or a `custom` record with a parent, training images or concepts |
+| `custom_private` | A `custom` record with no parent, training images or concepts that is private: its `privacy` field is `private`, or the selected scope's private model list returned it |
+| `unsupported` | Any other type, such as `elevenlabs-voice`, `gpt-image-1` or `flux.1-pro`, a `type` that is not a string, or a `custom` record with a parent, training images or concepts |
 
-An ordinary public or unlisted `custom` record has no kind. Offline tests cover
-every SDK 2.2.0 type literal and fail when an SDK upgrade changes that set.
-`catalog.is_trained` keeps every classified record out of the base lanes and
-picker, as the former blanket exclusion did. Listing private custom models as
-runnable models needs a separate product decision. `SDKCatalog.trained_models`
+A `custom` record without lineage that is neither marked private nor returned
+by the private list has no kind. Offline tests cover every SDK 2.2.0 type
+literal and fail when an SDK upgrade changes that set. `catalog.is_trained`
+keeps `lora`, `composition` and `unsupported` records out of the base lanes and
+picker. For every type literal, privacy and lineage it gives the same result as
+the former blanket exclusion, so lane lists and the picker are unchanged. A
+private custom model stays an ordinary runnable model wherever records already
+reach the lanes or picker, such as a saved selection or an MCP schema read. The
+`custom_private` kind only describes it. `SDKCatalog.trained_models`
 returns `(kind, record)` pairs: the scope's private trained list first, then
 public LoRAs and compositions. It reuses each privacy list already cached on
 the connection and reads only a missing list, or both on explicit refresh.

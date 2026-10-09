@@ -233,12 +233,16 @@ class SDKCatalog:
         carrying `inputs`; they never replace the details `get` caches for forms
         and quotes.
         """
-        if isinstance(model_ids, (str, bytes)) or not isinstance(model_ids, (list, tuple)):
+        # Check element types before deduplicating: an unhashable element must not escape as
+        # a bare TypeError.
+        if (
+            isinstance(model_ids, (str, bytes))
+            or not isinstance(model_ids, (list, tuple))
+            or not all(isinstance(model_id, str) for model_id in model_ids)
+        ):
             raise ScenarioError(0, "The catalog request is invalid")
         requested = list(dict.fromkeys(model_ids))
-        if len(requested) > MODEL_BULK_LIMIT or not all(
-            isinstance(model_id, str) for model_id in requested
-        ):
+        if len(requested) > MODEL_BULK_LIMIT:
             raise ScenarioError(0, "The catalog request is invalid")
         rows, waiting, owned = {}, {}, {}
         with self._condition:
@@ -294,8 +298,9 @@ class SDKCatalog:
 
         Reuses each privacy list cached on this connection and reads only a
         missing list, or both with `refresh`. Classification uses only REST
-        fields (catalog.trained_kind). Base lanes do not list these records and
-        no route runs them yet.
+        fields (catalog.trained_kind); a plain record from the private list is
+        custom_private. Base lanes and the picker still leave out LoRAs,
+        compositions and unsupported records, and no route runs them yet.
         """
         lists = {}
         for privacy in ("private", "public"):

@@ -664,6 +664,8 @@ def test_bulk_summaries_are_read_once_per_connection_apart_from_details(project)
         {"base"},
         None,
         [None],
+        [["a"]],
+        ("base", {}),
         [f"m{index}" for index in range(MODEL_BULK_LIMIT + 1)],
     ],
 )
@@ -791,16 +793,20 @@ def test_inaccessible_model_detail_keeps_its_status_without_service_text(status)
 
 def test_trained_models_reuse_cached_lists_and_classify_rest_records():
     calls = []
+    image = ["txt2img"]
     private_rows = [
-        {"id": "team-lora", "type": "flux.1-lora", "privacy": "private"},
+        {"id": "team-lora", "type": "flux.1-lora", "privacy": "private", "capabilities": image},
         {"id": "team-mix", "type": "flux.1-composition", "privacy": "private"},
-        {"id": "team-custom", "type": "custom", "privacy": "private"},
+        {"id": "team-custom", "type": "custom", "privacy": "private", "capabilities": image},
         {"id": "team-voice", "type": "elevenlabs-voice", "privacy": "private"},
+        # Untrusted records: a type that is not a string is unsupported, never an exception.
+        {"id": "team-odd", "type": {"name": "future"}, "privacy": "private"},
     ]
     public_rows = [
-        {"id": "base", "type": "custom", "privacy": "public", "capabilities": ["txt2img"]},
+        {"id": "base", "type": "custom", "privacy": "public", "capabilities": image},
         {"id": "scenario-lora", "type": "zimage-lora", "privacy": "public"},
         {"id": "hosted", "type": "flux.1-pro", "privacy": "public"},
+        {"id": "odd", "type": 5, "privacy": "public", "capabilities": image},
     ]
 
     def respond(request):
@@ -818,6 +824,7 @@ def test_trained_models_reuse_cached_lists_and_classify_rest_records():
             ("composition", "team-mix"),
             ("custom_private", "team-custom"),
             ("unsupported", "team-voice"),
+            ("unsupported", "team-odd"),
             ("lora", "scenario-lora"),
         ]
         pairs = context.trained_models()
@@ -826,9 +833,11 @@ def test_trained_models_reuse_cached_lists_and_classify_rest_records():
         pairs[0][1].raw["type"] = "custom"
         assert [(kind, record.id) for kind, record in context.trained_models()] == expected
         assert len(calls) == 2
-        # Lane lists from the same public read keep excluding every trained record.
+        # Lanes keep excluding LoRAs and unsupported records, and keep a private custom model.
         lane = catalog_module.models_for_lane("image", context.load_list_cached("public"))
         assert [record.id for record in lane] == ["base"]
+        lane = catalog_module.models_for_lane("image", context.load_list_cached("private"))
+        assert [record.id for record in lane] == ["team-custom"]
         context.trained_models(refresh=True)
         assert len(calls) == 4 and len(pools) == 1
     finally:

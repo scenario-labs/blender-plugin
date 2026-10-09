@@ -323,7 +323,8 @@ class StripLayout:
     """Geometry of the job strip. A hidden strip draws no tray and takes no clicks.
 
     `chip_rects` holds the chips that fit, left to right, as (key, Rect) pairs. `indicator_rect`
-    is a draw-only line inside the collapsed pill: the pill keeps its `expand` hit."""
+    is a draw-only line inside the pill: the pill keeps its own hit, `expand`, or `form` while it
+    stands in for a card without room."""
 
     hidden: bool
     rect: Rect = None
@@ -358,8 +359,8 @@ def _pill_indicator(pill, scale):
 def _edge_insets(extent, insets):
     """Non-negative (low, high) widths covered along one axis, ignored when they leave no room.
 
-    Ignoring that pair keeps a fully covered region on its own extent. A composer placement that
-    avoids side regions applies the same rule, so the card and its tray agree."""
+    Ignoring that pair keeps a fully covered region on its own extent. The composer placement
+    normalizes its side-region insets with this same rule, so the card and its tray agree."""
     low, high = (max(0.0, float(edge or 0.0)) for edge in (insets or (0.0, 0.0)))
     return (low, high) if low + high < extent else (0.0, 0.0)
 
@@ -381,8 +382,8 @@ def strip_placement(layout, region_w, region_h, spec, insets=None, vertical_inse
 
     Chips are right-aligned before the dismiss box. While the status text would be narrower than
     STRIP_MIN_TEXT, chips other than INSPECT_CHIP are dropped, last listed first. A tray that still
-    cannot hold that text, Inspect and the dismiss box is hidden. Collapsed, only the pill's
-    indicator line is placed."""
+    cannot hold that text, Inspect and the dismiss box is hidden. For a pill, collapsed or standing
+    in for a card without room, only its indicator line is placed."""
     s = layout.scale
     if not layout.expanded:
         return StripLayout(True, indicator_rect=_pill_indicator(layout.pill_rect, s))
@@ -449,17 +450,6 @@ def _clamp(value, lo, hi):
     return max(lo, min(hi, value))
 
 
-def _normalize_insets(region_w, insets):
-    """(left, right) widths covered by side regions, as non-negative floats.
-
-    Insets that leave no room at all are ignored: the composer then uses the whole region."""
-    left, right = tuple(insets or (0.0, 0.0))
-    left, right = max(0.0, float(left or 0.0)), max(0.0, float(right or 0.0))
-    if left + right >= region_w:
-        return (0.0, 0.0)
-    return (left, right)
-
-
 def _base_x(region_w, w, insets):
     left, right = insets
     return left + (region_w - left - right - w) / 2
@@ -472,7 +462,7 @@ def card_fits(region_w, region_h, scale=1.0, insets=(0.0, 0.0)):
     region needs the card height plus a margin above and below. Below either, the pill stands in for the card: a
     narrower card would clip its tab labels and controls, a shorter one would draw its rows over each other."""
     s = float(scale or 1.0)
-    left, right = _normalize_insets(region_w, insets)
+    left, right = _edge_insets(region_w, insets)
     return (
         region_w - left - right >= (MIN_CARD_WIDTH + 2 * MARGIN) * s
         and region_h >= (CARD_HEIGHT + 2 * MARGIN) * s
@@ -483,7 +473,7 @@ def clamp_width(width, region_w, scale=1.0, expanded=True, insets=(0.0, 0.0)):
     """A card or pill width that fits the span the side regions leave uncovered: never narrower than the minimum,
     never wider than that span minus margins."""
     s = float(scale or 1.0)
-    left, right = _normalize_insets(region_w, insets)
+    left, right = _edge_insets(region_w, insets)
     margin = MARGIN * s
     minimum = (MIN_CARD_WIDTH if expanded else MIN_PILL_WIDTH) * s
     maximum = max(minimum, region_w - left - right - 2 * margin)
@@ -497,7 +487,7 @@ def clamp_offset(offset, size, region_w, region_h, scale=1.0, insets=(0.0, 0.0))
     hard edge instead: the box never slides under it, so the controls next to it stay clickable."""
     s = float(scale or 1.0)
     w, h = size
-    insets = _normalize_insets(region_w, insets)
+    insets = _edge_insets(region_w, insets)
     left, right = insets
     keep = MIN_VISIBLE * s
     base_x, base_y = _base_x(region_w, w, insets), MARGIN * s
@@ -526,7 +516,7 @@ def pill_placement(
     edge, as the offset clamps)."""
     s = float(scale or 1.0)
     margin = MARGIN * s
-    insets = _normalize_insets(region_w, insets)
+    insets = _edge_insets(region_w, insets)
     offset = tuple(offset or (0.0, 0.0))
     fits = card_fits(region_w, region_h, s, insets)
     if not expanded or not fits:

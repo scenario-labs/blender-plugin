@@ -444,8 +444,9 @@ def test_the_card_needs_its_height_and_margins():
     assert not cl.card_fits(cl.MIN_CARD_WIDTH + 2 * cl.MARGIN - 1, 5000, 1.0)
 
 
-# the physical desktop case: Retina pixel size 2 with a Preferences UI scale of 2 (composer scale 4),
-# a 226 px toolbar and a 1122 px sidebar over a 2477 px viewport: about 1129 px stay uncovered
+# the physical desktop case: Retina at a Preferences resolution scale of 2 (custom-interface UI
+# scale 4), a 226 px toolbar and a 1122 px sidebar over a 2477 px viewport: about 1129 px stay
+# uncovered
 RETINA = {"region_w": 2477, "scale": 4.0, "insets": (226.0, 1122.0)}
 RETINA_SIDEBAR_X = 2477 - 1122
 

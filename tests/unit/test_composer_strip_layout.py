@@ -321,3 +321,75 @@ def test_collapsed_pill_gets_only_a_draw_only_indicator(scale):
     assert rect.y < indicator.y and indicator.top <= rect.y + 6 * s  # under the prompt field
     assert cl.composer_hit(pill, strip, *_center(indicator)) == ("expand",)
     assert strip.hit(*_center(indicator)) is None
+
+
+# the composer placement's side regions: a toolbar and a sidebar drawn over a 1600 px viewport
+SIDE_INSETS = (56.0, 300.0)
+PLACEMENT_SCALES = (1.0, 2.0, 4.0)
+
+
+@pytest.mark.parametrize("scale", PLACEMENT_SCALES)
+def test_tray_follows_the_insets_the_composer_placement_recorded(scale):
+    s = scale
+    region_w, region_h = 1600 * s, 900 * s
+    insets = (SIDE_INSETS[0] * s, SIDE_INSETS[1] * s)
+    span = cl.Rect(insets[0], 0.0, region_w - sum(insets), region_h)
+    spec = _spec(s, ("apply", "Apply... (2)"), INSPECT)
+    offsets = ((0.0, 0.0), (5000.0, 0.0), (-5000.0, 0.0), (120 * s, 200 * s), (5000.0, 5000.0))
+    for width in (None, 5000.0):
+        for offset in offsets:
+            layout = cl.pill_placement(region_w, region_h, True, s, offset, width, insets)
+            assert layout.expanded and layout.insets == insets
+            strip = cl.strip_placement(layout, region_w, region_h, spec)
+            # the recorded insets apply without the caller passing them again
+            explicit = cl.strip_placement(layout, region_w, region_h, spec, insets=insets)
+            assert strip == explicit and not strip.hidden
+            # the card already stays clear of both side regions, so the tray keeps its x and width
+            assert (strip.rect.x, strip.rect.w) == (layout.card_rect.x, layout.card_rect.w)
+            assert _inside(strip.rect, span)
+            for rect in _rects(strip):
+                assert _inside(rect, strip.rect)
+
+
+@pytest.mark.parametrize("scale", PLACEMENT_SCALES)
+def test_a_pill_standing_in_for_the_card_gets_only_the_indicator(scale):
+    s = scale
+    insets = (SIDE_INSETS[0] * s, SIDE_INSETS[1] * s)
+    # one pixel short of the minimum card with its margins: beside the sidebar, then in height
+    narrow_w = sum(insets) + (cl.MIN_CARD_WIDTH + 2 * cl.MARGIN) * s - 1
+    short_h = (cl.CARD_HEIGHT + 2 * cl.MARGIN) * s - 1
+    spec = _spec(s, ("apply", "Apply... (2)"), INSPECT)
+    for region_w, region_h, side in ((narrow_w, 900 * s, insets), (1800 * s, short_h, (0.0, 0.0))):
+        shown = cl.pill_placement(region_w, region_h, True, s, width=cl.CARD_WIDTH * s, insets=side)
+        assert not shown.expanded and not shown.card_fits
+        strip = cl.strip_placement(shown, region_w, region_h, spec)
+        assert strip.hidden and strip.rect is None and strip.chip_rects == ()
+        collapsed = cl.pill_placement(region_w, region_h, False, s, insets=side)
+        assert strip == cl.strip_placement(collapsed, region_w, region_h, spec)
+        indicator = strip.indicator_rect
+        assert _inside(indicator, shown.pill_rect)
+        # the indicator takes no click: the pill keeps its own, which opens the lane's form
+        assert strip.hit(*_center(indicator)) is None
+        assert cl.composer_hit(shown, strip, *_center(indicator)) == ("form",)
+        assert cl.composer_hit(shown, strip, *_center(shown.pill_rect)) == ("form",)
+    # closing the sidebar brings the card back, and the tray with it
+    region_w, toolbar = narrow_w, (insets[0], 0.0)
+    card = cl.pill_placement(region_w, 900 * s, True, s, width=cl.CARD_WIDTH * s, insets=toolbar)
+    assert card.expanded and card.card_fits
+    tray = cl.strip_placement(card, region_w, 900 * s, spec)
+    assert not tray.hidden and tray.rect.x == card.card_rect.x and tray.rect.x >= insets[0]
+
+
+def test_the_placement_and_the_tray_ignore_the_same_insets():
+    spec = _spec(1.0, INSPECT)
+    plain = cl.pill_placement(1600, 900, expanded=True)
+    bare = cl.strip_placement(plain, 1600, 900, spec)
+    for unusable in ((800.0, 800.0), (900.0, 900.0), (-50.0, None)):
+        layout = cl.pill_placement(1600, 900, True, insets=unusable)
+        assert layout.insets == (0.0, 0.0) and layout.card_rect == plain.card_rect
+        assert cl.strip_placement(layout, 1600, 900, spec) == bare
+        assert cl.strip_placement(layout, 1600, 900, spec, insets=unusable) == bare
+    # one pixel of span left: both keep the insets, so the pill stands in and the tray stays out
+    kept = cl.pill_placement(1600, 900, True, insets=(799.0, 800.0))
+    assert kept.insets == (799.0, 800.0) and not kept.expanded and not kept.card_fits
+    assert cl.strip_placement(kept, 1600, 900, spec).hidden

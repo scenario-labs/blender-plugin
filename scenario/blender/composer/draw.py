@@ -10,7 +10,7 @@ import gpu
 from gpu_extras.batch import batch_for_shader
 
 from ...core.ui import composer_layout as cl
-from .. import panels, runtime
+from .. import generation, panels, runtime
 
 _batches = {}
 _shader = None
@@ -147,11 +147,15 @@ def _grip(gr, scale, hovered):
 
 
 def status_note(lane_state):
-    """The line shown next to the model chip: a quote problem, the lane's error, else the add-on's temporary message."""
+    """The line shown next to the model chip: a failed model description, a quote problem, the lane's error, else the add-on's temporary message."""
+    error = generation.lane_error(lane_state)  # without a stale saved model-load failure
+    failure = runtime.state.model_errors.get(lane_state.model_id)
+    if failure is not None and generation.schema_for(lane_state.model_id) is None:
+        return error or failure  # explains why the quote is unavailable
     if lane_state.estimate_state in ("ERROR", "UNAVAILABLE") and lane_state.estimate_error:
         return lane_state.estimate_error
-    if lane_state.last_error:
-        return lane_state.last_error
+    if error:
+        return error
     visible = getattr(runtime, "message_visible", None)
     if callable(visible):
         return visible() or ""

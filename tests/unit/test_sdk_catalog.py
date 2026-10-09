@@ -270,6 +270,9 @@ def test_retirement_waits_for_read_cleanup_without_closing_pool_under_worker():
     [
         httpx.Response(200, json={"model": {"id": "other"}}),
         httpx.Response(503, text="private service details"),
+        httpx.Response(200, json={"model": {"id": "fixture", "capabilities": [17]}}),
+        httpx.Response(200, json={"model": {"id": "fixture", "tags": 17}}),
+        httpx.Response(200, json={"model": {"id": "fixture", "inputs": [17]}}),
     ],
 )
 def test_failed_reads_are_safe_and_leave_no_cached_record(response):
@@ -281,6 +284,21 @@ def test_failed_reads_are_safe_and_leave_no_cached_record(response):
     assert len(pools) == 1 and not pools[0]._closed
     context.close()
     assert pools[0]._closed
+
+
+@pytest.mark.parametrize(
+    "model",
+    [
+        {"id": "fixture", "inputs": [17]},
+        {"id": "fixture", "inputs": [{"name": "size"}], "uiConfig": {"selects": [17]}},
+    ],
+)
+def test_unparseable_form_schema_is_rejected_before_caching(model):
+    context, _ = catalog(lambda request: httpx.Response(200, json={"model": model}))
+    with pytest.raises(ScenarioError, match="^0 Scenario returned an invalid model description$"):
+        context.get("fixture")
+    assert context.load_cached("fixture") is None
+    context.close()
 
 
 def test_concurrent_reads_reuse_pool_and_retirement_closes_after_last_reader():

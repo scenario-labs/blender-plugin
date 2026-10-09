@@ -267,10 +267,7 @@ def draw_render_image_lane(layout, context):
     panels.draw_model_row(layout, lane_state, "render_image")
     schema = generation.schema_for(lane_state.model_id)
     if schema is None:
-        layout.label(
-            text=lane_state.last_error or "Loading the model description...",
-            icon="ERROR" if lane_state.last_error else "TIME",
-        )
+        panels.draw_schema_status(layout, lane_state, "render_image")
         return
     if scene_spec("render_image", schema) is None:
         layout.label(text="This model takes no image input; pick another one", icon="ERROR")
@@ -309,10 +306,7 @@ def draw_render_video_lane(layout, context):
     panels.draw_model_row(layout, lane_state, "render_video")
     schema = generation.schema_for(lane_state.model_id)
     if schema is None:
-        layout.label(
-            text=lane_state.last_error or "Loading the model description...",
-            icon="ERROR" if lane_state.last_error else "TIME",
-        )
+        panels.draw_schema_status(layout, lane_state, "render_video")
         return
     if scene_spec("render_video", schema) is None:
         layout.label(text="This model takes no video input; pick another one", icon="ERROR")

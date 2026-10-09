@@ -47,6 +47,7 @@ class RuntimeState:
         self.estimates = {}  # Exact SDK responses for current UI previews, never spend approval.
         self.estimate_origins = {}  # Pending request key -> original scene and lane, main thread only.
         self.records = {}  # model_id -> ModelRecord (detailed)
+        self.model_errors = {}  # model_id -> sanitized lane error of its last failed detail read
         self.lane_models = {}  # lane -> list[ModelRecord]
         self.catalog_loaded = False
         self.catalog_loading = False

@@ -48,6 +48,34 @@ class SCENARIO_OT_refresh_catalog(bpy.types.Operator):
         return {"CANCELLED"}
 
 
+class SCENARIO_OT_retry_model(bpy.types.Operator):
+    bl_idname = "scenario.retry_model"
+    bl_label = "Retry loading model"
+    bl_description = "Read the selected model's description from Scenario again"
+    lane: StringProperty(default="image")
+
+    @classmethod
+    def poll(cls, context):
+        return runtime.online() and runtime.credentials().valid
+
+    def execute(self, context):
+        lane_state = context.scene.scenario.lane_state(self.lane)
+        model_id = getattr(lane_state, "model_id", "")
+        if not model_id or model_id == "NONE":
+            self.report({"WARNING"}, "Choose a model first")
+            return {"CANCELLED"}
+        if not runtime.online():  # access can change after poll; no earlier message applies
+            self.report({"WARNING"}, generation.MODEL_OFFLINE)
+            return {"CANCELLED"}
+        # The same background read as a selection; its event clears or restores the error.
+        if generation.request_model(model_id):
+            self.report({"INFO"}, "Loading the model description")
+            return {"FINISHED"}
+        # Only a selection or service error refuses an online read; it was just reported.
+        self.report({"WARNING"}, runtime.state.last_message or "Could not retry loading the model")
+        return {"CANCELLED"}
+
+
 class SCENARIO_OT_generate(bpy.types.Operator):
     bl_idname = "scenario.generate"
     bl_label = "Generate"
@@ -1107,6 +1135,7 @@ CLASSES = (
     SCENARIO_OT_import_result,
     SCENARIO_OT_test_connection,
     SCENARIO_OT_refresh_catalog,
+    SCENARIO_OT_retry_model,
     SCENARIO_OT_generate,
     SCENARIO_OT_add_reference,
     SCENARIO_OT_remove_reference,

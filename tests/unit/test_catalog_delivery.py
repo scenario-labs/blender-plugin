@@ -195,3 +195,31 @@ def test_background_schema_request_keeps_its_quote_intent():
     assert name == "models"
     assert payload["detailed"] == ["background"]
     assert payload["mark_dirty"] is False
+
+
+def test_failed_schema_requests_report_sanitized_reasons_without_hiding_neighbors():
+    class Catalog:
+        def get(self, model_id, refresh=False):
+            assert refresh
+            if model_id == "unavailable":
+                raise ScenarioError(0, "Scenario request failed (HTTP 503)")
+            if model_id == "transport":
+                raise OSError("private transport details")
+            if model_id == "unexpected":
+                raise RuntimeError("private parser details")
+            return model_id
+
+    context = Catalog()
+    manager = JobManager(None, None)
+    manager.fetch_models(context, ["unavailable", "neighbor", "transport", "unexpected"])
+    manager.join(5)
+    assert not manager.has_active()
+    [(name, payload)] = manager.drain_catalog()
+    assert name == "models" and payload["catalog"] is context
+    assert payload["detailed"] == ["neighbor"]
+    assert payload["failed"] == {
+        "unavailable": "Scenario request failed (HTTP 503)",
+        "transport": "Unexpected read failure",
+        "unexpected": "Unexpected read failure",
+    }
+    assert manager.drain() == []

@@ -149,13 +149,18 @@ audit exit of 1 from configuration/report/cleanup errors, missing completion/tim
 or a clean audit followed by an artifact failure. Deliberate whole-workflow cancellation
 does not create an issue. Reporting never makes the failed audit job green.
 
-Default-branch activation, credential configuration, a clean live dispatch and
-two real deduplicated failure reports still require maintainer acceptance under
-[#41](https://github.com/scenario-labs/blender-plugin/issues/41). Offline tests
-and a configured workflow do not establish those outcomes. Do not run a live
-dispatch merely to validate this repository change. GitHub can disable schedules
-after 60 days without repository activity; maintainers can re-enable them from
-Actions after checking the configured test scope.
+Hosted activation and failure reporting are accepted under
+[closed #41](https://github.com/scenario-labs/blender-plugin/issues/41#issuecomment-6083352106).
+The [retained scheduled run](https://github.com/scenario-labs/blender-plugin/actions/runs/37271766942)
+completed with no fetch/schema failures at the configured HIGH threshold.
+Two deliberate missing-model dispatches failed and commented on the same
+[test incident](https://github.com/scenario-labs/blender-plugin/issues/218),
+verifying delivery and deduplication; that incident was then closed.
+The linked closure evidence records the checked artifacts and scoped findings.
+This accepts schema monitoring, not generation or release readiness. Later runs
+retain their own source/artifact identities and must be inspected independently.
+GitHub can disable schedules after 60 days without repository activity;
+maintainers can re-enable them after checking the configured test scope.
 
 ## SDK operation
 

@@ -24,8 +24,9 @@ workflows cannot cancel their parent run.
 
 Individual job names can include their caller prefix; artifact names and native
 matrix coverage are unchanged. The separate `pr-title` and `commits` checks
-remain independent. Making `ci-ok` required and configuring repository rules
-remain administrative work under #45; the workflow does not change settings.
+remain independent. The [current repository rules](../MAINTAINERS.md#rulesets)
+require `ci-ok`, `pr-title` and `commits`; the workflow itself does not change
+those settings. Keep their reported names synchronized with the ruleset.
 
 [Workflow contract tests](../../tests/unit/test_workflows.py) follow PR callers
 into their local reusable workflows and composite actions to check the explicit

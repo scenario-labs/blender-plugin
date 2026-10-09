@@ -167,14 +167,20 @@ Each result collapses on its own; the panel header has a **Collapse all / Expand
 
 A shared Jobs row names its saved state in words (`waiting to submit`,
 `submitted`, `canceling`, `finished on Scenario`, `downloading results`,
-`download failed`), never a raw state identifier. A job that finished on
-Scenario stays in Jobs until its results are saved; it never appears in
-Generations as a success before its download. While a known remote job is
-polled, the latest validated Scenario status replaces `submitted`: `waiting`,
-`queued`, `starting`, `generating` or `finishing`. Draw a native progress bar
-with its whole percentage only when Scenario reports a measured fraction above
-zero; never draw a percentage for zero, unknown or queued states, and never show
-an estimated time. With online access disabled, a `submitted` or `canceling` row
+`download failed`), never a raw state identifier. A model or workflow job
+that finished on Scenario stays a Jobs row as `finished on Scenario` while its
+results still need a download; Generations never lists it as a success before
+then. Prompt Spark, Translate and Blockout results are text that their tools
+read into memory without saving a result download, so such a job is finished
+once Scenario reports success: Generations lists it, including after **Inspect
+saved jobs**, and it never draws a Jobs row or a download line. The projection
+decides from the saved request (its operation and model), never from drawn
+text. While a known remote job is polled, the latest validated Scenario status
+replaces `submitted`: `waiting`, `queued`, `starting`, `generating` or
+`finishing`. Draw a native progress bar with its whole percentage only when
+Scenario reports a measured fraction above zero; never draw a percentage for
+zero, unknown or queued states, and never show an estimated time. With online
+access disabled, a `submitted` or `canceling` row
 adds `Status paused while online access is disabled` and a `finished on
 Scenario` row adds `Download paused while online access is disabled`, whether or
 not a reading exists yet. Otherwise, when the reading is not being kept current,
@@ -185,11 +191,13 @@ moves without hovering, but it does not redraw for the brief in-flight refresh
 that hides saved-job controls. Studio Jobs reuses the same draw.
 
 Installed tests on macOS arm64 Blender 5.0.1, 5.1.2 and 5.2.1 check the drawn
-label, bar factor and text, the offline and stale lines, a finished job drawn
-through the real Jobs panel with its offline download line and absent from
-Generations, the absence of storage reads and writes during draw, and one redraw
-per projected or online access change. No desktop interaction or screenshot of
-the bar is claimed yet; that remains #66 acceptance.
+label, bar factor and text, the offline and stale lines, a finished generation
+drawn through the real Jobs panel with its offline download line and absent from
+Generations, finished Prompt Spark, Translate and Blockout jobs inspected with
+online access off and listed only in Generations without an offline line, the
+absence of storage reads and writes during draw, and one redraw per projected or
+online access change. No desktop interaction or screenshot of the bar is claimed
+yet; that remains #66 acceptance.
 
 ## Wording
 

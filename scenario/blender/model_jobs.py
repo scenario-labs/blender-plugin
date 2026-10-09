@@ -19,6 +19,7 @@ from ..core.jobs import progress
 from ..core.jobs.records import JobRecord
 from ..core.jobs.store import JobOrigin, JobState, LocalApplicationState, StoredJob, _identity
 from ..core.scene.panorama import WORLD_MEDIA_TYPES
+from .blockout_jobs import MODEL as BLOCKOUT_MODEL
 from .job_session import (
     ImageResultUncertain,
     MaterialResultUncertain,
@@ -57,19 +58,43 @@ _SETTLED = frozenset(
         JobState.APPLIED,
     }
 )
-# Saved states whose next automatic step contacts Scenario: status polling or
-# the result download. Disabled Online Access holds them until it is allowed
-# again; Jobs rows draw an offline line and MCP reports `delivery_offline`.
+# Saved states whose next automatic step contacts Scenario: status polling or,
+# for a job whose results this session downloads, the download. Disabled Online
+# Access holds them until it is allowed again; Jobs rows draw an offline line
+# and MCP reports `delivery_offline` for a job this session advances by itself.
 NEEDS_SCENARIO = frozenset({JobState.REMOTE, JobState.CANCEL_REQUESTED, JobState.SUCCEEDED})
 # Prototype display statuses of shared views, which the Jobs and Generations
-# panels split with JobRecord.is_terminal. A SUCCEEDED job has no saved results
-# yet, so it must not read as the terminal "succeeded": it stays a Jobs row with
-# its saved state and offline line until delivery settles.
+# panels split with JobRecord.is_terminal. A SUCCEEDED job whose results this
+# session downloads has none saved yet, so it must not read as the terminal
+# "succeeded": it stays a Jobs row with its saved state and offline line until
+# delivery settles. Other SUCCEEDED jobs keep "succeeded"; see downloads_results.
 _DISPLAY_STATUS = {
     JobState.REMOTE: "in-progress",
     JobState.SUCCEEDED: "awaiting-download",
     JobState.APPLIED: "success",
 }
+
+
+def downloads_results(record):
+    """Whether ModelJobs saves this job's results by downloading them.
+
+    Decided from the saved intent alone: model and workflow generations do,
+    including Film tasks and cloud jobs saved for recovery. Prompt Spark and
+    Translate text (`prompt` and `translate` operations) and Blockout plans
+    (the text model) are read into memory by their own tools instead, so
+    `succeeded` is their last saved state. ModelJobs never downloads them, and
+    their views stay terminal, listed in Generations, without an offline hold.
+    """
+    intent = record.intent
+    return intent.operation == "workflow" or (
+        intent.operation == "model" and intent.target_id != BLOCKOUT_MODEL
+    )
+
+
+def _display_status(record):
+    if record.state == JobState.SUCCEEDED and not downloads_results(record):
+        return record.state.value
+    return _DISPLAY_STATUS.get(record.state, record.state.value)
 
 
 def _snapshot(body):
@@ -595,7 +620,7 @@ class ModelJobs:
                     0, "The saved job is unavailable; preserve storage for recovery"
                 )
             view.job_id = record.remote_job_id
-            view.status = _DISPLAY_STATUS.get(record.state, record.state.value)
+            view.status = _display_status(record)
             view.asset_ids = [item.asset.asset_id for item in record.results]
             view.asset_types = {
                 item.asset.asset_id: item.asset.media_type for item in record.results
@@ -622,7 +647,7 @@ class ModelJobs:
             if record.state in (JobState.REMOTE, JobState.CANCEL_REQUESTED):
                 if online and time.monotonic() >= self._next_poll.get(request_id, 0):
                     command = "refresh_remote"
-            elif record.state == JobState.SUCCEEDED and online:
+            elif record.state == JobState.SUCCEEDED and online and downloads_results(record):
                 command = "download_results"
             elif record.state == JobState.READY and request_id in self._automatic_application:
                 command = "verify_results"
@@ -1305,26 +1330,42 @@ class ModelJobs:
             sleeper.wait(min(0.1, remaining))
         raise ScenarioError(0, "The job context changed while waiting; inspect saved jobs again")
 
-    def _delivering(self, request_id, record):
-        """Whether this session still advances the job without an explicit action.
+    def _advancing(self, request_id, record):
+        """Whether this session advances the job by itself while Online Access allows it.
 
-        False once it is settled, paused for review, held by disabled Online
-        Access, prepared but never queued, or not owned by this session; `wait`
-        returns then, and MCP reports it as `delivery_active`. `wait` calls this
-        on the HTTP worker, so it reads only in-memory state, never bpy.
+        False once it is settled, including a finished job whose results
+        ModelJobs never downloads, paused for review, prepared but never
+        queued, or not owned by this session. `wait` calls this on the HTTP
+        worker, so it reads only in-memory state, never bpy.
         """
         return (
             request_id in self.views
             and request_id not in self._paused
             and record.state not in _SETTLED
-            and not self._offline(record)
+            and (record.state != JobState.SUCCEEDED or downloads_results(record))
             and (record.state != JobState.PREPARED or request_id in self.submissions)
             and (record.state != JobState.READY or request_id in self._automatic_application)
         )
 
-    def _offline(self, record):
-        """Whether disabled Online Access holds the job's next automatic step."""
+    def _held_offline(self, record):
         return not self._online_seen and record.state in NEEDS_SCENARIO
+
+    def _delivering(self, request_id, record):
+        """Whether the job advances now; `wait` returns once it does not.
+
+        MCP reports it as `delivery_active`: the job is advancing and its next
+        step is not held by disabled Online Access.
+        """
+        return self._advancing(request_id, record) and not self._held_offline(record)
+
+    def _offline(self, request_id, record):
+        """Whether disabled Online Access alone holds a step this session takes by itself.
+
+        That step is status polling or the result download. A paused, restarted
+        or settled job, and a finished job that ModelJobs never downloads, is
+        not held; MCP reports this as `delivery_offline`.
+        """
+        return self._held_offline(record) and self._advancing(request_id, record)
 
     def _mesh_status(self, request_id):
         saved = self._mesh_edits.get(request_id)
@@ -1409,7 +1450,7 @@ class ModelJobs:
             ],
             "delivery_paused": record.intent.request_id in self._paused,
             "delivery_active": self._delivering(record.intent.request_id, record),
-            "delivery_offline": self._offline(record),
+            "delivery_offline": self._offline(record.intent.request_id, record),
             "actions": self.actions(record),
             "error": self.views[record.intent.request_id].error
             if record.intent.request_id in self.views

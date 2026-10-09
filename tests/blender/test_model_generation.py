@@ -20,6 +20,8 @@ import httpx
 from helpers import (
     ACES_AP0,
     animated_glb,
+    draw_job_panels,
+    drawn_texts,
     online_access,
     reset_scene,
     scanline_exr,
@@ -1056,6 +1058,12 @@ class ModelGenerationTests(unittest.TestCase):
         offline = "Status paused while online access is disabled"
         with online_access(False):
             box = self.draw_job(view)
+            # Paused for an explicit action, it would not resume by itself online.
+            status = self.tools.job_status({"job_id": result["local_id"]})
+        self.assertEqual(
+            (status["delivery_paused"], status["delivery_active"], status["delivery_offline"]),
+            (True, False, False),
+        )
         box.label.assert_any_call(text=offline, icon="INFO")
         box.progress.assert_not_called()
         online_labels = self.draw_job(view).label.call_args_list
@@ -1195,17 +1203,9 @@ class ModelGenerationTests(unittest.TestCase):
             self.assertEqual(self.store.get(request_id).state, self.storemod.JobState.SUCCEEDED)
             self.assertNotIn(request_id, owner._commands)
             self.assertIn(view, self.runtime.state.jobs_view)
-            header, jobs, generations = Mock(), Mock(), Mock()
-            with (
-                patch.object(self.store, "get", side_effect=AssertionError("Store read in draw")),
-                patch.object(self.store, "records", side_effect=AssertionError("Store read")),
-                patch.object(panels, "draw_result") as draw_result,
-            ):
-                panels.SCENARIO_PT_jobs.draw_header(SimpleNamespace(layout=header), bpy.context)
-                panels.SCENARIO_PT_jobs.draw(SimpleNamespace(layout=jobs), bpy.context)
-                panels.SCENARIO_PT_generations.draw(
-                    SimpleNamespace(layout=generations), bpy.context
-                )
+            self.assertEqual(view.status, "awaiting-download")
+            self.assertFalse(view.is_terminal)
+            header, jobs, generations, listed = draw_job_panels()
             header.label.assert_called_once_with(text="1 Job")
             box = jobs.box.return_value
             box.label.assert_any_call(text="Shared image: finished on Scenario", icon="TIME")
@@ -1214,11 +1214,17 @@ class ModelGenerationTests(unittest.TestCase):
             )
             box.progress.assert_not_called()
             # A job without saved results is never listed as a finished generation.
-            self.assertNotIn(view, [call.args[1] for call in draw_result.call_args_list])
+            self.assertFalse(any(row is view for row in listed))
+            self.assertNotIn("Shared image: finished on Scenario", drawn_texts(generations))
             status = self.tools.job_status({"job_id": request_id})
             self.assertEqual(
-                (status["status"], status["delivery_active"], status["delivery_offline"]),
-                ("succeeded", False, True),
+                (
+                    status["status"],
+                    status["delivery_paused"],
+                    status["delivery_active"],
+                    status["delivery_offline"],
+                ),
+                ("succeeded", False, False, True),
             )
             self.assertEqual(len(self.calls), calls)
             self.assertEqual(self.downloads, [])

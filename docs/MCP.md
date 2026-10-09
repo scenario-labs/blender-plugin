@@ -63,19 +63,26 @@ is not a time estimate. A restarted job reports progress only after explicit
 itself: submission, polling, download or an Image lane's automatic import. It is
 `false` once delivery finishes, pauses for review (`delivery_paused`), is held by
 disabled Online Access, or the job is only inspected after a restart or was
-prepared but never queued. A `wait_for_job` result with `delivery_active` `true`
-means the wait expired, including while an automatic import is pending in
-`ready` or `applying`; call it again. Prepare no result application while it is
-`true`.
+prepared but never queued. It is also `false` for a finished Prompt Spark,
+Translate or Blockout job in `succeeded`: nothing downloads its text, which
+`read_prompt_result`, `read_model_text` or `prepare_blockout_plan` read on
+request. A `wait_for_job` result with `delivery_active` `true` means the wait
+expired, including while an automatic import is pending in `ready` or
+`applying`; call it again. Prepare no result application while it is `true`.
 
-`delivery_offline` is `true` while Blender's Online Access is disabled and the
-job's next step needs Scenario: status polling in `remote` or `cancel_requested`,
-or the result download in `succeeded`. Blender sends nothing meanwhile, so
+`delivery_offline` is `true` only while Blender's Online Access is disabled and
+holds a step this session would otherwise take by itself: status polling in
+`remote` or `cancel_requested`, or the result download of a finished model or
+workflow job in `succeeded`. Blender sends nothing meanwhile, so
 `delivery_active` is `false` and `wait_for_job` returns without waiting for its
-timeout. Ask the user to allow Online Access instead of calling it again; an
-unpaused job then resumes by itself, with no recovery action. The native Jobs
-row shows the same hold as `Status paused while online access is disabled` or
-`Download paused while online access is disabled`.
+timeout. Ask the user to allow Online Access instead of calling it again; the
+job then resumes by itself, with no recovery action. It is `false` for settled
+jobs, for paused or restarted jobs, which wait for an explicit recovery action
+whatever Online Access allows, and for finished Prompt Spark, Translate and
+Blockout jobs, which have nothing to download. A native Jobs row in `remote`,
+`cancel_requested` or a pending download adds `Status paused while online access
+is disabled` or `Download paused while online access is disabled`, also when it
+is paused or restarted, because its explicit recovery needs Online Access too.
 
 To import recovered PNG/EXR results, call `prepare_result_application` with the
 current context, request and revision, then show its destination and image list

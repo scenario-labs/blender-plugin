@@ -12,7 +12,13 @@ from unittest.mock import MagicMock, patch
 
 import bpy
 import httpx
-from helpers import online_access, reset_scene, submodule, temp_credentials
+from helpers import (
+    assert_finished_without_download,
+    online_access,
+    reset_scene,
+    submodule,
+    temp_credentials,
+)
 
 
 class PromptToolsTests(unittest.TestCase):
@@ -235,6 +241,29 @@ class PromptToolsTests(unittest.TestCase):
         self.lane.prompt = "Changed after quote"
         self.assertEqual(self.approve(item), {"CANCELLED"})
         self.assertEqual(self.paid, [])
+
+    def finished_after_inspection(self, action, operation):
+        item = self.quote(action)
+        self.assertEqual(self.approve(item), {"FINISHED"})
+        self.advance(item)
+        self.assertEqual(item.phase, "DONE")
+        record = self.runtime.state.job_store.get(item.request_id)
+        # Reading the text commits no later state, and nothing downloads it.
+        self.assertEqual(
+            (record.intent.operation, record.state),
+            (operation, self.storage.JobState.SUCCEEDED),
+        )
+        calls = len(self.calls)
+        _, status = assert_finished_without_download(self, item.request_id)
+        self.assertEqual(status["actions"], ())
+        self.assertEqual(len(self.calls), calls)
+        self.assertEqual(len(self.paid), 1)
+
+    def test_finished_prompt_spark_stays_out_of_jobs_after_inspecting_saved_jobs(self):
+        self.finished_after_inspection("GENERATE", "prompt")
+
+    def test_finished_translation_stays_out_of_jobs_after_inspecting_saved_jobs(self):
+        self.finished_after_inspection("TRANSLATE", "translate")
 
     def test_late_result_preserves_edited_prompt_and_can_be_read_via_mcp(self):
         item = self.quote()

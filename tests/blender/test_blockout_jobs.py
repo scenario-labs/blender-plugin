@@ -13,7 +13,14 @@ from unittest.mock import MagicMock, patch
 
 import bpy
 import httpx
-from helpers import FIXTURES, online_access, reset_scene, submodule, temp_credentials
+from helpers import (
+    FIXTURES,
+    assert_finished_without_download,
+    online_access,
+    reset_scene,
+    submodule,
+    temp_credentials,
+)
 
 
 class BlockoutJobsTests(unittest.TestCase):
@@ -448,6 +455,57 @@ class BlockoutJobsTests(unittest.TestCase):
         result = deferred.finish(deferred.run())
         self.assertEqual(result["text"], self.result_text)
         self.assertEqual(self.scene.scenario_blockout.plan_json, "")
+        self.assertEqual(len(self.paid), 1)
+
+    def test_finished_plan_stays_out_of_jobs_after_inspecting_saved_jobs(self):
+        item = self.quote()
+        self.approve(item)
+        self.advance(item)
+        self.assertEqual(item.phase, "DONE")
+        record = self.runtime.state.job_store.get(item.request_id)
+        # Reading the plan text commits no later state, and nothing downloads it.
+        self.assertEqual(record.state, self.storage.JobState.SUCCEEDED)
+        self.assertEqual([row.asset.media_type for row in record.results], ["text/plain"])
+        calls = len(self.calls)
+        _, status = assert_finished_without_download(self, item.request_id)
+        self.assertEqual(status["actions"], ("recover_blockout",))
+        self.assertEqual(len(self.calls), calls)
+        self.assertEqual(len(self.paid), 1)
+
+    def test_resumed_plan_finishes_without_a_result_download(self):
+        item = self.quote()
+        self.approve(item)
+        item.task.result(5)
+        request = item.request_id
+        record = self.runtime.state.job_store.get(request)
+        self.assertEqual(record.state, self.storage.JobState.REMOTE)
+        # After a restart, the submitted plan waits in Jobs for explicit recovery.
+        self.runtime.state.reset()
+        jobs = self.runtime.inspect_model_jobs()
+        self.assertIn("resume", jobs.views[request].meta["recovery_actions"])
+        calls = len(self.calls)
+        jobs.control(request, record.revision, "resume").result(5)
+        jobs.poll()
+        self.assertEqual(
+            self.runtime.state.job_store.get(request).state, self.storage.JobState.SUCCEEDED
+        )
+        # Resumed polling reads the status once; the plan text is never downloaded.
+        self.assertNotIn(request, jobs._commands)
+        self.assertEqual(len(self.calls), calls + 1)
+        view = jobs.views[request]
+        self.assertEqual(view.status, "succeeded")
+        self.assertTrue(view.is_terminal)
+        status = self.mcp.job_status({"job_id": request})
+        self.assertEqual(
+            (
+                status["delivery_paused"],
+                status["delivery_active"],
+                status["delivery_offline"],
+                status["actions"],
+            ),
+            (False, False, False, ("recover_blockout",)),
+        )
+        self.assertEqual(len(self.calls), calls + 1)
         self.assertEqual(len(self.paid), 1)
 
     def test_retired_context_cannot_approve(self):

@@ -634,15 +634,27 @@ the main thread advances delivery; pause, failure, completion or timeout returns
 the current result without canceling or regenerating. MCP status reports
 `delivery_active` from the same predicate the wait uses: the job is owned by this
 session, not paused and not in a terminal or failed state, `prepared` counts only
-while its submission is queued, and `ready` counts only while an Image lane
-automatic import is pending. A job whose next step needs Scenario (`remote`,
-`cancel_requested` or `succeeded`) does not count while Online Access is
-disabled; MCP reports that hold as `delivery_offline`, and delivery resumes by
-itself once access is allowed. The wait runs on the HTTP worker, so the
-predicate reads only in-memory state, including the Online Access value the
-last main-thread maintenance poll observed, never `bpy`. A returned result with
-`delivery_active` set is therefore an expired wait. Stopping the MCP server
-interrupts its wait without canceling the generation.
+while its submission is queued, `ready` counts only while an Image lane
+automatic import is pending, and `succeeded` counts only when `ModelJobs`
+downloads the results. `downloads_results` decides that from the saved intent:
+model and workflow generations, including Film tasks and cloud jobs saved for
+recovery, download; `prompt` and `translate` operations and Blockout plans (the
+text model) do not, because their tools read the text into memory, so
+`succeeded` is their last saved state. Their views keep the terminal display
+status `succeeded` and stay in Generations after **Inspect saved jobs**, and
+`ModelJobs.poll` never starts a download for them, including after an explicit
+resume of a restarted Blockout job. Only a `succeeded` view whose results
+`ModelJobs` downloads gets the non-terminal `awaiting-download` display status
+that keeps it in Jobs. A job the predicate counts whose next step needs Scenario
+(`remote`, `cancel_requested` or such a `succeeded` job) does not count while
+Online Access is disabled; MCP reports exactly that hold as `delivery_offline`,
+so a paused or restarted job, or a finished Prompt Spark, Translate or Blockout
+job, never reports it, and delivery resumes by itself once access is allowed.
+The wait runs on the HTTP worker, so the predicate reads only in-memory state,
+including the Online Access value the last main-thread maintenance poll
+observed, never `bpy`. A returned result with `delivery_active` set is therefore
+an expired wait. Stopping the MCP server interrupts its wait without canceling
+the generation.
 
 ## Remote progress and scene lane binding
 

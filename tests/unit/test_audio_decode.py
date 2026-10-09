@@ -310,3 +310,26 @@ def test_source_stamp_accepts_only_bounded_regular_files(tmp_path, monkeypatch):
         os.mkfifo(fifo)
         with pytest.raises(WaveformError, match="regular"):
             audio_decode.source_stamp(fifo)
+
+
+def test_sweep_removes_only_stale_decode_directories(tmp_path):
+    stale, fresh, other = tmp_path / "decode-old", tmp_path / "decode-new", tmp_path / "keep-old"
+    for path in (stale, fresh, other):
+        path.mkdir()
+        (path / "decode.log").write_text("fixture")
+    old = 1_000_000.0
+    for path in (stale, other):
+        os.utime(path, (old, old))
+    os.utime(fresh, (old + audio_decode.STALE_SECONDS, old + audio_decode.STALE_SECONDS))
+    target = tmp_path / "target"
+    target.mkdir()
+    link = tmp_path / "decode-link"
+    try:
+        link.symlink_to(target, target_is_directory=True)
+    except OSError:
+        link = None
+    audio_decode.sweep(tmp_path, now=old + audio_decode.STALE_SECONDS + 1)
+    assert not stale.exists() and fresh.is_dir() and other.is_dir() and target.is_dir()
+    if link is not None:
+        assert link.is_symlink()
+    audio_decode.sweep(tmp_path / "absent")

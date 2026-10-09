@@ -15,7 +15,7 @@
       "scenario/core/jobs/results.py": "58491953638b6401ec26771c8eb98ee5ff79019cd1708888398800ca32d1c813",
       "scenario/core/jobs/result_previews.py": "1bc82a1318619cb3771377caa6db67d107d6180a85575fbcc2d5470c087e5467",
       "scenario/core/jobs/workers.py": "fb361cbf1291e9dc426502ba4eaf6a538bebd15a80da9f02dacac8c8fa466dc9",
-      "scenario/core/jobs/audio_decode.py": "4bc3c5a270ad36449e8927d580f9346075f737ad07da0a0b63967de4d81340ba",
+      "scenario/core/jobs/audio_decode.py": "332645a336308d1a52690fa55b888073fffff5213f95cc59460a2314ca973720",
       "tests/unit/test_result_previews.py": "d571f7848c51872570a9207a42a393e9b40e01b3e7ed8f0b9d7a2b545572addb",
       "tests/unit/test_job_workers.py": "433229194bd6dc327f3f076f0f3c73ac919fb6df108a97bd6b99f9ff3346bca5"
     }

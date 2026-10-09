@@ -62,6 +62,7 @@ def _main_thread():
 
 def _read(token, path, decoder, directory, cancel, outcomes):
     try:
+        audio_decode.sweep(directory)
         before = audio_decode.source_stamp(path)
         waveform = audio_decode.decode(Path(path), directory, decoder, cancel=cancel)
         pixels = audio_waveform.raster(waveform)

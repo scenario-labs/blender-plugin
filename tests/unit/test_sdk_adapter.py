@@ -253,13 +253,14 @@ def test_errors_are_sanitized_redirects_blocked_and_no_retries(adapter, failure)
 
 
 PRIVATE_PROJECT = "private-project-7f3a"
-REJECTED = "Scenario rejected the API key or secret (HTTP 401). Check both values in Preferences."
-DENIED = "Scenario denied access (HTTP 403). Check the API key and secret in Preferences."
+REJECTED = "Key or secret rejected (HTTP 401). Check the selected API key and secret."
+DENIED = "Access denied (HTTP 403). Check the selected API key and secret."
 DENIED_PROJECT = (
-    "Scenario denied access (HTTP 403). Check the API key and secret, and that the "
+    "Access denied (HTTP 403). Check the selected API key and secret, and that the "
     "Project ID belongs to this key, or clear it to use the key's default scope."
 )
-LIMITED = "Scenario is limiting requests (HTTP 429). Try again shortly."
+LIMITED = "Too many requests (HTTP 429). Try again shortly."
+SIDEBAR_CHARS = 36  # scenario.blender.panels wraps sidebar status text at this width
 
 
 @pytest.mark.parametrize(
@@ -292,6 +293,10 @@ def test_status_errors_are_actionable_without_private_details(adapter, status, p
         client.model_page(page_size=1)
     message = str(error.value)
     assert message == expected
+    # The status sentence fits the first wrapped sidebar line; guidance never names a
+    # credential source, since saved and environment keys share these messages.
+    assert len(message.split(". ", 1)[0]) + 1 <= SIDEBAR_CHARS
+    assert "Preferences" not in message
     assert error.value.__cause__ is None and error.value.__suppress_context__
     private = (
         "selected-key",

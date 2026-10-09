@@ -78,7 +78,7 @@ def test_denied_probe_explains_the_selected_scope_without_identifiers(project):
         manager.join(5)
         [(_, payload)] = manager.drain_catalog()
         error = payload["error"]
-        assert error.startswith("Scenario denied access (HTTP 403). Check the API key and secret")
+        assert error.startswith("Access denied (HTTP 403). Check the selected API key and secret")
         assert ("Project ID" in error) is (project is not None)
         for private in ("do-not-expose", "local-key-fixture", "selected-key", "selected-secret"):
             assert private not in error

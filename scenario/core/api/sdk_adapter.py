@@ -95,23 +95,22 @@ def _json(raw, *, exact=False):
 
 
 def _status_text(status, *, project):
-    """Short first sentence for clipped status lines, then fixed guidance.
+    """Short first sentence that survives clipped status lines, then fixed guidance.
 
-    Never include response bodies, URLs, identifiers or credentials.
+    The guidance is credential-source neutral (saved or environment keys). Never
+    include response bodies, URLs, identifiers or credentials.
     """
     if status == 401:
-        return (
-            "Scenario rejected the API key or secret (HTTP 401). Check both values in Preferences."
-        )
+        return "Key or secret rejected (HTTP 401). Check the selected API key and secret."
     if status == 403 and project:
         return (
-            "Scenario denied access (HTTP 403). Check the API key and secret, and that the "
+            "Access denied (HTTP 403). Check the selected API key and secret, and that the "
             "Project ID belongs to this key, or clear it to use the key's default scope."
         )
     if status == 403:
-        return "Scenario denied access (HTTP 403). Check the API key and secret in Preferences."
+        return "Access denied (HTTP 403). Check the selected API key and secret."
     if status == 429:
-        return "Scenario is limiting requests (HTTP 429). Try again shortly."
+        return "Too many requests (HTTP 429). Try again shortly."
     return f"Scenario request failed (HTTP {status})"
 
 

@@ -1258,6 +1258,19 @@ Unicode paste is not IME composition. Track those native checks under #66 as
 acceptance follow-ups; they do not block review of this scoped change. The complete
 select/capture/estimate/generate/inspect/apply journey and other-platform desktop acceptance remain separate under #66/#68.
 
+Blur and Studio opening now share the same focused-prompt ownership guard.
+A conflicting scene, lane or sidebar prompt keeps both texts and focus intact;
+the outside click is consumed with a warning before any native handoff. With no
+focused prompt, blur writes nothing. Valid edits still commit and pass the same
+click to Blender. Installed modal-path regressions reproduce all four overwrite
+cases on the preceding ZIP and pass on fixed ZIP SHA-256
+`15f730160c62c2e7a700b25ac6c8a7a1d134122c30ef3e5c85842912c463777b`.
+That ZIP passes 1,088 installed tests on each macOS arm64 Blender 5.0.1, 5.1.2 and
+5.2.1 (two Windows-only skips per run). A new isolated desktop attempt displayed
+the correct fixture, but control-tool clicks did not visibly activate the composer
+or Studio. It supplies no new physical-input acceptance; the screenshots and
+interaction results above remain evidence for their explicitly identified ZIP.
+
 This view exposes existing creation/Film/result controls. Workflow input forms,
 asset-library search and complete retained Studio acceptance remain separate;
 local workflow commands alone do not provide those forms.

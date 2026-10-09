@@ -204,8 +204,11 @@ class SCENARIO_OT_composer_modal(bpy.types.Operator):
         if event.type == "LEFTMOUSE" and event.value == "PRESS":
             hit = layout.hit(event.mouse_region_x, event.mouse_region_y)
             if hit is None:
-                state.focused = False
-                state.commit_to_lane(scene)
+                try:
+                    state.flush_focused_prompt(scene)
+                except RuntimeError as error:
+                    self.report({"WARNING"}, str(error))
+                    return {"RUNNING_MODAL"}
                 # Deliver the same click to the header/sidebar or viewport after blur.
                 return self._finish(context) | {"PASS_THROUGH"}
             kind = hit[0]

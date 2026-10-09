@@ -57,6 +57,25 @@ class ComposerState:
         self.synced_lane, self.synced_text = lane, self.field.text
         return lane_state
 
+    def flush_focused_prompt(self, scene):
+        """Leave text focus only after committing to the unchanged original form."""
+        if not self.focused:
+            return
+        try:
+            lane = self.lane_for(scene)
+            valid = (
+                self.synced_scene == scene
+                and self.synced_lane == lane
+                and self.synced_text == scene.scenario.lane_state(lane).prompt
+            )
+        except ReferenceError:
+            valid = False
+        if not valid:
+            raise RuntimeError("Finish editing the original prompt before leaving the composer")
+        self.commit_to_lane(scene)
+        self.focused = False
+        self.dragging = False
+
     # -- placement ------------------------------------------------------------
     def begin_drag(self, mouse, kind):
         """Remember where a press happened so a move beyond the threshold turns into a drag (or a resize)."""

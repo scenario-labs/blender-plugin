@@ -144,6 +144,67 @@ class StudioViewTests(unittest.TestCase):
         finally:
             bpy.data.scenes.remove(other)
 
+    def test_outside_click_rejects_changed_prompt_lane_or_scene_before_native_handoff(self):
+        modal = submodule("blender.composer.modal")
+        original = bpy.context.scene
+        other = bpy.data.scenes.new("Other blur scene")
+        self.addCleanup(bpy.data.scenes.remove, other)
+        for conflict in ("prompt", "lane", "scene"):
+            with self.subTest(conflict=conflict):
+                original.scenario.lane = "image"
+                original.scenario.image.prompt = "original"
+                self.composer.sync_from_lane(original)
+                self.composer.focused = True
+                self.composer.field.set_text("pending composer")
+                scene = original
+                if conflict == "prompt":
+                    original.scenario.image.prompt = "new sidebar value"
+                elif conflict == "lane":
+                    original.scenario.lane = "video"
+                    original.scenario.video.prompt = "original"
+                else:
+                    scene = other
+                    other.scenario.lane = "image"
+                    other.scenario.image.prompt = "original"
+                lane_state = scene.scenario.lane_state(self.composer.lane_for(scene))
+                before = lane_state.prompt
+                self.runtime.state.composer_modal_running = True
+                context = SimpleNamespace(scene=scene, region=MagicMock())
+                event = SimpleNamespace(
+                    type="LEFTMOUSE", value="PRESS", mouse_region_x=10, mouse_region_y=10
+                )
+                operator = SimpleNamespace(report=MagicMock(), _finish=MagicMock())
+                with patch.object(modal, "_layout") as layout:
+                    layout.return_value.hit.return_value = None
+                    result = modal.SCENARIO_OT_composer_modal.modal(operator, context, event)
+                self.assertEqual(lane_state.prompt, before)
+                self.assertEqual(self.composer.field.text, "pending composer")
+                self.assertTrue(self.composer.focused)
+                self.assertTrue(self.runtime.state.composer_modal_running)
+                self.assertEqual(result, {"RUNNING_MODAL"})
+                operator._finish.assert_not_called()
+                operator.report.assert_called_once()
+                with self.assertRaisesRegex(RuntimeError, "original prompt"):
+                    self.studio.prepare_view(context)
+        self.assertFalse(self.workflow.calls)
+
+    def test_outside_click_without_focus_does_not_commit_stale_composer_text(self):
+        modal = submodule("blender.composer.modal")
+        scene = bpy.context.scene
+        scene.scenario.lane = "image"
+        self.composer.sync_from_lane(scene)
+        scene.scenario.image.prompt = "new sidebar value"
+        context = SimpleNamespace(scene=scene, region=MagicMock())
+        event = SimpleNamespace(
+            type="LEFTMOUSE", value="PRESS", mouse_region_x=10, mouse_region_y=10
+        )
+        operator = SimpleNamespace(_finish=MagicMock(return_value={"FINISHED"}))
+        with patch.object(modal, "_layout") as layout:
+            layout.return_value.hit.return_value = None
+            result = modal.SCENARIO_OT_composer_modal.modal(operator, context, event)
+        self.assertEqual(scene.scenario.image.prompt, "new sidebar value")
+        self.assertEqual(result, {"FINISHED", "PASS_THROUGH"})
+
     def test_popup_width_respects_area_window_and_dpi(self):
         context = SimpleNamespace(
             area=SimpleNamespace(width=1280),

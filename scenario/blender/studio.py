@@ -56,23 +56,8 @@ def popup_width(context):
 def prepare_view(context):
     """Flush the focused composer only into its unchanged original form."""
     state = runtime.state.composer
-    if state is None or not state.focused:
-        return
-    scene = context.scene
-    try:
-        lane = state.lane_for(scene)
-        valid = (
-            state.synced_scene == scene
-            and state.synced_lane == lane
-            and state.synced_text == scene.scenario.lane_state(lane).prompt
-        )
-    except ReferenceError:
-        valid = False
-    if not valid:
-        raise RuntimeError("Finish editing the original prompt before opening Studio")
-    state.commit_to_lane(scene)
-    state.focused = False
-    state.dragging = False
+    if state is not None:
+        state.flush_focused_prompt(context.scene)
 
 
 def draw_panel(layout, context, panel):

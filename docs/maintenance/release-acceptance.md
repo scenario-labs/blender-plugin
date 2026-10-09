@@ -7,7 +7,121 @@ needed before releasing 0.10.0. It does not replace the
 [release plan](release-plan.md), narrow retained-lane acceptance or authorize
 publication. OAuth remains deferred under #67.
 
-## Candidate identity
+## Current candidate and decision
+
+Reviewed on 2026-10-09 after the implementation stack merged. The supported
+release remains held by #68. The current development candidate includes the
+[grayscale material fix, #340](https://github.com/scenario-labs/blender-plugin/pull/340),
+which must merge before its dependent acceptance record.
+
+| Item | Identity |
+| --- | --- |
+| Merged main baseline | `6c70d2edb385f6bd9f4a5e53c1eee66c575ebd16` |
+| Corrected candidate source | `e73c700b4fb288acf8956615c40e085c7ee068b5` |
+| Package | `scenario-0.9.9.zip`; development version unchanged |
+| SHA-256 | `bc241cace5fe1d8158cc00cdc54c1a12c10eaddcafc954c3c1172bafd196494f` |
+| Source and bundle | All 140 packaged Python sources match; locked SDK 2.2.0 bundle, package GPL and dependency notices validate |
+
+The locked unit suite passes **3,927 tests**, with the existing SDK explicit-bearer
+precedence expected failure. Changed-file Ruff and knowledge structure checks
+pass; unrelated source-freshness warnings remain. This does not resolve the SDK
+authentication gap or establish fresh live onboarding.
+
+The same corrected ZIP passes the full installed suite in isolated macOS 27.0.1
+arm64 profiles:
+
+| Blender | Bundled Python | Installed suite | Native update and offline restart |
+| --- | --- | --- | --- |
+| 5.0.1 | 3.11.13 | 1,147 passed, two Windows-only skips | Pass |
+| 5.1.2 | 3.13.9 | 1,147 passed, two Windows-only skips | Pass |
+| 5.2.1 LTS | 3.13.13 | 1,147 passed, two Windows-only skips | Pass |
+
+All three update runs use synthetic predecessor SHA-256
+`2201ef15431ea764be17adfb270c2e1dbd4f5a1706651aff038cebd7e211b4bd`.
+Only its version declarations differ from the candidate. Project selection,
+scoped jobs/results/uploads, nonempty Film state, workflow references and the
+scene survive native update and offline restart. Each report records zero
+service requests, a stopped loopback server, removed successful profiles and an
+unchanged normal profile. This is synthetic lifecycle acceptance, not a published
+release pair or public HTTPS delivery.
+
+Existing local representative outputs were matched to their saved byte counts
+and SHA-256 receipts, then exercised through the installed candidate's native
+application primitives on all three Blender versions:
+
+- Image: decoded and packed successfully.
+- Material: five PBR maps decoded, packed and assigned to the captured mesh slot;
+  the base preview stays unused and the old material remains intact.
+- GLB: one mesh with 56,602 vertices imported; prior selection was preserved.
+- Video and audio: independent verified snapshots became movie/sound strips at
+  the requested frame without changing scene timing. Blender's decoded MP3 strip
+  duration differs by one frame between the tested versions; no duration is
+  forced or claimed to be sample-exact across decoders.
+
+These are native primitive checks using existing outputs, not a new service
+submission, coordinator approval journey or physical desktop interaction.
+The maintainer separately accepted motion/playback and sound quality for the
+reviewed video/audio outputs on 2026-10-09. This does not establish sustained
+candidate GPU/audio playback or quality across every provider/model.
+
+### Failure found and corrected
+
+The merged-main ZIP SHA-256
+`c01562d338e54dcd0cdd6b604afac21c2afc7ed52b8df3c33827e7335db1bdaa`
+passed 3,918 unit tests with the same expected failure, 1,146 installed tests
+plus two skips per supported macOS Blender version, and synthetic update/restart.
+However, applying the representative material failed on all three versions:
+its scalar maps were valid grayscale PNGs, which general image preflight rejected.
+#340 admits 8-/16-bit grayscale images while preserving panorama formats and all
+receipt/resource checks. The original material now applies, and new synthetic
+regressions cover both bit depths without storing private outputs in the repository.
+Do not use the initial merged-main ZIP as the accepted material candidate.
+
+[Hosted main CI](https://github.com/scenario-labs/blender-plugin/actions/runs/37939493112)
+is green for the merged baseline, including Linux/Windows Blender 5.0.1, 5.1.2
+and 5.2.1. Those jobs build separate archives and do not certify #340 or this
+macOS ZIP. Check the current fix and acceptance PR heads before merging.
+
+### Remaining acceptance handoff
+
+The merged-main exact-ZIP desktop session launched in the isolated review app
+and exited cleanly with its normal profile unchanged. The computer-control
+service failed at native-pipe startup, including after a reset, before any
+interaction or screenshot could be verified. This is a tool attachment failure,
+not evidence that Blender crashed or that UI checks passed. The corrected ZIP
+has no new physical desktop evidence. Earlier desktop evidence below retains
+its own artifact identity.
+
+Complete these checks on the corrected candidate before releasing:
+
+1. Fresh API-key onboarding from the documented instructions: connection success,
+   offline/permission errors, explicit credential source and optional project
+   selection. Changed credentials/projects must clear quotes and isolate results.
+2. Compact capture, upload, exact estimate, approved generation, inspect and apply;
+   Studio/Library reference reuse must invalidate the old quote and preserve the
+   selected destination. Existing results can cover recovery/application; a new
+   paid journey requires a fresh explicit project and quote/budget approval.
+3. Candidate-level UI/MCP approval parity, cancellation, restart/uncertain states,
+   failed transfer/import and scene/file/project switching. The installed suites
+   cover synthetic cases; record the corresponding integrated native journey.
+4. Physical focus/text/IME, viewport, small-window and alternate-DPI checks in
+   each claimed desktop environment; sustained candidate rendering/playback and
+   audio stability. Preserve the separate accepted human media review above.
+5. Required CI enforcement (#45), protected hosted smoke acceptance (#40), and
+   explicit experimental/unavailable capability limits. Read-only checks on
+   2026-10-09 still find only `pr-title` and `commits` in required status checks,
+   and only `github-pages` among environments. No settings were changed.
+6. Validate the actual release-please 0.10.0 artifact, then complete the published
+   checksum/provenance, extension index and native HTTPS installation checks at
+   their proper release stage. This 0.9.9 candidate is not a published release.
+
+The merged legacy OBJ/MTL recovery fix removes production metadata repair as a
+prerequisite for existing downloads. These acceptance checks neither regenerate
+those assets nor require a production backfill. Film, direct workflow uploads,
+interactive nodes/general workflow cancellation and asset organization retain
+their documented limitations; this record does not declare those scopes complete.
+
+## Historical candidate identity
 
 Initial candidate reviewed on 2026-10-07; later evidence is identified separately below:
 
@@ -25,7 +139,7 @@ validation for that artifact and record its checksum and revision here; this
 record cannot certify an unbuilt release. Rebuilding the same source does not
 justify substituting a different archive without checking it.
 
-## Verified evidence
+## Historical verified evidence
 
 The locked offline unit suite passes **3,807 tests**, with the existing SDK
 explicit-bearer authentication expected failure still unresolved. It is not
@@ -316,6 +430,10 @@ published-artifact/update gates.
 
 ## Remaining release gates
 
+The current candidate and concrete handoff above supersede earlier evidence gaps
+only where explicitly covered. Historical layer results below retain their own
+source and ZIP identities.
+
 | Gate | Current limit | Next evidence and owner |
 | --- | --- | --- |
 | Complete SDK adoption | The unscoped prototype engine and unused raw service clients are removed. The [SDK operation inventory](../SDK_ADOPTION.md#service-operation-inventory) maps maintained service paths and the existing discovery exception; offline/native checks pass. | Finish retained-capability and live provider acceptance under #64/#65; the call-site audit alone does not establish those product contracts. |
@@ -323,12 +441,12 @@ published-artifact/update gates.
 | Compact and expanded creation | An explicit native Studio view now reuses Create, Film, Jobs, Results and Connection controls. Workflow input/approval controls now share the job session; native Library search and confirmed model/workflow-reference reuse are present, with workflow and Library interaction acceptance still open. Offline prompt handoff/editing, populated forms, scrolling, quote-preserving navigation, continued saved-job polling, small-window fit and viewport return have desktop proof; alternate-DPI and IME checks remain pending. The compact composer still needs complete retained-capability acceptance. | Complete retained Studio presentation under #66, then native select/capture/estimate/generate/inspect/apply and library reuse; focus, text input, viewport, small-window and DPI checks under #66/#68. |
 | Workflows | Local MCP discovery, exact quote approval and durable execution now use the shared SDK session. Expanded Studio now has saved inputs and a separate exact-price confirmation; interactive nodes and general workflow cancellation remain absent. | Complete retained workflow presentation and authorized live output/recovery acceptance under #64/#65/#66/#68; the new commands do not close those issues. |
 | Asset library | Local MCP and native Library list/search use scoped SDK reads with explicit pagination and reusable reference metadata. Native model/workflow-reference confirmation preserves scope and destination. | Complete direct workflow uploads, collection/tag organization, physical/native presentation and live acceptance under #64/#65/#66/#68. |
-| Retained lanes | Offline receipts and MIME checks do not establish usable live results. | Authorized scoped checks for Image, Video, 3D, Materials, audio, render/edit and Film paths; inspect actual outputs and record limitations under #68. |
+| Retained lanes | Existing image, material, GLB, video and audio outputs pass native application on the current candidate; the grayscale material failure is corrected by #340. These checks do not exercise the full approval journey. | Complete integrated native capture/upload/estimate/submission/application and retained render/edit/Film checks under #68 with explicit paid authorization where needed. |
 | Recovery and switching | Synthetic tests cover lost acknowledgement, stale quotes, scope changes and application claims. | Candidate-level UI/MCP parity, cancellation/restart races and failed download/import journeys with recorded outcomes under #65/#68. |
-| GPU, motion and audio | Headless counts and media metadata do not establish sustained playback or human review. | Native rendering/playback, sustained GPU/audio checks and human motion/audio review under #68. |
-| Paid CI | The suite runner and protected workflow now quote all cases and enforce one aggregate cap. Explicit version-2 reference plans now stage/upload through shared durable commands before quoting. A read-only 2026-10-08 check finds no `smoke` environment; live reference-upload acceptance remains pending. | Configure #40's explicit project/budget policy, environment reviewers, private plan, recovery encryption secret and dedicated credentials; complete authorized hosted upload/generation acceptance. |
-| Required checks | Read-only main-branch rules checked on 2026-10-08 report `pr-title` and `commits` as required, plus CodeQL scanning. `ci-ok` is absent. | Complete #45's administration and negative merge-gate checks while preserving existing protections. |
-| Final release artifact | Current candidate retains development version 0.9.9. Local update checks use a synthetic predecessor. | Validate release-please's exact 0.10.0 ZIP, licenses, provenance/checksum and extension index; exercise public native installation/update under #36/#68 and the release procedure. |
+| GPU, motion and audio | Human motion/audio review of the existing outputs is accepted; candidate native media insertion passes. Sustained candidate playback is unverified. | Complete native rendering/playback and sustained GPU/audio stability checks under #68; preserve the bounded human review above. |
+| Paid CI | The suite runner and protected workflow now quote all cases and enforce one aggregate cap. Explicit version-2 reference plans now stage/upload through shared durable commands before quoting. A read-only 2026-10-09 check finds no `smoke` environment; live reference-upload acceptance remains pending. | Configure #40's explicit project/budget policy, environment reviewers, private plan, recovery encryption secret and dedicated credentials; complete authorized hosted upload/generation acceptance. |
+| Required checks | Read-only main-branch rules checked on 2026-10-09 report `pr-title` and `commits` as required, plus CodeQL scanning. `ci-ok` is absent. | Complete #45's administration and negative merge-gate checks while preserving existing protections. |
+| Final release artifact | The current corrected 0.9.9 ZIP passes exact-artifact native application and synthetic update/restart on all three macOS Blender versions. | Validate release-please's exact 0.10.0 ZIP, licenses, provenance/checksum and extension index; exercise public native installation/update under #36/#68 and the release procedure. |
 
 ## Native Library validation slice
 

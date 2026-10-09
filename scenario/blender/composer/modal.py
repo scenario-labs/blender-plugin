@@ -158,7 +158,9 @@ class SCENARIO_OT_composer_modal(bpy.types.Operator):
             # The pill stands in for a card the uncovered span cannot hold: expanding would change nothing on
             # screen, so the click opens the lane's form in the Settings dialog. The expanded choice and the card
             # width stay as they are, and the card comes back by itself once there is room.
+            # The card's status note is not drawn and the sidebar may be closed: report it in the status bar too.
             runtime.set_message(NO_ROOM_MESSAGE)
+            self.report({"INFO"}, NO_ROOM_MESSAGE)
             _open_settings(context, state.lane_for(scene))
         _redraw(context)
 

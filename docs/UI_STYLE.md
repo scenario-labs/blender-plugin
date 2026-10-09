@@ -227,10 +227,12 @@ nothing.
   card returns by itself once the sidebar closes or the viewport grows.
 - While the card has no room, a click on the pill, expanded or collapsed, opens
   the current lane's form in the Settings dialog (the dialog of the card's
-  **Settings** chip) instead of expanding. A short status message suggests
-  closing the sidebar or enlarging the viewport, and a drag still moves the
-  pill. A prompt that had focus when the card gave way is committed and left, as
-  a click outside would.
+  **Settings** chip) instead of expanding. A short message in the status bar
+  (and in the sidebar panel when it is open) suggests closing the sidebar or
+  enlarging the viewport, and a drag still moves the pill. A prompt that had
+  focus when the card gave way is committed and left, as a click outside would.
+  If its lane's prompt changed elsewhere meanwhile, focus is left without
+  overwriting that text and a warning is reported.
 - The pill narrows to its minimum of 200 px times the UI scale while keeping its
   margins. A narrower span then eats into the margins. In a span narrower than
   the minimum itself, the pill keeps that minimum width from the toolbar edge

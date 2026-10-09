@@ -526,9 +526,11 @@ class ComposerSideRegionTests(unittest.TestCase):
                     mock.patch.object(self.modal, "_open_settings") as open_settings,
                     mock.patch.object(self.modal, "_save_layout") as save,
                 ):
-                    self._click(self._operator(), ctx, press)
+                    operator = self._operator()
+                    self._click(operator, ctx, press)
                 open_settings.assert_called_once_with(ctx, "material")
                 message.assert_called_once_with(self.modal.NO_ROOM_MESSAGE)
+                operator.report.assert_called_once_with({"INFO"}, self.modal.NO_ROOM_MESSAGE)
                 save.assert_not_called()
                 # neither the expanded choice nor the saved card width changed
                 self.assertEqual((state.expanded, state.width), (expanded, 1680))
@@ -596,6 +598,30 @@ class ComposerSideRegionTests(unittest.TestCase):
         self.assertEqual(scene.scenario.lane_state("image").prompt, "copper kettle")
         self.assertTrue(state.expanded)
 
+    def test_a_prompt_changed_elsewhere_is_kept_when_the_card_gives_way(self):
+        scene = bpy.context.scene
+        scene.scenario.lane = "image"
+        scene.scenario.lane_state("image").prompt = "copper"
+        state = self.state_mod.ComposerState()
+        state.expanded = True
+        state.sync_from_lane(scene)
+        state.focused = True
+        state.field.insert(" kettle")
+        scene.scenario.lane_state("image").prompt = "edited in the sidebar"
+        ctx = self._retina()
+        x, y = self._centre(self.modal._layout(ctx, state).pill_rect)
+        event = SimpleNamespace(
+            type="MOUSEMOVE", value="NOTHING", mouse_region_x=x, mouse_region_y=y
+        )
+        operator = self._operator()
+        with mock.patch.object(self.runtime.state, "composer", state):
+            result = self.modal.SCENARIO_OT_composer_modal.modal(operator, ctx, event)
+        self.assertEqual(result, {"PASS_THROUGH"})
+        self.assertFalse(state.focused)
+        self.assertEqual(scene.scenario.lane_state("image").prompt, "edited in the sidebar")
+        operator.report.assert_called_once()
+        self.assertEqual(operator.report.call_args.args[0], {"WARNING"})
+
     # -- short viewport ----------------------------------------------------------
     def test_a_short_viewport_shows_the_pill_instead_of_overlapping_card_rows(self):
         bpy.context.scene.scenario.lane = "video"
@@ -642,9 +668,11 @@ class ComposerSideRegionTests(unittest.TestCase):
                     mock.patch.object(self.runtime, "set_message") as message,
                     mock.patch.object(self.modal, "_open_settings") as open_settings,
                 ):
-                    self._click(self._operator(), short, self._centre(pill))
+                    operator = self._operator()
+                    self._click(operator, short, self._centre(pill))
                 open_settings.assert_called_once_with(short, "video")
                 message.assert_called_once_with(self.modal.NO_ROOM_MESSAGE)
+                operator.report.assert_called_once_with({"INFO"}, self.modal.NO_ROOM_MESSAGE)
                 self.assertEqual(
                     (state.expanded, state.width), (True, self.cl.MIN_CARD_WIDTH * scale)
                 )

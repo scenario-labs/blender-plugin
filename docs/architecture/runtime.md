@@ -103,7 +103,11 @@ waits for its connection worker and drains that queue without a GUI timer. The
 account strip shows pending, error or success independently of cached models.
 Credential changes and runtime reset
 discard late success and failure. The result confirms model access; it does not
-derive account/project identity or activate durable jobs.
+derive account/project identity or activate durable jobs. Failures carry the
+adapter's fixed status text for every SDK request: HTTP 401 and 403 ask to check
+the selected key and secret, a 403 names the Project ID only when that request
+carried the override, and 429 asks for a later retry. Other statuses keep the
+generic HTTP text; no message includes response bodies, URLs or identifiers.
 
 Explicit local MCP recovery calls now lazily activate the selected
 [JobSession](../BLENDER_JOB_CONTEXT.md). `list_local_jobs` reads its durable

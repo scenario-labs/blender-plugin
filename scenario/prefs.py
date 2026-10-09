@@ -2,6 +2,8 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Add-on preferences: credentials, output folder, composer, MCP."""
 
+import textwrap
+
 import bpy
 from bpy.props import BoolProperty, EnumProperty, FloatProperty, IntProperty, StringProperty
 
@@ -120,7 +122,10 @@ class ScenarioPreferences(bpy.types.AddonPreferences):
         ).url = PORTAL_KEYS_URL
         row.operator("scenario.test_connection", text="Test connection", icon="CHECKMARK")
         if runtime.state.account_label:
-            box.label(text=runtime.state.account_label, icon="INFO")
+            # Labels clip instead of wrapping; permission guidance must stay readable.
+            icon = "ERROR" if runtime.state.connection_status == "error" else "INFO"
+            for index, line in enumerate(textwrap.wrap(runtime.state.account_label, 70)):
+                box.label(text=line, icon=icon if index == 0 else "NONE")
         if not runtime.online():
             box.label(
                 text="Allow Online Access is off in Blender's System preferences", icon="ERROR"

@@ -39,8 +39,18 @@ class RecordingLayout:
 
         return call
 
-    def labels(self):
+    def lines(self):
         return [(e.kwargs.get("text"), e.kwargs.get("icon")) for e in self.log if e.name == "label"]
+
+    def labels(self):
+        """Messages as read: a wrapped status rejoins its continuation lines (icon NONE)."""
+        messages = []
+        for text, icon in self.lines():
+            if icon == "NONE" and messages:
+                messages[-1] = (f"{messages[-1][0]} {text}", messages[-1][1])
+            else:
+                messages.append((text, icon))
+        return messages
 
     def retries(self):
         return [

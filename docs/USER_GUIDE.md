@@ -39,6 +39,13 @@ Test connection runs in the background. Its success status verifies model access
 with the selected credentials, including when the model list is empty. It does
 not identify an account or project. Repeated clicks while checking share the same
 request; changing credentials or project discards the previous check's result.
+Only HTTP 401, 403 and 429 failures add guidance. A 401 (key or secret rejected)
+or 403 (access denied) asks you to check the selected key and secret. When the
+failing request used the Project ID, a 403 also asks you to confirm that the
+project belongs to the key, or to clear it. A 429 (too many requests) asks you to
+try again shortly. Other statuses show only the HTTP code. Preferences wraps the
+connection result, and the sidebar wraps model-loading, price and generation errors.
+Messages never include service responses, credentials or IDs.
 
 **Project ID (optional)** applies to both saved and environment credentials. Leave
 it blank to use the API key's server-defined default scope, or enter a project ID
@@ -526,6 +533,7 @@ confirmation and shared-runtime boundaries.
 ## Troubleshooting
 
 - **"Loading models..." does not end**: check the key and secret in Preferences (Test connection), and Blender's Allow Online Access. A Retry button appears when the catalog request failed.
+- **"Key or secret rejected (HTTP 401)" / "Access denied (HTTP 403)"**: check the selected key and secret, in Preferences or in the environment that launched Blender. If a 403 mentions the Project ID, make sure that project belongs to the key, or clear it to use the key's default scope.
 - **"Prompt is required" / "Add a reference to see the cost"**: the quote needs a valid form; fill the prompt or add the required reference.
 - **"Select the mesh to edit" / "Price shown after the upload"**: the 3D tab in Edit mode needs a mesh object selected (or active) in the viewport.
 - **"This model takes no image/video input"**: the picked model cannot receive the capture; choose another one in the Render lane.

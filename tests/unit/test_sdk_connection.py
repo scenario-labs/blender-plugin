@@ -10,6 +10,7 @@ import pytest
 
 from scenario.core.api.errors import ScenarioError
 from scenario.core.jobs.manager import JobManager
+from scenario.core.jobs.store import JobScope
 from tests.unit.test_sdk_catalog import catalog
 
 
@@ -61,6 +62,27 @@ def test_failed_probe_delivers_safe_error_without_retrying(status, page):
         assert name == "connection" and payload["key"] is key and payload["catalog"] is context
         assert payload["error"] and "do-not-expose" not in payload["error"]
         assert len(calls) == 1
+    finally:
+        context.close()
+
+
+@pytest.mark.parametrize("project", [None, "private-project-7f3a"])
+def test_denied_probe_explains_the_selected_scope_without_identifiers(project):
+    scope = JobScope("https://api.cloud.scenario.com/v1", "local-key-fixture", project)
+    context, _ = catalog(
+        lambda request: httpx.Response(403, json={"private": "do-not-expose"}), scope=scope
+    )
+    manager = JobManager(None, None)
+    try:
+        manager.check_connection(context, object())
+        manager.join(5)
+        [(_, payload)] = manager.drain_catalog()
+        error = payload["error"]
+        assert error.startswith("Access denied (HTTP 403). Check the selected API key and secret")
+        assert ("Project ID" in error) is (project is not None)
+        for private in ("do-not-expose", "local-key-fixture", "selected-key", "selected-secret"):
+            assert private not in error
+        assert project is None or project not in error
     finally:
         context.close()
 

@@ -20,6 +20,7 @@ For questions, bugs or account help, see [Support](../SUPPORT.md).
 - [Job coordinator, workers and cancellation](JOB_COORDINATOR.md)
 - [Blender job context and stale-result guards](BLENDER_JOB_CONTEXT.md)
 - [Signed result transfers](RESULT_TRANSFERS.md)
+- [Saved-result previews](RESULT_PREVIEWS.md)
 - [Multipart upload lifecycle](SDK_UPLOADS.md)
 - [Reversible mesh application](MESH_APPLICATION.md)
 - [Panoramic World application](WORLD_APPLICATION.md)

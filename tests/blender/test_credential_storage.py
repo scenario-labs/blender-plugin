@@ -29,7 +29,11 @@ class CredentialStorageTests(unittest.TestCase):
         )
         self.root = Path(directory).resolve()
         self.enterContext(
-            patch.object(self.runtime, "paths", return_value=SimpleNamespace(state_dir=self.root))
+            patch.object(
+                self.runtime,
+                "paths",
+                return_value=SimpleNamespace(state_dir=self.root, cache_dir=self.root / "cache"),
+            )
         )
         self.addCleanup(self.runtime.state.reset)
 

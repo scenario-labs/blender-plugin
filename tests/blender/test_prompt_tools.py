@@ -34,7 +34,9 @@ class PromptToolsTests(unittest.TestCase):
                 self.runtime,
                 "paths",
                 return_value=SimpleNamespace(
-                    state_dir=Path(directory), registry_file=Path(directory) / "jobs.json"
+                    state_dir=Path(directory),
+                    cache_dir=Path(directory) / "cache",
+                    registry_file=Path(directory) / "jobs.json",
                 ),
             )
         )

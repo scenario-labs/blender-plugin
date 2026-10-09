@@ -58,6 +58,20 @@ def _save_layout():
     save_layout()
 
 
+def _generate(operator, scene, state):
+    """Submit the form the composer shows, only with that form's own ready quote."""
+    lane = state.generation_lane(scene)
+    if not panels.generate_enabled(scene.scenario.lane_state(lane), lane):
+        return
+    try:
+        bpy.ops.scenario.generate(lane=lane)
+    except RuntimeError as error:
+        # Operator error reports arrive as exceptions; the form keeps the reason. Keep this handler alive.
+        message = str(error).strip()
+        reason = message.removeprefix("Error:").strip() if message.startswith("Error:") else ""
+        operator.report({"WARNING"}, reason or "Generation is not available right now")
+
+
 class SCENARIO_OT_composer_modal(bpy.types.Operator):
     bl_idname = "scenario.composer_modal"
     bl_label = "Scenario composer"
@@ -242,18 +256,16 @@ class SCENARIO_OT_composer_modal(bpy.types.Operator):
             elif kind == "generate":
                 state.commit_to_lane(scene)
                 state.focused = False
-                lane = state.lane_for(scene)
-                if panels.generate_enabled(scene.scenario.lane_state(lane), lane):
-                    bpy.ops.scenario.generate(lane=lane)
+                _generate(self, scene, state)
             elif kind == "model":
-                # the model chip opens the search dialog; the sidebar shows the rest of the form
+                # the model chip opens the search dialog for the form it shows; the sidebar shows the rest
                 _open_sidebar(context)
                 try:
-                    bpy.ops.scenario.pick_model("INVOKE_DEFAULT", lane=state.lane_for(scene))
+                    bpy.ops.scenario.pick_model("INVOKE_DEFAULT", lane=state.generation_lane(scene))
                 except (RuntimeError, AttributeError):
                     pass
             elif kind == "settings":
-                # the generation settings of the current lane, in a dialog right here
+                # the tab's settings in a dialog right here (the 3D tab includes its Edit mode form)
                 try:
                     bpy.ops.scenario.quick_settings("INVOKE_DEFAULT", lane=state.lane_for(scene))
                 except (RuntimeError, AttributeError):
@@ -275,9 +287,7 @@ class SCENARIO_OT_composer_modal(bpy.types.Operator):
         if event.type in ("RET", "NUMPAD_ENTER"):
             state.commit_to_lane(scene)
             state.focused = False
-            lane = state.lane_for(scene)
-            if panels.generate_enabled(scene.scenario.lane_state(lane), lane):
-                bpy.ops.scenario.generate(lane=lane)
+            _generate(self, scene, state)
             _redraw(context)
             return {"RUNNING_MODAL"}
         if event.type == "BACK_SPACE":

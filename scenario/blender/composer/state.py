@@ -3,6 +3,7 @@
 """Interaction state of the floating composer, mirrored into the Scene lane state."""
 
 from ...core.ui.composer_layout import LANE_ORDER, TextField
+from .. import props
 
 COMPOSER_LANES = tuple(LANE_ORDER)
 
@@ -35,8 +36,12 @@ class ComposerState:
             return lane
         return "image"
 
+    def generation_lane(self, scene):
+        """The form behind the visible tab: its prompt, model, price and Generate (3D Edit mode is Edit 3D)."""
+        return props.effective_lane(scene, self.lane_for(scene))
+
     def sync_from_lane(self, scene):
-        lane = self.lane_for(scene)
+        lane = self.generation_lane(scene)
         lane_state = scene.scenario.lane_state(lane)
         if (
             scene != self.synced_scene
@@ -50,7 +55,7 @@ class ComposerState:
         return lane_state
 
     def commit_to_lane(self, scene):
-        lane = self.lane_for(scene)
+        lane = self.generation_lane(scene)
         lane_state = scene.scenario.lane_state(lane)
         if lane_state.prompt != self.field.text:
             lane_state.prompt = self.field.text
@@ -62,7 +67,7 @@ class ComposerState:
         if not self.focused:
             return
         try:
-            lane = self.lane_for(scene)
+            lane = self.generation_lane(scene)
             valid = (
                 self.synced_scene == scene
                 and self.synced_lane == lane

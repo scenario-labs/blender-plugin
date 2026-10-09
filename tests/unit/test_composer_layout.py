@@ -66,10 +66,17 @@ def test_scale_multiplies_every_size_and_fits_small_regions():
 
 def test_prompt_placeholder_and_lane_labels():
     assert cl.LANE_ORDER == ("image", "video", "3d", "material", "render_image", "render_video")
-    assert cl.LANE_LABELS["image"] == "Image" and cl.LANE_LABELS["render_image"] == "Render Image" and cl.LANE_LABELS["render_video"] == "Render Video"
+    assert (
+        cl.LANE_LABELS["image"] == "Image"
+        and cl.LANE_LABELS["render_image"] == "Render Image"
+        and cl.LANE_LABELS["render_video"] == "Render Video"
+    )
     assert cl.placeholder_for("image").startswith("Describe")
-    assert "Prompt Spark" in cl.placeholder_for("render_image") and "Prompt Spark" in cl.placeholder_for("render_video")
+    assert "Prompt Spark" in cl.placeholder_for(
+        "render_image"
+    ) and "Prompt Spark" in cl.placeholder_for("render_video")
     assert cl.placeholder_for("unknown") == "Type a prompt"
+    assert "selected mesh" in cl.placeholder_for("edit3d")  # the 3D tab in Edit mode
 
 
 def test_shift_arrows_extend_and_shrink_the_selection():
@@ -189,7 +196,9 @@ def test_settings_chip_and_corner_minus_button():
     expanded = cl.pill_placement(1600, 900, expanded=True, scale=1.0)
     card, c = expanded.card_rect, expanded.collapse_rect
     pad = cl.PAD
-    assert c.w == c.h == cl.TAB_HEIGHT  # the minus button is a cell of the tab row, same height as the tabs
+    assert (
+        c.w == c.h == cl.TAB_HEIGHT
+    )  # the minus button is a cell of the tab row, same height as the tabs
     assert abs((card.right - c.right) - pad) < 1e-6  # same padding on the right as the card
     tab = next(iter(expanded.tab_rects.values()))
     assert abs(c.y - tab.y) < 1e-6 and abs(c.h - tab.h) < 1e-6  # aligned with the tab row
@@ -199,7 +208,9 @@ def test_settings_chip_and_corner_minus_button():
     assert s is not None and s.x > expanded.model_rect.right and s.right < expanded.generate_rect.x
     assert expanded.hit(s.x + 1, s.y + 1) == ("settings",)
     assert expanded.hit(c.x + c.w - 1, c.y + c.h - 1) == ("collapse",)
-    assert len(expanded.tab_rects) == 6 and expanded.hit(*_center(expanded.tab_rects["render_video"])) == ("tab", "render_video")
+    assert len(expanded.tab_rects) == 6 and expanded.hit(
+        *_center(expanded.tab_rects["render_video"])
+    ) == ("tab", "render_video")
     narrow = cl.pill_placement(420, 400, expanded=True, scale=1.0)
     assert narrow.settings_rect is None or narrow.settings_rect.right < narrow.generate_rect.x
     assert narrow.hit(narrow.model_rect.x + 1, narrow.model_rect.y + 1) == ("model",)
@@ -212,10 +223,16 @@ def _center(rect):
 def test_offset_moves_the_composer_and_is_clamped_to_keep_it_reachable():
     base = cl.pill_placement(1600, 900, expanded=True)
     moved = cl.pill_placement(1600, 900, expanded=True, offset=(120.0, 300.0))
-    assert moved.card_rect.x == base.card_rect.x + 120.0 and moved.card_rect.y == base.card_rect.y + 300.0
+    assert (
+        moved.card_rect.x == base.card_rect.x + 120.0
+        and moved.card_rect.y == base.card_rect.y + 300.0
+    )
     assert moved.card_rect.w == base.card_rect.w
     # every control travels with the card
-    assert moved.prompt_rect.y == base.prompt_rect.y + 300.0 and moved.generate_rect.x == base.generate_rect.x + 120.0
+    assert (
+        moved.prompt_rect.y == base.prompt_rect.y + 300.0
+        and moved.generate_rect.x == base.generate_rect.x + 120.0
+    )
     # dragged far away: at least MIN_VISIBLE px stay inside the region
     far = cl.pill_placement(1600, 900, expanded=True, offset=(5000.0, -5000.0))
     assert far.card_rect.x == 1600 - cl.MIN_VISIBLE
@@ -226,7 +243,10 @@ def test_offset_moves_the_composer_and_is_clamped_to_keep_it_reachable():
     # the collapsed pill shares the offset (same centre point), and clamps the same way
     pill = cl.pill_placement(1600, 900, expanded=False, offset=(120.0, 300.0))
     assert pill.pill_rect.y == cl.MARGIN + 300.0
-    assert abs((pill.pill_rect.x + pill.pill_rect.w / 2) - (moved.card_rect.x + moved.card_rect.w / 2)) < 1e-6
+    assert (
+        abs((pill.pill_rect.x + pill.pill_rect.w / 2) - (moved.card_rect.x + moved.card_rect.w / 2))
+        < 1e-6
+    )
 
 
 def test_width_override_is_clamped_between_the_minimum_and_the_region():
@@ -239,7 +259,10 @@ def test_width_override_is_clamped_between_the_minimum_and_the_region():
     assert too_narrow.card_rect.w == cl.MIN_CARD_WIDTH
     scaled = cl.pill_placement(3200, 1800, expanded=True, scale=2.0, width=10)
     assert scaled.card_rect.w == cl.MIN_CARD_WIDTH * 2
-    assert cl.clamp_width(50, 1600) == cl.MIN_CARD_WIDTH and cl.clamp_width(50, 1600, expanded=False) == cl.MIN_PILL_WIDTH
+    assert (
+        cl.clamp_width(50, 1600) == cl.MIN_CARD_WIDTH
+        and cl.clamp_width(50, 1600, expanded=False) == cl.MIN_PILL_WIDTH
+    )
     pill = cl.pill_placement(1600, 900, expanded=False, width=600)
     assert pill.pill_rect.w == 600
 
@@ -248,7 +271,12 @@ def test_resize_grip_and_drag_hit_kinds():
     layout = cl.pill_placement(1600, 900, expanded=True)
     card = layout.card_rect
     grip = layout.resize_rect
-    assert grip is not None and grip.right == card.right and grip.y == card.y and grip.w == cl.RESIZE_SIZE
+    assert (
+        grip is not None
+        and grip.right == card.right
+        and grip.y == card.y
+        and grip.w == cl.RESIZE_SIZE
+    )
     assert layout.hit(card.right - 2, card.y + 2) == ("resize",)
     # empty card area (between the tabs row and the prompt) is a drag handle
     gap_y = layout.prompt_rect.top + (layout.tab_rects["image"].y - layout.prompt_rect.top) / 2

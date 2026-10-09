@@ -51,6 +51,7 @@ class ModelGenerationTests(unittest.TestCase):
         self.download_error = False
         self.cancel_calls = []
         self.lose_response = False
+        self.dry_run_costs = {}
         self.entered, self.release = threading.Event(), threading.Event()
         self.release.set()
         self.model = {
@@ -111,7 +112,11 @@ class ModelGenerationTests(unittest.TestCase):
                 self.remote_status = "canceled"
                 return httpx.Response(200, json={"job": {"jobId": "remote-1"}})
             if request.url.params.get("dryRun") == "true":
-                return httpx.Response(269, content=b'{"creativeUnitsCost":0.1234567890123456789}')
+                # Model run paths end with the model id; distinct forms can quote distinct costs.
+                cost = self.dry_run_costs.get(
+                    request.url.path.rsplit("/", 1)[-1], "0.1234567890123456789"
+                )
+                return httpx.Response(269, content=b'{"creativeUnitsCost":%s}' % cost.encode())
             records = self.store.records()
             self.assertTrue(any(r.state == self.storemod.JobState.SUBMITTING for r in records))
             self.assertNotIn("dryRun", request.url.params)

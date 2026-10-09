@@ -71,6 +71,17 @@ remain disabled until a ready quote handle exists; the submission path still
 rechecks its exact inputs, origin and approval. A model list is only described as
 loading while a catalog request is active.
 
+The composer's prompt, model chip, price, status line and **Generate** belong to
+the form that Generate submits. With the 3D tab in Edit mode, that form is Edit 3D:
+the 3D tab stays highlighted and **Settings** opens the 3D dialog with its mode
+switch, while the prompt, model, price and enablement come from the Edit 3D quote.
+A ready Text, Image or Multi-view price never enables or labels an Edit 3D
+submission. The sidebar Edit form's Generate uses the same lane-bound quote.
+Pricing, drawing and submission share one lane rule (`props.effective_lane`).
+Installed tests reproduce the former mismatch, in which a 1.5 CU Text price was
+displayed while Generate charged the Edit form's 7.25 CU quote, and cover the fix.
+Desktop keyboard and pointer interaction for this change has not been checked.
+
 ## The model chooser
 
 A `Model` section (a box with a `NODE_MATERIAL` header, like the others) holds a wide button (icon + model name) that opens the picker, with the native dropdown as a small fallback on the right. Its one-line description belongs in the picker, not the panel.

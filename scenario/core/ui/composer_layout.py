@@ -1,20 +1,36 @@
 # SPDX-FileCopyrightText: 2026 Scenario Inc.
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Geometry and text editing for the floating composer. No bpy, no gpu: pure numbers and strings."""
+
 from dataclasses import dataclass, field
 
 MARGIN = 24
 PILL_WIDTH, PILL_HEIGHT = 320, 44
-CARD_WIDTH, CARD_HEIGHT = 820, 132  # pad + tabs + gap + prompt + gap + model row + pad: no empty band under the buttons
+CARD_WIDTH, CARD_HEIGHT = (
+    820,
+    132,
+)  # pad + tabs + gap + prompt + gap + model row + pad: no empty band under the buttons
 TAB_HEIGHT, ROW_GAP, PAD = 24, 8, 12
 GENERATE_WIDTH, MODEL_WIDTH, COLLAPSE_SIZE, SETTINGS_WIDTH = 190, 200, 20, 84
 RESIZE_SIZE, MIN_CARD_WIDTH, MIN_PILL_WIDTH, MIN_VISIBLE, DRAG_THRESHOLD = 16, 420, 200, 40, 4
 LANE_ORDER = ("image", "video", "3d", "material", "render_image", "render_video")
-LANE_LABELS = {"image": "Image", "video": "Video", "3d": "3D", "material": "Materials", "render_image": "Render Image", "render_video": "Render Video"}
-PLACEHOLDERS = {"image": "Describe the image to generate", "video": "Describe the video, or capture the timeline", "3d": "Describe the object",
-                "material": "Describe the material (weathered copper, mossy stone...)",
-                "render_image": "Describe the look to render the viewport with (empty: Prompt Spark writes it)",
-                "render_video": "Describe the look of the video (empty: Prompt Spark writes it)"}
+LANE_LABELS = {
+    "image": "Image",
+    "video": "Video",
+    "3d": "3D",
+    "material": "Materials",
+    "render_image": "Render Image",
+    "render_video": "Render Video",
+}
+PLACEHOLDERS = {
+    "image": "Describe the image to generate",
+    "video": "Describe the video, or capture the timeline",
+    "3d": "Describe the object",
+    "material": "Describe the material (weathered copper, mossy stone...)",
+    "render_image": "Describe the look to render the viewport with (empty: Prompt Spark writes it)",
+    "render_video": "Describe the look of the video (empty: Prompt Spark writes it)",
+    "edit3d": "Describe the edit to the selected mesh",
+}
 
 
 def placeholder_for(lane):
@@ -79,7 +95,7 @@ class TextField:
 
     def selected_text(self):
         sel = self.selection
-        return self.text[sel[0]:sel[1]] if sel else ""
+        return self.text[sel[0] : sel[1]] if sel else ""
 
     def select_all(self):
         self.anchor = 0
@@ -126,7 +142,7 @@ class TextField:
             self.replace_selection(s)
             return
         self._clear_selection()
-        self.text = self.text[:self.caret] + s + self.text[self.caret:]
+        self.text = self.text[: self.caret] + s + self.text[self.caret :]
         self.caret += len(s)
 
     def backspace(self):
@@ -135,7 +151,7 @@ class TextField:
             return
         self._clear_selection()
         if self.caret > 0:
-            self.text = self.text[:self.caret - 1] + self.text[self.caret:]
+            self.text = self.text[: self.caret - 1] + self.text[self.caret :]
             self.caret -= 1
 
     def delete(self):
@@ -144,7 +160,7 @@ class TextField:
             return
         self._clear_selection()
         if self.caret < len(self.text):
-            self.text = self.text[:self.caret] + self.text[self.caret + 1:]
+            self.text = self.text[: self.caret] + self.text[self.caret + 1 :]
 
     def replace_selection(self, s):
         if not self.selection:
@@ -169,7 +185,9 @@ class TextField:
         sel = self.selection
         self._clear_selection()
         if sel:
-            self.caret = sel[0] if delta < 0 else sel[1]  # collapse onto the edge, like a native text field
+            self.caret = (
+                sel[0] if delta < 0 else sel[1]
+            )  # collapse onto the edge, like a native text field
             return
         self.caret = self._clamp(self.caret + delta)
 
@@ -298,11 +316,28 @@ def pill_placement(region_w, region_h, expanded, scale=1.0, offset=(0.0, 0.0), w
     if bottom_y < y + pad:
         bottom_y = y + pad
     model = Rect(x + pad, bottom_y, min(MODEL_WIDTH * s, w / 2 - pad), row_h)
-    generate = Rect(card.right - pad - min(GENERATE_WIDTH * s, w / 2 - pad), bottom_y, min(GENERATE_WIDTH * s, w / 2 - pad), row_h)
+    generate = Rect(
+        card.right - pad - min(GENERATE_WIDTH * s, w / 2 - pad),
+        bottom_y,
+        min(GENERATE_WIDTH * s, w / 2 - pad),
+        row_h,
+    )
     settings = None
     room = generate.x - gap - (model.right + gap)
     if room >= 40 * s:
         settings = Rect(model.right + gap, bottom_y, min(SETTINGS_WIDTH * s, room), row_h)
     grip = RESIZE_SIZE * s
     resize = Rect(card.right - grip, card.y, grip, grip)  # bottom-right corner
-    return Layout(True, s, Rect(x, y, w, h), card, tab_rects, prompt, model, generate, collapse, settings, resize)
+    return Layout(
+        True,
+        s,
+        Rect(x, y, w, h),
+        card,
+        tab_rects,
+        prompt,
+        model,
+        generate,
+        collapse,
+        settings,
+        resize,
+    )

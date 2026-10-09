@@ -426,9 +426,8 @@ def draw_edit3d_lane(layout, context):
         fixed_first={mesh_name: "Selected mesh (upload before pricing)"} if mesh_name else None,
     )
     params_ui.draw_params(layout, lane_state, schema)
-    draw_generate_row(
-        layout, lane_state, "3d"
-    )  # the operator routes the 3D tab in Edit mode to the edit3d lane
+    # Enablement and submission use the Edit form's own lane-bound quote.
+    draw_generate_row(layout, lane_state, "edit3d")
 
 
 def draw_mcp_lane(layout, context):

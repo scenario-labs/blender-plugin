@@ -161,7 +161,10 @@ Clicking **Generate** in any model form requires its unchanged ready quote. MCP 
 for every model lane requires its `quote_id` and the explicitly approved `cu_cost_exact`
 string as `approved_cost`. The quote also binds its lane: callers cannot turn an
 Image approval into a render, material or other lane submission. A displayed float
-is not used to reconstruct the price.
+is not used to reconstruct the price. The 3D tab in Edit mode resolves to the
+Edit 3D lane through one rule shared by the pricing pump, the sidebar and composer
+displays and the Generate operator, so a ready 3D-tab price cannot label or
+enable an Edit 3D submission.
 The facade consumes the handle before preparation; the coordinator persists an
 intent and claims `submitting` before the single SDK request. Repeated clicks,
 reused quote handles, changed inputs, stale origins and failed writes cannot

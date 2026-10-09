@@ -1231,11 +1231,32 @@ no Python network violations and the normal profile unchanged.
 ![Studio opens on the first click and retains the composer prompt](images/studio-prompt-handoff.png)
 ![Viewport selection and front view after dismissing Studio](images/studio-viewport-return.png)
 
-This limited offline check supersedes the earlier window-attachment blocker. It
-does not establish populated model forms, exact-quote navigation with active jobs,
-small-window or alternate-DPI fit, IME composition, scrolling or the complete
-select/capture/estimate/generate/inspect/apply journey. Keep this UI change in draft
-until the remaining native acceptance is supplied.
+A second offline fixture on that same ZIP populated the actual shared model form
+with a prompt, reference and enough settings to require scrolling. The SDK used
+an in-memory transport; a running synthetic job was seeded in the local saved
+store and resumed without invoking submission. Native navigation through Create,
+Film, Jobs, Results and Connection retained the quote identity and exact cost
+`0.1234567890123456789`, model, prompt and reference. The same job owner continued
+polling while the popup opened, changed pages and closed. No submission occurred.
+
+At Blender window dimensions 1512 × 917 and 1018 × 671, with UI scale 2.0,
+the populated popup remained readable and scrollable without horizontal clipping.
+Native Home/Shift-End selection, Unicode paste, Enter and Escape changed the
+Studio prompt to `Café 雪 Studio edited`; the compact composer showed the same
+text afterward, and the shared runtime produced a fresh ready quote. The repeat
+exited cleanly with no Python network violations and the normal profile unchanged.
+An earlier selection-shortcut attempt exited Blender and hit a test-fixture
+credential cleanup error during shutdown; that run is not clean-exit evidence.
+
+![Studio Jobs shows a synthetic running job during native navigation](images/studio-active-job.png)
+![Populated Studio form remains readable in a narrower Blender window](images/studio-narrow-form.png)
+
+These checks supersede the window-attachment and populated-form evidence gaps.
+Alternate-DPI interaction and IME composition remain unverified: Preferences
+opened, but the attempted scale edit did not change the observed UI scale, and
+Unicode paste is not IME composition. Keep this UI change in draft pending those
+native checks. The complete select/capture/estimate/generate/inspect/apply journey
+and other-platform desktop acceptance remain separate under #66/#68.
 
 This view exposes existing creation/Film/result controls. Workflow input forms,
 asset-library search and complete retained Studio acceptance remain separate;

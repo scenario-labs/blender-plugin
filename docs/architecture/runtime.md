@@ -558,6 +558,7 @@ focused prompt only into that unchanged scene/lane/form; navigation itself does
 not change scene data. Installed checks cover quote identity under native owner
 tagging, read-only drawing and continued jobs. The composer commits on blur and
 passes the same outside click to native controls. Offline desktop evidence covers
-first-click Studio opening, Unicode paste, Film navigation, Escape and viewport
-return. Populated forms, small-window/DPI/IME acceptance, workflow/library forms
+first-click Studio opening, Unicode prompt edits, populated-form scrolling,
+quote-preserving navigation, continued saved-job polling, small-window fit,
+Escape and viewport return. Alternate-DPI/IME acceptance, workflow/library forms
 and complete #66 remain pending.

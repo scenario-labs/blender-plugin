@@ -39,7 +39,10 @@ token. Claimed or uncertain submissions require reconciliation, never blind retr
 
 `recover_local_job` uses that token and the observed revision for explicit refresh,
 resume/download, known model-job cancellation, interrupted-download reconciliation
-or pending import-receipt retry. Resuming a restarted job does not import it into
+or pending import-receipt retry. `cancel` appears in `actions` only after a refresh
+in the current context reported a running `inference` job, the only type Scenario
+documents as cancellable; for any other job it is refused without a request and
+the job keeps running, matching the native Jobs panel. Resuming a restarted job does not import it into
 the current scene. Shared `wait_for_job` waits without blocking Blender's main
 thread and returns when delivery finishes, needs review, or reaches its timeout.
 See [job contexts](BLENDER_JOB_CONTEXT.md) for lifetime and remaining integration.

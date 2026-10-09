@@ -105,6 +105,22 @@ class CancellationUncertain(RecoveryError):
     """Cancellation was claimed; poll the known ID instead of replaying it."""
 
 
+class CancellationUnsupported(RecoveryError):
+    """The job is not documented as cancellable; nothing was claimed or sent."""
+
+
+# The public job-action reference and SDK 2.2.0 `jobs.trigger_action` both say
+# "Today only cancel on inference jobs is supported". `custom`, the captured
+# model-generation type, and every other enumerated job type stay ineligible
+# until that documentation changes; a durable claim is never replayed.
+CANCELLABLE_JOB_TYPES = ("inference",)
+
+
+def cancellable_job(response):
+    """Whether a retrieved job has a type the API documents as cancellable."""
+    return isinstance(response, dict) and response.get("jobType") in CANCELLABLE_JOB_TYPES
+
+
 class ApplicationError(RuntimeError):
     """Application admission failed; preserve the result for explicit review."""
 
@@ -1174,10 +1190,13 @@ class JobCoordinator:
         return RemoteSnapshot(updated, raw)
 
     def cancel_remote(self, request_id, *, expected_revision):
-        """Claim one known model-job cancellation durably, then retrieve its state.
+        """Claim one documented inference-job cancellation durably, then retrieve it.
 
-        CANCEL_REQUESTED is never replayed or reset on restart. It remains
-        pollable after a lost acknowledgement or a crash before sending.
+        A fresh retrieval must report `jobType` inference before the claim;
+        any other type raises CancellationUnsupported with the record unchanged
+        and no action sent. CANCEL_REQUESTED is never replayed or reset on
+        restart. It remains pollable after a lost acknowledgement or a crash
+        before sending.
         """
         with self._lock:
             if not self._active:
@@ -1198,10 +1217,12 @@ class JobCoordinator:
         snapshot = self._observe_remote(current, response)
         if snapshot.record.state != JobState.REMOTE:
             return snapshot
-        # Captured model-generation records use custom. The pinned SDK also
-        # enumerates inference; neither spelling is a general workflow cancel.
-        if response.get("jobType") not in ("custom", "inference"):
-            raise RecoveryError("Only a verified model-generation job can be canceled")
+        # Only the documented type may be claimed: a claim is never released, so
+        # an action the API refuses would leave a running job marked canceling.
+        if not cancellable_job(response):
+            raise CancellationUnsupported(
+                "Scenario documents cancellation only for inference jobs; nothing was sent"
+            )
         # CAS persists the claim before the remote action across coordinator
         # instances/processes. No expiration can make an uncertain action replayable.
         with self._lock:

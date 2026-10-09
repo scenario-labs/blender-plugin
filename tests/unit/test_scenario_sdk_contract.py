@@ -237,6 +237,23 @@ def test_cancel_uses_remote_action_and_keeps_acknowledged_status(client_factory)
     assert result.job.status == "in-progress"
 
 
+def test_cancel_documentation_limits_the_action_to_inference_jobs():
+    """Review coordinator cancellation eligibility when this documented limit changes."""
+    from typing import get_args
+
+    from scenario_sdk.resources.jobs import JobsResource
+    from scenario_sdk.types.job_retrieve_response import Job
+
+    from scenario.core.jobs.coordinator import CANCELLABLE_JOB_TYPES
+
+    documentation = " ".join(JobsResource.trigger_action.__doc__.split())
+    assert "Today only cancel on inference jobs is supported." in documentation
+    job_types = set(get_args(Job.model_fields["job_type"].annotation))
+    # custom (captured model generation) and workflow are distinct, undocumented types.
+    assert {"custom", "inference", "workflow"} <= job_types
+    assert CANCELLABLE_JOB_TYPES == ("inference",)
+
+
 @pytest.mark.parametrize("status", [408, 409, 429, 500, 503])
 @pytest.mark.parametrize("operation", ["model", "workflow"])
 def test_submission_http_errors_never_retry(client_factory, status, operation):

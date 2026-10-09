@@ -53,6 +53,8 @@ class ModelGenerationTests(unittest.TestCase):
         self.expected_project = None
         self.downloads = []
         self.remote_status = "in-progress"
+        # Captured model-generation jobs report custom; only inference is cancellable.
+        self.job_type = "custom"
         self.result_bytes = b""
         self.result_media_type = "image/png"
         self.before_images = set(bpy.data.images)
@@ -85,7 +87,7 @@ class ModelGenerationTests(unittest.TestCase):
                             "job": {
                                 "jobId": request.url.path.rsplit("/", 1)[-1],
                                 "status": self.remote_status,
-                                "jobType": "custom",
+                                "jobType": self.job_type,
                                 "metadata": {
                                     "input": {"modelId": self.model["id"]},
                                     "assetIds": list(
@@ -648,6 +650,12 @@ class ModelGenerationTests(unittest.TestCase):
             action=action,
         )
 
+    def hold_polling(self, request_id):
+        """Keep automatic refreshes from racing an explicit control under test."""
+        owner = self.runtime.state.model_jobs
+        owner._next_poll[request_id] = float("inf")
+        return owner
+
     def recover(self, request_id, action):
         deferred = self.tools.recover_local_job(self.recovery_args(request_id, action))
         if isinstance(deferred, dict):
@@ -829,13 +837,82 @@ class ModelGenerationTests(unittest.TestCase):
         self.assertEqual(len(self.paid), 1)
 
     def test_remote_cancel_observes_terminal_status_and_cannot_repeat(self):
+        self.job_type = "inference"
         result = self.mcp_submit(self.mcp_quote())
         self.deliver_results()
+        self.hold_polling(result["local_id"])
+        self.assertIn("cancel", self.tools.job_status({"job_id": result["local_id"]})["actions"])
         status = self.recover(result["local_id"], "cancel")
         self.assertEqual(status["status"], "canceled", status)
         with self.assertRaises(self.request_error):
             self.recover(result["local_id"], "cancel")
         self.assertEqual(len(self.cancel_calls), 1)
+        self.assertEqual(len(self.paid), 1)
+
+    def test_custom_job_offers_no_cancel_and_refuses_it_without_a_request(self):
+        result = self.mcp_submit(self.mcp_quote())
+        self.deliver_results()
+        request_id = result["local_id"]
+        owner = self.hold_polling(request_id)
+        record = self.store.get(request_id)
+        self.assertEqual(record.state, self.storemod.JobState.REMOTE)
+        self.assertTrue(any("/jobs/" in r.url.path and r.method == "GET" for r in self.calls))
+        status = self.tools.job_status({"job_id": request_id})
+        self.assertNotIn("cancel", status["actions"])
+        self.assertNotIn("cancel", owner.views[request_id].meta["recovery_actions"])
+        with self.assertRaisesRegex(self.request_error, "only for inference jobs"):
+            self.recover(request_id, "cancel")
+        with self.assertRaisesRegex(RuntimeError, "only for inference jobs"):
+            bpy.ops.scenario.recover_job(
+                context_id=self.runtime.state.job_context_id,
+                request_id=request_id,
+                expected_revision=record.revision,
+                action="cancel",
+            )
+        self.assertEqual(self.store.get(request_id), record)
+        self.assertEqual(self.cancel_calls, [])
+        self.assertNotIn(request_id, owner._paused)
+        self.assertEqual(len(self.paid), 1)
+
+    def test_cancel_needs_a_fresh_inference_observation_after_restart(self):
+        self.job_type = "inference"
+        result = self.mcp_submit(self.mcp_quote())
+        self.deliver_results()
+        request_id = result["local_id"]
+        self.hold_polling(request_id)
+        self.assertIn("cancel", self.tools.job_status({"job_id": request_id})["actions"])
+        self.runtime.state.reset()
+        calls = len(self.calls)
+        self.runtime.inspect_model_jobs()
+        self.assertEqual(len(self.calls), calls)
+        status = self.tools.job_status({"job_id": request_id})
+        self.assertNotIn("cancel", status["actions"])
+        with self.assertRaisesRegex(self.request_error, "only for inference jobs"):
+            self.recover(request_id, "cancel")
+        self.assertEqual((len(self.calls), self.cancel_calls), (calls, []))
+        self.recover(request_id, "refresh")
+        self.assertIn("cancel", self.tools.job_status({"job_id": request_id})["actions"])
+        self.assertEqual(self.recover(request_id, "cancel")["status"], "canceled")
+        self.assertEqual(len(self.cancel_calls), 1)
+        self.assertEqual(len(self.paid), 1)
+
+    def test_changed_job_type_withdraws_offer_and_coordinator_refuses_before_claim(self):
+        self.job_type = "inference"
+        result = self.mcp_submit(self.mcp_quote())
+        self.deliver_results()
+        request_id = result["local_id"]
+        self.hold_polling(request_id)
+        record = self.store.get(request_id)
+        self.assertIn("cancel", self.tools.job_status({"job_id": request_id})["actions"])
+        # A later retrieval that no longer reports inference must not be claimed.
+        self.job_type = "custom"
+        status = self.recover(request_id, "cancel")
+        self.assertEqual(status["status"], "remote", status)
+        self.assertTrue(status["delivery_paused"])
+        self.assertIn("only for inference jobs", status["error"])
+        self.assertNotIn("cancel", status["actions"])
+        self.assertEqual(self.store.get(request_id), record)
+        self.assertEqual(self.cancel_calls, [])
         self.assertEqual(len(self.paid), 1)
 
     def test_native_cancellation_of_queued_submission_never_dispatches(self):
@@ -1418,8 +1495,10 @@ class ModelGenerationTests(unittest.TestCase):
         self.assertEqual(len(self.paid), len(references))
 
     def test_video_remote_cancel_uses_shared_revision_guard_without_replay(self):
+        self.job_type = "inference"
         result = self.mcp_submit(self.mcp_quote("video"))
         self.deliver_results()
+        self.hold_polling(result["local_id"])
         status = self.recover(result["local_id"], "cancel")
         self.assertEqual(status["status"], "canceled")
         with self.assertRaises(self.request_error):

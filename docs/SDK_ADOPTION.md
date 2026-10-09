@@ -383,12 +383,17 @@ Persist scope and request identity before dispatch; poll a known remote ID, but
 keep a lost-ID submission uncertain unless authoritative correlation is available.
 Never resolve an empty or ambiguous listing by automatically submitting again.
 
-The job action documentation limits cancellation to inference jobs. The captured
-model-generation record in `tests/fixtures/patina-copper-512/job.json` uses
-`jobType=custom`; the pinned retrieve-response enum includes both `custom` and
-`inference`. The coordinator accepts these two kinds only for persisted model
-operations, with a durable `cancel_requested` claim before its single action.
-No general
+The job action documentation limits cancellation to inference jobs ("Today only
+cancel on inference jobs is supported", in both the public API reference and the
+pinned `jobs.trigger_action` docstring). The captured model-generation record in
+`tests/fixtures/patina-copper-512/job.json` uses `jobType=custom`; the pinned
+retrieve-response enum lists `custom` and `inference` as distinct types. The
+coordinator therefore accepts only a fresh `inference` observation for persisted
+model operations, with a durable `cancel_requested` claim before its single
+action, and refuses `custom` and every other type before any claim or request.
+Native and MCP controls offer cancellation only after such an observation. A
+contract test checks the pinned docstring and enum so an SDK upgrade that widens
+the limit is reviewed. No general
 workflow-cancel method appears in the inspected workflow resource. Rejection
 requires a user-approval node and has node/loop-specific semantics; it must not
 be repurposed as general cancellation. A response may still be `in-progress` or

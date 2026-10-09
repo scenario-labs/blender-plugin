@@ -65,6 +65,12 @@ establish live generation or full render-lane desktop acceptance.
   `recover_cloud_job`) instead of generating again. Uncertain workflow and
   prompt-helper submissions currently have no in-Blender recovery. Do not repeat
   them; check their outcome in the Scenario web app.
+- Remote cancellation is offered only for jobs Scenario reports as `inference`,
+  the only type its job action reference documents as cancellable. Captured
+  model generations report `custom`, so Blender does not cancel them; they
+  finish or fail on Scenario and stay recoverable. Which lanes return
+  `inference` and live cancellation acceptance remain open under
+  [#65](https://github.com/scenario-labs/blender-plugin/issues/65).
 - Trained/custom-model discovery and routing remain incomplete
   ([#97](https://github.com/scenario-labs/blender-plugin/issues/97)).
 

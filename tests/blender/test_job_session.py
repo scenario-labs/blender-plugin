@@ -411,7 +411,7 @@ class JobSessionTests(unittest.TestCase):
         self.session.drain()
         return record
 
-    def cancellation_response(self, *, lose_action=False):
+    def cancellation_response(self, *, lose_action=False, job_type="inference"):
         import httpx
 
         calls = []
@@ -427,12 +427,26 @@ class JobSessionTests(unittest.TestCase):
             return httpx.Response(
                 200,
                 json={
-                    "job": {"jobId": "fixture-remote", "jobType": "custom", "status": "in-progress"}
+                    "job": {"jobId": "fixture-remote", "jobType": job_type, "status": "in-progress"}
                 },
             )
 
         self.handler = respond
         return calls
+
+    def test_remote_cancel_of_undocumented_job_type_is_refused_before_claim(self):
+        commands = submodule("core.jobs.coordinator")
+        record = self.remote_model()
+        calls = self.cancellation_response(job_type="custom")
+        task = self.session.cancel_remote(
+            record.intent.request_id, expected_revision=record.revision
+        )
+        with self.assertRaises(commands.CancellationUnsupported):
+            task.result(5)
+        self.assertEqual([request.method for request, _ in calls], ["GET"])
+        self.assertIsInstance(self.session.drain()[0].error, commands.CancellationUnsupported)
+        self.assertEqual(self.store.get(record.intent.request_id), record)
+        self.assertEqual(self.session.recovery_plan()[0].action.value, "poll_remote")
 
     def test_remote_cancel_retains_origin_after_target_deletion_and_uses_poll_evidence(self):
         storage = submodule("core.jobs.store")

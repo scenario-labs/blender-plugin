@@ -234,7 +234,7 @@ and IME acceptance remain open.
 
 ## Native workflow validation slice
 
-The native workflow form above #325 uses ZIP SHA-256
+The earlier native workflow form above #325 used ZIP SHA-256
 `86894bcd18bb0df4b678b32c5785e2829f44d2f2c4a622345ee6f6663455ff2b`.
 All 137 packaged Python sources match that layer. It passes 1,093 installed tests
 on each macOS arm64 Blender 5.0.1, 5.1.2 and 5.2.1, with two Windows-specific
@@ -247,11 +247,21 @@ Workflow commands, Studio navigation and workflow controls are now explicitly
 included in the hosted baseline's module selection; inspect the current CI run
 for each platform rather than inferring those results from macOS.
 
+After rebasing onto merged #325, ZIP SHA-256
+`8f6ae6f4603d97283f8a3f5435428c2a62ff9826089064a00c88d84b34dc3c9e`
+passes 1,105 installed tests on each macOS arm64 Blender 5.0.1, 5.1.2 and 5.2.1
+in isolated profiles, with two Windows-specific skips per run. All 137 packaged
+Python sources match the reviewed checkout. The locked unit suite passes 3,852
+tests with the same known SDK authentication expected failure. These runs retain
+the merged Studio handoff checks and all seventeen workflow regressions; they
+do not add physical workflow interaction or live acceptance.
+
 Structured fields currently use JSON and file fields accept already uploaded
 asset IDs. Direct workflow reference upload/library selection, interactive nodes
 and general cancellation remain incomplete. No live request or paid generation
 was performed. Physical input, screenshots, layout, focus and viewport acceptance
-remain pending, so this UI layer stays draft. The earlier update and release
+remain pending under #66/#68 as acceptance follow-ups. Review readiness is
+separate from complete product acceptance; the earlier update and release
 artifact limitations still apply.
 
 ## Remaining release gates

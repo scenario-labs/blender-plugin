@@ -459,6 +459,8 @@ def draw(layout, context):
             view = owner.ready(context.scene)
             ready = True
         except (ValueError, ReferenceError, ScenarioError):
+            # Missing, stale or invalid quotes leave Generate disabled. Drawing
+            # must not refresh the quote or mutate the saved form to recover.
             pass
     row = layout.row()
     row.scale_y = 1.5

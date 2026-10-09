@@ -29,6 +29,8 @@ class WorkflowControlTests(unittest.TestCase):
         try:
             view.task.result(5)
         except Exception:
+            # Polling consumes task failures into view.error; assertions below
+            # check that outcome rather than failing at this synchronization step.
             pass
         self.owner.poll()
         return view

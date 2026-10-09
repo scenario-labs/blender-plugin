@@ -1304,6 +1304,7 @@ fresh estimate.
 Installed tests verify synthetic native registration, shared UI/MCP quote use,
 changed-input rejection, view changes, continued work and saved-form reload.
 These do not establish physical editing, native dropdown/confirmation behavior,
-scrolling, screenshots, DPI or viewport focus. Keep this UI layer in draft until
-that desktop proof is supplied. Interactive nodes, integrated workflow reference
-upload/library selection and live outputs remain outside this implementation.
+scrolling, screenshots, DPI or viewport focus. Track that desktop acceptance
+under #66/#68 without treating unverified configurations as automatic draft gates.
+Interactive nodes, integrated workflow reference upload/library selection and
+live outputs remain outside this implementation.

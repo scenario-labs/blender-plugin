@@ -560,8 +560,8 @@ tagging, read-only drawing and continued jobs. The composer commits on blur and
 passes the same outside click to native controls. Offline desktop evidence covers
 first-click Studio opening, Unicode prompt edits, populated-form scrolling,
 quote-preserving navigation, continued saved-job polling, small-window fit,
-Escape and viewport return. Alternate-DPI/IME acceptance, workflow interaction/library forms
-and complete #66 remain pending.
+Escape and viewport return. Alternate-DPI/IME acceptance, workflow interaction,
+library forms and complete #66 remain pending.
 
 ## Native workflow controls
 

@@ -206,7 +206,8 @@ class SCENARIO_OT_composer_modal(bpy.types.Operator):
             if hit is None:
                 state.focused = False
                 state.commit_to_lane(scene)
-                return self._finish(context)
+                # Deliver the same click to the header/sidebar or viewport after blur.
+                return self._finish(context) | {"PASS_THROUGH"}
             kind = hit[0]
             if kind == "expand":
                 # a click expands the pill; a move beyond the threshold drags it instead (decided on release)

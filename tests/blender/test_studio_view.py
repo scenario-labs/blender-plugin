@@ -106,6 +106,29 @@ class StudioViewTests(unittest.TestCase):
         self.assertEqual(self.composer.field.text, "pending composer")
         self.assertTrue(self.composer.focused)
 
+    def test_click_outside_focused_composer_commits_and_reaches_native_controls(self):
+        modal = submodule("blender.composer.modal")
+        scene = bpy.context.scene
+        scene.scenario.lane = "image"
+        self.composer.sync_from_lane(scene)
+        self.composer.focused = True
+        self.composer.field.set_text("Café 雪 pending")
+        self.runtime.state.composer_modal_running = True
+        context = SimpleNamespace(scene=scene, region=MagicMock())
+        event = SimpleNamespace(
+            type="LEFTMOUSE", value="PRESS", mouse_region_x=10, mouse_region_y=10
+        )
+        operator = SimpleNamespace()
+        operator._finish = lambda ctx: modal.SCENARIO_OT_composer_modal._finish(operator, ctx)
+        with patch.object(modal, "_layout") as layout:
+            layout.return_value.hit.return_value = None
+            result = modal.SCENARIO_OT_composer_modal.modal(operator, context, event)
+        self.assertEqual(result, {"FINISHED", "PASS_THROUGH"})
+        self.assertEqual(scene.scenario.image.prompt, "Café 雪 pending")
+        self.assertFalse(self.composer.focused)
+        self.assertFalse(self.runtime.state.composer_modal_running)
+        self.assertFalse(self.workflow.calls)
+
     def test_other_scene_with_same_prompt_cannot_receive_pending_composer_text(self):
         original = bpy.context.scene
         original.scenario.lane = "image"

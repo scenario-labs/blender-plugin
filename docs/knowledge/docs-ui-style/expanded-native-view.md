@@ -7,18 +7,24 @@
     "path": "docs/UI_STYLE.md",
     "scope": "expanded-native-view",
     "coverage": "source-reviewed",
-    "reviewed_at": "2026-10-07",
-    "base_revision": "d18a95212410a8babc37145b4ff2007e5e2cc011",
-    "limits": "Reviewed the explicit native popup, unsaved navigation, shared native panel drawing and guarded composer flush. Installed synthetic tests cover quote/form/scene ownership and continued admitted work. The desktop application was launched in an isolated profile, but CUA returned cgWindowNotFound before pointer/keyboard actions or screenshots. Physical input, visual layout, dismissal, small-window, DPI and Unicode/IME acceptance are not established; the UI PR remains draft. Workflow/library forms and complete retained Studio/compact/release acceptance remain separate. No live service call, upload or paid generation is included.",
+    "reviewed_at": "2026-10-09",
+    "base_revision": "afc40209d5a3bf86b30ac01e99e75d513a2b8e64",
+    "limits": "Reviewed explicit native popup, unsaved navigation, shared panel drawing, guarded composer flush and outside-click passthrough. Installed synthetic tests cover quote/form/scene ownership, continued work and click handoff. Exact-ZIP offline macOS arm64 Blender 5.1.2 desktop evidence covers Unicode paste, first-click Studio opening, Film navigation, Escape and viewport return with unchanged normal profile. Populated forms, active-job/quote desktop journeys, small-window, alternate DPI, scrolling and IME composition remain unverified; keep the PR draft. Workflow/library forms and complete retained Studio/compact/release acceptance remain separate. No live service, upload or paid generation.",
     "sources": {
-      "docs/UI_STYLE.md": "ae970bfd39e1ef2c5701c15afd7b1a64aa41f06554d01ade249fd9651914a044",
+      "docs/UI_STYLE.md": "1f4ffcda560ed443fb150b52a19117e125ae5fecfb4c261edd4e6a4bb7d92e1e",
       "scenario/blender/studio.py": "c2cabbeaf881c59e4139dbaa9f17f63d2efc3bf9446d5c8672425902b5ecc764",
       "scenario/blender/registry.py": "5ecf514d4b3eb13b38ac71b178179be898650c73c7261cfa4c971cad7dbb271c",
       "scenario/blender/popover.py": "7366e3dd7f5ad9414d9ad9e3246c072beef207f6edfbc6705488210fa1dbee35",
       "scenario/blender/composer/state.py": "1dda3de8748993fd75cc94fb20a0f08d303051f02e61ce72ff6837a12c025f7a",
       "scenario/blender/panels.py": "0ea312ede072b4e25c8177120214d404b449ea60db10c02edd12ad5eb985d989",
-      "tests/blender/test_studio_view.py": "a1fb335dc6b4f19715c2e3aca4db370526284260a0a760733f5b5888619f1b57",
-      "tests/blender/test_workflow_commands.py": "1439fa908ec461b0ed2d2314f2e58e918bfd5bdf1b7c35ea682ab3f641c5db5f"
+      "tests/blender/test_studio_view.py": "505fe86a65b7d605f9d0aa6fd0939649aca127f963599c905f6f6c9e6d4a9bcd",
+      "tests/blender/test_workflow_commands.py": "1439fa908ec461b0ed2d2314f2e58e918bfd5bdf1b7c35ea682ab3f641c5db5f",
+      "tools/desktop_review.py": "91db1219a8fa78cb77d4297a7556a47e677975001b2860234c82fa741e1c14e1",
+      "docs/images/studio-viewport-return.png": "6b2bc5853fe348d8bb1d979a7609df4bbcb629520453ad128f7cbb22c792135f",
+      "scenario/blender/composer/modal.py": "de2e25d1e4b601b8ca42e0028345b0744745cb702bf667669983b5a4eee95412",
+      "tools/desktop_review_scene.py": "40d0cdf90289a286c44e70dc4d3ea5ad70337a849c7d578f161de2933f9bdfc8",
+      "docs/images/studio-prompt-handoff.png": "e48e46911b5d5206e25ec9480c53dd0a8bdfb8d82960b058990cd90b8fc5514d",
+      "docs/images/studio-composer-focused.png": "f3c6937e86732cd4f50994d4bb40b2cf9334aa5aa49cfbca32dad4d7819afc5f"
     }
   }
 }

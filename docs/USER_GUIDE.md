@@ -693,8 +693,10 @@ picker or approval use their existing native dialogs. Reopen Studio from the
 header to continue with the same form. If a pending composer edit conflicts with
 a changed form or scene, finish editing its original prompt before opening Studio.
 
-The view's physical input, layout, focus, small-window and DPI acceptance is still
-pending. Workflow forms and asset-library search are not available in this view;
+Opening Studio from a focused prompt preserves the text on the first click.
+Offline desktop checks cover that handoff, Film navigation, Escape and return to
+the viewport. Populated-form, small-window, alternate-DPI and IME acceptance
+remain pending. Workflow forms and asset-library search are not available in this view;
 [local MCP workflow commands](MCP.md#workflow-execution) provide scoped discovery,
 exact estimates and explicit execution separately. This is not complete Studio
 or release acceptance.

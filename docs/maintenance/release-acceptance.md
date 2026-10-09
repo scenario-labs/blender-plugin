@@ -216,13 +216,26 @@ required by the [UI guide](../UI_STYLE.md). Workflow/library forms and complete
 retained-capability acceptance remain open; these tests do not establish a
 release-ready candidate or replace earlier update evidence.
 
+The current candidate rebased onto merged #324 adds a regression and fix for
+composer blur consuming the first Studio header click. Its exact ZIP is
+`32d81f8cbbc59023dcac10d71c1e87fc70a04265c8791e373639cef53c97c253`.
+This identical ZIP passes 1,086 installed tests (two Windows-only skips) on
+each of macOS arm64 Blender 5.0.1, 5.1.2 and 5.2.1. All 136 packaged Python
+sources match the candidate. The full locked unit suite passes 3,852 tests with
+the known SDK authentication expected failure.
+The [UI guide](../UI_STYLE.md#explicit-studio-view) records native first-click
+opening with preserved Unicode text, Film navigation, Escape and viewport return
+on isolated offline macOS arm64 Blender 5.1.2. No service requests or paid actions
+were used; the normal profile and installed package remained unchanged.
+Populated-form, small-window, alternate-DPI and IME acceptance remain open.
+
 ## Remaining release gates
 
 | Gate | Current limit | Next evidence and owner |
 | --- | --- | --- |
 | Complete SDK adoption | The unscoped prototype engine and unused raw service clients are removed. The [SDK operation inventory](../SDK_ADOPTION.md#service-operation-inventory) maps maintained service paths and the existing discovery exception; offline/native checks pass. | Finish retained-capability and live provider acceptance under #64/#65; the call-site audit alone does not establish those product contracts. |
 | Credentials and project scope | Merged #316 exposes an optional project ID. Scoped synthetic desktop input passed on the identified earlier ZIP; the final runtime ZIP has native regression coverage. The SDK service-retirement archive identified above also passes saved preference reload and local project isolation. | Complete fresh onboarding, permission failures, live override behavior and final-candidate update/desktop acceptance under #65/#68. |
-| Compact and expanded creation | A draft explicit native Studio view now reuses Create, Film, Jobs, Results and Connection controls. Workflow and asset-library forms remain absent; physical Studio input/layout proof is pending. The compact composer still needs complete retained-capability acceptance. | Complete retained Studio presentation under #66, then native select/capture/estimate/generate/inspect/apply and library reuse; focus, text input, viewport, small-window and DPI checks under #66/#68. |
+| Compact and expanded creation | A draft explicit native Studio view now reuses Create, Film, Jobs, Results and Connection controls. Workflow and asset-library forms remain absent. Offline prompt handoff, Film navigation and viewport return have desktop proof; populated-form, small-window, DPI and IME checks remain pending. The compact composer still needs complete retained-capability acceptance. | Complete retained Studio presentation under #66, then native select/capture/estimate/generate/inspect/apply and library reuse; focus, text input, viewport, small-window and DPI checks under #66/#68. |
 | Workflows | Local MCP discovery, exact quote approval and durable execution now use the shared SDK session. Expanded Studio forms, interactive nodes and general workflow cancellation remain absent. | Complete retained workflow presentation and authorized live output/recovery acceptance under #64/#65/#66/#68; the new commands do not close those issues. |
 | Retained lanes | Offline receipts and MIME checks do not establish usable live results. | Authorized scoped checks for Image, Video, 3D, Materials, audio, render/edit and Film paths; inspect actual outputs and record limitations under #68. |
 | Recovery and switching | Synthetic tests cover lost acknowledgement, stale quotes, scope changes and application claims. | Candidate-level UI/MCP parity, cancellation/restart races and failed download/import journeys with recorded outcomes under #65/#68. |

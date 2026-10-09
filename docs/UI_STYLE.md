@@ -1211,13 +1211,31 @@ both texts. Opening Studio never commits pending text into another scene with
 an identical old prompt.
 
 The requested popup width is bounded by the invoking area, window and UI scale;
-narrow requests use two rows of equal navigation segments. Native popup focus,
-scrolling and dismissal still require desktop acceptance. Installed tests cover
+narrow requests use two rows of equal navigation segments. Clicking outside a
+focused composer commits its text and passes that same click to Blender, so the
+Studio header button opens on the first click. Installed tests cover this handoff,
 registration, shared drawing, quote preservation, pending-text ownership and
-continued admitted work; they are not pointer, keyboard, Unicode/IME or visual
-layout proof. The isolated desktop attempt could not target the running window
-(`cgWindowNotFound`), so screenshot, focus, small-window and DPI proof remain
-pending. Keep this UI change in draft until that evidence is supplied.
+continued admitted work.
+
+An isolated offline desktop check on macOS 27.0.1 arm64, Blender 5.1.2, used exact
+ZIP SHA-256 `32d81f8cbbc59023dcac10d71c1e87fc70a04265c8791e373639cef53c97c253`.
+Native paste entered `Café 雪 Studio test` in the compact composer. One header
+click opened Studio and preserved that text; Film navigation and Escape dismissal
+worked. Camera selection, wheel zoom and the front-view shortcut worked afterward.
+The default-size captures show readable two-row navigation without overlap.
+The test app used a distinct bundle identity and development signature; the
+installed extension and ZIP stayed unchanged. The process exited cleanly with
+no Python network violations and the normal profile unchanged.
+
+![Focused Unicode prompt before opening Studio](images/studio-composer-focused.png)
+![Studio opens on the first click and retains the composer prompt](images/studio-prompt-handoff.png)
+![Viewport selection and front view after dismissing Studio](images/studio-viewport-return.png)
+
+This limited offline check supersedes the earlier window-attachment blocker. It
+does not establish populated model forms, exact-quote navigation with active jobs,
+small-window or alternate-DPI fit, IME composition, scrolling or the complete
+select/capture/estimate/generate/inspect/apply journey. Keep this UI change in draft
+until the remaining native acceptance is supplied.
 
 This view exposes existing creation/Film/result controls. Workflow input forms,
 asset-library search and complete retained Studio acceptance remain separate;

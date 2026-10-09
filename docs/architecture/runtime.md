@@ -556,5 +556,8 @@ Closing the popup owns no worker teardown or job cancellation.
 Composer synchronization retains its source scene. Opening Studio flushes a
 focused prompt only into that unchanged scene/lane/form; navigation itself does
 not change scene data. Installed checks cover quote identity under native owner
-tagging, read-only drawing and continued jobs. Native physical interaction and
-visual proof remain pending, as do workflow/library forms and complete #66.
+tagging, read-only drawing and continued jobs. The composer commits on blur and
+passes the same outside click to native controls. Offline desktop evidence covers
+first-click Studio opening, Unicode paste, Film navigation, Escape and viewport
+return. Populated forms, small-window/DPI/IME acceptance, workflow/library forms
+and complete #66 remain pending.

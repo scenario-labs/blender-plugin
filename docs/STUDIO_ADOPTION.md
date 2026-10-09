@@ -328,5 +328,7 @@ No selected-source runtime, font or icon is copied by this presentation layer.
 
 This is a bounded adaptation of the retained expanded-view responsibility, not
 complete source/UI adoption. Workflow forms, library search and broader compact
-composer replacement remain; native interaction and screenshot acceptance are
-pending. The [UI guide](UI_STYLE.md#explicit-studio-view) records that boundary.
+composer replacement remain. Limited offline native interaction and screenshots
+cover prompt handoff and viewport return; populated-form, small-window, DPI and
+IME acceptance remain pending. The [UI guide](UI_STYLE.md#explicit-studio-view)
+records that boundary.

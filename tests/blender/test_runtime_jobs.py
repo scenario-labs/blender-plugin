@@ -7,7 +7,7 @@ import threading
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import call, patch
+from unittest.mock import MagicMock, call, patch
 
 import bpy
 from helpers import online_access, submodule, temp_credentials
@@ -231,7 +231,7 @@ class RuntimeJobTests(unittest.TestCase):
             )
         self.assertEqual(store.get("request"), record)
 
-    def saved_job(self, request_id, *states, operation="model"):
+    def saved_job(self, request_id, *states, operation="model", film_task=None):
         m = self.storemod
         store = self.runtime.ensure_job_store()
         record = store.create(
@@ -244,6 +244,7 @@ class RuntimeJobTests(unittest.TestCase):
                 "a" * 64,
                 "b" * 64,
                 "0.10000000000000001",
+                film_task=film_task,
             )
         )
         for state in states:
@@ -270,6 +271,7 @@ class RuntimeJobTests(unittest.TestCase):
             "prepared": self.saved_job("prepared"),
             "workflow": self.saved_job("workflow", operation="workflow"),
             "prompt": self.saved_job("prompt", operation="prompt"),
+            "translate": self.saved_job("translate", operation="translate"),
             "submitting": self.saved_job("submitting", state.SUBMITTING),
             "uncertain": self.saved_job("uncertain", state.SUBMITTING, state.UNCERTAIN),
             "remote": self.saved_job("remote", state.SUBMITTING, state.REMOTE),
@@ -279,13 +281,54 @@ class RuntimeJobTests(unittest.TestCase):
         offered = {
             key for key in records if "cancel_prepared" in jobs.views[key].meta["recovery_actions"]
         }
-        self.assertEqual(offered, {"prepared", "workflow"})
-        self.assertEqual(jobs.views["prepared"].meta["recovery_actions"], ("cancel_prepared",))
-        self.assertEqual(jobs.status("prepared")["actions"], ("cancel_prepared",))
+        self.assertEqual(offered, {"prepared", "workflow", "prompt", "translate"})
+        for key in offered:
+            self.assertEqual(jobs.views[key].meta["recovery_actions"], ("cancel_prepared",))
+            self.assertEqual(jobs.status(key)["actions"], ("cancel_prepared",))
         # Local cancellation never routes through the remote recovery dispatcher.
         with self.assertRaisesRegex(Exception, "available action changed"):
             jobs.control("prepared", records["prepared"].revision, "cancel_prepared")
         self.assertEqual({key: self.runtime.state.job_store.get(key) for key in records}, records)
+        self.assertEqual(self.requests, [])
+
+    def confirm_cancel(self, record):
+        operator = SimpleNamespace(
+            context_id=self.runtime.state.job_context_id,
+            request_id=record.intent.request_id,
+            expected_revision=record.revision,
+            action="cancel_prepared",
+        )
+        confirm = MagicMock(return_value={"RUNNING_MODAL"})
+        context = SimpleNamespace(window_manager=SimpleNamespace(invoke_confirm=confirm))
+        cls = submodule("blender.job_recovery").SCENARIO_OT_recover_job
+        self.assertEqual(cls.invoke(operator, context, "event"), {"RUNNING_MODAL"})
+        return operator, confirm
+
+    def test_native_cancellation_confirms_before_changing_saved_state(self):
+        film = self.storemod.FilmTaskBinding("production", "take", "c" * 64, "d" * 64)
+        records = {
+            "prepared": self.saved_job("prepared"),
+            "film": self.saved_job("film", film_task=film),
+        }
+        self.runtime.inspect_model_jobs()
+        message = "Cancel this unsent request locally; nothing is sent to Scenario."
+        film_note = " A Film task stays reserved; use a new take name to try again."
+        for key, expected in (("prepared", message), ("film", message + film_note)):
+            with self.subTest(key=key):
+                operator, confirm = self.confirm_cancel(records[key])
+                confirm.assert_called_once_with(
+                    operator,
+                    "event",
+                    title="Cancel prepared job?",
+                    message=expected,
+                    confirm_text="Discard unsent job",
+                )
+                saved = self.runtime.state.job_store.get(key)
+                self.assertEqual(saved, records[key])
+                self.assertEqual(
+                    (saved.state, saved.revision),
+                    (self.storemod.JobState.PREPARED, records[key].revision),
+                )
         self.assertEqual(self.requests, [])
 
     def test_native_cancellation_persists_locally_without_service_requests(self):

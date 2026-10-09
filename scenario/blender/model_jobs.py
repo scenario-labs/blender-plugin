@@ -593,10 +593,9 @@ class ModelJobs:
         request_id = record.intent.request_id
         state = record.state
         if state == JobState.PREPARED:
-            # An unsent intent, including one queued here, can be canceled locally.
+            # Any unsent intent, including a queued model, workflow, prompt or
+            # translate submission, can be canceled locally like MCP allows.
             # The shared command rejects it once dispatch claims the revision.
-            if record.intent.operation in {"prompt", "translate"}:
-                return ()
             return ("cancel_prepared",)
         if request_id in self._commands or request_id in self.submissions:
             return ()

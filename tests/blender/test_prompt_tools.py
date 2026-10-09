@@ -42,6 +42,7 @@ class PromptToolsTests(unittest.TestCase):
         self.lose_response = False
         self.result_text = "A copper teapot\nSoft studio light"
         self.fail_read = False
+        self.hold_quotes, self.held_quotes = None, threading.Semaphore(0)
         api, catalog, session = self.api, self.runtime.SDKCatalog, self.runtime.JobSession
 
         def respond(request):
@@ -70,6 +71,10 @@ class PromptToolsTests(unittest.TestCase):
                     },
                 )
             if request.url.params.get("dryRun") == "true":
+                if self.hold_quotes is not None:
+                    # Occupy a shared worker so a later approval stays queued.
+                    self.held_quotes.release()
+                    self.hold_quotes.wait(5)
                 return httpx.Response(269, content=b'{"creativeUnitsCost":0.1234567890123456789}')
             records = self.runtime.state.job_store.records()
             self.assertTrue(any(row.state == self.storage.JobState.SUBMITTING for row in records))
@@ -266,6 +271,41 @@ class PromptToolsTests(unittest.TestCase):
         self.assertEqual(bpy.ops.scenario.prompt_spark(lane="image"), {"CANCELLED"})
         self.assertEqual(len(self.paid), 1)
         self.assertEqual(self.lane.prompt, "a teapot")
+
+    def test_native_cancellation_of_queued_prompt_request_never_dispatches(self):
+        state = self.storage.JobState
+        item = self.quote("TRANSLATE")
+        self.hold_quotes = threading.Event()
+        self.addCleanup(self.hold_quotes.set)
+        # Two pending price requests occupy both shared workers.
+        for lane in ("video", "audio"):
+            self.jobs().quote(self.scene, lane, "GENERATE")
+            self.assertTrue(self.held_quotes.acquire(timeout=5))
+        self.assertEqual(self.approve(item), {"FINISHED"})
+        record = self.runtime.state.job_store.get(item.request_id)
+        self.assertEqual((record.intent.operation, record.state), ("translate", state.PREPARED))
+        view = self.runtime.inspect_model_jobs().views[item.request_id]
+        self.assertIn(view, self.runtime.state.jobs_view)
+        self.assertEqual(view.meta["recovery_actions"], ("cancel_prepared",))
+        result = bpy.ops.scenario.recover_job(
+            context_id=self.runtime.state.job_context_id,
+            request_id=item.request_id,
+            expected_revision=record.revision,
+            action="cancel_prepared",
+        )
+        self.assertEqual(result, {"FINISHED"})
+        self.hold_quotes.set()
+        self.advance(item)
+        saved = self.runtime.state.job_store.get(item.request_id)
+        self.assertEqual((saved.state, saved.remote_job_id), (state.CANCELED, None))
+        self.assertEqual(saved.revision, record.revision + 1)
+        self.assertEqual(
+            (item.phase, item.error),
+            ("ERROR", "Prompt request canceled; nothing was sent to Scenario"),
+        )
+        self.assertEqual((view.status, view.error), ("canceled", None))
+        self.assertEqual(self.lane.prompt, "a teapot")
+        self.assertEqual(self.paid, [])
 
     def test_credential_retirement_discards_old_approval(self):
         item = self.quote()

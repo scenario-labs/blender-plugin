@@ -41,6 +41,20 @@ class SCENARIO_OT_inspect_saved_jobs(bpy.types.Operator):
         return {"FINISHED"}
 
 
+def cancel_prepared_message(request_id):
+    """Describe a local discard; reading the saved intent never changes it."""
+    message = "Cancel this unsent request locally; nothing is sent to Scenario."
+    store = runtime.state.job_store
+    try:
+        record = store.get(request_id) if store is not None else None
+    except Exception:
+        record = None
+    if record is not None and record.intent.film_task is not None:
+        # A canceled record still reserves its Film task identity.
+        message += " A Film task stays reserved; use a new take name to try again."
+    return message
+
+
 class SCENARIO_OT_recover_job(bpy.types.Operator):
     bl_idname = "scenario.recover_job"
     bl_label = "Recover saved job"
@@ -72,8 +86,8 @@ class SCENARIO_OT_recover_job(bpy.types.Operator):
                 self,
                 event,
                 title="Cancel prepared job?",
-                message="Cancel this unsent request locally; nothing is sent to Scenario.",
-                confirm_text="Cancel prepared job",
+                message=cancel_prepared_message(self.request_id),
+                confirm_text="Discard unsent job",
             )
         if self.action == "cancel":
             return context.window_manager.invoke_confirm(self, event)

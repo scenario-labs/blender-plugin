@@ -566,6 +566,53 @@ class WorkflowUploadTests(unittest.TestCase):
         self.assertTrue(self.upload("images").attached)
         self.assertEqual(json.loads(item.text), ["existing-asset", "uploaded-asset"])
 
+    def test_stopped_upload_note_survives_unrelated_undo_and_redo(self):
+        restored = self.history()
+        self.populated()
+        binding = self.start("images")
+        binding.ticket.task.result(5)  # Saved locally; nothing sent yet.
+        self.scene_changes()[0]()
+        self.pump(binding)
+        self.assertTrue(binding.ticket.sent_nothing)
+        note = "The upload stopped before sending; nothing was uploaded"
+        self.assertIn(note, self.drawn("images")[1])
+        bpy.ops.ed.undo_push(message="After stopped workflow upload")
+        self.form.inputs["prompt"].text = "edited elsewhere"
+        bpy.ops.ed.undo_push(message="Unrelated edit")
+        for step, prompt in (("undo", "a cup"), ("redo", "edited elsewhere")):
+            with self.subTest(step=step):
+                self.assertEqual(getattr(bpy.ops.ed, step)(), {"FINISHED"})
+                form = restored()
+                self.assertEqual(form.inputs["prompt"].text, prompt)
+                self.assertNotIn(self.ui.UPLOAD_MARKER, form.inputs["images"])
+                self.assertIn(note, self.drawn("images")[1])
+        # The note still follows the input's values, not the history step.
+        self.form.inputs["images"].enabled = False
+        self.assertNotIn(note, self.drawn("images")[1])
+
+    def test_a_new_upload_retires_the_inputs_earlier_note(self):
+        item = self.populated()
+        first = self.start("images")
+        first.ticket.task.result(5)
+        self.scene_changes()[0]()
+        self.pump(first)
+        note = "The upload stopped before sending; nothing was uploaded"
+        self.assertIn(note, self.drawn("images")[1])
+        # The next upload into the same input reaches Scenario, then stops.
+        ticket = self.start("images").ticket
+        ticket.task.result(5)
+        self.owner.poll()  # Observes staging and admits initialization.
+        self.assertEqual(ticket.command, "initialize_upload")
+        ticket.task.result(5)
+        self.scene_changes()[0]()
+        self.pump(SimpleNamespace(ticket=ticket))
+        self.assertFalse(ticket.sent_nothing)
+        self.uploads.stop_waiting(self.scene, "images", item[self.ui.UPLOAD_MARKER])
+        self.assertEqual(json.loads(item.text), ["existing-asset"])
+        _, labels = self.drawn("images")
+        self.assertNotIn(note, labels)
+        self.assertIn("Upload a file or snapshot, use Library, or enter an asset ID", labels)
+
     def test_operator_keeps_its_undo_step_when_a_failed_start_keeps_the_marker(self):
         cls = self.uploads.SCENARIO_OT_upload_workflow_input
         notice = self.fixture.module.UploadNotStarted

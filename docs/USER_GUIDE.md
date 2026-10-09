@@ -755,7 +755,8 @@ example moving an object) or changing the frame stops an upload that is still
 sending, and it cannot resume; once everything was sent, the import still
 finishes but does not attach automatically. If nothing had been sent yet, or the
 file could not be prepared, the input is freed with its values kept and says that
-nothing was uploaded, so you can upload again. Otherwise, and when you edit that
+nothing was uploaded, so you can upload again; the note stays after undo or redo
+until you change the input or upload into it again. Otherwise, and when you edit that
 input, load another workflow, undo or reopen the file during an upload, nothing
 attaches automatically; undo also stops an upload that is still sending. An input
 that stays marked shows **Saved upload: inspect before continuing**. Choose

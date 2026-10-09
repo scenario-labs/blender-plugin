@@ -514,7 +514,9 @@ transfers. It adds no SDK method, transport or worker pool: initialization,
 parts, completion and status reads keep the `uploads.create`,
 `uploads.trigger_action` and `uploads.retrieve` mapping and their one-attempt,
 no-replay rules described above. Its in-flight bindings share the facade's
-128-binding capacity with generation forms.
+128-binding capacity with generation forms. Each upload also takes one of the
+facade's 128 handles per session, which finished uploads keep until a credential
+or project change replaces the facade or the extension restarts.
 
 Uploadable inputs are file fields whose saved schema kind is image (the default),
 audio, video or 3D, using the same sources as generation forms. Other kinds and
@@ -531,7 +533,9 @@ ticket that never reached Scenario: staging failed before a saved record was
 observed, an admission was refused while the record was still `prepared` (it
 reaches `initializing` before the first service request), or the record was
 canceled. Delivery then removes only its own marker, keeps existing input values
-and leaves a transient note on the input. The upload operator returns `FINISHED`
+and leaves a note on the input. The note is keyed by the scene's session UID,
+input name and values, so it survives undo and redo while the input keeps those
+values; starting another upload into the input retires it. The upload operator returns `FINISHED`
 whenever a new marker remains after a start failure, so its undo step is recorded.
 
 The maintenance pump attaches only after an imported observation and a fresh

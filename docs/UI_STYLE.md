@@ -1463,8 +1463,10 @@ after any scene edit, frame change or undo in the origin scene, so a stopped upl
 never resumes. When an upload whose delivery is still held stopped before anything
 was sent (local staging failed, or the staged record was still prepared) the pump
 removes only its own marker, keeps existing values and draws a read-only note on
-the input that nothing was uploaded, so the content can be uploaded again. An
-upload that already sent something keeps the marker. **Cancel preparation** of a prepared record also frees any input still
+the input that nothing was uploaded, so the content can be uploaded again. The
+note stays through undo and redo while the input keeps those values, and the next
+upload into the input retires it. An upload that already sent something keeps
+the marker. **Cancel preparation** of a prepared record also frees any input still
 marked for it, matched through this connection's ticket for that marker, which
 survives undo, or through the recorded request after reopening or a connection
 change. A blend file saved before the first observation has no request link.

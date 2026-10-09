@@ -818,11 +818,11 @@ CLASSES = (
 def _history_post(_):
     # Undo restores RNA, not these Python bindings or consumed approvals. Keep
     # durable uploads and restored duplicate guards, then require fresh review.
+    # Workflow notes that nothing was sent stay: they match inputs by value.
     owner = runtime.state.reference_uploads
     if owner is not None:
         owner.forms.clear()
         owner.workflow_forms.clear()
-        owner.workflow_notices.clear()
         owner.form_errors.clear()
         owner.attachments.clear()
 

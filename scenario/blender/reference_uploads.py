@@ -186,7 +186,9 @@ class ReferenceUploads:
         self.workflow_forms = {}  # Shares the 128-binding capacity with forms.
         # Marker token -> ticket. Unlike delivery bindings this survives undo, so
         # cancelling a preparation can still free an input whose marker undo restored.
+        # Each ticket is also kept in references, so both share its 128-handle limit.
         self.workflow_tickets = {}
+        # Notes that an upload sent nothing: scene session UID, input, values, text.
         self.workflow_notices = deque(maxlen=16)
         self.form_errors = deque(maxlen=16)
         self.attachments = {}

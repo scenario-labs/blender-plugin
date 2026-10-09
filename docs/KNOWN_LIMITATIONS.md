@@ -91,7 +91,9 @@ establish live generation or full render-lane desktop acceptance.
   Library selection or a typed asset ID. An upload that is still sending stops
   for good after a scene edit, frame change or undo; it does not resume, so the
   content is uploaded again (see the [user guide](USER_GUIDE.md#run-a-workflow)).
-  Live workflow upload and native interaction acceptance remain under #66/#68.
+  Workflow and generation-form uploads share 128 upload handles per connection;
+  finished uploads keep theirs until the credentials or project change or the
+  extension restarts. Live workflow upload and native interaction acceptance remain under #66/#68.
 - Video-to-motion and speech-to-text workflows remain an explicit capability
   request in [#190](https://github.com/scenario-labs/blender-plugin/issues/190);
   model tags alone do not establish supported input and result handling. Models

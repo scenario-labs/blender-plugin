@@ -20,6 +20,17 @@ from repository_update import checked_repository, owned_profile
 
 PACKAGE = "bl_ext.update_fixture.scenario"
 PROJECT_ID = "update-fixture-project"
+WORKFLOW = {
+    "id": "update-workflow",
+    "name": "Preserved workflow",
+    "inputs": [
+        {"name": "prompt", "type": "string", "default": "Preserve Café 雪"},
+        {"name": "image", "type": "file", "kind": "image"},
+        {"name": "images", "type": "file_array", "kind": "image", "minItems": 2},
+    ],
+}
+WORKFLOW_UPLOAD_SCENE = "Update workflow upload scene"
+WORKFLOW_UPLOAD_KEYS = ("_scenario_workflow_upload", "_scenario_workflow_upload_request")
 
 
 def module(name):
@@ -283,22 +294,13 @@ def workflow_form(scene):
 
 
 def seed_workflow(scene, selected):
+    import bpy
+
     form = workflow_form(scene)
     if form is None:
         return
     controls = module("blender.workflow_controls")
-    controls.load_form(
-        form,
-        {
-            "id": "update-workflow",
-            "name": "Preserved workflow",
-            "inputs": [
-                {"name": "prompt", "type": "string", "default": "Preserve Café 雪"},
-                {"name": "image", "type": "file", "kind": "image"},
-                {"name": "images", "type": "file_array", "kind": "image", "minItems": 2},
-            ],
-        },
-    )
+    controls.load_form(form, WORKFLOW)
     scope = module("blender.reference_form").scope_key(selected.scope)
     for name, value in {
         "image": "update-workflow-image",
@@ -309,6 +311,47 @@ def seed_workflow(scene, selected):
         item.enabled = True
         item.asset_scope = scope
         item.asset_value = controls._json(value)
+    if "upload_path" not in form.bl_rna.properties["inputs"].fixed_type.properties:
+        return
+    # A completed upload keeps its chosen path and request beside the binding.
+    image = form.inputs["image"]
+    image.upload_path = "//update-workflow-image.png"
+    image[WORKFLOW_UPLOAD_KEYS[1]] = "update-workflow-upload"
+    # A pending upload's duplicate guard blocks pricing, so it uses another scene.
+    pending = bpy.data.scenes.new(WORKFLOW_UPLOAD_SCENE).scenario_workflow
+    controls.load_form(pending, WORKFLOW)
+    item = pending.inputs["images"]
+    item.upload_path = "//update-workflow-pending.png"
+    item[WORKFLOW_UPLOAD_KEYS[0]] = "update-workflow-pending"
+    item[WORKFLOW_UPLOAD_KEYS[1]] = "update-workflow-pending-request"
+
+
+def workflow_uploads(form):
+    rows = {}
+    for item in form.inputs:
+        markers = {key: item[key] for key in WORKFLOW_UPLOAD_KEYS if key in item}
+        path = getattr(item, "upload_path", "")
+        if markers or path:
+            rows[item.name] = {"upload_path": path, **markers}
+    return rows
+
+
+def pending_workflow_snapshot():
+    import bpy
+
+    scene = bpy.data.scenes.get(WORKFLOW_UPLOAD_SCENE)
+    form = workflow_form(scene) if scene is not None else None
+    if form is None or not form.loaded_id:
+        return None
+    controls = module("blender.workflow_controls")
+    try:
+        controls.parameters(form)
+    except ValueError as error:
+        if "reference upload" not in str(error):
+            raise
+    else:
+        raise RuntimeError("A pending workflow upload permitted pricing")
+    return {"signature": controls.signature(form), "uploads": workflow_uploads(form)}
 
 
 def workflow_snapshot(scene, other=None):
@@ -326,7 +369,12 @@ def workflow_snapshot(scene, other=None):
                 pass
             else:
                 raise RuntimeError("Workflow references escaped their selected connection")
-    return {"signature": controls.signature(form), "parameters": values}
+    result = {"signature": controls.signature(form), "parameters": values}
+    uploads, pending = workflow_uploads(form), pending_workflow_snapshot()
+    if uploads or pending is not None:
+        # Predecessors without upload fields report neither key before or after.
+        result.update(uploads=uploads, pending_upload=pending)
+    return result
 
 
 def seed(profile):
@@ -617,6 +665,9 @@ def main():
                     "scene_preserved": True,
                     "project_scope_preserved": True,
                     "workflow_references_preserved": expected["workflow"] is not None,
+                    "workflow_uploads_preserved": bool(
+                        expected["workflow"] and expected["workflow"].get("pending_upload")
+                    ),
                     "service_requests": 0,
                 }
             )

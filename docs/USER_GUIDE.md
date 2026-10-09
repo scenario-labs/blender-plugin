@@ -737,9 +737,22 @@ Edit the named inputs. Check an input to include it; unchecked inputs use the
 workflow's default when one exists. Booleans have a checkbox and fixed choices
 have a dropdown. Enter numeric values as numbers. Structured
 inputs use JSON, for example `["asset-one", "asset-two"]` for an image list.
-File inputs accept already uploaded asset IDs or confirmed Library selections;
-upload local files separately.
+File inputs accept uploaded asset IDs, confirmed Library selections or the
+uploads described below.
 Conditional requirements and allowed values are checked before pricing.
+
+To upload into an image, audio, video or 3D file input, choose its **File** and
+**Upload file**, or use a snapshot button: **Viewport**, **Camera view** or
+**Render result** for images, **Viewport clip** or **Camera clip** for video, and
+**Selected mesh** for 3D. Confirm the named file, input and workflow; uploading
+sends that content to Scenario but generates nothing. The input shows its
+progress and blocks pricing until the asset attaches, then requires a fresh price.
+A single input must be empty first; arrays append up to their maximum. If you edit
+that input or the scene, load another workflow, undo, or reopen the file during an
+upload, nothing attaches automatically: choose **Inspect uploads** (or **Use saved
+upload**) and confirm the saved upload for that input instead of uploading again.
+**Clear reference** stops waiting for an upload but leaves it in saved uploads.
+Inputs of other kinds, or with listed allowed asset IDs, use Library or an ID.
 
 Choose **Request workflow price**, then **Generate**. The separate confirmation
 shows the server-normalized inputs, original scene and complete exact CU price.
@@ -750,9 +763,8 @@ Changing inputs, scene or connection requires a fresh valid approval.
 The form and its schema save with the scene and remain editable after reopening;
 prices and approval handles do not survive restart. Jobs keep their existing
 durable recovery. This page runs existing workflows; it does not author graphs,
-handle interactive nodes or cancel running workflows. Direct file upload into
-workflow inputs remains to integrate. Native desktop interaction and live
-workflow acceptance are still pending.
+handle interactive nodes or cancel running workflows. Native desktop interaction,
+including workflow uploads, and live workflow acceptance are still pending.
 
 ### Browse Library assets
 

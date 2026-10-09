@@ -162,6 +162,7 @@ class ReferenceUploads:
         self.saved = {}
         self.recovery_errors = {}
         self.forms = {}
+        self.workflow_forms = {}  # Shares the 128-binding capacity with forms.
         self.form_errors = deque(maxlen=16)
         self.attachments = {}
 
@@ -286,6 +287,10 @@ class ReferenceUploads:
             from .reference_form import deliver
 
             deliver(self)
+        if self.workflow_forms:
+            from .workflow_uploads import deliver as deliver_workflow
+
+            deliver_workflow(self)
 
     def status(self, identifier):
         self.poll()

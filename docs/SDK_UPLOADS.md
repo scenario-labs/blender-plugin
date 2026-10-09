@@ -344,10 +344,11 @@ explicit `kind` of `image` (the default), `audio`, `video` or `3d`;
 `capture_reference` prepares a viewport/camera still or clip, or a selected-mesh
 GLB first. Both return a
 session-owned handle immediately. Poll `reference_upload_status` until the saved
-state is `imported`, then pass its `asset_id` to the intended model file input
-in a fresh estimate. Uploading
+state is `imported`, then pass its `asset_id` to the intended model or workflow
+file input in a fresh estimate. Uploading
 does not submit generation or approve its cost. Generation forms use the same
-owner through **Upload reference** for image, audio, video and 3D files. Image
+owner through **Upload reference** for image, audio, video and 3D files; loaded
+workflow forms use it through [workflow input attachment](#workflow-input-attachment). Image
 inputs also support explicit still captures; video inputs support explicit clips.
 **Upload selected mesh** creates one GLB reference for an empty 3D input. Preparation
 runs on the main thread in private temporary storage retained until asynchronous
@@ -503,6 +504,39 @@ Attaching invalidates the previous price and never submits generation. Native
 tests save/reopen an actual blend before explicitly approving the recovered
 reference; they do not establish physical GUI interaction or live-service acceptance.
 Never remove and re-add a reference as a substitute for reconciling an uncertain upload.
+
+### Workflow input attachment
+
+[`workflow_uploads.py`](../scenario/blender/workflow_uploads.py) uploads one
+explicitly confirmed local file or snapshot into a loaded workflow file input
+through the same `ReferenceUploads` owner, session, store, workers and signed
+transfers. It adds no SDK method, transport or worker pool: initialization,
+parts, completion and status reads keep the `uploads.create`,
+`uploads.trigger_action` and `uploads.retrieve` mapping and their one-attempt,
+no-replay rules described above. Its in-flight bindings share the facade's
+128-binding capacity with generation forms.
+
+Uploadable inputs are file fields whose saved schema kind is image (the default),
+audio, video or 3D, using the same sources as generation forms. Other kinds and
+fields that list allowed asset IDs are refused before staging. Preflight also
+refuses occupied single inputs, full arrays, a missing file and an existing marker.
+A persisted `_scenario_workflow_upload` ID property marks the input before origin
+capture; it remains after uncertain or failed admitted work, blocks pricing and
+prevents a second upload. Local validation or rejected queue admission removes it.
+
+The maintenance pump attaches only after an imported observation and a fresh
+origin check, and only while the workflow ID, schema digest, input kind, marker
+token and input value are unchanged. Attachment uses the same checked append and
+scope digest/canonical value binding as Library workflow references, records
+the request in `_scenario_workflow_upload_request` and removes the marker. Saved
+uploads use the shared inspection view with a workflow destination: attaching
+needs a separate single-use confirmation that rechecks the stored record, scene
+origin, scope and complete form signature, and supersedes an in-flight upload
+into that input. Undo/redo, blend reopening and connection retirement discard
+in-memory bindings without resending bytes. Selected-mesh uploads keep their
+captured source, so workflow quotes bind them as described below. Local MCP
+already exposes the equivalent sequence: `upload_reference` or `capture_reference`,
+then the imported asset ID in `estimate_workflow` parameters.
 
 ## Captured mesh export provenance
 

@@ -85,6 +85,11 @@ establish live generation or full render-lane desktop acceptance.
 - Prompt helpers require their own exact quote and approval. Unusable Spark
   output fails without an automatic paid LLM fallback; complete text can be
   retrieved again without regeneration. Historical prices are not current quotes.
+- Studio workflow file inputs upload image, audio, video and 3D files or
+  snapshots only. Inputs declared as other kinds (for example `image-hdr`,
+  `document`, `json` or `text`) or with listed allowed asset IDs still need a
+  Library selection or a typed asset ID. Live workflow upload and native
+  interaction acceptance remain under #66/#68.
 - Video-to-motion and speech-to-text workflows remain an explicit capability
   request in [#190](https://github.com/scenario-labs/blender-plugin/issues/190);
   model tags alone do not establish supported input and result handling. Models

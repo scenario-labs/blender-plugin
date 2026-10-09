@@ -24,6 +24,7 @@ _ASSET = "_scenario_reference_asset"
 _KIND = "_scenario_reference_kind"
 _KINDS = {"image", "audio", "video", "3d"}
 RENDER_ROLE = "_scenario_render_role"
+WORKFLOW_LANE = "workflow"  # Saved-upload dialogs for the loaded workflow form.
 
 
 def scope_key(scope):
@@ -58,7 +59,11 @@ def _lane(scene, name):
     return scene.scenario.lane_state(name)
 
 
-def _destination_key(scene, name):
+def _destination_key(scene, name, param_name=""):
+    if name == WORKFLOW_LANE:
+        from . import workflow_uploads
+
+        return workflow_uploads.destination(scene, param_name)
     lane = _lane(scene, name)
     value = (scene.as_pointer(), name, lane.model_id, _form_snapshot(lane))
     return hashlib.sha256(json.dumps(value).encode()).hexdigest()
@@ -145,6 +150,17 @@ def prepare_attachment(
 ):
     from . import generation
 
+    if lane_name == WORKFLOW_LANE:
+        from . import workflow_uploads
+
+        return workflow_uploads.prepare_saved(
+            context,
+            context_id,
+            request_id,
+            revision,
+            param_name,
+            destination_key=destination_key,
+        )
     lane = _lane(context.scene, lane_name)
     if destination_key and destination_key != _destination_key(context.scene, lane_name):
         raise ScenarioError(0, "The destination changed; open saved uploads from the form again")
@@ -208,6 +224,10 @@ def apply_attachment(context_id, identifier):
     if owner.session.inspect_upload(approval.record.intent.request_id) != approval.record:
         raise ScenarioError(0, "The saved upload changed; review it again")
     owner.session.validate_destination(approval.origin)
+    if approval.lane_name == WORKFLOW_LANE:
+        from . import workflow_uploads
+
+        return workflow_uploads.apply_saved(owner, approval)
     lane = _lane(approval.scene, approval.lane_name)
     kind_matches = _kind_matches(lane, approval.param_name, approval.record.intent.kind)
     if (
@@ -303,7 +323,7 @@ def start(context, index, *, lane_name="image"):
             else "This reference has a saved upload; inspect it and confirm the destination"
         )
         raise ScenarioError(0, reason)
-    if len(owner.forms) >= 128:
+    if len(owner.forms) + len(owner.workflow_forms) >= 128:
         raise ScenarioError(0, "Reference upload capacity reached; inspect existing uploads")
     kind = input_kind(lane, ref.param_name)
     if kind is None:
@@ -559,7 +579,7 @@ class SCENARIO_OT_inspect_uploads(bpy.types.Operator):
 
     def invoke(self, context, event):
         try:
-            self._destination_key = _destination_key(context.scene, self.lane)
+            self._destination_key = _inspected_key(self, context.scene)
             self._owner = runtime.ensure_reference_uploads()
             self._context_id = runtime.state.job_context_id
             self._records = self._owner.inspect_saved()
@@ -595,12 +615,7 @@ class SCENARIO_OT_inspect_uploads(bpy.types.Operator):
             op = row.operator("scenario.inspect_uploads", text=label)
             op.page, op.index, op.param_name = max(0, page), self.index, self.param_name
             op.lane = self.lane
-        lane_state = _lane(context.scene, self.lane)
-        param = self.param_name
-        if 0 <= self.index < len(lane_state.references):
-            param = lane_state.references[self.index].param_name
-        destination_valid = self._destination_key == _destination_key(context.scene, self.lane)
-        kind = input_kind(lane_state, param) if destination_valid else None
+        destination_valid, kind = _inspected_destination(self, context)
         if not destination_valid:
             layout.label(
                 text="The destination changed; reopen saved uploads from the form", icon="ERROR"
@@ -651,6 +666,30 @@ class SCENARIO_OT_inspect_uploads(bpy.types.Operator):
 
     def execute(self, context):
         return {"FINISHED"}
+
+
+def _inspected_key(operator, scene):
+    # Model lanes key the whole reference form; workflows key the chosen input.
+    if operator.lane == WORKFLOW_LANE:
+        return _destination_key(scene, WORKFLOW_LANE, operator.param_name)
+    return _destination_key(scene, operator.lane)
+
+
+def _inspected_destination(operator, context):
+    """Read the captured destination's current input kind without changing it."""
+    if operator._destination_key != _inspected_key(operator, context.scene):
+        return False, None
+    if operator.lane == WORKFLOW_LANE:
+        from . import workflow_uploads
+
+        return True, workflow_uploads.input_kind(
+            context.scene.scenario_workflow, operator.param_name
+        )
+    lane_state = _lane(context.scene, operator.lane)
+    param = operator.param_name
+    if 0 <= operator.index < len(lane_state.references):
+        param = lane_state.references[operator.index].param_name
+    return True, input_kind(lane_state, param)
 
 
 class SCENARIO_OT_recover_upload(bpy.types.Operator):
@@ -724,6 +763,13 @@ class SCENARIO_OT_attach_saved_upload(bpy.types.Operator):
 
     def draw(self, context):
         approval = self._approval
+        if approval.lane_name == WORKFLOW_LANE:
+            from . import workflow_uploads
+
+            for text in workflow_uploads.summary(approval):
+                for line in textwrap.wrap(text, 65):
+                    self.layout.label(text=line)
+            return
         for text in (
             f"Scene: {approval.scene_name}",
             f"Form: {approval.lane_name.replace('_', ' ').title()}",
@@ -775,6 +821,7 @@ def _history_post(_):
     owner = runtime.state.reference_uploads
     if owner is not None:
         owner.forms.clear()
+        owner.workflow_forms.clear()
         owner.form_errors.clear()
         owner.attachments.clear()
 

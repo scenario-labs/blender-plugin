@@ -42,7 +42,8 @@ def _check_binding(item, scope):
         raise ValueError("The reference connection or value changed; clear it and choose again")
 
 
-def choices(context, session, asset_id, label, kind):
+def choices(context, session, asset_id, label, kind, *, param_name=None, replace_upload=False):
+    """Offer matching inputs; a pending upload's input is offered only to replace it."""
     form = context.scene.scenario_workflow
     if not form.loaded_id or form.loaded_id != form.workflow_id or not form.schema_json:
         raise ValueError("Load a workflow in Workflows before choosing a reference")
@@ -54,6 +55,10 @@ def choices(context, session, asset_id, label, kind):
     result = []
     for item in form.inputs:
         if item.kind not in {"file", "file_array"}:
+            continue
+        if param_name is not None and item.name != param_name:
+            continue
+        if item.get(workflow_controls.UPLOAD_MARKER) and not replace_upload:
             continue
         try:
             _check_binding(item, scope)
@@ -95,23 +100,40 @@ def attach(approval, session):
     item = form.inputs.get(approval.param_name)
     if item is None:
         raise ValueError("The workflow input is unavailable")
-    _check_binding(item, approval.scope)
-    value = append_file_reference(
-        json.loads(form.schema_json), item.name, approval.asset_id, approval.kind, _value(item)
-    )
-    text = value if item.kind == "file" else workflow_controls._json(value)
-    if text != approval.value:
+    value = _proposed(form, item, approval.asset_id, approval.kind, approval.scope)
+    if _text(item, value) != approval.value:
         raise ValueError("The proposed reference value changed; review it again")
+    _write(item, value, approval.scope)
+    return item
+
+
+def bind_asset(form, item, asset_id, kind, scope):
+    """Add one imported asset with the persisted Library binding semantics."""
+    _write(item, _proposed(form, item, asset_id, kind, scope), scope)
+    return item
+
+
+def _proposed(form, item, asset_id, kind, scope):
+    _check_binding(item, scope)
+    return append_file_reference(
+        json.loads(form.schema_json), item.name, asset_id, kind, _value(item)
+    )
+
+
+def _text(item, value):
+    return value if item.kind == "file" else workflow_controls._json(value)
+
+
+def _write(item, value, scope):
     previous = item.text, item.enabled, item.asset_scope, item.asset_value, item.options
     try:
-        item.text, item.enabled = text, True
+        item.text, item.enabled = _text(item, value), True
         item.options = ""
-        item.asset_scope = approval.scope
+        item.asset_scope = scope
         item.asset_value = workflow_controls._json(value)
     except Exception:
         item.text, item.enabled, item.asset_scope, item.asset_value, item.options = previous
         raise
-    return item
 
 
 class SCENARIO_OT_clear_workflow_reference(bpy.types.Operator):
@@ -128,17 +150,16 @@ class SCENARIO_OT_clear_workflow_reference(bpy.types.Operator):
         self._scene = context.scene
         self._signature = workflow_controls.signature(form)
         self._input_name = self.input_name
-        return context.window_manager.invoke_confirm(
-            self,
-            event,
-            message=(
-                "Clear "
-                + item.label
-                + " from "
-                + (form.title or "this workflow")
-                + "? Unchecked inputs use workflow defaults."
-            ),
+        message = (
+            "Clear "
+            + item.label
+            + " from "
+            + (form.title or "this workflow")
+            + "? Unchecked inputs use workflow defaults."
         )
+        if item.get(workflow_controls.UPLOAD_MARKER):
+            message += " Its upload is not canceled; it stays in saved uploads."
+        return context.window_manager.invoke_confirm(self, event, message=message)
 
     def execute(self, context):
         scene = getattr(self, "_scene", None)
@@ -157,6 +178,15 @@ class SCENARIO_OT_clear_workflow_reference(bpy.types.Operator):
         item.options = ""
         item.enabled = False
         item.asset_scope = item.asset_value = ""
+        token = item.get(workflow_controls.UPLOAD_MARKER)
+        for key in (workflow_controls.UPLOAD_MARKER, workflow_controls.UPLOAD_REQUEST):
+            if key in item:
+                del item[key]
+        if token:
+            from . import workflow_uploads
+
+            # The admitted upload keeps running and remains in saved uploads.
+            workflow_uploads.release(scene, self._input_name, token)
         self._scene = None
         return {"FINISHED"}
 

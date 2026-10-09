@@ -259,6 +259,16 @@ these fields report false and cannot establish workflow preservation. They still
 run all applicable job/upload/scene checks; the probe does not invent prior state
 for newly introduced properties.
 
+When the predecessor's workflow inputs also expose `upload_path`, the probe seeds
+a completed upload's blend-relative path and request ID beside the image binding.
+A second scene holds a pending upload marker, request ID and path on an array
+input; its parameter builder must refuse pricing for that marker. Snapshots
+compare these fields and that form's signature after update and offline reopen.
+Both reports then include `workflow_uploads_preserved: true`; it is false when the
+expected workflow state has no pending upload form. Upload fields are recorded
+only when present, so an unmarked form keeps the same signature and snapshot as
+a predecessor without them.
+
 The probe rejects Python socket connections while seeding/checking/upgrading.
 Blender's native updater uses its configured loopback repository; this is not an
 OS sandbox for arbitrary package code or subprocesses. Use only trusted archives.

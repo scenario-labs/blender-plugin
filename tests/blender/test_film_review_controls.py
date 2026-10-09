@@ -678,6 +678,10 @@ class FilmReviewControlTests(unittest.TestCase):
         oldest = fill("CANCELLING")
         with self.assertRaisesRegex(ValueError, "Finish or discard"):
             self.mcp_prepare()
+        # A rejected preparation never retires an active handle.
+        self.assertIn(oldest, self.commands._reviews)
+        self.assertEqual(len(self.commands._reviews), 16)
+        self.assertFalse(self.copies())
         oldest = fill("CANCELLED")
         identifier = self.mcp_prepare()
         self.assertNotIn(oldest, self.commands._reviews)

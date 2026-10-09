@@ -829,35 +829,36 @@ export or release acceptance.
 
 ## Offline Film video export primitive
 
-[`local_capture.export_snapshot`](../scenario/blender/local_capture.py) writes one
-live local sequencer scene to a private blend snapshot on Blender's main thread,
-in Object Mode. It rejects scene, movie-clip and mask strips, requires an integer
-frame rate from 1 to 120 and defaults to the scene's frame range, output size
-and whether any unmuted sound strip exists. It synchronizes that scene's own view
-layers before `libraries.write`, which avoids the Blender 5.2 copy crash seen for
-new inactive scenes. A second synchronization is a no-op, so a caller can
-synchronize, capture origins and then snapshot without invalidating them.
-Every external movie, sound, image-sequence and font file is stamped by path,
-size, modification time, device and inode; packed sounds and fonts travel in the
-snapshot. The working file, selected scene and frame are unchanged. Bounds are
-validated before any file is written, and a failed snapshot removes its new
-`film-export-*` staging directory.
+[`local_capture.export_snapshot`](../scenario/blender/local_capture.py) writes
+one live local sequencer scene to a private blend snapshot on Blender's main
+thread, in Object Mode. It rejects scene, movie-clip and mask strips, requires an
+integer frame rate from 1 to 120 and defaults to the scene's frame range, output
+size and whether any sound strip is audible: not muted itself, by its sequencer
+channel or by an enclosing meta strip or that strip's channel. It synchronizes
+that scene's own view layers before `libraries.write`, which avoids the Blender
+5.2 copy crash seen for new inactive scenes. A second synchronization is a no-op,
+so a caller can synchronize, capture origins and then snapshot without
+invalidating them. Every external movie, sound, image-sequence and font file is
+stamped by path, size, modification time, device and inode; packed sounds and
+fonts travel in the snapshot. The working file, selected scene and frame are
+unchanged. Bounds are validated before any file is written, and a failed snapshot
+removes its new `film-export-*` staging directory.
 
 [`local_export`](../scenario/core/jobs/local_export.py) is the bpy-free export
-primitive. A specification allows at most fifteen minutes of frames (900
-seconds at the scene rate, at most 108,000), even 64 to 4,096 pixel dimensions and
-at most 2,000 media files totalling 16 GiB. The default render timeout is five
-minutes plus two seconds per frame, capped at six hours; verification scales
-with the frame count up to two hours. `render` hashes the stamped media
-cancellably, admits the snapshot once, then runs the bundled
-[`film_export_worker.py`](../scenario/blender/film_export_worker.py) in an offline,
-quiet, factory-startup Blender child with script auto-execution disabled, a
-disposable profile and the same scrubbed environment as capture. The child uses
-Blender's built-in FFmpeg encoder: MPEG-4 container, H.264 at Blender's high
-quality constant rate factor, no autosplit, sequencer output only and 100%
-resolution, with stereo 48 kHz AAC at 192 kb/s or no audio track. It prints
-bounded progress at most every 1%; the parent reads only the last 4 KiB of the
-log and stops the child when the staged file exceeds 16 GiB. Exactly one
+primitive. A specification allows at most fifteen minutes of frames (900 seconds
+at the scene rate, at most 108,000), even 64 to 4,096 pixel dimensions and at
+most 2,000 media files totalling 16 GiB. The default render timeout is five
+minutes plus two seconds per frame, capped at six hours; verification scales with
+the frame count up to two hours. `render` hashes the stamped media cancellably,
+admits the snapshot once (a reused snapshot is refused before hashing), then runs
+the bundled [`film_export_worker.py`](../scenario/blender/film_export_worker.py)
+in an offline, quiet, factory-startup Blender child with script auto-execution
+disabled, a disposable profile and the same scrubbed environment as capture. The
+child uses Blender's built-in FFmpeg encoder: MPEG-4 container, H.264 at
+Blender's high quality constant rate factor, no autosplit, sequencer output only
+and 100% resolution, with stereo 48 kHz AAC at 192 kb/s or no audio track. It
+prints bounded progress at most every 1%; the parent reads only the last 4 KiB of
+the log and stops the child when the staged file exceeds 16 GiB. Exactly one
 `output/film.mp4` is accepted.
 
 Verification always reads the MP4 container with the bpy-free
@@ -880,39 +881,55 @@ file is then decoded:
   export, and the receipt records which verification ran.
 
 Media stamps are rechecked after verification; a change during rendering rejects
-the export. No tool is downloaded or bundled, and Blender builds without H.264 or
-AAC fail with a clear message before rendering.
+the export. No tool is downloaded or bundled. A Blender build without FFmpeg is
+refused before snapshotting and again in the child. Blender lists every codec
+whatever its linked FFmpeg libraries can encode, so a build that lacks an H.264
+or AAC encoder is not detected in advance: its render child fails, surfacing as
+the generic export process failure with `render.log` retained in staging. File
+system errors in staging or verification reports become path-free export errors.
 
 `validate_destination` requires an absolute, visible `.mp4` path with a portable
-name and no control characters. The name must not exist, including as a dangling
-link, its folder must exist, and the resolved folder must lie outside the caller's
-private roots; the result uses that resolved folder. `reserve` creates the
-destination exclusively as an empty placeholder before rendering, so permission
-problems surface before a long encode. `publish` copies the verified staged bytes
-to a hidden `.<name>.scenario-<hex>.partial` file in the same folder, hashing and
-syncing them, compares size and SHA-256, checks that the placeholder is still the
-same empty file and then atomically replaces it. Failure or cancellation removes
-only its own partial file and placeholder, never another file, and keeps the
-staged output. `ExportPublishError.staged` allows a copy-only publish to another
-approved destination. A free-space preflight assumes about 25 Mbit/s at 1080p,
-scaled by pixel count, plus 64 MiB, doubled when staging and destination share a
-volume; a disk that fills later still fails cleanly.
+name: at most 255 UTF-8 bytes, no control characters, none of `<>:"|?*\/` and no
+Windows device stem such as `CON` or `COM1`, checked after removing trailing
+spaces as Windows does (the rules of Python 3.13's `ntpath.isreserved`). The name
+must not exist, including as a dangling link, its folder must exist, and the
+resolved folder must lie outside the caller's private roots. Containment compares
+Windows extended and ordinary spellings as equal and ignores case on macOS. The
+result uses that resolved folder. `reserve` creates the destination exclusively
+as an empty placeholder before rendering, so permission problems surface before a
+long encode. `publish` copies the verified staged bytes to a hidden fixed-length
+`.scenario-<hex>.partial` file in the same folder, so any valid destination name
+fits, hashing and syncing them, compares size and SHA-256, checks that the
+placeholder is still the same empty file and then atomically replaces it. Failure
+or cancellation removes only its own partial file and placeholder, never another
+file, and keeps the staged output. `ExportPublishError.staged` allows a copy-only
+publish to another approved destination. After reserving, a free-space preflight
+assumes about 25 Mbit/s at 1080p, scaled by pixel count, plus 64 MiB, doubled
+when staging and destination share a volume; a disk that fills later still fails
+cleanly.
 
-`JobSession.export_film` runs each approved export on a session-owned
-`LocalExportWorker` thread. It never occupies a shared job worker or the
-capture/review local media slot, so polling, downloads, capture and review
-preparation continue during a long export. One export or re-publish runs per
-session at a time. The coordinator checks that the owner is active and both the
-working and exported scene origins are current before reserving the destination.
-A later scene edit does not cancel the export, because the snapshot and media
-stamps bind the bytes. Owner retirement (credential or project change, file
-load or extension disable) cancels the export, reaps the child and releases the
-placeholder; retirement after rendering keeps the staged output unpublished.
-`drain` returns a `local_export` completion, and `deliver_local_export` consumes
-it without resolving a scene. `publish_film_export` re-publishes only a staged
-export issued by the same owner, without rendering. `ExportTask.progress()`
-reports the media, render, verify and publish phases. Each successful publish
-writes one local log line with the destination basename and SHA-256.
+`JobSession.export_film` and `publish_film_export` validate the destination on
+Blender's main thread before any thread, placeholder or media hashing starts.
+Their private roots are the snapshot's staging root, the extension's user
+storage, the installed extension folder and Blender's user resource and
+extensions folders, so every UI or MCP caller gets the same policy; a reused
+snapshot is refused there too. `LocalExportWorker` refuses a relative path before
+starting its thread, and the coordinator re-checks the portable shape before
+reserving. Each approved export runs on a session-owned `LocalExportWorker`
+thread. It never occupies a shared job worker or the capture/review local media
+slot, so polling, downloads, capture and review preparation continue during a
+long export. One export or re-publish runs per session at a time. The coordinator
+checks that the owner is active and both the working and exported scene origins
+are current before reserving the destination. A later scene edit does not cancel
+the export, because the snapshot and media stamps bind the bytes. Owner
+retirement (credential or project change, file load or extension disable) cancels
+the export, reaps the child and releases the placeholder; retirement after
+rendering keeps the staged output unpublished. `drain` returns a `local_export`
+completion, and `deliver_local_export` consumes it without resolving a scene.
+`publish_film_export` re-publishes only a staged export issued by the same owner,
+without rendering. `ExportTask.progress()` reports the media, render, verify and
+publish phases. Each successful publish writes one local log line with the
+destination basename and SHA-256.
 
 Export handles and receipts are session-local; no job store or blend schema
 changes. The caller owns the staging directory and removes it with
@@ -920,18 +937,21 @@ changes. The caller owns the staging directory and removes it with
 leave staging under extension user storage and a zero-byte placeholder or hidden
 partial file next to the destination. There is no startup sweep.
 
-Unit tests cover specification bounds, destination validation, exclusive
-reservation, identity-checked publishing, replace and permission failures,
-cancellation at each stage, container, ffprobe and Blender decode mismatches,
-media changes, output inventory and size, bounded progress parsing, environment
-scrubbing, owned-thread admission independent of the shared workers and owner
-retirement. Installed tests run a real child export of a synthetic 64x64,
-48-frame review with Blender's decode check on every platform, and the ffprobe
-check where it is installed. They also cover session delivery, mid-render
-retirement and copy-only re-publishing. Native/MCP export controls, the Studio
-case-study bundle, human playback review and Windows/Linux desktop evidence
-remain separate. Export makes no Scenario request, spends nothing and writes no
-job record.
+Unit tests cover specification bounds, destination validation including Windows
+names and spellings, the longest valid name, exclusive reservation,
+identity-checked publishing, replace and permission failures, cancellation at
+each stage, container, ffprobe and Blender decode mismatches, media changes,
+output inventory and size, bounded progress parsing, environment scrubbing,
+reused snapshots, path-free staging errors, owned-thread admission independent of
+the shared workers and owner retirement. Installed tests run a real child export
+of a synthetic 64x64, 48-frame review with Blender's decode check on every
+platform, and the ffprobe check where it is installed. They also cover session
+delivery, mid-render retirement, copy-only re-publishing, channel and meta strip
+audio defaults and session refusal of relative, private, existing and
+non-portable destinations before any work. A build without an H.264 or AAC
+encoder is not exercised. Native/MCP export controls, the Studio case-study
+bundle, human playback review and Windows/Linux desktop evidence remain separate.
+Export makes no Scenario request, spends nothing and writes no job record.
 
 ## Remaining integration and evidence
 

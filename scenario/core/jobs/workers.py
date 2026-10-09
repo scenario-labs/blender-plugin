@@ -7,6 +7,7 @@ import os
 import threading
 from collections import deque
 from concurrent.futures import Future
+from pathlib import Path
 
 from .coordinator import JobCoordinator, QuoteError, _payload
 
@@ -409,6 +410,16 @@ class ExportTask(JobTask):
             return self._progress
 
 
+def _absolute(destination):
+    """Refuse a relative export path before a thread starts; never use the working folder."""
+    from .local_export import LocalExportError
+
+    path = os.fspath(destination)
+    if not isinstance(path, str) or not Path(path).is_absolute():
+        raise LocalExportError("Choose an absolute destination path")
+    return Path(path)
+
+
 class LocalExportWorker:
     """Own one Film export thread at a time, outside the shared job workers.
 
@@ -440,7 +451,7 @@ class LocalExportWorker:
         return self._start(
             self._coordinator.export_film,
             spec,
-            os.fspath(destination),
+            _absolute(destination),
             origin=origin,
             source_origin=source_origin,
         )
@@ -453,7 +464,7 @@ class LocalExportWorker:
         return self._start(
             self._coordinator.publish_film_export,
             staged,
-            os.fspath(destination),
+            _absolute(destination),
             origin=origin,
             source_origin=source_origin,
         )

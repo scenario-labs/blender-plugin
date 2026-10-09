@@ -137,6 +137,8 @@ file, scene or frame. The bundled
 [`film_export_worker.py`](../../scenario/blender/film_export_worker.py) changes
 render settings only in an offline child, encoding H.264/AAC MP4 with Blender's
 built-in FFmpeg, and in verification mode decodes the result in a fresh child.
+The session validates each destination on the main thread against the staging
+root, extension storage and Blender's user folders before any work starts.
 Rendering, verification and no-overwrite publishing stay in bpy-free core code on
 a session-owned export thread; no bpy runs there. See the
 [export contract](../FILM_PLAN.md#offline-film-video-export-primitive) for bounds,

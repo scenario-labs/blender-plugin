@@ -4,6 +4,7 @@
 
 import hashlib
 import json
+import ntpath
 import os
 import sys
 import threading
@@ -169,8 +170,48 @@ def test_render_verifies_with_ffprobe_and_scrubs_environment(monkeypatch, spec):
     assert ("render", 12, 48) in events and ("render", 999999, 48) not in events
     assert {event[0] for event in events} == {"media", "render", "verify"}
     assert json.loads((spec.directory / "started.json").read_text())["mode"] == "render"
-    with pytest.raises(FileExistsError):
+
+
+def test_reused_snapshot_is_refused_before_hashing_without_private_paths(monkeypatch, spec):
+    Child(monkeypatch, spec)
+    export.render(spec)
+    hashed = []
+    monkeypatch.setattr(export, "_hash_media", lambda *args: hashed.append(args))
+    for marker in ("started.json", "output"):
+        with pytest.raises(export.LocalExportError, match="already used") as caught:
+            export.render(spec)
+        assert str(spec.directory) not in str(caught.value) and not hashed
+        if marker == "started.json":
+            (spec.directory / marker).unlink()
+
+
+@pytest.mark.parametrize("ffprobe", [True, False])
+def test_missing_verification_reports_fail_without_private_paths(monkeypatch, spec, ffprobe):
+    child = Child(monkeypatch, spec, ffprobe=ffprobe)
+
+    def run(command, *, stdout=None, **kwargs):
+        # The verification child exits successfully without writing its report.
+        if str(spec.directory / "snapshot.blend") in command:
+            return child(command, stdout=stdout, **kwargs)
+        kwargs["log"].write_text("fixture")
+
+    monkeypatch.setattr(export, "_run", run)
+    with pytest.raises(export.LocalExportError, match="missing or too large") as caught:
         export.render(spec)
+    assert str(spec.directory) not in str(caught.value)
+
+
+def test_staging_os_errors_never_expose_private_paths(monkeypatch, spec):
+    Child(monkeypatch, spec)
+
+    def unavailable(*args, **kwargs):
+        raise PermissionError(13, "Permission denied", str(spec.directory / "worker-x"))
+
+    monkeypatch.setattr(export.tempfile, "TemporaryDirectory", unavailable)
+    with pytest.raises(export.LocalExportError, match="private staging files") as caught:
+        export.render(spec)
+    assert str(spec.directory) not in str(caught.value)
+    assert caught.value.__cause__ is None and caught.value.__suppress_context__
 
 
 def test_render_falls_back_to_blender_decode_without_ffprobe(monkeypatch, spec):
@@ -472,6 +513,8 @@ def test_destination_validation(tmp_path):
     folder.mkdir()
     accepted = export.validate_destination(folder / "Review.MP4")
     assert accepted == folder.resolve() / "Review.MP4"
+    longest = "x" * 251 + ".mp4"
+    assert export.validate_destination(folder / longest).name == longest
     (folder / "taken.mp4").write_bytes(b"keep")
     (folder / "dangling.mp4").symlink_to(folder / "nowhere.mp4")
     private = tmp_path / "private"
@@ -498,6 +541,74 @@ def test_destination_validation(tmp_path):
         with pytest.raises(export.LocalExportError):
             export.validate_destination(value, private_roots=(private,))
     assert (folder / "taken.mp4").read_bytes() == b"keep"
+    with pytest.raises(export.LocalExportError, match="private storage"):
+        export.validate_destination(folder / "Review.mp4", private_roots=(None,))
+
+
+PORTABLE = ["Review.mp4", "Review final (v2).mp4", "CONSOLE.mp4", "COM10.mp4", "nul-take.mp4"]
+NOT_PORTABLE = [
+    "a:b.mp4",
+    "q?.mp4",
+    "x|y.mp4",
+    "a<b.mp4",
+    "a>b.mp4",
+    "a*b.mp4",
+    'say"hi".mp4',
+    "back\\slash.mp4",
+    "CON .mp4",
+    "con.mp4",
+    "Aux.final.mp4",
+    "nul  .take.mp4",
+    "CONIN$.mp4",
+    "LPT9.mp4",
+    "COM\u00b9.mp4",
+    "x" * 252 + ".mp4",
+    "tab\t.mp4",
+]
+
+
+@pytest.mark.parametrize("name", PORTABLE + NOT_PORTABLE)
+def test_destination_names_follow_windows_rules(tmp_path, name):
+    portable = name in PORTABLE
+    assert export.portable_name(name) is portable
+    # A Windows-spelled destination keeps the basename unless it holds a separator.
+    assert PureWindowsPath("C:\\Film\\" + name).name == name or "\\" in name
+    if hasattr(ntpath, "isreserved") and "\\" not in name and len(name.encode()) <= 255:
+        # Python 3.13+ applies the same rules to a full Windows path.
+        assert ntpath.isreserved("C:\\Film\\" + name) is not portable
+    if portable:
+        assert export.validate_destination(tmp_path / name) == tmp_path.resolve() / name
+    elif "\t" not in name and not (os.name == "nt" and "\\" in name):
+        # On Windows a backslash separates folders instead of naming one file.
+        with pytest.raises(export.LocalExportError, match="portable"):
+            export.validate_destination(str(tmp_path) + "/" + name)
+    assert list(tmp_path.iterdir()) == []
+
+
+@pytest.mark.parametrize(
+    "path, root, inside",
+    [
+        (r"\\?\C:\Users\a\AppData\Blender\state", r"C:\users\a\appdata\blender", True),
+        (r"C:\Users\a\AppData\Blender", r"\\?\C:\Users\a\AppData\Blender", True),
+        (r"\\?\UNC\server\share\Blender\x", r"\\SERVER\share\blender", True),
+        (r"C:\Users\a\Videos", r"\\?\C:\Users\a\AppData\Blender", False),
+        (r"D:\Blender", r"C:\Blender", False),
+    ],
+)
+def test_private_roots_compare_windows_spellings(path, root, inside):
+    assert export._inside(PureWindowsPath(path), PureWindowsPath(root)) is inside
+
+
+def test_private_roots_ignore_case_where_volumes_do(tmp_path):
+    private = tmp_path / "Library" / "Blender"
+    private.mkdir(parents=True)
+    alias = Path(str(private).replace("Library", "library").replace("Blender", "BLENDER"))
+    folds = sys.platform == "darwin" or os.name == "nt"
+    assert export._inside(alias, private) is folds
+    if folds:
+        # Default macOS and Windows volumes ignore case: the alias is the same folder.
+        with pytest.raises(export.LocalExportError, match="outside Blender"):
+            export.validate_destination(alias / "Review.mp4", private_roots=(private,))
 
 
 def staged_fixture(tmp_path, data=b"verified video bytes"):
@@ -538,6 +649,21 @@ def test_reservation_never_overwrites_and_release_is_identity_checked(tmp_path):
     export.release(reservation)
     with pytest.raises(export.LocalExportError, match="Cannot create"):
         export.reserve(tmp_path / "missing" / "film.mp4")
+    with pytest.raises(export.LocalExportError, match="absolute"):
+        export.reserve("film.mp4")
+    assert not Path("film.mp4").exists()
+
+
+def test_longest_portable_name_publishes_and_republishes(tmp_path):
+    staged = staged_fixture(tmp_path)
+    folder = tmp_path / "Film"
+    folder.mkdir()
+    for prefix in ("x", "y"):
+        destination = export.validate_destination(folder / (prefix * 251 + ".mp4"))
+        assert len(destination.name.encode()) == 255
+        export.publish(staged, destination)
+        assert destination.read_bytes() == b"verified video bytes"
+    assert not leftovers(folder)
 
 
 def test_publish_copies_verified_bytes_and_replaces_only_the_placeholder(tmp_path):
@@ -624,6 +750,8 @@ def test_space_check_and_staging_discard(monkeypatch, tmp_path, spec):
     )
     with pytest.raises(export.LocalExportError, match="free disk space"):
         export.check_space(spec, tmp_path / "Review.mp4")
+    with pytest.raises(export.LocalExportError, match="folder must already exist"):
+        export.check_space(spec, tmp_path / "missing" / "Review.mp4")
     with pytest.raises(export.LocalExportError, match="staging"):
         export.discard_staging(tmp_path)
     export.discard_staging(spec.directory)
@@ -794,6 +922,57 @@ def test_republish_requires_this_owners_staged_export(monkeypatch, tmp_path, own
         )
     with pytest.raises(TypeError):
         exports.export_film(object(), tmp_path / "x.mp4", origin=ORIGIN, source_origin=SOURCE)
+
+
+def test_relative_destination_is_refused_before_a_thread_starts(monkeypatch, tmp_path, owner, spec):
+    coordinator, exports = owner()
+    monkeypatch.chdir(tmp_path)
+    for command, value in ((exports.export_film, spec), (exports.publish_film_export, None)):
+        value = value if value is not None else staged_fixture(tmp_path)
+        with pytest.raises(export.LocalExportError, match="absolute"):
+            command(value, "Review.mp4", origin=ORIGIN, source_origin=SOURCE)
+    assert exports._threads == [] and not (tmp_path / "Review.mp4").exists()
+
+
+@pytest.mark.parametrize("name", ["a:b.mp4", "CON .mp4", ".hidden.mp4", "missing/Review.mp4"])
+def test_coordinator_rechecks_destination_shape_before_reserving(
+    monkeypatch, tmp_path, owner, spec, name
+):
+    coordinator, exports = owner()
+    monkeypatch.setattr(export, "render", lambda *a, **k: pytest.fail("Rendered"))
+    monkeypatch.setattr(export, "check_space", lambda *a: pytest.fail("Checked space"))
+    folder = tmp_path / "Film"
+    folder.mkdir()
+    task = exports.export_film(spec, str(folder) + "/" + name, origin=ORIGIN, source_origin=SOURCE)
+    with pytest.raises(export.LocalExportError, match="portable|visible|folder must"):
+        task.result(5)
+    assert list(folder.iterdir()) == []
+
+
+def test_reused_snapshot_never_reserves_a_destination(monkeypatch, tmp_path, owner, spec):
+    coordinator, exports = owner()
+    (spec.directory / "started.json").write_text("{}")
+    monkeypatch.setattr(export, "render", lambda *a, **k: pytest.fail("Rendered"))
+    task = exports.export_film(spec, tmp_path / "Review.mp4", origin=ORIGIN, source_origin=SOURCE)
+    with pytest.raises(export.LocalExportError, match="already used"):
+        task.result(5)
+    assert not (tmp_path / "Review.mp4").exists()
+
+
+def test_space_failure_releases_the_reserved_placeholder(monkeypatch, tmp_path, owner, spec):
+    coordinator, exports = owner()
+    order = []
+
+    def full(value, destination):
+        order.append(("space", Path(destination).exists()))
+        raise export.LocalExportError("Not enough free disk space for this video export")
+
+    monkeypatch.setattr(export, "check_space", full)
+    monkeypatch.setattr(export, "render", lambda *a, **k: pytest.fail("Rendered"))
+    task = exports.export_film(spec, tmp_path / "Review.mp4", origin=ORIGIN, source_origin=SOURCE)
+    with pytest.raises(export.LocalExportError, match="free disk space"):
+        task.result(5)
+    assert order == [("space", True)] and not (tmp_path / "Review.mp4").exists()
 
 
 def test_existing_destination_fails_before_rendering(monkeypatch, tmp_path, owner, spec):

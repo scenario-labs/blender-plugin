@@ -11,11 +11,13 @@ import threading
 import time
 import uuid
 from dataclasses import dataclass, field
+from pathlib import Path
 from weakref import WeakKeyDictionary, WeakValueDictionary
 
 import bpy
 from bpy.app.handlers import persistent
 
+from ..core.jobs import local_export
 from ..core.jobs.coordinator import (
     FilmUploadResult,
     JobCoordinator,
@@ -707,18 +709,41 @@ class JobSession:
         if any(pending is task for pending, _ in self._pending):
             self._workers.cancel_local(task)
 
+    @staticmethod
+    def _export_destination(destination, staging):
+        """Resolve an approved video path outside staging, extension and Blender storage.
+
+        Every UI or MCP caller passes through here, so a relative, existing,
+        non-portable or private destination never reaches a thread or placeholder.
+        """
+        package = __package__.rsplit(".", 1)[0]
+        roots = (
+            staging,
+            bpy.utils.extension_path_user(package),
+            Path(__file__).resolve().parent.parent,
+            bpy.utils.resource_path("USER"),
+            bpy.utils.user_resource("EXTENSIONS"),
+        )
+        return local_export.validate_destination(destination, private_roots=roots)
+
     def export_film(self, spec, destination, *, origin, source_origin):
         """Start one approved offline video export on the session's owned export thread.
 
         ``origin`` is the selected working scene and ``source_origin`` the exported
         scene. The caller owns destination approval and the snapshot's staging
-        directory. No Scenario request, spend or scene mutation follows.
+        directory. The destination is validated here, on the main thread, before
+        any thread, placeholder or media hashing starts. No Scenario request, spend
+        or scene mutation follows.
         """
         _main_thread()
+        if not isinstance(spec, local_export.ExportSpec):
+            raise TypeError("Use a Film export specification")
         self._check_capacity()
         self._resolve(origin)
         if not self._origins.current(source_origin):
             raise OriginUnavailable("The selected export scene changed")
+        destination = self._export_destination(destination, spec.directory.parent)
+        local_export.check_unused(spec)
         task = self._exports.export_film(
             spec, destination, origin=origin, source_origin=source_origin
         )
@@ -728,9 +753,12 @@ class JobSession:
     def publish_film_export(self, staged, destination, *, origin, source_origin):
         """Copy a verified staged export to another approved destination; never re-render."""
         _main_thread()
+        if not isinstance(staged, local_export.StagedExport):
+            raise TypeError("Use a verified staged Film export")
         self._check_capacity()
         if not self._active:
             raise OriginUnavailable("This export session is inactive")
+        destination = self._export_destination(destination, staged.directory.parent)
         task = self._exports.publish_film_export(
             staged, destination, origin=origin, source_origin=source_origin
         )

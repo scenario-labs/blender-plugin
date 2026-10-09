@@ -17,11 +17,12 @@ import re
 import secrets
 import shutil
 import stat
+import sys
 import tempfile
 import threading
 from dataclasses import dataclass, field
 from fractions import Fraction
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 
 from . import mp4_inspection
 from .local_render import (
@@ -32,6 +33,7 @@ from .local_render import (
     blender_path,
     digest,
 )
+from .transfers import TransferError
 
 MAX_SECONDS = 900
 MAX_FRAMES = 108000
@@ -43,9 +45,12 @@ VIDEO_NAME = "film.mp4"
 AUDIO_RATE = 48000
 AUDIO_CHANNELS = 2
 _PROGRESS = re.compile(rb"SCENARIO_PROGRESS (\d{1,6})/(\d{1,6})")
-# Windows device names stay reserved with any extension; reject them everywhere.
+# Windows naming rules apply everywhere so a chosen name stays portable. These
+# mirror Python 3.13's ntpath.isreserved, which Blender 5.0's Python 3.11 lacks.
+_RESERVED_CHARACTERS = frozenset('<>:"|?*\\/')
 _RESERVED = frozenset(
-    {"CON", "PRN", "AUX", "NUL"} | {f"{port}{i}" for port in ("COM", "LPT") for i in range(1, 10)}
+    {"CON", "PRN", "AUX", "NUL", "CONIN$", "CONOUT$"}
+    | {f"{port}{digit}" for port in ("COM", "LPT") for digit in "123456789\u00b9\u00b2\u00b3"}
 )
 
 
@@ -259,8 +264,46 @@ class Reservation:
     inode: int
 
 
+def portable_name(name):
+    """Whether a file name is valid on Windows too: no reserved characters or device stems."""
+    return (
+        isinstance(name, str)
+        and 0 < len(name.encode("utf-8")) <= 255
+        and not any(ord(c) < 32 or ord(c) == 127 for c in name)
+        and not _RESERVED_CHARACTERS.intersection(name)
+        # Windows drops trailing dots and spaces, so "CON .mp4" opens the device.
+        and not name.endswith((".", " "))
+        and name.partition(".")[0].rstrip(" ").upper() not in _RESERVED
+    )
+
+
+def _comparable(path):
+    """Spell a resolved path so containment ignores Windows prefixes and macOS case."""
+    text = str(path)
+    if isinstance(path, PureWindowsPath):
+        # Windows path comparison already ignores case; extended and ordinary
+        # spellings of one folder must still compare equal.
+        for prefix, replacement in (("\\\\?\\UNC\\", "\\\\"), ("\\\\?\\", "")):
+            if text.startswith(prefix):
+                text = replacement + text[len(prefix) :]
+                break
+    elif sys.platform == "darwin":
+        # The default macOS volume ignores case; over-rejecting another is safe.
+        text = text.casefold()
+    return type(path)(text)
+
+
+def _inside(path, root):
+    path, root = _comparable(path), _comparable(root)
+    return path == root or path.is_relative_to(root)
+
+
 def validate_destination(path, *, private_roots=()):
-    """Return the absolute destination with a canonical parent; never accept an existing name."""
+    """Return the absolute destination with a canonical parent; never accept an existing name.
+
+    ``private_roots`` are folders the export must never write into, such as
+    staging, extension and Blender user storage; the session supplies them.
+    """
     raw = os.fspath(path) if isinstance(path, (str, os.PathLike)) else None
     if not isinstance(raw, str) or not raw or any(ord(c) < 32 or ord(c) == 127 for c in raw):
         raise LocalExportError("Choose a destination path without control characters")
@@ -270,7 +313,7 @@ def validate_destination(path, *, private_roots=()):
         raise LocalExportError("Choose an absolute destination path")
     if not name.lower().endswith(".mp4") or len(name) < 5 or name.startswith("."):
         raise LocalExportError("Choose a visible destination file ending in .mp4")
-    if len(name.encode("utf-8")) > 255 or name.split(".")[0].upper() in _RESERVED:
+    if not portable_name(name):
         raise LocalExportError("Choose a portable destination file name")
     if os.path.lexists(destination):
         raise LocalExportError("The destination already exists; choose a new file name")
@@ -283,9 +326,9 @@ def validate_destination(path, *, private_roots=()):
     for root in private_roots:
         try:
             private = Path(root).resolve()
-        except (OSError, RuntimeError):
-            continue
-        if parent == private or parent.is_relative_to(private):
+        except (OSError, RuntimeError, TypeError):
+            raise LocalExportError("Cannot check the destination against private storage") from None
+        if _inside(parent, private):
             raise LocalExportError("Choose a destination outside Blender and extension storage")
     result = parent / name
     if os.path.lexists(result):
@@ -293,8 +336,16 @@ def validate_destination(path, *, private_roots=()):
     return result
 
 
+def check_unused(spec):
+    """Refuse a snapshot whose single render admission was already consumed."""
+    if any(os.path.lexists(spec.directory / name) for name in ("started.json", "output")):
+        raise LocalExportError("This export snapshot was already used; snapshot the scene again")
+
+
 def reserve(destination):
     """Create the destination exclusively as an empty placeholder; never overwrite."""
+    if not Path(destination).is_absolute():
+        raise LocalExportError("Choose an absolute destination path")
     flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
     flags |= getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_BINARY", 0)
     try:
@@ -338,6 +389,8 @@ def estimated_bytes(spec):
 def check_space(spec, destination):
     """Fail early on an obviously full disk; a full disk later still fails cleanly."""
     needed = estimated_bytes(spec)
+    if not Path(destination).parent.is_dir():
+        raise LocalExportError("The destination folder must already exist")
     try:
         staging = os.stat(spec.directory).st_dev
         target = os.stat(Path(destination).parent).st_dev
@@ -522,6 +575,16 @@ def check_blender(spec, raw):
         raise LocalExportError("Blender could not decode the approved frames and audio")
 
 
+def _report(path, message):
+    """Read one bounded child report; a missing or odd file fails without its path."""
+    try:
+        if path.is_symlink() or not 0 < path.stat().st_size <= 65536:
+            raise LocalExportError(message)
+        return path.read_bytes()
+    except OSError:
+        raise LocalExportError(message) from None
+
+
 def _verify(spec, output, env, cancel):
     """Decode-check the staged MP4; prefer an installed ffprobe, else Blender itself."""
     tool = shutil.which("ffprobe")
@@ -555,9 +618,7 @@ def _verify(spec, output, env, cancel):
             timeout=spec.check_timeout,
             cancel=cancel,
         )
-        if not 0 < probe.stat().st_size <= 65536:
-            raise LocalExportError("Media inspection exceeded the size policy")
-        check_probe(spec, probe.read_bytes())
+        check_probe(spec, _report(probe, "Media inspection output is missing or too large"))
         return "ffprobe"
     verify = spec.directory / "verify.json"
     with verify.open("x", encoding="utf-8") as stream:
@@ -593,10 +654,10 @@ def _verify(spec, output, env, cancel):
         timeout=spec.check_timeout,
         cancel=cancel,
     )
-    measured = spec.directory / "measured.json"
-    if measured.is_symlink() or not 0 < measured.stat().st_size <= 65536:
-        raise LocalExportError("Blender verification output exceeded the size policy")
-    check_blender(spec, measured.read_bytes())
+    measured = _report(
+        spec.directory / "measured.json", "Blender verification output is missing or too large"
+    )
+    check_blender(spec, measured)
     return "blender"
 
 
@@ -605,12 +666,22 @@ def render(spec, *, cancel=None, progress=None):
 
     Exactly one ``output/film.mp4`` is accepted. Verification always inspects the
     container, then decodes with an installed ffprobe or, when absent, in a second
-    offline Blender child. Media stamps must be unchanged before and after.
+    offline Blender child. Media stamps must be unchanged before and after. A
+    snapshot renders once; file system errors never expose private staging paths.
     """
     if not isinstance(spec, ExportSpec):
         raise TypeError("Use an approved Film export specification")
     cancel = cancel if cancel is not None else threading.Event()
     progress = progress if progress is not None else (lambda *_: None)
+    try:
+        return _render(spec, cancel, progress)
+    except OSError:
+        raise LocalExportError(
+            "Film export could not use its private staging files; snapshot the scene again"
+        ) from None
+
+
+def _render(spec, cancel, progress):
     snapshot = spec.directory / "snapshot.blend"
     output = spec.directory / "output"
     video = output / VIDEO_NAME
@@ -631,7 +702,13 @@ def render(spec, *, cancel=None, progress=None):
     snapshot_argument, binary_argument, worker_argument, parameters_argument = child_paths[:4]
     if spec.directory.is_symlink() or not spec.directory.is_dir():
         raise LocalExportError("The owned export directory is unavailable")
-    if digest(snapshot) != spec.snapshot_sha256:
+    # Refuse reuse before hashing up to 16 GiB of media again.
+    check_unused(spec)
+    try:
+        current = digest(snapshot)
+    except (OSError, LocalRenderError, TransferError):
+        current = None
+    if current != spec.snapshot_sha256:
         raise LocalExportError("The exported scene snapshot changed")
     if not spec.binary.is_file() or not spec.worker.is_file():
         raise LocalExportError("The Blender executable or bundled export worker is unavailable")
@@ -745,7 +822,8 @@ def publish(staged, destination, reservation=None, *, cancel=None, progress=None
         reservation = reserve(destination)
     elif not isinstance(reservation, Reservation) or reservation.path != destination:
         raise TypeError("Use this destination's placeholder reservation")
-    partial = destination.parent / f".{destination.name}.scenario-{secrets.token_hex(6)}.partial"
+    # A fixed-length name fits next to any destination name the file system allows.
+    partial = destination.parent / f".scenario-{secrets.token_hex(6)}.partial"
     created = None
     try:
         flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL

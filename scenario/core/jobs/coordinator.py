@@ -446,13 +446,17 @@ class JobCoordinator:
         Both origins must be current before the destination is reserved. A scene
         edit after the snapshot does not discard the approved bytes, but owner
         retirement before publishing releases the placeholder and keeps staging.
+        The session checks private roots; this re-checks the portable shape.
         """
         if not isinstance(spec, local_export.ExportSpec):
             raise TypeError("Use an approved Film export specification")
+        destination = local_export.validate_destination(destination)
+        local_export.check_unused(spec)
         self._check_export(origin, source_origin)
-        local_export.check_space(spec, destination)
+        # Reserve first so a missing or unwritable folder is reported as such.
         reservation = local_export.reserve(destination)
         try:
+            local_export.check_space(spec, destination)
             staged = local_export.render(spec, cancel=cancel, progress=progress)
         except BaseException:
             local_export.release(reservation)
@@ -479,6 +483,7 @@ class JobCoordinator:
         with self._lock:
             if self._staged_exports.get(id(staged)) is not staged:
                 raise ValueError("Use this connection's verified staged Film export")
+        destination = local_export.validate_destination(destination)
         self._check_export()
         published = local_export.publish(staged, destination, cancel=cancel, progress=progress)
         self._log_export(published)

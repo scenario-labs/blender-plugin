@@ -1186,3 +1186,91 @@ SDK transport and media metadata were mocked, and external socket/DNS calls were
 disabled. This proves the scoped native interaction flow, not real media probing,
 live provider quality, other OS/DPI behavior, local final assembly/export or
 complete Film/release acceptance.
+
+
+## Explicit Studio view
+
+The viewport header has a separate **Studio** button. It opens a native popup
+with Create, Film, Jobs, Results and Connection pages. Opening, closing or
+switching pages does not start a job or select another account/project. No
+startup or file-load handler opens it. The existing **Scenario** button still
+opens the sidebar; the compact composer remains the default creation surface.
+
+Studio reuses the actual native panel controls and their operators. Create keeps
+the same scene form, model, prompt, references and parameters. Film separates
+Tasks, Shots, Capture, Timeline and Composition; each keeps its existing
+confirmation boundary. Results reuse the saved-result and explicit application
+controls. Connection names the selected credential source/project and links to
+Preferences and local agent setup without displaying credentials.
+
+Navigation is an unsaved WindowManager property group. Native navigation edits
+must not tag a scene or invalidate its exact quote. Before opening, focused
+composer text is committed only if its original scene, lane and previously
+synchronized prompt still match. A conflicting form rejects opening and retains
+both texts. Opening Studio never commits pending text into another scene with
+an identical old prompt.
+
+The requested popup width is bounded by the invoking area, window and UI scale;
+narrow requests use two rows of equal navigation segments. Clicking outside a
+focused composer commits its text and passes that same click to Blender, so the
+Studio header button opens on the first click. Installed tests cover this handoff,
+registration, shared drawing, quote preservation, pending-text ownership and
+continued admitted work.
+
+An isolated offline desktop check on macOS 27.0.1 arm64, Blender 5.1.2, used exact
+ZIP SHA-256 `32d81f8cbbc59023dcac10d71c1e87fc70a04265c8791e373639cef53c97c253`.
+Native paste entered `Café 雪 Studio test` in the compact composer. One header
+click opened Studio and preserved that text; Film navigation and Escape dismissal
+worked. Camera selection, wheel zoom and the front-view shortcut worked afterward.
+The default-size captures show readable two-row navigation without overlap.
+The test app used a distinct bundle identity and development signature; the
+installed extension and ZIP stayed unchanged. The process exited cleanly with
+no Python network violations and the normal profile unchanged.
+
+![Focused Unicode prompt in the compact composer before opening Studio](images/studio-composer-focused.png)
+![Studio opens on the first click and retains the composer prompt](images/studio-prompt-handoff.png)
+![Viewport selection and front view after dismissing Studio](images/studio-viewport-return.png)
+
+A second offline fixture on that same ZIP populated the actual shared model form
+with a prompt, reference and enough settings to require scrolling. The SDK used
+an in-memory transport; a running synthetic job was seeded in the local saved
+store and resumed without invoking submission. Native navigation through Create,
+Film, Jobs, Results and Connection retained the quote identity and exact cost
+`0.1234567890123456789`, model, prompt and reference. The same job owner continued
+polling while the popup opened, changed pages and closed. No submission occurred.
+
+At Blender window dimensions 1512 × 917 and 1018 × 671, with UI scale 2.0,
+the populated popup remained readable and scrollable without horizontal clipping.
+Native Home/Shift-End selection, Unicode paste, Enter and Escape changed the
+Studio prompt to `Café 雪 Studio edited`; the compact composer showed the same
+text afterward, and the shared runtime produced a fresh ready quote. The repeat
+exited cleanly with no Python network violations and the normal profile unchanged.
+An earlier selection-shortcut attempt exited Blender and hit a test-fixture
+credential cleanup error during shutdown; that run is not clean-exit evidence.
+
+![Studio Jobs shows a synthetic running job during native navigation](images/studio-active-job.png)
+![Populated Studio form remains readable in a narrower Blender window](images/studio-narrow-form.png)
+
+These checks supersede the window-attachment and populated-form evidence gaps.
+Alternate-DPI interaction and IME composition remain unverified: Preferences
+opened, but the attempted scale edit did not change the observed UI scale, and
+Unicode paste is not IME composition. Track those native checks under #66 as
+acceptance follow-ups; they do not block review of this scoped change. The complete
+select/capture/estimate/generate/inspect/apply journey and other-platform desktop acceptance remain separate under #66/#68.
+
+Blur and Studio opening now share the same focused-prompt ownership guard.
+A conflicting scene, lane or sidebar prompt keeps both texts and focus intact;
+the outside click is consumed with a warning before any native handoff. With no
+focused prompt, blur writes nothing. Valid edits still commit and pass the same
+click to Blender. Installed modal-path regressions reproduce all four overwrite
+cases on the preceding ZIP and pass on fixed ZIP SHA-256
+`15f730160c62c2e7a700b25ac6c8a7a1d134122c30ef3e5c85842912c463777b`.
+That ZIP passes 1,088 installed tests on each macOS arm64 Blender 5.0.1, 5.1.2 and
+5.2.1 (two Windows-only skips per run). A new isolated desktop attempt displayed
+the correct fixture, but control-tool clicks did not visibly activate the composer
+or Studio. It supplies no new physical-input acceptance; the screenshots and
+interaction results above remain evidence for their explicitly identified ZIP.
+
+This view exposes existing creation/Film/result controls. Workflow input forms,
+asset-library search and complete retained Studio acceptance remain separate;
+local workflow commands alone do not provide those forms.

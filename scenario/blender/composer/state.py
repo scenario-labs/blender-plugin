@@ -1,6 +1,7 @@
 # SPDX-FileCopyrightText: 2026 Scenario Inc.
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Interaction state of the floating composer, mirrored into the Scene lane state."""
+
 from ...core.ui.composer_layout import LANE_ORDER, TextField
 
 COMPOSER_LANES = tuple(LANE_ORDER)
@@ -10,18 +11,21 @@ class ComposerState:
     def __init__(self):
         self.expanded = False
         self.focused = False
-        self.dragging = False      # left button held inside the prompt: mouse moves extend the selection
+        self.dragging = (
+            False  # left button held inside the prompt: mouse moves extend the selection
+        )
         self.hover = None
         self.mouse = (0, 0)
         self.field = TextField("")
+        self.synced_scene = None
         self.synced_lane = ""
         self.synced_text = None
         self.layout = None
         # placement: offset from the default bottom-centre spot (region pixels) and an optional card width
         self.offset = (0.0, 0.0)
         self.width = None
-        self.drag_mode = None      # None | "pending" | "move" | "resize"
-        self.drag_start = None     # dict(mouse, offset, width, kind) captured at the press
+        self.drag_mode = None  # None | "pending" | "move" | "resize"
+        self.drag_start = None  # dict(mouse, offset, width, kind) captured at the press
         self.moved = False
 
     def lane_for(self, scene):
@@ -34,9 +38,14 @@ class ComposerState:
     def sync_from_lane(self, scene):
         lane = self.lane_for(scene)
         lane_state = scene.scenario.lane_state(lane)
-        if lane != self.synced_lane or lane_state.prompt != self.synced_text:
+        if (
+            scene != self.synced_scene
+            or lane != self.synced_lane
+            or lane_state.prompt != self.synced_text
+        ):
             self.field.set_text(lane_state.prompt)
             self.field.end()
+            self.synced_scene = scene
             self.synced_lane, self.synced_text = lane, lane_state.prompt
         return lane_state
 
@@ -48,11 +57,35 @@ class ComposerState:
         self.synced_lane, self.synced_text = lane, self.field.text
         return lane_state
 
+    def flush_focused_prompt(self, scene):
+        """Leave text focus only after committing to the unchanged original form."""
+        if not self.focused:
+            return
+        try:
+            lane = self.lane_for(scene)
+            valid = (
+                self.synced_scene == scene
+                and self.synced_lane == lane
+                and self.synced_text == scene.scenario.lane_state(lane).prompt
+            )
+        except ReferenceError:
+            valid = False
+        if not valid:
+            raise RuntimeError("Finish editing the original prompt before leaving the composer")
+        self.commit_to_lane(scene)
+        self.focused = False
+        self.dragging = False
+
     # -- placement ------------------------------------------------------------
     def begin_drag(self, mouse, kind):
         """Remember where a press happened so a move beyond the threshold turns into a drag (or a resize)."""
         self.drag_mode = "resize" if kind == "resize" else "pending"
-        self.drag_start = {"mouse": tuple(mouse), "offset": tuple(self.offset), "width": self.width, "kind": kind}
+        self.drag_start = {
+            "mouse": tuple(mouse),
+            "offset": tuple(self.offset),
+            "width": self.width,
+            "kind": kind,
+        }
         self.moved = False
 
     def cancel_drag(self):

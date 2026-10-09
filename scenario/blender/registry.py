@@ -30,6 +30,7 @@ def _modules():
         props,
         reference_form,
         shot_planner,
+        studio,
     )
 
     modules = [
@@ -45,6 +46,7 @@ def _modules():
         film,
         model_picker,
         panels,
+        studio,
         popover,
         composer,
     ]

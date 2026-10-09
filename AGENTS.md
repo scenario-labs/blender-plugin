@@ -167,6 +167,12 @@ to the change; documentation work needs link, instruction and checker validation
 not a new Blender runtime run. Native acceptance uses the exact packaged ZIP in
 an isolated profile. Never run development builds in the user's normal profile.
 
+Distinguish review readiness from merge and release acceptance. Do not keep a
+reviewable PR draft solely for unverified edge cases or broader issue acceptance;
+track concrete follow-up checks in the owning issue and link them from the PR.
+Use the [readiness policy](docs/development/contributions.md#review-readiness-and-acceptance-follow-ups)
+for actual draft blockers; never claim unperformed checks passed.
+
 Use short-lived conventional branches. Independent PRs and the bottom of a stack
 target `main`; dependent PRs target their immediate parent branch. Follow the
 [stack workflow](docs/development/contributions.md#stacked-pull-requests), preserve

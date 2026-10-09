@@ -542,3 +542,23 @@ unchanged input, scene and connection. Results stay saved for explicit applicati
 there is no workflow-specific worker pool, store or automatic import. Native
 workflow forms, expanded Studio, interactive nodes, general cancellation and live
 output acceptance remain separate integration gates under #64/#65/#66/#68.
+
+
+## Explicit expanded native view
+
+[studio.py](../../scenario/blender/studio.py) registers an explicitly invoked
+native popup and unsaved WindowManager navigation. The header entry point is
+[popover.py](../../scenario/blender/popover.py); no lifecycle hook invokes it.
+It reuses existing panel drawing and operators for Create, Film, Jobs, Results
+and Connection, retaining scene-owned forms and application-owned sessions.
+Closing the popup owns no worker teardown or job cancellation.
+
+Composer synchronization retains its source scene. Opening Studio flushes a
+focused prompt only into that unchanged scene/lane/form; navigation itself does
+not change scene data. Installed checks cover quote identity under native owner
+tagging, read-only drawing and continued jobs. The composer commits on blur and
+passes the same outside click to native controls. Offline desktop evidence covers
+first-click Studio opening, Unicode prompt edits, populated-form scrolling,
+quote-preserving navigation, continued saved-job polling, small-window fit,
+Escape and viewport return. Alternate-DPI/IME acceptance, workflow/library forms
+and complete #66 remain pending.

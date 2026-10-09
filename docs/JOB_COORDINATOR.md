@@ -100,19 +100,23 @@ create a paid generation intent or authorize uploading the output.
 ## Local Film export thread
 
 `export_film(spec, destination, origin=..., source_origin=..., cancel=..., progress=...)`
-renders, verifies and publishes a local MP4 with no Scenario request. It checks
-the active owner and both captured origins before reserving the destination,
-then only the active owner before publishing; a later scene edit does not cancel
-the approved bytes. `publish_film_export` copies a staged export issued by this
-coordinator to another destination without rendering. `LocalExportResult` binds
-the published receipt to the selected scope and both origins; it grants no scene,
-upload or spend authority. Deactivation forgets issued staged exports.
+renders, verifies and publishes a local MP4 with no Scenario request. It
+re-checks the destination's portable shape and refuses a reused snapshot, checks
+the active owner and both captured origins, reserves the destination and only
+then runs the free-space preflight, so a missing folder is reported as such.
+Before publishing it checks only the active owner; a later scene edit does not
+cancel the approved bytes. Private-root policy belongs to the Blender session.
+`publish_film_export` copies a staged export issued by this coordinator to
+another destination without rendering. `LocalExportResult` binds the published
+receipt to the selected scope and both origins; it grants no scene, upload or
+spend authority. Deactivation forgets issued staged exports.
 
-`LocalExportWorker` runs these commands on its own named thread, one at a time per
-owner, instead of the bounded `JobWorkers` queue. A multi-hour export therefore
-never holds a polling/download worker or the capture/review local media slot.
-Deactivation cancels the running export and reaps its child; shutdown joins the
-thread before the coordinator closes. See the
+`LocalExportWorker` runs these commands on its own named thread, one at a time
+per owner, instead of the bounded `JobWorkers` queue. A multi-hour export
+therefore never holds a polling/download worker or the capture/review local media
+slot. It refuses a relative destination before starting the thread. Deactivation
+cancels the running export and reaps its child; shutdown joins the thread before
+the coordinator closes. See the
 [export contract](FILM_PLAN.md#offline-film-video-export-primitive).
 
 ## Film model task quotes

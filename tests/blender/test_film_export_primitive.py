@@ -29,7 +29,8 @@ class FilmExportPrimitiveTests(unittest.TestCase):
         self.directory = Path(
             self.enterContext(tempfile.TemporaryDirectory(dir=bpy.utils.resource_path("USER")))
         ).resolve()
-        self.output = self.directory / "Film"
+        # Published videos must live outside Blender's user and staging storage.
+        self.output = Path(self.enterContext(tempfile.TemporaryDirectory())).resolve() / "Film"
         self.output.mkdir()
         self.media = self.directory / "media.mp4"
         self.media.write_bytes((FIXTURES / "synthetic/film-four-seconds-audio.mp4").read_bytes())
@@ -125,6 +126,25 @@ class FilmExportPrimitiveTests(unittest.TestCase):
                 strip.mute = True
         self.assertFalse(self.snapshot().audio)
 
+    def test_muted_channels_and_meta_strips_default_to_no_audio_track(self):
+        editor = self.review.sequence_editor
+        (sound,) = [strip for strip in editor.strips_all if strip.type == "SOUND"]
+        editor.channels[sound.channel].mute = True
+        self.assertFalse(self.snapshot().audio)
+        editor.channels[sound.channel].mute = False
+        meta = editor.strips.new_meta("Audio meta", 5, 1)
+        sound.move_to_meta(meta)
+        self.assertEqual(sound.parent_meta(), meta)
+        self.assertTrue(self.snapshot().audio)
+        meta.mute = True
+        self.assertFalse(self.snapshot().audio)
+        meta.mute = False
+        editor.channels[meta.channel].mute = True
+        self.assertFalse(self.snapshot().audio)
+        editor.channels[meta.channel].mute = False
+        meta.channels[sound.channel].mute = True
+        self.assertFalse(self.snapshot().audio)
+
     def test_unsupported_scenes_are_rejected_without_files(self):
         before = set(self.directory.iterdir())
 
@@ -218,8 +238,72 @@ class FilmExportPrimitiveTests(unittest.TestCase):
         self.assertNotIn(threads[0], self.session._workers._threads)
         with self.assertRaises(self.module.OriginUnavailable):
             self.session.deliver_local_export(completion)
+        # A rendered snapshot is refused at the boundary instead of re-hashing media.
+        with self.assertRaisesRegex(self.export.LocalExportError, "already used"):
+            self.session.export_film(
+                spec, self.output / "Again.mp4", origin=origin, source_origin=source
+            )
+        self.assertFalse((self.output / "Again.mp4").exists())
         self.export.discard_staging(spec.directory)
         self.assertTrue(destination.exists())
+
+    def test_session_refuses_unsafe_destinations_before_work(self):
+        origin, source = self.origins()
+        staging = Path(self.enterContext(tempfile.TemporaryDirectory())).resolve()
+        spec = self.capture.export_snapshot(self.review, staging)
+        staged = self.export.StagedExport(
+            spec.directory,
+            spec.directory / "output" / "film.mp4",
+            "0" * 64,
+            1,
+            48,
+            24,
+            64,
+            64,
+            True,
+            "blender",
+            (),
+        )
+        package = self.module.__package__.rsplit(".", 1)[0]
+        extension = Path(bpy.utils.extension_path_user(package, create=True))
+        installed = Path(self.module.__file__).resolve().parent.parent
+        profile = Path(bpy.utils.resource_path("USER"))
+        taken = self.output / "Taken.mp4"
+        taken.write_bytes(b"keep")
+        # Join raw names as text: Windows pathlib would read "a:" as a drive.
+        folder = str(self.output) + os.sep
+        refused = {
+            "Review.mp4": "absolute",
+            str(staging / "Staging.mp4"): "outside Blender",
+            str(extension / "Extension.mp4"): "outside Blender",
+            str(installed / "Installed.mp4"): "outside Blender",
+            str(profile / "Profile.mp4"): "outside Blender",
+            str(taken): "already exists",
+            folder + "a:b.mp4": "portable",
+            folder + "CON .mp4": "portable",
+        }
+        before = set(spec.directory.iterdir())
+        with (
+            patch.object(self.export, "_hash_media", side_effect=AssertionError("hashed")),
+            patch.object(self.export, "reserve", side_effect=AssertionError("reserved")),
+        ):
+            for destination, message in refused.items():
+                with self.subTest(destination=Path(destination).name):
+                    with self.assertRaisesRegex(self.export.LocalExportError, message):
+                        self.session.export_film(
+                            spec, destination, origin=origin, source_origin=source
+                        )
+                    with self.assertRaisesRegex(self.export.LocalExportError, message):
+                        self.session.publish_film_export(
+                            staged, destination, origin=origin, source_origin=source
+                        )
+        self.assertEqual(self.session._exports._threads, [])
+        self.assertEqual(self.session._pending, [])
+        self.assertEqual(set(spec.directory.iterdir()), before)
+        self.assertEqual(sorted(p.name for p in self.output.iterdir()), ["Taken.mp4"])
+        for folder in (staging, extension, installed, profile):
+            self.assertEqual(list(folder.glob("*.mp4")), [])
+        self.assertFalse(Path("Review.mp4").exists())
 
     def test_publish_failure_allows_copy_only_republish(self):
         origin, source = self.origins()

@@ -122,10 +122,21 @@ def _export_media(scene):
     return tuple(stamps.values())
 
 
+def _muted(editor, strip):
+    """Mirror the sequencer: a strip, its channel or any enclosing meta strip mutes it."""
+    while strip is not None:
+        parent = strip.parent_meta()
+        if strip.mute or (parent or editor).channels[strip.channel].mute:
+            return True
+        strip = parent
+    return False
+
+
 def _audible(scene):
+    editor = scene.sequence_editor
     return any(
-        strip.type == "SOUND" and not strip.mute and strip.sound is not None
-        for strip in scene.sequence_editor.strips_all
+        strip.type == "SOUND" and strip.sound is not None and not _muted(editor, strip)
+        for strip in editor.strips_all
     )
 
 
@@ -143,10 +154,11 @@ def export_snapshot(
 ):
     """Snapshot one local sequencer scene for an offline MP4 export.
 
-    Defaults follow the scene's frame range, output dimensions and unmuted sound
-    strips. External media keep absolute references and are stamped so a change
-    before or during rendering rejects the export. The working file, selected
-    scene and frame are unchanged. The caller owns the returned staging directory.
+    Defaults follow the scene's frame range, output dimensions and audible sound
+    strips, honoring strip, channel and enclosing meta strip mutes. External
+    media keep absolute references and are stamped so a change before or during
+    rendering rejects the export. The working file, selected scene and frame are
+    unchanged. The caller owns the returned staging directory.
     """
     if threading.current_thread() is not threading.main_thread():
         raise RuntimeError("Snapshot Film exports on Blender's main thread")

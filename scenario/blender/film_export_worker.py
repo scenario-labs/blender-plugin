@@ -39,14 +39,11 @@ def _parameters():
 
 
 def _require_encoder(bpy):
-    settings = bpy.types.FFmpegSettings.bl_rna.properties
-    if (
-        not bpy.app.ffmpeg.supported
-        or "H264" not in settings["codec"].enum_items.keys()
-        or "AAC" not in settings["audio_codec"].enum_items.keys()
-        or "MPEG4" not in settings["format"].enum_items.keys()
-    ):
-        raise RuntimeError("This Blender build cannot encode H.264/AAC MP4 video")
+    # Blender lists every codec whether or not its FFmpeg libraries can encode
+    # it, so only a build without FFmpeg is detectable here. A missing H.264 or
+    # AAC encoder fails inside the render below; its log stays in staging.
+    if not bpy.app.ffmpeg.supported:
+        raise RuntimeError("This Blender build cannot encode video")
 
 
 def _render(bpy, path, spec):

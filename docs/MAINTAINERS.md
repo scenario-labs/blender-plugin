@@ -40,7 +40,7 @@ repository ref patterns.
 
 | Ruleset | ID / target | Inspected rules | Bypass |
 | --- | --- | --- | --- |
-| main - integrity | `22257774`; branch `refs/heads/main` | No deletion or non-fast-forward updates; linear history; pull request with squash only and zero required approvals; extra approval for unattributed changes. Code quality severity `errors`. CodeQL security threshold `high_or_higher`, alert threshold `errors`. Required status checks `pr-title` and `commits`, both integration `15368`; strict up-to-date policy off, enforcement on creation on. | None |
+| main - integrity | `22257774`; branch `refs/heads/main` | No deletion or non-fast-forward updates; linear history; pull request with squash only and zero required approvals; extra approval for unattributed changes. Code quality severity `errors`. CodeQL security threshold `high_or_higher`, alert threshold `errors`. Required status checks `ci-ok`, `pr-title` and `commits`, all integration `15368`; strict up-to-date policy off, enforcement on creation on. | None |
 | main - review | `22257776`; branch `refs/heads/main` | Pull request with squash only; one approval, dismiss stale reviews, resolve review threads, extra approval for unattributed changes. | `RepositoryRole` `5` (repository admin), `always` |
 | versioning | `22257778`; tags `refs/tags/v*` and `refs/tags/blender-plugin-v*` | Restrict creation, updates, deletion and non-fast-forward updates. | Repository admin `5` and release App integration `4751046`, both `always` |
 | Default security | `3247630`; inherited organization repository policy | Restrict repository creation, deletion and transfer. | `OrganizationAdmin`, `always` |
@@ -53,12 +53,27 @@ bypass integrity: direct pushes, force pushes and deletion of `main` remain
 prohibited. Other contributors need the configured review approval; unattributed
 changes require an additional approval. Tag restrictions have their own bypasses.
 
-`ci-ok` exists in [CI](../.github/workflows/ci.yml), but is **not currently a
-required status check**. CodeQL enforcement is already in the integrity ruleset,
-not the review ruleset proposed in the original audit. Reconcile the remaining
-required-check decision under #45 without dropping the existing `commits`, CodeQL
-or code-quality protection. Do not replace a ruleset from a historical example;
-read its complete conditions, rules and bypass actors before an approved update.
+On 2026-10-09, `ci-ok` from [CI](../.github/workflows/ci.yml) was added to
+required status checks after its successful GitHub Actions check identity
+(integration `15368`) was verified. API readback confirms that every other
+integrity rule, condition and bypass actor is unchanged; the review ruleset is
+unchanged too. CodeQL and code-quality enforcement remain in the integrity
+ruleset. Preserve the existing `commits` and `pr-title` checks.
+
+The [negative title check](https://github.com/scenario-labs/blender-plugin/actions/runs/37947533724)
+on [the administration PR](https://github.com/scenario-labs/blender-plugin/pull/343)
+failed for a deliberately nonconventional title while GitHub reported merging
+blocked. After the conventional title was restored,
+[the title check passed](https://github.com/scenario-labs/blender-plugin/actions/runs/37947630915),
+alongside `commits` and [required `ci-ok`](https://github.com/scenario-labs/blender-plugin/actions/runs/37947534205).
+This verifies the required
+failure path without attempting a merge or changing bypass rules; human review
+and the other required checks remain independent gates.
+
+Renaming a required check can block every merge until an administrator updates
+its ruleset context. Coordinate the workflow and settings changes, then update
+this record. Do not replace a ruleset from a historical example; read its complete
+conditions, rules and bypass actors before an approved update.
 
 ```sh
 gh api repos/scenario-labs/blender-plugin/rulesets
@@ -217,12 +232,15 @@ policy allowing exactly the `main` branch. Its read-only admission checks use
 GitHub's [environment API](https://docs.github.com/en/rest/deployments/environments#get-an-environment)
 and [branch-policy API](https://docs.github.com/en/rest/deployments/branch-policies#list-deployment-branch-policies).
 These checks run before the protected job and again after approval. A missing or
-unreadable gate fails closed. The environment was absent at the latest inspection;
-this workflow does not create it or establish hosted acceptance.
+unreadable gate fails closed. API readback on
+2026-10-09 confirms the environment exists, requires the maintainer reviewer,
+allows self-review for an explicitly approved dispatch, and accepts exactly the
+`main` branch. The workflow itself still never creates or relaxes these rules.
 
-An administrator must configure a dedicated test key and its explicit intended
-scope/budget, required reviewers, the main-only branch rule and these environment
-secrets through private input (never command arguments containing values):
+The authorized test key/default scope, private plan and recovery secret were
+installed as environment secrets on 2026-10-09. Secret values were passed through
+private standard input and never logged. The recovery passphrase is retained
+privately outside Git. Environment secrets are:
 
 - `SCENARIO_TEST_API_KEY` and `SCENARIO_TEST_API_SECRET`.
 - Optional `SCENARIO_TEST_PROJECT_ID`; blank is the key's default scope.
@@ -230,7 +248,10 @@ secrets through private input (never command arguments containing values):
 - `SMOKE_RECOVERY_PASSPHRASE`, a randomly generated secret of at least 32 characters,
   retained privately for decrypting artifacts after rotation.
 
-Set the repository variable `SMOKE_MAX_TOTAL_CU` only after agreeing on the monthly
+The repository variable `SMOKE_MAX_TOTAL_CU` remains unset, so scheduled runs have
+no positive allowance and fail admission before the protected job. A manual
+validation run is separately budget-authorized; it does not enable recurring spend.
+Set that repository variable only after agreeing on the monthly
 scheduled plan and per-run aggregate allowance. It has no positive default.
 Configure any provider-side project/monthly budget separately; the workflow's cap
 is per run, and manual runs do not share a monthly ledger. The approval job shows
@@ -246,8 +267,27 @@ Actions reruns are refused, even after an apparently early failure. Recover from
 the encrypted archive with the original scope using the non-submitting resume
 command. A new dispatch requires a new spending decision, never an assumed retry.
 See [hosted recovery and limits](../tests/smoke/README.md#protected-hosted-execution-and-recovery).
-Hosted positive/negative gate checks, encryption download/decryption and authorized
-live results remain #40/#68. Do not mark them complete from synthetic unit tests.
+The [zero-cap hosted check](https://github.com/scenario-labs/blender-plugin/actions/runs/37946825690)
+failed admission and skipped the protected job, with no Scenario request.
+The [non-main zero-cap dispatch](https://github.com/scenario-labs/blender-plugin/actions/runs/37948136030)
+skipped both jobs before any step ran. This verifies the workflow's branch guard;
+API readback separately verifies the environment's exact `main` policy.
+The [authorized hosted check](https://github.com/scenario-labs/blender-plugin/actions/runs/37946893572)
+passed admission, visibly paused at the required-reviewer gate, then succeeded
+after approval on source `88b6b3ec8ebd5707581f6d39f0fd158c784873a2`.
+Image, material, video, 3D and audio each produced one saved `READY` job.
+All 16 downloaded result files matched their saved byte counts and SHA-256
+receipts. Only the encrypted recovery archive was published as an artifact;
+private download/decryption and quote-binding verification passed. Running
+`tools.smoke_suite resume` on the decrypted suite passed with sockets blocked,
+zero network calls and the same five job records unchanged. Hosted logs contain
+none of the configured secret values, saved job/asset identities or signed queries.
+
+This version-1 plan exercises generation, polling, download and completed-result
+recovery. It does not establish version-2 reference uploads, uncertain remote-job
+recovery, Blender application, physical interaction or media-quality acceptance.
+No provider-side monthly budget was configured or recurring allowance authorized.
+Keep those remaining #40/#68 scopes separate from the completed hosted check.
 
 ## Project and labels
 
@@ -292,8 +332,8 @@ These tasks retain their existing owner issues. Read back the result and update
 this guide after an authorized change; do not treat the checklist as permission
 to perform it.
 
-- [ ] Configure and validate the protected smoke environment, private plan, recovery key, test scope and budget, then run authorized hosted acceptance: #40.
-- [ ] Add/reconcile the `ci-ok` required check after verifying its reported identity; retain the existing `pr-title`, `commits`, CodeQL and code-quality rules unless an explicit reviewed decision changes them: #45.
+- [x] Configure the protected smoke environment and private secrets, then verify the authorized five-lane hosted run and decrypted completed-result recovery: #40. Reference-upload acceptance and any future provider-side monthly budget/recurring allowance remain separate; scheduled spending is disabled.
+- [x] Add and read back the `ci-ok` required check with its verified GitHub Actions identity; preserve existing `pr-title`, `commits`, CodeQL, code-quality and review rules: #45. The hosted negative title check is verified; documentation review and merge remain.
 - [ ] Verify the first automated release, then remove the repository-admin tag bypass while retaining release App integration `4751046`, both tag patterns and all protection rules; enable immutable releases only after publication and download verification: #36.
 - [ ] Decide restricted allowed actions and require SHA pinning after workflow pins and update behavior are verified: #39.
 - [ ] Complete #56: the published handbook, homepage and manifest Website link are aligned; desktop Website-action acceptance remains. Native update publication remains #37.

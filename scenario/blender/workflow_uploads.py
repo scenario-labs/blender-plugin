@@ -4,6 +4,7 @@
 
 import hashlib
 import json
+import os
 import uuid
 from dataclasses import dataclass
 from pathlib import Path
@@ -55,13 +56,16 @@ def _allowed(field):
     return isinstance(allowed, list) and bool(allowed)
 
 
-def input_kind(form, name):
-    """Return an uploadable kind from the saved schema, or None for other inputs."""
-    field = _field(form, name)
-    if field is None or not is_file_field(field):
+def _field_kind(field):
+    if not isinstance(field, dict) or not is_file_field(field):
         return None
     kind = str(field.get("kind") or "image").lower()
     return kind if kind in _KINDS else None
+
+
+def input_kind(form, name):
+    """Return an uploadable kind from the saved schema, or None for other inputs."""
+    return _field_kind(_field(form, name))
 
 
 def _values(item):
@@ -170,6 +174,9 @@ class UploadReview:
     signature: str
     kind: str
     message: str
+    # The connection and scope that receive the content; start() requires both.
+    context_id: str = ""
+    scope: str = ""
 
 
 def review(context, name, source):
@@ -200,8 +207,14 @@ def review(context, name, source):
     if source not in reference_form._upload_sources(kind):
         raise ScenarioError(0, "Choose a local file or a supported snapshot for this input")
     filepath = item.upload_path if source == "FILE" else ""
-    if source == "FILE" and not filepath:
-        raise ScenarioError(0, f"Choose a file for this {kind} input first")
+    if source == "FILE":
+        if not filepath:
+            raise ScenarioError(0, f"Choose a file for this {kind} input first")
+        # Refuse before marking: a missing file would otherwise fail only in
+        # the worker, after the marker already blocks pricing.
+        resolved = bpy.path.abspath(filepath)
+        if not Path(resolved).is_file() or not os.access(resolved, os.R_OK):
+            raise ScenarioError(0, f"Choose an existing, readable {kind} file")
     try:
         workflow_references._proposed(form, item, _PROBE, kind, scope(owner))
     except ValueError as error:
@@ -221,6 +234,8 @@ def review(context, name, source):
         workflow_controls.signature(form),
         kind,
         message,
+        str(runtime.state.job_context_id or ""),
+        scope(owner),
     )
 
 
@@ -235,6 +250,8 @@ def start(context, reviewed):
     if context.scene != reviewed.scene:
         raise ScenarioError(0, "Review the upload from its original scene")
     current = review(context, reviewed.input_name, reviewed.source)
+    if (current.context_id, current.scope) != (reviewed.context_id, reviewed.scope):
+        raise ScenarioError(0, "The connection changed; review the upload again")
     if (current.signature, current.filepath) != (reviewed.signature, reviewed.filepath):
         raise ScenarioError(0, "The workflow input changed; review the upload again")
     owner = runtime.ensure_reference_uploads()
@@ -279,9 +296,24 @@ def deliver(owner):
             _release(owner, token, binding)
 
 
+def _clear_own_marker(binding, token):
+    try:
+        item = binding.item()
+        if item is not None and item.get(_MARKER) == token:
+            del item[_MARKER]
+    except (ReferenceError, RuntimeError):
+        pass
+
+
 def _deliver_binding(owner, token, binding):
     ticket = binding.ticket
     if binding.attached or binding.error or ticket is None:
+        return
+    if ticket.error and ticket.sent_nothing:
+        # ReferenceUploads proves local staging failed before any request, so
+        # release this upload's own marker and keep existing values for a retry.
+        binding.error = "The file could not be staged and nothing was uploaded; choose it again"
+        _clear_own_marker(binding, token)
         return
     if not binding.current(token):
         binding.error = "The scene, workflow or input changed; the upload was not attached"
@@ -408,7 +440,10 @@ def draw(layout, scene, item, field):
         op = row.operator("scenario.inspect_uploads", text="Inspect uploads", icon="VIEWZOOM")
         op.lane, op.param_name = reference_form.WORKFLOW_LANE, item.name
         return
-    kind = input_kind(scene.scenario_workflow, item.name)
+    # The caller passes the parsed field; reparse the schema only on a mismatch.
+    if not isinstance(field, dict) or field.get("name") != item.name:
+        field = _field(scene.scenario_workflow, item.name) or {}
+    kind = _field_kind(field)
     if kind is None or item.options or _allowed(field):
         layout.label(text="Choose Library > Workflow, or enter an uploaded asset ID")
         return
@@ -434,6 +469,8 @@ class SCENARIO_OT_upload_workflow_input(bpy.types.Operator):
         "Confirm uploading this file or snapshot to Scenario for one workflow input; "
         "it does not spend credits"
     )
+    # The marker gets its own undo step, so undoing later edits keeps the guard.
+    bl_options = {"UNDO"}
     input_name: StringProperty(options={"HIDDEN", "SKIP_SAVE"})
     source: EnumProperty(items=_SOURCES, default="FILE", options={"HIDDEN", "SKIP_SAVE"})
 

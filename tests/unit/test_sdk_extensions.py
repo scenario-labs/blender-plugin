@@ -370,6 +370,13 @@ def test_workflow_decision_requires_the_matching_job_acknowledgement(adapter, ca
         ("workflow", WORKFLOW_JOB, "", "user-approval", "approve", None),
         ("workflow", WORKFLOW_JOB, " node", "user-approval", "approve", None),
         ("workflow", WORKFLOW_JOB, "node\n", "user-selection", "reject", None),
+        # C1 control, bidi override and a lone surrogate, which UTF-8 cannot encode.
+        ("workflow", WORKFLOW_JOB, "no\u0085de", "user-approval", "approve", None),
+        ("workflow", WORKFLOW_JOB, "node\u202e", "user-selection", "reject", None),
+        ("workflow", WORKFLOW_JOB, "\ud800", "user-selection", "select", [0]),
+        ("workflow", WORKFLOW_JOB, "n" * 1025, "user-approval", "approve", None),
+        ("workflow\ud800", WORKFLOW_JOB, "node", "user-approval", "approve", None),
+        ("workflow", "job\u202e", "node", "user-selection", "reject", None),
         ("workflow", WORKFLOW_JOB, None, "user-approval", "approve", None),
         ("workflow", WORKFLOW_JOB, "node", "model", "approve", None),
         ("workflow", WORKFLOW_JOB, "node", None, "approve", None),
@@ -387,16 +394,21 @@ def test_workflow_decision_requires_the_matching_job_acknowledgement(adapter, ca
         ("workflow", WORKFLOW_JOB, "node", "user-selection", "select", [-1]),
         ("workflow", WORKFLOW_JOB, "node", "user-selection", "select", [True]),
         ("workflow", WORKFLOW_JOB, "node", "user-selection", "select", [1.0]),
+        ("workflow", WORKFLOW_JOB, "node", "user-selection", "select", []),
+        ("workflow", WORKFLOW_JOB, "node", "user-selection", "select", list(range(101))),
+        ("workflow", WORKFLOW_JOB, "node", "user-selection", "select", [2**53]),
     ],
 )
 def test_invalid_workflow_decisions_never_reach_transport(adapter, arguments):
     requests = []
     client = adapter(lambda request: requests.append(request))
     workflow_id, job_id, node_id, node_type, action, indices = arguments
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError) as error:
         client.workflow_decision(
             workflow_id, job_id, node_id, node_type, action, selected_indices=indices
         )
+    # The adapter's own validation, not a codec failure during SDK serialization.
+    assert not isinstance(error.value, UnicodeError)
     assert not requests
 
 
@@ -414,3 +426,19 @@ def test_node_ids_travel_only_in_the_body(adapter):
     assert requests[0].url.raw_path == b"/v1/workflows/fixture-workflow/user-selection"
     assert json.loads(requests[0].content)["nodeId"] == "loop/node#1?x"
     assert json.loads(requests[0].content)["selectedIndices"] == [1]
+
+
+def test_selection_accepts_the_documented_default_maximum(adapter):
+    requests = []
+
+    def respond(request):
+        requests.append(request)
+        return acknowledged(request)
+
+    picks = [2**53 - 1, *range(99)]
+    adapter(respond).workflow_decision(
+        "fixture-workflow", WORKFLOW_JOB, "étape 1", "user-selection", "select", picks
+    )
+    body = json.loads(requests[0].content)
+    assert body["selectedIndices"] == picks
+    assert body["nodeId"] == "étape 1"

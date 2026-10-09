@@ -5,6 +5,7 @@
 import copy
 import json
 import os
+import pickle
 import socket
 from decimal import Decimal
 
@@ -332,6 +333,19 @@ def test_unscoped_discovery_never_blames_the_project_override(adapter):
     with pytest.raises(AdapterError) as error:
         client.teams()
     assert str(error.value) == DENIED
+
+
+@pytest.mark.parametrize(
+    "status,message",
+    [(409, "Scenario request failed (HTTP 409)"), (403, DENIED_PROJECT), (429, LIMITED)],
+)
+def test_status_errors_keep_status_and_text_through_copy_and_pickle(status, message):
+    # A 403's text depends on whether the request carried a project, not only the status.
+    error = AdapterStatusError(status, message)
+    for clone in (copy.copy(error), copy.deepcopy(error), pickle.loads(pickle.dumps(error))):
+        assert type(clone) is AdapterStatusError
+        assert clone.status_code == status
+        assert str(clone) == message
 
 
 @pytest.mark.parametrize("cost", [None, True, -1, "1.23", float("nan"), float("inf")])

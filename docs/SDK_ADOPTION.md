@@ -499,9 +499,10 @@ these contracts pass with its raw-response wrapper.
   explicit project, decisions must require a project override instead.
 - **One attempt.** A decision can resume paid steps or stop the workflow, so it
   is never retried, including after `Retry-After`. `AdapterStatusError` carries
-  the HTTP status of a service reply with the usual sanitized text, separating
-  it from a lost response. Callers decide which statuses are definitive
-  refusals. A `ValueError` means nothing was sent. Treat every other
+  the HTTP status of a service reply with the adapter's sanitized status text,
+  separating it from a lost response. A 403 names the Project ID only when the
+  decision sent the project override. Callers decide which statuses are
+  definitive refusals. A `ValueError` means nothing was sent. Treat every other
   `AdapterError` as an unknown outcome until the job is retrieved again: offline
   and closed-client refusals happen before sending, but share that type with a
   lost response and a malformed or mismatched acknowledgement. The status error

@@ -81,8 +81,20 @@ class SplatSnapshotTests(unittest.TestCase):
         mesh = self.build(data)
         # Saved OPENCV (1, 2, 3) is Blender (1, 3, -2).
         self.assertEqual(tuple(mesh.vertices[0].co), (1.0, 3.0, -2.0))
-        ply = b"ply\nformat ascii 1.0\nelement vertex 1\nproperty float x\nend_header\n0\n"
+        ply = (
+            b"ply\nformat ascii 1.0\nelement vertex 1\n"
+            b"property float x\nproperty float y\nproperty float z\nend_header\n0 0 0\n"
+        )
         self.assertIsNone(self.decode_off_main_thread(ply, "model/ply", "OPENCV"))
+        # Without x, y and z the layout is neither a splat nor a mesh.
+        bare = b"ply\nformat ascii 1.0\nelement vertex 1\nproperty float x\nend_header\n0\n"
+        with self.assertRaisesRegex(self.splats.SplatError, "Unsupported PLY layout"):
+            self.splats.decode(
+                io.BytesIO(bare),
+                "model/ply",
+                options=self.splats.SplatOptions(10, "OPENCV"),
+                size=len(bare),
+            )
 
 
 if __name__ == "__main__":

@@ -51,9 +51,10 @@ class PreparedModelImport:
     """Worker-side preparation of one saved model result for a later reviewed import.
 
     `splat` is the decoded point snapshot of an SPZ, .splat or Gaussian PLY result.
-    A PLY without Gaussian splat properties has no snapshot; `ply_mesh` routes it
-    to a reviewed mesh importer. Preparation never claims or mutates a scene; a
-    claim still consumes the owner-registered `verified` ticket once.
+    A mesh PLY (a non-empty first vertex element with scalar x, y and z and no
+    splat properties) has no snapshot; `ply_mesh` routes it to a reviewed mesh
+    importer. Preparation never claims or mutates a scene; a claim still consumes
+    the owner-registered `verified` ticket once.
     """
 
     verified: VerifiedResults
@@ -496,6 +497,7 @@ class ResultCommands:
         The selected file is hashed while it is decoded. The snapshot is discarded
         unless its bytes equal the saved receipt and the job is unchanged. This
         never downloads, refreshes metadata, claims an application or uses bpy.
+        Cancellation is checked before each receipt is hashed and between chunks.
         """
         if not isinstance(options, splats.SplatOptions):
             raise TypeError("Use reviewed splat options")
@@ -507,7 +509,7 @@ class ResultCommands:
         )
         if current.state in pending_download:
             raise ResultError("Download the selected model result before importing it")
-        verified = self.verify_ready(request_id, expected_revision=expected_revision)
+        verified = self.verify_ready(request_id, expected_revision=expected_revision, cancel=cancel)
         chosen = [
             (item, path)
             for item, path in zip(verified.record.results, verified.paths, strict=True)
@@ -558,7 +560,8 @@ class ResultCommands:
             raise ResultError(failure)
         return splat
 
-    def verify_ready(self, request_id, *, expected_revision):
+    def verify_ready(self, request_id, *, expected_revision, cancel=None):
+        """Rehash every saved receipt; a set `cancel` stops before the next receipt."""
         current = self._current(
             request_id, expected_revision, {JobState.READY, JobState.APPLY_FAILED, JobState.APPLIED}
         )
@@ -570,12 +573,14 @@ class ResultCommands:
             for item in current.results:
                 with self._guard():
                     pass
+                if cancel is not None and cancel.is_set():
+                    raise splats.SplatCancelled("Splat preparation cancelled")
                 paths.append(self._downloader.verify(directory, item.receipt))
             # Stale verification cannot authorize a subsequent application.
             if self._store.get(request_id) != current:
                 raise StoreConflict("Result job changed during verification")
             return VerifiedResults(current, tuple(paths))
-        except StoreError:
+        except (StoreError, splats.SplatCancelled):
             raise
         except Exception:
             raise ResultError("Saved result files could not be verified") from None

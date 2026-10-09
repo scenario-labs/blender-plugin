@@ -47,6 +47,12 @@ ASSETS = {
         b"".join(splat_record((i, 0, 0), (0.1, 0.1, 0.1), (9, 9, 9, 9)) for i in range(4)),
     ),
     "asset-v4": ("model/spz", "spz", b"NGSP" + struct.pack("<II", 4, 1) + bytes(56)),
+    "asset-packed": (
+        "model/ply",
+        "ply",
+        b"ply\nformat binary_little_endian 1.0\nelement chunk 1\nproperty float min_x\n"
+        b"element vertex 1\nproperty uint packed_position\nend_header\n" + bytes(8),
+    ),
     "asset-glb": ("model/gltf-binary", "glb", b"glTF" + bytes(16)),
 }
 
@@ -183,6 +189,7 @@ def test_retired_owner_invalidates_an_unclaimed_preparation(env):
         ("asset-glb", "SPZ, PLY or .splat"),
         ("asset-unknown", "Choose one saved model result"),
         ("asset-v4", r"v4 \(ZSTD\)"),
+        ("asset-packed", "Compressed splat PLY.*saved file is kept"),
     ],
 )
 def test_unsupported_assets_fail_without_registration_or_changes(env, asset_id, message):
@@ -293,6 +300,23 @@ def test_cancellation_never_registers_a_preparation(env, monkeypatch, during):
     with pytest.raises(SplatCancelled):
         prepare(env, cancel=cancel)
     assert registered(env) == 0
+
+
+def test_cancellation_stops_before_the_next_receipt_is_hashed(env, monkeypatch):
+    cancel, hashed, decoded = threading.Event(), [], []
+    original = ResultDownloader.verify
+
+    def verify_then_cancel(self, root, receipt):
+        hashed.append(receipt.name)
+        cancel.set()
+        return original(self, root, receipt)
+
+    monkeypatch.setattr(ResultDownloader, "verify", verify_then_cancel)
+    monkeypatch.setattr(splats, "decode", lambda *args, **kwargs: decoded.append(args))
+    with pytest.raises(SplatCancelled):
+        prepare(env, cancel=cancel)
+    assert len(hashed) == 1 < len(ASSETS)
+    assert decoded == [] and registered(env) == 0
 
 
 def test_options_must_be_reviewed_before_queueing(env):

@@ -23,16 +23,14 @@ from dataclasses import dataclass, field
 
 MAX_SOURCE_POINTS = 20_000_000
 MAX_KEPT_POINTS = 2_000_000
-# Choices for a later reviewed import; the decoders accept any bounded value.
-MAX_POINTS_CHOICES = (250_000, 500_000, 1_000_000, 2_000_000)
-DEFAULT_MAX_POINTS = 1_000_000
 CHUNK_BYTES = 1 << 22
 SH_C0 = 0.28209479177387814
 
-# Saved coordinate conventions. OPENGL is right/up/back (RUB), the SPZ storage
-# convention. OPENCV is right/down/forward (RDF), the 3DGS PLY convention, which
-# the reference .splat converter keeps. Providers can differ from these format
-# conventions, so the caller chooses the axes for each reviewed import.
+# Saved coordinate conventions. OPENGL is right/up/back (RUB), the SPZ default when
+# no coordinate-system extension is present (see `SplatData.extensions`). OPENCV is
+# right/down/forward (RDF), the 3DGS PLY convention, which the reference .splat
+# converter keeps. Providers can differ from these format conventions, so the
+# caller chooses the axes for each reviewed import.
 AXES = frozenset({"OPENGL", "OPENCV"})
 FORMAT_AXES = {"spz": "OPENGL", "ply": "OPENCV", "splat": "OPENCV"}
 MEDIA_FORMATS = {
@@ -79,6 +77,11 @@ class SplatData:
     `positions` holds x, y, z in Blender axes; `colors` holds display-referred
     RGB in 0..1 with alpha equal to the opacity; `radii` is the median axis
     scale multiplied by sqrt(step) to compensate for thinning.
+
+    `antialiased` and `extensions` copy an SPZ header's flags and are False for
+    other formats. Extension records are not read; one can store positions in
+    axes other than right/up/back, so an import must warn when `extensions` is
+    set before it relies on the format's default axes.
     """
 
     format: str
@@ -92,6 +95,8 @@ class SplatData:
     opacities: bytes = field(repr=False)
     radii: bytes = field(repr=False)
     bounds: tuple[tuple[float, float, float], tuple[float, float, float]]
+    antialiased: bool = False
+    extensions: bool = False
 
     def __post_init__(self):
         if (
@@ -104,6 +109,9 @@ class SplatData:
             or not 1 <= self.step <= self.count
             or self.kept != -(-self.count // self.step)
             or self.kept > MAX_KEPT_POINTS
+            or type(self.antialiased) is not bool
+            or type(self.extensions) is not bool
+            or (self.format != "spz" and (self.antialiased or self.extensions))
         ):
             raise ValueError("Invalid splat snapshot")
         for name in FLOATS:
@@ -296,7 +304,20 @@ def interleave(parts):
     return bytes(out)
 
 
-def snapshot(fmt, version, axes, count, step, xyz, rgb, opacities, radii):
+def snapshot(
+    fmt,
+    version,
+    axes,
+    count,
+    step,
+    xyz,
+    rgb,
+    opacities,
+    radii,
+    *,
+    antialiased=False,
+    extensions=False,
+):
     """Assemble an immutable snapshot from saved-axis native float32 columns."""
     x, y, z = xyz
     # OPENGL (x, y, z) is Blender (x, -z, y); OPENCV is Blender (x, z, -y).
@@ -315,6 +336,8 @@ def snapshot(fmt, version, axes, count, step, xyz, rgb, opacities, radii):
         opacities=opacities,
         radii=radii,
         bounds=bounds,
+        antialiased=antialiased,
+        extensions=extensions,
     )
 
 
@@ -359,8 +382,9 @@ def decode_splat(stream, *, options, size, cancel=None):
 def decode(stream, media_type, *, options, size, cancel=None):
     """Decode one saved splat by its declared media type.
 
-    Returns None when a PLY has no Gaussian splat properties, so the caller can
-    route it as a mesh. Unexpected parser failures fail closed as SplatError.
+    Returns None for a mesh PLY (see `splat_ply.PlyHeader.classify`), so the
+    caller can route it to a mesh importer; other non-splat PLY layouts fail.
+    Unexpected parser failures fail closed as SplatError.
     """
     if not isinstance(options, SplatOptions):
         raise TypeError("Use reviewed splat options")
@@ -377,7 +401,7 @@ def decode(stream, media_type, *, options, size, cancel=None):
 
             reader = Reader(stream, cancel=cancel)
             header = splat_ply.read_header(reader)
-            if not header.splat:
+            if header.classify() == "mesh":
                 return None
             return splat_ply.decode(reader, header, options=options, size=size)
         return decode_splat(stream, options=options, size=size, cancel=cancel)

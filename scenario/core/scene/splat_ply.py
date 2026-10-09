@@ -4,7 +4,10 @@
 
 A splat PLY is binary little-endian with a first `vertex` element of scalar
 properties that include float32 x, y, z, f_dc_0..2, opacity and scale_0..2, and
-no faces. Every other valid PLY is classified as a mesh for a separate importer.
+no faces. A mesh PLY, for a separate importer, has a non-empty first `vertex`
+element with scalar x, y and z and none of the Gaussian splat property names.
+Every other layout fails closed, including splats with other encodings and the
+compressed splat PLY (a `chunk` element and a `packed_position` vertex property).
 Opacity is stored before its sigmoid, scales as natural logarithms and colour as
 the SH DC term; coordinates follow the 3DGS right/down/forward (OPENCV) convention.
 """
@@ -61,6 +64,9 @@ SPLAT_PROPERTIES = (
 )
 _NAME = re.compile(r"[!-~]{1,128}")
 _COUNT = re.compile(r"[0-9]{1,10}")
+# Vertex properties of 3D Gaussian splat exports; a mesh PLY has none of them.
+_SPLAT_NAME = re.compile(r"f_dc_[0-9]+|f_rest_[0-9]+|opacity|scale_[0-9]+|rot_[0-9]+")
+_KEPT = "; the saved file is kept"
 
 
 @dataclass(frozen=True)
@@ -90,6 +96,27 @@ class PlyHeader:
             and all(types.get(name) in ("float", "float32") for name in SPLAT_PROPERTIES)
             and not any(item.name == "face" and item.count for item in self.elements)
         )
+
+    def classify(self):
+        """Return "splat" or "mesh"; any other PLY layout raises SplatError."""
+        if self.splat:
+            return "splat"
+        names = {
+            name
+            for item in self.elements
+            if item.name == "vertex"
+            for name, _, _ in item.properties
+        }
+        # PlayCanvas compressed PLY: per-chunk bounds and packed vertex words.
+        if "packed_position" in names:
+            raise SplatError("Compressed splat PLY files are not supported" + _KEPT)
+        if any(_SPLAT_NAME.fullmatch(name) for name in names):
+            raise SplatError("This Gaussian splat PLY layout is not supported" + _KEPT)
+        vertex = self.elements[0]
+        scalars = {name for name, listed, _ in vertex.properties if listed is None}
+        if vertex.name != "vertex" or vertex.count < 1 or not {"x", "y", "z"} <= scalars:
+            raise SplatError("Unsupported PLY layout" + _KEPT)
+        return "mesh"
 
 
 def read_header(reader):

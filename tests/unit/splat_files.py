@@ -69,12 +69,22 @@ def splat_record(position, scale, rgba, rotation=(128, 128, 128, 255)):
     return struct.pack("<3f3f4B4B", *position, *scale, *rgba, *rotation)
 
 
-def spz_payload(count, *, version=2, sh_degree=0, fractional_bits=12, seed=1):
-    """A gzip SPZ body with pseudo-random attribute bytes, built without per-point loops."""
+def spz_payload(count, *, version=2, sh_degree=0, fractional_bits=12, seed=1, flags=0, trailer=b""):
+    """A gzip SPZ body with pseudo-random attribute bytes, built without per-point loops.
+
+    `trailer` follows the spherical harmonics, where extension records belong.
+    """
     rotation = 3 if version < 3 else 4
     dimensions = {0: 0, 1: 3, 2: 8, 3: 15, 4: 24}[sh_degree]
     tile = random.Random(seed).randbytes(16384)
     size = count * (16 + rotation + 3 * dimensions)
     body = (tile * (size // len(tile) + 1))[:size]
-    header = struct.pack("<IIIBBBB", 0x5053474E, version, count, sh_degree, fractional_bits, 0, 0)
-    return gzip.compress(header + body, compresslevel=1)
+    header = struct.pack(
+        "<IIIBBBB", 0x5053474E, version, count, sh_degree, fractional_bits, flags, 0
+    )
+    return gzip.compress(header + body + trailer, compresslevel=1)
+
+
+def spz_extension(kind, payload):
+    """One length-delimited SPZ extension record: u32 type, u32 length, payload."""
+    return struct.pack("<II", kind, len(payload)) + payload

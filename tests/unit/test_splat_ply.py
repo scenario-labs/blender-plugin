@@ -12,6 +12,7 @@ from scenario.core.scene import splat_ply, splats
 from scenario.core.scene.splats import SplatError, SplatOptions
 
 SPLAT = [(name, "float") for name in SPLAT_PROPERTIES]
+XYZ = [("x", "float"), ("y", "float"), ("z", "float")]
 OPENCV = SplatOptions(1000, "OPENCV")
 # Real 3DGS exports interleave normals, higher SH and rotations with the needed columns.
 EXPORT = (
@@ -45,8 +46,32 @@ def test_binary_little_endian_gaussian_rows_are_splats(properties, newline):
     data = ply_bytes([splat_row(0)], properties=properties, newline=newline)
     parsed, reader = header(data)
     assert parsed.splat and parsed.format == "binary_little_endian"
+    assert parsed.classify() == "splat"
     assert parsed.length == data.index(b"end_header") + len(b"end_header") + len(newline)
     assert reader.read(4) == data[parsed.length : parsed.length + 4]
+
+
+@pytest.mark.parametrize(
+    "build",
+    [
+        lambda: ply_bytes([{"x": 1.0}], properties=XYZ),
+        lambda: ply_bytes(
+            [{"x": 1.0}], properties=[("x", "double"), ("y", "double"), ("z", "double")]
+        ),
+        lambda: ply_bytes([{}], properties=[*XYZ, ("red", "uchar")], fmt="ascii"),
+        lambda: ply_bytes(
+            [{}],
+            properties=XYZ,
+            fmt="binary_big_endian",
+            elements=[("face", 1, ["property list uchar int vertex_indices"])],
+        ),
+    ],
+)
+def test_vertex_meshes_and_point_clouds_are_classified_as_meshes(build):
+    parsed, _ = header(build())
+    assert not parsed.splat and parsed.classify() == "mesh"
+    with pytest.raises(SplatError, match="no Gaussian splat"):
+        splat_ply.decode(splats.Reader(io.BytesIO(b"")), parsed, options=SplatOptions(1, "OPENGL"))
 
 
 @pytest.mark.parametrize(
@@ -56,16 +81,11 @@ def test_binary_little_endian_gaussian_rows_are_splats(properties, newline):
         lambda: ply_bytes([splat_row(0)], fmt="binary_big_endian"),
         lambda: ply_bytes([splat_row(0)], properties=SPLAT[:-1]),
         lambda: ply_bytes([splat_row(0)], properties=[("x", "double"), *SPLAT[1:]]),
+        lambda: ply_bytes([splat_row(0)], properties=[(name, "double") for name, _ in EXPORT]),
         lambda: ply_bytes(
             [splat_row(0)], elements=[("face", 1, ["property list uchar int vertex_indices"])]
         ),
         lambda: ply_bytes([], properties=SPLAT),
-        lambda: (
-            b"ply\nformat binary_little_endian 1.0\nelement face 0\n"
-            + b"element vertex 1\n"
-            + b"".join(f"property float {name}\n".encode() for name, _ in SPLAT)
-            + b"end_header\n"
-        ),
         lambda: (
             b"ply\nformat binary_little_endian 1.0\nelement vertex 1\n"
             + b"".join(f"property float {name}\n".encode() for name, _ in SPLAT)
@@ -73,11 +93,53 @@ def test_binary_little_endian_gaussian_rows_are_splats(properties, newline):
         ),
     ],
 )
-def test_other_valid_plys_are_classified_as_meshes(build):
+def test_gaussian_layouts_this_decoder_cannot_read_fail_closed(build):
     parsed, _ = header(build())
     assert not parsed.splat
-    with pytest.raises(SplatError, match="no Gaussian splat"):
-        splat_ply.decode(splats.Reader(io.BytesIO(b"")), parsed, options=SplatOptions(1, "OPENGL"))
+    with pytest.raises(SplatError, match="Gaussian splat PLY layout.*saved file is kept"):
+        parsed.classify()
+
+
+def test_compressed_splat_ply_is_rejected_explicitly():
+    data = (
+        b"ply\nformat binary_little_endian 1.0\nelement chunk 1\n"
+        + b"".join(f"property float {name}\n".encode() for name in ("min_x", "max_x"))
+        + b"element vertex 256\n"
+        + b"".join(
+            f"property uint packed_{name}\n".encode()
+            for name in ("position", "rotation", "scale", "color")
+        )
+        + b"end_header\n"
+    )
+    with pytest.raises(SplatError, match="Compressed splat PLY.*saved file is kept"):
+        header(data)[0].classify()
+
+
+@pytest.mark.parametrize(
+    "build",
+    [
+        lambda: ply_bytes([], properties=XYZ),
+        lambda: ply_bytes([{}], properties=XYZ[:2]),
+        lambda: ply_bytes([{}], properties=[("u", "float"), ("v", "float")]),
+        lambda: (
+            b"ply\nformat binary_little_endian 1.0\nelement face 0\n"
+            b"property list uchar int vertex_indices\nelement vertex 1\n"
+            b"property float x\nproperty float y\nproperty float z\nend_header\n"
+        ),
+        lambda: (
+            b"ply\nformat ascii 1.0\nelement point 1\n"
+            b"property float x\nproperty float y\nproperty float z\nend_header\n"
+        ),
+        lambda: (
+            b"ply\nformat ascii 1.0\nelement vertex 1\nproperty float x\nproperty float y\n"
+            b"property list uchar float z\nend_header\n"
+        ),
+    ],
+)
+def test_other_layouts_are_neither_splats_nor_meshes(build):
+    parsed, _ = header(build())
+    with pytest.raises(SplatError, match="Unsupported PLY layout; the saved file is kept"):
+        parsed.classify()
 
 
 def test_empty_face_element_does_not_make_a_mesh():

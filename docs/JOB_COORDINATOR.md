@@ -370,12 +370,14 @@ receipt again and binds the decoded bytes to the selected receipt, as described
 in [worker-side splat preparation](RESULT_TRANSFERS.md#worker-side-splat-preparation).
 The coordinator then registers `prepared.verified` exactly like a `verify_results`
 ticket: one claim consumes it and deactivation clears it. Cancellation, a changed
-record or a changed file leaves nothing registered. A PLY without splat properties
-returns `ply_mesh` and no snapshot. There is no SDK request, download, claim or
-scene mutation. `JobWorkers.prepare_model_import` uses the single local-operation
-slot shared with local capture and Film media inspection, so `cancel_local` and
-owner retirement stop decoding between chunks. Session, UI and MCP wiring remain
-separate.
+record or a changed file leaves nothing registered. A mesh PLY returns `ply_mesh`
+and no snapshot; other PLY layouts that are not splats fail. There is no SDK
+request, download, claim or scene mutation. `JobWorkers.prepare_model_import`
+uses the single local-operation slot shared with local capture and Film media
+inspection, so `cancel_local` and owner retirement stop preparation before the
+next receipt is hashed or between decoding chunks; one receipt's hash, up to the
+storage policy's byte limit (256 MiB by default), is not interrupted. Session, UI
+and MCP wiring remain separate.
 
 
 ## Durable application claims

@@ -11,9 +11,9 @@
     "base_revision": "fb699b8555f7cee62147794516cc7aaa224864f7",
     "limits": "Reviewed only the #189 status row against the current code. No candidate ZIP, desktop, listening or release evidence is added; #189 stays open.",
     "sources": {
-      "scenario/blender/audio_preview.py": "74c2781ed85dbd5b85cd9a79c43880eed7e53404a3f9c4514abe7d41c2d35e45",
+      "scenario/blender/audio_preview.py": "14b1f05e7ba0980e2c303d21d58945ae59286f38b0b14559b295dc5833fb749f",
       "scenario/core/jobs/preview_scheduler.py": "259ba661bb90b15d33723bfd7bafc0eb70b4443b5c8a56e70d45b9ffa99ac466",
-      "scenario/core/jobs/audio_decode.py": "4bc3c5a270ad36449e8927d580f9346075f737ad07da0a0b63967de4d81340ba",
+      "scenario/core/jobs/audio_decode.py": "332645a336308d1a52690fa55b888073fffff5213f95cc59460a2314ca973720",
       "tests/blender/test_waveform_worker.py": "b1fbfb74b8c75ef5366283ce32c97b23350bb1e81766891a2a7fab046b537aa5"
     }
   }

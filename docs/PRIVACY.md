@@ -103,6 +103,8 @@ the private copy; its disposable profile, temporary files and log stay in that
 copy's work directory and are removed with it. The Generations waveform preview
 for retained prototype results uses the same process with short-lived
 directories under `cache/audio-preview`; it reads the downloaded file in place.
+A directory left by an exit during decoding is removed by a later preview once
+it is a day old.
 Capture/export staging and thumbnails also use the extension's user state/cache
 directories. Explicit local output tools can write to the configured Output
 Folder, normally `~/Downloads/Scenario`.

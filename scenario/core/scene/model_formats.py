@@ -114,7 +114,7 @@ def model_format(media_type):
 
 
 def _model_file(media_type):
-    """Any model/* type, an FBX application type or an MTL."""
+    """Any model/* type (an MTL included), an FBX application type or application/x-ply."""
     return model_format(media_type) is not None or media_type.startswith("model/")
 
 

@@ -214,16 +214,16 @@ its own unit, never a companion. Without lineage, an OBJ or glTF binds companion
 only when it is the job's only file of that format, oversized ones included. Several
 MTLs, several maps for one slot, maps without a material, unsupported formats and
 oversized files remain saved and are reported with stable reason codes; nothing is
-guessed. Once a job holds any model file (a `model/*` type, an FBX `application/*`
-type or an MTL), every saved file is in exactly one place: one unit's files, one glTF
-unit's candidate resources, which are bound later by reference, or one finding. A
-file with a finding is never also a companion or a candidate resource. Without
-lineage, an MTL or slot map beside several OBJs, or a buffer or image beside several
-glTFs, is reported as `ambiguous-package`. Any other leftover is `unbound`, such as
-a map whose stored role (smoothness, height, ao or edge) has no MTL slot, a map
-beside a sole OBJ that is too large or, with lineage, a file under a skipped or
-unsupported model, whose own finding gives the cause. A job without a model file
-gives an empty plan.
+guessed. Once a job holds any model file (a `model/*` type, an MTL included, an FBX
+`application/*` type or `application/x-ply`), every saved file is in exactly one
+place: one unit's files, one glTF unit's candidate resources, which are bound later
+by reference, or one finding. A file with a finding is never also a companion or a
+candidate resource. Without lineage, an MTL or slot map beside several OBJs, or a
+buffer or image beside several glTFs, is reported as `ambiguous-package`. Any other
+leftover is `unbound`, such as a map whose stored role (smoothness, height, ao or
+edge) has no MTL slot, a map beside a sole OBJ that is too large or, with lineage, a
+file under a skipped or unsupported model, whose own finding gives the cause. A job
+without a model file gives an empty plan.
 With lineage, generated root outputs sort first: a `metadata.type` of `img23d`,
 `txt23d`, `3d23d`, `video23d` or `img2splat` whose parent is not in the job. Then
 GLB, glTF, FBX, OBJ, mesh PLY, SPZ, splat or unclassified PLY and `.splat` follow.

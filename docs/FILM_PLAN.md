@@ -863,9 +863,12 @@ waiting and ready reviews and deletes their unused private copies; prepare again
 Selecting the recipe scene again after leaving it counts as such a change: Blender
 runs `frame_change_pre` for the newly selected scene and the shared session revokes
 its captured origin. A waiting review therefore fails on a real return through the
-scene selector, as does every unbuilt review for that scene, including one for the
-other mode or one left behind while watching a built review scene. Build a ready
-review before leaving its recipe scene. Drawing only reads cached status.
+scene selector, as does every unbuilt review for that scene. Any dependency update
+of the recipe scene counts too, such as selecting, adding or editing an object.
+Building one review is followed by such an update, so another unbuilt review for
+that scene, such as one for the other mode, fails on the next maintenance poll;
+prepare and build one review at a time. Build a ready review before leaving its
+recipe scene. Drawing only reads cached status.
 Preparation occupies the session's single local media slot, shared with capture
 and composition inspection, and one shared worker while it copies and probes.
 
@@ -893,10 +896,11 @@ Restart drops review handles and pending receipt authority, as described above;
 saved jobs keep their durable claims for inspection. Undo after a build removes
 the review scene while its private copies and applied receipts remain, so repeated
 build and Undo cycles accumulate copies under `film-review` without an automatic
-sweep. Strict origin invalidation is deliberate for this release: a frame or recipe
-edit, or leaving the recipe scene and selecting it again, before building requires
-a fresh preparation. Composition and capture waiting use the same shared origin
-check; letting scene activation keep an unchanged origin is separate session work.
+sweep. Strict origin invalidation is deliberate for this release: a frame, recipe
+or object edit, building another review for the scene, or leaving the recipe scene
+and selecting it again, before building requires a fresh preparation. Composition
+and capture waiting use the same shared origin check; letting scene activation keep
+an unchanged origin is separate session work.
 
 Installed synthetic tests cover native and MCP preparation and build, shared
 handles, dismissed dialogs, cancellation during probing, a full session queue,

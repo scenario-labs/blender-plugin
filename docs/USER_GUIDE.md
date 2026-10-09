@@ -708,16 +708,17 @@ with installed `ffprobe`; video frame rates must match the recipe. When the
 recipe's master is saved, you can include it as a muted alternate. Then choose
 **Build review scene** and check its separate confirmation. Your working scene stays
 selected; select the new scene in the scene selector or Video Sequencer to watch
-it. Saved jobs record the generated sources as applied. Build any other prepared
-review first: returning to the working scene invalidates its unbuilt reviews.
+it. Saved jobs record the generated sources as applied. Prepare and build one
+review at a time: building a review also invalidates any other unbuilt review for
+the same working scene.
 
-Changing the recipe, frame or scene before building deletes the private copies;
-prepare again. Leaving the working scene and selecting it again counts as a
-change, even when preparation finished while you were away. **Discard review**
-deletes an unbuilt review's copies. If a build is uncertain, save the offered
-receipt, or inspect saved jobs and acknowledge the inspection; never build the
-same review again. Undo removes the review scene but keeps its private copies and
-saved receipts. See
+Changing the recipe, frame or scene before building, including selecting, adding or
+editing objects in it, deletes the private copies; prepare again. Leaving the
+working scene and selecting it again counts as a change, even when preparation
+finished while you were away. **Discard review** deletes an unbuilt review's copies.
+If a build is uncertain, save the offered receipt, or inspect saved jobs and
+acknowledge the inspection; never build the same review again. Undo removes the
+review scene but keeps its private copies and saved receipts. See
 [review controls](FILM_PLAN.md#native-and-mcp-review-controls) for MCP equivalents
 and limits. Desktop interaction for these controls has not been verified, and video
 export is not available yet.

@@ -425,6 +425,22 @@ def test_non_strict_tag_no_ops_are_valid_acknowledgements(adapter):
         lambda c: c.update_asset_tags("asset-a", add=["he\u2060ro"]),
         lambda c: c.create_collection("Hero\u2028props"),
         lambda c: c.update_asset_tags("asset-a", add=["he\u2029ro"]),
+        # Every other format character, invisible or direction-changing: marks,
+        # soft hyphen, invisible operators, Mongolian separator, tag characters.
+        lambda c: c.create_collection("\u200e"),
+        lambda c: c.create_collection("Hero\u200fprops"),
+        lambda c: c.update_asset_tags("asset-a", add=["he\u061cro"]),
+        lambda c: c.update_asset_tags("asset-a", add=["\u00ad"]),
+        lambda c: c.update_asset_tags("asset-a", add=["a\u2061b"]),
+        lambda c: c.update_asset_tags("asset-a", remove=["a\u2064b"]),
+        lambda c: c.update_asset_tags("asset-a", add=["he\u180ero"]),
+        lambda c: c.update_asset_tags("asset-a", add=["hero\U000e0001"]),
+        lambda c: c.create_collection("Hero\U000e0068\U000e0069"),
+        # Joiners join visible characters; alone or at an edge they hide text.
+        lambda c: c.create_collection("\u200d"),
+        lambda c: c.update_asset_tags("asset-a", add=["\u200c\u200d"]),
+        lambda c: c.update_asset_tags("asset-a", add=["\u200dhero"]),
+        lambda c: c.create_collection("Hero props\u200c"),
     ],
 )
 def test_invalid_writes_never_reach_transport(adapter, call):

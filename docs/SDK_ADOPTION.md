@@ -836,12 +836,19 @@ and still needs authorized live evidence:
 - **Local label limits.** Tag and name limits are undocumented. The adapter
   accepts exact single-line labels of at most 200 characters and at most 30
   tags per list, matching the Film plan's existing task tags. Labels cannot
-  have surrounding whitespace, control characters, lone surrogates, line or
-  paragraph separators, bidirectional embedding, override or isolate controls
-  (U+202A to U+202E, U+2066 to U+2069) or invisible separators (U+200B,
-  U+2060, U+FEFF), which could spoof or break Library and MCP rows. Joiners
-  (U+200C, U+200D) remain valid for scripts and emoji sequences. A tag cannot
-  be added and removed in the same change. Commas are allowed at this layer.
+  have surrounding whitespace, control characters (Cc), lone surrogates, line
+  or paragraph separators, or format characters (Cf). The format category
+  covers bidirectional controls and marks (U+200E, U+200F, U+061C, U+202A to
+  U+202E, U+2066 to U+2069), invisible separators and operators (U+200B,
+  U+2060 to U+2064, U+FEFF, U+180E), the soft hyphen and tag characters
+  (U+E0001, U+E0020 to U+E007F), which could hide or reorder text or break
+  Library and MCP rows. Joiners (U+200C, U+200D) remain valid between other characters for
+  scripts and emoji sequences, but not alone or at either end. Rejecting tag
+  characters also rejects subdivision flag emoji. This is not a confusable
+  check: homoglyphs, combining marks, variation selectors and blank-looking
+  letters such as U+3164 pass, so displays must still treat labels as
+  untrusted text. A tag cannot be added and removed in the same change.
+  Commas are allowed at this layer.
   The service may normalize case or spelling; a normalized acknowledgement is
   uncertain and must be read back.
 - Collection deletion and rename, model collections and tag listing are not

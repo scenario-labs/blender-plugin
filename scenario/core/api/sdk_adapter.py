@@ -100,13 +100,12 @@ MAX_COLLECTION_ASSETS = 49
 MAX_ASSET_RECORDS = 200
 MAX_ORGANIZATION_LABEL = 200
 MAX_TAG_CHANGES = 30
-# Labels are single-line display text. Reject control characters, unencodable
-# surrogates and line or paragraph separators by category, and bidirectional
-# embeddings, overrides and isolates plus invisible separators by code point.
-_LABEL_CATEGORIES = frozenset({"Cc", "Cs", "Zl", "Zp"})
-_HIDDEN_LABEL_CHARACTERS = frozenset(
-    "\u200b\u2060\ufeff\u202a\u202b\u202c\u202d\u202e\u2066\u2067\u2068\u2069"
-)
+# Labels are single-line display text. Reject control and format characters
+# (bidirectional controls and marks, invisible separators and operators, soft
+# hyphens, tag characters), unencodable surrogates and line or paragraph
+# separators by category. Only the two joiners stay, between other characters.
+_LABEL_CATEGORIES = frozenset({"Cc", "Cf", "Cs", "Zl", "Zp"})
+_LABEL_JOINERS = frozenset("\u200c\u200d")
 # 408, 425 and 429 can arrive after the service accepted the work, and 409 has
 # no documented meaning for these endpoints (duplicate member, name or lock).
 _UNCERTAIN_CLIENT_STATUSES = frozenset({408, 409, 425, 429})
@@ -239,9 +238,13 @@ def _upload_record(raw, identifier=None):
 def _organization_label(value, field):
     """Accept an exact bounded single-line label; never strip or rewrite what is sent.
 
-    Lone surrogates would fail inside the SDK; bidirectional controls, invisible
-    separators and line breaks could spoof or break Library and MCP rows.
-    Joiners (U+200C, U+200D) stay valid for scripts and emoji sequences.
+    Lone surrogates would fail inside the SDK. Control and format characters
+    (bidirectional controls, invisible separators and operators, tag characters)
+    and line breaks could hide or reorder text or break Library and MCP rows.
+    Joiners (U+200C, U+200D) stay valid between other characters for scripts and
+    emoji sequences. This is not a confusable check: homoglyphs, combining marks
+    and blank-looking letters such as U+3164 pass, so displays must still treat
+    labels as untrusted text.
     """
     if (
         not isinstance(value, str)
@@ -253,11 +256,13 @@ def _organization_label(value, field):
             f"{field} must be nonempty, at most {MAX_ORGANIZATION_LABEL} characters "
             "and without surrounding spaces"
         )
+    if value[0] in _LABEL_JOINERS or value[-1] in _LABEL_JOINERS:
+        raise ValueError(f"{field} cannot start or end with a joiner")
     if any(
-        char in _HIDDEN_LABEL_CHARACTERS or unicodedata.category(char) in _LABEL_CATEGORIES
+        char not in _LABEL_JOINERS and unicodedata.category(char) in _LABEL_CATEGORIES
         for char in value
     ):
-        raise ValueError(f"{field} cannot contain control, invisible or unencodable characters")
+        raise ValueError(f"{field} cannot contain control, format or unencodable characters")
     return value
 
 

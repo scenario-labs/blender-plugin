@@ -1492,7 +1492,7 @@ SPECS = (
             "Args: context_id and production_id are required from film_recipe inspection; mode is final (default) or previs, score_task_id defaults to score, include_master defaults to false.\n"
             "Returns: review_id and PREPARING phase with the recipe scene, mode and frame timing; poll film_review_status until READY.\n"
             'Example: {"context_id": "current-context", "production_id": "saved-production", "mode": "final"}.\n'
-            "Film is experimental. Copies up to 2 GiB of downloaded results and retained upload files into private extension storage and measures them with installed ffprobe; video and Film frame rates must match. include_master adds the recipe's saved master as a muted alternate. Shares the single local media slot with capture and composition inspection. No download, upload, generation, claim or scene change; build_film_review requires separate approval. Reviews are session-local.\n"
+            "Film is experimental. Copies up to 2 GiB of downloaded results and retained upload files into private extension storage and measures them with installed ffprobe; video and Film frame rates must match. include_master adds the recipe's saved master as a muted alternate. Shares the single local media slot with capture and composition inspection. No download, upload, generation, claim or scene change; build_film_review requires separate approval. Keep the recipe scene selected until building: leaving it and selecting it again invalidates the review. Reviews are session-local.\n"
             "Platform equivalent: none; local saved-media review preparation."
         ),
         _schema(
@@ -1514,7 +1514,7 @@ SPECS = (
             "Args: review_id is required; action is status (default), cancel, discard, retry_receipt or dismiss_uncertain. Dismissal requires inspected=true.\n"
             "Returns: review_id, production_id, mode, phase, recipe scene, review_scene, frames/fps, shots, sources, bytes, audio_segments, master, error, receipt_retry_available and inspection_required.\n"
             'Example: {"review_id": "current-review", "action": "status"}.\n'
-            "Film is experimental. Status advances local preparation but never builds. Cancel stops preparation; discard deletes only an unbuilt review's private copies. Recipe, frame or scene changes invalidate a review and delete its copies. Receipt retry never copies media or rebuilds. Dismissal retires an inspected uncertain review only when no known receipt remains; it never clears a saved claim. Built scenes, saved jobs and source media are never changed. Handles expire with the session.\n"
+            "Film is experimental. Status advances local preparation but never builds. Cancel stops preparation; discard deletes only an unbuilt review's private copies. Recipe, frame or scene changes, including leaving the recipe scene and selecting it again, invalidate an unbuilt review and delete its copies. Receipt retry never copies media or rebuilds. Dismissal retires an inspected uncertain review only when no known receipt remains; it never clears a saved claim. Built scenes, saved jobs and source media are never changed. Handles expire with the session.\n"
             "Platform equivalent: none; local review lifecycle and receipt recovery."
         ),
         _schema(

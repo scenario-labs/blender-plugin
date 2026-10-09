@@ -51,8 +51,9 @@ establish live generation or full render-lane desktop acceptance.
   now prepares private saved-media copies and separately approves a new review
   scene with application claims; it has installed synthetic coverage only, and
   desktop interaction, live media and human motion/audio review remain pending.
-  A frame or recipe edit before building deletes the copies and requires a fresh
-  preparation; Undo after a build keeps them. See
+  A frame or recipe edit, or leaving the recipe scene and selecting it again,
+  before building deletes the copies and requires a fresh preparation; Undo after
+  a build keeps them. See
   [review controls](FILM_PLAN.md#native-and-mcp-review-controls). Video export of
   review scenes remains unavailable. Complete runtime adoption
   and live/native acceptance remain open

@@ -270,7 +270,7 @@ class SCENARIO_PT_film_review(bpy.types.Panel):
                 text={
                     "PREPARING": "Copying and measuring saved media...",
                     "CANCELLING": "Stopping preparation...",
-                    "WAITING": "Waiting for the original scene...",
+                    "WAITING": "Scene left; reselecting it needs a new preparation",
                     "BUILDING": "Building the review scene...",
                 }[phase]
             )

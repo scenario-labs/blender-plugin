@@ -21,7 +21,12 @@ from .film_application import _main_thread
 
 _log = logging.getLogger("scenario.film_review")
 
-_STALE = "The Film recipe, scene or connection changed; prepare again"
+# Blender's frame_change_pre also fires when a window selects the recipe scene again;
+# the session then revokes its captured origin, so returning needs a fresh preparation.
+_STALE = (
+    "The Film recipe, scene, frame or connection changed, or the scene was selected again;"
+    " prepare again"
+)
 _PREPARE_FAILED = (
     "Inspect saved Film media, frame rates and the declared master before preparing again"
 )
@@ -130,6 +135,8 @@ class FilmReviewCommands:
         )
 
     def prepare(self, scene, *, mode="final", score_task_id="score", include_master=False):
+        from .job_session import SessionBusy
+
         _main_thread()
         if mode not in {"final", "previs"}:
             raise ValueError("Choose a final or previs review")
@@ -193,8 +200,8 @@ class FilmReviewCommands:
                 score_task_id=score_task_id,
                 include_master=include_master,
             )
-        except WorkerError as error:
-            # First-party admission text, such as waiting for the single local media slot.
+        except (WorkerError, SessionBusy) as error:
+            # First-party admission text, such as the single local media slot or a full queue.
             raise ValueError(str(error)) from None
         self._reviews[review.identifier] = review
         return self.status(review.identifier)
@@ -273,6 +280,8 @@ class FilmReviewCommands:
                         review.phase = "CANCELLED"
                     self._release(completion)
             if review.phase == "WAITING":
+                # Readiness needs the unchanged origin while its scene is current. A window
+                # selecting the scene again revokes it; the next poll's check fails first.
                 try:
                     selected = review.scene == bpy.context.scene
                 except ReferenceError:

@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Installed Film review controls share session handles, copies, claims and receipts."""
 
+import hashlib
 import json
 import threading
 import unittest
@@ -190,20 +191,51 @@ class FilmReviewControlTests(unittest.TestCase):
                 self.film.load_recipe(self.scene, self.media.raw)
         self.assertFalse(self.media.calls or self.media.downloads)
 
-    def test_scene_switch_waits_then_becomes_ready_on_return(self):
-        identifier = self.mcp_prepare()
-        review = self.commands._reviews[identifier]
-        review.task.result(5)
+    def test_selecting_the_recipe_scene_again_requires_fresh_preparation(self):
+        # The scene selector assigns window.scene; Blender then runs frame_change_pre
+        # for the newly selected scene, which a context override never does.
+        window = bpy.context.window
         other = bpy.data.scenes.new("Other review context")
-        try:
-            with bpy.context.temp_override(scene=other):
-                self.commands.poll()
-                self.assertEqual(review.phase, "WAITING")
-                self.assertEqual(len(self.copies()), 1)
-            self.commands.poll()
-            self.assertEqual(review.phase, "READY", review.error)
-        finally:
-            bpy.data.scenes.remove(other)
+        self.addCleanup(bpy.data.scenes.remove, other)
+        self.addCleanup(setattr, window, "scene", self.scene)
+        built = self.ready()
+        self.assertEqual(self.tools.build_film_review({"review_id": built})["phase"], "BUILT")
+        kept = self.copies()  # The built review scene still uses these copies.
+        self.assertEqual(len(kept), 1)
+        ready = self.ready()
+        self.assertEqual(len(self.copies()), 2)
+        window.scene = other
+        self.commands.poll()
+        # Leaving alone keeps the review and its copies.
+        self.assertEqual(self.commands.status(ready)["phase"], "READY")
+        self.assertEqual(len(self.copies()), 2)
+        window.scene = self.scene
+        self.commands.poll()
+        status = self.commands.status(ready)
+        self.assertEqual(status["phase"], "ERROR")
+        self.assertIn("selected again", status["error"])
+        self.assertEqual(self.copies(), kept)
+        with self.assertRaisesRegex(ValueError, "fresh ready"):
+            self.tools.build_film_review({"review_id": ready})
+        # A built review keeps its scene, copies and outcome after the same round trip.
+        status = self.commands.status(built)
+        self.assertEqual(status["phase"], "BUILT")
+        self.assertIn(status["review_scene"], bpy.data.scenes)
+        # Preparation finishing while another scene is active waits, then fails on return.
+        waiting = self.mcp_prepare()
+        review = self.commands._reviews[waiting]
+        window.scene = other
+        review.task.result(5)
+        self.commands.poll()
+        self.assertEqual(review.phase, "WAITING")
+        self.assertEqual(len(self.copies()), 2)
+        window.scene = self.scene
+        status = self.settle(waiting)
+        self.assertEqual(status["phase"], "ERROR")
+        self.assertIn("selected again", status["error"])
+        self.assertEqual(self.copies(), kept)
+        self.assertFalse(self.session._coordinator.film_review_cleanup_pending)
+        self.assertEqual(self.state(), self.storage.JobState.APPLIED)
         self.assertFalse(self.media.calls or self.media.downloads)
 
     def test_deleted_pending_scene_drains_and_removes_late_copies(self):
@@ -240,6 +272,122 @@ class FilmReviewControlTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "explicitly"):
             self.mcp_prepare(include_master="yes")
         self.assertFalse(self.media.calls or self.media.downloads)
+
+    def save_master(self, observations):
+        """Save one downloaded final master bound to the composed current-source recipe."""
+        storage, store = self.storage, self.store
+        draft = submodule("core.scene.film_finish").compose_recipe(
+            self.media.raw,
+            {
+                source.task_id: submodule("core.scene.film_plan").TaskAssets(
+                    source.scope, (source.asset_id,)
+                )
+                for source in observations
+            },
+            scope=self.session.scope,
+            mode="final",
+            score_task_id="score",
+            audio_durations={},
+        )
+        binding, tasks, *_ = submodule("core.jobs.film_tasks")._task_context(
+            store, draft, production_id=self.production, task_id="final-master", kind="model"
+        )
+        row = store.create(
+            storage.JobIntent(
+                "master",
+                self.media.scope,
+                self.media.origin,
+                "model",
+                tasks["final-master"]["model"],
+                "c" * 64,
+                "d" * 64,
+                "1",
+                film_task=binding,
+            )
+        )
+        for state in (
+            storage.JobState.SUBMITTING,
+            storage.JobState.REMOTE,
+            storage.JobState.SUCCEEDED,
+        ):
+            row = store.transition(
+                "master",
+                expected_revision=row.revision,
+                state=state,
+                remote_job_id="master-remote" if state == storage.JobState.REMOTE else None,
+            )
+        asset = storage.ResultAsset("master-asset", "master.mp4", "video/mp4")
+        row = store.set_results("master", (asset,), expected_revision=row.revision)
+        row = store.transition(
+            "master", expected_revision=row.revision, state=storage.JobState.DOWNLOADING
+        )
+        data = self.media.data
+        (self.session._coordinator._results._directory(row) / asset.name).write_bytes(data)
+        receipt = self.media.transfers.DownloadedResult(
+            asset.name, len(data), hashlib.sha256(data).hexdigest()
+        )
+        row = store.record_download(
+            "master", asset.asset_id, receipt, expected_revision=row.revision
+        )
+        store.transition("master", expected_revision=row.revision, state=storage.JobState.READY)
+
+    def test_included_saved_master_builds_a_muted_alternate(self):
+        first = self.ready()
+        observations = self.commands._reviews[first].completion.result.observations
+        self.tools.film_review_status({"review_id": first, "action": "discard"})
+        self.assertFalse(self.copies())
+        self.save_master(observations)
+        self.assertTrue(self.commands.master_available(self.scene, "final"))
+        self.assertFalse(self.commands.master_available(self.scene, "previs"))
+        operator = SimpleNamespace(report=Mock(), include_master=False, layout=MagicMock())
+        context = SimpleNamespace(
+            scene=self.scene, window_manager=Mock(scenario_film_review_mode="final")
+        )
+        context.window_manager.invoke_props_dialog.return_value = {"RUNNING_MODAL"}
+        prepare = self.ui.SCENARIO_OT_prepare_film_review
+        self.assertEqual(prepare.invoke(operator, context, None), {"RUNNING_MODAL"})
+        prepare.draw(operator, context)
+        self.assertTrue(operator._master)
+        self.assertIs(operator.layout.row.return_value.enabled, True)
+        labels = [c.kwargs["text"] for c in operator.layout.label.call_args_list]
+        self.assertNotIn("No saved master video for this recipe and mode", labels)
+        operator.include_master = True
+        self.assertEqual(prepare.execute(operator, bpy.context), {"FINISHED"})
+        operator.report.assert_not_called()
+        identifier = self.commands.current(self.scene, "final")["review_id"]
+        status = self.settle(identifier)
+        self.assertEqual(status["phase"], "READY", status["error"])
+        self.assertTrue(status["include_master"] and status["master"])
+        self.assertEqual((status["sources"], status["bytes"]), (1, 2 * len(self.media.data)))
+        self.assertEqual(len(tuple(next(iter(self.copies())).iterdir())), 2)
+        before = set(bpy.data.scenes)
+        status = self.tools.build_film_review({"review_id": identifier})
+        self.assertEqual(status["phase"], "BUILT", status["error"])
+        self.assertTrue(status["master"])
+        (review,) = set(bpy.data.scenes) - before
+        strips = tuple(review.sequence_editor.strips)
+        self.assertEqual(len(strips), 4)
+        muted = [strip for strip in strips if strip.mute]
+        self.assertEqual(sorted(strip.type for strip in muted), ["MOVIE", "SOUND"])
+        self.assertTrue(all("muted alternate" in strip.name for strip in muted))
+        self.assertEqual(self.state(), self.storage.JobState.APPLIED)
+        self.assertEqual(self.store.get("master").state, self.storage.JobState.APPLIED)
+        self.assertFalse(self.media.calls or self.media.downloads)
+
+    def test_full_session_queue_reports_readable_admission_text(self):
+        operator = SimpleNamespace(report=Mock(), include_master=False)
+        with patch.object(self.session, "_completion_limit", 0):
+            with self.assertRaisesRegex(ValueError, "Drain completed job outcomes"):
+                self.mcp_prepare()
+            self.assertEqual(
+                self.ui.SCENARIO_OT_prepare_film_review.execute(operator, bpy.context),
+                {"CANCELLED"},
+            )
+        operator.report.assert_called_once_with(
+            {"WARNING"}, "Drain completed job outcomes before adding more commands"
+        )
+        self.assertEqual(self.commands._reviews, {})
+        self.assertFalse(self.copies())
 
     def test_builder_failure_rolls_back_and_saves_failed_claim(self):
         identifier = self.ready()

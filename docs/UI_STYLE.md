@@ -1245,7 +1245,10 @@ scene**. That separate confirmation names the recipe scene, mode, timing, counts
 private copy size and master inclusion. It states that the build creates a new
 scene, keeps the working scene selected and marks generated sources applied, and
 that Undo removes only the scene. Build is disabled outside Object Mode with a poll
-message. Pending phases show one status line with **Cancel preparation**. Ready,
+message. Preparing and waiting reviews show one status line with **Cancel
+preparation**; stopping and building show status only. The waiting line says the
+scene was left and that reselecting it needs a new preparation: selecting the
+recipe scene again invalidates its unbuilt reviews and deletes their copies. Ready,
 failed and cancelled reviews offer **Discard review** with confirmation. Uncertain
 builds hide preparation and offer **Save review receipt** or **Acknowledge
 inspection** (with its checkbox), plus **Inspect saved jobs**. **Error details**
@@ -1253,10 +1256,12 @@ wraps the complete error and offers copying. Drawing reads cached status only; t
 maintenance pump owns progress. Studio's Film page adds a sixth **Review** tab,
 drawn as two rows of three at narrow widths.
 
-Installed synthetic tests cover operator execution, dialog construction,
-dismissed dialogs, MCP parity, read-only panel and Studio drawing, mode navigation
-and Edit Mode gating. Physical desktop interaction, screenshots and other OS/DPI
-behavior for these controls have not been captured; that evidence is pending.
+Installed synthetic tests cover operator execution, dialog construction including
+the enabled master option for a saved master, dismissed dialogs, readable
+full-queue admission, a real `window.scene` round trip, MCP parity, read-only
+panel and Studio drawing, mode navigation and Edit Mode gating. Physical desktop
+interaction, screenshots and other OS/DPI behavior for these controls have not
+been captured; that evidence is pending.
 
 
 ## Explicit Studio view

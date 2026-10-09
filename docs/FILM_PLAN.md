@@ -853,12 +853,19 @@ Object Mode in a Blender window; preparation remains available in Edit Mode.
 executor, store, service client or persisted state. Preparing rejects another
 active review for the same scene and mode, and any unresolved uncertain review for
 that scene. A full bound retires the oldest finished handle, never an active one.
-Runtime maintenance drains finished preparation while the panel is closed;
-readiness waits for the original scene to be selected. The prepared completion
-stays issued so that the separate build approval consumes it exactly once.
-A changed recipe, production, scene revision (including the current frame) or
-connection invalidates preparing, waiting and ready reviews and deletes their
-unused private copies; prepare again. Drawing only reads cached status.
+Runtime maintenance drains finished preparation while the panel is closed. A
+review becomes ready only while its recipe scene is current and its captured
+origin is unchanged; preparation that finishes while another scene is active is
+held as waiting with its copies. The prepared completion stays issued so that the
+separate build approval consumes it exactly once. A changed recipe, production,
+scene revision (including the current frame) or connection invalidates preparing,
+waiting and ready reviews and deletes their unused private copies; prepare again.
+Selecting the recipe scene again after leaving it counts as such a change: Blender
+runs `frame_change_pre` for the newly selected scene and the shared session revokes
+its captured origin. A waiting review therefore fails on a real return through the
+scene selector, as does every unbuilt review for that scene, including one for the
+other mode or one left behind while watching a built review scene. Build a ready
+review before leaving its recipe scene. Drawing only reads cached status.
 Preparation occupies the session's single local media slot, shared with capture
 and composition inspection, and one shared worker while it copies and probes.
 
@@ -887,16 +894,20 @@ saved jobs keep their durable claims for inspection. Undo after a build removes
 the review scene while its private copies and applied receipts remain, so repeated
 build and Undo cycles accumulate copies under `film-review` without an automatic
 sweep. Strict origin invalidation is deliberate for this release: a frame or recipe
-edit before building requires a fresh preparation.
+edit, or leaving the recipe scene and selecting it again, before building requires
+a fresh preparation. Composition and capture waiting use the same shared origin
+check; letting scene activation keep an unchanged origin is separate session work.
 
 Installed synthetic tests cover native and MCP preparation and build, shared
-handles, dismissed dialogs, cancellation during probing, frame and recipe
-invalidation, scene switching and deletion, missing master and `ffprobe`,
-rollback, receipt-only recovery, inspected dismissal, the 16-handle bound, shutdown
-cleanup, read-only drawing, mode navigation and Edit Mode gating. Physical desktop
-interaction, a fixture with an included master, live provider media, other OS/DPI
-behavior and human motion/audio review remain pending. Video export of review
-scenes is not available yet.
+handles, dismissed dialogs, cancellation during probing, a full session queue,
+frame and recipe invalidation, a real `window.scene` round trip that fails waiting
+and ready reviews while a built review keeps its scene, recipe scene deletion, an
+included saved master built as muted movie and sound strips, missing master and
+`ffprobe`, rollback, receipt-only recovery, inspected dismissal, the 16-handle
+bound, shutdown cleanup, read-only drawing, mode navigation and Edit Mode gating.
+Physical desktop interaction, live provider media, other OS/DPI behavior and human
+motion/audio review remain pending. Video export of review scenes is not available
+yet.
 
 ## Remaining integration and evidence
 

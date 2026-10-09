@@ -590,6 +590,33 @@ class WorkflowUploadTests(unittest.TestCase):
         self.form.inputs["images"].enabled = False
         self.assertNotIn(note, self.drawn("images")[1])
 
+    def test_stopped_upload_notes_are_kept_per_input_without_eviction(self):
+        item = self.populated()
+        binding = self.start("images")
+        binding.ticket.task.result(5)
+        self.scene_changes()[0]()
+        self.pump(binding)
+        note = "The upload stopped before sending; nothing was uploaded"
+        # Notes on other inputs, more than the former 16-note window, keep this one.
+        for index in range(16):
+            other = SimpleNamespace(
+                name=f"other-{index}",
+                text="",
+                enabled=False,
+                options="",
+                choice="",
+                asset_scope="",
+                asset_value="",
+            )
+            self.uploads._remember(self.owner, self.scene, other, "Synthetic note")
+        self.assertIn(note, self.drawn("images")[1])
+        # A later note for the same input replaces its earlier one.
+        self.uploads._remember(self.owner, self.scene, item, "Later note")
+        _, labels = self.drawn("images")
+        self.assertIn("Later note", labels)
+        self.assertNotIn(note, labels)
+        self.assertEqual(len(self.owner.workflow_notices), 17)
+
     def test_a_new_upload_retires_the_inputs_earlier_note(self):
         item = self.populated()
         first = self.start("images")

@@ -189,27 +189,22 @@ def _remember(owner, scene, item, message):
     """Explain on the freed input, while it keeps these values, why nothing was sent.
 
     Undo and redo invalidate Python scene references but keep the scene's session
-    UID, so the note follows history until another upload targets the input.
+    UID, so the note follows history until another upload targets the input. Each
+    input keeps only its latest note; notes on other inputs never evict it.
     """
-    owner.workflow_notices.append((scene.session_uid, item.name, _values(item), message))
+    owner.workflow_notices[(scene.session_uid, item.name)] = (_values(item), message)
 
 
 def _forget(owner, scene, name):
-    """Retire earlier notes for an input that a new upload now targets."""
-    key = (scene.session_uid, name)
-    kept = [notice for notice in owner.workflow_notices if notice[:2] != key]
-    owner.workflow_notices.clear()
-    owner.workflow_notices.extend(kept)
+    """Retire the note of an input that a new upload now targets."""
+    owner.workflow_notices.pop((scene.session_uid, name), None)
 
 
 def _notice(owner, scene, item):
     if owner is None:
         return ""
-    key = (scene.session_uid, item.name, _values(item))
-    for *notice_key, message in reversed(owner.workflow_notices):
-        if tuple(notice_key) == key:
-            return message
-    return ""
+    values, message = owner.workflow_notices.get((scene.session_uid, item.name), (None, ""))
+    return message if values == _values(item) else ""
 
 
 def release_canceled(owner, record):

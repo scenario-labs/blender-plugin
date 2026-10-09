@@ -221,6 +221,9 @@ class JobSession:
         from .film_capture import FilmCaptureCommands
 
         self.film_capture = FilmCaptureCommands(self)
+        from .film_review_commands import FilmReviewCommands
+
+        self.film_review = FilmReviewCommands(self, store)
         with _sessions_lock:
             _sessions.add(self)
         try:
@@ -1418,6 +1421,7 @@ class JobSession:
                 self.film_shots.close()
                 self.film_timeline.close()
                 self.film_capture.close()
+                self.film_review.close()
                 if self._coordinator.film_review_cleanup_pending:
                     self._film_cleanup_retry_at = time.monotonic() + 5.0
                 else:

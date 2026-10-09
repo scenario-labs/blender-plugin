@@ -573,8 +573,9 @@ active UI/MCP do not yet install or quote these drafts. The session quote comman
 below preserves source/scene/scope identity through price preparation and dispatch;
 active controls must retain the original recipe review and require explicit
 generation approval. Verified media preparation is available through the session
-command below; native final-review assembly, export, live provider acceptance and
-human motion/audio review remain separate. These helpers alone do not complete
+command below. Native review assembly has [separate controls](#native-and-mcp-review-controls);
+video export, live provider acceptance and human motion/audio review remain
+separate. These helpers alone do not complete
 Film finishing.
 
 ## Verified media preparation
@@ -654,7 +655,7 @@ unchanged, and API keys need no discovered/default project identifier.
 
 This command is verified through the installed native session and offline SDK
 fixtures. The controls below expose this path without installing or modifying
-the recipe. Provider acceptance and final assembly/export remain separate work.
+the recipe. Provider acceptance and video export remain separate work.
 
 ## Native and MCP composition controls
 
@@ -702,9 +703,9 @@ source/recipe/scene invalidation, cancellation, uncertainty, lost acknowledgemen
 read-only drawing and saved-master discovery after reopening the owner. Synthetic
 desktop mouse/keyboard, focus, confirmation and viewport checks pass on macOS
 arm64 Blender 5.1.2; see [the exact ZIP evidence](UI_STYLE.md#film-composition-controls).
-Live provider/media acceptance, other OS/DPI behavior and local final
-assembly/export remain pending. These controls do not complete the Film or
-release acceptance gates.
+Live provider/media acceptance, other OS/DPI behavior and video export remain
+pending; local review assembly uses the [review controls](#native-and-mcp-review-controls).
+These controls do not complete the Film or release acceptance gates.
 
 ## Native saved-media review primitive
 
@@ -755,8 +756,8 @@ trims, contiguous shots, loop phase/ducking, silent/native audio, muted masters,
 scope/receipt/rate failures, rollback uncertainty and a saved-scene library
 round-trip. The standalone primitive is synchronous. The shared preparation and
 application commands below move copying and probing to workers and supply
-current-source checks and application claims. Native/MCP review controls, portable
-export and desktop/live acceptance remain separate.
+current-source checks and application claims. [Native/MCP review controls](#native-and-mcp-review-controls)
+expose those commands; portable export and desktop/live acceptance remain separate.
 
 ## Shared native-review preparation and application
 
@@ -823,14 +824,84 @@ Process exit or module reload can still require manual inspection of logged file
 
 Installed tests cover real movie/audio strips from worker copies, generated job
 claims, reuse, stale recipe/origin/copy rejection, rollback, uncertain claims and
-receipt-only recovery. This command layer still needs native/MCP presentation and
-explicit user approval controls. It is not desktop, provider motion/audio, portable
-export or release acceptance.
+receipt-only recovery. The [native/MCP review controls](#native-and-mcp-review-controls)
+below present this command layer with separate preparation and build approvals.
+It is not desktop, provider motion/audio, portable export or release acceptance.
+
+## Native and MCP review controls
+
+Under **Film > Review**, choose **Final** or **Previs**, then **Prepare review**.
+Its dialog names the recipe scene and mode. **Include saved master as muted
+alternate** is enabled only when the recipe's declared master job has one saved
+video result; the shared preparation still validates that master. Confirming
+queues the shared preparation above: it copies up to 2 GiB of retained upload
+files or downloaded results into private extension storage and measures those
+copies with installed `ffprobe`. Video and cut frame rates must match. Nothing is
+downloaded, uploaded, generated or claimed, and no scene changes. Cancelling the
+dialog creates no review. Final/Previs is temporary per-scene WindowManager state,
+like the composition selector, so navigation does not tag the recipe scene.
+
+A ready review shows its frame count/rate and shot/source counts. **Build review
+scene** asks for a separate confirmation naming the recipe scene, mode, frames,
+fps, shot/source/audio-segment counts, private copy size and master inclusion.
+It states that the build creates a new scene, keeps the working scene selected
+and marks generated sources applied in saved jobs. It also states that Undo removes
+the scene but not saved receipts or private copies. Build is disabled outside
+Object Mode in a Blender window; preparation remains available in Edit Mode.
+
+`JobSession.film_review` owns at most 16 session-local review handles and adds no
+executor, store, service client or persisted state. Preparing rejects another
+active review for the same scene and mode, and any unresolved uncertain review for
+that scene. A full bound retires the oldest finished handle, never an active one.
+Runtime maintenance drains finished preparation while the panel is closed;
+readiness waits for the original scene to be selected. The prepared completion
+stays issued so that the separate build approval consumes it exactly once.
+A changed recipe, production, scene revision (including the current frame) or
+connection invalidates preparing, waiting and ready reviews and deletes their
+unused private copies; prepare again. Drawing only reads cached status.
+Preparation occupies the session's single local media slot, shared with capture
+and composition inspection, and one shared worker while it copies and probes.
+
+**Cancel preparation** stops the local probe; a late result never becomes ready
+and its copies are deleted. **Discard review** deletes only an unbuilt review's
+private copies; saved jobs, source media and scenes remain. A build rejected before
+consumption, for example after a source change, deletes its copies without a claim.
+Once consumed, outcomes follow the shared command above. A complete rollback saves
+failed claims. A known receipt-write failure offers **Save review receipt**, which
+never copies media or rebuilds. Uncertainty without a known receipt requires
+**Acknowledge inspection** with its checkbox. Dismissal retires only the review; it
+never clears a saved claim or deletes data. An uncertain review blocks new
+preparation for its scene until dismissed. No build is retried automatically, and
+**Error details** shows the complete error for copying.
+
+Local MCP uses `film_recipe` inspection's `context_id` and `production_id` with
+`prepare_film_review`. Poll `film_review_status` until `READY`, show the returned
+timing, counts, size and master inclusion for explicit approval, then call
+`build_film_review`. The status tool also cancels, discards, retries a known
+receipt or dismisses an inspected uncertain review (`inspected: true`). Native and
+MCP controls share the same handles: an MCP-prepared review can be built natively
+and the reverse. See [MCP review commands](MCP.md#film-review-commands).
+
+Restart drops review handles and pending receipt authority, as described above;
+saved jobs keep their durable claims for inspection. Undo after a build removes
+the review scene while its private copies and applied receipts remain, so repeated
+build and Undo cycles accumulate copies under `film-review` without an automatic
+sweep. Strict origin invalidation is deliberate for this release: a frame or recipe
+edit before building requires a fresh preparation.
+
+Installed synthetic tests cover native and MCP preparation and build, shared
+handles, dismissed dialogs, cancellation during probing, frame and recipe
+invalidation, scene switching and deletion, missing master and `ffprobe`,
+rollback, receipt-only recovery, inspected dismissal, the 16-handle bound, shutdown
+cleanup, read-only drawing, mode navigation and Edit Mode gating. Physical desktop
+interaction, a fixture with an included master, live provider media, other OS/DPI
+behavior and human motion/audio review remain pending. Video export of review
+scenes is not available yet.
 
 ## Remaining integration and evidence
 
-Native/MCP review controls, mixed-rate normalization,
-provider-specific preparation and final export remain separate work. Keep useful
+Mixed-rate normalization, provider-specific preparation, video export of review
+scenes and the Studio case-study bundle remain separate work. Keep useful
 source capabilities and tests as those paths are connected; do not describe this
 helper adoption as a completed Film workflow.
 

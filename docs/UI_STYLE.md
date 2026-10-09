@@ -1230,6 +1230,34 @@ disabled. This proves the scoped native interaction flow, not real media probing
 live provider quality, other OS/DPI behavior, local final assembly/export or
 complete Film/release acceptance.
 
+### Film review controls
+
+The **Review** child panel follows Composition. It uses equal Final/Previs
+segments, then an **Assemble review** box with a `SEQUENCE` header icon.
+**Prepare review** opens a dialog naming the recipe scene and mode. **Include saved
+master as muted alternate** is enabled only when a saved master video exists.
+The dialog states the 2 GiB private copy limit and the installed `ffprobe`
+requirement, and that nothing is downloaded, uploaded or generated. Cancelling it
+creates no review.
+
+A ready review shows its frames, fps and shot/source counts, then **Build review
+scene**. That separate confirmation names the recipe scene, mode, timing, counts,
+private copy size and master inclusion. It states that the build creates a new
+scene, keeps the working scene selected and marks generated sources applied, and
+that Undo removes only the scene. Build is disabled outside Object Mode with a poll
+message. Pending phases show one status line with **Cancel preparation**. Ready,
+failed and cancelled reviews offer **Discard review** with confirmation. Uncertain
+builds hide preparation and offer **Save review receipt** or **Acknowledge
+inspection** (with its checkbox), plus **Inspect saved jobs**. **Error details**
+wraps the complete error and offers copying. Drawing reads cached status only; the
+maintenance pump owns progress. Studio's Film page adds a sixth **Review** tab,
+drawn as two rows of three at narrow widths.
+
+Installed synthetic tests cover operator execution, dialog construction,
+dismissed dialogs, MCP parity, read-only panel and Studio drawing, mode navigation
+and Edit Mode gating. Physical desktop interaction, screenshots and other OS/DPI
+behavior for these controls have not been captured; that evidence is pending.
+
 
 ## Explicit Studio view
 
@@ -1241,7 +1269,7 @@ opens the sidebar; the compact composer remains the default creation surface.
 
 Studio reuses the actual native panel controls and their operators. Create keeps
 the same scene form, model, prompt, references and parameters. Film separates
-Tasks, Shots, Capture, Timeline and Composition; each keeps its existing
+Tasks, Shots, Capture, Timeline, Composition and Review; each keeps its existing
 confirmation boundary. Results reuse the saved-result and explicit application
 controls. Connection names the selected credential source/project and links to
 Preferences and local agent setup without displaying credentials.

@@ -126,4 +126,8 @@ fixtures. It requires matching movie/cut frame rates. The [review contract](../F
 describes byte/strip limits. Its shared session command now supplies worker
 preparation and generated-source claims before native decoding. Private copy
 identities are rechecked around decoding without GUI-thread copying or hashing.
-Native/MCP controls, portable export and live/desktop acceptance remain pending.
+Session-owned [native/MCP review controls](../FILM_PLAN.md#native-and-mcp-review-controls)
+separate preparation from the build approval. Drawing reads cached status, the
+maintenance pump advances work, and the build runs on the main thread only in
+Object Mode in a Blender window. Portable export and live/desktop acceptance
+remain pending.

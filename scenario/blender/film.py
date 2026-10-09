@@ -16,6 +16,7 @@ from . import (
     film_capture_controls,
     film_composition_controls,
     film_jobs,
+    film_review_controls,
     film_scene_controls,
     film_timeline_controls,
     runtime,
@@ -294,7 +295,7 @@ class SCENARIO_PT_film(bpy.types.Panel):
         if item is not None and item.error:
             box.label(text="Action needs review. Inspect saved jobs.", icon="ERROR")
         layout.operator("scenario.inspect_saved_jobs", icon="FILE_REFRESH")
-        layout.label(text="Local final assembly and export are not available yet")
+        layout.label(text="Assemble saved media under Review; video export is not available yet")
 
 
 CLASSES = (
@@ -315,47 +316,65 @@ CLASSES = (
     *film_timeline_controls.CLASSES,
     *film_capture_controls.CLASSES,
     *film_composition_controls.CLASSES,
+    *film_review_controls.CLASSES,
 )
 
 
-_composition_modes = {}
+_scene_modes = {"composition": {}, "review": {}}
 
 
-def _composition_mode_get(_owner):
-    scene = bpy.context.scene
-    return _composition_modes.get(scene.session_uid, 0) if scene is not None else 0
+def _scene_mode(key):
+    modes = _scene_modes[key]
 
+    def get(_owner):
+        scene = bpy.context.scene
+        return modes.get(scene.session_uid, 0) if scene is not None else 0
 
-def _composition_mode_set(_owner, value):
-    # WindowManager stores navigation without tagging scene revisions. Session UIDs
-    # keep scenes (including deleted/recreated names) independent across windows.
-    live = {scene.session_uid for scene in bpy.data.scenes}
-    for identifier in tuple(_composition_modes):
-        if identifier not in live:
-            del _composition_modes[identifier]
-    scene = bpy.context.scene
-    if scene is not None:
-        _composition_modes[scene.session_uid] = value
+    def set_mode(_owner, value):
+        # WindowManager stores navigation without tagging scene revisions. Session UIDs
+        # keep scenes (including deleted/recreated names) independent across windows.
+        live = {scene.session_uid for scene in bpy.data.scenes}
+        for identifier in tuple(modes):
+            if identifier not in live:
+                del modes[identifier]
+        scene = bpy.context.scene
+        if scene is not None:
+            modes[scene.session_uid] = value
+
+    return get, set_mode
 
 
 def register():
     for cls in CLASSES:
         bpy.utils.register_class(cls)
     bpy.types.Scene.scenario_film = PointerProperty(type=ScenarioFilm)
-    # Navigation must not tag the recipe scene and invalidate its retained quotes.
+    # Navigation must not tag the recipe scene and invalidate its retained quotes or reviews.
+    get, set_mode = _scene_mode("composition")
     bpy.types.WindowManager.scenario_film_composition_mode = EnumProperty(
         items=[
             ("final", "Final", "Include editorial audio and source trims"),
             ("previs", "Previs", "Review the previs cut without editorial audio"),
         ],
         options={"SKIP_SAVE"},
-        get=_composition_mode_get,
-        set=_composition_mode_set,
+        get=get,
+        set=set_mode,
+    )
+    get, set_mode = _scene_mode("review")
+    bpy.types.WindowManager.scenario_film_review_mode = EnumProperty(
+        items=[
+            ("final", "Final", "Assemble the final cut with editorial audio and source trims"),
+            ("previs", "Previs", "Assemble the previs takes without editorial audio"),
+        ],
+        options={"SKIP_SAVE"},
+        get=get,
+        set=set_mode,
     )
 
 
 def unregister():
-    _composition_modes.clear()
+    for modes in _scene_modes.values():
+        modes.clear()
+    del bpy.types.WindowManager.scenario_film_review_mode
     del bpy.types.WindowManager.scenario_film_composition_mode
     del bpy.types.Scene.scenario_film
     for cls in reversed(CLASSES):

@@ -523,6 +523,7 @@ def sync_catalog_context():
     if state.job_session is not None:
         state.job_session.film_shots.poll()
         state.job_session.film_capture.poll()
+        state.job_session.film_review.poll()
     if state.film_jobs is not None:
         state.film_jobs.poll()
     if state.prompt_jobs is not None:

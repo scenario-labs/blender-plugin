@@ -283,6 +283,9 @@ Do not edit this block by hand; run `make mcp-docs`. An asterisk marks a require
 | `film_composition_review` | Inspect, cancel or discard a session-local Film composition review. | `review_id`*: string<br>`action`: string (['status', 'cancel', 'discard']) | - |
 | `estimate_film_composition` | Request the exact server price for one READY verified Film composition. | `review_id`*: string | read-only annotation |
 | `generate_film_composition` | Approve one exact Film composition price and save its master identity before a single submission. | `review_id`*: string<br>`approved_cost`*: string | - |
+| `prepare_film_review` | Copy and measure saved Film media for a final or previs review scene without building or spending. | `context_id`*: string<br>`production_id`*: string<br>`mode`: string (['final', 'previs'])<br>`score_task_id`: string<br>`include_master`: boolean | - |
+| `film_review_status` | Inspect, cancel or discard a session-local Film review, or retry only its known saved receipt. | `review_id`*: string<br>`action`: string (['status', 'cancel', 'discard', 'retry_receipt', 'dismiss_uncertain'])<br>`inspected`: boolean | - |
+| `build_film_review` | Approve one READY Film review and build a new review scene from its private copies. | `review_id`*: string | - |
 | `film_capture_sources` | Inspect matching local scenes for one Film shot before capture. | `production_id`*: string<br>`shot_id`*: string | read-only annotation |
 | `prepare_film_capture` | Prepare a local shot capture for separate render approval. | `context_id`*: string<br>`production_id`*: string<br>`shot_id`*: string<br>`source_id`*: string<br>`kind`: string (['STILL', 'VIDEO'])<br>`width`: integer<br>`height`: integer<br>`color_type`: string (['MATERIAL', 'TEXTURE', 'OBJECT']) | - |
 | `render_film_capture` | Approve a READY Film capture and start one local render on the shared workers. | `review_id`*: string | - |
@@ -774,8 +777,8 @@ cleanup requires `inspected: true` and must never be replayed automatically.
 These four local commands have no platform equivalent, make no service call and
 never change saved jobs or import result files. Local scene markers establish
 recipe compatibility, not service provenance. They share the native command
-owner but do not create a native operator Undo entry. Capture uses the separate
-commands above; local final assembly/export remain unavailable.
+owner but do not create a native operator Undo entry. Capture and review assembly
+use the separate commands in this section; video export remains unavailable.
 
 ### Film composition commands
 
@@ -792,8 +795,33 @@ model path. Cancel/discard release preparation or approval, preserving saved job
 and media. On an error, lost response or restart, inspect the recipe's declared
 master job and use ordinary saved-job recovery; never repeat uncertain generation.
 These tools share [native composition review](FILM_PLAN.md#native-and-mcp-composition-controls).
-Synthetic native interaction passes on macOS Blender 5.1.2; live provider,
-other OS/DPI and local final assembly/export acceptance remain pending.
+Synthetic native interaction passes on macOS Blender 5.1.2; live provider and
+other OS/DPI acceptance remain pending. Review assembly uses the commands below.
+
+### Film review commands
+
+Inspect `film_recipe` for the selected context and production, then call
+`prepare_film_review` with final/previs mode and an explicit optional
+`include_master`. Poll `film_review_status` until READY. Show its timing,
+shot/source/audio-segment counts, private copy size and master inclusion, and
+obtain explicit build approval before `build_film_review(review_id)`. Building
+needs a Blender window in Object Mode; an Edit Mode rejection keeps the review.
+
+Preparation copies retained upload files or downloaded results into private
+extension storage and needs installed `ffprobe` and matching frame rates; it never
+uploads, downloads, generates or claims. Recipe, frame, scene or connection changes
+invalidate the review and delete its copies. Building consumes the review, saves
+application claims for generated sources and creates a new scene while the working
+scene stays selected. `film_review_status` can cancel preparation, discard an
+unbuilt review's copies, `retry_receipt` for a known saved outcome or dismiss an
+inspected uncertain review with `inspected: true`; none rebuilds or clears a saved
+claim. An uncertain review blocks new preparation for its scene until dismissed.
+
+These three local commands have no platform equivalent, make no service call and
+share the [native review controls](FILM_PLAN.md#native-and-mcp-review-controls).
+They do not create a native operator Undo entry. Handles expire with the session.
+Installed synthetic tests cover them; desktop interaction, live media and video
+export remain pending.
 
 
 ## Workflow execution

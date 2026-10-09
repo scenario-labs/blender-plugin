@@ -516,6 +516,39 @@ def generate_film_composition(args):
     )
 
 
+def prepare_film_review(args):
+    owner = _film_owner(args).session.film_review
+    if args["context_id"] != runtime.state.job_context_id:
+        raise ValueError("The review connection changed; inspect the recipe again")
+    return owner.prepare(
+        bpy.context.scene,
+        mode=args.get("mode", "final"),
+        score_task_id=args.get("score_task_id", "score"),
+        include_master=args.get("include_master", False),
+    )
+
+
+def film_review_status(args):
+    owner = runtime.ensure_film_jobs().session.film_review
+    action = args.get("action", "status")
+    owner.poll()
+    if action == "status":
+        return owner.status(args["review_id"])
+    if action == "cancel":
+        return owner.cancel(args["review_id"])
+    if action == "discard":
+        return owner.discard(args["review_id"])
+    if action == "retry_receipt":
+        return owner.retry_receipt(args["review_id"])
+    if action == "dismiss_uncertain":
+        return owner.dismiss_uncertain(args["review_id"], inspected=args.get("inspected"))
+    raise ValueError("Choose status, cancel, discard, retry_receipt or dismiss_uncertain")
+
+
+def build_film_review(args):
+    return runtime.ensure_film_jobs().session.film_review.approve(args["review_id"])
+
+
 def film_capture_sources(args):
     owner = _film_owner(args).session.film_capture
     return {
@@ -1451,6 +1484,64 @@ SPECS = (
             ["review_id", "approved_cost"],
         ),
         generate_film_composition,
+    ),
+    ToolSpec(
+        "prepare_film_review",
+        (
+            "Copy and measure saved Film media for a final or previs review scene without building or spending.\n"
+            "Args: context_id and production_id are required from film_recipe inspection; mode is final (default) or previs, score_task_id defaults to score, include_master defaults to false.\n"
+            "Returns: review_id and PREPARING phase with the recipe scene, mode and frame timing; poll film_review_status until READY.\n"
+            'Example: {"context_id": "current-context", "production_id": "saved-production", "mode": "final"}.\n'
+            "Film is experimental. Copies up to 2 GiB of downloaded results and retained upload files into private extension storage and measures them with installed ffprobe; video and Film frame rates must match. include_master adds the recipe's saved master as a muted alternate. Shares the single local media slot with capture and composition inspection. No download, upload, generation, claim or scene change; build_film_review requires separate approval. Reviews are session-local.\n"
+            "Platform equivalent: none; local saved-media review preparation."
+        ),
+        _schema(
+            {
+                "context_id": {"type": "string"},
+                "production_id": {"type": "string"},
+                "mode": {"type": "string", "enum": ["final", "previs"]},
+                "score_task_id": {"type": "string"},
+                "include_master": {"type": "boolean"},
+            },
+            ["context_id", "production_id"],
+        ),
+        prepare_film_review,
+    ),
+    ToolSpec(
+        "film_review_status",
+        (
+            "Inspect, cancel or discard a session-local Film review, or retry only its known saved receipt.\n"
+            "Args: review_id is required; action is status (default), cancel, discard, retry_receipt or dismiss_uncertain. Dismissal requires inspected=true.\n"
+            "Returns: review_id, production_id, mode, phase, recipe scene, review_scene, frames/fps, shots, sources, bytes, audio_segments, master, error, receipt_retry_available and inspection_required.\n"
+            'Example: {"review_id": "current-review", "action": "status"}.\n'
+            "Film is experimental. Status advances local preparation but never builds. Cancel stops preparation; discard deletes only an unbuilt review's private copies. Recipe, frame or scene changes invalidate a review and delete its copies. Receipt retry never copies media or rebuilds. Dismissal retires an inspected uncertain review only when no known receipt remains; it never clears a saved claim. Built scenes, saved jobs and source media are never changed. Handles expire with the session.\n"
+            "Platform equivalent: none; local review lifecycle and receipt recovery."
+        ),
+        _schema(
+            {
+                "review_id": {"type": "string"},
+                "action": {
+                    "type": "string",
+                    "enum": ["status", "cancel", "discard", "retry_receipt", "dismiss_uncertain"],
+                },
+                "inspected": {"type": "boolean"},
+            },
+            ["review_id"],
+        ),
+        film_review_status,
+    ),
+    ToolSpec(
+        "build_film_review",
+        (
+            "Approve one READY Film review and build a new review scene from its private copies.\n"
+            "Args: review_id is the required string from prepare_film_review.\n"
+            "Returns: the review status with BUILT, ERROR or UNCERTAIN phase and the new review_scene.\n"
+            'Example: {"review_id": "ready-review"}.\n'
+            "Film is experimental. Requires explicit build approval of the returned timing, sources and size. Needs a Blender window in Object Mode. Rechecks the recipe, scene and sources, consumes the review and saves application claims for generated sources before native decoding. Keeps the working scene selected. No generation, download, upload or native operator Undo entry. Never repeat an uncertain build; use retry_receipt when offered.\n"
+            "Platform equivalent: none; local Blender review assembly."
+        ),
+        _schema({"review_id": {"type": "string"}}, ["review_id"]),
+        build_film_review,
     ),
     ToolSpec(
         "film_capture_sources",

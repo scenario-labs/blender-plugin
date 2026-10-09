@@ -871,10 +871,22 @@ another build. `retry_film_review_receipt` accepts only this session's known
 outcome and retries persistence, never decoding or mutation. Unused completion
 discard and joined shutdown clean preparation copies; successful/uncertain scenes
 retain their files. See [the detailed contract](FILM_PLAN.md#shared-native-review-preparation-and-application)
-for copy identity assumptions, limits, pending controls and acceptance boundaries.
+for copy identity assumptions, limits and acceptance boundaries.
 Failed copy cleanup cannot suppress a known rollback receipt or its retry handle.
 The result retains inspection-required status after receipt recovery until the
 remaining files have been inspected; it never repeats native application.
+
+[`FilmReviewCommands`](../scenario/blender/film_review_commands.py) is owned by the
+session as `JobSession.film_review`, like the timeline and capture handles. It
+keeps at most 16 ephemeral reviews bound to the original scene, production, recipe
+and captured origin, and calls only the session's prepare, apply, receipt-retry and
+discard commands. Runtime maintenance drains preparation and waits for the original
+scene; the issued completion is consumed only by the separate build approval.
+Invalidation, cancellation and discard delete unused copies through the
+coordinator; handle cleanup never changes built scenes or saved claims. Shutdown
+drops the handles after workers join, and the coordinator removes unconsumed
+copies. Native controls and three MCP tools share these handles; see
+[review controls](FILM_PLAN.md#native-and-mcp-review-controls).
 
 Native **Apply mesh edit** and MCP `prepare_result_application` with
 `purpose: mesh_edit` share this command and its captured target. The

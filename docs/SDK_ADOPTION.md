@@ -681,8 +681,9 @@ Before the adopted extension is accepted:
   multipart upload/finalization, signed downloads, asset search and collection
   operations. Do not infer coverage from a similar method name.
 - Reproduce each uncovered operation and link an upstream SDK issue before a
-  narrow raw API fallback in the shared adapter. The named discovery extensions
-  above are the current exception, with issue and removal condition recorded.
+  narrow raw API fallback in the shared adapter. The named discovery (#29) and
+  workflow selection (#33) extensions above are the current exceptions, each
+  with its issue and removal condition recorded.
 - Bind exact quotes to payload/account/project, persist request identity before
   paid dispatch, and preserve an uncertain state after a lost response. SDK
   retry settings alone do not provide application persistence or prevent a

@@ -269,6 +269,8 @@ Do not edit this block by hand; run `make mcp-docs`. An asterisk marks a require
 
 | Tool | Description | Arguments | Notes |
 | --- | --- | --- | --- |
+| `list_assets` | Read one asset-library page using the selected credentials and optional project scope. | `public`: boolean<br>`page_size`: integer<br>`pagination_token`: string<br>`collection_id`: string | read-only annotation |
+| `search_assets` | Search asset-library metadata through the shared SDK session. | `query`*: string<br>`public`: boolean<br>`limit`: integer<br>`offset`: integer | read-only annotation |
 | `list_workflows` | List workflows in the selected credential/project scope without spending. | `privacy`: string (['private', 'public'])<br>`query`: string<br>`offset`: integer<br>`limit`: integer | read-only annotation |
 | `workflow_schema` | Read a workflow's declared input definitions without spending. | `workflow_id`*: string | read-only annotation |
 | `estimate_workflow` | Request a free exact workflow price bound to the selected scene and connection. | `workflow_id`*: string<br>`parameters`: object | - |
@@ -401,6 +403,7 @@ behavior interchangeable. Remote names below were checked against the
 | Change scene | `select_objects`, `set_frame`, `camera_path`, `execute_python` | Local only |
 | Capture scene | `screenshot_viewport`, `render_still` | Local only |
 | Workflow discovery | `list_workflows`, `workflow_schema` | `workflows_list`, `workflow_get` |
+| Asset library metadata | `list_assets`, `search_assets` | SDK `assets.list` and `search.asset_search`; no hosted tool-name equivalence asserted here |
 | Workflow price and execution | `estimate_workflow`, `run_workflow` | `workflow_run` |
 | Discard workflow approval | `discard_workflow_estimate` | Local only; no remote cancellation |
 | Collections, training, workflow authoring and usage | Use the hosted server | Discover operations in the hosted tool reference |
@@ -807,3 +810,25 @@ General workflow cancellation and interactive approval/selection nodes are not
 exposed. Workflow authoring, the expanded Studio form and live provider/output
 acceptance remain incomplete. Do not substitute node rejection for cancellation
 or infer live compatibility from the synthetic installed command tests.
+
+
+## Asset library metadata
+
+Use `list_assets` to read one page of assets accessible in the configured
+credential/project scope. `public: true` instead requests the public library.
+An optional `collection_id` narrows listing. Continue with the returned
+`next_pagination_token` and the same filters; no cursor is followed automatically.
+
+Use `search_assets` with nonempty `query` text for server-side asset search.
+Continue with the returned `next_offset`, keeping query, public selection and
+limit unchanged. The estimated total is not a stable snapshot, and changes to
+the library can change later results. Each call is bounded to 100 rows.
+
+Both commands return reference metadata: asset ID, name, description, MIME and
+generation types, tags and collection IDs. Download URL fields, account records
+and indexed text bodies are omitted. Search text can be incomplete, so it is
+never exposed as a complete text asset. These calls do not download, upload,
+generate, apply results or change collection/tag organization. Returned asset IDs
+can be used in supported model/workflow parameters before a fresh exact quote.
+Scene/session changes reject stale delivery; an explicit retry repeats only a
+read. Native Library presentation and integrated attachment remain pending.

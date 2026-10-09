@@ -590,3 +590,17 @@ The 32-entry UI projection cache reclaims idle entries under pressure, discardin
 any unused price but preserving saved scene inputs and independently owned jobs.
 Pending reads/quotes are never evicted. Required-field inclusion uses the same
 parsed `required_always` rules as model forms.
+
+## Shared asset library reads
+
+`JobSession.asset_library` admits one list/search request to the existing worker
+pool and records exact-task metadata ownership separately from saved-job results.
+The coordinator uses the selected SDK adapter and checks admission around the
+read. Main-thread delivery consumes the issued completion and checks its scene
+and session; retirement cannot route metadata into a replacement connection.
+
+Local MCP `list_assets` and `search_assets` expose bounded pages with explicit
+continuation. Their projection omits signed download URLs, indexed previews and
+account identifiers. Reads do not initialize ModelJobs, persist generation jobs
+or grant download/application authority. Native Library controls and scoped
+attachment, collection/tag editing and live acceptance remain separate.

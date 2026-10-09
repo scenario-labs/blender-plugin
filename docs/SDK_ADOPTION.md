@@ -44,6 +44,7 @@ records, lane/schema helpers and local display status classification remain.
 | New/Rewrite and Translate | Shared prompt commands: `generate.with_raw_response.prompt/translate`, including separate exact estimates and submission claims |
 | Cloud history, known-job recovery, polling and inference cancellation | Shared catalog/coordinator: `jobs.with_raw_response.list/retrieve/trigger_action` |
 | Result and complete prompt/model-text metadata | Shared coordinator: `assets.with_raw_response.retrieve`; bounded complete text uses the signed result transport |
+| Asset library browsing and text search | Shared coordinator: `assets.with_raw_response.list` and `search.with_raw_response.asset_search`; explicit single-page reads with selected project scope |
 | Reference upload metadata, progress and completion | Shared upload coordinator: `uploads.with_raw_response.create/retrieve/trigger_action` |
 | Optional team/project discovery | Adapter-owned `SDKResourceExtensions`, the named [SDK issue #29 exception](https://github.com/scenario-labs/scenario-sdk-python/issues/29) below; no new raw exception |
 | Developer model audit, fixture recorder and smoke tools | The same `SDKAdapter`; smoke generation and explicit reference-plan uploads use shared coordinator commands. [Reference automation](../tests/smoke/README.md#prepare-reference-inputs) reuses the upload SDK methods above and signed-part transport. |
@@ -646,3 +647,29 @@ Installed synthetic tests exercise pagination, schema retention, exact prices,
 model/workflow approval isolation, changed scenes/projects, failed persistence
 and uncertain dispatch. They do not establish live workflow output acceptance,
 interactive node handling, general workflow cancellation or expanded Studio.
+
+
+## Asset library reads
+
+The published SDK 2.2.0 provides [asset listing](https://docs.scenario.com/api/python/resources/assets/methods/list)
+and [asset search](https://docs.scenario.com/api/python/resources/search/methods/asset_search).
+`SDKAdapter.asset_page` uses the raw public list wrapper for one bounded page,
+optional collection and opaque cursor. Owned-scope listing omits privacy; explicit
+public listing requests public assets across organizations. Neither path infers
+the key's default project. The adapter's configured project remains query-only.
+
+`search_assets` uses the SDK's public search wrapper with query, public selection,
+limit and offset in its POST body. It requests one page explicitly rather than
+using automatic pagination. Search totals are estimates; missing totals permit
+one explicit continuation after a full page, and empty pages stop. Continuation
+counts raw hits before identical-record deduplication. Conflicting duplicate IDs,
+malformed or oversized pages, repeated list cursors and invalid search pagination
+fail with sanitized errors. Normalized pages retain internal asset metadata; MCP
+projects reference fields and omits download URLs, previews and account records.
+
+The existing coordinator and worker pool check active scope and online permission
+around reads; no job, upload, write or paid submission is created. New offline
+SDK contracts inspect actual method, query/body serialization and raw wrappers.
+There is no raw API exception or dependency change. Native Library presentation,
+asset attachment/application and collection/tag writes remain to integrate, and
+synthetic tests do not establish live search quality or provider acceptance.

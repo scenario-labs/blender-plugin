@@ -189,6 +189,7 @@ class JobSession:
         self._pending = []
         self._cloud_reads = {}
         self._workflow_reads = {}
+        self._asset_reads = set()
         self._issued = WeakValueDictionary()
         self._world_receipts = WeakKeyDictionary()
         self._image_receipts = WeakKeyDictionary()
@@ -385,6 +386,20 @@ class JobSession:
         else:
             task = self._workers.workflow(identifier)
         self._workflow_reads[task] = identifier
+        self._pending.append((task, origin))
+        return task
+
+    def asset_library(self, scene, *, query=None, **options):
+        """Read one library page through this session's existing scoped workers."""
+        _main_thread()
+        self._check_capacity()
+        origin = self.capture(scene)
+        task = (
+            self._workers.asset_page(**options)
+            if query is None
+            else self._workers.search_assets(query, **options)
+        )
+        self._asset_reads.add(task)
         self._pending.append((task, origin))
         return task
 
@@ -812,6 +827,8 @@ class JobSession:
                         and record.intent.operation == "model"
                         and record.intent.target_id == model_id
                     )
+                elif task in self._asset_reads:
+                    matches = isinstance(result, dict) and isinstance(result.get("assets"), list)
                 elif task in self._workflow_reads:
                     # Metadata has no job intent. Its exact task belongs to this
                     # scoped coordinator, which checks admission around the read;
@@ -848,6 +865,7 @@ class JobSession:
             finally:
                 self._cloud_reads.pop(task, None)
                 self._workflow_reads.pop(task, None)
+                self._asset_reads.discard(task)
                 self._cleanup_upload_capture(task)
             self._issued[id(completion)] = completion
             completions.append(completion)
@@ -1364,6 +1382,7 @@ class JobSession:
                 self._pending.clear()
                 self._cloud_reads.clear()
                 self._workflow_reads.clear()
+                self._asset_reads.clear()
                 self._issued.clear()
                 self._world_receipts.clear()
                 self._image_receipts.clear()

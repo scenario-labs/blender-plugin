@@ -306,6 +306,79 @@ class SDKAdapter:
     def asset(self, identifier):
         return self._retrieve("assets", identifier, "asset")
 
+    @staticmethod
+    def _asset_rows(rows, limit):
+        if not isinstance(rows, list) or len(rows) > limit:
+            raise AdapterError("Scenario returned an invalid asset page")
+        records = {}
+        for row in rows:
+            try:
+                identifier = _identifier(row.get("id") if isinstance(row, dict) else None)
+            except ValueError:
+                raise AdapterError("Scenario returned an invalid asset record") from None
+            if identifier in records and records[identifier] != row:
+                raise AdapterError(
+                    "Scenario returned conflicting asset records; refresh the library"
+                )
+            records[identifier] = row
+        return list(records.values())
+
+    def asset_page(self, *, public=False, page_size=40, pagination_token=None, collection_id=None):
+        """Read one SDK asset page in the selected scope, without automatic traversal."""
+        if type(public) is not bool or type(page_size) is not int or not 1 <= page_size <= 100:
+            raise ValueError("Choose public/owned assets and a page size from 1 to 100")
+        options = {"page_size": page_size}
+        if public:
+            options["privacy"] = "public"
+        if pagination_token is not None:
+            if not isinstance(pagination_token, str) or not pagination_token:
+                raise ValueError("Use a nonempty asset cursor")
+            options["pagination_token"] = pagination_token
+        if collection_id is not None:
+            options["collection_id"] = _identifier(collection_id)
+        page = _json(self._request(self._sdk.assets.with_raw_response.list, **options))
+        rows = self._asset_rows(page.get("assets"), page_size)
+        token = page.get("nextPaginationToken")
+        if token not in (None, "") and (not isinstance(token, str) or token == pagination_token):
+            raise AdapterError("Scenario repeated or returned an invalid asset cursor")
+        return {"assets": rows, "next_pagination_token": token or None}
+
+    def search_assets(self, query, *, public=False, limit=40, offset=0):
+        """Use the public SDK search method with explicit body-based pagination."""
+        if not isinstance(query, str) or not query.strip() or len(query) > 4096:
+            raise ValueError("Use a nonempty asset search of at most 4096 characters")
+        if (
+            type(public) is not bool
+            or type(limit) is not int
+            or not 1 <= limit <= 100
+            or type(offset) is not int
+            or offset < 0
+        ):
+            raise ValueError(
+                "Choose public/owned assets, a limit from 1 to 100 and nonnegative offset"
+            )
+        page = _json(
+            self._request(
+                self._sdk.search.with_raw_response.asset_search,
+                query=query,
+                public=public,
+                limit=limit,
+                offset=offset,
+            )
+        )
+        hits = page.get("hits")
+        rows = self._asset_rows(hits, limit)
+        total = page.get("estimatedTotalHits")
+        returned_offset = page.get("offset")
+        if (total is not None and (type(total) is not int or total < 0)) or (
+            returned_offset is not None
+            and (type(returned_offset) is not int or returned_offset != offset)
+        ):
+            raise AdapterError("Scenario returned invalid asset search pagination")
+        end = offset + len(hits)
+        more = bool(hits) and (end < total if total is not None else len(hits) == limit)
+        return {"assets": rows, "estimated_total": total, "next_offset": end if more else None}
+
     def job(self, identifier):
         return self._retrieve("jobs", identifier, "job")
 

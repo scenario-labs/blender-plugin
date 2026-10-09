@@ -113,6 +113,11 @@ def model_format(media_type):
     return _FORMAT_BY_MEDIA.get(media_type) if isinstance(media_type, str) else None
 
 
+def _model_file(media_type):
+    """Any model/* type, an FBX application type or an MTL."""
+    return model_format(media_type) is not None or media_type.startswith("model/")
+
+
 def unsupported_model(media_type):
     """A model/* result with no import policy, such as ksplat, sog, STL or USD."""
     return (
@@ -243,6 +248,10 @@ def _too_large(member, limit):
     return member.size is not None and member.size > limit
 
 
+def _gltf_resource(member):
+    return member.media_type in BUFFER_MEDIA_TYPES or member.media_type in TEXTURE_EXTENSIONS
+
+
 class _Classifier:
     def __init__(self, members, ply_kinds):
         self.members = members
@@ -257,7 +266,18 @@ class _Classifier:
     def children(self, parent):
         return [m for m in self.members if self.lineage and m.parent_id == parent.asset_id]
 
-    def pool(self, primary, peers):
+    def available(self, pool, claimed):
+        """Other model files are separate units, never companions; a bound or
+        reported file is in its one place already."""
+        return [
+            m
+            for m in pool
+            if model_format(m.media_type) is None
+            and m.asset_id not in claimed
+            and m.asset_id not in self.findings
+        ]
+
+    def pool(self, primary, peers, claimed):
         """Companion candidates: children with lineage, else a job with one such unit."""
         if self.lineage:
             pool, binding = self.children(primary), BINDING_PARENT
@@ -265,12 +285,10 @@ class _Classifier:
             pool, binding = self.members, BINDING_SOLE_PACKAGE
         else:
             return [], BINDING_SINGLE
-        # Other model files are separate units, never companions.
-        return [m for m in pool if model_format(m.media_type) is None], binding
+        return self.available(pool, claimed), binding
 
     def obj_companions(self, obj, peers, claimed):
-        pool, binding = self.pool(obj, peers)
-        pool = [m for m in pool if m.asset_id not in claimed]
+        pool, binding = self.pool(obj, peers, claimed)
         materials = [m for m in pool if m.media_type in MATERIAL_MEDIA_TYPES]
         material = None
         if len(materials) == 1 and not _too_large(materials[0], MAX_MTL_BYTES):
@@ -279,18 +297,12 @@ class _Classifier:
             if candidate is not material:
                 self.report(candidate, AMBIGUOUS_MATERIAL if len(materials) > 1 else TOO_LARGE)
         if material is not None and self.lineage:
-            pool += [
-                m
-                for m in self.children(material)
-                if m.asset_id not in claimed and model_format(m.media_type) is None
-            ]
+            pool += self.available(self.children(material), claimed)
         slots = {}
         for member in pool:
             slot = _texture_slot(member)
             if slot is not None:
                 slots.setdefault(slot, []).append(member)
-            elif self.lineage and member.media_type not in MATERIAL_MEDIA_TYPES:
-                self.report(member, UNBOUND)
         textures = []
         for slot in TEXTURE_SLOTS:
             candidates = slots.get(slot, [])
@@ -306,14 +318,8 @@ class _Classifier:
         return binding, material, textures
 
     def gltf_resources(self, gltf, peers, claimed):
-        pool, binding = self.pool(gltf, peers)
-        resources = [
-            m.asset_id
-            for m in pool
-            if m.asset_id not in claimed
-            and (m.media_type in BUFFER_MEDIA_TYPES or m.media_type in TEXTURE_EXTENSIONS)
-        ]
-        return binding, tuple(resources)
+        pool, binding = self.pool(gltf, peers, claimed)
+        return binding, tuple(m.asset_id for m in pool if _gltf_resource(m))
 
     def classify(self):
         candidates, peers = [], {}
@@ -383,7 +389,8 @@ class _Classifier:
                     ),
                 )
             )
-        self.report_leftovers(objs, claimed, {r for _, f in units for r in f["resources"]})
+        placed = {asset_id for _, f in units for asset_id, _ in f["files"]}
+        self.report_leftovers(objs, gltfs, placed | {r for _, f in units for r in f["resources"]})
         units.sort(key=lambda entry: entry[0])
         return PackagePlan(
             tuple(
@@ -399,32 +406,27 @@ class _Classifier:
             self.lineage,
         )
 
-    def report_leftovers(self, objs, claimed, resources):
-        """Report files no unit binds: every MTL, maps beside several legacy OBJs and,
-        with lineage, any other file under a model or an MTL, skipped ones included.
+    def report_leftovers(self, objs, gltfs, placed):
+        """Report every file that no unit places, once a job holds any model file.
 
-        A glTF unit's candidate resources are bound later by reference.
+        ``placed`` holds unit files and glTF candidate resources, which are bound
+        later by reference. Without lineage, an MTL or slot map beside several OBJs,
+        or a buffer or image beside several glTFs, could belong to either package and
+        is ambiguous; any other leftover, including one under a skipped model, is
+        unbound. A job without a model file has nothing to import as 3D.
         """
-        parents = {
-            m.asset_id
-            for m in self.members
-            if model_format(m.media_type) is not None or m.media_type in MATERIAL_MEDIA_TYPES
-        }
+        if not any(_model_file(m.media_type) for m in self.members):
+            return
         for member in self.members:
-            if (
-                member.asset_id in claimed
-                or member.asset_id in self.findings
-                or model_format(member.media_type) is not None
-            ):
+            if member.asset_id in placed or member.asset_id in self.findings:
                 continue
-            if member.media_type in MATERIAL_MEDIA_TYPES:
-                ambiguous = not self.lineage and len(objs) > 1
-                self.report(member, AMBIGUOUS_PACKAGE if ambiguous else UNBOUND)
-            elif self.lineage:
-                if member.parent_id in parents and member.asset_id not in resources:
-                    self.report(member, UNBOUND)
-            elif len(objs) > 1 and _texture_slot(member) is not None:
-                self.report(member, AMBIGUOUS_PACKAGE)
+            obj_companion = (
+                member.media_type in MATERIAL_MEDIA_TYPES or _texture_slot(member) is not None
+            )
+            ambiguous = not self.lineage and (
+                (len(objs) > 1 and obj_companion) or (len(gltfs) > 1 and _gltf_resource(member))
+            )
+            self.report(member, AMBIGUOUS_PACKAGE if ambiguous else UNBOUND)
 
 
 def classify_packages(members, *, ply_kinds=None):
@@ -435,7 +437,10 @@ def classify_packages(members, *, ply_kinds=None):
     it, an OBJ or glTF binds companions only when it is the job's only file of that
     format, oversized ones included. Within each group units sort by format, then
     more bound companions, larger size and manifest order. Ambiguous, unsupported
-    and oversized files stay saved and are reported, never guessed.
+    and oversized files stay saved and are reported, never guessed. Once a job holds
+    any model file, each member is in exactly one place: one unit's ``files``, one
+    glTF unit's candidate ``resources`` or one finding. A job without a model file
+    gives an empty plan.
     ``ply_kinds`` optionally maps PLY asset IDs to "mesh" or "splat" from
     :func:`inspect_ply_header` on verified bytes.
     """

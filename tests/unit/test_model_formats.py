@@ -426,10 +426,12 @@ def test_size_bounds_reject_files_and_packages_before_import():
 
 
 def test_image_only_jobs_have_no_units_or_findings():
-    plan = classify_packages(
-        [member("asset_a", "image/png", role="albedo"), member("asset_b", "video/mp4")]
-    )
+    job = [member("asset_a", "image/png", role="albedo"), member("asset_b", "video/mp4")]
+    plan = classify_packages(job)
     assert plan.units == () and plan.findings == () and plan.primary is None
+    assert classify_packages([member(m.asset_id, m.media_type, kind="texture") for m in job]) == (
+        mf.PackagePlan((), (), True)
+    )
 
 
 def test_gltf_resources_are_candidates_bound_later_by_reference():
@@ -445,12 +447,17 @@ def test_gltf_resources_are_candidates_bound_later_by_reference():
     assert unit.binding == mf.BINDING_PARENT
     assert unit.resources == ("asset_bin", "asset_tex")
     assert unit.files == (("asset_gltf", "model.gltf"),)
-    # Candidate resources are not findings; another child of the glTF is unbound.
-    assert plan.findings == (mf.Finding("asset_doc", mf.UNBOUND),)
+    # Candidate resources are not findings; other files no unit lists are unbound.
+    assert plan.findings == (
+        mf.Finding("asset_other", mf.UNBOUND),
+        mf.Finding("asset_doc", mf.UNBOUND),
+    )
+    assert_accounted(plan, job)
     plan = classify_packages(legacy(job))
     assert plan.primary.binding == mf.BINDING_SOLE_PACKAGE
     assert plan.primary.resources == ("asset_bin", "asset_tex", "asset_other")
-    assert plan.findings == ()
+    assert plan.findings == (mf.Finding("asset_doc", mf.UNBOUND),)
+    assert_accounted(plan, job)
 
 
 def test_gltf_resources_exclude_maps_bound_to_an_obj():
@@ -459,6 +466,168 @@ def test_gltf_resources_exclude_maps_bound_to_an_obj():
         member("asset_bin", "application/octet-stream"),
     ]
     assert classify_packages(job).unit("asset_gltf").resources == ("asset_bin",)
+
+
+def placements(plan):
+    """Every asset ID a plan places: unit files, candidate glTF resources, findings."""
+    return (
+        [asset_id for unit in plan.units for asset_id, _ in unit.files]
+        + [asset_id for unit in plan.units for asset_id in unit.resources]
+        + [finding.asset_id for finding in plan.findings]
+    )
+
+
+def assert_accounted(plan, members):
+    """A job with a model file places each member exactly once; others place none."""
+    if any(m.media_type.startswith("model/") or mf.model_format(m.media_type) for m in members):
+        assert sorted(placements(plan)) == sorted(m.asset_id for m in members)
+    else:
+        assert placements(plan) == []
+
+
+def test_maps_of_a_sole_oversized_obj_or_of_no_obj_are_reported_unbound():
+    job = [
+        member("asset_obj", "model/obj", size=300 * MiB),
+        member("asset_mtl", "model/mtl"),
+        member("asset_alb", "image/png", role="albedo"),
+    ]
+    plan = classify_packages(job)
+    assert plan.units == ()
+    assert plan.findings == (
+        mf.Finding("asset_obj", mf.TOO_LARGE),
+        mf.Finding("asset_mtl", mf.UNBOUND),
+        mf.Finding("asset_alb", mf.UNBOUND),
+    )
+    for job in (
+        [member("asset_glb", "model/glb"), member("asset_alb", "image/png", role="albedo")],
+        [member("asset_mtl", "model/mtl"), member("asset_alb", "image/png", role="albedo")],
+    ):
+        plan = classify_packages(job)
+        assert {f.asset_id: f.reason for f in plan.findings}["asset_alb"] == mf.UNBOUND
+        assert_accounted(plan, job)
+
+
+@pytest.mark.parametrize("role", ["smoothness", "height", "ao", "edge", "unknown"])
+def test_stored_roles_without_a_material_slot_are_reported_unbound(role):
+    job = [
+        member("asset_obj", "model/obj"),
+        member("asset_mtl", "model/mtl"),
+        member("asset_alb", "image/png", role="albedo"),
+        member("asset_map", "image/png", role=role),
+    ]
+    plan = classify_packages(job)
+    assert plan.primary.textures == (("albedo", "asset_alb"),)
+    assert plan.findings == (mf.Finding("asset_map", mf.UNBOUND),)
+    assert_accounted(plan, job)
+
+
+def test_lineage_reports_files_under_an_unsupported_model_as_unbound():
+    job = [
+        member("asset_glb", "model/glb", kind="img23d"),
+        member("asset_stl", "model/stl", kind="3d23d", parent="asset_glb"),
+        member("asset_alb", "image/png", role="albedo", kind="texture", parent="asset_stl"),
+        member("asset_bin", "application/octet-stream", kind="texture", parent="asset_stl"),
+    ]
+    plan = classify_packages(job)
+    assert [u.key for u in plan.units] == ["asset_glb"]
+    assert plan.findings == (
+        mf.Finding("asset_stl", mf.UNSUPPORTED_FORMAT),
+        mf.Finding("asset_alb", mf.UNBOUND),
+        mf.Finding("asset_bin", mf.UNBOUND),
+    )
+    assert_accounted(plan, job)
+
+
+def test_a_reported_file_is_never_also_a_gltf_resource():
+    job = [
+        member("asset_obj", "model/obj"),
+        member("asset_gltf", "model/gltf+json"),
+        member("asset_alb", "image/png", role="albedo"),
+        member("asset_bin", "application/octet-stream"),
+    ]
+    plan = classify_packages(job)
+    assert plan.unit("asset_gltf").resources == ("asset_bin",)
+    assert plan.findings == (mf.Finding("asset_alb", mf.NO_MATERIAL),)
+    assert_accounted(plan, job)
+    job = [
+        member("asset_obj", "model/obj", size=250 * MiB),
+        member("asset_mtl", "model/mtl"),
+        member("asset_alb", "image/png", 250 * MiB, "albedo"),
+        member("asset_nrm", "image/png", 100 * MiB, "normal"),
+        member("asset_gltf", "model/gltf+json"),
+    ]
+    plan = classify_packages(job)
+    assert [(u.key, u.resources) for u in plan.units] == [("asset_gltf", ())]
+    assert {f.reason for f in plan.findings} == {mf.PACKAGE_TOO_LARGE}
+    assert_accounted(plan, job)
+
+
+def test_without_lineage_resources_beside_several_gltf_files_are_ambiguous():
+    job = [
+        member("asset_gltf_a", "model/gltf+json"),
+        member("asset_gltf_b", "model/gltf+json"),
+        member("asset_bin", "application/octet-stream"),
+        member("asset_tex", "image/jpeg"),
+        member("asset_doc", "text/plain"),
+    ]
+    plan = classify_packages(job)
+    assert [(u.key, u.resources) for u in plan.units] == [
+        ("asset_gltf_a", ()),
+        ("asset_gltf_b", ()),
+    ]
+    assert {f.asset_id: f.reason for f in plan.findings} == {
+        "asset_bin": mf.AMBIGUOUS_PACKAGE,
+        "asset_tex": mf.AMBIGUOUS_PACKAGE,
+        "asset_doc": mf.UNBOUND,
+    }
+
+
+_RANDOM_MEDIA = (
+    "model/obj",
+    "model/mtl",
+    "model/gltf+json",
+    "model/glb",
+    "application/vnd.autodesk.fbx",
+    "model/ply",
+    "model/spz",
+    "model/stl",
+    "image/png",
+    "image/jpeg",
+    "image/webp",
+    "application/octet-stream",
+    "text/plain",
+    "video/mp4",
+)
+_RANDOM_ROLES = (None, "albedo", "base", "normal", "roughness", "metallic", "smoothness", "ao")
+_RANDOM_SIZES = (None, 10, 1000, 5 * MiB, 9 * MiB, 200 * MiB, 300 * MiB)
+
+
+@pytest.mark.parametrize("lineage", [False, True])
+def test_every_saved_file_ends_in_exactly_one_unit_or_one_finding(lineage):
+    rng = random.Random(366)
+    for _ in range(1500):
+        ids = [f"asset_{i}" for i in range(rng.randint(1, 12))]
+        job = []
+        for asset_id in ids:
+            media = rng.choice(_RANDOM_MEDIA)
+            role = rng.choice(_RANDOM_ROLES) if media.startswith("image/") else None
+            kind = rng.choice(("txt23d", "img23d", "texture", "uploaded-3d")) if lineage else None
+            parent = rng.choice([*ids, "asset_input", None]) if lineage else None
+            job.append(
+                PackageMember(asset_id, media, rng.choice(_RANDOM_SIZES), role, kind, parent)
+            )
+        plan = classify_packages(job)
+        assert_accounted(plan, job)
+        assert {f.reason for f in plan.findings} <= {
+            mf.UNSUPPORTED_FORMAT,
+            mf.TOO_LARGE,
+            mf.PACKAGE_TOO_LARGE,
+            mf.AMBIGUOUS_MATERIAL,
+            mf.AMBIGUOUS_TEXTURE,
+            mf.AMBIGUOUS_PACKAGE,
+            mf.NO_MATERIAL,
+            mf.UNBOUND,
+        }
 
 
 def test_stored_results_adapt_with_receipt_sizes_and_optional_lineage():

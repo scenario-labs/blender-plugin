@@ -228,12 +228,13 @@ The declared MIME type selects the decoder and the bytes must match it:
   The file must hold whole records.
 
 Files may hold at most 20,000,000 points. `SplatOptions(max_points, axes)` keeps
-every `ceil(count / max_points)`-th point, at most 2,000,000. Reads use 4 MiB
-chunks, so memory follows the kept points rather than the file. Non-finite
-inputs fail; large log scales are clamped so radii stay finite. Cancellation is
-checked before each saved receipt is hashed and between decoding chunks; a
-single receipt's hash is not interrupted. Parser failures fail closed with a
-sanitized message.
+every `ceil(count / max_points)`-th point, at most 2,000,000. Each decoder reads
+its stream once, sequentially, in chunks of at most 4 MiB (SPZ inflates 64 KiB of
+compressed input at a time), so memory follows the kept points rather than the
+file. Non-finite inputs fail; large log scales are clamped so radii stay finite.
+Cancellation is checked before each saved receipt is hashed and between decoding
+chunks; a single receipt's hash is not interrupted. Parser failures fail closed
+with a sanitized message.
 
 `SplatData` holds native float32 bytes in Blender's Z-up axes: positions, RGBA
 colours (display-referred SH DC colour, alpha equal to opacity), opacities and
@@ -261,18 +262,18 @@ that run; they are not a performance guarantee. On Blender 5.0.1 an attribute
 reference obtained before adding another attribute stopped receiving writes, so a
 builder must look attributes up by name after adding them.
 
-The prototype `read_spz` now wraps the SPZ decoder. It rejects versions 1 and 4,
-keeps at most 2,000,000 points when no limit is given and does not return the
-SPZ flags.
+The prototype `read_spz` now wraps the SPZ decoder. It rejects versions 1 and 4
+and files with no points or more than 20,000,000 points, keeps at most 2,000,000
+points when no limit is given and does not return the SPZ flags. The prototype
+"Add to scene" button reports such a rejection as an error and adds no object,
+instead of failing with a Python traceback.
 
 No session, UI, MCP or Blender importer uses this command yet. The point-cloud
 builder, which must create fresh Geometry Nodes and material data instead of the
 prototype's reuse of any material named "Scenario Splat", and saved mesh imports
-remain under #65. Mesh package snapshots should extend this worker command rather
-than hashing and rewriting packages on Blender's main thread. Live evidence must
-still confirm provider MIME types, SPZ versions, axis conventions and whether a
-3D asset's `url` serves its original bytes; SDK 2.2.0 documents
-`original_file_url` for some replaced 3D assets.
+remain under #65. Live evidence must still confirm provider MIME types, SPZ
+versions, axis conventions and whether a 3D asset's `url` serves its original
+bytes; SDK 2.2.0 documents `original_file_url` for some replaced 3D assets.
 
 ## Legacy OBJ and MTL byte counts
 

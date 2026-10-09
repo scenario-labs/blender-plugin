@@ -368,7 +368,12 @@ class ModelJobs:
         for request_id, task in tuple(self.submissions.items()):
             if task.done():
                 outcomes = self.session.drain(task=task)
-                record = self.store.get(request_id)
+                try:
+                    record = self.store.get(request_id)
+                except Exception:
+                    # An unreadable record keeps the review path below; raising here
+                    # would keep the entry and stop every later poll, not only this one.
+                    record = None
                 # Local cancellation before dispatch makes the queued submission
                 # fail its stored-state check; that rejection is the intended outcome.
                 canceled = record is not None and record.state == JobState.CANCELED

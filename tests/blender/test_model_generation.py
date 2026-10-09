@@ -860,6 +860,36 @@ class ModelGenerationTests(unittest.TestCase):
         self.assertEqual((view.status, view.error), ("canceled", None))
         self.assertEqual(len(self.paid), 2)
 
+    def test_failed_record_read_after_a_failed_submission_clears_the_queued_entry(self):
+        self.lose_response = True
+        request_id = self.mcp_submit(self.mcp_quote())["local_id"]
+        owner = self.runtime.state.model_jobs
+        try:
+            owner.submissions[request_id].result(5)
+        except Exception:
+            pass  # the lost response is the failed submission under test
+        store = self.runtime.state.job_store
+        read, failures = store.get, []
+
+        def unreadable_once(identifier, *args, **kwargs):
+            # Only the drained submission's first read fails; the view refresh reads normally.
+            if identifier == request_id and not failures:
+                failures.append(identifier)
+                raise self.storemod.StoreError("synthetic unreadable record")
+            return read(identifier, *args, **kwargs)
+
+        with patch.object(store, "get", side_effect=unreadable_once):
+            owner.poll()
+        self.assertEqual(failures, [request_id])
+        owner.poll()
+        self.assertNotIn(request_id, owner.submissions)
+        self.assertIn(request_id, owner._paused)
+        self.assertEqual(
+            owner.views[request_id].error,
+            "Submission outcome is not confirmed; do not submit it again",
+        )
+        self.assertEqual(len(self.paid), 1)
+
     def test_uncertain_submission_has_no_recovery_dispatch_action(self):
         self.lose_response = True
         result = self.mcp_submit(self.mcp_quote())

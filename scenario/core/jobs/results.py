@@ -3,14 +3,17 @@
 """Scoped result commands using SDK metadata and credential-free storage transfer."""
 
 import hashlib
+import os
 import tempfile
 from dataclasses import asdict, dataclass, field, replace
 from pathlib import Path
 
 from ..config import ext_for_mime
+from ..scene import splats
 from .result_metadata import REWRITTEN_MESH_TYPES, texture_role
 from .store import JobState, ResultAsset, StoreConflict, StoredJob, StoreError, _identity, _json
 from .transfers import ResultDownloader, TransferError, _root
+from .upload_sources import _open, _stamp
 
 
 class ResultError(RuntimeError):
@@ -41,6 +44,50 @@ class ModelTextResult:
     record: StoredJob
     asset_id: str
     text: str = field(repr=False)
+
+
+@dataclass(frozen=True, eq=False)
+class PreparedModelImport:
+    """Worker-side preparation of one saved model result for a later reviewed import.
+
+    `splat` is the decoded point snapshot of an SPZ, .splat or Gaussian PLY result.
+    A PLY without Gaussian splat properties has no snapshot; `ply_mesh` routes it
+    to a reviewed mesh importer. Preparation never claims or mutates a scene; a
+    claim still consumes the owner-registered `verified` ticket once.
+    """
+
+    verified: VerifiedResults
+    asset_id: str
+    media_type: str
+    options: splats.SplatOptions
+    splat: splats.SplatData | None = field(default=None, repr=False)
+
+    @property
+    def ply_mesh(self):
+        return self.splat is None
+
+
+class _ReceiptReader:
+    """Hash exactly the bytes a decoder reads from one receipt-bound file."""
+
+    def __init__(self, source, receipt, cancel):
+        self._source, self._receipt, self._cancel = source, receipt, cancel
+        self._digest, self._size = hashlib.sha256(), 0
+
+    def read(self, size):
+        data = self._source.read(min(size, self._receipt.size - self._size + 1))
+        self._size += len(data)
+        if self._size > self._receipt.size:
+            raise ResultError("The saved result changed while it was prepared; verify it again")
+        self._digest.update(data)
+        return data
+
+    def matches(self):
+        """Hash the unread remainder, then compare with the saved receipt."""
+        while self.read(1 << 20):
+            if self._cancel.is_set():
+                raise splats.SplatCancelled("Splat preparation cancelled")
+        return self._size == self._receipt.size and self._digest.hexdigest() == self._receipt.sha256
 
 
 def _prompt_text(value):
@@ -442,6 +489,74 @@ class ResultCommands:
             if self._store.get(request_id) != verified.record:
                 raise StoreConflict("Result changed during media inspection")
         return result
+
+    def prepare_model_import(self, request_id, *, expected_revision, asset_id, options, cancel):
+        """Verify every saved receipt, then decode one selected splat on a worker.
+
+        The selected file is hashed while it is decoded. The snapshot is discarded
+        unless its bytes equal the saved receipt and the job is unchanged. This
+        never downloads, refreshes metadata, claims an application or uses bpy.
+        """
+        if not isinstance(options, splats.SplatOptions):
+            raise TypeError("Use reviewed splat options")
+        pending_download = {JobState.SUCCEEDED, JobState.DOWNLOADING, JobState.DOWNLOAD_FAILED}
+        current = self._current(
+            request_id,
+            expected_revision,
+            {JobState.READY, JobState.APPLY_FAILED, JobState.APPLIED} | pending_download,
+        )
+        if current.state in pending_download:
+            raise ResultError("Download the selected model result before importing it")
+        verified = self.verify_ready(request_id, expected_revision=expected_revision)
+        chosen = [
+            (item, path)
+            for item, path in zip(verified.record.results, verified.paths, strict=True)
+            if item.asset.asset_id == asset_id
+        ]
+        if len(chosen) != 1:
+            raise ResultError("Choose one saved model result")
+        item, path = chosen[0]
+        if item.asset.media_type not in splats.MEDIA_FORMATS:
+            raise ResultError("Choose a saved SPZ, PLY or .splat result")
+        splat = self._decode_receipt(path, item, options, cancel)
+        with self._guard():
+            if self._store.get(request_id) != verified.record:
+                raise StoreConflict("Result changed during model import preparation")
+        return PreparedModelImport(verified, asset_id, item.asset.media_type, options, splat)
+
+    def _decode_receipt(self, path, item, options, cancel):
+        receipt = item.receipt
+        try:
+            source, before = _open(path)
+        except (OSError, TransferError):
+            raise ResultError("Saved result files could not be verified") from None
+        failure = None
+        with source:
+            try:
+                if before.st_size != receipt.size:
+                    raise ResultError(
+                        "The saved result changed while it was prepared; verify it again"
+                    )
+                reader = _ReceiptReader(source, receipt, cancel)
+                try:
+                    splat = splats.decode(
+                        reader,
+                        item.asset.media_type,
+                        options=options,
+                        size=receipt.size,
+                        cancel=cancel,
+                    )
+                except splats.SplatError as error:
+                    # Report a changed file before a decoder message about its bytes.
+                    failure, splat = str(error), None
+                unchanged = reader.matches() and _stamp(before) == _stamp(os.fstat(source.fileno()))
+            except OSError:
+                raise ResultError("The saved result could not be read") from None
+        if not unchanged:
+            raise ResultError("The saved result changed while it was prepared; verify it again")
+        if failure is not None:
+            raise ResultError(failure)
+        return splat
 
     def verify_ready(self, request_id, *, expected_revision):
         current = self._current(

@@ -1,27 +1,63 @@
 # SPDX-FileCopyrightText: 2026 Scenario Inc.
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""Reader for SPZ Gaussian splats (Niantic's compressed format, what Marble and HY World return). No bpy.
+"""SPZ Gaussian splats (Niantic's compressed format, returned by Marble and HY World). No bpy.
 
-An .spz file is a gzip stream: a 16-byte header (magic "NGSP", version, point count, SH degree, fractional bits,
-flags), then the attributes packed per point in fixed order: positions (3 x 24-bit fixed point), alphas (u8),
-colours (3 x u8, the SH DC term), scales (3 x u8, log scale), rotations, spherical harmonics. Blender has no splat
-renderer, so we read positions, colours, alphas and scales and hand back a point cloud; rotations and SH are skipped."""
+Versions 1 to 3 are one gzip stream: a 16-byte header (magic "NGSP", version, point
+count, SH degree, fractional bits, flags, reserved), then one block per attribute for
+all points in fixed order: positions, alphas, colours (the SH DC term), log scales,
+rotations and spherical harmonics. Version 2 stores positions as signed 24-bit fixed
+point; version 1 stored float16 and is rejected rather than misread. Version 3 changed
+only the rotation encoding, which is skipped. Version 4 starts with a plaintext NGSP
+header followed by ZSTD streams; Python 3.11 and 3.13 have no ZSTD decoder, so it is
+rejected and the saved file is kept. Reference: https://github.com/nianticlabs/spz
+(README and src/cc/load-spz.cc). Coordinates are stored right/up/back (OPENGL).
+"""
+
 import gzip
 import math
+import os
 import struct
+from array import array
+
+from .splats import (
+    MAX_KEPT_POINTS,
+    SH_C0,
+    UNIT,
+    GzipReader,
+    SplatCancelled,
+    SplatError,
+    SplatOptions,
+    byte_table,
+    kept_fields,
+    lookup,
+    median3,
+    native,
+    packed,
+    plan,
+    snapshot,
+)
 
 MAGIC = 0x5053474E  # "NGSP"
-SH_C0 = 0.28209479177387814
 COLOR_SCALE = 0.15
+MAX_SH_DEGREE = 4
+MAX_FRACTIONAL_BITS = 23
+# The reference loader bounds a point count by 1024x compression of 9-byte points.
+MAX_COMPRESSION_RATIO = 1024
+MIN_BYTES_PER_POINT = 9
+_SH_DIMENSIONS = {0: 0, 1: 3, 2: 8, 3: 15, 4: 24}
+_SIGN = bytes(0xFF if value & 0x80 else 0 for value in range(256))
+_INT32 = "i" if array("i").itemsize == 4 else "l"
+_COLOR = byte_table(
+    lambda value: min(1.0, max(0.0, 0.5 + SH_C0 * ((value / 255.0 - 0.5) / COLOR_SCALE)))
+)
 
 
-class SpzError(ValueError):
+class SpzError(SplatError):
     pass
 
 
-
 def sniff_spz(path):
-    """True when the file is a gzip stream whose first bytes are the SPZ magic (a splat saved with a .bin extension)."""
+    """True when a gzip stream starts with the SPZ magic (a splat saved as .bin)."""
     try:
         with gzip.open(str(path), "rb") as handle:
             head = handle.read(4)
@@ -30,55 +66,101 @@ def sniff_spz(path):
     return len(head) == 4 and struct.unpack("<I", head)[0] == MAGIC
 
 
-def read_spz(path, max_points=None):
-    """Decode an .spz file. Returns a dict with `count`, `positions` [(x, y, z)], `colors` [(r, g, b)], `alphas`,
-    `scales` (median world scale per point), `version`, `sh_degree`; the layout is Y-up like the file.
+def _fixed(values, scale):
+    """Native float32 bytes of signed 24-bit little-endian fixed-point values."""
+    high = values[2::3]
+    out = bytearray(4 * len(high))
+    out[0::4] = values[0::3]
+    out[1::4] = values[1::3]
+    out[2::4] = high
+    out[3::4] = high.translate(_SIGN)
+    return packed([value * scale for value in native(out, _INT32)])
 
-    `max_points` keeps every n-th point so multi-million splats stay interactive in Blender."""
-    with gzip.open(str(path), "rb") as handle:
-        data = handle.read()
-    if len(data) < 16:
-        raise SpzError("not an SPZ file (too short)")
-    magic, version, count, sh_degree, fractional_bits, _flags, _reserved = struct.unpack_from("<IIIBBBB", data, 0)
+
+def decode_spz(stream, *, options, size=None, cancel=None):
+    """Decode SPZ v2/v3 from a binary stream into a bounded `SplatData`.
+
+    Only the position, alpha, colour and scale blocks are inflated, chunk by chunk;
+    rotations, spherical harmonics and any extension records are neither decoded
+    nor validated. `size` is the compressed byte count when known.
+    """
+    if cancel is not None and cancel.is_set():
+        raise SplatCancelled("Splat preparation cancelled")
+    prefix = b""
+    while len(prefix) < 4:
+        data = stream.read(4 - len(prefix))
+        if not data:
+            break
+        prefix += data
+    if prefix == b"NGSP":
+        raise SpzError("SPZ v4 (ZSTD) cannot be decoded in this release; the saved file is kept")
+    if prefix[:2] != b"\x1f\x8b":
+        raise SpzError("Not an SPZ file")
+    reader = GzipReader(stream, cancel=cancel, prefix=prefix)
+    magic, version, count, sh_degree, fractional_bits, _flags, _reserved = struct.unpack(
+        "<IIIBBBB", reader.read(16)
+    )
     if magic != MAGIC:
-        raise SpzError("not an SPZ file (bad magic)")
-    if version not in (1, 2, 3):
-        raise SpzError(f"unsupported SPZ version {version}")
-    pos_off = 16
-    alpha_off = pos_off + count * 9
-    color_off = alpha_off + count
-    scale_off = color_off + count * 3
-    rot_off = scale_off + count * 3
-    needed = rot_off
-    if len(data) < needed:
-        raise SpzError(f"truncated SPZ file: {len(data)} bytes for {count} points")
-    step = 1
-    if max_points and count > max_points:
-        step = int(math.ceil(count / float(max_points)))
-    denom = float(1 << fractional_bits)
-    positions, colors, alphas, scales = [], [], [], []
-    for i in range(0, count, step):
-        p = pos_off + i * 9
-        xyz = []
-        for k in range(3):
-            b0, b1, b2 = data[p + 3 * k], data[p + 3 * k + 1], data[p + 3 * k + 2]
-            raw = b0 | (b1 << 8) | (b2 << 16)
-            if raw & 0x800000:
-                raw -= 0x1000000
-            xyz.append(raw / denom)
-        positions.append(tuple(xyz))
-        c = color_off + i * 3
-        rgb = []
-        for k in range(3):
-            sh0 = (data[c + k] / 255.0 - 0.5) / COLOR_SCALE
-            rgb.append(min(1.0, max(0.0, 0.5 + SH_C0 * sh0)))
-        colors.append(tuple(rgb))
-        alphas.append(data[alpha_off + i] / 255.0)
-        s = scale_off + i * 3
-        logs = sorted(data[s + k] / 16.0 - 10.0 for k in range(3))
-        scales.append(math.exp(logs[1]))
-    return {"count": count, "kept": len(positions), "step": step, "version": version, "sh_degree": sh_degree,
-            "positions": positions, "colors": colors, "alphas": alphas, "scales": scales}
+        raise SpzError("Not an SPZ file")
+    if version == 1:
+        raise SpzError("SPZ v1 (float16 positions) is not supported; use version 2 or 3")
+    if version not in (2, 3):
+        raise SpzError("Unsupported SPZ version; only versions 2 and 3 can be decoded")
+    if sh_degree > MAX_SH_DEGREE or fractional_bits > MAX_FRACTIONAL_BITS:
+        raise SpzError("The SPZ header has an unsupported layout")
+    if size is not None and count > size * MAX_COMPRESSION_RATIO // MIN_BYTES_PER_POINT:
+        raise SpzError("The SPZ point count exceeds its compressed size")
+    step, _ = plan(count, options.max_points)
+    # Blocks for every point: x, y, z, then alpha, then colour bytes, then log scales.
+    positions = kept_fields(reader, count, 9, step, ((0, 3), (3, 3), (6, 3)))
+    (alphas,) = kept_fields(reader, count, 1, step, ((0, 1),))
+    colors = kept_fields(reader, count, 3, step, ((0, 1), (1, 1), (2, 1)))
+    scales = kept_fields(reader, count, 3, step, ((0, 1), (1, 1), (2, 1)))
+    reader.check()
+    scale = 1.0 / (1 << fractional_bits)
+    density = math.sqrt(step)
+    radius = byte_table(lambda value: math.exp(value / 16.0 - 10.0) * density)
+    return snapshot(
+        "spz",
+        version,
+        options.axes,
+        count,
+        step,
+        tuple(_fixed(values, scale) for values in positions),
+        tuple(lookup(channel, _COLOR) for channel in colors),
+        lookup(alphas, UNIT),
+        lookup(bytes(map(median3, *scales)), radius),
+    )
+
+
+def read_spz(path, max_points=None):
+    """Prototype wrapper: decode an .spz file into Python lists.
+
+    Returns `count`, `kept`, `step`, `version`, `positions` [(x, y, z)] in the file's
+    Y-up axes, `colors` [(r, g, b)], `alphas` and `scales` (median world scale per
+    point). `max_points` keeps every n-th point; at most 2,000,000 points are kept.
+    """
+    limit = min(max_points or MAX_KEPT_POINTS, MAX_KEPT_POINTS)
+    with open(str(path), "rb") as handle:
+        data = decode_spz(
+            handle,
+            options=SplatOptions(limit, "OPENGL"),
+            size=os.fstat(handle.fileno()).st_size,
+        )
+    # OPENGL decoding gives Blender (x, -z, y); undo it to return file axes.
+    xyz = data.floats("positions").tolist()
+    rgba = data.floats("colors").tolist()
+    density = math.sqrt(data.step)
+    return {
+        "count": data.count,
+        "kept": data.kept,
+        "step": data.step,
+        "version": data.version,
+        "positions": [(xyz[i], xyz[i + 2], -xyz[i + 1]) for i in range(0, len(xyz), 3)],
+        "colors": [tuple(rgba[i : i + 3]) for i in range(0, len(rgba), 4)],
+        "alphas": data.floats("opacities").tolist(),
+        "scales": [radius / density for radius in data.floats("radii").tolist()],
+    }
 
 
 def y_up_to_z_up(position):
@@ -87,12 +169,18 @@ def y_up_to_z_up(position):
     return (x, -z, y)
 
 
-def write_spz(path, positions, colors, alphas=None, scales=None, fractional_bits=12):
-    """Encode a minimal SPZ (version 2, no SH, identity rotations). Used by tests and to round-trip subsamples."""
+def write_spz(
+    path, positions, colors, alphas=None, scales=None, fractional_bits=12, version=2, sh_degree=0
+):
+    """Encode a minimal SPZ (version 2 or 3, identity rotations, zero SH). Used by tests."""
+    if version not in (2, 3) or sh_degree not in _SH_DIMENSIONS:
+        raise ValueError("Write SPZ version 2 or 3 with a supported SH degree")
     count = len(positions)
     alphas = alphas or [1.0] * count
     scales = scales or [0.01] * count
-    out = bytearray(struct.pack("<IIIBBBB", MAGIC, 2, count, 0, fractional_bits, 0, 0))
+    out = bytearray(
+        struct.pack("<IIIBBBB", MAGIC, version, count, sh_degree, fractional_bits, 0, 0)
+    )
     scale = float(1 << fractional_bits)
     for x, y, z in positions:
         for v in (x, y, z):
@@ -106,7 +194,9 @@ def write_spz(path, positions, colors, alphas=None, scales=None, fractional_bits
     for s in scales:
         byte = int(round((math.log(max(1e-6, s)) + 10.0) * 16.0))
         out += bytes((min(255, max(0, byte)),) * 3)
-    out += bytes(count * 3)  # rotations
+    # Version 3 packs the largest component's index (w = 3) in the top two bits.
+    out += bytes(count * 3) if version == 2 else b"\x00\x00\x00\xc0" * count
+    out += b"\x80" * (count * 3 * _SH_DIMENSIONS[sh_degree])
     with gzip.open(str(path), "wb") as handle:
         handle.write(bytes(out))
     return path

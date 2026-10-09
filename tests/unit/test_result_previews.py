@@ -431,7 +431,8 @@ def test_image_results_issue_a_private_verified_decode_request(env):
     assert again.state == State.READY and again.preview.path.read_bytes() == png(256, 128)
 
 
-def test_open_regular_closes_its_descriptor_when_wrapping_fails(tmp_path, monkeypatch):
+@pytest.mark.parametrize("failing", ["fdopen", "fstat"])
+def test_open_regular_closes_its_descriptor_when_opening_fails(tmp_path, monkeypatch, failing):
     path = tmp_path / "still.png"
     path.write_bytes(png(1, 1))
     opened, real_open = [], os.open
@@ -440,17 +441,20 @@ def test_open_regular_closes_its_descriptor_when_wrapping_fails(tmp_path, monkey
         opened.append(real_open(*args, **kwargs))
         return opened[-1]
 
-    def failing_fdopen(*args, **kwargs):
-        raise ValueError("fixture wrapping failure")
+    def failure(*args, **kwargs):
+        raise ValueError(f"fixture {failing} failure")
 
     monkeypatch.setattr(previews.os, "open", tracking_open)
-    monkeypatch.setattr(previews.os, "fdopen", failing_fdopen)
-    with pytest.raises(ValueError, match="fixture"):
+    monkeypatch.setattr(previews.os, failing, failure)
+    with pytest.raises(ValueError, match="fixture") as caught:
         previews._open_regular(path)
     monkeypatch.undo()
     (descriptor,) = opened
+    # The kept traceback keeps any file object alive, so garbage collection
+    # cannot close the descriptor in place of _open_regular.
     with pytest.raises(OSError):
-        os.fstat(descriptor)  # Already closed, not leaked.
+        os.fstat(descriptor)
+    assert caught.traceback
 
 
 @pytest.mark.skipif(os.name != "posix", reason="Respells POSIX roots to model Windows")

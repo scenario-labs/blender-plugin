@@ -8,7 +8,7 @@
     "scope": "result-previews",
     "coverage": "source-reviewed",
     "reviewed_at": "2026-10-09",
-    "base_revision": "ad143c8e2406123217888301badcb49638033fd8",
+    "base_revision": "fb699b8555f7cee62147794516cc7aaa224864f7",
     "limits": "Inspected the bpy-free preview module, owner-thread scheduler, coordinator and result commands, the workers' dedicated preview lane and its idleness, the adapter's bulk asset reads, the downloader's cancellation event, still header dimension parsing, the audio envelope math and the JobSession/runtime wiring. Unit tests use the real SDK with MockTransport, a host-policy-enforcing offline downloader and synthetic media headers; native tests ran the installed ZIP on Blender 5.1.2 (macOS arm64) only. No live SDK metadata, CDN transfer, thumbnail coverage, dimensions, timing or size evidence; no Blender-side decoding, UI, MCP or desktop acceptance. No store schema change.",
     "sources": {
       "scenario/core/jobs/result_previews.py": "afd49b8052fd0953c1b1fe10b8a8f3f6fd6e383a7d5ddd6647aa4f00e002d893",
@@ -21,7 +21,7 @@
       "scenario/core/jobs/transfers.py": "809323c378949b690e0cc7b1572a8e621819349e72c622f6b59f287c2bb05024",
       "scenario/core/jobs/media_probe.py": "6db22b8cb051d6cabd6847b207d8380e181c80f28a5f50b2a987174bd9a95c7a",
       "scenario/blender/job_session.py": "f8ea693820df79a9e51d103873349f0e5d6512996841f0536dd091b15438757c",
-      "scenario/blender/runtime.py": "5c7d192dcdc8cbfc0b3e3d13d4e786d8bbaee67b855d6deaad80eaf0b08d746d",
+      "scenario/blender/runtime.py": "7ba1a04feddcf53987879cd57406210f2aa9fe7aa7e2c3a1e9fcbd54714eef46",
       "tests/unit/test_result_previews.py": "d34505132b8d4474911889ac697e848d3653593fa34ddb0eac3fb62794e9f830",
       "tests/unit/test_preview_scheduler.py": "8ff8325a17caa7dc79bd67d40d750d710163da0dd99a3e69eec25fde2c8d9b73",
       "tests/unit/test_audio_envelope.py": "5f51aa5ec09cbfc3283c0ef51cf8833363ce90609029f782de8edd4897ce8bde",

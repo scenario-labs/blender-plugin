@@ -45,6 +45,7 @@ records, lane/schema helpers and local display status classification remain.
 | Cloud history, known-job recovery, polling and inference cancellation | Shared catalog/coordinator: `jobs.with_raw_response.list/retrieve/trigger_action` |
 | Result and complete prompt/model-text metadata | Shared coordinator: `assets.with_raw_response.retrieve`; bounded complete text uses the signed result transport |
 | Asset library browsing and text search | Shared coordinator: `assets.with_raw_response.list` and `search.with_raw_response.asset_search`; explicit single-page reads with selected project scope |
+| Collection and tag organization (adapter methods only; no UI, MCP or job command calls them yet) | `SDKAdapter`: `collections.with_raw_response.list/retrieve/create`, `collections.with_raw_response.assets.add/remove`, `assets.with_raw_response.update_tags/get_bulk`; see [asset organization writes](#asset-organization-writes) |
 | Reference upload metadata, progress and completion | Shared upload coordinator: `uploads.with_raw_response.create/retrieve/trigger_action` |
 | Optional team/project discovery | Adapter-owned `SDKResourceExtensions`, the named [SDK issue #29 exception](https://github.com/scenario-labs/scenario-sdk-python/issues/29) below; no new raw exception |
 | Developer model audit, fixture recorder and smoke tools | The same `SDKAdapter`; smoke generation and explicit reference-plan uploads use shared coordinator commands. [Reference automation](../tests/smoke/README.md#prepare-reference-inputs) reuses the upload SDK methods above and signed-part transport. |
@@ -97,6 +98,8 @@ using the locked environment.
 | Job discovery | `jobs.list`: `jobs` page wrapper, filters, comma-separated `types`, opaque cursor and project/filter preservation on the next page |
 | Workflow approval rejection | `workflows.user_approval(action="reject")`: workflow, job and node identity; this is not general workflow cancellation |
 | Remote cancellation | `jobs.trigger_action(action="cancel")`: POST action and project query; acknowledgements can remain in progress or report a completion race; upload/cancel failures make one attempt |
+| Collection and tag writes | `collections.assets.add/remove`: PUT and DELETE with a JSON `assetIds` body; `collections.create`: POST `name`; `assets.update_tags`: PUT `add`/`delete` with explicit `strict=false`; `projectId` stays in the query. Timeouts, lost connections and 408/409/429/5xx make one attempt even with `x-should-retry: true`, and no idempotency header is sent |
+| Collection pages and organization read-back | `collections.list/retrieve`: `collections` page wrapper, opaque cursor with unchanged scope and `collection` wrapper; `assets.get_bulk`: POST `assetIds` body, `projectId` query, `tags` and `collectionIds` retained, and a requested asset may be absent |
 | Uncertain submissions | `max_retries=0` makes one attempt for model/workflow transport errors and retryable HTTP statuses, even with `Retry-After` |
 | Redirect handling | An explicit HTTP client with `follow_redirects=False` prevents a second request; also use `trust_env=False` to avoid ambient proxy configuration |
 | Authentication | Explicit Basic credentials take precedence over ambient Basic credentials; explicit Bearer precedence has the known failure below |
@@ -478,7 +481,9 @@ Token serialization does not establish browser OAuth acceptance by REST.
 
 ## Adapter coverage
 
-The adapter provides reads/estimates and a coordinator-only submission hook.
+The adapter provides reads/estimates, a coordinator-only submission hook and
+unpaid [asset organization writes](#asset-organization-writes) that no runtime
+surface calls yet.
 The [job coordinator](JOB_COORDINATOR.md) commits a scoped intent before dispatch,
 consumes each issued quote once and preserves uncertain outcomes. Inference
 cancellation is available through the coordinator. UI and MCP model submission now
@@ -510,6 +515,8 @@ The named discovery exceptions also use the same zero-retry SDK client.
 | Known model-job cancellation | `jobs.trigger_action(action="cancel")` through its public raw-response wrapper: one attempt, selected project, no terminal-state assumption from acknowledgement; coordinator retrieves before and after the action |
 | Scoped job discovery | `jobs.list` through the public raw-response wrapper: optional author/workflow/type/status filters, 1–200 items per page, bounded pagination and explicit errors instead of partial or conflicting history |
 | Multipart upload metadata | `uploads.create/retrieve/trigger_action(action="complete")`: immutable project scope, strict input/receipt identity, retained processing/future fields; no byte transfer, retry or automatic completion |
+| Collection and tag writes | `collections.create`, `collections.assets.add/remove` and `assets.update_tags(strict=false)` through public raw-response wrappers: one attempt, selected project, acknowledged identity checks, and `WriteRejected` or `WriteUncertain` after dispatch |
+| Collection pages and organization read-back | `collections.list/retrieve` and `assets.get_bulk`: one bounded collection page with cursor-loop failure, matching collection identity, and requested-only asset records with `tags`/`collectionIds` |
 | Model/workflow/asset/job records | `models.retrieve`, `workflows.retrieve`, `assets.retrieve`, `jobs.retrieve`: unwrap the named record and retain unknown fields |
 | Custom-model estimate | `generate.run_model(dry_run="true")`: adopted form value validation plus retained conditional/one-of rules; inputs in JSON and dry-run/project in query |
 | Prompt translation quote/submission | `generate.with_raw_response.translate`: POST `/generate/translate`, exact `dry_run="true"` response; optional selected `project_id` in the query; prompt in JSON; no raw API fallback |
@@ -748,3 +755,85 @@ SDK contracts inspect actual method, query/body serialization and raw wrappers.
 There is no raw API exception or dependency change. Native Library presentation,
 asset attachment/application and collection/tag writes remain to integrate, and
 synthetic tests do not establish live search quality or provider acceptance.
+
+## Asset organization writes
+
+The published SDK 2.2.0 covers collection listing, retrieval and creation,
+[collection membership](https://docs.scenario.com/api/python/resources/collections),
+[asset tag changes](https://docs.scenario.com/api/python/resources/assets/methods/update_tags)
+and the [bulk asset read](https://docs.scenario.com/api/python/resources/assets/methods/get_bulk)
+used to verify them. `SDKAdapter` therefore uses only their public
+`with_raw_response` wrappers: no SDK extension, raw API exception, SDK issue or
+dependency change is needed. These are free account metadata changes. They
+spend no credits, do not change the Blender scene and cannot be undone by
+Blender Undo.
+
+| Adapter method | SDK 2.2.0 method | Request and response contract |
+| --- | --- | --- |
+| `collection_page` | `collections.with_raw_response.list` | One page of 1 to 100 records and an opaque cursor. IDs are validated, identical duplicates are dropped, and conflicting duplicates, oversized pages or a repeated cursor fail. An empty page is valid. |
+| `collection` | `collections.with_raw_response.retrieve` | The returned `collection.id` must equal the requested ID. |
+| `asset_records` | `assets.with_raw_response.get_bulk` | POST with 1 to 200 IDs in the body; repeated IDs are read once. Found records are returned by ID in request order, with unknown fields kept. A missing asset is absent, not an error. Unrequested or conflicting records and non-list `tags`/`collectionIds` fail. |
+| `create_collection` | `collections.with_raw_response.create` | POST `{"name": ...}`. The acknowledged `collection.name` must match exactly and its ID must be valid. |
+| `add_collection_assets`, `remove_collection_assets` | `collections.with_raw_response.assets.add/remove` | PUT or DELETE with a JSON `assetIds` body of 1 to 49 unique IDs, the documented maximum. The acknowledged `collection.id` must match. |
+| `update_asset_tags` | `assets.with_raw_response.update_tags` | PUT with explicit `strict=false` and a nonempty `add` and/or `delete` list. The reported `added` and `deleted` lists must be subsets of the request and may be empty for documented non-strict no-ops. |
+
+Every request uses the adapter's selected credentials, its optional project
+override in the query and its online-access predicate. Reads keep the existing
+sanitized `AdapterError` behavior. Write outcomes are classified as follows:
+
+- **Not sent.** Invalid input raises `ValueError`. A closed client or disabled
+  online access raises a plain `AdapterError`. No request is made.
+- **One attempt.** The client keeps `max_retries=0`. The SDK would otherwise
+  retry 408, 409, 429 and 5xx responses, the Scenario client sends no
+  idempotency key, and the API reference documents no idempotency or
+  transaction contract for these endpoints.
+- **`WriteRejected(status)`.** Any 4xx response except 408, 409, 425 and 429.
+  The fixed text names the status class: rejected credentials (401), no
+  permission for this asset or collection (403), not found in the selected
+  connection (404), or a rejected change.
+- **`WriteUncertain(status or None)`.** Redirects (never followed), 408, 409,
+  425, 429 and 5xx responses, timeouts, lost connections, other transport
+  failures, and a 2xx response with invalid JSON, a missing wrapper, a
+  different collection ID or name, or tag lists that were not requested.
+- Messages contain at most the HTTP status code. They never include response
+  bodies, URLs, credentials, project or asset IDs, collection names or tags,
+  and the original SDK exception is suppressed.
+
+The adapter never resends a write. A caller reconciles an uncertain outcome by
+reading the assets back with `asset_records`, not with search, whose index may
+lag. A refused multi-asset request is not proof that no member changed, because
+no transaction contract is documented; read those assets back too.
+
+Behavior that the documentation does not establish is handled conservatively
+and still needs authorized live evidence:
+
+- **Re-adding an existing member** may return 200 or 409. A 409 is uncertain,
+  and the read-back shows the actual membership. Offline tests cover this case
+  with exactly one write request.
+- **The DELETE JSON body** is serialized by the SDK, as the offline contracts
+  check. Whether the production edge preserves it is unverified, so a 2xx
+  removal acknowledgement is not proof of removal and must be read back.
+- **Collection names.** No uniqueness or idempotent create is documented.
+  Callers must look up the exact name before creating and must not create
+  again after an uncertain outcome.
+- **Local label limits.** Tag and name limits are undocumented. The adapter
+  accepts exact labels of at most 200 characters, without surrounding
+  whitespace or control characters, and at most 30 tags per list, matching the
+  Film plan's existing task tags. A tag cannot be added and removed in the same
+  change. Commas are allowed at this layer. The service may normalize case or
+  spelling; a normalized acknowledgement is uncertain and must be read back.
+- Collection deletion and rename, model collections and tag listing are not
+  adopted.
+
+These are adapter methods only. No coordinator, worker, JobSession, local MCP
+tool or native Library control calls them yet. Shared review and verification
+commands, user-facing confirmation and live acceptance remain under
+[#64](https://github.com/scenario-labs/blender-plugin/issues/64),
+[#65](https://github.com/scenario-labs/blender-plugin/issues/65),
+[#66](https://github.com/scenario-labs/blender-plugin/issues/66) and
+[#68](https://github.com/scenario-labs/blender-plugin/issues/68). Run the
+offline contracts with:
+
+```sh
+uv run --locked --no-env-file python -m pytest tests/unit/test_scenario_sdk_contract.py tests/unit/test_sdk_adapter_organization.py -rx
+```

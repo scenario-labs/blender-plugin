@@ -1,9 +1,10 @@
 # SPDX-FileCopyrightText: 2026 Scenario Inc.
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""Scoped SDK reads and exact estimates for the consolidated runtime.
+"""Scoped SDK reads, exact estimates and unpaid organization writes.
 
 No bpy imports, ambient credentials, redirects or automatic retries. Paid
-dispatch requires an issued estimate and a durable claim callback.
+dispatch requires an issued estimate and a durable claim callback. Organization
+writes are sent once and classified as rejected or uncertain, never replayed.
 SDK imports are lazy so package registration does not start client work.
 """
 
@@ -13,6 +14,7 @@ import math
 import re
 import threading
 import time
+import unicodedata
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from decimal import Decimal
@@ -61,6 +63,40 @@ def _unavailable_on_denial(method):
             raise
 
     return call
+
+
+class WriteRejected(AdapterError):
+    """Scenario refused a sent organization write with a definite client error.
+
+    The adapter never resends it. The API documents no transaction contract, so
+    a refused multi-asset request is not proof that no member changed; read the
+    assets back with ``asset_records`` before reporting that nothing changed.
+    """
+
+    def __init__(self, message, status):
+        super().__init__(message)
+        self.status = status
+
+
+class WriteUncertain(AdapterError):
+    """An organization write may have been applied; read it back, never resend it."""
+
+    def __init__(self, message, status=None):
+        super().__init__(message)
+        self.status = status
+
+
+# Local bounds. The SDK documents 49 assets per membership change and 200 per
+# bulk read; tag and name limits are undocumented, so labels follow the Film
+# plan's 200-character rule and tag changes allow its 30-tag task list.
+MAX_COLLECTION_ASSETS = 49
+MAX_ASSET_RECORDS = 200
+MAX_ORGANIZATION_LABEL = 200
+MAX_TAG_CHANGES = 30
+# 408, 425 and 429 can arrive after the service accepted the work, and 409 has
+# no documented meaning for these endpoints (duplicate member, name or lock).
+_UNCERTAIN_CLIENT_STATUSES = frozenset({408, 409, 425, 429})
+_UNCONFIRMED = "Scenario did not confirm this change; read it back before changing it again"
 
 
 @dataclass(frozen=True)
@@ -179,6 +215,81 @@ def _upload_record(raw, identifier=None):
     # Preserve future statuses, transfer instructions and fields verbatim. This
     # is metadata, not a validated transfer plan or proof of completed import.
     return record
+
+
+def _organization_label(value, field):
+    """Accept an exact bounded label; never strip or rewrite what is sent."""
+    if (
+        not isinstance(value, str)
+        or not value.strip()
+        or value != value.strip()
+        or len(value) > MAX_ORGANIZATION_LABEL
+    ):
+        raise ValueError(
+            f"{field} must be nonempty, at most {MAX_ORGANIZATION_LABEL} characters "
+            "and without surrounding spaces"
+        )
+    if any(unicodedata.category(char) == "Cc" for char in value):
+        raise ValueError(f"{field} cannot contain control characters")
+    return value
+
+
+def _tag_changes(values, field):
+    if values is None:
+        return []
+    if not isinstance(values, (list, tuple)) or len(values) > MAX_TAG_CHANGES:
+        raise ValueError(f"Use a list of at most {MAX_TAG_CHANGES} tags to {field}")
+    tags = [_organization_label(value, "Tag") for value in values]
+    if len(set(tags)) != len(tags):
+        raise ValueError(f"Tags to {field} must be unique")
+    return tags
+
+
+def _asset_ids(values, limit, *, unique):
+    if not isinstance(values, (list, tuple)) or not 1 <= len(values) <= limit:
+        raise ValueError(f"Use a list of 1 to {limit} asset identifiers")
+    identifiers = [_identifier(value) for value in values]
+    if len(set(identifiers)) != len(identifiers):
+        if unique:
+            raise ValueError("Asset identifiers must be unique")
+        identifiers = list(dict.fromkeys(identifiers))
+    return identifiers
+
+
+def _unique_rows(rows, limit, noun):
+    """Validate record IDs; drop identical duplicates and fail on conflicting ones."""
+    if not isinstance(rows, list) or len(rows) > limit:
+        raise AdapterError(f"Scenario returned an invalid {noun} page")
+    records = {}
+    for row in rows:
+        try:
+            identifier = _identifier(row.get("id") if isinstance(row, dict) else None)
+        except ValueError:
+            raise AdapterError(f"Scenario returned an invalid {noun} record") from None
+        if identifier in records and records[identifier] != row:
+            raise AdapterError(f"Scenario returned conflicting {noun} records; refresh")
+        records[identifier] = row
+    return records
+
+
+def _write_rejected(status):
+    if status == 401:
+        text = "Scenario rejected the selected credentials"
+    elif status == 403:
+        text = "The selected credentials cannot change this asset or collection"
+    elif status == 404:
+        text = "Asset or collection not found in the selected connection"
+    else:
+        text = "Scenario rejected this organization change"
+    return WriteRejected(f"{text} (HTTP {status})", status)
+
+
+def _confirmed(raw):
+    """Parse a 2xx write acknowledgement; malformed bodies leave the outcome unknown."""
+    try:
+        return _json(raw)
+    except AdapterError:
+        raise WriteUncertain(_UNCONFIRMED) from None
 
 
 def _prepare(identifier, fields, parameters):
@@ -330,6 +441,39 @@ class SDKAdapter:
             raise AdapterError(_status_text(error.status_code, project=project)) from None
         except APIConnectionError:
             raise AdapterError("Could not reach Scenario") from None
+
+    def _write(self, method, *args, **kwargs):
+        """Send one unpaid account mutation through a public SDK raw wrapper.
+
+        A plain AdapterError (closed client, online access disabled) means
+        nothing was sent. After dispatch, failures raise only WriteRejected or
+        WriteUncertain. The client keeps max_retries=0 because the SDK would
+        otherwise retry 408/409/429/5xx and these endpoints document no
+        idempotency contract.
+        """
+        from scenario_sdk import APIStatusError
+
+        if self.project_id is not None:
+            kwargs["project_id"] = self.project_id
+        if self._closed:
+            raise AdapterError("Scenario client is closed")
+        if not self._online():
+            raise AdapterError("Online access is disabled")
+        try:
+            return method(*args, **kwargs).read()
+        except APIStatusError as error:
+            status = error.status_code
+            if 400 <= status < 500 and status not in _UNCERTAIN_CLIENT_STATUSES:
+                raise _write_rejected(status) from None
+            raise WriteUncertain(
+                f"Scenario did not confirm this change (HTTP {status}); "
+                "read it back before changing it again",
+                status,
+            ) from None
+        except Exception:
+            # Timeouts, lost connections and unexpected transport failures can
+            # follow an applied change. Classify them as unknown, never unsent.
+            raise WriteUncertain(_UNCONFIRMED) from None
 
     def _discovery(self, method, wrapper, *args):
         value = _json(self._unscoped_request(method, *args))
@@ -486,6 +630,138 @@ class SDKAdapter:
         end = offset + len(hits)
         more = bool(hits) and (end < total if total is not None else len(hits) == limit)
         return {"assets": rows, "estimated_total": total, "next_offset": end if more else None}
+
+    def collection_page(self, *, page_size=50, pagination_token=None):
+        """Read one collection page in the selected scope, without automatic traversal."""
+        if type(page_size) is not int or not 1 <= page_size <= 100:
+            raise ValueError("Collection page size must be an integer from 1 to 100")
+        options = {"page_size": page_size}
+        if pagination_token is not None:
+            if not isinstance(pagination_token, str) or not pagination_token:
+                raise ValueError("Use a nonempty collection cursor")
+            options["pagination_token"] = pagination_token
+        page = _json(self._request(self._sdk.collections.with_raw_response.list, **options))
+        rows = _unique_rows(page.get("collections"), page_size, "collection")
+        token = page.get("nextPaginationToken")
+        if token not in (None, "") and (not isinstance(token, str) or token == pagination_token):
+            raise AdapterError("Scenario repeated or returned an invalid collection cursor")
+        return {"collections": list(rows.values()), "next_pagination_token": token or None}
+
+    def collection(self, identifier):
+        """Retrieve one known collection; another returned identity is an error."""
+        identifier = _identifier(identifier)
+        record = self._retrieve("collections", identifier, "collection")
+        if record.get("id") != identifier:
+            raise AdapterError("Scenario returned a different collection")
+        return record
+
+    def asset_records(self, asset_ids):
+        """Read current tags and collection memberships of known assets.
+
+        This is the verification read after organization writes; search indexes
+        may lag. Duplicate requested IDs are read once. Assets the service does
+        not return are absent from the result, which the caller must treat as
+        unverified rather than unchanged. Unrequested records are an error.
+        """
+        identifiers = _asset_ids(asset_ids, MAX_ASSET_RECORDS, unique=False)
+        page = _json(
+            self._request(self._sdk.assets.with_raw_response.get_bulk, asset_ids=identifiers)
+        )
+        records = _unique_rows(page.get("assets"), MAX_ASSET_RECORDS, "asset")
+        if not records.keys() <= set(identifiers):
+            raise AdapterError("Scenario returned an asset that was not requested")
+        for record in records.values():
+            for key in ("tags", "collectionIds"):
+                values = record.get(key)
+                if values is not None and (
+                    not isinstance(values, list) or any(not isinstance(v, str) for v in values)
+                ):
+                    raise AdapterError("Scenario returned invalid asset organization metadata")
+        return {
+            identifier: records[identifier] for identifier in identifiers if identifier in records
+        }
+
+    def create_collection(self, name):
+        """Create one collection; this POST is not idempotent.
+
+        The API documents no name uniqueness. Callers must look the exact name up
+        first and, after WriteUncertain, reconcile by reading instead of
+        creating again. Returns the acknowledged record, whose name must match.
+        """
+        name = _organization_label(name, "Collection name")
+        raw = self._write(self._sdk.collections.with_raw_response.create, name=name)
+        record = _confirmed(raw).get("collection")
+        if not isinstance(record, dict) or record.get("name") != name:
+            raise WriteUncertain(_UNCONFIRMED)
+        try:
+            _identifier(record.get("id"))
+        except ValueError:
+            raise WriteUncertain(_UNCONFIRMED) from None
+        return record
+
+    def _membership(self, method, collection_id, asset_ids):
+        collection_id = _identifier(collection_id)
+        identifiers = _asset_ids(asset_ids, MAX_COLLECTION_ASSETS, unique=True)
+        raw = self._write(method, collection_id, asset_ids=identifiers)
+        record = _confirmed(raw).get("collection")
+        if not isinstance(record, dict) or record.get("id") != collection_id:
+            raise WriteUncertain(_UNCONFIRMED)
+        return record
+
+    def add_collection_assets(self, collection_id, asset_ids):
+        """Add 1 to 49 unique assets to one collection with a single request.
+
+        The acknowledgement names the collection, not each asset. Re-adding a
+        member has undocumented status behavior; a 409 is uncertain. Verify the
+        membership with ``asset_records``.
+        """
+        return self._membership(
+            self._sdk.collections.with_raw_response.assets.add, collection_id, asset_ids
+        )
+
+    def remove_collection_assets(self, collection_id, asset_ids):
+        """Remove 1 to 49 unique assets from one collection with a single request.
+
+        The SDK sends the IDs as a DELETE JSON body. A 2xx acknowledgement is not
+        proof that an intermediary preserved that body; verify with
+        ``asset_records``.
+        """
+        return self._membership(
+            self._sdk.collections.with_raw_response.assets.remove, collection_id, asset_ids
+        )
+
+    def update_asset_tags(self, asset_id, *, add=(), remove=()):
+        """Add and remove exact tags on one asset with a single non-strict request.
+
+        ``strict=False`` makes repeated additions and absent removals behave as
+        documented idempotent no-ops, so ``added``/``deleted`` may be empty.
+        Reported tags must be a subset of those requested. Verify with
+        ``asset_records``; the service may normalize tags in undocumented ways.
+        """
+        identifier = _identifier(asset_id)
+        added = _tag_changes(add, "add")
+        removed = _tag_changes(remove, "remove")
+        if not added and not removed:
+            raise ValueError("Add or remove at least one tag")
+        if set(added) & set(removed):
+            raise ValueError("A tag cannot be added and removed in the same change")
+        options = {"strict": False}
+        if added:
+            options["add"] = added
+        if removed:
+            options["delete"] = removed
+        result = _confirmed(
+            self._write(self._sdk.assets.with_raw_response.update_tags, identifier, **options)
+        )
+        for key, sent in (("added", added), ("deleted", removed)):
+            values = result.get(key)
+            if (
+                not isinstance(values, list)
+                or any(not isinstance(value, str) for value in values)
+                or not set(values) <= set(sent)
+            ):
+                raise WriteUncertain(_UNCONFIRMED)
+        return result
 
     def job(self, identifier):
         return self._retrieve("jobs", identifier, "job")

@@ -2,13 +2,15 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Owner-thread scheduling of receipt-bound result previews, without bpy.
 
-The scheduler owns no thread and performs no file or network I/O. Its owner
-calls ``pump`` from Blender's main-thread timer or a headless loop. Cache reads,
-private copies, SDK metadata reads and downloads all run as tasks on the
-dedicated preview lane of ``JobWorkers``; job refresh and downloads never wait
-for them. Server previews can appear minutes after a result is saved, so missing
-ones are polled with backoff for a bounded window of online time, then marked
-missing until an explicit retry.
+The scheduler owns no thread and performs no network I/O or preview cache
+work. Its owner calls ``pump`` from Blender's main-thread timer or a headless
+loop. ``request`` reads saved receipts from the local job store, and ``release``
+removes leftover private copies after the lane has stopped. Cache reads, private
+copies, SDK metadata reads and downloads all run as tasks on the dedicated
+preview lane of ``JobWorkers``; job refresh and downloads never wait for them.
+Server previews can appear minutes after a result is saved, so missing ones are
+polled with backoff for a bounded window of online time, then marked missing
+until an explicit retry.
 """
 
 import math
@@ -533,6 +535,8 @@ class ResultPreviewScheduler:
             try:
                 requests += list(self._task.result().requests)
             except BaseException:
+                # A stored lane outcome, as in _apply_batch. A failed or canceled
+                # batch discarded any private copies it made before it ended.
                 pass
         for request in requests:
             previews.discard_directory(request.directory)

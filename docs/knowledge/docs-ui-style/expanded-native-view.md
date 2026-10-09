@@ -9,9 +9,9 @@
     "coverage": "source-reviewed",
     "reviewed_at": "2026-10-09",
     "base_revision": "afc40209d5a3bf86b30ac01e99e75d513a2b8e64",
-    "limits": "Reviewed explicit native popup, unsaved navigation, shared panel drawing, guarded composer flush and outside-click passthrough. Installed synthetic tests cover quote/form/scene ownership, continued work and click handoff. Exact-ZIP offline macOS arm64 Blender 5.1.2 desktop evidence covers Unicode prompt handoff/editing, populated-form scrolling, quote-preserving page navigation, continued saved-job polling, small-window fit at UI scale 2.0, Escape and viewport return. The successful repeat exited cleanly with unchanged normal profile; an earlier shortcut-triggered exit hit fixture cleanup failure. Alternate DPI and IME composition remain unverified; keep the PR draft. Workflow/library forms and complete retained Studio/compact/release acceptance remain separate. No live service, upload or paid generation.",
+    "limits": "Reviewed explicit native popup, unsaved navigation, shared panel drawing, guarded composer flush and outside-click passthrough. Installed synthetic tests cover quote/form/scene ownership, continued work and click handoff. Exact-ZIP offline macOS arm64 Blender 5.1.2 desktop evidence covers Unicode prompt handoff/editing, populated-form scrolling, quote-preserving page navigation, continued saved-job polling, small-window fit at UI scale 2.0, Escape and viewport return. The successful repeat exited cleanly with unchanged normal profile; an earlier shortcut-triggered exit hit fixture cleanup failure. Alternate DPI and IME composition remain unverified acceptance follow-ups under #66, not draft blockers for this scoped PR. Workflow/library forms and complete retained Studio/compact/release acceptance remain separate. No live service, upload or paid generation.",
     "sources": {
-      "docs/UI_STYLE.md": "b937cfaa4235c99f73902461cf68f96d0ddbca493c1a6677e579550724358c63",
+      "docs/UI_STYLE.md": "910c10872a269098b72bdaabc055ae665a81e72c77602daa2111d9b1415fbff4",
       "scenario/blender/studio.py": "c2cabbeaf881c59e4139dbaa9f17f63d2efc3bf9446d5c8672425902b5ecc764",
       "scenario/blender/registry.py": "5ecf514d4b3eb13b38ac71b178179be898650c73c7261cfa4c971cad7dbb271c",
       "scenario/blender/popover.py": "7366e3dd7f5ad9414d9ad9e3246c072beef207f6edfbc6705488210fa1dbee35",

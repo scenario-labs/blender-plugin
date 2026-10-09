@@ -106,6 +106,26 @@ Read the actual release workflow/configuration before describing release behavio
 New release tags use `blender-plugin-vX.Y.Z`; package versions stay `X.Y.Z` and
 release ZIPs stay `scenario-X.Y.Z.zip`. Preserve historical `v*` tags and releases.
 
+## Review readiness and acceptance follow-ups
+
+Move a scoped, reviewable change out of draft when its implementation is complete
+and relevant checks provide enough evidence for review. Distinguish PR review
+readiness, merge approval and complete product/release acceptance. An untested
+configuration is an evidence gap; it is not by itself a demonstrated defect.
+
+Do not keep a PR in draft solely because broader acceptance or untested edge
+cases remain, such as additional DPI settings or IME composition. Record each
+gap in the owning issue with a concrete check and expected result, link it from
+the PR, and state the verified boundary. Keep acceptance checkboxes unchecked
+until there is evidence. Do not silently turn a release or parent-issue criterion
+into a draft gate for every incremental PR.
+
+A draft blocker must name unfinished work required for meaningful review, a
+concrete defect requiring a fix, or an explicit maintainer instruction to keep
+the PR draft. Identify the reason and its source. Required CI, human approval,
+merge authorization and release gates still apply at their respective stages;
+ready-for-review does not attest to their completion.
+
 ## Stacked pull requests
 
 Use a stack when a change needs another unmerged PR. For example,

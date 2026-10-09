@@ -184,7 +184,7 @@ behavior or in-place application acceptance.
 
 `synthetic/jobs-schema9.sql` is first-party GPL-3.0-or-later test data: the SQL
 dump of a shared job database written by the schema 9 storage code of commit
-`b57c398f`, the last main revision before schema 10, followed by that database's
+`b57c398f`, a schema 9 main revision, followed by that database's
 application ID and schema version pragmas. The repository does not commit database
 files, so tests rebuild the database from this reviewable text. It holds fifteen
 jobs in two synthetic credential scopes, covering every job state except the

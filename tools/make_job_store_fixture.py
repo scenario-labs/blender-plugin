@@ -3,7 +3,7 @@
 """Write the schema 9 job-store fixture with the predecessor's own storage code.
 
 The committed `tests/fixtures/synthetic/jobs-schema9.sql` was produced by
-extracting `scenario/` from commit b57c398f (the last schema 9 main revision) and
+extracting `scenario/` from commit b57c398f (a schema 9 main revision) and
 running this script against it. It uses only that code's public store API, so
 the upgrade tests rebuild a database the previous release candidate really wrote.
 The fixture is the SQL dump of that database plus its two header pragmas, because

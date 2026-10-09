@@ -260,7 +260,16 @@ unchanged-state comparison the probe writes the same schema 10 state into the
 upgraded store, and the offline restart must preserve it
 (`schema_10_state: after-upgrade`). Both forms require the original's receipt,
 the exact default, the cleared lane's revision and that the other credential scope
-sees no default.
+sees no default. The project check also requires the same credentials with the
+default scope or another project to see no saved or cleared default.
+
+When the package seeding the defaults ships the runtime
+[lane-defaults owner](../JOB_STORAGE.md#runtime-owner), the probe saves and clears
+them through `runtime.ensure_model_defaults` instead of the store. After the update
+and after the offline restart it reads every seeded lane through the candidate's
+owner, whose scope must equal the selected store's and whose states must equal the
+stored rows. Both reports record `model_defaults_preserved`; the runner requires it
+to be true exactly when the candidate archive contains `core/jobs/model_defaults.py`.
 
 When the candidate declares a newer schema than the predecessor, the runner then
 starts one more offline Blender process with factory settings, so neither package

@@ -107,17 +107,45 @@ def trained_defaults_snapshot(selected, other):
     return {lane: asdict(state) for lane, state in states.items()}
 
 
-def seed_schema_10(selected, results, origin):
-    """Save a declared EXR original with its projection, plus a saved and a cleared default."""
+def model_defaults_owner():
+    """The installed runtime's lane-defaults owner; older packages have only the store."""
+    runtime = module("blender.runtime")
+    if not hasattr(runtime, "ensure_model_defaults"):
+        return None
+    return runtime.ensure_model_defaults()
+
+
+def check_model_defaults(selected, owner):
+    """Read the saved lanes through the runtime owner that UI and MCP callers use."""
+    if owner is None:
+        return False
+    if owner.scope != selected.scope:
+        raise RuntimeError("Runtime lane defaults use another credential or project scope")
+    stored = {lane: selected.trained_default(lane) for lane in DEFAULT_LANES}
+    read = {lane: owner.lane(lane) for lane in DEFAULT_LANES}
+    if read != stored or owner.saved() != selected.trained_defaults():
+        raise RuntimeError("Runtime lane defaults differ from the saved store")
+    if not owner.saved():
+        raise RuntimeError("Runtime lane defaults lost the saved default")
+    return True
+
+
+def seed_schema_10(selected, results, origin, owner=None):
+    """Save a declared EXR original with its projection, plus a saved and a cleared default.
+
+    Defaults go through the runtime owner when the package has one, as a user's would.
+    """
     jobs = module("core.jobs.store")
     transfers = module("core.jobs.transfers")
+    save = owner.save if owner is not None else selected.set_trained_default
+    clear = owner.clear if owner is not None else selected.clear_trained_default
     default = jobs.TrainedModelDefault(
         "image", "stack", "update-base-model", (jobs.TrainedModelPick("update-lora", 0.75),)
     )
-    selected.set_trained_default(default, expected_revision=0)
+    save(default, expected_revision=0)
     custom = jobs.TrainedModelDefault("render_image", "custom", "update-private-model")
-    saved = selected.set_trained_default(custom, expected_revision=0)
-    selected.clear_trained_default("render_image", expected_revision=saved.revision)
+    saved = save(custom, expected_revision=0)
+    clear("render_image", expected_revision=saved.revision)
     record = selected.create(
         jobs.JobIntent(
             "panorama",
@@ -528,7 +556,7 @@ def seed(profile):
             seed_local_applications(selected, record, origin)
     other.create(replace(template, scope=other.scope, request_id="other-scope"))
     if supports_schema_10():
-        seed_schema_10(selected, results, origin)
+        seed_schema_10(selected, results, origin, model_defaults_owner())
     source = profile / "reference.png"
     source.write_bytes(b"offline preserved reference bytes")
     upload_states = module("core.jobs.upload_store").UploadState
@@ -592,6 +620,11 @@ def check_project_scope(paths, prefs, selected, *, scene=None):
             workflow_snapshot(scene, other)
         if other.records() or uploads.records():
             raise RuntimeError("Update lost job or upload project isolation")
+        if hasattr(other, "trained_defaults") and (
+            other.trained_defaults()
+            or any(other.trained_default(lane).revision for lane in DEFAULT_LANES)
+        ):
+            raise RuntimeError("Update lost trained-model default project isolation")
 
 
 def snapshot(profile):
@@ -721,6 +754,10 @@ def main():
             evidence = json.loads(evidence_path.read_text())
             if store_schema(module("blender.runtime").paths()) != evidence["store_schema"]["after"]:
                 raise RuntimeError("Job storage version changed after restart")
+            selected = module("blender.runtime").ensure_job_store()
+            preserved = check_model_defaults(selected, model_defaults_owner())
+            if preserved != evidence["model_defaults_preserved"]:
+                raise RuntimeError("Runtime lane defaults changed after restart")
         else:
             check_version(profile, args.before)
             seed(profile)
@@ -741,13 +778,15 @@ def main():
                 # Write schema 10 state into the upgraded store; restart must keep it.
                 _, selected, _, _, _, results = stores()
                 origin = module("core.jobs.store").JobOrigin(*ORIGIN)
-                seed_schema_10(selected, results, origin)
+                seed_schema_10(selected, results, origin, model_defaults_owner())
                 expected = snapshot(profile)
                 expected_path.write_text(json.dumps(expected, indent=2) + "\n")
                 seeded = "after-upgrade"
+            selected = module("blender.runtime").ensure_job_store()
             evidence = {
                 "store_schema": {"before": before_schema, "after": after_schema},
                 "schema_10_state": seeded or "unavailable",
+                "model_defaults_preserved": check_model_defaults(selected, model_defaults_owner()),
             }
             evidence_path.write_text(json.dumps(evidence) + "\n")
             bpy.ops.wm.save_userpref()

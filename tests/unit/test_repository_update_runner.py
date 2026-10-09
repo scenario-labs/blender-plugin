@@ -325,8 +325,8 @@ def test_test_predecessor_rejects_absent_candidate(runner, tmp_path):
         runner.fixture_predecessor(tmp_path / "before", archive)
 
 
-def _adopted(runner, directory, version, schema):
-    """A minimal adopted-layout package with its version and job-store schema."""
+def _adopted(runner, directory, version, schema, *, owner=False):
+    """A minimal adopted-layout package with its version, job-store schema and owners."""
     import zipfile
 
     directory.mkdir()
@@ -339,6 +339,8 @@ def _adopted(runner, directory, version, schema):
                 content = f'__version__ = "{version}"\n'.encode()
             package.writestr(name, content)
         package.writestr("core/jobs/store.py", f'"""Unit fixture."""\n\n_VERSION = {schema}\n')
+        if owner:
+            package.writestr("core/jobs/model_defaults.py", '"""Unit fixture."""\n')
     return archive
 
 
@@ -355,16 +357,38 @@ def test_store_schema_is_read_from_package_source_without_import(runner, tmp_pat
     assert zipfile.is_zipfile(missing)
 
 
-@pytest.mark.parametrize("schemas", [(9, 10), (10, 10), (8, 9)])
+def test_lane_defaults_owner_is_detected_from_package_source(runner, tmp_path):
+    assert not runner.model_defaults_owner(_adopted(runner, tmp_path / "ten", "1.0.0", 10))
+    owned = _adopted(runner, tmp_path / "owned", "1.0.0", 10, owner=True)
+    assert runner.model_defaults_owner(owned)
+    archive, _ = runner.fixture(tmp_path / "absent", "1.0.0")
+    assert not runner.model_defaults_owner(archive)
+
+
+@pytest.mark.parametrize(
+    ("schemas", "owner", "claimed"),
+    [
+        ((9, 10), True, True),
+        ((10, 10), False, False),
+        ((10, 10), True, True),
+        ((8, 9), False, False),
+        ((9, 10), True, False),
+        ((10, 10), False, True),
+    ],
+)
 def test_same_version_previous_code_becomes_the_test_predecessor(
-    runner, tmp_path, monkeypatch, schemas
+    runner, tmp_path, monkeypatch, schemas, owner, claimed
 ):
-    """An unreleased predecessor shares the candidate's version; only metadata changes."""
+    """An unreleased predecessor shares the candidate's version; only metadata changes.
+
+    A candidate that ships the lane-defaults owner must report reading the seeded
+    defaults through it, and a candidate without one cannot claim that it did.
+    """
     import contextlib
     import zipfile
 
     previous = _adopted(runner, tmp_path / "previous", "1.2.3", schemas[0])
-    candidate = _adopted(runner, tmp_path / "candidate", "1.2.3", schemas[1])
+    candidate = _adopted(runner, tmp_path / "candidate", "1.2.3", schemas[1], owner=owner)
     monkeypatch.setattr(runner, "normal_profile_root", lambda: tmp_path / "normal")
     monkeypatch.setattr(runner, "find_blender", lambda _: "fixture-blender")
     monkeypatch.setattr(runner, "verify_installed", lambda *_: None)
@@ -417,6 +441,7 @@ def test_same_version_previous_code_becomes_the_test_predecessor(
             else "after-upgrade"
             if schemas[1] >= 10
             else "unavailable",
+            "model_defaults_preserved": claimed,
         }
         (session.directory / "expected-state.json").write_text('{"workflow": null}')
         report.write_text(json.dumps(reports[name]))
@@ -443,9 +468,17 @@ def test_same_version_previous_code_becomes_the_test_predecessor(
         candidate_zip=candidate,
         test_predecessor=True,
     )
+    if claimed != owner:
+        assert runner.run(args) == 1
+        result = json.loads(next(args.artifacts.glob("*/result.json")).read_text())
+        assert result["error"] == "Missing native update and enabled-state evidence"
+        assert set(reports) == {"update"}
+        return
     assert runner.run(args) == 0
     result = json.loads(next(args.artifacts.glob("*/result.json")).read_text())
     assert result["status"] == "passed"
+    assert result["update"]["model_defaults_preserved"] is owner
+    assert result["restart"]["model_defaults_preserved"] is owner
     assert result["predecessor_code"] == "previous-zip"
     assert result["previous_sha256"] == runner.sha256(previous)
     assert set(reports) == {"update", "restart"}
@@ -661,6 +694,54 @@ def test_package_probe_seeds_and_detects_lost_schema_ten_state(package_probe, tm
     assert package_probe.trained_defaults_snapshot(SimpleNamespace(), other) is None
 
 
+def test_package_probe_reads_defaults_through_the_runtime_owner(package_probe, tmp_path):
+    from contextlib import nullcontext
+    from dataclasses import replace
+
+    from scenario.core.jobs import store as jobs
+    from scenario.core.jobs.model_defaults import DefaultsRetired, ModelDefaults
+    from scenario.core.jobs.results import ResultCommands
+    from scenario.core.jobs.transfers import ResultDownloader, StoragePolicy
+
+    scope = jobs.JobScope("https://fixture.invalid", "update-account", "project")
+    path = tmp_path / "jobs.sqlite3"
+    selected = jobs.JobStore(path, scope)
+    (tmp_path / "results").mkdir()
+    results = ResultCommands(
+        SimpleNamespace(),
+        selected,
+        nullcontext,
+        downloader=ResultDownloader(
+            StoragePolicy(frozenset({"fixture.invalid"})), online_access=lambda: False
+        ),
+        root=tmp_path / "results",
+    )
+    origin = jobs.JobOrigin(*package_probe.ORIGIN)
+    owner = ModelDefaults(selected)
+    assert package_probe.check_model_defaults(selected, None) is False
+    with pytest.raises(RuntimeError, match="lost the saved default"):
+        package_probe.check_model_defaults(selected, owner)
+    retired = ModelDefaults(selected)
+    retired.retire()
+    with pytest.raises(DefaultsRetired):
+        package_probe.seed_schema_10(selected, results, origin, retired)
+    assert selected.trained_defaults() == ()
+    package_probe.seed_schema_10(selected, results, origin, owner)
+    package_probe.check_schema_10(selected, results)
+    assert package_probe.check_model_defaults(selected, owner) is True
+    for project in (None, "other-project"):
+        foreign = ModelDefaults(jobs.JobStore(path, replace(scope, project_id=project)))
+        with pytest.raises(RuntimeError, match="another credential or project scope"):
+            package_probe.check_model_defaults(selected, foreign)
+    stale = SimpleNamespace(
+        scope=scope,
+        lane=lambda lane: jobs.TrainedDefaultState(lane, 0),
+        saved=selected.trained_defaults,
+    )
+    with pytest.raises(RuntimeError, match="differ from the saved store"):
+        package_probe.check_model_defaults(selected, stale)
+
+
 def test_update_snapshot_includes_separate_film_upload_and_rejects_scope_leak(package_probe):
     from dataclasses import dataclass, replace
 
@@ -801,13 +882,13 @@ def test_package_probe_rejects_lost_preference_or_runtime_project(package_probe,
 
 
 @pytest.mark.parametrize("other_project", [None, "update-other-project"])
-@pytest.mark.parametrize("record_kind", ["job", "upload"])
+@pytest.mark.parametrize("record_kind", ["job", "upload", "default", "cleared-default"])
 def test_package_probe_detects_records_outside_saved_project(
     package_probe, tmp_path, other_project, record_kind
 ):
     from scenario.core.api.sdk_adapter import Credentials
     from scenario.core.jobs.credential_storage import open_credential_store
-    from scenario.core.jobs.store import JobIntent, JobOrigin
+    from scenario.core.jobs.store import JobIntent, JobOrigin, TrainedModelDefault
     from scenario.core.jobs.upload_sources import UploadSources
     from scenario.core.jobs.upload_store import UploadStore
 
@@ -824,12 +905,23 @@ def test_package_probe_detects_records_outside_saved_project(
         JobIntent("selected", selected.scope, origin, "model", "model", "a" * 64, "b" * 64, "1")
     )
     (tmp_path / "shared-uploads").mkdir()
+    selected.set_trained_default(
+        TrainedModelDefault("image", "custom", "update-private-model"), expected_revision=0
+    )
     package_probe.check_project_scope(paths, prefs, selected)
     other = open_credential_store(tmp_path / "shared-jobs", credentials, project_id=other_project)
+    message = "job or upload project isolation"
     if record_kind == "job":
         other.create(
             JobIntent("escaped", other.scope, origin, "model", "model", "a" * 64, "b" * 64, "1")
         )
+    elif record_kind.endswith("default"):
+        message = "trained-model default project isolation"
+        escaped = TrainedModelDefault("render_image", "custom", "update-private-model")
+        other.set_trained_default(escaped, expected_revision=0)
+        if record_kind == "cleared-default":
+            # A cleared row still proves a write landed in the wrong project.
+            other.clear_trained_default("render_image", expected_revision=1)
     else:
         source = tmp_path / "source.png"
         source.write_bytes(b"synthetic update reference")
@@ -844,5 +936,5 @@ def test_package_probe_detects_records_outside_saved_project(
             content_type="image/png",
         )
         UploadStore(tmp_path / "shared-uploads/uploads.sqlite3", other.scope).create(intent)
-    with pytest.raises(RuntimeError, match="job or upload project isolation"):
+    with pytest.raises(RuntimeError, match=message):
         package_probe.check_project_scope(paths, prefs, selected)

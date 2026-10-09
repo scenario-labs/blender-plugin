@@ -583,8 +583,7 @@ Credential/project retirement discards the UI controller with the shared owner;
 file-load retirement removes approval handles while saved scene inputs survive.
 Closing Studio owns no cancellation or teardown. No new transport, store or
 worker pool is introduced. Interactive nodes, general workflow cancellation,
-integrated workflow reference upload and physical/live
-acceptance remain separate.
+integrated workflow reference upload and physical/live acceptance remain separate.
 
 The 32-entry UI projection cache reclaims idle entries under pressure, discarding
 any unused price but preserving saved scene inputs and independently owned jobs.
@@ -622,7 +621,8 @@ time; drawing does not dereference a removed scene. Attachment adds only a match
 unoccupied model reference, preserves existing slots, records the selected scope,
 and invalidates the old price. It does not start a transfer or paid submission.
 The existing persisted reference-scope guard applies after reopening as well.
-Organization mutations and physical/live acceptance remain outside this UI layer. No new SDK transport, worker pool or job store is added.
+Organization mutations and physical/live acceptance remain outside this UI layer.
+No new SDK transport, worker pool or job store is added.
 
 ## Workflow Library reference bindings
 

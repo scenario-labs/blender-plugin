@@ -258,8 +258,8 @@ do not add physical workflow interaction or live acceptance.
 
 At that workflow-control boundary, structured fields use JSON and file fields
 accept already uploaded asset IDs. Direct reference upload/Library selection,
-interactive nodes and general cancellation were incomplete. No live request or paid generation
-was performed. Physical input, screenshots, layout, focus and viewport acceptance
+interactive nodes and general cancellation were incomplete. No live request or
+paid generation was performed. Physical input, screenshots, layout, focus and viewport acceptance
 remain pending under #66/#68 as acceptance follow-ups. Review readiness is
 separate from complete product acceptance; the earlier update and release
 artifact limitations still apply.
@@ -343,10 +343,11 @@ reject edited or cross-connection values. Clear reference(s) requires a separate
 unchanged-form confirmation and keeps the documented unchecked/default semantics.
 
 Direct workflow uploads, interactive nodes, general workflow cancellation, asset
-organization and physical/live acceptance remain pending. The layer remains a
-draft UI change, with partial references to #64/#65/#66/#68 rather than closure.
+organization and physical/live acceptance remain pending. Track desktop checks
+under #66/#68 separately from review readiness. This layer does not close the
+complete scope of #64/#65/#66/#68.
 
-Exact ZIP SHA-256
+Earlier candidate ZIP SHA-256
 `eaec050ff2c5ba67a25ac55ee9fb9eefb1e546cec7fe0cc6ea632c5a87c74d5d`
 passes 1,129 installed tests on each macOS 27.0.1 arm64 Blender 5.0.1, 5.1.2 and
 5.2.1, with two Windows-only skips per run. All 140 packaged Python files match
@@ -358,6 +359,15 @@ safety. Eleven additional unit cases cover draft file edits without weakening
 complete validation. The full unit suite passes 3,832 tests with the existing SDK
 authentication expected failure. Synthetic transport confirms the exact reference
 payload and a single approved submission without live calls or spending.
+
+After rebasing onto merged #328, ZIP SHA-256
+`5570d0629976ef38b7799dcdc3c09e5a89b188950b211c024c12add813ec4fcf`
+passes 1,141 installed tests on each of those three Blender versions in isolated
+profiles, with two Windows-only skips per run. All 140 packaged Python sources
+match the reviewed checkout. The locked unit suite passes 3,883 tests with the
+same known SDK expected failure. The fourteen workflow-reference regressions and
+merged Studio/Library checks remain intact; these runs add no physical or live
+acceptance.
 
 ## Issue disposition
 

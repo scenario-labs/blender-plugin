@@ -1306,8 +1306,8 @@ changed-input rejection, view changes, continued work and saved-form reload.
 These do not establish physical editing, native dropdown/confirmation behavior,
 scrolling, screenshots, DPI or viewport focus. Track that desktop acceptance
 under #66/#68 without treating unverified configurations as automatic draft gates.
-Interactive nodes, integrated workflow reference upload and
-live outputs remain outside this implementation.
+Interactive nodes, integrated workflow reference upload and live outputs remain
+outside this implementation.
 
 ## Native Library controls
 
@@ -1326,8 +1326,8 @@ unchanged destination, adds a scoped asset reference and invalidates its price.
 The dialog displays a captured scene name, so deleting the scene while it is
 open cannot break redraw; confirmation still rejects the unavailable destination.
 Drawing never starts requests or mutates RNA. Organization writes are separate
-work. Installed synthetic tests establish these state and
-command boundaries, not physical input, focus, viewport, screenshot or DPI proof;
+work. Installed synthetic tests establish these state and command boundaries,
+not physical input, focus, viewport, screenshot or DPI proof;
 track the remaining desktop acceptance under #66/#68 separately from review
 readiness.
 

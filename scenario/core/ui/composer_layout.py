@@ -6,7 +6,7 @@ from dataclasses import dataclass, field
 
 MARGIN = 24
 PILL_WIDTH, PILL_HEIGHT = 320, 44
-# pad + tabs + gap + prompt + gap + model row + pad: no empty band under the buttons
+# card height: pad + tabs + gap + prompt + gap + model row + pad, no empty band under the buttons
 CARD_WIDTH, CARD_HEIGHT = 820, 132
 TAB_HEIGHT, ROW_GAP, PAD = 24, 8, 12
 GENERATE_WIDTH, MODEL_WIDTH, COLLAPSE_SIZE, SETTINGS_WIDTH = 190, 200, 20, 84
@@ -254,6 +254,148 @@ class Layout:
         if self.settings_rect is not None and self.settings_rect.contains(px, py):
             return ("settings",)
         return ("drag",)
+
+
+# Job strip tray, in unscaled pixels: a separate row as wide as the expanded card, outside it.
+STRIP_HEIGHT, STRIP_GAP, STRIP_PAD, STRIP_MIN_TEXT, STRIP_DOT = 30, 6, 8, 96, 8
+DISMISS_SIZE, CHIP_INSET, PROGRESS_HEIGHT, INDICATOR_HEIGHT = 18, 4, 3, 2
+CARD_RADIUS = 12  # corner radius the card and the pill are drawn with
+INSPECT_CHIP = "inspect"  # the one strip chip that is never dropped
+
+
+@dataclass(frozen=True)
+class StripSpec:
+    """The chips a job strip asks for, left to right, as (key, width) pairs.
+
+    Widths are region pixels at the drawn font size, already scaled, so the caller measures each
+    label exactly as it draws it."""
+
+    chips: tuple = ()
+
+
+@dataclass
+class StripLayout:
+    """Geometry of the job strip. A hidden strip draws no tray and takes no clicks.
+
+    `chip_rects` holds the chips that fit, left to right, as (key, Rect) pairs. `indicator_rect`
+    is a draw-only line inside the collapsed pill: the pill keeps its `expand` hit."""
+
+    hidden: bool
+    rect: Rect = None
+    dot_rect: Rect = None
+    text_rect: Rect = None
+    progress_rect: Rect = None
+    chip_rects: tuple = ()
+    dismiss_rect: Rect = None
+    indicator_rect: Rect = None
+
+    def hit(self, px, py):
+        """`job_dismiss`, (`job`, key) for a chip, `drag` on the rest of the tray, else None."""
+        if self.hidden or self.rect is None or not self.rect.contains(px, py):
+            return None
+        if self.dismiss_rect.contains(px, py):
+            return ("job_dismiss",)
+        for key, rect in self.chip_rects:
+            if rect.contains(px, py):
+                return ("job", key)
+        return ("drag",)
+
+
+def _pill_indicator(pill, scale):
+    radius = CARD_RADIUS * scale
+    width = pill.w - 2 * radius
+    if width <= 0:
+        return None
+    height = INDICATOR_HEIGHT * scale
+    return Rect(pill.x + radius, pill.y + height, width, height)
+
+
+def _edge_insets(extent, insets):
+    """Non-negative (low, high) widths covered along one axis, ignored when they leave no room.
+
+    Ignoring that pair keeps a fully covered region on its own extent. A composer placement that
+    avoids side regions applies the same rule, so the card and its tray agree."""
+    low, high = (max(0.0, float(edge or 0.0)) for edge in (insets or (0.0, 0.0)))
+    return (low, high) if low + high < extent else (0.0, 0.0)
+
+
+def strip_placement(layout, region_w, region_h, spec, insets=None, vertical_insets=(0.0, 0.0)):
+    """Place the job strip for a composer `layout` returned by pill_placement.
+
+    Expanded, the tray sits above the card when it fits in the region, else below the card when it
+    fits there, else it is hidden; the card's own controls never move.
+
+    `insets` are the (left, right) widths of side regions (toolbar, sidebar) drawn over this one
+    with region overlap. Callers pass the normalized insets the composer placement laid `layout`
+    out with. When omitted, the layout's own `insets` apply if it records them, else none, so draw,
+    hit and the tray cannot drift apart. The tray stays in the span they leave uncovered, narrowing
+    to it when the card is wider. `vertical_insets` are the (bottom, top) heights of regions drawn
+    over this one along those edges (header, tool header, asset shelf). Blender sends clicks there
+    to those regions, so either position counts only when the whole tray lies above the bottom one
+    and below the top one. Either pair is ignored when it leaves no room.
+
+    Chips are right-aligned before the dismiss box. While the status text would be narrower than
+    STRIP_MIN_TEXT, chips other than INSPECT_CHIP are dropped, last listed first. A tray that still
+    cannot hold that text, Inspect and the dismiss box is hidden. Collapsed, only the pill's
+    indicator line is placed."""
+    s = layout.scale
+    if not layout.expanded:
+        return StripLayout(True, indicator_rect=_pill_indicator(layout.pill_rect, s))
+    card = layout.card_rect
+    if insets is None:
+        insets = getattr(layout, "insets", None)
+    left, right = _edge_insets(region_w, insets)
+    bottom, top = _edge_insets(region_h, vertical_insets)
+    span_lo, span_hi = left, region_w - right
+    w = min(card.w, span_hi - span_lo)
+    h, gap, pad = STRIP_HEIGHT * s, STRIP_GAP * s, STRIP_PAD * s
+    dot, dismiss, inset = STRIP_DOT * s, DISMISS_SIZE * s, CHIP_INSET * s
+    # Each candidate must lie wholly between both vertical insets: a card dragged under a header
+    # can put the tray below it inside the header, and a tall shelf can cover a tray above it.
+    for y in (card.top + gap, card.y - gap - h):
+        if bottom <= y and y + h <= region_h - top:
+            break
+    else:
+        return StripLayout(True)
+    chips = [(str(key), max(0.0, float(width))) for key, width in spec.chips]
+
+    def text_width():
+        # pad, dot, gap, text, gap, then each chip and its gap, the dismiss box and pad
+        return w - (2 * pad + dot + 2 * gap + dismiss) - sum(cw + gap for _, cw in chips)
+
+    minimum = STRIP_MIN_TEXT * s
+    droppable = [index for index, (key, _) in enumerate(chips) if key != INSPECT_CHIP]
+    while droppable and text_width() < minimum:
+        del chips[droppable.pop()]
+    if w <= 0 or text_width() < minimum:
+        return StripLayout(True)
+    tray = Rect(_clamp(card.x, span_lo, span_hi - w), y, w, h)
+    dismiss_rect = Rect(tray.right - pad - dismiss, y + (h - dismiss) / 2, dismiss, dismiss)
+    chip_rects, cx = [], dismiss_rect.x - gap
+    for key, cw in reversed(chips):
+        cx -= cw
+        chip_rects.append((key, Rect(cx, y + inset, cw, h - 2 * inset)))
+        cx -= gap
+    chip_rects.reverse()
+    text_x = tray.x + pad + dot + gap
+    text_w = (chip_rects[0][1].x if chip_rects else dismiss_rect.x) - gap - text_x
+    progress = Rect(text_x, y + PROGRESS_HEIGHT * s, text_w, PROGRESS_HEIGHT * s)
+    text = Rect(text_x, progress.top, text_w, tray.top - inset - progress.top)
+    return StripLayout(
+        False,
+        tray,
+        Rect(tray.x + pad, text.y + (text.h - dot) / 2, dot, dot),
+        text,
+        progress,
+        tuple(chip_rects),
+        dismiss_rect,
+    )
+
+
+def composer_hit(layout, strip, px, py):
+    """What the pointer is on: the job strip first, then the composer's unchanged hits."""
+    hit = strip.hit(px, py) if strip is not None else None
+    return hit or layout.hit(px, py)
 
 
 def _clamp(value, lo, hi):

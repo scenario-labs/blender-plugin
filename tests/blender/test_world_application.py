@@ -1,9 +1,10 @@
 # SPDX-FileCopyrightText: 2026 Scenario Inc.
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""Offline generated PNG/EXR fixtures applied by the installed extension."""
+"""Offline generated PNG/JPEG/EXR fixtures applied by the installed extension."""
 
 import hashlib
 import os
+import re
 import struct
 import tempfile
 import threading
@@ -13,12 +14,36 @@ from dataclasses import replace
 from pathlib import Path
 
 import bpy
-from helpers import submodule
+from helpers import ACES_AP0, ACES_AP1, FIXTURES, REC709, exr_attribute, scanline_exr, submodule
+
+PROGRESSIVE_JPEG = FIXTURES / "synthetic" / "panorama-progressive.jpg"
+
+
+def colorspaces():
+    settings = bpy.types.ColorManagedInputColorspaceSettings.bl_rna.properties["name"]
+    return {item.identifier for item in settings.enum_items}
+
+
+def exif_orientation(data, orientation):
+    """Insert a big-endian EXIF IFD0 orientation tag directly after SOI."""
+    tiff = b"MM\x00\x2a" + struct.pack(">IH", 8, 1)
+    tiff += struct.pack(">HHII", 0x0112, 3, 1, orientation << 16) + bytes(4)
+    payload = b"Exif\0\0" + tiff
+    return data[:2] + b"\xff\xe1" + struct.pack(">H", len(payload) + 2) + payload + data[2:]
+
+
+def container_flag(value):
+    return exr_attribute(b"acesImageContainerFlag", b"int", struct.pack("<i", value))
+
+
+def interop(value):
+    return exr_attribute(b"colorInteropID", b"string", value)
 
 
 class WorldApplicationTests(unittest.TestCase):
     def setUp(self):
         self.module = submodule("blender.world_application")
+        self.panorama = submodule("core.scene.panorama")
         self.before_worlds = set(bpy.data.worlds)
         self.before_images = set(bpy.data.images)
         self.original = bpy.data.worlds.new("Fixture Original")
@@ -39,17 +64,23 @@ class WorldApplicationTests(unittest.TestCase):
         for image in set(bpy.data.images) - self.before_images:
             bpy.data.images.remove(image)
 
-    def fixture(self, *, exr=False, width=4, height=2):
+    def fixture(self, *, exr=False, jpeg=False, width=4, height=2):
         image = bpy.data.images.new("Fixture Pixels", width=width, height=height, float_buffer=exr)
         try:
             image.pixels[:] = [4.0 if exr else 0.5, 0.25, 0.125, 1.0] * (width * height)
-            image.file_format = "OPEN_EXR" if exr else "PNG"
-            path = Path(self.temp.name) / ("fixture.exr" if exr else "fixture.png")
+            image.file_format = "OPEN_EXR" if exr else "JPEG" if jpeg else "PNG"
+            name = "fixture.exr" if exr else "fixture.jpg" if jpeg else "fixture.png"
+            path = Path(self.temp.name) / name
             image.filepath_raw = str(path)
             image.save()
             return path
         finally:
             bpy.data.images.remove(image)
+
+    def write(self, name, data):
+        path = Path(self.temp.name) / name
+        path.write_bytes(data)
+        return path
 
     def assert_original(self):
         self.assertEqual(self.scene.world, self.original)
@@ -86,6 +117,337 @@ class WorldApplicationTests(unittest.TestCase):
         self.assertTrue(receipt.info.hdr_capable)
         self.assertTrue(receipt._image.is_float)
         self.assertGreater(max(receipt._image.pixels), 1.0)
+        self.assertTrue(receipt.restore())
+        self.assert_original()
+
+    def test_jpeg_fixture_applies_as_packed_ldr_byte_image(self):
+        path = self.fixture(jpeg=True, width=8, height=4)
+        expected = self.download_receipt(path)
+        receipt = self.module.apply_world(
+            self.scene, path, expected_receipt=expected, media_type="image/jpeg"
+        )
+        path.unlink()
+        world, image = self.scene.world, receipt._image
+        self.assertEqual(receipt.info, self.panorama.PanoramaInfo("JPEG", 8, 4, False))
+        self.assertEqual((image.file_format, tuple(image.size)), ("JPEG", (8, 4)))
+        self.assertFalse(image.is_float)
+        self.assertEqual(image.colorspace_settings.name, "sRGB")
+        self.assertEqual(image.filepath, "")
+        self.assertEqual(hashlib.sha256(image.packed_file.data).hexdigest(), expected.sha256)
+        environment = next(node for node in world.node_tree.nodes if node.type == "TEX_ENVIRONMENT")
+        self.assertEqual((environment.projection, environment.image), ("EQUIRECTANGULAR", image))
+        self.assertTrue(receipt.restore())
+        self.assert_original()
+        self.assertNotIn(world, tuple(bpy.data.worlds))
+        self.assertNotIn(image, tuple(bpy.data.images))
+
+    def test_nonpanoramic_or_truncated_jpeg_rejected_before_decode(self):
+        for size, cut, message in (((4, 4), 0, "2:1"), ((8, 4), 3, "incomplete")):
+            path = self.fixture(jpeg=True, width=size[0], height=size[1])
+            if cut:
+                # libjpeg would conceal this truncated scan; the EOI check rejects it.
+                path.write_bytes(path.read_bytes()[:-cut])
+            with (
+                self.subTest(size=size, cut=cut),
+                unittest.mock.patch.object(self.module, "_load_image") as decode,
+            ):
+                worlds, images = set(bpy.data.worlds), set(bpy.data.images)
+                with self.assertRaisesRegex(self.module.PanoramaError, message):
+                    self.module.apply_world(self.scene, path)
+                decode.assert_not_called()
+                self.assertEqual((set(bpy.data.worlds), set(bpy.data.images)), (worlds, images))
+                self.assert_original()
+
+    def test_exif_rotated_jpeg_rejected_because_blender_ignores_orientation(self):
+        image = bpy.data.images.new("Fixture Gradient", width=8, height=4)
+        try:
+            image.pixels[:] = [
+                value
+                for index in range(32)
+                for value in ((index % 8) / 7, (index // 8) / 3, 0.25, 1.0)
+            ]
+            image.file_format = "JPEG"
+            plain = Path(self.temp.name) / "plain.jpg"
+            image.filepath_raw = str(plain)
+            image.save()
+        finally:
+            bpy.data.images.remove(image)
+        rotated = self.write("rotated.jpg", exif_orientation(plain.read_bytes(), 6))
+        upright = self.write("upright.jpg", exif_orientation(plain.read_bytes(), 1))
+        decoded = []
+        for path in (plain, rotated):
+            # Blender's own decoder applies stored pixel order whatever the tag says.
+            loaded = bpy.data.images.load(str(path), check_existing=False)
+            try:
+                decoded.append((tuple(loaded.size), tuple(loaded.pixels)))
+            finally:
+                bpy.data.images.remove(loaded)
+        self.assertEqual(decoded[0], decoded[1])
+        with unittest.mock.patch.object(self.module, "_load_image") as decode:
+            with self.assertRaisesRegex(self.module.PanoramaError, "EXIF-rotated or mirrored"):
+                self.module.apply_world(self.scene, rotated, media_type="image/jpeg")
+            decode.assert_not_called()
+        self.assert_original()
+        receipt = self.module.apply_world(self.scene, upright, media_type="image/jpeg")
+        self.assertEqual((tuple(receipt._image.size), tuple(receipt._image.pixels)), decoded[0])
+        self.assertTrue(receipt.restore())
+        self.assert_original()
+
+    def test_progressive_jpeg_fixture_decodes_natively(self):
+        data = PROGRESSIVE_JPEG.read_bytes()
+        self.assertIn(b"\xff\xc2", data[: data.index(b"\xff\xda")])
+        self.assertEqual(data.count(b"\xff\xda"), 10)
+        path = self.write("progressive.jpg", data)
+        expected = self.download_receipt(path)
+        receipt = self.module.apply_world(
+            self.scene, path, expected_receipt=expected, media_type="image/jpeg"
+        )
+        image = receipt._image
+        self.assertEqual(receipt.info, self.panorama.PanoramaInfo("JPEG", 32, 16, False))
+        self.assertEqual(
+            (image.file_format, image.is_float, image.colorspace_settings.name),
+            ("JPEG", False, "sRGB"),
+        )
+        self.assertEqual(hashlib.sha256(image.packed_file.data).hexdigest(), expected.sha256)
+        pixels = tuple(image.pixels)
+        # Blender rows start at the bottom: blue and yellow below, red and green above.
+        corners = {
+            (0, 0): (40, 40, 200),
+            (31, 0): (200, 200, 40),
+            (0, 15): (200, 40, 40),
+            (31, 15): (40, 200, 40),
+        }
+        for (x, y), color in corners.items():
+            index = (y * 32 + x) * 4
+            for actual, wanted in zip(pixels[index : index + 3], color, strict=True):
+                self.assertAlmostEqual(actual, wanted / 255, delta=0.03)
+        self.assertTrue(receipt.restore())
+        self.assert_original()
+
+    def test_extended_sequential_jpeg_decodes_like_its_baseline_twin(self):
+        baseline = self.fixture(jpeg=True, width=8, height=4)
+        data = baseline.read_bytes()
+        frame = data.index(b"\xff\xc0")
+        self.assertLess(frame, data.index(b"\xff\xda"))
+        # A baseline frame is a valid extended-sequential (SOF1) Huffman frame.
+        extended = self.write("extended.jpg", data[:frame] + b"\xff\xc1" + data[frame + 2 :])
+        pixels = []
+        for path in (baseline, extended):
+            receipt = self.module.apply_world(self.scene, path, media_type="image/jpeg")
+            self.assertEqual(receipt._image.colorspace_settings.name, "sRGB")
+            pixels.append(tuple(receipt._image.pixels))
+            self.assertTrue(receipt.restore())
+        self.assertEqual(pixels[0], pixels[1])
+        self.assert_original()
+
+    def test_progressive_scan_flood_rejected_before_blender_decodes(self):
+        data = PROGRESSIVE_JPEG.read_bytes()
+        start = data.index(b"\xff\xda")
+        header = data[start : start + 2 + struct.unpack_from(">H", data, start + 2)[0]]
+        # About 15 bytes per scan; each would make libjpeg revisit every block.
+        flood = (header + b"\x00") * self.panorama.MAX_JPEG_SCANS
+        path = self.write("flood.jpg", data[:-2] + flood + b"\xff\xd9")
+        with unittest.mock.patch.object(self.module, "_load_image") as decode:
+            with self.assertRaisesRegex(self.module.PanoramaError, "scan limit"):
+                self.module.apply_world(self.scene, path, media_type="image/jpeg")
+            decode.assert_not_called()
+        self.assert_original()
+
+    def test_comment_flood_after_the_first_scan_rejected_before_blender_decodes(self):
+        data = PROGRESSIVE_JPEG.read_bytes()
+        segments = len(re.findall(rb"\xff[^\x00\xd0-\xd7\xff]", data)) - 2  # SOI and EOI
+        second_scan = data.index(b"\xff\xda", data.index(b"\xff\xda") + 2)
+        comment = b"\xff\xfe\x00\x02"
+        # Blender keeps JPEG comments and libjpeg walks its saved-marker list to
+        # append each one, so 160,000 of them would stall the main thread.
+        flood = comment * 160_000
+        for name, flooded in (
+            ("after.jpg", data[:-2] + flood + data[-2:]),
+            ("between.jpg", data[:second_scan] + flood + data[second_scan:]),
+        ):
+            path = self.write(name, flooded)
+            with (
+                self.subTest(name=name),
+                unittest.mock.patch.object(self.module, "_load_image") as decode,
+            ):
+                with self.assertRaisesRegex(self.module.PanoramaError, "segment limit"):
+                    self.module.apply_world(self.scene, path, media_type="image/jpeg")
+                decode.assert_not_called()
+            self.assert_original()
+        # Up to the shared segment budget, Blender still decodes the same pixels.
+        room = self.panorama.MAX_JPEG_SEGMENTS - segments
+        pixels = []
+        for count in (0, room):
+            flooded = data[:second_scan] + comment * count + data[second_scan:]
+            path = self.write(f"comments-{count}.jpg", flooded)
+            receipt = self.module.apply_world(self.scene, path, media_type="image/jpeg")
+            pixels.append(tuple(receipt._image.pixels))
+            self.assertTrue(receipt.restore())
+        self.assertEqual(pixels[0], pixels[1])
+        flooded = data[:second_scan] + comment * (room + 1) + data[second_scan:]
+        with self.assertRaisesRegex(self.module.PanoramaError, "segment limit"):
+            self.module.apply_world(self.scene, self.write("over.jpg", flooded))
+        self.assert_original()
+
+    def test_aces_ap0_exr_uses_aces2065_1_and_restore_guards_colorspace(self):
+        self.assertIn("ACES2065-1", colorspaces())
+        path = self.write("aces.exr", scanline_exr(8, 4, ACES_AP0))
+        expected = self.download_receipt(path)
+        receipt = self.module.apply_world(
+            self.scene, path, expected_receipt=expected, media_type="image/aces"
+        )
+        world, image = self.scene.world, receipt._image
+        self.assertEqual(receipt.info.chromaticities, "aces_ap0")
+        self.assertTrue(receipt.info.hdr_capable and image.is_float)
+        self.assertEqual(image.colorspace_settings.name, "ACES2065-1")
+        # AP0 red converts to a different scene-linear Rec.709 value than raw 4.0.
+        self.assertNotAlmostEqual(image.pixels[0], 4.0, delta=0.5)
+        self.assertEqual(hashlib.sha256(image.packed_file.data).hexdigest(), expected.sha256)
+        image.colorspace_settings.name = "Linear Rec.709"
+        with self.assertRaises(self.module.WorldApplicationError):
+            receipt.restore()
+        self.assertEqual(self.scene.world, world)
+        image.colorspace_settings.name = "ACES2065-1"
+        self.assertTrue(receipt.restore())
+        self.assert_original()
+
+    def test_rec709_and_undeclared_exr_keep_blender_linear_default(self):
+        for primaries in (None, REC709):
+            path = self.write("linear.exr", scanline_exr(8, 4, primaries))
+            with self.subTest(primaries=primaries):
+                receipt = self.module.apply_world(self.scene, path, media_type="image/x-exr")
+                image = receipt._image
+                self.assertEqual(image.colorspace_settings.name, "Linear Rec.709")
+                self.assertAlmostEqual(image.pixels[0], 4.0, places=4)
+                self.assertTrue(receipt.restore())
+                self.assert_original()
+
+    def test_other_declared_primaries_rejected_before_decode(self):
+        path = self.write("ap1.exr", scanline_exr(8, 4, ACES_AP1))
+        with unittest.mock.patch.object(self.module, "_load_image") as decode:
+            with self.assertRaisesRegex(self.module.PanoramaError, "Rec.709 or ACES AP0"):
+                self.module.apply_world(self.scene, path, media_type="image/aces")
+            decode.assert_not_called()
+        self.assert_original()
+
+    def test_aces_container_flag_or_interop_id_selects_aces2065_1(self):
+        for name, extra in (
+            ("flag", container_flag(1)),
+            ("interop", interop(b"lin_ap0_scene")),
+        ):
+            path = self.write(f"{name}.exr", scanline_exr(8, 4, extra=extra))
+            with self.subTest(name):
+                receipt = self.module.apply_world(self.scene, path, media_type="image/aces")
+                image = receipt._image
+                self.assertEqual(receipt.info.chromaticities, "aces_ap0")
+                self.assertEqual(image.colorspace_settings.name, "ACES2065-1")
+                self.assertNotAlmostEqual(image.pixels[0], 4.0, delta=0.5)
+                self.assertTrue(receipt.restore())
+                self.assert_original()
+
+    def blender_colorspace(self, path):
+        loaded = bpy.data.images.load(str(path), check_existing=False)
+        try:
+            return loaded.colorspace_settings.name
+        finally:
+            bpy.data.images.remove(loaded)
+
+    def test_conflicting_color_declarations_rejected_before_decode(self):
+        # Blender itself selects ACES2065-1 for the flag beside Rec.709 primaries.
+        path = self.write("conflict.exr", scanline_exr(8, 4, REC709, extra=container_flag(1)))
+        self.assertEqual(self.blender_colorspace(path), "ACES2065-1")
+        with unittest.mock.patch.object(self.module, "_load_image") as decode:
+            with self.assertRaisesRegex(self.module.PanoramaError, "declarations conflict"):
+                self.module.apply_world(self.scene, path, media_type="image/aces")
+            decode.assert_not_called()
+        self.assert_original()
+
+    def test_interop_id_conflicting_with_declared_primaries_fails_after_decode(self):
+        # The preflight leaves lin_ap1_scene unclassified; Blender selects ACEScg.
+        path = self.write("ap1-id.exr", scanline_exr(8, 4, REC709, extra=interop(b"lin_ap1_scene")))
+        self.assertEqual(self.blender_colorspace(path), "ACEScg")
+        worlds, images = set(bpy.data.worlds), set(bpy.data.images)
+        with self.assertRaisesRegex(self.module.WorldApplicationError, "ACEScg"):
+            self.module.apply_world(self.scene, path, media_type="image/aces")
+        self.assertEqual((set(bpy.data.worlds), set(bpy.data.images)), (worlds, images))
+        self.assert_original()
+
+    def test_interop_id_without_other_declarations_keeps_blender_colorspace(self):
+        cases = (
+            # Blender converts this AP1 declaration itself.
+            (scanline_exr(8, 4, extra=interop(b"lin_ap1_scene")), None, "ACEScg"),
+            # Rec.709 primaries with the sRGB transfer another writer may declare.
+            (
+                scanline_exr(8, 4, REC709, extra=interop(b"srgb_rec709_display")),
+                "rec709",
+                "sRGB",
+            ),
+        )
+        for data, declared, colorspace in cases:
+            path = self.write("interop.exr", data)
+            with self.subTest(colorspace=colorspace):
+                receipt = self.module.apply_world(self.scene, path, media_type="image/x-exr")
+                image = receipt._image
+                self.assertEqual(receipt.info.chromaticities, declared)
+                self.assertEqual(image.colorspace_settings.name, colorspace)
+                self.assertNotAlmostEqual(image.pixels[0], 4.0, delta=0.5)
+                self.assertTrue(receipt.restore())
+                self.assert_original()
+
+    def test_blender_written_exr_keeps_blender_colorspace_choice(self):
+        # Blender 5.0-5.2 label their own Image.save EXR output with a
+        # colorInteropID that the preflight does not classify.
+        path = self.fixture(exr=True, width=8, height=4)
+        self.assertIn(b"colorInteropID", path.read_bytes()[:4096])
+        receipt = self.module.apply_world(self.scene, path, media_type="image/x-exr")
+        self.assertIsNone(receipt.info.chromaticities)
+        self.assertEqual(receipt._image.colorspace_settings.name, self.blender_colorspace(path))
+        self.assertGreater(max(receipt._image.pixels), 1.0)
+        self.assertTrue(receipt.restore())
+        self.assert_original()
+
+    def test_unexpected_decoded_colorspace_fails_without_leaking_world_or_image(self):
+        # Stand-ins for metadata the preflight cannot classify or a configuration
+        # naming color spaces differently: application fails closed.
+        path = self.write("aces.exr", scanline_exr(8, 4, ACES_AP0))
+        inspect = self.module.inspect_panorama
+
+        def misclassified(data):
+            return replace(inspect(data), chromaticities="rec709")
+
+        for patcher in (
+            unittest.mock.patch.object(self.module, "inspect_panorama", misclassified),
+            unittest.mock.patch.dict(
+                self.module._COLORSPACES, {"aces_ap0": frozenset({"Fixture Space"})}
+            ),
+        ):
+            worlds, images = set(bpy.data.worlds), set(bpy.data.images)
+            with self.subTest(patcher=patcher), patcher:
+                with self.assertRaisesRegex(self.module.WorldApplicationError, "ACES2065-1"):
+                    self.module.apply_world(self.scene, path)
+            self.assertEqual((set(bpy.data.worlds), set(bpy.data.images)), (worlds, images))
+            self.assert_original()
+
+    def test_saved_media_type_must_name_the_actual_container(self):
+        path = self.fixture()
+        for media_type in ("image/jpeg", "image/aces", "image/x-exr"):
+            with (
+                self.subTest(media_type=media_type),
+                unittest.mock.patch.object(self.module, "_load_image") as decode,
+            ):
+                with self.assertRaisesRegex(self.module.WorldApplicationError, "media type"):
+                    self.module.apply_world(self.scene, path, media_type=media_type)
+                decode.assert_not_called()
+        for media_type in ("image/webp", "image/vnd.radiance", "", 3):
+            with (
+                self.subTest(media_type=media_type),
+                unittest.mock.patch.object(self.module.os, "open") as opened,
+            ):
+                with self.assertRaisesRegex(self.module.WorldApplicationError, "PNG, JPEG"):
+                    self.module.apply_world(self.scene, path, media_type=media_type)
+                opened.assert_not_called()
+        self.assert_original()
+        receipt = self.module.apply_world(self.scene, path, media_type="image/png")
         self.assertTrue(receipt.restore())
         self.assert_original()
 

@@ -5,6 +5,7 @@
 import os
 import threading
 import unittest
+from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
 import bpy
@@ -80,6 +81,7 @@ class SDKConnectionTests(unittest.TestCase):
         self.deliver()
         self.assertIn("Connection failed", self.runtime.state.account_label)
         self.assertIn("403", self.runtime.state.account_label)
+        self.assertIn("Check the selected API key and secret", self.runtime.state.account_label)
         self.assertNotIn("do-not-expose", self.runtime.state.account_label)
         self.status = 200
         self.runtime.request_connection_check()
@@ -179,3 +181,93 @@ class SDKConnectionTests(unittest.TestCase):
                 layout = Mock()
                 self.assertTrue(panels.draw_account_strip(layout, bpy.context))
                 self.assertEqual(layout.row.return_value.label.call_args.kwargs["icon"], expected)
+
+    def test_permission_guidance_wraps_instead_of_clipping(self):
+        message = (
+            "Access denied (HTTP 403). Check the selected API key and secret, and that the "
+            "Project ID belongs to this key, or clear it to use the key's default scope."
+        )
+        label = f"Connection failed: {message}"
+        prefs = submodule("prefs")
+        panels = submodule("blender.panels")
+        self.runtime.state.connection_status = "error"
+        self.runtime.state.account_label = label
+        self.runtime.state.catalog_error = message
+        owner = SimpleNamespace(
+            layout=Mock(), credential_source="ENVIRONMENT", composer_enabled=True
+        )
+        with patch.object(prefs.updates, "draw"):
+            prefs.ScenarioPreferences.draw(owner, bpy.context)
+        lane = SimpleNamespace(estimate_state="ERROR", estimate_error=message, last_error=message)
+        loading, generate_row = Mock(), Mock()
+        panels.draw_loading(loading)
+        with (
+            patch.object(panels, "generate_enabled", return_value=False),
+            patch.object(panels, "generate_button_text", return_value="Generate"),
+        ):
+            panels.draw_generate_row(generate_row, lane, "image")
+        # A failed model-description read keeps its "Could not load this model: " prefix.
+        failure = f"Could not load this model: {message}"
+        schema_lane = SimpleNamespace(model_id="fixture-model", last_error=failure)
+        self.runtime.state.model_errors[schema_lane.model_id] = failure
+        schema_failed, schema_offline = Mock(), Mock()
+        panels.draw_schema_status(schema_failed, schema_lane, "image")
+        with patch.object(self.runtime, "online", return_value=False):
+            panels.draw_schema_status(schema_offline, schema_lane, "image")
+        status = "Access denied (HTTP 403). Check the"
+        for drawn, text, width, icons, first in (
+            (owner.layout.box.return_value.label, label, 70, ["ERROR"], status),
+            (loading.label, message, panels.SIDEBAR_CHARS, ["ERROR"], status),
+            (generate_row.label, message, panels.SIDEBAR_CHARS, ["INFO", "ERROR"], status),
+            (schema_failed.label, failure, panels.SIDEBAR_CHARS, ["ERROR"], "Could not load"),
+        ):
+            with self.subTest(width=width, icons=icons):
+                blocks = wrapped_blocks(drawn, text)
+                self.assertEqual([block[0][1] for block in blocks], icons)
+                for block in blocks:
+                    self.assertGreater(len(block), 2)
+                    self.assertTrue(all(len(line) <= width for line, _ in block))
+                    self.assertEqual([icon for _, icon in block[1:]], ["NONE"] * (len(block) - 1))
+                    # The status (or the failed-read prefix) starts the first line.
+                    self.assertIn(first, block[0][0])
+        schema_failed.operator.assert_called_once_with(
+            "scenario.retry_model", text="Retry loading model", icon="FILE_REFRESH"
+        )
+        # The offline refusal wraps too, without a retry that could not read.
+        offline = wrapped_blocks(schema_offline.label, self.generation.MODEL_OFFLINE)
+        self.assertEqual([block[0][1] for block in offline], ["ERROR"])
+        self.assertGreater(len(offline[0]), 1)
+        self.assertTrue(all(len(line) <= panels.SIDEBAR_CHARS for line, _ in offline[0]))
+        schema_offline.operator.assert_not_called()
+        self.runtime.state.connection_status = "pending"
+        self.runtime.state.account_label = "Checking Scenario connection..."
+        owner.layout = Mock()
+        with patch.object(prefs.updates, "draw"):
+            prefs.ScenarioPreferences.draw(owner, bpy.context)
+        owner.layout.box.return_value.label.assert_any_call(
+            text="Checking Scenario connection...", icon="INFO"
+        )
+        # Without a failure recorded this session, the saved lane error is not drawn.
+        self.runtime.state.model_errors.clear()
+        schema_idle = Mock()
+        panels.draw_schema_status(schema_idle, schema_lane, "image")
+        schema_idle.label.assert_called_once_with(
+            text="The model description is not loaded", icon="INFO"
+        )
+
+
+def wrapped_blocks(labels, text):
+    """Contiguous label runs whose lines rejoin to text, as (line, icon) pairs."""
+    entries = [
+        (entry.kwargs.get("text", ""), entry.kwargs.get("icon")) for entry in labels.call_args_list
+    ]
+    blocks, start = [], 0
+    while start < len(entries):
+        for end in range(start + 1, len(entries) + 1):
+            if " ".join(line for line, _ in entries[start:end]) == text:
+                blocks.append(entries[start:end])
+                start = end
+                break
+        else:
+            start += 1
+    return blocks

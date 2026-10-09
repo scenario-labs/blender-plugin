@@ -52,6 +52,17 @@ List records are converted before publishing the cache. Malformed-record
 conversion failures preserve the previous list and reach every overlapping caller
 as a sanitized `ScenarioError`, keeping failures on the catalog event queue.
 
+The same connection also exposes core reads for later trained-model routing
+([#97](https://github.com/scenario-labs/blender-plugin/issues/97)). Explicit bulk
+model summaries are read at most once per connection, share pending reads, are
+cached apart from form schemas and are cleared on retirement. Trained records
+from the private list and public LoRAs are classified from REST fields; a
+malformed `type` is unsupported rather than an exception. No UI, MCP or catalog
+load calls these reads yet. Lane lists and the picker keep their former
+exclusion of LoRAs, compositions and other trained types, and still list a
+private custom model that reaches them.
+See [trained-model catalog reads](../SDK_ADOPTION.md#trained-model-catalog-reads).
+
 The GUI pump and main-thread MCP catalog/schema calls deliver the same queued
 completions. Credential changes retire the context, discard its model/schema
 caches and visible quotes, and reject late success/error events from the old
@@ -103,7 +114,11 @@ waits for its connection worker and drains that queue without a GUI timer. The
 account strip shows pending, error or success independently of cached models.
 Credential changes and runtime reset
 discard late success and failure. The result confirms model access; it does not
-derive account/project identity or activate durable jobs.
+derive account/project identity or activate durable jobs. Failures carry the
+adapter's fixed status text for every SDK request: HTTP 401 and 403 ask to check
+the selected key and secret, a 403 names the Project ID only when that request
+carried the override, and 429 asks for a later retry. Other statuses keep the
+generic HTTP text; no message includes response bodies, URLs or identifiers.
 
 Explicit local MCP recovery calls now lazily activate the selected
 [JobSession](../BLENDER_JOB_CONTEXT.md). `list_local_jobs` reads its durable
@@ -250,8 +265,11 @@ scene, preserves existing selection and packs its textures. Rigs, weights and
 node/morph animation clips remain in the new group; timing uses scene FPS without
 changing the current frame or timeline range. Its separate durable claim/receipt
 recovery follows the same session; in-place rig/animation transfer remains open.
-Saved PNG/EXR results also offer explicit World replacement, with a separate
-guarded restore in the current session. Completed jobs can reuse saved results
+Saved PNG, JPEG and OpenEXR results, including `image/aces`, also offer explicit
+World replacement, with a separate guarded restore in the current session.
+Application refuses a file whose container differs from its saved media type;
+[World application](../WORLD_APPLICATION.md#accepted-local-files) lists the
+accepted variants. Completed jobs can reuse saved results
 through fresh UI/MCP approval and a separate durable local claim, preserving the
 original generation outcome. Interrupted local claims block another application.
 Saved texture sets also offer explicit one-mesh material-slot approval, using

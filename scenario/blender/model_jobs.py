@@ -16,6 +16,7 @@ from ..core.api.catalog import GENERATION_LANES, LANE_KIND
 from ..core.api.errors import ScenarioError
 from ..core.jobs.records import JobRecord
 from ..core.jobs.store import JobOrigin, JobState, LocalApplicationState, StoredJob, _identity
+from ..core.scene.panorama import WORLD_MEDIA_TYPES
 from .job_session import (
     ImageResultUncertain,
     MaterialResultUncertain,
@@ -113,6 +114,7 @@ class WorldApplicationApproval:
     asset_id: str
     restore: bool = False
     kind: str = "world"
+    media_type: str = ""
 
 
 @dataclass(frozen=True)
@@ -486,7 +488,7 @@ class ModelJobs:
             except (PanoramaError, WorldApplicationError):
                 self._pause(
                     request_id,
-                    "World import needs a supported, unchanged 2:1 PNG/EXR panorama; inspect the saved result",
+                    "World import needs a supported, unchanged 2:1 PNG/JPEG/EXR panorama; inspect the saved result",
                 )
             except ModelResultUncertain as error:
                 if error.application is not None:
@@ -640,10 +642,7 @@ class ModelJobs:
                 and len(record.intent.mesh_sources[0].mesh_source.objects) == 1
             ):
                 actions.append("apply_mesh_source")
-        if reusable and any(
-            item.asset.media_type in {"image/png", "image/exr", "image/x-exr"}
-            for item in record.results
-        ):
+        if reusable and any(item.asset.media_type in WORLD_MEDIA_TYPES for item in record.results):
             actions.append("apply_world")
         if reusable:
             try:
@@ -1066,14 +1065,18 @@ class ModelJobs:
             raise ScenarioError(0, "Choose the destination and finish existing reviews first")
         bpy.context.view_layer.update()
         destination = self.session.capture(scene)
+        media_type = ""
         if restore:
             self._world_application(request_id, destination)
-        elif not any(
-            item.asset.asset_id == asset_id
-            and item.asset.media_type in {"image/png", "image/exr", "image/x-exr"}
-            for item in record.results
-        ):
-            raise ScenarioError(0, "Choose one saved PNG or EXR panorama")
+        else:
+            selected = [
+                item.asset.media_type
+                for item in record.results
+                if item.asset.asset_id == asset_id and item.asset.media_type in WORLD_MEDIA_TYPES
+            ]
+            if not selected:
+                raise ScenarioError(0, "Choose one saved PNG, JPEG or OpenEXR panorama")
+            media_type = selected[0]
         ticket = WorldApplicationApproval(
             uuid.uuid4().hex,
             record,
@@ -1083,6 +1086,7 @@ class ModelJobs:
             scene.world,
             asset_id or "",
             restore,
+            media_type=media_type,
         )
         self._application_approvals[ticket.identifier] = ticket
         return ticket

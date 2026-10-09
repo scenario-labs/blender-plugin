@@ -7,7 +7,8 @@ These tests document and check the assumptions needed for that replacement:
 project selection and dry-run flags reach the correct query parameters,
 model-specific inputs and exact quote bytes survive unchanged, response fields
 remain accessible, and disabling retries prevents a second submission attempt.
-Upload lifecycle and job discovery tests check scope, wrappers and cursors;
+Upload lifecycle, job discovery, private trained model lists and bulk model
+reads check scope, wrappers and cursors;
 cancellation fixtures preserve acknowledgements and completion races.
 They also record the known bug where ambient Basic credentials override an
 explicitly selected Bearer token; that assertion is an expected failure.
@@ -710,3 +711,95 @@ def test_asset_raw_response_preserves_texture_role_separately_from_mime(client_f
     assert len(requests) == 1
     assert (requests[0].method, requests[0].url.path) == ("GET", "/v1/assets/fixture-texture")
     assert dict(requests[0].url.params) == {"projectId": PROJECT}
+
+
+def test_model_get_bulk_raw_wrapper_keeps_ids_in_body_and_scope_in_query(client_factory):
+    # models.get_bulk is a generated SDK 2.2.0 method; no raw API fallback is needed.
+    fixture = {
+        "models": [
+            {
+                "id": "fixture-base",
+                "privacy": "public",
+                "type": "custom",
+                "uiConfig": {
+                    "lorasComponent": {
+                        "label": "LoRAs",
+                        "modelInput": "loras",
+                        "scaleInput": "lorasScale",
+                    }
+                },
+                "futureField": {"retain": True},
+            }
+        ],
+        "futureWrapperField": 1,
+    }
+    raw = json.dumps(fixture).encode()
+    requests = []
+
+    def respond(request):
+        requests.append(request)
+        return httpx.Response(200, content=raw)
+
+    sdk = client_factory(respond)
+    response = sdk.models.with_raw_response.get_bulk(
+        model_ids=["fixture-base", "fixture-lora"], project_id=PROJECT
+    )
+    assert response.read() == raw
+    assert len(requests) == 1
+    request = requests[0]
+    assert (request.method, request.url.path) == ("POST", "/v1/models/get-bulk")
+    assert dict(request.url.params) == {"projectId": PROJECT}
+    assert json.loads(request.content) == {"modelIds": ["fixture-base", "fixture-lora"]}
+    parsed = sdk.models.get_bulk(model_ids=["fixture-base"])
+    component = parsed.models[0].ui_config.loras_component
+    assert (component.api_model_input, component.scale_input) == ("loras", "lorasScale")
+    assert "projectId" not in requests[1].url.params
+
+
+def test_private_model_list_keeps_trained_filter_scope_and_cursor(client_factory):
+    requests = []
+
+    def respond(request):
+        requests.append(request)
+        return httpx.Response(
+            200,
+            json={
+                "models": [{"id": "fixture-lora", "type": "flux.1-lora", "privacy": "private"}],
+                "nextPaginationToken": "next+/=",
+            },
+        )
+
+    sdk = client_factory(respond)
+    response = sdk.models.with_raw_response.list(
+        privacy="private",
+        status="trained",
+        page_size=100,
+        pagination_token="cursor+/=",
+        project_id=PROJECT,
+    )
+    assert json.loads(response.read())["nextPaginationToken"] == "next+/="
+    assert len(requests) == 1
+    assert (requests[0].method, requests[0].url.path) == ("GET", "/v1/models")
+    assert dict(requests[0].url.params) == {
+        "privacy": "private",
+        "status": "trained",
+        "pageSize": "100",
+        "paginationToken": "cursor+/=",
+        "projectId": PROJECT,
+    }
+
+
+@pytest.mark.parametrize("status", [403, 404])
+def test_model_retrieve_denial_is_one_status_error(client_factory, status):
+    # The adapter maps these statuses to AdapterUnavailable without retrying.
+    requests = []
+
+    def respond(request):
+        requests.append(request)
+        return httpx.Response(status, json={"message": "fixture denial"})
+
+    sdk = client_factory(respond)
+    with pytest.raises(APIStatusError) as error:
+        sdk.models.with_raw_response.retrieve("fixture-model", project_id=PROJECT)
+    assert error.value.status_code == status
+    assert len(requests) == 1

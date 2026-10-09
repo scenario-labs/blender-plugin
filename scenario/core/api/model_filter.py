@@ -3,18 +3,14 @@
 """Scenario's model taxonomy for the picker dialog: modality tabs, category chips, search, recents. No bpy.
 
 Mirrors "Choose a Model" in the web app (2026-08-28): tabs Image / Video / Audio / 3D and, per tab, the category
-chips listed in CATEGORIES. LoRAs (Scenario's trained style presets) and deprecated models never appear."""
+chips listed in CATEGORIES. Trained models (LoRAs, compositions and other trained or unsupported types) and
+deprecated models never appear here: catalog.is_trained classifies them for separate routing work. A private
+custom model is an ordinary model and stays visible."""
+
 import json
 import pathlib
 
-try:
-    from .catalog import is_lora
-except ImportError:  # an older installed catalog without the helper (tests loading this file against a 0.6.0 build)
-    def is_lora(record):
-        raw = record.raw or {}
-        if record.type and record.type != "custom":
-            return True
-        return bool(raw.get("parentModelId") or raw.get("trainingImagesNumber") or raw.get("concepts"))
+from .catalog import is_trained
 
 MODALITIES = (
     ("image", "Image", "image"),
@@ -23,19 +19,65 @@ MODALITIES = (
     ("3d", "3D", "3d"),
 )
 CATEGORIES = {
-    "image": [("all", "All"), ("generate", "Generate"), ("edit", "Edit"), ("expand", "Expand"), ("upscale", "Upscale"), ("vectorize", "Vectorize"),
-              ("remove_background", "Remove Background"), ("tools", "Tools")],
-    "video": [("all", "All"), ("generate", "Generate"), ("edit", "Edit"), ("lipsync", "Lipsync"), ("upscale", "Upscale"), ("reframe", "Reframe"),
-              ("remove_background", "Remove Background"), ("tools", "Tools")],
-    "audio": [("all", "All"), ("speech", "Speech"), ("music", "Music"), ("sfx", "SFX"), ("tools", "Tools")],
-    "3d": [("all", "All"), ("generate", "Generate"), ("splat", "Splat"), ("remesh", "Remesh"), ("retexture", "Retexture"), ("uv_unwrap", "UV Unwrap"),
-           ("rigging", "Rigging"), ("animate", "Animate"), ("parts", "Parts")],
+    "image": [
+        ("all", "All"),
+        ("generate", "Generate"),
+        ("edit", "Edit"),
+        ("expand", "Expand"),
+        ("upscale", "Upscale"),
+        ("vectorize", "Vectorize"),
+        ("remove_background", "Remove Background"),
+        ("tools", "Tools"),
+    ],
+    "video": [
+        ("all", "All"),
+        ("generate", "Generate"),
+        ("edit", "Edit"),
+        ("lipsync", "Lipsync"),
+        ("upscale", "Upscale"),
+        ("reframe", "Reframe"),
+        ("remove_background", "Remove Background"),
+        ("tools", "Tools"),
+    ],
+    "audio": [
+        ("all", "All"),
+        ("speech", "Speech"),
+        ("music", "Music"),
+        ("sfx", "SFX"),
+        ("tools", "Tools"),
+    ],
+    "3d": [
+        ("all", "All"),
+        ("generate", "Generate"),
+        ("splat", "Splat"),
+        ("remesh", "Remesh"),
+        ("retexture", "Retexture"),
+        ("uv_unwrap", "UV Unwrap"),
+        ("rigging", "Rigging"),
+        ("animate", "Animate"),
+        ("parts", "Parts"),
+    ],
 }
 # Which tab a lane opens on, and which lane a tab lands in when the user crosses modalities.
-LANE_MODALITY = {"image": "image", "render_image": "image", "material": "image", "video": "video", "render_video": "video", "3d": "3d", "edit3d": "3d", "audio": "audio"}
+LANE_MODALITY = {
+    "image": "image",
+    "render_image": "image",
+    "material": "image",
+    "video": "video",
+    "render_video": "video",
+    "3d": "3d",
+    "edit3d": "3d",
+    "audio": "audio",
+}
 BASE_LANE = {"image": "image", "video": "video", "3d": "3d", "audio": "audio"}
 FEATURED_TAG = "sc:featured"
-BUILTIN_ICONS = {"image": 'IMAGE_DATA', "video": 'FILE_MOVIE', "audio": 'SPEAKER', "3d": 'MESH_DATA', "text": 'FILE_TEXT'}
+BUILTIN_ICONS = {
+    "image": "IMAGE_DATA",
+    "video": "FILE_MOVIE",
+    "audio": "SPEAKER",
+    "3d": "MESH_DATA",
+    "text": "FILE_TEXT",
+}
 
 _TOOL_TAGS = {"tool", "tools", "post processing"}
 _EDIT_TAGS = {"editing", "image editing", "video editing"}
@@ -86,7 +128,12 @@ def _image_categories(name, tags, out):
         out.add("edit")
     if tags & {"image-upscale", "enhance"} or "upscal" in name or "enhance" in name:
         out.add("upscale")
-    if "remove-background" in tags or "background remov" in name or "remove background" in name or "bg remov" in name:
+    if (
+        "remove-background" in tags
+        or "background remov" in name
+        or "remove background" in name
+        or "bg remov" in name
+    ):
         out.add("remove_background")
     if "vector" in name:
         out.add("vectorize")
@@ -112,13 +159,32 @@ def _video_categories(name, tags, out):
 
 
 def _audio_categories(name, tags, ins, out):
-    if tags & {"tts", "text-to-speech", "text to speech", "speech"} or any(k in name for k in ("speech", "voice", "tts", "transcri")):
+    if tags & {"tts", "text-to-speech", "text to speech", "speech"} or any(
+        k in name for k in ("speech", "voice", "tts", "transcri")
+    ):
         out.add("speech")
     if tags & {"music", "text to music"} or "music" in name or "song" in name or "lyria" in name:
         out.add("music")
     if "sfx" in tags or "sfx" in name or "sound effect" in name or "foley" in name:
         out.add("sfx")
-    if tags & _TOOL_TAGS or "audio" in ins or any(k in name for k in ("cut", "split", "extract", "to text", "transcri", "dubbing", "isolat", "convert", "stem")):
+    if (
+        tags & _TOOL_TAGS
+        or "audio" in ins
+        or any(
+            k in name
+            for k in (
+                "cut",
+                "split",
+                "extract",
+                "to text",
+                "transcri",
+                "dubbing",
+                "isolat",
+                "convert",
+                "stem",
+            )
+        )
+    ):
         out.add("tools")
     if not out:
         out.add("speech" if "txt" in ins else "tools")
@@ -128,15 +194,25 @@ def _threed_categories(name, tags, caps, out):
     mesh_in = "3d23d" in caps or "video23d" in caps
     if tags & {"splat", "world"} or "splat" in name or "world" in name:
         out.add("splat")
-    if mesh_in and (tags & {"remeshing", "retopology"} or any(k in name for k in ("remesh", "retopo", "topology"))):
+    if mesh_in and (
+        tags & {"remeshing", "retopology"}
+        or any(k in name for k in ("remesh", "retopo", "topology"))
+    ):
         out.add("remesh")
-    if mesh_in and ("retexture" in tags or any(k in name for k in ("retexture", "texturing", "texture edit", "multicolor", "styliz"))):
+    if mesh_in and (
+        "retexture" in tags
+        or any(
+            k in name for k in ("retexture", "texturing", "texture edit", "multicolor", "styliz")
+        )
+    ):
         out.add("retexture")
     if mesh_in and ("uv" in name.split() or "unwrap" in name):
         out.add("uv_unwrap")
     if mesh_in and ("rigging" in tags or "rig" in name):
         out.add("rigging")
-    if (mesh_in or "txt23d" in caps) and (tags & {"animation", "motion"} or any(k in name for k in ("animation", "motion", "animate"))):
+    if (mesh_in or "txt23d" in caps) and (
+        tags & {"animation", "motion"} or any(k in name for k in ("animation", "motion", "animate"))
+    ):
         out.add("animate")
     if mesh_in and ("segmentation" in tags or any(k in name for k in ("segment", "split", "part"))):
         out.add("parts")
@@ -166,12 +242,19 @@ def categories_of(record):
 
 
 def visible(record):
-    """Shown in the picker: not a LoRA, not deprecated, of a modality that has a tab."""
-    return record is not None and not is_lora(record) and not is_deprecated(record) and modality_of(record) in BASE_LANE
+    """Shown in the picker: not trained, not deprecated, of a modality that has a tab."""
+    return (
+        record is not None
+        and not is_trained(record)
+        and not is_deprecated(record)
+        and modality_of(record) in BASE_LANE
+    )
 
 
 def _haystack(record):
-    return " ".join((record.id, record.name, record.short_description or "", " ".join(record.tags))).lower()
+    return " ".join(
+        (record.id, record.name, record.short_description or "", " ".join(record.tags))
+    ).lower()
 
 
 def matches(record, query):
@@ -190,7 +273,9 @@ def is_featured(record):
 def filter_records(records, modality, category="all", query="", recent_ids=()):
     """Visible records of `modality` in `category` matching `query`: recently used first (in recent order, only under
     All with no query, like the web app's "Recently used" group), then featured, then by name."""
-    recent = list(recent_ids) if (category in ("all", "", None) and not (query or "").strip()) else []
+    recent = (
+        list(recent_ids) if (category in ("all", "", None) and not (query or "").strip()) else []
+    )
     rank = {model_id: index for index, model_id in enumerate(recent)}
     out = []
     for record in records:
@@ -231,7 +316,9 @@ class RecentModels:
             return {}
         if not isinstance(data, dict):
             return {}
-        return {str(lane): [str(m) for m in ids] for lane, ids in data.items() if isinstance(ids, list)}
+        return {
+            str(lane): [str(m) for m in ids] for lane, ids in data.items() if isinstance(ids, list)
+        }
 
     def ids(self, lane):
         return list(self._data.get(lane, []))
@@ -241,7 +328,7 @@ class RecentModels:
             return self.ids(lane)
         ids = [m for m in self._data.get(lane, []) if m != model_id]
         ids.insert(0, model_id)
-        self._data[lane] = ids[:self.limit]
+        self._data[lane] = ids[: self.limit]
         self._save()
         return list(self._data[lane])
 

@@ -7,13 +7,15 @@
   "evidence": {
     "path": "docs/BLENDER_JOB_CONTEXT.md",
     "coverage": "inherited",
-    "reviewed_at": "2026-09-24",
-    "limits": "Explicit JobSession World application was reviewed against owned verification, original-context checks, core claims, exact receipt-bound decoding and installed native failure/rollback/persistence cases. Other lifecycle, component, format and restoration claims retain prior evidence. One selected asset completes the job; there is no per-asset journal or atomic blend-file save. Active UI/MCP, authoritative account/project discovery, production storage policy, undo/recovery UX and live acceptance remain separate; no human approval is implied.",
+    "reviewed_at": "2026-10-09",
+    "limits": "Explicit JobSession World application was reviewed against owned verification, original-context checks, core claims, exact receipt-bound decoding and installed native failure/rollback/persistence cases. Other lifecycle, component, format and restoration claims retain prior evidence. One selected asset completes the job; there is no per-asset journal or atomic blend-file save. Active UI/MCP, authoritative account/project discovery, production storage policy, undo/recovery UX and live acceptance remain separate; no human approval is implied. The explicit JobSession command's binding of the selected saved media type to the actual PNG, JPEG or OpenEXR container was reviewed with native JPEG and mismatch cases.",
     "sources": {
-      "scenario/blender/world_application.py": "95a10cae5b1ec3fdc758a18dcb4e70a50ffe10961c1ab38e0c5bb9ea6dbe8934"
+      "scenario/blender/world_application.py": "341b67665ec8be9201c3191559d47a31421aae5726bc2ea06b134f8245876895",
+      "scenario/blender/job_session.py": "aa6b64633ca02992f355436eb3601147fa1a7457234c1e795f417a46a851b8eb",
+      "tests/blender/test_session_results.py": "e87afd949fda187702ddac63c0c52f2597fead62c171e2f2afcc9ab217defcf8"
     },
     "scope": "world-application",
-    "base_revision": "cdc8775a4a074a4997eca84cec2699e0dbb16e8c"
+    "base_revision": "b57c398f35fb2148c82fb8b26f6a40564d3f52ef"
   }
 }
 ---

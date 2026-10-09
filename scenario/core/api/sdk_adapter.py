@@ -24,10 +24,43 @@ from .sdk_extensions import SDKResourceExtensions
 from .user_agent import user_agent_string
 
 API_URL = "https://api.cloud.scenario.com/v1"
+# The API reference states no get-bulk batch limit; stay small until a capture
+# establishes one, and bound each call so a refresh cannot fan out reads.
+MODEL_BULK_CHUNK = 50
+MODEL_BULK_LIMIT = 200
 
 
 class AdapterError(RuntimeError):
     """Safe text for UI/worker boundaries; never include response bodies or URLs."""
+
+
+class AdapterUnavailable(AdapterError):
+    """The selected credentials or project cannot read a known model (HTTP 403 or 404)."""
+
+    def __init__(self, status):
+        self.status = status
+        super().__init__(
+            f"This model is not available to the selected credentials or project (HTTP {status})"
+        )
+
+
+def _unavailable_on_denial(method):
+    """Raise AdapterUnavailable for HTTP 403/404 from one known-record read.
+
+    The SDK raises inside the call, before the adapter's generic status mapping;
+    other failures keep that mapping.
+    """
+    from scenario_sdk import APIStatusError
+
+    def call(*args, **kwargs):
+        try:
+            return method(*args, **kwargs)
+        except APIStatusError as error:
+            if error.status_code in (403, 404):
+                raise AdapterUnavailable(error.status_code) from None
+            raise
+
+    return call
 
 
 @dataclass(frozen=True)
@@ -92,6 +125,26 @@ def _json(raw, *, exact=False):
     if not isinstance(result, dict):
         raise AdapterError("Scenario returned an unexpected response")
     return result
+
+
+def _status_text(status, *, project):
+    """Short first sentence that survives clipped status lines, then fixed guidance.
+
+    The guidance is credential-source neutral (saved or environment keys). Never
+    include response bodies, URLs, identifiers or credentials.
+    """
+    if status == 401:
+        return "Key or secret rejected (HTTP 401). Check the selected API key and secret."
+    if status == 403 and project:
+        return (
+            "Access denied (HTTP 403). Check the selected API key and secret, and that the "
+            "Project ID belongs to this key, or clear it to use the key's default scope."
+        )
+    if status == 403:
+        return "Access denied (HTTP 403). Check the selected API key and secret."
+    if status == 429:
+        return "Too many requests (HTTP 429). Try again shortly."
+    return f"Scenario request failed (HTTP {status})"
 
 
 def _identifier(value):
@@ -170,6 +223,17 @@ def _client(credentials, base_url, timeout, transport):
     except Exception:
         http.close()
         raise
+
+
+def model_identifiers(values):
+    """Unique model identifiers in request order; ValueError for any the adapter rejects.
+
+    Callers that share pending reads by identifier check a request here first,
+    so an invalid identifier fails only the request that contains it.
+    """
+    if isinstance(values, (str, bytes)) or not isinstance(values, (list, tuple)):
+        raise ValueError("Use a list of model identifiers")
+    return list(dict.fromkeys(_identifier(value) for value in values))
 
 
 class SDKAdapter:
@@ -261,7 +325,9 @@ class SDKAdapter:
             response = method(*args, **kwargs)
             return response.read()
         except APIStatusError as error:
-            raise AdapterError(f"Scenario request failed (HTTP {error.status_code})") from None
+            # Only a request that carried the override can blame the Project ID.
+            project = kwargs.get("project_id") is not None
+            raise AdapterError(_status_text(error.status_code, project=project)) from None
         except APIConnectionError:
             raise AdapterError("Could not reach Scenario") from None
 
@@ -289,8 +355,10 @@ class SDKAdapter:
         """Return one team's discovery response, ignoring the selected project."""
         return self._discovery(self._extensions.projects, "projects", _identifier(team_id))
 
-    def _retrieve(self, resource, identifier, wrapper):
+    def _retrieve(self, resource, identifier, wrapper, *, unavailable=False):
         method = getattr(self._sdk, resource).with_raw_response.retrieve
+        if unavailable:
+            method = _unavailable_on_denial(method)
         value = _json(self._request(method, _identifier(identifier)))
         record = value.get(wrapper)
         if not isinstance(record, dict):
@@ -298,7 +366,47 @@ class SDKAdapter:
         return record
 
     def model(self, identifier):
-        return self._retrieve("models", identifier, "model")
+        """Read one model record; HTTP 403/404 raise AdapterUnavailable."""
+        return self._retrieve("models", identifier, "model", unavailable=True)
+
+    def models_bulk(self, identifiers, *, chunk=MODEL_BULK_CHUNK):
+        """Read known models with the SDK's `models.get_bulk`, in bounded requests.
+
+        Returns {id: record} in request order for the records Scenario returned.
+        Omitted IDs stay absent: the API reference does not say whether a
+        missing or inaccessible ID is omitted or fails the request. Bulk records
+        are discovery data: the reference directs `inputs` readers to GET
+        /models/{modelId}, so read the model before building a form or quote.
+        Every chunk carries the selected project and rechecks online permission;
+        any failure returns nothing rather than a partial result.
+        """
+        if type(chunk) is not int or not 1 <= chunk <= MODEL_BULK_CHUNK:
+            raise ValueError(f"Bulk model chunks hold 1 to {MODEL_BULK_CHUNK} identifiers")
+        requested = model_identifiers(identifiers)
+        if len(requested) > MODEL_BULK_LIMIT:
+            raise ValueError(f"Read at most {MODEL_BULK_LIMIT} models at once")
+        records = {}
+        for start in range(0, len(requested), chunk):
+            batch = requested[start : start + chunk]
+            page = _json(
+                self._request(self._sdk.models.with_raw_response.get_bulk, model_ids=batch)
+            )
+            rows = page.get("models")
+            if not isinstance(rows, list):
+                raise AdapterError("Scenario returned an invalid bulk model list")
+            for row in rows:
+                try:
+                    identifier = _identifier(row.get("id") if isinstance(row, dict) else None)
+                except ValueError:
+                    raise AdapterError("Scenario returned an invalid model record") from None
+                if identifier not in batch:
+                    raise AdapterError("Scenario returned a model that was not requested")
+                if identifier in records and records[identifier] != row:
+                    raise AdapterError("Scenario returned conflicting model records; refresh")
+                records[identifier] = row
+        return {
+            identifier: records[identifier] for identifier in requested if identifier in records
+        }
 
     def workflow(self, identifier):
         return self._retrieve("workflows", identifier, "workflow")

@@ -4,6 +4,7 @@
 back, here and in the cloud), "Agents" (the MCP server). Lane tabs only cover generation."""
 
 import os
+import textwrap
 
 import bpy
 
@@ -41,6 +42,7 @@ ADD_SOURCE_LABEL = {
 IMAGE_EXTS = (".png", ".jpg", ".jpeg", ".webp")
 MESH_EXTS = (".glb", ".gltf", ".fbx", ".obj", ".spz", ".ply")
 AUDIO_EXTS = (".mp3", ".wav", ".ogg", ".m4a", ".flac")
+SIDEBAR_CHARS = 36  # wrapped status text fits the default sidebar width
 
 
 def draw_account_strip(layout, context):
@@ -317,15 +319,22 @@ def draw_generate_row(layout, lane_state, lane):
         "scenario.generate", text=generate_button_text(lane_state), icon="PLAY"
     ).lane = lane
     if lane_state.estimate_state in ("ERROR", "UNAVAILABLE") and lane_state.estimate_error:
-        layout.label(text=lane_state.estimate_error[:80], icon="INFO")
+        draw_wrapped(layout, lane_state.estimate_error, "INFO")
     error = generation.lane_error(lane_state)  # a stale saved model-load failure is not drawn
     if error:
-        layout.label(text=error[:80], icon="ERROR")
+        draw_wrapped(layout, error, "ERROR")
+
+
+def draw_wrapped(layout, message, icon):
+    """Sidebar labels clip instead of wrapping; keep status guidance readable."""
+    lines = textwrap.wrap(message, SIDEBAR_CHARS, max_lines=6, placeholder="...")
+    for index, line in enumerate(lines):
+        layout.label(text=line, icon=icon if index == 0 else "NONE")
 
 
 def draw_loading(layout):
     if runtime.state.catalog_error:
-        layout.label(text=runtime.state.catalog_error[:70], icon="ERROR")
+        draw_wrapped(layout, runtime.state.catalog_error, "ERROR")
         layout.operator(
             "scenario.refresh_catalog", text="Retry loading models", icon="FILE_REFRESH"
         )
@@ -348,13 +357,13 @@ def draw_schema_status(layout, lane_state, lane):
         layout.label(text="Loading the model description...", icon="TIME")
         return
     if not runtime.online():
-        layout.label(text=generation.MODEL_OFFLINE, icon="ERROR")
+        draw_wrapped(layout, generation.MODEL_OFFLINE, "ERROR")
         return
     failure = runtime.state.model_errors.get(model_id)
-    layout.label(
-        text=failure or "The model description is not loaded",
-        icon="ERROR" if failure else "INFO",
-    )
+    if failure:
+        draw_wrapped(layout, failure, "ERROR")
+    else:
+        layout.label(text="The model description is not loaded", icon="INFO")
     layout.operator(
         "scenario.retry_model", text="Retry loading model", icon="FILE_REFRESH"
     ).lane = lane

@@ -12,11 +12,19 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import asdict, replace
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import Mock, patch
+from unittest.mock import MagicMock, Mock, patch
 
 import bpy
 import httpx
-from helpers import animated_glb, online_access, reset_scene, submodule, temp_credentials
+from helpers import (
+    ACES_AP0,
+    animated_glb,
+    online_access,
+    reset_scene,
+    scanline_exr,
+    submodule,
+    temp_credentials,
+)
 
 
 class ModelGenerationTests(unittest.TestCase):
@@ -2043,7 +2051,7 @@ class ModelGenerationTests(unittest.TestCase):
         self.assertTrue(fresh["reuse"])
         self.assertEqual((len(self.calls), len(self.paid)), before)
 
-    def recovered_panorama(self):
+    def recovered_panorama(self, *, jpeg=False, media_type=None, data=None, width=8, height=4):
         before_worlds = set(bpy.data.worlds)
 
         def cleanup():
@@ -2051,16 +2059,19 @@ class ModelGenerationTests(unittest.TestCase):
                 bpy.data.worlds.remove(world, do_unlink=True)
 
         self.addCleanup(cleanup)
-        image = bpy.data.images.new("Synthetic panorama", width=8, height=4)
-        try:
-            image.pixels[:] = [0.25, 0.5, 0.75, 1.0] * 32
-            image.file_format = "PNG"
-            path = self.runtime.paths().state_dir / "panorama.png"
-            image.filepath_raw = str(path)
-            image.save()
-            self.result_bytes = path.read_bytes()
-        finally:
-            bpy.data.images.remove(image)
+        if data is None:
+            image = bpy.data.images.new("Synthetic panorama", width=width, height=height)
+            try:
+                image.pixels[:] = [0.25, 0.5, 0.75, 1.0] * (width * height)
+                image.file_format = "JPEG" if jpeg else "PNG"
+                path = self.runtime.paths().state_dir / ("panorama.jpg" if jpeg else "panorama.png")
+                image.filepath_raw = str(path)
+                image.save()
+                data = path.read_bytes()
+            finally:
+                bpy.data.images.remove(image)
+        self.result_bytes = data
+        self.result_media_type = media_type or ("image/jpeg" if jpeg else "image/png")
         self.remote_status = "success"
         with patch.object(self, "result_fixture", return_value=None):
             return self.recovered_images()
@@ -2248,6 +2259,101 @@ class ModelGenerationTests(unittest.TestCase):
         self.assertEqual(
             world.node_tree.nodes.get("Background").inputs["Strength"].default_value, 2
         )
+
+    def test_saved_jpeg_panorama_states_format_applies_and_restores(self):
+        request_id = self.recovered_panorama(jpeg=True)
+        owner = self.runtime.state.model_jobs
+        actions = owner.status(request_id)["actions"]
+        self.assertIn("apply_world", actions)
+        self.assertNotIn("import_images", actions)
+        scene, previous = bpy.context.scene, bpy.context.scene.world
+        before = len(self.calls), len(self.paid)
+        approval = self.prepare_world(request_id)
+        self.assertEqual(approval["format"], "JPEG (LDR)")
+        self.assertIn("JPEG", approval["note"])
+        self.assertEqual(scene.world, previous)
+        deferred = self.tools.apply_result_application(self.import_args(approval))
+        status = deferred.finish(deferred.run())
+        self.assertEqual(status["status"], "applied", status)
+        image = next(n for n in scene.world.node_tree.nodes if n.type == "TEX_ENVIRONMENT").image
+        self.assertEqual((image.file_format, image.is_float), ("JPEG", False))
+        restore = self.prepare_world(request_id, restore=True)
+        self.assertIsNone(restore["format"])
+        self.tools.apply_result_application(self.import_args(restore))
+        self.assertEqual(scene.world, previous)
+        self.assertEqual((len(self.calls), len(self.paid)), before)
+
+    def test_aces_labelled_saved_exr_applies_with_aces2065_1(self):
+        request_id = self.recovered_panorama(
+            media_type="image/aces", data=scanline_exr(8, 4, ACES_AP0)
+        )
+        self.assertIn("apply_world", self.runtime.state.model_jobs.status(request_id)["actions"])
+        approval = self.prepare_world(request_id)
+        self.assertTrue(approval["format"].startswith("ACES-labelled OpenEXR"))
+        deferred = self.tools.apply_result_application(self.import_args(approval))
+        status = deferred.finish(deferred.run())
+        self.assertEqual(status["status"], "applied", status)
+        world = bpy.context.scene.world
+        image = next(n for n in world.node_tree.nodes if n.type == "TEX_ENVIRONMENT").image
+        self.assertTrue(image.is_float)
+        self.assertEqual(image.colorspace_settings.name, "ACES2065-1")
+        self.assertEqual(len(self.paid), 1)
+
+    def assert_local_world_failure_keeps_retry_state(self, request_id):
+        previous = bpy.context.scene.world
+        before = len(self.calls), len(self.paid)
+        deferred = self.tools.apply_result_application(
+            self.import_args(self.prepare_world(request_id))
+        )
+        status = deferred.finish(deferred.run())
+        self.assertEqual(status["status"], "apply_failed", status)
+        self.assertIn("apply_world", status["actions"])
+        self.assertEqual(bpy.context.scene.world, previous)
+        self.assertEqual((len(self.calls), len(self.paid)), before)
+
+    def test_nonpanoramic_saved_jpeg_fails_locally_with_retry_state(self):
+        self.assert_local_world_failure_keeps_retry_state(
+            self.recovered_panorama(jpeg=True, width=4, height=4)
+        )
+
+    def test_mislabelled_saved_panorama_fails_locally_with_retry_state(self):
+        # PNG bytes saved as image/jpeg must not be described or applied as JPEG.
+        self.assert_local_world_failure_keeps_retry_state(
+            self.recovered_panorama(media_type="image/jpeg")
+        )
+
+    def test_native_world_dialog_states_selected_format_and_cancel_discards(self):
+        request_id = self.recovered_panorama(jpeg=True)
+        args = self.recovery_args(request_id, "apply_world")
+        operator = submodule("blender.job_recovery").SCENARIO_OT_apply_saved_world
+        fake = SimpleNamespace(
+            context_id=args["context_id"],
+            request_id=request_id,
+            expected_revision=args["expected_revision"],
+            asset_id="result-image",
+            purpose="world",
+            layout=MagicMock(),
+            report=MagicMock(),
+        )
+        wm = MagicMock()
+        wm.invoke_props_dialog.return_value = {"RUNNING_MODAL"}
+        context = SimpleNamespace(scene=bpy.context.scene, window_manager=wm)
+        previous = bpy.context.scene.world
+        self.assertEqual(operator.invoke(fake, context, None), {"RUNNING_MODAL"})
+        owner = self.runtime.state.model_jobs
+        self.assertIn(fake.application_id, owner._application_approvals)
+        snapshot = dict(vars(fake))
+        operator.draw(fake, context)
+        self.assertEqual(vars(fake), snapshot)  # Drawing only displays prepared text.
+        labels = [call.kwargs.get("text") for call in fake.layout.label.call_args_list]
+        self.assertIn("Selected: JPEG (LDR)", labels)
+        self.assertIn("Use this 2:1 image as an equirectangular environment.", labels)
+        # The 520 px dialog was verified on the desktop with 59-character lines.
+        self.assertLessEqual(max(len(label) for label in labels), 59)
+        operator.cancel(fake, context)
+        self.assertNotIn(fake.application_id, owner._application_approvals)
+        self.assertEqual(bpy.context.scene.world, previous)
+        self.assertEqual(len(self.paid), 1)
 
     def test_nonpanoramic_saved_image_reports_local_failure_without_replacing_world(self):
         request_id = self.recovered_images()

@@ -20,7 +20,7 @@
       "scenario/blender/studio.py": "7a4a6b694ba4becb7a51dac11f95838a35d9f2a3dc752d85a50e1b1cd0f1f071",
       "scenario/blender/runtime.py": "b14d964efc5d31f17c863d8dc7e6bd4f7f4f1024388e5c0d2628ce9e08ba876c",
       "scenario/mcp/tools_scenario.py": "fbfcbdb67dadaffc2d8fdf0ebef3667cd868112df838b4fe004d01af20e39674",
-      "tests/blender/test_film_review_controls.py": "79df14f44f4e92bdba5153ec6beec6aae4fffd37feb0fffad6252d1630003587",
+      "tests/blender/test_film_review_controls.py": "254db268726c99f3317f2ca3deb6f90505bc33741b6cfe61e1444c1eb8b99a09",
       "tests/blender/test_studio_view.py": "78fc2021e77f20b541217e8ce7fc137c994adb5a98f39db346b83849716e4acf",
       "tests/blender/test_mcp_contracts.py": "dbd15f36c6237161861c4312954831719d02de8a0cb542950c44896cdbe20e2f",
       "tests/unit/test_mcp_descriptions.py": "5691c030d27baaacdc7302daab7ccbc04fdd29c8096e8b8f0cfc74ce6b55c3d4"

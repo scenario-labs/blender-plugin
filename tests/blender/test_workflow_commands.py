@@ -140,6 +140,8 @@ class WorkflowCommandTests(unittest.TestCase):
             try:
                 task.result(5)
             except Exception:
+                # Keep draining after errors; polling and later saved-state
+                # assertions verify the submission outcome.
                 pass
         owner.poll()
         for _, task in tuple(owner._commands.values()):

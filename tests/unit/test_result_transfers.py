@@ -186,7 +186,7 @@ def test_offline_never_constructs_connection(tmp_path, storage):
 
 
 @pytest.mark.parametrize("status", [301, 302, 307, 308, 400, 401, 404, 500, 206])
-def test_status_never_follows_redirect_or_retries(status, tmp_path, storage):
+def test_status_never_follows_untrusted_redirect_or_retries(status, tmp_path, storage):
     storage[0].getresponse.return_value = Response(
         status=status, headers={"Location": "https://evil.invalid/private"}
     )
@@ -515,3 +515,128 @@ def test_per_request_limit_cannot_expand_storage_policy(tmp_path, storage):
     with pytest.raises(transfers.TransferError):
         downloader(max_bytes=10).download(URL, root=tmp_path, name="x", max_bytes=100)
     assert not list(tmp_path.iterdir())
+
+
+@pytest.mark.parametrize("status", [301, 302, 303, 307, 308])
+def test_same_host_redirect_keeps_signed_target_and_checks_final_bytes(status, tmp_path, storage):
+    conn, constructor = storage
+    first = Response(
+        status=status, headers={"Location": "https://storage.example.invalid/final?sig=next"}
+    )
+    final = Response()
+    conn.getresponse.side_effect = [first, final]
+    receipt = downloader().download(
+        URL,
+        root=tmp_path,
+        name="x",
+        expected_size=len(DATA),
+        expected_sha256=hashlib.sha256(DATA).hexdigest(),
+    )
+    assert (tmp_path / receipt.name).read_bytes() == DATA
+    assert first.closed and final.closed
+    assert constructor.call_count == 2 and conn.close.call_count == 2
+    assert conn.request.call_args.args == ("GET", "/final?sig=next")
+    assert conn.request.call_args.kwargs["headers"] == {
+        "Accept-Encoding": "identity",
+        "Connection": "close",
+    }
+
+
+@pytest.mark.parametrize(
+    "location",
+    [
+        None,
+        "/relative",
+        "http://storage.example.invalid/x",
+        "https://user@storage.example.invalid/x",
+        "https://storage.example.invalid:8443/x",
+        "https://storage.example.invalid/x#fragment",
+        URL,
+    ],
+)
+def test_redirect_rejects_malformed_destination_or_loop(location, tmp_path, storage):
+    conn, constructor = storage
+    first = Response(status=302, headers={"Location": location})
+    conn.getresponse.return_value = first
+    with pytest.raises(transfers.TransferError):
+        downloader().download(URL, root=tmp_path, name="x")
+    assert first.closed and conn.close.call_count == 1
+    assert constructor.call_count == 1 and not list(tmp_path.iterdir())
+
+
+def test_redirect_cannot_switch_to_another_configured_host(tmp_path, storage):
+    conn, constructor = storage
+    conn.getresponse.return_value = Response(
+        status=302, headers={"Location": "https://other.example.invalid/x"}
+    )
+    client = transfers.ResultDownloader(
+        transfers.StoragePolicy(frozenset({"storage.example.invalid", "other.example.invalid"})),
+        online_access=lambda: True,
+    )
+    with pytest.raises(transfers.TransferError):
+        client.download(URL, root=tmp_path, name="x")
+    assert constructor.call_count == 1
+
+
+def test_redirect_chain_has_two_hop_limit_and_cleans_all_responses(tmp_path, storage):
+    conn, constructor = storage
+    responses = [
+        Response(status=302, headers={"Location": f"https://storage.example.invalid/hop-{n}"})
+        for n in range(3)
+    ]
+    conn.getresponse.side_effect = responses
+    with pytest.raises(transfers.TransferError, match="limit"):
+        downloader().download(URL, root=tmp_path, name="x")
+    assert constructor.call_count == 3 and conn.close.call_count == 3
+    assert all(response.closed for response in responses)
+    assert not list(tmp_path.iterdir())
+
+
+def test_permission_revoked_after_redirect_prevents_next_connection(tmp_path, storage):
+    conn, constructor = storage
+    allowed = [True]
+    first = Response(status=302, headers={"Location": "https://storage.example.invalid/next"})
+
+    def response():
+        allowed[0] = False
+        return first
+
+    conn.getresponse.side_effect = response
+    client = transfers.ResultDownloader(
+        transfers.StoragePolicy(frozenset({"storage.example.invalid"})),
+        online_access=lambda: allowed[0],
+    )
+    with pytest.raises(transfers.TransferError, match="interrupted"):
+        client.download(URL, root=tmp_path, name="x")
+    assert constructor.call_count == 1 and first.closed
+
+
+def test_redirect_uses_original_total_deadline(tmp_path, storage, monkeypatch):
+    conn, constructor = storage
+    now = [0.0]
+    monkeypatch.setattr(transfers.time, "monotonic", lambda: now[0])
+    first = Response(status=302, headers={"Location": "https://storage.example.invalid/next"})
+
+    def response():
+        now[0] = 2.0
+        return first
+
+    conn.getresponse.side_effect = response
+    with pytest.raises(transfers.TransferError, match="interrupted"):
+        downloader(total_timeout=1).download(URL, root=tmp_path, name="x")
+    assert constructor.call_count == 1 and first.closed
+    assert not list(tmp_path.iterdir())
+
+
+def test_two_redirects_can_complete_without_reading_redirect_bodies(tmp_path, storage):
+    conn, constructor = storage
+    responses = [
+        Response(status=302, headers={"Location": f"https://storage.example.invalid/hop-{n}"})
+        for n in range(2)
+    ]
+    for response in responses:
+        response.read1 = Mock(side_effect=AssertionError("Redirect body must not be read"))
+    conn.getresponse.side_effect = [*responses, Response()]
+    downloader().download(URL, root=tmp_path, name="x")
+    assert constructor.call_count == 3 and conn.close.call_count == 3
+    assert (tmp_path / "x").read_bytes() == DATA

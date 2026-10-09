@@ -18,8 +18,16 @@ representation. This is a host policy, not a defense against compromised trusted
 DNS or hosts.
 
 The downloader sends only a GET, identity encoding and connection-close header.
-It has no Scenario credentials, cookie jar, netrc, proxy configuration, redirects,
-automatic retry or URL logging. TLS verifies the hostname and bundled certificate
+It has no Scenario credentials, cookie jar, netrc, proxy configuration, automatic
+retry or URL logging. At most two HTTP 301/302/303/307/308 redirects may be
+followed. Each Location must be an absolute HTTPS URL that passes the original
+storage policy and keeps the original hostname; relative URLs, cross-host hops
+(including another configured host), loops and malformed destinations are
+rejected. Each hop uses a fresh credential-free connection, the same total
+deadline and a fresh online-permission check. Redirect bodies are not read and
+responses/connections are closed before continuing. Final size/digest checks
+and atomic publication are unchanged. This accommodates same-host CDN delivery
+redirects without retrying generation or deriving new trusted hosts. TLS verifies the hostname and bundled certificate
 authorities; ambient certificate/key-log environment variables are ignored.
 Status 200 is required. Content and transfer encodings are rejected; compressed
 or chunked responses require a separately reviewed transport contract.

@@ -207,8 +207,9 @@ class ComposerEditFormTests(unittest.TestCase):
 
     def setUp(self):
         self.jobs = test_model_generation.ModelGenerationTests()
-        self.jobs.setUp()
+        # Registered first, so a fixture setUp that fails partway still releases its patches.
         self.addCleanup(self.jobs.doCleanups)
+        self.jobs.setUp()
         self.runtime = self.jobs.runtime
         self.generation = self.jobs.generation
         self.panels = submodule("blender.panels")
@@ -316,13 +317,15 @@ class ComposerEditFormTests(unittest.TestCase):
         shown.label = next(s for s in shown.texts if s.startswith("Generate"))
         return shown
 
-    def press(self, kind=None, key=None, text="", expect=("RUNNING_MODAL",)):
-        """Deliver one composer click (on `kind`) or one key press to the real modal handler."""
+    def press(
+        self, kind=None, key=None, text="", expect=("RUNNING_MODAL",), tab=None, value="PRESS"
+    ):
+        """Deliver one composer click (on `kind` or a lane `tab`) or one key press to the real modal handler."""
         self.runtime.state.composer_modal_running = True
         context = SimpleNamespace(scene=self.scene, region=MagicMock())
         event = SimpleNamespace(
             type=key or "LEFTMOUSE",
-            value="PRESS",
+            value=value,
             mouse_region_x=10,
             mouse_region_y=10,
             shift=False,
@@ -332,8 +335,12 @@ class ComposerEditFormTests(unittest.TestCase):
             unicode=text,
         )
         operator = SimpleNamespace(report=MagicMock(), _finish=MagicMock())
-        with patch.object(self.modal, "_layout") as layout:
-            layout.return_value.hit.return_value = (kind,) if kind else None
+        hit = ("tab", tab) if tab else (kind,) if kind else None
+        with (
+            patch.object(self.modal, "_layout") as layout,
+            patch.object(self.modal, "_caret_index", return_value=0),
+        ):
+            layout.return_value.hit.return_value = hit
             result = self.modal.SCENARIO_OT_composer_modal.modal(operator, context, event)
         self.assertEqual(result, set(expect))
         return operator
@@ -581,7 +588,8 @@ class ComposerEditFormTests(unittest.TestCase):
         dialogs.quick_settings.assert_not_called()
         dialogs.pick_model.assert_not_called()
 
-    def test_edit_task_without_a_prompt_offers_no_prompt_to_type(self):
+    def retopology(self, prompt=""):
+        """Load an Edit 3D task whose model takes no prompt into the Edit form."""
         mesh = {"name": "mesh", "type": "file", "kind": "3d", "required": True}
         self.configure(
             "edit3d",
@@ -592,8 +600,20 @@ class ComposerEditFormTests(unittest.TestCase):
                 "capabilities": ["3d23d"],
                 "inputs": [mesh],
             },
-            "",
+            prompt,
         )
+
+    def focus_image_form(self):
+        """Focus the composer on the Image tab's prompt."""
+        self.composer.focused = False
+        self.scene.scenario.lane = "image"
+        self.scene.scenario.lane_state("image").prompt = "a lighthouse"
+        self.drawn()
+        self.composer.focused = True
+        self.assertEqual(self.composer.field.text, "a lighthouse")
+
+    def test_edit_task_without_a_prompt_offers_no_prompt_to_type(self):
+        self.retopology()
         shown = self.drawn()
         self.assertEqual(shown.fields, ["This model takes no prompt"])
         operator = self.press("prompt")
@@ -601,3 +621,88 @@ class ComposerEditFormTests(unittest.TestCase):
         operator.report.assert_called_once()
         self.press(key="S", text="s", expect=("PASS_THROUGH",))
         self.assertEqual(self.edit3d.prompt, "")
+
+    def test_tab_click_keeps_focus_only_for_a_form_that_takes_a_prompt(self):
+        image = self.scene.scenario.lane_state("image")
+        self.focus_image_form()
+        self.press(tab="3d")
+        # The Edit form takes a prompt: typing continues there.
+        self.assertTrue(self.composer.focused)
+        self.assertEqual(self.composer.field.text, "rusty iron plates")
+        self.press(key="S", text="s")
+        self.assertEqual((self.edit3d.prompt, image.prompt), ("rusty iron platess", "a lighthouse"))
+        self.press(tab="image")
+        self.assertTrue(self.composer.focused)
+        self.assertEqual(self.composer.field.text, "a lighthouse")
+        # The Edit task now takes no prompt: the tab shows why instead of keeping a focused field.
+        self.retopology()
+        self.press(tab="3d")
+        self.assertFalse(self.composer.focused)
+        self.assertEqual(self.drawn().fields, ["This model takes no prompt"])
+        self.press(key="S", text="s", expect=("PASS_THROUGH",))
+        self.assertEqual((self.edit3d.prompt, image.prompt), ("", "a lighthouse"))
+
+    def test_tab_click_leaves_a_replaced_form_without_writing_either_form(self):
+        image = self.scene.scenario.lane_state("image")
+        image.prompt = "a lighthouse"
+        for tab, field in (("3d", "rusty iron plates"), ("image", "a lighthouse")):
+            with self.subTest(tab=tab):
+                self.scene.scenario.lane = "3d"
+                self.focus_text_form()
+                edit_ticket = self.runtime.state.estimates[self.edit3d.estimate_key]
+                operator = self.press(tab=tab)
+                # Like Esc: the tab shows its current form and the field is no longer focused.
+                self.assertFalse(self.composer.focused)
+                operator.report.assert_not_called()
+                shown = self.drawn()
+                self.assertEqual(shown.fields, [field])
+                self.assertFalse(any("Esc" in s for s in shown.texts))
+                # The next key reaches Blender instead of the form the tab shows.
+                self.press(key="S", text="s", expect=("PASS_THROUGH",))
+                self.assert_prompts_unchanged()
+                self.assertEqual(image.prompt, "a lighthouse")
+                self.assertFalse(edit_ticket.used)
+                self.assertEqual(self.edit3d.estimate_state, "READY")
+
+    def test_double_click_keeps_a_replaced_form_until_esc(self):
+        self.focus_text_form()
+        self.press("prompt", value="DOUBLE_CLICK")
+        # The double-click selects a word of the original text; it does not adopt the new form.
+        self.assertTrue(self.composer.focused)
+        self.assertEqual(self.composer.field.text, "a teapot")
+        self.assertTrue(self.composer.form_replaced(self.scene))
+        operator = self.press(key="S", text="s")
+        operator.report.assert_called_once()
+        self.assertIn("Esc", operator.report.call_args.args[1])
+        self.assert_prompts_unchanged()
+        self.assertEqual(self.drawn().fields, ["a teapot"])
+
+    def test_focused_prompt_leaves_when_its_model_stops_taking_a_prompt(self):
+        self.drawn()
+        self.composer.focused = True
+        self.assertEqual(self.composer.field.text, "rusty iron plates")
+        # Another window or a tool loads an Edit task without a prompt into the same form.
+        self.retopology("rusty iron plates")
+        operator = self.press(key="S", text="s")
+        self.assertFalse(self.composer.focused)
+        operator.report.assert_called_once_with({"WARNING"}, "This model takes no prompt")
+        self.assertEqual(self.edit3d.prompt, "rusty iron plates")
+        self.assertEqual(self.drawn().fields, ["This model takes no prompt"])
+
+
+class ComposerEditFormFixtureTests(unittest.TestCase):
+    def test_a_failed_fixture_setup_still_releases_its_patches(self):
+        released = []
+
+        def failing_setup(jobs):
+            jobs.addCleanup(released.append, "fixture patches")
+            raise RuntimeError("fixture setup failed")
+
+        test = ComposerEditFormTests("test_composer_displays_and_submits_the_edit_form_price")
+        with (
+            patch.object(test_model_generation.ModelGenerationTests, "setUp", failing_setup),
+            self.assertRaisesRegex(RuntimeError, "fixture setup failed"),
+        ):
+            test.setUp()
+        test.doCleanups()
+        self.assertEqual(released, ["fixture patches"])

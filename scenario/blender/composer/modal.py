@@ -97,6 +97,7 @@ def _open_dialog(context, scene, state, kind):
         try:
             bpy.ops.scenario.pick_model("INVOKE_DEFAULT", lane=state.generation_lane(scene))
         except (RuntimeError, AttributeError):
+            # No dialog in this context: the sidebar opened above still holds the model chooser.
             pass
         return
     # the tab's settings in a dialog right here (the 3D tab includes its Edit mode form)
@@ -234,9 +235,11 @@ class SCENARIO_OT_composer_modal(bpy.types.Operator):
         if event.type == "LEFTMOUSE" and event.value == "DOUBLE_CLICK":
             hit = layout.hit(event.mouse_region_x, event.mouse_region_y)
             if hit == ("prompt",) and state.expanded:
-                # The press before it already explained a form without a prompt.
-                if _takes_prompt(scene, state):
-                    state.sync_from_lane(scene)
+                # The press before it already explained a form without a prompt. A focused field
+                # keeps the form it was synchronized from, even one that was replaced.
+                if state.focused or _takes_prompt(scene, state):
+                    if not state.focused:
+                        state.sync_from_lane(scene)
                     state.focused = True
                     state.field.select_word_at(
                         _caret_index(context, state, layout, event.mouse_region_x)
@@ -275,8 +278,15 @@ class SCENARIO_OT_composer_modal(bpy.types.Operator):
                 state.leave_focus(scene)
                 state.expanded = False
             elif kind == "tab":
-                state.commit_to_lane(scene)
+                if state.form_replaced(scene):
+                    # Like Esc: leave the original form without writing to either form.
+                    state.leave_focus(scene)
+                else:
+                    state.commit_to_lane(scene)
                 scene.scenario.lane = hit[1]
+                if state.focused and not _takes_prompt(scene, state):
+                    # The new form takes no prompt: its field explains why instead of keeping focus.
+                    state.leave_focus(scene)
                 state.sync_from_lane(scene)
             elif kind == "prompt" and not state.focused and not _takes_prompt(scene, state):
                 self.report({"INFO"}, cl.NO_PROMPT)
@@ -320,6 +330,12 @@ class SCENARIO_OT_composer_modal(bpy.types.Operator):
         if state.form_replaced(scene) and _edits_text(event, command):
             # Keep the keys away from the viewport, but never type into the form that replaced it.
             self.report({"WARNING"}, cl.FORM_REPLACED_TYPING)
+            return {"RUNNING_MODAL"}
+        if _edits_text(event, command) and not _takes_prompt(scene, state):
+            # Another window or a tool loaded a model without a prompt into this form: write nothing.
+            state.focused = state.dragging = False
+            self.report({"WARNING"}, cl.NO_PROMPT)
+            _redraw(context)
             return {"RUNNING_MODAL"}
         if event.type == "BACK_SPACE":
             field.backspace()

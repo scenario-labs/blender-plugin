@@ -7,6 +7,7 @@ import os
 import threading
 from collections import deque
 from concurrent.futures import Future
+from pathlib import Path
 
 from .coordinator import JobCoordinator, QuoteError, _payload
 
@@ -389,3 +390,134 @@ class JobWorkers:
                 thread.join()
             self._coordinator.close()
             self._closed = True
+
+
+class ExportTask(JobTask):
+    """A pollable export handle with thread-safe progress for the main-thread pump."""
+
+    def __init__(self):
+        super().__init__()
+        self._progress_lock = threading.Lock()
+        self._progress = ("queued", 0, 0)
+
+    def _report(self, phase, done, total):
+        with self._progress_lock:
+            self._progress = (phase, done, total)
+
+    def progress(self):
+        """Return ``(phase, done, total)``; phases are queued, media, render, verify, publish."""
+        with self._progress_lock:
+            return self._progress
+
+
+def _absolute(destination):
+    """Refuse a relative export path before a thread starts; never use the working folder."""
+    from .local_export import LocalExportError
+
+    path = os.fspath(destination)
+    if not isinstance(path, str) or not Path(path).is_absolute():
+        raise LocalExportError("Choose an absolute destination path")
+    return Path(path)
+
+
+class LocalExportWorker:
+    """Own one Film export thread at a time, outside the shared job workers.
+
+    A multi-hour local encode never occupies a polling/download worker or the
+    capture/review media slot. At most one export or re-publish runs per owner.
+    Deactivation cancels it and reaps its child; shutdown joins its thread.
+    """
+
+    def __init__(self, coordinator: JobCoordinator):
+        if not isinstance(coordinator, JobCoordinator):
+            raise TypeError("Use the shared job coordinator")
+        self._coordinator = coordinator
+        self._lock = threading.Lock()
+        self._accepting = True
+        self._threads = []
+        self._task = None
+        self._cancel = None
+
+    @property
+    def stopped(self):
+        with self._lock:
+            return all(not thread.is_alive() for thread in self._threads)
+
+    def export_film(self, spec, destination, *, origin, source_origin):
+        from .local_export import ExportSpec
+
+        if not isinstance(spec, ExportSpec):
+            raise TypeError("Use a Film export specification")
+        return self._start(
+            self._coordinator.export_film,
+            spec,
+            _absolute(destination),
+            origin=origin,
+            source_origin=source_origin,
+        )
+
+    def publish_film_export(self, staged, destination, *, origin, source_origin):
+        from .local_export import StagedExport
+
+        if not isinstance(staged, StagedExport):
+            raise TypeError("Use a verified staged Film export")
+        return self._start(
+            self._coordinator.publish_film_export,
+            staged,
+            _absolute(destination),
+            origin=origin,
+            source_origin=source_origin,
+        )
+
+    def _start(self, command, *args, **kwargs):
+        with self._lock:
+            if not self._accepting:
+                raise WorkerError("This job owner is inactive")
+            if self._task is not None and not self._task.done():
+                raise WorkerError("Wait for the current Film export to finish")
+            self._threads = [thread for thread in self._threads if thread.is_alive()]
+            task, cancel = ExportTask(), threading.Event()
+            thread = threading.Thread(
+                target=self._run,
+                args=(task, cancel, command, args, kwargs),
+                name="ScenarioFilmExport",
+            )
+            thread.start()
+            self._threads.append(thread)
+            self._task, self._cancel = task, cancel
+            return task
+
+    @staticmethod
+    def _run(task, cancel, command, args, kwargs):
+        if not task._future.set_running_or_notify_cancel():
+            return
+        try:
+            result = command(*args, cancel=cancel, progress=task._report, **kwargs)
+        except BaseException as exc:
+            task._future.set_exception(exc)
+            if not isinstance(exc, Exception):
+                raise
+        else:
+            task._future.set_result(result)
+
+    def cancel(self, task):
+        with self._lock:
+            if task is self._task and self._cancel is not None:
+                self._cancel.set()
+
+    def deactivate(self):
+        """Stop admission and cancel the running export; publishing never resumes."""
+        with self._lock:
+            self._accepting = False
+            if self._cancel is not None:
+                self._cancel.set()
+
+    def shutdown(self):
+        """Cancel and join the owned export thread; the child is reaped before it exits."""
+        with self._lock:
+            threads = tuple(self._threads)
+        if threading.current_thread() in threads:
+            raise WorkerError("An export thread cannot join its own owner")
+        self.deactivate()
+        for thread in threads:
+            thread.join()

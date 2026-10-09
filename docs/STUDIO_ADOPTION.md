@@ -224,6 +224,14 @@ Use portable discovery and test present/missing tools, timeout/cancellation and
 child-process cleanup on supported platforms under #64/#31. These are adoption
 requirements, not claims that upstream already implements every check.
 
+The first-party [Film video export](FILM_PLAN.md#offline-film-video-export-primitive)
+needs no external encoder: an offline Blender child uses Blender's built-in
+FFmpeg. An installed ffprobe adds a full decoded-frame check; without it, a
+second Blender child performs a weaker decode check and the receipt records which
+verification ran. This MP4 export is new first-party code, not an adaptation of
+Studio's `film_export.py`. It does not replace Studio's retained case-study
+bundle, which remains separate work under #64.
+
 ## Local background capture adaptation
 
 The first-party PNG/playblast responsibility from selected Studio

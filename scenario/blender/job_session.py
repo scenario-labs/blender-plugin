@@ -11,15 +11,18 @@ import threading
 import time
 import uuid
 from dataclasses import dataclass, field
+from pathlib import Path
 from weakref import WeakKeyDictionary, WeakValueDictionary
 
 import bpy
 from bpy.app.handlers import persistent
 
+from ..core.jobs import local_export
 from ..core.jobs.coordinator import (
     FilmUploadResult,
     JobCoordinator,
     LocalCaptureResult,
+    LocalExportResult,
     OriginQuote,
     RemoteSnapshot,
 )
@@ -28,7 +31,7 @@ from ..core.jobs.film_review_media import PreparedFilmReview
 from ..core.jobs.origins import OriginRevisions
 from ..core.jobs.results import ModelTextResult, PromptResults, VerifiedResults
 from ..core.jobs.store import JobOrigin, JobState, StoredJob
-from ..core.jobs.workers import JobWorkers
+from ..core.jobs.workers import ExportTask, JobWorkers, LocalExportWorker
 from .film_application import FilmShotCommands
 from .image_application import ImageApplicationError, apply_images
 from .material_application import (
@@ -147,6 +150,7 @@ class JobCompletion:
     cloud_read: bool = False
     workflow_catalog: bool = False
     asset_library: bool = False
+    local_export: bool = False
 
 
 @dataclass(frozen=True)
@@ -214,6 +218,9 @@ class JobSession:
             part_uploader=part_uploader,
         )
         self._workers = JobWorkers(self._coordinator, workers=workers, pending_limit=pending_limit)
+        # Film video export owns its thread: hours of local encoding must not
+        # reduce the shared workers' polling/download capacity.
+        self._exports = LocalExportWorker(self._coordinator)
         self.film_shots = FilmShotCommands(self, store)
         from .film_timeline import FilmTimelineCommands
 
@@ -702,6 +709,99 @@ class JobSession:
         if any(pending is task for pending, _ in self._pending):
             self._workers.cancel_local(task)
 
+    @staticmethod
+    def _export_destination(destination, staging):
+        """Resolve an approved video path outside staging, extension and Blender storage.
+
+        Every UI or MCP caller passes through here, so a relative, existing,
+        non-portable or private destination never reaches a thread or placeholder.
+        """
+        package = __package__.rsplit(".", 1)[0]
+        roots = (
+            staging,
+            bpy.utils.extension_path_user(package),
+            Path(__file__).resolve().parent.parent,
+            bpy.utils.resource_path("USER"),
+            bpy.utils.user_resource("EXTENSIONS"),
+        )
+        return local_export.validate_destination(destination, private_roots=roots)
+
+    @staticmethod
+    def _export_programs(spec):
+        """Refuse a specification whose child is not this Blender running the bundled worker."""
+        expected = (
+            Path(bpy.app.binary_path).resolve(),
+            Path(__file__).with_name("film_export_worker.py").resolve(),
+        )
+        if (spec.binary, spec.worker) != expected:
+            raise ValueError("Use a Film export snapshot from this Blender and extension")
+
+    def export_film(self, spec, destination, *, origin, source_origin):
+        """Start one approved offline video export on the session's owned export thread.
+
+        ``origin`` is the selected working scene and ``source_origin`` the exported
+        scene. The caller owns destination approval and the snapshot's staging
+        directory. The destination is validated here, on the main thread, before
+        any thread, placeholder or media hashing starts. No Scenario request, spend
+        or scene mutation follows.
+        """
+        _main_thread()
+        if not isinstance(spec, local_export.ExportSpec):
+            raise TypeError("Use a Film export specification")
+        self._export_programs(spec)
+        self._check_capacity()
+        self._resolve(origin)
+        if not self._origins.current(source_origin):
+            raise OriginUnavailable("The selected export scene changed")
+        destination = self._export_destination(destination, spec.directory.parent)
+        local_export.check_unused(spec)
+        task = self._exports.export_film(
+            spec, destination, origin=origin, source_origin=source_origin
+        )
+        self._pending.append((task, origin))
+        return task
+
+    def publish_film_export(self, staged, destination, *, origin, source_origin):
+        """Copy a verified staged export to another approved destination; never re-render."""
+        _main_thread()
+        if not isinstance(staged, local_export.StagedExport):
+            raise TypeError("Use a verified staged Film export")
+        self._check_capacity()
+        if not self._active:
+            raise OriginUnavailable("This export session is inactive")
+        destination = self._export_destination(destination, staged.directory.parent)
+        task = self._exports.publish_film_export(
+            staged, destination, origin=origin, source_origin=source_origin
+        )
+        self._pending.append((task, origin))
+        return task
+
+    def cancel_film_export(self, task):
+        _main_thread()
+        if any(pending is task for pending, _ in self._pending):
+            self._exports.cancel(task)
+
+    def deliver_local_export(self, completion):
+        """Consume one export outcome from this active session; no scene is resolved.
+
+        Export never mutates Blender data. Like the asset library, workflow catalog
+        and cloud read deliveries, an inactive session hands out no outcome, even
+        before a shutdown clears issued outcomes.
+        """
+        _main_thread()
+        if (
+            not self._active
+            or self._issued.get(id(completion)) is not completion
+            or not completion.local_export
+        ):
+            raise OriginUnavailable(
+                "Use an unconsumed Film export outcome from this active session"
+            )
+        del self._issued[id(completion)]
+        if completion.error is not None:
+            raise completion.error
+        return completion.result
+
     def prepare_upload(
         self, source, *, origin, kind, content_type, mesh_source=None, expected_sha256=None
     ):
@@ -846,6 +946,7 @@ class JobSession:
                         OriginQuote,
                         FilmUploadResult,
                         LocalCaptureResult,
+                        LocalExportResult,
                         VerifiedComposition,
                         PreparedFilmReview,
                     ),
@@ -862,6 +963,7 @@ class JobSession:
                     cloud_read=cloud_read,
                     workflow_catalog=workflow_catalog,
                     asset_library=task in self._asset_reads,
+                    local_export=isinstance(task, ExportTask),
                 )
             else:
                 completion = JobCompletion(
@@ -870,6 +972,7 @@ class JobSession:
                     cloud_read=cloud_read,
                     workflow_catalog=workflow_catalog,
                     asset_library=task in self._asset_reads,
+                    local_export=isinstance(task, ExportTask),
                 )
             finally:
                 self._cloud_reads.pop(task, None)
@@ -1389,17 +1492,20 @@ class JobSession:
         _main_thread()
         self._active = False
         self.invalidate_all()
+        self._exports.deactivate()
         self._workers.deactivate()
 
     def shutdown(self):
         _main_thread()
         self.deactivate()
         try:
+            # Join the cancelled export thread before the coordinator closes.
+            self._exports.shutdown()
             self._workers.shutdown()
         finally:
             # A failed SDK close occurs after joining. Release local ownership
             # then, but retain it if a control exception interrupted live workers.
-            if self._workers.stopped:
+            if self._workers.stopped and self._exports.stopped:
                 for task in tuple(self._upload_captures):
                     self._cleanup_upload_capture(task)
                 self._pending.clear()

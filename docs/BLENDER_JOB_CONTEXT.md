@@ -121,6 +121,29 @@ does not remove durable upload records or their separate staged copies.
 An imported upload requires its own Film task association; no automatic generation
 or scene application follows capture or upload.
 
+## Film video export ownership
+
+`JobSession.export_film` admits one approved [offline video export](FILM_PLAN.md#offline-film-video-export-primitive)
+on the session-owned export thread after checking the active session, the
+selected working scene and the exported scene's captured origin. On the main
+thread it then validates the destination: absolute, visible, portable, new and
+outside the snapshot's staging root, the extension's user storage, the installed
+extension and Blender's user resource and extensions folders. A reused snapshot
+or a specification whose child is not this Blender running the bundled export
+worker is refused too, so nothing starts a thread, placeholder or media hash for
+a rejected request. `publish_film_export` applies the same destination policy.
+Capture and review preparation keep their separate local slot on the shared
+workers. `cancel_film_export` signals the child; session retirement cancels it
+and shutdown joins the thread before workers and the coordinator close.
+Completions drain as `local_export` outcomes; `deliver_local_export` consumes one
+without resolving a scene, because export never mutates Blender data. Like the
+asset library, workflow catalog and cloud read deliveries, it refuses once the
+session is inactive, even while a failed shutdown still holds issued outcomes. A
+publish failure carries its verified staged output, and `publish_film_export`
+copies it to another approved destination without rendering. Handles, receipts
+and progress are session-local; no job store, blend property or restart replay
+is added.
+
 ## Film media preparation ownership
 
 `JobSession.prepare_film_composition` captures the supplied current origin and

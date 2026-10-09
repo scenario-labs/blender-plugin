@@ -39,6 +39,16 @@ def test_blender_paths_reject_windows_overflow_in_utf16_units(part):
         render.blender_path(PureWindowsPath("C:/") / part)
 
 
+def test_digest_stops_when_cancelled(tmp_path):
+    path = tmp_path / "film.mp4"
+    path.write_bytes(bytes(200_000))
+    cancel = threading.Event()
+    assert render.digest(path, cancel=cancel) == render.digest(path)
+    cancel.set()
+    with pytest.raises(render.RenderCancelled):
+        render.digest(path, cancel=cancel)
+
+
 @pytest.fixture
 def spec(tmp_path):
     (tmp_path / "snapshot.blend").write_bytes(b"synthetic snapshot")

@@ -94,6 +94,11 @@ private source copies live under `state/shared-uploads`, including
 `uploads.sqlite3` and `sources`. Capture/export staging and thumbnails also use
 the extension's user state/cache directories. Explicit local output tools can
 write to the configured Output Folder, normally `~/Downloads/Scenario`.
+A Film video export writes only to the destination you approve. Its private
+staging keeps a scene snapshot, the encoded video and child logs until the
+owner discards it; the Blender console logs the destination file name and its
+SHA-256. An interrupted export can leave an empty placeholder or a hidden
+`.scenario-*.partial` file next to the destination for manual removal.
 Scene properties, imported media and prompts can be saved in your `.blend` file.
 Older `state/jobs.json` or model-cache files may remain from the prototype; local
 record inspection does not resume their cloud jobs or migrate their ownership.

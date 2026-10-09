@@ -47,9 +47,13 @@ establish live generation or full render-lane desktop acceptance.
   after restart. Synthetic composition approval, mode navigation, invalidation and
   saved-job inspection pass on macOS Blender 5.1.2; see
   [the evidence and limits](UI_STYLE.md#film-composition-controls). Live provider
-  acceptance and other OS/DPI behavior remain pending; local final assembly and
-  export remain unavailable. Complete runtime adoption
-  and live/native acceptance remain open
+  acceptance and other OS/DPI behavior remain pending. Local review assembly and
+  an offline MP4 export primitive exist as session commands, but neither has
+  native/MCP controls yet, and the Studio case-study bundle is unavailable. Export
+  verification uses an installed ffprobe when present and otherwise a weaker
+  Blender decode check. Blender builds without H.264/AAC encoders cannot export;
+  they are detected only when the render child fails, with its log retained.
+  Complete runtime adoption and live/native acceptance remain open
   ([#64](https://github.com/scenario-labs/blender-plugin/issues/64),
   [#65](https://github.com/scenario-labs/blender-plugin/issues/65)).
 - Credentials use one explicitly selected pair (saved Blender preferences by

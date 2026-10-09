@@ -74,9 +74,14 @@ without polling again. An explicit `retry` clears the marker and opens a new
 window. Requesting a rendition the result did not have yet, such as a clip after
 its still, also opens a new window and restarts the backoff for that result, so
 the clip is not judged by a window the still already used. Renditions still
-polling share the new window. A retry received while that result's batch is on
-the lane is recorded and applied when the batch returns, so the late outcome
-cannot undo it.
+polling share the new window, including one whose final poll is already on the
+lane: if that poll leaves it `missing` or `failed`, it polls again in the new
+window when the batch returns. That forced poll clears the `missing` marker the
+final poll wrote, and any older marker of the requested rendition. A failed
+download in that final poll is polled again too, because its outcome does not
+show whether the window's end caused it. A retry received while that result's
+batch is on the lane is recorded and applied when the batch returns, so the
+late outcome cannot undo it.
 
 Without online access, renditions report `offline` and are checked every five
 seconds. An offline poll pauses the window, keeping the time already used since

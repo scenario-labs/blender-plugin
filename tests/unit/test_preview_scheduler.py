@@ -231,6 +231,46 @@ def test_clip_requested_after_the_still_window_ended_gets_a_full_window(lane):
     assert state(lane, "asset-video").state == State.MISSING
 
 
+@pytest.mark.parametrize("fault", [None, 503], ids=["no-preview", "metadata-failure"])
+def test_clip_requested_during_the_still_final_poll_shares_the_new_window(lane, fault):
+    service, clock, scheduler = lane.env, lane.clock, lane.scheduler
+    ready_job(service, "request", [("asset-video", "video/mp4", MP4)])
+    service.assets["asset-video"] = asset_record("asset-video", "video/mp4")
+    scheduler.request("request")
+    for _ in range(300):
+        drive(scheduler)
+        clock.now += 1
+    # Eight polls used the window; the final one is due now, at its end.
+    assert len(service.calls) == 8 and state(lane, "asset-video").state == State.PENDING
+    entered, release = _gated(service)
+    service.status = fault
+    scheduler.pump()
+    assert entered.wait(2)
+    scheduler.request("request", clip=True)
+    service.gate = None
+    release.set()
+    drive(scheduler)
+    # The overtaken final poll settles nothing: the still polls again with the
+    # clip at once, with the missing marker it wrote cleared.
+    assert len(service.calls) == 10
+    assert state(lane, "asset-video").state == state(lane, "asset-video", CLIP).state
+    assert state(lane, "asset-video").state == State.PENDING
+    service.status, start, polls = None, clock.now, []
+    url = f"{CDN}/video-still.jpg"
+    service.downloader.files[url] = JPEG
+    for _ in range(320):
+        clock.now += 1
+        if clock.now - start == 100:
+            service.assets["asset-video"] = asset_record("asset-video", "video/mp4", thumbnail=url)
+        before = len(service.calls)
+        drive(scheduler)
+        if len(service.calls) > before:
+            polls.append(clock.now - start)
+    assert polls == [5, 15, 35, 75, 135, 195, 255, 300]
+    assert state(lane, "asset-video").state == State.READY
+    assert state(lane, "asset-video", CLIP).state == State.MISSING
+
+
 def test_retry_during_an_inflight_batch_applies_when_it_returns(lane):
     service, scheduler = lane.env, lane.scheduler
     ready_job(service, "request", [("asset-model", "model/gltf-binary", GLB)])

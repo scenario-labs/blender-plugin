@@ -67,6 +67,7 @@ class _Entry:
         "force",
         "inflight",
         "poll",
+        "renew",
         "retry",
         "seen",
         "states",
@@ -91,6 +92,9 @@ class _Entry:
         self.force = False
         # An explicit retry received while this entry's batch was in flight.
         self.retry = False
+        # A rendition added while this entry's batch was in flight, so that
+        # batch's final flag predates the new window.
+        self.renew = False
         self.inflight = False
         self.seen = now
 
@@ -218,8 +222,10 @@ class ResultPreviewScheduler:
             if added:
                 # A newly requested rendition, such as a clip after the still,
                 # gets a full window even if earlier polling used or ended one.
-                # Renditions still polling share it, so their window restarts.
+                # Renditions still polling share it, so their window restarts,
+                # including those whose final poll is on the lane right now.
                 entry.window, entry.used, entry.attempts = None, 0.0, 0
+                entry.renew |= entry.inflight
                 entry.due = min(entry.due, now)
             result.append(self._snapshot(entry))
         return tuple(result)
@@ -342,13 +348,35 @@ class ResultPreviewScheduler:
         for entry, _ in batch:
             entry.inflight = False
         self._apply_batch(task, batch, now)
-        for entry, _ in batch:
+        for entry, work in batch:
             target = entry.target
-            if entry.retry and self._entries.get((target.request_id, target.asset_id)) is entry:
-                self._restart(entry, now)
+            renew, entry.renew = entry.renew, False
+            if self._entries.get((target.request_id, target.asset_id)) is entry:
+                if entry.retry:
+                    self._restart(entry, now)
+                elif renew and work.final:
+                    self._rejoin(entry, work.renditions)
             # Renditions held back by the decode limit, or requested while this
             # batch ran, stay queued and must not wait for another trigger.
             self._schedule(entry, now)
+
+    @staticmethod
+    def _rejoin(entry, sent):
+        """Return what a final poll settled to the window a new rendition opened.
+
+        That poll's final flag was frozen before the request, so renditions it
+        left missing or failed poll again in the new window. Its outcomes do not
+        say whether a failure came from the window's end, so a failed download
+        also gets that poll. ``force`` clears the missing marker it wrote; the
+        lane forgets markers for every rendition in the next batch, so a marker
+        the added rendition kept from an earlier session is decided again too.
+        Ready previews are kept.
+        """
+        for rendition in sent:
+            status = entry.states.get(rendition)
+            if status is not None and status.state in (State.MISSING, State.FAILED):
+                entry.states[rendition] = RenditionStatus(State.QUEUED)
+                entry.force = True
 
     def _apply_batch(self, task, batch, now):
         try:
@@ -359,10 +387,10 @@ class ResultPreviewScheduler:
             # A stored lane outcome, never a signal for this thread: a control
             # exception already retired the workers. Retry other failures within
             # the same bounded window, then stop.
-            for entry, sent in batch:
+            for entry, work in batch:
                 self._open_window(entry, now)
                 expired = now - entry.window >= self._window
-                for rendition in sent:
+                for rendition in work.renditions:
                     if entry.states.get(rendition, RenditionStatus(State.QUEUED)).state in _ACTIVE:
                         entry.states[rendition] = RenditionStatus(
                             State.FAILED if expired else State.PENDING,
@@ -509,7 +537,7 @@ class ResultPreviewScheduler:
                     return changed
                 if maintain:
                     self._maintained = now
-                self._batch = tuple((entry, work.renditions) for entry, work in batch)
+                self._batch = tuple(batch)
                 for entry, _ in batch:
                     entry.inflight, entry.force = True, False
         return changed

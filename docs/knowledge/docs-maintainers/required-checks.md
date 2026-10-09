@@ -9,7 +9,7 @@
     "coverage": "source-reviewed",
     "reviewed_at": "2026-10-09",
     "base_revision": "88b6b3ec8ebd5707581f6d39f0fd158c784873a2",
-    "limits": "Scoped live ruleset read-back: ci-ok, pr-title and commits required from GitHub Actions; no integrity bypass; existing CodeQL/code-quality and review rules preserved. Smoke environment existence, reviewer and main-only policy plus secret names were inspected, not secret values or plan contents. Scheduled smoke budget and hosted execution remain unaccepted. Merge-gate proof is tracked in issue 45 and its documentation PR. No settings changes, paid calls, merging or release acceptance are claimed.",
+    "limits": "Scoped live ruleset read-back: ci-ok, pr-title and commits required from GitHub Actions; no integrity bypass; existing CodeQL/code-quality and review rules preserved. Smoke environment existence, reviewer and main-only policy plus secret names were inspected, not secret values or plan contents. Scheduled smoke budget is unset. Manual hosted run 37946893572 reports success; private plan and provider outcomes were not assessed here and retain acceptance under issue 40. Merge-gate proof is tracked in issue 45 and its documentation PR. No settings changes, paid calls, merging or release acceptance are claimed.",
     "sources": {
       ".github/workflows/ci.yml": "9805ee9848f2eed06b0b9f108bcd7054592d61b431f8f4b57d4098f5cf43c344",
       ".github/workflows/pr-name.yml": "0e315b620212b21f3058eae7d173813190ab81fd929b5d1178772c2fdbbc79d6",

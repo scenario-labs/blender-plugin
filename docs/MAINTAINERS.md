@@ -226,10 +226,13 @@ GitHub's [environment API](https://docs.github.com/en/rest/deployments/environme
 and [branch-policy API](https://docs.github.com/en/rest/deployments/branch-policies#list-deployment-branch-policies).
 These checks run before the protected job and again after approval. A missing or
 unreadable gate fails closed. Read back on 2026-10-09: the environment exists with
-one required reviewer and a custom branch policy allowing `main` only. All four required secret names
-below are present; their values, account scope and private plan were not read.
-The repository variable `SMOKE_MAX_TOTAL_CU` is unset, and no hosted smoke run is
-recorded. Environment configuration alone does not establish hosted acceptance.
+one required reviewer and a custom branch policy allowing `main` only. All four
+required secret names below are present; their values, account scope and private plan were not read.
+The repository variable `SMOKE_MAX_TOTAL_CU` is unset. A
+[manual hosted run](https://github.com/scenario-labs/blender-plugin/actions/runs/37946893572)
+reports success; its private plan and provider outcomes were not assessed in this
+repository-settings review. Complete their acceptance under #40 rather than
+inferring it from environment configuration or the workflow conclusion alone.
 
 An administrator must maintain the dedicated test key, explicitly approved
 scope/budget, required reviewers, main-only branch rule and these environment

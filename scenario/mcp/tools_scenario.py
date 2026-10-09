@@ -12,6 +12,7 @@ from ..core.api.catalog import GENERATION_LANES as LANES
 from ..core.api.errors import ScenarioError
 from ..core.api.library import asset_summary as _asset_summary
 from ..core.schema.params import build_body, validate
+from ..core.ui import capability_status
 from .protocol import DeferredTool, ToolSpec
 
 
@@ -47,6 +48,7 @@ def list_models(args):
                 "name": rec.name,
                 "description": rec.short_description,
                 "capabilities": list(rec.capabilities),
+                "capability_status": capability_status.model_status(rec.capabilities),
             }
         )
     return {"lane": lane, "models": out[:40]}
@@ -1384,7 +1386,7 @@ SPECS = (
             "Args: context_id and production_id are required from film_recipe inspection; mode is final (default) or previs, score_task_id defaults to score.\n"
             "Returns: review_id and PREPARING phase; poll film_composition_review until READY.\n"
             'Example: {"context_id": "current-context", "production_id": "saved-production", "mode": "final"}.\n'
-            "Requires retained upload files or downloaded results and installed ffprobe. Uses the existing selected connection and recipe; no upload, download, scene mutation or generation. Reviews are session-local.\n"
+            "Film is experimental. Requires retained upload files or downloaded results and installed ffprobe. Uses the existing selected connection and recipe; no upload, download, scene mutation or generation. Reviews are session-local.\n"
             "Platform equivalent: none; local composition source verification."
         ),
         _schema(
@@ -1405,7 +1407,7 @@ SPECS = (
             "Args: review_id is required; action is status (default), cancel or discard.\n"
             "Returns: phase, original scene/production/master, frames/fps, sources/layers, parameters, exact price, saved request_id and sanitized error when available.\n"
             'Example: {"review_id": "current-composition", "action": "status"}.\n'
-            "Cancel stops local inspection or discards a pending price after it finishes. Discard releases only the review after active work ends; media and saved jobs remain. Neither action cancels or repeats a generation. After restart inspect film_recipe and saved jobs.\n"
+            "Film is experimental. Cancel stops local inspection or discards a pending price after it finishes. Discard releases only the review after active work ends; media and saved jobs remain. Neither action cancels or repeats a generation. After restart inspect film_recipe and saved jobs.\n"
             "Platform equivalent: none; local composition review lifecycle."
         ),
         _schema(
@@ -1424,7 +1426,7 @@ SPECS = (
             "Args: review_id is required from prepare_film_composition.\n"
             "Returns: QUOTED review with exact cu_cost_exact, model parameters and original master identity.\n"
             'Example: {"review_id": "ready-composition"}.\n'
-            "Rechecks saved sources, original recipe, scene and connection. No generation. Review the returned payload and obtain explicit spending approval before generate_film_composition.\n"
+            "Film is experimental. Rechecks saved sources, original recipe, scene and connection. No generation. Review the returned payload and obtain explicit spending approval before generate_film_composition.\n"
             "Platform equivalent: estimate_cost for model_scenario-compose-video."
         ),
         _schema({"review_id": {"type": "string"}}, ["review_id"]),
@@ -1438,7 +1440,7 @@ SPECS = (
             "Args: review_id and approved_cost are required strings; approve cu_cost_exact verbatim.\n"
             "Returns: SUBMITTED review with request_id for job_status and saved-job recovery.\n"
             'Example: {"review_id": "quoted-composition", "approved_cost": "0.10000000000000001"}.\n'
-            "Requires explicit approval of the reviewed payload and exact cost. Consumes approval before preparation. On an error or lost response inspect film_recipe and saved jobs; never repeat uncertain submission. Downloads remain saved for separate application; no recipe or scene edit.\n"
+            "Film is experimental. Requires explicit approval of the reviewed payload and exact cost. Consumes approval before preparation. On an error or lost response inspect film_recipe and saved jobs; never repeat uncertain submission. Downloads remain saved for separate application; no recipe or scene edit.\n"
             "Platform equivalent: generate with model_scenario-compose-video through the shared model runtime."
         ),
         _schema(
@@ -1454,7 +1456,7 @@ SPECS = (
             "Args: production_id and shot_id are required strings from film_recipe.\n"
             "Returns: context_id, source_id/scene choices, editorial frames/fps and generated source timing.\n"
             'Example: {"production_id": "saved-production", "shot_id": "shot"}.\n'
-            "Fresh inspection replaces unprepared source handles; prepared reviews keep their identities. No rendering or upload.\n"
+            "Film is experimental. Fresh inspection replaces unprepared source handles; prepared reviews keep their identities. No rendering or upload.\n"
             "Platform equivalent: none; local Film capture inspection."
         ),
         _schema(
@@ -1471,7 +1473,7 @@ SPECS = (
             "Args: context_id, production_id, shot_id and source_id are required; kind is VIDEO (default) or STILL, width/height default 1280/720, color_type is MATERIAL (default), TEXTURE or OBJECT.\n"
             "Returns: review_id, READY phase, exact source, dimensions, frames and fps.\n"
             'Example: {"context_id": "current-context", "production_id": "saved-production", "shot_id": "shot", "source_id": "current-source", "kind": "STILL"}.\n'
-            "No scene snapshot, render, upload or generation yet. VIDEO requires installed ffmpeg/ffprobe and uses the editorial range without padding; STILL uses its first frame. Ask for approval of the displayed settings before render_film_capture.\n"
+            "Film is experimental. No scene snapshot, render, upload or generation yet. VIDEO requires installed ffmpeg/ffprobe and uses the editorial range without padding; STILL uses its first frame. Ask for approval of the displayed settings before render_film_capture.\n"
             "Platform equivalent: none; local capture settings review."
         ),
         _schema(
@@ -1496,7 +1498,7 @@ SPECS = (
             "Args: review_id is required from prepare_film_capture.\n"
             "Returns: capture phase; poll film_capture_review without starting another render.\n"
             'Example: {"review_id": "approved-capture"}.\n'
-            "Requires explicit approval of the source and settings. The snapshot/render is local, preserves the working file and sends no bytes to Scenario. Changed scenes or credentials invalidate approval.\n"
+            "Film is experimental. Requires explicit approval of the source and settings. The snapshot/render is local, preserves the working file and sends no bytes to Scenario. Changed scenes or credentials invalidate approval.\n"
             "Platform equivalent: none; local offline capture."
         ),
         _schema({"review_id": {"type": "string"}}, ["review_id"]),
@@ -1509,7 +1511,7 @@ SPECS = (
             "Args: review_id is required; action is status (default), cancel or discard.\n"
             "Returns: phase, dimensions/timing, private output path/hash, error and any upload reference_id/request_id.\n"
             'Example: {"review_id": "current-capture", "action": "status"}.\n'
-            "Cancel stops only the local render. Explicit discard deletes its private snapshot/media/logs after active work ends, preserving saved uploads. Captures are session-local and cleaned on session shutdown; no render replays after restart. No upload or generation.\n"
+            "Film is experimental. Cancel stops only the local render. Explicit discard deletes its private snapshot/media/logs after active work ends, preserving saved uploads. Captures are session-local and cleaned on session shutdown; no render replays after restart. No upload or generation.\n"
             "Platform equivalent: none; local capture lifecycle."
         ),
         _schema(
@@ -1528,7 +1530,7 @@ SPECS = (
             "Args: review_id is required for a CAPTURED result.\n"
             "Returns: reference_id for reference_upload_status and the original capture metadata.\n"
             'Example: {"review_id": "approved-capture"}.\n'
-            "Requires separate user approval of the captured output and selected connection. Staging verifies its exact content hash before any service request. Never restart an uncertain upload; inspect saved progress. Associate the imported upload with a recipe task separately using bind_film_upload. Does not generate or approve spending.\n"
+            "Film is experimental. Requires separate user approval of the captured output and selected connection. Staging verifies its exact content hash before any service request. Never restart an uncertain upload; inspect saved progress. Associate the imported upload with a recipe task separately using bind_film_upload. Does not generate or approve spending.\n"
             "Platform equivalent: shared uploads create/complete, followed by explicit local Film association."
         ),
         _schema({"review_id": {"type": "string"}}, ["review_id"]),
@@ -1541,7 +1543,7 @@ SPECS = (
             "Args: production_id is required from film_recipe.\n"
             "Returns: context_id, production_id, fps, total_frames and shots with source_id/scene choices.\n"
             'Example: {"production_id": "saved-production"}.\n'
-            "Choices are owner-issued live references, not scene names. Fresh inspection replaces previous choices but keeps prepared reviews. Existing scene markers identify recipe compatibility, not generation provenance; the user explicitly selects local scenes. No service call or scene mutation.\n"
+            "Film is experimental. Choices are owner-issued live references, not scene names. Fresh inspection replaces previous choices but keeps prepared reviews. Existing scene markers identify recipe compatibility, not generation provenance; the user explicitly selects local scenes. No service call or scene mutation.\n"
             "Platform equivalent: none; local editable timeline planning."
         ),
         _schema({"production_id": {"type": "string"}}, ["production_id"]),
@@ -1555,7 +1557,7 @@ SPECS = (
             "Args: context_id and production_id from film_timeline_sources; selections maps every shot ID to one returned source_id.\n"
             "Returns: review_id, phase, scene, shot_count, fps, total_frames and error.\n"
             'Example: {"context_id": "current", "production_id": "saved-production", "selections": {"shot-one": "returned-source"}}.\n'
-            "Captures current recipe/destination and unchanged local scenes. No generation, download, render or scene build; build_film_timeline requires separate approval.\n"
+            "Film is experimental. Captures current recipe/destination and unchanged local scenes. No generation, download, render or scene build; build_film_timeline requires separate approval.\n"
             "Platform equivalent: none; local timeline review."
         ),
         _schema(
@@ -1575,7 +1577,7 @@ SPECS = (
             "Args: review_id is required; action is status (default) or discard; inspected=true is required to dismiss uncertain partial cleanup.\n"
             "Returns: review_id, phase, scene, shot_count, fps, total_frames and error.\n"
             'Example: {"review_id": "returned-review", "action": "status"}.\n'
-            "Never builds, cleans Blender data or changes saved jobs. Handles expire when the session closes. Inspect uncertain local data before starting another review.\n"
+            "Film is experimental. Never builds, cleans Blender data or changes saved jobs. Handles expire when the session closes. Inspect uncertain local data before starting another review.\n"
             "Platform equivalent: none; local timeline review."
         ),
         _schema(
@@ -1595,7 +1597,7 @@ SPECS = (
             "Args: review_id is the required string from prepare_film_timeline.\n"
             "Returns: review_id, phase, scene, shot_count, fps, total_frames and error.\n"
             'Example: {"review_id": "returned-review"}.\n'
-            "Requires explicit build approval. Rechecks chosen scenes and consumes the review before mutation. Preserves the working scene and existing timelines. Strips reference live shot scenes; later edits affect the sequence. No generation, download, render, export, saved-job mutation or native operator Undo entry. Never repeat an uncertain build.\n"
+            "Film is experimental. Requires explicit build approval. Rechecks chosen scenes and consumes the review before mutation. Preserves the working scene and existing timelines. Strips reference live shot scenes; later edits affect the sequence. No generation, download, render, export, saved-job mutation or native operator Undo entry. Never repeat an uncertain build.\n"
             "Platform equivalent: none; local Blender timeline assembly."
         ),
         _schema({"review_id": {"type": "string"}}, ["review_id"]),
@@ -1608,7 +1610,7 @@ SPECS = (
             "Args: production_id and shot_id are required strings from film_recipe.\n"
             "Returns: context_id, production_id, shot_id and heroes with request_id, revision and GLB asset choices.\n"
             'Example: {"production_id": "saved-production", "shot_id": "shot-one"}.\n'
-            "Reads the selected credential scope only. No verification, download, generation or scene build occurs.\n"
+            "Film is experimental. Reads the selected credential scope only. No verification, download, generation or scene build occurs.\n"
             "Platform equivalent: none; local saved Film model inspection."
         ),
         _schema(
@@ -1625,7 +1627,7 @@ SPECS = (
             "Args: context_id, production_id and shot_id are required strings from film_shot_sources; selections is a required object mapping every hero_id to request_id, integer revision and asset_id. Use {} for a no-hero shot.\n"
             "Returns: review_id, shot_id, phase, hero_count, scene, error and recovery flags.\n"
             'Example: {"context_id": "current", "production_id": "saved-production", "shot_id": "shot-one", "selections": {"hero": {"request_id": "saved-job", "revision": 8, "asset_id": "saved-glb"}}}.\n'
-            "Captures the current recipe and scene; verifies local receipts on the shared workers without building, downloading or spending. Poll film_shot_review; a READY review still needs explicit build_film_shot approval.\n"
+            "Film is experimental. Captures the current recipe and scene; verifies local receipts on the shared workers without building, downloading or spending. Poll film_shot_review; a READY review still needs explicit build_film_shot approval.\n"
             "Platform equivalent: none; local Film application preparation."
         ),
         _schema(
@@ -1658,7 +1660,7 @@ SPECS = (
             "Args: review_id is required; action is status (default), discard, retry_receipts or dismiss_uncertain. Dismissal requires inspected=true.\n"
             "Returns: review_id, shot_id, phase, hero_count, scene, error, receipt_retry_available and inspection_required.\n"
             'Example: {"review_id": "returned-review", "action": "status"}.\n'
-            "Status advances pending local verification but never builds. Discard retires unapproved work. Receipt retry never calls the builder. After inspecting the scene and saved jobs, dismissal retires an uncertain review only if no known receipts remain; it never clears durable claims or repeats a build. Review handles do not survive a changed connection or restart.\n"
+            "Film is experimental. Status advances pending local verification but never builds. Discard retires unapproved work. Receipt retry never calls the builder. After inspecting the scene and saved jobs, dismissal retires an uncertain review only if no known receipts remain; it never clears durable claims or repeats a build. Review handles do not survive a changed connection or restart.\n"
             "Platform equivalent: none; local review and receipt recovery."
         ),
         _schema(
@@ -1681,7 +1683,7 @@ SPECS = (
             "Args: review_id is the required string from prepare_film_shot.\n"
             "Returns: review_id, shot_id, phase, hero_count, scene, error and recovery flags.\n"
             'Example: {"review_id": "returned-review"}.\n'
-            "Requires explicit scene-build approval. Rechecks the original recipe/destination, consumes the review and claims every source before mutation. Keeps the working scene selected. No generation or download occurs. Never repeat an uncertain build; use receipt-only recovery when offered.\n"
+            "Film is experimental. Requires explicit scene-build approval. Rechecks the original recipe/destination, consumes the review and claims every source before mutation. Keeps the working scene selected. No generation or download occurs. Never repeat an uncertain build; use receipt-only recovery when offered.\n"
             "Platform equivalent: none; local Blender shot construction."
         ),
         _schema({"review_id": {"type": "string"}}, ["review_id"]),
@@ -1694,7 +1696,7 @@ SPECS = (
             "Args: action is inspect (default), load or new_production; recipe is a raw Film JSON object required for load.\n"
             "Returns: stable production_id, title, tasks and shots; inspection adds context_id and saved job/upload identities and states, including declared master jobs. A quoted task includes quote_id, model_id, parameters and cu_cost_exact for its existing approval.\n"
             'Example: {"action": "inspect"}.\n'
-            "Load validates before mutation and preserves identity. Save the blend file to retain it. New production deliberately gives the same task names a fresh identity; it does not submit or recover work.\n"
+            "Film is experimental. Load validates before mutation and preserves identity. Save the blend file to retain it. New production deliberately gives the same task names a fresh identity; it does not submit or recover work.\n"
             "After a scene-switch error, return to the original scene and inspect to recover an unchanged quote or saved upload association. Inspection only completes already-admitted preparation; it never reprices, resumes saved jobs or submits. Stale quotes are omitted.\n"
             "Platform equivalent: none; local Film recipe and saved-task inspection."
         ),
@@ -1713,7 +1715,7 @@ SPECS = (
             "Args: production_id and task_id are required strings from film_recipe.\n"
             "Returns: quote_id, production_id, task_id, model_id, resolved parameters and cu_cost_exact.\n"
             'Example: {"production_id": "saved-production", "task_id": "shot-one"}.\n'
-            "Uses saved scoped dependencies and the shared SDK model quote; never submits. Existing task identities cannot be spent again. Discard an unused quote before repricing.\n"
+            "Film is experimental. Uses saved scoped dependencies and the shared SDK model quote; never submits. Existing task identities cannot be spent again. Discard an unused quote before repricing.\n"
             "Platform equivalent: estimate_cost for the recipe model's resolved inputs."
         ),
         _schema(
@@ -1730,7 +1732,7 @@ SPECS = (
             "Args: quote_id and approved_cost are required strings; approve the returned cu_cost_exact verbatim.\n"
             "Returns: request_id/local_id, state and recovery note.\n"
             'Example: {"quote_id": "returned-quote", "approved_cost": "0.10000000000000001"}.\n'
-            "Requires explicit spending approval. Results download through the shared model lifecycle and remain saved for explicit application. Never repeat an uncertain submission.\n"
+            "Film is experimental. Requires explicit spending approval. Results download through the shared model lifecycle and remain saved for explicit application. Never repeat an uncertain submission.\n"
             "Platform equivalent: generate for the approved Film model task."
         ),
         _schema(
@@ -1746,7 +1748,7 @@ SPECS = (
             "Args: quote_id is the required string from estimate_film_task.\n"
             "Returns: discarded.\n"
             'Example: {"quote_id": "returned-quote"}.\n'
-            "Does not cancel or change saved jobs.\n"
+            "Film is experimental. Does not cancel or change saved jobs.\n"
             "Platform equivalent: none; local approval handle."
         ),
         _schema({"quote_id": {"type": "string"}}, ["quote_id"]),
@@ -1759,7 +1761,7 @@ SPECS = (
             "Args: production_id/task_id identify the loaded Film task; context_id, request_id and integer expected_revision come from list_reference_uploads. All required.\n"
             "Returns: production_id, task_id, upload_request_id and bound state.\n"
             'Example: {"production_id": "saved-production", "task_id": "reference", "context_id": "current", "request_id": "upload", "expected_revision": 4}.\n'
-            "Requires an unchanged imported upload in the selected scope. The association is durable and immutable; choose a new task name for a different source.\n"
+            "Film is experimental. Requires an unchanged imported upload in the selected scope. The association is durable and immutable; choose a new task name for a different source.\n"
             "Platform equivalent: none; local reference to an already imported asset."
         ),
         _schema(
@@ -2102,7 +2104,7 @@ SPECS = (
             "Args:\n"
             "  - lane: optional string, default image; image, video, 3d, material, audio, render_image, render_video or edit3d.\n"
             "  - query: optional string, substring of the model name, description or id.\n"
-            "Returns: lane, models[] with id, name, description and capabilities. Retry after catalog loading completes.\n"
+            "Returns: lane, models[] with id, name, description, capabilities and capability_status (empty, or the experimental note the picker shows). Retry after catalog loading completes.\n"
             'Example: {"lane": "material", "query": "patina"}.\n'
             "Prefer model_schema before choosing generation parameters; this is not the full platform catalog.\n"
             "Platform equivalent: models_list, recommend."
@@ -2182,7 +2184,7 @@ SPECS = (
             "  - lane: optional generation lane, default image. Every lane issues a single-use quote_id.\n"
             "Returns: model_id, lane, cu_cost, cu_cost_exact (decimal string), details, mesh_sources (local captured 3D input provenance) and quote_id bound to the lane, model, inputs, scene and credential context.\n"
             'Example: {"model_id": "model_example", "parameters": {"prompt": "a wooden crate"}}.\n'
-            "Call before generate and show the cost to the user; an estimate does not authorize spending.\n"
+            "Call before generate and show the cost to the user; an estimate does not authorize spending. Speech-to-text (audio2txt) and video-to-motion (video23d) models are experimental: they can be estimated and generated and their results stay in saved jobs, but motion and transcription handling is not accepted. prepare_result_application imports a returned GLB or media file by file type only.\n"
             "Platform equivalent: model_run with dry_run."
         ),
         _schema(
@@ -2208,7 +2210,7 @@ SPECS = (
             "  - approved_cost: required, the exact cu_cost_exact string explicitly approved by the user.\n"
             "Returns: local_id, status, lane, model_id and note. All model jobs poll and download through the shared session. Only the Image lane imports verified PNG/EXR images automatically into the unchanged origin. Other lanes stop at saved ready results; their scene application remains separate. Render lanes require explicit render_form uploads and separate Prompt Spark approval when enabled with an empty look. No capture, upload or Spark submission occurs during generate.\n"
             'Example: {"lane": "image", "model_id": "model_example", "parameters": {"prompt": "a wooden crate"}, "quote_id": "quote_from_estimate", "approved_cost": "1.25"}.\n'
-            "Do not call before estimate_cost and explicit spending approval. Do not repeat a timed-out submission. Use prepare_result_application for saved-result imports.\n"
+            "Do not call before estimate_cost and explicit spending approval. Do not repeat a timed-out submission. Use prepare_result_application for saved-result imports. Speech-to-text (audio2txt) and video-to-motion (video23d) models are experimental: their results stay in saved jobs, but motion and transcription handling is not accepted. prepare_result_application imports a returned GLB or media file by file type only.\n"
             "Platform equivalent: model_run."
         ),
         _schema(

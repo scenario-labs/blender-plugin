@@ -114,6 +114,8 @@ def draw_view(layout, context, *, width):
     if view.page == "CREATE":
         draw_panel(layout, context, panels.SCENARIO_PT_main)
     elif view.page == "FILM":
+        # Studio reuses panel bodies only, so it draws the sidebar header's status itself.
+        film.draw_experimental(layout)
         identifiers = tuple(item[0] for item in FILM_PAGES)
         rows = (
             (identifiers,)

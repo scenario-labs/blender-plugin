@@ -29,9 +29,9 @@ TEXTURE_ROLES = frozenset(_TEXTURE_ROLES.values())
 REWRITTEN_MESH_TYPES = frozenset({"model/obj", "model/mtl"})
 
 # SDK 2.2.0 AssetRetrieveResponse.original_mime_type documents that an HDRi skybox
-# exposes a JPEG preview as `url` and its EXR as `originalFileUrl`. Only these
-# OpenEXR labels replace an image preview; Radiance, mesh, splat, audio and video
-# originals keep the asset's own file until a decoder accepts them.
+# exposes a JPEG preview as `url` and its `.exr` or `.hdr` file as `originalFileUrl`.
+# Only these OpenEXR labels replace an image preview; Radiance, mesh, splat, audio
+# and video originals keep the asset's own file until a decoder accepts them.
 ORIGINAL_MEDIA_TYPES = frozenset({"image/x-exr", "image/aces"})
 
 # SDK 2.2.0 AssetMetadata.type values that describe a 2:1 360 environment.

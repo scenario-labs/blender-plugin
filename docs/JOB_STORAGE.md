@@ -506,8 +506,9 @@ without changing it.
 
 The unit and installed-ZIP tests upgrade a store rebuilt from
 [the SQL dump of one written by the schema 9 code](../tests/fixtures/README.md#schema-9-job-store),
-containing every job state, operation, local claim, mesh and Film binding, a cloud
-record and a second credential scope. The
+containing every job state except the transient `downloading` and `applying`,
+every operation, local claim, mesh and Film binding, a cloud record and a second
+credential scope. The
 [package update check](development/validation.md#scenario-package-state-across-updates)
 exercises the same upgrade through Blender's native extension update, then opens
 the upgraded store with the predecessor package's own storage code, which must

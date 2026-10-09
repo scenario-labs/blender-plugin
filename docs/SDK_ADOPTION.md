@@ -703,7 +703,8 @@ policy, provider acceptance or the dependency pin.
 The same `assets.with_raw_response.retrieve` response also keeps the SDK 2.2.0
 `originalFileUrl` and `originalMimeType` fields. The typed
 `AssetRetrieveResponse.original_mime_type` documents that an HDRi skybox exposes a
-JPEG preview as `url` and its EXR as the original; its `original_file_url`
+JPEG preview as `url` and its `.exr` or `.hdr` file as the original; the extension
+selects only the OpenEXR labels. Its `original_file_url`
 docstring still describes only video, audio and 3D originals, which is a
 documentation gap rather than a missing operation. `metadata.type` includes the
 skybox labels used for the projection. Offline contracts check the raw and typed

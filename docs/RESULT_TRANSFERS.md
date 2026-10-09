@@ -176,8 +176,9 @@ role preservation alone does not authorize a scene mutation.
 ## Declared HDR originals and 360 projection
 
 SDK 2.2.0 documents that an HDRi skybox asset exposes a JPEG preview as `url` and
-its OpenEXR file as `originalFileUrl`, labelled by `originalMimeType`. When an
-image asset declares `image/x-exr` or `image/aces` there, the manifest records
+its `.exr` or `.hdr` file as `originalFileUrl`, labelled by `originalMimeType`.
+The extension selects only the OpenEXR labels: when an image asset declares
+`image/x-exr` or `image/aces` there, the manifest records
 `source: original`, that media type, an `.exr` local name and an unknown expected
 size: originals publish no size metadata. The download fetches `originalFileUrl`
 through the same storage policy, online check, redirect rules and atomic

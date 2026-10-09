@@ -16,22 +16,27 @@ from scenario.core.api.sdk_adapter import AdapterError
 from scenario.core.config import Credentials
 from scenario.core.jobs.coordinator import SubmissionUncertain
 from scenario.core.jobs.transfers import DownloadedResult, ResultDownloader, StoragePolicy
+from tests.unit.test_panorama import exr, png
 from tools import smoke_image as model
 from tools import smoke_suite as suite
 from tools.dev_config import LiveSettings
 
 SETTINGS = LiveSettings(Credentials("fixture-key", "fixture-secret"), "fixture-project")
 DATA = b"offline result; receipt and metadata coverage only"
+# Panorama kinds also need the bounded 2:1 container preflight to pass.
+FILES = {"panorama": png(), "hdri": exr()}
 
 
 class Downloads(ResultDownloader):
     def __init__(self):
         super().__init__(StoragePolicy(frozenset({"cdn.scenario.com"})), online_access=lambda: True)
 
-    def download(self, url, *, root, name, expected_size, expected_sha256):
+    def download(self, url, *, root, name, expected_size, expected_sha256, max_bytes=None):
         self._policy.destination(url)
-        (root / name).write_bytes(DATA)
-        return DownloadedResult(name, len(DATA), model.digest(DATA))
+        data = FILES.get(url.split("/")[3], DATA)
+        assert expected_size == len(data) or (expected_size is None and max_bytes)
+        (root / name).write_bytes(data)
+        return DownloadedResult(name, len(data), model.digest(data))
 
 
 @pytest.fixture
@@ -109,25 +114,28 @@ def fixture(tmp_path):
                 "video": "video/mp4",
                 "model": "model/gltf-binary",
                 "audio": "audio/wav",
+                "hdri": "image/jpeg",
             }.get(kind, "image/png")
             metadata = (
                 {"type": "texture-albedo" if kind.endswith("base") else "texture-normal"}
                 if kind.startswith("material-")
+                else {"type": {"panorama": "skybox-base-360", "hdri": "skybox-hdri"}[kind]}
+                if kind in FILES
                 else {}
             )
-            return httpx.Response(
-                200,
-                json={
-                    "asset": {
-                        "id": kind,
-                        "status": "success",
-                        "mimeType": mime,
-                        "metadata": metadata,
-                        "properties": {"size": len(DATA)},
-                        "url": "https://cdn.scenario.com/result?private=secret",
-                    }
-                },
-            )
+            asset = {
+                "id": kind,
+                "status": "success",
+                "mimeType": mime,
+                "metadata": metadata,
+                "properties": {"size": len(FILES.get(kind, DATA))},
+                "url": f"https://cdn.scenario.com/{kind}/result?private=secret",
+            }
+            if kind == "hdri":
+                # The JPEG preview's EXR original, declared by the asset itself.
+                asset["originalMimeType"] = "image/x-exr"
+                asset["originalFileUrl"] = "https://cdn.scenario.com/hdri/original?private=secret"
+            return httpx.Response(200, json={"asset": asset})
         raise AssertionError("Unexpected request")
 
     def execute(args, settings):
@@ -173,9 +181,9 @@ def test_all_kinds_exact_aggregate_and_offline_resume(fixture, capsys):
     assert run("quote") == 0
     assert not paid(calls)
     manifest = json.loads((root / "suite.json").read_bytes())
-    assert manifest["total_cost"] == "0.50000000000000000000000000005"
+    assert manifest["total_cost"] == "0.70000000000000000000000000007"
     assert run("submit", max_cu=Decimal(manifest["total_cost"])) == 0
-    assert len(paid(calls)) == 5
+    assert len(paid(calls)) == 7
     before = len(calls)
     assert run("resume") == 0 and len(calls) == before
     with pytest.raises(model.SmokeError, match="attempted"):
@@ -314,7 +322,7 @@ def test_concurrent_suite_submissions_cannot_repeat_paid_calls(fixture):
         finally:
             release.set()
         assert first.result(timeout=10) == 0
-    assert len(paid(calls)) == 5
+    assert len(paid(calls)) == 7
 
 
 @pytest.mark.parametrize("command", ["submit", "budget-run"])
@@ -342,7 +350,7 @@ def test_budget_authorized_execution_quotes_every_case_before_first_spend(fixtur
         if request.url.params.get("dryRun") == "true"
     }
     assert quoted == set(model.RESULT_KINDS)
-    assert len(paid(calls)) == 5 and (root / "suite-attempt").is_file()
+    assert len(paid(calls)) == 7 and (root / "suite-attempt").is_file()
 
 
 def test_changed_credentials_cannot_submit_any_case(fixture):

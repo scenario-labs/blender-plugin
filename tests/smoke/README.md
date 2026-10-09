@@ -124,6 +124,8 @@ metadata checks apply:
 | `video` | At least one video result; companion files remain verified |
 | `model` | At least one binary glTF result (`model/gltf-binary`); companion files remain verified |
 | `audio` | At least one audio result; companion files remain verified |
+| `panorama` | Every result is an image; at least one has a server-declared equirectangular projection, and each projected file passes the 2:1 panorama preflight |
+| `hdri` | As `panorama`, and at least one projected result is a saved OpenEXR original (`source: original`) |
 
 Material quotes use schema version 3 and retain the exact normalized SDK payload
 inside the approval digest. Checks use its `maps` selection, including model-schema
@@ -143,6 +145,17 @@ existing job, keep its original run and use `resume`; polling/download and recei
 recovery still work, but completion exits 4 for manual inspection instead of
 claiming map completeness. Never start another generation to recover that job.
 Non-material version-1/2 compatibility is unchanged.
+
+The `panorama` and `hdri` kinds read the projection that Scenario's asset
+`metadata.type` declared when the manifest was saved, never a filename, model or
+image dimensions. Each projected file must then pass the same bounded container
+preflight as World application: a 2:1 PNG or OpenEXR within the byte and pixel
+limits. JPEG panoramas fail until that preflight accepts JPEG. The `hdri` kind
+also requires an `image/x-exr` or `image/aces` original saved in place of the
+asset's preview with an OpenEXR container; a preview, a Radiance original or LDR
+bytes never qualify. Neither kind decodes pixels, measures dynamic range or judges
+seams; those remain native and human review under
+[#98](https://github.com/scenario-labs/blender-plugin/issues/98).
 
 A mismatch fails the check while preserving downloaded results for inspection.
 `resume` rechecks them without submitting again. MIME metadata alone does not

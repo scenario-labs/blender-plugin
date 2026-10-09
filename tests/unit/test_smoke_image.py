@@ -19,6 +19,7 @@ from scenario.core.jobs.credential_storage import open_credential_store
 from scenario.core.jobs.results import ResultError
 from scenario.core.jobs.store import JobState, JobStore, StoreError
 from scenario.core.jobs.transfers import DownloadedResult, ResultDownloader, StoragePolicy
+from tests.unit.test_panorama import exr, png
 from tools import smoke_image as smoke
 from tools.dev_config import LiveSettings
 
@@ -29,21 +30,25 @@ SETTINGS = LiveSettings(ToolCredentials("fixture-key", "fixture-secret"))
 
 
 class Downloads(ResultDownloader):
-    def __init__(self):
+    def __init__(self, data=DATA):
         super().__init__(StoragePolicy(frozenset({"cdn.scenario.com"})), online_access=lambda: True)
         self.fail = False
         self.paths = []
+        self.urls = []
+        self.data = data
 
-    def download(self, url, *, root, name, expected_size, expected_sha256):
+    def download(self, url, *, root, name, expected_size, expected_sha256, max_bytes=None):
         self._policy.destination(url)
         if self.fail:
             raise RuntimeError("private-signed-url?secret=redact")
-        assert expected_size == len(DATA)
+        # A declared original has no size metadata, so a byte cap must bound it.
+        assert expected_size == len(self.data) or (expected_size is None and max_bytes)
         path = root / name
         with path.open("xb") as output:
-            output.write(DATA)
+            output.write(self.data)
         self.paths.append(path)
-        return DownloadedResult(name, len(DATA), smoke.digest(DATA))
+        self.urls.append(url)
+        return DownloadedResult(name, len(self.data), smoke.digest(self.data))
 
 
 @pytest.fixture(params=smoke.RESULT_KINDS)
@@ -70,6 +75,9 @@ def run(tmp_path, request):
         "video": [("video/mp4", None)],
         "audio": [("audio/wav", None)],
         "model": [("model/gltf-binary", None), ("image/png", None)],
+        # Server-declared 360 images; the HDRi asset is a JPEG preview of an EXR original.
+        "panorama": [("image/png", "skybox-base-360")],
+        "hdri": [("image/jpeg", "skybox-hdri")],
         "material": [
             ("image/png", role)
             for role in (
@@ -82,18 +90,23 @@ def run(tmp_path, request):
             )
         ],
     }
+    downloads = Downloads({"panorama": png(), "hdri": exr()}.get(kind, DATA))
     behavior["assets"] = [
         {
             "id": f"asset-{index}",
             "status": "success",
             "mimeType": mime,
-            "properties": {"size": len(DATA)},
+            "properties": {"size": len(downloads.data)},
             "metadata": {"type": role},
             "url": "https://cdn.scenario.com/result?secret=redact",
         }
         for index, (mime, role) in enumerate(media_types[kind])
     ]
-    downloads = Downloads()
+    if kind == "hdri":
+        behavior["assets"][0].update(
+            originalMimeType="image/aces",
+            originalFileUrl="https://cdn.scenario.com/original?secret=redact",
+        )
 
     def store(settings=SETTINGS):
         return open_credential_store(
@@ -204,8 +217,9 @@ def test_quote_submit_restart_verify_exact_cost_and_scope_without_project(run, c
         if private != "remote":
             assert private not in output
     report = json.loads((root / "report.json").read_text())
+    data = downloads.data
     assert report["jobs"][0]["results"] == [
-        {"size": len(DATA), "sha256": smoke.digest(DATA)} for _ in downloads.paths
+        {"size": len(data), "sha256": smoke.digest(data)} for _ in downloads.paths
     ]
     assert "remote" not in (root / "report.json").read_text()
 
@@ -764,3 +778,84 @@ def test_material_model_without_supported_map_contract_cannot_produce_approval(r
     with pytest.raises(smoke.SmokeError, match="supported maps"):
         execute("quote")
     assert not (root / "quote.json").exists() and not paid(calls)
+
+
+@pytest.mark.parametrize("run", ["panorama", "hdri"], indirect=True)
+def test_panorama_kinds_accept_a_declared_projection_with_image_companions(run):
+    root, calls, behavior, downloads, store, _, execute = run
+    companion = {
+        **behavior["assets"][0],
+        "id": "asset-companion",
+        "mimeType": "image/png",
+        "metadata": {"type": "img2img"},
+    }
+    for key in ("originalMimeType", "originalFileUrl"):
+        companion.pop(key, None)
+    behavior["assets"].append(companion)
+    assert execute("quote") == 0
+    assert execute("submit") == 0 and execute("resume") == 0
+    results = store().records()[0].results
+    assert [item.asset.projection for item in results] == ["equirectangular", None]
+    hdri = json.loads((root / "quote.json").read_text())["result_kind"] == "hdri"
+    assert results[0].asset.source == ("original" if hdri else "asset")
+    assert ("/original" in downloads.urls[0]) == hdri
+    assert len(paid(calls)) == 1
+
+
+@pytest.mark.parametrize("run", ["panorama", "hdri"], indirect=True)
+@pytest.mark.parametrize(
+    "change", ["no-projection", "skybox-3d", "square", "jpeg", "video-companion"]
+)
+def test_panorama_kinds_require_a_projected_two_to_one_file(run, change):
+    root, calls, behavior, downloads, store, _, execute = run
+    asset = behavior["assets"][0]
+    hdri = "originalMimeType" in asset
+    if change == "no-projection":
+        asset["metadata"] = {}
+    elif change == "skybox-3d":
+        asset["metadata"] = {"type": "skybox-3d"}
+    elif change == "square":
+        downloads.data = exr(4, 4) if hdri else png(4, 4)
+    elif change == "jpeg":
+        # Not yet accepted by the World panorama preflight, so never a passing panorama.
+        downloads.data = b"\xff\xd8\xff\xe0 synthetic jpeg \xff\xd9"
+    else:
+        behavior["assets"].append(
+            {**asset, "id": "asset-video", "mimeType": "video/mp4", "metadata": {}}
+        )
+        for key in ("originalMimeType", "originalFileUrl"):
+            behavior["assets"][-1].pop(key, None)
+    for item in behavior["assets"]:
+        item["properties"] = {"size": len(downloads.data)}
+    execute("quote")
+    with pytest.raises(smoke.SmokeError, match="approved result kind|2:1 panorama") as error:
+        execute("submit")
+    assert error.value.code == 1
+    assert store().records()[0].state == JobState.READY
+    before = len(calls)
+    with pytest.raises(smoke.SmokeError):
+        execute("resume")
+    assert len(calls) == before and len(paid(calls)) == 1
+    assert (root / "report.json").is_file()
+
+
+@pytest.mark.parametrize("run", ["hdri"], indirect=True)
+@pytest.mark.parametrize("change", ["preview-only", "radiance-original", "ldr-original"])
+def test_hdri_kind_requires_a_declared_openexr_original(run, change):
+    _, calls, behavior, downloads, store, _, execute = run
+    asset = behavior["assets"][0]
+    if change == "preview-only":
+        # Even EXR-looking bytes saved from the preview URL are not an HDRI result.
+        del asset["originalMimeType"], asset["originalFileUrl"]
+    elif change == "radiance-original":
+        asset["originalMimeType"] = "image/vnd.radiance"
+    else:
+        downloads.data = png()
+        asset["properties"] = {"size": len(downloads.data)}
+    execute("quote")
+    with pytest.raises(smoke.SmokeError, match="approved result kind"):
+        execute("submit")
+    record = store().records()[0]
+    assert record.state == JobState.READY
+    assert record.results[0].asset.projection == "equirectangular"
+    assert len(paid(calls)) == 1

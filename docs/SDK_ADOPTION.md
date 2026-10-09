@@ -229,7 +229,8 @@ under maintainer-authorized credentials and project before any route is enabled.
 ## Model acceptance commands
 
 All model smoke entry points now use `tools.smoke_image` as their shared engine;
-`tools.smoke_model` selects Image, Material, Video, GLB or audio result checks.
+`tools.smoke_model` selects Image, Material, Video, GLB, audio, panorama or HDRI
+result checks.
 Fresh metadata uses SDK 2.2.0 `models.with_raw_response.retrieve`, exact estimates
 and one paid submission use `generate.with_raw_response.run_model`, and saved-job
 polling/download metadata use `jobs.with_raw_response.retrieve` and
@@ -244,11 +245,17 @@ maps fail submission-result and recovery checks without regenerating. Old materi
 quotes can recover results for inspection but cannot establish map completeness
 or authorize new submission; unsubmitted runs need a fresh quote.
 Offline SDK-transport tests
-exercise all five kinds, uncertainty, cost/schema drift, scope changes and receipt
+exercise every kind, uncertainty, cost/schema drift, scope changes and receipt
 recovery. Result checks use verified nonempty bytes, MIME metadata and known
 texture roles; they do not establish decoding, local reference upload, Film,
 native interaction, live provider acceptance or a protected aggregate CI budget.
 See [the command reference](../tests/smoke/README.md).
+
+The `panorama` and `hdri` kinds check the saved `projection` and `source` fields
+from the same `assets.with_raw_response.retrieve` metadata, then the bounded
+2:1 container preflight on the verified files; `hdri` requires a saved OpenEXR
+original. They add no SDK call or dependency. Offline tests use synthetic PNG and
+OpenEXR headers, not live skybox output.
 
 ## Shared model text reads
 

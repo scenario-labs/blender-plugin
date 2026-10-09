@@ -247,6 +247,17 @@ nonempty task bindings and `film_upload` before claiming this coverage. Adding
 Film storage to a package must not remove the captured-mesh, texture-role or local
 reuse checks above.
 
+When the predecessor exposes saved workflow Library bindings, the probe also
+seeds a workflow schema, a Unicode prompt and single/array reference inputs. It
+compares the complete form signature, canonical parameter values and persisted
+scope/value bindings after update and offline reopen. The parameter builder must
+reject the marked inputs under a different credential and default/alternate
+project stores. Both reports include `workflow_references_preserved`, which must
+be true when `expected-state.json` contains a workflow form. Predecessors without
+these fields report false and cannot establish workflow preservation. They still
+run all applicable job/upload/scene checks; the probe does not invent prior state
+for newly introduced properties.
+
 The probe rejects Python socket connections while seeding/checking/upgrading.
 Blender's native updater uses its configured loopback repository; this is not an
 OS sandbox for arbitrary package code or subprocesses. Use only trusted archives.

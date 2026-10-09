@@ -25,9 +25,12 @@ def test_repository_codex_entry_reads_the_cli_token_variable_and_stays_disabled(
     server = config["mcp_servers"]["scenario-blender"]
     variable = server["bearer_token_env_var"]
     assert resolve_cli_token(None, {variable: "shared-name"}) == ("shared-name", False)
-    assert f'bearer_token_env_var = "{variable}"' in (ROOT / "docs/MCP.md").read_text()
+    docs = (ROOT / "docs/MCP.md").read_text()
     snippet = (ROOT / "scenario/blender/mcp_service.py").read_text()
-    assert f"--bearer-token-env-var {variable}" in snippet
+    for text in (docs, snippet):
+        assert f"--bearer-token-env-var {variable}" in text
+        assert f"export {variable}=" in text
+    assert f'bearer_token_env_var = "{variable}"' in docs
     assert server["enabled"] is False
 
 

@@ -73,6 +73,21 @@ establish live generation or full render-lane desktop acceptance.
   [#98](https://github.com/scenario-labs/blender-plugin/issues/98).
 - Multi-object mesh export combines the selection. Safe in-place multi-object
   editing needs separate acceptance under #99.
+- Automatic Image-lane import and saved image, World and material application
+  currently accept only PNG and scanline OpenEXR files. Other image results, such
+  as JPEG or WebP, stay saved with the job without import.
+- Model import currently accepts one self-contained GLB per action: one scene
+  with embedded files, up to 256 MiB. Gaussian splat (`.spz`), PLY, OBJ, FBX and
+  glTF JSON (`.gltf`) results stay saved with the job without import.
+- An uncertain submission is currently not reconciled automatically. Its saved
+  job stays marked as unconfirmed and offers no resubmission. If the job completed,
+  recover it from cloud history with **Save for recovery** (local MCP:
+  `recover_cloud_job`) instead of generating again.
+- Running workflows currently cannot be cancelled from Blender, and interactive
+  workflow approval or selection nodes are unsupported. Native workflow file
+  inputs take Library selections or already uploaded asset IDs; the workflow form
+  has no direct local upload. To use a local file, upload it with local MCP
+  `upload_reference` and enter its imported asset ID.
 - Prompt helpers require their own exact quote and approval. Unusable Spark
   output fails without an automatic paid LLM fallback; complete text can be
   retrieved again without regeneration. Historical prices are not current quotes.

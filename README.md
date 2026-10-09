@@ -38,8 +38,11 @@ relying on a workflow; shared runtime and interface adoption remain in progress.
 
 1. Download `scenario-<version>.zip` from the
    [releases page](https://github.com/scenario-labs/blender-plugin/releases). Keep it zipped.
-   [Verify the download](docs/USER_GUIDE.md#verify-your-download) when checksums and
-   attestations are supplied with that release.
+   Verify your download: for releases that include `SHA256SUMS`, save the ZIP,
+   `scenario-handbook-<version>.html` and `SHA256SUMS` together, check them with
+   `sha256sum -c SHA256SUMS` (macOS: `shasum -a 256 -c SHA256SUMS`) and, with the GitHub CLI, run
+   `gh attestation verify scenario-<version>.zip -R scenario-labs/blender-plugin`
+   ([details](docs/USER_GUIDE.md#verify-your-download)). Historical `v*` releases have neither.
 2. Drag the ZIP onto a Blender window, or use Edit > Preferences > Get Extensions
    > Install from Disk. The extension appears as "Scenario" in Blender's Add-ons list.
 3. In Scenario, open Organization settings > API Keys > Add API Key and follow

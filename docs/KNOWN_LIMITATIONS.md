@@ -80,9 +80,10 @@ establish live generation or full render-lane desktop acceptance.
   request in [#190](https://github.com/scenario-labs/blender-plugin/issues/190);
   model tags alone do not establish supported input and result handling. Models
   offering `video23d` or `audio2txt` show a visible experimental status in the
-  picker, the Model row and `list_models`. Generation works and generic import by
-  file type may bring in a returned GLB or media file, but motion and
-  transcription handling is not accepted.
+  picker, the Model row and `list_models`; the viewport composer's model chip
+  does not show it. They can be submitted; provider behavior and result handling
+  are not accepted. Generic import by file type may still bring in a returned GLB
+  or media file.
 
 ## Interface and capture
 

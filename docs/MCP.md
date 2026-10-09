@@ -491,7 +491,8 @@ prototype result event automatically applies cached files into the current scene
 Speech-to-text (`audio2txt`) and video-to-motion (`video23d`) models are
 experimental. `estimate_cost` and `generate` describe this status and accept
 them like other models, and `list_models` returns the picker's status text in
-each entry's `status` (empty otherwise). Their results stay in saved jobs.
+each entry's `capability_status` (empty otherwise), named apart from the
+server's model status. Their results stay in saved jobs.
 `prepare_result_application` imports a returned GLB or media file by file type
 only; motion and transcription handling is not accepted ([#190](https://github.com/scenario-labs/blender-plugin/issues/190)).
 

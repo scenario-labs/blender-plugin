@@ -13,10 +13,10 @@
     "sources": {
       "scenario/blender/film.py": "ac0efa854242bdacff54711eba99aabb2f86f842e073bffe53669702606239d8",
       "scenario/blender/studio.py": "d4ba0b268cdcc1a6d9477cb5f190ebb18233010de5b5963fecf941ba05995fb8",
-      "scenario/mcp/tools_scenario.py": "b1226d92dd5b5aba2be56a4e3079d437ec93a865b63ba5a911d1338962115d42",
+      "scenario/mcp/tools_scenario.py": "fecde250ae186fbbc35bc55ff610c75a32457c0bef14e14de6a80499dd26ab70",
       "tests/blender/test_film_controls.py": "cecff78aeb5a08baddeeb00c235277c86eb919f0764a9c47a69b00af73b9c48b",
       "tests/blender/test_studio_view.py": "1e763f4c22eecaece1be36def00d565460d68dd424f4aad6c09ee8b90db16625",
-      "tests/unit/test_mcp_descriptions.py": "b568866568aa4d33840106780e3483494217deb0e5c1cc95a271f94d7fbf9b35"
+      "tests/unit/test_mcp_descriptions.py": "4da394cc79f73aec007b23115fb123b19159d6c3a7b1bfaf4f729e4a0054336a"
     }
   }
 }

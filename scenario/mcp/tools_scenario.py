@@ -48,7 +48,7 @@ def list_models(args):
                 "name": rec.name,
                 "description": rec.short_description,
                 "capabilities": list(rec.capabilities),
-                "status": capability_status.model_status(rec.capabilities),
+                "capability_status": capability_status.model_status(rec.capabilities),
             }
         )
     return {"lane": lane, "models": out[:40]}
@@ -2104,7 +2104,7 @@ SPECS = (
             "Args:\n"
             "  - lane: optional string, default image; image, video, 3d, material, audio, render_image, render_video or edit3d.\n"
             "  - query: optional string, substring of the model name, description or id.\n"
-            "Returns: lane, models[] with id, name, description, capabilities and status (empty, or the experimental note the picker shows). Retry after catalog loading completes.\n"
+            "Returns: lane, models[] with id, name, description, capabilities and capability_status (empty, or the experimental note the picker shows). Retry after catalog loading completes.\n"
             'Example: {"lane": "material", "query": "patina"}.\n'
             "Prefer model_schema before choosing generation parameters; this is not the full platform catalog.\n"
             "Platform equivalent: models_list, recommend."

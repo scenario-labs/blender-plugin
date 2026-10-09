@@ -195,8 +195,9 @@ short wording. Drawing reads the status and changes nothing.
   **Experimental: speech-to-text not accepted** or
   **Experimental: video-to-motion not accepted** label. The Model row is shared
   by the sidebar and Studio lanes, Render Image/Video and Edit 3D; the viewport
-  composer's model chip does not show it. Generation works and results stay in
-  saved jobs. Generic Import is offered by file type, so a returned GLB or media
+  composer's model chip does not show it. These models can be submitted and
+  results stay in saved jobs; provider behavior and result handling are not
+  accepted. Generic Import is offered by file type, so a returned GLB or media
   file may import, but motion and transcription handling is not accepted ([#190](https://github.com/scenario-labs/blender-plugin/issues/190)).
 
 Installed native tests assert the registered header preset draw call, the Studio

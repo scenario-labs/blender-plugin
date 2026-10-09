@@ -154,7 +154,10 @@ def test_experimental_paths_are_explicit_without_removing_tools():
 def test_list_models_reports_the_picker_status():
     _, calls = specs("tools_scenario")
     descriptions = {call.args[0].value: call.args[1].value for call in calls}
-    assert "capabilities and status (empty, or the experimental note" in descriptions["list_models"]
+    assert (
+        "capabilities and capability_status (empty, or the experimental note"
+        in descriptions["list_models"]
+    )
     tree = ast.parse((ROOT / "scenario/mcp/tools_scenario.py").read_text())
     function = next(
         node
@@ -162,12 +165,15 @@ def test_list_models_reports_the_picker_status():
         if isinstance(node, ast.FunctionDef) and node.name == "list_models"
     )
     entries = [node for node in ast.walk(function) if isinstance(node, ast.Dict)]
-    status = [
-        value
+    pairs = [
+        (key.value, value)
         for entry in entries
         for key, value in zip(entry.keys, entry.values, strict=True)
-        if isinstance(key, ast.Constant) and key.value == "status"
+        if isinstance(key, ast.Constant)
     ]
+    # Named apart from the server's model status, such as a training state.
+    assert "status" not in {key for key, _ in pairs}
+    status = [value for key, value in pairs if key == "capability_status"]
     assert len(status) == 1
     assert ast.unparse(status[0]) == "capability_status.model_status(rec.capabilities)"
 

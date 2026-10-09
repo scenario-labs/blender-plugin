@@ -216,15 +216,19 @@ nothing.
 
 - The pill and card start at the bottom centre of that span.
 - A saved or resized card width shrinks to the span minus margins. The card
-  needs its minimum width of 420 px plus a 24 px margin on each side, all times
-  the UI scale. A narrower span shows the pill in its place. At a composer scale
-  of 4 (Retina with a Preferences UI scale of 2), an open sidebar easily leaves
-  less than the 1,872 px the card needs. The viewport also needs the card's
-  132 px height plus a 24 px margin above and below, times the UI scale (720 px
-  at scale 4): a shorter viewport shows the pill too, instead of drawing the
-  card's rows over each other. Drawing, hit testing and drags then use the pill
-  geometry. The stored expanded choice and card width stay unchanged, so the
-  card returns by itself once the sidebar closes or the viewport grows.
+  needs its minimum width of 420 px plus a 24 px margin on each side, all
+  times the UI scale. The UI scale is Blender's custom-interface multiplier
+  (`preferences.system.ui_scale`: the display DPI times the Preferences
+  resolution scale), not the pixel size, which is a line width that already
+  includes both. A narrower span shows the pill in its place. At a UI scale of
+  4 (Retina with a Preferences resolution scale of 2), an open sidebar easily
+  leaves less than the 1,872 px the card needs. The viewport also needs the
+  card's 132 px height plus a 24 px margin above and below, times the UI scale
+  (720 px at scale 4): a shorter viewport shows the pill too, instead of
+  drawing the card's rows over each other. Drawing, hit testing and drags then
+  use the pill geometry. The stored expanded choice and card width stay
+  unchanged, so the card returns by itself once the sidebar closes or the
+  viewport grows.
 - While the card has no room, a click on the pill, expanded or collapsed, opens
   the current lane's form in the Settings dialog (the dialog of the card's
   **Settings** chip) instead of expanding. A short message in the status bar

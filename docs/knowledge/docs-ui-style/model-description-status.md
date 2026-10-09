@@ -16,7 +16,7 @@
       "scenario/blender/panels.py": "452dca5173123a40e757f37975acae3e7a27e9946a1bb5b9c0f1ef4bd33fcf01",
       "scenario/blender/render_lanes.py": "ccf9178bc587f97a79c7d663311f0d3622f8d19e32ede912000b4198cc7d43aa",
       "scenario/blender/operators.py": "41a8a513e4adec195e56794c7430078a95a46ddc1c48e2e682a24d2ff656512f",
-      "scenario/blender/composer/draw.py": "ff4ed9de7c0c46a9ebeb9d3954f25d344cf93f185c0649818990932cfd7b4f4a",
+      "scenario/blender/composer/draw.py": "af14182391dacb90947693e91633b071f93e1622fc0222d55f30f3d506d0b6f0",
       "scenario/blender/runtime.py": "43003d6a75ea5b11f2459ba56d39db94d43359a1cd1564765a10471d7979889e",
       "scenario/core/api/sdk_catalog.py": "d2405048078890ff64037a359281ec1413cfd114e8bc599aa9bc29889f9638d3",
       "scenario/core/jobs/manager.py": "f79ea01367faf949a139d7daaeb55ff47e58d86cc98fd58e5ed3c6bcfd6183ab",

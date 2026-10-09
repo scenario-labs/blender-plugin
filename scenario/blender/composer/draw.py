@@ -84,8 +84,11 @@ def text(x, y, size, string, color=TEXT, max_width=None):
 
 
 def ui_scale(context):
-    prefs = context.preferences
-    return prefs.system.pixel_size * prefs.view.ui_scale
+    """Blender's multiplier for custom interface drawing: the display DPI times the Preferences resolution scale.
+
+    The system pixel size is a line width derived from that same DPI (4 on Retina at a resolution scale of 2), so
+    multiplying it by the resolution scale would count that scale twice."""
+    return context.preferences.system.ui_scale
 
 
 # side regions drawn over the viewport with region overlap, and the space flag that shows each

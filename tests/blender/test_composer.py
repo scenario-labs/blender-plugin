@@ -463,23 +463,34 @@ class ComposerSideRegionTests(unittest.TestCase):
         self._assert_reachable(reopened, opened, sidebar_x)
 
     # -- large UI scale ----------------------------------------------------------
-    # The physical desktop case: Retina pixel size 2 with a Preferences UI scale of 2 (composer scale 4),
+    # The physical desktop case: Retina with a Preferences resolution scale of 2 (custom-UI scale 4),
     # a 226 px toolbar and a 1122 px sidebar at x=1355 over a 2477 px viewport. About 1129 px stay
     # uncovered, less than the 1680 px minimum card.
     RETINA = (0, 2477, 226, 1122)
 
     @staticmethod
-    def _preferences(pixel_size, ui_scale):
-        return SimpleNamespace(
-            system=SimpleNamespace(pixel_size=pixel_size), view=SimpleNamespace(ui_scale=ui_scale)
-        )
+    def _preferences(scale):
+        """Preferences whose custom-UI scale is `scale`, as Blender derives it from DPI and resolution scale."""
+        return SimpleNamespace(system=SimpleNamespace(ui_scale=scale))
 
     def _retina(self, sidebar=True, geometry=None, flipped=False):
         return self._context(
             sidebar=sidebar,
             flipped=flipped,
             geometry=geometry or self.RETINA,
-            preferences=self._preferences(2.0, 2.0),
+            preferences=self._preferences(4.0),
+        )
+
+    def test_composer_scale_is_blenders_custom_ui_scale_not_pixel_size_times_resolution(self):
+        # Blender 5.2.1 on Retina at a resolution scale of 2 reports DPI 288: a custom-UI scale of 4 and a pixel
+        # size (line width) of 4. Multiplying the pixel size by the resolution scale would draw at 8.
+        prefs = SimpleNamespace(
+            system=SimpleNamespace(ui_scale=4.0, pixel_size=4.0), view=SimpleNamespace(ui_scale=2.0)
+        )
+        self.assertEqual(self.draw.ui_scale(SimpleNamespace(preferences=prefs)), 4.0)
+        self.assertEqual(
+            self.draw.ui_scale(bpy.context),
+            bpy.context.preferences.system.ui_scale,
         )
 
     def test_large_scale_beside_the_sidebar_draws_and_hits_the_pill_instead_of_the_card(self):
@@ -628,7 +639,7 @@ class ComposerSideRegionTests(unittest.TestCase):
         for scale in (1.0, 2.0, 4.0):
             need = (self.cl.CARD_HEIGHT + 2 * self.cl.MARGIN) * scale
             geometry = (0, int(1800 * scale), int(56 * scale), int(300 * scale))
-            prefs = self._preferences(1.0, scale)
+            prefs = self._preferences(scale)
             with self.subTest(scale=scale):
                 state = self.state_mod.ComposerState()
                 state.expanded, state.width = True, self.cl.MIN_CARD_WIDTH * scale
@@ -712,10 +723,10 @@ class ComposerSideRegionTests(unittest.TestCase):
         state = self.state_mod.ComposerState()
         state.expanded = True
         # 1x: a hidden sidebar opens beside the picker, and the card still fits beside it
-        closed = self._context(sidebar=False, preferences=self._preferences(1.0, 1.0))
+        closed = self._context(sidebar=False, preferences=self._preferences(1.0))
         self.assertTrue(self.draw.card_fits_with_sidebar(closed))
         self._press_model_chip(closed, state).assert_called_once_with(closed)
-        opened = self._context(preferences=self._preferences(1.0, 1.0))
+        opened = self._context(preferences=self._preferences(1.0))
         self.assertTrue(self.modal._layout(opened, state).expanded)
         # composer scale 4: the card fits with the sidebar hidden, not beside its default 880 px
         closed = self._retina(sidebar=False)
@@ -740,7 +751,7 @@ class ComposerSideRegionTests(unittest.TestCase):
         self.assertFalse(self.draw.card_fits_with_sidebar(widened))
         self._press_model_chip(widened, state).assert_not_called()
         # a short viewport never gets this far: the pill stands in and the chip is not drawn
-        short = self._context(sidebar=False, preferences=self._preferences(1.0, 1.0), height=100)
+        short = self._context(sidebar=False, preferences=self._preferences(1.0), height=100)
         self.assertFalse(self.draw.card_fits_with_sidebar(short))
 
     # -- drag helpers ----------------------------------------------------------

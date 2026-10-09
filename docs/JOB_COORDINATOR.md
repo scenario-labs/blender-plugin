@@ -107,9 +107,12 @@ then runs the free-space preflight, so a missing folder is reported as such.
 Before publishing it checks only the active owner; a later scene edit does not
 cancel the approved bytes. Private-root policy belongs to the Blender session.
 `publish_film_export` copies a staged export issued by this coordinator to
-another destination without rendering. `LocalExportResult` binds the published
-receipt to the selected scope and both origins; it grants no scene, upload or
-spend authority. Deactivation forgets issued staged exports.
+another destination without rendering; it checks the active owner, not the
+origins. `LocalExportResult` carries the published receipt with the selected
+scope and the origins its command received: an initial export checked both
+before reserving, while a re-publish carries the caller's values as given. It
+grants no scene, upload or spend authority. Deactivation forgets issued staged
+exports.
 
 `LocalExportWorker` runs these commands on its own named thread, one at a time
 per owner, instead of the bounded `JobWorkers` queue. A multi-hour export

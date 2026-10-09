@@ -833,14 +833,16 @@ export or release acceptance.
 one live local sequencer scene to a private blend snapshot on Blender's main
 thread, in Object Mode. It rejects scene, movie-clip and mask strips, requires an
 integer frame rate from 1 to 120 and defaults to the scene's frame range, output
-size and whether any sound strip is audible: not muted itself, by its sequencer
-channel or by an enclosing meta strip or that strip's channel. It synchronizes
+size (truncating the resolution percentage as Blender's own output does) and
+whether any sound strip is audible: not muted itself, by its sequencer channel or
+by an enclosing meta strip or that strip's channel. It synchronizes
 that scene's own view layers before `libraries.write`, which avoids the Blender
 5.2 copy crash seen for new inactive scenes. A second synchronization is a no-op,
 so a caller can synchronize, capture origins and then snapshot without
-invalidating them. Every external movie, sound, image-sequence and font file is
-stamped by path, size, modification time, device and inode; packed sounds and
-fonts travel in the snapshot. The working file, selected scene and frame are
+invalidating them. Every distinct external movie, sound, image and font file is
+stamped once by path, size, modification time, device and inode, so the media
+budget counts files rather than strips; packed sounds and fonts travel in the
+snapshot. The working file, selected scene and frame are
 unchanged. Bounds are validated before any file is written, and a failed snapshot
 removes its new `film-export-*` staging directory.
 
@@ -856,10 +858,13 @@ in an offline, quiet, factory-startup Blender child with script auto-execution
 disabled, a disposable profile and the same scrubbed environment as capture. The
 child uses Blender's built-in FFmpeg encoder: MPEG-4 container, H.264 at
 Blender's high quality constant rate factor, no autosplit, sequencer output only
-and 100% resolution, with stereo 48 kHz AAC at 192 kb/s or no audio track. It
-prints bounded progress at most every 1%; the parent reads only the last 4 KiB of
-the log and stops the child when the staged file exceeds 16 GiB. Exactly one
-`output/film.mp4` is accepted.
+and 100% resolution at an explicit 8-bit colour depth, with stereo 48 kHz AAC
+at 192 kb/s or no audio track. It prints a progress line every
+`max(1, frames // 100)` rendered frames and after the last one; the parent reads
+only the last 4 KiB of the log. The parent stops the child when the staged file
+exceeds 16 GiB or the staging volume falls below 64 MiB free, since the
+free-space preflight is only an estimate. Exactly one `output/film.mp4` is
+accepted, and its final hash stops when the export is cancelled.
 
 Verification always reads the MP4 container with the bpy-free
 [`mp4_inspection`](../scenario/core/jobs/mp4_inspection.py) reader, which parses
@@ -893,23 +898,32 @@ name: at most 255 UTF-8 bytes, no control characters, none of `<>:"|?*\/` and no
 Windows device stem such as `CON` or `COM1`, checked after removing trailing
 spaces as Windows does (the rules of Python 3.13's `ntpath.isreserved`). The name
 must not exist, including as a dangling link, its folder must exist, and the
-resolved folder must lie outside the caller's private roots. Containment compares
-Windows extended and ordinary spellings as equal and ignores case on macOS. The
-result uses that resolved folder. `reserve` creates the destination exclusively
-as an empty placeholder before rendering, so permission problems surface before a
-long encode. `publish` copies the verified staged bytes to a hidden fixed-length
-`.scenario-<hex>.partial` file in the same folder, so any valid destination name
-fits, hashing and syncing them, compares size and SHA-256, checks that the
-placeholder is still the same empty file and then atomically replaces it. Failure
-or cancellation removes only its own partial file and placeholder, never another
-file, and keeps the staged output. `ExportPublishError.staged` allows a copy-only
+resolved folder must lie outside the caller's private roots, each of which must
+be absolute. Containment compares Windows extended and ordinary spellings as equal
+and folds case and Unicode composition on every platform, so a folder that differs
+from a private root only in spelling is refused even on a volume where it is a
+different folder. The result uses that resolved folder. `reserve` creates the
+destination exclusively as an empty placeholder before rendering, so permission
+problems surface before a long encode. On POSIX the reservation keeps the
+placeholder open until it is released or replaced, so a file recreated at that
+path cannot reuse its inode number; Windows keeps no handle, and NTFS file IDs
+carry a reuse sequence number. `publish` first checks that the destination volume
+has room for the exact staged size plus 64 MiB, then copies the verified staged
+bytes to a hidden fixed-length `.scenario-<hex>.partial` file in the same folder,
+so any valid destination name fits. It hashes the copied bytes, syncs the file,
+compares size and SHA-256, checks that the placeholder is still the same empty
+file and that the export was not cancelled meanwhile, then atomically replaces it.
+Failure or cancellation removes only its own partial file and placeholder, never
+another file, and keeps the staged output. `ExportPublishError.staged` allows a copy-only
 publish to another approved destination. After reserving, a free-space preflight
 assumes about 25 Mbit/s at 1080p, scaled by pixel count, plus 64 MiB, doubled
 when staging and destination share a volume; a disk that fills later still fails
 cleanly.
 
 `JobSession.export_film` and `publish_film_export` validate the destination on
-Blender's main thread before any thread, placeholder or media hashing starts.
+Blender's main thread before any thread, placeholder or media hashing starts, and
+`export_film` refuses a specification whose child is not the running Blender
+executable with the bundled export worker.
 Their private roots are the snapshot's staging root, the extension's user
 storage, the installed extension folder and Blender's user resource and
 extensions folders, so every UI or MCP caller gets the same policy; a reused
@@ -927,7 +941,8 @@ the export, reaps the child and releases the placeholder; retirement after
 rendering keeps the staged output unpublished. `drain` returns a `local_export`
 completion, and `deliver_local_export` consumes it without resolving a scene.
 `publish_film_export` re-publishes only a staged export issued by the same owner,
-without rendering. `ExportTask.progress()` reports the media, render, verify and
+without rendering; it checks the active owner but not the origins its caller
+passes, which the receipt carries as given. `ExportTask.progress()` reports the media, render, verify and
 publish phases. Each successful publish writes one local log line with the
 destination basename and SHA-256.
 
@@ -938,17 +953,20 @@ leave staging under extension user storage and a zero-byte placeholder or hidden
 partial file next to the destination. There is no startup sweep.
 
 Unit tests cover specification bounds, destination validation including Windows
-names and spellings, the longest valid name, exclusive reservation,
-identity-checked publishing, replace and permission failures, cancellation at
-each stage, container, ffprobe and Blender decode mismatches, media changes,
-output inventory and size, bounded progress parsing, environment scrubbing,
+names and spellings, case and composition folding and relative private roots, the
+longest valid name, exclusive and pinned reservation, identity-checked publishing,
+free-space checks, replace and permission failures, cancellation at each stage
+including after the copy and during the final hash, container, ffprobe and Blender
+decode mismatches, media changes, output inventory and size, bounded progress
+parsing, environment scrubbing,
 reused snapshots, path-free staging errors, owned-thread admission independent of
 the shared workers and owner retirement. Installed tests run a real child export
 of a synthetic 64x64, 48-frame review with Blender's decode check on every
 platform, and the ffprobe check where it is installed. They also cover session
 delivery, mid-render retirement, copy-only re-publishing, channel and meta strip
-audio defaults and session refusal of relative, private, existing and
-non-portable destinations before any work. A build without an H.264 or AAC
+audio defaults, the truncated default size, the distinct-file media budget, the
+8-bit encoder setting, session refusal of a foreign Blender or worker and of
+relative, private, existing and non-portable destinations before any work. A build without an H.264 or AAC
 encoder is not exercised. Native/MCP export controls, the Studio case-study
 bundle, human playback review and Windows/Linux desktop evidence remain separate.
 Export makes no Scenario request, spends nothing and writes no job record.

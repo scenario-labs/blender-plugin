@@ -128,8 +128,9 @@ selected working scene and the exported scene's captured origin. On the main
 thread it then validates the destination: absolute, visible, portable, new and
 outside the snapshot's staging root, the extension's user storage, the installed
 extension and Blender's user resource and extensions folders. A reused snapshot
-is refused too, so nothing starts a thread, placeholder or media hash for a
-rejected request. `publish_film_export` applies the same destination policy.
+or a specification whose child is not this Blender running the bundled export
+worker is refused too, so nothing starts a thread, placeholder or media hash for
+a rejected request. `publish_film_export` applies the same destination policy.
 Capture and review preparation keep their separate local slot on the shared
 workers. `cancel_film_export` signals the child; session retirement cancels it
 and shutdown joins the thread before workers and the coordinator close.

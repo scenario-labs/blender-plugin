@@ -536,11 +536,11 @@ whenever a new marker remains after a start failure, so its undo step is recorde
 
 The maintenance pump attaches only after an imported observation and a fresh
 origin check, and only while the workflow ID, schema digest, input kind, marker
-token and input value are unchanged. It records the request in
-`_scenario_workflow_upload_request` at the first observation of the saved record,
-even if the upload then stops. Attachment uses the same checked append and scope
-digest/canonical value binding as Library workflow references and removes the
-marker. Explicit **Cancel preparation** of a `prepared` record frees every input
+token and input value are unchanged. Once it observes the saved record for an
+unchanged input, it records the request in `_scenario_workflow_upload_request`,
+even if the upload later stops; an upload released as having sent nothing records
+none. Attachment uses the same checked append and scope digest/canonical value
+binding as Library workflow references and removes the marker. Explicit **Cancel preparation** of a `prepared` record frees every input
 still marked for it, matched through the facade's marker-to-ticket ledger, which
 survives undo, or through that recorded request after reopening or a connection
 change. A blend file saved before the first observation has no request link.

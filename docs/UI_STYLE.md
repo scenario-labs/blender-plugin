@@ -1453,9 +1453,10 @@ current price and blocks **Request workflow price** until the upload attaches or
 is resolved. The maintenance pump attaches only after an imported observation and
 a fresh origin check, and only into the unchanged scene, workflow, schema, input
 kind and input value. It writes the same scope digest and canonical value as
-Library attachment, and removes the marker. The input records the upload request
-when the pump first observes its saved record. A changed destination keeps the
-marker and an inspectable error.
+Library attachment, and removes the marker. Once the pump observes the saved
+record for an unchanged input, the input records the upload request, even if the
+upload later stops; an upload released as having sent nothing records none. A
+changed destination keeps the marker and an inspectable error.
 
 The shared session refuses the next initialization, part or completion request
 after any scene edit, frame change or undo in the origin scene, so a stopped upload

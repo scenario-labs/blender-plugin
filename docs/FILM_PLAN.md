@@ -915,12 +915,14 @@ check; letting scene activation keep an unchanged origin is separate session wor
 Installed synthetic tests cover native and MCP preparation and build, shared
 handles, dismissed dialogs, a storage error in the preparation dialog, cancellation
 during probing, a full session queue, frame and recipe invalidation, object
-selection and the session's registered Undo/Redo handler invalidating preparing
-and ready reviews under the panel's warning line, a real `window.scene` round trip
-that fails waiting and ready reviews while a built review keeps its scene, recipe
-scene deletion, an included saved master built as muted movie and sound strips,
-and a previs review prepared and built beside a ready final review, which then
-fails and builds again after a fresh preparation. They also cover missing master
+selection and the session's registered Undo/Redo handler invalidating ready
+reviews and preparing reviews, both while probing runs and after it returns but
+before maintenance, and deleting their copies, the panel's warning line on
+preparing and ready reviews, a real `window.scene` round trip that fails waiting
+and ready reviews while a built review keeps its scene, recipe scene deletion, an
+included saved master built as muted movie and sound strips, and a previs review
+prepared and built beside a ready final review, which then fails and builds again
+after a fresh preparation. They also cover missing master
 and `ffprobe`, rollback, receipt-only recovery, inspected dismissal, the 16-handle
 bound, shutdown cleanup, read-only drawing, mode navigation, Edit Mode gating and
 the build operator's Undo-only options. The tests call the Undo/Redo handler

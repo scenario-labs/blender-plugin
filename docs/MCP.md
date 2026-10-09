@@ -488,6 +488,11 @@ credentials to inspect the saved store. Read-only inspection of any prototype re
 uses its local snapshot without credentials, polling or manager creation. No
 prototype result event automatically applies cached files into the current scene.
 
+Speech-to-text (`audio2txt`) and video-to-motion (`video23d`) models are
+experimental. `estimate_cost` and `generate` describe this status and accept
+them like other models, but no Blender application path exists for their
+results, which stay saved ([#190](https://github.com/scenario-labs/blender-plugin/issues/190)).
+
 ### Preparing Render Image and Render Video
 
 1. Discover a model with `list_models(lane=render_image|render_video)` and inspect
@@ -685,6 +690,9 @@ result destination. The recovery read does not download files or mutate a scene,
 and it rejects delivery into a changed credential context.
 
 ### Film task commands
+
+Film is experimental. Every Film tool description says so, matching the native
+panel header and Studio's Film pages; the commands remain available.
 
 `film_recipe` loads or inspects the native scene's validated recipe and stable
 production identity. Loading preserves identity; `new_production` deliberately

@@ -180,6 +180,24 @@ Modality icons (image, video, audio, 3d) are Scenario's own PNGs (`scenario/icon
 
 `runtime.set_message(...)` lines are transient: `runtime.message_visible()` hides them after 8 s so a stale line never reads as current.
 
+## Experimental status
+
+Film and capabilities without a Blender application path keep an explicit
+experimental status. It describes acceptance only: it never hides or blocks a
+model, task, estimate or approval. Use the built-in `EXPERIMENTAL` icon and
+short wording. Drawing reads the status and changes nothing.
+
+- The **Film** sidebar panel shows **Experimental** on the right of its header,
+  visible while collapsed and above its child panels. Studio reuses panel bodies
+  only, so it draws the same line on every Film page.
+- The model picker's highlighted-model box shows **Experimental: speech-to-text
+  result stays saved** or **Experimental: video-to-motion result stays saved**
+  for models offering `audio2txt` or `video23d`. Generation works; the result
+  stays in saved jobs until an application path exists ([#190](https://github.com/scenario-labs/blender-plugin/issues/190)).
+
+Installed native tests assert the drawn header, Studio line and picker status.
+Physical placement in a desktop session has not been captured.
+
 ## What Blender cannot do (so we do not fake it)
 
 - Text is left, centre or right aligned, never justified.

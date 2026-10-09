@@ -319,6 +319,52 @@ class ModelPickerTests(unittest.TestCase):
         self.assertEqual([i.model_id for i in items], ["model_patina-material"])
         self.assertTrue(self.picker._ctx["material_only"])
 
+    def test_highlighted_model_without_application_shows_experimental_status(self):
+        catalog = submodule("core.api.catalog")
+        handlers = submodule("blender.handlers")
+
+        def record(model_id, name, capability, kind, tag):
+            return catalog.ModelRecord.from_api(
+                {
+                    "id": model_id,
+                    "name": name,
+                    "type": "custom",
+                    "capabilities": [capability],
+                    "tags": [tag, "sc:scenario"],
+                    "inputs": [
+                        {"name": kind, "type": "file", "kind": kind, "required": {"always": True}}
+                    ],
+                }
+            )
+
+        records = fake_records() + [
+            record("model_speech-to-text", "Speech to Text", "audio2txt", "audio", "tool"),
+            record("model_video-to-motion", "Video to Motion", "video23d", "video", "Motion"),
+        ]
+        handlers.dispatch(
+            ("catalog", {"privacy": "public", "records": records, "detailed": records})
+        )
+        wm = bpy.context.window_manager
+        for lane, model_id, expected in (
+            ("audio", "model_speech-to-text", "Experimental: speech-to-text result stays saved"),
+            ("3d", "model_video-to-motion", "Experimental: video-to-motion result stays saved"),
+            ("audio", "model_ace-step-1-5", None),
+            ("image", "model_openai-gpt-image-2", None),
+        ):
+            with self.subTest(model_id=model_id):
+                ids = [item.model_id for item in self.picker.prepare(bpy.context, lane)]
+                self.assertIn(model_id, ids)  # still listed and selectable, never removed
+                wm.scenario_picker_index = ids.index(model_id)
+                statuses = [
+                    call[2]
+                    for node in self.draw_dialog().walk()
+                    for call in node.named("label")
+                    if call[2].get("icon") == "EXPERIMENTAL"
+                ]
+                self.assertEqual(
+                    statuses, [{"text": expected, "icon": "EXPERIMENTAL"}] if expected else []
+                )
+
     def test_execute_without_rows_is_cancelled(self):
         wm = bpy.context.window_manager
         self.picker.prepare(bpy.context, "image")

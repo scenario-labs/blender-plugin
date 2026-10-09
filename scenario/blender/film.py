@@ -54,6 +54,11 @@ def _error(operator, message):
     return {"CANCELLED"}
 
 
+def draw_experimental(layout):
+    """Film's explicit release status for the sidebar header and Studio; drawing only."""
+    layout.label(text="Experimental", icon="EXPERIMENTAL")
+
+
 class SCENARIO_OT_load_film(bpy.types.Operator, ImportHelper):
     bl_idname = "scenario.load_film"
     bl_label = "Load recipe"
@@ -243,6 +248,10 @@ class SCENARIO_PT_film(bpy.types.Panel):
     bl_category = "Scenario"
     bl_options = {"DEFAULT_CLOSED"}
     bl_order = 20
+
+    def draw_header_preset(self, context):
+        # Visible while the panel is collapsed; child panels share this header.
+        draw_experimental(self.layout)
 
     def draw(self, context):
         layout = self.layout

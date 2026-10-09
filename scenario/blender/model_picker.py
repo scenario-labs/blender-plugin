@@ -21,6 +21,7 @@ from bpy.props import CollectionProperty, EnumProperty, IntProperty, StringPrope
 from ..core.api import model_filter
 from ..core.api.assets import download_file
 from ..core.api.catalog import PATINA_MODELS
+from ..core.ui import capability_status
 from . import generation, icons, runtime
 
 log = logging.getLogger("scenario.picker")
@@ -468,6 +469,9 @@ class SCENARIO_OT_pick_model(bpy.types.Operator):
         cats = category_labels(record)
         if cats:
             col.label(text=cats)
+        status = capability_status.model_status(record.capabilities)
+        if status:
+            col.label(text=status, icon="EXPERIMENTAL")
         for line in textwrap.wrap(record.short_description or "", 70)[:3]:
             col.label(text=line)
         muted = col.row()

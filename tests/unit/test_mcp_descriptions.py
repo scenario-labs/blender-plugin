@@ -8,6 +8,8 @@ from pathlib import Path
 
 import pytest
 
+from scenario.core.ui.capability_status import UNAPPLIED_CAPABILITIES
+
 ROOT = Path(__file__).resolve().parents[2]
 EXPECTED = {
     "tools_scenario": {
@@ -129,6 +131,21 @@ def test_real_tool_descriptions_are_complete_static_contracts(module):
             assert description.endswith("No platform equivalent."), name
     assert len(names) == len(set(names))
     assert set(names) == EXPECTED[module]
+
+
+def test_experimental_paths_are_explicit_without_removing_tools():
+    _, calls = specs("tools_scenario")
+    descriptions = {call.args[0].value: call.args[1].value for call in calls}
+    film = {name for name in descriptions if "film" in name}
+    assert film == {name for name in EXPECTED["tools_scenario"] if "film" in name}
+    for name in film:
+        assert "\nFilm is experimental. " in descriptions[name], name
+    for name in ("estimate_cost", "generate"):
+        description = descriptions[name]
+        assert "are experimental" in description, name
+        assert "results stay saved without Blender application" in description, name
+        for capability in UNAPPLIED_CAPABILITIES:
+            assert f"({capability})" in description, (name, capability)
 
 
 def test_job_tools_advertise_both_reference_spellings_without_requiring_legacy_id():

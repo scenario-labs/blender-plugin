@@ -24,10 +24,11 @@ from tests.unit.test_result_previews import (
     env,  # noqa: F401 - shared fixture
     png,
     ready_job,
+    wav,
     work_directories,
 )
 
-STILL, CLIP = previews.STILL, previews.CLIP
+STILL, CLIP, ENVELOPE = previews.STILL, previews.CLIP, previews.ENVELOPE
 State = previews.PreviewState
 
 
@@ -122,6 +123,108 @@ def test_offline_time_does_not_consume_the_window(lane):
         drive(scheduler)
         clock.now += 1
     assert state(lane, "asset-video").state == State.PENDING and len(service.calls) == 5
+
+
+def test_offline_pause_resumes_the_window_instead_of_restarting_it(lane):
+    service, clock, scheduler = lane.env, lane.clock, lane.scheduler
+    ready_job(service, "request", [("asset-video", "video/mp4", MP4)])
+    service.assets["asset-video"] = asset_record("asset-video", "video/mp4")
+    scheduler.request("request")
+    for _ in range(20):
+        drive(scheduler)
+        clock.now += 1
+    assert len(service.calls) == 3  # Online polls at 0, 5 and 15 seconds.
+    service.online = False
+    for _ in range(600):
+        drive(scheduler)
+        clock.now += 1
+    # The poll due at 35 seconds found no access: 35 seconds of the window are used.
+    assert state(lane, "asset-video").state == State.OFFLINE and len(service.calls) == 3
+    service.online, resumed = True, clock.now
+    while state(lane, "asset-video").state != State.MISSING:
+        assert clock.now - resumed < 300, "The resumed window did not end"
+        drive(scheduler)
+        clock.now += 1
+    assert clock.now - 1 - resumed == 300 - 35
+    assert len(service.calls) == 9
+
+
+def _gated(service):
+    entered, release = threading.Event(), threading.Event()
+
+    def gate():
+        entered.set()
+        assert release.wait(5), "Test did not release the preview lane"
+
+    service.gate = gate
+    return entered, release
+
+
+def test_decode_limited_audio_envelope_is_sent_once_decodes_free(lane):
+    service, clock, scheduler = lane.env, lane.clock, lane.scheduler
+    images = [(f"asset-{index}", "image/png", png(4, 4)) for index in range(4)]
+    ready_job(service, "request", [*images, ("asset-sound", "audio/wav", wav())])
+    url = f"{CDN}/sound.png"
+    service.assets["asset-sound"] = asset_record("asset-sound", "audio/wav", thumbnail=url)
+    service.downloader.files[url] = png(4, 4)
+    scheduler.request("request")
+    drive(scheduler)
+    assert state(lane, "asset-sound").state == State.READY
+    assert state(lane, "asset-sound", ENVELOPE).state == State.QUEUED
+    assert len(scheduler.decode_requests()) == 4
+    for request in scheduler.decode_requests():
+        request.output.write_bytes(png(2, 2))
+        scheduler.finish_decode(request)
+    drive(scheduler)
+    assert state(lane, "asset-sound", ENVELOPE).state == State.DECODE
+    (request,) = scheduler.decode_requests()
+    assert request.rendition == ENVELOPE and request.source.name == "source.wav"
+    assert len(service.calls) == 1  # The envelope is local; the still is not polled again.
+    clock.now += 400
+    drive(scheduler)
+    assert len(service.calls) == 1
+
+
+def test_clip_requested_during_an_inflight_still_poll_is_fetched(lane):
+    service, scheduler = lane.env, lane.scheduler
+    ready_job(service, "request", [("asset-video", "video/mp4", MP4)])
+    still, clip = f"{CDN}/still.png", f"{CDN}/clip.mp4"
+    service.assets["asset-video"] = asset_record(
+        "asset-video", "video/mp4", thumbnail=still, preview=clip
+    )
+    service.downloader.files.update({still: png(4, 2), clip: MP4})
+    entered, release = _gated(service)
+    scheduler.request("request")
+    scheduler.pump()
+    assert entered.wait(2)
+    (status,) = scheduler.request("request", clip=True)
+    assert status.get(CLIP).state == State.QUEUED
+    service.gate = None
+    release.set()
+    drive(scheduler)
+    assert state(lane, "asset-video").state == state(lane, "asset-video", CLIP).state == State.READY
+    assert len(service.calls) == 2 and len(service.downloader.calls) == 2
+
+
+def test_retry_during_an_inflight_batch_applies_when_it_returns(lane):
+    service, scheduler = lane.env, lane.scheduler
+    ready_job(service, "request", [("asset-model", "model/gltf-binary", GLB)])
+    service.assets["asset-model"] = asset_record("asset-model", "model/gltf-binary")
+    entered, release = _gated(service)
+    scheduler.request("request")
+    scheduler.pump()
+    assert entered.wait(2)
+    assert scheduler.retry("request", "asset-model").get(STILL).state == State.QUEUED
+    service.gate = None
+    release.set()
+    drive(scheduler)
+    # The late "pending" outcome did not absorb the retry: a forced poll followed
+    # at once, without waiting for the five-second backoff.
+    assert len(service.calls) == 2
+    assert state(lane, "asset-model").state == State.PENDING
+    assert scheduler.retry("request", "asset-model").get(STILL).state == State.QUEUED
+    drive(scheduler)
+    assert len(service.calls) == 3
 
 
 def test_preview_lane_never_delays_job_refresh(lane):

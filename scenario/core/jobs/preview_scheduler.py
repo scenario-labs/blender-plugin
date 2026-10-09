@@ -7,8 +7,8 @@ calls ``pump`` from Blender's main-thread timer or a headless loop. Cache reads,
 private copies, SDK metadata reads and downloads all run as tasks on the
 dedicated preview lane of ``JobWorkers``; job refresh and downloads never wait
 for them. Server previews can appear minutes after a result is saved, so missing
-ones are polled with backoff for a bounded window, then marked missing until an
-explicit retry.
+ones are polled with backoff for a bounded window of online time, then marked
+missing until an explicit retry.
 """
 
 import math
@@ -17,6 +17,7 @@ import threading
 import time
 from concurrent.futures import CancelledError
 from dataclasses import dataclass, field
+from pathlib import Path
 
 from . import result_previews as previews
 from .workers import WorkerError
@@ -58,15 +59,36 @@ class PreviewStatus:
 
 
 class _Entry:
-    __slots__ = ("attempts", "due", "force", "inflight", "seen", "states", "target", "window")
+    __slots__ = (
+        "attempts",
+        "due",
+        "force",
+        "inflight",
+        "poll",
+        "retry",
+        "seen",
+        "states",
+        "target",
+        "used",
+        "window",
+    )
 
     def __init__(self, target, now):
         self.target = target
         self.states = {}
+        # Earliest pump that has work for this entry: now for queued renditions,
+        # ``poll`` for waiting ones, never once every rendition has settled.
         self.due = now
+        # Backoff for pending or offline renditions; queued ones never wait for it.
+        self.poll = now
         self.attempts = 0
+        # Online polling window: its start, or None while paused or unopened,
+        # with the online seconds already consumed before a pause.
         self.window = None
+        self.used = 0.0
         self.force = False
+        # An explicit retry received while this entry's batch was in flight.
+        self.retry = False
         self.inflight = False
         self.seen = now
 
@@ -129,6 +151,11 @@ class ResultPreviewScheduler:
     def closed(self):
         return self._closed
 
+    @property
+    def root(self):
+        """The private cache root passed to every lane command."""
+        return Path(self._root)
+
     def _snapshot(self, entry):
         target = entry.target
         return PreviewStatus(
@@ -190,13 +217,22 @@ class ResultPreviewScheduler:
         return tuple(result)
 
     def retry(self, request_id, asset_id):
-        """Explicitly fetch again, clearing a missing marker and the polling window."""
+        """Explicitly fetch again, clearing a missing marker and the polling window.
+
+        While a lane batch for this result is in flight, the retry is recorded
+        and applied when that batch returns, so its late outcome cannot undo it.
+        """
         self._check()
         entry = self._entries.get((request_id, asset_id))
         if entry is None:
             raise previews.PreviewError("Request a preview for this saved result first")
         if entry.inflight:
-            return self._snapshot(entry)
+            entry.retry = True
+        else:
+            self._restart(entry, self._clock())
+        return self._snapshot(entry)
+
+    def _restart(self, entry, now):
         self._release(entry)
         publishing = {
             request.rendition
@@ -206,9 +242,9 @@ class ResultPreviewScheduler:
         for rendition, status in tuple(entry.states.items()):
             if status.state != State.UNSUPPORTED and rendition not in publishing:
                 entry.states[rendition] = RenditionStatus(State.QUEUED)
-        entry.force, entry.attempts, entry.window = True, 0, None
-        entry.due = self._clock()
-        return self._snapshot(entry)
+        entry.force, entry.retry, entry.attempts = True, False, 0
+        entry.window, entry.used = None, 0.0
+        entry.poll = entry.due = now
 
     def status(self, request_id, asset_id):
         """Read the last known status; no I/O, safe while drawing."""
@@ -274,11 +310,39 @@ class ResultPreviewScheduler:
     def _delay(self, attempts):
         return self._delays[min(attempts, len(self._delays)) - 1]
 
+    @staticmethod
+    def _open_window(entry, now):
+        if entry.window is None:
+            # Resume a paused window: offline time never consumed it.
+            entry.window = now - entry.used
+
+    @staticmethod
+    def _schedule(entry, now):
+        """Queued renditions are due now, waiting ones at their poll, settled ones never."""
+        due = math.inf
+        for status in entry.states.values():
+            if status.state == State.QUEUED:
+                due = now
+                break
+            if status.state in _ACTIVE:
+                due = min(due, entry.poll)
+        entry.due = due
+
     def _consume_batch(self, now):
         task, batch = self._task, self._batch
         self._task, self._batch = None, ()
         for entry, _ in batch:
             entry.inflight = False
+        self._apply_batch(task, batch, now)
+        for entry, _ in batch:
+            target = entry.target
+            if entry.retry and self._entries.get((target.request_id, target.asset_id)) is entry:
+                self._restart(entry, now)
+            # Renditions held back by the decode limit, or requested while this
+            # batch ran, stay queued and must not wait for another trigger.
+            self._schedule(entry, now)
+
+    def _apply_batch(self, task, batch, now):
         try:
             result = task.result()
         except (CancelledError, previews.PreviewCanceled):
@@ -288,8 +352,7 @@ class ResultPreviewScheduler:
             # exception already retired the workers. Retry other failures within
             # the same bounded window, then stop.
             for entry, sent in batch:
-                if entry.window is None:
-                    entry.window = now
+                self._open_window(entry, now)
                 expired = now - entry.window >= self._window
                 for rendition in sent:
                     if entry.states.get(rendition, RenditionStatus(State.QUEUED)).state in _ACTIVE:
@@ -300,7 +363,8 @@ class ResultPreviewScheduler:
                             else "Preview preparation failed; retrying",
                         )
                 entry.attempts += 1
-                entry.due = math.inf if expired else now + self._delay(entry.attempts)
+                if not expired:
+                    entry.poll = now + self._delay(entry.attempts)
             return
         if result.scope != self._coordinator.scope:
             for request in result.requests:
@@ -324,17 +388,17 @@ class ResultPreviewScheduler:
                 pending |= item.state == State.PENDING
                 offline |= item.state == State.OFFLINE
             if offline:
-                # Time without online access does not consume the polling window.
-                entry.window = None
-                entry.due = now + OFFLINE_DELAY
+                # Pause the polling window: time without online access does not
+                # consume it, and the next online poll resumes it.
+                if entry.window is not None:
+                    entry.used = now - entry.window
+                    entry.window = None
+                entry.poll = now + OFFLINE_DELAY
             elif pending:
-                if entry.window is None:
-                    entry.window = now
+                self._open_window(entry, now)
                 entry.attempts += 1
                 end = entry.window + self._window
-                entry.due = min(now + self._delay(entry.attempts), max(now, end))
-            else:
-                entry.due = math.inf
+                entry.poll = min(now + self._delay(entry.attempts), max(now, end))
 
     def _consume_publications(self):
         for task, request in tuple(self._publishing.items()):
@@ -390,14 +454,15 @@ class ResultPreviewScheduler:
             for rendition, status in entry.states.items():
                 if status.state not in _ACTIVE:
                     continue
+                if status.state != State.QUEUED and entry.poll > now:
+                    continue  # Waiting renditions keep their backoff.
                 if previews.is_local(entry.target.kind, rendition):
                     if decodes >= self._decode_limit:
-                        continue
+                        continue  # Still queued, so still due on the next pump.
                     decodes += 1
                 sent.append(rendition)
             if not sent:
-                if not any(status.state in _ACTIVE for status in entry.states.values()):
-                    entry.due = math.inf
+                self._schedule(entry, now)
                 continue
             final = entry.window is not None and now - entry.window >= self._window
             batch.append(

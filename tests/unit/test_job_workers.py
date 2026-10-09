@@ -522,6 +522,29 @@ def test_preview_queue_is_bounded_and_retirement_cancels_it(setup, monkeypatch):
     assert owner.stopped and not owner._preview_cancels and not calls
 
 
+def test_preview_idleness_covers_running_work_that_ignores_cancellation(setup, monkeypatch):
+    owner, coordinator, _, _, _, _, _, _ = setup()
+    started, release = threading.Event(), threading.Event()
+
+    def preview(work, *, root, cancel, maintain):
+        # Like an SDK read or socket wait, this does not watch the cancel event.
+        started.set()
+        assert release.wait(5), "Test did not release the preview lane"
+        return "late"
+
+    monkeypatch.setattr(coordinator, "prepare_result_previews", preview)
+    assert owner.previews_idle
+    task = owner.prepare_result_previews(["work"], root="/root")
+    assert started.wait(2)
+    owner.deactivate()
+    # Retirement signals the task, but the lane stays busy until it returns.
+    assert not owner.previews_idle and not task.done()
+    release.set()
+    assert task.result(2) == "late"
+    assert owner.previews_idle
+    owner.shutdown()
+
+
 def test_preview_cancellation_targets_one_task(setup, monkeypatch):
     owner, coordinator, _, _, _, _, _, _ = setup()
     started = threading.Event()

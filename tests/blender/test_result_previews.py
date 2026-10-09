@@ -3,6 +3,7 @@
 """Installed session previews: dedicated lane, private cache and no scene mutation."""
 
 import hashlib
+import json
 import struct
 import tempfile
 import threading
@@ -16,7 +17,13 @@ import httpx
 from helpers import addon_name, submodule
 
 CDN = "https://storage.example.invalid"
-JPEG = b"\xff\xd8\xff\xe0\x00\x10JFIF\x00" + b"\x00" * 64
+# SOI, a JFIF APP0 segment, a 32 by 24 baseline frame header and EOI.
+JPEG = (
+    b"\xff\xd8\xff\xe0\x00\x10JFIF\x00\x01\x01\x00\x00\x01\x00\x01\x00\x00"
+    + b"\xff\xc0\x00\x11\x08"
+    + struct.pack(">HH", 24, 32)
+    + b"\x03\x01\x11\x00\x02\x11\x01\x03\x11\x01\xff\xd9"
+)
 MP4 = b"\x00\x00\x00\x18ftypisom\x00\x00\x02\x00isomiso2" + b"\x00" * 64
 
 
@@ -57,7 +64,7 @@ class SessionPreviewTests(unittest.TestCase):
             "https://fixture.invalid/v1", "fixture-account", "fixture-project"
         )
         self.store = self.storage.JobStore(self.root / "jobs.sqlite3", self.scope)
-        self.calls, self.downloads = [], []
+        self.calls, self.downloads, self.gate = [], [], None
         self.thumbnail = f"{CDN}/still.jpg?signature=fixture"
         owner = self
 
@@ -84,21 +91,21 @@ class SessionPreviewTests(unittest.TestCase):
 
     def respond(self, request):
         self.calls.append((request, threading.current_thread()))
-        self.assertEqual(request.method, "GET")
+        if self.gate is not None:
+            self.gate()
+        self.assertEqual((request.method, request.url.path), ("POST", "/v1/assets/get-bulk"))
         self.assertEqual(request.url.params["projectId"], self.scope.project_id)
-        asset_id = request.url.path.rsplit("/", 1)[-1]
-        return httpx.Response(
-            200,
-            json={
-                "asset": {
-                    "id": asset_id,
-                    "status": "success",
-                    "mimeType": "video/mp4",
-                    "url": f"{CDN}/result?signature=fixture",
-                    "thumbnail": {"assetId": "asset-still", "url": self.thumbnail},
-                }
-            },
-        )
+        rows = [
+            {
+                "id": asset_id,
+                "status": "success",
+                "mimeType": "video/mp4",
+                "url": f"{CDN}/result?signature=fixture",
+                "thumbnail": {"assetId": "asset-still", "url": self.thumbnail},
+            }
+            for asset_id in json.loads(request.content)["assetIds"]
+        ]
+        return httpx.Response(200, json={"assets": rows})
 
     def new_session(self, **options):
         adapter = self.api.SDKAdapter(
@@ -186,6 +193,7 @@ class SessionPreviewTests(unittest.TestCase):
         )
         still = self.status("asset-video").preview
         self.assertEqual(still.path.read_bytes(), JPEG)
+        self.assertEqual((still.width, still.height), (32, 24))
         self.assertTrue(still.path.is_relative_to(self.cache))
         self.assertEqual([thread.name for _, thread in self.calls], ["ScenarioPreview"])
         self.assertEqual([thread.name for thread in self.downloads], ["ScenarioPreview"])
@@ -214,6 +222,33 @@ class SessionPreviewTests(unittest.TestCase):
         self.session.shutdown()
         self.assertFalse(request.directory.exists())
         self.assertEqual(self.calls, [])
+        self.assertSceneUnchanged()
+
+    def test_retirement_never_joins_an_inflight_preview_read_on_the_main_thread(self):
+        self.ready([("asset-video", "video/mp4", MP4)])
+        entered, release = threading.Event(), threading.Event()
+
+        def gate():
+            # Like an SDK read in flight, this does not watch the lane's cancel event.
+            entered.set()
+            release.wait(10)
+
+        self.gate = gate
+        self.addCleanup(release.set)
+        self.session.result_previews.request("request")
+        self.module.reap_retired()
+        self.assertTrue(entered.wait(5))
+        self.session.deactivate()
+        started = time.monotonic()
+        self.module.reap_retired()
+        self.assertLess(time.monotonic() - started, 1.0)
+        self.assertIn(self.session, self.module._session_snapshot())
+        self.assertFalse(self.session._workers.stopped)
+        release.set()
+        self.settle(lambda: self.session not in self.module._session_snapshot())
+        self.assertTrue(self.session._workers.stopped)
+        self.assertEqual(self.downloads, [])
+        self.assertFalse(any((self.cache / "work").glob("preview-*")))
         self.assertSceneUnchanged()
 
     def test_unconfigured_sessions_and_worker_threads_are_rejected(self):

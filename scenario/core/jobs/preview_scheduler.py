@@ -186,6 +186,7 @@ class ResultPreviewScheduler:
 
         Server stills are polled; clips are fetched only when ``clip`` is true.
         Requesting again keeps existing state; use ``retry`` after a failure.
+        Adding a rendition opens a new polling window for that result.
         """
         self._check()
         targets = self._coordinator.result_preview_targets(request_id, asset_ids)
@@ -209,10 +210,15 @@ class ResultPreviewScheduler:
                         State.UNSUPPORTED, reason="No preview is available for this format"
                     ),
                 )
-            for rendition in wanted:
-                if rendition not in entry.states:
-                    entry.states[rendition] = RenditionStatus(State.QUEUED)
-                    entry.due = min(entry.due, now)
+            added = [rendition for rendition in wanted if rendition not in entry.states]
+            for rendition in added:
+                entry.states[rendition] = RenditionStatus(State.QUEUED)
+            if added:
+                # A newly requested rendition, such as a clip after the still,
+                # gets a full window even if earlier polling used or ended one.
+                # Renditions still polling share it, so their window restarts.
+                entry.window, entry.used, entry.attempts = None, 0.0, 0
+                entry.due = min(entry.due, now)
             result.append(self._snapshot(entry))
         return tuple(result)
 

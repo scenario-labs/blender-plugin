@@ -9,6 +9,7 @@ import bpy
 from bpy.props import EnumProperty, FloatProperty, IntProperty, StringProperty
 
 from ..core.api.errors import ScenarioError
+from ..core.scene.splats import SplatError
 from ..core.ui.costs import format_cu
 from . import apply_image, generation, params_ui, props, runtime
 
@@ -1096,9 +1097,14 @@ class SCENARIO_OT_import_mesh_file(bpy.types.Operator):
         if not os.path.exists(self.filepath):
             self.report({"ERROR"}, "File not found")
             return {"CANCELLED"}
-        objects = apply_3d.import_model(
-            context, self.filepath, at_cursor=True, local_id=self.local_id
-        )
+        try:
+            objects = apply_3d.import_model(
+                context, self.filepath, at_cursor=True, local_id=self.local_id
+            )
+        except SplatError as error:
+            # The decoder rejects the file before any Blender data is created.
+            self.report({"ERROR"}, str(error))
+            return {"CANCELLED"}
         if self.local_id:
             for rec in runtime.state.jobs_view:
                 if rec.local_id == self.local_id:

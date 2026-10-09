@@ -361,6 +361,24 @@ this recovery command. Recovery never resets submitting, uncertain or applying
 records. It is available through the existing `JobWorkers` and `JobSession`
 queues, without activating the prototype UI/MCP runtime.
 
+### Worker splat preparation
+
+`prepare_model_import(request_id, expected_revision=..., asset_id=..., options=...,
+cancel=...)` decodes one saved SPZ, Gaussian PLY or .splat result into an
+immutable `PreparedModelImport` off Blender's main thread. It verifies every
+receipt again and binds the decoded bytes to the selected receipt, as described
+in [worker-side splat preparation](RESULT_TRANSFERS.md#worker-side-splat-preparation).
+The coordinator then registers `prepared.verified` exactly like a `verify_results`
+ticket: one claim consumes it and deactivation clears it. Cancellation, a changed
+record or a changed file leaves nothing registered. A mesh PLY returns `ply_mesh`
+and no snapshot; other PLY layouts that are not splats fail. There is no SDK
+request, download, claim or scene mutation. `JobWorkers.prepare_model_import`
+uses the single local-operation slot shared with local capture and Film media
+inspection, so `cancel_local` and owner retirement stop preparation before the
+next receipt is hashed or between decoding chunks; one receipt's hash, up to the
+storage policy's byte limit (256 MiB by default), is not interrupted. Session, UI
+and MCP wiring remain separate.
+
 
 ## Durable application claims
 

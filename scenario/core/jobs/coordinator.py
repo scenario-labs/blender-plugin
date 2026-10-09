@@ -16,6 +16,7 @@ from pathlib import Path
 from weakref import WeakKeyDictionary, WeakValueDictionary
 
 from ..api.sdk_adapter import Estimate, SDKAdapter
+from ..scene.splats import SplatCancelled
 from ..schema.forms import _fields, is_file_field
 from . import local_render
 from .film_finishing import (
@@ -496,6 +497,25 @@ class JobCoordinator:
         with self._result_guard():
             self._verified_results[id(verified)] = verified
         return verified
+
+    def prepare_model_import(self, request_id, *, expected_revision, asset_id, options, cancel):
+        """Decode one saved splat off the main thread; no network or scene mutation.
+
+        The returned preparation carries a registered verification of every saved
+        receipt. As with `verify_results`, a claim consumes it once.
+        """
+        prepared = self._results.prepare_model_import(
+            request_id,
+            expected_revision=expected_revision,
+            asset_id=asset_id,
+            options=options,
+            cancel=cancel,
+        )
+        with self._result_guard():
+            if cancel.is_set():
+                raise SplatCancelled("Splat preparation cancelled")
+            self._verified_results[id(prepared.verified)] = prepared.verified
+        return prepared
 
     def claim_application(self, verified: VerifiedResults):
         """Claim verified results before a caller mutates the captured Blender target.

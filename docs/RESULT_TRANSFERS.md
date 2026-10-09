@@ -183,6 +183,98 @@ fails before a composition draft can be prepared; source bytes are preserved.
 See [Film media limits](FILM_PLAN.md#verified-media-preparation), including the
 optional installed ffprobe and metadata-only timing guarantee.
 
+## Worker-side splat preparation
+
+`ResultCommands.prepare_model_import` follows the same pattern for one explicitly
+selected saved result of a `ready`, `apply_failed` or `applied` job. It verifies
+every saved receipt, opens the selected file without following links and hashes
+exactly the bytes its decoder reads, then the unread remainder. The decoded
+snapshot is discarded unless size, SHA-256 and file identity still match the
+receipt and the job record is unchanged. A changed file is reported as changed
+even when its new bytes are also undecodable. This is a local read: no metadata
+refresh, download, quote, claim or Blender mutation.
+
+The declared MIME type selects the decoder and the bytes must match it:
+
+- `model/spz`: SPZ versions 2 and 3, one gzip stream. Version 1 stored float16
+  positions and is rejected instead of being misread as fixed point. Version 4
+  starts with a plaintext `NGSP` header and ZSTD streams; Python 3.11 and 3.13
+  have no ZSTD decoder, so it is rejected and the saved file is kept. Only the
+  position, alpha, colour and scale blocks are inflated; rotations, spherical
+  harmonics and extension records are neither decoded nor validated. The SH
+  degree is at most 4, as in the [reference loader](https://github.com/nianticlabs/spz).
+  The point count must fit a compressed-size bound borrowed from the reference
+  v4 path (at most `size * 1024 / 9`); the reference gzip path checks the
+  inflated bytes instead. The limits of 23 fractional bits and 20,000,000 points
+  are this release's own. The header's antialiasing and extension flags are kept
+  as `antialiased` and `extensions`. Extension records follow the spherical
+  harmonics and are not read; one of them, `SPZ_ADOBE_coordinate_system` in the
+  [extension guide](https://github.com/nianticlabs/spz/blob/main/extensions/README.md),
+  can store positions in axes other than right/up/back.
+- `model/ply` and `application/x-ply`: a binary little-endian first `vertex`
+  element of scalar properties with float32 `x`, `y`, `z`, `f_dc_0..2`,
+  `opacity` and `scale_0..2`, and no faces, is a Gaussian splat. A non-empty
+  first `vertex` element with scalar `x`, `y` and `z` and none of the splat
+  property names (`f_dc_*`, `f_rest_*`, `opacity`, `scale_*`, `rot_*`) is a
+  mesh: it returns no snapshot and sets `ply_mesh` for a reviewed mesh importer.
+  Every other layout fails and keeps the saved file, including splat properties
+  in another encoding or type, and the compressed PLY read by
+  [PlayCanvas splat-transform](https://github.com/playcanvas/splat-transform)
+  (a `chunk` element and a `packed_position` vertex property). Headers are
+  limited to 64 KiB and later elements are not read.
+- `model/splat`: 32-byte records of float32 position and linear scale, RGBA
+  bytes and a byte quaternion, as written by the
+  [reference converter](https://github.com/antimatter15/splat/blob/main/convert.py).
+  The file must hold whole records.
+
+Files may hold at most 20,000,000 points. `SplatOptions(max_points, axes)` keeps
+every `ceil(count / max_points)`-th point, at most 2,000,000. Each decoder reads
+its stream once, sequentially, in chunks of at most 4 MiB (SPZ inflates 64 KiB of
+compressed input at a time), so memory follows the kept points rather than the
+file. Non-finite inputs fail; large log scales are clamped so radii stay finite.
+Cancellation is checked before each saved receipt is hashed and between decoding
+chunks; a single receipt's hash is not interrupted. Parser failures fail closed
+with a sanitized message.
+
+`SplatData` holds native float32 bytes in Blender's Z-up axes: positions, RGBA
+colours (display-referred SH DC colour, alpha equal to opacity), opacities and
+radii (median axis scale times the square root of the stride, compensating for
+thinning), plus bounds and the SPZ `antialiased` and `extensions` flags (always
+false for other formats). `floats(name)` returns read-only views that
+buffer-based `foreach_set` accepts. `OPENGL` (right/up/back, the SPZ storage
+convention when the file declares no coordinate-system extension) maps saved
+(x, y, z) to Blender (x, -z, y); `OPENCV` (right/down/forward, the 3DGS PLY
+convention kept by .splat files) maps it to (x, z, -y). `FORMAT_AXES` records
+these format conventions only. Providers can differ, for example World Labs
+documents OpenCV coordinates for exported worlds, so a reviewed import chooses
+the axes and live visual evidence must set any default. When `extensions` is
+set, the import must warn that the file may declare other storage axes.
+
+The decoders use standard-library bytes slicing, `bytes.translate` tables and
+`array` instead of numpy, which the development lock does not include and which
+Blender 5.0 and 5.1+ bundle in different major versions. In isolated Blender
+5.0.1, 5.1.2 and 5.2.1 profiles on macOS arm64, synthetic files decoded as
+follows: a random 2,000,000-point SPZ v3 to 1,000,000 points in about 0.4 s, a
+1,000,000-row 3DGS PLY with 62 float columns in about 1.4 s and 1,000,000 .splat
+records in about 0.4 s. Building a 1,000,000-vertex mesh with colour, opacity and
+radius attributes from the read-only views took under 0.05 s. These timings record
+that run; they are not a performance guarantee. On Blender 5.0.1 an attribute
+reference obtained before adding another attribute stopped receiving writes, so a
+builder must look attributes up by name after adding them.
+
+The prototype `read_spz` now wraps the SPZ decoder. It rejects versions 1 and 4
+and files with no points or more than 20,000,000 points, keeps at most 2,000,000
+points when no limit is given and does not return the SPZ flags. The prototype
+"Add to scene" button reports such a rejection as an error and adds no object,
+instead of failing with a Python traceback.
+
+No session, UI, MCP or Blender importer uses this command yet. The point-cloud
+builder, which must create fresh Geometry Nodes and material data instead of the
+prototype's reuse of any material named "Scenario Splat", and saved mesh imports
+remain under #65. Live evidence must still confirm provider MIME types, SPZ
+versions, axis conventions and whether a 3D asset's `url` serves its original
+bytes; SDK 2.2.0 documents `original_file_url` for some replaced 3D assets.
+
 ## Legacy OBJ and MTL byte counts
 
 Asset ingestion can rewrite OBJ material-library names and MTL texture names

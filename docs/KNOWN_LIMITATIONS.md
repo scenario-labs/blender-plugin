@@ -82,6 +82,12 @@ establish live generation or full render-lane desktop acceptance.
 - Automatic Image-lane import and saved image, World and material application
   currently accept only PNG and scanline OpenEXR files. Other image results, such
   as JPEG or WebP, stay saved with the job without import.
+- Saved Gaussian splats (SPZ v2/v3, 3DGS PLY and .splat) can be decoded off the
+  main thread, but no saved-job import control uses this yet (#65). SPZ v4 (ZSTD),
+  the pre-release v1 and compressed splat PLY files cannot be decoded; their files
+  are kept. SPZ extension records, including a declared coordinate system, are not
+  read; the snapshot only flags their presence. Splats will be shown as coloured
+  point clouds, not rendered as Gaussian splats.
 - Prompt helpers require their own exact quote and approval. Unusable Spark
   output fails without an automatic paid LLM fallback; complete text can be
   retrieved again without regeneration. Historical prices are not current quotes.

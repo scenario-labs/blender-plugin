@@ -8,6 +8,7 @@ import threading
 from collections import deque
 from concurrent.futures import Future
 
+from ..scene.splats import SplatOptions
 from .coordinator import JobCoordinator, QuoteError, _payload
 
 
@@ -308,6 +309,18 @@ class JobWorkers:
     def verify_results(self, request_id, *, expected_revision):
         return self._enqueue(
             self._coordinator.verify_results, request_id, expected_revision=expected_revision
+        )
+
+    def prepare_model_import(self, request_id, *, expected_revision, asset_id, options):
+        """Decode one saved splat in the cancellable local-operation slot."""
+        if not isinstance(options, SplatOptions):
+            raise TypeError("Use reviewed splat options")
+        return self._enqueue_local(
+            self._coordinator.prepare_model_import,
+            request_id,
+            expected_revision=expected_revision,
+            asset_id=asset_id,
+            options=options,
         )
 
     def recover_downloads(self, request_id, *, expected_revision):

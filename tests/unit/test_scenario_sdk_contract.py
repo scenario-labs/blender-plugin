@@ -9,7 +9,9 @@ model-specific inputs and exact quote bytes survive unchanged, response fields
 remain accessible, and disabling retries prevents a second submission attempt.
 Upload lifecycle, job discovery, private trained model lists and bulk model
 reads check scope, wrappers and cursors;
-cancellation fixtures preserve acknowledgements and completion races.
+cancellation fixtures preserve acknowledgements and completion races. Workflow
+step decisions check explicit actions, optional project scope, single attempts
+and the missing generated user-selection method.
 They also record the known bug where ambient Basic credentials override an
 explicitly selected Bearer token; that assertion is an expected failure.
 
@@ -541,7 +543,9 @@ def test_cancel_acknowledgement_can_race_with_completion(client_factory, status)
     assert result.job.status == status
 
 
-def test_workflow_rejection_targets_an_approval_node(client_factory):
+@pytest.mark.parametrize("project", [PROJECT, omit])
+@pytest.mark.parametrize("action", ["approve", "reject"])
+def test_workflow_approval_decision_targets_one_node(client_factory, project, action):
     requests = []
 
     def respond(request):
@@ -551,13 +555,14 @@ def test_workflow_rejection_targets_an_approval_node(client_factory):
         )
 
     sdk = client_factory(respond)
-    # This is a node decision, not a general cancel-workflow operation.
-    result = sdk.workflows.user_approval(
+    # A decision on one waiting node, not a general cancel-workflow operation.
+    # The adapter omits projectId unless the connection has a project override.
+    result = sdk.workflows.with_raw_response.user_approval(
         "fixture-workflow",
-        project_id=PROJECT,
+        project_id=project,
         node_id="fixture-node",
         workflow_job_id="fixture-workflow-job",
-        action="reject",
+        action=action,
     )
     assert len(requests) == 1
     request = requests[0]
@@ -565,14 +570,87 @@ def test_workflow_rejection_targets_an_approval_node(client_factory):
         "PUT",
         "/v1/workflows/fixture-workflow/user-approval",
     )
-    assert dict(request.url.params) == {"projectId": PROJECT}
+    assert dict(request.url.params) == ({} if project is omit else {"projectId": PROJECT})
     assert json.loads(request.content) == {
         "nodeId": "fixture-node",
         "workflowJobId": "fixture-workflow-job",
-        "action": "reject",
+        "action": action,
     }
-    assert result.job.job_id == "fixture-workflow-job"
-    assert result.job.status == "in-progress"
+    assert json.loads(result.read())["job"]["status"] == "in-progress"
+
+
+@pytest.mark.parametrize("project", [PROJECT, None])
+@pytest.mark.parametrize(
+    "body",
+    [
+        {
+            "action": "select",
+            "nodeId": "fixture-node",
+            "workflowJobId": "fixture-workflow-job",
+            "selectedIndices": [2, 0],
+        },
+        {"action": "reject", "nodeId": "fixture-node", "workflowJobId": "fixture-workflow-job"},
+    ],
+)
+def test_workflow_selection_gap_and_low_level_put_contract(client_factory, project, body):
+    # Issue #33: the API reference documents PUT /workflows/{id}/user-selection,
+    # but 2.2.0 has no generated method. Remove the adapter fallback once the
+    # selected release provides one that passes these decision contracts.
+    requests = []
+    payload = {"job": {"jobId": "fixture-workflow-job", "futureField": True}}
+
+    def respond(request):
+        requests.append(request)
+        return httpx.Response(200, json=payload)
+
+    sdk = client_factory(respond)
+    message = "Review the selection fallback on SDK upgrade"
+    assert not hasattr(sdk.workflows, "user_selection"), message
+    assert not hasattr(sdk.workflows.with_raw_response, "user_selection"), message
+    params = {} if project is None else {"projectId": project}
+    response = sdk.put(
+        "/workflows/fixture-workflow/user-selection",
+        cast_to=httpx.Response,
+        body=body,
+        options={"params": params, "max_retries": 0},
+    )
+    assert json.loads(response.read()) == payload
+    assert len(requests) == 1
+    request = requests[0]
+    assert (request.method, request.url.path) == (
+        "PUT",
+        "/v1/workflows/fixture-workflow/user-selection",
+    )
+    assert dict(request.url.params) == params
+    # Selected indices keep their order: the node output preserves it.
+    assert json.loads(request.content) == body
+
+
+@pytest.mark.parametrize("failure", ["timeout", 400, 409, 503])
+def test_low_level_put_options_disable_retries_for_one_decision(client_factory, failure):
+    requests = []
+
+    def fail(request):
+        requests.append(request)
+        if failure == "timeout":
+            raise httpx.ReadTimeout("fixture lost response", request=request)
+        return httpx.Response(
+            failure, json={"error": "fixture failure"}, headers={"Retry-After": "0"}
+        )
+
+    # The per-request option wins even over a client configured to retry.
+    sdk = client_factory(fail, max_retries=2)
+    expected = APITimeoutError if failure == "timeout" else APIStatusError
+    with pytest.raises(expected) as error:
+        sdk.put(
+            "/workflows/fixture-workflow/user-selection",
+            cast_to=httpx.Response,
+            body={"action": "reject", "nodeId": "n", "workflowJobId": "j"},
+            options={"params": {}, "max_retries": 0},
+        )
+    assert len(requests) == 1
+    if failure != "timeout":
+        assert error.value.status_code == failure
 
 
 @pytest.mark.parametrize("operation", ["upload-create", "upload-complete", "cancel"])

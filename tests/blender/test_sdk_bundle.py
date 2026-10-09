@@ -201,6 +201,51 @@ class SDKBundleTests(unittest.TestCase):
         self.assertTrue(all(r.headers["Authorization"].startswith("Basic ") for r in requests))
         self.assertEqual(client.project_id, "stale-project")
 
+    def test_workflow_decisions_use_bundled_sdk_with_one_attempt(self):
+        import httpx
+        from scenario_sdk.resources.workflows import WorkflowsResource
+
+        # SDK issue #33: review the selection fallback once the bundle provides it.
+        self.assertFalse(hasattr(WorkflowsResource, "user_selection"))
+        requests = []
+        replies = [409, 200, 200]
+
+        def respond(request):
+            requests.append(request)
+            status = replies[len(requests) - 1]
+            return httpx.Response(status, json={"job": {"jobId": "fixture-job"}})
+
+        module = submodule("core.api.sdk_adapter")
+        approvals = self.adapter(respond)
+        selections = self.adapter(respond, project="fixture-project")
+        with online_access(False), self.assertRaises(module.AdapterError):
+            selections.workflow_decision(
+                "fixture-workflow", "fixture-job", "node", "user-selection", "select", [1]
+            )
+        self.assertEqual(requests, [])
+        with online_access(True):
+            with self.assertRaises(module.AdapterStatusError) as error:
+                approvals.workflow_decision(
+                    "fixture-workflow", "fixture-job", "node", "user-approval", "reject"
+                )
+            self.assertEqual(error.exception.status_code, 409)
+            approvals.workflow_decision(
+                "fixture-workflow", "fixture-job", "node", "user-approval", "approve"
+            )
+            selections.workflow_decision(
+                "fixture-workflow", "fixture-job", "node", "user-selection", "select", [1, 0]
+            )
+        self.assertEqual(len(requests), 3)
+        self.assertEqual(
+            [(r.method, r.url.path) for r in requests],
+            [("PUT", "/v1/workflows/fixture-workflow/user-approval")] * 2
+            + [("PUT", "/v1/workflows/fixture-workflow/user-selection")],
+        )
+        self.assertEqual(dict(requests[1].url.params), {})
+        self.assertEqual(json.loads(requests[1].content)["action"], "approve")
+        self.assertEqual(dict(requests[2].url.params), {"projectId": "fixture-project"})
+        self.assertEqual(json.loads(requests[2].content)["selectedIndices"], [1, 0])
+
     def test_failed_estimate_is_single_attempt_and_sanitized(self):
         import httpx
 

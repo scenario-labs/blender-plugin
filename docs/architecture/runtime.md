@@ -583,8 +583,7 @@ Credential/project retirement discards the UI controller with the shared owner;
 file-load retirement removes approval handles while saved scene inputs survive.
 Closing Studio owns no cancellation or teardown. No new transport, store or
 worker pool is introduced. Interactive nodes, general workflow cancellation,
-integrated workflow reference upload/library selection and physical/live
-acceptance remain separate.
+integrated workflow reference upload and physical/live acceptance remain separate.
 
 The 32-entry UI projection cache reclaims idle entries under pressure, discarding
 any unused price but preserving saved scene inputs and independently owned jobs.
@@ -622,5 +621,25 @@ time; drawing does not dereference a removed scene. Attachment adds only a match
 unoccupied model reference, preserves existing slots, records the selected scope,
 and invalidates the old price. It does not start a transfer or paid submission.
 The existing persisted reference-scope guard applies after reopening as well.
-Workflow reference selection, organization mutations and physical/live acceptance
-remain outside this UI layer. No new SDK transport, worker pool or job store is added.
+Organization mutations and physical/live acceptance remain outside this UI layer.
+No new SDK transport, worker pool or job store is added.
+
+## Workflow Library reference bindings
+
+[workflow_references.py](../../scenario/blender/workflow_references.py) prepares
+choices for the loaded workflow form. The Library owner holds their single-use
+identities; confirmation checks the captured scene origin, full form signature,
+selected scope and proposed value before mutation. Model and workflow targets
+share catalog reads without introducing another service client or worker owner.
+
+`core.schema.forms.append_file_reference` validates one proposed file edit,
+including kind, duplicate IDs, capacity, types and allowed values. It defers array
+minimums and unrelated required inputs while the artist is filling the form;
+existing complete validation remains authoritative before a quote/submission.
+A Library-managed input persists its scope digest and canonical value. The native
+parameter builder rejects changed or cross-connection marked inputs; disabling
+an input omits it while preserving its binding. The form signature includes that
+binding, so attachment/clearing invalidates a prior approval even without a native
+RNA edit event. Explicit clearing verifies the original form and retains the
+existing unchecked-input/default semantics. Direct workflow uploads, interactive
+nodes, general cancellation and physical/live acceptance remain separate.

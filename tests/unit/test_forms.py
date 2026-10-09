@@ -229,3 +229,72 @@ def test_composition_omits_empty_lora_default_that_would_override_its_concepts()
         "base",
         {"prompt": "cube", "modelId": "composition"},
     )
+
+
+@pytest.mark.parametrize("shape", [{"type": "file_array"}, {"type": "file", "array": True}])
+def test_file_reference_edit_allows_incomplete_form_without_weakening_final_validation(shape):
+    from scenario.core.schema.forms import append_file_reference, validate_parameters
+
+    schema = {
+        "parameters": [
+            {"name": "prompt", "type": "string", "required": True},
+            {"name": "images", **shape, "kind": "image", "minItems": 2, "maxItems": 2},
+        ]
+    }
+    before = deepcopy(schema)
+    one = append_file_reference(schema, "images", "first", "image")
+    assert one == ["first"]
+    assert validate_parameters(schema, {"images": one})
+    two = append_file_reference(schema, "images", "second", "image", one)
+    assert validate_parameters(schema, {"prompt": "cup", "images": two}) == []
+    with pytest.raises(ValueError, match="at most 2"):
+        append_file_reference(schema, "images", "third", "image", two)
+    assert schema == before
+    assert one == ["first"]
+
+
+@pytest.mark.parametrize("kind", ["image", "audio", "video", "3d"])
+def test_file_reference_edit_preserves_input_kind_and_rejects_replacement(kind):
+    from scenario.core.schema.forms import append_file_reference
+
+    schema = {"parameters": [{"name": "reference", "type": "file", "kind": kind}]}
+    assert append_file_reference(schema, "reference", "asset", kind) == "asset"
+    with pytest.raises(ValueError, match="existing reference"):
+        append_file_reference(schema, "reference", "new", kind, "old")
+    with pytest.raises(ValueError, match="file type"):
+        append_file_reference(schema, "reference", "asset", "audio" if kind == "image" else "image")
+
+
+@pytest.mark.parametrize("shape", [{"type": "file_array"}, {"type": "file", "array": True}])
+@pytest.mark.parametrize(
+    "existing,asset,fragment",
+    [
+        ([], "other", "allowed values"),
+        (["asset"], "asset", "already"),
+        ("asset", "asset", "array"),
+        ([42], "asset", "one asset ID"),
+        ([], "", "nonempty"),
+    ],
+)
+def test_reference_edit_rejects_invalid_ids_arrays_duplicates_and_enum_values(
+    existing, asset, fragment, shape
+):
+    from scenario.core.schema.forms import append_file_reference
+
+    schema = {"parameters": [{"name": "refs", **shape, "allowedValues": ["asset"]}]}
+    with pytest.raises(ValueError, match=fragment):
+        append_file_reference(schema, "refs", asset, "image", existing)
+
+
+def test_reference_edit_accepts_conditional_input_before_sibling_is_complete():
+    from scenario.core.schema.forms import append_file_reference
+
+    schema = {
+        "parameters": [
+            {"name": "image", "type": "file", "required": {"ifDefined": {"prompt": True}}},
+            {"name": "prompt", "type": "string", "required": True},
+        ]
+    }
+    assert append_file_reference(schema, "image", "asset", "image") == "asset"
+    with pytest.raises(ValueError, match="file input"):
+        append_file_reference(schema, "prompt", "asset", "image")

@@ -19,7 +19,7 @@ from bpy.props import (
 from ..core.api.errors import ScenarioError
 from ..core.schema.forms import display_label, schema_defaults, validate_parameters
 from ..core.schema.params import parse_schema
-from . import runtime
+from . import reference_form, runtime
 
 
 def _json(value):
@@ -46,6 +46,8 @@ class ScenarioWorkflowInput(bpy.types.PropertyGroup):
     enabled: BoolProperty(name="Include input", default=True)
     text: StringProperty(name="Value")
     boolean: BoolProperty(name="Value")
+    asset_scope: StringProperty()
+    asset_value: StringProperty()
     options: StringProperty()
     choice: EnumProperty(name="Value", items=_choices)
 
@@ -85,6 +87,8 @@ def load_form(form, record):
     rows = []
     for field in schema["parameters"]:
         name, kind = field["name"], field.get("type", "string")
+        if kind == "file" and field.get("array") is True:
+            kind = "file_array"
         value = defaults.get(name)
         is_text = kind in {"string", "file", "model"}
         rows.append(
@@ -106,13 +110,32 @@ def load_form(form, record):
         item.text = value
         item.boolean = defaults.get(item.name) is True
         choices = field.get("allowedValues", field.get("allowed_values", field.get("enum")))
-        if isinstance(choices, list) and choices and not kind.endswith("_array"):
+        if isinstance(choices, list) and choices and not kind.endswith("_array") and kind != "file":
             item.options = _json(choices)
             default = _json(defaults.get(item.name))
             item.choice = str(next((i for i, v in enumerate(choices) if _json(v) == default), 0))
     form.schema_json = serialized
     form.loaded_id = form.workflow_id = record["id"]
     form.title = str(record.get("name") or record["id"])
+
+
+def input_value(item):
+    # Previously saved forms keep file-enum selections in choice, not text.
+    # Preserve that selection until the input is explicitly cleared or reloaded.
+    if item.options:
+        choices = json.loads(item.options)
+        index = int(item.choice)
+        if not 0 <= index < len(choices):
+            raise ValueError(f"Choose a value for {item.label}")
+        return choices[index]
+    if item.kind == "boolean":
+        return item.boolean
+    if item.kind in {"string", "file", "model"}:
+        return item.text
+    try:
+        return json.loads(item.text)
+    except (ValueError, TypeError) as error:
+        raise ValueError(f"Check the value for {item.label}") from error
 
 
 def parameters(form):
@@ -122,21 +145,18 @@ def parameters(form):
     for item in form.inputs:
         if not item.enabled:
             continue
-        if item.options:
-            choices = json.loads(item.options)
-            index = int(item.choice)
-            if not 0 <= index < len(choices):
-                raise ValueError(f"Choose a value for {item.label}")
-            value = choices[index]
-        elif item.kind == "boolean":
-            value = item.boolean
-        elif item.kind in {"string", "file", "model"}:
-            value = item.text
-        else:
-            try:
-                value = json.loads(item.text)
-            except (ValueError, TypeError) as error:
-                raise ValueError(f"Check the value for {item.label}") from error
+        value = input_value(item)
+        if item.asset_scope:
+            store = runtime.state.job_store
+            if (
+                store is None
+                or not runtime.catalog_selection_matches()
+                or reference_form.scope_key(store.scope) != item.asset_scope
+                or _json(value) != item.asset_value
+            ):
+                raise ValueError(
+                    f"{item.label}: reference connection or value changed; clear and choose it again"
+                )
         values[item.name] = value
     errors = validate_parameters(json.loads(form.schema_json), values)
     if errors:
@@ -159,6 +179,8 @@ def signature(form):
                     x.boolean,
                     x.options,
                     x.choice if x.options else "",
+                    x.asset_scope,
+                    x.asset_value,
                 )
                 for x in form.inputs
             ],
@@ -439,7 +461,13 @@ def draw(layout, context):
             prop = "choice" if item.options else "boolean" if item.kind == "boolean" else "text"
             value.prop(item, prop, text=item.label)
             if item.kind in {"file", "file_array"}:
-                box.label(text="Use uploaded asset IDs; local files must be uploaded separately")
+                box.label(text="Choose Library > Workflow, or enter an uploaded asset ID")
+                box.operator(
+                    "scenario.clear_workflow_reference",
+                    text="Clear references" if item.kind == "file_array" else "Clear reference",
+                ).input_name = item.name
+                if item.asset_scope:
+                    box.label(text="Reference is bound to its selected connection", icon="LINKED")
             if item.kind not in {"string", "file", "model", "boolean", "number", "integer"}:
                 box.label(text="Structured value (JSON)")
             allowed = field.get("allowedValues", field.get("allowed_values", field.get("enum")))

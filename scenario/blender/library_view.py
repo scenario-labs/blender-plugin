@@ -10,7 +10,7 @@ import bpy
 from bpy.props import BoolProperty, EnumProperty, PointerProperty, StringProperty
 
 from ..core.api.library import asset_summary
-from . import generation, props, reference_form, runtime
+from . import generation, props, reference_form, runtime, workflow_references
 
 
 def asset_kind(asset):
@@ -22,6 +22,15 @@ def asset_kind(asset):
 
 
 class ScenarioLibraryView(bpy.types.PropertyGroup):
+    target: EnumProperty(
+        name="Reference destination",
+        items=(
+            ("MODEL", "Model", "Add to the selected Create form"),
+            ("WORKFLOW", "Workflow", "Add to the loaded workflow form"),
+        ),
+        default="MODEL",
+        options={"SKIP_SAVE"},
+    )
     query: StringProperty(name="Search", options={"SKIP_SAVE"})
     public: BoolProperty(name="Public assets", options={"SKIP_SAVE"})
     collection: StringProperty(name="Collection ID", options={"SKIP_SAVE"})
@@ -124,12 +133,24 @@ class LibraryView:
         finally:
             self.pending = None
 
-    def prepare(self, context, asset_id):
+    def prepare(self, context, asset_id, *, target="MODEL"):
         if not self.current():
             raise ValueError("The connection changed; refresh Library")
         asset = next((row for row in self.assets if row["asset_id"] == asset_id), None)
         if asset is None or not asset_kind(asset):
             raise ValueError("Choose a Library asset with a supported file type")
+        if target == "WORKFLOW":
+            choices = workflow_references.choices(
+                context,
+                self.session,
+                asset_id,
+                str(asset.get("name") or asset_id),
+                asset_kind(asset),
+            )
+            self.approvals.update(choices)
+            return choices
+        if target != "MODEL":
+            raise ValueError("Choose a model or workflow destination")
         lane_name = context.scene.scenario.lane
         if lane_name not in props.GENERATION_LANES:
             raise ValueError("Choose a generation form in Create first")
@@ -177,6 +198,8 @@ class LibraryView:
             raise ValueError("Review this asset and destination again")
         self.approvals.remove(approval)
         self.session.validate_destination(approval.origin)
+        if isinstance(approval, workflow_references.WorkflowReferenceApproval):
+            return workflow_references.attach(approval, self.session)
         scene = approval.scene
         if (
             scene.scenario.lane != approval.lane_name
@@ -258,7 +281,10 @@ class SCENARIO_OT_library_reference(bpy.types.Operator):
             self._owner = controls()
             if self._owner is None:
                 raise ValueError("Refresh Library before choosing a reference")
-            self._approvals = self._owner.prepare(context, self.asset_id)
+            view = getattr(context.window_manager, "scenario_library_view", None)
+            self._approvals = self._owner.prepare(
+                context, self.asset_id, target=getattr(view, "target", "MODEL")
+            )
             self._input_choices = [(x.param_name, x.input_label, "") for x in self._approvals]
             self.input_name = self._approvals[0].param_name
         except ValueError as error:
@@ -275,8 +301,11 @@ class SCENARIO_OT_library_reference(bpy.types.Operator):
         approval = self._approvals[0]
         self.layout.label(text="Asset: " + approval.label)
         self.layout.label(text="Scene: " + approval.scene_name)
-        self.layout.label(text="Model: " + approval.model_label)
-        self.layout.label(text="Form: " + approval.lane_name.replace("_", " ").title())
+        if isinstance(approval, workflow_references.WorkflowReferenceApproval):
+            self.layout.label(text="Workflow: " + approval.workflow_label)
+        else:
+            self.layout.label(text="Model: " + approval.model_label)
+            self.layout.label(text="Form: " + approval.lane_name.replace("_", " ").title())
         self.layout.prop(self, "input_name")
         self.layout.label(text="Add this reference, then review a new generation price")
 
@@ -290,7 +319,7 @@ class SCENARIO_OT_library_reference(bpy.types.Operator):
         except Exception:
             self.report({"WARNING"}, "The destination changed; review this reference again")
             return {"CANCELLED"}
-        self.report({"INFO"}, "Reference added; review a new generation price in Create")
+        self.report({"INFO"}, "Reference added; review a new price in the destination form")
         return {"FINISHED"}
 
 
@@ -298,6 +327,7 @@ def draw(layout, context):
     view = context.window_manager.scenario_library_view
     box = layout.box()
     box.label(text="Asset Library", icon="ASSET_MANAGER")
+    box.prop(view, "target")
     box.prop(view, "public")
     box.prop(view, "query")
     box.prop(view, "collection")

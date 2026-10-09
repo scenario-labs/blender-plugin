@@ -699,7 +699,7 @@ scrolling, quote-preserving navigation, continued saved-job polling, small-windo
 fit, Escape and return to the viewport. Alternate-DPI and IME acceptance remain
 pending. The Workflows page and [local MCP workflow commands](MCP.md#workflow-execution)
 share scoped discovery, exact estimates and explicit execution. Library provides
-paginated asset search and confirmed model-reference reuse.
+paginated asset search and confirmed model/workflow reference reuse.
 Complete Studio/release acceptance remains open.
 
 ### Run a workflow
@@ -713,7 +713,8 @@ Edit the named inputs. Check an input to include it; unchecked inputs use the
 workflow's default when one exists. Booleans have a checkbox and fixed choices
 have a dropdown. Enter numeric values as numbers. Structured
 inputs use JSON, for example `["asset-one", "asset-two"]` for an image list.
-File inputs accept already uploaded asset IDs; upload local files separately.
+File inputs accept already uploaded asset IDs or confirmed Library selections;
+upload local files separately.
 Conditional requirements and allowed values are checked before pricing.
 
 Choose **Request workflow price**, then **Generate**. The separate confirmation
@@ -725,9 +726,9 @@ Changing inputs, scene or connection requires a fresh valid approval.
 The form and its schema save with the scene and remain editable after reopening;
 prices and approval handles do not survive restart. Jobs keep their existing
 durable recovery. This page runs existing workflows; it does not author graphs,
-handle interactive nodes or cancel running workflows. Direct file upload and
-library selection inside workflow inputs remain to integrate. Native desktop
-interaction and live workflow acceptance are still pending.
+handle interactive nodes or cancel running workflows. Direct file upload into
+workflow inputs remains to integrate. Native desktop interaction and live
+workflow acceptance are still pending.
 
 ### Browse Library assets
 
@@ -738,7 +739,8 @@ a Collection ID to browse that collection. These filters cannot be combined.
 Choose **Refresh** after changing filters. **Next** and **Previous** read only the
 requested page; they never download files or generate assets.
 
-Choose a model in Create, then **Use as reference** on a Library asset. Review
+Choose a model in Create, keep Library **Reference destination** on **Model**,
+then choose **Use as reference** on a Library asset. Review
 the scene, generation form, model and matching input in the confirmation. Only
 matching file types with available capacity are offered. Existing references
 are preserved; remove an occupied reference explicitly in Create before replacing
@@ -746,6 +748,22 @@ it. Confirmation adds the asset ID to that model form and requires a fresh price
 A changed scene, form or connection rejects the old confirmation. The reference's
 saved connection binding prevents reuse under another account/project by accident.
 
-Library selection currently targets model forms. Workflow input selection,
-collection/tag editing, thumbnails and live or physical-desktop acceptance remain
+For a workflow, load its inputs in Workflows first, then choose **Workflow** as
+Library's Reference destination. **Use as reference** confirms the original scene,
+workflow and compatible input. Single references require an empty input; arrays
+append without replacing existing entries. You can build a required array one
+asset at a time, but pricing still checks its minimum, maximum and all other
+workflow requirements. Return to Workflows to review the new price.
+
+Library-managed workflow inputs retain their connection binding when saved.
+Changing the asset IDs or selected connection requires **Clear reference** (or
+**Clear references** for an array), confirmation, and a fresh selection. Clearing
+empties and unchecks that input; as with any unchecked input, the workflow's
+default may apply. Disabling a marked input omits it without deleting its binding.
+Re-enabling it checks that binding again. Ordinary manually entered IDs remain
+available, and file allowed-value constraints are still checked before pricing.
+Previously saved file dropdowns retain their selected asset. Clear the reference
+with confirmation before choosing a replacement from Library.
+
+Collection/tag editing, thumbnails and live or physical-desktop acceptance remain
 separate. Unknown file types are displayed but cannot be attached through this view.

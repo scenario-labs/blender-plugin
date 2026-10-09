@@ -347,10 +347,10 @@ def draw_generate_lane(layout, context, lane):
     if lane == "video":
         draw_clip_options(layout, context, lane_state, schema)
     if lane == "material":
-        layout.label(
-            text="Results are saved; apply them to a mesh material slot from Jobs",
-            icon="INFO",
-        )
+        # Two short lines: one long label is middle-clipped at the default sidebar width.
+        hint = layout.column(align=True)
+        hint.label(text="Saved only, not applied to meshes", icon="INFO")
+        hint.label(text="Apply from Jobs to a mesh slot", icon="BLANK1")
     if lane == "audio":
         layout.label(
             text="Results land in the output folder; add them to the sequencer from Generations",

@@ -38,6 +38,7 @@ class MaterialLaneTests(unittest.TestCase):
         from test_model_picker import FakeLayout
 
         panels = submodule("blender.panels")
+        hint = ["Saved only, not applied to meshes", "Apply from Jobs to a mesh slot"]
         bpy.ops.mesh.primitive_cube_add()
         cube = bpy.context.active_object
         for selected in (True, False):
@@ -50,10 +51,14 @@ class MaterialLaneTests(unittest.TestCase):
                     for node in layout.walk()
                     for call in node.named("label")
                 ]
-                self.assertIn(
-                    "Results are saved; apply them to a mesh material slot from Jobs",
-                    labels,
-                )
+                # One aligned column, short enough not to be clipped beside an icon.
+                columns = [
+                    [call[2].get("text") for call in node.named("label")]
+                    for node in layout.walk()
+                    if node.kind == "column"
+                ]
+                self.assertIn(hint, columns)
+                self.assertTrue(all(len(line) <= 36 for line in hint))
                 self.assertFalse(
                     [text for text in labels if "selected mesh" in text or "arrival" in text]
                 )

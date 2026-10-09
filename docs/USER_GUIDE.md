@@ -6,7 +6,7 @@ Blender 5.0 or later, a Scenario account with API access (see the [Scenario docu
 
 ## What it does
 
-Scenario for Blender puts Scenario's generation models inside Blender's 3D viewport. From one tab you generate images, videos, 3D models, PBR materials and audio, render your scene as a finished still or clip, and edit the meshes you already have (remesh, retexture, UV unwrap, rigging, animation, parts). The inputs come from your scene (a viewport capture, the scene camera, a playblast of your animation, the selected mesh); the results come back where you work: images as datablocks and textures, meshes at the 3D cursor or next to their original, materials on the selected objects, videos and audio in your output folder (audio also drops on the sequencer). The Generate button displays the available estimate in Creative Units (CU). A "from" amount excludes references uploaded later; see [Costs](#costs). Requests use the credentials selected in the extension preferences.
+Scenario for Blender puts Scenario's generation models inside Blender's 3D viewport. From one tab you generate images, videos, 3D models, PBR materials and audio, render your scene as a finished still or clip, and edit the meshes you already have (remesh, retexture, UV unwrap, rigging, animation, parts). The inputs come from your scene (a viewport capture, the scene camera, a playblast of your animation, the selected mesh); the results come back where you work: images as datablocks and textures, meshes at the 3D cursor or next to their original, materials as saved texture sets you apply explicitly to a chosen mesh material slot, videos and audio in your output folder (audio also drops on the sequencer). The Generate button displays the available estimate in Creative Units (CU). A "from" amount excludes references uploaded later; see [Costs](#costs). Requests use the credentials selected in the extension preferences.
 
 The add-on also runs a small local MCP server, so an agent such as Claude Code, Cursor or Claude Desktop can read your scene, run tools in Blender (including planning a camera move) and generate with Scenario.
 
@@ -121,7 +121,7 @@ Where things are:
 
 - **Scenario**: what to generate. Lane tabs with Scenario's modality icons, laid out Image / Video / 3D, Audio / Materials, Render Image / Render Video, Blockout. Below the tabs, the form of the lane.
 - **Jobs**: what is running, all lanes together, with a count in the header: "Prompt Spark is writing the look", "uploading and submitting", "rendering 40%".
-- **Generations**: what came back. Each entry has a header (type icon, start of the prompt, price, a collapse arrow), the model, the asset id (click it to copy), a failure marker when something went wrong, the output thumbnail and the actions of its kind (images: View image, Use as reference (3D image to 3D, Image, Video, Render Image style, Render Video style), Remove background, Apply as texture, Add as plane; 3D: Add to scene, Select, Delete; video: Play, Play in Blender, Add video strip; audio: Play, Add to sequencer; materials: Tiling). The refresh button **reloads the parameters**: lane, model, prompt, every setting sent and the references come back into the form, ready to tweak and generate again. Objects a generation created are stamped with its id on import, so Select and Delete find them after renames. The info button opens Details: the full prompt, the settings sent, the references with their asset ids, the result assets, the files, the errors. Collapse an entry to keep only its icon and prompt. **Collapse all / Expand all** changes every entry from the panel header. A failed entry has a red error control: hover for the message, or click to read and copy the full text. Then, with the Project history (cloud) checkbox on, the project's cloud history: generations made on the web app, by agents or on another machine, with **Save for recovery** for completed model jobs. Saved jobs use explicit download and destination approval; see [Generations](#generations).
+- **Generations**: what came back. Each entry has a header (type icon, start of the prompt, price, a collapse arrow), the model, the asset id (click it to copy), a failure marker when something went wrong, the output thumbnail and the actions of its kind (images: View image, Use as reference (3D image to 3D, Image, Video, Render Image style, Render Video style), Remove background, Apply as texture, Add as plane; 3D: Add to scene, Select, Delete; video: Play, Play in Blender, Add video strip; audio: Play, Add to sequencer). The refresh button **reloads the parameters**: lane, model, prompt, every setting sent and the references come back into the form, ready to tweak and generate again. Objects a generation created are stamped with its id on import, so Select and Delete find them after renames. The info button opens Details: the full prompt, the settings sent, the references with their asset ids, the result assets, the files, the errors. Collapse an entry to keep only its icon and prompt. **Collapse all / Expand all** changes every entry from the panel header. A failed entry has a red error control: hover for the message, or click to read and copy the full text. Then, with the Project history (cloud) checkbox on, the project's cloud history: generations made on the web app, by agents or on another machine, with **Save for recovery** for completed model jobs. Saved jobs use explicit download and destination approval; see [Generations](#generations).
 
 - **Agents (MCP)**: the local MCP server, its token, one-click client setups, the Python permission.
 
@@ -169,7 +169,8 @@ and prices can change.
 - **Image**: text and image references to a picture.
 - **Video**: text, images or a scene clip to a video.
 - **3D**: generate a mesh, or edit an exported selection.
-- **Materials**: create a PBR map set for selected meshes.
+- **Materials**: create a saved PBR texture set, then apply it explicitly to a
+  chosen mesh material slot.
 - **Audio**: create speech, music or sound effects.
 - **Render Image**: use a scene capture as the layout for an image.
 - **Render Video**: use a playblast as the motion and framing for a clip.
@@ -284,7 +285,9 @@ Edit mode:
 ### Materials
 Patina turns a prompt (or a photo) into a seamless PBR set: base color, normal, roughness, metalness, height.
 
-![Materials lane with a copper prompt, texture map choices and settings](images/panel-materials.png)
+![Earlier Materials lane layout with a copper prompt, texture map choices and settings](images/panel-materials.png)
+
+*Earlier Materials layout. The current lane states that results are saved and applied from Jobs to a mesh slot.*
 
 Describe the material, choose the maps and size, review the price and choose **Generate**. The job saves the texture set without changing your scene, materials or selection; meshes selected while generating are not textured. Three models: PATINA Material (prompt, with variation and inpainting), PATINA Image to Maps (a flat texture or photo to maps), PATINA Material Extract (isolate one material from a photo).
 

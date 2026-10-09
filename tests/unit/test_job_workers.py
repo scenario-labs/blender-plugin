@@ -602,3 +602,40 @@ def test_audio_envelope_decodes_run_on_the_preview_lane_and_can_be_canceled(setu
     assert not running.done()
     release.set()
     assert running.result(2).state == JobState.REMOTE
+
+
+def test_queued_organization_change_is_cancelled_unsent_by_deactivation(tmp_path):
+    from organization_service import URL, OrganizationService, asset
+
+    from scenario.core.jobs.organization import build_request
+
+    service = OrganizationService(assets=[asset("asset-a")])
+    adapter = service.adapter()
+    scope = JobScope(URL, "account", "project")
+    coordinator = JobCoordinator(adapter, JobStore(tmp_path / "organization.sqlite3", scope))
+    owner = JobWorkers(coordinator, workers=1, pending_limit=4)
+    try:
+        built = build_request(scope, "update_tags", asset_ids=["asset-a"], add_tags=["x"])
+        snapshot = coordinator.organization_snapshot(built)
+        entered, release = threading.Event(), threading.Event()
+
+        def block_reads(request):
+            if request.url.path == "/v1/collections":
+                entered.set()
+                assert release.wait(5), "Test did not release the read"
+
+        service.gate = block_reads
+        blocker = owner.collection_page(page_size=10)
+        assert entered.wait(5)
+        queued = owner.organize(snapshot)
+        owner.deactivate()
+        release.set()
+        with pytest.raises(CancelledError):
+            queued.result(5)
+        # The in-flight read finishes, then its admission recheck refuses delivery.
+        with pytest.raises(QuoteError, match="inactive"):
+            blocker.result(5)
+    finally:
+        release.set()
+        owner.shutdown()
+    assert service.writes == []

@@ -608,6 +608,17 @@ def test_asset_records_validate_ids_before_dispatch(adapter, asset_ids):
 
 
 @pytest.mark.parametrize("read", sorted(READS))
+@pytest.mark.parametrize("state", ["offline", "closed"])
+def test_unsent_reads_raise_plain_adapter_errors(adapter, read, state):
+    client = adapter(deny, online=lambda: state != "offline")
+    if state == "closed":
+        client.close()
+    with pytest.raises(AdapterError, match="disabled|closed") as error:
+        READS[read](client)
+    assert not isinstance(error.value, (WriteRejected, WriteUncertain))
+
+
+@pytest.mark.parametrize("read", sorted(READS))
 def test_deeply_nested_read_bodies_are_invalid_json(adapter, read):
     requests, handler = recorder(httpx.Response(200, content=NESTED))
     with pytest.raises(AdapterError, match="invalid JSON") as error:

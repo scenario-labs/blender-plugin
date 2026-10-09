@@ -6,11 +6,12 @@
 offers, and MCP `job_status` reports the same action names. `describe()` turns
 one projected job view into ordered descriptors: label, icon, operator and the
 operator properties. The sidebar Jobs and Generations panels, Studio pages that
-reuse them and the compact composer draw and dispatch these descriptors instead
-of keeping their own branches.
+reuse them, and later the compact composer, draw and dispatch these descriptors
+instead of keeping their own branches.
 
-A descriptor grants nothing. Its operator rechecks the context token, saved
-revision and destination, and opens its own confirmation or destination review.
+A descriptor grants nothing. Its operator rechecks its context token and saved
+revision or review, and opens its own confirmation or destination review where
+one applies.
 Availability is expressed by presence: every offered operator descriptor is
 enabled. A descriptor without an operator is a status row, never a control.
 """
@@ -54,9 +55,12 @@ SINGLE_APPLY = {
 NOT_REUSE = frozenset({"restore_world", "retry_receipt"})
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, eq=False)
 class ResultTypes:
-    """Saved media types each application accepts; owned by the Blender modules."""
+    """Saved media types each application accepts; owned by the Blender modules.
+
+    It holds a mapping, so it compares and hashes by identity.
+    """
 
     model: str
     media: Mapping[str, str]  # media type -> "video" or "audio" strip kind
@@ -132,9 +136,9 @@ def _blockout(review, job):
     return (read,)
 
 
-def _describe_action(action, view, job, types, review):
+def _describe_action(action, view, job, result_types, review):
     def is_model(media_type):
-        return media_type == types.model
+        return media_type == result_types.model
 
     if action == "recover_blockout":
         return _blockout(review, job)
@@ -155,7 +159,7 @@ def _describe_action(action, view, job, types, review):
         )
     if action == "apply_world":
         # Panorama numbering counts only the World candidates.
-        world = [key for key in view.asset_ids if view.asset_types.get(key) in types.world]
+        world = [key for key in view.asset_ids if view.asset_types.get(key) in result_types.world]
         return tuple(
             SavedJobAction(
                 f"{action}:{asset_id}",
@@ -193,8 +197,8 @@ def _describe_action(action, view, job, types, review):
             view,
             action,
             "scenario.import_saved_media",
-            lambda index, media_type: f"Add {types.media[media_type]} strip ({index})",
-            lambda media_type: media_type in types.media,
+            lambda index, media_type: f"Add {result_types.media[media_type]} strip ({index})",
+            lambda media_type: media_type in result_types.media,
             job,
         )
     if action not in RECOVERY_GROUPS:
@@ -211,7 +215,7 @@ def _describe_action(action, view, job, types, review):
     )
 
 
-def describe(view, context_id, types, blockout_review=None):
+def describe(view, context_id, result_types, blockout_review=None):
     """Return one projected view's saved-job controls in drawing order.
 
     Reads only the in-memory view and the supplied Blockout review for the
@@ -232,7 +236,7 @@ def describe(view, context_id, types, blockout_review=None):
     if state == "applied" and any(action not in NOT_REUSE for action in actions):
         items.append(_status("reuse", "", "Reuse saved results", "FILE_REFRESH"))
     for action in actions:
-        items.extend(_describe_action(action, view, job, types, blockout_review))
+        items.extend(_describe_action(action, view, job, result_types, blockout_review))
     if state in ("ready", "apply_failed"):
         items.append(
             _status("awaiting_review", "", "Downloaded result awaits application review", "INFO")

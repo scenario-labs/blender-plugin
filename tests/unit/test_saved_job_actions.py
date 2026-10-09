@@ -298,6 +298,8 @@ def test_descriptors_are_immutable_and_reading_does_not_change_the_view():
     with pytest.raises(AttributeError):
         item.label = "Changed"
     assert (subject.asset_ids, subject.asset_types, subject.meta) == before
+    # Result types hold a mapping yet stay usable as a key, by identity.
+    assert {TYPES: True}[TYPES] and TYPES != sja.ResultTypes(TYPES.model, {}, frozenset())
 
 
 def _mcp_spec(name):

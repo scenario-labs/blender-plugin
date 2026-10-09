@@ -171,13 +171,20 @@ class ResultActionTests(unittest.TestCase):
         )
 
     def test_unprojected_or_unshared_views_draw_nothing(self):
+        unrevised = self.view("ready", ("import_images",))
+        del unrevised.meta["saved_revision"]
         for view in (
             self.view("remote", ("refresh",), shared_job=False),
             submodule("core.jobs.records").JobRecord("local", "image", "image", "model", {}),
+            unrevised,
         ):
             layout = MagicMock()
             self.recovery.draw_controls(layout, view)
             self.assertEqual(layout.mock_calls, [])
+
+    def test_world_candidates_use_the_owner_media_types(self):
+        owner = submodule("core.scene.panorama").WORLD_MEDIA_TYPES
+        self.assertIs(self.recovery.RESULT_TYPES.world, owner)
 
 
 class SavedJobActionTests(unittest.TestCase):

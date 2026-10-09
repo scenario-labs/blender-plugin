@@ -610,8 +610,9 @@ revision. Queued commands retain their original scope.
 Native surfaces draw these controls from one descriptor list.
 [`saved_job_actions.describe`](../scenario/core/ui/saved_job_actions.py) is
 free of `bpy`: it turns one projected view into ordered descriptors with the
-label, icon, operator and operator properties (context token, request ID,
-observed revision and any asset, purpose or action). Each operator descriptor
+label, icon, operator and operator properties (the context token, then either
+the request ID and observed revision or a ready Blockout review ID, and any
+asset, purpose or action). Each operator descriptor
 keeps the `ModelJobs.actions` name that MCP `job_status` reports. The sidebar
 Jobs and Generations panels, and the Studio Jobs and Results pages that reuse
 them, draw through `job_recovery.draw_controls`; a future surface such as the
@@ -619,8 +620,9 @@ compact composer can dispatch the same descriptors. Presence means enabled:
 a descriptor appears only while its action is offered, and rows without an
 operator are status text. Building descriptors reads only in-memory views and
 the current scene's Blockout review, without store reads, session creation or
-scene changes. A descriptor grants nothing: each operator still checks the
-context token and revision and opens its own confirmation or destination review.
+scene changes. A descriptor grants nothing: each operator still checks its
+context token and saved revision or review, and opens its own confirmation or
+destination review where one applies.
 A new saved-job action adds one descriptor here, not a surface-specific branch.
 
 No action reconstructs a quote, replays an uncertain submission, guesses a remote

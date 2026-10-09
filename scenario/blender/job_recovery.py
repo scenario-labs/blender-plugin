@@ -14,6 +14,7 @@ LABELS = {
     "refresh": "Refresh status",
     "resume": "Resume download",
     "cancel": "Cancel generation",
+    "cancel_prepared": "Cancel prepared job",
     "recover_download": "Check interrupted download",
     "retry_receipt": "Save import receipt",
     "import_images": "Import saved images",
@@ -66,22 +67,40 @@ class SCENARIO_OT_recover_job(bpy.types.Operator):
     )
 
     def invoke(self, context, event):
+        if self.action == "cancel_prepared":
+            return context.window_manager.invoke_confirm(
+                self,
+                event,
+                title="Cancel prepared job?",
+                message="Cancel this unsent request locally; nothing is sent to Scenario.",
+                confirm_text="Cancel prepared job",
+            )
         if self.action == "cancel":
             return context.window_manager.invoke_confirm(self, event)
         return self.execute(context)
 
     def execute(self, context):
         try:
-            runtime.control_model_job(
-                self.context_id, self.request_id, self.expected_revision, self.action
-            )
+            if self.action == "cancel_prepared":
+                # The same revision- and context-guarded command as MCP cancel_prepared_job.
+                runtime.cancel_prepared_job(
+                    self.context_id, self.request_id, self.expected_revision
+                )
+            else:
+                runtime.control_model_job(
+                    self.context_id, self.request_id, self.expected_revision, self.action
+                )
         except ScenarioError as error:
             self.report({"ERROR"}, error.reason)
             return {"CANCELLED"}
         except Exception:
             self.report({"ERROR"}, "Recovery did not complete; inspect the saved job again")
             return {"CANCELLED"}
-        runtime.set_message("Recovery requested; no new generation was submitted")
+        runtime.set_message(
+            "Prepared job canceled; nothing was sent to Scenario"
+            if self.action == "cancel_prepared"
+            else "Recovery requested; no new generation was submitted"
+        )
         return {"FINISHED"}
 
 

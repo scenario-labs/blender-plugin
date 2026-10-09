@@ -28,8 +28,9 @@ requests. Inspection returns exact saved costs and recovery suggestions, not new
 spending approval. Cancellation needs the current context token and observed
 record revision, and only accepts an unclaimed prepared intent. Resetting, loading a file or
 switching credentials invalidates the context token, even if another scope has
-the same request ID. Shared saved-job controls below also expose known model-job
-cancellation and download/receipt recovery. Uploads and remaining paid entry
+the same request ID. Shared saved-job controls below also expose this
+prepared-intent cancellation, known model-job cancellation and download/receipt
+recovery. Uploads and remaining paid entry
 points still need active integration. These recovery
 tools do not import prototype jobs. Model submission creates new durable intents.
 
@@ -590,6 +591,13 @@ context token and exact saved revision. Queued commands retain their original sc
   without network access or import.
 - `retry_receipt` saves an already completed image import's outcome without any
   scene mutation. The exact pending owner-local handle must still exist.
+- `cancel_prepared` is offered for an unsent prepared model or workflow job,
+  including one queued behind other work. After native confirmation it calls the
+  same `runtime.cancel_prepared_job` command as MCP `cancel_prepared_job`, not
+  `ModelJobs.control`, with the context token and observed revision. It sends no
+  service request. The queued submission then fails its stored-state check and the
+  job shows as canceled; a claimed request or stale revision is rejected. MCP
+  `job_status` lists the same `cancel_prepared` action name.
 
 No action reconstructs a quote, replays an uncertain submission, guesses a remote
 ID or rebinds the original scene. Missing/stale revisions and retired contexts fail

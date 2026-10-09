@@ -107,10 +107,12 @@ Complete these checks on the corrected candidate before releasing:
 4. Physical focus/text/IME, viewport, small-window and alternate-DPI checks in
    each claimed desktop environment; sustained candidate rendering/playback and
    audio stability. Preserve the separate accepted human media review above.
-5. Required CI enforcement (#45), protected hosted smoke acceptance (#40), and
-   explicit experimental/unavailable capability limits. Read-only checks on
-   2026-10-09 still find only `pr-title` and `commits` in required status checks,
-   and only `github-pages` among environments. No settings were changed.
+5. Complete protected hosted smoke acceptance (#40) and retain explicit
+   experimental/unavailable capability limits. The 2026-10-09 administration
+   follow-up added and read back required `ci-ok` while preserving all other
+   protections (#45), and configured the protected `smoke` environment and
+   private inputs. Scheduled spending remains disabled. See the
+   [maintainer record](../MAINTAINERS.md#smoke-lane) for hosted-run evidence.
 6. Validate the actual release-please 0.10.0 artifact, then complete the published
    checksum/provenance, extension index and native HTTPS installation checks at
    their proper release stage. This 0.9.9 candidate is not a published release.
@@ -444,8 +446,8 @@ source and ZIP identities.
 | Retained lanes | Existing image, material, GLB, video and audio outputs pass native application on the current candidate; the grayscale material failure is corrected by #340. These checks do not exercise the full approval journey. | Complete integrated native capture/upload/estimate/submission/application and retained render/edit/Film checks under #68 with explicit paid authorization where needed. |
 | Recovery and switching | Synthetic tests cover lost acknowledgement, stale quotes, scope changes and application claims. | Candidate-level UI/MCP parity, cancellation/restart races and failed download/import journeys with recorded outcomes under #65/#68. |
 | GPU, motion and audio | Human motion/audio review of the existing outputs is accepted; candidate native media insertion passes. Sustained candidate playback is unverified. | Complete native rendering/playback and sustained GPU/audio stability checks under #68; preserve the bounded human review above. |
-| Paid CI | The suite runner and protected workflow now quote all cases and enforce one aggregate cap. Explicit version-2 reference plans now stage/upload through shared durable commands before quoting. A read-only 2026-10-09 check finds no `smoke` environment; live reference-upload acceptance remains pending. | Configure #40's explicit project/budget policy, environment reviewers, private plan, recovery encryption secret and dedicated credentials; complete authorized hosted upload/generation acceptance. |
-| Required checks | Read-only main-branch rules checked on 2026-10-09 report `pr-title` and `commits` as required, plus CodeQL scanning. `ci-ok` is absent. | Complete #45's administration and negative merge-gate checks while preserving existing protections. |
+| Paid CI | The protected `smoke` environment, maintainer reviewer, main-only policy and private secrets are configured. Zero-cap hosted admission rejects execution; an authorized run passed admission and paused for review. Scheduled spending remains disabled. | Finish the authorized hosted run and encrypted recovery checks under #40. Reference-upload acceptance remains separate from a version-1 generation plan. |
+| Required checks | `ci-ok`, `pr-title` and `commits` are required after the 2026-10-09 update. Readback confirms other integrity rules and the separate review ruleset are unchanged. CodeQL and code-quality protection remain enforced. | Record #45's hosted negative title check and complete the documentation review/merge; do not drop existing protections. |
 | Final release artifact | The current corrected 0.9.9 ZIP passes exact-artifact native application and synthetic update/restart on all three macOS Blender versions. | Validate release-please's exact 0.10.0 ZIP, licenses, provenance/checksum and extension index; exercise public native installation/update under #36/#68 and the release procedure. |
 
 ## Native Library validation slice

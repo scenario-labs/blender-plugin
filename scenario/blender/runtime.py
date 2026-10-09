@@ -15,6 +15,7 @@ from ..core import config
 from ..core.api.errors import ScenarioError
 from ..core.api.sdk_adapter import Credentials as SDKCredentials
 from ..core.api.sdk_catalog import SDKCatalog
+from ..core.jobs.audio_decode import WaveformSpec
 from ..core.jobs.credential_storage import open_credential_store
 from ..core.jobs.manager import JobManager
 from ..core.jobs.records import JobRegistry
@@ -138,6 +139,25 @@ def online():
     return bool(getattr(bpy.app, "online_access", True))
 
 
+def waveform_spec():
+    """The owned offline audio decoder, resolved on the main thread; None without one.
+
+    Blender run as a Python module, or a package without a usable executable
+    path, cannot start the decoder: audio envelopes then fail explicitly.
+    """
+    binary = bpy.app.binary_path
+    if not binary:
+        return None
+    try:
+        executable = pathlib.Path(binary).resolve()
+        worker = pathlib.Path(__file__).with_name("waveform_worker.py").resolve()
+        if not executable.is_file() or not worker.is_file():
+            return None
+        return WaveformSpec(executable, worker)
+    except (OSError, ValueError):
+        return None
+
+
 def paths():
     state_dir = pathlib.Path(bpy.utils.extension_path_user(PACKAGE, path="state", create=True))
     cache_dir = pathlib.Path(bpy.utils.extension_path_user(PACKAGE, path="cache", create=True))
@@ -254,6 +274,7 @@ def ensure_job_session():
                 upload_sources=UploadSources(source_root),
                 part_uploader=PartUploader(S3UploadPolicy(), online_access=catalog.network_allowed),
                 preview_root=preview_root,
+                preview_waveform=waveform_spec(),
             )
         except BaseException:
             adapter.close()

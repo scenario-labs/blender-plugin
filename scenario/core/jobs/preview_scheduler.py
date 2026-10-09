@@ -14,6 +14,9 @@ window of online time, then marked missing or failed until an explicit retry.
 Cache maintenance runs with a batch at most every ``MAINTAIN_SECONDS``; after
 previews were written, an idle scheduler queues a maintenance-only lane command
 on the same cadence, so the cache budget does not wait for the next poll.
+Audio envelope copies are decoded by a lane command that runs an owned offline
+Blender process; image copies wait for Blender's main thread through
+``decode_requests``.
 """
 
 import math
@@ -35,6 +38,7 @@ BATCH_LIMIT = 32
 DECODE_LIMIT = 4
 DECODE_SECONDS = 120.0
 MAINTAIN_SECONDS = 600.0
+NO_WAVEFORM = "Audio waveforms need Blender's executable"
 ENTRY_LIMIT = 256
 # Renditions that the next lane batch must resolve.
 _ACTIVE = frozenset({State.QUEUED, State.PENDING, State.OFFLINE})
@@ -122,6 +126,7 @@ class ResultPreviewScheduler:
         batch_limit=BATCH_LIMIT,
         decode_limit=DECODE_LIMIT,
         decode_seconds=DECODE_SECONDS,
+        waveform=None,
     ):
         if (
             not callable(clock)
@@ -142,6 +147,8 @@ class ResultPreviewScheduler:
         self._window, self._delays = float(window), tuple(float(value) for value in delays)
         self._batch_limit, self._decode_limit = batch_limit, decode_limit
         self._decode_seconds = float(decode_seconds)
+        # The owned offline decoder for audio envelopes; without one they fail.
+        self._waveform = waveform
         self._entries = {}
         self._task = None
         self._batch = ()
@@ -286,9 +293,17 @@ class ResultPreviewScheduler:
         return None if entry is None else self._snapshot(entry)
 
     def decode_requests(self):
-        """Outstanding private copies awaiting Blender-side decoding, oldest first."""
+        """Outstanding image copies awaiting Blender-side decoding, oldest first.
+
+        Audio envelope copies are never listed: the scheduler queues their
+        decoding in an owned offline Blender process on the preview lane.
+        """
         self._check()
-        return tuple(request for request, _ in self._issued.values())
+        return tuple(
+            request
+            for request, _ in self._issued.values()
+            if request.rendition != previews.ENVELOPE
+        )
 
     def _issued_entry(self, request):
         item = self._issued.get(id(request))
@@ -456,6 +471,30 @@ class ResultPreviewScheduler:
                 end = entry.window + self._window
                 entry.poll = min(now + self._delay(entry.attempts), max(now, end))
 
+    def _dispatch_envelopes(self):
+        """Queue offline decoding of issued audio copies, oldest first.
+
+        A full lane leaves the rest issued for the next pump; the decode
+        expiry still bounds how long they wait.
+        """
+        changed = False
+        for identity, (request, _) in tuple(self._issued.items()):
+            if request.rendition != previews.ENVELOPE:
+                continue
+            if self._waveform is None:
+                self.discard_decode(request, reason=NO_WAVEFORM)
+                changed = True
+                continue
+            try:
+                task = self._workers.decode_result_preview(
+                    request, root=self._root, waveform=self._waveform
+                )
+            except WorkerError:
+                break
+            del self._issued[identity]
+            self._publishing[task] = request
+        return changed
+
     def _consume_publications(self):
         for task, request in tuple(self._publishing.items()):
             if not task.done():
@@ -545,6 +584,7 @@ class ResultPreviewScheduler:
             # A stored lane outcome, as in _apply_batch: a failed pass is not
             # retried early; the next one is due after the usual interval.
             self._maintenance = None
+        changed |= self._dispatch_envelopes()
         self._consume_discards()
         if self._issued:
             before = len(self._issued)

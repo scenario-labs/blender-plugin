@@ -271,6 +271,15 @@ class JobWorkers:
             envelope=envelope,
         )
 
+    def decode_result_preview(self, request, *, root, waveform):
+        """Queue an audio envelope decode; cancellation terminates its Blender child."""
+        return self._enqueue_preview(
+            self._coordinator.decode_result_preview,
+            request,
+            root=os.fspath(root),
+            waveform=waveform,
+        )
+
     def discard_result_preview(self, request, *, root):
         return self._enqueue_preview(
             self._coordinator.discard_result_preview, request, root=os.fspath(root)

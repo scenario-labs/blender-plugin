@@ -1,156 +1,135 @@
 # SPDX-FileCopyrightText: 2026 Scenario Inc.
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""Synthetic PCM samples are generated here; no recorded or third-party media."""
+"""Decoder-reduced level blocks and the envelope raster: pure math, no file or decoder."""
 
-import hashlib
-import os
-import threading
-import wave
+import math
 
 import pytest
 
 from scenario.core import audio_waveform as audio
+from scenario.core.audio_waveform import AudioEnvelope, EnvelopeBuilder, WaveformError
 
 
-def fixture(path, *, width=2, channels=1, frames=None, rate=8000):
-    limit = 1 << (width * 8 - 1)
-    frames = frames if frames is not None else [(-limit,), (limit - 1,), (0,), (limit // 2,)]
-    raw = bytearray()
-    for frame in frames:
-        for channel in range(channels):
-            value = frame[channel % len(frame)]
-            raw.extend(
-                (value + 128).to_bytes(1, "little")
-                if width == 1
-                else value.to_bytes(width, "little", signed=True)
-            )
-    with wave.open(str(path), "wb") as sound:
-        sound.setnchannels(channels)
-        sound.setsampwidth(width)
-        sound.setframerate(rate)
-        sound.writeframes(raw)
-    return path
+def blocks(samples, rate, channels):
+    """Reduce interleaved samples the way the offline decoder process does."""
+    block = max(1, rate // 100)
+    frames = len(samples) // channels
+    sums, peaks = [], []
+    for start in range(0, frames, block):
+        part = [
+            min(1.0, max(-1.0, value))
+            for value in samples[start * channels : min(frames, start + block) * channels]
+        ]
+        sums.append(float(sum(value * value for value in part)))
+        peaks.append(float(max(abs(value) for value in part)))
+    return sums, peaks, frames
 
 
-@pytest.mark.parametrize("width", [1, 2, 3, 4])
+def tone(rate, seconds, amplitude, channels=1):
+    values = []
+    for frame in range(int(rate * seconds)):
+        values.extend([amplitude * math.sin(2 * math.pi * 50 * frame / rate)] * channels)
+    return values
+
+
 @pytest.mark.parametrize("channels", [1, 2])
-def test_pcm_depths_channels_duration_and_snapshot_digest(tmp_path, width, channels):
-    path = fixture(tmp_path / "synthetic.wav", width=width, channels=channels)
-    original = path.read_bytes()
-    result = audio.read_waveform(path, threading.Event())
-    assert result.channels == channels
-    assert result.seconds == 4 / 8000
-    assert result.sha256 == hashlib.sha256(original).hexdigest()
-    assert result.peaks[0][0] == (-1.0, -1.0)
-    assert result.peaks[0][1][1] == pytest.approx(1 - 1 / (1 << (width * 8 - 1)))
-    assert result.peaks[0][2] == (0.0, 0.0)
-    assert path.read_bytes() == original
-    assert len(audio.raster(result)) == 256 * 96 * 4
+def test_reduced_blocks_fold_like_samples_including_a_partial_last_block(channels):
+    rate = 8000
+    samples = tone(rate, 0.5, 0.6, channels) + [1.5, -2.0] * channels  # Clamped, partial.
+    by_samples = EnvelopeBuilder(rate, channels, max_seconds=1)
+    by_samples.add(samples)
+    by_blocks = EnvelopeBuilder(rate, channels, max_seconds=1)
+    by_blocks.add_blocks(*blocks(samples, rate, channels))
+    assert by_blocks.frames == by_samples.frames == 4002
+    assert by_blocks.finish(bins=16) == by_samples.finish(bins=16)
 
 
-def test_short_impulses_and_distinct_stereo_channels_survive_binning(tmp_path, monkeypatch):
-    monkeypatch.setattr(audio, "BINS", 2)
-    path = fixture(
-        tmp_path / "stereo.wav",
-        channels=2,
-        frames=[(0, 0), (32767, -32768), (0, 0), (-16384, 8192)],
-    )
-    result = audio.read_waveform(path, threading.Event())
-    assert result.peaks == (
-        ((0.0, 32767 / 32768), (-0.5, 0.0)),
-        ((-1.0, 0.0), (0.0, 0.25)),
-    )
+def test_blocks_continue_after_whole_blocks_but_not_after_a_partial_one():
+    builder = EnvelopeBuilder(100, 1)  # One-frame blocks at 100 Hz.
+    builder.add_blocks([0.25], [0.5], 1)
+    builder.add([0.5, -0.5])
+    builder.add_blocks([0.0], [0.0], 1)
+    assert builder.frames == 4
+    partial = EnvelopeBuilder(1000, 1)
+    partial.add_blocks([0.0, 0.0], [0.0, 0.0], 15)
+    for extra in (lambda: partial.add([0.0]), lambda: partial.add_blocks([0.0], [0.0], 1)):
+        with pytest.raises(WaveformError, match="complete"):
+            extra()
+    assert partial.finish().silent
+    misaligned = EnvelopeBuilder(1000, 1)
+    misaligned.add([0.0] * 3)
+    with pytest.raises(WaveformError, match="boundary"):
+        misaligned.add_blocks([0.0], [0.0], 10)
 
 
 @pytest.mark.parametrize(
-    "kind", ["missing", "corrupt", "truncated", "float", "channels", "duration", "frames"]
+    "sums,peaks,frames,message",
+    [
+        ([0.0], [0.0], 0, "at least one"),
+        ([0.0], [0.0], True, "at least one"),
+        ([0.0, 0.0], [0.0], 20, "match"),
+        ([0.0], [0.0], 11, "match"),
+        ([math.nan], [0.5], 10, "invalid"),
+        ([math.inf], [0.5], 10, "invalid"),
+        ([0.1], [math.nan], 10, "invalid"),
+        ([0.1], [1.5], 10, "invalid"),
+        ([-0.1], [0.5], 10, "invalid"),
+        ([10 * 0.25 + 0.01], [0.5], 10, "invalid"),  # RMS above its peak.
+        ([0], [0.5], 10, "invalid"),
+        (iter([0.0]), [0.0], 10, "sequences"),
+    ],
 )
-def test_invalid_media_is_rejected_with_sanitized_errors(tmp_path, kind):
-    path = tmp_path / "private-name.wav"
-    if kind == "corrupt":
-        path.write_bytes(b"private decoder input")
-    elif kind != "missing":
-        fixture(
-            path,
-            channels=3 if kind == "channels" else 1,
-            frames=[(0,)] * 601 if kind == "duration" else None,
-            rate=1 if kind == "duration" else 8000,
-        )
-        raw = bytearray(path.read_bytes())
-        if kind == "truncated":
-            raw = raw[:-2]
-        elif kind == "float":
-            raw[20:22] = (3).to_bytes(2, "little")
-        elif kind == "frames":
-            raw[40:44] = ((audio.MAX_FRAMES + 1) * 2).to_bytes(4, "little")
-        path.write_bytes(raw)
-    with pytest.raises(audio.WaveformError) as error:
-        audio.read_waveform(path, threading.Event())
-    assert "private" not in str(error.value)
+def test_reduced_blocks_must_be_consistent_with_their_frames(sums, peaks, frames, message):
+    with pytest.raises(WaveformError, match=message):
+        EnvelopeBuilder(1000, 1).add_blocks(sums, peaks, frames)
 
 
-def test_oversized_file_is_rejected_before_reading_its_contents(tmp_path, monkeypatch):
-    path = fixture(tmp_path / "large.wav")
-    monkeypatch.setattr(audio, "MAX_BYTES", 8)
-    with pytest.raises(audio.WaveformError, match="32 MiB"):
-        audio.read_waveform(path, threading.Event())
+def test_reduced_blocks_respect_the_duration_limit():
+    builder = EnvelopeBuilder(100, 2, max_seconds=1)
+    builder.add_blocks([0.0] * 100, [0.0] * 100, 100)
+    with pytest.raises(WaveformError, match="duration"):
+        builder.add_blocks([0.0], [0.0], 1)
 
 
-def test_unsupported_extension_needs_no_file_access(tmp_path, monkeypatch):
-    monkeypatch.setattr(audio.os, "open", lambda *a: pytest.fail("must not open unsupported file"))
-    with pytest.raises(audio.WaveformError, match="PCM WAV"):
-        audio.read_waveform(tmp_path / "anything.mp3", threading.Event())
+def envelope(levels, *, rms=None):
+    return AudioEnvelope(
+        1.0,
+        8000,
+        1,
+        tuple(rms if rms is not None else [level / 2 for level in levels]),
+        tuple(levels),
+        0.1,
+        max(levels),
+    )
 
 
-def test_cancellation_before_read_and_between_decoding_chunks(tmp_path):
-    path = fixture(tmp_path / "cancel.wav", frames=[(123,)] * 20000)
-    cancel = threading.Event()
-    cancel.set()
-    with pytest.raises(audio.WaveformCanceled):
-        audio.read_waveform(path, cancel)
-
-    class DuringDecode:
-        calls = 0
-
-        def is_set(self):
-            self.calls += 1
-            return self.calls >= 6
-
-    with pytest.raises(audio.WaveformCanceled):
-        audio.read_waveform(path, DuringDecode())
+def column(pixels, x, width, height):
+    return [bytes(pixels[(y * width + x) * 4 : (y * width + x) * 4 + 4]) for y in range(height)]
 
 
-def test_changed_snapshot_is_not_published(tmp_path):
-    path = fixture(tmp_path / "changing.wav")
-
-    class ChangeAfterRead:
-        calls = 0
-
-        def is_set(self):
-            self.calls += 1
-            if self.calls == 3:
-                path.write_bytes(b"replacement")
-            return False
-
-    with pytest.raises(audio.WaveformError, match="changed"):
-        audio.read_waveform(path, ChangeAfterRead())
-    assert path.read_bytes() == b"replacement"
+def test_raster_draws_peak_bars_rms_cores_and_a_silent_center_line():
+    width, height = 16, 24
+    pixels = audio.raster(envelope([0.0, 1.0]), width=width, height=height)
+    assert len(pixels) == width * height * 4
+    silent = column(pixels, 0, width, height)
+    assert silent[12] == audio._LINE_COLOR
+    assert silent.count(b"\x00" * 4) == height - 1
+    loud = column(pixels, 15, width, height)
+    # A full-scale peak spans the band; its half-level RMS core is solid.
+    assert loud[2] == loud[22] == audio._PEAK_COLOR
+    assert loud[7] == loud[12] == loud[17] == audio._RMS_COLOR
+    assert loud[1] == loud[23] == b"\x00" * 4
 
 
-def test_symlink_is_not_followed(tmp_path):
-    original = fixture(tmp_path / "original.wav")
-    link = tmp_path / "link.wav"
-    try:
-        link.symlink_to(original)
-    except OSError:
-        pytest.skip("Symlink creation is unavailable")
-    with pytest.raises(audio.WaveformError):
-        audio.read_waveform(link, threading.Event())
-
-
-@pytest.mark.skipif(os.name == "nt", reason="POSIX FIFO guard")
-def test_fifo_is_rejected_without_waiting_for_a_writer(tmp_path):
-    path = tmp_path / "fifo.wav"
-    os.mkfifo(path)
-    with pytest.raises(audio.WaveformError):
-        audio.read_waveform(path, threading.Event())
+@pytest.mark.parametrize(
+    "value,options",
+    [
+        ("not an envelope", {}),
+        (envelope([0.5]), {"width": 7}),
+        (envelope([0.5]), {"height": 4097}),
+        (envelope([0.5]), {"width": 16.0}),
+    ],
+)
+def test_raster_rejects_invalid_input(value, options):
+    with pytest.raises(WaveformError):
+        audio.raster(value, **options)

@@ -20,7 +20,7 @@ import httpx
 import pytest
 
 from scenario.core.api.sdk_adapter import Credentials, SDKAdapter
-from scenario.core.audio_waveform import EnvelopeBuilder
+from scenario.core.audio_waveform import EnvelopeBuilder, WaveformCanceled, WaveformError
 from scenario.core.jobs import result_previews as previews
 from scenario.core.jobs import transfers
 from scenario.core.jobs.coordinator import JobCoordinator
@@ -951,3 +951,87 @@ def test_canceled_preview_transfer_stops_without_caching(env, monkeypatch):
         run(env, work(env, "request", [CLIP]), cancel=cancel)
     assert seen == [cancel]
     assert work_directories(env) == [] and list(env.cache.rglob("clip.*")) == []
+
+
+class FakeDecode:
+    """Stands in for the offline Blender decoder; records what the lane passed."""
+
+    def __init__(self, monkeypatch, *, error=None):
+        self.calls, self.error = [], error
+        monkeypatch.setattr(previews.audio_decode, "decode", self)
+
+    def __call__(self, source, directory, spec, *, cancel, max_seconds, bins):
+        self.calls.append((source, directory, spec, max_seconds, bins, source.read_bytes()))
+        if self.error is not None:
+            raise self.error
+        builder = EnvelopeBuilder(8000, 1, max_seconds=max_seconds)
+        builder.add([0.5, -0.25] * 400)
+        return builder.finish(bins)
+
+
+def envelope_request(env):
+    ready_job(env, "request", [("asset-sound", "audio/mpeg", b"ID3" + b"\x00" * 64)])
+    return outcome(run(env, work(env, "request", [ENVELOPE])), 0, ENVELOPE).request
+
+
+def test_offline_decode_caches_the_envelope_by_receipt_and_removes_the_copy(env, monkeypatch):
+    decoder = FakeDecode(monkeypatch)
+    request = envelope_request(env)
+    spec = object()
+    cached = env.coordinator.decode_result_preview(
+        request, root=env.cache, waveform=spec, cancel=threading.Event()
+    )
+    ((source, directory, passed, seconds, bins, data),) = decoder.calls
+    assert source == request.source and source.name == "source.mp3"
+    assert directory == request.directory and passed is spec
+    assert (seconds, bins) == (request.max_seconds, request.bins)
+    assert data == b"ID3" + b"\x00" * 64
+    assert cached.rendition == ENVELOPE and cached.envelope.overall_peak == 0.5
+    assert work_directories(env) == []
+    reread = outcome(run(env, work(env, "request", [ENVELOPE])), 0, ENVELOPE)
+    assert reread.state == State.READY and reread.preview.envelope == cached.envelope
+    assert len(decoder.calls) == 1
+
+
+@pytest.mark.parametrize(
+    "error,expected,reason",
+    [
+        (WaveformError("Blender could not decode this audio"), previews.PreviewError, "decode"),
+        (WaveformCanceled("Waveform preview canceled"), previews.PreviewCanceled, "canceled"),
+    ],
+)
+def test_offline_decode_failures_cache_nothing(env, monkeypatch, error, expected, reason):
+    FakeDecode(monkeypatch, error=error)
+    request = envelope_request(env)
+    with pytest.raises(expected, match=reason):
+        env.coordinator.decode_result_preview(
+            request, root=env.cache, waveform=object(), cancel=threading.Event()
+        )
+    assert work_directories(env) == []
+    retry = outcome(run(env, work(env, "request", [ENVELOPE])), 0, ENVELOPE)
+    assert retry.state == State.DECODE
+    env.coordinator.discard_result_preview(retry.request, root=env.cache)
+
+
+def test_offline_decode_rejects_canceled_and_foreign_requests(env, monkeypatch):
+    decoder = FakeDecode(monkeypatch)
+    request = envelope_request(env)
+    cancel = threading.Event()
+    cancel.set()
+    with pytest.raises(previews.PreviewCanceled):
+        env.coordinator.decode_result_preview(
+            request, root=env.cache, waveform=object(), cancel=cancel
+        )
+    assert work_directories(env) == []
+    ready_job(env, "image", [("asset-image", "image/png", png(4, 4))])
+    still = outcome(run(env, work(env, "image", [STILL])), 0, STILL).request
+    with pytest.raises(previews.PreviewError, match="audio decode request"):
+        env.coordinator.decode_result_preview(
+            still, root=env.cache, waveform=object(), cancel=threading.Event()
+        )
+    foreign = replace(still, key=replace(still.key, scope="0" * 64))
+    with pytest.raises(ResultError, match="connection"):
+        env.coordinator.decode_result_preview(
+            foreign, root=env.cache, waveform=object(), cancel=threading.Event()
+        )
+    assert decoder.calls == []

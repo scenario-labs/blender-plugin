@@ -1,6 +1,11 @@
 # SPDX-FileCopyrightText: 2026 Scenario Inc.
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""Selected local audio previews; workers never access Blender or service state."""
+"""Selected local audio previews; workers never access Blender or service state.
+
+Each reader thread decodes the selected file in an owned offline Blender process
+through ``core.jobs.audio_decode``, so decoding never holds this Blender's Python
+lock. The worker checks that the file is unchanged before it publishes.
+"""
 
 import array
 import queue
@@ -15,6 +20,7 @@ from bpy.app.handlers import persistent
 from bpy.props import IntProperty, StringProperty
 
 from ..core import audio_waveform
+from ..core.jobs import audio_decode
 from . import runtime
 
 MAX_READERS = 2
@@ -35,6 +41,8 @@ class Selection:
     area: object
     credentials: object
     deadline: float
+    decoder: object = None
+    directory: object = None
     status: str = "LOADING"
     message: str = "Loading local waveform..."
     waveform: object = None
@@ -52,11 +60,12 @@ def _main_thread():
         raise RuntimeError("Audio preview state belongs to Blender's main thread")
 
 
-def _read(token, path, cancel, outcomes):
+def _read(token, path, decoder, directory, cancel, outcomes):
     try:
-        waveform = audio_waveform.read_waveform(path, cancel)
+        before = audio_decode.source_stamp(path)
+        waveform = audio_decode.decode(Path(path), directory, decoder, cancel=cancel)
         pixels = audio_waveform.raster(waveform)
-        if audio_waveform.stamp(Path(path).lstat()) != waveform.source_stamp:
+        if audio_decode.source_stamp(path) != before:
             raise audio_waveform.WaveformError("Audio changed while preparing its preview")
         if cancel.is_set():
             raise audio_waveform.WaveformCanceled("Waveform preview canceled")
@@ -66,6 +75,10 @@ def _read(token, path, cancel, outcomes):
     except Exception:
         result = (token, None, None, "Could not prepare this local waveform")
     outcomes.put(result)
+
+
+def _channels(count):
+    return "Mono" if count == 1 else "Stereo" if count == 2 else f"{count} channels"
 
 
 class PreviewController:
@@ -118,6 +131,14 @@ class PreviewController:
             or not 0 <= index < len(record.files)
         ):
             raise ValueError("Select an available downloaded audio result")
+        decoder = runtime.waveform_spec()
+        if decoder is None:
+            raise ValueError("Waveform preview needs Blender's executable")
+        directory = runtime.paths().cache_dir / "audio-preview"
+        try:
+            directory.mkdir(mode=0o700, parents=True, exist_ok=True)
+        except OSError:
+            raise ValueError("Waveform preview storage is unavailable") from None
         self.clear()
         self.selection = Selection(
             object(),
@@ -130,6 +151,8 @@ class PreviewController:
             context.area,
             runtime.credentials(),
             monotonic() + READ_TIMEOUT,
+            decoder,
+            directory,
         )
         self._pending = self.selection
         self.poll()
@@ -201,7 +224,9 @@ class PreviewController:
                     preview.image_pixels_float = array.array("f", (v / 255 for v in pixels))
                     selected.icon_id, selected.waveform = preview.icon_id, waveform
                     selected.status = "READY"
-                    selected.message = f"{waveform.seconds:.2f} s · {'Mono' if waveform.channels == 1 else 'Stereo'} · Snapshot"
+                    selected.message = (
+                        f"{waveform.seconds:.2f} s · {_channels(waveform.channels)} · Snapshot"
+                    )
                 except (OSError, ValueError, RuntimeError):
                     self._release_icon()
                     error = "The captured preview could not be displayed"
@@ -212,7 +237,14 @@ class PreviewController:
             cancel = threading.Event()
             thread = threading.Thread(
                 target=_read,
-                args=(selected.token, selected.path, cancel, self._outcomes),
+                args=(
+                    selected.token,
+                    selected.path,
+                    selected.decoder,
+                    selected.directory,
+                    cancel,
+                    self._outcomes,
+                ),
                 name="scenario-audio-preview",
                 daemon=True,
             )
@@ -255,7 +287,10 @@ def _file_load(_):
 class SCENARIO_OT_preview_audio(bpy.types.Operator):
     bl_idname = "scenario.preview_audio"
     bl_label = "Preview waveform"
-    bl_description = "Preview this downloaded PCM WAV locally without playback or a service request"
+    bl_description = (
+        "Preview this downloaded audio's waveform in an offline Blender process, "
+        "without playback or a service request"
+    )
 
     local_id: StringProperty()
     file_index: IntProperty(default=0, min=0)

@@ -11,13 +11,14 @@ from unittest.mock import Mock
 
 import pytest
 
+from scenario.core.audio_waveform import EnvelopeBuilder, WaveformCanceled, WaveformError
 from scenario.core.jobs import preview_scheduler, transfers
 from scenario.core.jobs import result_previews as previews
 from scenario.core.jobs.coordinator import RemoteSnapshot
-from scenario.core.jobs.preview_scheduler import ResultPreviewScheduler
+from scenario.core.jobs.preview_scheduler import NO_WAVEFORM, ResultPreviewScheduler
 from scenario.core.jobs.store import JobIntent, JobState
 from scenario.core.jobs.transfers import ResultDownloader
-from scenario.core.jobs.workers import JobWorkers
+from scenario.core.jobs.workers import JobWorkers, WorkerError
 from tests.unit.test_result_previews import (
     CDN,
     GLB,
@@ -277,7 +278,40 @@ def _gated(service):
     return entered, release
 
 
-def test_decode_limited_audio_envelope_is_sent_once_decodes_free(lane):
+class Decoder:
+    """Stands in for the offline Blender decoder that the lane runs for envelopes."""
+
+    def __init__(self, monkeypatch):
+        self.calls, self.failures, self.gate = [], [], None
+        monkeypatch.setattr(previews.audio_decode, "decode", self)
+
+    def __call__(self, source, directory, spec, *, cancel, max_seconds, bins):
+        self.calls.append((source, directory, spec, threading.current_thread().name))
+        assert source.parent == directory and source.read_bytes() == wav()
+        if self.gate is not None:
+            self.gate(cancel)
+        if self.failures:
+            raise self.failures.pop(0)
+        builder = EnvelopeBuilder(8000, 1, max_seconds=max_seconds)
+        builder.add([0.125] * 800)
+        return builder.finish(bins)
+
+
+WAVEFORM = object()  # The scheduler passes its decoder specification through unchanged.
+
+
+@pytest.fixture
+def decoding(lane, monkeypatch):
+    decoder = Decoder(monkeypatch)
+    lane.scheduler = ResultPreviewScheduler(
+        lane.workers, lane.env.coordinator, lane.env.cache, clock=lane.clock, waveform=WAVEFORM
+    )
+    lane.decoder = decoder
+    return lane
+
+
+def test_decode_limited_audio_envelope_is_decoded_offline_once_decodes_free(decoding):
+    lane = decoding
     service, clock, scheduler = lane.env, lane.clock, lane.scheduler
     images = [(f"asset-{index}", "image/png", png(4, 4)) for index in range(4)]
     ready_job(service, "request", [*images, ("asset-sound", "audio/wav", wav())])
@@ -288,18 +322,115 @@ def test_decode_limited_audio_envelope_is_sent_once_decodes_free(lane):
     drive(scheduler)
     assert state(lane, "asset-sound").state == State.READY
     assert state(lane, "asset-sound", ENVELOPE).state == State.QUEUED
-    assert len(scheduler.decode_requests()) == 4
+    assert len(scheduler.decode_requests()) == 4 and lane.decoder.calls == []
     for request in scheduler.decode_requests():
         request.output.write_bytes(png(2, 2))
         scheduler.finish_decode(request)
     drive(scheduler)
-    assert state(lane, "asset-sound", ENVELOPE).state == State.DECODE
-    (request,) = scheduler.decode_requests()
-    assert request.rendition == ENVELOPE and request.source.name == "source.wav"
+    ready = state(lane, "asset-sound", ENVELOPE)
+    assert ready.state == State.READY and ready.preview.envelope.overall_rms == 0.125
+    ((source, directory, spec, thread),) = lane.decoder.calls
+    assert source.name == "source.wav" and spec is WAVEFORM and thread == "ScenarioPreview"
+    assert not directory.exists() and work_directories(service) == []
+    assert scheduler.decode_requests() == ()
     assert len(service.calls) == 1  # The envelope is local; the still is not polled again.
     clock.now += 400
     drive(scheduler)
-    assert len(service.calls) == 1
+    assert len(service.calls) == 1 and len(lane.decoder.calls) == 1
+    # The receipt-keyed cache answers a new session without decoding again.
+    again = ResultPreviewScheduler(
+        lane.workers, service.coordinator, service.cache, clock=clock, waveform=WAVEFORM
+    )
+    again.request("request", asset_ids=["asset-sound"])
+    drive(again)
+    cached = again.status("request", "asset-sound").get(ENVELOPE)
+    assert cached.state == State.READY and cached.preview.envelope == ready.preview.envelope
+    assert len(lane.decoder.calls) == 1
+
+
+def test_audio_envelope_without_a_decoder_fails_explicitly(lane):
+    service, scheduler = lane.env, lane.scheduler
+    ready_job(service, "request", [("asset-sound", "audio/wav", wav())])
+    service.online = False
+    scheduler.request("request")
+    drive(scheduler)
+    failed = state(lane, "asset-sound", ENVELOPE)
+    assert failed.state == State.FAILED and failed.reason == NO_WAVEFORM
+    assert scheduler.decode_requests() == () and work_directories(service) == []
+    scheduler.retry("request", "asset-sound")
+    drive(scheduler)
+    assert state(lane, "asset-sound", ENVELOPE).reason == NO_WAVEFORM
+
+
+def test_failed_offline_decode_is_explicit_and_retry_decodes_again(decoding):
+    lane = decoding
+    service, scheduler = lane.env, lane.scheduler
+    ready_job(service, "request", [("asset-sound", "audio/wav", wav())])
+    service.online = False
+    lane.decoder.failures.append(WaveformError("Blender could not decode this audio"))
+    scheduler.request("request")
+    drive(scheduler)
+    failed = state(lane, "asset-sound", ENVELOPE)
+    assert failed.state == State.FAILED and failed.reason == "Blender could not decode this audio"
+    assert work_directories(service) == [] and failed.preview is None
+    assert state(lane, "asset-sound").state == State.OFFLINE
+    scheduler.retry("request", "asset-sound")
+    drive(scheduler)
+    assert state(lane, "asset-sound", ENVELOPE).state == State.READY
+    assert len(lane.decoder.calls) == 2
+
+
+def test_full_lane_keeps_an_envelope_issued_until_it_can_be_queued(decoding, monkeypatch):
+    lane = decoding
+    service, scheduler, workers = lane.env, lane.scheduler, lane.workers
+    ready_job(service, "request", [("asset-sound", "audio/wav", wav())])
+    service.online = False
+    original, refusals = workers.decode_result_preview, []
+
+    def refuse_once(*args, **kwargs):
+        if not refusals:
+            refusals.append(args)
+            raise WorkerError("Preview queue is full; wait before adding more previews")
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(workers, "decode_result_preview", refuse_once)
+    scheduler.request("request")
+    drive(scheduler)
+    assert len(refusals) == 1 and lane.decoder.calls == []
+    # The refused copy waits for the next pump, never for Blender's main thread.
+    assert state(lane, "asset-sound", ENVELOPE).state == State.DECODE
+    assert scheduler.decode_requests() == ()
+    drive(scheduler)
+    assert state(lane, "asset-sound", ENVELOPE).state == State.READY
+    assert len(lane.decoder.calls) == 1 and work_directories(service) == []
+
+
+def test_close_cancels_a_running_offline_decode_and_release_removes_its_copy(decoding):
+    lane = decoding
+    service, scheduler, workers = lane.env, lane.scheduler, lane.workers
+    ready_job(service, "request", [("asset-sound", "audio/wav", wav())])
+    service.online = False
+    entered, canceled = threading.Event(), threading.Event()
+
+    def gate(cancel):
+        entered.set()
+        assert cancel.wait(5), "Closing did not signal the running decode"
+        canceled.set()
+        raise WaveformCanceled("Waveform preview canceled")
+
+    lane.decoder.gate = gate
+    scheduler.request("request")
+    scheduler.pump()
+    futures.wait([scheduler._task._future], timeout=5)
+    scheduler.pump()
+    assert entered.wait(5)
+    assert state(lane, "asset-sound", ENVELOPE).state == State.DECODE
+    scheduler.close()
+    assert canceled.wait(5)
+    workers.deactivate()
+    workers.shutdown()
+    scheduler.release()
+    assert work_directories(service) == []
 
 
 def test_clip_requested_during_an_inflight_still_poll_is_fetched(lane):

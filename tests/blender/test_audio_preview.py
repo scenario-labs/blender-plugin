@@ -1,6 +1,9 @@
 # SPDX-FileCopyrightText: 2026 Scenario Inc.
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""Installed local-result UI admission and completion tests; no service or playback."""
+"""Installed local-result UI admission and completion tests; no service or playback.
+
+Waveforms decode in the real offline Blender child; blocked reads patch it.
+"""
 
 import tempfile
 import textwrap
@@ -13,7 +16,7 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 import bpy
-from helpers import isolated_manager, submodule, temp_credentials
+from helpers import FIXTURES, isolated_manager, submodule, temp_credentials
 
 
 class _Layout:
@@ -39,6 +42,7 @@ class AudioPreviewTests(unittest.TestCase):
     def setUp(self):
         self.preview = submodule("blender.audio_preview")
         self.core = submodule("core.audio_waveform")
+        self.decoder = submodule("core.jobs.audio_decode")
         self.runtime = submodule("blender.runtime")
         self.preview.controller.clear()
         self.manager = self.enterContext(isolated_manager())
@@ -65,7 +69,7 @@ class AudioPreviewTests(unittest.TestCase):
         controller = self.preview.controller
         controller.clear()
         for reader in controller._readers:
-            reader.thread.join(5)
+            reader.thread.join(30)
             self.assertFalse(reader.thread.is_alive())
         controller.poll()
 
@@ -73,7 +77,8 @@ class AudioPreviewTests(unittest.TestCase):
         return self.preview.controller._readers[-1].thread
 
     def ready(self):
-        deadline = time.monotonic() + 5
+        # Each preview starts an offline Blender child; allow for a loaded host.
+        deadline = time.monotonic() + 30
         controller = self.preview.controller
         while controller.selection is not None and controller.selection.status == "LOADING":
             controller.poll()
@@ -91,20 +96,20 @@ class AudioPreviewTests(unittest.TestCase):
     def blocked_read(self, count=1):
         entered, release = threading.Event(), threading.Event()
         self.gates.append(release)
-        original = self.core.read_waveform
+        original = self.decoder.decode
         calls = []
 
-        def read(path, cancel):
-            calls.append((path, threading.current_thread()))
+        def read(path, directory, spec, *, cancel, **options):
+            calls.append((str(path), threading.current_thread()))
             if len(calls) <= count:
                 if len(calls) == count:
                     entered.set()
                 if not release.wait(10):
                     raise AssertionError("Native test did not release its reader")
             # Deliberately finish despite cancellation to exercise stale-result rejection.
-            return original(path, threading.Event())
+            return original(path, directory, spec, cancel=threading.Event(), **options)
 
-        self.enterContext(patch.object(self.core, "read_waveform", side_effect=read))
+        self.enterContext(patch.object(self.decoder, "decode", side_effect=read))
         self.select()
         if count == 2:
             self.select(1)
@@ -113,14 +118,16 @@ class AudioPreviewTests(unittest.TestCase):
 
     def test_operator_builds_native_icon_off_thread_without_changing_audio(self):
         before = Path(self.record.files[0]).read_bytes()
-        original = self.core.read_waveform
-        threads = []
+        original = self.decoder.decode
+        threads, directories = [], []
 
-        def read(path, cancel):
+        def read(path, directory, spec, *, cancel, **options):
             threads.append(threading.current_thread())
-            return original(path, cancel)
+            directories.append(directory)
+            self.assertEqual(spec, self.runtime.waveform_spec())
+            return original(path, directory, spec, cancel=cancel, **options)
 
-        with patch.object(self.core, "read_waveform", side_effect=read):
+        with patch.object(self.decoder, "decode", side_effect=read):
             self.select()
             selected = self.ready()
         self.assertEqual(selected.status, "READY")
@@ -128,6 +135,10 @@ class AudioPreviewTests(unittest.TestCase):
         self.assertGreaterEqual(selected.icon_id, 0)
         self.assertEqual(selected.waveform.channels, 1)
         self.assertEqual(Path(selected.path).read_bytes(), before)
+        # The child used a private directory under the extension cache and left nothing.
+        cache = Path(self.runtime.paths().cache_dir).resolve()
+        self.assertEqual([path.resolve() for path in directories], [cache / "audio-preview"])
+        self.assertEqual(list(directories[0].iterdir()), [])
         self.assertTrue(all(thread is not threading.main_thread() for thread in threads))
         self.assertEqual(tuple(self.preview.controller._previews["waveform"].image_size), (256, 96))
         pixels = self.preview.controller._previews["waveform"].image_pixels_float
@@ -207,7 +218,7 @@ class AudioPreviewTests(unittest.TestCase):
         self.assertEqual(selected.status, "READY")
         self.assertEqual(selected.path, self.record.files[1])
         self.assertEqual([path for path, _ in calls], [*self.record.files, self.record.files[1]])
-        self.assertLess(min(low for low, _ in selected.waveform.peaks[0]), -0.9)
+        self.assertGreater(max(selected.waveform.peaks), 0.9)
 
     def test_blocked_canceled_read_does_not_prevent_another_preview(self):
         release, calls = self.blocked_read()
@@ -425,16 +436,33 @@ class AudioPreviewTests(unittest.TestCase):
             bpy.context.window.scene = previous
             bpy.data.scenes.remove(other)
 
-    def test_compressed_file_reports_unsupported_without_mutating_playback_path(self):
+    def test_undecodable_file_reports_an_error_without_mutating_playback_path(self):
         path = self.directory / "example.mp3"
-        path.write_bytes(b"synthetic unsupported media")
+        path.write_bytes(b"synthetic undecodable media")
         self.record.files[0] = str(path)
         self.select()
         selected = self.ready()
         self.assertEqual(selected.status, "ERROR")
-        self.assertIn("PCM WAV", selected.message)
-        self.assertIn("Play and Add", selected.message)
+        self.assertEqual(selected.message, "Blender could not decode this audio")
         self.assertEqual(self.record.files[0], str(path))
+        self.assertEqual(path.read_bytes(), b"synthetic undecodable media")
+
+    def test_compressed_audio_now_previews_through_the_offline_decoder(self):
+        path = self.directory / "silence.mp3"
+        path.write_bytes((FIXTURES / "synthetic/audio-silence.mp3").read_bytes())
+        self.record.files[0] = str(path)
+        self.select()
+        selected = self.ready()
+        self.assertEqual(selected.status, "READY")
+        self.assertTrue(selected.waveform.silent)
+        self.assertIn("Mono", selected.message)
+
+    def test_missing_executable_is_refused_before_any_reader_starts(self):
+        with patch.object(self.runtime, "waveform_spec", return_value=None):
+            with self.assertRaisesRegex(ValueError, "executable"):
+                self.preview.controller.select(bpy.context, self.record.local_id, 0)
+        self.assertIsNone(self.preview.controller.selection)
+        self.assertEqual(self.preview.controller._readers, [])
 
     def test_unknown_failed_and_wrong_kind_results_are_not_admitted(self):
         controller = self.preview.controller

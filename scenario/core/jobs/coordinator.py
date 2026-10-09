@@ -526,6 +526,13 @@ class JobCoordinator:
             raise PreviewCanceled("Preview publication was canceled")
         return self._results.finish_preview(request, root=root, envelope=envelope)
 
+    def decode_result_preview(self, request, *, root, waveform, cancel):
+        """Preview-lane command: decode an audio envelope in an owned offline Blender child."""
+        if cancel.is_set():
+            self._results.discard_preview(request, root=root)
+            raise PreviewCanceled("Preview publication was canceled")
+        return self._results.decode_preview(request, root=root, waveform=waveform, cancel=cancel)
+
     def discard_result_preview(self, request, *, root, cancel=None):
         """Preview-lane command: remove an unused copy, even after a cancel request."""
         self._results.discard_preview(request, root=root)

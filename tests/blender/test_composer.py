@@ -490,8 +490,11 @@ class ComposerSideRegionTests(unittest.TestCase):
         self.assertEqual(self.draw.ui_scale(SimpleNamespace(preferences=prefs)), 4.0)
         self.assertEqual(
             self.draw.ui_scale(bpy.context),
-            bpy.context.preferences.system.ui_scale,
+            bpy.context.preferences.system.ui_scale or 1.0,
         )
+        # Background Blender reports a custom-UI scale of 0; sizes never collapse to zero.
+        zero = SimpleNamespace(preferences=self._preferences(0.0))
+        self.assertEqual(self.draw.ui_scale(zero), 1.0)
 
     def test_large_scale_beside_the_sidebar_draws_and_hits_the_pill_instead_of_the_card(self):
         ctx = self._retina()

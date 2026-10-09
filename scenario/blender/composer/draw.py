@@ -87,8 +87,9 @@ def ui_scale(context):
     """Blender's multiplier for custom interface drawing: the display DPI times the Preferences resolution scale.
 
     The system pixel size is a line width derived from that same DPI (4 on Retina at a resolution scale of 2), so
-    multiplying it by the resolution scale would count that scale twice."""
-    return context.preferences.system.ui_scale
+    multiplying it by the resolution scale would count that scale twice. Background Blender reports 0, which
+    stands for 1 so sizes derived from it are never zero."""
+    return context.preferences.system.ui_scale or 1.0
 
 
 # side regions drawn over the viewport with region overlap, and the space flag that shows each

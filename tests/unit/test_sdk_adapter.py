@@ -1034,3 +1034,25 @@ def test_bulk_assets_and_permission_checks_respect_online_access(adapter):
     assert client.bulk_assets(["asset-one"]) == {}
     client.close()
     assert client.network_allowed() is False
+
+
+@pytest.mark.parametrize("failure", [429, 500, 503, 504, "timeout"])
+def test_bulk_assets_send_retryable_failures_once_and_sanitize_them(adapter, failure):
+    calls = []
+
+    def handler(request):
+        calls.append(request)
+        if failure == "timeout":
+            raise httpx.ReadTimeout("selected-secret signed-url", request=request)
+        return httpx.Response(
+            failure,
+            json={"error": "selected-secret signed-url"},
+            headers={"Retry-After": "0"},
+        )
+
+    with pytest.raises(AdapterError) as error:
+        adapter(handler).bulk_assets(["asset-one", "asset-two"])
+    assert "selected-secret" not in str(error.value)
+    assert "signed-url" not in str(error.value)
+    # max_retries=0: the SDK never repeats a preview metadata read on its own.
+    assert len(calls) == 1

@@ -9,13 +9,13 @@
     "scope": "remote-progress-projection",
     "coverage": "source-reviewed",
     "reviewed_at": "2026-10-09",
-    "base_revision": "b57c398f35fb2148c82fb8b26f6a40564d3f52ef",
-    "limits": "Reviewed ModelJobs.status, which adds lane, remote_status, progress, remote_observed_at and remote_stale from the in-memory binding and view projection, and delivery_active from the same _delivering predicate that wait() uses, and the job_status and wait_for_job descriptions in tools_scenario.py, including the measured-status rule and the expired-wait rule. Installed tests cover UI and MCP parity, null fields for restarted and terminal jobs, delivery_active true while remote and false after terminal delivery or restart, lane null for a workflow submission, an explicit refresh after restart and wait timeout parity with job_status; tools/gen_mcp_docs.py --check passes. Installed native tests on macOS arm64 Blender 5.0.1, 5.1.2 and 5.2.1 cover these claims. No desktop interaction, screenshot, other operating system or live provider progress is claimed. No live agent client is claimed.",
+    "base_revision": "fb699b8555f7cee62147794516cc7aaa224864f7",
+    "limits": "Reviewed ModelJobs.status, which adds lane, remote_status, progress, remote_observed_at and remote_stale from the in-memory binding and view projection, and delivery_active from the same _delivering predicate that wait() uses, and the job_status and wait_for_job descriptions in tools_scenario.py, including the measured-status rule and the expired-wait rule. The predicate does not consider Online Access or a prepared job whose dispatch raised: with Online Access off, remote, cancel_requested and succeeded jobs report delivery_active true although no request is sent until access returns, and a prepared job whose dispatch raised reports true although nothing dispatches it. The statement that this session still advances the job is therefore not established in those cases, and no test covers them. Installed tests cover UI and MCP parity, null fields for restarted and terminal jobs, delivery_active true while remote and false after terminal delivery or restart, lane null for a workflow submission, an explicit refresh after restart and wait timeout parity with job_status; tools/gen_mcp_docs.py --check passes. Installed native tests on macOS arm64 Blender 5.0.1, 5.1.2 and 5.2.1 cover these claims. No desktop interaction, screenshot, other operating system or live provider progress is claimed. No live agent client is claimed.",
     "sources": {
       "scenario/mcp/tools_scenario.py": "3b75c077ed05ddddf882e251c46064c6d61bb61611c516e8dc7491fb11988e13",
-      "scenario/blender/model_jobs.py": "7278524fcd4cac373ce186782e741cc58b5a18e0a8ddca17d4c6cd1045fc52a6",
+      "scenario/blender/model_jobs.py": "ba849a84b2a3d80ad307e64f77ebd17945f22fde83325ad0ae987bf004e65629",
       "scenario/core/jobs/progress.py": "bf8bea9be0d1ba3c6ca7c2495fecf61eb67481ffb7499d1e30633cc154871af5",
-      "tests/blender/test_model_generation.py": "e0f1b143a429bee22f5715ce420ff0d364916efc11bc94b630e8ad067a466f10",
+      "tests/blender/test_model_generation.py": "8a198d8f3d0484306a7c7152d0ee716fe9f80d120df1ce778a4291cedbc52c41",
       "tests/blender/test_workflow_commands.py": "74086c3122b3c83103e08072be6669e510ac1026a1da6cbb6f0eeaa1c0f49338"
     }
   }

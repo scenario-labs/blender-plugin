@@ -914,7 +914,8 @@ check; letting scene activation keep an unchanged origin is separate session wor
 
 Installed synthetic tests cover native and MCP preparation and build, shared
 handles, dismissed dialogs, a storage error in the preparation dialog, cancellation
-during probing, a full session queue, frame and recipe invalidation, object
+during probing and, over MCP, after probing returns but before maintenance delivers
+it, a full session queue, frame and recipe invalidation, object
 selection and the session's registered Undo/Redo handler invalidating ready
 reviews and preparing reviews, both while probing runs and after it returns but
 before maintenance, and deleting their copies, the panel's warning line on

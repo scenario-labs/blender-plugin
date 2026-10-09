@@ -187,6 +187,7 @@ class JobSession:
         self._target_scenes = {}
         self._pending = []
         self._cloud_reads = {}
+        self._workflow_reads = {}
         self._issued = WeakValueDictionary()
         self._world_receipts = WeakKeyDictionary()
         self._image_receipts = WeakKeyDictionary()
@@ -370,6 +371,19 @@ class JobSession:
             expected_revision=expected_revision,
             origin=origin,
         )
+        self._pending.append((task, origin))
+        return task
+
+    def workflow_metadata(self, scene, *, identifier=None, privacy="private"):
+        """Read workflow metadata off-thread, bound to this session and scene."""
+        _main_thread()
+        self._check_capacity()
+        origin = self.capture(scene)
+        if identifier is None:
+            task = self._workers.workflows(privacy=privacy)
+        else:
+            task = self._workers.workflow(identifier)
+        self._workflow_reads[task] = identifier
         self._pending.append((task, origin))
         return task
 
@@ -796,6 +810,16 @@ class JobSession:
                         and record.intent.operation == "model"
                         and record.intent.target_id == model_id
                     )
+                elif task in self._workflow_reads:
+                    # Metadata has no job intent. Its exact task belongs to this
+                    # scoped coordinator, which checks admission around the read;
+                    # deliver() still validates the captured scene and session.
+                    identifier = self._workflow_reads[task]
+                    matches = (
+                        isinstance(result, list)
+                        if identifier is None
+                        else (isinstance(result, dict) and result.get("id") == identifier)
+                    )
                 elif isinstance(
                     record,
                     (
@@ -817,6 +841,7 @@ class JobSession:
                 completion = JobCompletion(origin, result=result, cloud_read=cloud_read)
             finally:
                 self._cloud_reads.pop(task, None)
+                self._workflow_reads.pop(task, None)
                 self._cleanup_upload_capture(task)
             self._issued[id(completion)] = completion
             completions.append(completion)
@@ -1318,6 +1343,7 @@ class JobSession:
                     self._cleanup_upload_capture(task)
                 self._pending.clear()
                 self._cloud_reads.clear()
+                self._workflow_reads.clear()
                 self._issued.clear()
                 self._world_receipts.clear()
                 self._image_receipts.clear()

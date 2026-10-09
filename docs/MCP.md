@@ -4,7 +4,9 @@
 
 `scenario-blender` connects an agent to the open Blender scene and generation
 into that scene. The hosted server at `mcp.scenario.com` provides platform-wide
-operations such as collections, training, workflows and usage. Connect either
+operations such as collections, training, workflow authoring and usage.
+Local workflow discovery and approved execution use the same saved-job session
+as model generation. Connect either
 or both according to the task; they have separate authentication and capabilities.
 
 The local server accepts MCP JSON-RPC over HTTP at
@@ -267,6 +269,11 @@ Do not edit this block by hand; run `make mcp-docs`. An asterisk marks a require
 
 | Tool | Description | Arguments | Notes |
 | --- | --- | --- | --- |
+| `list_workflows` | List workflows in the selected credential/project scope without spending. | `privacy`: string (['private', 'public'])<br>`query`: string<br>`offset`: integer<br>`limit`: integer | read-only annotation |
+| `workflow_schema` | Read a workflow's declared input definitions without spending. | `workflow_id`*: string | read-only annotation |
+| `estimate_workflow` | Request a free exact workflow price bound to the selected scene and connection. | `workflow_id`*: string<br>`parameters`: object | - |
+| `run_workflow` | Approve one unchanged workflow estimate and persist its identity before paid dispatch. | `workflow_id`*: string<br>`parameters`: object<br>`quote_id`*: string<br>`approved_cost`*: string | - |
+| `discard_workflow_estimate` | Discard one ready unsubmitted workflow approval without changing saved jobs. | `quote_id`*: string | - |
 | `prepare_film_composition` | Inspect saved Film media and prepare a final or previs composition without spending. | `context_id`*: string<br>`production_id`*: string<br>`mode`: string (['final', 'previs'])<br>`score_task_id`: string | - |
 | `film_composition_review` | Inspect, cancel or discard a session-local Film composition review. | `review_id`*: string<br>`action`: string (['status', 'cancel', 'discard']) | - |
 | `estimate_film_composition` | Request the exact server price for one READY verified Film composition. | `review_id`*: string | read-only annotation |
@@ -393,7 +400,10 @@ behavior interchangeable. Remote names below were checked against the
 | Inspect scene | `scene_summary`, `object_detail`, `datablocks_summary`, `blender_api_help` | Local only |
 | Change scene | `select_objects`, `set_frame`, `camera_path`, `execute_python` | Local only |
 | Capture scene | `screenshot_viewport`, `render_still` | Local only |
-| Collections, training, workflows and usage | Use the hosted server | Discover operations in the hosted tool reference |
+| Workflow discovery | `list_workflows`, `workflow_schema` | `workflows_list`, `workflow_get` |
+| Workflow price and execution | `estimate_workflow`, `run_workflow` | `workflow_run` |
+| Discard workflow approval | `discard_workflow_estimate` | Local only; no remote cancellation |
+| Collections, training, workflow authoring and usage | Use the hosted server | Discover operations in the hosted tool reference |
 
 Connect both when needed: use the local setup above for Blender and the
 [hosted server setup](https://mcp.scenario.com/docs) for Scenario-wide work.
@@ -767,3 +777,33 @@ master job and use ordinary saved-job recovery; never repeat uncertain generatio
 These tools share [native composition review](FILM_PLAN.md#native-and-mcp-composition-controls).
 Synthetic native interaction passes on macOS Blender 5.1.2; live provider,
 other OS/DPI and local final assembly/export acceptance remain pending.
+
+
+## Workflow execution
+
+Use `list_workflows` for a private or public catalog and `workflow_schema` for
+its declared inputs. Listing reads the full bounded catalog, deduplicates IDs
+and returns at most 40 filtered rows with `next_offset`. A new call refreshes
+metadata, so pages are not a stable snapshot. Inputs retain conditional and file
+definitions; supported form validation happens again with fresh metadata at
+estimation. File parameters use already uploaded Scenario asset IDs.
+
+`estimate_workflow` requests a free exact quote through SDK 2.2.0
+[`workflows.run`](https://docs.scenario.com/api/python/resources/workflows/methods/run)
+with `dry_run="true"` in the query. It returns the original `parameters`, the
+normalized `payload` including defaults, and `cu_cost_exact`. Review that payload
+and price. `run_workflow` requires its `quote_id`, the same workflow and original
+parameters, and that exact decimal string as `approved_cost`.
+
+Approval is bound to the current scene revision, file, credential and project.
+It is consumed before local persistence and the single paid dispatch. A timeout
+or failed write never permits reusing it. Inspect `job_status` and
+`list_local_jobs`; closing a view does not stop admitted work. Known jobs use the
+same polling, download, explicit application and restart recovery as model jobs.
+Workflow results are never automatically imported. `discard_workflow_estimate`
+releases only a ready local approval, leaving saved jobs unchanged.
+
+General workflow cancellation and interactive approval/selection nodes are not
+exposed. Workflow authoring, the expanded Studio form and live provider/output
+acceptance remain incomplete. Do not substitute node rejection for cancellation
+or infer live compatibility from the synthetic installed command tests.

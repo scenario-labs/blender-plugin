@@ -3,6 +3,7 @@
 """Main-thread model generation commands shared by UI and local MCP."""
 
 import json
+import os
 import threading
 import time
 import uuid
@@ -57,6 +58,7 @@ class ModelQuote:
     lane: str = "image"
     quote: object = field(default=None, repr=False)
     used: bool = False
+    operation: str = "model"
 
 
 @dataclass
@@ -228,6 +230,12 @@ class ModelJobs:
     def quote(self, scene, model_id, body, *, lane="image"):
         if lane not in GENERATION_LANES:
             raise ScenarioError(0, "Choose a supported generation lane")
+        return self._quote(scene, model_id, body, lane=lane, operation="model")
+
+    def quote_workflow(self, scene, workflow_id, body):
+        return self._quote(scene, workflow_id, body, lane="workflow", operation="workflow")
+
+    def _quote(self, scene, identifier, body, *, lane, operation):
         snapshot = _snapshot(body)
         if scene == bpy.context.scene:
             # Operators flush pending dependency updates before execute(). Do
@@ -244,8 +252,12 @@ class ModelJobs:
                     0, "Too many retained estimates; use an existing quote before requesting more"
                 )
         origin = self.session.capture(scene)
-        task = self.session.quote_model(model_id, json.loads(snapshot), origin=origin)
-        quote = ModelQuote(uuid.uuid4().hex, model_id, scene, snapshot, task, lane=lane)
+        task = getattr(self.session, f"quote_{operation}")(
+            identifier, json.loads(snapshot), origin=origin
+        )
+        quote = ModelQuote(
+            uuid.uuid4().hex, identifier, scene, snapshot, task, lane=lane, operation=operation
+        )
         self.quotes[quote.identifier] = quote
         return quote
 
@@ -256,7 +268,12 @@ class ModelJobs:
             completions = self.session.drain(task=ticket.task)
             if not completions:
                 raise ScenarioError(0, "The estimate is still running")
-            ticket.quote = self.session.deliver(completions[0], lambda value, *_: value)
+            try:
+                ticket.quote = self.session.deliver(completions[0], lambda value, *_: value)
+            except Exception:
+                if ticket.operation == "workflow":
+                    ticket.used = True
+                raise
         return ticket.quote.estimate
 
     def require_quote(self, quote_id):
@@ -269,7 +286,8 @@ class ModelJobs:
         ticket = self.require_quote(quote_id)
         estimate = self.finish_quote(ticket)
         if (
-            ticket.scene != scene
+            ticket.operation != "model"
+            or ticket.scene != scene
             or ticket.lane != lane
             or ticket.model_id != model_id
             or ticket.inputs != _snapshot(body)
@@ -280,6 +298,31 @@ class ModelJobs:
         # write. A second click must never prepare another intent from this quote.
         ticket.used = True
         return self._submit_quote(ticket.quote, lane=lane, kind=LANE_KIND[lane], meta=meta)
+
+    def submit_workflow(self, quote_id, scene, workflow_id, body, *, approved_cost):
+        if os.environ.get("SCENARIO_GUI_PROBE") == "1":
+            raise PermissionError("Generation is disabled while an automated GUI probe runs")
+        ticket = self.require_quote(quote_id)
+        estimate = self.finish_quote(ticket)
+        if (
+            ticket.operation != "workflow"
+            or ticket.scene != scene
+            or ticket.model_id != workflow_id
+            or ticket.inputs != _snapshot(body)
+            or approved_cost != str(estimate.cost)
+            or not self._online()
+        ):
+            raise ScenarioError(0, "Approve the unchanged workflow and exact price while online")
+        ticket.used = True
+        return self._submit_quote(ticket.quote, lane="workflow", kind="workflow")
+
+    def discard_workflow_quote(self, quote_id):
+        ticket = self.require_quote(quote_id)
+        if ticket.operation != "workflow":
+            raise ScenarioError(0, "Use a workflow estimate")
+        self.finish_quote(ticket)
+        ticket.used = True
+        ticket.quote = None
 
     def submit_film(self, quote, *, approved_cost):
         """Dispatch an owned Film approval through the ordinary saved-job lifecycle."""
@@ -308,7 +351,7 @@ class ModelJobs:
             self._automatic_application.add(view.local_id)
         try:
             task = self.session.submit(
-                prepared, operation="model", target_id=model_id, payload=estimate.payload
+                prepared, operation=estimate.operation, target_id=model_id, payload=estimate.payload
             )
         except Exception:
             view.error = "Submission could not be queued; inspect the saved job before continuing"
@@ -529,14 +572,14 @@ class ModelJobs:
         if request_id not in self.views:
             self.views[request_id] = JobRecord(
                 local_id=request_id,
-                lane="model",
-                kind="model",
+                lane="workflow" if record.intent.operation == "workflow" else "model",
+                kind="workflow" if record.intent.operation == "workflow" else "model",
                 model_id=record.intent.target_id,
                 body={},
                 cu_cost=float(record.intent.quote_cost)
                 if record.intent.quote_cost is not None
                 else None,
-                meta={"shared_job": True, "prompt": "Recovered model job"},
+                meta={"shared_job": True, "prompt": "Recovered saved job"},
             )
             self._paused.add(request_id)
         return self.views[request_id]

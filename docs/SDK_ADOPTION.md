@@ -44,6 +44,7 @@ records, lane/schema helpers and local display status classification remain.
 | New/Rewrite and Translate | Shared prompt commands: `generate.with_raw_response.prompt/translate`, including separate exact estimates and submission claims |
 | Cloud history, known-job recovery, polling and inference cancellation | Shared catalog/coordinator: `jobs.with_raw_response.list/retrieve/trigger_action` |
 | Result and complete prompt/model-text metadata | Shared coordinator: `assets.with_raw_response.retrieve`; bounded complete text uses the signed result transport |
+| Saved-result preview metadata | Shared coordinator on the preview lane: `assets.with_raw_response.retrieve` for one asset, `assets.with_raw_response.get_bulk` for batches; stills and clips use the signed result transport ([result previews](RESULT_PREVIEWS.md)) |
 | Asset library browsing and text search | Shared coordinator: `assets.with_raw_response.list` and `search.with_raw_response.asset_search`; explicit single-page reads with selected project scope |
 | Reference upload metadata, progress and completion | Shared upload coordinator: `uploads.with_raw_response.create/retrieve/trigger_action` |
 | Optional team/project discovery | Adapter-owned `SDKResourceExtensions`, the named [SDK issue #29 exception](https://github.com/scenario-labs/scenario-sdk-python/issues/29) below; no new raw exception |
@@ -91,6 +92,7 @@ using the locked environment.
 | Workflow estimate and submission | `workflows.run`: PUT, unchanged workflow-specific body, `dryRun` and `projectId` in the query |
 | Exact quote preservation | `generate.with_raw_response.run_model` retains JSON bytes for decimal parsing; this is a public SDK wrapper, not a custom endpoint call |
 | Model, asset and job retrieval | `models.retrieve`, `assets.retrieve`, `jobs.retrieve`: project query and response wrappers, including unrecognized fields |
+| Bulk asset previews | `assets.get_bulk`: POST with `assetIds` in the JSON body and `projectId` in the query; `thumbnail` and `preview` objects survive the raw wrapper and the parsed model, as they do for `assets.retrieve` |
 | Active UI/MCP model catalog | `models.with_raw_response.list/retrieve`: public privacy, opaque pagination cursor and original response fields; `status=trained` is used only for private model lists, as documented in the published wheel's `resources/models/models.py` |
 | Trained-model discovery | `models.with_raw_response.list(privacy="private", status="trained")` keeps the filter, page size, cursor and project in the query; `models.with_raw_response.get_bulk`: POST `/models/get-bulk` with only `modelIds` in JSON, project in the query, original `models` bytes and parsed `uiConfig.lorasComponent`; a `models.retrieve` 403 or 404 is one status error |
 | Multipart upload lifecycle | `uploads.create/retrieve/trigger_action`: project query, asset-option aliases, part URLs and processing/result fields; creation does not transfer bytes |
@@ -511,6 +513,7 @@ The named discovery exceptions also use the same zero-retry SDK client.
 | Scoped job discovery | `jobs.list` through the public raw-response wrapper: optional author/workflow/type/status filters, 1–200 items per page, bounded pagination and explicit errors instead of partial or conflicting history |
 | Multipart upload metadata | `uploads.create/retrieve/trigger_action(action="complete")`: immutable project scope, strict input/receipt identity, retained processing/future fields; no byte transfer, retry or automatic completion |
 | Model/workflow/asset/job records | `models.retrieve`, `workflows.retrieve`, `assets.retrieve`, `jobs.retrieve`: unwrap the named record and retain unknown fields |
+| Known asset records in bulk | `assets.get_bulk` through its public raw-response wrapper: 1 to 100 distinct validated identities, selected project, one attempt; omitted assets stay absent, while unrequested or conflicting rows fail. `network_allowed()` reads the same online predicate without a request |
 | Custom-model estimate | `generate.run_model(dry_run="true")`: adopted form value validation plus retained conditional/one-of rules; inputs in JSON and dry-run/project in query |
 | Prompt translation quote/submission | `generate.with_raw_response.translate`: POST `/generate/translate`, exact `dry_run="true"` response; optional selected `project_id` in the query; prompt in JSON; no raw API fallback |
 | Prompt Spark quote/submission commands | `generate.with_raw_response.prompt`: POST `/generate/prompt`, `dry_run="true"` and optional selected `project_id` in the query; explicit mode, prompt, modelId, images and numResults in JSON; no raw API fallback |

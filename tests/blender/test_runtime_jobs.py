@@ -31,7 +31,11 @@ class RuntimeJobTests(unittest.TestCase):
         root = self.enterContext(tempfile.TemporaryDirectory(dir=bpy.utils.resource_path("USER")))
         self.root = Path(root)
         self.enterContext(
-            patch.object(self.runtime, "paths", return_value=SimpleNamespace(state_dir=Path(root)))
+            patch.object(
+                self.runtime,
+                "paths",
+                return_value=SimpleNamespace(state_dir=Path(root), cache_dir=Path(root) / "cache"),
+            )
         )
         self.adapters, self.sessions, self.requests = [], [], []
         catalog_type, session_type = self.runtime.SDKCatalog, self.runtime.JobSession

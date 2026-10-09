@@ -35,7 +35,11 @@ class ReferenceUploadTests(unittest.TestCase):
         self.enterContext(patch.object(self.runtime, "online", return_value=True))
         self.enterContext(
             patch.object(
-                self.runtime, "paths", return_value=SimpleNamespace(state_dir=fixture.root)
+                self.runtime,
+                "paths",
+                return_value=SimpleNamespace(
+                    state_dir=fixture.root, cache_dir=fixture.root / "cache"
+                ),
             )
         )
 

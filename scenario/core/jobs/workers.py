@@ -46,12 +46,18 @@ class JobWorkers:
     quotes are revalidated by the coordinator immediately before dispatch.
     Deactivation abandons queued execution (records remain reviewable) and lets
     already claimed requests persist their original-scope receipts.
+
+    Result previews use one dedicated lane thread with its own bounded queue, so
+    preview polling and downloads never occupy the job workers used by remote
+    refresh, result downloads and submissions.
     """
 
-    def __init__(self, coordinator: JobCoordinator, *, workers=2, pending_limit=16):
+    def __init__(
+        self, coordinator: JobCoordinator, *, workers=2, pending_limit=16, preview_limit=8
+    ):
         if not isinstance(coordinator, JobCoordinator):
             raise TypeError("Use the shared job coordinator")
-        for value in (workers, pending_limit):
+        for value in (workers, pending_limit, preview_limit):
             if not isinstance(value, int) or isinstance(value, bool) or value < 1:
                 raise ValueError("Worker and pending limits must be positive integers")
         self._coordinator = coordinator
@@ -60,11 +66,17 @@ class JobWorkers:
         self._pending = deque()
         self._local_cancels = {}
         self._accepting = True
+        self._preview_limit = preview_limit
+        self._preview_condition = threading.Condition()
+        self._previews = deque()
+        self._preview_cancels = {}
+        self._preview_accepting = True
         self._closed = False
         self._shutdown_lock = threading.Lock()
         self._threads = [
             threading.Thread(target=self._run, name=f"ScenarioJob-{i}") for i in range(workers)
         ]
+        self._threads.append(threading.Thread(target=self._run_previews, name="ScenarioPreview"))
         started = []
         try:
             for thread in self._threads:
@@ -74,6 +86,9 @@ class JobWorkers:
             with self._condition:
                 self._accepting = False
                 self._condition.notify_all()
+            with self._preview_condition:
+                self._preview_accepting = False
+                self._preview_condition.notify_all()
             for thread in started:
                 thread.join()
             raise
@@ -207,6 +222,47 @@ class JobWorkers:
     def cancel_local(self, task):
         with self._condition:
             cancel = self._local_cancels.get(task)
+            if cancel is not None:
+                cancel.set()
+
+    def _enqueue_preview(self, command, *args, **kwargs):
+        """Admit one command to the dedicated preview lane, never the job workers."""
+        with self._preview_condition:
+            if not self._preview_accepting:
+                raise WorkerError("This job owner is inactive")
+            if len(self._previews) >= self._preview_limit:
+                raise WorkerError("Preview queue is full; wait before adding more previews")
+            cancel = threading.Event()
+            task = JobTask()
+            self._previews.append((task, command, args, {**kwargs, "cancel": cancel}))
+            self._preview_cancels[task] = cancel
+            self._preview_condition.notify()
+            return task
+
+    def prepare_result_previews(self, work, *, root, maintain=False):
+        return self._enqueue_preview(
+            self._coordinator.prepare_result_previews,
+            tuple(work),
+            root=os.fspath(root),
+            maintain=maintain,
+        )
+
+    def finish_result_preview(self, request, *, root, envelope=None):
+        return self._enqueue_preview(
+            self._coordinator.finish_result_preview,
+            request,
+            root=os.fspath(root),
+            envelope=envelope,
+        )
+
+    def discard_result_preview(self, request, *, root):
+        return self._enqueue_preview(
+            self._coordinator.discard_result_preview, request, root=os.fspath(root)
+        )
+
+    def cancel_preview(self, task):
+        with self._preview_condition:
+            cancel = self._preview_cancels.get(task)
             if cancel is not None:
                 cancel.set()
 
@@ -360,6 +416,36 @@ class JobWorkers:
             # Do not retain payloads/results while the worker waits for more work.
             del task, command, args, kwargs
 
+    def _run_previews(self):
+        """The preview lane: one command at a time, independent of the job workers."""
+        while True:
+            with self._preview_condition:
+                self._preview_condition.wait_for(
+                    lambda: self._previews or not self._preview_accepting
+                )
+                if not self._previews:
+                    return
+                task, command, args, kwargs = self._previews.popleft()
+            if task._future.set_running_or_notify_cancel():
+                try:
+                    result = command(*args, **kwargs)
+                except Exception as exc:
+                    with self._preview_condition:
+                        self._preview_cancels.pop(task, None)
+                    task._future.set_exception(exc)
+                except BaseException as exc:
+                    with self._preview_condition:
+                        self._preview_cancels.pop(task, None)
+                    task._future.set_exception(exc)
+                    self.deactivate()
+                    raise
+                else:
+                    with self._preview_condition:
+                        self._preview_cancels.pop(task, None)
+                    task._future.set_result(result)
+                    del result
+            del task, command, args, kwargs
+
     def deactivate(self):
         """Stop admission/queued work promptly; in-flight work keeps its scope."""
         with self._condition:
@@ -372,6 +458,15 @@ class JobWorkers:
                 task._future.cancel()
                 self._local_cancels.pop(task, None)
             self._condition.notify_all()
+        with self._preview_condition:
+            self._preview_accepting = False
+            for cancel in self._preview_cancels.values():
+                cancel.set()
+            while self._previews:
+                task, _, _, _ = self._previews.popleft()
+                task._future.cancel()
+                self._preview_cancels.pop(task, None)
+            self._preview_condition.notify_all()
 
     def shutdown(self):
         """Wait for in-flight persistence before closing the connection, once.

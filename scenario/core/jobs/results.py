@@ -7,7 +7,9 @@ import tempfile
 from dataclasses import asdict, dataclass, field, replace
 from pathlib import Path
 
+from ..api.sdk_adapter import AdapterError
 from ..config import ext_for_mime
+from . import result_previews as previews
 from .result_metadata import REWRITTEN_MESH_TYPES, texture_role
 from .store import JobState, ResultAsset, StoreConflict, StoredJob, StoreError, _identity, _json
 from .transfers import ResultDownloader, TransferError, _root
@@ -24,6 +26,11 @@ class VerifiedResults:
 
 
 MAX_PROMPT_BYTES = 65536
+# Read-only previews accept interrupted applications: they never touch the scene.
+PREVIEW_STATES = frozenset(
+    {JobState.READY, JobState.APPLYING, JobState.APPLY_FAILED, JobState.APPLIED}
+)
+PREVIEW_METADATA_CHUNK = 100
 
 
 @dataclass(frozen=True)
@@ -464,3 +471,244 @@ class ResultCommands:
             raise
         except Exception:
             raise ResultError("Saved result files could not be verified") from None
+
+    def preview_targets(self, request_id, asset_ids=None):
+        """Receipt-bound preview targets of one saved job, without file or network access."""
+        selected = None
+        if asset_ids is not None:
+            try:
+                selected = tuple(_identity(value) for value in asset_ids)
+            except (TypeError, ValueError):
+                raise ResultError("Choose saved result assets from this job") from None
+        with self._guard():
+            record = self._store.get(request_id)
+        if record is None or record.state not in PREVIEW_STATES:
+            raise ResultError("Download the saved result before previewing it")
+        known = {item.asset.asset_id for item in record.results}
+        if selected is not None and (
+            not selected or len(set(selected)) != len(selected) or not set(selected) <= known
+        ):
+            raise ResultError("Choose saved result assets from this job")
+        return tuple(
+            previews.PreviewTarget(
+                request_id,
+                item.asset.asset_id,
+                item.asset.media_type,
+                previews.preview_kind(item.asset.media_type),
+                previews.PreviewKey.for_result(self._store.scope, request_id, item),
+                item.receipt,
+            )
+            for item in record.results
+            if item.receipt is not None and (selected is None or item.asset.asset_id in selected)
+        )
+
+    def _preview_record(self, target):
+        """The current saved record if it still holds the target's exact receipt."""
+        with self._guard():
+            record = self._store.get(target.request_id)
+        if record is None or record.state not in PREVIEW_STATES:
+            return None
+        for item in record.results:
+            if (
+                item.asset.asset_id == target.asset_id
+                and item.asset.media_type == target.media_type
+                and item.receipt == target.receipt
+            ):
+                return record
+        return None
+
+    def _preview_check(self, cancel):
+        with self._guard():
+            if cancel.is_set():
+                raise previews.PreviewCanceled("Preview preparation was canceled")
+
+    def _preview_local(self, cache, item, rendition, record, cancel):
+        """Resolve one rendition from the cache or a local decode request; None needs Scenario."""
+        state, target = previews.PreviewState, item.target
+        if record is None:
+            return previews.RenditionOutcome(
+                rendition, state.FAILED, reason="This saved result changed; preview it again"
+            )
+        if not previews.supports(target.kind, rendition):
+            return previews.RenditionOutcome(
+                rendition, state.UNSUPPORTED, reason="No preview is available for this format"
+            )
+        if item.force:
+            cache.forget(target.key, rendition)
+        cached = cache.read(target.key, rendition)
+        if isinstance(cached, previews.CachedPreview):
+            return previews.RenditionOutcome(rendition, state.READY, preview=cached)
+        if isinstance(cached, previews.MissingPreview):
+            return previews.RenditionOutcome(
+                rendition,
+                state.MISSING,
+                reason="Scenario has no preview for this result; use Retry",
+            )
+        if not previews.is_local(target.kind, rendition):
+            return None
+        try:
+            source = self._directory(record, create=False) / target.receipt.name
+            request = previews.prepare_decode(cache, target, rendition, source, cancel)
+        except previews.PreviewCanceled:
+            raise
+        except previews.PreviewError as error:
+            return previews.RenditionOutcome(rendition, state.FAILED, reason=str(error))
+        except (ResultError, TransferError, OSError, ValueError):
+            return previews.RenditionOutcome(
+                rendition, state.FAILED, reason="Saved result files are unavailable"
+            )
+        return previews.RenditionOutcome(rendition, state.DECODE, request=request)
+
+    def _preview_metadata(self, identifiers):
+        records = {}
+        for start in range(0, len(identifiers), PREVIEW_METADATA_CHUNK):
+            chunk = identifiers[start : start + PREVIEW_METADATA_CHUNK]
+            with self._guard():
+                pass
+            try:
+                if len(chunk) == 1:
+                    records[chunk[0]] = self._adapter.asset(chunk[0])
+                else:
+                    records.update(self._adapter.bulk_assets(chunk))
+            except ValueError:
+                raise ResultError("Scenario preview metadata could not be retrieved") from None
+        return records
+
+    def _preview_remote(self, cache, work, remote, outcomes, cancel):
+        """Read server preview metadata once per batch, then fetch available renditions."""
+        state = previews.PreviewState
+
+        def settle(index, rendition, value, **details):
+            outcomes[index][rendition] = previews.RenditionOutcome(rendition, value, **details)
+
+        if not self._adapter.network_allowed():
+            for index, rendition in remote:
+                settle(index, rendition, state.OFFLINE, reason="Online access is disabled")
+            return
+        identifiers = tuple(dict.fromkeys(work[index].target.asset_id for index, _ in remote))
+        try:
+            records = self._preview_metadata(identifiers)
+        except (AdapterError, ResultError):
+            for index, rendition in remote:
+                settle(
+                    index,
+                    rendition,
+                    state.FAILED if work[index].final else state.PENDING,
+                    reason="Scenario preview metadata could not be read",
+                )
+            return
+        sources = {}
+        for index, rendition in remote:
+            self._preview_check(cancel)
+            item = work[index]
+            try:
+                if index not in sources:
+                    record = records.get(item.target.asset_id)
+                    found = {} if record is None else previews.server_sources(record, item.target)
+                    sources[index] = found
+                source = sources[index].get(rendition)
+                if source is not None and not self._adapter.network_allowed():
+                    settle(index, rendition, state.OFFLINE, reason="Online access is disabled")
+                elif source is not None:
+                    preview = previews.fetch(
+                        cache, self._downloader, item.target, rendition, source
+                    )
+                    settle(index, rendition, state.READY, preview=preview)
+                elif item.final:
+                    cache.mark_missing(item.target.key, rendition)
+                    settle(
+                        index,
+                        rendition,
+                        state.MISSING,
+                        reason="Scenario has no preview for this result; use Retry",
+                    )
+                else:
+                    settle(
+                        index,
+                        rendition,
+                        state.PENDING,
+                        reason="Waiting for Scenario to prepare the preview",
+                    )
+            except previews.PreviewCanceled:
+                raise
+            except previews.PreviewError as error:
+                settle(index, rendition, state.FAILED, reason=str(error))
+
+    def prepare_previews(self, work, *, root, cancel, maintain=False):
+        """Resolve preview renditions on the preview lane; never generate, apply or spend.
+
+        Verified cache entries are reused. Images and audio get decode requests
+        holding a private copy rehashed against the saved receipt. Server stills
+        and clips read SDK asset metadata once per batch, then use the bounded
+        result downloader and its storage hosts. The caller owns returned decode
+        requests and must finish or discard them.
+        """
+        if self._downloader is None:
+            raise ResultError("Result storage has not been configured")
+        work = tuple(work)
+        if not 1 <= len(work) <= 128 or not all(
+            isinstance(item, previews.PreviewWork) for item in work
+        ):
+            raise ValueError("Use a bounded preview batch")
+        cache = previews.PreviewCache(root)
+        if maintain:
+            cache.sweep()
+            cache.evict()
+        outcomes = [{} for _ in work]
+        try:
+            remote = []
+            for index, item in enumerate(work):
+                self._preview_check(cancel)
+                record = self._preview_record(item.target)
+                for rendition in item.renditions:
+                    outcome = self._preview_local(cache, item, rendition, record, cancel)
+                    if outcome is None:
+                        remote.append((index, rendition))
+                    else:
+                        outcomes[index][rendition] = outcome
+            if remote:
+                self._preview_remote(cache, work, remote, outcomes, cancel)
+            changed = previews.RenditionOutcome
+            for index, item in enumerate(work):
+                if self._preview_record(item.target) is None:
+                    for rendition, outcome in tuple(outcomes[index].items()):
+                        if outcome.request is not None:
+                            cache.discard(outcome.request.directory)
+                        outcomes[index][rendition] = changed(
+                            rendition,
+                            previews.PreviewState.FAILED,
+                            reason="This saved result changed; preview it again",
+                        )
+            return previews.PreviewBatch(
+                self._store.scope,
+                tuple(
+                    previews.PreviewOutcome(
+                        item.target, tuple(outcomes[index][r] for r in item.renditions)
+                    )
+                    for index, item in enumerate(work)
+                ),
+            )
+        except BaseException:
+            for result in outcomes:
+                for outcome in result.values():
+                    if outcome.request is not None:
+                        cache.discard(outcome.request.directory)
+            raise
+
+    def _owned_preview(self, request):
+        if not isinstance(request, previews.DecodeRequest) or request.key.scope != (
+            previews.scope_digest(self._store.scope)
+        ):
+            raise ResultError("Use a preview request issued for this connection")
+
+    def finish_preview(self, request, *, root, envelope=None):
+        """Validate Blender's decoded still or audio envelope and cache it."""
+        self._owned_preview(request)
+        with self._guard():
+            pass
+        return previews.finish_decode(previews.PreviewCache(root), request, envelope=envelope)
+
+    def discard_preview(self, request, *, root):
+        """Remove an unused decode request's private copy without caching anything."""
+        self._owned_preview(request)
+        previews.PreviewCache(root).discard(request.directory)

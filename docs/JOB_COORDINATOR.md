@@ -478,9 +478,10 @@ contract is [organization.py](../scenario/core/jobs/organization.py).
 `build_request` binds the selected `JobScope` and validates the operation (add to
 or remove from a collection, change tags, or create a collection), 1 to 49
 unique asset IDs (optional for a create), the collection ID or name, and tags.
-Tags and names are stripped and must pass the adapter's label rules; tags are
-deduplicated, at most 30 per list, without commas, and a tag cannot be added and
-removed together. The coordinator refuses a request for another scope before
+Tags and names are stripped and must pass the adapter's label rules. A tag list
+takes at most 200 entries, counting duplicates, and at most 30 unique tags after
+deduplication, without commas; each refusal names the limit it enforces, and a
+tag cannot be added and removed together. The coordinator refuses a request for another scope before
 any request is made.
 
 A snapshot reads the assets' tags and memberships with `get_bulk`, the target

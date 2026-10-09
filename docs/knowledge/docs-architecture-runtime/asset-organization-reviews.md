@@ -13,7 +13,7 @@
     "limits": "Reviewed the runtime-map claims: the pure bpy-free contract, coordinator and worker execution through the selected adapter, the session-owned entry point, pump polling independent of an open view, connection-scoped session-local reviews kept across undo and scene switches and retired on file load or credential or project change, and no job, upload or store schema change and no spending. The library-reads paragraph now points to these reviews. No live collection, tag or bulk request was made; service name uniqueness, re-adding a member, DELETE body survival, tag normalization and live limits remain unverified. No native Library or local MCP control, desktop interaction or release acceptance is claimed.",
     "sources": {
       "docs/architecture/runtime.md": "73bc52e0aa1306fb11fd7b792ad5b764738d9d78b05112cfaa5dd6182ae43a05",
-      "scenario/core/jobs/organization.py": "fca49ea65b119b66c9787ea9cfbc0c94e5bf3cb8dcc17743fa8800539cc8cce4",
+      "scenario/core/jobs/organization.py": "7f69ce28e4c54e3c2b819cc76735d001671de6bcfcb12145b2cd90b059e8b84d",
       "scenario/blender/asset_organization.py": "553512e5363e7784a8b7f73b7578d4d670a877c65faf8f4c3d7c0d500fa40e51",
       "scenario/blender/job_session.py": "e33a7ff821ae27d3c354a017c8b85315b0ac81ccc972d9e402892fbfdbfb4702",
       "scenario/blender/runtime.py": "4dd15c99e830769b970cbffb8a2d895c657bc52be66b6e4c1e01a8ebebd5ed00",

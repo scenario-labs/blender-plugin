@@ -205,6 +205,23 @@ class FilmReviewControlTests(unittest.TestCase):
         self.ready()  # The single local media slot is free again.
         self.assertFalse(self.media.calls or self.media.downloads)
 
+    def test_mcp_cancel_stops_finished_preparation_before_maintenance_delivers_it(self):
+        identifier = self.mcp_prepare()
+        self.commands._reviews[identifier].task.result(5)
+        # The worker returned, but no maintenance has delivered its result yet.
+        self.assertEqual(self.commands.status(identifier)["phase"], "PREPARING")
+        status = self.tools.film_review_status({"review_id": identifier, "action": "cancel"})
+        self.assertEqual(status["phase"], "CANCELLING")
+        status = self.settle(identifier)
+        self.assertEqual(status["phase"], "CANCELLED")
+        self.assertFalse(self.copies())
+        self.assertFalse(self.session._coordinator.film_review_cleanup_pending)
+        with self.assertRaisesRegex(ValueError, "fresh ready"):
+            self.tools.build_film_review({"review_id": identifier})
+        self.assertEqual(self.state(), self.storage.JobState.READY)
+        self.ready()  # The single local media slot is free again.
+        self.assertFalse(self.media.calls or self.media.downloads)
+
     def test_frame_or_recipe_change_after_ready_deletes_copies(self):
         for change in ("frame", "recipe"):
             with self.subTest(change=change):

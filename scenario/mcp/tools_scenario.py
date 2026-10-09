@@ -531,11 +531,12 @@ def prepare_film_review(args):
 def film_review_status(args):
     owner = runtime.ensure_film_jobs().session.film_review
     action = args.get("action", "status")
+    if action == "cancel":
+        # Like the native button, cancel before maintenance can deliver a finished preparation.
+        return owner.cancel(args["review_id"])
     owner.poll()
     if action == "status":
         return owner.status(args["review_id"])
-    if action == "cancel":
-        return owner.cancel(args["review_id"])
     if action == "discard":
         return owner.discard(args["review_id"])
     if action == "retry_receipt":

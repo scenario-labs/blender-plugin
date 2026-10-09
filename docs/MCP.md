@@ -811,8 +811,9 @@ Preparation copies retained upload files or downloaded results into private
 extension storage and needs installed `ffprobe` and matching frame rates; it never
 uploads, downloads, generates or claims. Recipe, frame, scene or connection changes
 invalidate the review and delete its copies; scene changes include selecting, adding
-or editing objects. Building one review also invalidates any other unbuilt review
-for the same scene, so prepare and build one at a time. Keep the recipe scene
+or editing objects, and any Undo or Redo resets every captured origin. Building one
+review also invalidates any other unbuilt review for the same scene, so prepare and
+build one at a time. Keep the recipe scene
 selected until building: selecting another scene and then the recipe scene again
 also invalidates it. `WAITING` means preparation finished while another scene was
 active; a return through the scene selector turns it into `ERROR`, so prepare again.
@@ -821,7 +822,7 @@ creates a new scene while the working scene stays selected. `film_review_status`
 cancel preparation, discard an unbuilt review's copies, `retry_receipt` for a known
 saved outcome or dismiss an inspected uncertain review with `inspected: true`; none
 rebuilds or clears a saved claim. An uncertain review blocks new preparation for its
-scene until dismissed.
+scene until its receipt is saved or it is dismissed.
 
 These three local commands have no platform equivalent, make no service call and
 share the [native review controls](FILM_PLAN.md#native-and-mcp-review-controls).

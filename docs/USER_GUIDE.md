@@ -713,8 +713,9 @@ review at a time: building a review also invalidates any other unbuilt review fo
 the same working scene.
 
 Changing the recipe, frame or scene before building, including selecting, adding or
-editing objects in it, deletes the private copies; prepare again. Leaving the
-working scene and selecting it again counts as a change, even when preparation
+editing objects in it or using Undo or Redo, deletes the private copies; prepare
+again. The panel reminds you: "Selecting, editing or Undo here discards it".
+Leaving the working scene and selecting it again counts as a change, even when preparation
 finished while you were away. **Discard review** deletes an unbuilt review's copies.
 If a build is uncertain, save the offered receipt, or inspect saved jobs and
 acknowledge the inspection; never build the same review again. Undo removes the

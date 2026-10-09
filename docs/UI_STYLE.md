@@ -1238,16 +1238,21 @@ segments, then an **Assemble review** box with a `SEQUENCE` header icon.
 master as muted alternate** is enabled only when a saved master video exists.
 The dialog states the 2 GiB private copy limit and the installed `ffprobe`
 requirement, and that nothing is downloaded, uploaded or generated. Cancelling it
-creates no review.
+creates no review. A saved-job storage error while checking the master reports its
+storage message rather than asking for a valid recipe.
 
 A ready review shows its frames, fps and shot/source counts, then **Build review
 scene**. That separate confirmation names the recipe scene, mode, timing, counts,
 private copy size and master inclusion. It states that the build creates a new
 scene, keeps the working scene selected and marks generated sources applied, and
 that Undo removes only the scene. Build is disabled outside Object Mode with a poll
-message. Preparing and waiting reviews show one status line with **Cancel
-preparation**; stopping and building show status only. The waiting line says the
-scene was left and that reselecting it needs a new preparation: selecting the
+message. Like the timeline build, the build operator declares only Blender's Undo
+option, without the register option behind the redo panel and the Info operator
+log. Preparing and ready reviews add "Selecting, editing or Undo here discards
+it": object selection or edits and any Undo or Redo invalidate an unbuilt review
+and delete its copies. Preparing and waiting reviews show a status line with
+**Cancel preparation**; stopping and building show status only. The waiting line
+says the scene was left and that reselecting it needs a new preparation: selecting the
 recipe scene again invalidates its unbuilt reviews and deletes their copies. Ready,
 failed and cancelled reviews offer **Discard review** with confirmation. Uncertain
 builds hide preparation and offer **Save review receipt** or **Acknowledge
@@ -1257,11 +1262,13 @@ maintenance pump owns progress. Studio's Film page adds a sixth **Review** tab,
 drawn as two rows of three at narrow widths.
 
 Installed synthetic tests cover operator execution, dialog construction including
-the enabled master option for a saved master, dismissed dialogs, readable
-full-queue admission, a real `window.scene` round trip, MCP parity, read-only
-panel and Studio drawing, mode navigation and Edit Mode gating. Physical desktop
-interaction, screenshots and other OS/DPI behavior for these controls have not
-been captured; that evidence is pending.
+the enabled master option for a saved master, dismissed dialogs, a storage error
+in the preparation dialog, readable full-queue admission, the warning line on
+preparing and ready reviews with selection and Undo/Redo-handler invalidation, a
+real `window.scene` round trip, a previs build beside a ready final review, MCP
+parity, read-only panel and Studio drawing, mode navigation, Edit Mode gating and
+the build operator's options. Physical desktop interaction, screenshots and other
+OS/DPI behavior for these controls have not been captured; that evidence is pending.
 
 
 ## Explicit Studio view

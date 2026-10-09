@@ -883,8 +883,10 @@ and captured origin, and calls only the session's prepare, apply, receipt-retry 
 discard commands. Runtime maintenance drains preparation; a review becomes ready
 only while its recipe scene is current with an unchanged origin. A window selecting
 the recipe scene again runs `frame_change_pre`, which revokes that origin, so
-waiting and ready reviews then fail and delete their copies. The issued completion
-is consumed only by the separate build approval.
+waiting and ready reviews then fail and delete their copies. Object selection or
+edits revoke it through the dependency handler, and Undo/redo resets every origin,
+with the same result. The issued completion is consumed only by the separate build
+approval.
 Invalidation, cancellation and discard delete unused copies through the
 coordinator; handle cleanup never changes built scenes or saved claims. Shutdown
 drops the handles after workers join, and the coordinator removes unconsumed

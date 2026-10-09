@@ -32,6 +32,9 @@ RECENT_FILE = "recent_models.json"
 _ctx = {"lane": "", "records": [], "current": "", "material_only": False}
 _pending_thumbs = set()
 _pending_lock = threading.Lock()
+# Worker-safe mirror of Blender's online access for thumbnails when no catalog is selected. Only the main thread sets
+# or clears it, each time the picker asks for a thumbnail; download workers read it without touching bpy.
+_online_access = threading.Event()
 _enum_cache = {}  # keeps enum item tuples alive for Blender
 
 
@@ -40,9 +43,24 @@ def _thumb_path(model_id):
     return runtime.paths().cache_dir / "thumbs" / f"{model_id}.jpg"
 
 
-def _fetch_thumbnail(url, path, model_id):
+def _download_permission():
+    """Main thread only: the worker-safe predicate a thumbnail download checks just before connecting.
+
+    The selected catalog's permission Event follows Blender's online access on every pump tick and clears when that
+    catalog retires. Without a catalog, the module Event mirrored here from runtime.online() stands in."""
+    if runtime.online():
+        _online_access.set()
+    else:
+        _online_access.clear()
+    allowed = getattr(runtime.state.catalog, "network_allowed", None)
+    return allowed if callable(allowed) else _online_access.is_set
+
+
+def _fetch_thumbnail(url, path, model_id, allowed):
     try:
-        download_file(url, path, timeout=30, retries=1)
+        # Online access may have been withdrawn since the row asked; a later refilter retries.
+        if allowed():
+            download_file(url, path, timeout=30, retries=1)
     except Exception as err:  # a missing thumbnail is cosmetic; never surface it as a job error
         log.debug("thumbnail %s failed: %s", model_id, err)
     finally:
@@ -52,6 +70,7 @@ def _fetch_thumbnail(url, path, model_id):
 
 def ensure_thumbnail(record):
     """Start a background download of the model thumbnail when it is not cached yet and Blender allows online access.
+    The worker rechecks the captured permission just before connecting, not during the transfer or its retry.
     Returns True when cached; a cached thumbnail still shows offline."""
     if record is None:
         return False
@@ -59,7 +78,10 @@ def ensure_thumbnail(record):
     if path.exists():
         return True
     url = model_filter.thumbnail_url(record)
-    if not url or not runtime.online():
+    if not url:
+        return False
+    allowed = _download_permission()
+    if not runtime.online() or not allowed():
         return False  # the row keeps its modality icon; a later refilter retries once online
     with _pending_lock:
         if record.id in _pending_thumbs:
@@ -67,7 +89,7 @@ def ensure_thumbnail(record):
         _pending_thumbs.add(record.id)
     threading.Thread(
         target=_fetch_thumbnail,
-        args=(url, path, record.id),
+        args=(url, path, record.id, allowed),
         name=f"scenario-thumb-{record.id}",
         daemon=True,
     ).start()

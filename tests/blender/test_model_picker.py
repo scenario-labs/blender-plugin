@@ -7,7 +7,7 @@ import tempfile
 import threading
 import types
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 import bpy
 from helpers import online_access, reset_scene, submodule
@@ -398,9 +398,18 @@ class ModelPickerTests(unittest.TestCase):
         )
         self.assertTrue(callable(self.picker.draw_model_row))
 
-    def test_opening_the_picker_downloads_thumbnails_only_with_online_access(self):
+    def thumbnail_fixture(self):
+        """A catalog model with an https thumbnail, a private cache and a mocked downloader.
+
+        Restores the module-level picker rows too, so a later test's refilter cannot
+        reach this https record through the real cache and downloader."""
         catalog = submodule("core.api.catalog")
         handlers = submodule("blender.handlers")
+        saved = {
+            key: list(value) if isinstance(value, list) else value
+            for key, value in self.picker._ctx.items()
+        }
+        self.addCleanup(self.picker._ctx.update, saved)
         url = "https://cdn.example.invalid/thumbnail.jpg"
         record = catalog.ModelRecord.from_api(
             {
@@ -419,11 +428,15 @@ class ModelPickerTests(unittest.TestCase):
         cache = pathlib.Path(
             self.enterContext(tempfile.TemporaryDirectory(prefix="scenario-test-thumbs-"))
         )
-        cached = cache / f"{record.id}.jpg"
         self.enterContext(
             patch.object(self.picker, "_thumb_path", lambda model_id: cache / f"{model_id}.jpg")
         )
         download = self.enterContext(patch.object(self.picker, "download_file"))
+        self.addCleanup(self.picker._pending_thumbs.discard, record.id)
+        return record, url, cache / f"{record.id}.jpg", download
+
+    def test_opening_the_picker_downloads_thumbnails_only_with_online_access(self):
+        record, url, cached, download = self.thumbnail_fixture()
         started = []
 
         def tracked_thread(*args, **kwargs):
@@ -434,7 +447,6 @@ class ModelPickerTests(unittest.TestCase):
         self.enterContext(
             patch.object(self.picker, "threading", types.SimpleNamespace(Thread=tracked_thread))
         )
-        self.addCleanup(self.picker._pending_thumbs.discard, record.id)
         wm = bpy.context.window_manager
 
         with online_access(False):
@@ -460,3 +472,57 @@ class ModelPickerTests(unittest.TestCase):
             self.assertTrue(self.picker.ensure_thumbnail(record))
         self.assertEqual(len(started), 1)
         download.assert_called_once()
+
+    def test_a_queued_thumbnail_download_rechecks_online_access_before_connecting(self):
+        record, url, cached, download = self.thumbnail_fixture()
+        held = []
+
+        class HeldThread(threading.Thread):
+            def start(self):
+                held.append(self)  # the test runs it after changing the permission
+
+        def run_worker(thread):
+            threading.Thread.start(thread)
+            thread.join(timeout=5)
+            self.assertFalse(thread.is_alive())
+
+        # Module-local: other Blender or test threads keep the real constructor.
+        self.enterContext(
+            patch.object(self.picker, "threading", types.SimpleNamespace(Thread=HeldThread))
+        )
+        wm = bpy.context.window_manager
+
+        # Without a catalog the main thread mirrors online access into a module Event.
+        self.assertIsNone(self.runtime.state.catalog)
+        with online_access(True):
+            self.picker.prepare(bpy.context, "image")
+        self.assertEqual([thread.name for thread in held], [f"scenario-thumb-{record.id}"])
+        with online_access(False):
+            wm.scenario_picker_query = "thumbnail"  # an offline refilter mirrors the change
+        run_worker(held[0])
+        download.assert_not_called()
+        self.assertNotIn(record.id, self.picker._pending_thumbs)
+
+        # The selected catalog's permission Event, which the pump syncs, wins over that mirror.
+        sdk_catalog = submodule("core.api.sdk_catalog")
+        catalog = sdk_catalog.SDKCatalog(
+            types.SimpleNamespace(authorization=lambda: None), online=True, adapter_factory=Mock()
+        )
+        self.addCleanup(catalog.close)
+        self.enterContext(patch.object(self.runtime.state, "catalog", catalog))
+        with online_access(True):
+            self.assertFalse(self.picker.ensure_thumbnail(record))
+        self.assertEqual(len(held), 2)
+        catalog.update_online(False)  # what sync_catalog_context does once access is withdrawn
+        run_worker(held[1])
+        download.assert_not_called()
+        self.assertNotIn(record.id, self.picker._pending_thumbs)
+
+        # Control: the same worker downloads while the captured permission still allows it.
+        catalog.update_online(True)
+        with online_access(True):
+            self.assertFalse(self.picker.ensure_thumbnail(record))
+        self.assertEqual(len(held), 3)
+        run_worker(held[2])
+        download.assert_called_once_with(url, cached, timeout=30, retries=1)
+        self.assertNotIn(record.id, self.picker._pending_thumbs)

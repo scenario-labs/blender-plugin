@@ -369,6 +369,18 @@ same known SDK expected failure. The fourteen workflow-reference regressions and
 merged Studio/Library checks remain intact; these runs add no physical or live
 acceptance.
 
+The reviewed file-array and saved-enum fixes use ZIP SHA-256
+`946fdef4d9e4ca641d1dd12e54c634d7c8f4ec8726d2c74242e0c04bb7932771`.
+It passes 1,145 installed tests on each of the same three Blender versions,
+with two Windows-only skips per run, unchanged normal profiles and all 140
+packaged Python sources matching the checkout. The locked unit suite passes
+3,889 tests with the same SDK expected failure. Eighteen workflow-reference
+tests now include alternate `file`/`array: true` defaults, incremental attachment,
+pricing and clearing; saved file-enum selections survive reopening, invalidate
+prices when changed and require clearing before replacement. Empty saved choices
+can receive a Library reference. Six additional unit cases enforce identical
+array constraints for both schema spellings. These remain synthetic checks.
+
 ## Issue disposition
 
 GitHub state reviewed on 2026-10-07 is separate from candidate acceptance:

@@ -231,13 +231,14 @@ def test_composition_omits_empty_lora_default_that_would_override_its_concepts()
     )
 
 
-def test_file_reference_edit_allows_incomplete_form_without_weakening_final_validation():
+@pytest.mark.parametrize("shape", [{"type": "file_array"}, {"type": "file", "array": True}])
+def test_file_reference_edit_allows_incomplete_form_without_weakening_final_validation(shape):
     from scenario.core.schema.forms import append_file_reference, validate_parameters
 
     schema = {
         "parameters": [
             {"name": "prompt", "type": "string", "required": True},
-            {"name": "images", "type": "file_array", "kind": "image", "minItems": 2, "maxItems": 2},
+            {"name": "images", **shape, "kind": "image", "minItems": 2, "maxItems": 2},
         ]
     }
     before = deepcopy(schema)
@@ -264,6 +265,7 @@ def test_file_reference_edit_preserves_input_kind_and_rejects_replacement(kind):
         append_file_reference(schema, "reference", "asset", "audio" if kind == "image" else "image")
 
 
+@pytest.mark.parametrize("shape", [{"type": "file_array"}, {"type": "file", "array": True}])
 @pytest.mark.parametrize(
     "existing,asset,fragment",
     [
@@ -275,11 +277,11 @@ def test_file_reference_edit_preserves_input_kind_and_rejects_replacement(kind):
     ],
 )
 def test_reference_edit_rejects_invalid_ids_arrays_duplicates_and_enum_values(
-    existing, asset, fragment
+    existing, asset, fragment, shape
 ):
     from scenario.core.schema.forms import append_file_reference
 
-    schema = {"parameters": [{"name": "refs", "type": "file_array", "allowedValues": ["asset"]}]}
+    schema = {"parameters": [{"name": "refs", **shape, "allowedValues": ["asset"]}]}
     with pytest.raises(ValueError, match=fragment):
         append_file_reference(schema, "refs", asset, "image", existing)
 

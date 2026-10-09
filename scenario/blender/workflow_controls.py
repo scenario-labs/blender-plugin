@@ -87,6 +87,8 @@ def load_form(form, record):
     rows = []
     for field in schema["parameters"]:
         name, kind = field["name"], field.get("type", "string")
+        if kind == "file" and field.get("array") is True:
+            kind = "file_array"
         value = defaults.get(name)
         is_text = kind in {"string", "file", "model"}
         rows.append(
@@ -118,8 +120,8 @@ def load_form(form, record):
 
 
 def input_value(item):
-    if item.kind == "file":
-        return item.text
+    # Previously saved forms keep file-enum selections in choice, not text.
+    # Preserve that selection until the input is explicitly cleared or reloaded.
     if item.options:
         choices = json.loads(item.options)
         index = int(item.choice)
@@ -128,7 +130,7 @@ def input_value(item):
         return choices[index]
     if item.kind == "boolean":
         return item.boolean
-    if item.kind in {"string", "model"}:
+    if item.kind in {"string", "file", "model"}:
         return item.text
     try:
         return json.loads(item.text)
@@ -176,7 +178,7 @@ def signature(form):
                     x.text,
                     x.boolean,
                     x.options,
-                    x.choice if x.options and x.kind != "file" else "",
+                    x.choice if x.options else "",
                     x.asset_scope,
                     x.asset_value,
                 )
@@ -456,13 +458,7 @@ def draw(layout, context):
             row.prop(item, "enabled", text="")
             value = row.row()
             value.enabled = item.enabled
-            prop = (
-                "choice"
-                if item.options and item.kind != "file"
-                else "boolean"
-                if item.kind == "boolean"
-                else "text"
-            )
+            prop = "choice" if item.options else "boolean" if item.kind == "boolean" else "text"
             value.prop(item, prop, text=item.label)
             if item.kind in {"file", "file_array"}:
                 box.label(text="Choose Library > Workflow, or enter an uploaded asset ID")

@@ -30,7 +30,9 @@ class WorkflowReferenceApproval:
 
 
 def _value(item):
-    return None if not item.text.strip() else workflow_controls.input_value(item)
+    return (
+        None if not item.options and not item.text.strip() else workflow_controls.input_value(item)
+    )
 
 
 def _check_binding(item, scope):
@@ -100,13 +102,14 @@ def attach(approval, session):
     text = value if item.kind == "file" else workflow_controls._json(value)
     if text != approval.value:
         raise ValueError("The proposed reference value changed; review it again")
-    previous = item.text, item.enabled, item.asset_scope, item.asset_value
+    previous = item.text, item.enabled, item.asset_scope, item.asset_value, item.options
     try:
         item.text, item.enabled = text, True
+        item.options = ""
         item.asset_scope = approval.scope
         item.asset_value = workflow_controls._json(value)
     except Exception:
-        item.text, item.enabled, item.asset_scope, item.asset_value = previous
+        item.text, item.enabled, item.asset_scope, item.asset_value, item.options = previous
         raise
     return item
 
@@ -151,6 +154,7 @@ class SCENARIO_OT_clear_workflow_reference(bpy.types.Operator):
             return {"CANCELLED"}
         item = form.inputs.get(self._input_name)
         item.text = "" if item.kind == "file" else "[]"
+        item.options = ""
         item.enabled = False
         item.asset_scope = item.asset_value = ""
         self._scene = None

@@ -762,6 +762,8 @@ empties and unchecks that input; as with any unchecked input, the workflow's
 default may apply. Disabling a marked input omits it without deleting its binding.
 Re-enabling it checks that binding again. Ordinary manually entered IDs remain
 available, and file allowed-value constraints are still checked before pricing.
+Previously saved file dropdowns retain their selected asset. Clear the reference
+with confirmation before choosing a replacement from Library.
 
 Collection/tag editing, thumbnails and live or physical-desktop acceptance remain
 separate. Unknown file types are displayed but cannot be attached through this view.

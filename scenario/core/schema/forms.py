@@ -241,7 +241,7 @@ def append_file_reference(schema, name, asset_id, kind, current=None):
     if not isinstance(asset_id, str) or not asset_id.strip():
         raise ValueError("Choose a nonempty asset ID")
     draft = dict(field)
-    if field["type"] == "file":
+    if field["type"] == "file" and field.get("array") is not True:
         if current not in (None, ""):
             raise ValueError("Clear the existing reference before replacing it")
         value = asset_id

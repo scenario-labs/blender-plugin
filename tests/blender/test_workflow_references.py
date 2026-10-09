@@ -161,6 +161,43 @@ class WorkflowReferenceTests(unittest.TestCase):
         )
         self.assertIsNotNone(self.fixture.fixture.store.get(result["local_id"]))
 
+    def test_alternate_file_array_preserves_defaults_appends_prices_and_clears(self):
+        field = self.record["inputs"][2]
+        field.update(type="file", array=True, allowedValues=["fixture-asset", "second"])
+        for default in ([], ["fixture-asset"]):
+            with self.subTest(default=default):
+                field["default"] = default
+                self.ui.load_form(self.form, self.record)
+                item = self.form.inputs["images"]
+                self.assertEqual(item.kind, "file_array")
+                if not default:
+                    self.load()
+                    self.attach("images")
+                self.form.inputs["prompt"].text = "a cup"
+                with self.assertRaisesRegex(ValueError, "at least 2"):
+                    self.ui.parameters(self.form)
+                self.load("second")
+                self.attach("images", "second")
+                self.price()
+                self.assertEqual(
+                    json.loads(self.calls[-1].content)["images"], ["fixture-asset", "second"]
+                )
+                self.load("third")
+                choices = self.owner.prepare(bpy.context, "third", target="WORKFLOW")
+                self.assertNotIn("images", [x.param_name for x in choices])
+                cls, operator, context = self.clear_operator("images")
+                self.assertEqual(cls.execute(operator, context), {"FINISHED"})
+                self.assertEqual(item.text, "[]")
+                self.assertFalse(item.enabled)
+                if default:
+                    # An unchecked input restores the workflow default, which
+                    # must still satisfy the complete minimum before pricing.
+                    with self.assertRaisesRegex(ValueError, "at least 2"):
+                        self.ui.parameters(self.form)
+                else:
+                    self.assertNotIn("images", self.ui.parameters(self.form))
+                self.assertFalse(self.paid)
+
     def test_new_reference_invalidates_existing_price_without_submission(self):
         view = self.price()
         self.attach()
@@ -203,8 +240,8 @@ class WorkflowReferenceTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.ui.parameters(self.form)
 
-    def clear_operator(self):
-        operator = SimpleNamespace(input_name="image", report=MagicMock())
+    def clear_operator(self, name="image"):
+        operator = SimpleNamespace(input_name=name, report=MagicMock())
         context = SimpleNamespace(
             scene=bpy.context.scene,
             window_manager=SimpleNamespace(
@@ -272,6 +309,56 @@ class WorkflowReferenceTests(unittest.TestCase):
         self.form.inputs["image"].text = "not-allowed"
         with self.assertRaisesRegex(ValueError, "allowed values"):
             self.ui.parameters(self.form)
+
+    def saved_file_enum(self, text=""):
+        self.record["inputs"][1]["allowedValues"] = ["fixture-asset", "allowed-other"]
+        self.ui.load_form(self.form, self.record)
+        item = self.form.inputs["image"]
+        # Reproduce the persisted representation written before Library references.
+        item.options = json.dumps(self.record["inputs"][1]["allowedValues"])
+        item.choice = "1"
+        item.text = text
+        item.enabled = True
+        self.form.inputs["prompt"].text = "a cup"
+        return item
+
+    def test_saved_file_enum_survives_reopen_with_empty_or_stale_text(self):
+        for text in ("", "fixture-asset"):
+            with self.subTest(text=text):
+                self.saved_file_enum(text)
+                with tempfile.TemporaryDirectory(dir=bpy.utils.resource_path("USER")) as directory:
+                    path = str(Path(directory) / "workflow-enum.blend")
+                    bpy.ops.wm.save_as_mainfile(filepath=path)
+                    bpy.ops.wm.open_mainfile(filepath=path)
+                    self.scene = bpy.context.scene
+                    self.form = self.scene.scenario_workflow
+                    self.assertEqual(self.ui.parameters(self.form)["image"], "allowed-other")
+
+    def test_saved_file_enum_blocks_replacement_tracks_price_and_clears_selection(self):
+        item = self.saved_file_enum()
+        choices = self.owner.prepare(bpy.context, "fixture-asset", target="WORKFLOW")
+        self.assertNotIn("image", [x.param_name for x in choices])
+        view = self.price()
+        self.assertEqual(json.loads(self.calls[-1].content)["image"], "allowed-other")
+        item.choice = "0"
+        with self.assertRaisesRegex(ValueError, "fresh workflow price"):
+            self.workflow.approve(self.scene, view.ticket.identifier, view.cost)
+        cls, operator, context = self.clear_operator()
+        self.assertEqual(cls.execute(operator, context), {"FINISHED"})
+        self.assertFalse(item.options)
+        self.assertFalse(item.text)
+        self.assertNotIn("image", self.ui.parameters(self.form))
+        self.attach()
+        self.assertEqual(self.ui.parameters(self.form)["image"], "fixture-asset")
+        self.assertFalse(self.paid)
+
+    def test_empty_saved_file_enum_can_receive_a_library_reference(self):
+        item = self.saved_file_enum()
+        item.options = json.dumps(["", "fixture-asset"])
+        item.choice = "0"
+        self.attach()
+        self.assertFalse(item.options)
+        self.assertEqual(self.ui.parameters(self.form)["image"], "fixture-asset")
 
     def test_workflow_confirmation_draw_names_destination_and_does_not_need_model(self):
         self.scene.scenario.image.model_id = "NONE"

@@ -1341,7 +1341,11 @@ with capacity can receive a selection. Adding an array item may leave the form
 incomplete, but Request workflow price must still enforce its full requirements.
 
 Workflow file inputs use asset text/JSON plus Library selection; allowed-value
-constraints remain active even when a file field declares enumerated IDs. Each
+constraints remain active even when a file field declares enumerated IDs. Both
+`file_array` and `file` with `array: true` use JSON arrays. Previously saved
+file-enum forms retain their selected choice until explicitly cleared or reloaded;
+changing that choice invalidates the price. Confirmed attachment to an empty
+selection switches it to the Library-managed asset value. Each
 Library-managed input stores its selected connection and canonical value. Edited
 or cross-connection marked values require explicit clearing and selection again;
 unchecked inputs retain the binding for re-enabling. **Clear reference(s)** asks

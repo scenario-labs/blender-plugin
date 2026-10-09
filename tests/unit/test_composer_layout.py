@@ -66,9 +66,15 @@ def test_scale_multiplies_every_size_and_fits_small_regions():
 
 def test_prompt_placeholder_and_lane_labels():
     assert cl.LANE_ORDER == ("image", "video", "3d", "material", "render_image", "render_video")
-    assert cl.LANE_LABELS["image"] == "Image" and cl.LANE_LABELS["render_image"] == "Render Image" and cl.LANE_LABELS["render_video"] == "Render Video"
+    assert (
+        cl.LANE_LABELS["image"] == "Image"
+        and cl.LANE_LABELS["render_image"] == "Render Image"
+        and cl.LANE_LABELS["render_video"] == "Render Video"
+    )
     assert cl.placeholder_for("image").startswith("Describe")
-    assert "Prompt Spark" in cl.placeholder_for("render_image") and "Prompt Spark" in cl.placeholder_for("render_video")
+    assert "Prompt Spark" in cl.placeholder_for(
+        "render_image"
+    ) and "Prompt Spark" in cl.placeholder_for("render_video")
     assert cl.placeholder_for("unknown") == "Type a prompt"
 
 
@@ -189,7 +195,9 @@ def test_settings_chip_and_corner_minus_button():
     expanded = cl.pill_placement(1600, 900, expanded=True, scale=1.0)
     card, c = expanded.card_rect, expanded.collapse_rect
     pad = cl.PAD
-    assert c.w == c.h == cl.TAB_HEIGHT  # the minus button is a cell of the tab row, same height as the tabs
+    assert (
+        c.w == c.h == cl.TAB_HEIGHT
+    )  # the minus button is a cell of the tab row, same height as the tabs
     assert abs((card.right - c.right) - pad) < 1e-6  # same padding on the right as the card
     tab = next(iter(expanded.tab_rects.values()))
     assert abs(c.y - tab.y) < 1e-6 and abs(c.h - tab.h) < 1e-6  # aligned with the tab row
@@ -199,7 +207,9 @@ def test_settings_chip_and_corner_minus_button():
     assert s is not None and s.x > expanded.model_rect.right and s.right < expanded.generate_rect.x
     assert expanded.hit(s.x + 1, s.y + 1) == ("settings",)
     assert expanded.hit(c.x + c.w - 1, c.y + c.h - 1) == ("collapse",)
-    assert len(expanded.tab_rects) == 6 and expanded.hit(*_center(expanded.tab_rects["render_video"])) == ("tab", "render_video")
+    assert len(expanded.tab_rects) == 6 and expanded.hit(
+        *_center(expanded.tab_rects["render_video"])
+    ) == ("tab", "render_video")
     narrow = cl.pill_placement(420, 400, expanded=True, scale=1.0)
     assert narrow.settings_rect is None or narrow.settings_rect.right < narrow.generate_rect.x
     assert narrow.hit(narrow.model_rect.x + 1, narrow.model_rect.y + 1) == ("model",)
@@ -212,10 +222,16 @@ def _center(rect):
 def test_offset_moves_the_composer_and_is_clamped_to_keep_it_reachable():
     base = cl.pill_placement(1600, 900, expanded=True)
     moved = cl.pill_placement(1600, 900, expanded=True, offset=(120.0, 300.0))
-    assert moved.card_rect.x == base.card_rect.x + 120.0 and moved.card_rect.y == base.card_rect.y + 300.0
+    assert (
+        moved.card_rect.x == base.card_rect.x + 120.0
+        and moved.card_rect.y == base.card_rect.y + 300.0
+    )
     assert moved.card_rect.w == base.card_rect.w
     # every control travels with the card
-    assert moved.prompt_rect.y == base.prompt_rect.y + 300.0 and moved.generate_rect.x == base.generate_rect.x + 120.0
+    assert (
+        moved.prompt_rect.y == base.prompt_rect.y + 300.0
+        and moved.generate_rect.x == base.generate_rect.x + 120.0
+    )
     # dragged far away: at least MIN_VISIBLE px stay inside the region
     far = cl.pill_placement(1600, 900, expanded=True, offset=(5000.0, -5000.0))
     assert far.card_rect.x == 1600 - cl.MIN_VISIBLE
@@ -226,7 +242,10 @@ def test_offset_moves_the_composer_and_is_clamped_to_keep_it_reachable():
     # the collapsed pill shares the offset (same centre point), and clamps the same way
     pill = cl.pill_placement(1600, 900, expanded=False, offset=(120.0, 300.0))
     assert pill.pill_rect.y == cl.MARGIN + 300.0
-    assert abs((pill.pill_rect.x + pill.pill_rect.w / 2) - (moved.card_rect.x + moved.card_rect.w / 2)) < 1e-6
+    assert (
+        abs((pill.pill_rect.x + pill.pill_rect.w / 2) - (moved.card_rect.x + moved.card_rect.w / 2))
+        < 1e-6
+    )
 
 
 def test_width_override_is_clamped_between_the_minimum_and_the_region():
@@ -239,7 +258,10 @@ def test_width_override_is_clamped_between_the_minimum_and_the_region():
     assert too_narrow.card_rect.w == cl.MIN_CARD_WIDTH
     scaled = cl.pill_placement(3200, 1800, expanded=True, scale=2.0, width=10)
     assert scaled.card_rect.w == cl.MIN_CARD_WIDTH * 2
-    assert cl.clamp_width(50, 1600) == cl.MIN_CARD_WIDTH and cl.clamp_width(50, 1600, expanded=False) == cl.MIN_PILL_WIDTH
+    assert (
+        cl.clamp_width(50, 1600) == cl.MIN_CARD_WIDTH
+        and cl.clamp_width(50, 1600, expanded=False) == cl.MIN_PILL_WIDTH
+    )
     pill = cl.pill_placement(1600, 900, expanded=False, width=600)
     assert pill.pill_rect.w == 600
 
@@ -248,7 +270,12 @@ def test_resize_grip_and_drag_hit_kinds():
     layout = cl.pill_placement(1600, 900, expanded=True)
     card = layout.card_rect
     grip = layout.resize_rect
-    assert grip is not None and grip.right == card.right and grip.y == card.y and grip.w == cl.RESIZE_SIZE
+    assert (
+        grip is not None
+        and grip.right == card.right
+        and grip.y == card.y
+        and grip.w == cl.RESIZE_SIZE
+    )
     assert layout.hit(card.right - 2, card.y + 2) == ("resize",)
     # empty card area (between the tabs row and the prompt) is a drag handle
     gap_y = layout.prompt_rect.top + (layout.tab_rects["image"].y - layout.prompt_rect.top) / 2
@@ -258,3 +285,115 @@ def test_resize_grip_and_drag_hit_kinds():
     collapsed = cl.pill_placement(1600, 900, expanded=False)
     assert collapsed.hit(collapsed.pill_rect.x + 5, collapsed.pill_rect.y + 5) == ("expand",)
     assert collapsed.resize_rect is None
+
+
+def _controls(layout):
+    rects = [layout.card_rect, layout.prompt_rect, layout.model_rect, layout.generate_rect]
+    rects += [layout.collapse_rect, layout.resize_rect, *layout.tab_rects.values()]
+    return rects + ([layout.settings_rect] if layout.settings_rect is not None else [])
+
+
+# a 1600 px viewport with a 56 px toolbar on the left and a 300 px sidebar on the right
+INSETS = (56.0, 300.0)
+SIDEBAR_X = 1600 - 300
+
+
+def test_side_regions_centre_the_composer_in_the_uncovered_span():
+    expanded = cl.pill_placement(1600, 900, expanded=True, insets=INSETS)
+    card = expanded.card_rect
+    assert expanded.insets == INSETS
+    assert card.w == cl.CARD_WIDTH
+    assert abs((card.x + card.w / 2) - (56 + (SIDEBAR_X - 56) / 2)) < 1e-6
+    for rect in _controls(expanded):
+        assert rect.x >= 56 + cl.MARGIN and rect.right <= SIDEBAR_X - cl.MARGIN
+    g, c = expanded.generate_rect, expanded.collapse_rect
+    assert expanded.hit(*_center(g)) == ("generate",)
+    assert expanded.hit(*_center(c)) == ("collapse",)
+    assert expanded.hit(SIDEBAR_X + 10, g.y + 1) is None
+    assert expanded.offset() == (0.0, 0.0)
+    pill = cl.pill_placement(1600, 900, expanded=False, insets=INSETS)
+    assert abs((pill.pill_rect.x + pill.pill_rect.w / 2) - (card.x + card.w / 2)) < 1e-6
+    assert pill.hit(*_center(pill.pill_rect)) == ("expand",)
+
+
+def test_default_card_narrows_instead_of_running_under_the_sidebar():
+    # a viewport where the centred default card would reach 110 px under a 300 px sidebar
+    plain = cl.pill_placement(1200, 900, expanded=True)
+    assert plain.card_rect.right > 1200 - 300
+    fitted = cl.pill_placement(1200, 900, expanded=True, insets=(56, 300))
+    span = 1200 - 56 - 300
+    assert fitted.card_rect.w == span - 2 * cl.MARGIN
+    assert fitted.card_rect.x == 56 + cl.MARGIN
+    assert fitted.card_rect.right == 1200 - 300 - cl.MARGIN
+    for kind in ("generate", "collapse"):
+        rect = getattr(fitted, f"{kind}_rect")
+        assert rect.right < 1200 - 300 and fitted.hit(*_center(rect)) == (kind,)
+
+
+def test_saved_width_and_offset_are_clamped_to_the_uncovered_span():
+    span = SIDEBAR_X - 56
+    wide = cl.pill_placement(1600, 900, expanded=True, width=5000, insets=INSETS)
+    assert wide.card_rect.w == span - 2 * cl.MARGIN
+    assert cl.clamp_width(5000, 1600, insets=INSETS) == span - 2 * cl.MARGIN
+    assert cl.clamp_width(10, 1600, insets=INSETS) == cl.MIN_CARD_WIDTH
+    # a side region is a hard edge: the card never slides under the sidebar or the toolbar
+    right = cl.pill_placement(1600, 900, expanded=True, offset=(5000.0, 0.0), insets=INSETS)
+    assert right.card_rect.right == SIDEBAR_X
+    assert right.generate_rect.right < SIDEBAR_X and right.collapse_rect.right < SIDEBAR_X
+    left = cl.pill_placement(1600, 900, expanded=True, offset=(-5000.0, 0.0), insets=INSETS)
+    assert left.card_rect.x == 56
+    pill = cl.pill_placement(1600, 900, expanded=False, offset=(5000.0, 0.0), insets=INSETS)
+    assert pill.pill_rect.right == SIDEBAR_X
+    # a bare region edge keeps the existing rule: MIN_VISIBLE px stay inside the region
+    bare = cl.pill_placement(1600, 900, expanded=True, offset=(-5000.0, 0.0), insets=(0, 300))
+    assert bare.card_rect.x == cl.MIN_VISIBLE - bare.card_rect.w
+    # an in-span offset moves the card from the span centre, the vertical clamp is unchanged
+    moved = cl.pill_placement(1600, 900, expanded=True, offset=(120.0, 300.0), insets=INSETS)
+    base = cl.pill_placement(1600, 900, expanded=True, insets=INSETS)
+    assert moved.card_rect.x == base.card_rect.x + 120.0
+    assert moved.card_rect.y == base.card_rect.y + 300.0
+
+
+def test_layout_offset_reproduces_the_clamped_placement():
+    for insets in ((0.0, 0.0), INSETS):
+        for expanded in (True, False):
+            clamped = cl.pill_placement(
+                1600, 900, expanded=expanded, offset=(5000.0, -5000.0), insets=insets
+            )
+            again = cl.pill_placement(
+                1600, 900, expanded=expanded, offset=clamped.offset(), insets=insets
+            )
+            assert again.pill_rect == clamped.pill_rect
+    plain = cl.pill_placement(1600, 900, expanded=True, offset=(120.0, 300.0))
+    assert plain.offset() == (120.0, 300.0)
+
+
+def test_a_small_span_narrows_the_card_instead_of_hiding_it():
+    # room for the minimum card only without margins: the margins go first
+    tight = cl.pill_placement(900, 400, expanded=True, insets=(56, 400))
+    assert tight.card_rect.w == cl.MIN_CARD_WIDTH
+    assert tight.card_rect.x >= 56 and tight.card_rect.right <= 900 - 400
+    # less room than the minimum card: the card narrows to the span and stays usable
+    narrow = cl.pill_placement(700, 400, expanded=True, insets=(56, 400))
+    assert narrow.card_rect.w == 700 - 56 - 400
+    assert narrow.card_rect.x == 56 and narrow.card_rect.right == 700 - 400
+    assert narrow.hit(*_center(narrow.generate_rect)) == ("generate",)
+    assert narrow.hit(*_center(narrow.collapse_rect)) == ("collapse",)
+    assert narrow.generate_rect.x >= narrow.model_rect.right  # the bottom-row chips never overlap
+    pill = cl.pill_placement(700, 400, expanded=False, insets=(56, 400))
+    assert pill.pill_rect.w == cl.MIN_PILL_WIDTH
+    assert pill.pill_rect.x >= 56 and pill.pill_rect.right <= 700 - 400
+    # below the pill minimum the card keeps that floor, starting at the toolbar edge
+    floor = cl.pill_placement(600, 400, expanded=True, insets=(56, 400))
+    assert floor.card_rect.w == cl.MIN_PILL_WIDTH and floor.card_rect.x == 56
+    scaled = cl.pill_placement(1400, 800, expanded=True, scale=2.0, insets=(112, 800))
+    assert scaled.card_rect.w == 1400 - 112 - 800
+    assert scaled.card_rect.right == 1400 - 800
+
+
+def test_unusable_insets_are_ignored():
+    covered = cl.pill_placement(1600, 900, expanded=True, insets=(900, 900))
+    plain = cl.pill_placement(1600, 900, expanded=True)
+    assert covered.card_rect == plain.card_rect and covered.insets == (0.0, 0.0)
+    negative = cl.pill_placement(1600, 900, expanded=True, insets=(-50, None))
+    assert negative.card_rect == plain.card_rect

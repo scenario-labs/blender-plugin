@@ -224,6 +224,12 @@ class Layout:
     collapse_rect: Rect = None
     settings_rect: Rect = None
     resize_rect: Rect = None
+    base: tuple = (0.0, 0.0)  # default bottom-centre corner of pill_rect, before the offset
+    insets: tuple = (0.0, 0.0)  # (left, right) side-region widths the placement kept clear of
+
+    def offset(self):
+        """The offset that reproduces this placement as clamped, relative to its default spot."""
+        return (self.pill_rect.x - self.base[0], self.pill_rect.y - self.base[1])
 
     def hit(self, px, py):
         """What the pointer is on. `expand` (collapsed pill), `resize` (corner grip), `drag` (empty card area) or a control."""
@@ -397,45 +403,85 @@ def _clamp(value, lo, hi):
     return max(lo, min(hi, value))
 
 
-def clamp_width(width, region_w, scale=1.0, expanded=True):
-    """A card or pill width that fits the region: never narrower than the minimum, never wider than the region minus margins."""
+def _normalize_insets(region_w, insets):
+    """(left, right) widths covered by side regions, as non-negative floats.
+
+    Insets that leave no room at all are ignored: the composer then uses the whole region."""
+    left, right = tuple(insets or (0.0, 0.0))
+    left, right = max(0.0, float(left or 0.0)), max(0.0, float(right or 0.0))
+    if left + right >= region_w:
+        return (0.0, 0.0)
+    return (left, right)
+
+
+def _base_x(region_w, w, insets):
+    left, right = insets
+    return left + (region_w - left - right - w) / 2
+
+
+def _fit_width(w, span_w, scale):
+    """Narrow a box the span cannot hold with its margins: drop the margins first, then shrink to MIN_PILL_WIDTH."""
+    if w <= span_w - 2 * MARGIN * scale:
+        return w
+    return max(MIN_PILL_WIDTH * scale, min(w, span_w))
+
+
+def clamp_width(width, region_w, scale=1.0, expanded=True, insets=(0.0, 0.0)):
+    """A card or pill width that fits the span the side regions leave uncovered: never narrower than the minimum,
+    never wider than that span minus margins."""
     s = float(scale or 1.0)
+    left, right = _normalize_insets(region_w, insets)
     margin = MARGIN * s
     minimum = (MIN_CARD_WIDTH if expanded else MIN_PILL_WIDTH) * s
-    maximum = max(minimum, region_w - 2 * margin)
+    maximum = max(minimum, region_w - left - right - 2 * margin)
     return _clamp(float(width), minimum, maximum)
 
 
-def clamp_offset(offset, size, region_w, region_h, scale=1.0):
-    """Keep at least MIN_VISIBLE px of a `size`-wide/high box inside the region, given its default bottom-centre position."""
+def clamp_offset(offset, size, region_w, region_h, scale=1.0, insets=(0.0, 0.0)):
+    """Clamp a move of a `size`-wide/high box from its default bottom-centre spot in the uncovered span.
+
+    At least MIN_VISIBLE px stay inside a bare region edge. A side region (toolbar, sidebar) drawn over this one is a
+    hard edge instead: the box never slides under it, so the controls next to it stay clickable."""
     s = float(scale or 1.0)
     w, h = size
-    margin = MARGIN * s
+    insets = _normalize_insets(region_w, insets)
+    left, right = insets
     keep = MIN_VISIBLE * s
-    base_x, base_y = (region_w - w) / 2, margin
+    base_x, base_y = _base_x(region_w, w, insets), MARGIN * s
+    lo = left if left > 0 else keep - w
+    hi = region_w - right - w if right > 0 else region_w - keep
     ox, oy = offset
-    x = _clamp(base_x + ox, keep - w, region_w - keep)
+    x = _clamp(base_x + ox, lo, hi)
     y = _clamp(base_y + oy, keep - h, region_h - keep)
     return (x - base_x, y - base_y)
 
 
-def pill_placement(region_w, region_h, expanded, scale=1.0, offset=(0.0, 0.0), width=None):
+def pill_placement(
+    region_w, region_h, expanded, scale=1.0, offset=(0.0, 0.0), width=None, insets=(0.0, 0.0)
+):
     """Geometry of the composer. `offset` moves it from its default bottom-centre spot (region pixels), `width`
-    overrides the card (expanded) or pill (collapsed) width; both are clamped so the composer stays reachable."""
+    overrides the card (expanded) or pill (collapsed) width. `insets` are the (left, right) widths of side regions
+    drawn over this one (toolbar and sidebar with region overlap): the composer centres in the span between them,
+    and both overrides are clamped so it stays reachable and clear of them."""
     s = float(scale or 1.0)
     margin = MARGIN * s
+    insets = _normalize_insets(region_w, insets)
+    span_w = region_w - insets[0] - insets[1]
     offset = tuple(offset or (0.0, 0.0))
     if not expanded:
-        w = clamp_width(width if width else PILL_WIDTH * s, region_w, s, expanded=False)
-        w = min(w, max(MIN_PILL_WIDTH * s, region_w - 2 * margin))
+        w = clamp_width(width if width else PILL_WIDTH * s, region_w, s, False, insets)
+        w = _fit_width(w, span_w, s)
         h = PILL_HEIGHT * s
-        ox, oy = clamp_offset(offset, (w, h), region_w, region_h, s)
-        return Layout(False, s, Rect((region_w - w) / 2 + ox, margin + oy, w, h))
-    w = clamp_width(width if width else CARD_WIDTH * s, region_w, s, expanded=True)
-    w = min(w, max(MIN_CARD_WIDTH * s, region_w - 2 * margin))
+        base = (_base_x(region_w, w, insets), margin)
+        ox, oy = clamp_offset(offset, (w, h), region_w, region_h, s, insets)
+        rect = Rect(base[0] + ox, base[1] + oy, w, h)
+        return Layout(False, s, rect, base=base, insets=insets)
+    w = clamp_width(width if width else CARD_WIDTH * s, region_w, s, True, insets)
+    w = _fit_width(w, span_w, s)
     h = min(CARD_HEIGHT * s, region_h - 2 * margin)
-    ox, oy = clamp_offset(offset, (w, h), region_w, region_h, s)
-    x, y = (region_w - w) / 2 + ox, margin + oy
+    base = (_base_x(region_w, w, insets), margin)
+    ox, oy = clamp_offset(offset, (w, h), region_w, region_h, s, insets)
+    x, y = base[0] + ox, base[1] + oy
     card = Rect(x, y, w, h)
     pad, gap = PAD * s, ROW_GAP * s
     tab_h = TAB_HEIGHT * s
@@ -478,4 +524,6 @@ def pill_placement(region_w, region_h, expanded, scale=1.0, offset=(0.0, 0.0), w
         collapse,
         settings,
         resize,
+        base=base,
+        insets=insets,
     )

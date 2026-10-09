@@ -9,17 +9,9 @@ from .. import panels, runtime
 
 
 def _layout(context, state):
-    from .draw import ui_scale
+    from .draw import composer_layout
 
-    region = context.region
-    return cl.pill_placement(
-        region.width,
-        region.height,
-        state.expanded,
-        ui_scale(context),
-        offset=state.offset,
-        width=state.width if state.expanded else None,
-    )
+    return composer_layout(context, state)
 
 
 def _redraw(context):
@@ -107,7 +99,8 @@ class SCENARIO_OT_composer_modal(bpy.types.Operator):
         start = state.drag_start
         dx = event.mouse_region_x - start["mouse"][0]
         dy = event.mouse_region_y - start["mouse"][1]
-        scale = _layout(context, state).scale
+        layout = _layout(context, state)
+        scale = layout.scale
         if state.drag_mode == "pending":
             if abs(dx) < cl.DRAG_THRESHOLD * scale and abs(dy) < cl.DRAG_THRESHOLD * scale:
                 return
@@ -118,19 +111,20 @@ class SCENARIO_OT_composer_modal(bpy.types.Operator):
         if state.drag_mode == "move":
             state.offset = (start["offset"][0] + dx, start["offset"][1] + dy)
         elif state.drag_mode == "resize":
-            base = start["width"] or cl.CARD_WIDTH * scale
-            state.width = cl.clamp_width(base + dx, region.width, scale, expanded=True)
+            # grow from the width the uncovered span allows, and never under the toolbar or sidebar
+            insets = layout.insets
+            base = cl.clamp_width(
+                start["width"] or cl.CARD_WIDTH * scale, region.width, scale, True, insets
+            )
+            state.width = cl.clamp_width(base + dx, region.width, scale, True, insets)
         _redraw(context)
 
     def _drag_release(self, context, state, scene):
         kind, mode, moved = state.end_drag()
         _cursor(context, None)
         if mode in ("move", "resize") and moved:
-            # keep the placement inside the region as the layout clamps it, then remember it
-            layout = _layout(context, state)
-            base_x = (context.region.width - layout.pill_rect.w) / 2
-            base_y = cl.MARGIN * layout.scale
-            state.offset = (layout.pill_rect.x - base_x, layout.pill_rect.y - base_y)
+            # keep the placement inside the uncovered span as the layout clamps it, then remember it
+            state.offset = _layout(context, state).offset()
             _save_layout()
         elif kind == "expand" and not moved:
             state.expanded = True

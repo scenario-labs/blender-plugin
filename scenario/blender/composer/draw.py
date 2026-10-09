@@ -88,6 +88,51 @@ def ui_scale(context):
     return prefs.system.pixel_size * prefs.view.ui_scale
 
 
+# side regions drawn over the viewport with region overlap, and the space flag that shows each
+SIDE_REGIONS = {"TOOLS": "show_region_toolbar", "UI": "show_region_ui"}
+
+
+def overlap_insets(area, region):
+    """(left, right) widths of `region` covered by the area's visible toolbar and sidebar.
+
+    With region overlap these regions are drawn over the WINDOW region; without it they sit beside it and do
+    not overlap its x-range. Each inset is measured from the edge the covering region is closer to (region.x
+    and width, so a flipped sidebar counts on the left)."""
+    if area is None or region is None:
+        return (0.0, 0.0)
+    space = getattr(getattr(area, "spaces", None), "active", None)
+    x0 = region.x
+    x1 = x0 + region.width
+    centre = (x0 + x1) / 2
+    left = right = 0.0
+    for other in area.regions:
+        flag = SIDE_REGIONS.get(other.type)
+        if flag is None or other.width <= 1 or not getattr(space, flag, True):
+            continue
+        lo, hi = max(x0, other.x), min(x1, other.x + other.width)
+        if hi <= lo:
+            continue
+        if other.x + other.width / 2 >= centre:
+            right = max(right, float(x1 - lo))
+        else:
+            left = max(left, float(hi - x0))
+    return (left, right)
+
+
+def composer_layout(context, state):
+    """Geometry of the composer in `context.region`: the one layout drawing and hit testing share."""
+    region = context.region
+    return cl.pill_placement(
+        region.width,
+        region.height,
+        state.expanded,
+        ui_scale(context),
+        offset=state.offset,
+        width=state.width if state.expanded else None,
+        insets=overlap_insets(getattr(context, "area", None), region),
+    )
+
+
 def prompt_metrics(prompt_rect, field, scale):
     """Font size, visible slice and text origin of the prompt field: shared by drawing and mouse hit testing."""
     font_px = int(12 * scale)
@@ -209,15 +254,8 @@ def draw_composer():
     state = runtime.state.composer
     if state is None:
         return
-    scale = ui_scale(context)
-    layout = cl.pill_placement(
-        region.width,
-        region.height,
-        state.expanded,
-        scale,
-        offset=state.offset,
-        width=state.width if state.expanded else None,
-    )
+    layout = composer_layout(context, state)
+    scale = layout.scale
     state.layout = layout
     lane_state = (
         state.sync_from_lane(scene)

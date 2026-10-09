@@ -204,6 +204,30 @@ Installed native tests assert the registered header preset draw call, the Studio
 line, the picker status and the Model row status. Physical placement in a desktop
 session has not been captured.
 
+## Composer placement
+
+With region overlap, Blender draws the 3D View toolbar and sidebar over the
+viewport's main region. The floating composer therefore places itself in the
+span those regions leave uncovered, not in the whole region. Each draw and each
+pointer event measures every visible toolbar or sidebar region whose x-range
+overlaps the main region, from its actual position, so a flipped sidebar counts
+on the left. Without region overlap they sit beside the viewport and change
+nothing.
+
+- The pill and card start at the bottom centre of that span.
+- A saved or resized width shrinks to the span minus margins. A span too small
+  for the minimum card drops the margins, then narrows the card down to the pill
+  minimum instead of covering the sidebar.
+- A saved or dragged offset stops at a toolbar or sidebar edge, so Generate and
+  the minus button stay clickable. A bare viewport edge keeps the earlier rule:
+  at least 40 px of a dragged composer stay visible.
+- Drawing and hit testing share one layout, so every control is drawn exactly
+  where a click reaches it.
+
+Installed tests cover these rules with synthetic overlapping regions and the
+background viewport's real regions. Physical desktop screenshots with the
+sidebar open remain a separate acceptance check under #66.
+
 ## What Blender cannot do (so we do not fake it)
 
 - Text is left, centre or right aligned, never justified.

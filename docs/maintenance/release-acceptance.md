@@ -108,9 +108,11 @@ Complete these checks on the corrected candidate before releasing:
    each claimed desktop environment; sustained candidate rendering/playback and
    audio stability. Preserve the separate accepted human media review above.
 5. Required CI enforcement (#45), protected hosted smoke acceptance (#40), and
-   explicit experimental/unavailable capability limits. Read-only checks on
-   2026-10-09 still find only `pr-title` and `commits` in required status checks,
-   and only `github-pages` among environments. No settings were changed.
+   explicit experimental/unavailable capability limits. A later read-back on
+   2026-10-09 confirms required `ci-ok`, `pr-title` and `commits`, plus the protected
+   main-only `smoke` environment. Hosted smoke execution and its explicit budget
+   still need acceptance. See the [current administration record](../MAINTAINERS.md)
+   and #45 for live merge-gate evidence. No settings were changed by this read-back.
 6. Validate the actual release-please 0.10.0 artifact, then complete the published
    checksum/provenance, extension index and native HTTPS installation checks at
    their proper release stage. This 0.9.9 candidate is not a published release.
@@ -444,8 +446,8 @@ source and ZIP identities.
 | Retained lanes | Existing image, material, GLB, video and audio outputs pass native application on the current candidate; the grayscale material failure is corrected by #340. These checks do not exercise the full approval journey. | Complete integrated native capture/upload/estimate/submission/application and retained render/edit/Film checks under #68 with explicit paid authorization where needed. |
 | Recovery and switching | Synthetic tests cover lost acknowledgement, stale quotes, scope changes and application claims. | Candidate-level UI/MCP parity, cancellation/restart races and failed download/import journeys with recorded outcomes under #65/#68. |
 | GPU, motion and audio | Human motion/audio review of the existing outputs is accepted; candidate native media insertion passes. Sustained candidate playback is unverified. | Complete native rendering/playback and sustained GPU/audio stability checks under #68; preserve the bounded human review above. |
-| Paid CI | The suite runner and protected workflow now quote all cases and enforce one aggregate cap. Explicit version-2 reference plans now stage/upload through shared durable commands before quoting. A read-only 2026-10-09 check finds no `smoke` environment; live reference-upload acceptance remains pending. | Configure #40's explicit project/budget policy, environment reviewers, private plan, recovery encryption secret and dedicated credentials; complete authorized hosted upload/generation acceptance. |
-| Required checks | Read-only main-branch rules checked on 2026-10-09 report `pr-title` and `commits` as required, plus CodeQL scanning. `ci-ok` is absent. | Complete #45's administration and negative merge-gate checks while preserving existing protections. |
+| Paid CI | The suite runner and protected workflow now quote all cases and enforce one aggregate cap. Explicit version-2 reference plans now stage/upload through shared durable commands before quoting. The 2026-10-09 read-back confirms the main-only `smoke` environment, one required reviewer and required secret names; the scheduled budget variable is unset and no hosted run is recorded. | Validate #40's private plan, credentials/scope and recovery secret without publishing their values; agree an explicit budget and complete authorized hosted upload/generation acceptance. |
+| Required checks | Read-only main-branch rules checked on 2026-10-09 require `ci-ok`, `pr-title` and `commits` from GitHub Actions, plus CodeQL and code-quality enforcement. Integrity has no bypass. | Record #45's live negative/positive merge-gate check and merge the matching administration documentation; preserve existing protections. |
 | Final release artifact | The current corrected 0.9.9 ZIP passes exact-artifact native application and synthetic update/restart on all three macOS Blender versions. | Validate release-please's exact 0.10.0 ZIP, licenses, provenance/checksum and extension index; exercise public native installation/update under #36/#68 and the release procedure. |
 
 ## Native Library validation slice
@@ -551,7 +553,7 @@ Read-only administration checks found no open **CodeQL** alerts. The six open
 code-scanning alerts were from **Scorecard**, which is advisory under the
 [maintainer baseline](../MAINTAINERS.md). Do not treat the aggregate alert count
 as six CodeQL blockers. Preserve required CodeQL/code-quality and review policies
-when adding `ci-ok`; no repository settings were changed by this audit.
+when maintaining required checks; no repository settings were changed by this audit.
 
 ## Merge and release decision
 

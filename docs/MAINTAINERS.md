@@ -40,7 +40,7 @@ repository ref patterns.
 
 | Ruleset | ID / target | Inspected rules | Bypass |
 | --- | --- | --- | --- |
-| main - integrity | `22257774`; branch `refs/heads/main` | No deletion or non-fast-forward updates; linear history; pull request with squash only and zero required approvals; extra approval for unattributed changes. Code quality severity `errors`. CodeQL security threshold `high_or_higher`, alert threshold `errors`. Required status checks `pr-title` and `commits`, both integration `15368`; strict up-to-date policy off, enforcement on creation on. | None |
+| main - integrity | `22257774`; branch `refs/heads/main` | No deletion or non-fast-forward updates; linear history; pull request with squash only and zero required approvals; extra approval for unattributed changes. Code quality severity `errors`. CodeQL security threshold `high_or_higher`, alert threshold `errors`. Required status checks `ci-ok`, `pr-title` and `commits`, all integration `15368`; strict up-to-date policy off, enforcement on creation on. | None |
 | main - review | `22257776`; branch `refs/heads/main` | Pull request with squash only; one approval, dismiss stale reviews, resolve review threads, extra approval for unattributed changes. | `RepositoryRole` `5` (repository admin), `always` |
 | versioning | `22257778`; tags `refs/tags/v*` and `refs/tags/blender-plugin-v*` | Restrict creation, updates, deletion and non-fast-forward updates. | Repository admin `5` and release App integration `4751046`, both `always` |
 | Default security | `3247630`; inherited organization repository policy | Restrict repository creation, deletion and transfer. | `OrganizationAdmin`, `always` |
@@ -53,12 +53,20 @@ bypass integrity: direct pushes, force pushes and deletion of `main` remain
 prohibited. Other contributors need the configured review approval; unattributed
 changes require an additional approval. Tag restrictions have their own bypasses.
 
-`ci-ok` exists in [CI](../.github/workflows/ci.yml), but is **not currently a
-required status check**. CodeQL enforcement is already in the integrity ruleset,
-not the review ruleset proposed in the original audit. Reconcile the remaining
-required-check decision under #45 without dropping the existing `commits`, CodeQL
-or code-quality protection. Do not replace a ruleset from a historical example;
-read its complete conditions, rules and bypass actors before an approved update.
+Read back on 2026-10-09: `ci-ok`, `pr-title` and `commits` are required
+GitHub Actions checks. The integrity ruleset has no bypass actors, including for
+the current administrator. CodeQL enforcement remains in that same ruleset,
+alongside code-quality enforcement. The separate review rule remains unchanged.
+The earlier #45 proposal placed CodeQL in the review rule and omitted `commits`;
+retain the stronger existing protections rather than replacing them with that
+historical example.
+
+Renaming `ci-ok`, `pr-title` or `commits` orphans its required check and blocks
+merges. Coordinate any rename with an administrative ruleset update and change
+this table in the same PR. Keep individual CI matrix jobs, scheduled checks and
+paid smoke outside the required status-check list; `ci-ok` aggregates the six
+ordinary CI workloads. Live negative/positive merge-gate evidence is tracked in
+[#45](https://github.com/scenario-labs/blender-plugin/issues/45).
 
 ```sh
 gh api repos/scenario-labs/blender-plugin/rulesets
@@ -217,11 +225,14 @@ policy allowing exactly the `main` branch. Its read-only admission checks use
 GitHub's [environment API](https://docs.github.com/en/rest/deployments/environments#get-an-environment)
 and [branch-policy API](https://docs.github.com/en/rest/deployments/branch-policies#list-deployment-branch-policies).
 These checks run before the protected job and again after approval. A missing or
-unreadable gate fails closed. The environment was absent at the latest inspection;
-this workflow does not create it or establish hosted acceptance.
+unreadable gate fails closed. Read back on 2026-10-09: the environment exists with
+one required reviewer and a custom branch policy allowing `main` only. All four required secret names
+below are present; their values, account scope and private plan were not read.
+The repository variable `SMOKE_MAX_TOTAL_CU` is unset, and no hosted smoke run is
+recorded. Environment configuration alone does not establish hosted acceptance.
 
-An administrator must configure a dedicated test key and its explicit intended
-scope/budget, required reviewers, the main-only branch rule and these environment
+An administrator must maintain the dedicated test key, explicitly approved
+scope/budget, required reviewers, main-only branch rule and these environment
 secrets through private input (never command arguments containing values):
 
 - `SCENARIO_TEST_API_KEY` and `SCENARIO_TEST_API_SECRET`.
@@ -292,8 +303,8 @@ These tasks retain their existing owner issues. Read back the result and update
 this guide after an authorized change; do not treat the checklist as permission
 to perform it.
 
-- [ ] Configure and validate the protected smoke environment, private plan, recovery key, test scope and budget, then run authorized hosted acceptance: #40.
-- [ ] Add/reconcile the `ci-ok` required check after verifying its reported identity; retain the existing `pr-title`, `commits`, CodeQL and code-quality rules unless an explicit reviewed decision changes them: #45.
+- [ ] Validate the configured smoke environment, private plan, recovery key and test scope; agree the budget and complete authorized hosted acceptance: #40.
+- [x] Require `ci-ok`, `pr-title` and `commits` from GitHub Actions, with no integrity bypass; preserve CodeQL/code-quality and the separate review rule. Live merge-gate verification and documentation delivery are tracked in #45.
 - [ ] Verify the first automated release, then remove the repository-admin tag bypass while retaining release App integration `4751046`, both tag patterns and all protection rules; enable immutable releases only after publication and download verification: #36.
 - [ ] Decide restricted allowed actions and require SHA pinning after workflow pins and update behavior are verified: #39.
 - [ ] Complete #56: the published handbook, homepage and manifest Website link are aligned; desktop Website-action acceptance remains. Native update publication remains #37.

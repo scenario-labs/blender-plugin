@@ -106,10 +106,12 @@ def known_progress(value):
     """
     if isinstance(value, bool) or not isinstance(value, (int, float)):
         return None
-    value = float(value)
-    if not math.isfinite(value) or not 0.0 <= value <= 1.0:
+    # Compare before converting: float() raises OverflowError for an integer
+    # too large for a float, such as a long literal in a decoded response.
+    # The comparison is also false for NaN and both infinities.
+    if not 0 <= value <= 1:
         return None
-    return value
+    return float(value)
 
 
 def progress_percent(value):

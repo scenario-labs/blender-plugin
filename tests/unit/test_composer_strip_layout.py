@@ -211,6 +211,72 @@ def test_tray_keeps_clear_of_headers_drawn_over_the_region(scale):
     assert hidden.hidden and hidden.hit(*_center(raised.card_rect)) is None
 
 
+@pytest.mark.parametrize("scale", SCALES)
+def test_tray_below_a_card_parked_under_the_headers_never_reaches_them(scale):
+    s = scale
+    region_h = 900 * s
+    spec = _spec(s, INSPECT)
+    # dragged up to its top clamp: only MIN_VISIBLE of the card stays in the region
+    parked = cl.pill_placement(2000, region_h, True, s, offset=(0.0, 1e6))
+    assert parked.card_rect.y == pytest.approx(region_h - cl.MIN_VISIBLE * s)
+    assert not cl.strip_placement(parked, 2000, region_h, spec).hidden
+    # header and tool header: the tray below the card would end 6 px (at 1x) inside them
+    headers = 52 * s
+    hidden = cl.strip_placement(parked, 2000, region_h, spec, vertical_insets=(0.0, headers))
+    assert hidden.hidden and hidden.rect is None and hidden.chip_rects == ()
+    point = _center(parked.card_rect)
+    assert cl.composer_hit(parked, hidden, *point) == parked.hit(*point)
+    # a header alone leaves room under it, so the tray stays below the card
+    header = 26 * s
+    below = cl.strip_placement(parked, 2000, region_h, spec, vertical_insets=(0.0, header))
+    assert below.rect.top == pytest.approx(parked.card_rect.y - cl.STRIP_GAP * s)
+    assert below.rect.top <= region_h - header
+
+
+@pytest.mark.parametrize("scale", SCALES)
+def test_tray_above_the_card_never_sits_inside_a_bottom_shelf(scale):
+    s = scale
+    region_w, region_h = 1600 * s, 900 * s
+    spec = _spec(s, INSPECT)
+    layout = cl.pill_placement(region_w, region_h, True, s)
+    card = layout.card_rect
+    assert card.y == pytest.approx(cl.MARGIN * s)
+    # a shelf taller than the card: above it the tray would lie wholly inside the shelf
+    shelf = cl.strip_placement(layout, region_w, region_h, spec, vertical_insets=(200 * s, 0.0))
+    assert shelf.hidden and shelf.rect is None
+    edge = card.top + cl.STRIP_GAP * s  # a shelf ending exactly where the tray starts
+    flush = cl.strip_placement(layout, region_w, region_h, spec, vertical_insets=(edge, 0.0))
+    assert not flush.hidden and flush.rect.y == edge
+    over = cl.strip_placement(layout, region_w, region_h, spec, vertical_insets=(edge + 1, 0.0))
+    assert over.hidden
+
+
+@pytest.mark.parametrize("scale", SCALES)
+def test_a_shown_tray_always_lies_between_both_vertical_insets(scale):
+    s = scale
+    region_w, region_h = 2000, 900 * s
+    spec = _spec(s, ("apply", "Apply... (2)"), INSPECT)
+    pairs = [(0.0, 0.0), (0.0, 26 * s), (0.0, 52 * s), (26 * s, 52 * s), (120 * s, 26 * s)]
+    pairs += [(200 * s, 0.0), (200 * s, 52 * s), (300 * s, 300 * s)]
+    shown = hidden = 0
+    for dy in range(-1000, 1001, 7):
+        layout = cl.pill_placement(region_w, region_h, True, s, offset=(0.0, dy * s))
+        card = layout.card_rect
+        for bottom, top in pairs:
+            strip = cl.strip_placement(
+                layout, region_w, region_h, spec, vertical_insets=(bottom, top)
+            )
+            if strip.hidden:
+                hidden += 1
+                continue
+            shown += 1
+            assert strip.rect.y >= bottom and strip.rect.top <= region_h - top
+            assert strip.rect.y >= card.top or strip.rect.top <= card.y  # never over the card
+            for rect in _rects(strip):
+                assert _inside(rect, strip.rect)
+    assert shown and hidden  # the grid reaches both outcomes
+
+
 def test_hit_precedence_strip_first_and_card_hits_unchanged():
     layout = cl.pill_placement(1600, 900, expanded=True)
     strip = cl.strip_placement(

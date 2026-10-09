@@ -152,7 +152,23 @@ def test_a_submitting_record_without_a_live_send_reads_unconfirmed():
 
 
 @pytest.mark.parametrize(
-    "value", [None, True, False, "0.5", [0.5], float("nan"), float("inf"), -0.01, 1.01]
+    "value",
+    [
+        None,
+        True,
+        False,
+        "0.5",
+        [0.5],
+        float("nan"),
+        float("inf"),
+        float("-inf"),
+        -0.01,
+        1.01,
+        2,
+        # too large for a float: still unknown, never an OverflowError
+        pytest.param(10**400, id="int-too-large-for-float"),
+        pytest.param(-(10**400), id="negative-int-too-large-for-float"),
+    ],
 )
 def test_unknown_progress_is_indeterminate_never_zero(value):
     assert js.known_progress(value) is None and js.progress_percent(value) is None
@@ -162,6 +178,7 @@ def test_unknown_progress_is_indeterminate_never_zero(value):
 
 def test_percent_appears_only_from_one_to_ninety_nine():
     assert js.known_progress(0) == 0.0 and js.progress_percent(0) is None
+    assert js.known_progress(1) == 1.0 and isinstance(js.known_progress(1), float)
     assert js.progress_percent(0.004) is None
     assert js.progress_percent(0.01) == 1
     assert js.progress_percent(0.29) == 29  # not floored to 28 by binary rounding

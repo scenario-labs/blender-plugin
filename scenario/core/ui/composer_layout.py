@@ -315,8 +315,8 @@ def _edge_insets(extent, insets):
 def strip_placement(layout, region_w, region_h, spec, insets=None, vertical_insets=(0.0, 0.0)):
     """Place the job strip for a composer `layout` returned by pill_placement.
 
-    Expanded, the tray sits above the card when it fits below the region top, else below the card,
-    else it is hidden; the card's own controls never move.
+    Expanded, the tray sits above the card when it fits in the region, else below the card when it
+    fits there, else it is hidden; the card's own controls never move.
 
     `insets` are the (left, right) widths of side regions (toolbar, sidebar) drawn over this one
     with region overlap. Callers pass the normalized insets the composer placement laid `layout`
@@ -324,8 +324,8 @@ def strip_placement(layout, region_w, region_h, spec, insets=None, vertical_inse
     hit and the tray cannot drift apart. The tray stays in the span they leave uncovered, narrowing
     to it when the card is wider. `vertical_insets` are the (bottom, top) heights of regions drawn
     over this one along those edges (header, tool header, asset shelf). Blender sends clicks there
-    to those regions, so the tray goes above the card only below the top one, and below the card
-    only above the bottom one. Either pair is ignored when it leaves no room.
+    to those regions, so either position counts only when the whole tray lies above the bottom one
+    and below the top one. Either pair is ignored when it leaves no room.
 
     Chips are right-aligned before the dismiss box. While the status text would be narrower than
     STRIP_MIN_TEXT, chips other than INSPECT_CHIP are dropped, last listed first. A tray that still
@@ -343,10 +343,11 @@ def strip_placement(layout, region_w, region_h, spec, insets=None, vertical_inse
     w = min(card.w, span_hi - span_lo)
     h, gap, pad = STRIP_HEIGHT * s, STRIP_GAP * s, STRIP_PAD * s
     dot, dismiss, inset = STRIP_DOT * s, DISMISS_SIZE * s, CHIP_INSET * s
-    if card.top + gap + h <= region_h - top:
-        y = card.top + gap
-    elif card.y - gap - h >= bottom:
-        y = card.y - gap - h
+    # Each candidate must lie wholly between both vertical insets: a card dragged under a header
+    # can put the tray below it inside the header, and a tall shelf can cover a tray above it.
+    for y in (card.top + gap, card.y - gap - h):
+        if bottom <= y and y + h <= region_h - top:
+            break
     else:
         return StripLayout(True)
     chips = [(str(key), max(0.0, float(width))) for key, width in spec.chips]

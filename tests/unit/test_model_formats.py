@@ -29,7 +29,7 @@ def member(asset_id, media, size=1000, role=None, kind=None, parent=None):
     return PackageMember(asset_id, media, size, role, kind, parent)
 
 
-def meshy_job():
+def derived_obj_package_job():
     """GLB root output, derived OBJ child, MTL and maps under the OBJ."""
     return [
         member("asset_glb", "model/gltf-binary", kind="txt23d", parent="asset_input"),
@@ -105,7 +105,7 @@ def test_companions_and_images_are_not_formats_or_unsupported_models():
 
 
 def test_lineage_binds_obj_material_and_maps_and_puts_the_root_output_first():
-    plan = classify_packages(meshy_job())
+    plan = classify_packages(derived_obj_package_job())
     assert plan.lineage
     glb, obj = plan.units
     assert (glb.key, glb.primary, glb.main, glb.format, glb.kind) == (
@@ -167,7 +167,7 @@ def test_parent_links_separate_several_obj_packages_in_one_job():
 
 
 def test_ambiguous_maps_and_materials_stay_saved_and_are_reported():
-    job = meshy_job() + [
+    job = derived_obj_package_job() + [
         member("asset_alb2", "image/png", role="base", kind="texture", parent="asset_obj"),
         member("asset_ao", "image/png", role="ao", kind="texture-ao", parent="asset_obj"),
         member("asset_misc", "image/png", kind="3d23d-texture", parent="asset_obj"),
@@ -180,7 +180,7 @@ def test_ambiguous_maps_and_materials_stay_saved_and_are_reported():
         "asset_ao": mf.UNBOUND,
         "asset_misc": mf.UNBOUND,
     }
-    job = meshy_job() + [
+    job = derived_obj_package_job() + [
         member("asset_mtl2", "model/mtl", kind="3d-texture-mtl", parent="asset_obj")
     ]
     plan = classify_packages(job)
@@ -194,7 +194,9 @@ def test_ambiguous_maps_and_materials_stay_saved_and_are_reported():
 
 
 def test_a_model_child_of_the_material_is_its_own_unit_not_an_unbound_companion():
-    job = meshy_job() + [member("asset_glb2", "model/glb", kind="3d23d", parent="asset_mtl")]
+    job = derived_obj_package_job() + [
+        member("asset_glb2", "model/glb", kind="3d23d", parent="asset_mtl")
+    ]
     plan = classify_packages(job)
     assert [u.key for u in plan.units] == ["asset_glb", "asset_glb2", "asset_obj"]
     assert len(plan.unit("asset_obj").textures) == 4 and plan.findings == ()
@@ -211,6 +213,29 @@ def test_material_without_an_obj_parent_is_reported_unbound():
     assert plan.findings == (mf.Finding("asset_mtl", mf.UNBOUND),)
 
 
+def test_lineage_reports_files_under_a_skipped_model_or_a_glb_as_unbound():
+    job = derived_obj_package_job()
+    job[1] = member("asset_obj", "model/obj", 300 * MiB, kind="txt23d", parent="asset_glb")
+    job += [
+        member("asset_obj2", "model/obj", kind="txt23d", parent="asset_glb"),
+        member("asset_mtl_alb", "image/png", role="albedo", kind="texture", parent="asset_mtl"),
+        member("asset_glb_alb", "image/png", role="albedo", kind="texture", parent="asset_glb"),
+    ]
+    plan = classify_packages(job)
+    assert [u.key for u in plan.units] == ["asset_glb", "asset_obj2"]
+    # With lineage a material is never ambiguous between packages; it is unbound.
+    assert {f.asset_id: f.reason for f in plan.findings} == {
+        "asset_obj": mf.TOO_LARGE,
+        "asset_mtl": mf.UNBOUND,
+        "asset_alb": mf.UNBOUND,
+        "asset_nrm": mf.UNBOUND,
+        "asset_rgh": mf.UNBOUND,
+        "asset_met": mf.UNBOUND,
+        "asset_mtl_alb": mf.UNBOUND,
+        "asset_glb_alb": mf.UNBOUND,
+    }
+
+
 def legacy(members):
     return [
         PackageMember(m.asset_id, m.media_type, m.size, m.texture_role, None, None) for m in members
@@ -218,7 +243,7 @@ def legacy(members):
 
 
 def test_legacy_manifest_binds_only_a_sole_obj_package():
-    plan = classify_packages(legacy(meshy_job()))
+    plan = classify_packages(legacy(derived_obj_package_job()))
     assert not plan.lineage
     glb, obj = plan.units
     assert glb.primary and not glb.main and not obj.main
@@ -227,7 +252,7 @@ def test_legacy_manifest_binds_only_a_sole_obj_package():
 
 
 def test_legacy_manifest_with_several_obj_files_binds_nothing():
-    job = legacy(meshy_job()) + [member("asset_obj2", "model/obj")]
+    job = legacy(derived_obj_package_job()) + [member("asset_obj2", "model/obj")]
     plan = classify_packages(job)
     assert [(u.key, u.material, u.binding) for u in plan.units] == [
         ("asset_glb", None, mf.BINDING_SINGLE),
@@ -276,7 +301,7 @@ def test_an_oversized_peer_still_prevents_sole_package_binding():
 
 
 def test_partial_lineage_is_ignored_rather_than_mixed():
-    job = meshy_job()
+    job = derived_obj_package_job()
     job[3] = PackageMember("asset_alb", "image/png", 1000, "albedo", None, "asset_obj")
     plan = classify_packages(job)
     assert not plan.lineage and not plan.primary.main
@@ -383,14 +408,14 @@ def test_size_bounds_reject_files_and_packages_before_import():
         mf.Finding("asset_big", mf.TOO_LARGE),
         mf.Finding("asset_gltf", mf.TOO_LARGE),
     )
-    job = meshy_job()
+    job = derived_obj_package_job()
     job[2] = member(
         "asset_mtl", "model/mtl", 4 * MiB + 1, kind="3d-texture-mtl", parent="asset_obj"
     )
     plan = classify_packages(job)
     assert plan.unit("asset_obj").material is None
     assert {f.asset_id: f.reason for f in plan.findings}["asset_mtl"] == mf.TOO_LARGE
-    job = meshy_job()
+    job = derived_obj_package_job()
     job[1] = member("asset_obj", "model/obj", 200 * MiB, kind="txt23d", parent="asset_glb")
     job[3] = member("asset_alb", "image/png", 200 * MiB, "albedo", "3d-texture-albedo", "asset_obj")
     job[4] = member("asset_nrm", "image/png", 200 * MiB, "normal", "3d-texture-normal", "asset_obj")
@@ -415,17 +440,21 @@ def test_gltf_resources_are_candidates_bound_later_by_reference():
         member("asset_other", "image/png", kind="texture", parent="asset_input"),
         member("asset_doc", "text/plain", kind="txt2txt", parent="asset_gltf"),
     ]
-    unit = classify_packages(job).primary
+    plan = classify_packages(job)
+    unit = plan.primary
     assert unit.binding == mf.BINDING_PARENT
     assert unit.resources == ("asset_bin", "asset_tex")
     assert unit.files == (("asset_gltf", "model.gltf"),)
-    unit = classify_packages(legacy(job)).primary
-    assert unit.binding == mf.BINDING_SOLE_PACKAGE
-    assert unit.resources == ("asset_bin", "asset_tex", "asset_other")
+    # Candidate resources are not findings; another child of the glTF is unbound.
+    assert plan.findings == (mf.Finding("asset_doc", mf.UNBOUND),)
+    plan = classify_packages(legacy(job))
+    assert plan.primary.binding == mf.BINDING_SOLE_PACKAGE
+    assert plan.primary.resources == ("asset_bin", "asset_tex", "asset_other")
+    assert plan.findings == ()
 
 
 def test_gltf_resources_exclude_maps_bound_to_an_obj():
-    job = legacy(meshy_job()) + [
+    job = legacy(derived_obj_package_job()) + [
         member("asset_gltf", "model/gltf+json"),
         member("asset_bin", "application/octet-stream"),
     ]
@@ -478,7 +507,7 @@ def test_manifest_shape_is_bounded_and_unique():
 
 
 def test_classification_is_deterministic_for_the_same_manifest():
-    job = meshy_job()
+    job = derived_obj_package_job()
     assert classify_packages(job) == classify_packages(tuple(job))
     shuffled = job[:]
     random.Random(7).shuffle(shuffled)
@@ -590,6 +619,8 @@ def test_ply_header_lines_split_only_at_line_feeds(separator):
         b"obj\n",
         ply(extra="element vertex 2|property float x"),
         ply(extra="element face 0|element face 1"),
+        ply(properties=[*SPLAT_PROPERTIES, "x"]),
+        ply(extra="element face 0|property list uchar int i|property list uchar int i"),
         ply().replace(b"element vertex 3", b"element vertex 3\x0c"),
         ply().replace(b"element vertex 3", b"element\x1cvertex 3"),
         ply().replace(b"end_header", b"end_head"),

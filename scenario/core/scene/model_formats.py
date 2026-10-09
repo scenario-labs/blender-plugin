@@ -383,7 +383,7 @@ class _Classifier:
                     ),
                 )
             )
-        self.report_leftovers(objs, claimed)
+        self.report_leftovers(objs, claimed, {r for _, f in units for r in f["resources"]})
         units.sort(key=lambda entry: entry[0])
         return PackagePlan(
             tuple(
@@ -399,13 +399,31 @@ class _Classifier:
             self.lineage,
         )
 
-    def report_leftovers(self, objs, claimed):
+    def report_leftovers(self, objs, claimed, resources):
+        """Report files no unit binds: every MTL, maps beside several legacy OBJs and,
+        with lineage, any other file under a model or an MTL, skipped ones included.
+
+        A glTF unit's candidate resources are bound later by reference.
+        """
+        parents = {
+            m.asset_id
+            for m in self.members
+            if model_format(m.media_type) is not None or m.media_type in MATERIAL_MEDIA_TYPES
+        }
         for member in self.members:
-            if member.asset_id in claimed or member.asset_id in self.findings:
+            if (
+                member.asset_id in claimed
+                or member.asset_id in self.findings
+                or model_format(member.media_type) is not None
+            ):
                 continue
             if member.media_type in MATERIAL_MEDIA_TYPES:
-                self.report(member, AMBIGUOUS_PACKAGE if len(objs) > 1 else UNBOUND)
-            elif not self.lineage and len(objs) > 1 and _texture_slot(member) is not None:
+                ambiguous = not self.lineage and len(objs) > 1
+                self.report(member, AMBIGUOUS_PACKAGE if ambiguous else UNBOUND)
+            elif self.lineage:
+                if member.parent_id in parents and member.asset_id not in resources:
+                    self.report(member, UNBOUND)
+            elif len(objs) > 1 and _texture_slot(member) is not None:
                 self.report(member, AMBIGUOUS_PACKAGE)
 
 
@@ -519,7 +537,7 @@ def inspect_ply_header(data, *, size=None):
     The splat route needs binary little-endian float32 x, y, z, f_dc_0..2, opacity
     and scale_0..2 scalar vertex properties, no face data and, when ``size`` is
     known, an exact body length. Any other well-formed header is a mesh PLY. Lines
-    end at LF only and element names must be unique.
+    end at LF only; element names, and property names within an element, are unique.
     """
     data = bytes(data[:MAX_PLY_HEADER_BYTES])
     if not data.startswith((b"ply\n", b"ply\r\n")):
@@ -551,6 +569,9 @@ def inspect_ply_header(data, *, size=None):
                     raise ValueError
                 elements.append((words[1], int(words[2]), []))
             elif words[0] == "property" and elements and len(elements[-1][2]) < 256:
+                # One property per name, so a column decoder reads the declared layout.
+                if any(name == words[-1] for name, _ in elements[-1][2]):
+                    raise ValueError
                 if len(words) == 3 and words[1] in _PLY_TYPES:
                     elements[-1][2].append((words[2], words[1]))
                 elif (

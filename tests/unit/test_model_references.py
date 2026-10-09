@@ -209,6 +209,27 @@ def test_options_keep_only_numeric_scale_offset_and_bump_strength():
 
 
 @pytest.mark.parametrize(
+    ("options", "kept"),
+    [
+        (b"-s 1_0", b""),
+        (b"-bm 1e5_0", b""),
+        (b"-o 1_0 0 0", b""),
+        (b"-s 1 1_0", b"-s 1 "),
+        (b"-s 0x1", b""),
+        (b"-s 1e", b""),
+        (b"-s 1.5e+", b""),
+        (b"-s \xd9\xa1", b""),
+        (b"-o 1. .5 -.5 -s +.5 1E-3 007", b"-o 1. .5 -.5 -s +.5 1E-3 007 "),
+    ],
+)
+def test_option_values_are_plain_decimal_numbers(options, kept):
+    # Blender rejects a value such as 1_0, which Python's float() accepts, and then
+    # reads it as part of the file name.
+    result = mtl(b"newmtl M\nmap_Kd " + options + b" provider/x.png\n")
+    assert result.data == b"newmtl M\nmap_Kd " + kept + b"texture-albedo.png\n"
+
+
+@pytest.mark.parametrize(
     "line",
     [
         b"map_Ks spec.png",
@@ -399,6 +420,30 @@ def test_an_external_buffer_binds_by_unique_size_when_its_name_is_not_an_asset()
     twin = PackageMember("asset_twin", "application/octet-stream", len(binary))
     with pytest.raises(ModelPackageError, match="not part of the saved package"):
         inspect_gltf_json(encode(document), resources=resources(binary, twin))
+
+
+def test_an_image_never_binds_through_a_buffer_uri():
+    document, binary = external(image_uri="asset_buffer.bin")
+    with pytest.raises(ModelPackageError, match="not part of the saved package"):
+        inspect_gltf_json(encode(document), resources=resources(binary))
+    # The same URI still binds the image member when one exists with that stem.
+    image = PackageMember("asset_shared", "image/png", 70)
+    buffer = PackageMember("asset_shared_bin", "application/octet-stream", len(binary))
+    document, _ = external(buffer_uri="asset_shared.png", image_uri="asset_shared.png")
+    result = inspect_gltf_json(encode(document), resources=(buffer, image))
+    assert result.files == (("buffer-0.bin", "asset_shared_bin"), ("image-0.png", "asset_shared"))
+
+
+def test_every_buffer_checks_its_own_length_even_for_a_repeated_uri():
+    document, binary = external()
+    document["buffers"].append({"uri": "asset_buffer.bin", "byteLength": len(binary) + 1000})
+    with pytest.raises(ModelPackageError, match="size does not match"):
+        inspect_gltf_json(encode(document), resources=resources(binary))
+    document["buffers"][1]["byteLength"] = len(binary)
+    rewritten = json.loads(
+        inspect_gltf_json(encode(document), resources=resources(binary)).document
+    )
+    assert [buffer["uri"] for buffer in rewritten["buffers"]] == ["buffer-0.bin"] * 2
 
 
 def test_data_uris_are_kept_and_checked():

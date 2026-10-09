@@ -4,12 +4,14 @@
 
 Every external reference either resolves to a member of the selected import unit
 under a canonical snapshot name or is removed (OBJ/MTL) or rejected (glTF).
-Provider names, absolute paths, traversal and URLs never reach an importer, and the
-importer's own file search never sees a name outside the snapshot. Every physical
-line is classified on its own: Blender's MTL reader has no line continuation, and
-Blender 5.0 and 5.1 can read an OBJ continuation line by itself at a read-buffer
-boundary. Functions take and return bytes or binary streams, so a worker can run
-them on verified copies.
+Provider names, absolute paths, traversal and URLs never reach an importer. The
+importer's own file search stays inside the snapshot only if the caller writes
+every canonical name passed here into the snapshot before import: Blender looks
+for a missing file elsewhere, including the process working directory. The import
+must still check the images it creates. Every physical line is classified on its
+own: Blender's MTL reader has no line continuation, and Blender 5.0 and 5.1 can
+read an OBJ continuation line by itself at a read-buffer boundary. Functions take
+and return bytes or binary streams, so a worker can run them on verified copies.
 """
 
 import base64
@@ -280,13 +282,14 @@ _OPTION_ARITY = {
 }
 _KEPT_OPTIONS = frozenset({b"-bm", b"-o", b"-s"})
 _WORD_OPTIONS = frozenset({b"-clamp", b"-blendu", b"-blendv", b"-cc", b"-imfchan", b"-type"})
+# Plain ASCII decimal notation only. Blender keeps an option value only when the
+# whole token is one number; it rejects forms Python's float() accepts, such as
+# digit-group underscores, and then reads the token as part of the file name.
+_NUMBER = re.compile(rb"[+-]?(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)(?:[eE][+-]?[0-9]+)?")
 
 
 def _number(token):
-    try:
-        return math.isfinite(float(token.decode("ascii")))
-    except (UnicodeDecodeError, ValueError):
-        return False
+    return _NUMBER.fullmatch(token) is not None and math.isfinite(float(token))
 
 
 def _map_statement(statement):
@@ -480,9 +483,7 @@ class _Resources:
             raise ValueError("Use package members as glTF resources")
         self.by_uri, self.names, self.counts = {}, {}, {"buffer": 0, "image": 0}
 
-    def bind(self, uri, kind, byte_length=None):
-        if uri in self.by_uri:
-            return self.by_uri[uri]
+    def _match(self, uri, kind, byte_length):
         stem = _relative_stem(uri)
         if stem is None:
             raise ModelPackageError("glTF references a path or URL outside the saved package")
@@ -494,7 +495,13 @@ class _Resources:
             matches = [m for m in candidates if m.size == byte_length and m.asset_id not in bound]
         if len(matches) != 1:
             raise ModelPackageError("glTF references a file that is not part of the saved package")
-        member = matches[0]
+        return matches[0]
+
+    def bind(self, uri, kind, byte_length=None):
+        # Keyed by kind and URI, and every buffer checks its own length, so a repeated
+        # URI never skips the media type or size check of the entry that binds it.
+        key = (kind, uri)
+        member = self.by_uri[key] if key in self.by_uri else self._match(uri, kind, byte_length)
         if member.size is None or member.size > MAX_MEMBER_BYTES:
             raise ModelPackageError("glTF resource size is unknown or exceeds the import limit")
         if kind == "buffer" and member.size != byte_length:
@@ -506,7 +513,7 @@ class _Resources:
             self.counts[kind] += 1
             suffix = "bin" if kind == "buffer" else TEXTURE_EXTENSIONS[member.media_type]
             self.names[member] = f"{kind}-{number}.{suffix}"
-        self.by_uri[uri] = self.names[member]
+        self.by_uri[key] = member
         return self.names[member]
 
 

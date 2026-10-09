@@ -211,34 +211,38 @@ With lineage, an OBJ binds its single MTL child and one map per slot (albedo or
 base, normal, roughness, metallic) among the OBJ's or that MTL's children, so
 several OBJ packages in one job stay separate. A model file among those children is
 its own unit, never a companion. Without lineage, an OBJ or glTF binds companions
-only when it is the job's only file of that format, oversized ones included.
-Several MTLs, several maps for one slot, maps without a material, unsupported
-formats and oversized files remain saved and are reported with stable reason codes,
-as are lineage children with other roles; nothing is guessed. With lineage,
-generated root outputs sort first: a `metadata.type` of `img23d`, `txt23d`, `3d23d`,
-`video23d` or `img2splat` whose parent is not in the job. Then GLB, glTF, FBX, OBJ,
-mesh PLY, SPZ, splat or unclassified PLY and `.splat` follow. Ties prefer more bound
-companions, then the larger file, then manifest order. The first unit is primary
-and the others are alternates for explicit selection. `inspect_ply_header` treats a
-binary little-endian PLY with float `x`, `y`, `z`, `f_dc_0..2`, `opacity` and
-`scale_0..2` vertex data, no faces and, when known, an exact body size as a
-Gaussian splat; other well-formed PLYs are meshes. Header lines end at LF only,
-structural lines are printable ASCII and element names are unique. Limits are
-256 MiB per file, 512 MiB per package, 4 MiB per MTL, 8 MiB of glTF JSON and
-64 KiB of PLY header.
+only when it is the job's only file of that format, oversized ones included. Several
+MTLs, several maps for one slot, maps without a material, unsupported formats and
+oversized files remain saved and are reported with stable reason codes; nothing is
+guessed. With lineage, any other file under a model or an MTL that no unit binds is
+reported as `unbound`, including files under a skipped model, whose own finding
+gives the cause; a glTF unit's candidate resources are bound later by reference.
+With lineage, generated root outputs sort first: a `metadata.type` of `img23d`,
+`txt23d`, `3d23d`, `video23d` or `img2splat` whose parent is not in the job. Then
+GLB, glTF, FBX, OBJ, mesh PLY, SPZ, splat or unclassified PLY and `.splat` follow.
+Ties prefer more bound companions, then the larger file, then manifest order. The
+first unit is primary and the others are alternates for explicit selection.
+`inspect_ply_header` treats a binary little-endian PLY with float `x`, `y`, `z`,
+`f_dc_0..2`, `opacity` and `scale_0..2` vertex data, no faces and, when known, an
+exact body size as a Gaussian splat; other well-formed PLYs are meshes. Header lines
+end at LF only, structural lines are printable ASCII, element names are unique and
+property names are unique within an element. Limits are 256 MiB per file, 512 MiB
+per package, 4 MiB per MTL, 8 MiB of glTF JSON and 64 KiB of PLY header.
 
 [`model_references`](../scenario/core/scene/model_references.py) plans the private
 snapshot. Each unit lists canonical file names such as `model.obj`, `material.mtl`
 and `texture-albedo.png`. `rewrite_obj` streams an OBJ, points its first `mtllib` at
 the bound material and removes other libraries and file-reading statements.
 `rewrite_mtl` points `map_Kd`, `map_Pm`, `map_Pr` and `map_Bump`/`bump`/`norm` at
-bound textures, keeps only numeric `-o`, `-s` and `-bm` options and drops every
-other map, `refl`, `disp` and `decal` statement, including maps whose files are not
-part of the saved package. A slot whose materials name different files is dropped
-rather than shared. Original names, absolute paths, traversal and URLs never reach
-the output. Reports keep the line, a fixed keyword and the reason, never the
-reference: an unknown keyword reports only its matched prefix, such as `map_`,
-because a reference can be glued to it.
+bound textures, keeps only `-o`, `-s` and `-bm` options whose values are plain ASCII
+decimal numbers and drops every other map, `refl`, `disp` and `decal` statement,
+including maps whose files are not part of the saved package. Blender reads a value
+such as `1_0` as part of the file name, so any other value ends option parsing and
+the option is dropped. A slot whose materials name different files is dropped rather
+than shared. Original names, absolute paths, traversal and URLs never reach the
+output. Reports keep the line, a fixed keyword and the reason, never the reference:
+an unknown keyword reports only its matched prefix, such as `map_`, because a
+reference can be glued to it.
 
 Text must use LF or CRLF endings without NUL bytes, and every physical line is
 classified on its own. Blender's MTL reader has no line continuation, so a trailing
@@ -246,25 +250,30 @@ backslash never hides the next MTL line from the rewrite. An OBJ statement conti
 after a backslash and optional whitespace, as Blender reads it. A continued OBJ
 statement is rejected when any of its physical lines starts with a file-reading
 keyword, because Blender 5.0 and 5.1 can read a continuation line by itself at a
-read-buffer boundary. OBJ streaming checks cancellation every 65,536 lines and
-every 4 MiB read. `inspect_gltf_json` applies the GLB document bounds and keeps
-base64 data URIs; a unit test keeps its duplicated document checks aligned with
+read-buffer boundary. OBJ streaming checks cancellation every 65,536 lines and every
+4 MiB read. `inspect_gltf_json` applies the GLB document bounds and keeps base64
+data URIs; a unit test keeps its duplicated document checks aligned with
 `inspect_glb`. It binds an external buffer by asset-ID file stem or by a unique
 exact size, and an external image only by asset-ID stem; any other URI, including
-one inside an extension, fails closed. All functions take bytes or streams, so
-integration can prepare snapshots on a worker from verified copies.
+one inside an extension, fails closed. Buffers and images bind separately, and every
+buffer's saved size must equal its own `byteLength`, also when several entries share
+a URI. All functions take bytes or streams, so integration can prepare snapshots on
+a worker from verified copies. The importer's own file search stays inside the
+snapshot only if every canonical name passed to these functions is written into the
+snapshot before import: Blender looks for a missing file elsewhere, including the
+process working directory. The import must still check the images it creates.
 
 The store does not persist lineage, and no planned store migration includes it.
 Persisting it would need two optional `ResultAsset` fields captured from the same
 `assets.retrieve` response as the manifest: `asset_type` (SDK `AssetMetadata.type`)
-and `parent_id` (`AssetMetadata.parent_id`). That follow-up is tracked in #65.
+and `parent_id` (`AssetMetadata.parent_id`). No issue tracks that follow-up yet.
 Until it lands, every stored manifest uses the stricter rules without lineage;
 `members_from_results` accepts lineage only as an explicit mapping, so parent
 binding and generated-output ordering apply only when a caller supplies it.
-Undocumented provider file names are never used. Tests cover synthetic manifests
-and files only. Provider package shapes, SPZ versions and glTF delivery need live
-evidence; import, approval, claims and status remain integration work under #65,
-and this primary/alternate ordering is not a #99 edit policy.
+Undocumented provider file names are never used. Tests cover synthetic manifests and
+files only. Provider package shapes, SPZ versions and glTF delivery need live
+evidence; import, approval, claims and status remain integration work under #65, and
+this primary/alternate ordering is not a #99 edit policy.
 
 ## Captured source and verified saved-mesh command
 

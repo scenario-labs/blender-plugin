@@ -229,12 +229,18 @@ runtime is not replaced or supplemented by a second active runtime here.
 
 `cancel_remote(request_id, expected_revision=...)` accepts only a current scoped
 `remote` record with a known ID and a model operation. A fresh `jobs.retrieve`
-observation must identify `jobType=custom` or `jobType=inference`. The sanitized
+observation must report `jobType=inference`. The public
+[job action reference](https://docs.scenario.com/api/resources/jobs/methods/trigger_action)
+and the pinned SDK 2.2.0 `jobs.trigger_action` both state "Today only cancel on
+inference jobs is supported". The SDK's retrieve enum lists `custom` and
+`workflow` as separate types, and the sanitized
 [captured model-job fixture](../tests/fixtures/patina-copper-512/job.json) uses
-`custom`; the pinned SDK 2.2.0 enum also includes `inference`. These are model-job
-categories, not a general workflow-cancellation contract. Workflow operations
-and other kinds remain unsupported. A job already observed terminal is committed
-without sending a cancellation.
+`custom`. Any other type raises `CancellationUnsupported` before the claim: the
+record keeps its state and revision, no action is sent and polling continues.
+`cancellable_job()` is the same predicate for owners deciding whether to offer
+cancellation. This is not a general workflow-cancellation contract. A job
+already observed terminal is committed without sending a cancellation. An SDK
+contract test fails if the pinned documentation of this limit changes.
 
 After eligibility checks, an atomic revision-checked store transition commits
 `remote → cancel_requested` before the SDK action. This claim serializes competing
@@ -269,7 +275,8 @@ fail closed on that record instead of silently treating it as dispatchable.
 polling interface. Deactivation before the action is claimed stops dispatch;
 once claimed, late observations stay bound to the original store. Shutdown
 joins this work before closing the SDK. General workflow cancellation, live
-service acceptance and other generation lanes remain outstanding under #65.
+service acceptance, and which generation lanes return `inference` jobs remain
+outstanding under #65.
 The Image facade now exposes these commands through shared UI/MCP saved-job
 controls; rejecting a workflow approval node is not a substitute. Captured job
 types and offline tests do not establish live cancellation acceptance.
@@ -522,7 +529,7 @@ A missing or lost receipt leaves uncertainty, never permission to retry.
 the existing bounded pool. It creates no independent thread or job owner.
 
 Known prompt job IDs can be read after restart through `refresh_remote` without
-resubmission. Only model jobs support remote cancellation. `read_prompt_results` retrieves full generated text from a known successful job,
+resubmission. Only model jobs observed as `inference` support remote cancellation. `read_prompt_results` retrieves full generated text from a known successful job,
 including text assets, without resubmission. Native and MCP prompt controls use
 the same explicit approval facade, including render look preparation from uploaded
 images. Preparing a look never submits the render itself.

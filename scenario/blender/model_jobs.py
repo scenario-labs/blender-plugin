@@ -14,6 +14,7 @@ from mathutils import Matrix
 
 from ..core.api.catalog import GENERATION_LANES, LANE_KIND
 from ..core.api.errors import ScenarioError
+from ..core.jobs.coordinator import CancellationUnsupported, RemoteSnapshot, cancellable_job
 from ..core.jobs.records import JobRecord
 from ..core.jobs.store import JobOrigin, JobState, LocalApplicationState, StoredJob, _identity
 from ..core.scene.panorama import WORLD_MEDIA_TYPES
@@ -35,6 +36,12 @@ from .mesh_result_application import validate_request as validate_mesh_request
 from .model_application import MODEL_MEDIA_TYPE
 from .model_application import validate_destination as validate_model_destination
 from .world_application import PanoramaError, WorldApplicationError
+
+# Shared by the native operator and MCP recover_local_job through control().
+CANCEL_UNSUPPORTED = (
+    "Scenario documents cancellation only for inference jobs and has not confirmed "
+    "this job as one; nothing was sent and the job keeps running"
+)
 
 
 def _snapshot(body):
@@ -173,6 +180,10 @@ class ModelJobs:
         self._materials = {}
         self._mesh_destinations = {}
         self._mesh_edits = {}
+        # request_id -> remote ID whose latest owned retrieval reported a type
+        # the API documents as cancellable. Memory only: a restarted or newly
+        # inspected job offers no cancellation until an explicit refresh.
+        self._cancellable = {}
         self.cloud_reads = {}
         self._cloud_read_owner = object()
 
@@ -402,6 +413,8 @@ class ModelJobs:
                 completion = completions[0]
                 if completion.error is not None:
                     raise completion.error
+                if command in ("refresh_remote", "cancel_remote"):
+                    self._observe_cancellation(request_id, completion.result)
                 if command == "verify_mesh_edit":
                     applied = self.session.apply_recovered_mesh(
                         completion,
@@ -513,6 +526,10 @@ class ModelJobs:
                     self._receipts[request_id] = error
                     _remember(self._images, request_id, error.images, bpy.data.images)
                 self._pause(request_id, "Image import needs receipt recovery; do not import again")
+            except CancellationUnsupported:
+                # The coordinator refused before any claim or action; the job keeps running.
+                self._cancellable.pop(request_id, None)
+                self._pause(request_id, CANCEL_UNSUPPORTED)
             except Exception:
                 self._pause(
                     request_id,
@@ -524,6 +541,8 @@ class ModelJobs:
                 raise ScenarioError(
                     0, "The saved job is unavailable; preserve storage for recovery"
                 )
+            if record.state != JobState.REMOTE:
+                self._cancellable.pop(request_id, None)
             view.job_id = record.remote_job_id
             view.status = {
                 JobState.REMOTE: "in-progress",
@@ -570,6 +589,38 @@ class ModelJobs:
     def _pause(self, request_id, message):
         self._paused.add(request_id)
         self.views[request_id].error = message
+
+    def _observe_cancellation(self, request_id, snapshot):
+        """Remember whether the latest owned retrieval confirmed a cancellable job.
+
+        Only a remote record whose snapshot repeats its known ID and reports a
+        documented cancellable type qualifies; anything else withdraws the offer.
+        """
+        self._cancellable.pop(request_id, None)
+        if not isinstance(snapshot, RemoteSnapshot):
+            return
+        record = snapshot.record
+        if (
+            record.intent.request_id != request_id
+            or record.state != JobState.REMOTE
+            or record.remote_job_id is None
+        ):
+            return
+        try:
+            response = snapshot.response
+        except ValueError:
+            return
+        if isinstance(response, dict) and response.get("jobId") == record.remote_job_id:
+            if cancellable_job(response):
+                self._cancellable[request_id] = record.remote_job_id
+
+    def _confirmed_cancellable(self, record):
+        return (
+            record.state == JobState.REMOTE
+            and record.intent.operation == "model"
+            and record.remote_job_id is not None
+            and self._cancellable.get(record.intent.request_id) == record.remote_job_id
+        )
 
     def inspect(self):
         """Attach saved display projections without resuming or applying old work."""
@@ -633,7 +684,7 @@ class ModelJobs:
             actions.append("import_images")
         if reusable and any(item.asset.media_type in MEDIA_TYPES for item in record.results):
             actions.append("import_media")
-        if state == JobState.REMOTE and record.intent.operation == "model":
+        if self._confirmed_cancellable(record):
             actions.append("cancel")
         if reusable and any(item.asset.media_type == MODEL_MEDIA_TYPE for item in record.results):
             actions.extend(("import_model", "apply_mesh"))
@@ -662,6 +713,18 @@ class ModelJobs:
     def control(self, request_id, expected_revision, action):
         """Explicit recovery never reconstructs a quote or approves another import."""
         record = self.store.get(request_id)
+        if (
+            action == "cancel"
+            and record is not None
+            and type(expected_revision) is int
+            and record.revision == expected_revision
+            and record.state == JobState.REMOTE
+            and record.intent.operation == "model"
+            and request_id not in self._commands
+            and request_id not in self.submissions
+            and not self._confirmed_cancellable(record)
+        ):
+            raise ScenarioError(0, CANCEL_UNSUPPORTED)
         if (
             type(expected_revision) is not int
             or record is None

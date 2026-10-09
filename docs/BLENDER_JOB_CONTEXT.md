@@ -371,8 +371,8 @@ cancellation does not promise remote cancellation.
 completion queue as refresh/submission. Its original origin is loaded from this
 connection's scoped store, never captured from the currently selected scene.
 The [coordinator's model-job cancellation contract](JOB_COORDINATOR.md#known-model-job-cancellation)
-still governs eligibility, the durable single-action claim and authoritative
-status polling. A canceled acknowledgement alone cannot report terminal success;
+still governs eligibility (documented `inference` jobs only), the durable
+single-action claim and authoritative status polling. A canceled acknowledgement alone cannot report terminal success;
 an uncertain response remains recoverable by refreshing the known ID without
 replaying the action. General workflow cancellation is unsupported.
 
@@ -589,6 +589,15 @@ revision. Queued commands retain their original scope.
   failed download, without authorizing automatic import.
 - `cancel` uses the coordinator's once-claimed model cancellation command and
   continues observing the known ID. The acknowledgement alone is not cancellation.
+  It is offered only for a `remote` model record whose latest refresh or cancel
+  snapshot in this owner repeated its known ID with `jobType=inference`, the only
+  type the API documents as cancellable. `ModelJobs` keeps that observation in
+  memory only, so a restarted or newly inspected job needs an explicit Refresh
+  first. Other jobs, including the captured `custom` model jobs, show no Cancel
+  button; a native or MCP cancel for them reports that Scenario documents
+  cancellation only for inference jobs, sends nothing and leaves the job running.
+  If a fresh coordinator read no longer reports `inference`, the owner withdraws
+  the offer and pauses delivery with the same message, without a claim.
 - `recover_download` verifies interrupted saved receipts under the existing lock,
   without network access or import.
 - `retry_receipt` saves an already completed image import's outcome without any

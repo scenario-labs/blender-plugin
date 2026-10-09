@@ -1,6 +1,10 @@
 # SPDX-FileCopyrightText: 2026 Scenario Inc.
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""Cancel through the actual SDK without trusting acknowledgements or replaying."""
+"""Cancel through the actual SDK without trusting acknowledgements or replaying.
+
+Only `jobType` inference is eligible: the public job-action reference and the
+pinned SDK say "Today only cancel on inference jobs is supported".
+"""
 
 import json
 import socket
@@ -14,9 +18,11 @@ import pytest
 from scenario.core.api.sdk_adapter import AdapterError, Credentials, SDKAdapter
 from scenario.core.jobs.coordinator import (
     CancellationUncertain,
+    CancellationUnsupported,
     JobCoordinator,
     RecoveryAction,
     RecoveryError,
+    cancellable_job,
 )
 from scenario.core.jobs.store import (
     JobIntent,
@@ -43,7 +49,7 @@ INTENT = JobIntent(
 
 
 def response(status="in-progress", **fields):
-    return {"jobId": "remote", "jobType": "custom", "status": status, **fields}
+    return {"jobId": "remote", "jobType": "inference", "status": status, **fields}
 
 
 @pytest.fixture(autouse=True)
@@ -150,12 +156,35 @@ def test_preflight_completion_avoids_cancel(setup, status):
     assert store.get("request") == result.record
 
 
-@pytest.mark.parametrize("kind", [None, "workflow", "training", [], "Inference"])
-def test_only_verified_inference_is_cancelable(setup, kind):
+@pytest.mark.parametrize(
+    "kind", [None, "custom", "workflow", "model-training", "upload", [], "Inference", " inference"]
+)
+def test_only_documented_inference_is_cancelable(setup, kind):
     coordinator, store, calls, record, _ = setup([response(jobType=kind)])
-    with pytest.raises(RecoveryError, match="verified model-generation"):
+    with pytest.raises(CancellationUnsupported, match="only for inference jobs; nothing was sent"):
         coordinator.cancel_remote("request", expected_revision=record.revision)
     assert store.get("request") == record and len(calls) == 1
+    assert calls[0].method == "GET"
+    # Nothing was claimed, so the same revision stays pollable and re-checkable.
+    assert coordinator.recovery_plan()[0].action == RecoveryAction.POLL_REMOTE
+
+
+def test_cancellable_job_accepts_only_the_documented_type():
+    assert issubclass(CancellationUnsupported, RecoveryError)
+    assert cancellable_job({"jobType": "inference"})
+    for value in ({"jobType": "custom"}, {"jobType": ["inference"]}, {}, None, "inference"):
+        assert not cancellable_job(value)
+
+
+def test_unsupported_type_can_still_complete_through_refresh(setup):
+    coordinator, store, calls, record, _ = setup(
+        [response(jobType="custom"), response("success", jobType="custom")]
+    )
+    with pytest.raises(CancellationUnsupported):
+        coordinator.cancel_remote("request", expected_revision=record.revision)
+    result = coordinator.refresh_remote("request", expected_revision=record.revision)
+    assert result.record.state == JobState.SUCCEEDED
+    assert [r.method for r in calls] == ["GET", "GET"]
 
 
 def test_workflows_and_lost_id_never_send_cancellation(setup):
@@ -317,7 +346,7 @@ def test_ineligible_request_never_reaches_service(setup, reason):
     assert store.get("request") == record and calls == []
 
 
-def test_captured_custom_model_record_is_eligible(setup):
+def test_captured_custom_model_record_is_never_claimed_or_sent(setup):
     from pathlib import Path
 
     captured = json.loads(
@@ -327,18 +356,15 @@ def test_captured_custom_model_record_is_eligible(setup):
     # Retain captured metadata/type, using a synthetic known ID and active phase.
     captured.update(jobId="remote", status="in-progress")
     intent = replace(INTENT, target_id=captured["metadata"]["input"]["modelId"])
-    coordinator, store, calls, record, _ = setup(
-        [captured, response(), response("canceled")], intent=intent
-    )
-    assert (
-        coordinator.cancel_remote("request", expected_revision=record.revision).record.state
-        == JobState.CANCELED
-    )
-    assert [r.method for r in calls] == ["GET", "POST", "GET"]
-    assert store.get("request").intent == intent
+    coordinator, store, calls, record, _ = setup([captured], intent=intent)
+    with pytest.raises(CancellationUnsupported):
+        coordinator.cancel_remote("request", expected_revision=record.revision)
+    # Before this rule the record became cancel_requested and the action was sent.
+    assert store.get("request") == record and record.state == JobState.REMOTE
+    assert [r.method for r in calls] == ["GET"]
 
 
-def test_sdk_inference_spelling_remains_eligible(setup):
+def test_documented_inference_job_is_claimed_once(setup):
     coordinator, _, calls, record, _ = setup(
         [response(jobType="inference"), response(), response("canceled")]
     )

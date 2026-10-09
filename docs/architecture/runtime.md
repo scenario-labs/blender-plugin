@@ -12,7 +12,7 @@ is Blender 5.0; dependency and runtime acceptance have separate gates.
 | Registration | [registry.py](../../scenario/blender/registry.py) | Registers properties, panels, operators, composer, pump and local server integration. The `scenario_blender` headless command serves local MCP on the main thread. |
 | UI lifetime and state | [runtime.py](../../scenario/blender/runtime.py) | Owns the credential-bound SDK catalog and process-wide UI/MCP state; native form quote/submission and Film task/capture/composition controls use the selected `JobSession`; local Film final assembly/export remain to integrate. |
 | UI generation | [generation.py](../../scenario/blender/generation.py) | Every native model form consumes a lane-bound session quote before durable submission; unfinished file/capture/Spark inputs block final pricing and submission. |
-| Main-thread application | [pump.py](../../scenario/blender/pump.py) | Drains SDK catalog events and maintains shared job delivery. Unbound prototype completions cannot apply results. GUI timer handling differs from headless execution. |
+| Main-thread application | [pump.py](../../scenario/blender/pump.py) | Drains SDK catalog events, maintains shared job delivery and redraws when events arrive or drawn job rows change. Unbound prototype completions cannot apply results. GUI timer handling differs from headless execution. |
 | Local MCP | [server.py](../../scenario/mcp/server.py), [tools_scenario.py](../../scenario/mcp/tools_scenario.py), [mcp_service.py](../../scenario/blender/mcp_service.py) | Queues scene tools for main-thread execution; model listing/schema use the same SDK catalog as the UI, all model generation lanes use the shared session; prototype records remain local snapshots. |
 | Credentials | [config.py](../../scenario/core/config.py), [prefs.py](../../scenario/prefs.py) | Credentials default to the saved Blender pair; environment credentials require explicit selection and cannot mix with preferences. Optional project selection scopes both catalog and shared jobs; OAuth and live permission acceptance remain separate. |
 
@@ -189,9 +189,16 @@ can be reclaimed; repricing a UI form explicitly releases its previous approval.
 GUI and headless main-thread context maintenance drains completed submissions,
 polls their known remote IDs at two-second intervals and downloads successful
 results through the coordinator. Saved state is projected into the existing Jobs view. This projection is
-not registered with the prototype manager. Closing a panel does not stop work;
-credential/file changes retire the owner while in-flight receipts stay in the
-original store. Local MCP status can inspect these records after restart.
+not registered with the prototype manager. Each poll also projects the latest
+validated remote status and progress fraction, and submissions record a
+display-only scene and lane binding; both stay in memory and MCP `job_status`
+reports the same values ([projection rules](../BLENDER_JOB_CONTEXT.md#remote-progress-and-scene-lane-binding)).
+The GUI pump compares the drawn job rows and online access each tick and
+redraws the 3D viewport and Preferences regions only when they change, so
+progress and the offline line update without hovering. Closing a
+panel does not stop work; credential/file changes retire the owner while
+in-flight receipts stay in the original store. Local MCP status can inspect
+these records after restart.
 The model-job pump and explicit inspection retain scoped shared sidebar rows,
 deduplicated by local job ID, with the owner's current projection replacing stale
 copies. Existing rows keep their order while newly observed rows appear first;
@@ -248,7 +255,8 @@ commands. They stop at saved `ready` results without automatically assigning
 materials, importing meshes or inserting media strips. Status includes the saved
 result manifest and receipt presence, without returning paths for unverified
 application. Restarted display records are generic model jobs; the original lane
-is not persisted. Explicit PNG/EXR import remains available by result type.
+is not persisted, so they have no scene/lane binding. Explicit PNG/EXR import
+remains available by result type.
 For supported video/audio, **Add video/audio strip** and MCP
 `prepare_result_application(asset_id=...)` capture one asset and the selected
 scene/frame for approval. The shared command verifies local receipts and claims

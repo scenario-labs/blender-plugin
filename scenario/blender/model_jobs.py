@@ -3,6 +3,7 @@
 """Main-thread model generation commands shared by UI and local MCP."""
 
 import json
+import logging
 import os
 import threading
 import time
@@ -14,9 +15,11 @@ from mathutils import Matrix
 
 from ..core.api.catalog import GENERATION_LANES, LANE_KIND
 from ..core.api.errors import ScenarioError
+from ..core.jobs import progress
 from ..core.jobs.records import JobRecord
 from ..core.jobs.store import JobOrigin, JobState, LocalApplicationState, StoredJob, _identity
 from ..core.scene.panorama import WORLD_MEDIA_TYPES
+from .blockout_jobs import MODEL as BLOCKOUT_MODEL
 from .job_session import (
     ImageResultUncertain,
     MaterialResultUncertain,
@@ -35,6 +38,63 @@ from .mesh_result_application import validate_request as validate_mesh_request
 from .model_application import MODEL_MEDIA_TYPE
 from .model_application import validate_destination as validate_model_destination
 from .world_application import PanoramaError, WorldApplicationError
+
+_log = logging.getLogger("scenario.jobs")
+
+# Seconds between automatic refreshes of a known remote job. A reading becomes
+# stale once its scheduled refresh is overdue by the grace, so a longer
+# scheduled interval never reads as stale merely because it is longer.
+POLL_INTERVAL = 2.0
+STALE_GRACE = 2 * POLL_INTERVAL
+# Saved states this session never advances by itself; READY is settled too
+# unless an automatic image import is still pending.
+_SETTLED = frozenset(
+    {
+        JobState.UNCERTAIN,
+        JobState.FAILED,
+        JobState.CANCELED,
+        JobState.DOWNLOAD_FAILED,
+        JobState.APPLY_FAILED,
+        JobState.APPLIED,
+    }
+)
+# Saved states whose next automatic step contacts Scenario: status polling or,
+# for a job whose results this session downloads, the download. Disabled Online
+# Access holds them until it is allowed again; Jobs rows draw an offline line
+# and MCP reports `delivery_offline` for a job this session advances by itself.
+NEEDS_SCENARIO = frozenset({JobState.REMOTE, JobState.CANCEL_REQUESTED, JobState.SUCCEEDED})
+# Prototype display statuses of shared views, which the Jobs and Generations
+# panels split with JobRecord.is_terminal. A SUCCEEDED job whose results this
+# session downloads has none saved yet, so it must not read as the terminal
+# "succeeded": it stays a Jobs row with its saved state and offline line until
+# delivery settles. Other SUCCEEDED jobs keep "succeeded"; see downloads_results.
+_DISPLAY_STATUS = {
+    JobState.REMOTE: "in-progress",
+    JobState.SUCCEEDED: "awaiting-download",
+    JobState.APPLIED: "success",
+}
+
+
+def downloads_results(record):
+    """Whether ModelJobs saves this job's results by downloading them.
+
+    Decided from the saved intent alone: model and workflow generations do,
+    including Film tasks and cloud jobs saved for recovery. Prompt Spark and
+    Translate text (`prompt` and `translate` operations) and Blockout plans
+    (the text model) are read into memory by their own tools instead, so
+    `succeeded` is their last saved state. ModelJobs never downloads them, and
+    their views stay terminal, listed in Generations, without an offline hold.
+    """
+    intent = record.intent
+    return intent.operation == "workflow" or (
+        intent.operation == "model" and intent.target_id != BLOCKOUT_MODEL
+    )
+
+
+def _display_status(record):
+    if record.state == JobState.SUCCEEDED and not downloads_results(record):
+        return record.state.value
+    return _DISPLAY_STATUS.get(record.state, record.state.value)
 
 
 def _snapshot(body):
@@ -60,6 +120,20 @@ class ModelQuote:
     quote: object = field(default=None, repr=False)
     used: bool = False
     operation: str = "model"
+
+
+@dataclass(frozen=True)
+class JobBinding:
+    """Display-only origin of a model-lane submission in this session.
+
+    `scene_uid` is Blender's session identifier of the submitting scene, stable
+    across renames and undo, and `lane` is the submitted generation lane. A
+    binding grants no destination, origin or application authority. It is never
+    persisted, so restarted and recovered jobs remain unbound.
+    """
+
+    scene_uid: int
+    lane: str
 
 
 @dataclass
@@ -155,7 +229,11 @@ class ModelJobs:
         self.quotes = {}
         self.submissions = {}
         self.views = {}
+        self._bindings = {}
         self._online = online
+        # Online Access as the main thread last saw it. `wait` runs on the MCP
+        # HTTP worker, which must not read bpy, so it uses this copy.
+        self._online_seen = online()
         self._commands = {}
         self._next_poll = {}
         self._paused = set()
@@ -299,7 +377,13 @@ class ModelJobs:
         # Consumption precedes persistence: an error may occur after a committed
         # write. A second click must never prepare another intent from this quote.
         ticket.used = True
-        return self._submit_quote(ticket.quote, lane=lane, kind=LANE_KIND[lane], meta=meta)
+        return self._submit_quote(
+            ticket.quote,
+            lane=lane,
+            kind=LANE_KIND[lane],
+            meta=meta,
+            binding=JobBinding(scene.session_uid, lane),
+        )
 
     def submit_workflow(self, quote_id, scene, workflow_id, body, *, approved_cost):
         if os.environ.get("SCENARIO_GUI_PROBE") == "1":
@@ -332,7 +416,7 @@ class ModelJobs:
             raise ScenarioError(0, "Approve a Film task's unchanged exact price")
         return self._submit_quote(quote, lane="film", kind="film")
 
-    def _submit_quote(self, quote, *, lane, kind, meta=None):
+    def _submit_quote(self, quote, *, lane, kind, meta=None, binding=None):
         estimate = quote.estimate
         model_id = estimate.target_id
         prepared = self.session.prepare_quote(quote)
@@ -348,6 +432,9 @@ class ModelJobs:
             meta=dict(meta or {}),
         )
         self.views[view.local_id] = view
+        # Bind before dispatch so a job that could not be queued stays findable.
+        if binding is not None:
+            self._bindings[view.local_id] = binding
         view.meta["shared_job"] = True
         if lane == "image":
             self._automatic_application.add(view.local_id)
@@ -395,6 +482,7 @@ class ModelJobs:
             world = self._world_destinations.pop(request_id, None)
             material = self._material_destinations.pop(request_id, None)
             mesh = self._mesh_destinations.pop(request_id, None)
+            observed = None
             try:
                 completions = self.session.drain(task=task)
                 if not completions:
@@ -462,7 +550,9 @@ class ModelJobs:
                     )
                     _remember(self._images, request_id, result.images, bpy.data.images)
                     self._paused.discard(request_id)
-                self._next_poll[request_id] = time.monotonic() + 2.0
+                elif command in ("refresh_remote", "cancel_remote"):
+                    observed = completion.result
+                self._next_poll[request_id] = time.monotonic() + POLL_INTERVAL
             except MaterialResultUncertain as error:
                 if error.application is not None:
                     self._receipts[request_id] = error
@@ -518,6 +608,11 @@ class ModelJobs:
                     request_id,
                     "Result delivery stopped; review the saved job before retrying",
                 )
+            if observed is not None:
+                # Display only: outside the delivery error mapping, so a failed
+                # projection can never pause delivery or skip the next poll.
+                self._observe(request_id, observed)
+        online = self._online_seen = self._online()
         for request_id, view in self.views.items():
             record = self.store.get(request_id)
             if record is None:
@@ -525,10 +620,7 @@ class ModelJobs:
                     0, "The saved job is unavailable; preserve storage for recovery"
                 )
             view.job_id = record.remote_job_id
-            view.status = {
-                JobState.REMOTE: "in-progress",
-                JobState.APPLIED: "success",
-            }.get(record.state, record.state.value)
+            view.status = _display_status(record)
             view.asset_ids = [item.asset.asset_id for item in record.results]
             view.asset_types = {
                 item.asset.asset_id: item.asset.media_type for item in record.results
@@ -536,6 +628,7 @@ class ModelJobs:
             view.meta["saved_revision"] = record.revision
             view.meta["saved_state"] = record.state.value
             view.meta["recovery_actions"] = self.actions(record)
+            self._project_remote(request_id, record, view, online=online)
             if record.state in (JobState.SUBMITTING, JobState.UNCERTAIN):
                 view.error = "Submission outcome is not confirmed; do not submit it again"
             elif any(
@@ -552,9 +645,9 @@ class ModelJobs:
                 continue
             command = None
             if record.state in (JobState.REMOTE, JobState.CANCEL_REQUESTED):
-                if self._online() and time.monotonic() >= self._next_poll.get(request_id, 0):
+                if online and time.monotonic() >= self._next_poll.get(request_id, 0):
                     command = "refresh_remote"
-            elif record.state == JobState.SUCCEEDED and self._online():
+            elif record.state == JobState.SUCCEEDED and online and downloads_results(record):
                 command = "download_results"
             elif record.state == JobState.READY and request_id in self._automatic_application:
                 command = "verify_results"
@@ -570,6 +663,63 @@ class ModelJobs:
     def _pause(self, request_id, message):
         self._paused.add(request_id)
         self.views[request_id].error = message
+
+    def _observe(self, request_id, snapshot):
+        """Project one validated remote reading; terminal or other snapshots clear it.
+
+        This is the only consumer of refresh/cancel snapshots. Later remote
+        interpretations extend this hook instead of draining them separately.
+        """
+        meta = self.views[request_id].meta
+        try:
+            reading = progress.observe(snapshot)
+        except Exception as error:
+            # Never log the response; it may carry signed result URLs.
+            _log.warning("Remote progress reading dropped (%s)", type(error).__name__)
+            reading = None
+        if reading is None:
+            meta.pop("remote", None)
+        else:
+            meta["remote"] = reading
+
+    def _project_remote(self, request_id, record, view, *, online):
+        """Keep a reading only for its unchanged known job, and mark it stale.
+
+        Stale means automatic polling is not keeping the reading current:
+        delivery is paused, Online Access is off or the scheduled refresh is
+        overdue by the grace. It is display state; nothing is persisted.
+        """
+        reading = view.meta.get("remote")
+        if reading is None:
+            return
+        if (
+            record.state not in (JobState.REMOTE, JobState.CANCEL_REQUESTED)
+            or record.remote_job_id != reading.remote_job_id
+            or record.revision != reading.revision
+        ):
+            del view.meta["remote"]
+            return
+        due = max(self._next_poll.get(request_id, 0.0), reading.observed_monotonic)
+        stale = not online or request_id in self._paused or time.monotonic() > due + STALE_GRACE
+        if stale != reading.stale:
+            view.meta["remote"] = replace(reading, stale=stale)
+
+    def bound_views(self, scene, lane):
+        """Return this session's views submitted from one scene lane, newest first.
+
+        Reads only in-memory bindings and views, so drawing code may call it.
+        A binding identifies where a job came from; it never authorizes applying
+        a result there.
+        """
+        try:
+            key = JobBinding(scene.session_uid, lane)
+        except ReferenceError:
+            return ()
+        return tuple(
+            self.views[request_id]
+            for request_id, binding in reversed(self._bindings.items())
+            if binding == key and request_id in self.views
+        )
 
     def inspect(self):
         """Attach saved display projections without resuming or applying old work."""
@@ -1172,27 +1322,50 @@ class ModelJobs:
             record = self.store.get(request_id)
             if record is None:
                 raise ScenarioError(0, "Saved job is unavailable")
-            if (
-                request_id in self._paused
-                or record.state
-                in (
-                    JobState.UNCERTAIN,
-                    JobState.FAILED,
-                    JobState.CANCELED,
-                    JobState.DOWNLOAD_FAILED,
-                    JobState.APPLY_FAILED,
-                    JobState.APPLIED,
-                )
-                or (
-                    record.state == JobState.READY and request_id not in self._automatic_application
-                )
-            ):
+            if not self._delivering(request_id, record):
                 return
             remaining = deadline - time.monotonic()
             if remaining <= 0:
                 return
             sleeper.wait(min(0.1, remaining))
         raise ScenarioError(0, "The job context changed while waiting; inspect saved jobs again")
+
+    def _advancing(self, request_id, record):
+        """Whether this session advances the job by itself while Online Access allows it.
+
+        False once it is settled, including a finished job whose results
+        ModelJobs never downloads, paused for review, prepared but never
+        queued, or not owned by this session. `wait` calls this on the HTTP
+        worker, so it reads only in-memory state, never bpy.
+        """
+        return (
+            request_id in self.views
+            and request_id not in self._paused
+            and record.state not in _SETTLED
+            and (record.state != JobState.SUCCEEDED or downloads_results(record))
+            and (record.state != JobState.PREPARED or request_id in self.submissions)
+            and (record.state != JobState.READY or request_id in self._automatic_application)
+        )
+
+    def _held_offline(self, record):
+        return not self._online_seen and record.state in NEEDS_SCENARIO
+
+    def _delivering(self, request_id, record):
+        """Whether the job advances now; `wait` returns once it does not.
+
+        MCP reports it as `delivery_active`: the job is advancing and its next
+        step is not held by disabled Online Access.
+        """
+        return self._advancing(request_id, record) and not self._held_offline(record)
+
+    def _offline(self, request_id, record):
+        """Whether disabled Online Access alone holds a step this session takes by itself.
+
+        That step is status polling or the result download. A paused, restarted
+        or settled job, and a finished job that ModelJobs never downloads, is
+        not held; MCP reports this as `delivery_offline`.
+        """
+        return self._held_offline(record) and self._advancing(request_id, record)
 
     def _mesh_status(self, request_id):
         saved = self._mesh_edits.get(request_id)
@@ -1223,11 +1396,20 @@ class ModelJobs:
         if len(matches) != 1:
             return None
         record = matches[0]
+        view = self.views.get(record.intent.request_id)
+        reading = view.meta.get("remote") if view is not None else None
+        binding = self._bindings.get(record.intent.request_id)
         return {
             "local_id": record.intent.request_id,
             "job_id": record.remote_job_id,
             "status": record.state.value,
             "revision": record.revision,
+            # In-memory projection shared with the Jobs views; never persisted.
+            "lane": binding.lane if binding is not None else None,
+            "remote_status": reading.status if reading is not None else None,
+            "progress": reading.fraction if reading is not None else None,
+            "remote_observed_at": reading.observed_utc if reading is not None else None,
+            "remote_stale": reading.stale if reading is not None else None,
             "mesh_sources": [asdict(source) for source in record.intent.mesh_sources],
             "cu_cost": float(record.intent.quote_cost)
             if record.intent.quote_cost is not None
@@ -1267,6 +1449,8 @@ class ModelJobs:
                 for item in record.local_applications
             ],
             "delivery_paused": record.intent.request_id in self._paused,
+            "delivery_active": self._delivering(record.intent.request_id, record),
+            "delivery_offline": self._offline(record.intent.request_id, record),
             "actions": self.actions(record),
             "error": self.views[record.intent.request_id].error
             if record.intent.request_id in self.views

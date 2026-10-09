@@ -785,6 +785,45 @@ STATUS_TEXT = {
     "queued": "queued",
     "in-progress": "rendering",
 }
+# Unfinished shared saved states. While a known remote job is polled, its latest
+# validated Scenario status replaces "submitted".
+SHARED_STATUS_TEXT = {
+    "prepared": "waiting to submit",
+    "submitting": "submitting",
+    "uncertain": "submission unconfirmed",
+    "remote": "submitted",
+    "cancel_requested": "canceling",
+    "succeeded": "finished on Scenario",
+    "downloading": "downloading results",
+    "download_failed": "download failed",
+    "ready": "results saved",
+    "applying": "applying",
+    "apply_failed": "application needs review",
+}
+# Saved states whose next step needs Scenario, and what pauses without online
+# access, whether or not a remote reading exists yet.
+SHARED_OFFLINE_TEXT = {
+    "remote": "Status paused while online access is disabled",
+    "cancel_requested": "Status paused while online access is disabled",
+    "succeeded": "Download paused while online access is disabled",
+}
+
+
+def draw_shared_status(layout, rec, model):
+    """Saved state and ModelJobs' projected advisory remote reading; no I/O or writes."""
+    state = rec.meta.get("saved_state", rec.status)
+    reading = rec.meta.get("remote")
+    text = SHARED_STATUS_TEXT.get(state, state)
+    if reading is not None and state == "remote":
+        text = reading.label
+    layout.label(text=f"{model}: {text}", icon="TIME")
+    if reading is not None and reading.percent is not None:
+        layout.progress(factor=reading.fraction, type="BAR", text=f"{reading.percent}%")
+    offline = None if runtime.online() else SHARED_OFFLINE_TEXT.get(state)
+    if offline is not None:
+        layout.label(text=offline, icon="INFO")
+    elif reading is not None and reading.stale:
+        layout.label(text="Status is not updating", icon="INFO")
 
 
 def draw_active_job(layout, rec):
@@ -792,13 +831,13 @@ def draw_active_job(layout, rec):
     box = layout.box()
     row = box.row(align=True)
     row.label(text=_short_prompt(rec, 44), icon=KIND_ICON.get(rec.kind, "TIME"))
-    status = STATUS_TEXT.get(rec.status, rec.status)
-    progress = (
-        f" {int(rec.progress * 100)}%"
-        if rec.status == "in-progress" and not rec.meta.get("shared_job")
-        else ""
-    )
-    box.label(text=f"{rec.meta.get('model_name', rec.model_id)}: {status}{progress}", icon="TIME")
+    model = rec.meta.get("model_name", rec.model_id)
+    if rec.meta.get("shared_job"):
+        draw_shared_status(box, rec, model)
+    else:
+        status = STATUS_TEXT.get(rec.status, rec.status)
+        progress = f" {int(rec.progress * 100)}%" if rec.status == "in-progress" else ""
+        box.label(text=f"{model}: {status}{progress}", icon="TIME")
     if rec.error:
         box.operator(
             "scenario.error_details", text="Job needs review", icon="ERROR"

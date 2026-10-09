@@ -266,3 +266,84 @@ def animated_glb(*, clips=2, morph=True, node_transform=False):
         + struct.pack("<I4s", len(binary), b"BIN\0")
         + binary
     )
+
+
+def draw_job_panels():
+    """Draw the real Jobs header, Jobs and Generations panels into recording layouts.
+
+    Drawing must not read job storage, so a store read fails the caller. Returns
+    the three layouts and the rows Generations listed through its real
+    draw_result.
+    """
+    from types import SimpleNamespace
+    from unittest.mock import MagicMock
+
+    panels = submodule("blender.panels")
+    store = submodule("blender.runtime").state.job_store
+    header, jobs, generations = MagicMock(), MagicMock(), MagicMock()
+    with (
+        patch.object(store, "get", side_effect=AssertionError("Store read in draw")),
+        patch.object(store, "records", side_effect=AssertionError("Store read in draw")),
+        patch.object(panels, "draw_result", wraps=panels.draw_result) as draw_result,
+    ):
+        panels.SCENARIO_PT_jobs.draw_header(SimpleNamespace(layout=header), bpy.context)
+        panels.SCENARIO_PT_jobs.draw(SimpleNamespace(layout=jobs), bpy.context)
+        panels.SCENARIO_PT_generations.draw(SimpleNamespace(layout=generations), bpy.context)
+    return header, jobs, generations, [call.args[1] for call in draw_result.call_args_list]
+
+
+def drawn_texts(*layouts):
+    """Every `text` drawn anywhere under recording layouts, nested rows and boxes included."""
+    return [
+        call.kwargs["text"]
+        for layout in layouts
+        for call in layout.mock_calls
+        if "text" in call.kwargs
+    ]
+
+
+def assert_finished_without_download(test, request_id):
+    """Check a finished job whose text is read without a download after Inspect saved jobs.
+
+    Prompt Spark, Translate and Blockout jobs keep the saved state `succeeded`.
+    With Online Access off, the real panels must list the job in Generations,
+    neither count nor draw it in Jobs and draw no offline line, and MCP
+    `job_status` must report no delivery or offline hold. Returns the view and
+    that status.
+    """
+    runtime = submodule("blender.runtime")
+    panels = submodule("blender.panels")
+    tools = submodule("mcp.tools_scenario")
+    with online_access(False):
+        test.assertEqual(bpy.ops.scenario.inspect_saved_jobs(), {"FINISHED"})
+        view = runtime.state.model_jobs.views[request_id]
+        header, jobs, generations, listed = draw_job_panels()
+        status = tools.job_status({"job_id": request_id})
+        offline = set(panels.SHARED_OFFLINE_TEXT.values())
+        header.label.assert_called_once()
+        # One comparison, so a regression reports every visible symptom at once.
+        test.assertEqual(
+            {
+                "view": (view.meta["saved_state"], view.status, view.is_terminal),
+                "header": header.label.call_args.kwargs["text"],
+                "jobs_rows": jobs.box.call_count,
+                "in_generations": any(row is view for row in listed),
+                "offline_lines": offline & set(drawn_texts(header, jobs, generations)),
+                "mcp": (
+                    status["status"],
+                    status["delivery_paused"],
+                    status["delivery_active"],
+                    status["delivery_offline"],
+                ),
+            },
+            {
+                "view": ("succeeded", "succeeded", True),
+                "header": "Jobs",
+                "jobs_rows": 0,
+                "in_generations": True,
+                "offline_lines": set(),
+                "mcp": ("succeeded", True, False, False),
+            },
+        )
+        jobs.label.assert_any_call(text="No job running", icon="CHECKMARK")
+    return view, status

@@ -13,6 +13,7 @@ ESTIMATE_DEBOUNCE = 0.7
 ACTIVE_INTERVAL = 0.25
 IDLE_INTERVAL = 0.6
 _running = False
+_job_rows = None  # what job views last drew; compared each tick, never persisted
 
 
 def start():
@@ -78,9 +79,48 @@ def _process():
                     lane_state.estimate_dirty_at = 0.0
                     generation.request_estimate(scene, lane)
                     changed = True
+    if _jobs_changed():
+        changed = True
     if changed:
         redraw()
     studio.redraw_popups()
+
+
+def _job_row(row):
+    # Offered actions are deliberately absent: they empty while each automatic
+    # two-second refresh is in flight, and redrawing on that would make the
+    # saved-job controls blink. A completed refresh that changes the reading or
+    # saved state redraws after its drain has restored them.
+    reading = row.meta.get("remote")
+    return (
+        row.local_id,
+        row.status,
+        row.error,
+        row.progress,
+        len(row.files),
+        row.meta.get("saved_revision"),
+        None if reading is None else (reading.status, reading.percent, reading.stale),
+    )
+
+
+def _jobs_changed():
+    """Report whether drawn job rows changed since the last tick.
+
+    Shared job projections change in context maintenance, not in a manager
+    event, so this one comparison is what redraws Jobs, Generations and the
+    viewport when progress or saved state moves. Online access is compared too,
+    because shared rows draw an offline line. Unchanged ticks never redraw.
+    """
+    global _job_rows
+    rows = (
+        runtime.state.job_context_id,
+        runtime.online(),
+        tuple(_job_row(row) for row in runtime.state.jobs_view),
+    )
+    if rows == _job_rows:
+        return False
+    _job_rows = rows
+    return True
 
 
 def redraw():

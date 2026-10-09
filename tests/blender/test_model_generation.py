@@ -7,6 +7,7 @@ import io
 import json
 import tempfile
 import threading
+import time
 import unittest
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import asdict, replace
@@ -19,6 +20,8 @@ import httpx
 from helpers import (
     ACES_AP0,
     animated_glb,
+    draw_job_panels,
+    drawn_texts,
     online_access,
     reset_scene,
     scanline_exr,
@@ -53,11 +56,13 @@ class ModelGenerationTests(unittest.TestCase):
         self.expected_project = None
         self.downloads = []
         self.remote_status = "in-progress"
+        self.remote_progress = None  # omitted from job reads unless a test sets it
         self.result_bytes = b""
         self.result_media_type = "image/png"
         self.before_images = set(bpy.data.images)
         self.download_error = False
         self.cancel_calls = []
+        self.status_after_cancel = "canceled"
         self.lose_response = False
         self.entered, self.release = threading.Event(), threading.Event()
         self.release.set()
@@ -79,22 +84,18 @@ class ModelGenerationTests(unittest.TestCase):
                     if getattr(self, "block_cloud_read", False):
                         self.entered.set()
                         self.assertTrue(self.release.wait(5))
-                    return httpx.Response(
-                        200,
-                        json={
-                            "job": {
-                                "jobId": request.url.path.rsplit("/", 1)[-1],
-                                "status": self.remote_status,
-                                "jobType": "custom",
-                                "metadata": {
-                                    "input": {"modelId": self.model["id"]},
-                                    "assetIds": list(
-                                        getattr(self, "result_assets", ["result-image"])
-                                    ),
-                                },
-                            }
+                    job = {
+                        "jobId": request.url.path.rsplit("/", 1)[-1],
+                        "status": self.remote_status,
+                        "jobType": "custom",
+                        "metadata": {
+                            "input": {"modelId": self.model["id"]},
+                            "assetIds": list(getattr(self, "result_assets", ["result-image"])),
                         },
-                    )
+                    }
+                    if self.remote_progress is not None:
+                        job["progress"] = self.remote_progress
+                    return httpx.Response(200, json={"job": job})
                 if "/assets/" in request.url.path:
                     asset_id = request.url.path.rsplit("/", 1)[-1]
                     return httpx.Response(
@@ -116,7 +117,7 @@ class ModelGenerationTests(unittest.TestCase):
             if "/jobs/" in request.url.path:
                 self.assertEqual(json.loads(request.content), {"action": "cancel"})
                 self.cancel_calls.append(request)
-                self.remote_status = "canceled"
+                self.remote_status = self.status_after_cancel
                 return httpx.Response(200, json={"job": {"jobId": "remote-1"}})
             if request.url.params.get("dryRun") == "true":
                 return httpx.Response(269, content=b'{"creativeUnitsCost":0.1234567890123456789}')
@@ -836,6 +837,502 @@ class ModelGenerationTests(unittest.TestCase):
         with self.assertRaises(self.request_error):
             self.recover(result["local_id"], "cancel")
         self.assertEqual(len(self.cancel_calls), 1)
+        self.assertEqual(len(self.paid), 1)
+
+    def poll_now(self, *request_ids):
+        """Make maintenance refresh these known jobs now instead of after the interval."""
+        owner = self.runtime.state.model_jobs
+        for request_id in request_ids:
+            owner._next_poll[request_id] = 0.0
+        self.deliver_results()
+
+    def remote_fields(self, request_id):
+        status = self.tools.job_status({"job_id": request_id})
+        keys = ("status", "lane", "remote_status", "progress", "remote_stale", "delivery_active")
+        return {key: status[key] for key in keys}, status
+
+    def draw_job(self, view):
+        """Draw one Jobs row with a recording layout; drawing must not write or read storage."""
+        panels = submodule("blender.panels")
+        layout = Mock()
+        before = dict(view.meta)
+        with (
+            patch.object(self.store, "get", side_effect=AssertionError("Store read in draw")),
+            patch.object(self.store, "records", side_effect=AssertionError("Store read in draw")),
+            patch.object(self.runtime, "ensure_model_jobs", side_effect=AssertionError("ensure")),
+        ):
+            panels.draw_active_job(layout, view)
+        self.assertEqual(view.meta, before)
+        return layout.box.return_value
+
+    def test_ui_and_mcp_jobs_bind_their_scene_lane_and_project_validated_progress(self):
+        self.result_fixture()
+        self.remote_status, self.remote_progress = "in-progress", 0.42
+        scene = bpy.context.scene
+        self.ui_quote()
+        ui = self.generation.submit_generation(bpy.context, "image")
+        mcp = self.mcp_submit(self.mcp_quote())
+        self.deliver_results()
+        owner = self.runtime.state.model_jobs
+        views = (owner.views[mcp["local_id"]], owner.views[ui.local_id])
+        self.assertEqual(owner.bound_views(scene, "image"), views)
+        self.assertEqual(owner.bound_views(scene, "video"), ())
+        revisions = {view.local_id: self.store.get(view.local_id).revision for view in views}
+        expected = {
+            "status": "remote",
+            "lane": "image",
+            "remote_status": "in-progress",
+            "progress": 0.42,
+            "remote_stale": False,
+            "delivery_active": True,
+        }
+        for view in views:
+            reading = view.meta["remote"]
+            self.assertEqual(
+                (reading.label, reading.percent, reading.stale), ("generating", 42, False)
+            )
+            fields, status = self.remote_fields(view.local_id)
+            self.assertEqual(fields, expected)
+            self.assertRegex(status["remote_observed_at"], r"^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ$")
+            box = self.draw_job(view)
+            box.label.assert_any_call(text="Shared image: generating", icon="TIME")
+            box.progress.assert_called_once_with(factor=0.42, type="BAR", text="42%")
+        # An invalid fraction is unknown, never zero; active reads keep the saved revision.
+        self.remote_progress = "0.9"
+        self.poll_now(*revisions)
+        for view in views:
+            self.assertEqual(self.remote_fields(view.local_id)[0], dict(expected, progress=None))
+            self.assertEqual(self.store.get(view.local_id).revision, revisions[view.local_id])
+            self.draw_job(view).progress.assert_not_called()
+        # A terminal read clears the reading; the session binding remains.
+        self.remote_status = "success"
+        self.poll_now(*revisions)
+        for view in views:
+            self.assertNotIn("remote", view.meta)
+            fields, status = self.remote_fields(view.local_id)
+            self.assertEqual(fields["status"], "applied", status)
+            self.assertEqual(
+                (fields["lane"], fields["remote_status"], fields["progress"]), ("image", None, None)
+            )
+            self.assertFalse(fields["delivery_active"])
+            self.assertIsNone(status["remote_observed_at"])
+        other = bpy.data.scenes.new("Unbound progress scene")
+        self.addCleanup(bpy.data.scenes.remove, other)
+        self.assertEqual(owner.bound_views(other, "image"), ())
+        self.assertEqual(owner.bound_views(scene, "image"), views)
+        self.assertEqual(len(self.paid), 2)
+
+    def test_offline_reading_is_stale_and_drawn_without_requests(self):
+        self.remote_progress = 0.5
+        result = self.mcp_submit(self.mcp_quote())
+        self.deliver_results()
+        view = self.runtime.state.model_jobs.views[result["local_id"]]
+        self.assertFalse(view.meta["remote"].stale)
+        calls = len(self.calls)
+        with online_access(False):
+            self.runtime.state.model_jobs._next_poll[view.local_id] = 0.0
+            self.runtime.sync_catalog_context()
+            self.assertTrue(view.meta["remote"].stale)
+            self.assertTrue(self.remote_fields(view.local_id)[0]["remote_stale"])
+            box = self.draw_job(view)
+            box.progress.assert_called_once_with(factor=0.5, type="BAR", text="50%")
+            box.label.assert_any_call(
+                text="Status paused while online access is disabled", icon="INFO"
+            )
+            self.assertEqual(len(self.calls), calls)
+        self.poll_now(view.local_id)
+        self.assertFalse(view.meta["remote"].stale)
+        self.assertEqual(len(self.calls), calls + 1)
+        self.assertEqual(len(self.paid), 1)
+
+    def test_overdue_scheduled_refresh_marks_the_reading_stale(self):
+        model_jobs = submodule("blender.model_jobs")
+        self.remote_progress = 0.5
+        result = self.mcp_submit(self.mcp_quote())
+        self.deliver_results()
+        owner = self.runtime.state.model_jobs
+        request_id = result["local_id"]
+        view = owner.views[request_id]
+        now = time.monotonic()
+        view.meta["remote"] = replace(view.meta["remote"], observed_monotonic=now - 30.0)
+        # Hold a slow refresh in flight, so only the reading's age changes below.
+        owner._commands[request_id] = ("refresh_remote", SimpleNamespace(done=lambda: False))
+        try:
+            # A longer scheduled interval is not stale before that refresh is overdue.
+            owner._next_poll[request_id] = now + 30.0
+            owner.poll()
+            self.assertFalse(view.meta["remote"].stale)
+            owner._next_poll[request_id] = now - model_jobs.STALE_GRACE - 1.0
+            owner.poll()
+            self.assertTrue(view.meta["remote"].stale)
+            box = self.draw_job(view)
+            box.label.assert_any_call(text="Status is not updating", icon="INFO")
+        finally:
+            del owner._commands[request_id]
+        self.assertEqual(len(self.paid), 1)
+
+    def test_mismatched_or_failed_readings_are_dropped_without_pausing_delivery(self):
+        progress = submodule("core.jobs.progress")
+        self.remote_progress = 0.5
+        result = self.mcp_submit(self.mcp_quote())
+        self.deliver_results()
+        owner = self.runtime.state.model_jobs
+        request_id = result["local_id"]
+        view = owner.views[request_id]
+        reading = view.meta["remote"]
+        # Hold automatic polling, so only the projection check runs below.
+        owner._next_poll[request_id] = float("inf")
+        for changed in ({"revision": reading.revision + 1}, {"remote_job_id": "another-job"}):
+            with self.subTest(**changed):
+                view.meta["remote"] = replace(reading, **changed)
+                owner.poll()
+                self.assertNotIn("remote", view.meta)
+        view.meta["remote"] = reading
+        owner.poll()
+        self.assertIs(view.meta["remote"], reading)
+        # A failed display projection drops the reading; delivery and polling continue.
+        before = time.monotonic()
+        with (
+            patch.object(progress, "observe", side_effect=RuntimeError("private response")),
+            self.assertLogs("scenario.jobs", "WARNING") as logs,
+        ):
+            self.poll_now(request_id)
+        self.assertNotIn("remote", view.meta)
+        self.assertNotIn("private", "\n".join(logs.output))
+        self.assertGreater(owner._next_poll[request_id], before)
+        status = self.tools.job_status({"job_id": request_id})
+        self.assertEqual(
+            (status["status"], status["delivery_paused"], status["delivery_active"]),
+            ("remote", False, True),
+        )
+        self.assertIsNone(status["error"])
+        self.poll_now(request_id)
+        self.assertEqual(view.meta["remote"].fraction, 0.5)
+        self.assertEqual(len(self.paid), 1)
+
+    def test_remote_cancel_rebinds_the_reading_to_the_cancel_request_revision(self):
+        self.remote_progress = 0.4
+        result = self.mcp_submit(self.mcp_quote())
+        self.deliver_results()
+        request_id = result["local_id"]
+        view = self.runtime.state.model_jobs.views[request_id]
+        before = view.meta["remote"]
+        self.assertEqual(before.revision, self.store.get(request_id).revision)
+        # Scenario acknowledges the cancellation while the job is still finishing.
+        self.status_after_cancel, self.remote_progress = "finalizing", 0.9
+        status = self.recover(request_id, "cancel")
+        record = self.store.get(request_id)
+        self.assertEqual(record.state, self.storemod.JobState.CANCEL_REQUESTED)
+        self.assertGreater(record.revision, before.revision)
+        reading = view.meta["remote"]
+        self.assertEqual(
+            (reading.revision, reading.status, reading.fraction, reading.stale),
+            (record.revision, "finalizing", 0.9, False),
+        )
+        self.assertEqual(
+            (status["status"], status["remote_status"], status["progress"]),
+            ("cancel_requested", "finalizing", 0.9),
+        )
+        box = self.draw_job(view)
+        box.label.assert_any_call(text="Shared image: canceling", icon="TIME")
+        box.progress.assert_called_once_with(factor=0.9, type="BAR", text="90%")
+        self.assertEqual(len(self.cancel_calls), 1)
+        self.assertEqual(len(self.paid), 1)
+
+    def test_restarted_jobs_stay_unbound_and_show_progress_only_after_explicit_refresh(self):
+        self.remote_progress = 0.25
+        result = self.mcp_submit(self.mcp_quote())
+        self.deliver_results()
+        self.runtime.state.reset()
+        calls = len(self.calls)
+        owner = self.runtime.inspect_model_jobs()
+        unbound = {"lane": None, "remote_status": None, "progress": None, "remote_stale": None}
+        self.assertEqual(
+            self.remote_fields(result["local_id"])[0],
+            dict(unbound, status="remote", delivery_active=False),
+        )
+        self.assertEqual(owner.bound_views(bpy.context.scene, "image"), ())
+        # Without any reading, an offline row still says that nothing is being checked.
+        view = owner.views[result["local_id"]]
+        self.assertNotIn("remote", view.meta)
+        offline = "Status paused while online access is disabled"
+        with online_access(False):
+            box = self.draw_job(view)
+            # Paused for an explicit action, it would not resume by itself online.
+            status = self.tools.job_status({"job_id": result["local_id"]})
+        self.assertEqual(
+            (status["delivery_paused"], status["delivery_active"], status["delivery_offline"]),
+            (True, False, False),
+        )
+        box.label.assert_any_call(text=offline, icon="INFO")
+        box.progress.assert_not_called()
+        online_labels = self.draw_job(view).label.call_args_list
+        self.assertNotIn(offline, [call.kwargs.get("text") for call in online_labels])
+        panels = submodule("blender.panels")
+        for state, line in (
+            ("succeeded", "Download paused while online access is disabled"),
+            ("cancel_requested", offline),
+            ("ready", None),
+        ):
+            with self.subTest(state=state), online_access(False):
+                layout = Mock()
+                panels.draw_shared_status(
+                    layout, SimpleNamespace(status=state, meta={"saved_state": state}), "Model"
+                )
+                texts = [call.kwargs["text"] for call in layout.label.call_args_list[1:]]
+                self.assertEqual(texts, [] if line is None else [line])
+        self.assertEqual(len(self.calls), calls)
+        status = self.recover(result["local_id"], "refresh")
+        self.assertEqual(len(self.calls), calls + 1)
+        # An explicit refresh is one reading; nothing keeps it current afterwards.
+        self.assertEqual(
+            (status["lane"], status["remote_status"], status["progress"], status["remote_stale"]),
+            (None, "in-progress", 0.25, True),
+        )
+        self.assertEqual(len(self.paid), 1)
+
+    def test_credential_and_file_retirement_drop_bindings_and_readings(self):
+        session = submodule("blender.job_session")
+        secret = self.prefs.api_secret
+        for retire in ("file", "credentials"):
+            with self.subTest(retire=retire):
+                self.remote_progress = 0.3
+                result = self.mcp_submit(self.mcp_quote())
+                self.deliver_results()
+                owner = self.runtime.state.model_jobs
+                view = owner.views[result["local_id"]]
+                self.assertIn("remote", view.meta)
+                self.assertIn(view, owner.bound_views(bpy.context.scene, "image"))
+                if retire == "credentials":
+                    self.prefs.api_secret = "different-fixture-secret"
+                    self.runtime.sync_catalog_context()
+                    self.prefs.api_secret = secret
+                else:
+                    session._load_pre(None)
+                    self.runtime.sync_catalog_context()
+                self.assertIsNot(self.runtime.state.model_jobs, owner)
+                self.assertNotIn(view, self.runtime.state.jobs_view)
+                restarted = self.runtime.inspect_model_jobs()
+                self.assertEqual(restarted.bound_views(bpy.context.scene, "image"), ())
+                fields = self.remote_fields(result["local_id"])[0]
+                self.assertEqual(
+                    (fields["lane"], fields["remote_status"], fields["progress"]),
+                    (None, None, None),
+                )
+        self.assertEqual(len(self.paid), 2)
+
+    def test_scene_lane_binding_survives_native_undo_and_redo(self):
+        result = self.mcp_submit(self.mcp_quote())
+        self.deliver_results()
+        owner = self.runtime.state.model_jobs
+        view = owner.views[result["local_id"]]
+        name = bpy.context.scene.name
+        preferences = bpy.context.preferences.edit
+        settings = preferences.use_global_undo, preferences.undo_steps
+        preferences.use_global_undo, preferences.undo_steps = True, 32
+        try:
+            # Real memfile history re-reads the edited scene; its session_uid must hold.
+            frame = bpy.context.scene.frame_current
+            self.assertEqual(bpy.ops.ed.undo_push(message="Fixture before edit"), {"FINISHED"})
+            bpy.context.scene.frame_current = frame + 7
+            self.assertEqual(bpy.ops.ed.undo_push(message="Fixture scene edit"), {"FINISHED"})
+            for step, expected in ((bpy.ops.ed.undo, frame), (bpy.ops.ed.redo, frame + 7)):
+                self.assertEqual(step(), {"FINISHED"})
+                scene = bpy.data.scenes[name]
+                self.assertEqual(scene.frame_current, expected)
+                self.assertEqual(owner.bound_views(scene, "image"), (view,))
+        finally:
+            preferences.use_global_undo, preferences.undo_steps = settings
+        self.assertEqual(len(self.paid), 1)
+
+    def test_shared_wait_timeout_returns_the_same_remote_projection(self):
+        self.remote_progress = 0.75
+        result = self.mcp_submit(self.mcp_quote())
+        self.deliver_results()
+        deferred = self.tools.wait_for_job({"job_id": result["local_id"], "timeout": 0.01})
+        with ThreadPoolExecutor(max_workers=1) as worker:
+            worker.submit(deferred.run).result(5)
+        waited = deferred.finish(None)
+        keys = ("status", "lane", "remote_status", "progress", "delivery_paused", "delivery_active")
+        # delivery_active is how an agent tells an expired wait from finished delivery.
+        self.assertEqual(
+            {key: waited[key] for key in keys},
+            {
+                "status": "remote",
+                "lane": "image",
+                "remote_status": "in-progress",
+                "progress": 0.75,
+                "delivery_paused": False,
+                "delivery_active": True,
+            },
+        )
+        self.assertEqual(waited, self.tools.job_status({"job_id": result["local_id"]}))
+        self.assertEqual(len(self.paid), 1)
+
+    def wait_briefly(self, request_id, timeout=8):
+        """Run one shared MCP wait on a worker and return its result and duration."""
+        deferred = self.tools.wait_for_job({"job_id": request_id, "timeout": timeout})
+        started = time.monotonic()
+        with ThreadPoolExecutor(max_workers=1) as worker:
+            worker.submit(deferred.run).result(timeout + 10)
+        return deferred.finish(None), time.monotonic() - started
+
+    def test_finished_job_stays_in_jobs_with_its_offline_download_line(self):
+        panels = submodule("blender.panels")
+        model_jobs = submodule("blender.model_jobs")
+        # The panel's offline lines and the MCP hold name the same saved states.
+        self.assertEqual(
+            set(panels.SHARED_OFFLINE_TEXT), {state.value for state in model_jobs.NEEDS_SCENARIO}
+        )
+        result = self.mcp_submit(self.mcp_quote())
+        self.deliver_results()
+        owner = self.runtime.state.model_jobs
+        request_id = result["local_id"]
+        view = owner.views[request_id]
+        # Scenario now reports success; the refresh completes while online.
+        self.result_fixture()
+        owner._next_poll[request_id] = 0.0
+        self.runtime.sync_catalog_context()
+        command, task = owner._commands[request_id]
+        self.assertEqual(command, "refresh_remote")
+        task.result(5)
+        calls = len(self.calls)
+        with online_access(False):
+            # Draining that refresh offline leaves the download held, not started.
+            self.runtime.sync_catalog_context()
+            self.assertEqual(self.store.get(request_id).state, self.storemod.JobState.SUCCEEDED)
+            self.assertNotIn(request_id, owner._commands)
+            self.assertIn(view, self.runtime.state.jobs_view)
+            self.assertEqual(view.status, "awaiting-download")
+            self.assertFalse(view.is_terminal)
+            header, jobs, generations, listed = draw_job_panels()
+            header.label.assert_called_once_with(text="1 Job")
+            box = jobs.box.return_value
+            box.label.assert_any_call(text="Shared image: finished on Scenario", icon="TIME")
+            box.label.assert_any_call(
+                text="Download paused while online access is disabled", icon="INFO"
+            )
+            box.progress.assert_not_called()
+            # A job without saved results is never listed as a finished generation.
+            self.assertFalse(any(row is view for row in listed))
+            self.assertNotIn("Shared image: finished on Scenario", drawn_texts(generations))
+            status = self.tools.job_status({"job_id": request_id})
+            self.assertEqual(
+                (
+                    status["status"],
+                    status["delivery_paused"],
+                    status["delivery_active"],
+                    status["delivery_offline"],
+                ),
+                ("succeeded", False, False, True),
+            )
+            self.assertEqual(len(self.calls), calls)
+            self.assertEqual(self.downloads, [])
+        # Allowing Online Access again resumes the download without any action.
+        self.deliver_results()
+        status = self.tools.job_status({"job_id": request_id})
+        self.assertEqual(
+            (status["status"], status["delivery_active"], status["delivery_offline"]),
+            ("applied", False, False),
+        )
+        self.assertEqual(len(self.downloads), 1)
+        self.assertEqual(len(self.paid), 1)
+
+    def test_offline_hold_is_reported_and_ends_the_wait_without_polling(self):
+        self.remote_progress = 0.5
+        result = self.mcp_submit(self.mcp_quote())
+        self.deliver_results()
+        request_id = result["local_id"]
+        online = self.tools.job_status({"job_id": request_id})
+        self.assertEqual((online["delivery_active"], online["delivery_offline"]), (True, False))
+        calls = len(self.calls)
+        with online_access(False):
+            waited, elapsed = self.wait_briefly(request_id)
+            # An offline agent is told why nothing moves instead of being told to wait again.
+            self.assertLess(elapsed, 4)
+            self.assertEqual(
+                (
+                    waited["status"],
+                    waited["delivery_paused"],
+                    waited["delivery_active"],
+                    waited["delivery_offline"],
+                    waited["remote_stale"],
+                ),
+                ("remote", False, False, True, True),
+            )
+            self.assertEqual(waited, self.tools.job_status({"job_id": request_id}))
+            self.assertEqual(len(self.calls), calls)
+        self.poll_now(request_id)
+        self.assertEqual(len(self.calls), calls + 1)
+        status = self.tools.job_status({"job_id": request_id})
+        self.assertEqual((status["delivery_active"], status["delivery_offline"]), (True, False))
+        self.assertEqual(len(self.paid), 1)
+
+    def test_prepared_job_that_was_never_queued_is_not_reported_as_delivering(self):
+        quote = self.mcp_quote()
+        session = self.runtime.ensure_job_session()
+        with (
+            patch.object(session, "submit", side_effect=self.origin_error("Fixture origin gone")),
+            self.assertRaises(self.origin_error),
+        ):
+            self.mcp_submit(quote)
+        (record,) = self.store.records()
+        request_id = record.intent.request_id
+        self.assertEqual(record.state, self.storemod.JobState.PREPARED)
+        self.assertNotIn(request_id, self.runtime.state.model_jobs.submissions)
+        waited, elapsed = self.wait_briefly(request_id)
+        self.assertLess(elapsed, 4)
+        self.assertEqual(
+            (
+                waited["status"],
+                waited["delivery_paused"],
+                waited["delivery_active"],
+                waited["delivery_offline"],
+                tuple(waited["actions"]),
+            ),
+            ("prepared", False, False, False, ("cancel_prepared",)),
+        )
+        self.assertEqual(self.paid, [])
+
+    def test_pump_redraws_on_projected_progress_change_and_not_on_idle_ticks(self):
+        pump = submodule("blender.pump")
+        self.remote_progress = 0.1
+        result = self.mcp_submit(self.mcp_quote())
+        self.deliver_results()
+        owner = self.runtime.state.model_jobs
+        request_id = result["local_id"]
+        # Hold automatic polling while idle ticks are compared.
+        owner._next_poll[request_id] = float("inf")
+        with (
+            patch.object(pump, "redraw") as redraw,
+            patch.object(self.generation, "request_estimate"),
+        ):
+            pump._process()
+            redraw.reset_mock()
+            for _ in range(3):
+                pump._process()
+            redraw.assert_not_called()
+            self.remote_progress = 0.6
+            owner._next_poll[request_id] = 0.0
+            # Queuing the refresh empties offered actions; that alone must not redraw.
+            pump._process()
+            self.assertIn(request_id, owner._commands)
+            redraw.assert_not_called()
+            owner._commands[request_id][1].result(5)
+            pump._process()
+            redraw.assert_called_once()
+            self.assertEqual(owner.views[request_id].meta["remote"].percent, 60)
+            pump._process()
+            redraw.assert_called_once()
+            # Rows without a reading still draw an offline line, so access changes redraw.
+            del owner.views[request_id].meta["remote"]
+            pump._process()
+            redraw.reset_mock()
+            with online_access(False):
+                pump._process()
+                redraw.assert_called_once()
+                pump._process()
+                redraw.assert_called_once()
         self.assertEqual(len(self.paid), 1)
 
     def test_native_cancellation_of_queued_submission_never_dispatches(self):

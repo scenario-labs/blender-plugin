@@ -178,6 +178,18 @@ class WorkflowCommandTests(unittest.TestCase):
             self.approve(quote)
         self.assertEqual(len(self.paid), 1)
 
+    def test_workflow_jobs_stay_unbound_from_scene_lanes(self):
+        result = self.approve(self.quote())
+        self.settle()
+        owner = self.runtime.state.model_jobs
+        for lane in (*submodule("core.api.catalog").GENERATION_LANES, "workflow"):
+            self.assertEqual(owner.bound_views(bpy.context.scene, lane), ())
+        status = self.tools.job_status({"job_id": result["local_id"]})
+        self.assertIsNone(status["lane"])
+        # Workflow jobs still project their validated remote status.
+        self.assertEqual((status["status"], status["remote_status"]), ("remote", "in-progress"))
+        self.assertEqual(len(self.paid), 1)
+
     def test_changed_price_payload_identity_and_scene_do_not_submit(self):
         quote = self.quote()
         for changes in (

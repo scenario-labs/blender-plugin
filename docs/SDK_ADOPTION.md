@@ -480,12 +480,16 @@ these contracts pass with its raw-response wrapper.
 - **Request shape.** Workflow and job IDs use the adapter's path-safe identifier
   rules; the selection path uses the same segment encoding as the generated
   approval route. Node IDs travel only in the JSON body, so they need only be
-  nonblank printable text; the format of loop-iteration node IDs is not
-  documented. The action is always explicit, because an omitted approval action
-  approves.
-- **Selection.** Indices must be unique nonnegative integers and keep the
-  caller's order, which the node output preserves. The step's own min/max bounds
-  and candidate count remain the caller's check.
+  printable text of at most 1,024 characters without surrounding whitespace;
+  the format of loop-iteration node IDs is not documented. All three IDs must
+  pass Python's `str.isprintable`, which rejects control and format characters,
+  such as bidi overrides, and lone surrogates before any request is built. The
+  action is always explicit, because an omitted approval action approves.
+- **Selection.** A selection sends 1 to 100 unique nonnegative integer indices,
+  in the caller's order, which the node output preserves. The cap is the API
+  reference's default maximum, and indices stay within the exact JSON integer
+  range. The step's own min/max bounds and candidate count remain the caller's
+  check.
 - **Scope.** Both endpoints document `projectId` as required, and SDK 2.2.0
   types it as required for approvals. A decision uses the scope of the run it
   answers: the adapter's explicit project override when configured, otherwise
@@ -496,8 +500,11 @@ these contracts pass with its raw-response wrapper.
   is never retried, including after `Retry-After`. `AdapterStatusError` carries
   the HTTP status of a service reply with the usual sanitized text, separating
   it from a lost response. Callers decide which statuses are definitive
-  refusals. After a lost response or a malformed or mismatched acknowledgement,
-  the outcome is unknown until the job is retrieved again.
+  refusals. A `ValueError` means nothing was sent. Treat every other
+  `AdapterError` as an unknown outcome until the job is retrieved again: offline
+  and closed-client refusals happen before sending, but share that type with a
+  lost response and a malformed or mismatched acknowledgement. The status error
+  keeps its status and text through `copy` and `pickle`.
 - **Acknowledgement.** The returned `job` must name the same workflow job. It is
   not terminal-state evidence and may carry signed asset URLs, which callers must
   not persist or log.
@@ -638,8 +645,11 @@ tests do not claim live service acceptance or authorize a paid operation.
 The inspected 2.2.0 wheel retains the same required dependency closure and
 byte-identical MIT notice as 2.1.0. Client/authentication and transport sources
 are unchanged, so both the #26 header workaround and #29 discovery extensions
-remain necessary. Resource/type updates include stricter query annotations and
-additional model/job metadata; raw-response parsing preserves those fields.
+remain necessary. 2.2.0 also lacks `workflows.user_selection`, so the
+[#33 selection extension](#workflow-step-decisions) is required too; the
+dependency tests flag each missing method for review on upgrade. Resource/type
+updates include stricter query annotations and additional model/job metadata;
+raw-response parsing preserves those fields.
 
 Model and workflow `dry_run` now declare `"true"` or `"api"`. The adapter uses
 `"true"` for existing estimates and omits the parameter for actual submissions,

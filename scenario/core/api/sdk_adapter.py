@@ -46,6 +46,11 @@ class AdapterStatusError(AdapterError):
         super().__init__(message)
         self.status_code = status_code
 
+    def __reduce__(self):
+        # args holds only the message, so copy and pickle must pass the status too.
+        # The text can depend on the request's project, so keep it rather than rebuild it.
+        return type(self), (self.status_code, str(self))
+
 
 class AdapterUnavailable(AdapterError):
     """The selected credentials or project cannot read a known model (HTTP 403 or 404)."""
@@ -81,6 +86,10 @@ _STEP_ACTIONS = {
     "user-approval": frozenset({"approve", "reject"}),
     "user-selection": frozenset({"select", "reject"}),
 }
+# The API reference's default maximum pick count for a user-selection step.
+_MAX_SELECTED_ITEMS = 100
+# Larger JSON integers lose precision in parsers that read numbers as doubles.
+_MAX_JSON_INTEGER = 2**53 - 1
 
 
 @dataclass(frozen=True)
@@ -175,25 +184,34 @@ def _identifier(value):
     return value
 
 
-def _node_identifier(value):
-    """Flow node IDs travel only in a JSON body, so path-unsafe characters are acceptable."""
-    if (
-        not isinstance(value, str)
-        or not value
-        or value.strip() != value
-        or len(value) > 1024
-        or any(ord(char) < 32 or ord(char) == 127 for char in value)
-    ):
-        raise ValueError("A nonempty workflow step identifier is required")
+def _printable(value):
+    """Reject controls, format characters such as bidi overrides and lone surrogates.
+
+    A lone surrogate cannot be encoded as UTF-8, so it would otherwise fail
+    inside SDK serialization instead of in this validation.
+    """
+    if not value.isprintable():
+        raise ValueError("Identifier contains unsupported characters")
     return value
 
 
+def _node_identifier(value):
+    """Flow node IDs travel only in a JSON body, so path-unsafe characters are acceptable."""
+    if not isinstance(value, str) or not value or value.strip() != value or len(value) > 1024:
+        raise ValueError("A nonempty workflow step identifier is required")
+    return _printable(value)
+
+
 def _selected_indices(values):
-    """Keep zero-based picks in order; the step's min/max is the caller's check."""
+    """Keep 1-100 zero-based picks in order; the step's own min/max is the caller's check."""
     if not isinstance(values, (list, tuple)):
         raise ValueError("Selected items must be a list of indices")
     picks = list(values)
-    if any(type(value) is not int or value < 0 for value in picks):
+    if not picks:
+        raise ValueError("Select at least one item")
+    if len(picks) > _MAX_SELECTED_ITEMS:
+        raise ValueError(f"Select at most {_MAX_SELECTED_ITEMS} items")
+    if any(type(value) is not int or not 0 <= value <= _MAX_JSON_INTEGER for value in picks):
         raise ValueError("Selected items must be nonnegative integer indices")
     if len(set(picks)) != len(picks):
         raise ValueError("Select each item at most once")
@@ -558,15 +576,17 @@ class SDKAdapter:
         """Send one decision for a waiting workflow approval or selection step.
 
         A decision can resume paid steps or stop the workflow, so it is never
-        retried. AdapterStatusError is a service reply; another AdapterError
-        after dispatch leaves the outcome unknown until the job is read again.
-        The acknowledgement is not terminal-state evidence and may contain
-        signed asset URLs, which callers must not persist or log.
+        retried. ValueError means nothing was sent. AdapterStatusError is a
+        service reply. Treat every other AdapterError as an unknown outcome
+        until the job is read again: offline and closed-client refusals happen
+        before sending but share that type with a lost response or a malformed
+        acknowledgement. The acknowledgement is not terminal-state evidence and
+        may contain signed asset URLs, which callers must not persist or log.
         """
         from scenario_sdk import omit
 
-        workflow_id = _identifier(workflow_id)
-        workflow_job_id = _identifier(workflow_job_id)
+        workflow_id = _printable(_identifier(workflow_id))
+        workflow_job_id = _printable(_identifier(workflow_job_id))
         node_id = _node_identifier(node_id)
         actions = _STEP_ACTIONS.get(node_type) if isinstance(node_type, str) else None
         if actions is None:

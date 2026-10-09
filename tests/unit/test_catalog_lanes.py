@@ -226,6 +226,20 @@ def test_is_trained_matches_the_former_lane_exclusion():
         assert catalog.is_trained(record) and _former_lora_exclusion(record)
 
 
+def test_is_trained_is_a_lane_filter_not_a_trained_model_test():
+    # Routing must not use is_trained to pick trained models: it also hides hosted base types
+    # and keeps private custom models listed.
+    hosted = catalog.ModelRecord.from_api({"id": "m", "type": "flux.1-pro"})
+    private = catalog.ModelRecord.from_api({"id": "p", "type": "custom", "privacy": "private"})
+    assert catalog.is_trained(hosted) and catalog.trained_kind(hosted) == "unsupported"
+    assert not catalog.is_trained(private) and catalog.trained_kind(private) == "custom_private"
+    for model_type in _sdk_model_types():
+        record = catalog.ModelRecord.from_api({"id": "m", "type": model_type})
+        usable = catalog.trained_kind(record) in catalog.USABLE_TRAINED_KINDS
+        assert usable == (model_type in SDK_LORA_TYPES or model_type == "flux.1-composition")
+        assert not usable or catalog.is_trained(record)
+
+
 def test_malformed_record_types_are_unsupported_without_failing_lanes():
     malformed = [
         catalog.ModelRecord.from_api(

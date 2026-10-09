@@ -182,7 +182,10 @@ by the private list has no kind. Offline tests cover every SDK 2.2.0 type
 literal and fail when an SDK upgrade changes that set. `catalog.is_trained`
 keeps `lora`, `composition` and `unsupported` records out of the base lanes and
 picker. For every type literal, privacy and lineage it gives the same result as
-the former blanket exclusion, so lane lists and the picker are unchanged. A
+the former blanket exclusion, so lane lists and the picker are unchanged. It is
+a lane filter, not a trained-model test: it is also true for hosted base types
+such as `flux.1-pro` and false for `custom_private`. Routing selects trained
+models with `trained_kind` and `USABLE_TRAINED_KINDS` instead. A
 private custom model stays an ordinary runnable model wherever records already
 reach the lanes or picker, such as a saved selection or an MCP schema read. The
 `custom_private` kind only describes it. `SDKCatalog.trained_models`
@@ -203,12 +206,17 @@ discovery summaries, not form schemas.
 
 `SDKCatalog.get_many` reads each requested ID at most once per connection,
 remembers IDs the service omitted, and shares pending reads between overlapping
-callers; `refresh=True` reads again. Summaries are cached apart from the model
-details used for forms and quotes, never replace them, and are discarded on
-retirement. Catalog loading does not start bulk reads; callers request them
-explicitly, which bounds read amplification. `SDKAdapter.model` raises
-`AdapterUnavailable` for HTTP 403 or 404, and `SDKCatalog` keeps that status on
-its `ScenarioError`, so later quote checks can report an inaccessible model.
+callers. `refresh=True` skips cached summaries but joins a read of the same ID
+already in flight. A request is checked with the adapter's identifier rules
+before it owns any shared read, so an invalid ID fails only that request.
+Summaries are cached apart from the model details used for forms and quotes,
+never replace them, and are discarded on retirement. Catalog loading does not
+start bulk reads; callers request them explicitly, which bounds read
+amplification. `SDKAdapter.model` raises `AdapterUnavailable` for HTTP 403 or
+404 with fixed text that names the status, and `SDKCatalog` keeps that status
+on its `ScenarioError`. Form and MCP description reads show that text. The job
+coordinator's metadata and quote reads call `SDKAdapter.model` directly and
+receive the same text as an `AdapterError`.
 
 Every operation here is a public SDK 2.2.0 method, so there is no raw fallback,
 SDK issue or dependency change. Offline transport tests establish serialization,

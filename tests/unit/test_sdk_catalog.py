@@ -5,6 +5,7 @@
 import base64
 import json
 import threading
+import time
 from concurrent.futures import Future, ThreadPoolExecutor
 from decimal import Decimal
 
@@ -677,12 +678,70 @@ def test_invalid_bulk_requests_fail_before_opening_a_pool(model_ids):
     context.close()
 
 
-@pytest.mark.parametrize("model_id", ["", "../other", "padded "])
-def test_invalid_bulk_identifiers_never_reach_the_service(model_id):
-    context, _ = catalog(lambda request: pytest.fail("Unexpected request"))
+@pytest.mark.parametrize(
+    "model_ids", [[""], ["../other"], ["padded "], ["good", "bad/id"], ["good", "100%"]]
+)
+def test_invalid_bulk_identifiers_never_reach_the_service(model_ids, monkeypatch):
+    created = []
+
+    class RecordedFuture(Future):
+        def __init__(self):
+            super().__init__()
+            created.append(self)
+
+    monkeypatch.setattr("scenario.core.api.sdk_catalog.Future", RecordedFuture)
+    context, pools = catalog(lambda request: pytest.fail("Unexpected request"))
     with pytest.raises(ScenarioError, match="request is invalid"):
-        context.get_many([model_id])
+        context.get_many(model_ids)
+    # The request owns no shared read and opens no pool before its identifiers are checked.
+    assert created == [] and pools == []
     assert context._summary_reads == {} and context._summaries == {}
+    context.close()
+
+
+def test_rejected_identifier_cannot_fail_a_concurrent_read_of_a_valid_id(monkeypatch):
+    entered, release, waiting = (threading.Event() for _ in range(3))
+    calls = []
+
+    class ObservedFuture(Future):
+        def result(self, timeout=None):
+            waiting.set()
+            return super().result(timeout)
+
+    monkeypatch.setattr("scenario.core.api.sdk_catalog.Future", ObservedFuture)
+    models_bulk = SDKAdapter.models_bulk
+
+    def gated(self, identifiers, **options):
+        if "bad/id" in identifiers:
+            entered.set()  # Reached only if the invalid request owned the shared read.
+            assert release.wait(5)
+        return models_bulk(self, identifiers, **options)
+
+    monkeypatch.setattr(SDKAdapter, "models_bulk", gated)
+    context, _ = catalog(bulk_handler(calls))
+
+    def settled(*conditions):
+        deadline = time.monotonic() + 5
+        while not any(condition() for condition in conditions):
+            if time.monotonic() > deadline:
+                return False
+            time.sleep(0.005)
+        return True
+
+    with ThreadPoolExecutor(max_workers=2) as workers:
+        try:
+            invalid = workers.submit(context.get_many, ["good", "bad/id"])
+            assert settled(invalid.done, entered.is_set)
+            valid = workers.submit(context.get_many, ["good"])
+            # If the invalid request owned "good", the valid caller joins its pending read.
+            assert settled(valid.done, waiting.is_set)
+        finally:
+            release.set()
+        with pytest.raises(ScenarioError, match="request is invalid"):
+            invalid.result(5)
+        assert list(valid.result(5)) == ["good"]
+    assert not entered.is_set() and bulk_ids(calls) == [["good"]]
+    assert context._summary_reads == {}
     context.close()
 
 

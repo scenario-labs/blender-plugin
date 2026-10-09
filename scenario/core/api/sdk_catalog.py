@@ -13,7 +13,13 @@ from ..schema.params import parse_schema
 from .catalog import ModelRecord
 from .catalog import trained_models as trained_pairs
 from .errors import ScenarioError
-from .sdk_adapter import MODEL_BULK_LIMIT, AdapterError, AdapterUnavailable, SDKAdapter
+from .sdk_adapter import (
+    MODEL_BULK_LIMIT,
+    AdapterError,
+    AdapterUnavailable,
+    SDKAdapter,
+    model_identifiers,
+)
 
 
 class SDKCatalog:
@@ -227,21 +233,18 @@ class SDKCatalog:
 
         Returns {id: ModelRecord} in request order for the models Scenario
         returned. An omitted ID is remembered as absent for this connection, so
-        repeated loads do not repeat its read; `refresh` reads every requested
-        ID again. Overlapping callers share pending reads. These summaries come
-        from `models.get_bulk`, which the API reference does not document as
-        carrying `inputs`; they never replace the details `get` caches for forms
-        and quotes.
+        repeated loads do not repeat its read. `refresh` skips cached summaries
+        but joins a read of the same ID already in flight. Overlapping callers
+        share pending reads. These summaries come from `models.get_bulk`, which
+        the API reference does not document as carrying `inputs`; they never
+        replace the details `get` caches for forms and quotes.
         """
-        # Check element types before deduplicating: an unhashable element must not escape as
-        # a bare TypeError.
-        if (
-            isinstance(model_ids, (str, bytes))
-            or not isinstance(model_ids, (list, tuple))
-            or not all(isinstance(model_id, str) for model_id in model_ids)
-        ):
-            raise ScenarioError(0, "The catalog request is invalid")
-        requested = list(dict.fromkeys(model_ids))
+        # Apply the adapter's identifier rules before owning a shared read: an ID it rejects
+        # must fail only this request, never a caller waiting on a valid ID from it.
+        try:
+            requested = model_identifiers(model_ids)
+        except ValueError:
+            raise ScenarioError(0, "The catalog request is invalid") from None
         if len(requested) > MODEL_BULK_LIMIT:
             raise ScenarioError(0, "The catalog request is invalid")
         rows, waiting, owned = {}, {}, {}

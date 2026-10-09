@@ -327,6 +327,10 @@ def is_trained(record):
     This covers LoRAs, compositions and other trained or unsupported types,
     which need a verified route before they can run. A private custom model
     is an ordinary runnable model and stays listed, as before.
+
+    This is a lane filter, not a trained-model test: it is also true for
+    hosted base types such as `flux.1-pro` and false for custom_private.
+    Routing selects trained models with trained_kind and USABLE_TRAINED_KINDS.
     """
     return trained_kind(record) in EXCLUDED_KINDS
 

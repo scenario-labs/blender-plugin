@@ -205,6 +205,17 @@ def _client(credentials, base_url, timeout, transport):
         raise
 
 
+def model_identifiers(values):
+    """Unique model identifiers in request order; ValueError for any the adapter rejects.
+
+    Callers that share pending reads by identifier check a request here first,
+    so an invalid identifier fails only the request that contains it.
+    """
+    if isinstance(values, (str, bytes)) or not isinstance(values, (list, tuple)):
+        raise ValueError("Use a list of model identifiers")
+    return list(dict.fromkeys(_identifier(value) for value in values))
+
+
 class SDKAdapter:
     """One selected account/project and owned HTTP pool; close after worker use.
 
@@ -347,11 +358,9 @@ class SDKAdapter:
         Every chunk carries the selected project and rechecks online permission;
         any failure returns nothing rather than a partial result.
         """
-        if isinstance(identifiers, (str, bytes)) or not isinstance(identifiers, (list, tuple)):
-            raise ValueError("Use a list of model identifiers")
         if type(chunk) is not int or not 1 <= chunk <= MODEL_BULK_CHUNK:
             raise ValueError(f"Bulk model chunks hold 1 to {MODEL_BULK_CHUNK} identifiers")
-        requested = list(dict.fromkeys(_identifier(value) for value in identifiers))
+        requested = model_identifiers(identifiers)
         if len(requested) > MODEL_BULK_LIMIT:
             raise ValueError(f"Read at most {MODEL_BULK_LIMIT} models at once")
         records = {}

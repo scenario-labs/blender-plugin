@@ -18,6 +18,7 @@ from scenario.core.api.sdk_adapter import (
     AdapterUnavailable,
     Credentials,
     SDKAdapter,
+    model_identifiers,
 )
 
 URL = "https://service.example.invalid/v1"
@@ -818,6 +819,15 @@ def test_bulk_model_reads_validate_input_before_network(adapter, identifiers, op
     client = adapter(lambda request: pytest.fail("Invalid input reached the service"))
     with pytest.raises(ValueError):
         client.models_bulk(identifiers, **options)
+
+
+def test_model_identifiers_share_the_adapter_rules_without_a_client():
+    # SDKCatalog.get_many applies these rules before it owns a shared read.
+    assert model_identifiers(("b", "a", "b")) == ["b", "a"]
+    assert model_identifiers([]) == []
+    for invalid in ("a", b"a", {"a"}, None, ["a", "b/c"], ["a", ""], ["a", ["b"]], [{}]):
+        with pytest.raises(ValueError):
+            model_identifiers(invalid)
 
 
 def test_bulk_model_reads_accept_the_limit_and_recheck_permission_per_chunk(adapter):

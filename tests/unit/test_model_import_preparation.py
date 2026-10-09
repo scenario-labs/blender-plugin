@@ -253,6 +253,24 @@ def test_bytes_changed_after_verification_discard_the_snapshot(env, monkeypatch,
     assert registered(env) == 0
 
 
+def test_changed_bytes_the_decoder_reads_discard_a_decodable_snapshot(env, monkeypatch):
+    # Flip the red byte of the first .splat record; the changed file still decodes.
+    _change_after_open(monkeypatch, env.paths["asset-splat"], _overwrite(24))
+    # Ignore file identity so only the hash of the bytes the decoder read can object.
+    monkeypatch.setattr(results, "_stamp", lambda value: ())
+    original, decoded = splats.decode, []
+
+    def decode_and_keep(*args, **kwargs):
+        decoded.append(original(*args, **kwargs))
+        return decoded[-1]
+
+    monkeypatch.setattr(splats, "decode", decode_and_keep)
+    with pytest.raises(ResultError, match="changed while it was prepared"):
+        prepare(env, "asset-splat")
+    assert decoded[0].floats("colors")[0] == pytest.approx((9 ^ 0xFF) / 255)
+    assert registered(env) == 0
+
+
 def test_replaced_or_missing_files_fail_before_decoding(env, monkeypatch):
     path = env.paths["asset-spz"]
     original = results.ResultCommands.verify_ready

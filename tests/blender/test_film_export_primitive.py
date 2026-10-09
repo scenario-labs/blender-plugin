@@ -4,12 +4,15 @@
 
 import os
 import shutil
+import sys
 import tempfile
 import threading
 import time
 import unittest
 from concurrent.futures import ThreadPoolExecutor
+from dataclasses import replace
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
 import bpy
@@ -119,6 +122,82 @@ class FilmExportPrimitiveTests(unittest.TestCase):
         self.assertEqual((muted.frames, muted.audio), (24, False))
         with self.assertRaises(ValueError):
             self.snapshot(width=65)
+
+    def test_default_size_truncates_like_blender_output(self):
+        render = self.review.render
+        render.resolution_x, render.resolution_y = 1918, 1080
+        render.resolution_percentage = 33
+        # Blender renders (1918 * 33) // 100 = 632; rounding would ask for 633.
+        spec = self.snapshot()
+        self.assertEqual((spec.width, spec.height), (632, 356))
+
+    def test_media_budget_counts_distinct_files(self):
+        # The movie and sound strips read the same file: one stamp, one budget slot.
+        with patch.object(self.capture, "MAX_MEDIA", 1):
+            spec = self.snapshot()
+            self.assertEqual([item.path for item in spec.media], [self.media])
+            other = self.directory / "other.mp4"
+            other.write_bytes(self.media.read_bytes())
+            self.review.sequence_editor.strips.new_sound("Other", str(other), 3, 1)
+            with self.assertRaisesRegex(self.export.LocalExportError, "at most 2,000"):
+                self.snapshot()
+
+    def test_export_child_is_this_blender_running_the_bundled_worker(self):
+        origin, source = self.origins()
+        spec = self.snapshot()
+        script = self.directory / "film_export_worker.py"
+        script.write_text("raise SystemExit(1)\n", encoding="utf-8")
+        foreign = (
+            replace(spec, binary=Path(sys.executable).resolve()),
+            replace(spec, worker=script),
+        )
+        with (
+            patch.object(self.export, "_hash_media", side_effect=AssertionError("hashed")),
+            patch.object(self.export, "reserve", side_effect=AssertionError("reserved")),
+        ):
+            for value in foreign:
+                with self.assertRaisesRegex(ValueError, "this Blender and extension"):
+                    self.session.export_film(
+                        value, self.output / "Review.mp4", origin=origin, source_origin=source
+                    )
+        self.assertEqual(self.session._exports._threads, [])
+        self.assertEqual(list(self.output.iterdir()), [])
+
+    def test_worker_encodes_8_bit_even_from_a_10_bit_scene(self):
+        worker = submodule("blender.film_export_worker")
+        image = self.review.render.image_settings
+        if hasattr(image, "media_type"):
+            image.media_type = "VIDEO"
+        image.file_format = "FFMPEG"
+        self.review.render.ffmpeg.codec = "H264"
+        image.color_depth = "10"
+        parameters = self.directory / "started.json"
+        (self.directory / "output").mkdir()
+        seen = []
+
+        def render(**options):
+            settings = self.review.render
+            seen.append((settings.image_settings.color_depth, settings.ffmpeg.codec))
+            return {"FINISHED"}
+
+        native = SimpleNamespace(
+            app=bpy.app,
+            context=bpy.context,
+            data=bpy.data,
+            ops=SimpleNamespace(render=SimpleNamespace(render=render)),
+        )
+        spec = dict(
+            mode="render",
+            scene_name=self.review.name,
+            frame_start=1,
+            frame_end=2,
+            fps=24,
+            width=64,
+            height=64,
+            audio=False,
+        )
+        worker._render(native, parameters, spec)
+        self.assertEqual(seen, [("8", "H264")])
 
     def test_silent_review_defaults_to_no_audio_track(self):
         for strip in self.review.sequence_editor.strips_all:

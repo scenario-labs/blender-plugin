@@ -96,30 +96,31 @@ def snapshot(
 
 
 def _export_media(scene):
-    """Stamp every external file the sequencer reads; packed data is in the snapshot."""
-    paths = []
+    """Stamp every distinct external file the sequencer reads; packed data is in the snapshot."""
+    paths = {}
     for strip in scene.sequence_editor.strips_all:
         if strip.type in BLOCKED_STRIPS:
             raise ValueError("Export only movie, sound, image, text and effect strips")
+        raw = ()
         if strip.type == "MOVIE":
-            paths.append(strip.filepath)
+            raw = (strip.filepath,)
         elif strip.type == "SOUND" and strip.sound is not None:
             if strip.sound.packed_file is None:
-                paths.append(strip.sound.filepath)
+                raw = (strip.sound.filepath,)
         elif strip.type == "IMAGE":
-            paths.extend(os.path.join(strip.directory, item.filename) for item in strip.elements)
+            raw = (os.path.join(strip.directory, item.filename) for item in strip.elements)
         elif strip.type == "TEXT" and strip.font is not None:
             if strip.font.packed_file is None and strip.font.filepath != "<builtin>":
-                paths.append(strip.font.filepath)
+                raw = (strip.font.filepath,)
+        for value in raw:
+            paths.setdefault(Path(bpy.path.abspath(value)), None)
+        # The budget counts distinct files: cuts may reuse one clip or sound many times.
         if len(paths) > MAX_MEDIA:
             raise LocalExportError("Export at most 2,000 media files")
-    stamps = {}
-    for raw in paths:
-        path = Path(bpy.path.abspath(raw))
+    for path in paths:
         if not path.is_absolute():
             raise LocalExportError("Export media must use absolute or saved-file-relative paths")
-        stamps.setdefault(path, media_stamp(path))
-    return tuple(stamps.values())
+    return tuple(media_stamp(path) for path in paths)
 
 
 def _muted(editor, strip):
@@ -173,7 +174,7 @@ def export_snapshot(
     render = scene.render
     if render.fps_base != 1 or not 1 <= render.fps <= 120:
         raise ValueError("Export scenes with an integer frame rate from 1 to 120")
-    scale = render.resolution_percentage / 100
+    percentage = render.resolution_percentage
     parameters = {
         "directory": _root(directory),
         "binary": Path(bpy.app.binary_path).resolve(),
@@ -183,8 +184,9 @@ def export_snapshot(
         "frame_start": scene.frame_start if frame_start is None else frame_start,
         "frame_end": scene.frame_end if frame_end is None else frame_end,
         "fps": render.fps,
-        "width": round(render.resolution_x * scale) if width is None else width,
-        "height": round(render.resolution_y * scale) if height is None else height,
+        # Blender's own output size truncates the percentage scale.
+        "width": render.resolution_x * percentage // 100 if width is None else width,
+        "height": render.resolution_y * percentage // 100 if height is None else height,
         "audio": _audible(scene) if audio is None else audio,
         "media": _export_media(scene),
         "timeout": timeout,

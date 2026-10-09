@@ -726,6 +726,16 @@ class JobSession:
         )
         return local_export.validate_destination(destination, private_roots=roots)
 
+    @staticmethod
+    def _export_programs(spec):
+        """Refuse a specification whose child is not this Blender running the bundled worker."""
+        expected = (
+            Path(bpy.app.binary_path).resolve(),
+            Path(__file__).with_name("film_export_worker.py").resolve(),
+        )
+        if (spec.binary, spec.worker) != expected:
+            raise ValueError("Use a Film export snapshot from this Blender and extension")
+
     def export_film(self, spec, destination, *, origin, source_origin):
         """Start one approved offline video export on the session's owned export thread.
 
@@ -738,6 +748,7 @@ class JobSession:
         _main_thread()
         if not isinstance(spec, local_export.ExportSpec):
             raise TypeError("Use a Film export specification")
+        self._export_programs(spec)
         self._check_capacity()
         self._resolve(origin)
         if not self._origins.current(source_origin):

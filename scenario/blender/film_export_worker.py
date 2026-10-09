@@ -89,6 +89,8 @@ def _render(bpy, path, spec):
     ffmpeg = render.ffmpeg
     ffmpeg.format = "MPEG4"
     ffmpeg.codec = "H264"
+    # 8-bit 4:2:0 is the verified output; never inherit the scene's 10-bit depth.
+    image.color_depth = "8"
     ffmpeg.constant_rate_factor = "HIGH"
     ffmpeg.ffmpeg_preset = "GOOD"
     ffmpeg.use_autosplit = False

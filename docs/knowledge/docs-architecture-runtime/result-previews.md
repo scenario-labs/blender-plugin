@@ -9,12 +9,12 @@
     "coverage": "source-reviewed",
     "reviewed_at": "2026-10-09",
     "base_revision": "fb699b8555f7cee62147794516cc7aaa224864f7",
-    "limits": "Inspected the shared-runtime connection of the preview scheduler, preview lane and cache root, including retirement that waits for an idle preview lane before shutdown. No view schedules previews; UI, MCP and live acceptance remain open.",
+    "limits": "Inspected the shared-runtime connection of the preview scheduler, preview lane and cache root, including retirement that waits for an idle preview lane before shutdown and a session that runs jobs without previews when the cache root cannot be created. No view schedules previews; UI, MCP and live acceptance remain open.",
     "sources": {
       "scenario/blender/job_session.py": "f8ea693820df79a9e51d103873349f0e5d6512996841f0536dd091b15438757c",
-      "scenario/blender/runtime.py": "7ba1a04feddcf53987879cd57406210f2aa9fe7aa7e2c3a1e9fcbd54714eef46",
+      "scenario/blender/runtime.py": "e7d96070a984d22c589b33c035597fec6f3b2eb53ae28551c3e26b82f6b5ee34",
       "scenario/core/jobs/workers.py": "39e769705a7ae81582906460f01efe648390149f67aa99352ca77e2cb6f6e98f",
-      "scenario/core/jobs/preview_scheduler.py": "f9e20eaa003f7baafee3d8ddb78730b459741b2330bc8a21e9b6dff140efdc03"
+      "scenario/core/jobs/preview_scheduler.py": "ba072b0748b5210527ed953da66794a8e3fca3617608960bc8a0a57a42d9737c"
     }
   }
 }

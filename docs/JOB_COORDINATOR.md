@@ -173,7 +173,11 @@ failed persistence preserve local state. A stale polling result cannot overwrite
 a newer decision; simultaneous identical terminal results are idempotent.
 
 The snapshot retains the response in memory behind copy-on-read JSON access.
-Raw responses, result text and signed URLs are not persisted. The saved remote ID
+Raw responses, result text and signed URLs are not persisted. An active refresh
+commits nothing and keeps the saved revision; Blender's owner derives a validated
+in-memory [progress reading](BLENDER_JOB_CONTEXT.md#remote-progress-and-scene-lane-binding)
+from the snapshot's `status` and `progress` with the bpy-free
+[`progress.observe`](../scenario/core/jobs/progress.py). The saved remote ID
 allows result metadata to be fetched again. There is deliberately no command to
 attach a guessed remote ID or regenerate an unknown submission.
 

@@ -90,6 +90,13 @@ WRITES = {
     "remove": lambda client: client.remove_collection_assets("fixture-collection", ["asset-a"]),
     "tags": lambda client: client.update_asset_tags("asset-a", add=["hero"]),
 }
+READS = {
+    "collections": lambda client: client.collection_page(),
+    "collection": lambda client: client.collection("fixture-collection"),
+    "records": lambda client: client.asset_records(["asset-a"]),
+}
+# json.loads raises RecursionError, not ValueError, past its nesting limit.
+NESTED = b"[" * 100_000 + b"]" * 100_000
 
 
 @pytest.mark.parametrize("project", [None, "selected-project"])
@@ -268,7 +275,9 @@ def assert_sanitized(error):
         b'{"collection": null}',
         b'{"error": "private-service-text"}',
         b'{"added": NaN}',
+        NESTED,
     ],
+    ids=["empty", "text", "list", "null", "error", "nan", "nested"],
 )
 def test_malformed_success_bodies_are_uncertain(adapter, operation, content):
     requests, handler = recorder(httpx.Response(200 if content else 204, content=content))
@@ -596,6 +605,15 @@ def test_asset_records_reject_unrequested_or_malformed_records(adapter, page):
 def test_asset_records_validate_ids_before_dispatch(adapter, asset_ids):
     with pytest.raises(ValueError):
         adapter(deny).asset_records(asset_ids)
+
+
+@pytest.mark.parametrize("read", sorted(READS))
+def test_deeply_nested_read_bodies_are_invalid_json(adapter, read):
+    requests, handler = recorder(httpx.Response(200, content=NESTED))
+    with pytest.raises(AdapterError, match="invalid JSON") as error:
+        READS[read](adapter(handler))
+    assert not isinstance(error.value, (WriteRejected, WriteUncertain))
+    assert len(requests) == 1
 
 
 @pytest.mark.parametrize("failure", [404, 503, "timeout"])

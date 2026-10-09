@@ -795,8 +795,10 @@ sanitized `AdapterError` behavior. Write outcomes are classified as follows:
   connection (404), or a rejected change.
 - **`WriteUncertain(status or None)`.** Redirects (never followed), 408, 409,
   425, 429 and 5xx responses, timeouts, lost connections, other transport
-  failures, and a 2xx response with invalid JSON, a missing wrapper, a
-  different collection ID or name, or tag lists that were not requested.
+  failures, and a 2xx response with invalid JSON (including nesting deeper
+  than the decoder's recursion limit), a missing wrapper, a different
+  collection ID or name, or tag lists that were not requested. Reads report
+  the same malformed bodies as a sanitized `AdapterError`.
 - **`WriteUncertain.collection_id`** is set only when a create acknowledgement
   has a valid collection ID but another name, for example after service
   normalization. That collection exists, so the caller reconciles by this ID,

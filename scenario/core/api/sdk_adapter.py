@@ -170,7 +170,8 @@ def _json(raw, *, exact=False):
         result = json.loads(
             raw, parse_float=Decimal if exact else float, parse_constant=_reject_constant
         )
-    except (ValueError, UnicodeError):
+    except (ValueError, UnicodeError, RecursionError):
+        # Deeply nested arrays or objects exceed the decoder's recursion limit.
         raise AdapterError("Scenario returned invalid JSON") from None
     if not isinstance(result, dict):
         raise AdapterError("Scenario returned an unexpected response")

@@ -116,6 +116,24 @@ def test_tags_and_names_are_stripped_deduplicated_and_kept_in_order():
     assert created.asset_ids == ()
 
 
+def test_tag_limit_errors_name_the_limit_each_check_enforces(service):
+    assert normalize_tags(["hero"] * 200) == ("hero",)
+    assert parse_tags(",".join(["hero"] * 200)) == ("hero",)
+    raw = "Use at most 200 tag entries, counting duplicates"
+    with pytest.raises(ValueError) as exceeded:
+        normalize_tags(["hero"] * 201)
+    assert str(exceeded.value) == raw
+    with pytest.raises(ValueError, match="^Use at most 200 tag entries"):
+        parse_tags(",".join(["hero"] * 201))
+    with pytest.raises(ValueError, match="^Use at most 200 tag entries"):
+        request("update_tags", asset_ids=["asset-a"], remove_tags=["old"] * 201)
+    unique = f"Use at most {MAX_TAG_CHANGES} tags in one change"
+    with pytest.raises(ValueError) as exceeded:
+        normalize_tags([f"t{i}" for i in range(MAX_TAG_CHANGES + 1)] * 2)
+    assert str(exceeded.value) == unique
+    assert service.requests == []
+
+
 @pytest.mark.parametrize(
     "operation,arguments",
     [

@@ -141,7 +141,7 @@ def normalize_tags(values):
     if isinstance(values, str) or not isinstance(values, (list, tuple)):
         raise ValueError("Tags must be a list of text labels")
     if len(values) > _RAW_TAG_LIMIT:
-        raise ValueError(f"Use at most {MAX_TAG_CHANGES} tags in one change")
+        raise ValueError(f"Use at most {_RAW_TAG_LIMIT} tag entries, counting duplicates")
     tags = []
     for value in values:
         if not isinstance(value, str):

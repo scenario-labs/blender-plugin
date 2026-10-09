@@ -1,0 +1,67 @@
+{
+ "model": {
+  "id": "model_2taP2G9BJL1Rw8t81NwiXGZA",
+  "type": "flux.1-lora",
+  "privacy": "public",
+  "status": "trained",
+  "custom": false,
+  "capabilities": [
+   "txt2img",
+   "txt2img_texture",
+   "txt2img_ip_adapter",
+   "img2img",
+   "img2img_ip_adapter",
+   "img2img_texture",
+   "controlnet",
+   "controlnet_img2img",
+   "controlnet_inpaint",
+   "controlnet_reference",
+   "controlnet_texture",
+   "controlnet_inpaint_ip_adapter",
+   "controlnet_ip_adapter",
+   "inpaint",
+   "inpaint_ip_adapter",
+   "reference",
+   "reference_texture"
+  ],
+  "compliantModelIds": [
+   "flux.1-dev",
+   "flux.1-schnell"
+  ],
+  "concepts": [
+   {
+    "modelId": "model_2taP2G9BJL1Rw8t81NwiXGZA",
+    "scale": 0.8
+   }
+  ],
+  "observedFields": [
+   "accessRestrictions",
+   "authorId",
+   "capabilities",
+   "collectionIds",
+   "complianceMetadata",
+   "compliantModelIds",
+   "concepts",
+   "createdAt",
+   "custom",
+   "epochs",
+   "exampleAssetIds",
+   "id",
+   "name",
+   "ownerId",
+   "parameters",
+   "privacy",
+   "shortDescription",
+   "source",
+   "status",
+   "tags",
+   "thumbnail",
+   "trainingImagePairs",
+   "trainingImagesNumber",
+   "trainingProgress",
+   "type",
+   "updatedAt",
+   "userId"
+  ]
+ }
+}

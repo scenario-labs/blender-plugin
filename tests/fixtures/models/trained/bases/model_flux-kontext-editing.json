@@ -1,0 +1,165 @@
+{
+ "model": {
+  "id": "model_flux-kontext-editing",
+  "userId": "apiu_FIXTURE0000000000000000",
+  "authorId": "apiu_FIXTURE0000000000000000",
+  "ownerId": "proj_FIXTURE00000000000000000",
+  "createdAt": "2025-11-05T14:37:11.459Z",
+  "updatedAt": "2026-06-28T10:15:31.636Z",
+  "name": "Flux Kontext",
+  "shortDescription": "Flux Kontext by Black Forest Labs. Edit images with text instructions, preserving characters and style across local or global edits. Supports up to 10 reference images.",
+  "type": "custom",
+  "privacy": "public",
+  "capabilities": [
+   "img2img"
+  ],
+  "source": "other",
+  "status": "trained",
+  "trainingProgress": {},
+  "parameters": {},
+  "trainingImagesNumber": 0,
+  "trainingImagePairs": [],
+  "tags": [
+   "Black Forest Labs",
+   "Flux",
+   "editing",
+   "sc:third-party"
+  ],
+  "collectionIds": [],
+  "exampleAssetIds": [],
+  "custom": true,
+  "accessRestrictions": 25,
+  "complianceMetadata": {
+   "enterpriseStatus": "Ready",
+   "modelProvider": "BFL",
+   "dataProcessingComment": "temporaryRetention",
+   "licenseTerms": "https://scenario.com/terms-and-conditions",
+   "subProcessor": "Replicate",
+   "maintainer": "Scenario"
+  },
+  "inputs": [
+   {
+    "description": "List of one or more LoRA model IDs or URLs.",
+    "modelTypes": [
+     "flux.1-kontext-lora"
+    ],
+    "default": [],
+    "label": "Flux Kontext LoRA",
+    "maxLength": 1,
+    "name": "loras",
+    "costImpact": true,
+    "type": "model_array"
+   },
+   {
+    "description": "Scales for the LoRA weights",
+    "label": "LoRA Scale",
+    "max": 2,
+    "min": 0,
+    "name": "lorasScale",
+    "costImpact": false,
+    "step": 0.05,
+    "type": "number_array"
+   },
+   {
+    "description": "Reference images for style or content guidance",
+    "kind": "image",
+    "label": "Reference images",
+    "maxLength": 10,
+    "name": "referenceImages",
+    "costImpact": true,
+    "parent": true,
+    "required": {
+     "always": true
+    },
+    "type": "file_array"
+   },
+   {
+    "description": "Text prompt for image editing or generation",
+    "label": "Instructions",
+    "maxLength": 4096,
+    "name": "prompt",
+    "costImpact": false,
+    "prompt": true,
+    "required": {
+     "always": true
+    },
+    "type": "string",
+    "promptSpark": true
+   },
+   {
+    "description": "Number of images to generate",
+    "default": 1,
+    "group": "Settings",
+    "label": "Image Count",
+    "max": 4,
+    "min": 1,
+    "name": "numOutputs",
+    "costImpact": true,
+    "step": 1,
+    "type": "number"
+   },
+   {
+    "allowedValues": [
+     "21:9",
+     "16:9",
+     "3:2",
+     "4:3",
+     "1:1",
+     "2:3",
+     "3:4",
+     "9:16",
+     "9:21",
+     "auto"
+    ],
+    "description": "Aspect ratio for the generated image",
+    "default": "auto",
+    "group": "Settings",
+    "label": "Aspect Ratio",
+    "name": "aspectRatio",
+    "costImpact": false,
+    "type": "string"
+   },
+   {
+    "allowedValues": [
+     "high",
+     "medium"
+    ],
+    "description": "Generation quality",
+    "default": "high",
+    "group": "Settings",
+    "label": "Quality",
+    "name": "quality",
+    "costImpact": true,
+    "type": "string"
+   },
+   {
+    "description": "How closely to follow the prompt (1.0-10.0)",
+    "default": 3.5,
+    "group": "Settings",
+    "label": "Guidance",
+    "max": 10,
+    "min": 1,
+    "name": "guidanceScale",
+    "costImpact": false,
+    "step": 0.1,
+    "type": "number"
+   }
+  ],
+  "uiConfig": {
+   "lorasComponent": {
+    "label": "Loras",
+    "modelInput": "loras",
+    "scaleInput": "lorasScale"
+   },
+   "selects": {
+    "quality": {
+     "high": "High",
+     "medium": "Medium"
+    },
+    "aspectRatio": {
+     "auto": "Auto"
+    }
+   }
+  }
+ }
+}

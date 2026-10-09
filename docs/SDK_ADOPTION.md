@@ -220,11 +220,93 @@ receive the same text as an `AdapterError`.
 
 Every operation here is a public SDK 2.2.0 method, so there is no raw fallback,
 SDK issue or dependency change. Offline transport tests establish serialization,
-scope, caching and failure handling only. Which base models declare
-`uiConfig.lorasComponent`, whether live bulk records carry `uiConfig` or
-`inputs`, the bulk batch limit and absent-ID behavior, and whether a trained ID
-runs directly remain unverified. They need a zero-spend read and dry-run capture
-under maintainer-authorized credentials and project before any route is enabled.
+scope, caching and failure handling only. A zero-spend capture, described in
+[trained-model REST contracts](#trained-model-rest-contracts), records which
+base models declare `uiConfig.lorasComponent`, what list and bulk records carry
+and whether a trained ID runs directly. The bulk batch limit above 50 IDs and
+absent-ID behavior remain unverified.
+
+## Trained-model REST contracts
+
+[tools/capture_trained_contracts.py](../tools/capture_trained_contracts.py)
+records how the service treats trained models, with reads and `dryRun=true`
+quotes only, through the shared adapter: `models.with_raw_response.list`
+(private trained and public lists), `models.with_raw_response.retrieve`,
+`models.with_raw_response.get_bulk`, `assets.with_raw_response.list` (one image
+of the scope for an image-to-image quote) and `generate.with_raw_response.run_model`
+with `dry_run="true"`. Its probes use the adapter's request guard and configured
+zero-retry client but issue no `Estimate`, so nothing they quote can be
+submitted, and it never sends `ipDetection`, which is charged even in a dry run.
+It quotes each accepted base-model route a second time through
+`SDKAdapter.estimate_model`, the production quote path, and never submits that
+estimate either. The sanitized results are committed under
+`tests/fixtures/models/trained/` and pinned by
+[offline contract tests](../tests/unit/test_trained_contracts.py); the
+[fixture inventory](../tests/fixtures/README.md#trained-model-contracts)
+describes recording and scrubbing. The recorded capture used SDK 2.2.0 and an
+explicit API-key pair in its credential-bound scope, without a project override.
+
+| Route kind | Request | Dry-run result |
+| --- | --- | --- |
+| LoRA stack | Base model with `loras` (`lorasComponent.modelInput`) and `lorasScale` (`scaleInput`) | Accepted: one and two `flux.1-lora` on FLUX.1 Dev, `flux.2-dev-lora` on FLUX.2 Dev, `flux.1-kontext-lora` on Flux Kontext with a reference image |
+| Single LoRA by ID | Base model with `modelId` (`modelIdInput`) set to a LoRA | Accepted on FLUX.1 Dev |
+| Composition | Base model with `modelId` set to a `flux.1-composition` | Accepted on FLUX.1 Dev, also for a composition with an unlisted concept LoRA and with extra `loras` |
+| Direct trained ID | `POST /generate/custom/{trainedId}` | Rejected with HTTP 400 "Custom models only are supported for this endpoint" for `flux.1-lora`, `flux.1-composition` and `flux.2-dev-lora` |
+
+What the reads show:
+
+- A GET of a public LoRA or composition returns no `inputs` or `uiConfig` and
+  reports `custom: false`. A trained record declares no runnable schema of its
+  own; the base model's schema is the only REST contract for using it.
+- Public list rows and get-bulk summaries carry neither `inputs` nor `uiConfig`,
+  even for LoRA-capable bases, so finding `lorasComponent` needs a detail read
+  of each candidate base.
+- FLUX.1 Dev, FLUX.2 Dev, Flux Kontext, Qwen Image Edit 2511 and Z-Image declare
+  `modelInput: loras`, a `model_array` with `modelTypes` and at most 6 items (1
+  for Kontext), and `scaleInput: lorasScale`, a `number_array` with min 0, max 2,
+  step 0.05 and no default. All but Kontext also declare `modelIdInput: modelId`,
+  a single `model` input; only FLUX.1 Dev lists `flux.1-composition` there, and
+  no captured base accepts a composition in `loras`. An uncommitted exploratory read
+  found the same component on other FLUX.1, FLUX.2 Klein, Qwen Image and
+  Z-Image Turbo bases.
+- Public trained records are `flux.1-lora`, `flux.1-kontext-lora`,
+  `flux.2-dev-lora` and `flux.1-composition` only, so the Z-Image and Qwen slots
+  have no public LoRA to quote.
+- The captured scope's private trained list was empty. Private LoRA and
+  composition records, and their routes, are not captured; when present, the
+  tool records only their REST types, schema presence and route statuses.
+- Composition concepts are LoRA IDs with scales between 0 and 1. A concept LoRA
+  that is not in the public list was still readable by ID.
+
+The service's answers to validation probes on FLUX.1 Dev, compared with today's
+shared form preparation (`forms.prepare_run`) on the captured schema:
+
+| Probe | Service dry run | `prepare_run` |
+| --- | --- | --- |
+| LoRA type outside `modelTypes`, or a composition in `loras` | HTTP 400 naming the model and the allowed types | Accepts |
+| Unknown model ID | HTTP 404 | Accepts |
+| 7 LoRAs where 6 are allowed | HTTP 400 | Rejects |
+| Strength 3 where the maximum is 2 | HTTP 400 | Rejects |
+| Strength -0.5 where the minimum is 0 | Accepted | Rejects |
+| Two LoRAs with one strength | Accepted | Rejects |
+| LoRAs without `lorasScale` | Accepted; the strength the service then applies is unknown | Accepts and adds none |
+
+LoRA and composition selections did not change the FLUX.1 Dev or FLUX.2 Dev
+quote, whose `loras` input declares `costImpact: false`; the Kontext LoRA raised
+the Kontext quote, as its `costImpact: true` declares. `estimate_model` quoted
+every accepted base-model selection at the same price as the minimal request,
+after adding the schema defaults.
+
+For [#97](https://github.com/scenario-labs/blender-plugin/issues/97), routing
+may therefore offer LoRA stacks and single LoRAs through a base model's
+`lorasComponent`, and compositions through its `modelIdInput`. Direct trained
+IDs stay disabled and the `estimate_model` gate is unchanged. Client checks must
+cover model types, existence, the strength minimum and strength alignment, which
+the service does not all enforce, and a missing strength needs an explicit
+policy because no default is declared. A dry run is not a paid run: result
+quality, how the service combines `modelId` with `loras` (the schema text says
+`loras` overrides a composition's LoRAs) and private-model behavior remain
+unverified.
 
 ## Model acceptance commands
 

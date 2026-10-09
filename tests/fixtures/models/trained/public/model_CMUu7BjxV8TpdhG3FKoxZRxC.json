@@ -1,0 +1,60 @@
+{
+ "model": {
+  "id": "model_CMUu7BjxV8TpdhG3FKoxZRxC",
+  "type": "flux.2-dev-lora",
+  "privacy": "public",
+  "status": "trained",
+  "custom": false,
+  "capabilities": [
+   "txt2img",
+   "img2img",
+   "img2img_texture",
+   "txt2img_texture",
+   "controlnet",
+   "controlnet_texture",
+   "controlnet_img2img",
+   "controlnet_inpaint",
+   "inpaint",
+   "outpaint",
+   "txt2img_ip_adapter",
+   "img2img_ip_adapter",
+   "controlnet_ip_adapter"
+  ],
+  "concepts": [
+   {
+    "modelId": "model_CMUu7BjxV8TpdhG3FKoxZRxC",
+    "scale": 0.8
+   }
+  ],
+  "parentModelId": "model_w3uxKZqU3pJXYiYXqGH9mS6j",
+  "observedFields": [
+   "accessRestrictions",
+   "authorId",
+   "capabilities",
+   "collectionIds",
+   "complianceMetadata",
+   "concepts",
+   "createdAt",
+   "custom",
+   "epochs",
+   "exampleAssetIds",
+   "id",
+   "name",
+   "ownerId",
+   "parameters",
+   "parentModelId",
+   "privacy",
+   "shortDescription",
+   "source",
+   "status",
+   "tags",
+   "thumbnail",
+   "trainingImagePairs",
+   "trainingImagesNumber",
+   "trainingProgress",
+   "type",
+   "updatedAt",
+   "userId"
+  ]
+ }
+}

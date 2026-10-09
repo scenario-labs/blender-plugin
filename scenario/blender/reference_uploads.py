@@ -188,8 +188,9 @@ class ReferenceUploads:
         # cancelling a preparation can still free an input whose marker undo restored.
         # Each ticket is also kept in references, so both share its 128-handle limit.
         self.workflow_tickets = {}
-        # Notes that an upload sent nothing: scene session UID, input, values, text.
-        self.workflow_notices = deque(maxlen=16)
+        # (scene session UID, input) -> (values, text) of its "nothing was sent" note.
+        # One per input; each comes from an upload or a canceled marker.
+        self.workflow_notices = {}
         self.form_errors = deque(maxlen=16)
         self.attachments = {}
 

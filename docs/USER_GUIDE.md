@@ -698,8 +698,9 @@ Offline desktop checks cover that handoff, prompt editing, populated-form
 scrolling, quote-preserving navigation, continued saved-job polling, small-window
 fit, Escape and return to the viewport. Alternate-DPI and IME acceptance remain
 pending. The Workflows page and [local MCP workflow commands](MCP.md#workflow-execution)
-share scoped discovery, exact estimates and explicit execution. Asset-library
-search and complete Studio/release acceptance remain open.
+share scoped discovery, exact estimates and explicit execution. Library provides
+paginated asset search and confirmed model-reference reuse.
+Complete Studio/release acceptance remains open.
 
 ### Run a workflow
 
@@ -727,3 +728,24 @@ durable recovery. This page runs existing workflows; it does not author graphs,
 handle interactive nodes or cancel running workflows. Direct file upload and
 library selection inside workflow inputs remain to integrate. Native desktop
 interaction and live workflow acceptance are still pending.
+
+### Browse Library assets
+
+Open **Studio > Library** and choose **Refresh** to read one page in the selected
+connection. **Public assets** searches the public catalog; leave it unchecked
+for the connected account's assets. Enter Search text, or clear Search and enter
+a Collection ID to browse that collection. These filters cannot be combined.
+Choose **Refresh** after changing filters. **Next** and **Previous** read only the
+requested page; they never download files or generate assets.
+
+Choose a model in Create, then **Use as reference** on a Library asset. Review
+the scene, generation form, model and matching input in the confirmation. Only
+matching file types with available capacity are offered. Existing references
+are preserved; remove an occupied reference explicitly in Create before replacing
+it. Confirmation adds the asset ID to that model form and requires a fresh price.
+A changed scene, form or connection rejects the old confirmation. The reference's
+saved connection binding prevents reuse under another account/project by accident.
+
+Library selection currently targets model forms. Workflow input selection,
+collection/tag editing, thumbnails and live or physical-desktop acceptance remain
+separate. Unknown file types are displayed but cannot be attached through this view.

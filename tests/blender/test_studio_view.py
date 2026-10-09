@@ -219,12 +219,13 @@ class StudioViewTests(unittest.TestCase):
         context.area.width, context.window.width = 1920, 800
         self.assertEqual(self.studio.popup_width(context), 352)
 
-    def test_compact_navigation_draws_two_segment_rows(self):
+    def test_compact_navigation_bounds_segment_rows(self):
         panels = submodule("blender.panels")
         self.view.page = "JOBS"
         with patch.object(panels, "draw_enum_tabs") as tabs:
             self.studio.draw_view(MagicMock(), bpy.context, width=400)
-        self.assertEqual(len(tabs.call_args.args[3]), 2)
+        self.assertEqual(len(tabs.call_args.args[3]), 3)
+        self.assertTrue(all(len(row) <= 3 for row in tabs.call_args.args[3]))
         with patch.object(panels, "draw_enum_tabs") as tabs:
             self.studio.draw_view(MagicMock(), bpy.context, width=960)
         self.assertEqual(len(tabs.call_args.args[3]), 1)

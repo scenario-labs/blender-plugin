@@ -10,6 +10,7 @@ import bpy
 from ..blender import generation, runtime
 from ..core.api.catalog import GENERATION_LANES as LANES
 from ..core.api.errors import ScenarioError
+from ..core.api.library import asset_summary as _asset_summary
 from ..core.schema.params import build_body, validate
 from .protocol import DeferredTool, ToolSpec
 
@@ -159,21 +160,6 @@ def _wait_workflow(task):
     except Exception:
         # Deliver the owned completion on the main thread, including errors.
         pass
-
-
-def _asset_summary(row):
-    """Expose reference metadata without signed URLs, previews or account records."""
-    metadata = row.get("metadata")
-    metadata = metadata if isinstance(metadata, dict) else {}
-    return {
-        "asset_id": row["id"],
-        "name": row.get("name", ""),
-        "description": row.get("description", ""),
-        "mime_type": row.get("mimeType", ""),
-        "type": metadata.get("type", ""),
-        "tags": row.get("tags", []),
-        "collection_ids": row.get("collectionIds", []),
-    }
 
 
 def _asset_library(args, *, search=False):

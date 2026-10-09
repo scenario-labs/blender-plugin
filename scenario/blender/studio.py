@@ -13,6 +13,7 @@ from . import (
     film_composition_controls,
     film_scene_controls,
     film_timeline_controls,
+    library_view,
     panels,
     runtime,
     workflow_controls,
@@ -22,6 +23,7 @@ PAGES = (
     ("CREATE", "Create", "Use the same model, prompt, references and settings as the composer"),
     ("FILM", "Film", "Prepare Film tasks, shots, captures, timeline and composition"),
     ("WORKFLOWS", "Workflows", "Choose a workflow, edit its inputs and approve its exact price"),
+    ("LIBRARY", "Library", "Browse and search assets in the selected connection"),
     ("JOBS", "Jobs", "Inspect running and saved jobs in the selected connection"),
     ("RESULTS", "Results", "Inspect results, reuse references and explicitly apply saved assets"),
     ("CONNECTION", "Connection", "Inspect account/project selection and local agent setup"),
@@ -89,14 +91,22 @@ def draw_view(layout, context, *, width):
     header.label(text=context.scene.name, icon="SCENE_DATA")
     layout.label(text="Press Esc or click outside to return to the viewport")
     identifiers = tuple(item[0] for item in PAGES)
-    rows = (identifiers,) if width >= 720 else (identifiers[:3], identifiers[3:])
+    rows = (
+        (identifiers,)
+        if width >= 720
+        else tuple(identifiers[i : i + 3] for i in range(0, len(identifiers), 3))
+    )
     panels.draw_enum_tabs(layout, view, "page", rows)
     layout.separator(factor=0.5)
     if view.page == "CREATE":
         draw_panel(layout, context, panels.SCENARIO_PT_main)
     elif view.page == "FILM":
         identifiers = tuple(item[0] for item in FILM_PAGES)
-        rows = (identifiers,) if width >= 720 else (identifiers[:3], identifiers[3:])
+        rows = (
+            (identifiers,)
+            if width >= 720
+            else tuple(identifiers[i : i + 3] for i in range(0, len(identifiers), 3))
+        )
         panels.draw_enum_tabs(layout, view, "film_page", rows)
         layout.separator(factor=0.5)
         draw_panel(layout, context, FILM_PANELS[view.film_page])
@@ -104,6 +114,8 @@ def draw_view(layout, context, *, width):
         draw_panel(layout, context, panels.SCENARIO_PT_jobs)
     elif view.page == "WORKFLOWS":
         workflow_controls.draw(layout, context)
+    elif view.page == "LIBRARY":
+        library_view.draw(layout, context)
     elif view.page == "RESULTS":
         draw_panel(layout, context, panels.SCENARIO_PT_generations)
     else:

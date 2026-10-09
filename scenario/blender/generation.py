@@ -227,6 +227,19 @@ def _clear_model_failures(model_ids):
                 lane_state.last_error = ""
 
 
+def lane_error(lane_state):
+    """The lane error to draw; read-only, so drawing never rewrites the saved value.
+
+    A model-load failure is current only while this session records it for the
+    lane's model. One saved in a reopened file is stale and is not drawn.
+    """
+    error = lane_state.last_error
+    if error.startswith(_MODEL_FAILED):
+        if runtime.state.model_errors.get(lane_state.model_id) != error:
+            return ""
+    return error
+
+
 _pending_models = set()
 _pending_dirty_models = set()
 

@@ -81,7 +81,8 @@ with **Retry loading model** repeating the same background read. A later read,
 success, another model or changed credentials clear it; drawing never retries.
 Online, a form with neither a pending read nor a failure recorded this session,
 such as one in a reopened file, offers the same retry instead of a saved error.
-With online access disabled, the form says so and offers no retry. An MCP call
+A model-load error saved with the file is not drawn in the form, below Generate
+or in the composer note unless this session recorded it. With online access disabled, the form says so and offers no retry. An MCP call
 needing the description, such as `model_schema`, reports a recorded failure once
 while it starts the next read.
 

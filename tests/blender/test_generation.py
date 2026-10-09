@@ -547,12 +547,43 @@ class GenerationTests(unittest.TestCase):
         lane = bpy.context.scene.scenario.lane_state("image")
         self.unload_schema(lane.model_id)
         lane.last_error = FAILED_MESSAGE  # as saved in a file reopened in a new session
+        lane.estimate_state, self.runtime.state.last_message = "IDLE", ""
         self.assertEqual(self.runtime.state.model_errors, {})
         with patch.object(self.runtime, "online", return_value=True):
             layout = self.draw("image")
         self.assertNotIn((FAILED_MESSAGE, "ERROR"), layout.labels())
         self.assertEqual(layout.labels()[-1], NOT_LOADED)
         self.assertEqual(layout.retries(), ["image"])
+        self.assertEqual(submodule("blender.composer.draw").status_note(lane), "")
+        self.assertEqual(lane.last_error, FAILED_MESSAGE)  # drawing only reads the saved value
+
+    def test_loaded_form_and_composer_skip_a_stale_saved_model_failure(self):
+        lane = bpy.context.scene.scenario.lane_state("image")
+        model_id = lane.model_id
+        self.assertIsNotNone(self.generation.schema_for(model_id))
+        status_note = submodule("blender.composer.draw").status_note
+        lane.estimate_state, self.runtime.state.last_message = "IDLE", ""
+        # A file opened after this session loaded the description keeps its saved failure.
+        lane.last_error = FAILED_MESSAGE
+        with patch.object(self.runtime, "online", return_value=True):
+            for _ in range(2):  # Drawing neither shows nor rewrites the stale value.
+                self.assertNotIn((FAILED_MESSAGE, "ERROR"), self.draw("image").labels())
+                self.assertEqual(status_note(lane), "")
+                self.assertEqual(lane.last_error, FAILED_MESSAGE)
+            self.assertEqual(self.runtime.state.model_errors, {})
+            # A failure this session records for the lane's model is current.
+            self.runtime.state.model_errors[model_id] = FAILED_MESSAGE
+            self.assertIn((FAILED_MESSAGE, "ERROR"), self.draw("image").labels())
+            self.assertEqual(status_note(lane), FAILED_MESSAGE)
+            # Another model's recorded failure does not make this saved one current.
+            self.runtime.state.model_errors = {"model_patina-material": FAILED_MESSAGE}
+            self.assertNotEqual(model_id, "model_patina-material")
+            self.assertNotIn((FAILED_MESSAGE, "ERROR"), self.draw("image").labels())
+            self.assertEqual(status_note(lane), "")
+            # Other lane errors are drawn as before.
+            lane.last_error = "Generation was refused"
+            self.assertIn(("Generation was refused", "ERROR"), self.draw("image").labels())
+            self.assertEqual(status_note(lane), "Generation was refused")
 
     def test_form_without_a_model_is_not_described_as_loading(self):
         layout = RecordingLayout()

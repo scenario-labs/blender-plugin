@@ -306,8 +306,9 @@ def draw_generate_row(layout, lane_state, lane):
     ).lane = lane
     if lane_state.estimate_state in ("ERROR", "UNAVAILABLE") and lane_state.estimate_error:
         layout.label(text=lane_state.estimate_error[:80], icon="INFO")
-    if lane_state.last_error:
-        layout.label(text=lane_state.last_error[:80], icon="ERROR")
+    error = generation.lane_error(lane_state)  # a stale saved model-load failure is not drawn
+    if error:
+        layout.label(text=error[:80], icon="ERROR")
 
 
 def draw_loading(layout):

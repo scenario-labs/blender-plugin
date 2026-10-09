@@ -270,17 +270,94 @@ def is_utility(record):
     return "tool" in record.tags or any(hint in text for hint in UTILITY_HINTS)
 
 
-def is_lora(record):
-    """Scenario's trained models (Flux LoRAs, compositions, Kontext LoRAs) and anything trained on a parent model.
-    They are style presets for the web app, not tools a Blender user picks by name: kept out of every lane (product decision)."""
+# Kinds of model records outside the shared base catalog, classified from REST fields only.
+TRAINED_LORA = "lora"
+TRAINED_COMPOSITION = "composition"
+PRIVATE_CUSTOM = "custom_private"
+TRAINED_UNSUPPORTED = "unsupported"
+TRAINED_KINDS = (TRAINED_LORA, TRAINED_COMPOSITION, PRIVATE_CUSTOM, TRAINED_UNSUPPORTED)
+# Kinds a later route may run through a compatible base model's REST schema (#97).
+USABLE_TRAINED_KINDS = (TRAINED_LORA, TRAINED_COMPOSITION)
+# Kinds the base lanes and picker leave out, as the former blanket LoRA exclusion did. A private
+# custom model is an ordinary runnable model and keeps its former lane and picker behavior.
+EXCLUDED_KINDS = (TRAINED_LORA, TRAINED_COMPOSITION, TRAINED_UNSUPPORTED)
+
+
+def trained_kind(record, *, private_list=False):
+    """Classify a model record by its REST `type`, training lineage and privacy.
+
+    A plain record is a `custom` type (or one without a type, in older
+    synthetic records) with no parent, training images or concepts. Returns
+    None for a plain record that is not private. Otherwise returns one of
+    TRAINED_KINDS:
+
+    - lora: a `*-lora` type (Flux, Flux 2, Kontext, Krea, Qwen and Z-Image LoRAs);
+    - composition: a `*-composition` type, which combines LoRA concepts;
+    - custom_private: a plain record that is private. Either its `privacy`
+      field says so or, with `private_list`, the selected scope's private model
+      list returned it, whatever its privacy field says;
+    - unsupported: any other type (for example a voice clone or a hosted base
+      type), a type that is not a string, or a `custom` record trained on a
+      parent model.
+
+    A kind is not a route. Running a LoRA or composition needs a base model
+    whose own REST schema declares a compatible model input; no route is
+    inferred from names or remote-MCP metadata.
+    """
     raw = record.raw
-    if record.type and record.type != "custom":
-        return True
-    return bool(raw.get("parentModelId") or raw.get("trainingImagesNumber") or raw.get("concepts"))
+    kind = record.type or "custom"
+    if not isinstance(kind, str):
+        return TRAINED_UNSUPPORTED
+    if kind.endswith("-composition"):
+        return TRAINED_COMPOSITION
+    if kind.endswith("-lora"):
+        return TRAINED_LORA
+    if kind != "custom" or any(
+        raw.get(name) for name in ("parentModelId", "trainingImagesNumber", "concepts")
+    ):
+        return TRAINED_UNSUPPORTED
+    if private_list or record.privacy == "private":
+        return PRIVATE_CUSTOM
+    return None
+
+
+def is_trained(record):
+    """True for records the base lanes and picker do not list.
+
+    This covers LoRAs, compositions and other trained or unsupported types,
+    which need a verified route before they can run. A private custom model
+    is an ordinary runnable model and stays listed, as before.
+
+    This is a lane filter, not a trained-model test: it is also true for
+    hosted base types such as `flux.1-pro` and false for custom_private.
+    Routing selects trained models with trained_kind and USABLE_TRAINED_KINDS.
+    """
+    return trained_kind(record) in EXCLUDED_KINDS
+
+
+def trained_models(private_records, public_records):
+    """(kind, record) pairs to offer later, in listing order and unique by ID.
+
+    Every record of the selected scope's private trained list comes first, so
+    its kind can explain an unavailable model; a plain record from that list
+    is custom_private (trained_kind with `private_list`). Public records add
+    only LoRAs and compositions; public base models stay in the lane lists.
+    """
+    result, seen = [], set()
+    for record in private_records:
+        if record.id not in seen:
+            seen.add(record.id)
+            result.append((trained_kind(record, private_list=True), record))
+    for record in public_records:
+        kind = trained_kind(record)
+        if record.id not in seen and kind in USABLE_TRAINED_KINDS:
+            seen.add(record.id)
+            result.append((kind, record))
+    return result
 
 
 def models_for_lane(lane, records):
-    """Filter records usable in `lane`, LoRAs and deprecated models removed, curated models first."""
+    """Filter records usable in `lane`, trained and deprecated models removed, curated first."""
     curated = DEFAULT_MODELS.get(lane, [])
     rank = {model_id: index for index, model_id in enumerate(curated)}
     usable = [
@@ -289,7 +366,7 @@ def models_for_lane(lane, records):
         if lane in r.lanes
         and r.deprecated_successor is None
         and r.status in ("", "trained")
-        and not is_lora(r)
+        and not is_trained(r)
     ]
     if lane == "material":
         usable = [r for r in usable if r.id in PATINA_MODELS]

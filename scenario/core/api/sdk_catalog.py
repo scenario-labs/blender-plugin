@@ -11,8 +11,15 @@ from .. import history
 from ..jobs.store import JobScope
 from ..schema.params import parse_schema
 from .catalog import ModelRecord
+from .catalog import trained_models as trained_pairs
 from .errors import ScenarioError
-from .sdk_adapter import AdapterError, SDKAdapter
+from .sdk_adapter import (
+    MODEL_BULK_LIMIT,
+    AdapterError,
+    AdapterUnavailable,
+    SDKAdapter,
+    model_identifiers,
+)
 
 
 class SDKCatalog:
@@ -20,8 +27,10 @@ class SDKCatalog:
 
     Reads share this connection's HTTP pool until retirement. Retirement disables
     subsequent requests and closes the pool only after the final reader exits.
-    Cache entries live only in this connection. An optional local job scope binds
-    the adapter to credential-isolated storage; it is not a server account claim.
+    Cache entries live only in this connection. Bulk summaries are cached apart
+    from model details, so they never stand in for a form schema. An optional
+    local job scope binds the adapter to credential-isolated storage; it is not
+    a server account claim.
     """
 
     def __init__(self, credentials, *, online, adapter_factory=None, scope=None):
@@ -40,6 +49,8 @@ class SDKCatalog:
         self._list_reads = {}
         self._records = {}
         self._model_reads = {}
+        self._summaries = {}
+        self._summary_reads = {}
         self.update_online(online)
 
     @property
@@ -65,6 +76,7 @@ class SDKCatalog:
             self._permission.clear()
             self._lists.clear()
             self._records.clear()
+            self._summaries.clear()
             self._close_idle_adapter()
             if wait:
                 self._condition.wait_for(lambda: not self._readers)
@@ -132,6 +144,8 @@ class SDKCatalog:
                         self._close_idle_adapter()
                     finally:
                         self._condition.notify_all()
+        except AdapterUnavailable as error:
+            raise ScenarioError(error.status, str(error)) from None
         except AdapterError as error:
             raise ScenarioError(0, str(error)) from None
         except ValueError:
@@ -213,6 +227,90 @@ class SDKCatalog:
             self._check_active()
             row = copy.deepcopy(self._records.get(model_id))
         return None if row is None else ModelRecord.from_api(row)
+
+    def get_many(self, model_ids, refresh=False):
+        """Bulk model summaries by ID, read at most once per connection.
+
+        Returns {id: ModelRecord} in request order for the models Scenario
+        returned. An omitted ID is remembered as absent for this connection, so
+        repeated loads do not repeat its read. `refresh` skips cached summaries
+        but joins a read of the same ID already in flight. Overlapping callers
+        share pending reads. These summaries come from `models.get_bulk`, which
+        the API reference does not document as carrying `inputs`; they never
+        replace the details `get` caches for forms and quotes.
+        """
+        # Apply the adapter's identifier rules before owning a shared read: an ID it rejects
+        # must fail only this request, never a caller waiting on a valid ID from it.
+        try:
+            requested = model_identifiers(model_ids)
+        except ValueError:
+            raise ScenarioError(0, "The catalog request is invalid") from None
+        if len(requested) > MODEL_BULK_LIMIT:
+            raise ScenarioError(0, "The catalog request is invalid")
+        rows, waiting, owned = {}, {}, {}
+        with self._condition:
+            self._check_active()
+            for model_id in requested:
+                if not refresh and model_id in self._summaries:
+                    rows[model_id] = self._summaries[model_id]
+                elif model_id in self._summary_reads:
+                    waiting[model_id] = self._summary_reads[model_id]
+                else:
+                    owned[model_id] = self._summary_reads[model_id] = Future()
+        if owned:
+            try:
+                found = self._fetch_summaries(list(owned))
+            except BaseException as error:
+                for pending in owned.values():
+                    pending.set_exception(error)
+                raise
+            else:
+                for model_id, pending in owned.items():
+                    rows[model_id] = found.get(model_id)
+                    pending.set_result(copy.deepcopy(rows[model_id]))
+            finally:
+                with self._condition:
+                    for model_id in owned:
+                        del self._summary_reads[model_id]
+        for model_id, pending in waiting.items():
+            rows[model_id] = pending.result()
+        with self._condition:
+            self._check_active()
+            return {
+                model_id: ModelRecord.from_api(copy.deepcopy(rows[model_id]))
+                for model_id in requested
+                if rows[model_id] is not None
+            }
+
+    def _fetch_summaries(self, model_ids):
+        with self._read() as adapter:
+            found = adapter.models_bulk(model_ids)
+            try:
+                for row in found.values():
+                    ModelRecord.from_api(row)
+            except (AttributeError, TypeError, ValueError):
+                raise ScenarioError(0, "Scenario returned an invalid model summary") from None
+            with self._condition:
+                self._check_active()
+                for model_id in model_ids:
+                    self._summaries[model_id] = copy.deepcopy(found.get(model_id))
+        return found
+
+    def trained_models(self, refresh=False):
+        """(kind, ModelRecord) pairs: this scope's private trained list, then public LoRAs.
+
+        Reuses each privacy list cached on this connection and reads only a
+        missing list, or both with `refresh`. Classification uses only REST
+        fields (catalog.trained_kind); a plain record from the private list is
+        custom_private. Base lanes and the picker still leave out LoRAs,
+        compositions and unsupported records, and no route runs them yet.
+        """
+        lists = {}
+        for privacy in ("private", "public"):
+            lists[privacy] = None if refresh else self.load_list_cached(privacy)
+            if lists[privacy] is None:
+                lists[privacy] = self.fetch_list(privacy)
+        return trained_pairs(lists["private"], lists["public"])
 
     def estimate(self, model_id, parameters):
         """Price validated inputs on this connection; never submit or upload files."""

@@ -6,6 +6,7 @@ import bpy
 from bpy.props import BoolProperty, EnumProperty, FloatVectorProperty, IntProperty, StringProperty
 
 from ..core.api.errors import ScenarioError
+from ..core.scene.panorama import WORLD_MEDIA_TYPES, describe_world_media
 from . import runtime
 from .media_application import MEDIA_TYPES
 from .model_application import MODEL_MEDIA_TYPE
@@ -347,6 +348,7 @@ class SCENARIO_OT_apply_saved_world(bpy.types.Operator):
     scene_name: StringProperty(options={"HIDDEN", "SKIP_SAVE"})
     is_reuse: BoolProperty(options={"HIDDEN", "SKIP_SAVE"})
     world_name: StringProperty(options={"HIDDEN", "SKIP_SAVE"})
+    media_label: StringProperty(options={"HIDDEN", "SKIP_SAVE"})
 
     def invoke(self, context, event):
         try:
@@ -364,6 +366,7 @@ class SCENARIO_OT_apply_saved_world(bpy.types.Operator):
             )
             self.application_id, self.scene_name = approval.identifier, approval.scene_name
             self.world_name = approval.previous.name if approval.previous else "None"
+            self.media_label = describe_world_media(approval.media_type)
         except Exception:
             self.report({"ERROR"}, "Could not prepare the World change; inspect saved jobs")
             return {"CANCELLED"}
@@ -378,9 +381,12 @@ class SCENARIO_OT_apply_saved_world(bpy.types.Operator):
             self.layout.label(text="Restore the original World kept by this session.")
             self.layout.label(text="Changed World or image data prevents restoration.")
         else:
-            self.layout.label(text="Use this 2:1 PNG/EXR as an equirectangular environment.")
+            self.layout.label(text=f"Selected: {self.media_label}")
+            self.layout.label(text="Use this 2:1 image as an equirectangular environment.")
             self.layout.label(text="Pack the panorama and keep the original World unchanged.")
-            self.layout.label(text="PNG is LDR; EXR does not guarantee HDR or seamless content.")
+            self.layout.label(
+                text="PNG/JPEG are LDR; EXR does not guarantee HDR or seamless content."
+            )
             self.layout.label(text="Restore remains available in this session while unchanged.")
 
     def cancel(self, context):
@@ -686,7 +692,7 @@ def draw_controls(layout, record):
                 else [
                     key
                     for key in record.asset_ids
-                    if record.asset_types.get(key) in {"image/png", "image/exr", "image/x-exr"}
+                    if record.asset_types.get(key) in WORLD_MEDIA_TYPES
                 ]
             )
             for index, asset_id in enumerate(identifiers, 1):

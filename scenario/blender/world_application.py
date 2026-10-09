@@ -13,7 +13,17 @@ from pathlib import Path
 import bpy
 
 from ..core.jobs.transfers import DownloadedResult
-from ..core.scene.panorama import MAX_FILE_BYTES, PanoramaError, PanoramaInfo, inspect_panorama
+from ..core.scene.panorama import (
+    MAX_FILE_BYTES,
+    WORLD_MEDIA_FORMATS,
+    PanoramaError,
+    PanoramaInfo,
+    inspect_panorama,
+)
+
+_SUFFIXES = {"PNG": ".png", "JPEG": ".jpg", "OPEN_EXR": ".exr"}
+# Blender's bundled OCIO configuration names for declared OpenEXR primaries.
+_COLORSPACES = {"aces_ap0": "ACES2065-1"}
 
 
 class WorldApplicationError(RuntimeError):
@@ -211,7 +221,7 @@ def _load_image(data, info):
         # Decode stable private bytes, not a caller path that could change during
         # loading. Packing detaches the result from this temporary filename.
         with tempfile.TemporaryDirectory(prefix="panorama-", dir=root) as directory:
-            path = Path(directory) / ("input.png" if info.file_format == "PNG" else "input.exr")
+            path = Path(directory) / f"input{_SUFFIXES[info.file_format]}"
             path.write_bytes(data)
             image = bpy.data.images.load(str(path), check_existing=False)
             if (
@@ -226,6 +236,17 @@ def _load_image(data, info):
                 raise WorldApplicationError(
                     "OpenEXR panorama did not decode as floating-point data"
                 )
+            colorspace = _COLORSPACES.get(info.chromaticities)
+            if colorspace is not None and image.colorspace_settings.name != colorspace:
+                # Blender 5.0-5.2 already map AP0 chromaticities on decode. Keep
+                # the declared primaries authoritative if a decoder differs; the
+                # private file still exists, so Blender re-reads it before packing.
+                try:
+                    image.colorspace_settings.name = colorspace
+                except TypeError:
+                    raise WorldApplicationError(
+                        f"Blender's color configuration has no {colorspace} color space"
+                    ) from None
             image.pack()
             if image.packed_file is None:
                 raise WorldApplicationError("The panorama could not be retained in the blend file")
@@ -237,18 +258,23 @@ def _load_image(data, info):
         raise
 
 
-def apply_world(scene, filepath, *, expected_receipt=None):
+def apply_world(scene, filepath, *, expected_receipt=None, media_type=None):
     """Apply a local supported 2:1 panorama to exactly this scene, on main thread.
 
     The caller explicitly selects an equirectangular panorama. Aspect ratio does
     not prove projection, seams, poles or high dynamic range. Async integrations
     must validate their captured file/scene/revision before calling this function
     and supply the saved download receipt to bind the decoded snapshot's bytes.
+    A saved media type, when supplied, must name the actual container.
     """
     _main_thread()
     _scene(scene)
     if expected_receipt is not None and not isinstance(expected_receipt, DownloadedResult):
         raise WorldApplicationError("Use a downloaded-result receipt for panorama verification")
+    if media_type is not None and (
+        not isinstance(media_type, str) or media_type not in WORLD_MEDIA_FORMATS
+    ):
+        raise WorldApplicationError("Choose a saved PNG, JPEG or OpenEXR panorama")
     previous, world, image = scene.world, None, None
     try:
         path = Path(filepath)
@@ -269,6 +295,8 @@ def apply_world(scene, filepath, *, expected_receipt=None):
         ):
             raise WorldApplicationError("The panorama no longer matches its download receipt")
         info = inspect_panorama(data)
+        if media_type is not None and WORLD_MEDIA_FORMATS[media_type] != info.file_format:
+            raise WorldApplicationError("The panorama does not match its saved media type")
         image = _load_image(data, info)
         world = bpy.data.worlds.new("Scenario Panorama")
         world.use_nodes = True

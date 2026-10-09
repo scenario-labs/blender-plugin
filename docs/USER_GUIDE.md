@@ -458,12 +458,16 @@ see the reference for token configuration and online-access requirements.
 
 ## Apply a saved panorama to World
 
-For a saved PNG or EXR result, choose **Set panorama as World (N)**.
-Confirm the scene and current World. The image must be a supported 2:1 panorama;
-Blender uses it as an equirectangular environment, packs it and keeps the original
-World untouched. PNG is LDR. EXR can store HDR, but its format alone says nothing
-about the actual range or seamless edges. An ordinary nonpanoramic image reports
-a local error and leaves the original World in place.
+For a saved PNG, JPEG or OpenEXR result, choose **Set panorama as World (N)**.
+Confirm the scene, current World and the selected file's declared format. The
+image must be a supported 2:1 panorama whose actual format matches that saved
+declaration; Blender uses it as an equirectangular environment, packs it and
+keeps the original World untouched. PNG and JPEG are LDR. EXR can store HDR, but
+its format alone says nothing about the actual range or seamless edges. An EXR
+whose header declares ACES AP0 primaries uses Blender's ACES2065-1 color space;
+one declaring other non-Rec.709 primaries is refused. Blender ignores JPEG EXIF
+orientation. An ordinary nonpanoramic image reports a local error and leaves the
+original World in place.
 
 After success, **Restore previous World** offers a separate confirmation in the
 same session. Edited/replaced World or image data prevents restoration so your

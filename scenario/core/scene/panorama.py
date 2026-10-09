@@ -4,11 +4,56 @@
 
 import struct
 import zlib
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 MAX_FILE_BYTES = 128 * 1024 * 1024
 MAX_PIXELS = 32 * 1024 * 1024
 MAX_PNG_CHUNKS = 4096
+MAX_JPEG_SEGMENTS = 4096
+
+# Saved media types offered for World application and the container their bytes
+# must use. "image/aces" is a server label, not proof of ACES primaries.
+WORLD_MEDIA_FORMATS = {
+    "image/png": "PNG",
+    "image/jpeg": "JPEG",
+    "image/exr": "OPEN_EXR",
+    "image/x-exr": "OPEN_EXR",
+    "image/aces": "OPEN_EXR",
+}
+WORLD_MEDIA_TYPES = frozenset(WORLD_MEDIA_FORMATS)
+_WORLD_MEDIA_LABELS = {
+    "image/png": "PNG (LDR)",
+    "image/jpeg": "JPEG (LDR)",
+    "image/exr": "OpenEXR (float; ACES AP0 primaries use ACES2065-1)",
+    "image/x-exr": "OpenEXR (float; ACES AP0 primaries use ACES2065-1)",
+    "image/aces": "ACES-labelled OpenEXR (float; AP0 primaries use ACES2065-1)",
+}
+
+# OpenEXR chromaticities: red, green, blue and white CIE xy coordinates.
+_PRIMARIES = {
+    "rec709": (0.64, 0.33, 0.30, 0.60, 0.15, 0.06, 0.3127, 0.3290),
+    "aces_ap0": (0.7347, 0.2653, 0.0, 1.0, 0.0001, -0.0770, 0.32168, 0.33767),
+}
+_PRIMARY_TOLERANCE = 0.001
+
+# ITU-T T.81 frame markers: baseline, extended sequential and progressive Huffman.
+_JPEG_FRAMES = {0xC0, 0xC1, 0xC2}
+# Lossless, hierarchical, arithmetic and reserved JPG frames fail closed.
+_JPEG_UNSUPPORTED_FRAMES = {
+    0xC3,
+    0xC5,
+    0xC6,
+    0xC7,
+    0xC8,
+    0xC9,
+    0xCA,
+    0xCB,
+    0xCD,
+    0xCE,
+    0xCF,
+    0xDE,
+    0xDF,
+}
 
 
 class PanoramaError(ValueError):
@@ -21,6 +66,13 @@ class PanoramaInfo:
     width: int
     height: int
     hdr_capable: bool
+    # World preflight only: declared OpenEXR primaries, None, "rec709" or "aces_ap0".
+    chromaticities: str | None = None
+
+
+def describe_world_media(media_type):
+    """Return confirmation wording for a saved World media type without reading bytes."""
+    return _WORLD_MEDIA_LABELS.get(media_type, "Unsupported media type")
 
 
 def _dimensions(file_format, width, height, *, panorama=True):
@@ -126,8 +178,28 @@ def _exr(data, *, panorama=True):
         raise PanoramaError("Cubemap OpenEXR images are unsupported")
     x0, y0, x1, y1 = struct.unpack("<iiii", window)
     info = _dimensions("OPEN_EXR", x1 - x0 + 1, y1 - y0 + 1, panorama=panorama)
+    if panorama:
+        info = replace(info, chromaticities=_chromaticities(attributes))
     _exr_chunks(data, offset + 1, attributes, info.height, y0)
     return info
+
+
+def _chromaticities(attributes):
+    # Blender 5.0-5.2 assign ACES2065-1 for AP0 chromaticities but decode
+    # other declared primaries as linear Rec.709, which would mis-tint lighting.
+    kind, value = attributes.get(b"chromaticities", (None, b""))
+    if kind is None:
+        return None
+    if kind != b"chromaticities" or len(value) != 32:
+        raise PanoramaError("OpenEXR color primaries are invalid")
+    values = struct.unpack("<8f", value)
+    for name, expected in _PRIMARIES.items():
+        if all(
+            abs(actual - wanted) <= _PRIMARY_TOLERANCE
+            for actual, wanted in zip(values, expected, strict=True)
+        ):
+            return name
+    raise PanoramaError("Use Rec.709 or ACES AP0 primaries for an OpenEXR panorama")
 
 
 def _exr_chunks(data, start, attributes, height, y0):
@@ -172,19 +244,65 @@ def _exr_chunks(data, start, attributes, height, y0):
         raise PanoramaError("OpenEXR has unexpected trailing data")
 
 
+def _jpeg(data):
+    # ITU-T T.81 Annex B: marker segments precede the first scan. A small file
+    # can declare billions of pixels, so read only the frame header before
+    # Blender allocates a decoded buffer. Tables, entropy-coded data, color
+    # transforms and APPn metadata (including EXIF orientation) stay Blender's.
+    offset, info = 2, None
+    for _ in range(MAX_JPEG_SEGMENTS):
+        if offset + 4 > len(data) or data[offset] != 0xFF:
+            raise PanoramaError("JPEG header is incomplete or invalid")
+        marker = data[offset + 1]
+        size = struct.unpack_from(">H", data, offset + 2)[0]
+        end = offset + 2 + size
+        # Accept no fill bytes, standalone markers or reserved codes before the
+        # first scan; libjpeg also rejects reserved markers.
+        if marker < 0xC0 or 0xD0 <= marker <= 0xD9 or marker == 0xFF or size < 2:
+            raise PanoramaError("JPEG header is incomplete or invalid")
+        if end > len(data):
+            raise PanoramaError("JPEG header is incomplete or invalid")
+        if marker == 0xDA:
+            if info is None:
+                raise PanoramaError("JPEG dimensions are unavailable")
+            # Scan data follows; libjpeg conceals a truncated scan with gray
+            # pixels, so require the end-of-image marker as the final bytes.
+            if end + 2 >= len(data) or not data.endswith(b"\xff\xd9"):
+                raise PanoramaError("JPEG data is incomplete or has trailing bytes")
+            return info
+        if marker in _JPEG_UNSUPPORTED_FRAMES:
+            raise PanoramaError("Use a baseline or progressive JPEG panorama")
+        if marker in _JPEG_FRAMES:
+            if info is not None:
+                raise PanoramaError("JPEG has conflicting frame headers")
+            if size < 8:
+                raise PanoramaError("JPEG frame header is invalid")
+            precision, height, width, components = struct.unpack_from(">BHHB", data, offset + 4)
+            if size != 8 + 3 * components:
+                raise PanoramaError("JPEG frame header is invalid")
+            if precision != 8 or components != 3:
+                raise PanoramaError("Use a standard 8-bit color JPEG panorama")
+            info = _dimensions("JPEG", width, height)
+        offset = end
+    raise PanoramaError("JPEG exceeds the supported segment limit")
+
+
 def inspect_panorama(data):
-    """Check actual PNG/EXR headers, never the filename or an HDR claim.
+    """Check actual PNG/JPEG/EXR headers, never the filename or an HDR claim.
 
     HDR-capable means an OpenEXR container; it does not assert measured pixel
     range, seamless content or a verified cloud model's projection contract.
+    PNG and JPEG are LDR. Blender remains the decoder for every format.
     """
     if not isinstance(data, bytes) or not data or len(data) > MAX_FILE_BYTES:
         raise PanoramaError("Panorama file is empty or exceeds the byte limit")
     if data.startswith(b"\x89PNG\r\n\x1a\n"):
         return _png(data)
+    if data.startswith(b"\xff\xd8"):
+        return _jpeg(data)
     if data.startswith(b"\x76\x2f\x31\x01"):
         return _exr(data)
-    raise PanoramaError("Use a supported PNG or OpenEXR panorama")
+    raise PanoramaError("Use a supported PNG, JPEG or OpenEXR panorama")
 
 
 def inspect_image(data):

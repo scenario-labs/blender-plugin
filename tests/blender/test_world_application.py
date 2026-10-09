@@ -1,6 +1,6 @@
 # SPDX-FileCopyrightText: 2026 Scenario Inc.
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""Offline generated PNG/EXR fixtures applied by the installed extension."""
+"""Offline generated PNG/JPEG/EXR fixtures applied by the installed extension."""
 
 import hashlib
 import os
@@ -13,12 +13,26 @@ from dataclasses import replace
 from pathlib import Path
 
 import bpy
-from helpers import submodule
+from helpers import ACES_AP0, ACES_AP1, REC709, scanline_exr, submodule
+
+
+def colorspaces():
+    settings = bpy.types.ColorManagedInputColorspaceSettings.bl_rna.properties["name"]
+    return {item.identifier for item in settings.enum_items}
+
+
+def exif_orientation(data, orientation):
+    """Insert a big-endian EXIF IFD0 orientation tag directly after SOI."""
+    tiff = b"MM\x00\x2a" + struct.pack(">IH", 8, 1)
+    tiff += struct.pack(">HHII", 0x0112, 3, 1, orientation << 16) + bytes(4)
+    payload = b"Exif\0\0" + tiff
+    return data[:2] + b"\xff\xe1" + struct.pack(">H", len(payload) + 2) + payload + data[2:]
 
 
 class WorldApplicationTests(unittest.TestCase):
     def setUp(self):
         self.module = submodule("blender.world_application")
+        self.panorama = submodule("core.scene.panorama")
         self.before_worlds = set(bpy.data.worlds)
         self.before_images = set(bpy.data.images)
         self.original = bpy.data.worlds.new("Fixture Original")
@@ -39,17 +53,23 @@ class WorldApplicationTests(unittest.TestCase):
         for image in set(bpy.data.images) - self.before_images:
             bpy.data.images.remove(image)
 
-    def fixture(self, *, exr=False, width=4, height=2):
+    def fixture(self, *, exr=False, jpeg=False, width=4, height=2):
         image = bpy.data.images.new("Fixture Pixels", width=width, height=height, float_buffer=exr)
         try:
             image.pixels[:] = [4.0 if exr else 0.5, 0.25, 0.125, 1.0] * (width * height)
-            image.file_format = "OPEN_EXR" if exr else "PNG"
-            path = Path(self.temp.name) / ("fixture.exr" if exr else "fixture.png")
+            image.file_format = "OPEN_EXR" if exr else "JPEG" if jpeg else "PNG"
+            name = "fixture.exr" if exr else "fixture.jpg" if jpeg else "fixture.png"
+            path = Path(self.temp.name) / name
             image.filepath_raw = str(path)
             image.save()
             return path
         finally:
             bpy.data.images.remove(image)
+
+    def write(self, name, data):
+        path = Path(self.temp.name) / name
+        path.write_bytes(data)
+        return path
 
     def assert_original(self):
         self.assertEqual(self.scene.world, self.original)
@@ -86,6 +106,156 @@ class WorldApplicationTests(unittest.TestCase):
         self.assertTrue(receipt.info.hdr_capable)
         self.assertTrue(receipt._image.is_float)
         self.assertGreater(max(receipt._image.pixels), 1.0)
+        self.assertTrue(receipt.restore())
+        self.assert_original()
+
+    def test_jpeg_fixture_applies_as_packed_ldr_byte_image(self):
+        path = self.fixture(jpeg=True, width=8, height=4)
+        expected = self.download_receipt(path)
+        receipt = self.module.apply_world(
+            self.scene, path, expected_receipt=expected, media_type="image/jpeg"
+        )
+        path.unlink()
+        world, image = self.scene.world, receipt._image
+        self.assertEqual(receipt.info, self.panorama.PanoramaInfo("JPEG", 8, 4, False))
+        self.assertEqual((image.file_format, tuple(image.size)), ("JPEG", (8, 4)))
+        self.assertFalse(image.is_float)
+        self.assertEqual(image.colorspace_settings.name, "sRGB")
+        self.assertEqual(image.filepath, "")
+        self.assertEqual(hashlib.sha256(image.packed_file.data).hexdigest(), expected.sha256)
+        environment = next(node for node in world.node_tree.nodes if node.type == "TEX_ENVIRONMENT")
+        self.assertEqual((environment.projection, environment.image), ("EQUIRECTANGULAR", image))
+        self.assertTrue(receipt.restore())
+        self.assert_original()
+        self.assertNotIn(world, tuple(bpy.data.worlds))
+        self.assertNotIn(image, tuple(bpy.data.images))
+
+    def test_nonpanoramic_or_truncated_jpeg_rejected_before_decode(self):
+        for size, cut, message in (((4, 4), 0, "2:1"), ((8, 4), 3, "incomplete")):
+            path = self.fixture(jpeg=True, width=size[0], height=size[1])
+            if cut:
+                # libjpeg would conceal this truncated scan; the EOI check rejects it.
+                path.write_bytes(path.read_bytes()[:-cut])
+            with (
+                self.subTest(size=size, cut=cut),
+                unittest.mock.patch.object(self.module, "_load_image") as decode,
+            ):
+                worlds, images = set(bpy.data.worlds), set(bpy.data.images)
+                with self.assertRaisesRegex(self.module.PanoramaError, message):
+                    self.module.apply_world(self.scene, path)
+                decode.assert_not_called()
+                self.assertEqual((set(bpy.data.worlds), set(bpy.data.images)), (worlds, images))
+                self.assert_original()
+
+    def test_blender_decodes_jpeg_in_stored_order_without_exif_orientation(self):
+        image = bpy.data.images.new("Fixture Gradient", width=8, height=4)
+        try:
+            image.pixels[:] = [
+                value
+                for index in range(32)
+                for value in ((index % 8) / 7, (index // 8) / 3, 0.25, 1.0)
+            ]
+            image.file_format = "JPEG"
+            plain = Path(self.temp.name) / "plain.jpg"
+            image.filepath_raw = str(plain)
+            image.save()
+        finally:
+            bpy.data.images.remove(image)
+        rotated = self.write("rotated.jpg", exif_orientation(plain.read_bytes(), 6))
+        pixels = []
+        for path in (plain, rotated):
+            receipt = self.module.apply_world(self.scene, path)
+            self.assertEqual(tuple(receipt._image.size), (8, 4))
+            pixels.append(tuple(receipt._image.pixels))
+            self.assertTrue(receipt.restore())
+        self.assertEqual(pixels[0], pixels[1])
+        self.assert_original()
+
+    def test_aces_ap0_exr_uses_aces2065_1_and_restore_guards_colorspace(self):
+        self.assertIn("ACES2065-1", colorspaces())
+        path = self.write("aces.exr", scanline_exr(8, 4, ACES_AP0))
+        expected = self.download_receipt(path)
+        receipt = self.module.apply_world(
+            self.scene, path, expected_receipt=expected, media_type="image/aces"
+        )
+        world, image = self.scene.world, receipt._image
+        self.assertEqual(receipt.info.chromaticities, "aces_ap0")
+        self.assertTrue(receipt.info.hdr_capable and image.is_float)
+        self.assertEqual(image.colorspace_settings.name, "ACES2065-1")
+        # AP0 red converts to a different scene-linear Rec.709 value than raw 4.0.
+        self.assertNotAlmostEqual(image.pixels[0], 4.0, delta=0.5)
+        self.assertEqual(hashlib.sha256(image.packed_file.data).hexdigest(), expected.sha256)
+        image.colorspace_settings.name = "Linear Rec.709"
+        with self.assertRaises(self.module.WorldApplicationError):
+            receipt.restore()
+        self.assertEqual(self.scene.world, world)
+        image.colorspace_settings.name = "ACES2065-1"
+        self.assertTrue(receipt.restore())
+        self.assert_original()
+
+    def test_rec709_and_undeclared_exr_keep_blender_linear_default(self):
+        for primaries in (None, REC709):
+            path = self.write("linear.exr", scanline_exr(8, 4, primaries))
+            with self.subTest(primaries=primaries):
+                receipt = self.module.apply_world(self.scene, path, media_type="image/x-exr")
+                image = receipt._image
+                self.assertEqual(image.colorspace_settings.name, "Linear Rec.709")
+                self.assertAlmostEqual(image.pixels[0], 4.0, places=4)
+                self.assertTrue(receipt.restore())
+                self.assert_original()
+
+    def test_other_declared_primaries_rejected_before_decode(self):
+        path = self.write("ap1.exr", scanline_exr(8, 4, ACES_AP1))
+        with unittest.mock.patch.object(self.module, "_load_image") as decode:
+            with self.assertRaisesRegex(self.module.PanoramaError, "Rec.709 or ACES AP0"):
+                self.module.apply_world(self.scene, path, media_type="image/aces")
+            decode.assert_not_called()
+        self.assert_original()
+
+    def test_declared_primaries_are_assigned_when_the_decoder_differs(self):
+        # Blender 5.0-5.2 map AP0 natively; exercise the explicit fallback path.
+        path = self.write("fallback.exr", scanline_exr(8, 4, REC709))
+        expected = self.download_receipt(path)
+        with unittest.mock.patch.dict(self.module._COLORSPACES, {"rec709": "ACES2065-1"}):
+            receipt = self.module.apply_world(self.scene, path, expected_receipt=expected)
+        image = receipt._image
+        self.assertEqual(image.colorspace_settings.name, "ACES2065-1")
+        self.assertNotAlmostEqual(image.pixels[0], 4.0, delta=0.5)
+        self.assertEqual(hashlib.sha256(image.packed_file.data).hexdigest(), expected.sha256)
+        self.assertTrue(receipt.restore())
+        self.assert_original()
+
+    def test_missing_colorspace_fails_without_leaking_world_or_image(self):
+        path = self.write("aces.exr", scanline_exr(8, 4, ACES_AP0))
+        worlds, images = set(bpy.data.worlds), set(bpy.data.images)
+        with unittest.mock.patch.dict(
+            self.module._COLORSPACES, {"aces_ap0": "Fixture Missing Space"}
+        ):
+            with self.assertRaisesRegex(self.module.WorldApplicationError, "Missing Space"):
+                self.module.apply_world(self.scene, path)
+        self.assertEqual((set(bpy.data.worlds), set(bpy.data.images)), (worlds, images))
+        self.assert_original()
+
+    def test_saved_media_type_must_name_the_actual_container(self):
+        path = self.fixture()
+        for media_type in ("image/jpeg", "image/aces", "image/x-exr"):
+            with (
+                self.subTest(media_type=media_type),
+                unittest.mock.patch.object(self.module, "_load_image") as decode,
+            ):
+                with self.assertRaisesRegex(self.module.WorldApplicationError, "media type"):
+                    self.module.apply_world(self.scene, path, media_type=media_type)
+                decode.assert_not_called()
+        for media_type in ("image/webp", "image/vnd.radiance", "", 3):
+            with (
+                self.subTest(media_type=media_type),
+                unittest.mock.patch.object(self.module.os, "open") as opened,
+            ):
+                with self.assertRaisesRegex(self.module.WorldApplicationError, "PNG, JPEG"):
+                    self.module.apply_world(self.scene, path, media_type=media_type)
+                opened.assert_not_called()
+        self.assert_original()
+        receipt = self.module.apply_world(self.scene, path, media_type="image/png")
         self.assertTrue(receipt.restore())
         self.assert_original()
 

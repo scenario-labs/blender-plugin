@@ -11,6 +11,7 @@ from ..blender import generation, runtime
 from ..core.api.catalog import GENERATION_LANES as LANES
 from ..core.api.errors import ScenarioError
 from ..core.api.library import asset_summary as _asset_summary
+from ..core.scene.panorama import describe_world_media
 from ..core.schema.params import build_body, validate
 from .protocol import DeferredTool, ToolSpec
 
@@ -931,10 +932,12 @@ def prepare_result_application(args):
             "kind": "world",
             "purpose": purpose,
             "previous_world": approval.previous.name if approval.previous else None,
+            "format": None if approval.restore else describe_world_media(approval.media_type),
             "note": "Approve restoring this session's original World; changed owned World/image data prevents restoration."
             if approval.restore
             else "Approve replacing this scene's World with one packed equirectangular panorama. "
-            "Only supported 2:1 PNG/EXR bytes qualify; PNG is LDR and EXR is not proof of actual HDR range. "
+            "Only supported 2:1 PNG, JPEG or scanline OpenEXR bytes matching the saved media type qualify; "
+            "PNG/JPEG are LDR and EXR is not proof of actual HDR range. "
             "The original World stays untouched and this session can restore it while unchanged. Nothing has been applied.",
         }
     if purpose != "import":
@@ -1868,9 +1871,9 @@ SPECS = (
             "  - mesh_policy: REMESH (default) replaces geometry/UV/materials; UV replaces only active UVs; RETEXTURE preserves geometry/non-UV attributes and replaces all UV layers/materials. UV and RETEXTURE require exact topology/position matching. PARTS replaces source geometry with an empty mesh parent and 2 to 128 named parts from the selected static GLB; every mesh is a part, not an alternate variant. RIG preserves source geometry, UVs and materials and attaches matching weights and one rig with clips; it requires exact indexed geometry and rejects morphs/mesh animation.\n"
             "  - mesh_placement: WORLD (default) preserves imported scene positions; LOCAL uses imported positions in the object's local coordinates. No fitting is inferred.\n"
             "  - keep_original: boolean, default true; preserve an unselected original mesh copy. These mesh options apply to mesh_edit and mesh_source, which require asset_id. mesh_source requires exactly one captured input and its unchanged live export source; it ignores current selection and cannot restore authority after undo/load/restart.\n"
-            "Returns: context_id, application_id, request_id, revision, reuse, scene, images or asset_id/kind/frame or cursor, and note.\n"
+            "Returns: context_id, application_id, request_id, revision, reuse, scene, images or asset_id/kind/frame, cursor or World format, and note.\n"
             'Example: {"context_id": "from-list", "request_id": "from-list", "expected_revision": 8}.\n'
-            "Show the destination, selected assets and media frame, model cursor, material target/slot/roles, World operation or mesh target/policy/placement/Keep original before apply_result_application. This makes no network request, spends no credits and imports nothing. Ready or confirmed rolled-back results use their original application claim. Completed results require a new local reuse approval; show reuse=true as another application, never another generation. Unfinished reuse blocks another attempt. Restoration applies to this session's most recent World assignment for this job.\n"
+            "Show the destination, selected assets and media frame, model cursor, material target/slot/roles, World operation/format or mesh target/policy/placement/Keep original before apply_result_application. This makes no network request, spends no credits and imports nothing. Ready or confirmed rolled-back results use their original application claim. Completed results require a new local reuse approval; show reuse=true as another application, never another generation. Unfinished reuse blocks another attempt. Restoration applies to this session's most recent World assignment for this job.\n"
             "Platform equivalent: none; this captures a local Blender destination."
         ),
         _schema(

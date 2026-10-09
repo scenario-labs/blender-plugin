@@ -322,20 +322,24 @@ class SessionResultTests(unittest.TestCase):
         self.assertEqual(self.store.get("request").revision, ready.revision)
         self.assertEqual((len(self.calls), len(self.downloads)), before)
 
-    def world_completion(self, *, exr=False, width=4, height=2):
+    def world_completion(self, *, exr=False, jpeg=False, width=4, height=2, media_type=None):
         image = bpy.data.images.new(
             "Session panorama", width=width, height=height, float_buffer=exr
         )
         try:
             image.pixels[:] = [4.0 if exr else 0.5, 0.25, 0.125, 1.0] * (width * height)
-            image.file_format = "OPEN_EXR" if exr else "PNG"
-            path = self.root / ("panorama.exr" if exr else "panorama.png")
+            image.file_format = "OPEN_EXR" if exr else "JPEG" if jpeg else "PNG"
+            path = self.root / (
+                "panorama.exr" if exr else "panorama.jpg" if jpeg else "panorama.png"
+            )
             image.filepath_raw = str(path)
             image.save()
             self.body = path.read_bytes()
         finally:
             bpy.data.images.remove(image)
-        self.media_type = "image/exr" if exr else "image/png"
+        self.media_type = media_type or (
+            "image/exr" if exr else "image/jpeg" if jpeg else "image/png"
+        )
         ready = self.ready()
         return self.command("verify_results", ready)
 
@@ -458,9 +462,39 @@ class SessionResultTests(unittest.TestCase):
         with patch.object(self.module, "apply_world", wraps=self.module.apply_world) as apply:
             outcome = self.session.apply_world(completion, asset_id="second")
         apply.assert_called_once_with(
-            self.scene, verified.paths[1], expected_receipt=verified.record.results[1].receipt
+            self.scene,
+            verified.paths[1],
+            expected_receipt=verified.record.results[1].receipt,
+            media_type="image/png",
         )
         self.assertTrue(outcome.application.restore())
+
+    def test_world_application_accepts_saved_jpeg_panorama(self):
+        verified, completion = self.world_completion(jpeg=True, width=8, height=4)
+        original = self.scene.world
+        outcome = self.session.apply_world(completion, asset_id="asset")
+        self.assertEqual(outcome.record.state, self.storage.JobState.APPLIED)
+        self.assertEqual(outcome.application.info.file_format, "JPEG")
+        image = outcome.application._image
+        self.assertFalse(image.is_float)
+        self.assertEqual(
+            hashlib.sha256(image.packed_file.data).hexdigest(),
+            verified.record.results[0].receipt.sha256,
+        )
+        self.assertTrue(outcome.application.restore())
+        self.assertEqual(self.scene.world, original)
+
+    def test_world_saved_media_type_mismatch_fails_locally_without_mutation(self):
+        _, completion = self.world_completion(media_type="image/jpeg")
+        original = self.scene.world
+        before = set(bpy.data.worlds), set(bpy.data.images)
+        calls = len(self.calls), len(self.downloads)
+        with self.assertRaisesRegex(self.module.WorldApplicationError, "saved media type"):
+            self.session.apply_world(completion, asset_id="asset")
+        self.assertEqual(self.store.get("request").state, self.storage.JobState.APPLY_FAILED)
+        self.assertEqual((set(bpy.data.worlds), set(bpy.data.images)), before)
+        self.assertEqual(self.scene.world, original)
+        self.assertEqual((len(self.calls), len(self.downloads)), calls)
 
     def test_world_receipt_failure_allows_only_fresh_verified_local_retry(self):
         verified, completion = self.world_completion()

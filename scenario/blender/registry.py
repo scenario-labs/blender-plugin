@@ -31,6 +31,7 @@ def _modules():
         reference_form,
         shot_planner,
         studio,
+        workflow_controls,
     )
 
     modules = [
@@ -46,6 +47,7 @@ def _modules():
         film,
         model_picker,
         panels,
+        workflow_controls,
         studio,
         popover,
         composer,

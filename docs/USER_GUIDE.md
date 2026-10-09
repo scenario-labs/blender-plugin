@@ -697,7 +697,33 @@ Opening Studio from a focused prompt preserves the text on the first click.
 Offline desktop checks cover that handoff, prompt editing, populated-form
 scrolling, quote-preserving navigation, continued saved-job polling, small-window
 fit, Escape and return to the viewport. Alternate-DPI and IME acceptance remain
-pending. Workflow forms and asset-library search are not available in this view;
-[local MCP workflow commands](MCP.md#workflow-execution) provide scoped discovery,
-exact estimates and explicit execution separately. This is not complete Studio
-or release acceptance.
+pending. The Workflows page and [local MCP workflow commands](MCP.md#workflow-execution)
+share scoped discovery, exact estimates and explicit execution. Asset-library
+search and complete Studio/release acceptance remain open.
+
+### Run a workflow
+
+Open **Studio > Workflows**, then choose **Private** or **Public** to refresh that
+catalog. Search the loaded names or enter a Workflow ID directly. Choose a row
+or **Load workflow inputs**, and confirm replacing the form with that workflow's
+defaults. This reads metadata without generating anything.
+
+Edit the named inputs. Check an input to include it; unchecked inputs use the
+workflow's default when one exists. Booleans have a checkbox and fixed choices
+have a dropdown. Enter numeric values as numbers. Structured
+inputs use JSON, for example `["asset-one", "asset-two"]` for an image list.
+File inputs accept already uploaded asset IDs; upload local files separately.
+Conditional requirements and allowed values are checked before pricing.
+
+Choose **Request workflow price**, then **Generate**. The separate confirmation
+shows the server-normalized inputs, original scene and complete exact CU price.
+Cancel submits nothing. Confirmation saves one workflow job; inspect it in Jobs
+and use Results for separate application. Never repeat an uncertain submission.
+Changing inputs, scene or connection requires a fresh valid approval.
+
+The form and its schema save with the scene and remain editable after reopening;
+prices and approval handles do not survive restart. Jobs keep their existing
+durable recovery. This page runs existing workflows; it does not author graphs,
+handle interactive nodes or cancel running workflows. Direct file upload and
+library selection inside workflow inputs remain to integrate. Native desktop
+interaction and live workflow acceptance are still pending.

@@ -654,6 +654,38 @@ def test_reservation_never_overwrites_and_release_is_identity_checked(tmp_path):
     assert not Path("film.mp4").exists()
 
 
+def pinned(reservation):
+    pin = reservation.pin
+    return pin is not None and pin._fd is not None
+
+
+@pytest.mark.skipif(not export._PIN_PLACEHOLDERS, reason="POSIX reservations hold it open")
+def test_reservation_pins_its_inode_until_released_or_replaced(tmp_path):
+    destination = tmp_path / "film.mp4"
+    reservation = export.reserve(destination)
+    assert pinned(reservation)
+    destination.unlink()
+    # Linux reuses a freed inode number at once; the open pin keeps ours allocated.
+    destination.write_bytes(b"")
+    assert destination.stat().st_ino != reservation.inode
+    export.release(reservation)
+    assert destination.exists() and not pinned(reservation)
+    export.release(reservation)
+    staged = staged_fixture(tmp_path)
+    second = tmp_path / "second.mp4"
+    reservation = export.reserve(second)
+    export.publish(staged, second, reservation)
+    assert second.read_bytes() == b"verified video bytes" and not pinned(reservation)
+
+
+def test_windows_reservations_keep_no_open_handle(monkeypatch, tmp_path):
+    monkeypatch.setattr(export, "_PIN_PLACEHOLDERS", False)
+    reservation = export.reserve(tmp_path / "film.mp4")
+    assert reservation.pin is None
+    export.release(reservation)
+    assert not (tmp_path / "film.mp4").exists()
+
+
 def test_longest_portable_name_publishes_and_republishes(tmp_path):
     staged = staged_fixture(tmp_path)
     folder = tmp_path / "Film"

@@ -22,6 +22,7 @@ import pytest
 from scenario.core.api.sdk_adapter import Credentials, SDKAdapter
 from scenario.core.audio_waveform import EnvelopeBuilder
 from scenario.core.jobs import result_previews as previews
+from scenario.core.jobs import transfers
 from scenario.core.jobs.coordinator import JobCoordinator
 from scenario.core.jobs.results import ResultError
 from scenario.core.jobs.store import (
@@ -428,6 +429,56 @@ def test_image_results_issue_a_private_verified_decode_request(env):
     assert not request.directory.exists()
     again = outcome(run(env, work(env, "request", [STILL])))
     assert again.state == State.READY and again.preview.path.read_bytes() == png(256, 128)
+
+
+@pytest.mark.skipif(os.name != "posix", reason="Respells POSIX roots to model Windows")
+def test_cache_paths_keep_the_canonical_root_spelling(env, monkeypatch):
+    """On Windows ``_root`` returns the extended ``\\\\?\\`` spelling of the same root.
+
+    Model that portably: every canonical root becomes ``/../<root>``, the same
+    directory spelled differently, and calling ``_root`` again keeps it, as
+    with ``\\\\?\\``. Python 3.12+ ``mkdtemp`` would normalize such a spelling.
+    """
+    plain = transfers._root
+
+    def respelled(root):
+        path = Path(os.path.normpath(root))
+        plain(path)
+        return Path("/..", *path.parts[1:])
+
+    monkeypatch.setattr(transfers, "_root", respelled)
+    monkeypatch.setattr(previews, "_root", respelled)
+    ready_job(
+        env,
+        "request",
+        [
+            ("asset-video", "video/mp4", MP4),
+            ("asset-image", "image/png", png(8, 4)),
+            ("asset-other", "image/png", png(4, 4)),
+        ],
+    )
+    still = f"{CDN}/thumb.jpg?Signature=preview-secret"
+    env.assets["asset-video"] = asset_record("asset-video", "video/mp4", thumbnail=still)
+    env.downloader.files[still] = JPEG
+    root = previews.PreviewCache(env.cache).root
+    assert root.parts[1] == ".." and root.resolve() == env.cache.resolve()
+    batch = run(env, work(env, "request", [STILL]))
+    cached = outcome(batch, 0).preview
+    assert cached.path.read_bytes() == JPEG
+    # The Windows CI expectation: relative to the canonical root, not the raw one.
+    assert cached.path.is_relative_to(root) and not cached.path.is_relative_to(env.cache)
+    image, other = outcome(batch, 1).request, outcome(batch, 2).request
+    for request in (image, other):
+        assert request.directory.parent == root / "work"
+        assert request.source.parent == request.output.parent == request.directory
+    assert len(work_directories(env)) == 2  # The still's staging directory is gone.
+    image.output.write_bytes(png(4, 2))
+    published = env.coordinator.finish_result_preview(
+        image, root=env.cache, cancel=threading.Event()
+    )
+    assert published.path.is_relative_to(root) and (published.width, published.height) == (4, 2)
+    env.coordinator.discard_result_preview(other, root=env.cache)
+    assert work_directories(env) == []
 
 
 @pytest.mark.parametrize(

@@ -117,6 +117,12 @@ and a JSON sidecar holding digests, sizes, dimensions and the server preview
 asset ID, never a URL, credential or prompt. Envelopes and `missing` markers are
 sidecars only.
 
+Like saved results, the paths the cache returns, including decode requests,
+use the canonical spelling of its root: on Windows, the extended-length `\\?\`
+namespace. Compare them with that canonical root, not with the configured one.
+Work directories are built on that root and take only their name from
+`mkdtemp`, which normalizes the path it returns on Python 3.12 and later.
+
 Reads accept only a regular, nonsymlink file whose size, digest and signature
 match its sidecar; anything else is a cache miss. Publication never replaces a
 valid entry. At most every ten minutes the lane removes abandoned work

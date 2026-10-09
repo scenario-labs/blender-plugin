@@ -123,7 +123,8 @@ clips and 10,000 total joints or animation channels. This is a bounded policy
 preflight, not a complete glTF validator or proof against every expensive decoder
 input; Blender validates geometry and textures. JSON glTF, FBX, OBJ, splats,
 multiple scenes, external files and pointer-based animation need separate
-integration. Unsupported downloads remain available. REMESH, UV, RETEXTURE and PARTS
+integration; [package classification](#saved-3d-package-classification) is its
+first, unwired step. Unsupported downloads remain available. REMESH, UV, RETEXTURE and PARTS
 keep the default static-only preflight; RIG uses the bounded skin policy below.
 
 [`model_application.apply_model`](../scenario/blender/model_application.py)
@@ -186,6 +187,69 @@ can attach a compatible returned skin to a captured static mesh; retargeting an
 existing rig remains outside this import command. Native global Undo is not
 added to this new-group command. See [interaction evidence](UI_STYLE.md#animated-model-import-interaction)
 for the exact packaged desktop check and its limits.
+
+## Saved 3D package classification
+
+[`model_formats.classify_packages`](../scenario/core/scene/model_formats.py)
+groups a saved job's results into ordered import units without Blender, files or
+network access. It is groundwork for non-GLB saved model import: no UI, MCP tool,
+session or importer uses it yet, and the GLB import above is unchanged.
+
+Inputs are URL-free manifest facts typed by the pinned SDK 2.2.0
+[asset response](https://docs.scenario.com/api/python/resources/assets/methods/retrieve):
+`mimeType`, the verified receipt size (else `properties.size`), the stored texture
+role, and the lineage facts `metadata.type` and `metadata.parentId`. MIME selects
+handling. `model/gltf-binary` and `model/glb` are GLB, `model/gltf+json` is JSON
+glTF, and `model/x-fbx` plus the two Autodesk `application/*` FBX types are FBX.
+OBJ, PLY (`model/ply`, `application/x-ply`), SPZ and `.splat` complete the supported
+set; `model/mtl` is only an OBJ companion. Other `model/*` types, such as ksplat,
+sog, STL and USD, are reported as unsupported. `check_signature` confirms that
+leading bytes match the declared format (binary FBX, gzip or `NGSP` SPZ, whole
+32-byte `.splat` records); it never chooses a format by content.
+
+With lineage, an OBJ binds its single MTL child and one map per slot (albedo or
+base, normal, roughness, metallic) among the OBJ's or that MTL's children, so
+several OBJ packages in one job stay separate. Without lineage, an OBJ or glTF binds
+companions only when it is the job's only file of that format. Several MTLs, several
+maps for one slot, maps without a material, unsupported formats and oversized files
+remain saved and are reported with stable reason codes, as are lineage children with
+other roles; nothing is guessed. With lineage, generated root outputs sort first: a
+`metadata.type` of `img23d`, `txt23d`, `3d23d`, `video23d` or `img2splat` whose
+parent is not in the job. Then GLB, glTF, FBX, OBJ, mesh PLY, SPZ, splat or
+unclassified PLY and `.splat` follow, with manifest order breaking ties. The first
+unit is primary and the others are alternates for explicit selection.
+`inspect_ply_header` treats a binary little-endian PLY with float `x`, `y`, `z`,
+`f_dc_0..2`, `opacity` and `scale_0..2` vertex data, no faces and, when known, an
+exact body size as a Gaussian splat; other well-formed PLYs are meshes. Limits are
+256 MiB per file, 512 MiB per package, 4 MiB per MTL, 8 MiB of glTF JSON and 64 KiB
+of PLY header.
+
+[`model_references`](../scenario/core/scene/model_references.py) plans the private
+snapshot. Each unit lists canonical file names such as `model.obj`, `material.mtl`
+and `texture-albedo.png`. `rewrite_obj` streams an OBJ, points its first `mtllib` at
+the bound material and removes other libraries and file-reading statements.
+`rewrite_mtl` points `map_Kd`, `map_Pm`, `map_Pr` and `map_Bump`/`bump`/`norm` at
+bound textures, keeps only numeric `-o`, `-s` and `-bm` options and drops every
+other map, `refl`, `disp` and `decal` statement, including maps whose files are not
+part of the saved package. A slot whose materials name different files is dropped
+rather than shared. Original names, absolute paths, traversal and URLs never reach
+the output, and reports keep the line, keyword and reason but not the reference.
+Text must use LF or CRLF endings without NUL bytes; a continued OBJ reference
+statement is rejected. `inspect_gltf_json` applies the GLB document bounds and keeps
+base64 data URIs. It binds an external buffer by asset-ID file stem or by a unique
+exact size, and an external image only by asset-ID stem; any other URI, including
+one inside an extension, fails closed. All functions take bytes or streams, so
+integration can prepare snapshots on a worker from verified copies.
+
+The current store does not persist lineage. The planned store v10 migration needs
+two optional `ResultAsset` fields captured from the same `assets.retrieve`
+response as the manifest: `asset_type` (SDK `AssetMetadata.type`) and `parent_id`
+(`AssetMetadata.parent_id`). Until then `members_from_results` accepts them as an
+explicit mapping, and v9 manifests use the stricter rules above. Undocumented
+provider file names are never used. Tests cover synthetic manifests and files
+only. Provider package shapes, SPZ versions and glTF delivery need live evidence;
+import, approval, claims and status remain integration work under #65, and this
+primary/alternate ordering is not a #99 edit policy.
 
 ## Captured source and verified saved-mesh command
 

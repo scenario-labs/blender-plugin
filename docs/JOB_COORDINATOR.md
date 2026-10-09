@@ -97,6 +97,24 @@ Queued local work is canceled on retirement. Shutdown joins owned workers before
 the Blender session releases capture directories. Local render approval does not
 create a paid generation intent or authorize uploading the output.
 
+## Local Film export thread
+
+`export_film(spec, destination, origin=..., source_origin=..., cancel=..., progress=...)`
+renders, verifies and publishes a local MP4 with no Scenario request. It checks
+the active owner and both captured origins before reserving the destination,
+then only the active owner before publishing; a later scene edit does not cancel
+the approved bytes. `publish_film_export` copies a staged export issued by this
+coordinator to another destination without rendering. `LocalExportResult` binds
+the published receipt to the selected scope and both origins; it grants no scene,
+upload or spend authority. Deactivation forgets issued staged exports.
+
+`LocalExportWorker` runs these commands on its own named thread, one at a time per
+owner, instead of the bounded `JobWorkers` queue. A multi-hour export therefore
+never holds a polling/download worker or the capture/review local media slot.
+Deactivation cancels the running export and reaps its child; shutdown joins the
+thread before the coordinator closes. See the
+[export contract](FILM_PLAN.md#offline-film-video-export-primitive).
+
 ## Film model task quotes
 
 `quote_film_task(recipe, production_id=..., task_id=..., origin=...)` uses the

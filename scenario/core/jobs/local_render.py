@@ -193,8 +193,12 @@ def _check_diagnostics(log, stdout):
         raise LocalRenderError("Local render diagnostics exceeded the size policy")
 
 
-def _run(command, *, log, env, timeout, cancel, stdout=None):
-    """Reap the owned child on cancellation, timeout, log overflow and exceptions."""
+def _run(command, *, log, env, timeout, cancel, stdout=None, on_poll=None):
+    """Reap the owned child on cancellation, timeout, log overflow and exceptions.
+
+    ``on_poll`` runs on this owner thread at each poll; raising from it stops and
+    reaps the child like any other failure.
+    """
     if cancel.is_set():
         raise RenderCancelled("Local capture cancelled")
     with log.open("xb") as errors:
@@ -216,6 +220,8 @@ def _run(command, *, log, env, timeout, cancel, stdout=None):
                     if time.monotonic() >= deadline:
                         raise LocalRenderError("Local capture timed out; inspect retained frames")
                     _check_diagnostics(log, stdout)
+                    if on_poll is not None:
+                        on_poll()
                     cancel.wait(0.1)
                 # The child can finish writing and exit between polling checks.
                 _check_diagnostics(log, stdout)

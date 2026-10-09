@@ -55,8 +55,11 @@ establish live generation or full render-lane desktop acceptance.
   another review for the same scene, or leaving the recipe scene and selecting it
   again, before building deletes the copies and requires a fresh preparation;
   Undo after a build keeps them. See
-  [review controls](FILM_PLAN.md#native-and-mcp-review-controls). Video export of
-  review scenes remains unavailable. Complete runtime adoption
+  [review controls](FILM_PLAN.md#native-and-mcp-review-controls). An offline MP4
+  export primitive exists as session commands, but it has no native/MCP controls
+  yet, and the Studio case-study bundle is unavailable. Export verification uses
+  an installed ffprobe when present and otherwise a weaker Blender decode check;
+  Blender builds without H.264/AAC cannot export. Complete runtime adoption
   and live/native acceptance remain open
   ([#64](https://github.com/scenario-labs/blender-plugin/issues/64),
   [#65](https://github.com/scenario-labs/blender-plugin/issues/65)).

@@ -431,6 +431,28 @@ def test_image_results_issue_a_private_verified_decode_request(env):
     assert again.state == State.READY and again.preview.path.read_bytes() == png(256, 128)
 
 
+def test_open_regular_closes_its_descriptor_when_wrapping_fails(tmp_path, monkeypatch):
+    path = tmp_path / "still.png"
+    path.write_bytes(png(1, 1))
+    opened, real_open = [], os.open
+
+    def tracking_open(*args, **kwargs):
+        opened.append(real_open(*args, **kwargs))
+        return opened[-1]
+
+    def failing_fdopen(*args, **kwargs):
+        raise ValueError("fixture wrapping failure")
+
+    monkeypatch.setattr(previews.os, "open", tracking_open)
+    monkeypatch.setattr(previews.os, "fdopen", failing_fdopen)
+    with pytest.raises(ValueError, match="fixture"):
+        previews._open_regular(path)
+    monkeypatch.undo()
+    (descriptor,) = opened
+    with pytest.raises(OSError):
+        os.fstat(descriptor)  # Already closed, not leaked.
+
+
 @pytest.mark.skipif(os.name != "posix", reason="Respells POSIX roots to model Windows")
 def test_cache_paths_keep_the_canonical_root_spelling(env, monkeypatch):
     """On Windows ``_root`` returns the extended ``\\\\?\\`` spelling of the same root.

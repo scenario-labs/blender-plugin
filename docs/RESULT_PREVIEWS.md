@@ -150,7 +150,9 @@ under the client policy. `JobWorkers.previews_idle` reports when no preview
 command is queued or running. Shutdown joins the lane with the other workers.
 
 `ResultPreviewScheduler` runs on its owner thread, normally Blender's main
-thread, and performs no I/O. `request`, `retry`, `status`, `decode_requests`,
+thread, and performs no network I/O or preview cache work. `request` reads saved
+receipts from the local job store, and `release` removes leftover private copies
+after the lane stops. `request`, `retry`, `status`, `decode_requests`,
 `finish_decode` and `discard_decode` are its interface; status snapshots are
 immutable and safe to read while drawing. It sends at most one batch of up to 32
 assets at a time.

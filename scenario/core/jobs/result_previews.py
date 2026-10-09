@@ -429,7 +429,12 @@ def _open_regular(path):
         | getattr(os, "O_NONBLOCK", 0)
         | getattr(os, "O_BINARY", 0)
     )
-    stream = os.fdopen(os.open(path, flags), "rb")
+    descriptor = os.open(path, flags)
+    try:
+        stream = os.fdopen(descriptor, "rb")
+    except BaseException:
+        os.close(descriptor)
+        raise
     if not stat.S_ISREG(os.fstat(stream.fileno()).st_mode):
         stream.close()
         raise PreviewError("Preview files must be regular local files")
@@ -488,7 +493,7 @@ class PreviewCache:
             try:
                 path.mkdir(mode=0o700)
             except FileExistsError:
-                pass
+                pass  # The usual case: the root survives between lane commands.
             except OSError:
                 raise PreviewError("Preview cache is unavailable") from None
         try:
@@ -508,7 +513,7 @@ class PreviewCache:
                 try:
                     path.mkdir(mode=0o700)
                 except FileExistsError:
-                    pass
+                    pass  # Existing parts are checked to be directories just below.
             if not stat.S_ISDIR(path.lstat().st_mode):
                 raise PreviewError("Preview cache entries must be private directories")
         return path

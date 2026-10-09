@@ -103,6 +103,10 @@ def _completes_double_click(context, state, layout, event):
 
 def _generate(operator, scene, state):
     """Submit the form the composer shows, only with that form's own ready quote."""
+    if not state.owns_form(scene):
+        # The card described another form (one replaced while focused): show this one first.
+        operator.report({"WARNING"}, cl.FORM_REPLACED_GENERATE)
+        return
     lane = state.generation_lane(scene)
     if not panels.generate_enabled(scene.scenario.lane_state(lane), lane):
         return
@@ -113,6 +117,36 @@ def _generate(operator, scene, state):
         message = str(error).strip()
         reason = message.removeprefix("Error:").strip() if message.startswith("Error:") else ""
         operator.report({"WARNING"}, reason or "Generation is not available right now")
+
+
+def _takes_prompt(scene, state):
+    lane = state.generation_lane(scene)
+    return panels.form_takes_prompt(scene.scenario.lane_state(lane), lane)
+
+
+def _edits_text(event, command):
+    """Keys that change the prompt text; caret moves, selection and copy only read it."""
+    if event.type in ("BACK_SPACE", "DEL"):
+        return True
+    if command:
+        return event.type in ("V", "X")
+    return bool(event.unicode) and not event.alt
+
+
+def _open_dialog(context, scene, state, kind):
+    if kind == "model":
+        # The model chip opens the search dialog for the form it shows, and the sidebar shows the rest of the
+        # form. Where the sidebar would leave the card no room (a large UI scale), the dialog alone is enough:
+        # showing it would swap the card for the pill while the picker is open.
+        if _card_fits_with_sidebar(context):
+            _open_sidebar(context)
+        try:
+            bpy.ops.scenario.pick_model("INVOKE_DEFAULT", lane=state.generation_lane(scene))
+        except (RuntimeError, AttributeError):
+            pass
+        return
+    # the tab's settings in a dialog right here (the 3D tab includes its Edit mode form)
+    _open_settings(context, state.lane_for(scene))
 
 
 class SCENARIO_OT_composer_modal(bpy.types.Operator):
@@ -257,9 +291,8 @@ class SCENARIO_OT_composer_modal(bpy.types.Operator):
             hit = layout.hit(*state.mouse)
             if hit != state.hover:
                 if hit == ("resize",):
-                    _cursor(
-                        context, "MOVE_X"
-                    )  # the corner shows a resize cursor instead of a permanent grip
+                    # the corner shows a resize cursor instead of a permanent grip
+                    _cursor(context, "MOVE_X")
                 elif state.hover == ("resize",):
                     _cursor(context, None)
                 state.hover = hit
@@ -283,13 +316,15 @@ class SCENARIO_OT_composer_modal(bpy.types.Operator):
             state.presses.reset()
             hit = layout.hit(event.mouse_region_x, event.mouse_region_y)
             if hit == ("prompt",) and state.expanded:
-                state.sync_from_lane(scene)
-                state.focused = True
-                state.field.select_word_at(
-                    _caret_index(context, state, layout, event.mouse_region_x)
-                )
-                state.dragging = False
-                _redraw(context)
+                # The press before it already explained a form without a prompt.
+                if _takes_prompt(scene, state):
+                    state.sync_from_lane(scene)
+                    state.focused = True
+                    state.field.select_word_at(
+                        _caret_index(context, state, layout, event.mouse_region_x)
+                    )
+                    state.dragging = False
+                    _redraw(context)
             elif hit in (("drag",), ("resize",)):
                 # double-click on the card background puts the composer back at its default place and size
                 state.cancel_drag()
@@ -315,20 +350,20 @@ class SCENARIO_OT_composer_modal(bpy.types.Operator):
                 state.begin_drag((event.mouse_region_x, event.mouse_region_y), kind)
             elif kind == "drag":
                 if state.focused:
-                    state.focused = False
-                    state.commit_to_lane(scene)
+                    state.leave_focus(scene)
                 state.begin_drag((event.mouse_region_x, event.mouse_region_y), "drag")
             elif kind == "resize":
                 state.begin_drag((event.mouse_region_x, event.mouse_region_y), "resize")
                 _cursor(context, "MOVE_X")
             elif kind == "collapse":
-                state.focused = False
-                state.commit_to_lane(scene)
+                state.leave_focus(scene)
                 state.expanded = False
             elif kind == "tab":
                 state.commit_to_lane(scene)
                 scene.scenario.lane = hit[1]
                 state.sync_from_lane(scene)
+            elif kind == "prompt" and not state.focused and not _takes_prompt(scene, state):
+                self.report({"INFO"}, cl.NO_PROMPT)
             elif kind == "prompt":
                 if not state.focused:
                     state.sync_from_lane(scene)
@@ -338,22 +373,16 @@ class SCENARIO_OT_composer_modal(bpy.types.Operator):
                 )
                 state.dragging = True
             elif kind == "generate":
-                state.commit_to_lane(scene)
-                state.focused = False
+                state.leave_focus(scene)
                 _generate(self, scene, state)
-            elif kind == "model":
-                # The model chip opens the search dialog for the form it shows, and the sidebar shows the rest of
-                # the form. Where the sidebar would leave the card no room (a large UI scale), the dialog alone is
-                # enough: showing it would swap the card for the pill while the picker is open.
-                if _card_fits_with_sidebar(context):
-                    _open_sidebar(context)
+            elif kind in ("model", "settings"):
+                # Their dialogs can switch the form (3D mode, model lane): commit and blur first.
                 try:
-                    bpy.ops.scenario.pick_model("INVOKE_DEFAULT", lane=state.generation_lane(scene))
-                except (RuntimeError, AttributeError):
-                    pass
-            elif kind == "settings":
-                # the tab's settings in a dialog right here (the 3D tab includes its Edit mode form)
-                _open_settings(context, state.lane_for(scene))
+                    state.flush_focused_prompt(scene)
+                except RuntimeError as error:
+                    self.report({"WARNING"}, str(error))
+                else:
+                    _open_dialog(context, scene, state, kind)
             _redraw(context)
             return {"RUNNING_MODAL"}
         if not state.focused:
@@ -363,16 +392,18 @@ class SCENARIO_OT_composer_modal(bpy.types.Operator):
         field = state.field
         command = event.ctrl or event.oskey
         if event.type == "ESC":
-            state.focused = False
-            state.dragging = False
-            state.commit_to_lane(scene)
+            # Leaves a replaced form without writing to either one; the next draw shows the new form.
+            state.leave_focus(scene)
             _redraw(context)
             return {"RUNNING_MODAL"}
         if event.type in ("RET", "NUMPAD_ENTER"):
-            state.commit_to_lane(scene)
-            state.focused = False
+            state.leave_focus(scene)
             _generate(self, scene, state)
             _redraw(context)
+            return {"RUNNING_MODAL"}
+        if state.form_replaced(scene) and _edits_text(event, command):
+            # Keep the keys away from the viewport, but never type into the form that replaced it.
+            self.report({"WARNING"}, cl.FORM_REPLACED_TYPING)
             return {"RUNNING_MODAL"}
         if event.type == "BACK_SPACE":
             field.backspace()

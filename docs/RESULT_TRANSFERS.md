@@ -201,14 +201,17 @@ Filenames, dimensions, models and `skybox-3d` never set it, and an unclassified
 saved result is never relabelled later, as for texture roles. The projection and
 EXR container are labels for later review; Blender must still decode the file,
 the World preflight still checks its 2:1 shape and no dynamic range is measured.
-Existing image and World actions accept `image/x-exr` but not yet `image/aces`;
-an ACES-labelled original stays saved for inspection until World application
-accepts that label. The offline and installed-ZIP tests use mocked storage
-responses. A live HDRi run must still confirm `metadata.type`, the original's
-host, size and color labelling before the release freezes this behavior. An
-`originalFileUrl` host outside the storage policy makes each such job end in
-`download_failed`, where earlier builds saved the JPEG preview; that needs a
-reviewed storage policy change, never a host derived from another URL.
+[World application](WORLD_APPLICATION.md) offers both original labels and applies
+them only after its own OpenEXR container and color primaries checks; an original
+whose primaries it refuses stays saved, and the JPEG preview is not kept as a
+fallback. Image import accepts `image/x-exr` but not yet `image/aces`, so an
+ACES-labelled original is offered for World application and inspection only.
+The offline and installed-ZIP tests use mocked storage responses. A live HDRi run
+must still confirm `metadata.type`, the original's host, size and color labelling
+before the release freezes this behavior. An `originalFileUrl` host outside the
+storage policy makes each such job end in `download_failed`, where earlier builds
+saved the JPEG preview; that needs a reviewed storage policy change, never a host
+derived from another URL.
 
 ## Local Film media measurement
 

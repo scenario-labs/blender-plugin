@@ -19,7 +19,7 @@ from scenario.core.jobs.credential_storage import open_credential_store
 from scenario.core.jobs.results import ResultError
 from scenario.core.jobs.store import JobState, JobStore, StoreError
 from scenario.core.jobs.transfers import DownloadedResult, ResultDownloader, StoragePolicy
-from tests.unit.test_panorama import exr, png
+from tests.unit.test_panorama import exr, jpeg, png
 from tools import smoke_image as smoke
 from tools.dev_config import LiveSettings
 
@@ -802,9 +802,26 @@ def test_panorama_kinds_accept_a_declared_projection_with_image_companions(run):
     assert len(paid(calls)) == 1
 
 
+@pytest.mark.parametrize("run", ["panorama"], indirect=True)
+def test_panorama_kind_accepts_a_declared_jpeg_panorama(run):
+    # World application accepts 2:1 JPEG panoramas, so the shared preflight does too.
+    _, calls, behavior, downloads, store, _, execute = run
+    downloads.data = jpeg()
+    behavior["assets"][0].update(mimeType="image/jpeg", properties={"size": len(downloads.data)})
+    assert execute("quote") == 0
+    assert execute("submit") == 0 and execute("resume") == 0
+    asset = store().records()[0].results[0].asset
+    assert (asset.media_type, asset.source, asset.projection) == (
+        "image/jpeg",
+        "asset",
+        "equirectangular",
+    )
+    assert len(paid(calls)) == 1
+
+
 @pytest.mark.parametrize("run", ["panorama", "hdri"], indirect=True)
 @pytest.mark.parametrize(
-    "change", ["no-projection", "skybox-3d", "square", "jpeg", "video-companion"]
+    "change", ["no-projection", "skybox-3d", "square", "malformed-jpeg", "video-companion"]
 )
 def test_panorama_kinds_require_a_projected_two_to_one_file(run, change):
     root, calls, behavior, downloads, store, _, execute = run
@@ -816,8 +833,8 @@ def test_panorama_kinds_require_a_projected_two_to_one_file(run, change):
         asset["metadata"] = {"type": "skybox-3d"}
     elif change == "square":
         downloads.data = exr(4, 4) if hdri else png(4, 4)
-    elif change == "jpeg":
-        # Not yet accepted by the World panorama preflight, so never a passing panorama.
+    elif change == "malformed-jpeg":
+        # JPEG markers without parseable segments fail the bounded preflight.
         downloads.data = b"\xff\xd8\xff\xe0 synthetic jpeg \xff\xd9"
     else:
         behavior["assets"].append(
@@ -840,7 +857,9 @@ def test_panorama_kinds_require_a_projected_two_to_one_file(run, change):
 
 
 @pytest.mark.parametrize("run", ["hdri"], indirect=True)
-@pytest.mark.parametrize("change", ["preview-only", "radiance-original", "ldr-original"])
+@pytest.mark.parametrize(
+    "change", ["preview-only", "radiance-original", "ldr-original", "jpeg-original"]
+)
 def test_hdri_kind_requires_a_declared_openexr_original(run, change):
     _, calls, behavior, downloads, store, _, execute = run
     asset = behavior["assets"][0]
@@ -850,7 +869,8 @@ def test_hdri_kind_requires_a_declared_openexr_original(run, change):
     elif change == "radiance-original":
         asset["originalMimeType"] = "image/vnd.radiance"
     else:
-        downloads.data = png()
+        # A 2:1 panorama container that is not OpenEXR, despite the EXR label.
+        downloads.data = png() if change == "ldr-original" else jpeg()
         asset["properties"] = {"size": len(downloads.data)}
     execute("quote")
     with pytest.raises(smoke.SmokeError, match="approved result kind"):

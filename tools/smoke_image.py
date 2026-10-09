@@ -136,7 +136,7 @@ def panoramas(record, paths):
     """Return projected results whose verified bytes pass the World panorama preflight.
 
     Only the server-declared projection selects a file; the bounded container
-    check then requires a 2:1 PNG or OpenEXR. It does not decode pixels, measure
+    check then requires a 2:1 PNG, JPEG or OpenEXR. It does not decode pixels, measure
     dynamic range or judge seams, which stay with Blender and human review.
     """
     if len(paths) != len(record.results):

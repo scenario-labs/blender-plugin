@@ -254,8 +254,8 @@ See [the command reference](../tests/smoke/README.md).
 The `panorama` and `hdri` kinds check the saved `projection` and `source` fields
 from the same `assets.with_raw_response.retrieve` metadata, then the bounded
 2:1 container preflight on the verified files; `hdri` requires a saved OpenEXR
-original. They add no SDK call or dependency. Offline tests use synthetic PNG and
-OpenEXR headers, not live skybox output.
+original. They add no SDK call or dependency. Offline tests use synthetic PNG,
+JPEG and OpenEXR headers, not live skybox output.
 
 ## Shared model text reads
 

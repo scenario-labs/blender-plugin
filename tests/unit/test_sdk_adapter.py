@@ -15,6 +15,7 @@ from scenario import __version__
 from scenario.core.api.sdk_adapter import (
     MODEL_BULK_LIMIT,
     AdapterError,
+    AdapterStatusError,
     AdapterUnavailable,
     Credentials,
     SDKAdapter,
@@ -257,6 +258,12 @@ def test_errors_are_sanitized_redirects_blocked_and_no_retries(adapter, failure)
     assert "selected-secret" not in str(error.value)
     assert "signed-url" not in str(error.value)
     assert len(calls) == 1
+    # Only a service reply carries a status; a lost response does not.
+    assert isinstance(error.value, AdapterStatusError) is (failure != "timeout")
+    if failure != "timeout":
+        assert error.value.status_code == failure
+        generic = f"Scenario request failed (HTTP {failure})"
+        assert str(error.value) == (LIMITED if failure == 429 else generic)
 
 
 PRIVATE_PROJECT = "private-project-7f3a"
@@ -296,10 +303,11 @@ def test_status_errors_are_actionable_without_private_details(adapter, status, p
 
     credentials = Credentials("selected-key", "selected-secret")
     client = adapter(handler, credentials=credentials, project_id=project)
-    with pytest.raises(AdapterError) as error:
+    with pytest.raises(AdapterStatusError) as error:
         client.model_page(page_size=1)
     message = str(error.value)
     assert message == expected
+    assert error.value.status_code == status
     # The status sentence fits the first wrapped sidebar line; guidance never names a
     # credential source, since saved and environment keys share these messages.
     assert len(message.split(". ", 1)[0]) + 1 <= SIDEBAR_CHARS

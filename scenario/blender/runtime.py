@@ -17,6 +17,7 @@ from ..core.api.sdk_adapter import Credentials as SDKCredentials
 from ..core.api.sdk_catalog import SDKCatalog
 from ..core.jobs.credential_storage import open_credential_store
 from ..core.jobs.manager import JobManager
+from ..core.jobs.model_defaults import ModelDefaults
 from ..core.jobs.records import JobRegistry
 from ..core.jobs.store import StoreError
 from ..core.jobs.transfers import ResultDownloader, StoragePolicy
@@ -34,6 +35,7 @@ class RuntimeState:
         self.manager = None
         self.catalog = None
         self.job_store = None
+        self.model_defaults = None  # Explicit lane defaults of job_store's scope.
         self.job_session = None
         self.job_context_id = None
         self.model_jobs = None
@@ -93,6 +95,7 @@ class RuntimeState:
     def reset(self):
         """Forget catalog, jobs and history; keep process-level services (MCP server, composer, previews)."""
         self.retire_jobs()
+        self.retire_model_defaults()
         for catalog in [self.catalog, *self.retired_catalogs]:
             if catalog is not None:
                 catalog.close()
@@ -125,6 +128,12 @@ class RuntimeState:
         self.film_jobs = None
         self.reference_uploads = None
         self.model_previews.clear()
+
+    def retire_model_defaults(self):
+        """Stop the old scope's defaults owner; saved rows stay in their own scope."""
+        if self.model_defaults is not None:
+            self.model_defaults.retire()
+            self.model_defaults = None
 
 
 state = RuntimeState()
@@ -221,6 +230,40 @@ def ensure_job_store():
     """Select local durable jobs through the same context used by UI and MCP reads."""
     ensure_catalog()
     return state.job_store
+
+
+def ensure_model_defaults():
+    """Select explicit lane defaults for the selected credentials and project override.
+
+    The scope comes from the selected job store, never from discovery or a guessed
+    server project. No network or job session is needed; a credential or project
+    change retires this owner in sync_catalog_context.
+    """
+    store = ensure_job_store()
+    owner = state.model_defaults
+    if owner is None or not owner.active or owner.scope != store.scope:
+        state.retire_model_defaults()
+        state.model_defaults = ModelDefaults(store)
+    return state.model_defaults
+
+
+def _current_model_defaults(context_id):
+    owner = ensure_model_defaults()
+    if context_id != owner.context_id:
+        raise ScenarioError(
+            0, "The selected credentials or project changed; review the default again"
+        )
+    return owner
+
+
+def save_model_default(context_id, default, *, expected_revision):
+    """Save an explicit lane default only in the context where the user reviewed it."""
+    return _current_model_defaults(context_id).save(default, expected_revision=expected_revision)
+
+
+def clear_model_default(context_id, lane, *, expected_revision):
+    """Clear a lane default only in the context where the user reviewed it."""
+    return _current_model_defaults(context_id).clear(lane, expected_revision=expected_revision)
 
 
 def ensure_job_session():
@@ -487,6 +530,7 @@ def sync_catalog_context():
             from . import generation
 
             state.retire_jobs()
+            state.retire_model_defaults()
             state.catalog.close()
             state.retired_catalogs.append(state.catalog)
             state.catalog = None

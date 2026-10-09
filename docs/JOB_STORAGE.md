@@ -491,6 +491,32 @@ whether a saved lane still exists before offering it. Corrupt rows, a scope or
 lane mismatch, a revision below 1 or unknown fields raise `StoreError` and are
 preserved for recovery.
 
+#### Runtime owner
+
+Callers reach these rows through one
+[`ModelDefaults`](../scenario/core/jobs/model_defaults.py) owner per selection,
+not through the store directly. `runtime.ensure_model_defaults` binds it to the
+selected job store, so its scope is exactly the credential pseudonym and optional
+Project ID override that select local jobs. A blank override is the key scope;
+no project, team or account is taken from discovery or a model list. It needs
+no network, job session or connection check. Reading a lane never writes and
+never falls back to another lane, project or credential scope. `save` takes an
+explicit `TrainedModelDefault` with the revision the caller last saw, and `clear`
+takes the lane with that revision; nothing else writes a default.
+
+A credential or project change in `sync_catalog_context`, or a runtime reset,
+retires the owner. Retirement waits for a running call, then every read and write
+raises `DefaultsRetired`, a `StoreConflict`, while the rows stay in their own
+scope. The owner's `context_id` is an in-memory token: the runtime's
+`save_model_default` and `clear_model_default` refuse a token from an earlier
+selection, so a choice reviewed in one project cannot land in another even when
+both lanes are at the same revision. `parse_default` and `describe` convert
+between this type and plain JSON values for UI and MCP callers. They refuse
+unknown fields, booleans, numeric strings and non-finite strengths rather than
+coercing them, and the description carries no scope or credential identity.
+No UI control or MCP tool uses the owner yet
+([#97](https://github.com/scenario-labs/blender-plugin/issues/97)).
+
 ### Upgrade from schema 9
 
 Opening a schema 2 to 9 store upgrades it in one immediate transaction, like

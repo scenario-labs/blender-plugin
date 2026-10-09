@@ -446,15 +446,27 @@ def test_open_regular_closes_its_descriptor_when_opening_fails(tmp_path, monkeyp
 
     monkeypatch.setattr(previews.os, "open", tracking_open)
     monkeypatch.setattr(previews.os, failing, failure)
-    with pytest.raises(ValueError, match="fixture") as caught:
-        previews._open_regular(path)
-    monkeypatch.undo()
-    (descriptor,) = opened
-    # The kept traceback keeps any file object alive, so garbage collection
-    # cannot close the descriptor in place of _open_regular.
-    with pytest.raises(OSError):
-        os.fstat(descriptor)
-    assert caught.traceback
+    closed = False
+    try:
+        with pytest.raises(ValueError, match="fixture") as caught:
+            previews._open_regular(path)
+        monkeypatch.undo()
+        (descriptor,) = opened
+        # The kept traceback keeps any file object alive, so garbage collection
+        # cannot close the descriptor in place of _open_regular.
+        with pytest.raises(OSError):
+            os.fstat(descriptor)
+        closed = True
+        assert caught.traceback
+    finally:
+        monkeypatch.undo()
+        # Only a failed check leaves a descriptor open; close it after the
+        # failure is recorded. A closed number may already be reused.
+        for leaked in () if closed else opened:
+            try:
+                os.close(leaked)
+            except OSError:
+                pass  # Closed by _open_regular after all.
 
 
 @pytest.mark.skipif(os.name != "posix", reason="Respells POSIX roots to model Windows")

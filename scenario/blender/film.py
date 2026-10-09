@@ -250,7 +250,7 @@ class SCENARIO_PT_film(bpy.types.Panel):
     bl_order = 20
 
     def draw_header_preset(self, context):
-        # Visible while the panel is collapsed; child panels share this header.
+        # Drawn in this parent header: visible while collapsed and above the nested Film panels.
         draw_experimental(self.layout)
 
     def draw(self, context):

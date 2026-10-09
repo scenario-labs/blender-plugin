@@ -319,7 +319,7 @@ class ModelPickerTests(unittest.TestCase):
         self.assertEqual([i.model_id for i in items], ["model_patina-material"])
         self.assertTrue(self.picker._ctx["material_only"])
 
-    def test_highlighted_model_without_application_shows_experimental_status(self):
+    def test_highlighted_model_with_unaccepted_capability_shows_experimental_status(self):
         catalog = submodule("core.api.catalog")
         handlers = submodule("blender.handlers")
 
@@ -346,8 +346,8 @@ class ModelPickerTests(unittest.TestCase):
         )
         wm = bpy.context.window_manager
         for lane, model_id, expected in (
-            ("audio", "model_speech-to-text", "Experimental: speech-to-text result stays saved"),
-            ("3d", "model_video-to-motion", "Experimental: video-to-motion result stays saved"),
+            ("audio", "model_speech-to-text", "Experimental: speech-to-text not accepted"),
+            ("3d", "model_video-to-motion", "Experimental: video-to-motion not accepted"),
             ("audio", "model_ace-step-1-5", None),
             ("image", "model_openai-gpt-image-2", None),
         ):
@@ -364,6 +364,64 @@ class ModelPickerTests(unittest.TestCase):
                 self.assertEqual(
                     statuses, [{"text": expected, "icon": "EXPERIMENTAL"}] if expected else []
                 )
+
+    def test_model_row_shows_experimental_status_for_the_chosen_model(self):
+        catalog = submodule("core.api.catalog")
+        handlers = submodule("blender.handlers")
+        panels = submodule("blender.panels")
+        prompt = [
+            {"name": "prompt", "type": "string", "prompt": True, "required": {"always": True}}
+        ]
+
+        def record(model_id, name, capabilities):
+            return catalog.ModelRecord.from_api(
+                {
+                    "id": model_id,
+                    "name": name,
+                    "type": "custom",
+                    "capabilities": capabilities,
+                    "tags": ["sc:scenario"],
+                    "inputs": prompt,
+                }
+            )
+
+        records = fake_records() + [
+            record("model_speech-studio", "Speech Studio", ["txt2audio", "audio2txt"]),
+            record("model_motion-clip", "Motion Clip", ["video2video", "video23d"]),
+        ]
+        handlers.dispatch(
+            ("catalog", {"privacy": "public", "records": records, "detailed": records})
+        )
+        scene = bpy.context.scene
+        for lane, model_id, expected in (
+            ("audio", "model_speech-studio", "Experimental: speech-to-text not accepted"),
+            ("video", "model_motion-clip", "Experimental: video-to-motion not accepted"),
+            ("audio", "model_ace-step-1-5", None),
+            ("image", "model_z-image", None),
+        ):
+            with self.subTest(model_id=model_id):
+                lane_state = scene.scenario.lane_state(lane)
+                lane_state.model_id = model_id
+                before = (lane_state.model_id, lane_state.model_key)
+                root = FakeLayout()
+                panels.draw_model_row(root, lane_state, lane)  # the sidebar/render/Edit 3D row
+                (box,) = root.children
+                status = [{"text": expected, "icon": "EXPERIMENTAL"}] if expected else []
+                self.assertEqual(
+                    [call[2] for call in box.named("label")],
+                    [{"text": "Model", "icon": "NODE_MATERIAL"}, *status],
+                )
+                experimental = [
+                    call
+                    for node in root.walk()
+                    for call in node.named("label")
+                    if call[2].get("icon") == "EXPERIMENTAL"
+                ]
+                self.assertEqual(len(experimental), len(status))
+                # A status, not a block: the picker button stays and drawing changes nothing.
+                buttons = [call[1][0] for node in root.walk() for call in node.named("operator")]
+                self.assertEqual(buttons, ["scenario.pick_model"])
+                self.assertEqual((lane_state.model_id, lane_state.model_key), before)
 
     def test_execute_without_rows_is_cancelled(self):
         wm = bpy.context.window_manager

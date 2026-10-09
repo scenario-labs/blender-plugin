@@ -12,6 +12,7 @@ from ..core.api.catalog import GENERATION_LANES as LANES
 from ..core.api.errors import ScenarioError
 from ..core.api.library import asset_summary as _asset_summary
 from ..core.schema.params import build_body, validate
+from ..core.ui import capability_status
 from .protocol import DeferredTool, ToolSpec
 
 
@@ -47,6 +48,7 @@ def list_models(args):
                 "name": rec.name,
                 "description": rec.short_description,
                 "capabilities": list(rec.capabilities),
+                "status": capability_status.model_status(rec.capabilities),
             }
         )
     return {"lane": lane, "models": out[:40]}
@@ -2102,7 +2104,7 @@ SPECS = (
             "Args:\n"
             "  - lane: optional string, default image; image, video, 3d, material, audio, render_image, render_video or edit3d.\n"
             "  - query: optional string, substring of the model name, description or id.\n"
-            "Returns: lane, models[] with id, name, description and capabilities. Retry after catalog loading completes.\n"
+            "Returns: lane, models[] with id, name, description, capabilities and status (empty, or the experimental note the picker shows). Retry after catalog loading completes.\n"
             'Example: {"lane": "material", "query": "patina"}.\n'
             "Prefer model_schema before choosing generation parameters; this is not the full platform catalog.\n"
             "Platform equivalent: models_list, recommend."
@@ -2182,7 +2184,7 @@ SPECS = (
             "  - lane: optional generation lane, default image. Every lane issues a single-use quote_id.\n"
             "Returns: model_id, lane, cu_cost, cu_cost_exact (decimal string), details, mesh_sources (local captured 3D input provenance) and quote_id bound to the lane, model, inputs, scene and credential context.\n"
             'Example: {"model_id": "model_example", "parameters": {"prompt": "a wooden crate"}}.\n'
-            "Call before generate and show the cost to the user; an estimate does not authorize spending. Speech-to-text (audio2txt) and video-to-motion (video23d) models are experimental: they can be estimated and generated, but their results stay saved without Blender application.\n"
+            "Call before generate and show the cost to the user; an estimate does not authorize spending. Speech-to-text (audio2txt) and video-to-motion (video23d) models are experimental: they can be estimated and generated and their results stay in saved jobs, but motion and transcription handling is not accepted. prepare_result_application imports a returned GLB or media file by file type only.\n"
             "Platform equivalent: model_run with dry_run."
         ),
         _schema(
@@ -2208,7 +2210,7 @@ SPECS = (
             "  - approved_cost: required, the exact cu_cost_exact string explicitly approved by the user.\n"
             "Returns: local_id, status, lane, model_id and note. All model jobs poll and download through the shared session. Only the Image lane imports verified PNG/EXR images automatically into the unchanged origin. Other lanes stop at saved ready results; their scene application remains separate. Render lanes require explicit render_form uploads and separate Prompt Spark approval when enabled with an empty look. No capture, upload or Spark submission occurs during generate.\n"
             'Example: {"lane": "image", "model_id": "model_example", "parameters": {"prompt": "a wooden crate"}, "quote_id": "quote_from_estimate", "approved_cost": "1.25"}.\n'
-            "Do not call before estimate_cost and explicit spending approval. Do not repeat a timed-out submission. Use prepare_result_application for saved-result imports. Speech-to-text (audio2txt) and video-to-motion (video23d) models are experimental: their results stay saved without Blender application.\n"
+            "Do not call before estimate_cost and explicit spending approval. Do not repeat a timed-out submission. Use prepare_result_application for saved-result imports. Speech-to-text (audio2txt) and video-to-motion (video23d) models are experimental: their results stay in saved jobs, but motion and transcription handling is not accepted. prepare_result_application imports a returned GLB or media file by file type only.\n"
             "Platform equivalent: model_run."
         ),
         _schema(

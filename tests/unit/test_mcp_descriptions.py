@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from scenario.core.ui.capability_status import UNAPPLIED_CAPABILITIES
+from scenario.core.ui.capability_status import UNACCEPTED_CAPABILITIES
 
 ROOT = Path(__file__).resolve().parents[2]
 EXPECTED = {
@@ -143,9 +143,33 @@ def test_experimental_paths_are_explicit_without_removing_tools():
     for name in ("estimate_cost", "generate"):
         description = descriptions[name]
         assert "are experimental" in description, name
-        assert "results stay saved without Blender application" in description, name
-        for capability in UNAPPLIED_CAPABILITIES:
+        assert "results stay in saved jobs" in description, name
+        assert "motion and transcription handling is not accepted" in description, name
+        assert "imports a returned GLB or media file by file type only" in description, name
+        assert "without Blender application" not in description, name
+        for capability in UNACCEPTED_CAPABILITIES:
             assert f"({capability})" in description, (name, capability)
+
+
+def test_list_models_reports_the_picker_status():
+    _, calls = specs("tools_scenario")
+    descriptions = {call.args[0].value: call.args[1].value for call in calls}
+    assert "capabilities and status (empty, or the experimental note" in descriptions["list_models"]
+    tree = ast.parse((ROOT / "scenario/mcp/tools_scenario.py").read_text())
+    function = next(
+        node
+        for node in tree.body
+        if isinstance(node, ast.FunctionDef) and node.name == "list_models"
+    )
+    entries = [node for node in ast.walk(function) if isinstance(node, ast.Dict)]
+    status = [
+        value
+        for entry in entries
+        for key, value in zip(entry.keys, entry.values, strict=True)
+        if isinstance(key, ast.Constant) and key.value == "status"
+    ]
+    assert len(status) == 1
+    assert ast.unparse(status[0]) == "capability_status.model_status(rec.capabilities)"
 
 
 def test_job_tools_advertise_both_reference_spellings_without_requiring_legacy_id():

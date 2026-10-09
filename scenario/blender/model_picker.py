@@ -491,7 +491,8 @@ class SCENARIO_OT_pick_model(bpy.types.Operator):
 
 def draw_model_row(layout, lane_state, lane):
     """A "Model" section (like Clip to render / Camera path): a header, then a wide button opening the picker
-    (its icon next to the model name) and the native dropdown at the right as a fallback."""
+    (its icon next to the model name) and the native dropdown at the right as a fallback. A model offering an
+    unaccepted capability adds its read-only experimental status below."""
     box = layout.box()
     box.label(text="Model", icon="NODE_MATERIAL")
     record = runtime.state.records.get(lane_state.model_id)
@@ -505,6 +506,9 @@ def draw_model_row(layout, lane_state, lane):
     area = row.split(factor=0.9, align=True)
     area.operator("scenario.pick_model", text=label, **icon_kwargs).lane = lane
     area.prop(lane_state, "model_id", text="", icon_only=True)
+    status = capability_status.model_status(record.capabilities) if record is not None else ""
+    if status:
+        box.label(text=status, icon="EXPERIMENTAL")
 
 
 CLASSES = (ScenarioPickerItem, SCENARIO_UL_models, SCENARIO_OT_pick_model)

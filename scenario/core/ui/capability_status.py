@@ -1,16 +1,18 @@
 # SPDX-FileCopyrightText: 2026 Scenario Inc.
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""Explicit experimental status for model capabilities without Blender application.
+"""Explicit experimental status for model capabilities whose result handling is not accepted.
 
 Display only: a status never blocks a model. Its jobs still run and their results
-stay saved. Speech-to-text and video-to-motion result handling is tracked in #190.
+stay in saved jobs. Generic import is offered by file type, so a returned GLB or
+media file may be imported, but speech-to-text and video-to-motion handling has
+not been accepted (#190).
 """
 
-UNAPPLIED_CAPABILITIES = {"audio2txt": "speech-to-text", "video23d": "video-to-motion"}
+UNACCEPTED_CAPABILITIES = {"audio2txt": "speech-to-text", "video23d": "video-to-motion"}
 
 
 def model_status(capabilities):
-    """Short status for a model offering a capability without Blender application, or ""."""
+    """Short status for a model offering an unaccepted capability, or ""."""
     offered = {str(capability).lower() for capability in capabilities or ()}
-    names = [name for capability, name in UNAPPLIED_CAPABILITIES.items() if capability in offered]
-    return f"Experimental: {', '.join(names)} result stays saved" if names else ""
+    names = [name for capability, name in UNACCEPTED_CAPABILITIES.items() if capability in offered]
+    return f"Experimental: {', '.join(names)} not accepted" if names else ""

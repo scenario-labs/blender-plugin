@@ -14,7 +14,7 @@
     "sources": {
       "scenario/blender/model_jobs.py": "f09de87f40cbe1e4fe95c1869a63d7d84e52d967eb95421ebc4c9c6a47d699f6",
       "scenario/mcp/tools_scenario.py": "8fd2f8673317e0d2c3bd767850330014ab37f0b1d3f2c56fd16eb47c01925b74",
-      "scenario/core/jobs/store.py": "af6a1aca80668fb15001ca1ac75dabecef5d7118c045a2223caee9b404c844e1"
+      "scenario/core/jobs/store.py": "5e94feb941bd943939901be0b8e0e447e424da24635cf28b5f44f7f159c60ec6"
     }
   }
 }

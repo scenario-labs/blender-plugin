@@ -30,7 +30,9 @@ if TYPE_CHECKING:
 _VERSION = 10
 _APPLICATION_ID = 0x53434A42
 _FILM_TASK_FILTER = "json_valid(record) AND json_extract(record, '$.intent.film_task') IS NOT NULL"
-_LANE = re.compile(r"[a-z][a-z0-9_]{0,31}")
+# A bounded identifier, not the current catalog: "3d" is a lane, and a renamed or
+# retired lane must never make an existing stored row unreadable.
+_LANE = re.compile(r"[a-z0-9][a-z0-9_]{0,31}")
 TRAINED_ROUTES = frozenset({"stack", "composition", "custom", "direct"})
 MAX_TRAINED_PICKS = 16
 
@@ -244,7 +246,7 @@ def _create_film_uploads(connection):
 
 def _lane(value):
     if not isinstance(value, str) or not _LANE.fullmatch(value):
-        raise ValueError("Use a generation lane name")
+        raise ValueError("Use a lowercase generation lane identifier")
     return value
 
 

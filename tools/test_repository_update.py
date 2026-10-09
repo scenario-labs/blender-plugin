@@ -70,11 +70,66 @@ def write_inventory(path, package_version):
 def store_schema(path):
     """Read a package's declared job-store schema without importing its code."""
     with zipfile.ZipFile(path) as archive:
-        source = archive.read("core/jobs/store.py").decode("utf-8")
+        try:
+            source = archive.read("core/jobs/store.py").decode("utf-8")
+        except KeyError:
+            # Every published release through 0.9.9 predates the shared job store.
+            raise ValueError(
+                "Package has no shared job store; use a package with adopted storage"
+            ) from None
     match = re.search(r"(?m)^_VERSION = ([1-9][0-9]*)$", source)
     if match is None:
         raise ValueError("Package job storage declares no schema version")
     return int(match.group(1))
+
+
+def store_files(database):
+    """Fingerprint the job database and its siblings, including any journal files."""
+    return {
+        path.name: sha256(path) if path.is_file() else "directory"
+        for path in sorted(database.parent.iterdir())
+    }
+
+
+def predecessor_reopen(session, package):
+    """Run the predecessor's own storage code against the upgraded store in Blender.
+
+    Factory settings keep the installed candidate unloaded. The older code must
+    refuse the newer format and leave every byte of the store directory unchanged.
+    """
+    databases = [
+        path
+        for path in session.profile.rglob("jobs.sqlite3")
+        if path.parent.name == "shared-jobs" and path.is_file() and not path.is_symlink()
+    ]
+    if len(databases) != 1:
+        raise ValueError("Expected one upgraded shared job store in the disposable profile")
+    database = databases[0]
+    before = store_files(database)
+    evidence = session.directory / "predecessor-reopen.json"
+    session.step(
+        "predecessor-reopen",
+        [
+            "--offline-mode",
+            "--background",
+            "--factory-startup",
+            "--python-exit-code",
+            "1",
+            "--python",
+            str(ROOT / "tests/blender/predecessor_store.py"),
+            "--",
+            "--package",
+            str(package),
+            "--database",
+            str(database),
+            "--report",
+            str(evidence),
+        ],
+    )
+    result = json.loads(evidence.read_text())
+    if store_files(database) != before:
+        raise ValueError("Predecessor storage changed the upgraded job store")
+    return {**result, "store_unchanged": True}
 
 
 def fixture_predecessor(directory, package):
@@ -389,6 +444,11 @@ def run(args):
                 if report["restart"] != expected:
                     raise ValueError("Package state did not survive an offline Blender restart")
                 verify_installed(second, installed)
+                if schemas["before"] < schemas["after"]:
+                    reopened = predecessor_reopen(session, first)
+                    if reopened.get("predecessor_schema") != schemas["before"]:
+                        raise ValueError("Predecessor reopen used different storage code")
+                    report["predecessor_reopen"] = reopened
         report["server_stopped"] = True
         if profile_snapshot(normal_profile) != before:
             raise ValueError("Normal Blender profile changed during the run")

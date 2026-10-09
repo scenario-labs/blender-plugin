@@ -11,7 +11,10 @@ the repository does not commit database files:
 
     git archive b57c398f scenario | tar -x -C <empty directory>
     uv run --locked --no-env-file python tools/make_job_store_fixture.py \
-        --source <empty directory> --output tests/fixtures/synthetic/jobs-schema9.sql
+        --source <empty directory> --output <new directory>/jobs-schema9.sql
+    cmp <new directory>/jobs-schema9.sql tests/fixtures/synthetic/jobs-schema9.sql
+
+The output must be a new file; delete the committed fixture first only to replace it.
 
 All identities are synthetic. No Scenario request, credential or Blender is used.
 """

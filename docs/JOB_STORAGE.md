@@ -409,15 +409,33 @@ metadata; see [legacy mesh transfers](RESULT_TRANSFERS.md#legacy-obj-and-mtl-byt
 
 ## Schema 10: declared originals and lane defaults
 
-Schema 10 is the single storage change for the 0.10.0 capabilities. It batches
-every new persisted field they need: result file source, result projection and
-per-scope lane defaults for trained or private models. Live remote progress, the
-composer's scene/lane binding, workflow step decisions, Film review/export state,
-asset organization reviews and preview caches stay in memory or in disposable
-caches, so they add nothing here. No intent-level lane or trained-model display
-name is stored: restarted display records remain generic model jobs and show the
-quoted target model. Saved `.blend` properties added by later interface work are
-separate from this database, and the upload database keeps its own version.
+Schema 10 batches into one upgrade the persisted fields that the accepted 0.10.0
+designs need: result file source, result projection and per-scope lane defaults
+for trained or private models. Live remote progress, the composer's scene/lane
+binding, workflow step decisions, Film review/export state, asset organization
+reviews and preview caches stay in memory or in disposable caches, so they add
+nothing here. No intent-level lane or trained-model display name is stored:
+restarted display records remain generic model jobs and show the quoted target
+model. Saved `.blend` properties added by later interface work are separate from
+this database, and the upload database keeps its own version.
+
+This is not yet a frozen release format. Three open maintainer decisions would
+add persisted fields if adopted; each is deferred rather than guessed here:
+
+- An intent-level panorama purpose, needed only if live skybox assets lack the
+  `metadata.type` that projection depends on
+  ([#98](https://github.com/scenario-labs/blender-plugin/issues/98)).
+- A `first_frame` local-application purpose, if handing a saved image to Render
+  Video should become a durable application claim instead of a form binding
+  ([#65](https://github.com/scenario-labs/blender-plugin/issues/65)).
+- Each result's parent asset and file name, for exact binding of multi-file 3D
+  packages ([#65](https://github.com/scenario-labs/blender-plugin/issues/65)).
+
+Live skybox results must also confirm `metadata.type`, `originalMimeType` and an
+`originalFileUrl` host inside the storage policy; see
+[declared HDR originals](RESULT_TRANSFERS.md#declared-hdr-originals-and-360-projection).
+Once candidate builds have written schema 10 stores, adopting any of these needs
+its own version and upgrade rather than a new reading of schema 10 rows.
 
 ### Result source and projection
 
@@ -454,7 +472,7 @@ names the lane, a route and model identities only:
 The row also repeats the full scope and is decoded strictly. No prompt, schema,
 quote, thumbnail, URL or raw model record is stored. `trained_default(lane)` returns
 the lane's state, with revision 0 when nothing was ever saved; `trained_defaults()`
-lists the saved lanes in lane order. `set_trained_default` and
+lists the saved lanes ordered by lane name. `set_trained_default` and
 `clear_trained_default` require the last observed revision and increment it in one
 immediate transaction. Clearing keeps the row and its revision, so a writer holding
 a pre-clear revision still conflicts instead of restoring a stale choice. Clearing
@@ -463,9 +481,13 @@ an already empty lane at its current revision changes nothing.
 A default is a remembered choice, not spending authority. Callers must recheck the
 routes against fresh model schemas and obtain a new exact quote before any paid
 submission; a missing or incompatible model must block the lane rather than fall
-back to the base model. Lane names are bounded identifiers; callers choose them from
-the current catalog. Corrupt rows, a scope or lane mismatch, a revision below 1 or
-unknown fields raise `StoreError` and are preserved for recovery.
+back to the base model. Lane names are lowercase ASCII identifiers of 1 to 32
+letters, digits and underscores that do not start with an underscore, such as `3d`
+or `render_image`. The store does not compare them with the current catalog, so
+renaming or retiring a lane never makes a saved row unreadable; callers decide
+whether a saved lane still exists before offering it. Corrupt rows, a scope or
+lane mismatch, a revision below 1 or unknown fields raise `StoreError` and are
+preserved for recovery.
 
 ### Upgrade from schema 9
 
@@ -487,4 +509,6 @@ The unit and installed-ZIP tests upgrade a store rebuilt from
 containing every job state, operation, local claim, mesh and Film binding, a cloud
 record and a second credential scope. The
 [package update check](development/validation.md#scenario-package-state-across-updates)
-exercises the same upgrade through Blender's native extension update.
+exercises the same upgrade through Blender's native extension update, then opens
+the upgraded store with the predecessor package's own storage code, which must
+refuse it without changing any byte.

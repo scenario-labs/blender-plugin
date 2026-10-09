@@ -13,6 +13,7 @@ from threading import Barrier
 
 import pytest
 
+from scenario.core.api.catalog import GENERATION_LANES
 from scenario.core.jobs import store as storage
 from scenario.core.jobs.store import (
     JobScope,
@@ -24,6 +25,7 @@ from scenario.core.jobs.store import (
     TrainedModelDefault,
     TrainedModelPick,
 )
+from scenario.core.ui.composer_layout import LANE_ORDER
 
 # SQL dump of a database written by the schema 9 storage code (tests/fixtures/README.md).
 FIXTURE = Path(__file__).resolve().parents[1] / "fixtures/synthetic/jobs-schema9.sql"
@@ -289,6 +291,35 @@ def test_trained_defaults_list_only_saved_lanes_in_lane_order(defaults):
     defaults.set_trained_default(stack("video"), expected_revision=0)
     defaults.clear_trained_default("video", expected_revision=1)
     assert [state.lane for state in defaults.trained_defaults()] == ["image", "render_image"]
+
+
+@pytest.mark.parametrize("lane", sorted(set(GENERATION_LANES) | set(LANE_ORDER)))
+def test_every_generation_lane_round_trips_a_default(defaults, tmp_path, lane):
+    """Lanes such as "3d" start with a digit; set, get, list and clear all accept them."""
+    custom = TrainedModelDefault(lane, "custom", f"model_private-{lane}")
+    saved = defaults.set_trained_default(custom, expected_revision=0)
+    assert saved == TrainedDefaultState(lane, 1, custom)
+    reopened = JobStore(tmp_path / "jobs.sqlite3", defaults.scope)
+    assert reopened.trained_default(lane) == saved
+    assert reopened.trained_defaults() == (saved,)
+    assert reopened.clear_trained_default(lane, expected_revision=1) == TrainedDefaultState(lane, 2)
+    assert reopened.trained_defaults() == ()
+
+
+def test_every_catalog_lane_is_listed_in_lane_order(defaults):
+    lanes = sorted(GENERATION_LANES, reverse=True)
+    for lane in lanes:
+        defaults.set_trained_default(stack(lane), expected_revision=0)
+    assert [state.lane for state in defaults.trained_defaults()] == sorted(lanes)
+
+
+def test_lane_identifiers_stay_independent_of_the_current_catalog(defaults):
+    """A retired or renamed lane remains readable; malformed names are still refused."""
+    retired = defaults.set_trained_default(stack("retired_lane_2"), expected_revision=0)
+    assert defaults.trained_defaults() == (retired,)
+    for lane in ("", "_image", "3D", "image-lane", "a" * 33, "image lane", "١d"):
+        with pytest.raises(ValueError):
+            defaults.trained_default(lane)
 
 
 @pytest.mark.parametrize(

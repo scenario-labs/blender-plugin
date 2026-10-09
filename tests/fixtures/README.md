@@ -195,15 +195,17 @@ record. All identities, hashes and receipts are synthetic; there are no result
 files, credentials, prompts or signed URLs. The
 [schema 10 upgrade tests](../unit/test_job_store_schema10.py) and the
 installed-ZIP store test rebuild a fresh database for each case. Reproduce the
-dump with that commit's own storage code:
+dump with that commit's own storage code and compare it with the committed file:
 
 ```sh
 git archive b57c398f scenario | tar -x -C /path/to/empty-directory
 uv run --locked --no-env-file python tools/make_job_store_fixture.py \
-  --source /path/to/empty-directory --output tests/fixtures/synthetic/jobs-schema9.sql
+  --source /path/to/empty-directory --output /path/to/new/jobs-schema9.sql
+cmp /path/to/new/jobs-schema9.sql tests/fixtures/synthetic/jobs-schema9.sql
 ```
 
-The tool refuses any source whose store is not schema 9, imports nothing from the
-current checkout and writes the database only to a temporary directory. The dump
-records rows, schema and index definitions, not SQLite page layout, which the
-upgrade does not depend on.
+The tool never overwrites a file: `--output` must name a new `.sql` path, so delete
+the committed fixture first only when intentionally replacing it. It refuses any
+source whose store is not schema 9, imports nothing from the current checkout and
+writes the database only to a temporary directory. The dump records rows, schema
+and index definitions, not SQLite page layout, which the upgrade does not depend on.

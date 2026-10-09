@@ -350,7 +350,7 @@ def test_store_schema_is_read_from_package_source_without_import(runner, tmp_pat
     with pytest.raises(ValueError, match="no schema version"):
         runner.store_schema(missing)
     archive, _ = runner.fixture(tmp_path / "absent", "1.0.0")
-    with pytest.raises(KeyError):
+    with pytest.raises(ValueError, match="no shared job store"):
         runner.store_schema(archive)
     assert zipfile.is_zipfile(missing)
 
@@ -374,13 +374,30 @@ def test_same_version_previous_code_becomes_the_test_predecessor(
         output.mkdir()
         return output
 
+    database = None
+
     def step(session, name, args):
+        nonlocal database
         if name == "probe":
             path = session.directory / "probe.log"
             path.write_text('SCENARIO_ENV={"version":[5,1,2],"blender":"5.1.2"}\n')
             return path
         if name in {"configure", "install"}:
             return None
+        if name == "predecessor-reopen":
+            assert "--factory-startup" in args
+            package = session.directory / "first/scenario-0.0.0.zip"
+            assert Path(args[args.index("--package") + 1]) == package
+            assert Path(args[args.index("--database") + 1]) == database
+            report = Path(args[args.index("--report") + 1])
+            report.write_text(
+                json.dumps({"predecessor_schema": schemas[0], "refused": "Unsupported"})
+            )
+            return None
+        if name == "update":
+            database = session.profile / "extensions/.user/update_fixture/shared-jobs/jobs.sqlite3"
+            database.parent.mkdir(parents=True)
+            database.write_bytes(b"upgraded store")
         before = session.directory / "first/scenario-0.0.0.zip"
         with zipfile.ZipFile(before) as package:
             assert f"_VERSION = {schemas[0]}" in package.read("core/jobs/store.py").decode()
@@ -433,6 +450,96 @@ def test_same_version_previous_code_becomes_the_test_predecessor(
     assert result["previous_sha256"] == runner.sha256(previous)
     assert set(reports) == {"update", "restart"}
     assert result["update"]["store_schema"] == {"before": schemas[0], "after": schemas[1]}
+    if schemas[0] < schemas[1]:
+        assert result["predecessor_reopen"] == {
+            "predecessor_schema": schemas[0],
+            "refused": "Unsupported",
+            "store_unchanged": True,
+        }
+    else:
+        assert "predecessor_reopen" not in result
+
+
+@pytest.mark.parametrize("damage", [None, "changed", "journal", "second-store"])
+def test_predecessor_reopen_requires_one_unchanged_store(runner, tmp_path, damage):
+    session = SimpleNamespace(profile=tmp_path / "profile", directory=tmp_path)
+    database = session.profile / "extensions/.user/update_fixture/shared-jobs/jobs.sqlite3"
+    database.parent.mkdir(parents=True)
+    database.write_bytes(b"upgraded store")
+    (database.parent / "scope.key").write_bytes(b"scope key")
+    if damage == "second-store":
+        other = session.profile / "elsewhere/shared-jobs/jobs.sqlite3"
+        other.parent.mkdir(parents=True)
+        other.write_bytes(b"other store")
+    steps = []
+
+    def step(name, args):
+        steps.append((name, args))
+        report = Path(args[args.index("--report") + 1])
+        report.write_text(json.dumps({"predecessor_schema": 9, "refused": "Unsupported"}))
+        if damage == "changed":
+            database.write_bytes(b"rewritten by older code")
+        elif damage == "journal":
+            (database.parent / "jobs.sqlite3-journal").write_bytes(b"left behind")
+
+    session.step = step
+    package = tmp_path / "first/scenario-0.0.0.zip"
+    if damage is None:
+        assert runner.predecessor_reopen(session, package) == {
+            "predecessor_schema": 9,
+            "refused": "Unsupported",
+            "store_unchanged": True,
+        }
+        name, args = steps[0]
+        assert name == "predecessor-reopen" and "--factory-startup" in args
+        assert args[args.index("--database") + 1] == str(database)
+        assert args[args.index("--package") + 1] == str(package)
+        return
+    with pytest.raises(ValueError, match="one upgraded|changed the upgraded"):
+        runner.predecessor_reopen(session, package)
+    assert len(steps) == (0 if damage == "second-store" else 1)
+
+
+def _predecessor_package(path, version):
+    """The current storage code relabelled as an older schema, for offline mechanics only."""
+    import zipfile
+
+    with zipfile.ZipFile(path, "w") as package:
+        package.writestr("__init__.py", (ROOT / "scenario/__init__.py").read_text())
+        package.writestr("blender/ui.py", "raise RuntimeError('never imported')\n")
+        for source in sorted((ROOT / "scenario/core").rglob("*.py")):
+            text = source.read_text()
+            if source.name == "store.py" and source.parent.name == "jobs":
+                text = text.replace("\n_VERSION = 10\n", f"\n_VERSION = {version}\n")
+                assert f"_VERSION = {version}" in text
+            package.writestr(source.relative_to(ROOT / "scenario").as_posix(), text)
+    return path
+
+
+def test_predecessor_store_probe_refuses_newer_store_without_writing(tmp_path, monkeypatch):
+    monkeypatch.syspath_prepend(str(ROOT / "tests/blender"))
+    probe = importlib.import_module("predecessor_store")
+    from scenario.core.jobs.store import JobScope, JobStore
+
+    database = tmp_path / "shared-jobs/jobs.sqlite3"
+    JobStore(database, JobScope("https://service.example.invalid/v1", "local-key-fixture"))
+    before = database.read_bytes()
+    older = _predecessor_package(tmp_path / "older.zip", 9)
+    result = probe.reopen(older, database)
+    assert result["predecessor_schema"] == 9 and probe.REFUSAL in result["refused"]
+    assert database.read_bytes() == before
+    assert sorted(path.name for path in database.parent.iterdir()) == ["jobs.sqlite3"]
+    assert not any(name.startswith(probe.PACKAGE) for name in sys.modules)
+    same = _predecessor_package(tmp_path / "same.zip", 10)
+    with pytest.raises(RuntimeError, match="opened the upgraded"):
+        probe.reopen(same, database)
+    empty = tmp_path / "empty.zip"
+    import zipfile
+
+    with zipfile.ZipFile(empty, "w") as package:
+        package.writestr("__init__.py", "")
+    with pytest.raises(RuntimeError, match="no shared job store"):
+        probe.reopen(empty, database)
 
 
 def test_candidate_with_older_job_storage_stops_before_install(runner, tmp_path, monkeypatch):

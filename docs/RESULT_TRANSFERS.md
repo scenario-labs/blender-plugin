@@ -203,8 +203,11 @@ the World preflight still checks its 2:1 shape and no dynamic range is measured.
 Existing image and World actions accept `image/x-exr` but not yet `image/aces`;
 an ACES-labelled original stays saved for inspection until World application
 accepts that label. The offline and installed-ZIP tests use mocked storage
-responses. A live HDRi run must still confirm the original's host, size and
-color labelling.
+responses. A live HDRi run must still confirm `metadata.type`, the original's
+host, size and color labelling before the release freezes this behavior. An
+`originalFileUrl` host outside the storage policy makes each such job end in
+`download_failed`, where earlier builds saved the JPEG preview; that needs a
+reviewed storage policy change, never a host derived from another URL.
 
 ## Local Film media measurement
 

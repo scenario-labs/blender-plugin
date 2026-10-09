@@ -243,6 +243,30 @@ class JobStoreTests(unittest.TestCase):
                 "fixture-upload-asset",
             )
 
+    def test_installed_store_keeps_a_default_for_every_installed_lane(self):
+        module = submodule("core.jobs.store")
+        lanes = set(submodule("core.api.catalog").GENERATION_LANES)
+        lanes |= set(submodule("core.ui.composer_layout").LANE_ORDER)
+        lanes |= set(submodule("blender.props").GENERATION_LANES)
+        self.assertIn("3d", lanes)
+        scope = module.JobScope("https://service.example.invalid/v1", "fixture-account", "project")
+        with tempfile.TemporaryDirectory(dir=bpy.utils.resource_path("USER")) as directory:
+            path = Path(directory) / "jobs.sqlite3"
+            store = module.JobStore(path, scope)
+            saved = {}
+            for lane in sorted(lanes):
+                default = module.TrainedModelDefault(lane, "custom", f"model_private-{lane}")
+                saved[lane] = store.set_trained_default(default, expected_revision=0)
+            reopened = module.JobStore(path, scope)
+            self.assertEqual(
+                reopened.trained_defaults(), tuple(saved[lane] for lane in sorted(lanes))
+            )
+            for lane in sorted(lanes):
+                self.assertEqual(reopened.trained_default(lane), saved[lane])
+                cleared = reopened.clear_trained_default(lane, expected_revision=1)
+                self.assertEqual((cleared.revision, cleared.default), (2, None))
+            self.assertEqual(reopened.trained_defaults(), ())
+
     def test_installed_coordinator_persists_before_sdk_dispatch(self):
         import httpx
 

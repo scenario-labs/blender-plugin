@@ -262,6 +262,15 @@ upgraded store, and the offline restart must preserve it
 the exact default, the cleared lane's revision and that the other credential scope
 sees no default.
 
+When the candidate declares a newer schema than the predecessor, the runner then
+starts one more offline Blender process with factory settings, so neither package
+loads. It imports only the predecessor ZIP's own `core` storage code under a
+private package name and opens the upgraded `shared-jobs/jobs.sqlite3` with it.
+That older code must raise its unsupported-format `StoreError`, and every file in
+the store directory must keep its exact bytes. `result.json` records this as
+`predecessor_reopen` with the predecessor's schema. Packages without a shared job
+store, including every published release through 0.9.9, cannot run this probe.
+
 When the predecessor exposes saved workflow Library bindings, the probe also
 seeds a workflow schema, a Unicode prompt and single/array reference inputs. It
 compares the complete form signature, canonical parameter values and persisted

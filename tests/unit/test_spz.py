@@ -8,7 +8,7 @@ import threading
 import time
 
 import pytest
-from splat_files import spz_payload
+from splat_files import spz_extension, spz_payload
 
 from scenario.core.scene import splats, spz
 from scenario.core.scene.splats import SplatError, SplatOptions
@@ -16,6 +16,8 @@ from scenario.core.scene.splats import SplatError, SplatOptions
 POSITIONS = [(0.0, 0.0, 0.0), (1.5, -2.25, 3.0), (-100.125, 50.5, 0.75)]
 COLORS = [(1.0, 0.0, 0.0), (0.0, 1.0, 0.0), (0.2, 0.4, 0.6)]
 OPENGL = SplatOptions(1000, "OPENGL")
+# SPZ_ADOBE_coordinate_system (0xADBE0003) declaring right/down/front (RDF = 6) storage.
+COORDINATE_SYSTEM = spz_extension(0xADBE0003, struct.pack("<I", 6))
 
 
 def test_roundtrip_positions_colors_alphas_scales(tmp_path):
@@ -146,7 +148,27 @@ def test_header_bounds_are_checked_before_reading_points(fields, message):
         spz.decode_spz(io.BytesIO(gzip.compress(header)), options=SplatOptions(10, "OPENGL"))
 
 
-def test_point_count_must_fit_the_reference_compression_bound():
+@pytest.mark.parametrize(
+    "flags, antialiased, extensions",
+    [
+        (0, False, False),
+        (0x1, True, False),
+        (0x2, False, True),
+        (0x3, True, True),
+        (0x80, False, False),
+    ],
+)
+def test_header_flags_are_kept_for_a_reviewed_import(flags, antialiased, extensions):
+    trailer = COORDINATE_SYSTEM if flags & spz.FLAG_HAS_EXTENSIONS else b""
+    plain = decode(spz_payload(4, version=3, sh_degree=1))
+    result = decode(spz_payload(4, version=3, sh_degree=1, flags=flags, trailer=trailer))
+    assert (result.antialiased, result.extensions) == (antialiased, extensions)
+    # Extension records are not read, so a declared coordinate system cannot change
+    # the decoded points; the flag is what tells a reviewed import to warn.
+    assert (result.positions, result.colors) == (plain.positions, plain.colors)
+
+
+def test_point_count_must_fit_the_compressed_size_bound():
     header = struct.pack("<IIIBBBB", spz.MAGIC, 2, 1_000_000, 0, 12, 0, 0)
     data = gzip.compress(header)
     with pytest.raises(spz.SpzError, match="compressed size"):

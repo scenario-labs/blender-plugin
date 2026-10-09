@@ -10,7 +10,11 @@ point; version 1 stored float16 and is rejected rather than misread. Version 3 c
 only the rotation encoding, which is skipped. Version 4 starts with a plaintext NGSP
 header followed by ZSTD streams; Python 3.11 and 3.13 have no ZSTD decoder, so it is
 rejected and the saved file is kept. Reference: https://github.com/nianticlabs/spz
-(README and src/cc/load-spz.cc). Coordinates are stored right/up/back (OPENGL).
+(README, extensions/README.md and src/cc/load-spz.cc). Coordinates are stored
+right/up/back (OPENGL) unless an extension declares otherwise. Extension records
+follow the spherical harmonics and are not read; one of them
+(SPZ_ADOBE_coordinate_system) can store positions in other axes. The snapshot keeps
+the header's extension and antialiasing flags so a reviewed import can warn.
 """
 
 import gzip
@@ -39,9 +43,14 @@ from .splats import (
 
 MAGIC = 0x5053474E  # "NGSP"
 COLOR_SCALE = 0.15
+FLAG_ANTIALIASED = 0x1
+FLAG_HAS_EXTENSIONS = 0x2
+# The reference loader allows SH degree 4. The compressed-size bound is borrowed from
+# its v4 (NGSP) path: at most 1024x compression of 9-byte position records. Its gzip
+# path bounds the count by the inflated bytes instead. The 23 fractional bits are this
+# release's own limit, as is the 20,000,000-point bound in `splats.plan`.
 MAX_SH_DEGREE = 4
 MAX_FRACTIONAL_BITS = 23
-# The reference loader bounds a point count by 1024x compression of 9-byte points.
 MAX_COMPRESSION_RATIO = 1024
 MIN_BYTES_PER_POINT = 9
 _SH_DIMENSIONS = {0: 0, 1: 3, 2: 8, 3: 15, 4: 24}
@@ -82,7 +91,8 @@ def decode_spz(stream, *, options, size=None, cancel=None):
 
     Only the position, alpha, colour and scale blocks are inflated, chunk by chunk;
     rotations, spherical harmonics and any extension records are neither decoded
-    nor validated. `size` is the compressed byte count when known.
+    nor validated. The header's antialiasing and extension flags are kept on the
+    snapshot. `size` is the compressed byte count when known.
     """
     if cancel is not None and cancel.is_set():
         raise SplatCancelled("Splat preparation cancelled")
@@ -97,7 +107,7 @@ def decode_spz(stream, *, options, size=None, cancel=None):
     if prefix[:2] != b"\x1f\x8b":
         raise SpzError("Not an SPZ file")
     reader = GzipReader(stream, cancel=cancel, prefix=prefix)
-    magic, version, count, sh_degree, fractional_bits, _flags, _reserved = struct.unpack(
+    magic, version, count, sh_degree, fractional_bits, flags, _reserved = struct.unpack(
         "<IIIBBBB", reader.read(16)
     )
     if magic != MAGIC:
@@ -130,6 +140,8 @@ def decode_spz(stream, *, options, size=None, cancel=None):
         tuple(lookup(channel, _COLOR) for channel in colors),
         lookup(alphas, UNIT),
         lookup(bytes(map(median3, *scales)), radius),
+        antialiased=bool(flags & FLAG_ANTIALIASED),
+        extensions=bool(flags & FLAG_HAS_EXTENSIONS),
     )
 
 

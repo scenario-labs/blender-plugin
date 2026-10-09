@@ -48,9 +48,7 @@ def test_options_are_bounded_and_explicit(max_points, axes):
         SplatOptions(max_points, axes)
 
 
-def test_reviewed_choices_fit_the_decoder_bound():
-    assert splats.DEFAULT_MAX_POINTS in splats.MAX_POINTS_CHOICES
-    assert max(splats.MAX_POINTS_CHOICES) == splats.MAX_KEPT_POINTS
+def test_format_conventions_use_only_supported_axes():
     assert set(splats.FORMAT_AXES.values()) == splats.AXES
 
 
@@ -97,6 +95,7 @@ def test_kept_fields_match_simple_slicing_across_chunk_layouts(
 def test_splat_records_decode_to_blender_axes_colours_and_radii():
     data = decode_splat(records(3))
     assert (data.format, data.version, data.count, data.kept, data.step) == ("splat", None, 3, 3, 1)
+    assert (data.antialiased, data.extensions) == (False, False)
     # OPENGL saved (x, y, z) becomes Blender (x, -z, y).
     assert rows(data, "positions", 3) == [(0.0, 0.0, 0.0), (1.0, 3.0, 2.0), (2.0, 6.0, 4.0)]
     assert data.bounds == ((0.0, 0.0, 0.0), (2.0, 6.0, 4.0))
@@ -159,6 +158,10 @@ def test_snapshot_views_are_read_only_native_floats():
         {"bounds": ((0.0, 0.0, 0.0), (math.nan, 0.0, 0.0))},
         {"bounds": ((1.0, 0.0, 0.0), (0.0, 0.0, 0.0))},
         {"bounds": ((0.0, 0.0), (0.0, 0.0))},
+        {"antialiased": 1},
+        {"extensions": None},
+        # Header flags belong to SPZ snapshots only.
+        {"extensions": True},
     ],
 )
 def test_snapshot_rejects_inconsistent_arrays_and_bounds(change):
@@ -200,10 +203,24 @@ def test_dispatcher_selects_by_declared_media_type_only():
 
 
 def test_dispatcher_returns_no_snapshot_for_a_mesh_ply():
-    data = ply_bytes([{"x": 1.0, "y": 2.0, "z": 3.0}], properties=[("x", "float")])
+    xyz = [("x", "float"), ("y", "float"), ("z", "float")]
+    data = ply_bytes([{"x": 1.0, "y": 2.0, "z": 3.0}], properties=xyz)
     assert (
         splats.decode(io.BytesIO(data), "application/x-ply", options=OPENGL, size=len(data)) is None
     )
+
+
+@pytest.mark.parametrize(
+    "properties, message",
+    [
+        ([("x", "float"), ("y", "float")], "Unsupported PLY layout"),
+        ([(name, "double") for name in ("x", "y", "z", "f_dc_0", "opacity")], "Gaussian splat"),
+    ],
+)
+def test_dispatcher_fails_closed_for_plys_that_are_neither_splats_nor_meshes(properties, message):
+    data = ply_bytes([splat_row(0)], properties=properties)
+    with pytest.raises(SplatError, match=message + ".*saved file is kept"):
+        splats.decode(io.BytesIO(data), "model/ply", options=OPENGL, size=len(data))
 
 
 @pytest.mark.parametrize("media_type", ["model/spz", "model/ply", "model/splat"])

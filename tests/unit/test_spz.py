@@ -115,7 +115,7 @@ def test_opencv_axes_and_density_compensation(tmp_path):
 
 def test_version_one_is_rejected_instead_of_misread_as_fixed_point():
     header = struct.pack("<IIIBBBB", spz.MAGIC, 1, 1, 0, 0, 0, 0)
-    with pytest.raises(spz.SpzError, match="v1"):
+    with pytest.raises(spz.SpzError, match=r"v1 \(float16 positions\).*saved file is kept"):
         decode(gzip.compress(header + bytes(6 + 1 + 3 + 3 + 3)))
 
 
@@ -128,7 +128,7 @@ def test_plaintext_version_four_is_rejected_with_a_retained_file_message():
 @pytest.mark.parametrize("version", [0, 4, 5, 2**32 - 1])
 def test_other_gzip_versions_are_unsupported(version):
     header = struct.pack("<IIIBBBB", spz.MAGIC, version, 1, 0, 12, 0, 0)
-    with pytest.raises(spz.SpzError, match="version"):
+    with pytest.raises(spz.SpzError, match="versions 2 and 3.*saved file is kept"):
         decode(gzip.compress(header + bytes(32)))
 
 

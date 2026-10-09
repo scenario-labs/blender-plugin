@@ -1,26 +1,19 @@
 # SPDX-FileCopyrightText: 2026 Scenario Inc.
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""Bounded local PCM-WAV snapshots and envelopes, without Blender or playback.
+"""Bounded audio envelopes and their raster, without Blender, files or playback.
 
-``EnvelopeBuilder`` reduces samples that a caller already decoded (for example
-with Blender's audio module on its own schedule) to bounded RMS and peak bins.
-It performs no file I/O and no decoding.
+``EnvelopeBuilder`` reduces decoded samples to 10 ms sum-of-squares and peak
+blocks, then folds them into bounded RMS and peak bins. ``add`` accepts samples
+and ``add_blocks`` accepts blocks that an owned decoder process already reduced;
+both are checked against the frame count before they are folded. Nothing here
+reads files or decodes audio: see ``core.jobs.audio_decode`` for the decoder.
 """
 
 import array
-import hashlib
-import io
 import math
 import operator
-import os
-import stat
-import sys
-import wave
 from dataclasses import dataclass
-from pathlib import Path
 
-MAX_BYTES = 32 * 1024 * 1024
-MAX_FRAMES = 10_000_000
 MAX_SECONDS = 600
 BINS = 256
 ENVELOPE_MAX_BINS = 1024
@@ -28,6 +21,11 @@ ENVELOPE_MAX_CHANNELS = 8
 ENVELOPE_MAX_RATE = 192_000
 # Peaks at or below this linear amplitude (about -80 dBFS) count as silence.
 SILENCE = 1e-4
+# Float tolerance when checking decoder-reduced blocks against their peaks.
+_TOLERANCE = 1e-6
+_PEAK_COLOR = b"\x76\xc9\xf5\x90"
+_RMS_COLOR = b"\x76\xc9\xf5\xff"
+_LINE_COLOR = b"\x88\x88\x88\x70"
 
 
 class WaveformError(ValueError):
@@ -36,144 +34,6 @@ class WaveformError(ValueError):
 
 class WaveformCanceled(WaveformError):
     pass
-
-
-def stamp(info):
-    return info.st_dev, info.st_ino, info.st_size, info.st_mtime_ns, info.st_ctime_ns
-
-
-def _check(cancel):
-    if cancel.is_set():
-        raise WaveformCanceled("Waveform preview canceled")
-
-
-@dataclass(frozen=True)
-class Waveform:
-    seconds: float
-    channels: int
-    sample_rate: int
-    peaks: tuple
-    sha256: str
-    source_stamp: tuple
-
-
-def _snapshot(path, cancel):
-    flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0)
-    fd = os.open(path, flags | getattr(os, "O_BINARY", 0))
-    with os.fdopen(fd, "rb") as source:
-        before = os.fstat(source.fileno())
-        if not stat.S_ISREG(before.st_mode) or path.is_symlink():
-            raise WaveformError("Choose an unchanged regular audio file")
-        if not 1 <= before.st_size <= MAX_BYTES:
-            raise WaveformError("Waveform preview supports files up to 32 MiB")
-        data = bytearray()
-        while len(data) < before.st_size:
-            _check(cancel)
-            chunk = source.read(min(65536, before.st_size - len(data)))
-            if not chunk:
-                raise WaveformError("Audio file changed while reading")
-            data.extend(chunk)
-        _check(cancel)
-        after = path.lstat()
-        if (
-            source.read(1)
-            or stamp(before) != stamp(os.fstat(source.fileno()))
-            or not stat.S_ISREG(after.st_mode)
-            or not os.path.samestat(before, after)
-        ):
-            raise WaveformError("Audio file changed while reading")
-        return data, stamp(after)
-
-
-def _samples(raw, width):
-    if width == 1:
-        return (value - 128 for value in raw)
-    if width == 3:
-        return (
-            int.from_bytes(raw[i : i + 3], "little", signed=True) for i in range(0, len(raw), 3)
-        )
-    values = array.array("h" if width == 2 else "i")
-    values.frombytes(raw)
-    if sys.byteorder != "little":
-        values.byteswap()
-    return iter(values)
-
-
-def read_waveform(path, cancel):
-    """Read a stable local snapshot; cancellation is checked between bounded chunks.
-
-    The digest identifies these local bytes, not a remote job or durable receipt.
-    Filesystem operations themselves retain the operating system's wait behavior.
-    """
-    path = Path(path)
-    _check(cancel)
-    if path.suffix.lower() != ".wav":
-        raise WaveformError("Waveform preview supports PCM WAV; Play and Add remain available")
-    try:
-        data, identity = _snapshot(path, cancel)
-        with wave.open(io.BytesIO(data), "rb") as sound:
-            channels, width, rate, frames = (
-                sound.getnchannels(),
-                sound.getsampwidth(),
-                sound.getframerate(),
-                sound.getnframes(),
-            )
-            if channels not in (1, 2) or width not in (1, 2, 3, 4) or sound.getcomptype() != "NONE":
-                raise WaveformError("Use 8, 16, 24 or 32-bit mono/stereo PCM WAV")
-            if (
-                not 1 <= rate <= 192000
-                or not 1 <= frames <= MAX_FRAMES
-                or frames / rate > MAX_SECONDS
-            ):
-                raise WaveformError("Audio exceeds the waveform frame or ten-minute duration limit")
-            count = min(BINS, frames)
-            peaks = [[[1.0, -1.0] for _ in range(count)] for _ in range(channels)]
-            scale, offset = float(1 << (width * 8 - 1)), 0
-            while offset < frames:
-                _check(cancel)
-                amount = min(4096, frames - offset)
-                raw = sound.readframes(amount)
-                if len(raw) != amount * channels * width:
-                    raise WaveformError("Audio file is truncated")
-                samples = _samples(raw, width)
-                for frame in range(offset, offset + amount):
-                    bucket = frame * count // frames
-                    for channel in range(channels):
-                        value = next(samples) / scale
-                        peak = peaks[channel][bucket]
-                        peak[0], peak[1] = min(peak[0], value), max(peak[1], value)
-                offset += amount
-            _check(cancel)
-        return Waveform(
-            frames / rate,
-            channels,
-            rate,
-            tuple(tuple(tuple(pair) for pair in channel) for channel in peaks),
-            hashlib.sha256(data).hexdigest(),
-            identity,
-        )
-    except WaveformError:
-        raise
-    except (OSError, EOFError, wave.Error, ValueError, OverflowError):
-        raise WaveformError("Audio is missing, corrupt or unsupported PCM WAV") from None
-
-
-def raster(waveform, *, width=256, height=96):
-    """Small transparent RGBA waveform; each channel has its own amplitude band."""
-    pixels = bytearray(width * height * 4)
-    band = height // waveform.channels
-    for channel, peaks in enumerate(waveform.peaks):
-        center, radius = channel * band + band // 2, max(1, band // 2 - 4)
-        for x in range(width):
-            low, high = peaks[min(len(peaks) - 1, x * len(peaks) // width)]
-            first, last = round(center + low * radius), round(center + high * radius)
-            for y in range(first, last + 1):
-                index = (y * width + x) * 4
-                pixels[index : index + 4] = b"\x76\xc9\xf5\xff"
-            index = (center * width + x) * 4
-            if not pixels[index + 3]:
-                pixels[index : index + 4] = b"\x88\x88\x88\x70"
-    return bytes(pixels)
 
 
 def _level(value):
@@ -305,10 +165,17 @@ class EnvelopeBuilder:
         self._counts = array.array("L")
         self._pending = [0.0, 0.0, 0]
         self._finished = False
+        # A partial block from ``add_blocks`` must stay the last one.
+        self._ended = False
 
     @property
     def frames(self):
         return self._frames
+
+    @property
+    def block(self):
+        """Frames per 10 ms block, at least one."""
+        return self._block
 
     def _flush(self):
         total, peak, frames = self._pending
@@ -317,9 +184,57 @@ class EnvelopeBuilder:
         self._counts.append(frames)
         self._pending = [0.0, 0.0, 0]
 
-    def add(self, samples):
-        if self._finished:
+    def _check_open(self):
+        if self._finished or self._ended:
             raise WaveformError("This audio envelope is already complete")
+
+    def add_blocks(self, sums, peaks, frames):
+        """Accept whole blocks reduced elsewhere: per-block sums of squares and peaks.
+
+        ``sums`` and ``peaks`` hold one value per ``block`` frames of clamped
+        samples, summed or maximized across channels; only the last block may
+        be partial, and nothing can follow it. Each block is checked against
+        what its frames could produce: finite, peaks within full scale and a
+        root mean square no louder than its peak. A decoder process therefore
+        cannot report levels its samples could not have, though it remains
+        trusted for which samples it decoded.
+        """
+        self._check_open()
+        if self._pending[2]:
+            raise WaveformError("Decoded audio blocks must start on a block boundary")
+        if type(frames) is not int or frames < 1:
+            raise WaveformError("Decoded audio blocks must cover at least one frame")
+        if frames > self._limit - self._frames:
+            raise WaveformError("Audio exceeds the preview duration limit")
+        count = -(-frames // self._block)
+        try:
+            if len(sums) != count or len(peaks) != count:
+                raise WaveformError("Decoded audio blocks do not match their frame count")
+            pairs = tuple(zip(sums, peaks, strict=True))
+        except TypeError:
+            raise WaveformError("Decoded audio blocks must be sequences of numbers") from None
+        totals, maxima, counts = array.array("d"), array.array("d"), array.array("L")
+        for index, (total, peak) in enumerate(pairs):
+            size = min(self._block, frames - index * self._block)
+            if (
+                type(total) is not float
+                or type(peak) is not float
+                or not math.isfinite(total)
+                or not 0.0 <= peak <= 1.0
+                or not 0.0 <= total <= size * self._channels * peak * peak * (1 + _TOLERANCE)
+            ):
+                raise WaveformError("Decoded audio levels are invalid")
+            totals.append(total)
+            maxima.append(peak)
+            counts.append(size)
+        self._sums.extend(totals)
+        self._peaks.extend(maxima)
+        self._counts.extend(counts)
+        self._frames += frames
+        self._ended = bool(frames % self._block)
+
+    def add(self, samples):
+        self._check_open()
         try:
             count = len(samples)
         except TypeError:
@@ -373,3 +288,33 @@ class EnvelopeBuilder:
             level(sum(self._sums), self._frames),
             max(peaks),
         )
+
+
+def raster(envelope, *, width=256, height=96):
+    """Small transparent RGBA waveform: peak bars with solid RMS cores around a center line.
+
+    Rows are symmetric, so Blender's bottom-up preview pixel order needs no flip.
+    """
+    if not isinstance(envelope, AudioEnvelope):
+        raise WaveformError("Provide a decoded audio envelope")
+    if any(type(value) is not int or not 8 <= value <= 4096 for value in (width, height)):
+        raise WaveformError("Use waveform raster dimensions from 8 to 4096 pixels")
+    pixels = bytearray(width * height * 4)
+    center = height // 2
+    radius = max(1, center - 2)
+    bins = len(envelope.peaks)
+    for x in range(width):
+        index = min(bins - 1, x * bins // width)
+        for level, color in (
+            (envelope.peaks[index], _PEAK_COLOR),
+            (envelope.rms[index], _RMS_COLOR),
+        ):
+            extent = round(level * radius)
+            if extent:
+                for y in range(center - extent, center + extent + 1):
+                    offset = (y * width + x) * 4
+                    pixels[offset : offset + 4] = color
+        offset = (center * width + x) * 4
+        if not pixels[offset + 3]:
+            pixels[offset : offset + 4] = _LINE_COLOR
+    return bytes(pixels)

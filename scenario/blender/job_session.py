@@ -178,6 +178,7 @@ class JobSession:
         upload_sources=None,
         part_uploader=None,
         preview_root=None,
+        preview_waveform=None,
     ):
         _main_thread()
         if not _registered:
@@ -216,11 +217,14 @@ class JobSession:
             part_uploader=part_uploader,
         )
         self._workers = JobWorkers(self._coordinator, workers=workers, pending_limit=pending_limit)
-        # Previews poll and download on the workers' dedicated preview lane.
+        # Previews poll and download on the workers' dedicated preview lane,
+        # which also runs the owned offline Blender that decodes audio envelopes.
         self._previews = (
             None
             if preview_root is None
-            else ResultPreviewScheduler(self._workers, self._coordinator, preview_root)
+            else ResultPreviewScheduler(
+                self._workers, self._coordinator, preview_root, waveform=preview_waveform
+            )
         )
         self.film_shots = FilmShotCommands(self, store)
         from .film_timeline import FilmTimelineCommands

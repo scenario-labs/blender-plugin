@@ -6,9 +6,10 @@ Video, 3D and audio stills and short clips come from the SDK asset record's
 ``thumbnail`` and ``preview`` fields, downloaded through the existing signed
 result transfer and its configured storage hosts. Images and audio waveforms
 use the verified local result instead: this module issues a decode request that
-holds a private verified copy, and Blender decodes it later on its main thread.
-Every function here performs file or network I/O and belongs on the dedicated
-preview worker lane, never in drawing or on Blender's main thread.
+holds a private verified copy. Blender decodes an image copy later on its main
+thread; ``decode_envelope`` decodes an audio copy in an owned offline Blender
+process. Every function here performs file or network I/O and belongs on the
+dedicated preview worker lane, never in drawing or on Blender's main thread.
 """
 
 import hashlib
@@ -26,7 +27,8 @@ from dataclasses import asdict, dataclass, field
 from enum import StrEnum
 from pathlib import Path
 
-from ..audio_waveform import BINS, MAX_SECONDS, AudioEnvelope
+from ..audio_waveform import BINS, MAX_SECONDS, AudioEnvelope, WaveformCanceled, WaveformError
+from . import audio_decode
 from .local_render import RenderCancelled
 from .media_probe import FORMATS, MediaProbeError, _snapshot
 from .store import JobScope, StoredResult, _identity, _json
@@ -383,10 +385,11 @@ class MissingPreview:
 
 @dataclass(frozen=True, eq=False)
 class DecodeRequest:
-    """A private verified copy for Blender-side decoding, never the saved result.
+    """A private verified copy for local decoding, never the saved result.
 
     For a still, Blender writes a PNG fitting ``max_edge`` to ``output``. For an
-    audio envelope, Blender decodes ``source`` and supplies an ``AudioEnvelope``.
+    audio envelope, ``decode_envelope`` decodes ``source`` in an owned offline
+    Blender process and caches the resulting ``AudioEnvelope``.
     """
 
     key: PreviewKey
@@ -966,5 +969,33 @@ def finish_decode(cache, request, *, envelope=None):
         if not isinstance(envelope, AudioEnvelope) or len(envelope.rms) > request.bins:
             raise PreviewError("Provide the bounded decoded audio envelope")
         return cache.publish_envelope(request.key, envelope)
+    finally:
+        cache.discard(request.directory)
+
+
+def decode_envelope(cache, request, spec, cancel):
+    """Decode an audio request's private copy in an owned offline Blender, then cache it.
+
+    The child reads only the receipt-checked copy and is terminated on
+    cancellation or timeout. The copy is removed on every exit; a failure
+    caches nothing and keeps its sanitized reason for the caller.
+    """
+    if not _owned(cache, request) or request.rendition != ENVELOPE:
+        raise PreviewError("Use an audio decode request issued by this preview cache")
+    try:
+        try:
+            envelope = audio_decode.decode(
+                request.source,
+                request.directory,
+                spec,
+                cancel=cancel,
+                max_seconds=request.max_seconds,
+                bins=request.bins,
+            )
+        except WaveformCanceled:
+            raise PreviewCanceled("Preview preparation was canceled") from None
+        except WaveformError as error:
+            raise PreviewError(str(error)) from None
+        return finish_decode(cache, request, envelope=envelope)
     finally:
         cache.discard(request.directory)

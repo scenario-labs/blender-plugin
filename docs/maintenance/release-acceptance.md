@@ -278,8 +278,9 @@ The authenticated MCP discovery test verifies both newly registered tools.
 
 No live library search, file transfer, organization write or generation was
 performed. Native Library presentation, integrated reference attachment and
-collection/tag editing were still open at that command-layer boundary. These command checks do not replace desktop
-or live release acceptance, or the final published-artifact/update gates.
+collection/tag editing were still open at that command-layer boundary. These
+command checks do not replace desktop or live release acceptance, or the final
+published-artifact/update gates.
 
 ## Remaining release gates
 
@@ -308,7 +309,7 @@ and tag writes, thumbnails, physical interaction/screenshots and live acceptance
 remain pending under #66/#68 separately from review readiness. This UI layer
 does not close #64/#65/#66/#68.
 
-Exact ZIP SHA-256
+Earlier candidate ZIP SHA-256
 `5bd1bc29213abb62951cd69efe9e1ea9156bd6e0983e258de7cb35dcc67f7eef`
 passes 1,115 installed tests on each macOS 27.0.1 arm64 Blender 5.0.1, 5.1.2 and
 5.2.1, with two Windows-only skips per run. All 139 packaged Python sources match
@@ -320,6 +321,15 @@ exact destination, selected-scene and credential/project guards. A deleted-scene
 regression verifies safe dialog redraw from captured display text and rejection
 of attachment to the unavailable destination. The locked unit
 suite also passes with the existing SDK bearer-precedence expected failure.
+
+After rebasing onto merged #327, ZIP SHA-256
+`dc8282900cb8c1b428d258a734ebfda5e8964f3d15ecd78e73fceac1ad02d3f8`
+passes 1,127 installed tests on each of those three Blender versions in isolated
+profiles, with two Windows-only skips per run. All 139 packaged Python sources
+match the reviewed checkout. The locked unit suite passes 3,872 tests with the
+same known SDK expected failure. These runs retain all fifteen Library regressions
+and the merged Studio/workflow checks; physical Library acceptance remains open.
+
 No live or paid service calls were made. These are headless installed checks,
 not physical Library interaction or release-candidate acceptance.
 

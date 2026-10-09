@@ -560,7 +560,8 @@ tagging, read-only drawing and continued jobs. The composer commits on blur and
 passes the same outside click to native controls. Offline desktop evidence covers
 first-click Studio opening, Unicode prompt edits, populated-form scrolling,
 quote-preserving navigation, continued saved-job polling, small-window fit,
-Escape and viewport return. Alternate-DPI/IME acceptance, workflow and Library interaction and complete #66 remain pending.
+Escape and viewport return. Alternate-DPI/IME acceptance, workflow and Library
+interaction and complete #66 remain pending.
 
 ## Native workflow controls
 
@@ -601,8 +602,8 @@ and session; retirement cannot route metadata into a replacement connection.
 Local MCP `list_assets` and `search_assets` expose bounded pages with explicit
 continuation. Their projection omits signed download URLs, indexed previews and
 account identifiers. Reads do not initialize ModelJobs, persist generation jobs
-or grant download/application authority. Native Library controls use these same reads. Collection/tag editing and live
-acceptance remain separate.
+or grant download/application authority. Native Library controls use these same
+reads. Collection/tag editing and live acceptance remain separate.
 
 ## Native Library projection and attachment
 

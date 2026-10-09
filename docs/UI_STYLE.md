@@ -1191,9 +1191,9 @@ complete Film/release acceptance.
 ## Explicit Studio view
 
 The viewport header has a separate **Studio** button. It opens a native popup
-with Create, Film, Workflows, Library, Jobs, Results and Connection pages. Opening, closing or
-switching pages does not start a job or select another account/project. No
-startup or file-load handler opens it. The existing **Scenario** button still
+with Create, Film, Workflows, Library, Jobs, Results and Connection pages.
+Opening, closing or switching pages does not start a job or select another
+account/project. No startup or file-load handler opens it. The existing **Scenario** button still
 opens the sidebar; the compact composer remains the default creation surface.
 
 Studio reuses the actual native panel controls and their operators. Create keeps
@@ -1211,9 +1211,9 @@ both texts. Opening Studio never commits pending text into another scene with
 an identical old prompt.
 
 The requested popup width is bounded by the invoking area, window and UI scale;
-narrow requests use rows of at most three equal navigation segments. Clicking outside a
-focused composer commits its text and passes that same click to Blender, so the
-Studio header button opens on the first click. Installed tests cover this handoff,
+narrow requests use rows of at most three equal navigation segments. Clicking
+outside a focused composer commits its text and passes that same click to Blender,
+so the Studio header button opens on the first click. Installed tests cover this handoff,
 registration, shared drawing, quote preservation, pending-text ownership and
 continued admitted work.
 
@@ -1328,4 +1328,5 @@ open cannot break redraw; confirmation still rejects the unavailable destination
 Drawing never starts requests or mutates RNA. Workflow inputs and organization
 writes are separate work. Installed synthetic tests establish these state and
 command boundaries, not physical input, focus, viewport, screenshot or DPI proof;
-track the remaining desktop acceptance under #66/#68 separately from review readiness.
+track the remaining desktop acceptance under #66/#68 separately from review
+readiness.

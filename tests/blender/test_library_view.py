@@ -50,6 +50,8 @@ class LibraryViewTests(unittest.TestCase):
         try:
             self.owner.task.result(timeout=10)
         except Exception:
+            # Polling records request failures in owner.error; each test checks
+            # that outcome after this helper has synchronized completion.
             pass
         self.owner.poll()
         self.assertIsNone(self.owner.task)

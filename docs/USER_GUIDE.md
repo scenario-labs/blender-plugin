@@ -698,7 +698,8 @@ Offline desktop checks cover that handoff, prompt editing, populated-form
 scrolling, quote-preserving navigation, continued saved-job polling, small-window
 fit, Escape and return to the viewport. Alternate-DPI and IME acceptance remain
 pending. The Workflows page and [local MCP workflow commands](MCP.md#workflow-execution)
-share scoped discovery, exact estimates and explicit execution. Library provides paginated asset search and confirmed model-reference reuse.
+share scoped discovery, exact estimates and explicit execution. Library provides
+paginated asset search and confirmed model-reference reuse.
 Complete Studio/release acceptance remains open.
 
 ### Run a workflow

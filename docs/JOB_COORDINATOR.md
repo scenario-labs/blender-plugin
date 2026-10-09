@@ -402,9 +402,10 @@ evicts cache entries beyond the budget, without reading a job or the network.
 request's copy in an
 [offline Blender process](RESULT_PREVIEWS.md#offline-audio-envelopes), checks
 and caches the envelope and always removes the copy; the task's cancellation
-event terminates the process. None of these commands transitions a job, changes
-its revision, claims application, reads the network or submits work. See [result previews](RESULT_PREVIEWS.md) for renditions, limits and the
-polling window.
+event terminates the process. Only `prepare_result_previews` reads the network.
+None of these commands transitions a job, changes its revision, claims
+application or submits work. See [result previews](RESULT_PREVIEWS.md) for
+renditions, limits and the polling window.
 
 ## Durable application claims
 

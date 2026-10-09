@@ -20,8 +20,9 @@
       "tests/blender/test_runtime_jobs.py": "9cbc0a763541264ae1c3f291a7754c09755066f60dc11f03206ba1fe8f398cf3",
       "tests/blender/test_model_generation.py": "05a97189a433b036e7cae5dc41ddbbe40374f4fa632eecec0e341819914e3a62",
       "tests/blender/test_prompt_tools.py": "f66677160a495f6d9cc9ed21fcb4a21d7df21835c427d7e13a11e7edbf9bf861",
-      "scenario/blender/blockout_jobs.py": "aefd6c26282c1c83201b3204de30abf58bb367c89d9143132becdcb408c55b18",
-      "tests/blender/test_blockout_jobs.py": "f869b85b1f6b5138573cdc0af34cd8aa77a38076d6d261c06e2592110ff4d464"
+      "scenario/blender/blockout_jobs.py": "56415f9205cd93f7cec15dc92520d379ea54ec8bb72f4d7c4920fff8cc287703",
+      "tests/blender/test_blockout_jobs.py": "fd189d4cb712d98acb24e944857088378d327cb59455d858d4cdf64fce41e37e",
+      "scenario/blender/blockout.py": "314a786af022272d8be5853613ff0f32d8a4d438b9472dadc3ac43c9116f70f8"
     }
   }
 }

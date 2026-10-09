@@ -14,6 +14,7 @@ from ..core.jobs.store import JobState
 from ..core.scene import blockout
 
 MODEL = "model_scenario-llm"
+CANCELED = "Blockout request canceled; nothing was sent to Scenario"
 BUSY = {"QUOTING", "SUBMITTING", "POLLING", "LISTING", "READING"}
 
 
@@ -245,5 +246,5 @@ class BlockoutJobs:
         except Exception:
             record = None
         if record is not None and record.state == JobState.CANCELED and not record.remote_job_id:
-            return "Blockout request canceled; nothing was sent to Scenario"
+            return CANCELED
         return "Blockout stopped; inspect the saved job"

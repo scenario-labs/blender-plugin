@@ -9,7 +9,7 @@ import unittest
 from concurrent.futures import Future
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import bpy
 import httpx
@@ -296,6 +296,13 @@ class BlockoutJobsTests(unittest.TestCase):
         )
         self.assertEqual(self.scene.scenario_blockout.plan_json, plan)
         self.assertEqual(self.paid, [])
+        # The panel shows the cancellation, not a failure that needs review.
+        layout = MagicMock()
+        self.blockout.draw_status(layout, self.scene)
+        drawn = [call.kwargs.get("text") for call in layout.label.call_args_list]
+        self.assertEqual(" ".join(drawn), "Blockout request canceled; nothing was sent to Scenario")
+        self.assertNotIn("Blockout needs review", drawn)
+        layout.operator.assert_not_called()
 
     def test_refinement_quotes_the_complete_current_plan(self):
         previous = [

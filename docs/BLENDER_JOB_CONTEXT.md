@@ -135,10 +135,13 @@ Capture and review preparation keep their separate local slot on the shared
 workers. `cancel_film_export` signals the child; session retirement cancels it
 and shutdown joins the thread before workers and the coordinator close.
 Completions drain as `local_export` outcomes; `deliver_local_export` consumes one
-without resolving a scene, because export never mutates Blender data. A publish
-failure carries its verified staged output, and `publish_film_export` copies it
-to another approved destination without rendering. Handles, receipts and progress
-are session-local; no job store, blend property or restart replay is added.
+without resolving a scene, because export never mutates Blender data. Like the
+asset library, workflow catalog and cloud read deliveries, it refuses once the
+session is inactive, even while a failed shutdown still holds issued outcomes. A
+publish failure carries its verified staged output, and `publish_film_export`
+copies it to another approved destination without rendering. Handles, receipts
+and progress are session-local; no job store, blend property or restart replay
+is added.
 
 ## Film media preparation ownership
 

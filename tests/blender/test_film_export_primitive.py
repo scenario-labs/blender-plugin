@@ -326,6 +326,26 @@ class FilmExportPrimitiveTests(unittest.TestCase):
         self.export.discard_staging(spec.directory)
         self.assertTrue(destination.exists())
 
+    def test_inactive_session_refuses_to_deliver_an_issued_receipt(self):
+        origin, source = self.origins()
+        spec = self.snapshot(audio=False)
+        destination = self.output / "Retired.mp4"
+        completion = self.wait(
+            self.session.export_film(spec, destination, origin=origin, source_origin=source)
+        )
+        self.assertTrue(completion.local_export)
+        self.assertIsNone(completion.error)
+        # Deactivation keeps issued outcomes until a successful shutdown clears
+        # them; like every other delivery, an inactive session hands none out.
+        self.session.deactivate()
+        self.assertIs(self.session._issued.get(id(completion)), completion)
+        with self.assertRaisesRegex(self.module.OriginUnavailable, "active session"):
+            self.session.deliver_local_export(completion)
+        self.assertIs(self.session._issued.get(id(completion)), completion)
+        # Refusing the receipt never undoes the approved publication.
+        self.assertEqual(completion.result.export.sha256, self.render.digest(destination))
+        self.export.discard_staging(spec.directory)
+
     def test_session_refuses_unsafe_destinations_before_work(self):
         origin, source = self.origins()
         staging = Path(self.enterContext(tempfile.TemporaryDirectory())).resolve()

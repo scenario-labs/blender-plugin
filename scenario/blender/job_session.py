@@ -782,10 +782,21 @@ class JobSession:
             self._exports.cancel(task)
 
     def deliver_local_export(self, completion):
-        """Consume one export outcome; nothing mutates a scene, so none is resolved."""
+        """Consume one export outcome from this active session; no scene is resolved.
+
+        Export never mutates Blender data. Like the asset library, workflow catalog
+        and cloud read deliveries, an inactive session hands out no outcome, even
+        before a shutdown clears issued outcomes.
+        """
         _main_thread()
-        if self._issued.get(id(completion)) is not completion or not completion.local_export:
-            raise OriginUnavailable("Use an unconsumed Film export outcome from this session")
+        if (
+            not self._active
+            or self._issued.get(id(completion)) is not completion
+            or not completion.local_export
+        ):
+            raise OriginUnavailable(
+                "Use an unconsumed Film export outcome from this active session"
+            )
         del self._issued[id(completion)]
         if completion.error is not None:
             raise completion.error

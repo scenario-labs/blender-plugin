@@ -939,7 +939,8 @@ the export, because the snapshot and media stamps bind the bytes. Owner
 retirement (credential or project change, file load or extension disable) cancels
 the export, reaps the child and releases the placeholder; retirement after
 rendering keeps the staged output unpublished. `drain` returns a `local_export`
-completion, and `deliver_local_export` consumes it without resolving a scene.
+completion, and `deliver_local_export` consumes it without resolving a scene,
+only while the session is active.
 `publish_film_export` re-publishes only a staged export issued by the same owner,
 without rendering; it checks the active owner but not the origins its caller
 passes, which the receipt carries as given. `ExportTask.progress()` reports the media, render, verify and

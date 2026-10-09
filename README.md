@@ -83,7 +83,7 @@ The [user guide](docs/USER_GUIDE.md) describes each lane and its controls.
 - [Image](docs/USER_GUIDE.md#image): generate from text or reference images and use results as textures or references.
 - [Video](docs/USER_GUIDE.md#video): generate from prompts, images or scene playblasts.
 - [3D](docs/USER_GUIDE.md#3d): generate meshes or apply provider edit tasks to an exported selection. Safe in-place editing remains incomplete.
-- [Materials](docs/USER_GUIDE.md#materials): generate PBR maps for selected meshes.
+- [Materials](docs/USER_GUIDE.md#materials): generate saved PBR texture sets and apply them explicitly to a chosen mesh material slot.
 - [Audio](docs/USER_GUIDE.md#audio): generate speech, music or sound effects and add results to the sequencer.
 - [Render Image](docs/USER_GUIDE.md#render-image): use a scene capture and look references to produce a still.
 - [Render Video](docs/USER_GUIDE.md#render-video): work with timeline captures, a camera path planner and style references.

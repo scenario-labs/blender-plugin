@@ -9,17 +9,9 @@ from .. import panels, runtime
 
 
 def _layout(context, state):
-    from .draw import ui_scale
+    from .draw import composer_layout
 
-    region = context.region
-    return cl.pill_placement(
-        region.width,
-        region.height,
-        state.expanded,
-        ui_scale(context),
-        offset=state.offset,
-        width=state.width if state.expanded else None,
-    )
+    return composer_layout(context, state)
 
 
 def _redraw(context):
@@ -31,6 +23,24 @@ def _open_sidebar(context):
     from ..popover import open_sidebar
 
     open_sidebar(context.area)
+
+
+def _card_fits_with_sidebar(context):
+    from .draw import card_fits_with_sidebar
+
+    return card_fits_with_sidebar(context)
+
+
+# shown when the pill stands in for a card the viewport has no room for and is clicked
+NO_ROOM_MESSAGE = "Not enough room for the composer card: close the sidebar or enlarge the viewport"
+
+
+def _open_settings(context, lane):
+    """The lane's full form (model, prompt, references, parameters, Generate) in a dialog, else in the sidebar."""
+    try:
+        bpy.ops.scenario.quick_settings("INVOKE_DEFAULT", lane=lane)
+    except (RuntimeError, AttributeError):
+        _open_sidebar(context)
 
 
 def _caret_index(context, state, layout, px):
@@ -107,34 +117,51 @@ class SCENARIO_OT_composer_modal(bpy.types.Operator):
         start = state.drag_start
         dx = event.mouse_region_x - start["mouse"][0]
         dy = event.mouse_region_y - start["mouse"][1]
-        scale = _layout(context, state).scale
+        layout = _layout(context, state)
+        scale = layout.scale
         if state.drag_mode == "pending":
             if abs(dx) < cl.DRAG_THRESHOLD * scale and abs(dy) < cl.DRAG_THRESHOLD * scale:
                 return
             state.drag_mode = "move"
             _cursor(context, "SCROLL_XY")
+        if start.get("origin") is None:
+            # Start from the placement as drawn. A saved offset or width past a toolbar or sidebar
+            # edge (parked there before the sidebar opened) is clamped first; otherwise the pointer
+            # would have to cover that hidden excess before the composer follows it. The pressed
+            # offset and width stay in drag_start, so Escape (cancel_drag) still restores them.
+            start["origin"] = (layout.offset(), layout.pill_rect.w)
+            state.offset = start["origin"][0]
         state.moved = True
         region = context.region
+        offset, width = start["origin"]
         if state.drag_mode == "move":
-            state.offset = (start["offset"][0] + dx, start["offset"][1] + dy)
+            state.offset = (offset[0] + dx, offset[1] + dy)
         elif state.drag_mode == "resize":
-            base = start["width"] or cl.CARD_WIDTH * scale
-            state.width = cl.clamp_width(base + dx, region.width, scale, expanded=True)
+            # never wider than the uncovered span allows, so the card stays clear of the side regions
+            state.width = cl.clamp_width(width + dx, region.width, scale, True, layout.insets)
         _redraw(context)
 
     def _drag_release(self, context, state, scene):
         kind, mode, moved = state.end_drag()
         _cursor(context, None)
         if mode in ("move", "resize") and moved:
-            # keep the placement inside the region as the layout clamps it, then remember it
+            # remember the placement as drawn: clamped inside the uncovered span, never past an edge
             layout = _layout(context, state)
-            base_x = (context.region.width - layout.pill_rect.w) / 2
-            base_y = cl.MARGIN * layout.scale
-            state.offset = (layout.pill_rect.x - base_x, layout.pill_rect.y - base_y)
+            state.offset = layout.offset()
+            if mode == "resize":
+                state.width = layout.pill_rect.w
             _save_layout()
         elif kind == "expand" and not moved:
             state.expanded = True
             state.sync_from_lane(scene)
+        elif kind == "form" and not moved:
+            # The pill stands in for a card the uncovered span cannot hold: expanding would change nothing on
+            # screen, so the click opens the lane's form in the Settings dialog. The expanded choice and the card
+            # width stay as they are, and the card comes back by itself once there is room.
+            # The card's status note is not drawn and the sidebar may be closed: report it in the status bar too.
+            runtime.set_message(NO_ROOM_MESSAGE)
+            self.report({"INFO"}, NO_ROOM_MESSAGE)
+            _open_settings(context, state.lane_for(scene))
         _redraw(context)
 
     def modal(self, context, event):
@@ -143,6 +170,14 @@ class SCENARIO_OT_composer_modal(bpy.types.Operator):
             return self._finish(context)
         scene = context.scene
         layout = _layout(context, state)
+        if state.focused and not layout.expanded:
+            # The card gave way to the pill (the viewport lost the room for it): leave the prompt it no longer
+            # draws, as a click outside would, so keys never type into a hidden field.
+            try:
+                state.flush_focused_prompt(scene)
+            except RuntimeError as error:
+                state.focused = state.dragging = False
+                self.report({"WARNING"}, str(error))
         if state.drag_mode is not None:
             if event.type == "MOUSEMOVE":
                 state.mouse = (event.mouse_region_x, event.mouse_region_y)
@@ -212,9 +247,10 @@ class SCENARIO_OT_composer_modal(bpy.types.Operator):
                 # Deliver the same click to the header/sidebar or viewport after blur.
                 return self._finish(context) | {"PASS_THROUGH"}
             kind = hit[0]
-            if kind == "expand":
-                # a click expands the pill; a move beyond the threshold drags it instead (decided on release)
-                state.begin_drag((event.mouse_region_x, event.mouse_region_y), "expand")
+            if kind in ("expand", "form"):
+                # a click expands the pill (or opens the lane's form when the card has no room); a move beyond the
+                # threshold drags it instead (decided on release)
+                state.begin_drag((event.mouse_region_x, event.mouse_region_y), kind)
             elif kind == "drag":
                 if state.focused:
                     state.focused = False
@@ -246,18 +282,18 @@ class SCENARIO_OT_composer_modal(bpy.types.Operator):
                 if panels.generate_enabled(scene.scenario.lane_state(lane), lane):
                     bpy.ops.scenario.generate(lane=lane)
             elif kind == "model":
-                # the model chip opens the search dialog; the sidebar shows the rest of the form
-                _open_sidebar(context)
+                # The model chip opens the search dialog, and the sidebar shows the rest of the form. Where the
+                # sidebar would leave the card no room (a large UI scale), the dialog alone is enough: showing it
+                # would swap the card for the pill while the picker is open.
+                if _card_fits_with_sidebar(context):
+                    _open_sidebar(context)
                 try:
                     bpy.ops.scenario.pick_model("INVOKE_DEFAULT", lane=state.lane_for(scene))
                 except (RuntimeError, AttributeError):
                     pass
             elif kind == "settings":
                 # the generation settings of the current lane, in a dialog right here
-                try:
-                    bpy.ops.scenario.quick_settings("INVOKE_DEFAULT", lane=state.lane_for(scene))
-                except (RuntimeError, AttributeError):
-                    _open_sidebar(context)
+                _open_settings(context, state.lane_for(scene))
             _redraw(context)
             return {"RUNNING_MODAL"}
         if not state.focused:

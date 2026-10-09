@@ -84,8 +84,88 @@ def text(x, y, size, string, color=TEXT, max_width=None):
 
 
 def ui_scale(context):
-    prefs = context.preferences
-    return prefs.system.pixel_size * prefs.view.ui_scale
+    """Blender's multiplier for custom interface drawing: the display DPI times the Preferences resolution scale.
+
+    The system pixel size is a line width derived from that same DPI (4 on Retina at a resolution scale of 2), so
+    multiplying it by the resolution scale would count that scale twice. Background Blender reports 0, which
+    stands for 1 so sizes derived from it are never zero."""
+    return context.preferences.system.ui_scale or 1.0
+
+
+# side regions drawn over the viewport with region overlap, and the space flag that shows each
+SIDE_REGIONS = {"TOOLS": "show_region_toolbar", "UI": "show_region_ui"}
+
+
+def overlap_insets(area, region):
+    """(left, right) widths of `region` covered by the area's visible toolbar and sidebar.
+
+    With region overlap these regions are drawn over the WINDOW region; without it they sit beside it and do
+    not overlap its x-range. Each inset is measured from the edge the covering region is closer to (region.x
+    and width, so a flipped sidebar counts on the left)."""
+    if area is None or region is None:
+        return (0.0, 0.0)
+    space = getattr(getattr(area, "spaces", None), "active", None)
+    x0 = region.x
+    x1 = x0 + region.width
+    centre = (x0 + x1) / 2
+    left = right = 0.0
+    for other in area.regions:
+        flag = SIDE_REGIONS.get(other.type)
+        if flag is None or other.width <= 1 or not getattr(space, flag, True):
+            continue
+        lo, hi = max(x0, other.x), min(x1, other.x + other.width)
+        if hi <= lo:
+            continue
+        if other.x + other.width / 2 >= centre:
+            right = max(right, float(x1 - lo))
+        else:
+            left = max(left, float(hi - x0))
+    return (left, right)
+
+
+# Blender's default sidebar width at a UI scale of 1 (UI_SIDEBAR_PANEL_WIDTH). A hidden sidebar reports a width of
+# 1 px, so this stands in for the width it opens at.
+SIDEBAR_WIDTH = 220
+
+
+def card_fits_with_sidebar(context):
+    """Whether the card still fits `context.region` once the area's sidebar is shown, as the model chip shows it.
+
+    A visible sidebar is already measured, so showing it changes nothing. A hidden one covers (region overlap) or
+    takes (no overlap) its width from the uncovered span once shown: its reported width when it has one, else
+    Blender's default sidebar width at this UI scale. A sidebar widened before it was hidden reopens wider than
+    that estimate."""
+    area, region = getattr(context, "area", None), context.region
+    space = getattr(getattr(area, "spaces", None), "active", None)
+    sidebar = next((r for r in getattr(area, "regions", ()) if r.type == "UI"), None)
+    if region is None or sidebar is None:
+        return True
+    if sidebar.width > 1 and getattr(space, "show_region_ui", True):
+        return True
+    scale = ui_scale(context)
+    left, right = overlap_insets(area, region)
+    width = sidebar.width if sidebar.width > 1 else SIDEBAR_WIDTH * scale
+    if sidebar.x + sidebar.width / 2 >= region.x + region.width / 2:
+        right += width
+    else:
+        left += width
+    if left + right >= region.width:
+        return False  # the sidebar would cover the whole viewport
+    return cl.card_fits(region.width, region.height, scale, (left, right))
+
+
+def composer_layout(context, state):
+    """Geometry of the composer in `context.region`: the one layout drawing and hit testing share."""
+    region = context.region
+    return cl.pill_placement(
+        region.width,
+        region.height,
+        state.expanded,
+        ui_scale(context),
+        offset=state.offset,
+        width=state.width if state.expanded else None,
+        insets=overlap_insets(getattr(context, "area", None), region),
+    )
 
 
 def prompt_metrics(prompt_rect, field, scale):
@@ -114,13 +194,25 @@ def caret_index_at(px, prompt_rect, field, scale):
     return end
 
 
-def _chip(r, label, scale, font_px, hovered, fill=TAB, color=TEXT, centered=False):
+def _measure(font_px):
+    """Text width in px at `font_px`, for the label choices of the pure layout."""
+    blf.size(FONT, font_px)
+    return lambda string: blf.dimensions(FONT, string)[0]
+
+
+def _chip(r, label, scale, font_px, hovered, fill=TAB, color=TEXT, centered=False, clip=True):
+    """A rounded chip with its label. `clip=False` draws a label already fitted (lane tabs) as it is."""
     rect(r.x, r.y, r.w, r.h, TAB_HOVER if hovered else fill, 6 * scale)
     blf.size(FONT, font_px)
     tw = blf.dimensions(FONT, label)[0]
     x = r.x + (max(4 * scale, (r.w - tw) / 2) if centered else 10 * scale)
     text(
-        x, r.y + (r.h - font_px) / 2 + 2 * scale, font_px, label, color, max_width=r.w - 12 * scale
+        x,
+        r.y + (r.h - font_px) / 2 + 2 * scale,
+        font_px,
+        label,
+        color,
+        max_width=r.w - cl.CHIP_TEXT_INSET * scale if clip else None,
     )
 
 
@@ -209,15 +301,8 @@ def draw_composer():
     state = runtime.state.composer
     if state is None:
         return
-    scale = ui_scale(context)
-    layout = cl.pill_placement(
-        region.width,
-        region.height,
-        state.expanded,
-        scale,
-        offset=state.offset,
-        width=state.width if state.expanded else None,
-    )
+    layout = composer_layout(context, state)
+    scale = layout.scale
     state.layout = layout
     lane_state = (
         state.sync_from_lane(scene)
@@ -229,8 +314,9 @@ def draw_composer():
     font_px = int(12 * scale)
     gpu.state.blend_set("ALPHA")
     try:
-        if not state.expanded:
-            # the collapsed composer shares the card's language: same fill, same corner radius, same field and button styles
+        if not layout.expanded:
+            # the collapsed composer shares the card's language: same fill, same corner radius, same field and button
+            # styles; it also stands in for an expanded card the uncovered span cannot hold
             r = layout.pill_rect
             rect(r.x, r.y, r.w, r.h, CARD, 12 * scale)
             gen_w = 96 * scale
@@ -269,16 +355,19 @@ def draw_composer():
             return
         card = layout.card_rect
         rect(card.x, card.y, card.w, card.h, CARD, 12 * scale)
+        # full labels when they fit, else the short ones; the layout clips only as a last resort, never to nothing
+        labels = layout.tab_labels(_measure(font_px))
         for tab_lane, tr in layout.tab_rects.items():
             active = tab_lane == lane
             _chip(
                 tr,
-                cl.LANE_LABELS[tab_lane],
+                labels[tab_lane],
                 scale,
                 font_px,
                 hovered=(state.hover == ("tab", tab_lane)) and not active,
                 fill=ACCENT if active else TAB,
                 centered=True,
+                clip=False,
             )
         _minus_button(layout.collapse_rect, scale, hovered=(state.hover == ("collapse",)))
         _prompt_field(layout.prompt_rect, state.field, state.focused, lane, scale)

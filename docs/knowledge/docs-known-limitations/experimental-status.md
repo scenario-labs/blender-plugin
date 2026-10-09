@@ -19,7 +19,7 @@
       "tests/unit/test_mcp_descriptions.py": "4da394cc79f73aec007b23115fb123b19159d6c3a7b1bfaf4f729e4a0054336a",
       "tests/blender/test_model_picker.py": "2db431d736b07a17576cdf167b464f677042f5e7b9b3b87bb7f5ee73b514b2ca",
       "tests/blender/test_mcp_tools.py": "79b4ca5ad4047a03e2128120d616f2bd5b2b8931083ea72cd32f7c3b13a26d99",
-      "scenario/blender/composer/draw.py": "2514a1ae064493dae895b60704dc3d0795467b7a819400053cbcc19e53032719"
+      "scenario/blender/composer/draw.py": "db9ce841a722d8b7761786bd1ea44c6a1d7e189ce0673560d5e604f35a78c0cf"
     }
   }
 }

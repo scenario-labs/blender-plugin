@@ -20,6 +20,17 @@ LANE_LABELS = {
     "render_image": "Render Image",
     "render_video": "Render Video",
 }
+# what a tab shows when its full label does not fit: distinct, and none is the start of another
+LANE_SHORT_LABELS = {
+    "image": "Img",
+    "video": "Vid",
+    "3d": "3D",
+    "material": "Mat",
+    "render_image": "R-Img",
+    "render_video": "R-Vid",
+}
+CHIP_TEXT_INSET = 12  # horizontal room a chip keeps around its label, in unscaled pixels
+ELLIPSIS = "…"
 PLACEHOLDERS = {
     "image": "Describe the image to generate",
     "video": "Describe the video, or capture the timeline",
@@ -32,6 +43,30 @@ PLACEHOLDERS = {
 
 def placeholder_for(lane):
     return PLACEHOLDERS.get(lane, "Type a prompt")
+
+
+def clip_label(text, max_width, measure):
+    """`text` when `measure(text)` (its width in px) fits `max_width`, else cut with an ellipsis until it fits.
+
+    Never empty: at least the first character stays. When nothing fits, the narrowest of these is returned."""
+    if not text or measure(text) <= max_width:
+        return text
+    clipped = [text[:n] + ELLIPSIS for n in range(len(text) - 1, 0, -1)]
+    for candidate in clipped:
+        if measure(candidate) <= max_width:
+            return candidate
+    return min([text, *clipped], key=measure)
+
+
+def tab_label(lane, max_width, measure):
+    """The label of `lane`'s tab in a `max_width` px text box, `measure(text)` giving a text's width in px.
+
+    The full label when it fits, else the short one (`Render Image` becomes `R-Img`). Only a short label that
+    still does not fit is clipped, as a last resort, so a tab never goes blank or shows a bare prefix first."""
+    full = LANE_LABELS.get(lane, lane)
+    if measure(full) <= max_width:
+        return full
+    return clip_label(LANE_SHORT_LABELS.get(lane, full), max_width, measure)
 
 
 @dataclass
@@ -224,11 +259,28 @@ class Layout:
     collapse_rect: Rect = None
     settings_rect: Rect = None
     resize_rect: Rect = None
+    base: tuple = (0.0, 0.0)  # default bottom-centre corner of pill_rect, before the offset
+    insets: tuple = (0.0, 0.0)  # (left, right) side-region widths the placement kept clear of
+    # False when the uncovered span or the region height cannot hold the card: the pill is shown even if the card
+    # was asked for
+    card_fits: bool = True
+
+    def offset(self):
+        """The offset that reproduces this placement as clamped, relative to its default spot."""
+        return (self.pill_rect.x - self.base[0], self.pill_rect.y - self.base[1])
+
+    def tab_labels(self, measure):
+        """The label each lane tab shows, `measure(text)` giving a text's width in px at the tab font."""
+        room = CHIP_TEXT_INSET * self.scale
+        return {lane: tab_label(lane, r.w - room, measure) for lane, r in self.tab_rects.items()}
 
     def hit(self, px, py):
-        """What the pointer is on. `expand` (collapsed pill), `resize` (corner grip), `drag` (empty card area) or a control."""
+        """What the pointer is on: `expand` (pill), `form` (pill while the card has no room), `resize` (corner grip),
+        `drag` (empty card area) or a control."""
         if not self.expanded:
-            return ("expand",) if self.pill_rect.contains(px, py) else None
+            if not self.pill_rect.contains(px, py):
+                return None
+            return ("expand",) if self.card_fits else ("form",)
         if self.card_rect is None or not self.card_rect.contains(px, py):
             return None
         if self.resize_rect is not None and self.resize_rect.contains(px, py):
@@ -271,7 +323,8 @@ class StripLayout:
     """Geometry of the job strip. A hidden strip draws no tray and takes no clicks.
 
     `chip_rects` holds the chips that fit, left to right, as (key, Rect) pairs. `indicator_rect`
-    is a draw-only line inside the collapsed pill: the pill keeps its `expand` hit."""
+    is a draw-only line inside the pill: the pill keeps its own hit, `expand`, or `form` while it
+    stands in for a card without room."""
 
     hidden: bool
     rect: Rect = None
@@ -306,8 +359,8 @@ def _pill_indicator(pill, scale):
 def _edge_insets(extent, insets):
     """Non-negative (low, high) widths covered along one axis, ignored when they leave no room.
 
-    Ignoring that pair keeps a fully covered region on its own extent. A composer placement that
-    avoids side regions applies the same rule, so the card and its tray agree."""
+    Ignoring that pair keeps a fully covered region on its own extent. The composer placement
+    normalizes its side-region insets with this same rule, so the card and its tray agree."""
     low, high = (max(0.0, float(edge or 0.0)) for edge in (insets or (0.0, 0.0)))
     return (low, high) if low + high < extent else (0.0, 0.0)
 
@@ -329,8 +382,8 @@ def strip_placement(layout, region_w, region_h, spec, insets=None, vertical_inse
 
     Chips are right-aligned before the dismiss box. While the status text would be narrower than
     STRIP_MIN_TEXT, chips other than INSPECT_CHIP are dropped, last listed first. A tray that still
-    cannot hold that text, Inspect and the dismiss box is hidden. Collapsed, only the pill's
-    indicator line is placed."""
+    cannot hold that text, Inspect and the dismiss box is hidden. For a pill, collapsed or standing
+    in for a card without room, only its indicator line is placed."""
     s = layout.scale
     if not layout.expanded:
         return StripLayout(True, indicator_rect=_pill_indicator(layout.pill_rect, s))
@@ -397,45 +450,90 @@ def _clamp(value, lo, hi):
     return max(lo, min(hi, value))
 
 
-def clamp_width(width, region_w, scale=1.0, expanded=True):
-    """A card or pill width that fits the region: never narrower than the minimum, never wider than the region minus margins."""
+def _base_x(region_w, w, insets):
+    left, right = insets
+    return left + (region_w - left - right - w) / 2
+
+
+def card_fits(region_w, region_h, scale=1.0, insets=(0.0, 0.0)):
+    """Whether the region holds the card at its minimum size, margins included.
+
+    The span the side regions leave uncovered needs the minimum card width plus a margin on each side, and the
+    region needs the card height plus a margin above and below. Below either, the pill stands in for the card: a
+    narrower card would clip its tab labels and controls, a shorter one would draw its rows over each other."""
     s = float(scale or 1.0)
+    left, right = _edge_insets(region_w, insets)
+    return (
+        region_w - left - right >= (MIN_CARD_WIDTH + 2 * MARGIN) * s
+        and region_h >= (CARD_HEIGHT + 2 * MARGIN) * s
+    )
+
+
+def clamp_width(width, region_w, scale=1.0, expanded=True, insets=(0.0, 0.0)):
+    """A card or pill width that fits the span the side regions leave uncovered: never narrower than the minimum,
+    never wider than that span minus margins."""
+    s = float(scale or 1.0)
+    left, right = _edge_insets(region_w, insets)
     margin = MARGIN * s
     minimum = (MIN_CARD_WIDTH if expanded else MIN_PILL_WIDTH) * s
-    maximum = max(minimum, region_w - 2 * margin)
+    maximum = max(minimum, region_w - left - right - 2 * margin)
     return _clamp(float(width), minimum, maximum)
 
 
-def clamp_offset(offset, size, region_w, region_h, scale=1.0):
-    """Keep at least MIN_VISIBLE px of a `size`-wide/high box inside the region, given its default bottom-centre position."""
+def clamp_offset(offset, size, region_w, region_h, scale=1.0, insets=(0.0, 0.0)):
+    """Clamp a move of a `size`-wide/high box from its default bottom-centre spot in the uncovered span.
+
+    At least MIN_VISIBLE px stay inside a bare region edge. A side region (toolbar, sidebar) drawn over this one is a
+    hard edge instead: the box never slides under it, so the controls next to it stay clickable."""
     s = float(scale or 1.0)
     w, h = size
-    margin = MARGIN * s
+    insets = _edge_insets(region_w, insets)
+    left, right = insets
     keep = MIN_VISIBLE * s
-    base_x, base_y = (region_w - w) / 2, margin
+    base_x, base_y = _base_x(region_w, w, insets), MARGIN * s
+    lo = left if left > 0 else keep - w
+    hi = region_w - right - w if right > 0 else region_w - keep
     ox, oy = offset
-    x = _clamp(base_x + ox, keep - w, region_w - keep)
+    x = _clamp(base_x + ox, lo, hi)
     y = _clamp(base_y + oy, keep - h, region_h - keep)
     return (x - base_x, y - base_y)
 
 
-def pill_placement(region_w, region_h, expanded, scale=1.0, offset=(0.0, 0.0), width=None):
+def pill_placement(
+    region_w, region_h, expanded, scale=1.0, offset=(0.0, 0.0), width=None, insets=(0.0, 0.0)
+):
     """Geometry of the composer. `offset` moves it from its default bottom-centre spot (region pixels), `width`
-    overrides the card (expanded) or pill (collapsed) width; both are clamped so the composer stays reachable."""
+    overrides the card (expanded) or pill (collapsed) width. `insets` are the (left, right) widths of side regions
+    drawn over this one (toolbar and sidebar with region overlap): the composer centres in the span between them,
+    and both overrides are clamped so it stays reachable and clear of them.
+
+    When the region cannot hold the card at its minimum size with its margins (a large UI scale beside an open
+    sidebar, or a short viewport), the layout is the pill even if `expanded`, and the card width does not apply to
+    it. The caller keeps its expanded choice and width, so the card comes back as soon as there is room.
+
+    The pill narrows to MIN_PILL_WIDTH with its margins kept; a narrower span then takes the margins, and a span
+    narrower than MIN_PILL_WIDTH still gets a pill that wide (from the toolbar edge, else ending at the sidebar
+    edge, as the offset clamps)."""
     s = float(scale or 1.0)
     margin = MARGIN * s
+    insets = _edge_insets(region_w, insets)
     offset = tuple(offset or (0.0, 0.0))
-    if not expanded:
-        w = clamp_width(width if width else PILL_WIDTH * s, region_w, s, expanded=False)
-        w = min(w, max(MIN_PILL_WIDTH * s, region_w - 2 * margin))
+    fits = card_fits(region_w, region_h, s, insets)
+    if not expanded or not fits:
+        w = clamp_width(
+            width if width and not expanded else PILL_WIDTH * s, region_w, s, False, insets
+        )
         h = PILL_HEIGHT * s
-        ox, oy = clamp_offset(offset, (w, h), region_w, region_h, s)
-        return Layout(False, s, Rect((region_w - w) / 2 + ox, margin + oy, w, h))
-    w = clamp_width(width if width else CARD_WIDTH * s, region_w, s, expanded=True)
-    w = min(w, max(MIN_CARD_WIDTH * s, region_w - 2 * margin))
-    h = min(CARD_HEIGHT * s, region_h - 2 * margin)
-    ox, oy = clamp_offset(offset, (w, h), region_w, region_h, s)
-    x, y = (region_w - w) / 2 + ox, margin + oy
+        base = (_base_x(region_w, w, insets), margin)
+        ox, oy = clamp_offset(offset, (w, h), region_w, region_h, s, insets)
+        rect = Rect(base[0] + ox, base[1] + oy, w, h)
+        return Layout(False, s, rect, base=base, insets=insets, card_fits=fits)
+    # the region holds the minimum card with its margins, so the clamps alone keep the card inside it
+    w = clamp_width(width if width else CARD_WIDTH * s, region_w, s, True, insets)
+    h = CARD_HEIGHT * s
+    base = (_base_x(region_w, w, insets), margin)
+    ox, oy = clamp_offset(offset, (w, h), region_w, region_h, s, insets)
+    x, y = base[0] + ox, base[1] + oy
     card = Rect(x, y, w, h)
     pad, gap = PAD * s, ROW_GAP * s
     tab_h = TAB_HEIGHT * s
@@ -478,4 +576,6 @@ def pill_placement(region_w, region_h, expanded, scale=1.0, offset=(0.0, 0.0), w
         collapse,
         settings,
         resize,
+        base=base,
+        insets=insets,
     )

@@ -25,8 +25,14 @@ def _open_sidebar(context):
     open_sidebar(context.area)
 
 
+def _card_fits_with_sidebar(context):
+    from .draw import card_fits_with_sidebar
+
+    return card_fits_with_sidebar(context)
+
+
 # shown when the pill stands in for a card the viewport has no room for and is clicked
-NO_ROOM_MESSAGE = "Not enough room for the composer card: close the sidebar or widen the viewport"
+NO_ROOM_MESSAGE = "Not enough room for the composer card: close the sidebar or enlarge the viewport"
 
 
 def _open_settings(context, lane):
@@ -274,8 +280,11 @@ class SCENARIO_OT_composer_modal(bpy.types.Operator):
                 if panels.generate_enabled(scene.scenario.lane_state(lane), lane):
                     bpy.ops.scenario.generate(lane=lane)
             elif kind == "model":
-                # the model chip opens the search dialog; the sidebar shows the rest of the form
-                _open_sidebar(context)
+                # The model chip opens the search dialog, and the sidebar shows the rest of the form. Where the
+                # sidebar would leave the card no room (a large UI scale), the dialog alone is enough: showing it
+                # would swap the card for the pill while the picker is open.
+                if _card_fits_with_sidebar(context):
+                    _open_sidebar(context)
                 try:
                     bpy.ops.scenario.pick_model("INVOKE_DEFAULT", lane=state.lane_for(scene))
                 except (RuntimeError, AttributeError):

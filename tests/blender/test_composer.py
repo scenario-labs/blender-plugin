@@ -217,11 +217,13 @@ class ComposerSideRegionTests(unittest.TestCase):
         self.runtime = submodule("blender.runtime")
         self.cl = submodule("core.ui.composer_layout")
 
-    def _context(self, sidebar=True, overlap=True, flipped=False, geometry=None, preferences=None):
+    def _context(
+        self, sidebar=True, overlap=True, flipped=False, geometry=None, preferences=None, height=900
+    ):
         """A 3D view area as Blender lays it out: window-relative region x, the sidebar on the right.
 
         `geometry` is (area x, area width, toolbar width, sidebar width), `preferences` stands in for
-        Blender's (pixel size and UI scale)."""
+        Blender's (pixel size and UI scale), `height` is the viewport's."""
         x, w, toolbar_w, sidebar_open_w = geometry or (
             self.AREA_X,
             self.AREA_W,
@@ -232,9 +234,9 @@ class ComposerSideRegionTests(unittest.TestCase):
         sidebar_x = x if flipped else x + w - sidebar_w
         toolbar_x = x + w - toolbar_w if flipped else x
         if overlap:
-            window = _region("WINDOW", x, w)
+            window = _region("WINDOW", x, w, height=height)
         else:
-            window = _region("WINDOW", x + toolbar_w, w - toolbar_w - sidebar_w)
+            window = _region("WINDOW", x + toolbar_w, w - toolbar_w - sidebar_w, height=height)
         window.tag_redraw = lambda: None  # the modal's drag handlers redraw the region
         regions = [
             _region("HEADER", x, w, y=1000, height=26),
@@ -466,11 +468,19 @@ class ComposerSideRegionTests(unittest.TestCase):
     # uncovered, less than the 1680 px minimum card.
     RETINA = (0, 2477, 226, 1122)
 
-    def _retina(self, sidebar=True):
-        prefs = SimpleNamespace(
-            system=SimpleNamespace(pixel_size=2.0), view=SimpleNamespace(ui_scale=2.0)
+    @staticmethod
+    def _preferences(pixel_size, ui_scale):
+        return SimpleNamespace(
+            system=SimpleNamespace(pixel_size=pixel_size), view=SimpleNamespace(ui_scale=ui_scale)
         )
-        return self._context(sidebar=sidebar, geometry=self.RETINA, preferences=prefs)
+
+    def _retina(self, sidebar=True, geometry=None, flipped=False):
+        return self._context(
+            sidebar=sidebar,
+            flipped=flipped,
+            geometry=geometry or self.RETINA,
+            preferences=self._preferences(2.0, 2.0),
+        )
 
     def test_large_scale_beside_the_sidebar_draws_and_hits_the_pill_instead_of_the_card(self):
         ctx = self._retina()
@@ -585,6 +595,125 @@ class ComposerSideRegionTests(unittest.TestCase):
         self.assertFalse(state.focused)
         self.assertEqual(scene.scenario.lane_state("image").prompt, "copper kettle")
         self.assertTrue(state.expanded)
+
+    # -- short viewport ----------------------------------------------------------
+    def test_a_short_viewport_shows_the_pill_instead_of_overlapping_card_rows(self):
+        bpy.context.scene.scenario.lane = "video"
+        for scale in (1.0, 2.0, 4.0):
+            need = (self.cl.CARD_HEIGHT + 2 * self.cl.MARGIN) * scale
+            geometry = (0, int(1800 * scale), int(56 * scale), int(300 * scale))
+            prefs = self._preferences(1.0, scale)
+            with self.subTest(scale=scale):
+                state = self.state_mod.ComposerState()
+                state.expanded, state.width = True, self.cl.MIN_CARD_WIDTH * scale
+                tall = self._context(
+                    sidebar=False, geometry=geometry, preferences=prefs, height=need
+                )
+                layout = self.modal._layout(tall, state)
+                self.assertTrue(layout.expanded and layout.card_fits)
+                card = layout.card_rect
+                self.assertEqual(card.h, self.cl.CARD_HEIGHT * scale)
+                self.assertGreaterEqual(card.y, 0)
+                self.assertLessEqual(card.top, need)
+                # the rows stack inside the card without overlapping
+                self.assertGreaterEqual(layout.tab_rects["image"].y, layout.prompt_rect.top)
+                self.assertGreaterEqual(layout.prompt_rect.y, layout.model_rect.top)
+                self.assertGreaterEqual(layout.model_rect.y, card.y)
+                self.assertIn((card.x, card.y, card.w, card.h), self._draw(tall, state))
+                # one pixel shorter: the pill, drawn and hit as the pill
+                short = self._context(
+                    sidebar=False, geometry=geometry, preferences=prefs, height=need - 1
+                )
+                layout = self.modal._layout(short, state)
+                self.assertEqual(layout, self.draw.composer_layout(short, state))
+                self.assertFalse(layout.expanded or layout.card_fits)
+                self.assertIsNone(layout.card_rect)
+                pill = layout.pill_rect
+                self.assertEqual(layout.hit(*self._centre(pill)), ("form",))
+                drawn = self._draw(short, state)
+                self.assertIn((pill.x, pill.y, pill.w, pill.h), drawn)
+                for x, y, w, h in drawn:
+                    self.assertGreaterEqual(x, pill.x)
+                    self.assertLessEqual(x + w, pill.right)
+                    self.assertLessEqual(y + h, pill.top)
+                # a click on it opens the lane's form, and the stored choice stays
+                with (
+                    mock.patch.object(self.runtime.state, "composer", state),
+                    mock.patch.object(self.runtime, "set_message") as message,
+                    mock.patch.object(self.modal, "_open_settings") as open_settings,
+                ):
+                    self._click(self._operator(), short, self._centre(pill))
+                open_settings.assert_called_once_with(short, "video")
+                message.assert_called_once_with(self.modal.NO_ROOM_MESSAGE)
+                self.assertEqual(
+                    (state.expanded, state.width), (True, self.cl.MIN_CARD_WIDTH * scale)
+                )
+
+    # -- model chip --------------------------------------------------------------
+    def _press_model_chip(self, context, state):
+        """A press on the model chip through the modal: returns the sidebar and picker mocks."""
+        layout = self.modal._layout(context, state)
+        self.assertTrue(layout.expanded)
+        x, y = self._centre(layout.model_rect)
+        self.assertEqual(layout.hit(x, y), ("model",))
+        event = SimpleNamespace(
+            type="LEFTMOUSE",
+            value="PRESS",
+            mouse_region_x=x,
+            mouse_region_y=y,
+            shift=False,
+            ctrl=False,
+            oskey=False,
+            alt=False,
+            unicode="",
+        )
+        pick = mock.Mock()
+        ops = SimpleNamespace(scenario=SimpleNamespace(pick_model=pick))
+        with (
+            mock.patch.object(self.runtime.state, "composer", state),
+            mock.patch.object(self.modal, "bpy", SimpleNamespace(ops=ops)),
+            mock.patch.object(self.modal, "_open_sidebar") as open_sidebar,
+        ):
+            result = self.modal.SCENARIO_OT_composer_modal.modal(self._operator(), context, event)
+        self.assertEqual(result, {"RUNNING_MODAL"})
+        pick.assert_called_once_with("INVOKE_DEFAULT", lane=state.lane_for(context.scene))
+        return open_sidebar
+
+    def test_the_model_chip_opens_the_sidebar_only_while_the_card_keeps_its_room(self):
+        bpy.context.scene.scenario.lane = "image"
+        state = self.state_mod.ComposerState()
+        state.expanded = True
+        # 1x: a hidden sidebar opens beside the picker, and the card still fits beside it
+        closed = self._context(sidebar=False, preferences=self._preferences(1.0, 1.0))
+        self.assertTrue(self.draw.card_fits_with_sidebar(closed))
+        self._press_model_chip(closed, state).assert_called_once_with(closed)
+        opened = self._context(preferences=self._preferences(1.0, 1.0))
+        self.assertTrue(self.modal._layout(opened, state).expanded)
+        # composer scale 4: the card fits with the sidebar hidden, not beside its default 880 px
+        closed = self._retina(sidebar=False)
+        self.assertTrue(self.modal._layout(closed, state).expanded)
+        self.assertFalse(self.draw.card_fits_with_sidebar(closed))
+        self._press_model_chip(closed, state).assert_not_called()
+        default_width = self.draw.SIDEBAR_WIDTH * 4
+        opened = self._retina(geometry=(0, 2477, 226, default_width))
+        self.assertFalse(self.modal._layout(opened, state).expanded)  # what opening would cause
+        flipped = self._retina(sidebar=False, flipped=True)
+        self.assertFalse(self.draw.card_fits_with_sidebar(flipped))
+        # a viewport wide enough for the card beside the open sidebar: showing it again changes nothing
+        wide = self._retina(geometry=(0, 4000, 226, 1122))
+        self.assertTrue(self.draw.card_fits_with_sidebar(wide))
+        self._press_model_chip(wide, state).assert_called_once_with(wide)
+        # a closed sidebar that still reports its width is predicted at that width, not the default
+        widened = self._retina(geometry=(0, 3000, 226, 1122))
+        widened.space_data.show_region_ui = False
+        self.assertTrue(self.modal._layout(widened, state).expanded)
+        need = (self.cl.MIN_CARD_WIDTH + 2 * self.cl.MARGIN) * 4
+        self.assertGreaterEqual(3000 - 226 - default_width, need)  # the default estimate would fit
+        self.assertFalse(self.draw.card_fits_with_sidebar(widened))
+        self._press_model_chip(widened, state).assert_not_called()
+        # a short viewport never gets this far: the pill stands in and the chip is not drawn
+        short = self._context(sidebar=False, preferences=self._preferences(1.0, 1.0), height=100)
+        self.assertFalse(self.draw.card_fits_with_sidebar(short))
 
     # -- drag helpers ----------------------------------------------------------
     @staticmethod

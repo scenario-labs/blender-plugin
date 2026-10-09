@@ -372,29 +372,31 @@ def test_layout_offset_reproduces_the_clamped_placement():
 
 def test_drawn_width_and_offset_reproduce_the_placement():
     # a drag release stores the drawn width and offset; laying them out again changes nothing,
-    # including a span too small for the card (the pill stands in) and below the pill floor
+    # including a span too small for the card (the pill stands in), below the pill floor and a
+    # region too short for the card
     cases = (
-        (1600, INSETS),
-        (1600, (0.0, 0.0)),
-        (900, (56, 400)),
-        (700, (56, 400)),
-        (600, (56, 400)),
+        (1600, 900, INSETS),
+        (1600, 900, (0.0, 0.0)),
+        (900, 900, (56, 400)),
+        (700, 900, (56, 400)),
+        (600, 900, (56, 400)),
+        (1600, 150, INSETS),
     )
-    for region_w, insets in cases:
+    for region_w, region_h, insets in cases:
         for width in (None, 10, 900, 5000):
             for offset in ((0.0, 0.0), (5000.0, -5000.0), (-5000.0, 300.0)):
                 drawn = cl.pill_placement(
-                    region_w, 900, expanded=True, offset=offset, width=width, insets=insets
+                    region_w, region_h, expanded=True, offset=offset, width=width, insets=insets
                 )
                 again = cl.pill_placement(
                     region_w,
-                    900,
+                    region_h,
                     expanded=True,
                     offset=drawn.offset(),
                     width=drawn.pill_rect.w,
                     insets=insets,
                 )
-                assert again == drawn, (region_w, insets, width, offset)
+                assert again == drawn, (region_w, region_h, insets, width, offset)
 
 
 def test_the_card_needs_its_minimum_width_and_margins():
@@ -402,8 +404,8 @@ def test_the_card_needs_its_minimum_width_and_margins():
         need = (cl.MIN_CARD_WIDTH + 2 * cl.MARGIN) * scale
         insets = (56 * scale, 300 * scale)
         room = insets[0] + insets[1] + need
-        assert cl.card_fits(room, scale, insets)
-        assert not cl.card_fits(room - 1, scale, insets)
+        assert cl.card_fits(room, 900 * scale, scale, insets)
+        assert not cl.card_fits(room - 1, 900 * scale, scale, insets)
         fits = cl.pill_placement(room, 900 * scale, expanded=True, scale=scale, insets=insets)
         assert fits.expanded and fits.card_fits
         assert fits.card_rect.w == cl.MIN_CARD_WIDTH * scale
@@ -411,7 +413,35 @@ def test_the_card_needs_its_minimum_width_and_margins():
         short = cl.pill_placement(room - 1, 900 * scale, expanded=True, scale=scale, insets=insets)
         assert not short.expanded and not short.card_fits and short.card_rect is None
     # unusable insets are ignored here too: the whole region counts
-    assert cl.card_fits(1600, 1.0, (900, 900))
+    assert cl.card_fits(1600, 900, 1.0, (900, 900))
+
+
+def test_the_card_needs_its_height_and_margins():
+    for scale in (1.0, 2.0, 4.0):
+        need = (cl.CARD_HEIGHT + 2 * cl.MARGIN) * scale
+        region_w = 1800 * scale  # wide enough for the default card
+        assert cl.card_fits(region_w, need, scale)
+        assert not cl.card_fits(region_w, need - 1, scale)
+        fits = cl.pill_placement(region_w, need, expanded=True, scale=scale)
+        assert fits.expanded and fits.card_fits
+        card = fits.card_rect
+        assert card.h == cl.CARD_HEIGHT * scale and card.y == cl.MARGIN * scale  # the margins stay
+        assert card.top == need - cl.MARGIN * scale
+        # the rows stack without overlapping: tabs over the prompt over the model row
+        tab = fits.tab_rects["image"]
+        assert tab.y >= fits.prompt_rect.top and tab.top <= card.top
+        for row in (fits.model_rect, fits.generate_rect):
+            assert fits.prompt_rect.y >= row.top and row.y >= card.y
+        # one pixel shorter: the pill, whatever the saved card width
+        for width in (None, cl.MIN_CARD_WIDTH * scale):
+            short = cl.pill_placement(region_w, need - 1, expanded=True, scale=scale, width=width)
+            collapsed = cl.pill_placement(region_w, need - 1, expanded=False, scale=scale)
+            assert not short.expanded and not short.card_fits and short.card_rect is None
+            assert short.pill_rect == collapsed.pill_rect
+            assert short.hit(*_center(short.pill_rect)) == ("form",)
+            assert collapsed.hit(*_center(collapsed.pill_rect)) == ("form",)
+    # both conditions hold together: a tall region does not rescue a span too narrow for the card
+    assert not cl.card_fits(cl.MIN_CARD_WIDTH + 2 * cl.MARGIN - 1, 5000, 1.0)
 
 
 # the physical desktop case: Retina pixel size 2 with a Preferences UI scale of 2 (composer scale 4),
@@ -469,12 +499,17 @@ def test_a_span_narrower_than_the_pill_keeps_the_pill_floor():
     # without an overlapping toolbar it ends at the sidebar edge instead
     bare = cl.pill_placement(2477, 1600, expanded=True, scale=4.0, insets=(0.0, 1900.0))
     assert bare.pill_rect.w == cl.MIN_PILL_WIDTH * 4 and bare.pill_rect.right == 2477 - 1900
-    # between the pill minimum and the card minimum the pill drops its margins, then narrows
+    # between the pill minimum and the card minimum the pill narrows to its minimum with its margins kept,
+    # then a narrower span eats into the margins
     tight = cl.pill_placement(900, 400, expanded=True, insets=(56, 400))
     assert not tight.expanded and tight.pill_rect.w == cl.PILL_WIDTH
-    narrow = cl.pill_placement(700, 400, expanded=True, insets=(56, 400))
+    kept = cl.pill_placement(800, 400, expanded=True, insets=(56, 400))  # a 344 px span
+    assert kept.pill_rect.w == 344 - 2 * cl.MARGIN
+    assert kept.pill_rect.x == 56 + cl.MARGIN and kept.pill_rect.right == 800 - 400 - cl.MARGIN
+    narrow = cl.pill_placement(700, 400, expanded=True, insets=(56, 400))  # a 244 px span
     assert narrow.pill_rect.w == cl.MIN_PILL_WIDTH
     assert narrow.pill_rect.x >= 56 and narrow.pill_rect.right <= 700 - 400
+    assert narrow.pill_rect.x - 56 < cl.MARGIN  # the margins give way before the minimum width
 
 
 def test_unusable_insets_are_ignored():

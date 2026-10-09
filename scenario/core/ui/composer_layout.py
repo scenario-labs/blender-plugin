@@ -261,7 +261,8 @@ class Layout:
     resize_rect: Rect = None
     base: tuple = (0.0, 0.0)  # default bottom-centre corner of pill_rect, before the offset
     insets: tuple = (0.0, 0.0)  # (left, right) side-region widths the placement kept clear of
-    # False when the uncovered span cannot hold the card: the pill is shown even if the card was asked for
+    # False when the uncovered span or the region height cannot hold the card: the pill is shown even if the card
+    # was asked for
     card_fits: bool = True
 
     def offset(self):
@@ -464,20 +465,18 @@ def _base_x(region_w, w, insets):
     return left + (region_w - left - right - w) / 2
 
 
-def _fit_width(w, span_w, scale):
-    """Narrow a pill the span cannot hold with its margins: drop the margins first, then shrink to MIN_PILL_WIDTH."""
-    if w <= span_w - 2 * MARGIN * scale:
-        return w
-    return max(MIN_PILL_WIDTH * scale, min(w, span_w))
+def card_fits(region_w, region_h, scale=1.0, insets=(0.0, 0.0)):
+    """Whether the region holds the card at its minimum size, margins included.
 
-
-def card_fits(region_w, scale=1.0, insets=(0.0, 0.0)):
-    """Whether the span the side regions leave uncovered holds the card at its minimum width, margins included.
-
-    Below that the pill stands in for the card: a narrower card would clip its tab labels and controls."""
+    The span the side regions leave uncovered needs the minimum card width plus a margin on each side, and the
+    region needs the card height plus a margin above and below. Below either, the pill stands in for the card: a
+    narrower card would clip its tab labels and controls, a shorter one would draw its rows over each other."""
     s = float(scale or 1.0)
     left, right = _normalize_insets(region_w, insets)
-    return region_w - left - right >= (MIN_CARD_WIDTH + 2 * MARGIN) * s
+    return (
+        region_w - left - right >= (MIN_CARD_WIDTH + 2 * MARGIN) * s
+        and region_h >= (CARD_HEIGHT + 2 * MARGIN) * s
+    )
 
 
 def clamp_width(width, region_w, scale=1.0, expanded=True, insets=(0.0, 0.0)):
@@ -518,28 +517,30 @@ def pill_placement(
     drawn over this one (toolbar and sidebar with region overlap): the composer centres in the span between them,
     and both overrides are clamped so it stays reachable and clear of them.
 
-    When that span cannot hold the card at its minimum width with its margins (a large UI scale beside an open
-    sidebar), the layout is the pill even if `expanded`, and the card width does not apply to it. The caller keeps
-    its expanded choice and width, so the card comes back as soon as there is room."""
+    When the region cannot hold the card at its minimum size with its margins (a large UI scale beside an open
+    sidebar, or a short viewport), the layout is the pill even if `expanded`, and the card width does not apply to
+    it. The caller keeps its expanded choice and width, so the card comes back as soon as there is room.
+
+    The pill narrows to MIN_PILL_WIDTH with its margins kept; a narrower span then takes the margins, and a span
+    narrower than MIN_PILL_WIDTH still gets a pill that wide (from the toolbar edge, else ending at the sidebar
+    edge, as the offset clamps)."""
     s = float(scale or 1.0)
     margin = MARGIN * s
     insets = _normalize_insets(region_w, insets)
-    span_w = region_w - insets[0] - insets[1]
     offset = tuple(offset or (0.0, 0.0))
-    fits = card_fits(region_w, s, insets)
+    fits = card_fits(region_w, region_h, s, insets)
     if not expanded or not fits:
         w = clamp_width(
             width if width and not expanded else PILL_WIDTH * s, region_w, s, False, insets
         )
-        w = _fit_width(w, span_w, s)
         h = PILL_HEIGHT * s
         base = (_base_x(region_w, w, insets), margin)
         ox, oy = clamp_offset(offset, (w, h), region_w, region_h, s, insets)
         rect = Rect(base[0] + ox, base[1] + oy, w, h)
         return Layout(False, s, rect, base=base, insets=insets, card_fits=fits)
-    # the span holds the minimum card with its margins, so the clamp alone keeps the card inside it
+    # the region holds the minimum card with its margins, so the clamps alone keep the card inside it
     w = clamp_width(width if width else CARD_WIDTH * s, region_w, s, True, insets)
-    h = min(CARD_HEIGHT * s, region_h - 2 * margin)
+    h = CARD_HEIGHT * s
     base = (_base_x(region_w, w, insets), margin)
     ox, oy = clamp_offset(offset, (w, h), region_w, region_h, s, insets)
     x, y = base[0] + ox, base[1] + oy

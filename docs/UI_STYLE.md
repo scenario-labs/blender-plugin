@@ -219,19 +219,30 @@ nothing.
   needs its minimum width of 420 px plus a 24 px margin on each side, all times
   the UI scale. A narrower span shows the pill in its place. At a composer scale
   of 4 (Retina with a Preferences UI scale of 2), an open sidebar easily leaves
-  less than the 1,872 px the card needs. Drawing, hit testing and drags then use
-  the pill geometry. The stored expanded choice and card width stay unchanged,
-  so the card returns by itself once the sidebar closes or the viewport widens.
+  less than the 1,872 px the card needs. The viewport also needs the card's
+  132 px height plus a 24 px margin above and below, times the UI scale (720 px
+  at scale 4): a shorter viewport shows the pill too, instead of drawing the
+  card's rows over each other. Drawing, hit testing and drags then use the pill
+  geometry. The stored expanded choice and card width stay unchanged, so the
+  card returns by itself once the sidebar closes or the viewport grows.
 - While the card has no room, a click on the pill, expanded or collapsed, opens
   the current lane's form in the Settings dialog (the dialog of the card's
   **Settings** chip) instead of expanding. A short status message suggests
-  closing the sidebar or widening the viewport, and a drag still moves the pill.
-  A prompt that had focus when the card gave way is committed and left, as a
-  click outside would.
-- The pill drops its margins, then narrows down to its minimum of 200 px times
-  the UI scale. Below a span that wide, it keeps that width from the toolbar
-  edge and runs under the sidebar; without an overlapping toolbar it ends at the
+  closing the sidebar or enlarging the viewport, and a drag still moves the
+  pill. A prompt that had focus when the card gave way is committed and left, as
+  a click outside would.
+- The pill narrows to its minimum of 200 px times the UI scale while keeping its
+  margins. A narrower span then eats into the margins. In a span narrower than
+  the minimum itself, the pill keeps that minimum width from the toolbar edge
+  and runs under the sidebar; without an overlapping toolbar it ends at the
   sidebar edge instead.
+- The model chip opens the model picker and shows the sidebar, which holds the
+  rest of the lane's form. When showing the sidebar would leave the card no
+  room, the chip opens the picker alone, so the card does not give way to the
+  pill while the picker is open. A hidden sidebar reports no width, so the
+  composer assumes it reopens at Blender's default width of 220 px times the UI
+  scale; a sidebar widened before it was hidden can still leave less room than
+  that, and the pill then stands in as usual.
 - A lane tab shows its full label when it fits the tab, otherwise a short one:
   **Img**, **Vid**, **3D**, **Mat**, **R-Img**, **R-Vid**. Each tab decides from
   the measured text width, so Image and Video can keep their full labels beside
@@ -255,8 +266,10 @@ and transparent headers can still cover the composer or its default spot.
 
 Installed tests cover these rules with synthetic overlapping regions, including
 the modal's move, resize and release handlers with the sidebar opened and
-closed, a scale-4 Retina layout whose sidebar leaves no room for the card, and
-the background viewport's real regions. A physical macOS Blender 5.2.1 check at
+closed, a scale-4 Retina layout whose sidebar leaves no room for the card, a
+viewport one pixel too short for the card at scales 1, 2 and 4, the model
+chip's choice to show the sidebar or not, and the background viewport's real
+regions. A physical macOS Blender 5.2.1 check at
 that scale found the card running under the sidebar and blank or ambiguous tab
 labels, which motivated the pill fallback and the short labels. Repeating
 physical desktop drags and screenshots with the sidebar open remains a separate

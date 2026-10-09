@@ -119,6 +119,37 @@ def overlap_insets(area, region):
     return (left, right)
 
 
+# Blender's default sidebar width at a UI scale of 1 (UI_SIDEBAR_PANEL_WIDTH). A hidden sidebar reports a width of
+# 1 px, so this stands in for the width it opens at.
+SIDEBAR_WIDTH = 220
+
+
+def card_fits_with_sidebar(context):
+    """Whether the card still fits `context.region` once the area's sidebar is shown, as the model chip shows it.
+
+    A visible sidebar is already measured, so showing it changes nothing. A hidden one covers (region overlap) or
+    takes (no overlap) its width from the uncovered span once shown: its reported width when it has one, else
+    Blender's default sidebar width at this UI scale. A sidebar widened before it was hidden reopens wider than
+    that estimate."""
+    area, region = getattr(context, "area", None), context.region
+    space = getattr(getattr(area, "spaces", None), "active", None)
+    sidebar = next((r for r in getattr(area, "regions", ()) if r.type == "UI"), None)
+    if region is None or sidebar is None:
+        return True
+    if sidebar.width > 1 and getattr(space, "show_region_ui", True):
+        return True
+    scale = ui_scale(context)
+    left, right = overlap_insets(area, region)
+    width = sidebar.width if sidebar.width > 1 else SIDEBAR_WIDTH * scale
+    if sidebar.x + sidebar.width / 2 >= region.x + region.width / 2:
+        right += width
+    else:
+        left += width
+    if left + right >= region.width:
+        return False  # the sidebar would cover the whole viewport
+    return cl.card_fits(region.width, region.height, scale, (left, right))
+
+
 def composer_layout(context, state):
     """Geometry of the composer in `context.region`: the one layout drawing and hit testing share."""
     region = context.region

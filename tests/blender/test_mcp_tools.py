@@ -4,7 +4,6 @@ import json
 import unittest
 
 import bpy
-
 from helpers import FIXTURES, reset_scene, submodule
 
 
@@ -21,9 +20,11 @@ class McpToolsTests(unittest.TestCase):
         summary = self.tb.scene_summary({})
         names = [o["name"] for o in summary["objects"]]
         self.assertIn("Crate", names)
-        self.assertEqual(summary["frame_range"], [bpy.context.scene.frame_start, bpy.context.scene.frame_end])
+        self.assertEqual(
+            summary["frame_range"], [bpy.context.scene.frame_start, bpy.context.scene.frame_end]
+        )
         detail = self.tb.object_detail({"name": "Crate"})
-        self.assertEqual(detail["type"], 'MESH')
+        self.assertEqual(detail["type"], "MESH")
         self.assertAlmostEqual(detail["location"][2], 3.0)
         self.assertIn("vertices", detail)
         with self.assertRaises(ValueError):
@@ -51,7 +52,9 @@ class McpToolsTests(unittest.TestCase):
         self.assertIn("datablocks_summary", names)
 
     def test_execute_python_captures_output_and_result_and_blocks_quit(self):
-        out = self.sandbox.run_python("import bpy\nprint('hello')\nresult['count'] = len(bpy.data.objects)")
+        out = self.sandbox.run_python(
+            "import bpy\nprint('hello')\nresult['count'] = len(bpy.data.objects)"
+        )
         self.assertEqual(out["result"]["count"], len(bpy.data.objects))
         self.assertIn("hello", out["stdout"])
         blocked = self.sandbox.run_python("import bpy\nbpy.ops.wm.quit_blender()")
@@ -78,7 +81,9 @@ class McpToolsTests(unittest.TestCase):
         catalog = submodule("core.api.catalog")
         handlers = submodule("blender.handlers")
         runtime.state.reset()
-        rec = catalog.ModelRecord.from_api(json.loads((FIXTURES / "models" / "model_patina-material.json").read_text())["model"])
+        rec = catalog.ModelRecord.from_api(
+            json.loads((FIXTURES / "models" / "model_patina-material.json").read_text())["model"]
+        )
         handlers.dispatch(("catalog", {"privacy": "public", "records": [rec], "detailed": [rec]}))
         listed = self.ts.list_models({"lane": "material"})
         self.assertEqual(listed["models"][0]["id"], "model_patina-material")
@@ -86,3 +91,28 @@ class McpToolsTests(unittest.TestCase):
         self.assertIn("maps", [p["name"] for p in schema["parameters"]])
         self.assertTrue(any(s.name == "generate" for s in self.ts.SPECS))
         self.assertTrue(any(s.name == "scene_summary" for s in self.tb.SPECS))
+
+    def test_list_models_reports_the_picker_experimental_status(self):
+        runtime = submodule("blender.runtime")
+        catalog = submodule("core.api.catalog")
+        handlers = submodule("blender.handlers")
+        runtime.state.reset()
+        records = [
+            catalog.ModelRecord.from_api(
+                {"id": model_id, "name": name, "type": "custom", "capabilities": capabilities}
+            )
+            for model_id, name, capabilities in (
+                ("model_speech-studio", "Speech Studio", ["txt2audio", "audio2txt"]),
+                ("model_music", "Music", ["txt2audio"]),
+            )
+        ]
+        handlers.dispatch(
+            ("catalog", {"privacy": "public", "records": records, "detailed": records})
+        )
+        listed = {item["id"]: item for item in self.ts.list_models({"lane": "audio"})["models"]}
+        self.assertEqual(
+            listed["model_speech-studio"]["capability_status"],
+            "Experimental: speech-to-text not accepted",
+        )
+        self.assertEqual(listed["model_music"]["capability_status"], "")
+        self.assertNotIn("status", listed["model_music"])

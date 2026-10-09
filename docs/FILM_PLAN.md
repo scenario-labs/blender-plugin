@@ -7,8 +7,10 @@ the selected Studio source. They are pure Python: they do not open files, contac
 Scenario, submit jobs or mutate Blender.
 
 This is the input contract for the remaining Film integration under #64/#65.
-Native Film task controls and MCP commands now use these contracts. This does not
-establish a Film generation journey or satisfy the [release gate](maintenance/release-plan.md).
+Native Film task controls and MCP commands now use these contracts. Film shows a
+visible experimental status in its sidebar header, on every Studio Film page and
+in every Film MCP tool description. This does not establish a Film generation
+journey or satisfy the [release gate](maintenance/release-plan.md).
 
 ## Recipe and timing validation
 

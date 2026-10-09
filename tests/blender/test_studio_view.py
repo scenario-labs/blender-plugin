@@ -219,6 +219,27 @@ class StudioViewTests(unittest.TestCase):
         context.area.width, context.window.width = 1920, 800
         self.assertEqual(self.studio.popup_width(context), 352)
 
+    def test_film_page_marks_every_film_tab_experimental(self):
+        film = submodule("blender.film")
+        marker = {"text": "Experimental", "icon": "EXPERIMENTAL"}
+        self.view.page = "FILM"
+        for film_page, _, _ in self.studio.FILM_PAGES:
+            with self.subTest(film_page=film_page):
+                self.view.film_page = film_page
+                layout = MagicMock()
+                with patch.object(
+                    film, "draw_experimental", wraps=film.draw_experimental
+                ) as status:
+                    self.studio.draw_view(layout, bpy.context, width=960)
+                status.assert_called_once_with(layout)
+                labels = [c.kwargs for c in layout.label.call_args_list]
+                self.assertEqual(labels.count(marker), 1)
+        self.view.page = "JOBS"
+        layout = MagicMock()
+        self.studio.draw_view(layout, bpy.context, width=960)
+        self.assertNotIn(marker, [c.kwargs for c in layout.label.call_args_list])
+        self.assertFalse(self.workflow.calls)
+
     def test_compact_navigation_bounds_segment_rows(self):
         panels = submodule("blender.panels")
         self.view.page = "JOBS"

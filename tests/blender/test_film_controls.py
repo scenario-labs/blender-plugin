@@ -745,6 +745,21 @@ class FilmControlsTests(unittest.TestCase):
         self.assertIsNone(owner.current(other, "take"))
         self.assertEqual(self.paid, [])
 
+    def test_panel_header_marks_film_experimental_without_hiding_actions(self):
+        panel = submodule("blender.film").SCENARIO_PT_film
+        self.assertIs(bpy.types.SCENARIO_PT_film.draw_header_preset, panel.draw_header_preset)
+        before = self.film.snapshot(self.scene)
+        layout = MagicMock()
+        with patch.object(
+            self.runtime, "ensure_film_jobs", side_effect=AssertionError("draw owns no commands")
+        ):
+            panel.draw_header_preset(SimpleNamespace(layout=layout), bpy.context)
+        layout.label.assert_called_once_with(text="Experimental", icon="EXPERIMENTAL")
+        self.assertEqual(len(layout.mock_calls), 1)
+        self.assertEqual(self.film.snapshot(self.scene), before)
+        self.assertIn("scenario.quote_film", self.drawn_operators())  # a status, not a block
+        self.assertEqual(self.paid, [])
+
     def test_draw_does_not_load_storage_or_mutate_scene(self):
         from unittest.mock import MagicMock
 

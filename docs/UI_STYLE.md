@@ -230,6 +230,30 @@ Modality icons (image, video, audio, 3d) are Scenario's own PNGs (`scenario/icon
 
 `runtime.set_message(...)` lines are transient: `runtime.message_visible()` hides them after 8 s so a stale line never reads as current.
 
+## Experimental status
+
+Film and capabilities whose result handling is not accepted keep an explicit
+experimental status. It describes acceptance only: it never hides or blocks a
+model, task, estimate or approval. Use the built-in `EXPERIMENTAL` icon and
+short wording. Drawing reads the status and changes nothing.
+
+- The **Film** sidebar panel shows **Experimental** on the right of its header,
+  visible while collapsed and above its nested panels. Studio reuses panel bodies
+  only, so it draws the same line on every Film page.
+- For models offering `audio2txt` or `video23d`, the model picker's
+  highlighted-model box and the persistent **Model** row show a read-only
+  **Experimental: speech-to-text not accepted** or
+  **Experimental: video-to-motion not accepted** label. The Model row is shared
+  by the sidebar and Studio lanes, Render Image/Video and Edit 3D; the viewport
+  composer's model chip does not show it. These models can be submitted and
+  results stay in saved jobs; provider behavior and result handling are not
+  accepted. Generic Import is offered by file type, so a returned GLB or media
+  file may import, but motion and transcription handling is not accepted ([#190](https://github.com/scenario-labs/blender-plugin/issues/190)).
+
+Installed native tests assert the registered header preset draw call, the Studio
+line, the picker status and the Model row status. Physical placement in a desktop
+session has not been captured.
+
 ## What Blender cannot do (so we do not fake it)
 
 - Text is left, centre or right aligned, never justified.

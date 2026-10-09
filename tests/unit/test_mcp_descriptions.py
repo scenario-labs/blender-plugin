@@ -8,6 +8,8 @@ from pathlib import Path
 
 import pytest
 
+from scenario.core.ui.capability_status import UNACCEPTED_CAPABILITIES
+
 ROOT = Path(__file__).resolve().parents[2]
 EXPECTED = {
     "tools_scenario": {
@@ -129,6 +131,51 @@ def test_real_tool_descriptions_are_complete_static_contracts(module):
             assert description.endswith("No platform equivalent."), name
     assert len(names) == len(set(names))
     assert set(names) == EXPECTED[module]
+
+
+def test_experimental_paths_are_explicit_without_removing_tools():
+    _, calls = specs("tools_scenario")
+    descriptions = {call.args[0].value: call.args[1].value for call in calls}
+    film = {name for name in descriptions if "film" in name}
+    assert film == {name for name in EXPECTED["tools_scenario"] if "film" in name}
+    for name in film:
+        assert "\nFilm is experimental. " in descriptions[name], name
+    for name in ("estimate_cost", "generate"):
+        description = descriptions[name]
+        assert "are experimental" in description, name
+        assert "results stay in saved jobs" in description, name
+        assert "motion and transcription handling is not accepted" in description, name
+        assert "imports a returned GLB or media file by file type only" in description, name
+        assert "without Blender application" not in description, name
+        for capability in UNACCEPTED_CAPABILITIES:
+            assert f"({capability})" in description, (name, capability)
+
+
+def test_list_models_reports_the_picker_status():
+    _, calls = specs("tools_scenario")
+    descriptions = {call.args[0].value: call.args[1].value for call in calls}
+    assert (
+        "capabilities and capability_status (empty, or the experimental note"
+        in descriptions["list_models"]
+    )
+    tree = ast.parse((ROOT / "scenario/mcp/tools_scenario.py").read_text())
+    function = next(
+        node
+        for node in tree.body
+        if isinstance(node, ast.FunctionDef) and node.name == "list_models"
+    )
+    entries = [node for node in ast.walk(function) if isinstance(node, ast.Dict)]
+    pairs = [
+        (key.value, value)
+        for entry in entries
+        for key, value in zip(entry.keys, entry.values, strict=True)
+        if isinstance(key, ast.Constant)
+    ]
+    # Named apart from the server's model status, such as a training state.
+    assert "status" not in {key for key, _ in pairs}
+    status = [value for key, value in pairs if key == "capability_status"]
+    assert len(status) == 1
+    assert ast.unparse(status[0]) == "capability_status.model_status(rec.capabilities)"
 
 
 def test_job_tools_advertise_both_reference_spellings_without_requiring_legacy_id():

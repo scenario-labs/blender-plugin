@@ -314,10 +314,15 @@ def ensure_reference_uploads():
 
 
 def cancel_prepared_job(context_id, request_id, expected_revision):
+    """Shared native/MCP local cancellation of an unsent intent; it sends no request."""
     session = ensure_job_session()
     if context_id != state.job_context_id:
         raise ScenarioError(0, "The selected job context changed; list local jobs again")
-    return session.cancel_prepared(request_id, expected_revision=expected_revision)
+    record = session.cancel_prepared(request_id, expected_revision=expected_revision)
+    view = state.model_jobs.show_canceled(record) if state.model_jobs is not None else None
+    if view is not None:
+        show_job_views((view,))
+    return record
 
 
 def show_job_views(records):

@@ -59,6 +59,12 @@ establish live generation or full render-lane desktop acceptance.
   default scope without discovering its identity. Live project permission and
   cross-project service acceptance remain under #68; browser sign-in in
   [#67](https://github.com/scenario-labs/blender-plugin/issues/67) is deferred.
+- An uncertain submission is currently not reconciled automatically. Its saved
+  job stays marked as unconfirmed and offers no resubmission. If a model job
+  completed, recover it from cloud history with **Save for recovery** (local MCP:
+  `recover_cloud_job`) instead of generating again. Uncertain workflow and
+  prompt-helper submissions currently have no in-Blender recovery. Do not repeat
+  them; check their outcome in the Scenario web app.
 - Trained/custom-model discovery and routing remain incomplete
   ([#97](https://github.com/scenario-labs/blender-plugin/issues/97)).
 
@@ -73,12 +79,20 @@ establish live generation or full render-lane desktop acceptance.
   [#98](https://github.com/scenario-labs/blender-plugin/issues/98).
 - Multi-object mesh export combines the selection. Safe in-place multi-object
   editing needs separate acceptance under #99.
+- Automatic Image-lane import and saved image, World and material application
+  currently accept only PNG and scanline OpenEXR files. Other image results, such
+  as JPEG or WebP, stay saved with the job without import.
 - Prompt helpers require their own exact quote and approval. Unusable Spark
   output fails without an automatic paid LLM fallback; complete text can be
   retrieved again without regeneration. Historical prices are not current quotes.
 - Video-to-motion and speech-to-text workflows remain an explicit capability
   request in [#190](https://github.com/scenario-labs/blender-plugin/issues/190);
-  model tags alone do not establish supported input and result handling.
+  model tags alone do not establish supported input and result handling. Models
+  offering `video23d` or `audio2txt` show a visible experimental status in the
+  picker, the Model row and `list_models`; the viewport composer's model chip
+  does not show it. They can be submitted; provider behavior and result handling
+  are not accepted. Generic import by file type may still bring in a returned GLB
+  or media file.
 
 ## Interface and capture
 

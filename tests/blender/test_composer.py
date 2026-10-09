@@ -215,6 +215,7 @@ class ComposerSideRegionTests(unittest.TestCase):
         self.modal = submodule("blender.composer.modal")
         self.state_mod = submodule("blender.composer.state")
         self.runtime = submodule("blender.runtime")
+        self.cl = submodule("core.ui.composer_layout")
 
     def _context(self, sidebar=True, overlap=True, flipped=False):
         """A 3D view area as Blender lays it out: window-relative region x, the sidebar on the right."""
@@ -226,6 +227,7 @@ class ComposerSideRegionTests(unittest.TestCase):
             window = _region("WINDOW", x, w)
         else:
             window = _region("WINDOW", x + self.TOOLBAR_W, w - self.TOOLBAR_W - sidebar_w)
+        window.tag_redraw = lambda: None  # the modal's drag handlers redraw the region
         regions = [
             _region("HEADER", x, w, y=1000, height=26),
             _region("TOOLS", toolbar_x, self.TOOLBAR_W),
@@ -361,6 +363,136 @@ class ComposerSideRegionTests(unittest.TestCase):
         if region.width - left - right >= layout.card_rect.w:
             self.assertGreaterEqual(layout.card_rect.x, left)
             self.assertLessEqual(layout.card_rect.right, region.width - right)
+
+    def test_a_move_starts_from_the_clamped_placement_without_a_dead_zone(self):
+        ctx = self._context()
+        sidebar_x = self._sidebar_x(ctx)
+        # parked against the right edge, or below the bottom edge too, while the sidebar was closed
+        for expanded in (True, False):
+            for saved in ((5000.0, 200.0), (5000.0, -5000.0)):
+                with self.subTest(expanded=expanded, saved=saved):
+                    state = self.state_mod.ComposerState()
+                    state.expanded, state.offset = expanded, saved
+                    state.width = 500 if expanded else None  # room to move inside the span
+                    shown = self.modal._layout(ctx, state)
+                    box = shown.pill_rect
+                    self.assertAlmostEqual(box.right, sidebar_x)
+                    press, kind = self._grab_point(shown)
+                    moves = ((-60, 50), (-140, 90))
+                    layouts, save = self._drag(ctx, state, press, kind, moves)
+                    # the first move past the threshold already moves the composer by the pointer delta
+                    for (dx, dy), layout in zip(moves, layouts, strict=True):
+                        self.assertAlmostEqual(layout.pill_rect.x, box.x + dx)
+                        self.assertAlmostEqual(layout.pill_rect.y, box.y + dy)
+                    # the release stores the placement as drawn, not the saved value past the edge
+                    last = layouts[-1]
+                    self.assertEqual(state.offset, last.offset())
+                    self.assertEqual(state.width, 500 if expanded else None)
+                    self._assert_same_rect(self.modal._layout(ctx, state).pill_rect, last.pill_rect)
+                    save.assert_called_once_with()
+                    # Escape still puts back the offset the press started from
+                    state.offset = saved
+                    press, kind = self._grab_point(self.modal._layout(ctx, state))
+                    state.begin_drag(press, kind)
+                    self._move(ctx, state, press, -60, 50)
+                    self.assertNotEqual(state.offset, saved)
+                    state.cancel_drag()
+                    self.assertEqual(state.offset, saved)
+
+    def test_a_resize_starts_from_the_clamped_width_and_stores_what_it_draws(self):
+        ctx = self._context()
+        sidebar_x = self._sidebar_x(ctx)
+        state = self.state_mod.ComposerState()
+        # a wide card saved while the sidebar was closed, parked against the sidebar edge
+        state.expanded, state.offset, state.width = True, (5000.0, 200.0), 5000
+        shown = self.modal._layout(ctx, state)
+        card = shown.card_rect
+        self.assertAlmostEqual(card.right, sidebar_x)
+        self.assertLess(card.w, 5000)
+        grip = shown.resize_rect
+        press = (grip.x + grip.w / 2, grip.y + grip.h / 2)
+        self.assertEqual(shown.hit(*press), ("resize",))
+        moves = ((-30, 0), (-120, 5))
+        layouts, save = self._drag(ctx, state, press, "resize", moves)
+        for (dx, _dy), layout in zip(moves, layouts, strict=True):
+            self.assertAlmostEqual(layout.card_rect.w, card.w + dx)
+            self.assertLessEqual(layout.card_rect.right, sidebar_x)
+            self.assertEqual(layout.hit(*self._centre(layout.generate_rect)), ("generate",))
+        last = layouts[-1]
+        self.assertEqual(state.width, last.card_rect.w)
+        self.assertEqual(state.offset, last.offset())
+        self._assert_same_rect(self.modal._layout(ctx, state).card_rect, last.card_rect)
+        save.assert_called_once_with()
+
+    def test_closing_and_reopening_the_sidebar_keeps_the_composer_reachable(self):
+        opened, closed = self._context(), self._context(sidebar=False)
+        sidebar_x = self._sidebar_x(opened)
+        state = self.state_mod.ComposerState()
+        state.expanded, state.width = True, 500
+        # sidebar closed: drag the card to the bare right edge, where only MIN_VISIBLE px remain
+        press, kind = self._grab_point(self.modal._layout(closed, state))
+        self._drag(closed, state, press, kind, ((5000, 0),))
+        parked = self.modal._layout(closed, state)
+        keep = self.cl.MIN_VISIBLE * parked.scale
+        self.assertAlmostEqual(parked.card_rect.x, closed.region.width - keep)
+        # N opens the sidebar: the card stops at its edge, Generate and minus clickable
+        shown = self.modal._layout(opened, state)
+        self.assertAlmostEqual(shown.card_rect.right, sidebar_x)
+        self._assert_reachable(shown, opened, sidebar_x)
+        # a drag from there follows the pointer at once and is stored as drawn
+        press, kind = self._grab_point(shown)
+        layouts, _save = self._drag(opened, state, press, kind, ((-80, 0),))
+        self.assertAlmostEqual(layouts[-1].card_rect.x, shown.card_rect.x - 80)
+        # closing and reopening the sidebar keeps that placement reachable both ways
+        self._assert_reachable(self.modal._layout(closed, state), closed, closed.region.width)
+        reopened = self.modal._layout(opened, state)
+        self._assert_same_rect(reopened.card_rect, layouts[-1].card_rect)
+        self._assert_reachable(reopened, opened, sidebar_x)
+
+    # -- drag helpers ----------------------------------------------------------
+    @staticmethod
+    def _centre(rect):
+        return (rect.x + rect.w / 2, rect.y + rect.h / 2)
+
+    def _grab_point(self, layout):
+        """A press on the drag surface: the collapsed pill, or the card's top padding."""
+        if layout.expanded:
+            card = layout.card_rect
+            point = (card.x + card.w / 2, card.top - self.cl.PAD * layout.scale / 2)
+            kind = "drag"
+        else:
+            point, kind = self._centre(layout.pill_rect), "expand"
+        self.assertEqual(layout.hit(*point), (kind,))
+        return point, kind
+
+    def _move(self, context, state, press, dx, dy):
+        event = SimpleNamespace(mouse_region_x=press[0] + dx, mouse_region_y=press[1] + dy)
+        self.modal.SCENARIO_OT_composer_modal._drag_move(SimpleNamespace(), context, state, event)
+        return self.modal._layout(context, state)
+
+    def _drag(self, context, state, press, kind, moves):
+        """Press, move by each (dx, dy) from the press through the modal's handlers, then release."""
+        state.begin_drag(press, kind)
+        layouts = [self._move(context, state, press, dx, dy) for dx, dy in moves]
+        operator = self.modal.SCENARIO_OT_composer_modal
+        with mock.patch.object(self.modal, "_save_layout") as save:
+            operator._drag_release(SimpleNamespace(), context, state, context.scene)
+        self.assertIsNone(state.drag_mode)
+        return layouts, save
+
+    def _assert_same_rect(self, actual, expected):
+        for name in ("x", "y", "w", "h"):
+            self.assertAlmostEqual(getattr(actual, name), getattr(expected, name), msg=name)
+
+    def _assert_reachable(self, layout, context, right_edge):
+        """Card, Generate and minus lie between the toolbar and `right_edge` and take their clicks."""
+        self.assertGreaterEqual(layout.card_rect.x, self.TOOLBAR_W)
+        self.assertLessEqual(layout.card_rect.right, right_edge)
+        for kind in ("generate", "collapse"):
+            rect = getattr(layout, f"{kind}_rect")
+            self.assertGreaterEqual(rect.y, 0)
+            self.assertLessEqual(rect.top, context.region.height)
+            self.assertEqual(layout.hit(*self._centre(rect)), (kind,))
 
     def _draw(self, context, state):
         """Run the draw handler with gpu/blf stubbed (background Blender has no GPU) and return the drawn rects."""

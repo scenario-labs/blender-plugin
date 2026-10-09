@@ -368,6 +368,27 @@ def test_layout_offset_reproduces_the_clamped_placement():
     assert plain.offset() == (120.0, 300.0)
 
 
+def test_drawn_width_and_offset_reproduce_the_placement():
+    # a drag release stores the drawn width and offset; laying them out again changes nothing,
+    # including a span narrowed below the minimum card and below the pill floor
+    cases = ((1600, INSETS), (1600, (0.0, 0.0)), (700, (56, 400)), (600, (56, 400)))
+    for region_w, insets in cases:
+        for width in (None, 10, 900, 5000):
+            for offset in ((0.0, 0.0), (5000.0, -5000.0), (-5000.0, 300.0)):
+                drawn = cl.pill_placement(
+                    region_w, 900, expanded=True, offset=offset, width=width, insets=insets
+                )
+                again = cl.pill_placement(
+                    region_w,
+                    900,
+                    expanded=True,
+                    offset=drawn.offset(),
+                    width=drawn.card_rect.w,
+                    insets=insets,
+                )
+                assert again.card_rect == drawn.card_rect, (region_w, insets, width, offset)
+
+
 def test_a_small_span_narrows_the_card_instead_of_hiding_it():
     # room for the minimum card only without margins: the margins go first
     tight = cl.pill_placement(900, 400, expanded=True, insets=(56, 400))

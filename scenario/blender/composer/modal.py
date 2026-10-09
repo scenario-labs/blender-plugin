@@ -106,25 +106,32 @@ class SCENARIO_OT_composer_modal(bpy.types.Operator):
                 return
             state.drag_mode = "move"
             _cursor(context, "SCROLL_XY")
+        if start.get("origin") is None:
+            # Start from the placement as drawn. A saved offset or width past a toolbar or sidebar
+            # edge (parked there before the sidebar opened) is clamped first; otherwise the pointer
+            # would have to cover that hidden excess before the composer follows it. The pressed
+            # offset and width stay in drag_start, so Escape (cancel_drag) still restores them.
+            start["origin"] = (layout.offset(), layout.pill_rect.w)
+            state.offset = start["origin"][0]
         state.moved = True
         region = context.region
+        offset, width = start["origin"]
         if state.drag_mode == "move":
-            state.offset = (start["offset"][0] + dx, start["offset"][1] + dy)
+            state.offset = (offset[0] + dx, offset[1] + dy)
         elif state.drag_mode == "resize":
-            # grow from the width the uncovered span allows, and never under the toolbar or sidebar
-            insets = layout.insets
-            base = cl.clamp_width(
-                start["width"] or cl.CARD_WIDTH * scale, region.width, scale, True, insets
-            )
-            state.width = cl.clamp_width(base + dx, region.width, scale, True, insets)
+            # never wider than the uncovered span allows, so the card stays clear of the side regions
+            state.width = cl.clamp_width(width + dx, region.width, scale, True, layout.insets)
         _redraw(context)
 
     def _drag_release(self, context, state, scene):
         kind, mode, moved = state.end_drag()
         _cursor(context, None)
         if mode in ("move", "resize") and moved:
-            # keep the placement inside the uncovered span as the layout clamps it, then remember it
-            state.offset = _layout(context, state).offset()
+            # remember the placement as drawn: clamped inside the uncovered span, never past an edge
+            layout = _layout(context, state)
+            state.offset = layout.offset()
+            if mode == "resize":
+                state.width = layout.pill_rect.w
             _save_layout()
         elif kind == "expand" and not moved:
             state.expanded = True

@@ -217,16 +217,25 @@ nothing.
 - The pill and card start at the bottom centre of that span.
 - A saved or resized width shrinks to the span minus margins. A span too small
   for the minimum card drops the margins, then narrows the card down to the pill
-  minimum instead of covering the sidebar.
+  minimum of 200 px times the UI scale. Below a span that wide, the card keeps
+  that width from the toolbar edge and runs under the sidebar; without an
+  overlapping toolbar it ends at the sidebar edge instead.
 - A saved or dragged offset stops at a toolbar or sidebar edge, so Generate and
   the minus button stay clickable. A bare viewport edge keeps the earlier rule:
-  at least 40 px of a dragged composer stay visible.
+  at least 40 px of a dragged composer stay visible at 1x UI scale (the minimum
+  scales with it).
+- A move or resize starts from the placement as drawn. A composer parked past an
+  edge before the sidebar opened therefore follows the pointer at once instead of
+  waiting for it to cover the hidden excess. Releasing a move stores the drawn
+  offset, and releasing a resize also stores the drawn width; Esc during the drag
+  restores the saved placement.
 - Drawing and hit testing share one layout, so every control is drawn exactly
   where a click reaches it.
 
-Installed tests cover these rules with synthetic overlapping regions and the
-background viewport's real regions. Physical desktop screenshots with the
-sidebar open remain a separate acceptance check under #66.
+Installed tests cover these rules with synthetic overlapping regions, including
+the modal's move, resize and release handlers with the sidebar opened and
+closed, and the background viewport's real regions. Physical desktop drags and
+screenshots with the sidebar open remain a separate acceptance check under #66.
 
 ## What Blender cannot do (so we do not fake it)
 

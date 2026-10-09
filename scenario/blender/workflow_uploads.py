@@ -190,21 +190,33 @@ def _remember(owner, scene, item, message):
 
     Undo and redo invalidate Python scene references but keep the scene's session
     UID, so the note follows history until another upload targets the input. Each
-    input keeps only its latest note; notes on other inputs never evict it.
+    input keeps only its latest note; notes on other inputs never evict it. The
+    loaded workflow and schema are recorded too, so a same-named input of another
+    workflow never shows it.
     """
-    owner.workflow_notices[(scene.session_uid, item.name)] = (_values(item), message)
+    key = (scene.session_uid, item.name)
+    owner.workflow_notices[key] = (_values(item), _workflow(scene), message)
+
+
+def _workflow(scene):
+    form = scene.scenario_workflow
+    return form.loaded_id, _digest(form.schema_json)
 
 
 def _forget(owner, scene, name):
-    """Retire the note of an input that a new upload now targets."""
+    """Retire the note of an input once a newer upload may have been admitted."""
     owner.workflow_notices.pop((scene.session_uid, name), None)
 
 
 def _notice(owner, scene, item):
     if owner is None:
         return ""
-    values, message = owner.workflow_notices.get((scene.session_uid, item.name), (None, ""))
-    return message if values == _values(item) else ""
+    values, workflow, message = owner.workflow_notices.get(
+        (scene.session_uid, item.name), (None, None, "")
+    )
+    if values != _values(item) or workflow != _workflow(scene):
+        return ""
+    return message
 
 
 def release_canceled(owner, record):
@@ -350,8 +362,6 @@ def start(context, reviewed):
     token = uuid.uuid4().hex
     # Mark before capturing the origin so a second click cannot start another upload.
     item[_MARKER] = token
-    # An earlier note described another upload; this one reports its own outcome.
-    _forget(owner, context.scene, item.name)
     binding = WorkflowUpload(
         context.scene,
         form.workflow_id,
@@ -369,14 +379,19 @@ def start(context, reviewed):
         else:
             binding.ticket = capture_upload(context, source=reviewed.source)
     except UploadNotStarted:
-        # The typed result proves no task was admitted; the input may be retried.
+        # The typed result proves no task was admitted; the input may be retried
+        # and keeps any note about its earlier upload.
         del owner.workflow_forms[token]
         del item[_MARKER]
         raise
     except Exception:
+        # Work may have been admitted, so an earlier note no longer applies.
+        _forget(owner, context.scene, item.name)
         binding.error = "Upload did not start; inspect progress before choosing another reference"
         _release(owner, token, binding)
         raise ScenarioError(0, binding.error) from None
+    # An earlier note described another upload; this one reports its own outcome.
+    _forget(owner, context.scene, item.name)
     owner.workflow_tickets[token] = binding.ticket
     return binding
 

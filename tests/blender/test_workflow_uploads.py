@@ -617,6 +617,45 @@ class WorkflowUploadTests(unittest.TestCase):
         self.assertNotIn(note, labels)
         self.assertEqual(len(self.owner.workflow_notices), 17)
 
+    def test_stopped_upload_note_stays_with_its_workflow(self):
+        binding = self.start("image")  # An empty input keeps its loaded defaults.
+        binding.ticket.task.result(5)
+        self.scene_changes()[0]()
+        self.pump(binding)
+        note = "The upload stopped before sending; nothing was uploaded"
+        self.assertIn(note, self.drawn("image")[1])
+        self.record = {
+            "id": "fixture-other-workflow",
+            "name": "Other workflow",
+            "inputs": [{"name": "image", "type": "file", "kind": "image"}],
+        }
+        self.ui.load_form(self.form, self.record)
+        # The same-named input of another workflow has identical default values.
+        self.assertEqual(self.form.inputs["image"].text, "")
+        self.assertNotIn(note, self.drawn("image")[1])
+
+    def test_a_retry_that_does_not_start_keeps_the_inputs_note(self):
+        item = self.populated()
+        binding = self.start("images")
+        binding.ticket.task.result(5)
+        self.scene_changes()[0]()
+        self.pump(binding)
+        note = "The upload stopped before sending; nothing was uploaded"
+        refusal = self.fixture.module.UploadNotStarted(0, "Synthetic local refusal")
+        reviewed = self.uploads.review(bpy.context, "images", "FILE")
+        with patch.object(self.owner, "start", side_effect=refusal):
+            with self.assertRaises(self.fixture.module.UploadNotStarted):
+                self.uploads.start(bpy.context, reviewed)
+        self.assertNotIn(self.ui.UPLOAD_MARKER, item)
+        self.assertIn(note, self.drawn("images")[1])
+        # A failure after admission keeps the new marker and retires the old note.
+        reviewed = self.uploads.review(bpy.context, "images", "FILE")
+        with patch.object(self.owner, "start", side_effect=RuntimeError("synthetic")):
+            with self.assertRaises(self.errors.ScenarioError):
+                self.uploads.start(bpy.context, reviewed)
+        self.uploads.stop_waiting(self.scene, "images", item[self.ui.UPLOAD_MARKER])
+        self.assertNotIn(note, self.drawn("images")[1])
+
     def test_a_new_upload_retires_the_inputs_earlier_note(self):
         item = self.populated()
         first = self.start("images")

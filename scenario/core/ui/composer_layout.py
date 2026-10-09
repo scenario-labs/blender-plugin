@@ -303,28 +303,49 @@ def _pill_indicator(pill, scale):
     return Rect(pill.x + radius, pill.y + height, width, height)
 
 
-def strip_placement(layout, region_w, region_h, spec, insets=(0.0, 0.0)):
+def _edge_insets(extent, insets):
+    """Non-negative (low, high) widths covered along one axis, ignored when they leave no room.
+
+    Ignoring that pair keeps a fully covered region on its own extent. A composer placement that
+    avoids side regions applies the same rule, so the card and its tray agree."""
+    low, high = (max(0.0, float(edge or 0.0)) for edge in (insets or (0.0, 0.0)))
+    return (low, high) if low + high < extent else (0.0, 0.0)
+
+
+def strip_placement(layout, region_w, region_h, spec, insets=None, vertical_insets=(0.0, 0.0)):
     """Place the job strip for a composer `layout` returned by pill_placement.
 
     Expanded, the tray sits above the card when it fits below the region top, else below the card,
-    else it is hidden; the card's own controls never move. `insets` are the (left, right) widths of
-    side regions drawn over this one, as the composer placement records them: the tray stays in the
-    span they leave uncovered, narrowing to it when the card is wider. Chips are right-aligned before
-    the dismiss box. While the status text would be narrower than STRIP_MIN_TEXT, chips other than
-    INSPECT_CHIP are dropped, last listed first. A tray that still cannot hold that text, Inspect and
-    the dismiss box is hidden. Collapsed, only the pill's indicator line is placed."""
+    else it is hidden; the card's own controls never move.
+
+    `insets` are the (left, right) widths of side regions (toolbar, sidebar) drawn over this one
+    with region overlap. Callers pass the normalized insets the composer placement laid `layout`
+    out with. When omitted, the layout's own `insets` apply if it records them, else none, so draw,
+    hit and the tray cannot drift apart. The tray stays in the span they leave uncovered, narrowing
+    to it when the card is wider. `vertical_insets` are the (bottom, top) heights of regions drawn
+    over this one along those edges (header, tool header, asset shelf). Blender sends clicks there
+    to those regions, so the tray goes above the card only below the top one, and below the card
+    only above the bottom one. Either pair is ignored when it leaves no room.
+
+    Chips are right-aligned before the dismiss box. While the status text would be narrower than
+    STRIP_MIN_TEXT, chips other than INSPECT_CHIP are dropped, last listed first. A tray that still
+    cannot hold that text, Inspect and the dismiss box is hidden. Collapsed, only the pill's
+    indicator line is placed."""
     s = layout.scale
     if not layout.expanded:
         return StripLayout(True, indicator_rect=_pill_indicator(layout.pill_rect, s))
     card = layout.card_rect
-    left, right = (max(0.0, float(edge or 0.0)) for edge in (insets or (0.0, 0.0)))
+    if insets is None:
+        insets = getattr(layout, "insets", None)
+    left, right = _edge_insets(region_w, insets)
+    bottom, top = _edge_insets(region_h, vertical_insets)
     span_lo, span_hi = left, region_w - right
     w = min(card.w, span_hi - span_lo)
     h, gap, pad = STRIP_HEIGHT * s, STRIP_GAP * s, STRIP_PAD * s
     dot, dismiss, inset = STRIP_DOT * s, DISMISS_SIZE * s, CHIP_INSET * s
-    if card.top + gap + h <= region_h:
+    if card.top + gap + h <= region_h - top:
         y = card.top + gap
-    elif card.y - gap - h >= 0:
+    elif card.y - gap - h >= bottom:
         y = card.y - gap - h
     else:
         return StripLayout(True)

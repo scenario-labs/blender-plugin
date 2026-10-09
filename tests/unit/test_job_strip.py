@@ -50,6 +50,20 @@ MODEL_1 = Action(
 MODEL_2 = Action(
     "import_model:a2", "import_model", "apply", "Import model (2)", "scenario.import_saved_model"
 )
+WORLD = Action(
+    "apply_world:a1",
+    "apply_world",
+    "apply",
+    "Set panorama as World (1)",
+    "scenario.apply_saved_world",
+)
+RESTORE_WORLD = Action(
+    "restore_world",
+    "restore_world",
+    "apply",
+    "Restore previous World",
+    "scenario.apply_saved_world",
+)
 REUSE_ROW = Action("reuse", "", "status", "Reuse saved results", None)
 REVIEW_ROW = Action(
     "awaiting_review", "", "status", "Downloaded result awaits application review", None
@@ -68,7 +82,8 @@ def test_remote_vocabulary_is_the_pinned_sdk_job_status():
 
 TABLE = [
     ("prepared", {}, "Preparing submission", "active", None),
-    ("submitting", {}, "Submitting...", "active", None),
+    ("submitting", {"in_flight": True}, "Submitting...", "active", None),
+    ("submitting", {}, "Submission unconfirmed; do not resubmit", "review", None),
     ("uncertain", {}, "Submission unconfirmed; do not resubmit", "review", None),
     ("remote", {}, "Submitted", "active", None),
     ("remote", {"remote_status": "pending"}, "Queued", "active", None),
@@ -82,7 +97,7 @@ TABLE = [
         "active",
         0.42,
     ),
-    ("remote", {"remote_status": "in-progress", "progress": 1}, "Generating 100%", "active", 1.0),
+    ("remote", {"remote_status": "in-progress", "progress": 1}, "Generating", "active", None),
     ("remote", {"remote_status": "finalizing", "progress": 0.99}, "Finalizing", "active", None),
     ("remote", {"remote_status": "queued", "progress": 0.5}, "Queued", "active", None),
     ("remote", {"remote_status": "success"}, "Submitted", "active", None),
@@ -122,6 +137,18 @@ def test_every_saved_job_state_has_its_own_wording():
     unknown = js.strip_status(None)
     for state in JobState:
         assert js.strip_status(state.value) != unknown, state
+        assert js.strip_status(state.value, in_flight=True) != unknown, state
+
+
+def test_a_submitting_record_without_a_live_send_reads_unconfirmed():
+    # The uncertain transition runs only when the send raises; a failed write or a
+    # quit mid-send leaves the record submitting with no task behind it.
+    stalled = js.strip_status("submitting", in_flight=False)
+    assert stalled == js.strip_status("uncertain") and not stalled.indeterminate
+    sending = js.strip_status("submitting", in_flight=True)
+    assert sending == js.StripStatus("Submitting...", "active") and sending.indeterminate
+    for state in ("prepared", "uncertain", "remote", "ready", "applied"):
+        assert js.strip_status(state, in_flight=True) == js.strip_status(state)
 
 
 @pytest.mark.parametrize(
@@ -133,15 +160,21 @@ def test_unknown_progress_is_indeterminate_never_zero(value):
     assert status == js.StripStatus("Generating", "active") and status.indeterminate
 
 
-def test_percent_appears_only_from_one_percent():
+def test_percent_appears_only_from_one_to_ninety_nine():
     assert js.known_progress(0) == 0.0 and js.progress_percent(0) is None
     assert js.progress_percent(0.004) is None
     assert js.progress_percent(0.01) == 1
     assert js.progress_percent(0.29) == 29  # not floored to 28 by binary rounding
-    assert js.progress_percent(0.999) == 99  # never 100% before the service says 1
-    assert js.progress_percent(1.0) == 100
+    assert js.progress_percent(0.999) == 99
+    assert js.progress_percent(0.999999999995) == 99  # the epsilon never reaches 100
+    assert js.known_progress(1.0) == 1.0 and js.progress_percent(1.0) is None
     started = js.strip_status("remote", remote_status="in-progress", progress=0.004)
     assert started == js.StripStatus("Generating", "active")
+    almost = js.strip_status("remote", remote_status="in-progress", progress=0.999999999995)
+    assert almost == js.StripStatus("Generating 99%", "active", 0.999999999995)
+    # still in progress at 1: completion is a later status, so no 100% beside an active bar
+    done = js.strip_status("remote", remote_status="in-progress", progress=1.0)
+    assert done == js.StripStatus("Generating", "active") and done.indeterminate
 
 
 @pytest.mark.parametrize(
@@ -211,9 +244,12 @@ def test_a_paused_error_replaces_the_wording_for_review(state):
 
 
 @pytest.mark.parametrize("state", ["submitting", "uncertain", "failed", "canceled"])
-def test_states_with_their_own_wording_keep_it_over_an_error(state):
+@pytest.mark.parametrize("in_flight", [False, True])
+def test_states_with_their_own_wording_keep_it_over_an_error(state, in_flight):
     note = "Submission outcome is not confirmed; do not submit it again"
-    assert js.strip_status(state, error=note) == js.strip_status(state)
+    assert js.strip_status(state, error=note, in_flight=in_flight) == js.strip_status(
+        state, in_flight=in_flight
+    )
 
 
 def test_blank_or_non_text_errors_are_ignored():
@@ -274,6 +310,29 @@ def test_several_apply_actions_offer_one_choice():
     assert ready == (js.StripChip("choose", "Apply... (3)"), INSPECT)
     applied = js.strip_chips((REUSE_ROW, IMAGES, MATERIAL), "applied")
     assert applied == (js.StripChip("choose", "Reuse... (2)"), INSPECT)
+
+
+def test_restoring_the_world_is_not_counted_as_reuse():
+    panorama = js.strip_chips((REUSE_ROW, IMAGES, WORLD, RESTORE_WORLD), "applied")
+    assert panorama == (js.StripChip("choose", "Reuse... (2)"), INSPECT)
+    one = js.strip_chips((REUSE_ROW, WORLD, RESTORE_WORLD), "applied")
+    assert one == (js.StripChip("choose", "Reuse... (1)"), INSPECT)
+    alone = js.strip_chips((RESTORE_WORLD,), "applied")
+    assert alone == (js.StripChip("restore_world", "Restore previous World"), INSPECT)
+
+
+def test_an_automatic_import_offers_only_inspect_until_it_pauses():
+    actions = (IMAGES, WORLD, REVIEW_ROW)
+    assert js.strip_status("ready", automatic=True).text == "Importing..."
+    assert js.strip_chips(actions, "ready", automatic=True) == (INSPECT,)
+    assert js.strip_chips(actions, "ready", automatic=True, error="  ") == (INSPECT,)
+    paused = "Image import needs receipt recovery; do not import again"
+    assert js.strip_chips(actions, "ready", automatic=True, error=paused) == js.strip_chips(
+        actions, "ready"
+    )
+    assert js.strip_chips(actions, "ready")[0].key == "choose"
+    for state in ("applied", "apply_failed"):
+        assert js.strip_chips(actions, state, automatic=True) == js.strip_chips(actions, state)
 
 
 def test_only_claim_backed_descriptors_with_an_operator_become_chips():

@@ -52,9 +52,9 @@ _STATE_TEXT = {
     "canceled": ("Canceled", "done"),
 }
 # A projection error replaces the state wording, except where that wording
-# already says more: every in-flight send carries the unconfirmed-submission
-# note (an unconfirmed outcome becomes "uncertain"), and terminal failure or
-# cancellation keeps its own tone. Inspect shows the full error either way.
+# already says more. The projection notes an unconfirmed outcome on every
+# submitting or uncertain record, so both keep their own wording; terminal
+# failure or cancellation keeps its own tone. Inspect shows the full error.
 _OWN_WORDING = frozenset({"submitting", "uncertain", "failed", "canceled"})
 _REMOTE_STATES = frozenset({"remote", "cancel_requested"})
 _NETWORK_STATES = _REMOTE_STATES | {"succeeded", "downloading", "download_failed"}
@@ -62,6 +62,9 @@ _INSPECT_ONLY = frozenset({"submitting", "uncertain"})
 _DOWNLOAD_STATES = frozenset({"succeeded", "downloading", "download_failed"})
 _DOWNLOAD_RECOVERY = frozenset({"resume", "recover_download"})
 _CHIP_GROUPS = frozenset({"receipt", "cancel", "recover", "apply"})
+# An apply-group action that does not reuse the job's results: it puts back
+# the World a panorama replaced, so it is neither counted nor named as reuse.
+_NOT_REUSE = frozenset({"restore_world"})
 _NUMBER = re.compile(r" \(\d+\)$")
 
 
@@ -71,7 +74,8 @@ class StripStatus:
 
     The text always states the status, so the tone colour is never the only
     signal. `fraction` fills a determinate bar only while an in-progress job
-    reports at least 1%; any other active status draws an indeterminate bar.
+    reports from 1% to under 100%, as its text does; any other active status
+    draws an indeterminate bar.
     """
 
     text: str
@@ -109,13 +113,23 @@ def known_progress(value):
 
 
 def progress_percent(value):
-    """The whole percent reached, only from 1% up; otherwise None (indeterminate)."""
+    """The whole percent reached, from 1 to 99; otherwise None (indeterminate).
+
+    Below 1% the bar would look stuck. A job still in progress at 1 has not
+    finished: completion is a later status (finalizing, then success), so it
+    reads as plain progress rather than 100% beside an active bar.
+    """
     value = known_progress(value)
-    if value is None:
+    if value is None or value >= 1.0:
         return None
-    # The epsilon keeps binary fractions such as 0.29 from flooring to 28.
-    percent = math.floor(value * 100 + 1e-9)
+    # The epsilon keeps binary fractions such as 0.29 from flooring to 28; the
+    # cap keeps a value just under 1 from reaching 100 through that epsilon.
+    percent = min(math.floor(value * 100 + 1e-9), 99)
     return percent if percent >= 1 else None
+
+
+def _message(error):
+    return error.strip() if isinstance(error, str) else ""
 
 
 def strip_status(
@@ -125,6 +139,7 @@ def strip_status(
     progress=None,
     error=None,
     automatic=False,
+    in_flight=False,
     online=True,
     stale=False,
 ):
@@ -135,9 +150,18 @@ def strip_status(
     scheduled poll allows. `automatic` is true when a ready result imports
     without further review. Without online access, states waiting on the
     network say so instead of looking current.
+
+    `in_flight` is true only while this session still holds the submission
+    task for the request; the caller reads it from the job owner's live
+    submissions (`request_id in ModelJobs.submissions`). A submitting record
+    without one did not save its outcome, for example when the uncertain
+    transition could not be stored or Blender quit mid-send, so it reads as
+    unconfirmed instead of as a send in progress.
     """
     state = saved_state if saved_state in _STATE_TEXT else None
-    message = error.strip() if isinstance(error, str) else ""
+    if state == "submitting" and not in_flight:
+        state = "uncertain"
+    message = _message(error)
     if message and state not in _OWN_WORDING:
         return StripStatus(message, "review")
     if state is None:
@@ -159,18 +183,24 @@ def strip_status(
     return StripStatus(text, tone, fraction)
 
 
-def strip_chips(actions, saved_state):
+def strip_chips(actions, saved_state, *, automatic=False, error=None):
     """Chips for one job view, left to right: at most one primary action, then Inspect.
 
     `actions` are the view's saved-job action descriptors (key, action, group,
     label, operator), in drawing order. Only descriptors with an operator in a
-    claim-backed group can become a chip; status rows never do. An unconfirmed
-    submission offers only Inspect. The primary chip is, in order: a receipt
-    retry, a cancellation, download recovery while results are not local, the
-    single apply action (without its asset number), or a choice between several.
+    claim-backed group can become a chip; status rows never do. A submission
+    in flight or unconfirmed offers only Inspect. So does a ready result that
+    imports automatically (`automatic`, as for strip_status) without a paused
+    `error`: it reads "Importing...", and its saved actions can still be listed
+    for a poll before that import is under way. The primary chip is, in order:
+    a receipt retry, a cancellation, download recovery while results are not
+    local, the single apply action (without its asset number), or a choice
+    between several, counting only the actions that reuse an applied job.
     """
     inspect = StripChip(INSPECT_CHIP, INSPECT_LABEL)
     if saved_state in _INSPECT_ONLY:
+        return (inspect,)
+    if saved_state == "ready" and automatic and not _message(error):
         return (inspect,)
     controls = [item for item in actions if item.operator and item.group in _CHIP_GROUPS]
     primary = _primary(controls, saved_state)
@@ -190,8 +220,10 @@ def _primary(controls, saved_state):
     if len(apply) == 1:
         return StripChip(apply[0].key, _NUMBER.sub("", apply[0].label))
     if apply:
-        verb = "Reuse..." if saved_state == "applied" else "Apply..."
-        return StripChip(CHOOSE_CHIP, f"{verb} ({len(apply)})")
+        reuse = [item for item in apply if item.action not in _NOT_REUSE]
+        if saved_state == "applied" and reuse:
+            return StripChip(CHOOSE_CHIP, f"Reuse... ({len(reuse)})")
+        return StripChip(CHOOSE_CHIP, f"Apply... ({len(apply)})")
     return None
 
 

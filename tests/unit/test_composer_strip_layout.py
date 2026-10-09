@@ -2,6 +2,8 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Placement, chip fitting and hit precedence of the composer's job strip tray."""
 
+from types import SimpleNamespace
+
 import pytest
 
 from scenario.core.ui import composer_layout as cl
@@ -136,8 +138,31 @@ def test_tray_hides_when_inspect_and_readable_text_cannot_fit():
     assert narrow.hidden and narrow.chip_rects == ()
     huge = cl.strip_placement(layout, 1600, 900, cl.StripSpec((("inspect", 900.0),)))
     assert huge.hidden
+
+
+def test_insets_that_leave_no_room_are_ignored():
+    layout = cl.pill_placement(1600, 900, expanded=True)
+    spec = _spec(1.0, ("apply", "Apply... (2)"), INSPECT)
+    bare = cl.strip_placement(layout, 1600, 900, spec)
     covered = cl.strip_placement(layout, 1600, 900, spec, insets=(900.0, 900.0))
-    assert covered.hidden
+    assert covered == bare and not bare.hidden
+    exact = cl.strip_placement(layout, 1600, 900, spec, insets=(800.0, 800.0))
+    assert exact == bare
+    shut = cl.strip_placement(layout, 1600, 900, spec, vertical_insets=(450.0, 450.0))
+    assert shut == bare
+    negative = cl.strip_placement(layout, 1600, 900, spec, (-50.0, None), (-5.0, None))
+    assert negative == bare
+
+
+def test_the_layout_insets_apply_unless_the_caller_passes_its_own():
+    layout = cl.pill_placement(1600, 900, True, offset=(-5000.0, 0.0))
+    spec = _spec(1.0, INSPECT)
+    recorded = SimpleNamespace(**{**vars(layout), "insets": (100.0, 300.0)})
+    by_layout = cl.strip_placement(recorded, 1600, 900, spec)
+    assert by_layout.rect.x == 100.0
+    assert by_layout == cl.strip_placement(layout, 1600, 900, spec, insets=(100.0, 300.0))
+    assert cl.strip_placement(recorded, 1600, 900, spec, insets=(0.0, 0.0)).rect.x == 0.0
+    assert cl.strip_placement(layout, 1600, 900, spec).rect.x == 0.0
 
 
 def test_tray_stays_in_the_span_side_regions_leave_uncovered():
@@ -157,6 +182,33 @@ def test_tray_stays_in_the_span_side_regions_leave_uncovered():
     bare = cl.strip_placement(off_left, 1600, 900, spec)
     assert off_left.card_rect.x < 0 and bare.rect.x == 0
     assert cl.strip_placement(off_left, 1600, 900, spec, insets=None).rect == bare.rect
+
+
+@pytest.mark.parametrize("scale", SCALES)
+def test_tray_keeps_clear_of_headers_drawn_over_the_region(scale):
+    s = scale
+    region_h = 900 * s
+    header = 26 * s
+    room = (cl.MARGIN + cl.CARD_HEIGHT + cl.STRIP_GAP + cl.STRIP_HEIGHT) * s
+    spec = _spec(s, INSPECT)
+    clear = cl.pill_placement(2000, region_h, True, s, offset=(0.0, region_h - room - header))
+    above = cl.strip_placement(clear, 2000, region_h, spec, vertical_insets=(0.0, header))
+    assert above.rect.y == clear.card_rect.top + cl.STRIP_GAP * s
+    assert above.rect.top <= region_h - header
+    # a card dragged up to the header: above would still fit the region, not the header
+    near = cl.pill_placement(2000, region_h, True, s, offset=(0.0, region_h - room - header + 2))
+    assert cl.strip_placement(near, 2000, region_h, spec).rect.y > near.card_rect.top
+    below = cl.strip_placement(near, 2000, region_h, spec, vertical_insets=(0.0, header))
+    assert below.rect.top == near.card_rect.y - cl.STRIP_GAP * s
+    # the tray goes below only above a bottom header, and hides when neither side is clear
+    tray = (cl.STRIP_GAP + cl.STRIP_HEIGHT) * s
+    raised = cl.pill_placement(2000, region_h, True, s, offset=(0.0, tray + header - cl.MARGIN * s))
+    top = region_h - raised.card_rect.top - tray + 1
+    shown = cl.strip_placement(raised, 2000, region_h, spec, vertical_insets=(header, top))
+    assert shown.rect.y == pytest.approx(header)
+    blocked = (header + 1, top)
+    hidden = cl.strip_placement(raised, 2000, region_h, spec, vertical_insets=blocked)
+    assert hidden.hidden and hidden.hit(*_center(raised.card_rect)) is None
 
 
 def test_hit_precedence_strip_first_and_card_hits_unchanged():

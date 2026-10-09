@@ -25,6 +25,18 @@ def _open_sidebar(context):
     open_sidebar(context.area)
 
 
+# shown when the pill stands in for a card the viewport has no room for and is clicked
+NO_ROOM_MESSAGE = "Not enough room for the composer card: close the sidebar or widen the viewport"
+
+
+def _open_settings(context, lane):
+    """The lane's full form (model, prompt, references, parameters, Generate) in a dialog, else in the sidebar."""
+    try:
+        bpy.ops.scenario.quick_settings("INVOKE_DEFAULT", lane=lane)
+    except (RuntimeError, AttributeError):
+        _open_sidebar(context)
+
+
 def _caret_index(context, state, layout, px):
     from .draw import caret_index_at, ui_scale
 
@@ -136,6 +148,12 @@ class SCENARIO_OT_composer_modal(bpy.types.Operator):
         elif kind == "expand" and not moved:
             state.expanded = True
             state.sync_from_lane(scene)
+        elif kind == "form" and not moved:
+            # The pill stands in for a card the uncovered span cannot hold: expanding would change nothing on
+            # screen, so the click opens the lane's form in the Settings dialog. The expanded choice and the card
+            # width stay as they are, and the card comes back by itself once there is room.
+            runtime.set_message(NO_ROOM_MESSAGE)
+            _open_settings(context, state.lane_for(scene))
         _redraw(context)
 
     def modal(self, context, event):
@@ -144,6 +162,14 @@ class SCENARIO_OT_composer_modal(bpy.types.Operator):
             return self._finish(context)
         scene = context.scene
         layout = _layout(context, state)
+        if state.focused and not layout.expanded:
+            # The card gave way to the pill (the viewport lost the room for it): leave the prompt it no longer
+            # draws, as a click outside would, so keys never type into a hidden field.
+            try:
+                state.flush_focused_prompt(scene)
+            except RuntimeError as error:
+                state.focused = state.dragging = False
+                self.report({"WARNING"}, str(error))
         if state.drag_mode is not None:
             if event.type == "MOUSEMOVE":
                 state.mouse = (event.mouse_region_x, event.mouse_region_y)
@@ -213,9 +239,10 @@ class SCENARIO_OT_composer_modal(bpy.types.Operator):
                 # Deliver the same click to the header/sidebar or viewport after blur.
                 return self._finish(context) | {"PASS_THROUGH"}
             kind = hit[0]
-            if kind == "expand":
-                # a click expands the pill; a move beyond the threshold drags it instead (decided on release)
-                state.begin_drag((event.mouse_region_x, event.mouse_region_y), "expand")
+            if kind in ("expand", "form"):
+                # a click expands the pill (or opens the lane's form when the card has no room); a move beyond the
+                # threshold drags it instead (decided on release)
+                state.begin_drag((event.mouse_region_x, event.mouse_region_y), kind)
             elif kind == "drag":
                 if state.focused:
                     state.focused = False
@@ -255,10 +282,7 @@ class SCENARIO_OT_composer_modal(bpy.types.Operator):
                     pass
             elif kind == "settings":
                 # the generation settings of the current lane, in a dialog right here
-                try:
-                    bpy.ops.scenario.quick_settings("INVOKE_DEFAULT", lane=state.lane_for(scene))
-                except (RuntimeError, AttributeError):
-                    _open_sidebar(context)
+                _open_settings(context, state.lane_for(scene))
             _redraw(context)
             return {"RUNNING_MODAL"}
         if not state.focused:

@@ -159,13 +159,25 @@ def caret_index_at(px, prompt_rect, field, scale):
     return end
 
 
-def _chip(r, label, scale, font_px, hovered, fill=TAB, color=TEXT, centered=False):
+def _measure(font_px):
+    """Text width in px at `font_px`, for the label choices of the pure layout."""
+    blf.size(FONT, font_px)
+    return lambda string: blf.dimensions(FONT, string)[0]
+
+
+def _chip(r, label, scale, font_px, hovered, fill=TAB, color=TEXT, centered=False, clip=True):
+    """A rounded chip with its label. `clip=False` draws a label already fitted (lane tabs) as it is."""
     rect(r.x, r.y, r.w, r.h, TAB_HOVER if hovered else fill, 6 * scale)
     blf.size(FONT, font_px)
     tw = blf.dimensions(FONT, label)[0]
     x = r.x + (max(4 * scale, (r.w - tw) / 2) if centered else 10 * scale)
     text(
-        x, r.y + (r.h - font_px) / 2 + 2 * scale, font_px, label, color, max_width=r.w - 12 * scale
+        x,
+        r.y + (r.h - font_px) / 2 + 2 * scale,
+        font_px,
+        label,
+        color,
+        max_width=r.w - cl.CHIP_TEXT_INSET * scale if clip else None,
     )
 
 
@@ -267,8 +279,9 @@ def draw_composer():
     font_px = int(12 * scale)
     gpu.state.blend_set("ALPHA")
     try:
-        if not state.expanded:
-            # the collapsed composer shares the card's language: same fill, same corner radius, same field and button styles
+        if not layout.expanded:
+            # the collapsed composer shares the card's language: same fill, same corner radius, same field and button
+            # styles; it also stands in for an expanded card the uncovered span cannot hold
             r = layout.pill_rect
             rect(r.x, r.y, r.w, r.h, CARD, 12 * scale)
             gen_w = 96 * scale
@@ -307,16 +320,19 @@ def draw_composer():
             return
         card = layout.card_rect
         rect(card.x, card.y, card.w, card.h, CARD, 12 * scale)
+        # full labels when they fit, else the short ones; the layout clips only as a last resort, never to nothing
+        labels = layout.tab_labels(_measure(font_px))
         for tab_lane, tr in layout.tab_rects.items():
             active = tab_lane == lane
             _chip(
                 tr,
-                cl.LANE_LABELS[tab_lane],
+                labels[tab_lane],
                 scale,
                 font_px,
                 hovered=(state.hover == ("tab", tab_lane)) and not active,
                 fill=ACCENT if active else TAB,
                 centered=True,
+                clip=False,
             )
         _minus_button(layout.collapse_rect, scale, hovered=(state.hover == ("collapse",)))
         _prompt_field(layout.prompt_rect, state.field, state.focused, lane, scale)

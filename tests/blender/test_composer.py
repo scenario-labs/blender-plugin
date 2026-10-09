@@ -217,20 +217,28 @@ class ComposerSideRegionTests(unittest.TestCase):
         self.runtime = submodule("blender.runtime")
         self.cl = submodule("core.ui.composer_layout")
 
-    def _context(self, sidebar=True, overlap=True, flipped=False):
-        """A 3D view area as Blender lays it out: window-relative region x, the sidebar on the right."""
-        x, w = self.AREA_X, self.AREA_W
-        sidebar_w = self.SIDEBAR_W if sidebar else 1
+    def _context(self, sidebar=True, overlap=True, flipped=False, geometry=None, preferences=None):
+        """A 3D view area as Blender lays it out: window-relative region x, the sidebar on the right.
+
+        `geometry` is (area x, area width, toolbar width, sidebar width), `preferences` stands in for
+        Blender's (pixel size and UI scale)."""
+        x, w, toolbar_w, sidebar_open_w = geometry or (
+            self.AREA_X,
+            self.AREA_W,
+            self.TOOLBAR_W,
+            self.SIDEBAR_W,
+        )
+        sidebar_w = sidebar_open_w if sidebar else 1
         sidebar_x = x if flipped else x + w - sidebar_w
-        toolbar_x = x + w - self.TOOLBAR_W if flipped else x
+        toolbar_x = x + w - toolbar_w if flipped else x
         if overlap:
             window = _region("WINDOW", x, w)
         else:
-            window = _region("WINDOW", x + self.TOOLBAR_W, w - self.TOOLBAR_W - sidebar_w)
+            window = _region("WINDOW", x + toolbar_w, w - toolbar_w - sidebar_w)
         window.tag_redraw = lambda: None  # the modal's drag handlers redraw the region
         regions = [
             _region("HEADER", x, w, y=1000, height=26),
-            _region("TOOLS", toolbar_x, self.TOOLBAR_W),
+            _region("TOOLS", toolbar_x, toolbar_w),
             _region("UI", sidebar_x, sidebar_w),
             _region("HUD", x + 60, 1),
             window,
@@ -249,7 +257,7 @@ class ComposerSideRegionTests(unittest.TestCase):
             region=window,
             space_data=space,
             scene=bpy.context.scene,
-            preferences=bpy.context.preferences,
+            preferences=preferences or bpy.context.preferences,
         )
 
     def _sidebar_x(self, context):
@@ -360,9 +368,12 @@ class ComposerSideRegionTests(unittest.TestCase):
             self.assertEqual(layout.insets, (0.0, 0.0))
             return
         self.assertEqual(layout.insets, (left, right))
-        if region.width - left - right >= layout.card_rect.w:
-            self.assertGreaterEqual(layout.card_rect.x, left)
-            self.assertLessEqual(layout.card_rect.right, region.width - right)
+        # the card, or the pill standing in for it when the uncovered span cannot hold the card
+        self.assertEqual(layout.expanded, layout.card_fits)
+        box = layout.pill_rect
+        if region.width - left - right >= box.w:
+            self.assertGreaterEqual(box.x, left)
+            self.assertLessEqual(box.right, region.width - right)
 
     def test_a_move_starts_from_the_clamped_placement_without_a_dead_zone(self):
         ctx = self._context()
@@ -449,6 +460,132 @@ class ComposerSideRegionTests(unittest.TestCase):
         self._assert_same_rect(reopened.card_rect, layouts[-1].card_rect)
         self._assert_reachable(reopened, opened, sidebar_x)
 
+    # -- large UI scale ----------------------------------------------------------
+    # The physical desktop case: Retina pixel size 2 with a Preferences UI scale of 2 (composer scale 4),
+    # a 226 px toolbar and a 1122 px sidebar at x=1355 over a 2477 px viewport. About 1129 px stay
+    # uncovered, less than the 1680 px minimum card.
+    RETINA = (0, 2477, 226, 1122)
+
+    def _retina(self, sidebar=True):
+        prefs = SimpleNamespace(
+            system=SimpleNamespace(pixel_size=2.0), view=SimpleNamespace(ui_scale=2.0)
+        )
+        return self._context(sidebar=sidebar, geometry=self.RETINA, preferences=prefs)
+
+    def test_large_scale_beside_the_sidebar_draws_and_hits_the_pill_instead_of_the_card(self):
+        ctx = self._retina()
+        self.assertEqual(self.draw.ui_scale(ctx), 4.0)
+        self.assertEqual(self.draw.overlap_insets(ctx.area, ctx.region), (226.0, 1122.0))
+        sidebar_x = self._sidebar_x(ctx)
+        self.assertEqual(sidebar_x, 1355)
+        state = self.state_mod.ComposerState()
+        state.expanded, state.width = True, 1680  # the card at its minimum width, as saved
+        layout = self.modal._layout(ctx, state)
+        self.assertEqual(layout, self.draw.composer_layout(ctx, state))
+        self.assertFalse(layout.expanded)
+        self.assertFalse(layout.card_fits)
+        self.assertIsNone(layout.card_rect)
+        pill = layout.pill_rect
+        self.assertGreaterEqual(pill.x, 226)
+        self.assertLessEqual(pill.right, sidebar_x)
+        self.assertEqual(layout.hit(*self._centre(pill)), ("form",))
+        self.assertIsNone(layout.hit(sidebar_x + 10, pill.y + 1))
+        texts = []
+        drawn = self._draw(ctx, state, texts)
+        self.assertEqual(state.layout, layout)
+        self.assertIn((pill.x, pill.y, pill.w, pill.h), drawn)
+        for x, _y, w, _h in drawn:
+            # the pill and what it holds, nothing card-sized, nothing under the sidebar
+            self.assertGreaterEqual(x, pill.x)
+            self.assertLessEqual(x + w, pill.right)
+        self.assertNotIn("Render Image", texts)
+        # drawing changed nothing the user chose
+        self.assertEqual((state.expanded, state.width, state.offset), (True, 1680, (0.0, 0.0)))
+
+    def test_a_click_on_the_pill_without_room_opens_the_lane_form_instead_of_toggling(self):
+        ctx = self._retina()
+        ctx.scene.scenario.lane = "material"
+        for expanded in (True, False):
+            with self.subTest(expanded=expanded):
+                state = self.state_mod.ComposerState()
+                state.expanded, state.width = expanded, 1680
+                press = self._centre(self.modal._layout(ctx, state).pill_rect)
+                with (
+                    mock.patch.object(self.runtime.state, "composer", state),
+                    mock.patch.object(self.runtime, "set_message") as message,
+                    mock.patch.object(self.modal, "_open_settings") as open_settings,
+                    mock.patch.object(self.modal, "_save_layout") as save,
+                ):
+                    self._click(self._operator(), ctx, press)
+                open_settings.assert_called_once_with(ctx, "material")
+                message.assert_called_once_with(self.modal.NO_ROOM_MESSAGE)
+                save.assert_not_called()
+                # neither the expanded choice nor the saved card width changed
+                self.assertEqual((state.expanded, state.width), (expanded, 1680))
+                self.assertEqual(state.offset, (0.0, 0.0))
+                self.assertIsNone(state.drag_mode)
+
+    def test_closing_the_sidebar_brings_the_card_back_with_readable_tab_labels(self):
+        opened, closed = self._retina(), self._retina(sidebar=False)
+        state = self.state_mod.ComposerState()
+        state.expanded, state.width = True, 1680
+        self.assertFalse(self.modal._layout(opened, state).expanded)
+        layout = self.modal._layout(closed, state)
+        self.assertTrue(layout.expanded and layout.card_fits)
+        self.assertEqual(layout.card_rect.w, 1680)
+        self._assert_reachable(layout, closed, closed.region.width)
+        texts = []
+        drawn = self._draw(closed, state, texts)
+        card = layout.card_rect
+        self.assertIn((card.x, card.y, card.w, card.h), drawn)
+        # glyphs 0.65 em wide at 48 px: the long labels give way to their short ones, none is clipped
+        shown = [label for label in texts if label in self._lane_labels()]
+        self.assertEqual(shown, ["Image", "Video", "3D", "Mat", "R-Img", "R-Vid"])
+        # the sidebar opens again: the pill once more, with the stored choice untouched
+        self.assertFalse(self.modal._layout(opened, state).expanded)
+        self.assertEqual((state.expanded, state.width), (True, 1680))
+
+    def test_dragging_the_pill_without_room_moves_it_and_keeps_the_card_width(self):
+        ctx = self._retina()
+        sidebar_x = self._sidebar_x(ctx)
+        state = self.state_mod.ComposerState()
+        state.expanded, state.width = True, 1680
+        shown = self.modal._layout(ctx, state)
+        press, kind = self._grab_point(shown)
+        self.assertEqual(kind, "form")
+        moves = ((-60, 50), (5000, 90))
+        with mock.patch.object(self.modal, "_open_settings") as open_settings:
+            layouts, save = self._drag(ctx, state, press, kind, moves)
+        open_settings.assert_not_called()  # a drag is not a click
+        self.assertAlmostEqual(layouts[0].pill_rect.x, shown.pill_rect.x - 60)
+        self.assertAlmostEqual(layouts[-1].pill_rect.right, sidebar_x)  # stops at the sidebar
+        self.assertEqual(state.offset, layouts[-1].offset())
+        save.assert_called_once_with()
+        self.assertEqual((state.expanded, state.width), (True, 1680))
+
+    def test_a_focused_prompt_is_left_when_the_card_gives_way_to_the_pill(self):
+        scene = bpy.context.scene
+        scene.scenario.lane = "image"
+        scene.scenario.lane_state("image").prompt = "copper"
+        state = self.state_mod.ComposerState()
+        state.expanded = True
+        state.sync_from_lane(scene)
+        state.focused = True
+        state.field.insert(" kettle")
+        ctx = self._retina()  # the sidebar opened while the prompt had focus
+        layout = self.modal._layout(ctx, state)
+        self.assertFalse(layout.expanded)
+        x, y = self._centre(layout.pill_rect)
+        event = SimpleNamespace(
+            type="MOUSEMOVE", value="NOTHING", mouse_region_x=x, mouse_region_y=y
+        )
+        with mock.patch.object(self.runtime.state, "composer", state):
+            result = self.modal.SCENARIO_OT_composer_modal.modal(self._operator(), ctx, event)
+        self.assertEqual(result, {"PASS_THROUGH"})
+        self.assertFalse(state.focused)
+        self.assertEqual(scene.scenario.lane_state("image").prompt, "copper kettle")
+        self.assertTrue(state.expanded)
+
     # -- drag helpers ----------------------------------------------------------
     @staticmethod
     def _centre(rect):
@@ -461,9 +598,38 @@ class ComposerSideRegionTests(unittest.TestCase):
             point = (card.x + card.w / 2, card.top - self.cl.PAD * layout.scale / 2)
             kind = "drag"
         else:
-            point, kind = self._centre(layout.pill_rect), "expand"
+            point = self._centre(layout.pill_rect)
+            kind = "expand" if layout.card_fits else "form"
         self.assertEqual(layout.hit(*point), (kind,))
         return point, kind
+
+    def _operator(self):
+        """A stand-in for the running modal operator: its handlers bound to a plain object."""
+        cls = self.modal.SCENARIO_OT_composer_modal
+        operator = SimpleNamespace(report=mock.Mock())
+        for name in ("_finish", "_drag_move", "_drag_release"):
+            setattr(operator, name, getattr(cls, name).__get__(operator))
+        return operator
+
+    def _click(self, operator, context, point):
+        """A left press and release at `point` without moving, through the modal's event handler."""
+        for value in ("PRESS", "RELEASE"):
+            event = SimpleNamespace(
+                type="LEFTMOUSE",
+                value=value,
+                mouse_region_x=point[0],
+                mouse_region_y=point[1],
+                shift=False,
+                ctrl=False,
+                oskey=False,
+                alt=False,
+                unicode="",
+            )
+            result = self.modal.SCENARIO_OT_composer_modal.modal(operator, context, event)
+            self.assertEqual(result, {"RUNNING_MODAL"})
+
+    def _lane_labels(self):
+        return set(self.cl.LANE_LABELS.values()) | set(self.cl.LANE_SHORT_LABELS.values())
 
     def _move(self, context, state, press, dx, dy):
         event = SimpleNamespace(mouse_region_x=press[0] + dx, mouse_region_y=press[1] + dy)
@@ -494,20 +660,23 @@ class ComposerSideRegionTests(unittest.TestCase):
             self.assertLessEqual(rect.top, context.region.height)
             self.assertEqual(layout.hit(*self._centre(rect)), (kind,))
 
-    def _draw(self, context, state):
-        """Run the draw handler with gpu/blf stubbed (background Blender has no GPU) and return the drawn rects."""
+    def _draw(self, context, state, texts=None):
+        """Run the draw handler with gpu/blf stubbed (background Blender has no GPU) and return the drawn rects.
+
+        Glyphs are 0.65 em wide, like Blender's UI font; drawn strings are appended to `texts` when given."""
         drawn = []
+        metrics = {"size": 12.0}
 
         def rect(x, y, w, h, color, radius=8.0):
             if w > 0 and h > 0:
                 drawn.append((x, y, w, h))
 
         fake_blf = SimpleNamespace(
-            size=lambda font, size: None,
-            dimensions=lambda font, text: (6.0 * len(text), 10.0),
+            size=lambda font, size: metrics.update(size=size),
+            dimensions=lambda font, text: (0.65 * metrics["size"] * len(text), metrics["size"]),
             color=lambda *args: None,
             position=lambda *args: None,
-            draw=lambda font, text: None,
+            draw=lambda font, text: texts.append(text) if texts is not None else None,
         )
         fake_gpu = SimpleNamespace(state=SimpleNamespace(blend_set=lambda mode: None))
         with (

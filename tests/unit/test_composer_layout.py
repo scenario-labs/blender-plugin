@@ -210,7 +210,9 @@ def test_settings_chip_and_corner_minus_button():
     assert len(expanded.tab_rects) == 6 and expanded.hit(
         *_center(expanded.tab_rects["render_video"])
     ) == ("tab", "render_video")
-    narrow = cl.pill_placement(420, 400, expanded=True, scale=1.0)
+    # the narrowest region that still shows the card: its minimum width plus its margins
+    narrow = cl.pill_placement(cl.MIN_CARD_WIDTH + 2 * cl.MARGIN, 400, expanded=True, scale=1.0)
+    assert narrow.expanded and narrow.card_rect.w == cl.MIN_CARD_WIDTH
     assert narrow.settings_rect is None or narrow.settings_rect.right < narrow.generate_rect.x
     assert narrow.hit(narrow.model_rect.x + 1, narrow.model_rect.y + 1) == ("model",)
 
@@ -370,8 +372,14 @@ def test_layout_offset_reproduces_the_clamped_placement():
 
 def test_drawn_width_and_offset_reproduce_the_placement():
     # a drag release stores the drawn width and offset; laying them out again changes nothing,
-    # including a span narrowed below the minimum card and below the pill floor
-    cases = ((1600, INSETS), (1600, (0.0, 0.0)), (700, (56, 400)), (600, (56, 400)))
+    # including a span too small for the card (the pill stands in) and below the pill floor
+    cases = (
+        (1600, INSETS),
+        (1600, (0.0, 0.0)),
+        (900, (56, 400)),
+        (700, (56, 400)),
+        (600, (56, 400)),
+    )
     for region_w, insets in cases:
         for width in (None, 10, 900, 5000):
             for offset in ((0.0, 0.0), (5000.0, -5000.0), (-5000.0, 300.0)):
@@ -383,33 +391,90 @@ def test_drawn_width_and_offset_reproduce_the_placement():
                     900,
                     expanded=True,
                     offset=drawn.offset(),
-                    width=drawn.card_rect.w,
+                    width=drawn.pill_rect.w,
                     insets=insets,
                 )
-                assert again.card_rect == drawn.card_rect, (region_w, insets, width, offset)
+                assert again == drawn, (region_w, insets, width, offset)
 
 
-def test_a_small_span_narrows_the_card_instead_of_hiding_it():
-    # room for the minimum card only without margins: the margins go first
+def test_the_card_needs_its_minimum_width_and_margins():
+    for scale in (1.0, 2.0, 4.0):
+        need = (cl.MIN_CARD_WIDTH + 2 * cl.MARGIN) * scale
+        insets = (56 * scale, 300 * scale)
+        room = insets[0] + insets[1] + need
+        assert cl.card_fits(room, scale, insets)
+        assert not cl.card_fits(room - 1, scale, insets)
+        fits = cl.pill_placement(room, 900 * scale, expanded=True, scale=scale, insets=insets)
+        assert fits.expanded and fits.card_fits
+        assert fits.card_rect.w == cl.MIN_CARD_WIDTH * scale
+        assert fits.card_rect.x == insets[0] + cl.MARGIN * scale  # the margins stay
+        short = cl.pill_placement(room - 1, 900 * scale, expanded=True, scale=scale, insets=insets)
+        assert not short.expanded and not short.card_fits and short.card_rect is None
+    # unusable insets are ignored here too: the whole region counts
+    assert cl.card_fits(1600, 1.0, (900, 900))
+
+
+# the physical desktop case: Retina pixel size 2 with a Preferences UI scale of 2 (composer scale 4),
+# a 226 px toolbar and a 1122 px sidebar over a 2477 px viewport: about 1129 px stay uncovered
+RETINA = {"region_w": 2477, "scale": 4.0, "insets": (226.0, 1122.0)}
+RETINA_SIDEBAR_X = 2477 - 1122
+
+
+def test_a_span_narrower_than_the_card_shows_the_pill_instead():
+    span = RETINA["region_w"] - sum(RETINA["insets"])
+    assert span < cl.MIN_CARD_WIDTH * RETINA["scale"]
+    for width in (None, 1680, 5000):
+        shown = cl.pill_placement(expanded=True, region_h=1600, width=width, **RETINA)
+        collapsed = cl.pill_placement(expanded=False, region_h=1600, **RETINA)
+        # the collapsed pill's geometry, whatever the saved card width
+        assert not shown.expanded and not shown.card_fits
+        assert shown.pill_rect == collapsed.pill_rect and shown.base == collapsed.base
+        assert shown.card_rect is None and shown.tab_rects == {} and shown.resize_rect is None
+        pill = shown.pill_rect
+        assert (
+            pill.w == span - 2 * cl.MARGIN * 4
+        )  # the default pill, shrunk to the span minus margins
+        assert pill.x == 226 + cl.MARGIN * 4 and pill.right == RETINA_SIDEBAR_X - cl.MARGIN * 4
+        # a click on it opens the lane's form instead of expanding, collapsed or not
+        assert shown.hit(*_center(pill)) == ("form",)
+        assert collapsed.hit(*_center(pill)) == ("form",)
+        assert shown.hit(RETINA_SIDEBAR_X + 10, pill.y + 1) is None
+    # with the sidebar closed the same viewport holds the card again
+    closed = cl.pill_placement(
+        RETINA["region_w"], 1600, expanded=True, scale=4.0, width=1680, insets=(226.0, 0.0)
+    )
+    assert closed.expanded and closed.card_fits and closed.card_rect.w == 1680
+    pill = cl.pill_placement(
+        RETINA["region_w"], 1600, expanded=False, scale=4.0, insets=(226.0, 0.0)
+    )
+    assert pill.hit(*_center(pill.pill_rect)) == ("expand",)
+
+
+def test_the_pill_standing_in_for_the_card_moves_and_clamps_like_the_pill():
+    # a saved offset past the sidebar edge stops there, and the drawn offset reproduces the placement
+    for offset in ((5000.0, 300.0), (-5000.0, -5000.0), (120.0, 40.0)):
+        shown = cl.pill_placement(expanded=True, region_h=1600, offset=offset, **RETINA)
+        assert shown.pill_rect.x >= 226 and shown.pill_rect.right <= RETINA_SIDEBAR_X
+        again = cl.pill_placement(expanded=True, region_h=1600, offset=shown.offset(), **RETINA)
+        assert again == shown
+        collapsed = cl.pill_placement(expanded=False, region_h=1600, offset=offset, **RETINA)
+        assert collapsed.pill_rect == shown.pill_rect
+
+
+def test_a_span_narrower_than_the_pill_keeps_the_pill_floor():
+    # room for neither the card nor the pill minimum: the pill keeps that floor from the toolbar edge
+    floor = cl.pill_placement(2477, 1600, expanded=True, scale=4.0, insets=(226.0, 1700.0))
+    assert not floor.expanded and floor.hit(*_center(floor.pill_rect)) == ("form",)
+    assert floor.pill_rect.w == cl.MIN_PILL_WIDTH * 4 and floor.pill_rect.x == 226
+    # without an overlapping toolbar it ends at the sidebar edge instead
+    bare = cl.pill_placement(2477, 1600, expanded=True, scale=4.0, insets=(0.0, 1900.0))
+    assert bare.pill_rect.w == cl.MIN_PILL_WIDTH * 4 and bare.pill_rect.right == 2477 - 1900
+    # between the pill minimum and the card minimum the pill drops its margins, then narrows
     tight = cl.pill_placement(900, 400, expanded=True, insets=(56, 400))
-    assert tight.card_rect.w == cl.MIN_CARD_WIDTH
-    assert tight.card_rect.x >= 56 and tight.card_rect.right <= 900 - 400
-    # less room than the minimum card: the card narrows to the span and stays usable
+    assert not tight.expanded and tight.pill_rect.w == cl.PILL_WIDTH
     narrow = cl.pill_placement(700, 400, expanded=True, insets=(56, 400))
-    assert narrow.card_rect.w == 700 - 56 - 400
-    assert narrow.card_rect.x == 56 and narrow.card_rect.right == 700 - 400
-    assert narrow.hit(*_center(narrow.generate_rect)) == ("generate",)
-    assert narrow.hit(*_center(narrow.collapse_rect)) == ("collapse",)
-    assert narrow.generate_rect.x >= narrow.model_rect.right  # the bottom-row chips never overlap
-    pill = cl.pill_placement(700, 400, expanded=False, insets=(56, 400))
-    assert pill.pill_rect.w == cl.MIN_PILL_WIDTH
-    assert pill.pill_rect.x >= 56 and pill.pill_rect.right <= 700 - 400
-    # below the pill minimum the card keeps that floor, starting at the toolbar edge
-    floor = cl.pill_placement(600, 400, expanded=True, insets=(56, 400))
-    assert floor.card_rect.w == cl.MIN_PILL_WIDTH and floor.card_rect.x == 56
-    scaled = cl.pill_placement(1400, 800, expanded=True, scale=2.0, insets=(112, 800))
-    assert scaled.card_rect.w == 1400 - 112 - 800
-    assert scaled.card_rect.right == 1400 - 800
+    assert narrow.pill_rect.w == cl.MIN_PILL_WIDTH
+    assert narrow.pill_rect.x >= 56 and narrow.pill_rect.right <= 700 - 400
 
 
 def test_unusable_insets_are_ignored():
@@ -418,3 +483,86 @@ def test_unusable_insets_are_ignored():
     assert covered.card_rect == plain.card_rect and covered.insets == (0.0, 0.0)
     negative = cl.pill_placement(1600, 900, expanded=True, insets=(-50, None))
     assert negative.card_rect == plain.card_rect
+
+
+def _per_char(px):
+    """A font metric: every character, the ellipsis included, is `px` wide."""
+    return lambda text: px * len(text)
+
+
+def test_short_lane_labels_are_distinct_and_none_starts_another():
+    shorts = [cl.LANE_SHORT_LABELS[lane] for lane in cl.LANE_ORDER]
+    assert len(set(shorts)) == len(cl.LANE_ORDER)
+    for short in shorts:
+        assert short and cl.ELLIPSIS not in short
+        assert not any(other != short and other.startswith(short) for other in shorts)
+    for lane in cl.LANE_ORDER:
+        assert len(cl.LANE_SHORT_LABELS[lane]) <= len(cl.LANE_LABELS[lane])
+
+
+def test_tab_label_keeps_the_full_label_when_it_fits():
+    measure = _per_char(6.0)
+    for lane in cl.LANE_ORDER:
+        assert cl.tab_label(lane, 200, measure) == cl.LANE_LABELS[lane]
+    # exactly as wide as the box still fits
+    assert cl.tab_label("render_image", 6.0 * len("Render Image"), measure) == "Render Image"
+
+
+def test_tab_label_switches_to_the_short_label_tab_by_tab():
+    labels = {lane: cl.tab_label(lane, 40, _per_char(6.0)) for lane in cl.LANE_ORDER}
+    assert labels == {
+        "image": "Image",
+        "video": "Video",
+        "3d": "3D",
+        "material": "Mat",
+        "render_image": "R-Img",
+        "render_video": "R-Vid",
+    }
+    # Render Image and Render Video never share a label once shortened
+    assert labels["render_image"] != labels["render_video"]
+
+
+def test_tab_label_clips_the_short_label_only_as_a_last_resort_and_never_to_nothing():
+    measure = _per_char(6.0)
+    assert cl.tab_label("render_image", 29, measure) == "R-I…"
+    assert cl.tab_label("render_image", 13, measure) == "R…"
+    assert cl.tab_label("material", 13, measure) == "M…"
+    for lane in cl.LANE_ORDER:
+        for room in (0, -10, 5):
+            label = cl.tab_label(lane, room, measure)
+            assert label and label[0] == cl.LANE_SHORT_LABELS[lane][0]
+    # a two-character label is not swapped for an equally wide clipped one
+    assert cl.tab_label("3d", 0, measure) == "3D"
+
+
+def test_clip_label_measures_with_the_injected_metric():
+    widths = {"R-Img": 39.0, "R-Im…": 36.0, "R-I…": 30.0, "R-…": 25.0, "R…": 18.0}
+    measure = widths.__getitem__
+    assert cl.clip_label("R-Img", 39, measure) == "R-Img"
+    assert cl.clip_label("R-Img", 30, measure) == "R-I…"
+    assert cl.clip_label("R-Img", 20, measure) == "R…"
+    assert cl.clip_label("R-Img", 1, measure) == "R…"  # the narrowest, never empty
+    assert cl.clip_label("", 0, _per_char(6.0)) == ""
+
+
+def test_every_tab_reads_at_the_minimum_card_width_on_every_scale():
+    # glyphs about 0.65 em wide: Blender's UI font at 12 px measures R-Img at 39 px
+    for scale in (1.0, 2.0, 4.0):
+        font_px = 12 * scale
+        measure = _per_char(0.65 * font_px)
+        insets = (56 * scale, 300 * scale)
+        region_w = insets[0] + insets[1] + (cl.MIN_CARD_WIDTH + 2 * cl.MARGIN) * scale
+        layout = cl.pill_placement(region_w, 900, expanded=True, scale=scale, insets=insets)
+        assert layout.card_rect.w == cl.MIN_CARD_WIDTH * scale
+        labels = layout.tab_labels(measure)
+        assert list(labels) == list(cl.LANE_ORDER)
+        assert labels["render_image"] == "R-Img" and labels["render_video"] == "R-Vid"
+        assert len(set(labels.values())) == len(cl.LANE_ORDER)
+        for lane, label in labels.items():
+            room = layout.tab_rects[lane].w - cl.CHIP_TEXT_INSET * scale
+            assert label and cl.ELLIPSIS not in label and measure(label) <= room
+        # the default card shows every full label
+        wide = cl.pill_placement(1800 * scale, 900, expanded=True, scale=scale)
+        assert wide.tab_labels(measure) == cl.LANE_LABELS
+    # a pill has no tabs to label
+    assert cl.pill_placement(1600, 900, expanded=False).tab_labels(_per_char(6.0)) == {}

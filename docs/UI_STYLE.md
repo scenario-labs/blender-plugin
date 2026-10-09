@@ -215,11 +215,28 @@ on the left. Without region overlap they sit beside the viewport and change
 nothing.
 
 - The pill and card start at the bottom centre of that span.
-- A saved or resized width shrinks to the span minus margins. A span too small
-  for the minimum card drops the margins, then narrows the card down to the pill
-  minimum of 200 px times the UI scale. Below a span that wide, the card keeps
-  that width from the toolbar edge and runs under the sidebar; without an
-  overlapping toolbar it ends at the sidebar edge instead.
+- A saved or resized card width shrinks to the span minus margins. The card
+  needs its minimum width of 420 px plus a 24 px margin on each side, all times
+  the UI scale. A narrower span shows the pill in its place. At a composer scale
+  of 4 (Retina with a Preferences UI scale of 2), an open sidebar easily leaves
+  less than the 1,872 px the card needs. Drawing, hit testing and drags then use
+  the pill geometry. The stored expanded choice and card width stay unchanged,
+  so the card returns by itself once the sidebar closes or the viewport widens.
+- While the card has no room, a click on the pill, expanded or collapsed, opens
+  the current lane's form in the Settings dialog (the dialog of the card's
+  **Settings** chip) instead of expanding. A short status message suggests
+  closing the sidebar or widening the viewport, and a drag still moves the pill.
+  A prompt that had focus when the card gave way is committed and left, as a
+  click outside would.
+- The pill drops its margins, then narrows down to its minimum of 200 px times
+  the UI scale. Below a span that wide, it keeps that width from the toolbar
+  edge and runs under the sidebar; without an overlapping toolbar it ends at the
+  sidebar edge instead.
+- A lane tab shows its full label when it fits the tab, otherwise a short one:
+  **Img**, **Vid**, **3D**, **Mat**, **R-Img**, **R-Vid**. Each tab decides from
+  the measured text width, so Image and Video can keep their full labels beside
+  R-Img. Only a short label that still does not fit is clipped with an ellipsis,
+  as a last resort and never below its first character, so a tab is never blank.
 - A saved or dragged offset stops at a toolbar or sidebar edge, so Generate and
   the minus button stay clickable. A bare viewport edge keeps the earlier rule:
   at least 40 px of a dragged composer stay visible at 1x UI scale (the minimum
@@ -232,10 +249,18 @@ nothing.
 - Drawing and hit testing share one layout, so every control is drawn exactly
   where a click reaches it.
 
+Only the side regions are avoided so far. Horizontal regions drawn over the
+viewport are not: the asset shelf along the bottom (in Pose Mode, for example)
+and transparent headers can still cover the composer or its default spot.
+
 Installed tests cover these rules with synthetic overlapping regions, including
 the modal's move, resize and release handlers with the sidebar opened and
-closed, and the background viewport's real regions. Physical desktop drags and
-screenshots with the sidebar open remain a separate acceptance check under #66.
+closed, a scale-4 Retina layout whose sidebar leaves no room for the card, and
+the background viewport's real regions. A physical macOS Blender 5.2.1 check at
+that scale found the card running under the sidebar and blank or ambiguous tab
+labels, which motivated the pill fallback and the short labels. Repeating
+physical desktop drags and screenshots with the sidebar open remains a separate
+acceptance check under #66.
 
 ## What Blender cannot do (so we do not fake it)
 

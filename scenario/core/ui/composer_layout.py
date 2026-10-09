@@ -20,6 +20,17 @@ LANE_LABELS = {
     "render_image": "Render Image",
     "render_video": "Render Video",
 }
+# what a tab shows when its full label does not fit: distinct, and none is the start of another
+LANE_SHORT_LABELS = {
+    "image": "Img",
+    "video": "Vid",
+    "3d": "3D",
+    "material": "Mat",
+    "render_image": "R-Img",
+    "render_video": "R-Vid",
+}
+CHIP_TEXT_INSET = 12  # horizontal room a chip keeps around its label, in unscaled pixels
+ELLIPSIS = "…"
 PLACEHOLDERS = {
     "image": "Describe the image to generate",
     "video": "Describe the video, or capture the timeline",
@@ -32,6 +43,30 @@ PLACEHOLDERS = {
 
 def placeholder_for(lane):
     return PLACEHOLDERS.get(lane, "Type a prompt")
+
+
+def clip_label(text, max_width, measure):
+    """`text` when `measure(text)` (its width in px) fits `max_width`, else cut with an ellipsis until it fits.
+
+    Never empty: at least the first character stays. When nothing fits, the narrowest of these is returned."""
+    if not text or measure(text) <= max_width:
+        return text
+    clipped = [text[:n] + ELLIPSIS for n in range(len(text) - 1, 0, -1)]
+    for candidate in clipped:
+        if measure(candidate) <= max_width:
+            return candidate
+    return min([text, *clipped], key=measure)
+
+
+def tab_label(lane, max_width, measure):
+    """The label of `lane`'s tab in a `max_width` px text box, `measure(text)` giving a text's width in px.
+
+    The full label when it fits, else the short one (`Render Image` becomes `R-Img`). Only a short label that
+    still does not fit is clipped, as a last resort, so a tab never goes blank or shows a bare prefix first."""
+    full = LANE_LABELS.get(lane, lane)
+    if measure(full) <= max_width:
+        return full
+    return clip_label(LANE_SHORT_LABELS.get(lane, full), max_width, measure)
 
 
 @dataclass
@@ -226,15 +261,25 @@ class Layout:
     resize_rect: Rect = None
     base: tuple = (0.0, 0.0)  # default bottom-centre corner of pill_rect, before the offset
     insets: tuple = (0.0, 0.0)  # (left, right) side-region widths the placement kept clear of
+    # False when the uncovered span cannot hold the card: the pill is shown even if the card was asked for
+    card_fits: bool = True
 
     def offset(self):
         """The offset that reproduces this placement as clamped, relative to its default spot."""
         return (self.pill_rect.x - self.base[0], self.pill_rect.y - self.base[1])
 
+    def tab_labels(self, measure):
+        """The label each lane tab shows, `measure(text)` giving a text's width in px at the tab font."""
+        room = CHIP_TEXT_INSET * self.scale
+        return {lane: tab_label(lane, r.w - room, measure) for lane, r in self.tab_rects.items()}
+
     def hit(self, px, py):
-        """What the pointer is on. `expand` (collapsed pill), `resize` (corner grip), `drag` (empty card area) or a control."""
+        """What the pointer is on: `expand` (pill), `form` (pill while the card has no room), `resize` (corner grip),
+        `drag` (empty card area) or a control."""
         if not self.expanded:
-            return ("expand",) if self.pill_rect.contains(px, py) else None
+            if not self.pill_rect.contains(px, py):
+                return None
+            return ("expand",) if self.card_fits else ("form",)
         if self.card_rect is None or not self.card_rect.contains(px, py):
             return None
         if self.resize_rect is not None and self.resize_rect.contains(px, py):
@@ -420,10 +465,19 @@ def _base_x(region_w, w, insets):
 
 
 def _fit_width(w, span_w, scale):
-    """Narrow a box the span cannot hold with its margins: drop the margins first, then shrink to MIN_PILL_WIDTH."""
+    """Narrow a pill the span cannot hold with its margins: drop the margins first, then shrink to MIN_PILL_WIDTH."""
     if w <= span_w - 2 * MARGIN * scale:
         return w
     return max(MIN_PILL_WIDTH * scale, min(w, span_w))
+
+
+def card_fits(region_w, scale=1.0, insets=(0.0, 0.0)):
+    """Whether the span the side regions leave uncovered holds the card at its minimum width, margins included.
+
+    Below that the pill stands in for the card: a narrower card would clip its tab labels and controls."""
+    s = float(scale or 1.0)
+    left, right = _normalize_insets(region_w, insets)
+    return region_w - left - right >= (MIN_CARD_WIDTH + 2 * MARGIN) * s
 
 
 def clamp_width(width, region_w, scale=1.0, expanded=True, insets=(0.0, 0.0)):
@@ -462,22 +516,29 @@ def pill_placement(
     """Geometry of the composer. `offset` moves it from its default bottom-centre spot (region pixels), `width`
     overrides the card (expanded) or pill (collapsed) width. `insets` are the (left, right) widths of side regions
     drawn over this one (toolbar and sidebar with region overlap): the composer centres in the span between them,
-    and both overrides are clamped so it stays reachable and clear of them."""
+    and both overrides are clamped so it stays reachable and clear of them.
+
+    When that span cannot hold the card at its minimum width with its margins (a large UI scale beside an open
+    sidebar), the layout is the pill even if `expanded`, and the card width does not apply to it. The caller keeps
+    its expanded choice and width, so the card comes back as soon as there is room."""
     s = float(scale or 1.0)
     margin = MARGIN * s
     insets = _normalize_insets(region_w, insets)
     span_w = region_w - insets[0] - insets[1]
     offset = tuple(offset or (0.0, 0.0))
-    if not expanded:
-        w = clamp_width(width if width else PILL_WIDTH * s, region_w, s, False, insets)
+    fits = card_fits(region_w, s, insets)
+    if not expanded or not fits:
+        w = clamp_width(
+            width if width and not expanded else PILL_WIDTH * s, region_w, s, False, insets
+        )
         w = _fit_width(w, span_w, s)
         h = PILL_HEIGHT * s
         base = (_base_x(region_w, w, insets), margin)
         ox, oy = clamp_offset(offset, (w, h), region_w, region_h, s, insets)
         rect = Rect(base[0] + ox, base[1] + oy, w, h)
-        return Layout(False, s, rect, base=base, insets=insets)
+        return Layout(False, s, rect, base=base, insets=insets, card_fits=fits)
+    # the span holds the minimum card with its margins, so the clamp alone keeps the card inside it
     w = clamp_width(width if width else CARD_WIDTH * s, region_w, s, True, insets)
-    w = _fit_width(w, span_w, s)
     h = min(CARD_HEIGHT * s, region_h - 2 * margin)
     base = (_base_x(region_w, w, insets), margin)
     ox, oy = clamp_offset(offset, (w, h), region_w, region_h, s, insets)

@@ -49,13 +49,15 @@ def blender_path(path):
     return value
 
 
-def digest(path, *, maximum=1024**3):
+def digest(path, *, maximum=1024**3, cancel=None):
     stream, info = _open(Path(path))
     with stream:
         if not 1 <= info.st_size <= maximum:
             raise LocalRenderError("Local render file exceeds the size policy")
         value = hashlib.sha256()
         for chunk in iter(lambda: stream.read(65536), b""):
+            if cancel is not None and cancel.is_set():
+                raise RenderCancelled("Local render hashing cancelled")
             value.update(chunk)
     return value.hexdigest()
 

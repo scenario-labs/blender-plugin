@@ -8,6 +8,7 @@ import ntpath
 import os
 import sys
 import threading
+import unicodedata
 from contextlib import nullcontext
 from dataclasses import replace
 from fractions import Fraction
@@ -599,16 +600,42 @@ def test_private_roots_compare_windows_spellings(path, root, inside):
     assert export._inside(PureWindowsPath(path), PureWindowsPath(root)) is inside
 
 
-def test_private_roots_ignore_case_where_volumes_do(tmp_path):
-    private = tmp_path / "Library" / "Blender"
+@pytest.mark.parametrize(
+    "spelling",
+    [
+        str.swapcase,
+        # macOS volumes ignore composition: NFD names the same NFC folder.
+        lambda text: unicodedata.normalize("NFD", text),
+        lambda text: unicodedata.normalize("NFD", text).upper(),
+    ],
+)
+def test_private_roots_ignore_case_and_composition_everywhere(tmp_path, spelling):
+    relative = Path("Library", "Vid\u00e9os")
+    private = tmp_path / relative
     private.mkdir(parents=True)
-    alias = Path(str(private).replace("Library", "library").replace("Blender", "BLENDER"))
-    folds = sys.platform == "darwin" or os.name == "nt"
-    assert export._inside(alias, private) is folds
-    if folds:
-        # Default macOS and Windows volumes ignore case: the alias is the same folder.
+    alias = tmp_path / spelling(str(relative))
+    assert str(alias) != str(private) and export._inside(alias, private)
+    assert export._inside(alias / "nested", private)
+    assert not export._inside(tmp_path / "Library" / "Videos", private)
+    # A volume that ignores case or composition makes the alias the same folder;
+    # on another volume it is a separate folder that is refused anyway.
+    (alias / "nested").mkdir(parents=True, exist_ok=True)
+    for folder in (alias, alias / "nested"):
         with pytest.raises(export.LocalExportError, match="outside Blender"):
-            export.validate_destination(alias / "Review.mp4", private_roots=(private,))
+            export.validate_destination(folder / "Review.mp4", private_roots=(private,))
+
+
+@pytest.mark.parametrize("root", ["", "relative/private", "."])
+def test_relative_private_roots_never_resolve_against_the_working_folder(
+    monkeypatch, tmp_path, root
+):
+    # Blender returns a path for a missing user folder; an empty one is a bug.
+    folder = tmp_path / "Film"
+    folder.mkdir()
+    monkeypatch.chdir(tmp_path)
+    with pytest.raises(export.LocalExportError, match="private storage"):
+        export.validate_destination(folder / "Review.mp4", private_roots=(root,))
+    assert list(folder.iterdir()) == []
 
 
 def staged_fixture(tmp_path, data=b"verified video bytes"):
@@ -756,6 +783,65 @@ def test_changed_staging_and_cancelled_publish_leave_no_destination(tmp_path):
     assert isinstance(caught.value, local_render.RenderCancelled)
     assert caught.value.staged is staged
     assert not (tmp_path / "Review.mp4").exists() and not leftovers(tmp_path)
+
+
+def test_cancel_after_the_copy_never_replaces_the_placeholder(tmp_path):
+    staged = staged_fixture(tmp_path)
+    destination = tmp_path / "Review.mp4"
+    cancel = threading.Event()
+
+    def progress(phase, done, total):
+        # Retirement arrives after the last chunk, while the copy is synced.
+        if done == total:
+            cancel.set()
+
+    with pytest.raises(export.ExportPublishCancelled) as caught:
+        export.publish(staged, destination, cancel=cancel, progress=progress)
+    assert caught.value.staged is staged and staged.path.exists()
+    assert not destination.exists() and not leftovers(tmp_path)
+
+
+def test_publish_checks_free_space_for_the_exact_copy(monkeypatch, tmp_path):
+    staged = staged_fixture(tmp_path)
+    destination = tmp_path / "Review.mp4"
+    usage = export.shutil.disk_usage(tmp_path)
+    free = [staged.size + export.SPACE_MARGIN - 1]
+    monkeypatch.setattr(export.shutil, "disk_usage", lambda path: usage._replace(free=free[0]))
+    with pytest.raises(export.ExportPublishError, match="free disk space") as caught:
+        export.publish(staged, destination)
+    assert caught.value.staged is staged and staged.path.exists()
+    assert not destination.exists() and not leftovers(tmp_path)
+    free[0] += 1
+    export.publish(staged, destination)
+    assert destination.read_bytes() == b"verified video bytes"
+
+
+def test_low_free_space_stops_the_child(monkeypatch, spec):
+    Child(monkeypatch, spec)
+    usage = export.shutil.disk_usage(spec.directory)
+    monkeypatch.setattr(
+        export.shutil, "disk_usage", lambda path: usage._replace(free=export.SPACE_MARGIN - 1)
+    )
+    with pytest.raises(export.LocalExportError, match="free disk space"):
+        export.render(spec)
+    assert not (spec.directory / "output" / "film.mp4").exists()
+
+
+def test_final_staged_hash_observes_cancellation(monkeypatch, spec):
+    Child(monkeypatch, spec)
+    cancel = threading.Event()
+    digest = export.digest
+
+    def hashing(path, **options):
+        if Path(path).name == export.VIDEO_NAME:
+            # Retirement arrives while the staged video is hashed.
+            cancel.set()
+        return digest(path, **options)
+
+    monkeypatch.setattr(export, "digest", hashing)
+    with pytest.raises(local_render.RenderCancelled, match="staged output is retained"):
+        export.render(spec, cancel=cancel)
+    assert (spec.directory / "output" / "film.mp4").exists()
 
 
 def test_unwritable_destination_folder_keeps_staged_output(tmp_path):

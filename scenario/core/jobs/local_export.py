@@ -17,9 +17,9 @@ import re
 import secrets
 import shutil
 import stat
-import sys
 import tempfile
 import threading
+import unicodedata
 from dataclasses import dataclass, field
 from fractions import Fraction
 from pathlib import Path, PureWindowsPath
@@ -41,6 +41,8 @@ MAX_MEDIA = 2000
 MAX_MEDIA_BYTES = 16 * 1024**3
 MAX_OUTPUT_BYTES = 16 * 1024**3
 MAX_TIMEOUT = 21600
+# Free space kept beyond each estimate, and the floor that stops a running render.
+SPACE_MARGIN = 64 * 1024**2
 VIDEO_NAME = "film.mp4"
 AUDIO_RATE = 48000
 AUDIO_CHANNELS = 2
@@ -309,18 +311,22 @@ def portable_name(name):
 
 
 def _comparable(path):
-    """Spell a resolved path so containment ignores Windows prefixes and macOS case."""
+    """Spell a resolved path so containment ignores Windows prefixes, case and composition.
+
+    Volumes that ignore case or Unicode composition exist on every platform
+    (APFS, NTFS, SMB, exFAT), so every spelling is folded: refusing an unrelated
+    folder that differs only in case or composition is safe; missing a private
+    one is not.
+    """
     text = str(path)
     if isinstance(path, PureWindowsPath):
-        # Windows path comparison already ignores case; extended and ordinary
-        # spellings of one folder must still compare equal.
+        # Extended and ordinary spellings of one folder must compare equal.
         for prefix, replacement in (("\\\\?\\UNC\\", "\\\\"), ("\\\\?\\", "")):
             if text.startswith(prefix):
                 text = replacement + text[len(prefix) :]
                 break
-    elif sys.platform == "darwin":
-        # The default macOS volume ignores case; over-rejecting another is safe.
-        text = text.casefold()
+    # Unicode canonical caseless matching: decompose, fold case, decompose again.
+    text = unicodedata.normalize("NFD", unicodedata.normalize("NFD", text).casefold())
     return type(path)(text)
 
 
@@ -356,7 +362,11 @@ def validate_destination(path, *, private_roots=()):
         raise LocalExportError("The destination folder must already exist")
     for root in private_roots:
         try:
-            private = Path(root).resolve()
+            private = Path(root)
+            # An empty or relative root would resolve against the working folder.
+            if not private.is_absolute():
+                raise TypeError(root)
+            private = private.resolve()
         except (OSError, RuntimeError, TypeError):
             raise LocalExportError("Cannot check the destination against private storage") from None
         if _inside(parent, private):
@@ -429,7 +439,15 @@ def estimated_bytes(spec):
     seconds = float(spec.duration)
     video = seconds * 25_000_000 / 8 * (spec.width * spec.height) / (1920 * 1080)
     audio = seconds * 192_000 / 8 if spec.audio else 0
-    return math.ceil(video + audio) + 64 * 1024**2
+    return math.ceil(video + audio) + SPACE_MARGIN
+
+
+def _free(path):
+    """Free bytes on the volume holding ``path``, or None when it cannot be read."""
+    try:
+        return shutil.disk_usage(path).free
+    except OSError:
+        return None
 
 
 def check_space(spec, destination):
@@ -780,6 +798,10 @@ def _render(spec, cancel, progress):
                 size = 0
             if size > MAX_OUTPUT_BYTES:
                 raise LocalExportError("Exported video exceeded the size policy")
+            # The preflight is an estimate; stop before the encoder fills the volume.
+            free = _free(spec.directory)
+            if free is not None and free < SPACE_MARGIN:
+                raise LocalExportError("Not enough free disk space for this video export")
             done = _progress_from_log(log, spec.frames)
             if done is not None:
                 progress("render", done, spec.frames)
@@ -822,10 +844,15 @@ def _render(spec, cancel, progress):
     _check_media(spec)
     if cancel.is_set():
         raise RenderCancelled("Film export cancelled; staged output is retained")
+    try:
+        # Hashing up to 16 GiB takes a while; retirement must not wait for it.
+        sha256 = digest(video, maximum=MAX_OUTPUT_BYTES, cancel=cancel)
+    except RenderCancelled:
+        raise RenderCancelled("Film export cancelled; staged output is retained") from None
     return StagedExport(
         spec.directory,
         video,
-        digest(video, maximum=MAX_OUTPUT_BYTES),
+        sha256,
         size,
         spec.frames,
         spec.fps,
@@ -873,6 +900,10 @@ def publish(staged, destination, reservation=None, *, cancel=None, progress=None
     partial = destination.parent / f".scenario-{secrets.token_hex(6)}.partial"
     created = None
     try:
+        # The exact size is known now; a re-publish skips the export's estimate.
+        free = _free(destination.parent)
+        if free is None or free < staged.size + SPACE_MARGIN:
+            raise ExportPublishError("Not enough free disk space for this video export", staged)
         flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
         flags |= getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_BINARY", 0)
         try:
@@ -919,6 +950,11 @@ def publish(staged, destination, reservation=None, *, cancel=None, progress=None
         ):
             raise ExportPublishError(
                 "The destination changed during export; nothing was overwritten", staged
+            )
+        # Syncing can take a while; a cancel or retirement meanwhile still wins.
+        if cancel.is_set():
+            raise ExportPublishCancelled(
+                "Film export publishing cancelled; nothing was overwritten", staged
             )
         try:
             os.replace(partial, destination)

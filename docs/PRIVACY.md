@@ -97,7 +97,12 @@ private source copies live under `state/shared-uploads`, including
 `cache/result-previews`: server preview images and clips, decoded stills, audio
 envelopes, temporary private copies of saved results awaiting decoding, and
 digests and asset IDs, without signed URLs. Unused entries beyond 512 MiB are
-evicted, and the directory is safe to delete, even while Blender runs.
+evicted, and the directory is safe to delete, even while Blender runs. Audio
+envelopes are computed by a separate offline Blender process that reads only
+the private copy; its disposable profile, temporary files and log stay in that
+copy's work directory and are removed with it. The Generations waveform preview
+for retained prototype results uses the same process with short-lived
+directories under `cache/audio-preview`; it reads the downloaded file in place.
 Capture/export staging and thumbnails also use the extension's user state/cache
 directories. Explicit local output tools can write to the configured Output
 Folder, normally `~/Downloads/Scenario`.

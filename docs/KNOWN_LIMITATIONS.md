@@ -101,21 +101,28 @@ establish live generation or full render-lane desktop acceptance.
   acceptance in [#66](https://github.com/scenario-labs/blender-plugin/issues/66).
 - Viewport screenshots and OpenGL capture require a GUI. Automated GUI probes
   can take keyboard focus; follow the isolated-profile validation procedure.
-- Downloaded audio has an explicit local PCM-WAV waveform preview in Generations.
+- Downloaded audio has an explicit local waveform preview in Generations.
   It uses the existing result record/file selection, not the durable verified
-  result identity planned in #65. Compressed audio previews, the shared compact/
+  result identity planned in #65. Saved shared results get receipt-keyed audio
+  envelopes on the preview lane, but no view draws them yet; the shared compact/
   expanded result UI and human audio review remain #189, #66 and #68 work.
   See the [supported preview limits](USER_GUIDE.md#audio).
-- Audio reads and metadata checks run in at most two tracked workers; Blender only
-  displays its captured snapshot after checking the selected record and context.
-  The preview does not monitor later external file changes. Cancellation discards
-  late completion; it cannot interrupt an operating-system filesystem call.
-  A spare worker lets another preview proceed while one canceled read is stuck.
-  Loading expires after 30 seconds, checked by Blender's timer. If both workers
-  remain occupied, a new preview times out with retry/restart guidance; capacity
-  becomes available only when a worker actually exits. The UI remains usable.
-  Terminal previews check context invalidation once per second rather than at
-  the loading timer's ten checks per second.
+- Each waveform starts a separate offline Blender process: a one-second file took
+  0.65 to 0.9 seconds end to end on macOS arm64 with Blender 5.0.1 to 5.2.1.
+  Windows and Linux start-up, antivirus interference and sandboxed Blender
+  packages are unmeasured. Without a usable executable path, waveform previews
+  fail with an explicit error.
+- Waveform decoding and metadata checks run in at most two tracked workers;
+  Blender only displays its captured snapshot after checking the selected record
+  and context. The preview does not monitor later external file changes.
+  Cancellation terminates the decoder process and discards late completion; it
+  cannot interrupt an operating-system filesystem call. A spare worker lets
+  another preview proceed while one canceled check is stuck. Loading expires
+  after 30 seconds, checked by Blender's timer. If both workers remain occupied,
+  a new preview times out with retry/restart guidance; capacity becomes available
+  only when a worker actually exits. The UI remains usable. Terminal previews
+  check context invalidation once per second rather than at the loading timer's
+  ten checks per second.
 - Prompt helpers lack an explicit generic/model-contextual Spark preference
   ([#188](https://github.com/scenario-labs/blender-plugin/issues/188)).
 - Capture timing follows scene settings; native dialogs use Blender's theme

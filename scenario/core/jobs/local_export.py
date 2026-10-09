@@ -972,6 +972,7 @@ def publish(staged, destination, reservation=None, *, cancel=None, progress=None
                 if (info.st_dev, info.st_ino) == created:
                     os.unlink(partial)
             except OSError:
+                # Best effort: keep the original failure; a leftover partial is documented.
                 pass
         release(reservation)
         raise

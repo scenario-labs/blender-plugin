@@ -83,6 +83,12 @@ def store_schema(path):
     return int(match.group(1))
 
 
+def model_defaults_owner(path):
+    """Whether a package ships the runtime owner of explicit lane defaults (no import)."""
+    with zipfile.ZipFile(path) as archive:
+        return "core/jobs/model_defaults.py" in archive.namelist()
+
+
 def store_files(database):
     """Fingerprint the job database and its siblings, including any journal files."""
     return {
@@ -413,6 +419,8 @@ def run(args):
                         if schemas["after"] >= 10
                         else "unavailable"
                     ),
+                    # The candidate's runtime owner must read the seeded defaults.
+                    model_defaults_preserved=model_defaults_owner(second),
                 )
             if report["update"] != expected:
                 raise ValueError("Missing native update and enabled-state evidence")

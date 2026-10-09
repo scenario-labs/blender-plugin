@@ -678,10 +678,12 @@ acceptance remain separate.
 workflow file inputs to the existing [`ReferenceUploads`](../SDK_UPLOADS.md#workflow-input-attachment)
 owner. An explicit confirmation precedes a single local-file or capture upload on
 the selected JobSession; no new SDK operation, transport, store or worker pool is
-added. The input carries a persisted marker before origin capture, so pricing and
-duplicate uploads are refused while it is present. The form signature includes
-the marker only when present, which invalidates prior approvals without changing
-the saved signature of unmarked forms.
+added. Review refuses a missing or unreadable file, and starting requires the
+reviewed connection and scope. The input carries a persisted marker before origin
+capture, so pricing and duplicate uploads are refused while it is present. The
+operator records its own undo step, so undoing later edits keeps the marker. The
+form signature includes the marker only when present, which invalidates prior
+approvals without changing the saved signature of unmarked forms.
 
 The application maintenance pump delivers on the main thread. It attaches only
 the imported asset into the unchanged scene, workflow, schema, kind, marker and
@@ -690,8 +692,11 @@ That shared binding writes the same scope digest and canonical value as Library
 attachment, so existing pricing checks reject edited or cross-connection values.
 Stale, failed or retired bindings keep the marker and an inspectable error; saved
 uploads attach only through a separate single-use confirmation in the shared
-inspection view. Undo/redo, file load and connection retirement discard
-in-memory bindings. Selected-mesh uploads gain their captured source binding at
-quote time. Local MCP keeps its existing `upload_reference`, `capture_reference`
-and `estimate_workflow` sequence; no MCP protocol change is needed. Physical
-Studio interaction and live upload acceptance remain under #66/#68.
+inspection view. The exception is a ticket that `ReferenceUploads` reports as
+failing during local staging, before any service request: the marker is removed
+and existing values stay. Undo/redo, file load and connection retirement discard
+in-memory bindings; undoing the upload step itself also removes the marker.
+Selected-mesh uploads gain their captured source binding at quote time. Local MCP
+keeps its existing `upload_reference`, `capture_reference` and `estimate_workflow`
+sequence; no MCP protocol change is needed. Physical Studio interaction and live
+upload acceptance remain under #66/#68.

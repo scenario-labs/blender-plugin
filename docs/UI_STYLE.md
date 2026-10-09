@@ -1446,26 +1446,36 @@ generates or approves spending. Inputs of other kinds, and file inputs that list
 allowed asset IDs, keep Library selection and typed asset IDs.
 
 Before marking the input, preflight refuses an occupied single input, a full
-array, an unsupported source, a missing file, an existing upload marker and the
-shared 128-binding upload capacity. Confirmation rechecks the reviewed form and
-file path. The saved marker invalidates the current price and blocks **Request
-workflow price** until the upload attaches or is resolved. The maintenance pump
-attaches only after an imported observation and a fresh origin check, and only
-into the unchanged scene, workflow, schema, input kind and input value. It writes
-the same scope digest and canonical value as Library attachment, records the
-upload request and removes the marker. A changed destination keeps the marker and
-an inspectable error.
+array, an unsupported source, a missing or unreadable file, an existing upload
+marker and the shared 128-binding upload capacity. Confirmation rechecks the
+reviewed form, file path, connection and scope. The saved marker invalidates the
+current price and blocks **Request workflow price** until the upload attaches or
+is resolved. The maintenance pump attaches only after an imported observation and
+a fresh origin check, and only into the unchanged scene, workflow, schema, input
+kind and input value. It writes the same scope digest and canonical value as
+Library attachment, records the upload request and removes the marker. A changed
+destination keeps the marker and an inspectable error. If local staging fails
+before any service request, the marker is removed and existing values stay, so a
+corrected file can be uploaded.
 
 **Inspect uploads** and **Use saved upload** open the shared saved-upload view
 for that input. Attaching an imported upload needs a separate single-use
 confirmation naming the scene, workflow, input and file; it supersedes an
-in-flight upload into the same input. Undo, redo, reopening the blend file and a
-connection change discard in-memory delivery, so the marker then requires this
-explicit review, never a second upload. **Clear reference** warns that an
-admitted upload continues in saved uploads, then removes the marker. Drawing stays
+in-flight upload into the same input. The upload records its own undo step with
+the marker. Undo or redo to a state that keeps the marker, reopening the blend
+file and a connection change discard in-memory delivery, so the marker then
+requires this explicit review instead of a second upload. History changes also
+retire the captured origin: an upload that has not been imported starts no further
+initialization, part or completion request, and any saved record stays under
+**Inspect uploads**, where a processing upload can be refreshed and an imported
+one attached. Undoing the upload step itself removes the marker, so **Upload
+file** would send the content again. **Clear reference** warns that an admitted
+upload continues in saved uploads, then removes the marker. Drawing stays
 read-only.
 
-Installed synthetic tests cover these guards, shared MCP pricing of an uploaded
-asset ID and selected-mesh provenance at quote time. Native interaction proof
-(file browser and confirmation from the Studio popup, captures, DPI and IME) and
-live upload acceptance remain under #66/#68.
+Installed synthetic tests cover these guards, including missing and unreadable
+files, failed staging, undo around an upload and a background **Render result**
+upload, plus shared MCP pricing of an uploaded asset ID and selected-mesh
+provenance at quote time. Native interaction proof (file browser and confirmation
+from the Studio popup, viewport and camera captures, rendering with F12 before
+**Render result**, DPI and IME) and live upload acceptance remain under #66/#68.

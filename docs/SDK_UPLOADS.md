@@ -519,10 +519,14 @@ no-replay rules described above. Its in-flight bindings share the facade's
 Uploadable inputs are file fields whose saved schema kind is image (the default),
 audio, video or 3D, using the same sources as generation forms. Other kinds and
 fields that list allowed asset IDs are refused before staging. Preflight also
-refuses occupied single inputs, full arrays, a missing file and an existing marker.
+refuses occupied single inputs, full arrays, a missing or unreadable file and an
+existing marker; starting rechecks the reviewed connection and scope.
 A persisted `_scenario_workflow_upload` ID property marks the input before origin
-capture; it remains after uncertain or failed admitted work, blocks pricing and
+capture; it remains after uncertain or failed remote work, blocks pricing and
 prevents a second upload. Local validation or rejected queue admission removes it.
+So does a staging failure that `ReferenceUpload.sent_nothing` identifies: the
+ticket failed during local preparation, before any saved record was observed or
+any service request was made. Existing input values are kept.
 
 The maintenance pump attaches only after an imported observation and a fresh
 origin check, and only while the workflow ID, schema digest, input kind, marker
@@ -533,8 +537,11 @@ uploads use the shared inspection view with a workflow destination: attaching
 needs a separate single-use confirmation that rechecks the stored record, scene
 origin, scope and complete form signature, and supersedes an in-flight upload
 into that input. Undo/redo, blend reopening and connection retirement discard
-in-memory bindings without resending bytes. Selected-mesh uploads keep their
-captured source, so workflow quotes bind them as described below. Local MCP
+in-memory bindings without resending bytes. The upload operator records its own
+undo step, so among history changes only undoing that step removes the marker.
+History changes also retire the captured origin: unfinished work starts no
+further mutation and its saved record remains inspectable. Selected-mesh uploads
+keep their captured source, so workflow quotes bind them as described below. Local MCP
 already exposes the equivalent sequence: `upload_reference` or `capture_reference`,
 then the imported asset ID in `estimate_workflow` parameters.
 

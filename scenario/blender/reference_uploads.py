@@ -141,6 +141,17 @@ class ReferenceUpload:
     next_poll: float = 0.0
     retry_admission_at: float = 0.0
 
+    @property
+    def sent_nothing(self):
+        """Whether this ticket failed during local staging, before any remote request.
+
+        Staging only copies, hashes and saves intent locally. Every later command
+        starts from an observed saved record, so a failed ticket without one never
+        reached Scenario. A staged intent saved just before a failed read stays
+        listed for explicit cancellation.
+        """
+        return bool(self.error) and self.record is None and self.command == "prepare_upload"
+
 
 @dataclass(eq=False)
 class UploadRecovery:

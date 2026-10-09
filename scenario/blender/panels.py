@@ -800,6 +800,13 @@ SHARED_STATUS_TEXT = {
     "applying": "applying",
     "apply_failed": "application needs review",
 }
+# Saved states whose next step needs Scenario, and what pauses without online
+# access, whether or not a remote reading exists yet.
+SHARED_OFFLINE_TEXT = {
+    "remote": "Status paused while online access is disabled",
+    "cancel_requested": "Status paused while online access is disabled",
+    "succeeded": "Download paused while online access is disabled",
+}
 
 
 def draw_shared_status(layout, rec, model):
@@ -810,17 +817,13 @@ def draw_shared_status(layout, rec, model):
     if reading is not None and state == "remote":
         text = reading.label
     layout.label(text=f"{model}: {text}", icon="TIME")
-    if reading is None:
-        return
-    if reading.percent is not None:
+    if reading is not None and reading.percent is not None:
         layout.progress(factor=reading.fraction, type="BAR", text=f"{reading.percent}%")
-    if reading.stale:
-        layout.label(
-            text="Status is not updating"
-            if runtime.online()
-            else "Status paused while online access is disabled",
-            icon="INFO",
-        )
+    offline = None if runtime.online() else SHARED_OFFLINE_TEXT.get(state)
+    if offline is not None:
+        layout.label(text=offline, icon="INFO")
+    elif reading is not None and reading.stale:
+        layout.label(text="Status is not updating", icon="INFO")
 
 
 def draw_active_job(layout, rec):

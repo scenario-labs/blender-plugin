@@ -51,10 +51,20 @@ selects a destination. While a known remote job is active, `remote_status` is it
 latest validated Scenario status, `progress` its reported fraction from 0 to 1
 (`null` when missing or invalid), `remote_observed_at` the reading's UTC time and
 `remote_stale` whether automatic polling has stopped keeping it current. They are
-`null` otherwise and are never persisted. Providers may keep `progress` at 0 until
-completion, so it is not a time estimate. A restarted job reports progress only
-after explicit `recover_local_job` `refresh` or `resume`; see
+`null` otherwise and are never persisted. Only `in-progress` and `finalizing`
+fractions measure generation; the native Jobs views show a percentage only for
+those statuses above 0. Providers may keep `progress` at 0 until completion, so it
+is not a time estimate. A restarted job reports progress only after explicit
+`recover_local_job` `refresh` or `resume`; see
 [the projection rules](BLENDER_JOB_CONTEXT.md#remote-progress-and-scene-lane-binding).
+
+`delivery_active` is `true` while this Blender session still advances the job by
+itself: submission, polling, download or an Image lane's automatic import. It is
+`false` once delivery finishes, pauses for review (`delivery_paused`) or the job
+is only inspected after a restart. A `wait_for_job` result with `delivery_active`
+`true` means the wait expired, including while an automatic import is pending in
+`ready` or `applying`; call it again. Prepare no result application while it is
+`true`.
 
 To import recovered PNG/EXR results, call `prepare_result_application` with the
 current context, request and revision, then show its destination and image list

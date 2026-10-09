@@ -631,7 +631,11 @@ before command dispatch. The UI confirms remote cancellation through its native
 invoke path. MCP recovery waits off the main thread and rechecks its owner before
 returning status. Shared `wait_for_job` reads saved state on the HTTP worker while
 the main thread advances delivery; pause, failure, completion or timeout returns
-the current result without canceling or regenerating. Stopping the MCP server
+the current result without canceling or regenerating. MCP status reports
+`delivery_active` from the same predicate the wait uses: the job is owned by this
+session, not paused and not in a terminal or failed state, and `ready` counts
+only while an Image lane automatic import is pending. A returned result with
+`delivery_active` set is therefore an expired wait. Stopping the MCP server
 interrupts its wait without canceling the generation.
 
 ## Remote progress and scene lane binding
@@ -644,9 +648,12 @@ UTC and monotonic time) bound to the record's remote job ID and saved revision.
 The fraction must be a finite number from 0 to 1; booleans, strings, missing,
 non-finite and out-of-range values are unknown, never 0. Providers may still
 report 0 until completion, so a percentage is shown only for `in-progress` or
-`finalizing` above zero. A terminal snapshot clears the reading. Later
-interpretations of the same snapshots extend this hook rather than draining the
-completions again.
+`finalizing` above zero; the whole percentage snaps to the reported decimal
+before flooring, so 0.29 shows 29%. A terminal snapshot clears the reading. The
+projection runs after the next poll is scheduled and outside the delivery error
+mapping: if it fails, the reading is dropped and only the error type is logged,
+never the response, and delivery is never paused. Later interpretations of the
+same snapshots extend this hook rather than draining the completions again.
 
 The reading lives only in the view's `meta["remote"]`, the projection the Jobs
 views and MCP `job_status` both read. Each maintenance poll drops it when the

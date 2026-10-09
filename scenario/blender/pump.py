@@ -108,10 +108,15 @@ def _jobs_changed():
 
     Shared job projections change in context maintenance, not in a manager
     event, so this one comparison is what redraws Jobs, Generations and the
-    viewport when progress or saved state moves. Unchanged ticks never redraw.
+    viewport when progress or saved state moves. Online access is compared too,
+    because shared rows draw an offline line. Unchanged ticks never redraw.
     """
     global _job_rows
-    rows = (runtime.state.job_context_id, tuple(_job_row(row) for row in runtime.state.jobs_view))
+    rows = (
+        runtime.state.job_context_id,
+        runtime.online(),
+        tuple(_job_row(row) for row in runtime.state.jobs_view),
+    )
     if rows == _job_rows:
         return False
     _job_rows = rows

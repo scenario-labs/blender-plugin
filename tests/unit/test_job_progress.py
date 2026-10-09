@@ -93,6 +93,12 @@ def test_every_active_status_has_a_display_word(status, label):
     [
         ("in-progress", 0.999, 99),
         ("in-progress", 0.005, 0),
+        # Reported decimals whose binary product falls just below the whole value.
+        ("in-progress", 0.29, 29),
+        ("in-progress", 0.57, 57),
+        ("in-progress", 0.58, 58),
+        ("in-progress", 0.28, 28),
+        ("in-progress", 0.9999999, 99),
         ("in-progress", 1, 100),
         ("finalizing", 0.5, 50),
         # Providers may keep 0 until completion; zero and unknown show no bar.

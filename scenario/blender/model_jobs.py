@@ -3,6 +3,7 @@
 """Main-thread model generation commands shared by UI and local MCP."""
 
 import json
+import logging
 import os
 import threading
 import time
@@ -37,11 +38,25 @@ from .model_application import MODEL_MEDIA_TYPE
 from .model_application import validate_destination as validate_model_destination
 from .world_application import PanoramaError, WorldApplicationError
 
+_log = logging.getLogger("scenario.jobs")
+
 # Seconds between automatic refreshes of a known remote job. A reading becomes
 # stale once its scheduled refresh is overdue by the grace, so a longer
 # scheduled interval never reads as stale merely because it is longer.
 POLL_INTERVAL = 2.0
 STALE_GRACE = 2 * POLL_INTERVAL
+# Saved states this session never advances by itself; READY is settled too
+# unless an automatic image import is still pending.
+_SETTLED = frozenset(
+    {
+        JobState.UNCERTAIN,
+        JobState.FAILED,
+        JobState.CANCELED,
+        JobState.DOWNLOAD_FAILED,
+        JobState.APPLY_FAILED,
+        JobState.APPLIED,
+    }
+)
 
 
 def _snapshot(body):
@@ -426,6 +441,7 @@ class ModelJobs:
             world = self._world_destinations.pop(request_id, None)
             material = self._material_destinations.pop(request_id, None)
             mesh = self._mesh_destinations.pop(request_id, None)
+            observed = None
             try:
                 completions = self.session.drain(task=task)
                 if not completions:
@@ -494,7 +510,7 @@ class ModelJobs:
                     _remember(self._images, request_id, result.images, bpy.data.images)
                     self._paused.discard(request_id)
                 elif command in ("refresh_remote", "cancel_remote"):
-                    self._observe(request_id, completion.result)
+                    observed = completion.result
                 self._next_poll[request_id] = time.monotonic() + POLL_INTERVAL
             except MaterialResultUncertain as error:
                 if error.application is not None:
@@ -551,6 +567,10 @@ class ModelJobs:
                     request_id,
                     "Result delivery stopped; review the saved job before retrying",
                 )
+            if observed is not None:
+                # Display only: outside the delivery error mapping, so a failed
+                # projection can never pause delivery or skip the next poll.
+                self._observe(request_id, observed)
         online = self._online()
         for request_id, view in self.views.items():
             record = self.store.get(request_id)
@@ -612,8 +632,13 @@ class ModelJobs:
         This is the only consumer of refresh/cancel snapshots. Later remote
         interpretations extend this hook instead of draining them separately.
         """
-        reading = progress.observe(snapshot)
         meta = self.views[request_id].meta
+        try:
+            reading = progress.observe(snapshot)
+        except Exception as error:
+            # Never log the response; it may carry signed result URLs.
+            _log.warning("Remote progress reading dropped (%s)", type(error).__name__)
+            reading = None
         if reading is None:
             meta.pop("remote", None)
         else:
@@ -1259,27 +1284,26 @@ class ModelJobs:
             record = self.store.get(request_id)
             if record is None:
                 raise ScenarioError(0, "Saved job is unavailable")
-            if (
-                request_id in self._paused
-                or record.state
-                in (
-                    JobState.UNCERTAIN,
-                    JobState.FAILED,
-                    JobState.CANCELED,
-                    JobState.DOWNLOAD_FAILED,
-                    JobState.APPLY_FAILED,
-                    JobState.APPLIED,
-                )
-                or (
-                    record.state == JobState.READY and request_id not in self._automatic_application
-                )
-            ):
+            if not self._delivering(request_id, record):
                 return
             remaining = deadline - time.monotonic()
             if remaining <= 0:
                 return
             sleeper.wait(min(0.1, remaining))
         raise ScenarioError(0, "The job context changed while waiting; inspect saved jobs again")
+
+    def _delivering(self, request_id, record):
+        """Whether this session still advances the job without an explicit action.
+
+        False once it is settled, paused for review or not owned by this
+        session; `wait` returns then, and MCP reports it as `delivery_active`.
+        """
+        return (
+            request_id in self.views
+            and request_id not in self._paused
+            and record.state not in _SETTLED
+            and (record.state != JobState.READY or request_id in self._automatic_application)
+        )
 
     def _mesh_status(self, request_id):
         saved = self._mesh_edits.get(request_id)
@@ -1363,6 +1387,7 @@ class ModelJobs:
                 for item in record.local_applications
             ],
             "delivery_paused": record.intent.request_id in self._paused,
+            "delivery_active": self._delivering(record.intent.request_id, record),
             "actions": self.actions(record),
             "error": self.views[record.intent.request_id].error
             if record.intent.request_id in self.views

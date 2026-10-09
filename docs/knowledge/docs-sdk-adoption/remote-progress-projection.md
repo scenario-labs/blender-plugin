@@ -14,9 +14,9 @@
     "sources": {
       "scenario/core/api/sdk_adapter.py": "1247ca79813ac35fe4bedad564e3588c41a52506e16580bb85178161ce875bfb",
       "scenario/core/jobs/coordinator.py": "a8b7efb39e74a1a34f350ff7274e2e714a06933383743744dd22e6e1b7d7096d",
-      "scenario/core/jobs/progress.py": "286563456f871fb3073ad32932cc3d9b750f12b9d263abef2fe931cbc5568f92",
+      "scenario/core/jobs/progress.py": "bf8bea9be0d1ba3c6ca7c2495fecf61eb67481ffb7499d1e30633cc154871af5",
       "tests/unit/test_scenario_sdk_contract.py": "7e81dddf2735aa5b04c477d8459e6454c18a6f565af8ee447052705690647e00",
-      "tests/unit/test_job_progress.py": "4d3ff074ca2970f79b48b944f25c2d19326142a8457b505968ad60994b072ddb"
+      "tests/unit/test_job_progress.py": "c6ab3586b2b9ae8f4abf957a36b066b20cb8f01259fda6d9db5c858b11204a17"
     }
   }
 }

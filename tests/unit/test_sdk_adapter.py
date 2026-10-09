@@ -12,7 +12,13 @@ import httpx
 import pytest
 
 from scenario import __version__
-from scenario.core.api.sdk_adapter import AdapterError, Credentials, SDKAdapter
+from scenario.core.api.sdk_adapter import (
+    MODEL_BULK_LIMIT,
+    AdapterError,
+    AdapterUnavailable,
+    Credentials,
+    SDKAdapter,
+)
 
 URL = "https://service.example.invalid/v1"
 MODEL = {
@@ -685,3 +691,206 @@ def test_translate_exact_quote_and_single_dispatch(adapter, project):
 def test_translate_invalid_input_never_requests(adapter, body):
     with pytest.raises(ValueError):
         adapter(lambda request: pytest.fail("Unexpected service call")).estimate_translate(body)
+
+
+@pytest.mark.parametrize("project", [None, "selected-project"])
+def test_private_trained_catalog_keeps_filter_scope_and_cursor_on_every_page(adapter, project):
+    calls = []
+    lora = {"id": "lora", "type": "flux.1-lora", "uiConfig": {"future": True}}
+
+    def handler(request):
+        calls.append(request)
+        if len(calls) == 1:
+            return httpx.Response(
+                200, json={"models": [lora, {"id": "mix"}], "nextPaginationToken": "page+2"}
+            )
+        return httpx.Response(200, json={"models": [lora, {"id": "custom"}]})
+
+    rows = adapter(handler, project_id=project).models(privacy="private")
+    assert rows == [lora, {"id": "mix"}, {"id": "custom"}]
+    assert len(calls) == 2
+    for call in calls:
+        assert call.method == "GET" and call.url.path == "/v1/models"
+        params = dict(call.url.params)
+        params.pop("paginationToken", None)
+        assert params == {
+            "privacy": "private",
+            "status": "trained",
+            "pageSize": "100",
+            **({"projectId": project} if project else {}),
+        }
+    assert "paginationToken" not in calls[0].url.params
+    assert calls[1].url.params["paginationToken"] == "page+2"
+
+
+@pytest.mark.parametrize("mode", ["loop", "limit", "offline"])
+def test_private_trained_catalog_never_returns_a_partial_list(adapter, mode):
+    calls = []
+    permission = [True]
+
+    def handler(request):
+        calls.append(request)
+        if mode == "offline":
+            permission[0] = False
+        token = "same" if mode == "loop" else f"page-{len(calls)}"
+        return httpx.Response(200, json={"models": [{"id": "one"}], "nextPaginationToken": token})
+
+    client = adapter(handler, online=lambda: permission[0])
+    with pytest.raises(AdapterError):
+        client.models(privacy="private", max_pages=3 if mode == "limit" else 5)
+    assert len(calls) == {"loop": 2, "limit": 3, "offline": 1}[mode]
+
+
+@pytest.mark.parametrize("project", [None, "selected-project"])
+def test_bulk_model_reads_chunk_ids_in_body_with_scope_and_request_order(adapter, project):
+    calls = []
+    requested = [f"model-{index:03d}" for index in range(120)]
+
+    def handler(request):
+        calls.append(request)
+        ids = json.loads(request.content)["modelIds"]
+        rows = [
+            {"id": model_id, "uiConfig": {"lorasComponent": {"modelInput": "loras"}}}
+            for model_id in reversed(ids)
+            if model_id != "model-007"
+        ]
+        return httpx.Response(200, json={"models": rows + rows[:1], "future": True})
+
+    found = adapter(handler, project_id=project).models_bulk(requested + ["model-000"])
+    assert list(found) == [model_id for model_id in requested if model_id != "model-007"]
+    assert found["model-001"]["uiConfig"]["lorasComponent"] == {"modelInput": "loras"}
+    assert [len(json.loads(call.content)["modelIds"]) for call in calls] == [50, 50, 20]
+    for call in calls:
+        assert (call.method, call.url.path) == ("POST", "/v1/models/get-bulk")
+        assert dict(call.url.params) == ({"projectId": project} if project else {})
+        assert set(json.loads(call.content)) == {"modelIds"}
+    assert [json.loads(call.content)["modelIds"] for call in calls] == [
+        requested[:50],
+        requested[50:100],
+        requested[100:],
+    ]
+
+
+def test_bulk_model_reads_without_ids_make_no_request(adapter):
+    assert adapter(lambda request: pytest.fail("Unexpected service call")).models_bulk([]) == {}
+
+
+@pytest.mark.parametrize(
+    "page",
+    [
+        {},
+        {"models": None},
+        {"models": [None]},
+        {"models": [{"id": ""}]},
+        {"models": [{"id": "../wanted"}]},
+        {"models": [{"id": "other"}]},
+        {"models": [{"id": "wanted", "type": "custom"}, {"id": "wanted", "type": "flux.1-lora"}]},
+    ],
+)
+def test_bulk_model_reads_reject_invalid_unrequested_or_conflicting_records(adapter, page):
+    calls = []
+    client = adapter(lambda request: calls.append(request) or httpx.Response(200, json=page))
+    with pytest.raises(AdapterError) as error:
+        client.models_bulk(["wanted", "second"])
+    assert "wanted" not in str(error.value) and "other" not in str(error.value)
+    assert len(calls) == 1
+
+
+@pytest.mark.parametrize(
+    "identifiers,options",
+    [
+        ("model", {}),
+        (b"model", {}),
+        ({"model"}, {}),
+        (None, {}),
+        ([""], {}),
+        (["../other"], {}),
+        (["padded "], {}),
+        ([None], {}),
+        ([f"model-{index}" for index in range(MODEL_BULK_LIMIT + 1)], {}),
+        (["model"], {"chunk": 0}),
+        (["model"], {"chunk": 51}),
+        (["model"], {"chunk": True}),
+        (["model"], {"chunk": 2.0}),
+    ],
+)
+def test_bulk_model_reads_validate_input_before_network(adapter, identifiers, options):
+    client = adapter(lambda request: pytest.fail("Invalid input reached the service"))
+    with pytest.raises(ValueError):
+        client.models_bulk(identifiers, **options)
+
+
+def test_bulk_model_reads_accept_the_limit_and_recheck_permission_per_chunk(adapter):
+    permission = [True]
+    calls = []
+
+    def handler(request):
+        calls.append(request)
+        permission[0] = False
+        ids = json.loads(request.content)["modelIds"]
+        return httpx.Response(200, json={"models": [{"id": value} for value in ids]})
+
+    client = adapter(handler, online=lambda: permission[0])
+    limit = [f"model-{index}" for index in range(MODEL_BULK_LIMIT)]
+    with pytest.raises(AdapterError, match="Online access"):
+        client.models_bulk(limit)
+    assert len(calls) == 1
+    permission[0] = True
+    assert len(adapter(handler).models_bulk(limit, chunk=MODEL_BULK_LIMIT // 4)) == len(limit)
+    client.close()
+    with pytest.raises(AdapterError, match="closed"):
+        client.models_bulk(["model"])
+
+
+@pytest.mark.parametrize("failure", [403, 404, 429, 500, "timeout"])
+def test_bulk_model_failures_are_single_sanitized_attempts(adapter, failure):
+    calls = []
+
+    def handler(request):
+        calls.append(request)
+        if failure == "timeout":
+            raise httpx.ReadTimeout("selected-secret private-model", request=request)
+        return httpx.Response(
+            failure,
+            json={"error": "selected-secret private-model"},
+            headers={"Retry-After": "0"},
+        )
+
+    with pytest.raises(AdapterError) as error:
+        adapter(handler).models_bulk(["private-model", "other-model"])
+    assert not isinstance(error.value, AdapterUnavailable)
+    assert "selected-secret" not in str(error.value)
+    assert "private-model" not in str(error.value)
+    assert len(calls) == 1
+
+
+@pytest.mark.parametrize("status", [403, 404])
+@pytest.mark.parametrize("project", [None, "selected-project"])
+def test_inaccessible_model_reads_are_unavailable_with_safe_text(adapter, status, project):
+    calls = []
+
+    def handler(request):
+        calls.append(request)
+        return httpx.Response(status, json={"message": "private-model belongs to team-x"})
+
+    with pytest.raises(AdapterUnavailable) as error:
+        adapter(handler, project_id=project).model("private-model")
+    assert error.value.status == status
+    assert f"HTTP {status}" in str(error.value)
+    assert "private-model" not in str(error.value) and "team-x" not in str(error.value)
+    assert isinstance(error.value, AdapterError)
+    assert len(calls) == 1
+    assert dict(calls[0].url.params) == ({"projectId": project} if project else {})
+
+
+@pytest.mark.parametrize("status", [401, 429, 500])
+def test_other_model_read_failures_keep_generic_errors(adapter, status):
+    client = adapter(lambda request: httpx.Response(status, json={"message": "private"}))
+    with pytest.raises(AdapterError, match=f"HTTP {status}") as error:
+        client.model("fixture-model")
+    assert not isinstance(error.value, AdapterUnavailable)
+    for method in ("workflow", "asset", "job"):
+        denied = adapter(lambda request: httpx.Response(404, json={"message": "private"}))
+        with pytest.raises(AdapterError, match="HTTP 404") as other:
+            getattr(denied, method)("fixture-record")
+        assert not isinstance(other.value, AdapterUnavailable)

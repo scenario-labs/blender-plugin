@@ -39,7 +39,7 @@ records, lane/schema helpers and local display status classification remain.
 
 | Service operation | Shared implementation and selected SDK 2.2.0 method |
 | --- | --- |
-| Model catalog, schemas, connection check | `SDKCatalog` / `SDKAdapter`: `models.with_raw_response.list/retrieve` |
+| Model catalog, schemas, connection check | `SDKCatalog` / `SDKAdapter`: `models.with_raw_response.list/retrieve`; [trained-model discovery](#trained-model-catalog-reads) adds `models.with_raw_response.get_bulk` |
 | Exact model quote and submission, including render, Blockout and Film models | `JobCoordinator` / `SDKAdapter`: `generate.with_raw_response.run_model`, with `dry_run="true"` only for quotes |
 | New/Rewrite and Translate | Shared prompt commands: `generate.with_raw_response.prompt/translate`, including separate exact estimates and submission claims |
 | Cloud history, known-job recovery, polling and inference cancellation | Shared catalog/coordinator: `jobs.with_raw_response.list/retrieve/trigger_action` |
@@ -92,6 +92,7 @@ using the locked environment.
 | Exact quote preservation | `generate.with_raw_response.run_model` retains JSON bytes for decimal parsing; this is a public SDK wrapper, not a custom endpoint call |
 | Model, asset and job retrieval | `models.retrieve`, `assets.retrieve`, `jobs.retrieve`: project query and response wrappers, including unrecognized fields |
 | Active UI/MCP model catalog | `models.with_raw_response.list/retrieve`: public privacy, opaque pagination cursor and original response fields; `status=trained` is used only for private model lists, as documented in the published wheel's `resources/models/models.py` |
+| Trained-model discovery | `models.with_raw_response.list(privacy="private", status="trained")` keeps the filter, page size, cursor and project in the query; `models.with_raw_response.get_bulk`: POST `/models/get-bulk` with only `modelIds` in JSON, project in the query, original `models` bytes and parsed `uiConfig.lorasComponent`; a `models.retrieve` 403 or 404 is one status error |
 | Multipart upload lifecycle | `uploads.create/retrieve/trigger_action`: project query, asset-option aliases, part URLs and processing/result fields; creation does not transfer bytes |
 | Job discovery | `jobs.list`: `jobs` page wrapper, filters, comma-separated `types`, opaque cursor and project/filter preservation on the next page |
 | Workflow approval rejection | `workflows.user_approval(action="reject")`: workflow, job and node identity; this is not general workflow cancellation |
@@ -152,6 +153,66 @@ invalid cost data is an error; explicit zero remains valid. Native UI and MCP
 model quotes use fresh metadata through the selected JobSession instead;
 submission consumes that quote through the coordinator with the same raw SDK
 estimate and no automatic retry.
+
+## Trained-model catalog reads
+
+The 0.10.0 scope for [#97](https://github.com/scenario-labs/blender-plugin/issues/97)
+is using existing trained models: private LoRAs and compositions of the selected
+credentials and project, plus public Scenario LoRAs. Training is out of scope.
+These core reads and classifications enable no route, picker entry or quote;
+lane lists and the picker are unchanged.
+
+`SDKAdapter.models(privacy="private")` uses `models.with_raw_response.list` with
+`privacy=private`, `status=trained`, page size 100 and the selected project on
+every page. It follows cursors, keeps the first record of a repeated ID, fails
+on a repeated cursor or the page limit, and rechecks online permission before
+each page. The SDK documents `type` filters only for public lists, so
+[catalog.trained_kind](../scenario/core/api/catalog.py) classifies records from
+their REST fields:
+
+| Kind | REST record |
+| --- | --- |
+| `lora` | A `*-lora` type, such as `flux.1-lora`, `flux.2-klein-4b-edit-lora`, `qwen-image-lora` or `zimage-lora` |
+| `composition` | A `*-composition` type; SDK 2.2.0 declares `flux.1-composition` |
+| `custom_private` | A private `custom` record with no parent, training images or concepts |
+| `unsupported` | Any other type, such as `elevenlabs-voice`, `gpt-image-1` or `flux.1-pro`, or a `custom` record with a parent, training images or concepts |
+
+An ordinary public or unlisted `custom` record has no kind. Offline tests cover
+every SDK 2.2.0 type literal and fail when an SDK upgrade changes that set.
+`catalog.is_trained` keeps every classified record out of the base lanes and
+picker, as the former blanket exclusion did. Listing private custom models as
+runnable models needs a separate product decision. `SDKCatalog.trained_models`
+returns `(kind, record)` pairs: the scope's private trained list first, then
+public LoRAs and compositions. It reuses each privacy list already cached on
+the connection and reads only a missing list, or both on explicit refresh.
+
+`SDKAdapter.models_bulk` uses the generated
+[get-bulk method](https://docs.scenario.com/api/resources/models/methods/get_bulk):
+POST `/models/get-bulk` with `modelIds` in JSON and the selected project in the
+query. The reference states no batch limit and does not describe unknown or
+inaccessible IDs, so the adapter sends at most 50 IDs per request and 200 per
+call, rechecks online permission before each request, returns requested
+identities in request order and omits absent IDs. Unrequested, malformed or
+conflicting records fail the whole call without a partial result. The reference
+directs readers of `inputs` to GET `/models/{modelId}`, so bulk records are
+discovery summaries, not form schemas.
+
+`SDKCatalog.get_many` reads each requested ID at most once per connection,
+remembers IDs the service omitted, and shares pending reads between overlapping
+callers; `refresh=True` reads again. Summaries are cached apart from the model
+details used for forms and quotes, never replace them, and are discarded on
+retirement. Catalog loading does not start bulk reads; callers request them
+explicitly, which bounds read amplification. `SDKAdapter.model` raises
+`AdapterUnavailable` for HTTP 403 or 404, and `SDKCatalog` keeps that status on
+its `ScenarioError`, so later quote checks can report an inaccessible model.
+
+Every operation here is a public SDK 2.2.0 method, so there is no raw fallback,
+SDK issue or dependency change. Offline transport tests establish serialization,
+scope, caching and failure handling only. Which base models declare
+`uiConfig.lorasComponent`, whether live bulk records carry `uiConfig` or
+`inputs`, the bulk batch limit and absent-ID behavior, and whether a trained ID
+runs directly remain unverified. They need a zero-spend read and dry-run capture
+under maintainer-authorized credentials and project before any route is enabled.
 
 ## Model acceptance commands
 
@@ -431,6 +492,8 @@ The named discovery exceptions also use the same zero-retry SDK client.
 | Adapter operation | SDK 2.2.0 method and contract |
 | --- | --- |
 | Public/private model catalog | `models.list`: explicit page size/status/privacy, `paginationToken`, scope on every page, deduplication and cursor-loop/page-limit failures |
+| Bulk model summaries | `models.get_bulk` through its public raw-response wrapper: at most 50 IDs per request and 200 per call, requested identities only, identical duplicates merged, conflicts rejected, scope and online permission on every request, no partial result; see [trained-model catalog reads](#trained-model-catalog-reads) |
+| Inaccessible model detail | `models.retrieve`: HTTP 403 or 404 raises `AdapterUnavailable`, an `AdapterError` carrying the status and fixed text; other reads and statuses keep the generic error |
 | Public/private workflow catalog | `workflows.list`: SDK REST catalog replaces the need for Studio's public-workflow HTTP bypass; pagination and scope are tested synthetically |
 | Known model-job cancellation | `jobs.trigger_action(action="cancel")` through its public raw-response wrapper: one attempt, selected project, no terminal-state assumption from acknowledgement; coordinator retrieves before and after the action |
 | Scoped job discovery | `jobs.list` through the public raw-response wrapper: optional author/workflow/type/status filters, 1–200 items per page, bounded pagination and explicit errors instead of partial or conflicting history |

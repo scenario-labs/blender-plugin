@@ -52,6 +52,14 @@ List records are converted before publishing the cache. Malformed-record
 conversion failures preserve the previous list and reach every overlapping caller
 as a sanitized `ScenarioError`, keeping failures on the catalog event queue.
 
+The same connection also exposes core reads for later trained-model routing
+([#97](https://github.com/scenario-labs/blender-plugin/issues/97)). Explicit bulk
+model summaries are read at most once per connection, share pending reads, are
+cached apart from form schemas and are cleared on retirement. Trained records
+from the private list and public LoRAs are classified from REST fields. No UI,
+MCP or catalog load calls them yet, and lane lists still exclude trained records.
+See [trained-model catalog reads](../SDK_ADOPTION.md#trained-model-catalog-reads).
+
 The GUI pump and main-thread MCP catalog/schema calls deliver the same queued
 completions. Credential changes retire the context, discard its model/schema
 caches and visible quotes, and reject late success/error events from the old

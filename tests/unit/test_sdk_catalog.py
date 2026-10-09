@@ -11,8 +11,9 @@ from decimal import Decimal
 import httpx
 import pytest
 
+from scenario.core.api import catalog as catalog_module
 from scenario.core.api.errors import ScenarioError
-from scenario.core.api.sdk_adapter import AdapterError, Credentials, SDKAdapter
+from scenario.core.api.sdk_adapter import MODEL_BULK_LIMIT, AdapterError, Credentials, SDKAdapter
 from scenario.core.api.sdk_catalog import SDKCatalog
 from scenario.core.jobs.store import JobScope
 
@@ -588,5 +589,247 @@ def test_job_adapter_requires_durable_scope():
         with pytest.raises(ScenarioError, match="storage is not configured"):
             context.create_job_adapter()
         assert pools == []
+    finally:
+        context.close()
+
+
+def bulk_handler(calls, missing=(), details=True):
+    def respond(request):
+        calls.append(request)
+        if request.method == "POST":
+            assert request.url.path == "/v1/models/get-bulk"
+            ids = json.loads(request.content)["modelIds"]
+            rows = [
+                {"id": model_id, "name": model_id.upper(), "uiConfig": {"future": True}}
+                for model_id in ids
+                if model_id not in missing
+            ]
+            return httpx.Response(200, json={"models": rows})
+        assert details
+        model_id = request.url.path.rsplit("/", 1)[-1]
+        return httpx.Response(
+            200,
+            json={"model": {"id": model_id, "inputs": [{"name": "prompt", "type": "string"}]}},
+        )
+
+    return respond
+
+
+def bulk_ids(calls):
+    return [json.loads(call.content)["modelIds"] for call in calls if call.method == "POST"]
+
+
+@pytest.mark.parametrize("project", [None, "selected-project"])
+def test_bulk_summaries_are_read_once_per_connection_apart_from_details(project):
+    calls = []
+    scope = JobScope("https://api.cloud.scenario.com/v1", "local-fixture", project)
+    context, pools = catalog(bulk_handler(calls, missing={"missing"}), scope=scope)
+    try:
+        first = context.get_many(["base", "missing", "base"])
+        assert list(first) == ["base"] and first["base"].name == "BASE"
+        assert first["base"].ui_config == {"future": True}
+        assert bulk_ids(calls) == [["base", "missing"]]
+        assert all(call.url.params.get("projectId") == project for call in calls)
+        first["base"].raw["name"] = "Changed by caller"
+        # Cached summaries and remembered absences make no new request.
+        again = context.get_many(("missing", "base"))
+        assert list(again) == ["base"] and again["base"].name == "BASE"
+        assert len(calls) == 1
+        assert list(context.get_many(["base", "other"])) == ["base", "other"]
+        assert bulk_ids(calls)[-1] == ["other"]
+        # A summary never stands in for the detail used by forms and quotes.
+        assert context.load_cached("base") is None
+        assert context.get("base").parameters == [{"name": "prompt", "type": "string"}]
+        assert calls[-1].method == "GET"
+        context.get_many(["base", "missing"], refresh=True)
+        assert bulk_ids(calls)[-1] == ["base", "missing"]
+        assert context.get_many([]) == {}
+        assert len(pools) == 1
+        other, _ = catalog(bulk_handler(calls))
+        try:
+            assert list(other.get_many(["base"])) == ["base"]
+            assert bulk_ids(calls)[-1] == ["base"]
+        finally:
+            other.close()
+    finally:
+        context.close()
+    assert pools[0]._closed
+
+
+@pytest.mark.parametrize(
+    "model_ids",
+    [
+        "base",
+        b"base",
+        {"base"},
+        None,
+        [None],
+        [f"m{index}" for index in range(MODEL_BULK_LIMIT + 1)],
+    ],
+)
+def test_invalid_bulk_requests_fail_before_opening_a_pool(model_ids):
+    context, pools = catalog(lambda request: pytest.fail("Unexpected request"))
+    with pytest.raises(ScenarioError, match="request is invalid"):
+        context.get_many(model_ids)
+    assert not pools and context._summary_reads == {}
+    context.close()
+
+
+@pytest.mark.parametrize("model_id", ["", "../other", "padded "])
+def test_invalid_bulk_identifiers_never_reach_the_service(model_id):
+    context, _ = catalog(lambda request: pytest.fail("Unexpected request"))
+    with pytest.raises(ScenarioError, match="request is invalid"):
+        context.get_many([model_id])
+    assert context._summary_reads == {} and context._summaries == {}
+    context.close()
+
+
+def test_overlapping_bulk_reads_share_pending_ids(monkeypatch):
+    entered, release, waiting = (threading.Event() for _ in range(3))
+    calls = []
+
+    class ObservedFuture(Future):
+        def result(self, timeout=None):
+            waiting.set()
+            return super().result(timeout)
+
+    monkeypatch.setattr("scenario.core.api.sdk_catalog.Future", ObservedFuture)
+    respond = bulk_handler(calls)
+
+    def blocking(request):
+        if json.loads(request.content)["modelIds"] == ["a", "b"]:
+            entered.set()
+            assert release.wait(5)
+        return respond(request)
+
+    context, pools = catalog(blocking)
+    with ThreadPoolExecutor(max_workers=2) as workers:
+        leader = workers.submit(context.get_many, ["a", "b"])
+        try:
+            assert entered.wait(5)
+            waiter = workers.submit(context.get_many, ["b", "c"])
+            assert waiting.wait(5)
+            assert not waiter.done()
+        finally:
+            release.set()
+        assert list(leader.result(5)) == ["a", "b"]
+        shared = waiter.result(5)
+    assert list(shared) == ["b", "c"]
+    assert sorted(bulk_ids(calls)) == [["a", "b"], ["c"]]
+    assert context._summary_reads == {} and len(pools) == 1
+    context.close()
+
+
+@pytest.mark.parametrize("outcome", ["failure", "retired", "offline", "invalid-record"])
+def test_failed_bulk_read_releases_waiters_without_caching(monkeypatch, outcome):
+    entered, release, waiting = (threading.Event() for _ in range(3))
+    calls = []
+
+    class ObservedFuture(Future):
+        def result(self, timeout=None):
+            waiting.set()
+            return super().result(timeout)
+
+    monkeypatch.setattr("scenario.core.api.sdk_catalog.Future", ObservedFuture)
+
+    def respond(request):
+        calls.append(request)
+        if len(calls) == 1:
+            entered.set()
+            assert release.wait(5)
+            if outcome == "failure":
+                return httpx.Response(503, text="private service failure")
+            if outcome == "invalid-record":
+                return httpx.Response(200, json={"models": [{"id": "a", "capabilities": [None]}]})
+        return httpx.Response(200, json={"models": [{"id": "a"}]})
+
+    context, pools = catalog(respond)
+    # Revoked permission refuses the next chunk; a dispatched chunk is not recalled.
+    second_chunk = [f"x{index}" for index in range(50)] if outcome == "offline" else []
+    with ThreadPoolExecutor(max_workers=2) as workers:
+        leader = workers.submit(context.get_many, ["a", *second_chunk])
+        try:
+            assert entered.wait(5)
+            waiter = workers.submit(context.get_many, ["a"], True)
+            assert waiting.wait(5)
+            if outcome == "retired":
+                context.close()
+            elif outcome == "offline":
+                context.update_online(False)
+        finally:
+            release.set()
+        for read in (leader, waiter):
+            with pytest.raises(ScenarioError) as error:
+                read.result(5)
+            assert "private service failure" not in str(error.value)
+    assert len(calls) == 1
+    assert context._summary_reads == {} and context._summaries == {}
+    if outcome == "retired":
+        assert context.closed and pools[0]._closed
+        with pytest.raises(ScenarioError, match="connection changed"):
+            context.get_many(["a"])
+    else:
+        context.update_online(True)
+        assert list(context.get_many(["a"])) == ["a"]
+        assert len(calls) == 2
+        context.close()
+
+
+@pytest.mark.parametrize("status", [403, 404])
+def test_inaccessible_model_detail_keeps_its_status_without_service_text(status):
+    context, _ = catalog(lambda request: httpx.Response(status, text="private model of team-x"))
+    try:
+        with pytest.raises(ScenarioError) as error:
+            context.get("private-model")
+        assert error.value.status == status
+        assert "not available" in error.value.reason
+        assert "team-x" not in str(error.value) and "private-model" not in str(error.value)
+        assert context.load_cached("private-model") is None
+    finally:
+        context.close()
+
+
+def test_trained_models_reuse_cached_lists_and_classify_rest_records():
+    calls = []
+    private_rows = [
+        {"id": "team-lora", "type": "flux.1-lora", "privacy": "private"},
+        {"id": "team-mix", "type": "flux.1-composition", "privacy": "private"},
+        {"id": "team-custom", "type": "custom", "privacy": "private"},
+        {"id": "team-voice", "type": "elevenlabs-voice", "privacy": "private"},
+    ]
+    public_rows = [
+        {"id": "base", "type": "custom", "privacy": "public", "capabilities": ["txt2img"]},
+        {"id": "scenario-lora", "type": "zimage-lora", "privacy": "public"},
+        {"id": "hosted", "type": "flux.1-pro", "privacy": "public"},
+    ]
+
+    def respond(request):
+        calls.append(request)
+        privacy = request.url.params["privacy"]
+        if privacy == "private":
+            assert request.url.params["status"] == "trained"
+        rows = private_rows if privacy == "private" else public_rows
+        return httpx.Response(200, json={"models": rows})
+
+    context, pools = catalog(respond)
+    try:
+        expected = [
+            ("lora", "team-lora"),
+            ("composition", "team-mix"),
+            ("custom_private", "team-custom"),
+            ("unsupported", "team-voice"),
+            ("lora", "scenario-lora"),
+        ]
+        pairs = context.trained_models()
+        assert [(kind, record.id) for kind, record in pairs] == expected
+        assert [call.url.params["privacy"] for call in calls] == ["private", "public"]
+        pairs[0][1].raw["type"] = "custom"
+        assert [(kind, record.id) for kind, record in context.trained_models()] == expected
+        assert len(calls) == 2
+        # Lane lists from the same public read keep excluding every trained record.
+        lane = catalog_module.models_for_lane("image", context.load_list_cached("public"))
+        assert [record.id for record in lane] == ["base"]
+        context.trained_models(refresh=True)
+        assert len(calls) == 4 and len(pools) == 1
     finally:
         context.close()

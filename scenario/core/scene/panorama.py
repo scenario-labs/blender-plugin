@@ -10,6 +10,10 @@ MAX_FILE_BYTES = 128 * 1024 * 1024
 MAX_PIXELS = 32 * 1024 * 1024
 MAX_PNG_CHUNKS = 4096
 MAX_JPEG_SEGMENTS = 4096
+# Each progressive scan makes libjpeg revisit every block of the frame, so a
+# small file with thousands of scans can stall Blender's main thread. Typical
+# encoders write at most about a dozen scans.
+MAX_JPEG_SCANS = 64
 
 # Saved media types offered for World application and the container their bytes
 # must use. "image/aces" is a server label, not proof of ACES primaries.
@@ -24,9 +28,9 @@ WORLD_MEDIA_TYPES = frozenset(WORLD_MEDIA_FORMATS)
 _WORLD_MEDIA_LABELS = {
     "image/png": "PNG (LDR)",
     "image/jpeg": "JPEG (LDR)",
-    "image/exr": "OpenEXR (float; ACES AP0 primaries use ACES2065-1)",
-    "image/x-exr": "OpenEXR (float; ACES AP0 primaries use ACES2065-1)",
-    "image/aces": "ACES-labelled OpenEXR (float; AP0 primaries use ACES2065-1)",
+    "image/exr": "OpenEXR (float; ACES AP0 uses ACES2065-1)",
+    "image/x-exr": "OpenEXR (float; ACES AP0 uses ACES2065-1)",
+    "image/aces": "ACES-labelled OpenEXR (float, AP0 as ACES2065-1)",
 }
 
 # OpenEXR chromaticities: red, green, blue and white CIE xy coordinates.
@@ -35,6 +39,10 @@ _PRIMARIES = {
     "aces_ap0": (0.7347, 0.2653, 0.0, 1.0, 0.0001, -0.0770, 0.32168, 0.33767),
 }
 _PRIMARY_TOLERANCE = 0.001
+# OpenEXR colorInteropID values classified by the World preflight. Blender
+# ignores many others, including the srgb_rec709_display it writes itself, so
+# they are left to the decoded color space check.
+_INTEROP_IDS = {b"lin_rec709_scene": "rec709", b"lin_ap0_scene": "aces_ap0"}
 
 # ITU-T T.81 frame markers: baseline, extended sequential and progressive Huffman.
 _JPEG_FRAMES = {0xC0, 0xC1, 0xC2}
@@ -66,7 +74,8 @@ class PanoramaInfo:
     width: int
     height: int
     hdr_capable: bool
-    # World preflight only: declared OpenEXR primaries, None, "rec709" or "aces_ap0".
+    # World preflight only: OpenEXR primaries declared by chromaticities,
+    # acesImageContainerFlag or colorInteropID: None, "rec709" or "aces_ap0".
     chromaticities: str | None = None
 
 
@@ -179,27 +188,49 @@ def _exr(data, *, panorama=True):
     x0, y0, x1, y1 = struct.unpack("<iiii", window)
     info = _dimensions("OPEN_EXR", x1 - x0 + 1, y1 - y0 + 1, panorama=panorama)
     if panorama:
-        info = replace(info, chromaticities=_chromaticities(attributes))
+        info = replace(info, chromaticities=_primaries(attributes))
     _exr_chunks(data, offset + 1, attributes, info.height, y0)
     return info
 
 
-def _chromaticities(attributes):
-    # Blender 5.0-5.2 assign ACES2065-1 for AP0 chromaticities but decode
-    # other declared primaries as linear Rec.709, which would mis-tint lighting.
+def _primaries(attributes):
+    # Blender 5.0-5.2 select ACES2065-1 for AP0 chromaticities or an ACES
+    # container flag (SMPTE ST 2065-4), honour some colorInteropID values and
+    # decode other chromaticities as linear Rec.709. Classify these declarations
+    # and refuse other primaries or conflicts, which would mis-tint lighting.
+    declared = set()
     kind, value = attributes.get(b"chromaticities", (None, b""))
-    if kind is None:
-        return None
-    if kind != b"chromaticities" or len(value) != 32:
-        raise PanoramaError("OpenEXR color primaries are invalid")
-    values = struct.unpack("<8f", value)
-    for name, expected in _PRIMARIES.items():
-        if all(
-            abs(actual - wanted) <= _PRIMARY_TOLERANCE
-            for actual, wanted in zip(values, expected, strict=True)
-        ):
-            return name
-    raise PanoramaError("Use Rec.709 or ACES AP0 primaries for an OpenEXR panorama")
+    if kind is not None:
+        if kind != b"chromaticities" or len(value) != 32:
+            raise PanoramaError("OpenEXR color primaries are invalid")
+        values = struct.unpack("<8f", value)
+        matches = [
+            name
+            for name, expected in _PRIMARIES.items()
+            if all(
+                abs(actual - wanted) <= _PRIMARY_TOLERANCE
+                for actual, wanted in zip(values, expected, strict=True)
+            )
+        ]
+        if not matches:
+            raise PanoramaError("Use Rec.709 or ACES AP0 primaries for an OpenEXR panorama")
+        declared.add(matches[0])
+    kind, value = attributes.get(b"acesImageContainerFlag", (None, b""))
+    if kind is not None:
+        if kind != b"int" or len(value) != 4:
+            raise PanoramaError("OpenEXR color primaries are invalid")
+        # Blender treats only 1 as an ACES container, whose primaries are AP0.
+        if struct.unpack("<i", value)[0] == 1:
+            declared.add("aces_ap0")
+    kind, value = attributes.get(b"colorInteropID", (None, b""))
+    if kind is not None:
+        if kind != b"string":
+            raise PanoramaError("OpenEXR color primaries are invalid")
+        if bytes(value) in _INTEROP_IDS:
+            declared.add(_INTEROP_IDS[bytes(value)])
+    if len(declared) > 1:
+        raise PanoramaError("OpenEXR color declarations conflict")
+    return declared.pop() if declared else None
 
 
 def _exr_chunks(data, start, attributes, height, y0):
@@ -244,12 +275,35 @@ def _exr_chunks(data, start, attributes, height, y0):
         raise PanoramaError("OpenEXR has unexpected trailing data")
 
 
+def _exif_orientation(payload):
+    # EXIF 2.32 (CIPA DC-008) APP1: "Exif\0\0", a TIFF 6.0 header, then IFD0
+    # entries of tag, type, count and a 4-byte value. Read only Orientation
+    # (0x0112, one SHORT) inside this segment; unreadable metadata fails closed.
+    tiff = payload[6:]
+    if len(tiff) < 8 or tiff[:2] not in (b"II", b"MM"):
+        raise PanoramaError("JPEG EXIF metadata is invalid")
+    order = "<" if tiff[:2] == b"II" else ">"
+    magic, ifd = struct.unpack_from(order + "HI", tiff, 2)
+    if magic != 42 or ifd < 8 or ifd + 2 > len(tiff):
+        raise PanoramaError("JPEG EXIF metadata is invalid")
+    count = struct.unpack_from(order + "H", tiff, ifd)[0]
+    if ifd + 2 + count * 12 > len(tiff):
+        raise PanoramaError("JPEG EXIF metadata is invalid")
+    for index in range(count):
+        tag, kind, number, value = struct.unpack_from(order + "HHIH", tiff, ifd + 2 + index * 12)
+        if tag == 0x0112:
+            if kind != 3 or number != 1:
+                raise PanoramaError("JPEG EXIF metadata is invalid")
+            return value
+    return 1
+
+
 def _jpeg(data):
     # ITU-T T.81 Annex B: marker segments precede the first scan. A small file
     # can declare billions of pixels, so read only the frame header before
     # Blender allocates a decoded buffer. Tables, entropy-coded data, color
-    # transforms and APPn metadata (including EXIF orientation) stay Blender's.
-    offset, info = 2, None
+    # transforms and APPn metadata other than EXIF orientation stay Blender's.
+    offset, info, exif = 2, None, False
     for _ in range(MAX_JPEG_SEGMENTS):
         if offset + 4 > len(data) or data[offset] != 0xFF:
             raise PanoramaError("JPEG header is incomplete or invalid")
@@ -265,11 +319,24 @@ def _jpeg(data):
         if marker == 0xDA:
             if info is None:
                 raise PanoramaError("JPEG dimensions are unavailable")
-            # Scan data follows; libjpeg conceals a truncated scan with gray
-            # pixels, so require the end-of-image marker as the final bytes.
+            # Scan data follows. libjpeg conceals a truncated scan with gray
+            # pixels; requiring the end-of-image marker as the final bytes
+            # catches simple truncation, not every malformed or appended scan.
             if end + 2 >= len(data) or not data.endswith(b"\xff\xd9"):
                 raise PanoramaError("JPEG data is incomplete or has trailing bytes")
+            # Entropy-coded data stuffs 0xFF as FF00, so counting later SOS
+            # marker bytes can only over-count and fail closed.
+            if data.count(b"\xff\xda", end) >= MAX_JPEG_SCANS:
+                raise PanoramaError("JPEG exceeds the supported scan limit")
             return info
+        if marker == 0xE1 and data.startswith(b"Exif\0\0", offset + 4, end):
+            if exif:
+                raise PanoramaError("JPEG has conflicting EXIF metadata")
+            exif = True
+            # Blender 5.0-5.2 ignore EXIF orientation, so a rotated or mirrored
+            # panorama would become a World in its stored pixel order.
+            if _exif_orientation(data[offset + 4 : end]) != 1:
+                raise PanoramaError("EXIF-rotated or mirrored JPEG panoramas are unsupported")
         if marker in _JPEG_UNSUPPORTED_FRAMES:
             raise PanoramaError("Use a baseline or progressive JPEG panorama")
         if marker in _JPEG_FRAMES:

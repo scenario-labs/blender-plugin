@@ -83,6 +83,25 @@ ffmpeg -f lavfi -i color=c=0x6b88a4:s=32x32:r=24 \
   tests/fixtures/synthetic/film-four-seconds-audio.mp4
 ```
 
+## Synthetic progressive JPEG panorama
+
+`synthetic/panorama-progressive.jpg` is a first-party GPL-3.0-or-later fixture:
+a 32x16 progressive JPEG with four flat 16x8 color blocks (red and green above,
+blue and yellow below), 4:4:4 sampling and ten scans. It contains no recording,
+provider output or EXIF metadata. Native World tests check that Blender decodes
+this progressive frame with its expected colors and that a scan flood built from
+it is rejected before decoding. Reproduce it with the locked Pillow 12.3.0
+development dependency; the tests do not run this command:
+
+```sh
+uv run --locked python -c 'from PIL import Image
+image = Image.new("RGB", (32, 16))
+colors = ((200, 40, 40), (40, 200, 40), (40, 40, 200), (200, 200, 40))
+image.putdata([colors[(y // 8) * 2 + x // 16] for y in range(16) for x in range(32)])
+image.save("tests/fixtures/synthetic/panorama-progressive.jpg",
+           quality=95, subsampling=0, progressive=True)'
+```
+
 ## Identifiers and URLs
 
 The recorder replaces string-valued account fields `userId`, `authorId`,

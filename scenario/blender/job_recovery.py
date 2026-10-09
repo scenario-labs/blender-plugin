@@ -384,9 +384,7 @@ class SCENARIO_OT_apply_saved_world(bpy.types.Operator):
             self.layout.label(text=f"Selected: {self.media_label}")
             self.layout.label(text="Use this 2:1 image as an equirectangular environment.")
             self.layout.label(text="Pack the panorama and keep the original World unchanged.")
-            self.layout.label(
-                text="PNG/JPEG are LDR; EXR does not guarantee HDR or seamless content."
-            )
+            self.layout.label(text="PNG/JPEG are LDR; EXR may not be HDR or seamless.")
             self.layout.label(text="Restore remains available in this session while unchanged.")
 
     def cancel(self, context):

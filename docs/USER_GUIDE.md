@@ -464,10 +464,15 @@ image must be a supported 2:1 panorama whose actual format matches that saved
 declaration; Blender uses it as an equirectangular environment, packs it and
 keeps the original World untouched. PNG and JPEG are LDR. EXR can store HDR, but
 its format alone says nothing about the actual range or seamless edges. An EXR
-whose header declares ACES AP0 primaries uses Blender's ACES2065-1 color space;
-one declaring other non-Rec.709 primaries is refused. Blender ignores JPEG EXIF
-orientation. An ordinary nonpanoramic image reports a local error and leaves the
-original World in place.
+whose header declares ACES AP0 primaries uses Blender's ACES2065-1 color space.
+An EXR declaring other chromaticities, such as ACEScg or Rec.2020, is refused
+because Blender would light the scene with the wrong primaries. So is one whose
+color declarations conflict, or that Blender decodes in a color space other than
+the one its primaries declare. Blender ignores JPEG EXIF orientation and
+embedded ICC profiles: a rotated or mirrored JPEG is refused, so save it
+upright, and a wide-gamut JPEG looks mis-tinted unless converted to sRGB first.
+An ordinary nonpanoramic image reports a local error and leaves the original
+World in place.
 
 After success, **Restore previous World** offers a separate confirmation in the
 same session. Edited/replaced World or image data prevents restoration so your

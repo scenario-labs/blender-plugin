@@ -114,15 +114,16 @@ def isolated_manager():
                     original.add_note(message)
 
 
-def _exr_attribute(name, kind, payload):
+def exr_attribute(name, kind, payload):
     return name + b"\0" + kind + b"\0" + struct.pack("<I", len(payload)) + payload
 
 
-def scanline_exr(width=8, height=4, primaries=None, value=(4.0, 0.5, 0.25)):
+def scanline_exr(width=8, height=4, primaries=None, value=(4.0, 0.5, 0.25), extra=b""):
     """Uncompressed FLOAT B/G/R scanline OpenEXR, optionally declaring chromaticities.
 
     Written directly from the OpenEXR file layout so tests control every header
     attribute, unlike Blender's writer, which adds its own color metadata.
+    ``extra`` adds encoded attributes such as other color declarations.
     """
     channels = b"".join(
         name + b"\0" + struct.pack("<iBBBBii", 2, 0, 0, 0, 0, 1, 1) for name in (b"B", b"G", b"R")
@@ -131,20 +132,21 @@ def scanline_exr(width=8, height=4, primaries=None, value=(4.0, 0.5, 0.25)):
     declared = (
         b""
         if primaries is None
-        else _exr_attribute(b"chromaticities", b"chromaticities", struct.pack("<8f", *primaries))
+        else exr_attribute(b"chromaticities", b"chromaticities", struct.pack("<8f", *primaries))
     )
     header = (
         b"\x76\x2f\x31\x01"
         + struct.pack("<I", 2)
-        + _exr_attribute(b"channels", b"chlist", channels + b"\0")
+        + exr_attribute(b"channels", b"chlist", channels + b"\0")
         + declared
-        + _exr_attribute(b"compression", b"compression", b"\0")
-        + _exr_attribute(b"dataWindow", b"box2i", window)
-        + _exr_attribute(b"displayWindow", b"box2i", window)
-        + _exr_attribute(b"lineOrder", b"lineOrder", b"\0")
-        + _exr_attribute(b"pixelAspectRatio", b"float", struct.pack("<f", 1.0))
-        + _exr_attribute(b"screenWindowCenter", b"v2f", bytes(8))
-        + _exr_attribute(b"screenWindowWidth", b"float", struct.pack("<f", 1.0))
+        + extra
+        + exr_attribute(b"compression", b"compression", b"\0")
+        + exr_attribute(b"dataWindow", b"box2i", window)
+        + exr_attribute(b"displayWindow", b"box2i", window)
+        + exr_attribute(b"lineOrder", b"lineOrder", b"\0")
+        + exr_attribute(b"pixelAspectRatio", b"float", struct.pack("<f", 1.0))
+        + exr_attribute(b"screenWindowCenter", b"v2f", bytes(8))
+        + exr_attribute(b"screenWindowWidth", b"float", struct.pack("<f", 1.0))
         + b"\0"
     )
     red, green, blue = value

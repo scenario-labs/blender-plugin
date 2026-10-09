@@ -2283,6 +2283,8 @@ class ModelGenerationTests(unittest.TestCase):
         labels = [call.kwargs.get("text") for call in fake.layout.label.call_args_list]
         self.assertIn("Selected: JPEG (LDR)", labels)
         self.assertIn("Use this 2:1 image as an equirectangular environment.", labels)
+        # The 520 px dialog was verified on the desktop with 59-character lines.
+        self.assertLessEqual(max(len(label) for label in labels), 59)
         operator.cancel(fake, context)
         self.assertNotIn(fake.application_id, owner._application_approvals)
         self.assertEqual(bpy.context.scene.world, previous)

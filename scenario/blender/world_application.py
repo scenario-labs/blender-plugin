@@ -22,8 +22,12 @@ from ..core.scene.panorama import (
 )
 
 _SUFFIXES = {"PNG": ".png", "JPEG": ".jpg", "OPEN_EXR": ".exr"}
-# Blender's bundled OCIO configuration names for declared OpenEXR primaries.
-_COLORSPACES = {"aces_ap0": "ACES2065-1"}
+# Color spaces in Blender's bundled OCIO configuration with the OpenEXR primaries
+# the preflight classified. A colorInteropID can select the sRGB transfer.
+_COLORSPACES = {
+    "rec709": frozenset({"Linear Rec.709", "sRGB"}),
+    "aces_ap0": frozenset({"ACES2065-1"}),
+}
 
 
 class WorldApplicationError(RuntimeError):
@@ -236,17 +240,15 @@ def _load_image(data, info):
                 raise WorldApplicationError(
                     "OpenEXR panorama did not decode as floating-point data"
                 )
-            colorspace = _COLORSPACES.get(info.chromaticities)
-            if colorspace is not None and image.colorspace_settings.name != colorspace:
-                # Blender 5.0-5.2 already map AP0 chromaticities on decode. Keep
-                # the declared primaries authoritative if a decoder differs; the
-                # private file still exists, so Blender re-reads it before packing.
-                try:
-                    image.colorspace_settings.name = colorspace
-                except TypeError:
-                    raise WorldApplicationError(
-                        f"Blender's color configuration has no {colorspace} color space"
-                    ) from None
+            expected = _COLORSPACES.get(info.chromaticities)
+            if expected is not None and image.colorspace_settings.name not in expected:
+                # Metadata the preflight did not classify, another decoder or a
+                # custom OCIO configuration chose other primaries; never override
+                # either declaration. Undeclared files keep Blender's own choice.
+                raise WorldApplicationError(
+                    f"Blender decoded the panorama as {image.colorspace_settings.name!r}, "
+                    "which conflicts with its declared color primaries"
+                )
             image.pack()
             if image.packed_file is None:
                 raise WorldApplicationError("The panorama could not be retained in the blend file")

@@ -267,7 +267,7 @@ in-place editing, other OS desktop behavior, release readiness or #263 resolutio
 **Set panorama as World (N)** prepares one PNG, JPEG or OpenEXR result and
 identifies the selected scene and current World. A **Selected** line states the
 saved media type's declared format, using the same wording as MCP `format`:
-PNG or JPEG as LDR, or OpenEXR as float with ACES AP0 primaries in ACES2065-1.
+PNG or JPEG as LDR, or OpenEXR as float with ACES AP0 in ACES2065-1.
 Invoke computes that text; drawing only displays it. Explain the
 2:1/equirectangular requirement, packed image, preserved original World, LDR/HDR
 distinction and session-local restore limit. The action's presence is a
@@ -292,8 +292,10 @@ app copy used a distinct bundle identifier and local ad-hoc signature for window
 targeting; vendor executable code and the extension ZIP were unchanged. This does
 not establish actual HDR/seam quality, other OS desktop support, resolution of
 #263 or release acceptance. That capture predates the **Selected** format line
-and JPEG/OpenEXR offers; headless native tests cover their invoke, draw and
-cancel handling, but desktop interaction with the new wording is not yet recorded.
+and the JPEG and `image/aces` offers. Headless native tests cover their invoke,
+draw and cancel handling, and every new dialog line stays within 59 characters,
+the longest line verified in that capture. Desktop interaction with the new
+wording is not yet recorded; that check is an open follow-up under #98.
 
 ## Saved material approval
 

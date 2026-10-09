@@ -75,8 +75,32 @@ def jpeg(width=4, height=2, *, marker=0xC0, sof=None, before=b"", scan=b"\x12\x3
     )
 
 
+# Each later scan: an SOS header for one component and one entropy-coded byte.
+EXTRA_SCAN = segment(0xDA, b"\x01\x01\x00\x00\x00\x00") + b"\x00"
+
+
+def exif(orientation=1, *, order=b"MM", tag=0x0112, kind=3, count=1, entries=None):
+    """APP1 EXIF segment with one IFD0 entry; orientation None omits the tag."""
+    endian = "<" if order == b"II" else ">"
+    # A camera-make tag stands in when orientation is omitted.
+    value = struct.pack(endian + "HH", orientation or 0, 0)
+    entry = struct.pack(endian + "HHI", 0x010F if orientation is None else tag, kind, count)
+    entry += value
+    number = 1 if entries is None else entries
+    tiff = order + struct.pack(endian + "HIH", 42, 8, number) + entry + bytes(4)
+    return segment(0xE1, b"Exif\0\0" + tiff)
+
+
 def chromaticities(values):
     return attribute(b"chromaticities", b"chromaticities", struct.pack("<8f", *values))
+
+
+def container_flag(value, kind=b"int"):
+    return attribute(b"acesImageContainerFlag", kind, struct.pack("<i", value))
+
+
+def interop(value, kind=b"string"):
+    return attribute(b"colorInteropID", kind, value)
 
 
 REC709 = (0.64, 0.33, 0.30, 0.60, 0.15, 0.06, 0.3127, 0.3290)
@@ -408,11 +432,68 @@ def test_jpeg_excess_segments_rejected_before_further_header_work():
         assert unpack.call_count == panorama.MAX_JPEG_SEGMENTS
 
 
-def test_jpeg_metadata_segments_are_left_to_blender():
-    # EXIF orientation 6 is not interpreted; Blender decodes stored pixel order.
-    tiff = b"MM\x00\x2a" + struct.pack(">IH", 8, 1) + struct.pack(">HHII", 0x0112, 3, 1, 6 << 16)
-    data = jpeg(before=segment(0xE1, b"Exif\0\0" + tiff + bytes(4)) + segment(0xE2, b"ICC"))
+@pytest.mark.parametrize("scans", [1, 2, panorama.MAX_JPEG_SCANS])
+def test_jpeg_scans_up_to_the_limit_are_accepted(scans):
+    data = jpeg(marker=0xC2, scan=b"\x12\x34" + EXTRA_SCAN * (scans - 1))
+    assert data.count(b"\xff\xda") == scans
     assert panorama.inspect_panorama(data) == panorama.PanoramaInfo("JPEG", 4, 2, False)
+
+
+@pytest.mark.parametrize("scans", [panorama.MAX_JPEG_SCANS + 1, 4010])
+def test_jpeg_scans_beyond_the_limit_rejected_before_decode(scans):
+    # About 15 bytes per scan; each makes libjpeg revisit every frame block.
+    data = jpeg(marker=0xC2, scan=b"\x12\x34" + EXTRA_SCAN * (scans - 1))
+    with pytest.raises(panorama.PanoramaError, match="scan limit"):
+        panorama.inspect_panorama(data)
+
+
+def test_jpeg_scan_count_ignores_stuffed_data_and_pre_scan_segments():
+    # FF00 stuffing is not a marker, and SOS bytes inside APPn metadata such as
+    # an EXIF thumbnail precede the first scan.
+    thumbnail = segment(0xE2, b"\xff\xda" * panorama.MAX_JPEG_SCANS)
+    stuffed = b"\xff\x00" * panorama.MAX_JPEG_SCANS
+    data = jpeg(before=thumbnail, scan=stuffed + EXTRA_SCAN * (panorama.MAX_JPEG_SCANS - 1))
+    assert panorama.inspect_panorama(data).file_format == "JPEG"
+
+
+@pytest.mark.parametrize("order", [b"MM", b"II"])
+@pytest.mark.parametrize("orientation", [None, 1])
+def test_upright_jpeg_exif_and_other_metadata_are_left_to_blender(order, orientation):
+    xmp = segment(0xE1, b"http://ns.adobe.com/xap/1.0/\0<x:xmpmeta/>")
+    before = exif(orientation, order=order) + xmp + segment(0xE2, b"ICC_PROFILE\0")
+    data = jpeg(before=before)
+    assert panorama.inspect_panorama(data) == panorama.PanoramaInfo("JPEG", 4, 2, False)
+
+
+@pytest.mark.parametrize("order", [b"MM", b"II"])
+@pytest.mark.parametrize("orientation", [0, 2, 3, 4, 5, 6, 7, 8, 9])
+def test_rotated_or_mirrored_jpeg_rejected_before_decode(order, orientation):
+    # Blender 5.0-5.2 ignore EXIF orientation and would apply stored pixel order.
+    with pytest.raises(panorama.PanoramaError, match="EXIF-rotated or mirrored"):
+        panorama.inspect_panorama(jpeg(before=exif(orientation, order=order)))
+
+
+@pytest.mark.parametrize(
+    "segment_bytes",
+    [
+        exif(order=b"XX"),
+        exif(kind=4),
+        exif(count=2),
+        exif(entries=2),
+        segment(0xE1, b"Exif\0\0MM\x00\x2a"),
+        segment(0xE1, b"Exif\0\0MM\x00\x2b\x00\x00\x00\x08\x00\x00"),
+        segment(0xE1, b"Exif\0\0MM\x00\x2a\x00\x00\x00\x40\x00\x00"),
+        segment(0xE1, b"Exif\0\0MM\x00\x2a\x00\x00\x00\x04\x00\x00"),
+    ],
+)
+def test_unreadable_jpeg_exif_orientation_fails_closed(segment_bytes):
+    with pytest.raises(panorama.PanoramaError, match="EXIF metadata is invalid"):
+        panorama.inspect_panorama(jpeg(before=segment_bytes))
+
+
+def test_jpeg_with_several_exif_segments_rejected():
+    with pytest.raises(panorama.PanoramaError, match="conflicting EXIF"):
+        panorama.inspect_panorama(jpeg(before=exif() + exif()))
 
 
 def test_general_image_preflight_does_not_accept_jpeg():
@@ -438,6 +519,61 @@ def test_exr_without_primaries_keeps_blender_default():
 
 
 @pytest.mark.parametrize(
+    "extra,expected",
+    [
+        # Blender 5.0-5.2 select ACES2065-1 for a container flag of 1 alone.
+        (container_flag(1), "aces_ap0"),
+        (container_flag(1) + chromaticities(ACES_AP0), "aces_ap0"),
+        (container_flag(0), None),
+        (container_flag(2), None),
+        (container_flag(0) + chromaticities(ACES_AP0), "aces_ap0"),
+        (container_flag(0) + chromaticities(REC709), "rec709"),
+        (interop(b"lin_ap0_scene"), "aces_ap0"),
+        (interop(b"lin_rec709_scene"), "rec709"),
+        (interop(b"lin_ap0_scene") + container_flag(1), "aces_ap0"),
+        (interop(b"lin_ap0_scene") + chromaticities(ACES_AP0), "aces_ap0"),
+        (interop(b"lin_rec709_scene") + chromaticities(REC709), "rec709"),
+    ],
+)
+def test_exr_container_flag_and_interop_id_are_classified(extra, expected):
+    assert panorama.inspect_panorama(exr(extra=extra)).chromaticities == expected
+
+
+@pytest.mark.parametrize(
+    "extra",
+    [
+        # Blender would decode these as ACES2065-1 or by colorInteropID.
+        container_flag(1) + chromaticities(REC709),
+        interop(b"lin_ap0_scene") + chromaticities(REC709),
+        interop(b"lin_rec709_scene") + chromaticities(ACES_AP0),
+        interop(b"lin_rec709_scene") + container_flag(1),
+    ],
+)
+def test_conflicting_exr_color_declarations_rejected(extra):
+    with pytest.raises(panorama.PanoramaError, match="declarations conflict"):
+        panorama.inspect_panorama(exr(extra=extra))
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        b"lin_ap1_scene",
+        b"lin_rec2020_scene",
+        b"srgb_rec709_display",
+        b"data",
+        b"fixture_unknown",
+        b"",
+    ],
+)
+def test_other_exr_interop_ids_are_left_to_the_decoded_colorspace_check(value):
+    # Blender writes srgb_rec709_display itself and ignores it when decoding, but
+    # selects ACEScg for lin_ap1_scene; the World primitive verifies the result.
+    assert panorama.inspect_panorama(exr(extra=interop(value))).chromaticities is None
+    data = exr(extra=interop(value) + chromaticities(REC709))
+    assert panorama.inspect_panorama(data).chromaticities == "rec709"
+
+
+@pytest.mark.parametrize(
     "values",
     [ACES_AP1, REC2020, ACES_AP0[:6] + REC709[6:], (float("nan"),) * 8],
 )
@@ -451,6 +587,9 @@ def test_exr_other_primaries_fail_closed_for_world(values):
     [
         attribute(b"chromaticities", b"v2f", struct.pack("<8f", *ACES_AP0)),
         attribute(b"chromaticities", b"chromaticities", struct.pack("<7f", *ACES_AP0[:7])),
+        container_flag(1, kind=b"string"),
+        attribute(b"acesImageContainerFlag", b"int", b"\x01\x00"),
+        interop(struct.pack("<i", 1), kind=b"int"),
     ],
 )
 def test_malformed_exr_primaries_rejected(extra):
@@ -459,7 +598,8 @@ def test_malformed_exr_primaries_rejected(extra):
 
 
 def test_general_image_preflight_does_not_classify_exr_primaries():
-    info = panorama.inspect_image(exr(3, 5, extra=chromaticities(ACES_AP1)))
+    extra = chromaticities(ACES_AP1) + container_flag(1) + interop(b"lin_ap1_scene")
+    info = panorama.inspect_image(exr(3, 5, extra=extra))
     assert info == panorama.PanoramaInfo("OPEN_EXR", 3, 5, True)
 
 
@@ -472,6 +612,8 @@ def test_world_media_types_name_their_required_container_and_wording():
         assert ("LDR" in label) == (container != "OPEN_EXR")
         assert ("ACES2065-1" in label) == (container == "OPEN_EXR")
     assert panorama.describe_world_media("image/aces").startswith("ACES-labelled OpenEXR")
+    # The 520 px confirmation was verified on the desktop with 59-character lines.
+    assert max(len(f"Selected: {label}") for label in panorama._WORLD_MEDIA_LABELS.values()) <= 59
     for unsupported in ("image/webp", "image/vnd.radiance", "image/jpg", ""):
         assert unsupported not in panorama.WORLD_MEDIA_TYPES
         assert panorama.describe_world_media(unsupported) == "Unsupported media type"

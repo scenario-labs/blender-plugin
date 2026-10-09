@@ -11,8 +11,10 @@ publication. OAuth remains deferred under #67.
 
 Reviewed on 2026-10-09 after the implementation stack merged. The supported
 release remains held by #68. The current development candidate includes the
-[grayscale material fix, #340](https://github.com/scenario-labs/blender-plugin/pull/340),
-which must merge before its dependent acceptance record.
+[grayscale material fix, #340](https://github.com/scenario-labs/blender-plugin/pull/340).
+That fix and its acceptance record (#341) are merged into `main` at
+`88b6b3ec8ebd5707581f6d39f0fd158c784873a2`. The exact tested source and ZIP
+identities below remain unchanged; the merge does not certify a rebuilt archive.
 
 | Item | Identity |
 | --- | --- |
@@ -80,7 +82,7 @@ Do not use the initial merged-main ZIP as the accepted material candidate.
 [Hosted main CI](https://github.com/scenario-labs/blender-plugin/actions/runs/37939493112)
 is green for the merged baseline, including Linux/Windows Blender 5.0.1, 5.1.2
 and 5.2.1. Those jobs build separate archives and do not certify #340 or this
-macOS ZIP. Check the current fix and acceptance PR heads before merging.
+macOS ZIP. Their later merges do not change the identity of the tested archive.
 
 ### Remaining acceptance handoff
 
@@ -107,12 +109,14 @@ Complete these checks on the corrected candidate before releasing:
 4. Physical focus/text/IME, viewport, small-window and alternate-DPI checks in
    each claimed desktop environment; sustained candidate rendering/playback and
    audio stability. Preserve the separate accepted human media review above.
-5. Complete protected hosted smoke acceptance (#40) and retain explicit
+5. Complete reference-upload acceptance and retain explicit
    experimental/unavailable capability limits. The 2026-10-09 administration
    follow-up added and read back required `ci-ok` while preserving all other
-   protections (#45), and configured the protected `smoke` environment and
-   private inputs. Scheduled spending remains disabled. See the
-   [maintainer record](../MAINTAINERS.md#smoke-lane) for hosted-run evidence.
+   protections (#45), and configured the protected `smoke` environment (#40).
+   The authorized five-lane hosted run and decrypted completed-result recovery
+   passed. Its version-1 plan has no new reference uploads. Scheduled spending
+   remains disabled. See the [maintainer record](../MAINTAINERS.md#smoke-lane)
+   for hosted-run evidence and the remaining scope.
 6. Validate the actual release-please 0.10.0 artifact, then complete the published
    checksum/provenance, extension index and native HTTPS installation checks at
    their proper release stage. This 0.9.9 candidate is not a published release.
@@ -446,8 +450,8 @@ source and ZIP identities.
 | Retained lanes | Existing image, material, GLB, video and audio outputs pass native application on the current candidate; the grayscale material failure is corrected by #340. These checks do not exercise the full approval journey. | Complete integrated native capture/upload/estimate/submission/application and retained render/edit/Film checks under #68 with explicit paid authorization where needed. |
 | Recovery and switching | Synthetic tests cover lost acknowledgement, stale quotes, scope changes and application claims. | Candidate-level UI/MCP parity, cancellation/restart races and failed download/import journeys with recorded outcomes under #65/#68. |
 | GPU, motion and audio | Human motion/audio review of the existing outputs is accepted; candidate native media insertion passes. Sustained candidate playback is unverified. | Complete native rendering/playback and sustained GPU/audio stability checks under #68; preserve the bounded human review above. |
-| Paid CI | The protected `smoke` environment, maintainer reviewer, main-only policy and private secrets are configured. Zero-cap hosted admission rejects execution; an authorized run passed admission and paused for review. Scheduled spending remains disabled. | Finish the authorized hosted run and encrypted recovery checks under #40. Reference-upload acceptance remains separate from a version-1 generation plan. |
-| Required checks | `ci-ok`, `pr-title` and `commits` are required after the 2026-10-09 update. Readback confirms other integrity rules and the separate review ruleset are unchanged. CodeQL and code-quality protection remain enforced. | Record #45's hosted negative title check and complete the documentation review/merge; do not drop existing protections. |
+| Paid CI | The protected `smoke` environment, maintainer reviewer, main-only policy and private secrets are configured. Zero-cap admission rejects execution; the approved hosted run produced five `READY` jobs and 16 receipt-verified files. Downloaded recovery decryption and offline resume passed without changing saved jobs. Scheduled spending remains disabled. | Reference-upload and uncertain-job acceptance remain separate from this version-1 generation/completed-result recovery plan. Provider-side monthly budgeting and recurring allowance need a separate decision under #40. |
+| Required checks | `ci-ok`, `pr-title` and `commits` are required after the 2026-10-09 update. Readback confirms other integrity rules and the separate review ruleset are unchanged. CodeQL and code-quality protection remain enforced. A deliberately invalid title failed its required check while GitHub reported the administration PR blocked; the conventional title was restored. | Complete #45's documentation review/merge and verify the final PR checks; do not drop existing protections. |
 | Final release artifact | The current corrected 0.9.9 ZIP passes exact-artifact native application and synthetic update/restart on all three macOS Blender versions. | Validate release-please's exact 0.10.0 ZIP, licenses, provenance/checksum and extension index; exercise public native installation/update under #36/#68 and the release procedure. |
 
 ## Native Library validation slice
@@ -545,7 +549,7 @@ GitHub state reviewed on 2026-10-07 is separate from candidate acceptance:
 | #31, #32, #42 | Closed for portable tooling, native baseline CI and weekly platform CI. Their infrastructure is a basis for validation, not proof of every product journey. |
 | #15, #17, #43, #47, #52 | Closed for their headless CLI, capture cleanup, local MCP security, hosted link monitoring and generated MCP documentation scopes. Keep these resolved foundations closed. |
 | #37 | Closed for the native update repository foundation. Exact 0.10.0 public delivery and update evidence still belong to #36/#68. |
-| #36, #39, #40, #45 | Open. Publication/provenance administration, action pinning, protected paid smoke acceptance and required-check enforcement retain their own gates. |
+| #36, #39, #40, #45 | Open. Required-check settings and the protected hosted five-lane smoke/recovery check are verified; their documentation review/merge and remaining scoped acceptance are separate. Publication/provenance administration and action pinning retain their own gates. |
 | #189 | Open. A local PCM WAV waveform preview exists; broader audio preview and native listening acceptance are not complete. |
 | #263 | Closed on 2026-10-04. Its public record has no documented root cause or verified fix for the historical desktop crash. Preserve the [diagnostic limits](../KNOWN_LIMITATIONS.md) and obtain current-candidate sustained desktop evidence under #68; closure alone supplies no new runtime evidence. |
 

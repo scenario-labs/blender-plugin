@@ -60,6 +60,16 @@ integrity rule, condition and bypass actor is unchanged; the review ruleset is
 unchanged too. CodeQL and code-quality enforcement remain in the integrity
 ruleset. Preserve the existing `commits` and `pr-title` checks.
 
+The [negative title check](https://github.com/scenario-labs/blender-plugin/actions/runs/37947533724)
+on [the administration PR](https://github.com/scenario-labs/blender-plugin/pull/343)
+failed for a deliberately nonconventional title while GitHub reported merging
+blocked. After the conventional title was restored,
+[the title check passed](https://github.com/scenario-labs/blender-plugin/actions/runs/37947630915),
+alongside `commits` and [required `ci-ok`](https://github.com/scenario-labs/blender-plugin/actions/runs/37947534205).
+This verifies the required
+failure path without attempting a merge or changing bypass rules; human review
+and the other required checks remain independent gates.
+
 Renaming a required check can block every merge until an administrator updates
 its ruleset context. Coordinate the workflow and settings changes, then update
 this record. Do not replace a ruleset from a historical example; read its complete
@@ -259,10 +269,25 @@ command. A new dispatch requires a new spending decision, never an assumed retry
 See [hosted recovery and limits](../tests/smoke/README.md#protected-hosted-execution-and-recovery).
 The [zero-cap hosted check](https://github.com/scenario-labs/blender-plugin/actions/runs/37946825690)
 failed admission and skipped the protected job, with no Scenario request.
+The [non-main zero-cap dispatch](https://github.com/scenario-labs/blender-plugin/actions/runs/37948136030)
+skipped both jobs before any step ran. This verifies the workflow's branch guard;
+API readback separately verifies the environment's exact `main` policy.
 The [authorized hosted check](https://github.com/scenario-labs/blender-plugin/actions/runs/37946893572)
-passed admission and visibly paused at the required-reviewer gate before approval.
-Its result and encrypted recovery validation remain pending until recorded below;
-configuration and a paused job alone do not establish live completion under #40/#68.
+passed admission, visibly paused at the required-reviewer gate, then succeeded
+after approval on source `88b6b3ec8ebd5707581f6d39f0fd158c784873a2`.
+Image, material, video, 3D and audio each produced one saved `READY` job.
+All 16 downloaded result files matched their saved byte counts and SHA-256
+receipts. Only the encrypted recovery archive was published as an artifact;
+private download/decryption and quote-binding verification passed. Running
+`tools.smoke_suite resume` on the decrypted suite passed with sockets blocked,
+zero network calls and the same five job records unchanged. Hosted logs contain
+none of the configured secret values, saved job/asset identities or signed queries.
+
+This version-1 plan exercises generation, polling, download and completed-result
+recovery. It does not establish version-2 reference uploads, uncertain remote-job
+recovery, Blender application, physical interaction or media-quality acceptance.
+No provider-side monthly budget was configured or recurring allowance authorized.
+Keep those remaining #40/#68 scopes separate from the completed hosted check.
 
 ## Project and labels
 
@@ -307,8 +332,8 @@ These tasks retain their existing owner issues. Read back the result and update
 this guide after an authorized change; do not treat the checklist as permission
 to perform it.
 
-- [ ] Finish authorized hosted smoke and encrypted-recovery acceptance: #40. The environment, reviewer, main-only policy and private secrets are configured; recurring allowance remains disabled.
-- [x] Add and read back the `ci-ok` required check with its verified GitHub Actions identity; preserve existing `pr-title`, `commits`, CodeQL, code-quality and review rules: #45. Hosted negative-check evidence and this documentation merge remain part of issue completion.
+- [x] Configure the protected smoke environment and private secrets, then verify the authorized five-lane hosted run and decrypted completed-result recovery: #40. Reference-upload acceptance and any future provider-side monthly budget/recurring allowance remain separate; scheduled spending is disabled.
+- [x] Add and read back the `ci-ok` required check with its verified GitHub Actions identity; preserve existing `pr-title`, `commits`, CodeQL, code-quality and review rules: #45. The hosted negative title check is verified; documentation review and merge remain.
 - [ ] Verify the first automated release, then remove the repository-admin tag bypass while retaining release App integration `4751046`, both tag patterns and all protection rules; enable immutable releases only after publication and download verification: #36.
 - [ ] Decide restricted allowed actions and require SHA pinning after workflow pins and update behavior are verified: #39.
 - [ ] Complete #56: the published handbook, homepage and manifest Website link are aligned; desktop Website-action acceptance remains. Native update publication remains #37.

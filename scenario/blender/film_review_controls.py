@@ -7,8 +7,12 @@ import textwrap
 import bpy
 from bpy.props import BoolProperty, StringProperty
 
+from ..core.jobs.store import StoreError
 from . import film_jobs, runtime
 from .film_scene_controls import _error
+
+# Selection, edits and Undo/Redo revoke the scene's captured origin before a build.
+_UNCHANGED = "Selecting, editing or Undo here discards it"
 
 
 def commands(*, create=True):
@@ -41,6 +45,9 @@ class SCENARIO_OT_prepare_film_review(bpy.types.Operator):
             # Read the saved store here, never while drawing.
             self._master = self._owner.master_available(context.scene, self._mode)
             self._scene_name = context.scene.name
+        except StoreError as error:
+            # Store errors carry first-party wording about saved jobs, not the recipe.
+            return _error(self, f"Inspect saved jobs before preparing: {error}")
         except Exception:
             return _error(self, "Load a valid Film recipe in the current scene first")
         self.include_master = False
@@ -83,7 +90,8 @@ class SCENARIO_OT_build_film_review(bpy.types.Operator):
     bl_idname = "scenario.build_film_review"
     bl_label = "Build review scene"
     bl_description = "Create one new review scene from the prepared copies and mark generated sources applied, without spending credits"
-    bl_options = {"REGISTER", "UNDO"}
+    # Approval is consumed once: like the timeline build, no REGISTER (redo panel, Info log).
+    bl_options = {"UNDO"}
     review_id: StringProperty(options={"HIDDEN", "SKIP_SAVE"})
 
     @classmethod
@@ -274,9 +282,12 @@ class SCENARIO_PT_film_review(bpy.types.Panel):
                     "BUILDING": "Building the review scene...",
                 }[phase]
             )
+            if phase == "PREPARING":
+                box.label(text=_UNCHANGED)
         elif phase == "READY":
             box.label(text=f"{status['frames']} frames at {status['fps']} fps")
             box.label(text=f"{status['shots']} shots; {status['sources']} sources")
+            box.label(text=_UNCHANGED)
             box.operator("scenario.build_film_review", icon="SCENE_DATA").review_id = identifier
         elif phase == "UNCERTAIN":
             box.label(text="Review build needs inspection", icon="ERROR")

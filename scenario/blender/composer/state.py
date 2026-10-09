@@ -12,9 +12,8 @@ class ComposerState:
     def __init__(self):
         self.expanded = False
         self.focused = False
-        self.dragging = (
-            False  # left button held inside the prompt: mouse moves extend the selection
-        )
+        # left button held inside the prompt: mouse moves extend the selection
+        self.dragging = False
         self.hover = None
         self.mouse = (0, 0)
         self.field = TextField("")
@@ -54,32 +53,63 @@ class ComposerState:
             self.synced_lane, self.synced_text = lane, lane_state.prompt
         return lane_state
 
+    def owns_form(self, scene):
+        """Whether the field mirrors the form shown now: the scene and form it was synchronized from."""
+        try:
+            return self.synced_scene == scene and self.synced_lane == self.generation_lane(scene)
+        except ReferenceError:
+            return False
+
+    def form_replaced(self, scene):
+        """Whether another form replaced the one the focused prompt belongs to.
+
+        A Settings mode switch, a model pick, another window or a tool can do it. Each edit was
+        committed to the original form as it was typed.
+        """
+        return self.focused and not self.owns_form(scene)
+
+    def replaced_form(self, scene):
+        """(tab, lane) of the original form a replaced focused prompt still describes in this scene."""
+        if not self.form_replaced(scene):
+            return None
+        try:
+            same_scene = self.synced_scene == scene
+        except ReferenceError:
+            return None
+        if not same_scene or scene.scenario.lane_state(self.synced_lane) is None:
+            return None
+        return props.form_tab(self.synced_lane), self.synced_lane
+
     def commit_to_lane(self, scene):
-        lane = self.generation_lane(scene)
-        lane_state = scene.scenario.lane_state(lane)
+        """Write the field into the form it was synchronized from, never into one that replaced it."""
+        if not self.owns_form(scene):
+            return None
+        lane_state = scene.scenario.lane_state(self.synced_lane)
         if lane_state.prompt != self.field.text:
             lane_state.prompt = self.field.text
-        self.synced_lane, self.synced_text = lane, self.field.text
+        self.synced_text = self.field.text
         return lane_state
+
+    def leave_focus(self, scene):
+        """Esc, Enter, Generate, collapse or a drag: commit to the original form only, then blur."""
+        self.commit_to_lane(scene)
+        self.focused = False
+        self.dragging = False
 
     def flush_focused_prompt(self, scene):
         """Leave text focus only after committing to the unchanged original form."""
         if not self.focused:
             return
         try:
-            lane = self.generation_lane(scene)
             valid = (
-                self.synced_scene == scene
-                and self.synced_lane == lane
-                and self.synced_text == scene.scenario.lane_state(lane).prompt
+                self.owns_form(scene)
+                and self.synced_text == scene.scenario.lane_state(self.synced_lane).prompt
             )
         except ReferenceError:
             valid = False
         if not valid:
             raise RuntimeError("Finish editing the original prompt before leaving the composer")
-        self.commit_to_lane(scene)
-        self.focused = False
-        self.dragging = False
+        self.leave_focus(scene)
 
     # -- placement ------------------------------------------------------------
     def begin_drag(self, mouse, kind):

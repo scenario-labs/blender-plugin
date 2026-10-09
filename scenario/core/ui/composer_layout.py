@@ -6,10 +6,8 @@ from dataclasses import dataclass, field
 
 MARGIN = 24
 PILL_WIDTH, PILL_HEIGHT = 320, 44
-CARD_WIDTH, CARD_HEIGHT = (
-    820,
-    132,
-)  # pad + tabs + gap + prompt + gap + model row + pad: no empty band under the buttons
+# pad + tabs + gap + prompt + gap + model row + pad: no empty band under the buttons
+CARD_WIDTH, CARD_HEIGHT = 820, 132
 TAB_HEIGHT, ROW_GAP, PAD = 24, 8, 12
 GENERATE_WIDTH, MODEL_WIDTH, COLLAPSE_SIZE, SETTINGS_WIDTH = 190, 200, 20, 84
 RESIZE_SIZE, MIN_CARD_WIDTH, MIN_PILL_WIDTH, MIN_VISIBLE, DRAG_THRESHOLD = 16, 420, 200, 40, 4
@@ -31,6 +29,12 @@ PLACEHOLDERS = {
     "render_video": "Describe the look of the video (empty: Prompt Spark writes it)",
     "edit3d": "Describe the edit to the selected mesh",
 }
+# Forms whose model takes no prompt (several Edit 3D tasks) offer nothing to type.
+NO_PROMPT = "This model takes no prompt"
+# A focused prompt whose form another one replaced (a mode switch, a model pick, another window).
+FORM_REPLACED_NOTE = "The form changed: press Esc to show it"
+FORM_REPLACED_TYPING = "The form behind the composer changed. Press Esc to show it; your text stays in its original form"
+FORM_REPLACED_GENERATE = "The form behind the composer changed. Check its prompt, then generate"
 
 
 def placeholder_for(lane):
@@ -185,9 +189,8 @@ class TextField:
         sel = self.selection
         self._clear_selection()
         if sel:
-            self.caret = (
-                sel[0] if delta < 0 else sel[1]
-            )  # collapse onto the edge, like a native text field
+            # collapse onto the edge, like a native text field
+            self.caret = sel[0] if delta < 0 else sel[1]
             return
         self.caret = self._clamp(self.caret + delta)
 

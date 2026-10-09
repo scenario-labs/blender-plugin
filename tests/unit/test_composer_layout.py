@@ -72,11 +72,14 @@ def test_prompt_placeholder_and_lane_labels():
         and cl.LANE_LABELS["render_video"] == "Render Video"
     )
     assert cl.placeholder_for("image").startswith("Describe")
-    assert "Prompt Spark" in cl.placeholder_for(
-        "render_image"
-    ) and "Prompt Spark" in cl.placeholder_for("render_video")
+    assert "Prompt Spark" in cl.placeholder_for("render_image")
+    assert "Prompt Spark" in cl.placeholder_for("render_video")
     assert cl.placeholder_for("unknown") == "Type a prompt"
-    assert "selected mesh" in cl.placeholder_for("edit3d")  # the 3D tab in Edit mode
+    # the 3D tab in Edit mode
+    assert "selected mesh" in cl.placeholder_for("edit3d")
+    # an Edit 3D task, such as retopology, may take no prompt at all
+    assert cl.NO_PROMPT == "This model takes no prompt"
+    assert "Esc" in cl.FORM_REPLACED_NOTE and "Esc" in cl.FORM_REPLACED_TYPING
 
 
 def test_shift_arrows_extend_and_shrink_the_selection():
@@ -196,9 +199,8 @@ def test_settings_chip_and_corner_minus_button():
     expanded = cl.pill_placement(1600, 900, expanded=True, scale=1.0)
     card, c = expanded.card_rect, expanded.collapse_rect
     pad = cl.PAD
-    assert (
-        c.w == c.h == cl.TAB_HEIGHT
-    )  # the minus button is a cell of the tab row, same height as the tabs
+    # the minus button is a cell of the tab row, same height as the tabs
+    assert c.w == c.h == cl.TAB_HEIGHT
     assert abs((card.right - c.right) - pad) < 1e-6  # same padding on the right as the card
     tab = next(iter(expanded.tab_rects.values()))
     assert abs(c.y - tab.y) < 1e-6 and abs(c.h - tab.h) < 1e-6  # aligned with the tab row
@@ -208,9 +210,8 @@ def test_settings_chip_and_corner_minus_button():
     assert s is not None and s.x > expanded.model_rect.right and s.right < expanded.generate_rect.x
     assert expanded.hit(s.x + 1, s.y + 1) == ("settings",)
     assert expanded.hit(c.x + c.w - 1, c.y + c.h - 1) == ("collapse",)
-    assert len(expanded.tab_rects) == 6 and expanded.hit(
-        *_center(expanded.tab_rects["render_video"])
-    ) == ("tab", "render_video")
+    assert len(expanded.tab_rects) == 6
+    assert expanded.hit(*_center(expanded.tab_rects["render_video"])) == ("tab", "render_video")
     narrow = cl.pill_placement(420, 400, expanded=True, scale=1.0)
     assert narrow.settings_rect is None or narrow.settings_rect.right < narrow.generate_rect.x
     assert narrow.hit(narrow.model_rect.x + 1, narrow.model_rect.y + 1) == ("model",)

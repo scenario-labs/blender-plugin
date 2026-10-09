@@ -220,6 +220,7 @@ class ComposerEditFormTests(unittest.TestCase):
         self.scene = bpy.context.scene
         self.scene.scenario.lane = "3d"
         self.scene.scenario.three_d_mode = "TEXT"
+        self.models = {}
         prompt = {"name": "prompt", "type": "string", "required": True, "prompt": True}
         self.configure(
             "3d",
@@ -255,7 +256,7 @@ class ComposerEditFormTests(unittest.TestCase):
         self.edit3d = self.scene.scenario.edit3d
 
     def configure(self, lane, model, prompt):
-        self.jobs.model = model  # the fixture describes the model quoted next
+        self.models[lane] = model
         record = submodule("core.api.catalog").ModelRecord.from_api(model)
         self.runtime.state.records[record.id] = record
         self.runtime.state.lane_models[lane] = [record]
@@ -267,6 +268,7 @@ class ComposerEditFormTests(unittest.TestCase):
         state.prompt = prompt
 
     def quote(self, lane, cost):
+        self.jobs.model = self.models[lane]  # the fixture describes the model it quotes
         self.jobs.dry_run_costs[self.scene.scenario.lane_state(lane).model_id] = cost
         self.jobs.ui_quote(lane)
 
@@ -283,15 +285,15 @@ class ComposerEditFormTests(unittest.TestCase):
         )
         blf = MagicMock()
         blf.dimensions.return_value = (10.0, 10.0)
-        placeholder = submodule("core.ui.composer_layout").placeholder_for
+        placeholder_for = submodule("core.ui.composer_layout").placeholder_for
 
         def chip(rect, label, *args, fill=None, **kwargs):
             shown.chips.append(label)
             if fill == self.draw.ACCENT:
                 shown.active_tab = label
 
-        def prompt_field(rect, field, focused, lane, scale):
-            shown.fields.append(field.text or placeholder(lane))
+        def prompt_field(rect, field, focused, lane, scale, placeholder=None):
+            shown.fields.append(field.text or placeholder or placeholder_for(lane))
 
         recorders = {
             "bpy": SimpleNamespace(context=context),
@@ -314,7 +316,7 @@ class ComposerEditFormTests(unittest.TestCase):
         shown.label = next(s for s in shown.texts if s.startswith("Generate"))
         return shown
 
-    def press(self, kind=None, key=None):
+    def press(self, kind=None, key=None, text="", expect=("RUNNING_MODAL",)):
         """Deliver one composer click (on `kind`) or one key press to the real modal handler."""
         self.runtime.state.composer_modal_running = True
         context = SimpleNamespace(scene=self.scene, region=MagicMock())
@@ -327,14 +329,37 @@ class ComposerEditFormTests(unittest.TestCase):
             ctrl=False,
             oskey=False,
             alt=False,
-            unicode="",
+            unicode=text,
         )
         operator = SimpleNamespace(report=MagicMock(), _finish=MagicMock())
         with patch.object(self.modal, "_layout") as layout:
             layout.return_value.hit.return_value = (kind,) if kind else None
             result = self.modal.SCENARIO_OT_composer_modal.modal(operator, context, event)
-        self.assertEqual(result, {"RUNNING_MODAL"})
+        self.assertEqual(result, set(expect))
         return operator
+
+    def switch_mode(self, mode):
+        """Switch the 3D input mode like the sidebar or Settings; the fixture catalog lists the form's model again."""
+        self.scene.scenario.three_d_mode = mode
+        lane = "edit3d" if mode == "EDIT" else "3d"
+        self.configure(lane, self.models[lane], self.scene.scenario.lane_state(lane).prompt)
+
+    def focus_text_form(self):
+        """Focus the composer on the 3D tab's Text form, then let the form behind it become Edit 3D."""
+        self.composer.focused = False
+        self.switch_mode("TEXT")
+        self.edit3d.prompt, self.three_d.prompt = "rusty iron plates", "a teapot"
+        self.drawn()
+        self.composer.focused = True
+        self.assertEqual(self.composer.field.text, "a teapot")
+        # A Settings mode switch, a 3D-to-3D model pick, another window or a tool can change it.
+        self.switch_mode("EDIT")
+        self.quote("edit3d", "7.25")
+
+    def assert_prompts_unchanged(self):
+        self.assertEqual(
+            (self.three_d.prompt, self.edit3d.prompt), ("a teapot", "rusty iron plates")
+        )
 
     def test_composer_displays_and_submits_the_edit_form_price(self):
         self.quote("edit3d", "7.25")
@@ -451,3 +476,128 @@ class ComposerEditFormTests(unittest.TestCase):
         self.jobs.settle()
         self.assertEqual(len(self.jobs.paid), 1)
         self.assertEqual(self.runtime.state.jobs_view[0].cu_cost, 7.25)
+
+    def test_focused_prompt_never_writes_into_the_form_that_replaced_it(self):
+        for key, text in (("S", "s"), ("BACK_SPACE", ""), ("RET", ""), ("ESC", "")):
+            with self.subTest(key=key):
+                self.focus_text_form()
+                edit_ticket = self.runtime.state.estimates[self.edit3d.estimate_key]
+                operator = self.press(key=key, text=text)
+                self.jobs.settle()
+                self.assert_prompts_unchanged()
+                self.assertEqual(self.jobs.paid, [])
+                self.assertFalse(edit_ticket.used)
+                self.assertEqual(self.edit3d.estimate_state, "READY")
+                if key in ("S", "BACK_SPACE"):
+                    # Typing is refused and the text stays visible until Esc shows the new form.
+                    self.assertTrue(self.composer.focused)
+                    self.assertEqual(self.composer.field.text, "a teapot")
+                    operator.report.assert_called_once()
+                    self.assertIn("Esc", operator.report.call_args.args[1])
+                else:
+                    self.assertFalse(self.composer.focused)
+                    self.assertEqual(self.drawn().fields, ["rusty iron plates"])
+        self.assertEqual(self.runtime.state.jobs_view, [])
+
+    def test_generate_click_after_the_form_changed_submits_nothing(self):
+        self.focus_text_form()
+        operator = self.press("generate")
+        self.jobs.settle()
+        self.assert_prompts_unchanged()
+        self.assertEqual(self.jobs.paid, [])
+        operator.report.assert_called_once()
+        self.assertEqual(operator.report.call_args.args[0], {"WARNING"})
+        self.assertFalse(self.composer.focused)
+        shown = self.drawn()
+        self.assertEqual(shown.fields, ["rusty iron plates"])
+        self.assertTrue(shown.enabled)
+
+    def test_card_keeps_describing_the_focused_form_until_esc(self):
+        self.focus_text_form()
+        shown = self.drawn()
+        self.assertEqual(shown.fields, ["a teapot"])
+        self.assertIn("Text to 3D", shown.chips)
+        self.assertNotIn("Retexture", shown.chips)
+        self.assertNotIn("7.25 CU", shown.label)
+        self.assertFalse(shown.enabled)
+        self.assertTrue(any("Esc" in s for s in shown.texts))
+        self.assertTrue(self.composer.focused)
+        self.press(key="ESC")
+        shown = self.drawn()
+        self.assertEqual(shown.fields, ["rusty iron plates"])
+        self.assertIn("Retexture", shown.chips)
+        self.assertIn("7.25 CU", shown.label)
+        self.assertTrue(shown.enabled)
+
+    def test_settings_and_model_chip_leave_the_prompt_before_their_dialogs(self):
+        """The dialogs can switch the 3D mode; the typed text stays in its own form."""
+
+        def switch_to_edit(*args, **kwargs):
+            self.switch_mode("EDIT")
+
+        for kind in ("settings", "model"):
+            with self.subTest(kind=kind):
+                self.composer.focused = False
+                self.switch_mode("TEXT")
+                self.three_d.prompt, self.edit3d.prompt = "a teapot", "rusty iron plates"
+                self.drawn()
+                self.composer.focused = True
+                self.press(key="S", text="s")
+                self.assertEqual(self.three_d.prompt, "a teapots")
+                dialogs = MagicMock()
+                dialogs.quick_settings.side_effect = switch_to_edit
+                dialogs.pick_model.side_effect = switch_to_edit
+                with (
+                    patch.object(
+                        self.modal, "bpy", SimpleNamespace(ops=SimpleNamespace(scenario=dialogs))
+                    ),
+                    patch.object(self.modal, "_open_sidebar"),
+                ):
+                    self.press(kind)
+                self.assertFalse(self.composer.focused)
+                self.assertEqual(self.scene.scenario.three_d_mode, "EDIT")
+                # The next key reaches Blender instead of the replaced form.
+                self.press(key="S", text="s", expect=("PASS_THROUGH",))
+                self.assertEqual(
+                    (self.three_d.prompt, self.edit3d.prompt), ("a teapots", "rusty iron plates")
+                )
+                self.assertEqual(self.drawn().fields, ["rusty iron plates"])
+
+    def test_dialogs_do_not_open_over_a_replaced_focused_form(self):
+        self.focus_text_form()
+        dialogs = MagicMock()
+        for kind in ("settings", "model"):
+            with self.subTest(kind=kind):
+                with (
+                    patch.object(
+                        self.modal, "bpy", SimpleNamespace(ops=SimpleNamespace(scenario=dialogs))
+                    ),
+                    patch.object(self.modal, "_open_sidebar"),
+                ):
+                    operator = self.press(kind)
+                operator.report.assert_called_once()
+                self.assertTrue(self.composer.focused)
+                self.assert_prompts_unchanged()
+        dialogs.quick_settings.assert_not_called()
+        dialogs.pick_model.assert_not_called()
+
+    def test_edit_task_without_a_prompt_offers_no_prompt_to_type(self):
+        mesh = {"name": "mesh", "type": "file", "kind": "3d", "required": True}
+        self.configure(
+            "edit3d",
+            {
+                "id": "fixture-retopology",
+                "name": "Retopology",
+                "type": "custom",
+                "capabilities": ["3d23d"],
+                "inputs": [mesh],
+            },
+            "",
+        )
+        shown = self.drawn()
+        self.assertEqual(shown.fields, ["This model takes no prompt"])
+        operator = self.press("prompt")
+        self.assertFalse(self.composer.focused)
+        operator.report.assert_called_once()
+        self.press(key="S", text="s", expect=("PASS_THROUGH",))
+        self.assertEqual(self.edit3d.prompt, "")

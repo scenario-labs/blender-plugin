@@ -8,9 +8,18 @@ from dataclasses import asdict, dataclass, field, replace
 from pathlib import Path
 
 from ..config import ext_for_mime
-from .result_metadata import REWRITTEN_MESH_TYPES, texture_role
+from ..scene.panorama import MAX_FILE_BYTES
+from .result_metadata import (
+    REWRITTEN_MESH_TYPES,
+    original_media_type,
+    panorama_projection,
+    texture_role,
+)
 from .store import JobState, ResultAsset, StoreConflict, StoredJob, StoreError, _identity, _json
 from .transfers import ResultDownloader, TransferError, _root
+
+# Originals carry no size metadata, so the World file limit bounds each transfer.
+MAX_ORIGINAL_BYTES = MAX_FILE_BYTES
 
 
 class ResultError(RuntimeError):
@@ -60,23 +69,49 @@ def _prompt_asset_id(value):
     return value.startswith("asset_") and not any(char.isspace() for char in value)
 
 
-def _asset(record, identifier, name):
+def _download_url(record, source):
+    """Select the documented destination for the saved file, never a fallback."""
+    url = record.get("originalFileUrl" if source == "original" else "url")
+    if not isinstance(url, str) or not url:
+        raise ResultError("Scenario returned no result download destination")
+    return url
+
+
+def _asset(record, identifier, name, *, source=None):
+    """Describe the file to save; a saved manifest passes its own source when refreshing."""
     if record.get("id") != identifier or record.get("status") != "success":
         raise ResultError("Scenario returned an unavailable or different result asset")
-    properties = record.get("properties")
-    if not isinstance(properties, dict):
-        raise ResultError("Scenario returned no result size")
-    size = properties.get("size")
-    if (
-        isinstance(size, bool)
-        or not isinstance(size, (int, float))
-        or not 0 <= size <= 2**53
-        or int(size) != size
-    ):
-        raise ResultError("Scenario returned an invalid result size")
+    original = original_media_type(record)
+    if source is None:
+        source = "original" if original is not None else "asset"
+    if source == "original":
+        if original is None:
+            raise ResultError("Scenario no longer declares the saved original result file")
+        # The asset's size describes its preview; the original has no size metadata.
+        _download_url(record, source)
+        media_type, size = original, None
+    else:
+        properties = record.get("properties")
+        if not isinstance(properties, dict):
+            raise ResultError("Scenario returned no result size")
+        size = properties.get("size")
+        if (
+            isinstance(size, bool)
+            or not isinstance(size, (int, float))
+            or not 0 <= size <= 2**53
+            or int(size) != size
+        ):
+            raise ResultError("Scenario returned an invalid result size")
+        media_type, size = record.get("mimeType"), int(size)
     try:
         return ResultAsset(
-            identifier, name, record.get("mimeType"), int(size), texture_role=texture_role(record)
+            identifier,
+            name,
+            media_type,
+            size,
+            texture_role=texture_role(record),
+            source=source,
+            projection=panorama_projection(record),
         )
     except ValueError:
         raise ResultError("Scenario returned invalid result metadata") from None
@@ -279,11 +314,8 @@ class ResultCommands:
         for index, identifier in enumerate(identifiers):
             record = self._request(self._adapter.asset, identifier)
             # Provider filenames/URL paths never choose local storage paths.
-            suffix = (
-                ext_for_mime(record.get("mimeType"))
-                if isinstance(record.get("mimeType"), str)
-                else "bin"
-            )
+            mime = original_media_type(record) or record.get("mimeType")
+            suffix = ext_for_mime(mime) if isinstance(mime, str) else "bin"
             name = f"{index:03d}-{hashlib.sha256(identifier.encode()).hexdigest()[:24]}.{suffix}"
             assets.append(_asset(record, identifier, name))
         with self._guard():
@@ -335,8 +367,13 @@ class ResultCommands:
                     self._downloader.verify(directory, item.receipt)
                     continue
                 response = self._request(self._adapter.asset, item.asset.asset_id)
-                fresh = _asset(response, item.asset.asset_id, item.asset.name)
+                # The saved manifest chose the file; schema 9 manifests keep the asset
+                # file even if Scenario now declares an original.
+                fresh = _asset(
+                    response, item.asset.asset_id, item.asset.name, source=item.asset.source
+                )
                 rewritten_mesh = item.asset.media_type in REWRITTEN_MESH_TYPES
+                original = item.asset.source == "original"
                 if rewritten_mesh:
                     # Legacy ingestion rewrote file references without updating
                     # properties.size; identity/type/digest checks remain exact.
@@ -345,18 +382,23 @@ class ResultCommands:
                     # Legacy/unclassified results keep unknown semantics. A later
                     # response may not grant a new material role to saved bytes.
                     fresh = replace(fresh, texture_role=None)
+                if item.asset.projection is None:
+                    # Likewise, a later response cannot relabel saved bytes as 360.
+                    fresh = replace(fresh, projection=None)
                 if fresh != item.asset:
                     raise ResultError("Result metadata changed after the manifest was saved")
-                url = response.get("url")
-                if not isinstance(url, str) or not url:
-                    raise ResultError("Scenario returned no result download destination")
+                options = {}
+                if rewritten_mesh:
+                    options["allow_size_mismatch"] = True
+                if original:
+                    options["max_bytes"] = MAX_ORIGINAL_BYTES
                 receipt = self._downloader.download(
-                    url,
+                    _download_url(response, item.asset.source),
                     root=directory,
                     name=item.asset.name,
                     expected_size=item.asset.expected_size,
                     expected_sha256=item.asset.expected_sha256,
-                    **({"allow_size_mismatch": True} if rewritten_mesh else {}),
+                    **options,
                 )
                 self._downloader.verify(directory, receipt)
                 current = self._store.record_download(

@@ -314,17 +314,154 @@ def test_test_predecessor_changes_only_matching_version_metadata(runner, tmp_pat
     assert json.loads(inventory.read_text())["archives"][0]["sha256"] == runner.sha256(before)
 
 
-def test_test_predecessor_rejects_ambiguous_or_absent_selection(runner, tmp_path):
-    for previous, candidate in [(None, None), (tmp_path / "old.zip", tmp_path / "new.zip")]:
-        with pytest.raises(ValueError, match="excludes"):
+def test_test_predecessor_rejects_absent_candidate(runner, tmp_path):
+    for previous in (None, tmp_path / "old.zip"):
+        with pytest.raises(ValueError, match="requires --candidate-zip"):
             runner.run(
-                SimpleNamespace(
-                    previous_zip=previous, candidate_zip=candidate, test_predecessor=True
-                )
+                SimpleNamespace(previous_zip=previous, candidate_zip=None, test_predecessor=True)
             )
     archive, _ = runner.fixture(tmp_path / "old", "1.2.3")
     with pytest.raises(ValueError, match="matching version declaration"):
         runner.fixture_predecessor(tmp_path / "before", archive)
+
+
+def _adopted(runner, directory, version, schema):
+    """A minimal adopted-layout package with its version and job-store schema."""
+    import zipfile
+
+    directory.mkdir()
+    fixture, _ = runner.fixture(directory / "fixture", version)
+    archive = directory / f"scenario-{version}.zip"
+    with zipfile.ZipFile(fixture) as source, zipfile.ZipFile(archive, "w") as package:
+        for name in source.namelist():
+            content = source.read(name)
+            if name == "__init__.py":
+                content = f'__version__ = "{version}"\n'.encode()
+            package.writestr(name, content)
+        package.writestr("core/jobs/store.py", f'"""Unit fixture."""\n\n_VERSION = {schema}\n')
+    return archive
+
+
+def test_store_schema_is_read_from_package_source_without_import(runner, tmp_path):
+    import zipfile
+
+    assert runner.store_schema(_adopted(runner, tmp_path / "nine", "1.0.0", 9)) == 9
+    missing = _adopted(runner, tmp_path / "missing", "1.0.0", "unknown")
+    with pytest.raises(ValueError, match="no schema version"):
+        runner.store_schema(missing)
+    archive, _ = runner.fixture(tmp_path / "absent", "1.0.0")
+    with pytest.raises(KeyError):
+        runner.store_schema(archive)
+    assert zipfile.is_zipfile(missing)
+
+
+@pytest.mark.parametrize("schemas", [(9, 10), (10, 10), (8, 9)])
+def test_same_version_previous_code_becomes_the_test_predecessor(
+    runner, tmp_path, monkeypatch, schemas
+):
+    """An unreleased predecessor shares the candidate's version; only metadata changes."""
+    import contextlib
+    import zipfile
+
+    previous = _adopted(runner, tmp_path / "previous", "1.2.3", schemas[0])
+    candidate = _adopted(runner, tmp_path / "candidate", "1.2.3", schemas[1])
+    monkeypatch.setattr(runner, "normal_profile_root", lambda: tmp_path / "normal")
+    monkeypatch.setattr(runner, "find_blender", lambda _: "fixture-blender")
+    monkeypatch.setattr(runner, "verify_installed", lambda *_: None)
+    reports = {}
+
+    def generate(_commands, _inventory, output):
+        output.mkdir()
+        return output
+
+    def step(session, name, args):
+        if name == "probe":
+            path = session.directory / "probe.log"
+            path.write_text('SCENARIO_ENV={"version":[5,1,2],"blender":"5.1.2"}\n')
+            return path
+        if name in {"configure", "install"}:
+            return None
+        before = session.directory / "first/scenario-0.0.0.zip"
+        with zipfile.ZipFile(before) as package:
+            assert f"_VERSION = {schemas[0]}" in package.read("core/jobs/store.py").decode()
+        report = Path(args[args.index("--report") + 1])
+        reports[name] = {
+            "before": "0.0.0",
+            "after": "1.2.3",
+            "enabled": True,
+            "state_preserved": True,
+            "scene_preserved": True,
+            "project_scope_preserved": True,
+            "workflow_references_preserved": False,
+            "service_requests": 0,
+            "store_schema": {"before": schemas[0], "after": schemas[1]},
+            "schema_10_state": "before-update"
+            if schemas[0] >= 10
+            else "after-upgrade"
+            if schemas[1] >= 10
+            else "unavailable",
+        }
+        (session.directory / "expected-state.json").write_text('{"workflow": null}')
+        report.write_text(json.dumps(reports[name]))
+        return None
+
+    class Server:
+        requests = ["/index.json", "/scenario-0.0.0.zip", "/scenario-1.2.3.zip"]
+        socket = SimpleNamespace(fileno=lambda: -1)
+
+    @contextlib.contextmanager
+    def serve(_repository, _archives):
+        yield Server(), "http://127.0.0.1:9/index.json"
+
+    monkeypatch.setattr(runner, "generate", generate)
+    monkeypatch.setattr(runner, "serve", serve)
+    monkeypatch.setattr(runner.Session, "step", step)
+    monkeypatch.setattr(runner.Session, "cleanup", lambda _session: None)
+    args = SimpleNamespace(
+        blender=None,
+        artifacts=tmp_path / "artifacts",
+        timeout=2,
+        expected_version="5.1.2",
+        previous_zip=previous,
+        candidate_zip=candidate,
+        test_predecessor=True,
+    )
+    assert runner.run(args) == 0
+    result = json.loads(next(args.artifacts.glob("*/result.json")).read_text())
+    assert result["status"] == "passed"
+    assert result["predecessor_code"] == "previous-zip"
+    assert result["previous_sha256"] == runner.sha256(previous)
+    assert set(reports) == {"update", "restart"}
+    assert result["update"]["store_schema"] == {"before": schemas[0], "after": schemas[1]}
+
+
+def test_candidate_with_older_job_storage_stops_before_install(runner, tmp_path, monkeypatch):
+    previous = _adopted(runner, tmp_path / "previous", "1.2.3", 10)
+    candidate = _adopted(runner, tmp_path / "candidate", "1.2.3", 9)
+    monkeypatch.setattr(runner, "normal_profile_root", lambda: tmp_path / "normal")
+    monkeypatch.setattr(runner, "find_blender", lambda _: "fixture-blender")
+    calls = []
+
+    def step(session, name, _args):
+        calls.append(name)
+        path = session.directory / "probe.log"
+        path.write_text('SCENARIO_ENV={"version":[5,1,2],"blender":"5.1.2"}\n')
+        return path
+
+    monkeypatch.setattr(runner.Session, "step", step)
+    args = SimpleNamespace(
+        blender=None,
+        artifacts=tmp_path / "artifacts",
+        timeout=2,
+        expected_version="5.1.2",
+        previous_zip=previous,
+        candidate_zip=candidate,
+        test_predecessor=True,
+    )
+    assert runner.run(args) == 1
+    assert calls == ["probe"]
+    report = json.loads(next(args.artifacts.glob("*/result.json")).read_text())
+    assert "older" in report["error"]
 
 
 def test_probe_inventory_uses_extended_windows_drive_and_unc_paths(monkeypatch):
@@ -344,17 +481,21 @@ def package_probe(monkeypatch):
     return probe
 
 
-def test_update_snapshot_adds_only_absent_film_field(package_probe):
-    from dataclasses import dataclass
+def test_update_snapshot_adds_only_absent_film_and_result_fields(package_probe):
+    from dataclasses import dataclass, field
 
     @dataclass
     class Record:
         intent: dict
+        results: list = field(default_factory=list)
 
-    old = Record({"request_id": "old"})
-    assert package_probe.job_snapshot(old)["intent"] == {
-        "request_id": "old",
-        "film_task": None,
+    old = Record({"request_id": "old"}, [{"asset": {"asset_id": "a"}, "receipt": None}])
+    snapshot = package_probe.job_snapshot(old)
+    assert snapshot["intent"] == {"request_id": "old", "film_task": None}
+    assert snapshot["results"][0]["asset"] == {
+        "asset_id": "a",
+        "source": "asset",
+        "projection": None,
     }
     binding = {"production_id": "production", "task_id": "take", "task_sha256": "a" * 64}
     bound = Record({"film_task": binding})
@@ -362,6 +503,55 @@ def test_update_snapshot_adds_only_absent_film_field(package_probe):
     cloud = Record({"source": "cloud"})
     assert package_probe.job_snapshot(cloud)["intent"] == {"source": "cloud"}
     assert old.intent == {"request_id": "old"}
+    assert old.results[0]["asset"] == {"asset_id": "a"}
+    saved = {"asset_id": "b", "source": "original", "projection": "equirectangular"}
+    current = Record({"request_id": "new"}, [{"asset": dict(saved), "receipt": None}])
+    assert package_probe.job_snapshot(current)["results"][0]["asset"] == saved
+
+
+def test_package_probe_seeds_and_detects_lost_schema_ten_state(package_probe, tmp_path):
+    from contextlib import nullcontext
+    from dataclasses import replace
+
+    from scenario.core.jobs import store as jobs
+    from scenario.core.jobs.results import ResultCommands
+    from scenario.core.jobs.transfers import ResultDownloader, StoragePolicy
+
+    scope = jobs.JobScope("https://fixture.invalid", "update-account", "project")
+    path = tmp_path / "jobs.sqlite3"
+    selected = jobs.JobStore(path, scope)
+    other = jobs.JobStore(path, replace(scope, account_id="other-account"))
+    (tmp_path / "results").mkdir()
+    results = ResultCommands(
+        SimpleNamespace(),
+        selected,
+        nullcontext,
+        downloader=ResultDownloader(
+            StoragePolicy(frozenset({"fixture.invalid"})), online_access=lambda: False
+        ),
+        root=tmp_path / "results",
+    )
+    assert package_probe.supports_schema_10()
+    assert package_probe.trained_defaults_snapshot(selected, other) is None
+    package_probe.seed_schema_10(selected, results, jobs.JobOrigin(*package_probe.ORIGIN))
+    package_probe.check_schema_10(selected, results)
+    snapshot = package_probe.trained_defaults_snapshot(selected, other)
+    assert snapshot["image"]["default"]["picks"] == ({"model_id": "update-lora", "scale": 0.75},)
+    assert snapshot["render_image"] == {"lane": "render_image", "revision": 2, "default": None}
+    state = tmp_path / "state"
+    (state / "shared-jobs").mkdir(parents=True)
+    jobs.JobStore(state / "shared-jobs/jobs.sqlite3", scope)
+    before = (state / "shared-jobs/jobs.sqlite3").read_bytes()
+    assert package_probe.store_schema(SimpleNamespace(state_dir=state)) == 10
+    assert (state / "shared-jobs/jobs.sqlite3").read_bytes() == before
+    leaked = jobs.TrainedModelDefault("image", "custom", "update-private-model")
+    other.set_trained_default(leaked, expected_revision=0)
+    with pytest.raises(RuntimeError, match="credential scope"):
+        package_probe.trained_defaults_snapshot(selected, other)
+    selected.clear_trained_default("image", expected_revision=1)
+    with pytest.raises(RuntimeError, match="trained-model default"):
+        package_probe.check_schema_10(selected, results)
+    assert package_probe.trained_defaults_snapshot(SimpleNamespace(), other) is None
 
 
 def test_update_snapshot_includes_separate_film_upload_and_rejects_scope_leak(package_probe):

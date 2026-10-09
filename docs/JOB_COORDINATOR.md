@@ -282,7 +282,10 @@ job through public SDK `jobs.retrieve`, then reads every asset through
 `assets.retrieve`, always under the original immutable project scope. Only a
 matching successful job with a nonempty unique `metadata.assetIds` list (up to
 128) is supported. Each retrieved asset must match its ID and declare success,
-a valid MIME type and an integral nonnegative `properties.size`. Unsupported
+a valid MIME type and an integral nonnegative `properties.size`. An image asset
+that declares an OpenEXR original with a download destination is instead saved
+as that original, with its MIME type and an unknown size; see
+[declared HDR originals](RESULT_TRANSFERS.md#declared-hdr-originals-and-360-projection). Unsupported
 non-asset outputs and malformed/changed metadata fail explicitly. No result list
 is inferred from a similar job or current selection.
 
@@ -306,7 +309,9 @@ identical asset names in separate requests cannot overwrite each other.
 retrieves each unfinished asset again for a fresh signed URL. Identity, MIME and
 size must still match the manifest. A saved known texture role must match too.
 An unclassified/legacy result remains unclassified even if a fresh response
-supplies a role; that does not rewrite its manifest or grant material semantics. The bounded downloader publishes without
+supplies a role; that does not rewrite its manifest or grant material semantics.
+The saved source and projection follow the same rule: the manifest's file choice
+is refreshed, never switched to a newly declared original or relabelled as 360. The bounded downloader publishes without
 overwriting files; its verification uses the same configured byte cap. Each
 receipt commits before advancing to another asset. Existing receipts are
 rehash-verified instead of redownloaded. All receipts must exist before `ready`.

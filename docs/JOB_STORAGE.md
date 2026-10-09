@@ -60,7 +60,8 @@ scope, payload and origin before authorizing dispatch.
 Only hashes and exact cost are persisted for payload/quote identity. No prompt,
 credential, raw service response, absolute file path or signed storage URL is stored.
 Result manifests retain portable basenames, asset IDs, media types, optional
-expected size/digest, allowlisted image texture roles and verified download receipts.
+expected size/digest, allowlisted image texture roles, the delivered file's source,
+server-declared projection and verified download receipts.
 An old stored quote is not reusable spending authorization after restart. The
 store does not itself verify a supplied fingerprint against a live estimate or
 prove ownership of a supplied remote ID; those checks belong to the coordinator.
@@ -78,7 +79,7 @@ Every connection rechecks that the database is a regular nonsymlink file,
 including after a competing creation. The parent must remain trusted: this check
 and SQLite's path open are separate operations, not an atomic no-follow open.
 
-The database has an application ID and schema version **9**. SQLite transactions
+The database has an application ID and schema version **10**. SQLite transactions
 with `synchronous=FULL` commit the whole change or report `StoreError`; no cached
 in-memory result is reported as saved before commit succeeds. `BEGIN IMMEDIATE`
 serializes writers across threads/processes. Each operation owns a connection,
@@ -94,7 +95,7 @@ another request or resend. Intent fields and a known remote job ID cannot change
 Foreign databases, unsupported versions, malformed records and mismatched stored
 identities/revisions raise errors. They are preserved for explicit recovery,
 never silently replaced with empty history. An already-open store also fails if
-its database disappears. Previous shared schemas 2 through 8 upgrade in one
+its database disappears. Previous shared schemas 2 through 9 upgrade in one
 transaction that validates every scope, record, identity and revision. A corrupt
 row or failed commit preserves all previous rows and the old version. This is
 not a prototype import; version 1 and foreign databases remain rejected. Schema 2/3
@@ -105,8 +106,10 @@ Schemas before 5 receive an empty local-application history; schema 5 preserves
 its existing claims, including unfinished applications. Schemas before 6
 receive empty mesh input bindings; schema 6 preserves its captured mesh sources.
 Schema 7 cloud results remain cloud records without synthetic spend or Film
-bindings. Older extension builds reject schema 9; stop older Blender processes before
-upgrading and do not expect an older build to open the upgraded store.
+bindings. Schemas before 10 receive the asset's own file and no projection (see
+[schema 10](#schema-10-declared-originals-and-lane-defaults)). Older extension builds
+reject schema 10; stop older Blender processes before upgrading and do not expect an
+older build to open the upgraded store.
 
 ## Explicit cloud result records
 
@@ -199,8 +202,10 @@ unreceipted bytes, deletes files or performs network work. See the
 
 After observing remote success, `set_results` binds a nonempty tuple of at most
 128 `ResultAsset` entries once. Each entry has an opaque asset ID, portable
-basename, normalized media type, optional expected size/SHA256 and optional
-allowlisted `texture_role`. The role is independent of MIME: it describes image
+basename, normalized media type, optional expected size/SHA256, optional
+allowlisted `texture_role`, the delivered file's `source` and an optional
+server-declared `projection` ([schema 10](#schema-10-declared-originals-and-lane-defaults)).
+The role is independent of MIME: it describes image
 semantics, never a file decoder. Unknown roles remain `None`; arbitrary metadata,
 prompts and URLs are not retained. Current schema records require the role key
 even when null, so a truncated record cannot silently gain defaults. Duplicate asset
@@ -400,3 +405,86 @@ previous receipts stay fixed. Other media, a wrong digest/name, an existing
 receipt, a stale revision or a missing download claim are rejected. Ordinary
 recording remains strict. This uses the existing schema and never alters remote
 metadata; see [legacy mesh transfers](RESULT_TRANSFERS.md#legacy-obj-and-mtl-byte-counts).
+
+
+## Schema 10: declared originals and lane defaults
+
+Schema 10 is the single storage change for the 0.10.0 capabilities. It batches
+every new persisted field they need: result file source, result projection and
+per-scope lane defaults for trained or private models. Live remote progress, the
+composer's scene/lane binding, workflow step decisions, Film review/export state,
+asset organization reviews and preview caches stay in memory or in disposable
+caches, so they add nothing here. No intent-level lane or trained-model display
+name is stored: restarted display records remain generic model jobs and show the
+quoted target model. Saved `.blend` properties added by later interface work are
+separate from this database, and the upload database keeps its own version.
+
+### Result source and projection
+
+Every `ResultAsset` now records `source` and `projection`; current records require
+both keys, even when they hold the defaults. `source: asset` is the asset's own
+file (`url`). `source: original` is a server-declared original (`originalFileUrl`)
+saved instead of an image preview. Only the OpenEXR labels `image/x-exr` and
+`image/aces` qualify, and the saved media type is the original's. Originals carry
+no size metadata, so `expected_size` stays unknown and the receipt digest records
+the bytes. Radiance HDR, mesh, splat, audio and video originals keep the asset's
+own file. `projection: equirectangular` is set only when Scenario's
+`metadata.type` declares a 360 image (`skybox-base-360`, `upscale-skybox` or
+`skybox-hdri`); `skybox-3d` and every other value stay `None`. The store rejects
+other labels, a non-EXR original and a projection on a non-image file. Neither
+field authorizes World application, implies a measured dynamic range or replaces
+Blender's decoder checks. The [result command](RESULT_TRANSFERS.md#declared-hdr-originals-and-360-projection)
+chooses the file and refreshes its destination.
+
+### Lane defaults for trained models
+
+A separate `trained_defaults` table holds at most one explicit default per selected
+scope and generation lane. The key is the same SHA256 of `JobScope` used by jobs,
+so the credential pseudonym, API base, team and project override all partition it;
+no server identity or discovered default project is inferred. A `TrainedModelDefault`
+names the lane, a route and model identities only:
+
+| Route | Identities |
+| --- | --- |
+| `stack` | A base model plus 1 to 16 distinct trained models, each with an optional finite strength |
+| `composition` | A base model plus exactly one composition, without a strength |
+| `custom` | One private runnable model, without picks |
+| `direct` | One trained model run as its own target, without picks |
+
+The row also repeats the full scope and is decoded strictly. No prompt, schema,
+quote, thumbnail, URL or raw model record is stored. `trained_default(lane)` returns
+the lane's state, with revision 0 when nothing was ever saved; `trained_defaults()`
+lists the saved lanes in lane order. `set_trained_default` and
+`clear_trained_default` require the last observed revision and increment it in one
+immediate transaction. Clearing keeps the row and its revision, so a writer holding
+a pre-clear revision still conflicts instead of restoring a stale choice. Clearing
+an already empty lane at its current revision changes nothing.
+
+A default is a remembered choice, not spending authority. Callers must recheck the
+routes against fresh model schemas and obtain a new exact quote before any paid
+submission; a missing or incompatible model must block the lane rather than fall
+back to the base model. Lane names are bounded identifiers; callers choose them from
+the current catalog. Corrupt rows, a scope or lane mismatch, a revision below 1 or
+unknown fields raise `StoreError` and are preserved for recovery.
+
+### Upgrade from schema 9
+
+Opening a schema 2 to 9 store upgrades it in one immediate transaction, like
+earlier migrations. Every job row is decoded and rewritten with
+`source: asset` and `projection: None`; identities, revisions, receipts, quotes,
+local application claims, mesh bindings and Film bindings are otherwise unchanged.
+Schema 9 Film upload associations are rechecked, including their scope key, task
+identity and the shared Film task namespace, and preserved byte for byte. The empty
+`trained_defaults` table is created last. Nothing is inferred from filenames,
+media types or remote calls. One invalid row, a conflicting association or a failed
+commit rolls back the whole upgrade and leaves the schema 9 file unchanged. A
+concurrent opener waits on the same write lock and then sees schema 10, so the
+upgrade runs once. A schema 9 reader refuses schema 10 as an unsupported format
+without changing it.
+
+The unit and installed-ZIP tests upgrade a store rebuilt from
+[the SQL dump of one written by the schema 9 code](../tests/fixtures/README.md#schema-9-job-store),
+containing every job state, operation, local claim, mesh and Film binding, a cloud
+record and a second credential scope. The
+[package update check](development/validation.md#scenario-package-state-across-updates)
+exercises the same upgrade through Blender's native extension update.

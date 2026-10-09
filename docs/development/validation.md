@@ -248,6 +248,20 @@ nonempty task bindings and `film_upload` before claiming this coverage. Adding
 Film storage to a package must not remove the captured-mesh, texture-role or local
 reuse checks above.
 
+Both native reports also record the job database schema read before and after
+the update (`store_schema`), and the runner requires the versions declared by the
+two archives' `core/jobs/store.py`; a candidate with an older schema fails before
+installation. When the predecessor already has schema 10, the probe seeds a ready
+job whose saved result is a declared EXR original with an equirectangular
+projection, a saved `image` lane default and a cleared `render_image` default
+(`schema_10_state: before-update`). When only the candidate has schema 10, the
+first post-update store access upgrades the predecessor's database; after the
+unchanged-state comparison the probe writes the same schema 10 state into the
+upgraded store, and the offline restart must preserve it
+(`schema_10_state: after-upgrade`). Both forms require the original's receipt,
+the exact default, the cleared lane's revision and that the other credential scope
+sees no default.
+
 When the predecessor exposes saved workflow Library bindings, the probe also
 seeds a workflow schema, a Unicode prompt and single/array reference inputs. It
 compares the complete form signature, canonical parameter values and persisted
@@ -278,12 +292,27 @@ uv run --locked --no-env-file python tools/test_repository_update.py \
   --candidate-zip artifacts/scenario-CANDIDATE.zip --test-predecessor
 ```
 
-This mode excludes `--previous-zip`. It derives a synthetic `0.0.0` predecessor
-from the candidate, replacing only its two matching version declarations in the
-manifest and package initializer. All other entry contents remain unchanged;
-the supplied candidate is never rewritten. Missing/mismatched declarations fail.
-The result records `test_predecessor: true` and both artifact hashes. These test
+This mode derives a synthetic `0.0.0` predecessor from the candidate, replacing
+only its two matching version declarations in the manifest and package initializer.
+All other entry contents remain unchanged; the supplied candidate is never
+rewritten. Missing/mismatched declarations fail. The result records
+`test_predecessor: true`, `predecessor_code` and both artifact hashes. These test
 archives must never become release or public repository inputs.
+
+To upgrade real predecessor code that still carries the candidate's version, such
+as a ZIP built from the previous main commit before a storage migration, add
+`--previous-zip`. The `0.0.0` predecessor is then derived from that exact ZIP's
+code (`predecessor_code: previous-zip`, with its original `previous_sha256`):
+
+```sh
+uv run --locked --no-env-file python tools/test_repository_update.py \
+  --previous-zip artifacts/scenario-PREVIOUS-COMMIT.zip \
+  --candidate-zip artifacts/scenario-CANDIDATE.zip --test-predecessor
+```
+
+Build the previous ZIP with that commit's own `tools/build.py`. This exercises the
+actual schema upgrade through Blender's updater; like the candidate-derived mode,
+it is synthetic version evidence, not published release-pair acceptance.
 
 Each Linux and Windows baseline job now runs both the small fixture and this
 actual-package lifecycle check for Blender 5.0, 5.1 and 5.2. It requires exactly one

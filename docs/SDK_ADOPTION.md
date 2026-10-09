@@ -691,6 +691,25 @@ application; unknown semantics remain unknown. See
 atomic schema 2/3 upgrades. This does not change authentication, scope, retry
 policy, provider acceptance or the dependency pin.
 
+## Declared HDR originals and projections
+
+The same `assets.with_raw_response.retrieve` response also keeps the SDK 2.2.0
+`originalFileUrl` and `originalMimeType` fields. The typed
+`AssetRetrieveResponse.original_mime_type` documents that an HDRi skybox exposes a
+JPEG preview as `url` and its EXR as the original; its `original_file_url`
+docstring still describes only video, audio and 3D originals, which is a
+documentation gap rather than a missing operation. `metadata.type` includes the
+skybox labels used for the projection. Offline contracts check the raw and typed
+fields through the public wrapper. The result command downloads EXR-family
+originals through the existing credential-free storage policy; no new endpoint,
+SDK method, extension or raw fallback is added. `assets.download.request` was not
+used: it requests a converted download with a status poll, and none of its
+`target_format` values is EXR. See
+[declared HDR originals](RESULT_TRANSFERS.md#declared-hdr-originals-and-360-projection)
+and [schema 10](JOB_STORAGE.md#schema-10-declared-originals-and-lane-defaults).
+Live original hosts, sizes and asset layouts remain unverified until an authorized
+panorama run.
+
 ## Verified Film composition quotes
 
 `JobSession.quote_film_composition` uses the existing shared adapter

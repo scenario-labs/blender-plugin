@@ -477,8 +477,11 @@ recovery use the same scoped revision guards as Image.
 Only the Image lane automatically imports verified PNG/EXR images into its
 unchanged original scene. Other lanes stop at `ready` after saving downloads;
 there is no implicit texture assignment, mesh import or sequencer insertion.
-`job_status.results` reports asset identity, media type, expected size and whether
-a download receipt was recorded. This inspection does not reverify local files
+`job_status.results` reports asset identity, media type, expected size, `source`,
+`projection` and whether a download receipt was recorded. `source: original` means
+a declared OpenEXR original was saved instead of its preview, with unknown size;
+`projection: equirectangular` appears only when Scenario declares a 360 image.
+Neither is an application approval. This inspection does not reverify local files
 or authorize scene application. Recovered display records use generic
 `kind: model`; original lane metadata is not persisted. PNG/EXR results can use
 the explicit image import approval above, without inferring a material or World

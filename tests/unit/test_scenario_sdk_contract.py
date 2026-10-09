@@ -713,6 +713,41 @@ def test_asset_raw_response_preserves_texture_role_separately_from_mime(client_f
     assert dict(requests[0].url.params) == {"projectId": PROJECT}
 
 
+@pytest.mark.parametrize("original", ["image/aces", "image/x-exr"])
+def test_asset_raw_response_preserves_declared_hdr_original_and_skybox_type(
+    client_factory, original
+):
+    fixture = {
+        "asset": {
+            "id": "fixture-hdri",
+            "status": "success",
+            "kind": "image-hdr",
+            "mimeType": "image/jpeg",
+            "metadata": {"type": "skybox-hdri", "kind": "image-hdr"},
+            "properties": {"size": 123},
+            "url": "https://cdn.example.invalid/preview?signed=fixture",
+            "originalFileUrl": "https://cdn.example.invalid/original?signed=fixture",
+            "originalMimeType": original,
+        }
+    }
+    requests = []
+
+    def respond(request):
+        requests.append(request)
+        return httpx.Response(200, json=fixture)
+
+    sdk = client_factory(respond)
+    response = sdk.assets.with_raw_response.retrieve("fixture-hdri", project_id=PROJECT)
+    assert json.loads(response.read()) == fixture
+    typed = response.parse().asset
+    assert (typed.mime_type, typed.original_mime_type) == ("image/jpeg", original)
+    assert typed.original_file_url == fixture["asset"]["originalFileUrl"]
+    assert typed.metadata.type == "skybox-hdri"
+    assert len(requests) == 1
+    assert (requests[0].method, requests[0].url.path) == ("GET", "/v1/assets/fixture-hdri")
+    assert dict(requests[0].url.params) == {"projectId": PROJECT}
+
+
 def test_model_get_bulk_raw_wrapper_keeps_ids_in_body_and_scope_in_query(client_factory):
     # models.get_bulk is a generated SDK 2.2.0 method; no raw API fallback is needed.
     fixture = {

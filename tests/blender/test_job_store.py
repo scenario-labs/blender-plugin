@@ -8,7 +8,7 @@ import tempfile
 import threading
 import unittest
 from contextlib import closing
-from dataclasses import replace
+from dataclasses import asdict, replace
 from pathlib import Path
 
 import bpy
@@ -126,9 +126,11 @@ class JobStoreTests(unittest.TestCase):
                 del raw["local_applications"]
                 del raw["intent"]["mesh_sources"]
                 del raw["intent"]["film_task"]
-                del raw["results"][0]["asset"]["texture_role"]
+                for key in ("texture_role", "source", "projection"):
+                    del raw["results"][0]["asset"][key]
                 connection.execute("UPDATE jobs SET record=?", (json.dumps(raw),))
                 connection.execute("DROP TABLE film_uploads")
+                connection.execute("DROP TABLE trained_defaults")
                 connection.execute("PRAGMA user_version=3")
             with self.assertRaises(sqlite3.ProgrammingError):
                 connection.execute("SELECT 1")
@@ -139,7 +141,7 @@ class JobStoreTests(unittest.TestCase):
             )
             self.assertEqual(reopened.get("result-request"), record)
             with closing(sqlite3.connect(root / "jobs.sqlite3")) as connection, connection:
-                self.assertEqual(connection.execute("PRAGMA user_version").fetchone()[0], 9)
+                self.assertEqual(connection.execute("PRAGMA user_version").fetchone()[0], 10)
             with self.assertRaises(sqlite3.ProgrammingError):
                 connection.execute("SELECT 1")
             verified = transfers.verify_download(root, record.results[0].receipt)
@@ -155,8 +157,11 @@ class JobStoreTests(unittest.TestCase):
                 del raw["local_applications"]
                 del raw["intent"]["mesh_sources"]
                 del raw["intent"]["film_task"]
+                for key in ("source", "projection"):
+                    del raw["results"][0]["asset"][key]
                 connection.execute("UPDATE jobs SET record=?", (json.dumps(raw),))
                 connection.execute("DROP TABLE film_uploads")
+                connection.execute("DROP TABLE trained_defaults")
                 connection.execute("PRAGMA user_version=4")
             reopened = module.JobStore(root / "jobs.sqlite3", scope)
             self.assertEqual(reopened.get("result-request"), record)
@@ -195,6 +200,48 @@ class JobStoreTests(unittest.TestCase):
             with self.assertRaises(transfers.TransferError):
                 transfers.verify_download(root, record.results[0].receipt)
             self.assertEqual(reopened.get("result-request"), record)
+
+    def test_installed_store_upgrades_the_real_schema_nine_fixture(self):
+        from helpers import FIXTURES
+
+        module = submodule("core.jobs.store")
+        with tempfile.TemporaryDirectory(dir=bpy.utils.resource_path("USER")) as directory:
+            path = Path(directory) / "jobs.sqlite3"
+            # SQL dump of a database written by the schema 9 storage code.
+            script = (FIXTURES / "synthetic/jobs-schema9.sql").read_text(encoding="utf-8")
+            with closing(sqlite3.connect(path)) as connection:
+                connection.executescript(script)
+            with closing(sqlite3.connect(path)) as connection, connection:
+                rows = connection.execute(
+                    "SELECT scope, request_id, revision, record FROM jobs ORDER BY 1, 2"
+                ).fetchall()
+                self.assertEqual(connection.execute("PRAGMA user_version").fetchone()[0], 9)
+            scopes = {
+                key: module.JobScope(**json.loads(raw)["intent"]["scope"])
+                for key, _, _, raw in rows
+            }
+            stores = {key: module.JobStore(path, scope) for key, scope in scopes.items()}
+            for key, request_id, revision, raw in rows:
+                record = stores[key].get(request_id)
+                self.assertEqual(record.revision, revision)
+                expected = json.loads(raw)
+                for item in expected["results"]:
+                    item["asset"].update(source="asset", projection=None)
+                self.assertEqual(json.loads(json.dumps(asdict(record))), expected)
+            with closing(sqlite3.connect(path)) as connection, connection:
+                self.assertEqual(connection.execute("PRAGMA user_version").fetchone()[0], 10)
+            selected = next(store for store in stores.values() if store.scope.project_id)
+            default = module.TrainedModelDefault(
+                "image", "stack", "model_base", (module.TrainedModelPick("model_lora", 0.75),)
+            )
+            saved = selected.set_trained_default(default, expected_revision=0)
+            other = next(store for store in stores.values() if store is not selected)
+            self.assertEqual(other.trained_default("image").default, None)
+            self.assertEqual(module.JobStore(path, selected.scope).trained_defaults(), (saved,))
+            self.assertEqual(
+                selected.film_upload("fixture-production", "upload-one").asset_id,
+                "fixture-upload-asset",
+            )
 
     def test_installed_coordinator_persists_before_sdk_dispatch(self):
         import httpx

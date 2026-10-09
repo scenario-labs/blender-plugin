@@ -67,17 +67,31 @@ def write_inventory(path, package_version):
     return inventory
 
 
-def fixture_predecessor(directory, candidate):
-    """Make a clearly synthetic predecessor; only version metadata may differ."""
-    manifest, _ = inspect_zip(candidate)
+def store_schema(path):
+    """Read a package's declared job-store schema without importing its code."""
+    with zipfile.ZipFile(path) as archive:
+        source = archive.read("core/jobs/store.py").decode("utf-8")
+    match = re.search(r"(?m)^_VERSION = ([1-9][0-9]*)$", source)
+    if match is None:
+        raise ValueError("Package job storage declares no schema version")
+    return int(match.group(1))
+
+
+def fixture_predecessor(directory, package):
+    """Make a clearly synthetic predecessor; only version metadata may differ.
+
+    `package` is the candidate by default, or an exact earlier package whose code
+    shares the candidate's version number (an unreleased predecessor commit).
+    """
+    manifest, _ = inspect_zip(package)
     current = manifest["version"]
     if version(current) <= (0, 0, 0):
-        raise ValueError("Test predecessor requires a candidate newer than 0.0.0")
+        raise ValueError("Test predecessor requires a package newer than 0.0.0")
     directory.mkdir()
     path = directory / "scenario-0.0.0.zip"
     replacements = {"blender_manifest.toml": "version", "__init__.py": "__version__"}
     changed = set()
-    with zipfile.ZipFile(candidate) as source, zipfile.ZipFile(path, "w") as destination:
+    with zipfile.ZipFile(package) as source, zipfile.ZipFile(path, "w") as destination:
         for info in source.infolist():
             content = source.read(info.filename)
             if info.filename in replacements:
@@ -186,8 +200,8 @@ def serve(repository, archives=("scenario-1.0.0.zip", "scenario-2.0.0.zip")):
 def run(args):
     previous, candidate = getattr(args, "previous_zip", None), getattr(args, "candidate_zip", None)
     test_predecessor = getattr(args, "test_predecessor", False)
-    if test_predecessor and (previous is not None or candidate is None):
-        raise ValueError("--test-predecessor requires --candidate-zip and excludes --previous-zip")
+    if test_predecessor and candidate is None:
+        raise ValueError("--test-predecessor requires --candidate-zip")
     if not test_predecessor and bool(previous) != bool(candidate):
         raise ValueError("Provide both --previous-zip and --candidate-zip")
     package_mode = candidate is not None
@@ -208,6 +222,8 @@ def run(args):
         "repository": REPO,
         "test_predecessor": test_predecessor,
     }
+    if test_predecessor:
+        report["predecessor_code"] = "previous-zip" if previous is not None else "candidate"
     server = None
     write_json(session.directory / "repository-update.json", {"profile": str(session.profile)})
     try:
@@ -238,13 +254,24 @@ def run(args):
             second, second_inventory, after_version = package_artifact(
                 session.directory / "second", candidate
             )
-            first, first_inventory, before_version = (
-                fixture_predecessor(session.directory / "first", second)
-                if test_predecessor
-                else package_artifact(session.directory / "first", previous)
-            )
+            if test_predecessor:
+                code = second
+                if previous is not None:
+                    # Same-version predecessor code; only its version metadata changes.
+                    code, _, _ = package_artifact(session.directory / "previous", previous)
+                    report["previous_sha256"] = sha256(code)
+                first, first_inventory, before_version = fixture_predecessor(
+                    session.directory / "first", code
+                )
+            else:
+                first, first_inventory, before_version = package_artifact(
+                    session.directory / "first", previous
+                )
             if version(after_version) <= version(before_version):
                 raise ValueError("Candidate version must be newer than the previous package")
+            schemas = {"before": store_schema(first), "after": store_schema(second)}
+            if schemas["after"] < schemas["before"]:
+                raise ValueError("Candidate job storage is older than the previous package")
         else:
             first, first_inventory = fixture(session.directory / "first", before_version)
             second, second_inventory = fixture(session.directory / "second", after_version)
@@ -323,6 +350,14 @@ def run(args):
                         is not None
                     ),
                     service_requests=0,
+                    store_schema=schemas,
+                    schema_10_state=(
+                        "before-update"
+                        if schemas["before"] >= 10
+                        else "after-upgrade"
+                        if schemas["after"] >= 10
+                        else "unavailable"
+                    ),
                 )
             if report["update"] != expected:
                 raise ValueError("Missing native update and enabled-state evidence")
@@ -395,7 +430,10 @@ def main():
     parser.add_argument(
         "--test-predecessor",
         action="store_true",
-        help="Use test-only version 0.0.0 metadata with candidate code; not release-pair acceptance",
+        help=(
+            "Use test-only version 0.0.0 metadata with the --previous-zip code, or the candidate "
+            "code without it; not release-pair acceptance"
+        ),
     )
     args = parser.parse_args()
     if args.timeout <= 0:

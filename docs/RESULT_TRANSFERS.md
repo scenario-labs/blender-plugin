@@ -173,6 +173,39 @@ not assign materials or choose between multiple texture sets/variants. A later
 material approval must select unambiguous assets and the intended mesh targets;
 role preservation alone does not authorize a scene mutation.
 
+## Declared HDR originals and 360 projection
+
+SDK 2.2.0 documents that an HDRi skybox asset exposes a JPEG preview as `url` and
+its OpenEXR file as `originalFileUrl`, labelled by `originalMimeType`. When an
+image asset declares `image/x-exr` or `image/aces` there, the manifest records
+`source: original`, that media type, an `.exr` local name and an unknown expected
+size: originals publish no size metadata. The download fetches `originalFileUrl`
+through the same storage policy, online check, redirect rules and atomic
+publication, with a 128 MiB cap matching the World file limit instead of a size
+match. The receipt digest then binds the saved bytes. Radiance (`.hdr`), mesh,
+splat, audio and video originals keep the asset's own file and size.
+
+A declared EXR original without a usable `originalFileUrl` fails before any
+manifest is saved, so a retry can still choose the original; the JPEG preview is
+never saved in its place. Refreshing an unfinished download reuses the saved
+manifest's choice. A saved original whose declaration or destination later
+disappears, changes to another format or loses its projection stops before
+transfer with `download_failed`. Manifests saved before
+[schema 10](JOB_STORAGE.md#schema-10-declared-originals-and-lane-defaults) keep
+downloading the file they recorded, even if Scenario now declares an original.
+
+`result_metadata.panorama_projection` reports `equirectangular` only when an image
+asset's `metadata.type` is `skybox-base-360`, `upscale-skybox` or `skybox-hdri`.
+Filenames, dimensions, models and `skybox-3d` never set it, and an unclassified
+saved result is never relabelled later, as for texture roles. The projection and
+EXR container are labels for later review; Blender must still decode the file,
+the World preflight still checks its 2:1 shape and no dynamic range is measured.
+Existing image and World actions accept `image/x-exr` but not yet `image/aces`;
+an ACES-labelled original stays saved for inspection until World application
+accepts that label. The offline and installed-ZIP tests use mocked storage
+responses. A live HDRi run must still confirm the original's host, size and
+color labelling.
+
 ## Local Film media measurement
 
 `ResultCommands.measure_media` selects exactly one asset from a current verified

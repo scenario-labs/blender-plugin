@@ -8,6 +8,7 @@ extension-user-data path and stable, non-secret scope/origin identities.
 
 import hashlib
 import json
+import math
 import os
 import re
 import sqlite3
@@ -20,15 +21,18 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 from urllib.parse import urlsplit
 
-from .result_metadata import REWRITTEN_MESH_TYPES, TEXTURE_ROLES
+from .result_metadata import ORIGINAL_MEDIA_TYPES, PROJECTIONS, REWRITTEN_MESH_TYPES, TEXTURE_ROLES
 from .transfers import DownloadedResult, TransferError, _root, validate_result_name
 
 if TYPE_CHECKING:
     from .mesh_source import MeshSource
 
-_VERSION = 9
+_VERSION = 10
 _APPLICATION_ID = 0x53434A42
 _FILM_TASK_FILTER = "json_valid(record) AND json_extract(record, '$.intent.film_task') IS NOT NULL"
+_LANE = re.compile(r"[a-z][a-z0-9_]{0,31}")
+TRAINED_ROUTES = frozenset({"stack", "composition", "custom", "direct"})
+MAX_TRAINED_PICKS = 16
 
 
 class StoreError(RuntimeError):
@@ -238,6 +242,118 @@ def _create_film_uploads(connection):
     )
 
 
+def _lane(value):
+    if not isinstance(value, str) or not _LANE.fullmatch(value):
+        raise ValueError("Use a generation lane name")
+    return value
+
+
+@dataclass(frozen=True)
+class TrainedModelPick:
+    """One explicitly chosen trained model and optional strength, never a quote."""
+
+    model_id: str
+    scale: float | None = None
+
+    def __post_init__(self):
+        _identity(self.model_id)
+        if self.scale is not None and (
+            type(self.scale) is not float or not math.isfinite(self.scale)
+        ):
+            raise ValueError("Use a finite decimal strength or no strength")
+
+
+@dataclass(frozen=True)
+class TrainedModelDefault:
+    """An explicit lane default for one scope; reusing it still needs a fresh exact quote.
+
+    `stack` adds one or more trained models to a base model, `composition` runs one
+    composition through its base, and `custom`/`direct` name one runnable model.
+    The store keeps identities only; callers recheck schema routes before quoting.
+    """
+
+    lane: str
+    route: str
+    base_model_id: str
+    picks: tuple[TrainedModelPick, ...] = ()
+
+    def __post_init__(self):
+        _lane(self.lane)
+        if not isinstance(self.route, str) or self.route not in TRAINED_ROUTES:
+            raise ValueError("Choose a stack, composition, custom or direct route")
+        _identity(self.base_model_id)
+        if (
+            not isinstance(self.picks, tuple)
+            or len(self.picks) > MAX_TRAINED_PICKS
+            or any(not isinstance(pick, TrainedModelPick) for pick in self.picks)
+        ):
+            raise ValueError("Use a bounded immutable selection of trained models")
+        identities = [pick.model_id for pick in self.picks]
+        if len(set(identities)) != len(identities) or self.base_model_id in identities:
+            raise ValueError("Choose each trained model once, separately from its base")
+        valid = {
+            "stack": bool(self.picks),
+            "composition": len(self.picks) == 1 and self.picks[0].scale is None,
+            "custom": not self.picks,
+            "direct": not self.picks,
+        }[self.route]
+        if not valid:
+            raise ValueError("Trained model picks do not match the selected route")
+
+
+@dataclass(frozen=True)
+class TrainedDefaultState:
+    """One lane's saved default in the selected scope; revision 0 means never saved."""
+
+    lane: str
+    revision: int
+    default: TrainedModelDefault | None = None
+
+
+def _create_trained_defaults(connection):
+    connection.execute(
+        "CREATE TABLE trained_defaults (scope TEXT NOT NULL, lane TEXT NOT NULL, "
+        "revision INTEGER NOT NULL, record TEXT NOT NULL, PRIMARY KEY (scope, lane))"
+    )
+
+
+def _decode_trained_default(raw, scope, lane, revision):
+    try:
+        _lane(lane)
+        value = json.loads(raw)
+        if not isinstance(value, dict) or set(value) != {"scope", "default"}:
+            raise ValueError
+        fields = value["scope"]
+        if not isinstance(fields, dict) or set(fields) != set(JobScope.__dataclass_fields__):
+            raise ValueError
+        if JobScope(**fields) != scope or type(revision) is not int or revision < 1:
+            raise ValueError
+        default = value["default"]
+        if default is not None:
+            if not isinstance(default, dict) or set(default) != set(
+                TrainedModelDefault.__dataclass_fields__
+            ):
+                raise ValueError
+            picks = default["picks"]
+            if not isinstance(picks, list) or len(picks) > MAX_TRAINED_PICKS:
+                raise ValueError
+            for pick in picks:
+                if not isinstance(pick, dict) or set(pick) != set(
+                    TrainedModelPick.__dataclass_fields__
+                ):
+                    raise ValueError
+            default = TrainedModelDefault(
+                **{**default, "picks": tuple(TrainedModelPick(**pick) for pick in picks)}
+            )
+            if default.lane != lane:
+                raise ValueError
+        return TrainedDefaultState(lane, revision, default)
+    except (ValueError, TypeError, KeyError, AttributeError):
+        raise StoreError(
+            "Stored trained-model default is invalid; preserve its database for recovery"
+        ) from None
+
+
 @dataclass(frozen=True)
 class JobIntent:
     request_id: str
@@ -370,7 +486,12 @@ _TRANSITIONS = {
 
 @dataclass(frozen=True)
 class ResultAsset:
-    """Immutable URL-free metadata from the scoped remote job/asset response."""
+    """Immutable URL-free metadata from the scoped remote job/asset response.
+
+    `source` names the delivered file: the asset's own file, or its server-declared
+    original (an EXR environment behind a JPEG preview). `projection` is semantic
+    metadata from the server, never a decoder guarantee or a filename inference.
+    """
 
     asset_id: str
     name: str
@@ -378,6 +499,8 @@ class ResultAsset:
     expected_size: int | None = None
     expected_sha256: str | None = None
     texture_role: str | None = None
+    source: str = "asset"
+    projection: str | None = None
 
     def __post_init__(self):
         _identity(self.asset_id)
@@ -395,6 +518,16 @@ class ResultAsset:
             or not self.media_type.startswith("image/")
         ):
             raise ValueError("Use a supported image texture role")
+        if not isinstance(self.source, str) or self.source not in {"asset", "original"}:
+            raise ValueError("Choose the asset file or its declared original")
+        if self.source == "original" and self.media_type not in ORIGINAL_MEDIA_TYPES:
+            raise ValueError("Only a declared HDR original may replace an image preview")
+        if self.projection is not None and (
+            not isinstance(self.projection, str)
+            or self.projection not in PROJECTIONS
+            or not self.media_type.startswith("image/")
+        ):
+            raise ValueError("Use a supported image projection")
         if self.expected_size is not None and (
             type(self.expected_size) is not int or not 0 <= self.expected_size <= 2**63 - 1
         ):
@@ -591,16 +724,20 @@ def _decode(raw, scope, *, version=_VERSION):
         if not isinstance(raw_results, list) or len(raw_results) > 128:
             raise ValueError
         results = []
+        # Earlier schemas receive unknown semantics and the asset's own file;
+        # migration never infers a role, original or projection from names.
+        absent = {}
+        if version < 10:
+            absent.update(source="asset", projection=None)
+        if version in {2, 3}:
+            absent["texture_role"] = None
         for item in raw_results:
             if not isinstance(item, dict) or set(item) != {"asset", "receipt"}:
                 raise ValueError
-            asset_fields = set(ResultAsset.__dataclass_fields__)
-            if version in {2, 3}:
-                asset_fields.remove("texture_role")
+            asset_fields = set(ResultAsset.__dataclass_fields__) - set(absent)
             if not isinstance(item["asset"], dict) or set(item["asset"]) != asset_fields:
                 raise ValueError
-            if version in {2, 3}:
-                item["asset"]["texture_role"] = None
+            item["asset"].update(absent)
             receipt = item["receipt"]
             if receipt is not None:
                 if set(receipt) != set(DownloadedResult.__dataclass_fields__):
@@ -735,9 +872,10 @@ class JobStore:
                         "PRIMARY KEY (scope, request_id))"
                     )
                     _create_film_uploads(connection)
+                    _create_trained_defaults(connection)
                     connection.execute(f"PRAGMA application_id = {_APPLICATION_ID}")
                     connection.execute(f"PRAGMA user_version = {_VERSION}")
-                elif version in {2, 3, 4, 5, 6, 7, 8} and application == _APPLICATION_ID:
+                elif version in {2, 3, 4, 5, 6, 7, 8, 9} and application == _APPLICATION_ID:
                     self._upgrade_previous(connection, version)
                 else:
                     self._check_version(connection)
@@ -757,7 +895,13 @@ class JobStore:
 
     @staticmethod
     def _upgrade_previous(connection, version):
-        """Upgrade supported shared stores atomically without guessing missing roles."""
+        """Upgrade supported shared stores in the caller's single write transaction.
+
+        Every row is decoded and rewritten in the current shape; one invalid row
+        rolls back the whole upgrade and keeps the old version. A concurrent opener
+        waits on the same immediate transaction and then sees the current version.
+        Missing roles, originals and projections are never guessed.
+        """
         film_tasks = set()
         for key, request_id, revision, raw in connection.execute(
             "SELECT scope, request_id, revision, record FROM jobs"
@@ -786,7 +930,29 @@ class JobStore:
                 "UPDATE jobs SET record=? WHERE scope=? AND request_id=?",
                 (_json(asdict(record)), key, request_id),
             )
-        _create_film_uploads(connection)
+        if version < 9:
+            _create_film_uploads(connection)
+        else:
+            # Schema 9 associations keep their format; recheck them before upgrading.
+            for key, production_id, task_id, raw in connection.execute(
+                "SELECT scope, production_id, task_id, record FROM film_uploads"
+            ).fetchall():
+                try:
+                    scope = JobScope(**json.loads(raw)["scope"])
+                except (ValueError, TypeError, KeyError):
+                    raise StoreError(
+                        "Stored Film upload is invalid; preserve its database for recovery"
+                    ) from None
+                reference = _decode_film_upload(raw, scope)
+                identity = (key, production_id, task_id)
+                if (
+                    key != hashlib.sha256(_json(asdict(scope)).encode()).hexdigest()
+                    or (reference.film_task.production_id, reference.film_task.task_id)
+                    != (production_id, task_id)
+                    or identity in film_tasks
+                ):
+                    raise StoreError("Stored Film upload identity is inconsistent")
+        _create_trained_defaults(connection)
         connection.execute(f"PRAGMA user_version = {_VERSION}")
 
     @contextmanager
@@ -978,6 +1144,69 @@ class JobStore:
                 (self._key, binding.production_id, binding.task_id, _json(asdict(reference))),
             )
         return reference
+
+    def _trained_default(self, connection, lane):
+        row = connection.execute(
+            "SELECT revision, record FROM trained_defaults WHERE scope=? AND lane=?",
+            (self._key, lane),
+        ).fetchone()
+        if row is None:
+            return TrainedDefaultState(lane, 0)
+        return _decode_trained_default(row[1], self.scope, lane, row[0])
+
+    def trained_default(self, lane):
+        """Inspect one lane's explicit default in this scope; never apply or quote it."""
+        _lane(lane)
+        with self._connection() as connection:
+            return self._trained_default(connection, lane)
+
+    def trained_defaults(self):
+        """Return every saved lane default in this scope, ordered by lane."""
+        with self._connection() as connection:
+            lanes = connection.execute(
+                "SELECT lane FROM trained_defaults WHERE scope=? ORDER BY lane", (self._key,)
+            ).fetchall()
+            states = tuple(self._trained_default(connection, row[0]) for row in lanes)
+        return tuple(state for state in states if state.default is not None)
+
+    def set_trained_default(self, default: TrainedModelDefault, *, expected_revision):
+        """Save an explicit choice; revision 0 creates the lane's first default."""
+        if not isinstance(default, TrainedModelDefault):
+            raise ValueError("A trained-model default is required")
+        return self._write_trained_default(default.lane, default, expected_revision)
+
+    def clear_trained_default(self, lane, *, expected_revision):
+        """Clear a lane default and keep its revision, so a stale writer still conflicts."""
+        return self._write_trained_default(_lane(lane), None, expected_revision)
+
+    def _write_trained_default(self, lane, default, expected_revision):
+        if type(expected_revision) is not int or expected_revision < 0:
+            raise ValueError("A nonnegative expected revision is required")
+        with self._connection(write=True) as connection:
+            current = self._trained_default(connection, lane)
+            if current.revision != expected_revision:
+                raise StoreConflict("Saved default changed; reload before acting")
+            if default is None and current.default is None:
+                return current
+            updated = TrainedDefaultState(lane, current.revision + 1, default)
+            record = _json(
+                {
+                    "scope": asdict(self.scope),
+                    "default": asdict(default) if default is not None else None,
+                }
+            )
+            if current.revision == 0:
+                connection.execute(
+                    "INSERT INTO trained_defaults VALUES (?, ?, ?, ?)",
+                    (self._key, lane, updated.revision, record),
+                )
+            else:
+                connection.execute(
+                    "UPDATE trained_defaults SET revision=?, record=? "
+                    "WHERE scope=? AND lane=? AND revision=?",
+                    (updated.revision, record, self._key, lane, expected_revision),
+                )
+        return updated
 
     def adopt_cloud_job(self, intent: CloudJobIntent, remote_job_id):
         """Save authoritative successful-job evidence supplied by the coordinator."""

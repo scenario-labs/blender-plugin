@@ -117,3 +117,144 @@ class ResultCommandTests(unittest.TestCase):
                     self.assertIsNot(threads[0], threading.current_thread())
                 finally:
                     workers.shutdown()
+
+    def test_installed_worker_saves_a_declared_exr_original_through_the_storage_policy(self):
+        import io
+        from unittest.mock import Mock, patch
+
+        import httpx
+
+        api = submodule("core.api.sdk_adapter")
+        storage = submodule("core.jobs.store")
+        commands = submodule("core.jobs.coordinator")
+        results = submodule("core.jobs.results")
+        transfers = submodule("core.jobs.transfers")
+        workers_module = submodule("core.jobs.workers")
+        body = b"offline native EXR original"
+        scope = storage.JobScope("https://service.example.invalid/v1", "account", "project")
+        originals = {
+            "allowed": "https://storage.example.invalid/hdr?signed=fixture",
+            "elsewhere": "https://elsewhere.example.invalid/hdr?signed=fixture",
+        }
+
+        def respond(request):
+            self.assertEqual(request.method, "GET")
+            name = request.url.path.rsplit("/", 1)[-1]
+            if request.url.path.startswith("/v1/jobs/"):
+                return httpx.Response(
+                    200,
+                    json={
+                        "job": {
+                            "jobId": name,
+                            "status": "success",
+                            "metadata": {"assetIds": [f"hdri-{name}"]},
+                        }
+                    },
+                )
+            return httpx.Response(
+                200,
+                json={
+                    "asset": {
+                        "id": name,
+                        "status": "success",
+                        "kind": "image-hdr",
+                        "mimeType": "image/jpeg",
+                        "metadata": {"type": "skybox-hdri"},
+                        "properties": {"size": 3},
+                        "url": "https://storage.example.invalid/preview?signed=fixture",
+                        "originalMimeType": "image/aces",
+                        "originalFileUrl": originals[name.removeprefix("hdri-")],
+                    }
+                },
+            )
+
+        requested = []
+        connection = Mock()
+        connection.request.side_effect = lambda _method, target, **_kwargs: requested.append(target)
+
+        def response():
+            stream = io.BytesIO(body)
+            stream.status = 200
+            stream.getheader = lambda _key, default=None: default
+            return stream
+
+        connection.getresponse.side_effect = response
+        with tempfile.TemporaryDirectory(dir=bpy.utils.resource_path("USER")) as directory:
+            root = Path(directory).resolve()
+            store = storage.JobStore(root / "jobs.sqlite3", scope)
+            records = {}
+            for name in originals:
+                record = store.create(
+                    storage.JobIntent(
+                        name,
+                        scope,
+                        storage.JobOrigin("file", "scene", "revision"),
+                        "model",
+                        "model_hdri-fixture",
+                        "a" * 64,
+                        "b" * 64,
+                        "1.0",
+                    )
+                )
+                for state in (
+                    storage.JobState.SUBMITTING,
+                    storage.JobState.REMOTE,
+                    storage.JobState.SUCCEEDED,
+                ):
+                    record = store.transition(
+                        name,
+                        expected_revision=record.revision,
+                        state=state,
+                        remote_job_id=name if state == storage.JobState.REMOTE else None,
+                    )
+                records[name] = record
+            with (
+                api.SDKAdapter(
+                    api.Credentials("fixture-key", "fixture-secret"),
+                    online=lambda: True,
+                    account_id=scope.account_id,
+                    project_id=scope.project_id,
+                    base_url=scope.service,
+                    transport=httpx.MockTransport(respond),
+                ) as adapter,
+                patch.object(
+                    transfers.http.client, "HTTPSConnection", return_value=connection
+                ) as https,
+            ):
+                coordinator = commands.JobCoordinator(
+                    adapter,
+                    store,
+                    result_downloader=transfers.ResultDownloader(
+                        transfers.StoragePolicy(frozenset({"storage.example.invalid"})),
+                        online_access=lambda: True,
+                    ),
+                    result_root=root,
+                )
+                workers = workers_module.JobWorkers(coordinator, workers=1)
+                try:
+                    ready = workers.download_results(
+                        "allowed", expected_revision=records["allowed"].revision
+                    ).result(timeout=10)
+                    with self.assertRaises(results.ResultError):
+                        workers.download_results(
+                            "elsewhere", expected_revision=records["elsewhere"].revision
+                        ).result(timeout=10)
+                finally:
+                    workers.shutdown()
+            asset = ready.results[0].asset
+            self.assertEqual(ready.state, storage.JobState.READY)
+            self.assertEqual(
+                (asset.media_type, asset.source, asset.projection, asset.expected_size),
+                ("image/aces", "original", "equirectangular", None),
+            )
+            self.assertTrue(asset.name.endswith(".exr"))
+            self.assertEqual(ready.results[0].receipt.sha256, hashlib.sha256(body).hexdigest())
+            self.assertEqual(requested, ["/hdr?signed=fixture"])
+            self.assertEqual(
+                [call.args[0] for call in https.call_args_list], ["storage.example.invalid"]
+            )
+            rejected = store.get("elsewhere")
+            self.assertEqual(rejected.state, storage.JobState.DOWNLOAD_FAILED)
+            self.assertIsNone(rejected.results[0].receipt)
+            self.assertEqual(storage.JobStore(root / "jobs.sqlite3", scope).get("allowed"), ready)
+            self.assertNotIn(b"signed=", (root / "jobs.sqlite3").read_bytes())

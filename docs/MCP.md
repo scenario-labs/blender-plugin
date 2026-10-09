@@ -805,9 +805,11 @@ metadata, so pages are not a stable snapshot. Inputs retain conditional and file
 definitions; supported form validation happens again with fresh metadata at
 estimation. File parameters use Scenario asset IDs: Library assets, or the
 imported `asset_id` from `upload_reference` or `capture_reference`. This is the
-MCP equivalent of native workflow input uploads; MCP passes the ID in
-`parameters` rather than binding it into the saved Studio form, and the quote
-binds captured selected-mesh sources the same way.
+MCP equivalent of native workflow input uploads from a file, viewport, camera,
+clip or selected mesh; the native **Render result** snapshot has no
+`capture_reference` source. MCP passes the ID in `parameters` rather than binding
+it into the saved Studio form, and the quote binds captured selected-mesh sources
+the same way.
 
 `estimate_workflow` requests a free exact quote through SDK 2.2.0
 [`workflows.run`](https://docs.scenario.com/api/python/resources/workflows/methods/run)

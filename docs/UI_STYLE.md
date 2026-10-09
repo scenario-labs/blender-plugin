@@ -1453,29 +1453,42 @@ current price and blocks **Request workflow price** until the upload attaches or
 is resolved. The maintenance pump attaches only after an imported observation and
 a fresh origin check, and only into the unchanged scene, workflow, schema, input
 kind and input value. It writes the same scope digest and canonical value as
-Library attachment, records the upload request and removes the marker. A changed
-destination keeps the marker and an inspectable error. If local staging fails
-before any service request, the marker is removed and existing values stay, so a
-corrected file can be uploaded.
+Library attachment, and removes the marker. The input records the upload request
+when the pump first observes its saved record. A changed destination keeps the
+marker and an inspectable error.
+
+The shared session refuses the next initialization, part or completion request
+after any scene edit, frame change or undo in the origin scene, so a stopped upload
+never resumes. When an upload whose delivery is still held stopped before anything
+was sent (local staging failed, or the staged record was still prepared) the pump
+removes only its own marker, keeps existing values and draws a read-only note on
+the input that nothing was uploaded, so the content can be uploaded again. An
+upload that already sent something keeps the marker. **Cancel preparation** of a prepared record also frees any input still
+marked for it, matched through this connection's ticket for that marker, which
+survives undo, or through the recorded request after reopening or a connection
+change. A blend file saved before the first observation has no request link.
 
 **Inspect uploads** and **Use saved upload** open the shared saved-upload view
 for that input. Attaching an imported upload needs a separate single-use
 confirmation naming the scene, workflow, input and file; it supersedes an
 in-flight upload into the same input. The upload records its own undo step with
-the marker. Undo or redo to a state that keeps the marker, reopening the blend
-file and a connection change discard in-memory delivery, so the marker then
-requires this explicit review instead of a second upload. History changes also
-retire the captured origin: an upload that has not been imported starts no further
-initialization, part or completion request, and any saved record stays under
-**Inspect uploads**, where a processing upload can be refreshed and an imported
-one attached. Undoing the upload step itself removes the marker, so **Upload
-file** would send the content again. **Clear reference** warns that an admitted
-upload continues in saved uploads, then removes the marker. Drawing stays
-read-only.
+the marker, also when starting fails after a task was admitted. Undo or redo to a
+state that keeps the marker, reopening the blend file and a connection change
+discard in-memory delivery, so the marker then requires this explicit review
+instead of a second upload. A marked input with no running delivery offers
+**Stop waiting** beside **Inspect uploads**: after a confirmation it removes the
+marker and request link, keeps the current values and leaves the upload in saved
+uploads. A running upload is not released this way. Undoing the upload step itself
+removes the marker, so **Upload file** would send the content again. **Clear
+reference** warns that an admitted upload continues in saved uploads, then removes
+the marker and empties the input. Drawing stays read-only.
 
 Installed synthetic tests cover these guards, including missing and unreadable
-files, failed staging, undo around an upload and a background **Render result**
-upload, plus shared MCP pricing of an uploaded asset ID and selected-mesh
-provenance at quote time. Native interaction proof (file browser and confirmation
-from the Studio popup, viewport and camera captures, rendering with F12 before
-**Render result**, DPI and IME) and live upload acceptance remain under #66/#68.
+files, failed staging, an object move and a frame change after staging on an array
+that already holds a value, cancellation of a waiting, undo-restored or
+retired-connection marker, **Stop waiting** after an upload stopped mid-transfer,
+undo around an upload and a background **Render result** upload, plus shared MCP
+pricing of an uploaded asset ID and selected-mesh provenance at quote time. Native
+interaction proof (file browser and confirmation from the Studio popup, viewport
+and camera captures, rendering with F12 before **Render result**, DPI and IME) and
+live upload acceptance remain under #66/#68.

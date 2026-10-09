@@ -524,26 +524,39 @@ existing marker; starting rechecks the reviewed connection and scope.
 A persisted `_scenario_workflow_upload` ID property marks the input before origin
 capture; it remains after uncertain or failed remote work, blocks pricing and
 prevents a second upload. Local validation or rejected queue admission removes it.
-So does a staging failure that `ReferenceUpload.sent_nothing` identifies: the
-ticket failed during local preparation, before any saved record was observed or
-any service request was made. Existing input values are kept.
+JobSession refuses the next initialization, part or completion admission once a
+scene edit, frame change or undo has invalidated the captured origin, and the
+ticket then stops for good. `ReferenceUpload.sent_nothing` identifies a stopped
+ticket that never reached Scenario: staging failed before a saved record was
+observed, an admission was refused while the record was still `prepared` (it
+reaches `initializing` before the first service request), or the record was
+canceled. Delivery then removes only its own marker, keeps existing input values
+and leaves a transient note on the input. The upload operator returns `FINISHED`
+whenever a new marker remains after a start failure, so its undo step is recorded.
 
 The maintenance pump attaches only after an imported observation and a fresh
 origin check, and only while the workflow ID, schema digest, input kind, marker
-token and input value are unchanged. Attachment uses the same checked append and
-scope digest/canonical value binding as Library workflow references, records
-the request in `_scenario_workflow_upload_request` and removes the marker. Saved
-uploads use the shared inspection view with a workflow destination: attaching
-needs a separate single-use confirmation that rechecks the stored record, scene
-origin, scope and complete form signature, and supersedes an in-flight upload
-into that input. Undo/redo, blend reopening and connection retirement discard
-in-memory bindings without resending bytes. The upload operator records its own
-undo step, so among history changes only undoing that step removes the marker.
-History changes also retire the captured origin: unfinished work starts no
-further mutation and its saved record remains inspectable. Selected-mesh uploads
-keep their captured source, so workflow quotes bind them as described below. Local MCP
-already exposes the equivalent sequence: `upload_reference` or `capture_reference`,
-then the imported asset ID in `estimate_workflow` parameters.
+token and input value are unchanged. It records the request in
+`_scenario_workflow_upload_request` at the first observation of the saved record,
+even if the upload then stops. Attachment uses the same checked append and scope
+digest/canonical value binding as Library workflow references and removes the
+marker. Explicit **Cancel preparation** of a `prepared` record frees every input
+still marked for it, matched through the facade's marker-to-ticket ledger, which
+survives undo, or through that recorded request after reopening or a connection
+change. A blend file saved before the first observation has no request link.
+**Stop waiting** releases any marked input without a running delivery: it removes
+the marker and request link, keeps values and leaves the saved record untouched.
+Saved uploads use the shared inspection view with a workflow destination:
+attaching needs a separate single-use confirmation that rechecks the stored record,
+scene origin, scope and complete form signature, and supersedes an in-flight
+upload into that input. Undo/redo, blend reopening and connection retirement
+discard in-memory bindings without resending bytes. The upload operator records
+its own undo step, so among history changes only undoing that step removes the
+marker. Selected-mesh uploads keep their captured source, so workflow quotes bind
+them as described below. Local MCP already exposes the equivalent sequence for
+file, viewport, camera, clip and selected-mesh sources: `upload_reference` or
+`capture_reference`, then the imported asset ID in `estimate_workflow` parameters.
+The native **Render result** snapshot has no `capture_reference` source.
 
 ## Captured mesh export provenance
 

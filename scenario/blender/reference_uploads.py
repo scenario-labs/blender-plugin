@@ -143,14 +143,24 @@ class ReferenceUpload:
 
     @property
     def sent_nothing(self):
-        """Whether this ticket failed during local staging, before any remote request.
+        """Whether this ticket stopped for good without ever reaching Scenario.
 
-        Staging only copies, hashes and saves intent locally. Every later command
-        starts from an observed saved record, so a failed ticket without one never
-        reached Scenario. A staged intent saved just before a failed read stays
-        listed for explicit cancellation.
+        Staging only copies, hashes and saves intent locally, so a ticket that
+        failed before observing a saved record never sent anything. A prepared
+        record has no remote identity either: initialization saves INITIALIZING
+        before its first service request, and an admission refused before
+        queueing (for example by a changed origin) leaves the record prepared.
+        Cancellation is only possible from that state and is final. A stopped
+        ticket is never polled again, so neither state can send anything later.
+        The staged intent stays listed for explicit cancellation.
         """
-        return bool(self.error) and self.record is None and self.command == "prepare_upload"
+        if self.task is not None:
+            return False
+        if self.record is None:
+            return bool(self.error) and self.command == "prepare_upload"
+        if self.record.state == UploadState.CANCELED:
+            return True
+        return bool(self.error) and self.record.state == UploadState.PREPARED
 
 
 @dataclass(eq=False)
@@ -174,6 +184,10 @@ class ReferenceUploads:
         self.recovery_errors = {}
         self.forms = {}
         self.workflow_forms = {}  # Shares the 128-binding capacity with forms.
+        # Marker token -> ticket. Unlike delivery bindings this survives undo, so
+        # cancelling a preparation can still free an input whose marker undo restored.
+        self.workflow_tickets = {}
+        self.workflow_notices = deque(maxlen=16)
         self.form_errors = deque(maxlen=16)
         self.attachments = {}
 
@@ -376,6 +390,11 @@ class ReferenceUploads:
         except BaseException:
             del self._recovering[request_id]
             raise
+        if command.done:
+            from .workflow_uploads import release_canceled
+
+            # A canceled preparation never sent anything: free inputs waiting for it.
+            release_canceled(self, command.record)
         return command
 
     def _poll_recoveries(self):

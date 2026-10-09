@@ -692,10 +692,17 @@ That shared binding writes the same scope digest and canonical value as Library
 attachment, so existing pricing checks reject edited or cross-connection values.
 Stale, failed or retired bindings keep the marker and an inspectable error; saved
 uploads attach only through a separate single-use confirmation in the shared
-inspection view. The exception is a ticket that `ReferenceUploads` reports as
-failing during local staging, before any service request: the marker is removed
-and existing values stay. Undo/redo, file load and connection retirement discard
-in-memory bindings; undoing the upload step itself also removes the marker.
+inspection view. Any scene edit, frame change or undo makes JobSession refuse the
+upload's next initialization, part or completion admission, and the ticket stops.
+The exception to keeping the marker is a stopped ticket that `ReferenceUploads`
+reports as never having reached Scenario (failed staging, a refused admission
+while still prepared, or cancellation): the marker is removed and existing values
+stay. Explicit cancellation of a prepared record frees inputs still marked for it
+through a marker-to-ticket ledger that survives undo, or through the request
+recorded at first observation. Without a running delivery, **Stop waiting**
+releases the marker without changing values. Undo/redo, file load and connection
+retirement discard in-memory bindings; undoing the upload step itself also
+removes the marker.
 Selected-mesh uploads gain their captured source binding at quote time. Local MCP
 keeps its existing `upload_reference`, `capture_reference` and `estimate_workflow`
 sequence; no MCP protocol change is needed. Physical Studio interaction and live

@@ -88,8 +88,10 @@ establish live generation or full render-lane desktop acceptance.
 - Studio workflow file inputs upload image, audio, video and 3D files or
   snapshots only. Inputs declared as other kinds (for example `image-hdr`,
   `document`, `json` or `text`) or with listed allowed asset IDs still need a
-  Library selection or a typed asset ID. Live workflow upload and native
-  interaction acceptance remain under #66/#68.
+  Library selection or a typed asset ID. An upload that is still sending stops
+  for good after a scene edit, frame change or undo; it does not resume, so the
+  content is uploaded again (see the [user guide](USER_GUIDE.md#run-a-workflow)).
+  Live workflow upload and native interaction acceptance remain under #66/#68.
 - Video-to-motion and speech-to-text workflows remain an explicit capability
   request in [#190](https://github.com/scenario-labs/blender-plugin/issues/190);
   model tags alone do not establish supported input and result handling. Models

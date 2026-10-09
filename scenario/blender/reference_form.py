@@ -822,6 +822,7 @@ def _history_post(_):
     if owner is not None:
         owner.forms.clear()
         owner.workflow_forms.clear()
+        owner.workflow_notices.clear()
         owner.form_errors.clear()
         owner.attachments.clear()
 

@@ -5,6 +5,7 @@
 import itertools
 import json
 import os
+import time
 import unittest
 from dataclasses import replace
 from pathlib import Path
@@ -149,6 +150,63 @@ class WorkflowUploadTests(unittest.TestCase):
 
         self.addCleanup(restore)
         return restored
+
+    def pump(self, binding, rounds=4):
+        """Finish the ticket's current task and let the maintenance pump observe it."""
+        for _ in range(rounds):
+            ticket = binding.ticket
+            if ticket.task is not None:
+                try:
+                    ticket.task.result(5)
+                except Exception:
+                    pass  # poll() records the completion error asserted by the test.
+            ticket.next_poll = 0
+            self.owner.poll()
+
+    def scene_changes(self):
+        """Edits that invalidate the captured origin through JobSession's handlers."""
+        fixture = self.fixture.fixture
+
+        def object_move():
+            fixture.target.location.x += 1.0
+            bpy.context.view_layer.update()
+
+        def frame_change():
+            self.scene.frame_set(self.scene.frame_current + 1)
+
+        return object_move, frame_change
+
+    def populated(self, name="images"):
+        item = self.form.inputs[name]
+        item.text, item.enabled = json.dumps(["existing-asset"]), True
+        item.asset_scope = item.asset_value = ""
+        return item
+
+    def drawn(self, name):
+        """Operators and labels drawn for one input, without changing any property."""
+        layout = Mock()
+        layout.row.return_value = layout
+        operators = []
+
+        def operator(identifier, **kwargs):
+            op = SimpleNamespace()
+            operators.append((identifier, op))
+            return op
+
+        layout.operator.side_effect = operator
+        field = next(x for x in self.record["inputs"] if x["name"] == name)
+        self.uploads.draw(layout, self.scene, self.form.inputs[name], field)
+        labels = [call.kwargs.get("text") for call in layout.label.call_args_list]
+        return operators, labels
+
+    def release_operator(self, name="images"):
+        cls = self.uploads.SCENARIO_OT_release_workflow_upload
+        operator = SimpleNamespace(input_name=name, report=MagicMock())
+        confirm = MagicMock(return_value={"RUNNING_MODAL"})
+        context = SimpleNamespace(
+            scene=self.scene, window_manager=SimpleNamespace(invoke_confirm=confirm)
+        )
+        return cls, operator, context, confirm
 
     def assert_untouched(self, item, value):
         """No marker, binding, ticket, saved record or service request was created."""
@@ -334,6 +392,203 @@ class WorkflowUploadTests(unittest.TestCase):
             self.uploads.review(bpy.context, "image", "FILE")
         self.assertEqual(len(attempts), 1)
         fixture.uploader.upload.assert_not_called()
+
+    def test_scene_change_before_sending_releases_marker_and_keeps_values(self):
+        fixture = self.fixture.fixture
+        for change in self.scene_changes():
+            with self.subTest(change=change.__name__):
+                item = self.populated()
+                calls, sent = len(fixture.calls), fixture.uploader.upload.call_count
+                binding = self.start("images")
+                staged = binding.ticket.task.result(5)  # Saved locally; nothing sent yet.
+                change()
+                self.pump(binding)
+                ticket = binding.ticket
+                self.assertIn("origin changed", ticket.error)
+                self.assertEqual(ticket.record.state.value, "prepared")
+                self.assertTrue(ticket.sent_nothing)
+                self.assertFalse(binding.attached)
+                self.assertNotIn(self.ui.UPLOAD_MARKER, item)
+                # An earlier attachment's request link stays; this upload is not linked.
+                self.assertNotEqual(item.get(self.ui.UPLOAD_REQUEST), staged.intent.request_id)
+                self.assertEqual(json.loads(item.text), ["existing-asset"])
+                self.assertEqual(self.owner.workflow_forms, {})
+                self.assertIn("nothing was uploaded", self.owner.form_errors[-1])
+                self.assertEqual(len(fixture.calls), calls)
+                self.assertEqual(fixture.uploader.upload.call_count, sent)
+                self.assertEqual(self.ui.parameters(self.form)["images"], ["existing-asset"])
+                before = self.snapshot()
+                operators, labels = self.drawn("images")
+                self.assertIn("The upload stopped before sending; nothing was uploaded", labels)
+                self.assertIn(
+                    ("scenario.upload_workflow_input", "FILE"),
+                    [(identifier, getattr(op, "source", None)) for identifier, op in operators],
+                )
+                self.assertEqual(before, self.snapshot())
+                # The staged copy stays listed; cancelling it leaves the freed input alone.
+                saved = self.owner.session.inspect_upload(staged.intent.request_id)
+                self.assertEqual(saved.state.value, "prepared")
+                self.owner.recover(saved.intent.request_id, saved.revision, "cancel_prepared")
+                self.assertEqual(json.loads(item.text), ["existing-asset"])
+                # Another upload into the same input appends after the existing value.
+                self.assertTrue(self.upload("images").attached)
+                self.assertEqual(json.loads(item.text), ["existing-asset", "uploaded-asset"])
+                self.assertEqual(fixture.uploader.upload.call_count, sent + 1)
+
+    def test_cancel_preparation_releases_a_waiting_input_and_keeps_values(self):
+        fixture = self.fixture.fixture
+        item = self.populated()
+        binding = self.start("images")
+        # Hold the staged upload before initialization, as a busy queue would.
+        binding.ticket.retry_admission_at = time.monotonic() + 3600
+        self.pump(binding, 2)
+        record = binding.ticket.record
+        self.assertEqual(record.state.value, "prepared")
+        self.assertIsNone(binding.ticket.error)
+        self.assertTrue(item.get(self.ui.UPLOAD_MARKER))
+        self.assertEqual(item[self.ui.UPLOAD_REQUEST], record.intent.request_id)
+        self.owner.recover(record.intent.request_id, record.revision, "cancel_prepared")
+        self.assertNotIn(self.ui.UPLOAD_MARKER, item)
+        self.assertNotIn(self.ui.UPLOAD_REQUEST, item)
+        self.assertEqual(self.owner.workflow_forms, {})
+        self.assertIn("nothing was uploaded", self.owner.form_errors[-1])
+        binding.ticket.retry_admission_at = 0
+        self.pump(binding)
+        self.assertFalse(binding.attached)
+        self.assertNotIn(self.ui.UPLOAD_MARKER, item)
+        self.assertEqual(json.loads(item.text), ["existing-asset"])
+        saved = self.owner.session.inspect_upload(record.intent.request_id)
+        self.assertEqual(saved.state.value, "canceled")
+        self.assertEqual(fixture.calls, [])
+        fixture.uploader.upload.assert_not_called()
+        self.assertEqual(self.ui.parameters(self.form)["images"], ["existing-asset"])
+        self.assertEqual(self.uploads.review(bpy.context, "images", "FILE").input_name, "images")
+
+    def test_cancel_preparation_releases_a_marker_restored_by_undo(self):
+        fixture = self.fixture.fixture
+        restored = self.history()
+        self.populated()
+        bpy.ops.ed.undo_push(message="Before workflow upload")
+        binding = self.start("images")
+        staged = binding.ticket.task.result(5)
+        # Python operator calls skip undo pushes; record the step the operator adds.
+        bpy.ops.ed.undo_push(message="Upload workflow input")
+        self.form.inputs["prompt"].text = "edited after upload"
+        bpy.ops.ed.undo_push(message="Edit after workflow upload")
+        self.assertEqual(bpy.ops.ed.undo(), {"FINISHED"})
+        item = restored().inputs["images"]
+        self.pump(binding)
+        # Undo discarded delivery and the captured origin: the upload sends nothing
+        # more, and the restored marker waits for an explicit choice.
+        self.assertIsNone(binding.ticket.task)
+        self.assertTrue(item.get(self.ui.UPLOAD_MARKER))
+        self.assertEqual(self.owner.workflow_forms, {})
+        operators, _ = self.drawn("images")
+        self.assertIn("scenario.release_workflow_upload", [x for x, _ in operators])
+        record = self.owner.session.inspect_upload(staged.intent.request_id)
+        self.assertEqual(record.state.value, "prepared")
+        self.owner.recover(record.intent.request_id, record.revision, "cancel_prepared")
+        self.assertNotIn(self.ui.UPLOAD_MARKER, item)
+        self.assertEqual(json.loads(item.text), ["existing-asset"])
+        self.assertEqual(self.form.inputs["prompt"].text, "a cup")
+        self.assertEqual(self.ui.parameters(self.form)["images"], ["existing-asset"])
+        self.assertEqual(fixture.calls, [])
+        fixture.uploader.upload.assert_not_called()
+
+    def test_cancel_preparation_after_connection_retirement_uses_the_request_link(self):
+        item = self.populated()
+        binding = self.start("images")
+        binding.ticket.retry_admission_at = time.monotonic() + 3600
+        self.pump(binding, 2)
+        record = binding.ticket.record
+        self.assertEqual(item[self.ui.UPLOAD_REQUEST], record.intent.request_id)
+        # A blank in-memory owner knows the marker only through its request link.
+        self.runtime.state.reference_uploads = None
+        replacement = self.runtime.ensure_reference_uploads()
+        self.assertEqual(replacement.workflow_tickets, {})
+        replacement.recover(record.intent.request_id, record.revision, "cancel_prepared")
+        self.assertNotIn(self.ui.UPLOAD_MARKER, item)
+        self.assertNotIn(self.ui.UPLOAD_REQUEST, item)
+        self.assertEqual(json.loads(item.text), ["existing-asset"])
+        self.assertIn("nothing was uploaded", replacement.form_errors[-1])
+        self.assertEqual(self.fixture.fixture.calls, [])
+
+    def test_stop_waiting_releases_a_stopped_upload_and_keeps_values(self):
+        fixture = self.fixture.fixture
+        item = self.populated()
+        binding = self.start("images")
+        cls, operator, context, confirm = self.release_operator()
+        # A running upload is not released this way; Clear remains available.
+        self.assertEqual(cls.invoke(operator, context, None), {"CANCELLED"})
+        confirm.assert_not_called()
+        with self.assertRaisesRegex(self.errors.ScenarioError, "still running"):
+            self.uploads.stop_waiting(self.scene, "images", item[self.ui.UPLOAD_MARKER])
+        ticket = binding.ticket
+        ticket.task.result(5)
+        self.owner.poll()  # Observes staging and admits initialization.
+        self.assertEqual(ticket.command, "initialize_upload")
+        ticket.task.result(5)  # Scenario now holds an incomplete upload.
+        self.scene_changes()[0]()
+        self.pump(binding)
+        record = ticket.record
+        self.assertEqual(record.state.value, "uploading")
+        self.assertIn("origin changed", ticket.error)
+        self.assertFalse(ticket.sent_nothing)
+        self.assertTrue(item.get(self.ui.UPLOAD_MARKER))
+        self.assertEqual(item[self.ui.UPLOAD_REQUEST], record.intent.request_id)
+        with self.assertRaisesRegex(ValueError, "finish the reference upload"):
+            self.ui.parameters(self.form)
+        before = self.snapshot()
+        operators, labels = self.drawn("images")
+        self.assertEqual(
+            [identifier for identifier, _ in operators],
+            ["scenario.inspect_uploads", "scenario.release_workflow_upload"],
+        )
+        self.assertEqual(operators[1][1].input_name, "images")
+        self.assertIn("Saved upload: inspect before continuing", labels)
+        self.assertEqual(before, self.snapshot())
+        calls = len(fixture.calls)
+        self.assertEqual(cls.invoke(operator, context, None), {"RUNNING_MODAL"})
+        message = confirm.call_args.kwargs["message"]
+        self.assertIn("Images", message)
+        self.assertIn("values stay", message)
+        self.assertIn("saved uploads", message)
+        self.assertEqual(cls.execute(operator, context), {"FINISHED"})
+        self.assertIn("UNDO", cls.bl_options)
+        self.assertNotIn(self.ui.UPLOAD_MARKER, item)
+        self.assertNotIn(self.ui.UPLOAD_REQUEST, item)
+        self.assertEqual(json.loads(item.text), ["existing-asset"])
+        self.assertEqual(self.ui.parameters(self.form)["images"], ["existing-asset"])
+        self.assertEqual(self.owner.session.inspect_upload(record.intent.request_id), record)
+        self.assertEqual(len(fixture.calls), calls)
+        fixture.uploader.upload.assert_not_called()
+        self.assertEqual(cls.execute(operator, context), {"CANCELLED"})  # Single use.
+        self.assertTrue(self.upload("images").attached)
+        self.assertEqual(json.loads(item.text), ["existing-asset", "uploaded-asset"])
+
+    def test_operator_keeps_its_undo_step_when_a_failed_start_keeps_the_marker(self):
+        cls = self.uploads.SCENARIO_OT_upload_workflow_input
+        notice = self.fixture.module.UploadNotStarted
+        for name, failure, result in (
+            ("image", RuntimeError("synthetic admitted failure"), {"FINISHED"}),
+            ("images", notice(0, "Synthetic local refusal"), {"CANCELLED"}),
+        ):
+            with self.subTest(name=name):
+                operator = SimpleNamespace(input_name=name, source="FILE", report=MagicMock())
+                context = SimpleNamespace(
+                    scene=self.scene,
+                    window_manager=SimpleNamespace(
+                        invoke_confirm=MagicMock(return_value={"RUNNING_MODAL"})
+                    ),
+                )
+                self.assertEqual(cls.invoke(operator, context, None), {"RUNNING_MODAL"})
+                with patch.object(self.owner, "start", side_effect=failure):
+                    self.assertEqual(cls.execute(operator, context), result)
+                operator.report.assert_called_once()
+                self.assertEqual(operator.report.call_args.args[0], {"ERROR"})
+                marked = bool(self.form.inputs[name].get(self.ui.UPLOAD_MARKER))
+                self.assertEqual(marked, result == {"FINISHED"})
+        self.assertEqual(self.fixture.fixture.calls, [])
 
     def test_reviewed_upload_requires_the_same_connection_and_scope(self):
         item = self.form.inputs["image"]

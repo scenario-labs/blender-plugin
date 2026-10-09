@@ -748,15 +748,24 @@ To upload into an image, audio, video or 3D file input, choose its **File** and
 sends that content to Scenario but generates nothing. The input shows its
 progress and blocks pricing until the asset attaches, then requires a fresh price.
 A single input must be empty first; arrays append up to their maximum. The chosen
-file must exist and be readable. If it cannot be prepared before anything is sent,
-the input keeps its values and you can choose a corrected file. If you edit
-that input or the scene, load another workflow, undo, or reopen the file during an
-upload, nothing attaches automatically: choose **Inspect uploads** (or **Use saved
-upload**) and refresh or confirm the saved upload for that input instead of
-uploading again. Undo also stops an unfinished upload before its next transfer
-step. Undoing the upload itself clears the input's upload state; uploading again
-then sends the file again.
-**Clear reference** stops waiting for an upload but leaves it in saved uploads.
+file must exist and be readable.
+
+Leave the scene unchanged until the upload attaches. Editing the scene (for
+example moving an object) or changing the frame stops an upload that is still
+sending, and it cannot resume; once everything was sent, the import still
+finishes but does not attach automatically. If nothing had been sent yet, or the
+file could not be prepared, the input is freed with its values kept and says that
+nothing was uploaded, so you can upload again. Otherwise, and when you edit that
+input, load another workflow, undo or reopen the file during an upload, nothing
+attaches automatically; undo also stops an upload that is still sending. An input
+that stays marked shows **Saved upload: inspect before continuing**. Choose
+**Inspect uploads** to attach an imported upload with **Use this reference**, or
+to cancel one that never started with **Cancel preparation**, which usually also
+frees the waiting input. **Stop waiting** frees the input in any of these cases
+and keeps its current values; the upload stays in saved uploads, and uploading
+again sends the file again. Undoing the upload itself also clears the input's
+upload state.
+**Clear reference** stops waiting too, but empties the input.
 Inputs of other kinds, or with listed allowed asset IDs, use Library or an ID.
 
 Choose **Request workflow price**, then **Generate**. The separate confirmation

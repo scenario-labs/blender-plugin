@@ -110,6 +110,17 @@ class JobWorkers:
     def search_assets(self, query, **options):
         return self._enqueue(self._coordinator.search_assets, query, **_snapshot(options))
 
+    def collection_page(self, **options):
+        return self._enqueue(self._coordinator.collection_page, **_snapshot(options))
+
+    def organization_snapshot(self, request):
+        """Queue the read an organization review shows; requests are immutable."""
+        return self._enqueue(self._coordinator.organization_snapshot, request)
+
+    def organize(self, snapshot):
+        """Queue one approved organization change; deactivation cancels it unsent."""
+        return self._enqueue(self._coordinator.organize, snapshot)
+
     def model(self, identifier):
         return self._enqueue(self._coordinator.model, identifier)
 

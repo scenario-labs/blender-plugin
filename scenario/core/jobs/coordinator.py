@@ -24,6 +24,13 @@ from .film_finishing import (
     validate_composition_sources,
 )
 from .film_media import VerifiedComposition
+from .organization import (
+    OrganizationCommands,
+    OrganizationError,
+    OrganizationNotSent,
+    OrganizationRequest,
+    OrganizationSnapshot,
+)
 from .results import ResultCommands, ResultError, VerifiedResults
 from .store import (
     CloudJobIntent,
@@ -237,6 +244,8 @@ class JobCoordinator:
         self._verified_results = WeakValueDictionary()
         self._application_claims = WeakValueDictionary()
         self._application_receipts = WeakKeyDictionary()
+        self._organization = OrganizationCommands(adapter)
+        self._organization_snapshots = WeakValueDictionary()
         self._uploads = None
         upload_config = (upload_store, upload_sources, part_uploader)
         if any(value is not None for value in upload_config):
@@ -650,6 +659,8 @@ class JobCoordinator:
             self._quotes.clear()
             self._compositions.clear()
             self._verified_results.clear()
+            self._organization_snapshots.clear()
+            self._organization.reset()
 
     def close(self):
         """Release the SDK client after the application owner has joined workers."""
@@ -712,6 +723,40 @@ class JobCoordinator:
 
     def search_assets(self, query, **options):
         return self._read_metadata(self._adapter.search_assets, query, **options)
+
+    def collection_page(self, **options):
+        return self._read_metadata(self._adapter.collection_page, **options)
+
+    def organization_snapshot(self, request):
+        """Read the state an organization review shows; this sends no write."""
+        if not isinstance(request, OrganizationRequest) or request.scope != self.scope:
+            raise OrganizationError("Prepare organization changes in the selected connection")
+        snapshot = self._read_metadata(self._organization.snapshot, request)
+        with self._request_guard():
+            self._organization_snapshots[id(snapshot)] = snapshot
+            return snapshot
+
+    def organize(self, snapshot):
+        """Send one issued snapshot's writes once; the active context admits each write.
+
+        Deactivation stops later writes without hiding writes already sent.
+        Raises OrganizationNotSent only when nothing was sent.
+        """
+        with self._lock:
+            if (
+                not self._active
+                or not isinstance(snapshot, OrganizationSnapshot)
+                or snapshot.scope != self.scope
+                or self._organization_snapshots.get(id(snapshot)) is not snapshot
+            ):
+                raise OrganizationNotSent("Apply an unused review from the selected connection")
+            del self._organization_snapshots[id(snapshot)]
+
+        def guard():
+            with self._request_guard():
+                pass
+
+        return self._organization.execute(snapshot, guard)
 
     def model(self, identifier):
         return self._metadata("model", identifier)

@@ -406,3 +406,73 @@ def test_prompt_restart_observes_known_id_without_resubmission_or_cancellation(s
     assert requests[-1].method == "GET"
     assert requests[-1].url.path == "/v1/jobs/remote"
     assert len(requests) == 3
+
+
+def organization_owner(tmp_path):
+    from organization_service import URL, OrganizationService, asset
+
+    service = OrganizationService(assets=[asset("asset-a"), asset("asset-b")])
+    adapter = service.adapter()
+    scope = JobScope(URL, "account", "project")
+    coordinator = JobCoordinator(adapter, JobStore(tmp_path / "organization.sqlite3", scope))
+    return service, adapter, coordinator
+
+
+def test_organization_rejects_other_scope_and_issued_snapshots_apply_once(tmp_path):
+    from dataclasses import replace
+
+    from scenario.core.jobs.organization import (
+        OrganizationError,
+        OrganizationNotSent,
+        build_request,
+    )
+
+    service, adapter, coordinator = organization_owner(tmp_path)
+    try:
+        other = replace(coordinator.scope, project_id="another-project")
+        foreign = build_request(other, "update_tags", asset_ids=["asset-a"], add_tags=["x"])
+        with pytest.raises(OrganizationError, match="selected connection"):
+            coordinator.organization_snapshot(foreign)
+        assert service.requests == []
+        built = build_request(
+            coordinator.scope, "update_tags", asset_ids=["asset-a"], add_tags=["x"]
+        )
+        snapshot = coordinator.organization_snapshot(built)
+        forged = replace(snapshot)
+        with pytest.raises(OrganizationNotSent):
+            coordinator.organize(forged)
+        assert coordinator.organize(snapshot).state.value == "VERIFIED"
+        with pytest.raises(OrganizationNotSent):
+            coordinator.organize(snapshot)
+        assert len(service.writes) == 1
+    finally:
+        adapter.close()
+
+
+def test_deactivation_stops_later_organization_writes_and_clears_uncertain_names(tmp_path):
+    from scenario.core.jobs.organization import Outcome, build_request
+
+    service, adapter, coordinator = organization_owner(tmp_path)
+    try:
+        built = build_request(
+            coordinator.scope, "update_tags", asset_ids=["asset-a", "asset-b"], add_tags=["x"]
+        )
+        snapshot = coordinator.organization_snapshot(built)
+        coordinator._organization._mark_uncertain("Earlier name")
+
+        def deactivate_during_first_write(request):
+            if request.method == "PUT":
+                coordinator.deactivate()
+
+        service.gate = deactivate_during_first_write
+        result = coordinator.organize(snapshot)
+        assert [outcome.state for outcome in result.outcomes] == [
+            Outcome.VERIFIED,
+            Outcome.NOT_SENT,
+        ]
+        assert len(service.writes) == 1
+        assert not coordinator._organization._uncertain("Earlier name")
+        with pytest.raises(QuoteError, match="inactive"):
+            coordinator.organization_snapshot(built)
+    finally:
+        adapter.close()

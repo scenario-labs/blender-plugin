@@ -786,9 +786,14 @@ sanitized `AdapterError` behavior. Write outcomes are classified as follows:
   client. A closed client or disabled online access raises a plain
   `AdapterError`. No request is made.
 - **One attempt.** The client keeps `max_retries=0`. The SDK would otherwise
-  retry 408, 409, 429 and 5xx responses, the Scenario client sends no
-  idempotency key, and the API reference documents no idempotency or
-  transaction contract for these endpoints.
+  retry 408, 409, 429 and 5xx responses, and the Scenario client sends no
+  idempotency key. The API reference documents no idempotency or transaction
+  contract for collection creation or membership changes. For
+  `update_tags`, `strict=false` is documented to make the endpoint "behave
+  as if it was idempotent": repeated additions and absent removals do not
+  fail. That describes tag semantics, not safe replay after an unknown
+  outcome, because a resend could reapply a change that another client has
+  since reverted. Tag changes are therefore also sent once and read back.
 - **`WriteRejected(status)`.** Any 4xx response except 408, 409, 425 and 429.
   The fixed text names the status class: rejected credentials (401), no
   permission for this asset or collection (403), not found in the selected

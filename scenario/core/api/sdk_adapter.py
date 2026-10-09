@@ -480,8 +480,11 @@ class SDKAdapter:
         A plain AdapterError (closed client, online access disabled) means
         nothing was sent. After dispatch, failures raise only WriteRejected or
         WriteUncertain. The client keeps max_retries=0 because the SDK would
-        otherwise retry 408/409/429/5xx and these endpoints document no
-        idempotency contract.
+        otherwise retry 408/409/429/5xx. Collection creation and membership
+        changes document no idempotency contract. Non-strict tag changes are
+        documented to behave as if idempotent, but a resend after an unknown
+        outcome could reapply a change another client has since reverted, so
+        callers read back instead.
         """
         from scenario_sdk import APIStatusError
 

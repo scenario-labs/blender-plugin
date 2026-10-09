@@ -5,6 +5,7 @@ builder places in the viewport, colour-coded and organised into sub-collections,
 assets. The design runs off the main thread (LLM); the build runs on the main thread from the stored plan."""
 
 import json
+import textwrap
 from math import radians
 
 import bmesh
@@ -280,6 +281,13 @@ def draw_status(layout, scene):
     elif item.phase == "DONE":
         layout.label(text="Plan ready. Build it to update geometry.", icon="CHECKMARK")
     elif item.phase == "ERROR":
+        from .blockout_jobs import CANCELED
+
+        if item.error == CANCELED:
+            # A local cancellation sent nothing: there is no saved job to review.
+            for index, line in enumerate(textwrap.wrap(CANCELED, 32)):
+                layout.label(text=line, icon="INFO" if index == 0 else "NONE")
+            return
         layout.label(text="Blockout needs review", icon="ERROR")
         if item.request_id:
             layout.operator(

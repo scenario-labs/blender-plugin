@@ -7,7 +7,7 @@ import threading
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import patch
+from unittest.mock import MagicMock, call, patch
 
 import bpy
 from helpers import online_access, submodule, temp_credentials
@@ -230,6 +230,158 @@ class RuntimeJobTests(unittest.TestCase):
                 dict(context_id=context, request_id="request", expected_revision=record.revision)
             )
         self.assertEqual(store.get("request"), record)
+
+    def saved_job(self, request_id, *states, operation="model", film_task=None):
+        m = self.storemod
+        store = self.runtime.ensure_job_store()
+        record = store.create(
+            m.JobIntent(
+                request_id,
+                store.scope,
+                m.JobOrigin("file", "scene", "revision"),
+                operation,
+                "model",
+                "a" * 64,
+                "b" * 64,
+                "0.10000000000000001",
+                film_task=film_task,
+            )
+        )
+        for state in states:
+            record = store.transition(
+                request_id,
+                expected_revision=record.revision,
+                state=state,
+                remote_job_id=f"remote-{request_id}" if state == m.JobState.REMOTE else None,
+            )
+        return record
+
+    def native_cancel(self, context_id, record, **changes):
+        args = dict(
+            context_id=context_id,
+            request_id=record.intent.request_id,
+            expected_revision=record.revision,
+            action="cancel_prepared",
+        )
+        return bpy.ops.scenario.recover_job(**dict(args, **changes))
+
+    def test_native_controls_offer_local_cancellation_only_for_prepared_jobs(self):
+        state = self.storemod.JobState
+        records = {
+            "prepared": self.saved_job("prepared"),
+            "workflow": self.saved_job("workflow", operation="workflow"),
+            "prompt": self.saved_job("prompt", operation="prompt"),
+            "translate": self.saved_job("translate", operation="translate"),
+            "submitting": self.saved_job("submitting", state.SUBMITTING),
+            "uncertain": self.saved_job("uncertain", state.SUBMITTING, state.UNCERTAIN),
+            "remote": self.saved_job("remote", state.SUBMITTING, state.REMOTE),
+            "canceled": self.saved_job("canceled", state.CANCELED),
+        }
+        jobs = self.runtime.inspect_model_jobs()
+        offered = {
+            key for key in records if "cancel_prepared" in jobs.views[key].meta["recovery_actions"]
+        }
+        self.assertEqual(offered, {"prepared", "workflow", "prompt", "translate"})
+        for key in offered:
+            self.assertEqual(jobs.views[key].meta["recovery_actions"], ("cancel_prepared",))
+            self.assertEqual(jobs.status(key)["actions"], ("cancel_prepared",))
+        # Local cancellation never routes through the remote recovery dispatcher.
+        with self.assertRaisesRegex(Exception, "available action changed"):
+            jobs.control("prepared", records["prepared"].revision, "cancel_prepared")
+        self.assertEqual({key: self.runtime.state.job_store.get(key) for key in records}, records)
+        self.assertEqual(self.requests, [])
+
+    def confirm_cancel(self, record):
+        operator = SimpleNamespace(
+            context_id=self.runtime.state.job_context_id,
+            request_id=record.intent.request_id,
+            expected_revision=record.revision,
+            action="cancel_prepared",
+        )
+        confirm = MagicMock(return_value={"RUNNING_MODAL"})
+        context = SimpleNamespace(window_manager=SimpleNamespace(invoke_confirm=confirm))
+        cls = submodule("blender.job_recovery").SCENARIO_OT_recover_job
+        self.assertEqual(cls.invoke(operator, context, "event"), {"RUNNING_MODAL"})
+        return operator, confirm
+
+    def test_native_cancellation_confirms_before_changing_saved_state(self):
+        film = self.storemod.FilmTaskBinding("production", "take", "c" * 64, "d" * 64)
+        records = {
+            "prepared": self.saved_job("prepared"),
+            "film": self.saved_job("film", film_task=film),
+        }
+        self.runtime.inspect_model_jobs()
+        message = "Cancel this unsent request locally; nothing is sent to Scenario."
+        film_note = " A Film task stays reserved; use a new take name to try again."
+        for key, expected in (("prepared", message), ("film", message + film_note)):
+            with self.subTest(key=key):
+                operator, confirm = self.confirm_cancel(records[key])
+                confirm.assert_called_once_with(
+                    operator,
+                    "event",
+                    title="Cancel prepared job?",
+                    message=expected,
+                    confirm_text="Discard unsent job",
+                )
+                saved = self.runtime.state.job_store.get(key)
+                self.assertEqual(saved, records[key])
+                self.assertEqual(
+                    (saved.state, saved.revision),
+                    (self.storemod.JobState.PREPARED, records[key].revision),
+                )
+        self.assertEqual(self.requests, [])
+
+    def test_native_cancellation_persists_locally_without_service_requests(self):
+        record = self.saved_job("prepared")
+        jobs = self.runtime.inspect_model_jobs()
+        view = jobs.views["prepared"]
+        view.error = "Submission did not complete; inspect the saved job before continuing"
+        context = self.runtime.state.job_context_id
+        self.assertEqual(self.native_cancel(context, record), {"FINISHED"})
+        saved = self.runtime.state.job_store.get("prepared")
+        self.assertEqual(saved.state, self.storemod.JobState.CANCELED)
+        self.assertEqual(saved.revision, record.revision + 1)
+        self.assertEqual((view.status, view.error), ("canceled", None))
+        self.assertEqual(view.meta["recovery_actions"], ())
+        self.assertNotIn("prepared", jobs._paused)
+        self.assertIn(view, self.runtime.state.jobs_view)
+        self.assertEqual(self.tools.list_local_jobs({})["jobs"][0]["state"], "canceled")
+        with self.assertRaisesRegex(RuntimeError, "Recovery did not complete"):
+            self.native_cancel(context, saved)
+        self.assertEqual(self.runtime.state.job_store.get("prepared"), saved)
+        self.assertEqual(self.requests, [])
+
+    def test_native_cancellation_rejects_stale_revision_and_changed_context(self):
+        record = self.saved_job("prepared")
+        self.runtime.inspect_model_jobs()
+        context = self.runtime.state.job_context_id
+        with self.assertRaisesRegex(RuntimeError, "Recovery did not complete"):
+            self.native_cancel(context, record, expected_revision=record.revision + 1)
+        self.runtime.state.reset()
+        self.runtime.inspect_model_jobs()
+        self.assertNotEqual(context, self.runtime.state.job_context_id)
+        with self.assertRaisesRegex(RuntimeError, "context changed"):
+            self.native_cancel(context, record)
+        self.assertEqual(self.runtime.ensure_job_store().get("prepared"), record)
+        self.assertEqual(self.requests, [])
+
+    def test_native_and_mcp_cancellation_share_one_runtime_command(self):
+        native, agent = self.saved_job("native"), self.saved_job("agent")
+        jobs = self.runtime.inspect_model_jobs()
+        context = self.runtime.state.job_context_id
+        shared = self.runtime.cancel_prepared_job
+        with patch.object(self.runtime, "cancel_prepared_job", wraps=shared) as command:
+            self.assertEqual(self.native_cancel(context, native), {"FINISHED"})
+            result = self.tools.cancel_prepared_job(
+                dict(context_id=context, request_id="agent", expected_revision=agent.revision)
+            )
+        self.assertEqual(
+            command.call_args_list,
+            [call(context, "native", native.revision), call(context, "agent", agent.revision)],
+        )
+        self.assertEqual(result["state"], "canceled")
+        self.assertEqual({jobs.views[key].status for key in ("native", "agent")}, {"canceled"})
+        self.assertEqual(self.requests, [])
 
     def test_invalid_revision_fails_before_context_creation(self):
         for value in (True, -1, 0.0, "0", None):

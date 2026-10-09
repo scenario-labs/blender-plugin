@@ -9,7 +9,7 @@ import unittest
 from concurrent.futures import Future
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import bpy
 import httpx
@@ -42,6 +42,7 @@ class BlockoutJobsTests(unittest.TestCase):
         self.model = json.loads((FIXTURES / "models/model_scenario-llm.json").read_text())["model"]
         self.calls, self.paid, self.sessions = [], [], []
         self.lose_response, self.fail_read = False, False
+        self.hold_quotes, self.held_quotes = None, threading.Semaphore(0)
         self.result_text = json.dumps(
             [
                 {
@@ -95,6 +96,11 @@ class BlockoutJobsTests(unittest.TestCase):
                         },
                     )
                 return httpx.Response(200, json={"model": self.model})
+            if self.hold_quotes is not None and request.url.params.get("dryRun") == "true":
+                # A held price request of any kind occupies a shared worker.
+                self.held_quotes.release()
+                self.hold_quotes.wait(5)
+                return httpx.Response(269, content=b'{"creativeUnitsCost":0.1234567890123456789}')
             self.assertEqual(request.url.path, "/v1/generate/custom/model_scenario-llm")
             if request.url.params.get("dryRun") == "true":
                 return httpx.Response(269, content=b'{"creativeUnitsCost":0.1234567890123456789}')
@@ -255,6 +261,48 @@ class BlockoutJobsTests(unittest.TestCase):
         self.assertEqual(self.approve(item), {"CANCELLED"})
         self.assertEqual(bpy.ops.scenario.blockout_design(), {"CANCELLED"})
         self.assertEqual(len(self.paid), 1)
+
+    def test_native_cancellation_of_queued_request_reports_cancellation(self):
+        state = self.storage.JobState
+        item = self.quote()
+        self.hold_quotes = threading.Event()
+        self.addCleanup(self.hold_quotes.set)
+        # Two pending prompt price requests in the same scene occupy both shared
+        # workers; switching scenes would retire the Blockout quote.
+        for lane in ("video", "audio"):
+            self.runtime.ensure_prompt_jobs().quote(self.scene, lane, "GENERATE")
+            self.assertTrue(self.held_quotes.acquire(timeout=5))
+        plan = self.scene.scenario_blockout.plan_json
+        self.assertEqual(self.approve(item), {"FINISHED"})
+        record = self.runtime.state.job_store.get(item.request_id)
+        self.assertEqual(record.state, state.PREPARED)
+        view = self.runtime.inspect_model_jobs().views[item.request_id]
+        self.assertIn(view, self.runtime.state.jobs_view)
+        self.assertEqual(view.meta["recovery_actions"], ("cancel_prepared",))
+        result = bpy.ops.scenario.recover_job(
+            context_id=self.runtime.state.job_context_id,
+            request_id=item.request_id,
+            expected_revision=record.revision,
+            action="cancel_prepared",
+        )
+        self.assertEqual(result, {"FINISHED"})
+        self.hold_quotes.set()
+        self.advance(item)
+        saved = self.runtime.state.job_store.get(item.request_id)
+        self.assertEqual((saved.state, saved.remote_job_id), (state.CANCELED, None))
+        self.assertEqual(
+            (item.phase, item.error),
+            ("ERROR", "Blockout request canceled; nothing was sent to Scenario"),
+        )
+        self.assertEqual(self.scene.scenario_blockout.plan_json, plan)
+        self.assertEqual(self.paid, [])
+        # The panel shows the cancellation, not a failure that needs review.
+        layout = MagicMock()
+        self.blockout.draw_status(layout, self.scene)
+        drawn = [call.kwargs.get("text") for call in layout.label.call_args_list]
+        self.assertEqual(" ".join(drawn), "Blockout request canceled; nothing was sent to Scenario")
+        self.assertNotIn("Blockout needs review", drawn)
+        layout.operator.assert_not_called()
 
     def test_refinement_quotes_the_complete_current_plan(self):
         previous = [

@@ -212,7 +212,18 @@ class PromptJobs:
                 item.task = None
                 item.phase = "ERROR"
                 item.error = (
-                    "Prompt action stopped; inspect the saved job"
+                    self._stopped(item.request_id)
                     if item.request_id
                     else "Prompt price unavailable or inputs changed; request a new price"
                 )
+
+    def _stopped(self, request_id):
+        # Local cancellation makes a queued submission fail its stored-state
+        # check before dispatch; a remote job ID means Scenario saw the request.
+        try:
+            record = self.store.get(request_id)
+        except Exception:
+            record = None
+        if record is not None and record.state == JobState.CANCELED and not record.remote_job_id:
+            return "Prompt request canceled; nothing was sent to Scenario"
+        return "Prompt action stopped; inspect the saved job"

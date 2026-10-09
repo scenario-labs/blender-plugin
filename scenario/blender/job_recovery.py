@@ -14,6 +14,7 @@ LABELS = {
     "refresh": "Refresh status",
     "resume": "Resume download",
     "cancel": "Cancel generation",
+    "cancel_prepared": "Cancel prepared job",
     "recover_download": "Check interrupted download",
     "retry_receipt": "Save import receipt",
     "import_images": "Import saved images",
@@ -38,6 +39,20 @@ class SCENARIO_OT_inspect_saved_jobs(bpy.types.Operator):
             self.report({"ERROR"}, "Could not inspect saved jobs; preserve storage for recovery")
             return {"CANCELLED"}
         return {"FINISHED"}
+
+
+def cancel_prepared_message(request_id):
+    """Describe a local discard; reading the saved intent never changes it."""
+    message = "Cancel this unsent request locally; nothing is sent to Scenario."
+    store = runtime.state.job_store
+    try:
+        record = store.get(request_id) if store is not None else None
+    except Exception:
+        record = None
+    if record is not None and record.intent.film_task is not None:
+        # A canceled record still reserves its Film task identity.
+        message += " A Film task stays reserved; use a new take name to try again."
+    return message
 
 
 class SCENARIO_OT_recover_job(bpy.types.Operator):
@@ -66,22 +81,40 @@ class SCENARIO_OT_recover_job(bpy.types.Operator):
     )
 
     def invoke(self, context, event):
+        if self.action == "cancel_prepared":
+            return context.window_manager.invoke_confirm(
+                self,
+                event,
+                title="Cancel prepared job?",
+                message=cancel_prepared_message(self.request_id),
+                confirm_text="Discard unsent job",
+            )
         if self.action == "cancel":
             return context.window_manager.invoke_confirm(self, event)
         return self.execute(context)
 
     def execute(self, context):
         try:
-            runtime.control_model_job(
-                self.context_id, self.request_id, self.expected_revision, self.action
-            )
+            if self.action == "cancel_prepared":
+                # The same revision- and context-guarded command as MCP cancel_prepared_job.
+                runtime.cancel_prepared_job(
+                    self.context_id, self.request_id, self.expected_revision
+                )
+            else:
+                runtime.control_model_job(
+                    self.context_id, self.request_id, self.expected_revision, self.action
+                )
         except ScenarioError as error:
             self.report({"ERROR"}, error.reason)
             return {"CANCELLED"}
         except Exception:
             self.report({"ERROR"}, "Recovery did not complete; inspect the saved job again")
             return {"CANCELLED"}
-        runtime.set_message("Recovery requested; no new generation was submitted")
+        runtime.set_message(
+            "Prepared job canceled; nothing was sent to Scenario"
+            if self.action == "cancel_prepared"
+            else "Recovery requested; no new generation was submitted"
+        )
         return {"FINISHED"}
 
 

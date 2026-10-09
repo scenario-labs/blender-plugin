@@ -368,7 +368,16 @@ class ModelJobs:
         for request_id, task in tuple(self.submissions.items()):
             if task.done():
                 outcomes = self.session.drain(task=task)
-                if outcomes and outcomes[0].error is not None:
+                try:
+                    record = self.store.get(request_id)
+                except Exception:
+                    # An unreadable record keeps the review path below; raising here
+                    # would keep the entry and stop every later poll, not only this one.
+                    record = None
+                # Local cancellation before dispatch makes the queued submission
+                # fail its stored-state check; that rejection is the intended outcome.
+                canceled = record is not None and record.state == JobState.CANCELED
+                if outcomes and outcomes[0].error is not None and not canceled:
                     self.views[
                         request_id
                     ].error = "Submission did not complete; inspect the saved job before continuing"
@@ -587,9 +596,14 @@ class ModelJobs:
     def actions(self, record):
         """Return available explicit controls, without changing saved state."""
         request_id = record.intent.request_id
+        state = record.state
+        if state == JobState.PREPARED:
+            # Any unsent intent, including a queued model, workflow, prompt or
+            # translate submission, can be canceled locally like MCP allows.
+            # The shared command rejects it once dispatch claims the revision.
+            return ("cancel_prepared",)
         if request_id in self._commands or request_id in self.submissions:
             return ()
-        state = record.state
         if request_id in self._receipts:
             return ("retry_receipt",)
         if any(item.state == LocalApplicationState.APPLYING for item in record.local_applications):
@@ -656,6 +670,7 @@ class ModelJobs:
             or action not in self.actions(record)
             or action
             in {
+                "cancel_prepared",
                 "import_images",
                 "import_media",
                 "import_model",
@@ -711,6 +726,19 @@ class ModelJobs:
         else:
             self._paused.add(request_id)
         return task
+
+    def show_canceled(self, record):
+        """Project a shared local cancellation; nothing remains to deliver or resume."""
+        request_id = record.intent.request_id
+        view = self.views.get(request_id)
+        if view is None or record.state != JobState.CANCELED:
+            return None
+        self._paused.discard(request_id)
+        self._automatic_application.discard(request_id)
+        view.status, view.error = record.state.value, None
+        view.meta["saved_revision"], view.meta["saved_state"] = record.revision, record.state.value
+        view.meta["recovery_actions"] = self.actions(record)
+        return view
 
     def prepare_image_application(self, request_id, expected_revision, scene):
         """Capture a reviewable destination without verification, import or network."""

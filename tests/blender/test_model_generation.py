@@ -830,6 +830,66 @@ class ModelGenerationTests(unittest.TestCase):
         self.assertEqual(len(self.cancel_calls), 1)
         self.assertEqual(len(self.paid), 1)
 
+    def test_native_cancellation_of_queued_submission_never_dispatches(self):
+        quotes = [self.mcp_quote() for _ in range(3)]
+        self.release.clear()
+        # Occupy both shared workers so the third approved submission stays queued.
+        for quote in quotes[:2]:
+            self.entered.clear()
+            self.mcp_submit(quote)
+            self.assertTrue(self.entered.wait(5))
+        request_id = self.mcp_submit(quotes[2])["local_id"]
+        self.runtime.sync_catalog_context()
+        owner = self.runtime.state.model_jobs
+        view = owner.views[request_id]
+        self.assertIn(request_id, owner.submissions)
+        self.assertEqual(self.store.get(request_id).state, self.storemod.JobState.PREPARED)
+        self.assertEqual(view.meta["recovery_actions"], ("cancel_prepared",))
+        result = bpy.ops.scenario.recover_job(
+            context_id=self.runtime.state.job_context_id,
+            request_id=request_id,
+            expected_revision=view.meta["saved_revision"],
+            action="cancel_prepared",
+        )
+        self.assertEqual(result, {"FINISHED"})
+        self.release.set()
+        self.settle()
+        self.assertEqual(self.store.get(request_id).state, self.storemod.JobState.CANCELED)
+        self.assertNotIn(request_id, owner.submissions)
+        self.assertNotIn(request_id, owner._paused)
+        self.assertEqual((view.status, view.error), ("canceled", None))
+        self.assertEqual(len(self.paid), 2)
+
+    def test_failed_record_read_after_a_failed_submission_clears_the_queued_entry(self):
+        self.lose_response = True
+        request_id = self.mcp_submit(self.mcp_quote())["local_id"]
+        owner = self.runtime.state.model_jobs
+        try:
+            owner.submissions[request_id].result(5)
+        except Exception:
+            pass  # the lost response is the failed submission under test
+        store = self.runtime.state.job_store
+        read, failures = store.get, []
+
+        def unreadable_once(identifier, *args, **kwargs):
+            # Only the drained submission's first read fails; the view refresh reads normally.
+            if identifier == request_id and not failures:
+                failures.append(identifier)
+                raise self.storemod.StoreError("synthetic unreadable record")
+            return read(identifier, *args, **kwargs)
+
+        with patch.object(store, "get", side_effect=unreadable_once):
+            owner.poll()
+        self.assertEqual(failures, [request_id])
+        owner.poll()
+        self.assertNotIn(request_id, owner.submissions)
+        self.assertIn(request_id, owner._paused)
+        self.assertEqual(
+            owner.views[request_id].error,
+            "Submission outcome is not confirmed; do not submit it again",
+        )
+        self.assertEqual(len(self.paid), 1)
+
     def test_uncertain_submission_has_no_recovery_dispatch_action(self):
         self.lose_response = True
         result = self.mcp_submit(self.mcp_quote())

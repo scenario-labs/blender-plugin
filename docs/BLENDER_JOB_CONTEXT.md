@@ -28,8 +28,9 @@ requests. Inspection returns exact saved costs and recovery suggestions, not new
 spending approval. Cancellation needs the current context token and observed
 record revision, and only accepts an unclaimed prepared intent. Resetting, loading a file or
 switching credentials invalidates the context token, even if another scope has
-the same request ID. Shared saved-job controls below also expose known model-job
-cancellation and download/receipt recovery. Uploads and remaining paid entry
+the same request ID. Shared saved-job controls below also expose this
+prepared-intent cancellation, known model-job cancellation and download/receipt
+recovery. Uploads and remaining paid entry
 points still need active integration. These recovery
 tools do not import prototype jobs. Model submission creates new durable intents.
 
@@ -577,9 +578,10 @@ live acceptance remain; this slice must not be advertised as complete release ac
 
 ## Active saved-job controls
 
-The Jobs panel can inspect saved jobs without network activity. Recovery buttons
-and MCP `recover_local_job` share `ModelJobs.control`, guarded by the selected
-context token and exact saved revision. Queued commands retain their original scope.
+The Jobs panel can inspect saved jobs without network activity. Except
+`cancel_prepared` (below), recovery buttons and MCP `recover_local_job` share
+`ModelJobs.control`, guarded by the selected context token and exact saved
+revision. Queued commands retain their original scope.
 
 - `refresh` observes a known remote ID once, without continuing delivery.
 - `resume` polls and downloads the existing job, including after restart or a
@@ -590,6 +592,19 @@ context token and exact saved revision. Queued commands retain their original sc
   without network access or import.
 - `retry_receipt` saves an already completed image import's outcome without any
   scene mutation. The exact pending owner-local handle must still exist.
+- `cancel_prepared` is offered for any unsent prepared intent: model (including
+  Blockout), workflow, Film task, prompt or translate, including one queued behind
+  other work. Prompt, translate, Blockout and restarted intents get a Jobs panel
+  view after inspection. After
+  native confirmation (**Discard unsent job**) it calls the same
+  `runtime.cancel_prepared_job` command as MCP `cancel_prepared_job`, not
+  `ModelJobs.control`, with the context token and observed revision. It sends no
+  service request. The queued submission then fails its stored-state check and the
+  job shows as canceled; the prompt field and the Blockout panel report the local
+  cancellation instead of a stopped action. A claimed request or stale revision is rejected. The dialog
+  warns that a canceled Film task stays reserved, so another take needs a new name.
+  MCP `job_status` lists the same `cancel_prepared` action name, and its
+  description maps that name to `cancel_prepared_job`.
 
 No action reconstructs a quote, replays an uncertain submission, guesses a remote
 ID or rebinds the original scene. Missing/stale revisions and retired contexts fail

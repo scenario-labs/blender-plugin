@@ -120,8 +120,8 @@ Where things are:
 ## The four panels
 
 - **Scenario**: what to generate. Lane tabs with Scenario's modality icons, laid out Image / Video / 3D, Audio / Materials, Render Image / Render Video, Blockout. Below the tabs, the form of the lane.
-- **Jobs**: saved jobs that are running or waiting for your review, all lanes together, with a count in the header. **Inspect saved jobs** lists the selected connection's saved jobs, including after a restart, without submitting anything. Each row shows the model and state, for example "uploading and submitting" or "rendering"; no percentage is shown. A row offers only the explicit controls its state allows, such as **Refresh status**, **Cancel generation**, **Resume download** or, once a downloaded result awaits review, an application action that confirms its destination.
-- **Generations**: what came back. Each entry has a header (type icon, start of the prompt, price, a collapse arrow), the model, the asset id (click it to copy), a failure marker when something went wrong and the saved-job controls its state allows. Images imported automatically in this session also show their thumbnail with View image, Use as reference (3D image to 3D, Image, Video, Render Image style, Render Video style), Remove background, Apply as texture and Add as plane. Other results stay saved until you choose an explicit action, such as **Import model (N)**, **Add video strip (N)**, **Add audio strip (N)**, **Apply saved material** or **Set panorama as World (N)**; after application, **Reuse saved results** offers them again. For a generation started in this session, the refresh button **reloads the parameters**: lane, model, prompt, every setting sent and the references come back into the form, ready to tweak and generate again. The info button opens Details: the full prompt, the settings sent, the references with their asset ids, the result assets, the files, the errors. Collapse an entry to keep only its icon and prompt. **Collapse all / Expand all** changes every entry from the panel header. A failed entry has a red error control: hover for the message, or click to read and copy the full text. Then, with the Project history (cloud) checkbox on, the project's cloud history: generations made on the web app, by agents or on another machine, with **Save for recovery** for completed model jobs. Saved jobs use explicit download and destination approval; see [Generations](#generations).
+- **Jobs**: what is running, all lanes together, with a count in the header: "Prompt Spark is writing the look", "uploading and submitting", "rendering 40%".
+- **Generations**: what came back. Each entry has a header (type icon, start of the prompt, price, a collapse arrow), the model, the asset id (click it to copy), a failure marker when something went wrong, the output thumbnail and the actions of its kind (images: View image, Use as reference (3D image to 3D, Image, Video, Render Image style, Render Video style), Remove background, Apply as texture, Add as plane; 3D: Add to scene, Select, Delete; video: Play, Play in Blender, Add video strip; audio: Play, Add to sequencer; materials: Tiling). The refresh button **reloads the parameters**: lane, model, prompt, every setting sent and the references come back into the form, ready to tweak and generate again. Objects a generation created are stamped with its id on import, so Select and Delete find them after renames. The info button opens Details: the full prompt, the settings sent, the references with their asset ids, the result assets, the files, the errors. Collapse an entry to keep only its icon and prompt. **Collapse all / Expand all** changes every entry from the panel header. A failed entry has a red error control: hover for the message, or click to read and copy the full text. Then, with the Project history (cloud) checkbox on, the project's cloud history: generations made on the web app, by agents or on another machine, with **Save for recovery** for completed model jobs. Saved jobs use explicit download and destination approval; see [Generations](#generations).
 
 - **Agents (MCP)**: the local MCP server, its token, one-click client setups, the Python permission.
 
@@ -153,7 +153,7 @@ CU labels use up to three decimal places without trailing zeros, with compact
 notation from 10,000 CU (`12.3K CU`). The approval retains the original server
 quote even when its displayed amount is rounded.
 
-New form generations appear in the shared saved jobs. Image imports supported PNG/EXR results into its original scene; other lanes retain downloaded results for explicit application. Saved video/audio results offer the confirmed strip insertion described below. Some lane descriptions below also mention earlier result controls that saved jobs do not offer; see the [known limitations](KNOWN_LIMITATIONS.md#creation-and-scene-application) for what is currently imported or applied.
+New form generations appear in the shared saved jobs. Image imports supported PNG/EXR results into its original scene; other lanes retain downloaded results for explicit application. Saved video/audio results now offer the confirmed strip insertion described below. The lane descriptions below also describe retained prototype capabilities whose shared result application is still being integrated. See the [known limitations](KNOWN_LIMITATIONS.md#creation-and-scene-application) for current import and application limits.
 
 ![The model picker: Image, Video, Audio and 3D tabs with icons, category chips, search, the model list and the description of GPT Image 2](images/model-picker.png)
 
@@ -263,11 +263,13 @@ add a global Undo step.
 
 ![One saved triangle model imported beside existing geometry at the approved Blender cursor](images/saved-model-result.png)
 
+The following descriptions include retained prototype generation and import
+features whose full shared-runtime acceptance remains open.
 Four modes: **Text**, **Image** (one picture), **Multi-view** (several views of the same object, first one is the front) and **Edit** (Scenario's 3D tools on the selected mesh).
 
 ![3D lane in Text mode with Meshy selected, texture options and a target polygon count](images/panel-3d.png)
 
-Generate: Meshy 7 and Rodin Gen-2.5 for text; Tripo 3.1, Tripo P1, Meshy 7, Hunyuan 3.1 Pro, Rodin 2.5 for images; Meshy 7 Multi Image, Tripo 3.1 Multi View, Hunyuan 3.1 Pro Multiview and Rodin for multi-view; worlds (Marble, HY World, TripoSplat) through the picker. Results are saved with the job, not imported automatically. Providers can return several files for one result (Meshy: GLB, OBJ and texture PNGs; Rodin with `material=All`: a shaded and a PBR mesh); Rodin defaults to PBR. **Import model (N)** imports one chosen self-contained GLB as described above, and the other files stay saved. Worlds come back as Gaussian splats (`.spz`); splat, PLY, OBJ, FBX and glTF JSON results are currently saved without import.
+Generate: Meshy 7 and Rodin Gen-2.5 for text; Tripo 3.1, Tripo P1, Meshy 7, Hunyuan 3.1 Pro, Rodin 2.5 for images; Meshy 7 Multi Image, Tripo 3.1 Multi View, Hunyuan 3.1 Pro Multiview and Rodin for multi-view; worlds (Marble, HY World, TripoSplat) through the picker. Worlds come back as Gaussian splats (`.spz`, millions of splats): Blender cannot render splats, so the add-on loads them as a coloured point cloud (splat centres with their colours, sized points through a Geometry Nodes modifier, one million points kept for interactivity). The result is imported at the 3D cursor into a "Scenario" collection and the viewport switches to Material Preview so the textures show. Providers return several variants of one result (Meshy: GLB, OBJ and texture PNGs; Rodin with `material=All`: a shaded and a PBR mesh): the add-on imports one primary mesh (the textured GLB) and lists the other files in Generations with an **Add** button. Rodin defaults to PBR. **Add to scene** imports the primary mesh again at the cursor; **Select** selects the objects the job created.
 
 Edit mode:
 
@@ -432,7 +434,7 @@ record. A read error permits another read, never another paid generation.
 Cloud recovery does not recover an original mesh-edit target from another session.
 Native desktop interaction and live provider acceptance remain separate checks.
 
-![Generations list with result prompts, credit amounts and Import into scene buttons](images/panel-generations.png)
+![An earlier Generations panel layout listing past generation prompts and their credit amounts](images/panel-generations.png)
 
 ### Agents (MCP)
 The local `scenario-blender` server connects agents to the open scene and
@@ -523,8 +525,8 @@ confirmation and shared-runtime boundaries.
 - **"Prompt is required" / "Add a reference to see the cost"**: the quote needs a valid form; fill the prompt or add the required reference.
 - **"Select the mesh to edit" / "Price shown after the upload"**: the 3D tab in Edit mode needs a mesh object selected (or active) in the viewport.
 - **"This model takes no image/video input"**: the picked model cannot receive the capture; choose another one in the Render lane.
-- **The result does not appear**: open Jobs and Generations, or choose **Inspect saved jobs**. A job that failed shows a warning marker and the reason. Results other than automatically imported images wait for an explicit application action; use **Resume download** or **Check interrupted download** instead of generating again. After installing an update, restart Blender so the new version loads.
-- **A 3D model looks untextured**: switch the viewport to Material Preview; model import does not change viewport shading. Check Details for the saved result assets.
+- **The result does not appear**: open Generations. A job that failed shows a warning marker and the reason; Details lists the download errors; choose **Inspect saved jobs** and use **Resume download** or **Check interrupted download** instead of generating again. After installing an update, restart Blender so the new version loads.
+- **A 3D model looks untextured**: switch the viewport to Material Preview (the add-on does this on import), and check Details for the imported file name.
 - **The rendered image moved things around**: the prompt already freezes the layout; give the model a cleaner capture (Grey clay capture, a camera view rather than a wide viewport) and fewer style images, and keep the look description about materials and light, not about content.
 - **The sidebar and the dialogs do not look like the composer**: they are drawn by Blender with your Blender theme; the composer is custom drawing. Their layout follows the composer (tabs, chips, header rows) but their colours are the theme's.
 - **Where are the logs**: Blender's system console (Window > Toggle System Console on Windows, the terminal on macOS/Linux), messages are prefixed `scenario`.

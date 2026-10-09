@@ -320,6 +320,19 @@ def draw_loading(layout):
         layout.label(text="Loading models...", icon="TIME")
 
 
+def draw_schema_status(layout, lane_state, lane):
+    """Explain a form without its description; a failed read offers an explicit retry."""
+    failure = runtime.state.model_errors.get(lane_state.model_id)
+    error = lane_state.last_error or failure
+    layout.label(
+        text=error or "Loading the model description...", icon="ERROR" if error else "TIME"
+    )
+    if failure is not None:
+        layout.operator(
+            "scenario.retry_model", text="Retry loading model", icon="FILE_REFRESH"
+        ).lane = lane
+
+
 def draw_generate_lane(layout, context, lane):
     lane_state = context.scene.scenario.lane_state(lane)
     if lane == "3d":
@@ -330,10 +343,7 @@ def draw_generate_lane(layout, context, lane):
     draw_model_row(layout, lane_state, lane)
     schema = generation.schema_for(lane_state.model_id)
     if schema is None:
-        layout.label(
-            text=lane_state.last_error or "Loading the model description...",
-            icon="ERROR" if lane_state.last_error else "TIME",
-        )
+        draw_schema_status(layout, lane_state, lane)
         return
     if schema.prompt_name:
         draw_prompt_row(layout, lane_state, lane)
@@ -389,10 +399,7 @@ def draw_edit3d_lane(layout, context):
     draw_model_row(layout, lane_state, "edit3d")
     schema = generation.schema_for(lane_state.model_id)
     if schema is None:
-        layout.label(
-            text=lane_state.last_error or "Loading the model description...",
-            icon="ERROR" if lane_state.last_error else "TIME",
-        )
+        draw_schema_status(layout, lane_state, "edit3d")
         return
     if schema.prompt_name:
         draw_prompt_row(layout, lane_state, "edit3d")

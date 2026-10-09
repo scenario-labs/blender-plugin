@@ -192,8 +192,13 @@ class JobManager:
         for model_id in model_ids:
             try:
                 detailed.append(catalog.get(model_id, refresh=True))
-            except (ScenarioError, OSError) as err:
-                failed[model_id] = str(getattr(err, "reason", err))
+            except ScenarioError as err:
+                failed[model_id] = err.reason
+            except Exception as err:
+                # Every request ends with a result so its form can offer a retry;
+                # unexpected transport details stay out of the interface.
+                log.warning("model %s: %s", model_id, type(err).__name__)
+                failed[model_id] = "Unexpected read failure"
         self.catalog_events.put(
             (
                 "models",

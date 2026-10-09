@@ -80,6 +80,7 @@ def request_catalog():
 
 def clear_catalog():
     """Drop every form/cache tied to retired credentials on the main thread."""
+    _clear_model_failures(tuple(runtime.state.model_errors))
     _schemas.clear()
     _pending_models.clear()
     _pending_dirty_models.clear()
@@ -130,6 +131,7 @@ def process_catalog_events():
 def set_catalog(records, detailed, *, warmup=False):
     for rec in detailed:
         runtime.state.records[rec.id] = rec
+        runtime.state.model_errors.pop(rec.id, None)
         _schemas.pop(rec.id, None)
     for rec in records:
         runtime.state.records.setdefault(rec.id, rec)
@@ -174,10 +176,19 @@ def restore_model_key(lane_state):
 def set_models(detailed, failed, *, mark_dirty=True):
     for rec in detailed:
         runtime.state.records[rec.id] = rec
+        runtime.state.model_errors.pop(rec.id, None)
         _schemas.pop(rec.id, None)
     for model_id, reason in failed.items():
         runtime.set_message(f"{model_id}: {reason}")
     succeeded = {r.id for r in detailed}
+    # A form without its description keeps the sanitized failure until a new
+    # read, a success, another model or retired credentials replaces it.
+    unavailable = {
+        model_id: f"Could not load this model: {reason}"
+        for model_id, reason in failed.items()
+        if model_id not in succeeded and schema_for(model_id) is None
+    }
+    runtime.state.model_errors.update(unavailable)
     dirty_models = _pending_dirty_models & succeeded
     # A transient failure ends this request, not the user's pending selection.
     # Its eventual background retry still needs to re-arm the estimate timer.
@@ -186,12 +197,32 @@ def set_models(detailed, failed, *, mark_dirty=True):
     for scene in bpy.data.scenes:
         for lane in props.GENERATION_LANES:
             lane_state = scene.scenario.lane_state(lane)
-            if lane_state.model_id in [r.id for r in detailed]:
+            if lane_state.model_id in succeeded:
                 on_model_changed(
                     bpy.context,
                     lane_state,
                     mark_dirty=mark_dirty or lane_state.model_id in dirty_models,
                 )
+            elif lane_state.model_id in unavailable:
+                lane_state.last_error = unavailable[lane_state.model_id]
+
+
+def _clear_model_failures(model_ids):
+    """A new read or retired credentials supersede these failures (main thread)."""
+    failures = {
+        model_id: runtime.state.model_errors.pop(model_id)
+        for model_id in model_ids
+        if model_id in runtime.state.model_errors
+    }
+    if not failures:
+        return
+    for scene in bpy.data.scenes:
+        if not hasattr(scene, "scenario"):
+            continue
+        for lane in props.GENERATION_LANES:
+            lane_state = scene.scenario.lane_state(lane)
+            if failures.get(lane_state.model_id) == lane_state.last_error:
+                lane_state.last_error = ""
 
 
 _pending_models = set()
@@ -199,18 +230,25 @@ _pending_dirty_models = set()
 
 
 def request_model(model_id, *, mark_dirty=True):
-    """Fetch a model record in the background; the 'models' event finishes the job."""
+    """Fetch a model record in the background; the 'models' event finishes the job.
+
+    Returns whether a read for this model is in flight.
+    """
     runtime.sync_catalog_context()
-    if model_id in _pending_models or not runtime.online():
-        return
+    if model_id in _pending_models:
+        return True
+    if not runtime.online():
+        return False
     try:
         manager = runtime.ensure_manager()
         catalog = runtime.ensure_catalog()
     except ScenarioError as err:
         runtime.set_message(err.reason)
-        return
+        return False
     _pending_models.add(model_id)
+    _clear_model_failures((model_id,))
     manager.fetch_models(catalog, [model_id], mark_dirty=mark_dirty)
+    return True
 
 
 def _image_inputs(record):
@@ -311,6 +349,7 @@ def request_models(model_ids, *, mark_dirty=True):
         runtime.set_message(err.reason)
         return
     _pending_models.update(model_ids)
+    _clear_model_failures(model_ids)
     manager.fetch_models(catalog, list(model_ids), mark_dirty=mark_dirty)
 
 
@@ -328,6 +367,7 @@ def ensure_record(model_id, *, mark_dirty=True):
     if cached is not None and cached.parameters:
         runtime.state.records[model_id] = cached
         _schemas.pop(model_id, None)
+        _clear_model_failures((model_id,))
         return cached
     request_model(model_id, mark_dirty=mark_dirty)
     raise ScenarioError(0, "Loading the model description")

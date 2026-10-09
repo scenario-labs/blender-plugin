@@ -270,6 +270,8 @@ def test_retirement_waits_for_read_cleanup_without_closing_pool_under_worker():
     [
         httpx.Response(200, json={"model": {"id": "other"}}),
         httpx.Response(503, text="private service details"),
+        httpx.Response(200, json={"model": {"id": "fixture", "capabilities": [17]}}),
+        httpx.Response(200, json={"model": {"id": "fixture", "tags": 17}}),
     ],
 )
 def test_failed_reads_are_safe_and_leave_no_cached_record(response):

@@ -75,6 +75,11 @@ loading while a catalog request is active.
 
 A `Model` section (a box with a `NODE_MATERIAL` header, like the others) holds a wide button (icon + model name) that opens the picker, with the native dropdown as a small fallback on the right. Its one-line description belongs in the picker, not the panel.
 
+A form is described as loading its model only while that description read is
+pending. A failed read shows its sanitized reason in the form and composer note,
+with **Retry loading model** repeating the same background read. A later read,
+success, another model or changed credentials clear it; drawing never retries.
+
 ## Duration and Match timeline
 
 The video model's `Duration (cost)` drives the camera-path duration for **Render

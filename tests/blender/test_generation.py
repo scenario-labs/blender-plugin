@@ -1,12 +1,44 @@
 # SPDX-FileCopyrightText: 2026 Scenario Inc.
 # SPDX-License-Identifier: GPL-3.0-or-later
 import json
+import types
 import unittest
 from ctypes import c_float
 from unittest.mock import Mock, patch
 
 import bpy
-from helpers import FIXTURES, isolated_manager, reset_scene, submodule
+from helpers import FIXTURES, isolated_manager, reset_scene, submodule, temp_credentials
+
+UNAVAILABLE = "Scenario request failed (HTTP 503)"
+FAILED_MESSAGE = f"Could not load this model: {UNAVAILABLE}"
+
+
+class RecordingLayout:
+    """Record labels and operator properties a draw function sets, at any depth."""
+
+    def __init__(self, log=None):
+        self.log = [] if log is None else log
+
+    def __getattr__(self, name):
+        if name.startswith("__"):
+            raise AttributeError(name)
+
+        def call(*args, **kwargs):
+            if name in ("row", "column", "box", "split", "grid_flow"):
+                return RecordingLayout(self.log)
+            entry = types.SimpleNamespace(name=name, args=args, kwargs=kwargs)
+            self.log.append(entry)
+            return entry  # operator properties are assigned on the recorded entry
+
+        return call
+
+    def labels(self):
+        return [(e.kwargs.get("text"), e.kwargs.get("icon")) for e in self.log if e.name == "label"]
+
+    def retries(self):
+        return [
+            e.lane for e in self.log if e.name == "operator" and e.args == ("scenario.retry_model",)
+        ]
 
 
 class GenerationTests(unittest.TestCase):
@@ -288,3 +320,159 @@ class GenerationTests(unittest.TestCase):
         self.assertGreaterEqual(lane.estimate_dirty_at, c_float(before).value)
         self.assertLessEqual(lane.estimate_dirty_at, c_float(after).value)
         self.assertEqual(lane.estimate_key, "")
+
+    def unload_schema(self, model_id):
+        """Keep only the list entry, as before a selected model's detail read finishes."""
+        detailed = self.runtime.state.records[model_id]
+        self.runtime.state.records[model_id] = self.catalog.ModelRecord.from_api(
+            {"id": model_id, "capabilities": list(detailed.capabilities)}
+        )
+        self.generation._schemas.pop(model_id, None)
+        return detailed
+
+    def draw(self, lane):
+        layout = RecordingLayout()
+        if lane == "render_image":
+            submodule("blender.render_lanes").draw_render_image_lane(layout, bpy.context)
+        else:
+            submodule("blender.panels").draw_generate_lane(layout, bpy.context, lane)
+        return layout
+
+    def test_failed_selected_schema_shows_persistent_error_and_retries(self):
+        scenario = bpy.context.scene.scenario
+        lane, neighbor = scenario.lane_state("image"), scenario.lane_state("render_image")
+        model_id, neighbor_id = "model_patina-material", "model_google-gemini-3-1-flash"
+        self.assertEqual(neighbor.model_id, neighbor_id)
+        detailed = self.unload_schema(model_id)
+        neighbor_record = self.runtime.state.records[neighbor_id]
+        context = Mock()
+        context.load_cached.return_value = None
+        manager = self.runtime.state.manager
+        with (
+            patch.object(self.runtime, "ensure_catalog", return_value=context),
+            patch.object(self.runtime, "online", return_value=True),
+            patch.object(manager, "fetch_models") as fetch,
+        ):
+            lane.model_id = model_id
+            fetch.assert_called_once_with(context, [model_id], mark_dirty=True)
+            self.assertEqual(lane.last_error, "")
+            loading = self.draw("image")
+            self.assertIn(("Loading the model description...", "TIME"), loading.labels())
+            self.assertEqual(loading.retries(), [])
+            # The estimate debounce can price the form before its description arrives.
+            self.generation.request_estimate(bpy.context.scene, "image")
+            self.assertEqual(lane.estimate_error, "Model not loaded yet")
+            # The failure arrives with a neighbor's successful description.
+            self.handlers.dispatch(
+                (
+                    "models",
+                    {
+                        "detailed": [neighbor_record],
+                        "failed": {model_id: UNAVAILABLE},
+                        "mark_dirty": False,
+                    },
+                )
+            )
+            self.assertEqual(lane.last_error, FAILED_MESSAGE)
+            self.assertEqual(self.runtime.state.model_errors, {model_id: FAILED_MESSAGE})
+            self.assertEqual(submodule("blender.composer.draw").status_note(lane), FAILED_MESSAGE)
+            self.assertEqual(neighbor.last_error, "")
+            self.assertIsNotNone(self.generation.schema_for(neighbor_id))
+            self.assertEqual(
+                [item[0] for item in self.runtime.enum_items(("models", "image"))],
+                [neighbor_id, model_id],
+            )
+            for _ in range(2):  # Drawing only reads the state set by the event handler.
+                failed = self.draw("image")
+                self.assertIn((FAILED_MESSAGE, "ERROR"), failed.labels())
+                self.assertEqual(failed.retries(), ["image"])
+                self.assertEqual(lane.last_error, FAILED_MESSAGE)
+                self.assertEqual(self.runtime.state.model_errors, {model_id: FAILED_MESSAGE})
+            self.assertEqual(fetch.call_count, 1)
+            with temp_credentials():
+                self.assertEqual(bpy.ops.scenario.retry_model(lane="image"), {"FINISHED"})
+            self.assertEqual(fetch.call_count, 2)
+            self.assertEqual(fetch.call_args.args, (context, [model_id]))
+            self.assertEqual(fetch.call_args.kwargs, {"mark_dirty": True})
+            self.assertEqual(lane.last_error, "")
+            self.assertEqual(self.runtime.state.model_errors, {})
+            retrying = self.draw("image")
+            self.assertIn(("Loading the model description...", "TIME"), retrying.labels())
+            self.assertEqual(retrying.retries(), [])
+            self.handlers.dispatch(
+                ("models", {"detailed": [], "failed": {model_id: UNAVAILABLE}, "mark_dirty": True})
+            )
+            self.assertEqual(lane.last_error, FAILED_MESSAGE)
+        self.handlers.dispatch(
+            ("models", {"detailed": [detailed], "failed": {}, "mark_dirty": True})
+        )
+        self.assertEqual(lane.last_error, "")
+        self.assertEqual(self.runtime.state.model_errors, {})
+        self.assertIsNotNone(self.generation.schema_for(model_id))
+        self.assertEqual(self.draw("image").retries(), [])
+        self.assertEqual(lane.estimate_state, "PENDING")
+
+    def test_model_change_clears_failed_schema_and_reselection_reads_again(self):
+        lane = bpy.context.scene.scenario.lane_state("image")
+        model_id, other_id = "model_patina-material", "model_google-gemini-3-1-flash"
+        self.unload_schema(model_id)
+        context = Mock()
+        context.load_cached.return_value = None
+        manager = self.runtime.state.manager
+        with (
+            patch.object(self.runtime, "ensure_catalog", return_value=context),
+            patch.object(self.runtime, "online", return_value=True),
+            patch.object(manager, "fetch_models") as fetch,
+        ):
+            lane.model_id = model_id
+            self.handlers.dispatch(
+                ("models", {"detailed": [], "failed": {model_id: UNAVAILABLE}, "mark_dirty": True})
+            )
+            self.assertEqual(lane.last_error, FAILED_MESSAGE)
+            lane.model_id = other_id
+            self.assertEqual(lane.last_error, "")
+            self.assertEqual(self.draw("image").retries(), [])
+            self.assertIn("resolution", [p.name for p in lane.params])
+            self.assertEqual(fetch.call_count, 1)
+            lane.model_id = model_id
+            self.assertEqual(fetch.call_count, 2)
+            self.assertEqual(fetch.call_args.args, (context, [model_id]))
+            self.assertEqual(lane.last_error, "")
+            self.assertEqual(self.runtime.state.model_errors, {})
+
+    def test_render_lane_failed_schema_retries_its_own_lane(self):
+        lane = bpy.context.scene.scenario.lane_state("render_image")
+        model_id = lane.model_id
+        self.unload_schema(model_id)
+        self.handlers.dispatch(
+            ("models", {"detailed": [], "failed": {model_id: UNAVAILABLE}, "mark_dirty": False})
+        )
+        layout = self.draw("render_image")
+        self.assertIn((FAILED_MESSAGE, "ERROR"), layout.labels())
+        self.assertEqual(layout.retries(), ["render_image"])
+
+    def test_credential_retirement_clears_failed_schema_and_rejects_late_events(self):
+        lane = bpy.context.scene.scenario.lane_state("material")
+        model_id = lane.model_id
+        self.unload_schema(model_id)
+        retired = Mock()
+        with temp_credentials("first-key", "first-secret") as prefs:
+            self.runtime.state.catalog = retired
+            self.runtime.state.catalog_credentials = self.runtime.credentials()
+            self.runtime.state.catalog_project_id = self.runtime.project_id()
+            failure = {
+                "catalog": retired,
+                "detailed": [],
+                "failed": {model_id: UNAVAILABLE},
+                "mark_dirty": False,
+            }
+            self.handlers.dispatch(("models", failure))
+            self.assertEqual(lane.last_error, FAILED_MESSAGE)
+            prefs.api_key = "second-key"  # The preference callback retires the old catalog.
+            retired.close.assert_called()
+            self.assertIsNone(self.runtime.state.catalog)
+            self.assertEqual(lane.last_error, "")
+            self.assertEqual(self.runtime.state.model_errors, {})
+            self.handlers.dispatch(("models", failure))
+            self.assertEqual(lane.last_error, "")
+            self.assertEqual(self.runtime.state.model_errors, {})

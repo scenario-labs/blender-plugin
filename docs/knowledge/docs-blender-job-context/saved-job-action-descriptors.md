@@ -9,19 +9,20 @@
     "scope": "saved-job-action-descriptors",
     "coverage": "source-reviewed",
     "reviewed_at": "2026-10-09",
-    "base_revision": "b57c398f35fb2148c82fb8b26f6a40564d3f52ef",
-    "limits": "Reviewed the bpy-free saved_job_actions.describe descriptor builder, its use by job_recovery.result_actions/draw_controls, the extracted panels.draw_active_job, and Studio Jobs/Results reuse of those panels. Offline unit tests cover golden labels, icons, operators, properties, numbering, Blockout review phases, reuse and review rows, unique keys, rejection of unknown actions, no Blender imports, and the MCP recover_local_job action enum, job_status action mapping and prepare_result_application purposes. A temporary offline harness compared the previous draw_controls with the descriptor path over 189,123 synthetic combinations with no difference; it is not committed. Installed native tests on macOS arm64 Blender 5.1.2 validate every descriptor property against the registered operator RNA, ordered drawing, read-only drawing of real saved prepared and remote jobs whose action names equal MCP job_status actions, and Studio pages drawing the sidebar views. The only intended difference is that a shared view without a saved revision, previously a draw-time KeyError that projection never produces, now draws nothing; unit and installed drawing tests cover it. World candidates use model_jobs.WORLD_MEDIA_TYPES, the set that ModelJobs.actions and World approval also use. Operators recheck their context token and saved revision or Blockout review; refresh, resume, download check and receipt retry run without a dialog. No collapsible draw_result variant, composer strip, new action, desktop interaction, screenshot, Blender 5.0/5.2 run or live acceptance is claimed.",
+    "base_revision": "c70c7d1bdba93cf29ce5488fa7d83e92f24596b2",
+    "limits": "Reviewed the bpy-free saved_job_actions.describe descriptor builder, its use by job_recovery.result_actions/draw_controls, the extracted panels.draw_active_job, and Studio Jobs/Results reuse of those panels. Offline unit tests cover golden labels, icons, operators, properties, numbering, Blockout review phases, reuse and review rows, unique keys, rejection of unknown actions, no Blender imports, and the MCP recover_local_job action enum, job_status action mapping and prepare_result_application purposes. A temporary offline harness compared the previous draw_controls with the descriptor path over 189,123 synthetic combinations with no difference; it is not committed and was not rerun after rebasing onto main, where the previous code and the descriptors read the same World media type set. Installed native tests on macOS arm64 Blender 5.1.2 validate every descriptor property against the registered operator RNA, ordered drawing, read-only drawing of real saved prepared and remote jobs whose action names equal MCP job_status actions, and Studio pages drawing the sidebar views. The only intended difference concerns a shared view that has actions or a ready state but no saved revision, which projection never produces because it sets the revision, state and actions together: the previous code drew the rows that need no revision (status rows and, for a ready Blockout review, Use saved Blockout plan) and raised KeyError at the first offered control that needed the revision, and the descriptor path draws nothing; unit and installed drawing tests cover it. A newly prepared view without a revision has no actions or saved state and draws nothing in both. World candidates use panorama.WORLD_MEDIA_TYPES (PNG, JPEG and OpenEXR types), the set that ModelJobs.actions and World approval also read; the World confirmation dialog and its media label stay in the apply_saved_world operator. Operators recheck their context token and saved revision or Blockout review; refresh, resume, download check and receipt retry run without a dialog. No collapsible draw_result variant, composer strip, new action, desktop interaction, screenshot, Blender 5.0/5.2 run or live acceptance is claimed.",
     "sources": {
       "scenario/core/ui/saved_job_actions.py": "db27851f0e2026a9e418ed111d74d4ac468b2a49b84b72ab8c75446dc2a68bae",
-      "scenario/blender/job_recovery.py": "2c818c79b349569b164179e3fab91c3b66c056a7054fc86d5b82813b2c171a23",
-      "scenario/blender/panels.py": "59b7efd2ee247a3b5d788aaf26e17e32abdc97e8966438287bcb31101a49f935",
-      "scenario/blender/studio.py": "ccdc50f2047cbab1792b1dd2a52a2b9e0c36ba9a85c315a7794d344e06b3e544",
-      "scenario/blender/model_jobs.py": "601d74616aa1b31040bf27f323c385cb6cea3349202ddba423e09c1d4463cbe7",
-      "scenario/mcp/tools_scenario.py": "69d5be07239f2f6c9503aa0b5ca86d4e0e1310f7d92b1de44cdbb409c88ab229",
-      "tests/unit/test_saved_job_actions.py": "2445e03cf3695df8d50ad41aaa661badf3b72553aa1a6939385c91604ddc7cf5",
-      "tests/blender/test_result_actions.py": "acd63c3ea3b79cb6a01a5395f14ff83ec6613bf9ec4ad6b0c5cfac9a4d3b29af",
-      "tests/blender/test_studio_view.py": "46a6636f4ee0c52919d636905a29510f849b97a0b993885a210c0e1c04e6d6e3",
-      "tests/blender/test_blockout_jobs.py": "e7ec96601b00871766fdab717ef0ecfc952a8c6e577a373cf9ccc59238363f24"
+      "scenario/blender/job_recovery.py": "da8df6bde6c9a0613565ea0563e7f1211086448d75e9419414f9c738038bda63",
+      "scenario/blender/panels.py": "ffff10ed5d252fca10c6da56156b5e364e0300cbdf88914120d7274d268402f8",
+      "scenario/blender/studio.py": "d4ba0b268cdcc1a6d9477cb5f190ebb18233010de5b5963fecf941ba05995fb8",
+      "scenario/blender/model_jobs.py": "db89e83391d2d572e6c4b496cdd12aae7d1865d08e2ec4b66d406221716e5430",
+      "scenario/core/scene/panorama.py": "1d7d8fb6b0a06675baa2168a73c87a49fa4ecab6d4ad34843690d3c26edcf764",
+      "scenario/mcp/tools_scenario.py": "8613fe347b43421261f0462fe3972e777fffb6f35f17f9cd4a26d8b321d25331",
+      "tests/unit/test_saved_job_actions.py": "b0c8c88107f240d652b3c7497f76a2ad4b23cb997268d00599a0ae802c6588b2",
+      "tests/blender/test_result_actions.py": "a0a8de36ed944f1d934c21cd595f773640ea5357f8afa50a7fac9d8e79e8f913",
+      "tests/blender/test_studio_view.py": "e6f0fdbdc8aa81bb51880ba4a01da299f54d106babb4e1380216f9d575aed5f7",
+      "tests/blender/test_blockout_jobs.py": "fd189d4cb712d98acb24e944857088378d327cb59455d858d4cdf64fce41e37e"
     }
   }
 }

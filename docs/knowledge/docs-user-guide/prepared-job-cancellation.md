@@ -9,7 +9,7 @@
     "coverage": "source-reviewed",
     "reviewed_at": "2026-10-09",
     "base_revision": "fb699b8555f7cee62147794516cc7aaa224864f7",
-    "limits": "Reviewed the Cancel prepared job saved-job control for unsent prepared generation, workflow, Film task, Blockout, Prompt Spark and Translate requests, including queued or restarted ones. Prompt, translate, Blockout and restarted requests get a Jobs panel row after Inspect saved jobs. It asks for confirmation (Discard unsent job), then cancels locally through the same command as MCP cancel_prepared_job without a service request; claimed, stale or changed-context jobs are rejected. The dialog warns that a canceled Film task stays reserved, which the store enforces by task identity. Installed native tests on macOS arm64 Blender 5.1.2 cover these paths with mocked transports and a mocked confirmation call. No desktop dialog interaction, screenshot, other Blender version or OS, or live acceptance is claimed. The Jobs panel row now draws this control from the shared saved_job_actions descriptors through panels.draw_active_job; its label, confirmation and command are unchanged. Later descriptor review fixes (a shared World media type constant, a parameter rename and docstring wording) leave this action unchanged. Other guide topics retain their own evidence.",
+    "limits": "Reviewed the Cancel prepared job saved-job control for unsent prepared generation, workflow, Film task, Blockout, Prompt Spark and Translate requests, including queued or restarted ones. Prompt, translate, Blockout and restarted requests get a Jobs panel row after Inspect saved jobs. It asks for confirmation (Discard unsent job), then cancels locally through the same command as MCP cancel_prepared_job without a service request; claimed, stale or changed-context jobs are rejected. The dialog warns that a canceled Film task stays reserved, which the store enforces by task identity. Installed native tests on macOS arm64 Blender 5.1.2 cover these paths with mocked transports and a mocked confirmation call. No desktop dialog interaction, screenshot, other Blender version or OS, or live acceptance is claimed. Other guide topics retain their own evidence.",
     "sources": {
       "scenario/blender/job_recovery.py": "4d4e1fc7bf4556f037a6abe9ca09ff3f76a0713950db334b63e8d376211e5370",
       "scenario/blender/model_jobs.py": "e1b28274e6f113c8279c3e2bb94ee66172844b55dd10cf59b3b504143c0aec72",
@@ -22,8 +22,7 @@
       "tests/blender/test_prompt_tools.py": "f66677160a495f6d9cc9ed21fcb4a21d7df21835c427d7e13a11e7edbf9bf861",
       "scenario/blender/blockout_jobs.py": "56415f9205cd93f7cec15dc92520d379ea54ec8bb72f4d7c4920fff8cc287703",
       "tests/blender/test_blockout_jobs.py": "fd189d4cb712d98acb24e944857088378d327cb59455d858d4cdf64fce41e37e",
-      "scenario/blender/blockout.py": "314a786af022272d8be5853613ff0f32d8a4d438b9472dadc3ac43c9116f70f8",
-      "scenario/core/ui/saved_job_actions.py": "90e86afc6b3c727abfb6834961da55676e11cdffeb31e19543398b40d5c25ec9"
+      "scenario/blender/blockout.py": "314a786af022272d8be5853613ff0f32d8a4d438b9472dadc3ac43c9116f70f8"
     }
   }
 }

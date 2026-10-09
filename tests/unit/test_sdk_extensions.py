@@ -11,6 +11,7 @@ import json
 
 import httpx
 import pytest
+from scenario_sdk import APIStatusError, APITimeoutError, Scenario
 
 from scenario.core.api.sdk_adapter import (
     AdapterError,
@@ -18,6 +19,7 @@ from scenario.core.api.sdk_adapter import (
     Credentials,
     SDKAdapter,
 )
+from scenario.core.api.sdk_extensions import SDKResourceExtensions
 
 
 @pytest.fixture
@@ -332,6 +334,50 @@ def test_workflow_decision_denial_names_the_project_only_when_one_was_sent(adapt
     message = str(error.value)
     assert message.startswith("Access denied (HTTP 403).")
     assert ("Project ID" in message) is (project is not None)
+
+
+@pytest.mark.parametrize("action", ["select", "reject"])
+@pytest.mark.parametrize("failure", [503, "timeout"])
+def test_selection_fallback_stays_single_attempt_on_a_retrying_client(action, failure):
+    # The adapter's client has zero retries, so the adapter tests above cannot
+    # tell whether the fallback's own max_retries=0 option still holds.
+    requests = []
+
+    def respond(request):
+        requests.append(request)
+        if failure == "timeout":
+            raise httpx.ReadTimeout("fixture lost response", request=request)
+        return httpx.Response(failure, json={"error": "fixture"}, headers={"Retry-After-Ms": "1"})
+
+    sdk = Scenario(
+        base_url="https://service.example.invalid/v1",
+        api_key="fixture-key",
+        api_secret="fixture-secret",
+        max_retries=2,
+        timeout=5.0,
+        http_client=httpx.Client(
+            transport=httpx.MockTransport(respond), follow_redirects=False, trust_env=False
+        ),
+    )
+    body = {"action": action, "nodeId": "fixture-node", "workflowJobId": WORKFLOW_JOB}
+    if action == "select":
+        body["selectedIndices"] = [1, 0]
+    expected = APITimeoutError if failure == "timeout" else APIStatusError
+    try:
+        with pytest.raises(expected):
+            SDKResourceExtensions(sdk).workflow_user_selection("fixture-workflow", body=body)
+        assert len(requests) == 1
+        if failure != "timeout":
+            # Control: the same client retries a request without that option.
+            with pytest.raises(APIStatusError):
+                sdk.put(
+                    "/workflows/fixture-workflow/user-selection",
+                    cast_to=httpx.Response,
+                    body=body,
+                )
+            assert len(requests) == 4
+    finally:
+        sdk.close()
 
 
 @pytest.mark.parametrize("case", DECISIONS)

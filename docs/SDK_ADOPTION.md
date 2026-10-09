@@ -459,7 +459,8 @@ is required for this layer.
 
 [Extension tests](../tests/unit/test_sdk_extensions.py) cover selected Basic and
 Bearer credentials despite conflicting environment values, stale-project
-discovery, permission/lifetime checks, malformed data and single-attempt errors.
+discovery, permission/lifetime checks, malformed data and single-attempt errors,
+including the selection fallback on an SDK client configured to retry.
 They also exercise API-key estimate/submission without discovery or tenant IDs,
 and the workflow decisions below. These synthetic checks and the installed-bundle
 test do not claim live service acceptance or complete active durable-generation

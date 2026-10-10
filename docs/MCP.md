@@ -1199,8 +1199,9 @@ A job no longer `remote` returns without a request and with no steps. The read
 keeps how the job is delivered: an automatically polled job stays polled, and a
 paused or restarted job stays paused, so its steps appear without resuming
 downloads. It needs Online Access for a `remote` job. Each call is one more
-status read, so follow the job with `job_status` or `wait_for_job` and call it
-only to review steps before a decision.
+status read, plus one read of the workflow's definition for its step links the
+first time a step is seen waiting, so follow the job with `job_status` or
+`wait_for_job` and call it only to review steps before a decision.
 
 Show each step to the user with its review asset IDs or candidate items, its
 bounds and the approved price. `decide_workflow_step` then sends only the user's
@@ -1227,7 +1228,10 @@ the refreshed state is authoritative. Approving or selecting lets the remaining
 steps run and spend credits; the charge after a decision is not live-verified
 against the approved price. A selection that feeds a ForEach loop, a nested
 workflow or an unlisted node type stays blocked, with only `reject`, until live
-evidence shows that charge stays within the approved price.
+evidence shows that charge stays within the approved price. So does a selection
+in a workflow with such a node when its step links cannot be read (`unverified`).
+When `links_complete` is `false`, an approval's dependencies and review assets
+may be incomplete; say so before the user approves.
 
 
 ## Asset library metadata

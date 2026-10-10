@@ -1221,3 +1221,24 @@ class WorkflowCommandTests(unittest.TestCase):
         with self.assertRaisesRegex(Exception, r"outcome: applied\); never repeat"):
             pending.finish(None)
         self.assertEqual(len(self.decisions), 1)
+
+    def test_mcp_steps_report_unverified_links_and_refuse_select_before_any_request(self):
+        loop = {"id": "loop", "type": "for-each", "status": "pending"}
+        local_id = self.paused_workflow(self.live_selection(), loop)
+        steps = self.finish(self.tools.workflow_job_steps(self.step_args(local_id)))
+        (step,) = steps["steps"]
+        self.assertEqual((step["blocked"], step["actions"]), ("unverified", ["reject"]))
+        self.assertFalse(step["links_complete"])
+        self.assertIn("could not read how this workflow's steps connect", step["blocked_reason"])
+        with self.assertRaisesRegex(Exception, "could not read how this workflow"):
+            self.tools.decide_workflow_step(
+                self.step_args(
+                    local_id,
+                    expected_revision=steps["revision"],
+                    node_id="pick",
+                    review_id=step["review_id"],
+                    action="select",
+                    selected_indices=[0],
+                )
+            )
+        self.assertFalse(self.decisions)

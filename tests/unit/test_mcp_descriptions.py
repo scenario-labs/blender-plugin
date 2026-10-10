@@ -395,6 +395,10 @@ def test_workflow_step_tools_require_the_users_explicit_choice():
     steps = descriptions["workflow_job_steps"]
     for text in ("decides nothing", "never signed URLs", "stays paused", "blocked_reason"):
         assert text in steps, text
+    # Unknown step links fail closed, and the definition read is disclosed.
+    for name in ("workflow_job_steps", "job_status"):
+        for text in ("links_complete", "unverified", "workflow's definition"):
+            assert text in descriptions[name], (name, text)
     # Every other surface that mentions a waiting step points to the same tools.
     for name in ("run_workflow", "job_status"):
         assert "decide_workflow_step" in descriptions[name], name

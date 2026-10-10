@@ -19,6 +19,7 @@ from bpy.props import (
 from ..core.api.errors import ScenarioError
 from ..core.schema.forms import display_label, schema_defaults, validate_parameters
 from ..core.schema.params import parse_schema
+from ..core.ui.costs import workflow_loop_warning
 from . import reference_form, runtime
 
 # Persisted ID properties on workflow file inputs. A marker blocks pricing until
@@ -217,6 +218,8 @@ class WorkflowView:
     signature: str = ""
     ticket: object = None
     cost: str = ""
+    # Nonblocking: a loop quote covers one pass, so the charge can be higher.
+    cost_warning: str = ""
     error: str = ""
 
 
@@ -261,7 +264,7 @@ class WorkflowControls:
                 self.jobs.discard_workflow_quote(view.ticket.identifier)
             view.ticket = self.jobs.quote_workflow(scene, form.workflow_id, values)
             view.task = view.ticket.task
-            view.cost = ""
+            view.cost = view.cost_warning = ""
         elif action in {"load", "list"}:
             if action == "load" and not form.workflow_id.strip():
                 raise ValueError("Choose a workflow first")
@@ -288,6 +291,7 @@ class WorkflowControls:
                         self.jobs.discard_workflow_quote(view.ticket.identifier)
                         raise ValueError("Inputs changed")
                     view.cost = str(estimate.cost)
+                    view.cost_warning = workflow_loop_warning(estimate.loop_steps) or ""
                 else:
                     outcomes = self.jobs.session.drain(task=task)
                     if not outcomes:
@@ -299,14 +303,14 @@ class WorkflowControls:
                         if view.ticket is not None and not view.ticket.used:
                             self.jobs.discard_workflow_quote(view.ticket.identifier)
                         load_form(view.scene.scenario_workflow, result)
-                        view.cost = ""
+                        view.cost = view.cost_warning = ""
                     else:
                         result = self.jobs.session.deliver_workflow_catalog(outcomes[0])
                         self.catalog = result
                         self.catalog_privacy = view.action.split(":", 1)[1]
             except Exception:
                 view.error = "Could not finish this workflow request. Check the connection and unchanged inputs, then try again."
-                view.cost = ""
+                view.cost = view.cost_warning = ""
 
     def ready(self, scene):
         view = self.view(scene)
@@ -419,6 +423,7 @@ class SCENARIO_OT_generate_workflow(bpy.types.Operator):
             self._scene = context.scene
             self._scene_name = context.scene.name
             self._quote_id, self._cost = view.ticket.identifier, view.cost
+            self._warning = view.cost_warning
             self._title = context.scene.scenario_workflow.title
             self._payload = view.ticket.quote.estimate.payload
         except Exception:
@@ -432,6 +437,7 @@ class SCENARIO_OT_generate_workflow(bpy.types.Operator):
             for line in textwrap.wrap(f"{display_label(name)}: {_json(value)}", 70):
                 self.layout.label(text=line)
         self.layout.label(text=f"Exact price: {self._cost} CU")
+        _warn(self.layout, self._warning)
         self.layout.label(text="Submit once. Inspect saved jobs after an uncertain response.")
         self.layout.label(
             text="Results require separate application. Running workflows cannot be cancelled here."
@@ -445,6 +451,11 @@ class SCENARIO_OT_generate_workflow(bpy.types.Operator):
         except Exception:
             return _error(self, "Review this workflow and inspect saved jobs before continuing")
         return {"FINISHED"}
+
+
+def _warn(layout, text):
+    for index, line in enumerate(textwrap.wrap(text, 60)):
+        layout.label(text=line, icon="ERROR" if index == 0 else "BLANK1")
 
 
 def draw(layout, context):
@@ -516,11 +527,13 @@ def draw(layout, context):
     row = layout.row()
     row.scale_y = 1.5
     row.enabled = ready and runtime.online()
-    row.operator(
-        "scenario.generate_workflow",
-        text=f"Generate ({view.cost} CU)" if ready else "Generate (request price)",
-        icon="PLAY",
-    )
+    text = "Generate (request price)"
+    if ready:
+        # A loop quote is a lower bound: show it as "from" the exact quoted price.
+        text = f"Generate ({'from ' if view.cost_warning else ''}{view.cost} CU)"
+    row.operator("scenario.generate_workflow", text=text, icon="PLAY")
+    if ready and view.cost_warning:
+        _warn(layout, view.cost_warning)
 
 
 CLASSES = (

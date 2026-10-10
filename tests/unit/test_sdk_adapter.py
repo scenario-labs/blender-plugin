@@ -1104,3 +1104,37 @@ def test_bulk_assets_send_retryable_failures_once_and_sanitize_them(adapter, fai
     assert "signed-url" not in str(error.value)
     # max_retries=0: the SDK never repeats a preview metadata read on its own.
     assert len(calls) == 1
+
+
+@pytest.mark.parametrize(
+    "flow,expected",
+    [
+        ([{"id": "step", "type": "custom-model"}], 0),
+        ([], 0),
+        (
+            [
+                {"id": "loop-a", "type": "for-each", "loopBodyNodeIds": ["step"]},
+                {"id": "step", "type": "custom-model"},
+                {"id": "loop-b", "type": "for-each", "count": 3},
+            ],
+            2,
+        ),
+        # Unknown coverage: a missing or malformed flow, or a nested workflow
+        # whose own definition this quote does not read.
+        (None, None),
+        ("not a list", None),
+        ([None], None),
+        ([{"id": "nested", "type": "workflow"}], None),
+    ],
+)
+def test_workflow_estimate_reports_loop_steps_from_definition(adapter, flow, expected):
+    client = adapter()
+    workflow = {"id": "fixture-workflow", "inputs": MODEL["inputs"]}
+    if flow is not None:
+        workflow["flow"] = flow
+    before = copy.deepcopy(workflow)
+    estimate = client.estimate_workflow(workflow, {"prompt": "x"})
+    assert estimate.loop_steps == expected
+    assert estimate.cost == Decimal("0.10000000000000001")
+    assert workflow == before
+    assert client.estimate_model(copy.deepcopy(MODEL), {"prompt": "x"}).loop_steps == 0

@@ -198,7 +198,7 @@ def test_list_models_reports_the_picker_status():
 def test_list_generations_names_every_history_kind_including_unknown():
     _, calls = specs("tools_scenario")
     description = {call.args[0].value: call.args[1].value for call in calls}["list_generations"]
-    assert "kind (image, video, 3d, material, audio or unknown)" in description
+    assert "kind (image, video, 3d, material, audio, workflow or unknown)" in description
 
 
 def test_job_tools_advertise_both_reference_spellings_without_requiring_legacy_id():

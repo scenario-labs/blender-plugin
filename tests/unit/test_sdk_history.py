@@ -11,6 +11,7 @@ import pytest
 from scenario.core.api.errors import ScenarioError
 from scenario.core.api.sdk_adapter import AdapterError, Credentials, SDKAdapter
 from scenario.core.jobs.manager import JobManager
+from scenario.core.jobs.store import JobScope
 from tests.unit.test_sdk_catalog import catalog
 
 
@@ -204,5 +205,77 @@ def test_offline_history_never_sends():
     try:
         with pytest.raises(ScenarioError, match="Online"):
             context.history_page()
+    finally:
+        context.close()
+
+
+def test_history_page_reads_missing_workflow_steps_with_a_bound():
+    from scenario.core.api import sdk_catalog
+
+    calls = []
+    steps = [f"job-step-{i}" for i in range(sdk_catalog.WORKFLOW_STEP_READS + 3)]
+    run = {
+        "jobId": "job-run",
+        "jobType": "workflow",
+        "status": "success",
+        "billing": {"cuCost": 0, "cuDiscount": 0},
+        "metadata": {
+            "input": {},
+            "flow": [
+                {"id": f"n{i}", "type": "custom-model", "jobId": s} for i, s in enumerate(steps)
+            ],
+        },
+    }
+    present = {**job(steps[0], "listed"), "metadata": {"workflowJobId": "job-run"}}
+
+    def respond(request):
+        calls.append(request)
+        assert request.method == "GET"
+        if request.url.path == "/v1/jobs":
+            return httpx.Response(200, json={"jobs": [present, run]})
+        identifier = request.url.path.rsplit("/", 1)[1]
+        if identifier == steps[1]:
+            return httpx.Response(404, json={"message": "private detail"})
+        return httpx.Response(
+            200,
+            json={"job": {**job(identifier), "billing": {"cuCost": 1, "cuDiscount": 0}}},
+        )
+
+    scope = JobScope("https://api.cloud.scenario.com/v1", "local-key-fixture", "selected-project")
+    context, _ = catalog(respond, scope=scope)
+    try:
+        page = context.history_page()
+    finally:
+        context.close()
+    reads = [r.url.path.rsplit("/", 1)[1] for r in calls[1:]]
+    assert reads == steps[1 : 1 + sdk_catalog.WORKFLOW_STEP_READS]
+    assert all(r.url.params.get("projectId") == "selected-project" for r in calls)
+    related = page["related_jobs"]
+    assert [row["jobId"] for row in related] == reads[1:]
+    assert [row["jobId"] for row in page["jobs"]] == [steps[0], "job-run"]
+
+
+def test_worker_delivers_related_workflow_steps_with_the_page():
+    run = {
+        "jobId": "job-run",
+        "jobType": "workflow",
+        "status": "success",
+        "metadata": {"flow": [{"id": "n", "type": "custom-model", "jobId": "job-step"}]},
+    }
+
+    def respond(request):
+        if request.url.path == "/v1/jobs":
+            return httpx.Response(200, json={"jobs": [run]})
+        return httpx.Response(200, json={"job": job("job-step")})
+
+    context, _ = catalog(respond)
+    manager = JobManager(None, None)
+    try:
+        manager.fetch_history(context, "request")
+        manager.join(5)
+        [(name, payload)] = manager.drain_catalog()
+        assert name == "history"
+        assert payload["jobs"] == [run]
+        assert payload["related"] == [job("job-step")]
     finally:
         context.close()

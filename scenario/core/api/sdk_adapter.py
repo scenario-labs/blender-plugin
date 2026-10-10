@@ -199,6 +199,8 @@ class Estimate:
     response_json: bytes = field(repr=False)
     scope: object = field(repr=False)
     issued_at: float = field(repr=False)
+    # ForEach steps in a quoted workflow definition; None when coverage is unknown.
+    loop_steps: int | None = 0
 
     @property
     def payload(self):
@@ -207,6 +209,22 @@ class Estimate:
     @property
     def details(self):
         return _json(self.response_json, exact=True)
+
+
+def workflow_loop_steps(workflow):
+    """Count ForEach steps in a retrieved workflow definition, or None if unknown.
+
+    The server's workflow dry run prices one pass through a loop, so a run that
+    iterates more often can charge more than its quote. A missing or malformed
+    flow, or a nested workflow step whose definition is not read, is unknown.
+    """
+    flow = workflow.get("flow") if isinstance(workflow, dict) else None
+    if not isinstance(flow, list) or not all(isinstance(node, dict) for node in flow):
+        return None
+    types = [node.get("type") for node in flow]
+    if "workflow" in types:
+        return None
+    return types.count("for-each")
 
 
 def _reject_constant(value):
@@ -1278,7 +1296,11 @@ class SDKAdapter:
         return self._estimate("model", *self.prepare_model(model, parameters))
 
     def estimate_workflow(self, workflow, parameters):
-        return self._estimate("workflow", *self.prepare_workflow(workflow, parameters))
+        return self._estimate(
+            "workflow",
+            *self.prepare_workflow(workflow, parameters),
+            loop_steps=workflow_loop_steps(workflow),
+        )
 
     def estimate_prompt(self, parameters):
         """Quote a bounded Prompt Spark request through the public SDK method.
@@ -1352,7 +1374,7 @@ class SDKAdapter:
             raise ValueError("Unsupported generation operation")
         return self._request(method, identifier, body=payload, **options)
 
-    def _estimate(self, operation, identifier, payload):
+    def _estimate(self, operation, identifier, payload, *, loop_steps=0):
         try:
             payload_json = json.dumps(payload, ensure_ascii=False, allow_nan=False).encode()
         except (TypeError, ValueError):
@@ -1373,6 +1395,7 @@ class SDKAdapter:
             raw,
             self._scope,
             time.monotonic(),
+            loop_steps,
         )
         with self._estimate_lock:
             self._estimates[id(estimate)] = estimate

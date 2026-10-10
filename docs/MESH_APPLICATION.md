@@ -364,13 +364,17 @@ above. FBX uses the bundled `import_scene.fbx` without image search, OBJ uses
 PLY uses `wm.ply_import`. Selection made by these importers stays in staging.
 Every new image must be packed by the importer (embedded FBX or glTF data) or load
 from the snapshot directory itself; anything else, including an FBX texture at an
-absolute path or an OBJ placeholder, fails the import and rolls back. Accepted
-images are packed and their file paths cleared. The FBX importer sets the file's
-frame rate on the staging scene: clips keep that timing and the destination scene
-keeps its own, and `model_import.frame_rate_mismatch` reports when they differ.
-Publication matches the GLB group and records `scenario_assets` with the member
-list on the root. Failure removes only new objects, meshes, materials, images,
-curves, textures, actions and the staging scene, then verifies the datablock sets.
+absolute path or an OBJ placeholder, fails the import and rolls back. Blender's
+OBJ importer reads every MTL map as sRGB, so the unit's saved texture roles decide:
+bound normal, roughness and metallic maps become Non-Color data while albedo stays
+sRGB, and a normal map that does not already reach the shader through a Normal Map
+node gets one. Accepted images are packed and their file paths cleared. The FBX
+importer sets the file's frame rate on the staging scene: clips keep that timing
+and the destination scene keeps its own, and `model_import.frame_rate_mismatch`
+reports when they differ. Publication matches the GLB group and records
+`scenario_assets` with the member list on the root. Failure removes only new
+objects, meshes, materials, images, curves, textures, actions and the staging
+scene, then verifies the datablock sets.
 Receipt-only retry, reuse claims and session cleanup are shared with the GLB path.
 MCP status keeps a session-local `model_import` summary (unit, format, members,
 dropped references and frame-rate mismatch) until undo history changes. Newly
@@ -381,7 +385,8 @@ change, and import uses canonical snapshot names, not local ones.
 Native tests build an OBJ with its MTL and PNG, an FBX with an embedded texture, a
 separate glTF with its buffer and a mesh PLY with Blender's own exporters, then
 rename them to the provider's legacy package convention. They cover placement,
-preserved selection, packed images, dropped maps, external FBX textures, a disabled
+preserved selection, packed images, dropped maps, Non-Color OBJ data maps with the
+normal map through a Normal Map node, external FBX textures, a disabled
 FBX add-on, splat PLY and SPZ refusal, changed bytes before the claim, windowless
 callers, rollback and every member in reuse claims. Provider package shapes still
 need live evidence; splat units wait for their point-cloud builder.

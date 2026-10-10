@@ -141,6 +141,22 @@ def test_lineage_binds_obj_material_and_maps_and_puts_the_root_output_first():
     assert plan.unit("asset_alb") is None
 
 
+def test_bound_maps_name_their_snapshot_file_and_only_albedo_reads_as_color():
+    plan = classify_packages(derived_obj_package_job())
+    glb, obj = plan.units
+    assert obj.texture_files == (
+        ("texture-albedo.png", "albedo"),
+        ("texture-normal.png", "normal"),
+        ("texture-roughness.jpg", "roughness"),
+        ("texture-metallic.png", "metallic"),
+    )
+    assert glb.texture_files == ()
+    data = {slot for slot in mf.TEXTURE_SLOTS if slot in mf.NON_COLOR_TEXTURE_ROLES}
+    assert data == {"normal", "roughness", "metallic"}
+    assert mf.NON_COLOR_TEXTURE_ROLES >= {"height", "ao", "smoothness", "edge"}
+    assert not {"albedo", "base"} & mf.NON_COLOR_TEXTURE_ROLES
+
+
 def test_parent_links_separate_several_obj_packages_in_one_job():
     members = []
     for name in ("a", "b"):

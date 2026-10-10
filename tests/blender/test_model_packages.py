@@ -127,6 +127,81 @@ class ModelPackageTests(unittest.TestCase):
         textures = [node.image for node in material.node_tree.nodes if node.type == "TEX_IMAGE"]
         self.assertEqual(textures, list(images))
 
+    def test_obj_data_maps_read_as_non_color_and_normals_use_a_normal_map_node(self):
+        # Blender's OBJ importer reads every MTL map as sRGB; the unit knows each role.
+        self.legacy_obj()
+        png = self.exports["png"].read_bytes()
+        for role in ("normal", "roughness", "metallic"):
+            self.save(role, "image/png", png, role=role)
+        unit = self.unit("obj")
+        self.assertEqual(
+            [slot for slot, _ in unit.textures], ["albedo", "normal", "roughness", "metallic"]
+        )
+        result = self.apply("obj")
+        images = self.assert_published(result, "obj")
+        self.assertEqual(result.dropped_references, 0)
+        self.assertEqual(len(images), 4)
+        mesh = next(obj for obj in result.objects if obj.type == "MESH")
+        tree = mesh.data.materials[0].node_tree
+        bsdf = next(node for node in tree.nodes if node.type == "BSDF_PRINCIPLED")
+
+        def image_into(socket):
+            (link,) = socket.links
+            self.assertEqual(link.from_node.type, "TEX_IMAGE")
+            return link.from_node.image
+
+        albedo = image_into(bsdf.inputs["Base Color"])
+        self.assertFalse(albedo.colorspace_settings.is_data)
+        self.assertEqual(albedo.colorspace_settings.name, "sRGB")
+        for name in ("Metallic", "Roughness"):
+            with self.subTest(socket=name):
+                self.assertTrue(image_into(bsdf.inputs[name]).colorspace_settings.is_data)
+        normal_maps = [node for node in tree.nodes if node.type == "NORMAL_MAP"]
+        self.assertEqual(len(normal_maps), 1)
+        # RNA wrappers differ per access, so compare nodes by equality, not identity.
+        (link,) = bsdf.inputs["Normal"].links
+        self.assertEqual(link.from_node, normal_maps[0])
+        normal = image_into(normal_maps[0].inputs["Color"])
+        self.assertTrue(normal.colorspace_settings.is_data)
+        self.assertEqual(
+            {albedo, normal, *(image_into(bsdf.inputs[n]) for n in ("Metallic", "Roughness"))},
+            images,
+        )
+
+    def test_normal_maps_reach_the_shader_through_one_normal_map_node(self):
+        material = bpy.data.materials.new("Direct normal")
+        material.use_nodes = True
+        tree = material.node_tree
+        bsdf = next(node for node in tree.nodes if node.type == "BSDF_PRINCIPLED")
+        normal = bpy.data.images.new("normal", width=4, height=4)
+        albedo = bpy.data.images.new("albedo", width=4, height=4)
+        nodes = {}
+        for image in (normal, albedo):
+            nodes[image] = tree.nodes.new("ShaderNodeTexImage")
+            nodes[image].image = image
+        tree.links.new(nodes[albedo].outputs["Color"], bsdf.inputs["Base Color"])
+        # An importer that linked the map straight into the shader's Normal input.
+        tree.links.new(nodes[normal].outputs["Color"], bsdf.inputs["Normal"])
+        for _ in range(2):
+            self.module._route_normal_maps(tree, {normal})
+            normal_maps = [node for node in tree.nodes if node.type == "NORMAL_MAP"]
+            self.assertEqual(len(normal_maps), 1)
+            (link,) = bsdf.inputs["Normal"].links
+            self.assertEqual(link.from_node, normal_maps[0])
+            (link,) = normal_maps[0].inputs["Color"].links
+            self.assertEqual(link.from_node, nodes[normal])
+            self.assertEqual(len(nodes[normal].outputs["Color"].links), 1)
+            (link,) = bsdf.inputs["Base Color"].links
+            self.assertEqual(link.from_node, nodes[albedo])
+        # An unlinked normal map is connected to the shader's free Normal input.
+        tree.nodes.remove(normal_maps[0])
+        self.assertFalse(bsdf.inputs["Normal"].is_linked)
+        self.module._route_normal_maps(tree, {normal})
+        (link,) = bsdf.inputs["Normal"].links
+        self.assertEqual(link.from_node.type, "NORMAL_MAP")
+        (link,) = link.from_node.inputs["Color"].links
+        self.assertEqual(link.from_node, nodes[normal])
+
     def test_obj_without_material_imports_untextured(self):
         self.save("obj", "model/obj", self.exports["obj"].read_bytes())
         result = self.apply("obj")

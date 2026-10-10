@@ -36,6 +36,7 @@ from ..core.scene.model_formats import (
     MAX_MTL_BYTES,
     MAX_PACKAGE_BYTES,
     MAX_PLY_HEADER_BYTES,
+    NON_COLOR_TEXTURE_ROLES,
     ModelFormat,
     ModelPackageError,
     PackageMember,
@@ -707,6 +708,62 @@ def _snapshot_image(image, root):
     return path if path.parent == root and path.is_file() else None
 
 
+def _route_normal_maps(tree, images):
+    """Feed each normal map into the shader through one Normal Map node.
+
+    Blender's OBJ importer adds the node for ``map_Bump``; a map linked straight
+    into a Normal input, or left unlinked, gets one here.
+    """
+    for node in tuple(tree.nodes):
+        if node.type != "TEX_IMAGE" or node.image not in images:
+            continue
+        color = node.outputs["Color"]
+        if any(link.to_node.type == "NORMAL_MAP" for link in color.links):
+            continue
+        targets = [link.to_socket for link in color.links if link.to_socket.name == "Normal"]
+        for link in tuple(color.links):
+            if link.to_socket.name == "Normal":
+                tree.links.remove(link)
+        if not targets:
+            targets = [
+                shader.inputs["Normal"]
+                for shader in tree.nodes
+                if shader.type == "BSDF_PRINCIPLED" and not shader.inputs["Normal"].is_linked
+            ]
+        if not targets:
+            continue
+        normal = tree.nodes.new("ShaderNodeNormalMap")
+        normal.location = node.location.x + 300.0, node.location.y
+        tree.links.new(color, normal.inputs["Color"])
+        for socket in targets:
+            tree.links.new(normal.outputs["Normal"], socket)
+
+
+def _apply_texture_roles(previous, directory, texture_files):
+    """Read bound data maps as Non-Color and route normal maps through a Normal Map node.
+
+    ``texture_files`` pairs each bound map's snapshot name with its slot. Blender's
+    OBJ importer reads every MTL map as sRGB; base color maps keep that.
+    """
+    slots = dict(texture_files)
+    if not slots:
+        return
+    root = directory.resolve()
+    normals = set()
+    for image in set(bpy.data.images) - previous["images"]:
+        path = _snapshot_image(image, root)
+        slot = slots.get(path.name) if path is not None else None
+        if slot in NON_COLOR_TEXTURE_ROLES:
+            image.colorspace_settings.is_data = True
+        if slot == "normal":
+            normals.add(image)
+    if not normals:
+        return
+    for material in set(bpy.data.materials) - previous["materials"]:
+        if material.node_tree is not None:
+            _route_normal_maps(material.node_tree, normals)
+
+
 def _pack_snapshot_images(previous, directory):
     """Keep only images embedded in the model or read from the snapshot itself."""
     root = directory.resolve()
@@ -747,6 +804,7 @@ def import_snapshot(scene, snapshot, *, cursor, history=False):
             gltf_timing=gltf,
             deselect=not gltf,
         )
+        _apply_texture_roles(previous, snapshot.directory, snapshot.unit.texture_files)
         _pack_snapshot_images(previous, snapshot.directory)
         # glTF converts seconds at the destination rate. FBX instead sets the
         # file's frame rate on the staging scene; the destination keeps its own,

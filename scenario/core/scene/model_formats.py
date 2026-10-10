@@ -82,6 +82,11 @@ _SLOT_BY_ROLE = {
     "roughness": "roughness",
     "metallic": "metallic",
 }
+# Stored texture roles whose pixels are data, not color. Base color (albedo) maps
+# stay sRGB; Blender's OBJ importer reads every MTL map as sRGB.
+NON_COLOR_TEXTURE_ROLES = frozenset(
+    {"normal", "roughness", "metallic", "height", "ao", "smoothness", "edge"}
+)
 
 _MESH_FORMATS = frozenset({ModelFormat.GLB, ModelFormat.GLTF, ModelFormat.FBX, ModelFormat.OBJ})
 _RANK = {
@@ -207,6 +212,12 @@ class ImportUnit:
     def members(self):
         """Asset IDs a durable application claim must cover, before glTF resources."""
         return tuple(asset_id for asset_id, _ in self.files)
+
+    @property
+    def texture_files(self):
+        """Each bound material map's canonical snapshot name and slot."""
+        names = dict(self.files)
+        return tuple((names[asset_id], slot) for slot, asset_id in self.textures)
 
 
 @dataclass(frozen=True)

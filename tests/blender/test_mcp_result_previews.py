@@ -328,6 +328,18 @@ class McpResultPreviewTests(unittest.TestCase):
         self.assertEqual(self.runtime.state.job_store.get("request"), record)
         self.assertEqual({request.url.path for request in self.requests}, {"/v1/assets/get-bulk"})
 
+    def test_a_roughness_map_is_captioned_by_its_role_like_its_tile(self):
+        # A roughness map from a 3D texture set once read "Image (1)" here too.
+        with online_access(False):
+            record = self.saved(
+                [("roughness", "roughness.png", "image/png", png(8, 8), "roughness")]
+            )
+            result = self.inspect_until(self.args(record), lambda value: not value["in_progress"])
+        (item,) = result["results"]
+        self.assertEqual((item["caption"], item["kind"]), ("Roughness (1)", "image"))
+        (tile,) = self.tiles.controller.tiles["request"]
+        self.assertEqual(tile.caption, item["caption"])
+
     def test_an_envelope_wait_runs_off_the_main_thread_and_returns_bounded_levels(self):
         with online_access(False):
             record = self.saved([("sound", "sound.wav", "audio/wav", tone())])

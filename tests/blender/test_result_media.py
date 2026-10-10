@@ -591,6 +591,45 @@ class ResultMediaTests(unittest.TestCase):
         self.settle(lambda: selected.status != "LOADING")
         self.assertEqual(selected.status, "READY", selected.message)
 
+    def test_retry_while_a_still_poll_is_on_the_lane_keeps_the_waveform_loading(self):
+        view = self.saved([("sound", "sound.wav", "audio/wav", tone())])
+        started, stopped, patcher = self.blocked_decode()
+        selected = self.waveform(view)
+        self.settle(started.is_set)
+        self.assertEqual(bpy.ops.scenario.cancel_saved_waveform(), {"FINISHED"})
+        self.settle(lambda: stopped == ["ScenarioPreview"])
+        self.settle(self.idle)
+        patcher.stop()
+        session = self.runtime.state.job_session
+        previews, coordinator = session.result_previews, session._coordinator
+        envelope = submodule("core.jobs.result_previews").ENVELOPE
+        state = submodule("core.jobs.result_previews").PreviewState
+        self.assertEqual(previews.status("request", "sound").get(envelope).state, state.FAILED)
+        # Hold the next lane batch: a still poll for the same result, as an
+        # automatic preview or MCP request makes, is in flight during Retry.
+        original = coordinator.prepare_result_previews
+        entered, release = threading.Event(), threading.Event()
+
+        def held(*args, **kwargs):
+            entered.set()
+            if not release.wait(10):
+                raise AssertionError("The test did not release the preview lane")
+            return original(*args, **kwargs)
+
+        with patch.object(coordinator, "prepare_result_previews", side_effect=held):
+            previews.request("request", asset_ids=("sound",))
+            self.settle(entered.is_set)
+            selected = self.waveform(view)
+            # Retry reads the envelope queued at once, not its earlier failure.
+            self.assertEqual(previews.status("request", "sound").get(envelope).state, state.QUEUED)
+            self.assertEqual(selected.status, "LOADING", selected.message)
+            self.media.controller.poll()
+            self.assertEqual(selected.status, "LOADING")
+            release.set()
+            self.settle(lambda: selected.status != "LOADING")
+        self.assertEqual(selected.status, "READY", selected.message)
+        self.assertEqual(self.requests, [])
+
     def idle(self):
         return self.runtime.state.job_session._workers.previews_idle
 

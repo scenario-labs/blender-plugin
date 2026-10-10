@@ -1019,3 +1019,33 @@ def test_cancel_during_an_inflight_copy_discards_it_when_the_batch_returns(decod
     scheduler.retry("request", "asset-sound")
     drive(scheduler)
     assert state(lane, "asset-sound", ENVELOPE).state == State.READY
+
+
+def test_retry_after_cancel_while_a_still_poll_is_in_flight_reads_queued(decoding):
+    # The Waveform control retries a canceled envelope and reads the status
+    # right away; a still poll for the same result may be on the lane then.
+    lane = decoding
+    service, scheduler = lane.env, lane.scheduler
+    ready_job(service, "request", [("asset-sound", "audio/wav", wav())])
+    service.assets["asset-sound"] = asset_record("asset-sound", "audio/wav")  # No still yet.
+    scheduler.request("request")
+    scheduler.cancel("request", "asset-sound")
+    drive(scheduler)
+    assert state(lane, "asset-sound", ENVELOPE).reason == CANCELED
+    assert state(lane, "asset-sound").state == State.PENDING
+    entered, release = _gated(service)
+    lane.clock.now += 60
+    scheduler.pump()
+    assert entered.wait(2)  # The still's next metadata read is in flight.
+    assert scheduler.retry("request", "asset-sound").get(ENVELOPE).state == State.QUEUED
+    assert state(lane, "asset-sound", ENVELOPE).state == State.QUEUED
+    release.set()
+    futures.wait([scheduler._task._future], timeout=5)
+    scheduler.pump()
+    # The returned poll is applied and the retry follows in the same pump.
+    assert state(lane, "asset-sound", ENVELOPE).state in (State.QUEUED, State.DECODE)
+    service.gate = None
+    drive(scheduler)
+    drive(scheduler)
+    assert state(lane, "asset-sound", ENVELOPE).state == State.READY
+    assert len(lane.decoder.calls) == 1 and work_directories(service) == []

@@ -217,6 +217,29 @@ def test_decoder_stops_inflating_past_the_declared_image_size():
     assert peak < 1 << 20
 
 
+def test_reader_stops_reading_past_the_file_size_limit(tmp_path):
+    small, path = tmp_path / "small.png", tmp_path / "large.png"
+    small.write_bytes(fixture.encode_png(2, 2, bytes(12)))
+    assert fixture.read_png(small) == (2, 2, bytes(12), {0})
+    with path.open("wb") as stream:
+        stream.write(small.read_bytes())
+        stream.truncate(8 * fixture.MAX_BYTES)
+    tracing = tracemalloc.is_tracing()
+    if not tracing:
+        tracemalloc.start()
+    try:
+        tracemalloc.reset_peak()
+        before = tracemalloc.get_traced_memory()[0]
+        with pytest.raises(ValueError, match="Not a bounded PNG"):
+            fixture.read_png(path)
+        peak = tracemalloc.get_traced_memory()[1] - before
+    finally:
+        if not tracing:
+            tracemalloc.stop()
+    # Reading the whole file would hold 64 MiB; the limit needs one byte past 8 MiB.
+    assert peak < fixture.MAX_BYTES + (1 << 20)
+
+
 def test_compare_counts_differing_pixels_and_largest_channel_change():
     rows = noise(4, 4)
     changed = bytearray(rows)

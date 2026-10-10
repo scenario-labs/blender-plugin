@@ -135,6 +135,15 @@ def decode_png(data):
     return width, height, bytes(rows), filters
 
 
+def read_png(path):
+    """Decode the PNG file at path, reading at most one byte past MAX_BYTES.
+
+    A larger file then fails the size check without being read in full.
+    """
+    with Path(path).open("rb") as stream:
+        return decode_png(stream.read(MAX_BYTES + 1))
+
+
 def compare(expected, actual):
     """Return (differing pixel count, largest channel difference) for equal-size RGB data."""
     if len(expected) != len(actual) or len(expected) % 3:
@@ -291,7 +300,7 @@ def render(bpy, bmesh, mathutils, directory):
     output = directory / "render.png"
     scene.render.filepath = str(output)
     bpy.ops.render.render(write_still=True)
-    width, height, pixels, _ = decode_png(output.read_bytes())
+    width, height, pixels, _ = read_png(output)
     if (width, height) != (SIZE, SIZE):
         raise RuntimeError("Blender rendered an unexpected image size")
     return pixels
@@ -352,7 +361,7 @@ def main(argv):
         write(args.path, data)
         print(f"Wrote {args.path} sha256 {hashlib.sha256(data).hexdigest()}", flush=True)
         return
-    width, height, expected, _ = decode_png(args.path.read_bytes())
+    width, height, expected, _ = read_png(args.path)
     if (width, height) != (SIZE, SIZE):
         raise RuntimeError("The compared fixture has an unexpected size")
     differing, largest = compare(expected, pixels)

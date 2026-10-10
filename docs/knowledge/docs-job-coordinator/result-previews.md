@@ -9,7 +9,7 @@
     "coverage": "source-reviewed",
     "reviewed_at": "2026-10-11",
     "base_revision": "72723f02a97a7226b1c697c31d8124b77ac92c86",
-    "limits": "Inspected preview target reads, the batch, publication, discard and maintenance-only commands, bulk metadata reads for every batch size, receipt rechecks, transfer failures reported pending until the final poll while receipt and content failures fail at once, cancellation passed to preview transfers and inactive-coordinator cleanup, and the dedicated preview thread's admission, cancellation, idleness, retirement and shutdown. Offline unit tests only for these commands; no job state transition or revision change is made. Live provider behavior, UI and MCP wiring are outside this topic. Re-reviewed on 2026-10-10: the preview commands section adds review_preview_targets (store-only; 1 to 50 distinct IDs of a remote workflow job; review keys without a receipt) and the batch's recheck of the same remote workflow job; checked against coordinator.py, results.py and the review unit tests, added as a source. Only the fingerprints of touched sources that matched the base were refreshed.",
+    "limits": "Inspected preview target reads, the batch, publication, discard and maintenance-only commands, bulk metadata reads for every batch size, receipt rechecks, transfer failures reported pending until the final poll while receipt and content failures fail at once, cancellation passed to preview transfers and inactive-coordinator cleanup, and the dedicated preview thread's admission, cancellation, idleness, retirement and shutdown. Offline unit tests only for these commands; no job state transition or revision change is made. Live provider behavior, UI and MCP wiring are outside this topic. Re-reviewed on 2026-10-10: the preview commands section adds review_preview_targets (store-only; 1 to 50 distinct IDs of a remote workflow job; review keys without a receipt) and the batch's recheck of the same remote workflow job; checked against coordinator.py, results.py and the review unit tests, added as a source. Only the fingerprints of touched sources that matched the base were refreshed. Re-reviewed on 2026-10-10 after two review preview fixes: the review preview unit tests gained a scheduler retry case (an intact entry reused, a lost one fetched again with one metadata read and one transfer); the claims here are unchanged and only that test file's fingerprint was refreshed.",
     "sources": {
       "scenario/core/jobs/result_previews.py": "b17c9f0ebd80e222090c0ad83339b27d7f261a7e1cb5a7bf02d2ca261d9ceb09",
       "scenario/core/jobs/preview_scheduler.py": "aedd1fa55614dd342688a15bba9639fb31f10590d2bbd7dfd4be2344912641d2",
@@ -20,7 +20,7 @@
       "tests/unit/test_preview_scheduler.py": "42f7b5057fd0ef01e788a60e9201d7aad8e8e5a75e0d7b3174e11e3ed9b605dd",
       "tests/unit/test_job_workers.py": "32ea1de8ba32c30e5a1441ede694b7f740f39ab370640e1baccfd319818835f9",
       "scenario/core/jobs/transfers.py": "af6442afac9d146fab63563a04f62e97440b6eef9099b579a3f2dfe4fcae2e2c",
-      "tests/unit/test_workflow_review_previews.py": "12fb0b5f4f8cd6f15c5868996ef108f01192fadf4e9f70f1b62f1b0c6a38a83e"
+      "tests/unit/test_workflow_review_previews.py": "41040fae354b6f8584513af9e9e2e029e6a746d97644452fce548634dccbc308"
     }
   }
 }

@@ -2067,14 +2067,17 @@ offline. It never decides, spends or applies. The
 asset's still. Once requested, the step shows up to eight loaded icons, four to a
 row, and **Previews: R of N ready** with any loading, waiting for Online Access
 or unavailable count; **Retry previews** appears while some are unavailable and
-fetches only those again. The review dialog shows an approval's loaded previews
+sends only those through the preview lane again, which fetches a still again when
+it failed, is missing or lost its cached file. The review dialog shows an approval's loaded previews
 as a grid of icons named by asset ID, and a candidate's loaded preview beside
 its checkbox; an asset without one keeps its ID and a short status line, and a
 step with nothing loaded says to load previews from the Jobs row or Studio
 Workflows. While its previews load, the dialog is refreshed by the pump like
 Studio. Icons are decoded by the pump from the verified cached still, at most
 two per tick and at most 256 pixels per side, never while drawing or while a
-render job runs; drawing reads memory only. A step that is decided or changes
+render job runs; drawing reads memory only. Decoding uses temporary Blender
+data, so the open file gains no image and origins captured in it stay current.
+A cached still lost before decoding is fetched again once by itself. A step that is decided or changes
 releases its icons, and so does a connection change.
 
 Installed tests on macOS arm64 Blender 5.1.2 cover the descriptors drawn in the
@@ -2087,10 +2090,13 @@ decision, steps after an explicit refresh following a restart, redraws and
 registration, with synthetic SDK responses. Installed tests of the previews
 cover the Load previews controls and their binding, metadata and transfers on
 the preview lane, decoding only in the pump (a fitted icon with the stored
-colors, the temporary image removed), icons drawn in rows, Studio and the dialog
-with storage reads and requests refused, unavailable candidates and their
-explicit retry, stale, foreign and offline requests, released icons after a
-decision or connection change, and cached stills reused after a restart.
+colors, no image added to the open file, no dependency update and a captured
+origin still current), icons drawn in rows, Studio and the dialog with storage
+reads and requests refused, unavailable candidates and their explicit retry, a
+lost cached still fetched again once by itself and then by Retry previews, a
+still Blender could not decode checked and decoded again by Retry previews,
+stale, foreign and offline requests, released icons after a decision or
+connection change, and cached stills reused after a restart.
 Background Blender assigns no icon IDs, so drawn icons were recorded with a
 stand-in ID. Physical desktop evidence of the rows, previews and dialog (input,
 focus, DPI, IME and screenshots) is pending.

@@ -741,8 +741,10 @@ in-memory step projection, and its review dialog sends one decision through
 `runtime.decide_workflow_step`. Its **Load previews** control fetches private
 stills of a step's review assets through `runtime.load_review_previews` and the
 shared preview lane; [review_previews.py](../../scenario/blender/review_previews.py)
-decodes them into icons in the GUI pump. Running-step cancellation and
-physical/live acceptance remain separate.
+decodes them into icons in the GUI pump with the
+[temporary preview decoder](blender.md#temporary-preview-decoding), outside the
+open file. Running-step cancellation and physical/live acceptance remain
+separate.
 
 The 32-entry UI projection cache reclaims idle entries under pressure, discarding
 any unused price but preserving saved scene inputs and independently owned jobs.

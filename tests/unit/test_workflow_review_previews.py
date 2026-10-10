@@ -354,6 +354,42 @@ def test_missing_thumbnail_is_polled_then_missing_until_an_explicit_retry(lane):
     assert review_state(lane, "asset-v").state == State.READY
 
 
+def test_a_review_retry_fetches_a_ready_still_again_only_when_its_cached_file_is_lost(lane):
+    # The Blender owner relies on this when the pump finds a ready still's
+    # cached file gone or changed before decoding, or Blender cannot decode it.
+    service, scheduler = lane.env, lane.scheduler
+    waiting_job(service)
+    service.assets["asset-a"] = image("asset-a")
+    service.downloader.files[own_url("asset-a")] = JPEG
+    scheduler.request_review("request", ["asset-a"])
+    drive(scheduler)
+    ready = review_state(lane, "asset-a")
+    assert ready.state == State.READY
+    # A retry of an intact entry verifies it again on the lane and reuses it.
+    calls = (len(service.calls), len(service.downloader.calls))
+    assert scheduler.retry("request", "asset-a", review=True).get(STILL).state == State.QUEUED
+    drive(scheduler)
+    assert review_state(lane, "asset-a") == ready
+    assert (len(service.calls), len(service.downloader.calls)) == calls
+    ready.preview.path.unlink()
+    with pytest.raises(previews.PreviewError, match="unavailable; use Retry"):
+        previews.check_still(ready.preview)
+    # Requesting again keeps the ready state and fetches nothing.
+    scheduler.request_review("request", ["asset-a"])
+    drive(scheduler)
+    assert review_state(lane, "asset-a") == ready
+    assert (len(service.calls), len(service.downloader.calls)) == calls
+    # The lost file fails the lane's cache verification, so a retry fetches it
+    # again: one metadata read and one transfer.
+    assert scheduler.retry("request", "asset-a", review=True).get(STILL).state == State.QUEUED
+    drive(scheduler)
+    again = review_state(lane, "asset-a")
+    assert again.state == State.READY
+    assert previews.check_still(again.preview) == again.preview.path
+    assert again.preview.path.read_bytes() == JPEG
+    assert (len(service.calls), len(service.downloader.calls)) == (calls[0] + 1, calls[1] + 1)
+
+
 def test_review_and_saved_result_entries_of_one_asset_never_share_state(lane):
     service, scheduler = lane.env, lane.scheduler
     ready_job(service, "request", [("asset-a", "video/mp4", MP4)])

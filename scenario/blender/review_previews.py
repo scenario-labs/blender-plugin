@@ -12,12 +12,22 @@ its window. Opening **Review** sends nothing; the dialog shows what is loaded.
 Everything here runs on Blender's main thread. The GUI pump calls `pump`, which
 copies scheduler statuses into memory, verifies each newly cached still again
 and decodes at most `DECODES_PER_TICK` of them into icons of at most 256 pixels
-per side, never while a render job runs. Icons are filled from pixels, so
-Blender's file-thumbnail cache is never written. Drawing reads only `get`, `summary` and `loading`, and never
-decodes, requests or changes a property.
+per side, never while a render job runs. Decoding goes through
+`preview_decode`, in temporary Blender data freed before it returns: the open
+file never gains or loses an image, so its dependency graph reports no update
+and job origins captured in its scenes stay current. Icons are filled from
+pixels, so Blender's file-thumbnail cache is never written. Drawing reads only
+`get`, `summary` and `loading`, and never decodes, requests or changes a
+property.
+
+The cache is disposable, so a ready still's file can be evicted or deleted
+after the lane verified it. The pump then fetches it again once, as part of the
+request already made; after that, **Retry previews** does. Retry also sends a
+still Blender could not decode through the lane again, which verifies its cache
+entry and fetches it again only when that entry was lost or changed, then
+decodes it again.
 """
 
-import array
 import threading
 from dataclasses import dataclass
 
@@ -28,7 +38,7 @@ from ..core.api.errors import ScenarioError
 from ..core.jobs import result_previews as previews
 from ..core.jobs import workflow_nodes
 from ..core.jobs.results import ResultError
-from . import runtime
+from . import preview_decode, runtime
 
 State = previews.PreviewState
 LOAD = "scenario.load_workflow_step_previews"
@@ -51,7 +61,7 @@ def _main():
 
 
 def _rendering():
-    """Whether a render job runs; decoding then waits, so no datablock is added meanwhile."""
+    """Whether a render job runs; decoding then waits until it ends."""
     running = getattr(bpy.app, "is_job_running", None)
     return bool(running is not None and running("RENDER"))
 
@@ -93,6 +103,8 @@ class ReviewPreviews:
         self._icons = {}
         # (request ID, asset ID) -> (cached digest, reason) of a failed decode.
         self._failed = {}
+        # (request ID, asset ID) of lost cached stills already fetched again once.
+        self._refetched = set()
         self._collection = None
         self._serial = 0
 
@@ -103,8 +115,12 @@ class ReviewPreviews:
     ):
         """Track one waiting step's review assets; `retry` fetches failed ones again.
 
-        Returns the number of assets requested. Checks the step binding and
-        Online Access first; nothing is queued when either fails.
+        A retry sends through the lane again each still it failed or found
+        missing, and each ready still whose cached file was lost or changed or
+        that Blender could not decode. The lane verifies the cache entry again
+        and fetches the still when the entry no longer verifies. Returns the
+        number of assets requested. Checks the step binding and Online Access
+        first; nothing is queued when either fails.
         """
         _main()
         assets = jobs.review_assets(request_id, expected_revision, node_id, review_id)
@@ -116,9 +132,7 @@ class ReviewPreviews:
             scheduler.request_review(request_id, assets)
             if retry:
                 for asset_id in assets:
-                    status = scheduler.status(request_id, asset_id, review=True)
-                    still = status.get(previews.STILL) if status is not None else None
-                    if still is not None and still.state in _FAILED_STATES:
+                    if self._refetch(scheduler, (request_id, asset_id)):
                         scheduler.retry(request_id, asset_id, review=True)
         except (previews.PreviewError, ResultError) as error:
             raise ScenarioError(0, str(error)) from None
@@ -126,11 +140,28 @@ class ReviewPreviews:
             key = (request_id, asset_id)
             if retry:
                 self._failed.pop(key, None)
+                self._refetched.discard(key)
             value = self._tracked.pop(key, AssetPreview(LOADING, reason="Loading preview"))
             self._tracked[key] = value
         while len(self._tracked) > ICON_LIMIT:
             self._forget(next(iter(self._tracked)))
         return len(assets)
+
+    def _refetch(self, scheduler, key):
+        """Whether Retry previews fetches this asset's still again."""
+        status = scheduler.status(*key, review=True)
+        still = status.get(previews.STILL) if status is not None else None
+        if still is None:
+            return False
+        if still.state in _FAILED_STATES:
+            return True
+        failed = self._failed.get(key)
+        return (
+            still.state == State.READY
+            and still.preview is not None
+            and failed is not None
+            and failed[0] == still.preview.sha256
+        )
 
     # Main-thread maintenance.
 
@@ -165,7 +196,7 @@ class ReviewPreviews:
         for key in tuple(self._tracked):
             status = scheduler.status(*key, review=True)
             still = status.get(previews.STILL) if status is not None else None
-            value, decoded = self._project(key, still, decodes < DECODES_PER_TICK)
+            value, decoded = self._project(scheduler, key, still, decodes < DECODES_PER_TICK)
             decodes += decoded
             if value != self._tracked[key]:
                 self._tracked[key] = value
@@ -180,7 +211,7 @@ class ReviewPreviews:
                 current.update((request_id, asset) for asset in workflow_nodes.preview_assets(step))
         return current
 
-    def _project(self, key, still, may_decode):
+    def _project(self, scheduler, key, still, may_decode):
         """The drawable value for one scheduler status; decodes a ready still once."""
         if still is None:
             icon = self._icons.get(key)
@@ -204,7 +235,11 @@ class ReviewPreviews:
             return AssetPreview(LOADING, reason="Preparing preview"), 0
         self._release_icon(key)
         try:
-            name, icon_id = self._decode(still.preview)
+            path = previews.check_still(still.preview)
+        except previews.PreviewError as error:
+            return self._lost(scheduler, key, digest, str(error)), 1
+        try:
+            name, icon_id = self._decode(path, still.preview)
         except previews.PreviewError as error:
             self._failed[key] = (digest, str(error))
             return AssetPreview(UNAVAILABLE, reason=str(error)), 1
@@ -212,39 +247,53 @@ class ReviewPreviews:
             reason = "Blender could not decode this preview"
             self._failed[key] = (digest, reason)
             return AssetPreview(UNAVAILABLE, reason=reason), 1
+        self._refetched.discard(key)
         self._icons[key] = (digest, name)
         return AssetPreview(READY, icon_id), 1
 
-    def _decode(self, preview):
+    def _lost(self, scheduler, key, digest, reason):
+        """A ready still whose cached file vanished or changed before it was decoded.
+
+        Cache eviction, or a person deleting the cache, can remove it after the
+        lane verified it. The first time, the still is fetched again at once,
+        as part of the request already made; after that, Retry previews does it.
+        """
+        if key not in self._refetched:
+            self._refetched.add(key)
+            try:
+                scheduler.retry(*key, review=True)
+            except previews.PreviewError:
+                pass
+            else:
+                return AssetPreview(LOADING, reason="Fetching preview again")
+        self._failed[key] = (digest, reason)
+        return AssetPreview(UNAVAILABLE, reason=reason)
+
+    def _decode(self, path, preview):
         """Decode one verified cached still into a new icon of at most ICON_EDGE pixels.
 
-        The still is checked against its cache entry again, then read through a
-        temporary image datablock that is removed before returning. Blender
-        reads the pixels as stored (Non-Color), as the icon displays them.
+        ``preview_decode`` reads it in temporary Blender data freed before it
+        returns, never through ``bpy.data``: loading and removing an image
+        there would make the next dependency graph evaluation report scene and
+        object updates, which invalidate every job origin captured in that
+        scene. Blender must read the dimensions the lane verified. Pixels are
+        RGBA display values, as the icon shows them.
         """
-        path = previews.check_still(preview)
-        image = bpy.data.images.load(str(path), check_existing=False)
+        expected = (preview.width, preview.height)
+        read = []
+
+        def limit(width, height):
+            read.append((width, height))
+            return (width, height) == expected
+
         try:
-            try:
-                image.colorspace_settings.name = "Non-Color"
-            except TypeError:
-                pass  # A custom color configuration without Non-Color keeps its default.
-            width, height = tuple(image.size)
-            if (width, height) != (preview.width, preview.height):
-                raise previews.PreviewError("Blender read different dimensions for this preview")
-            scale = min(1.0, ICON_EDGE / max(width, height))
-            size = (max(1, round(width * scale)), max(1, round(height * scale)))
-            if size != (width, height):
-                image.scale(*size)
-            channels = image.channels
-            if tuple(image.size) != size or channels not in (1, 3, 4):
-                raise previews.PreviewError("Blender could not decode this preview")
-            pixels = array.array("f", bytes(4 * size[0] * size[1] * channels))
-            image.pixels.foreach_get(pixels)
-        finally:
-            bpy.data.images.remove(image)
-        if channels != 4:
-            pixels = _rgba(pixels, channels)
+            size, pixels = preview_decode.decode(path, ICON_EDGE, limit)
+        except preview_decode.PreviewDecodeError as error:
+            if read and read[-1] != expected:
+                raise previews.PreviewError(
+                    "Blender read different dimensions for this preview"
+                ) from None
+            raise previews.PreviewError(str(error)) from None
         if self._collection is None:
             self._collection = bpy.utils.previews.new()
         name = f"review-{self._serial}"
@@ -262,6 +311,7 @@ class ReviewPreviews:
     def _forget(self, key):
         self._tracked.pop(key, None)
         self._failed.pop(key, None)
+        self._refetched.discard(key)
         self._release_icon(key)
 
     def clear(self):
@@ -270,6 +320,7 @@ class ReviewPreviews:
         self._tracked.clear()
         self._icons.clear()
         self._failed.clear()
+        self._refetched.clear()
         if self._collection is not None:
             bpy.utils.previews.remove(self._collection)
             self._collection = None
@@ -299,16 +350,6 @@ class ReviewPreviews:
             value is not None and value.state in (LOADING, OFFLINE)
             for value in (self._tracked.get((request_id, asset_id)) for asset_id in asset_ids)
         )
-
-
-def _rgba(pixels, channels):
-    """Expand gray or RGB float pixels to the RGBA layout icons take."""
-    result = array.array("f", bytes(4 * 4 * (len(pixels) // channels)))
-    for index in range(len(pixels) // channels):
-        source = pixels[index * channels : index * channels + channels]
-        rgb = (source[0],) * 3 if channels == 1 else tuple(source[:3])
-        result[index * 4 : index * 4 + 4] = array.array("f", (*rgb, 1.0))
-    return result
 
 
 def owner():

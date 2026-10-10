@@ -1,6 +1,13 @@
 # SPDX-FileCopyrightText: 2026 Scenario Inc.
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""Installed private previews of waiting workflow steps' review assets; not physical input proof."""
+"""Installed private previews of waiting workflow steps' review assets; not physical input proof.
+
+Decoding must leave the open file alone: no image is added or removed, the
+dependency graph reports no update and a job origin captured beforehand stays
+current. A cached still lost before decoding is fetched again once by itself,
+then by Retry previews; Retry also sends a still Blender could not decode
+through the lane again before decoding it again.
+"""
 
 import hashlib
 import json
@@ -14,6 +21,7 @@ import bpy
 import test_workflow_commands
 import test_workflow_steps
 from helpers import online_access, submodule
+from test_preview_decode import open_file_state
 from test_result_previews import png
 
 LOAD = "scenario.load_workflow_step_previews"
@@ -159,6 +167,17 @@ class ReviewPreviewTests(unittest.TestCase):
     def owner(self):
         return self.runtime.state.review_previews
 
+    def still(self, local_id, asset_id):
+        scheduler = self.runtime.state.job_session.result_previews
+        return scheduler.status(local_id, asset_id, review=True).get("still")
+
+    def ready(self, local_id, asset_id):
+        """Service the lane until the still is cached; the pump has not decoded it yet."""
+        self.lane(lambda scheduler: self.still(local_id, asset_id).state.value == "ready")
+
+    def transfers(self):
+        return len(self.fixture.bulk_reads), len(self.downloads)
+
     def rows(self, local_id):
         layout = Layout()
         self.recovery.draw_controls(layout, self.view(local_id))
@@ -227,7 +246,7 @@ class ReviewPreviewTests(unittest.TestCase):
             icon.image_pixels_float[:4], (0x40 / 255, 0x80 / 255, 0xC0 / 255, 1.0), strict=True
         ):
             self.assertAlmostEqual(got, expected, places=2)
-        # The temporary image datablock is gone again.
+        # Decoded in temporary data: the open file never gained an image.
         self.assertEqual(len(bpy.data.images), images)
         self.assertFalse(self.owner().pump())
         self.assertIn("Previews: 1 of 1 ready", self.rows(local_id).labels())
@@ -250,6 +269,95 @@ class ReviewPreviewTests(unittest.TestCase):
         self.assertNotIn("Signature", json.dumps(status))
         self.assertFalse(self.fixture.decisions)
         self.assertEqual(len(self.fixture.paid), 1)
+
+    def test_decoding_keeps_job_origins_captured_in_the_scene_current(self):
+        local_id = self.paused(self.fixture.approval())
+        session = self.runtime.state.job_session
+        origin = session.capture(bpy.context.scene)
+        updates = []
+
+        def record(scene, depsgraph=None):
+            # Names only, read while the handler runs.
+            names = () if depsgraph is None else (u.id.name for u in depsgraph.updates)
+            updates.append(tuple(names))
+
+        handlers = bpy.app.handlers.depsgraph_update_post
+        handlers.append(record)
+        self.addCleanup(lambda: record in handlers and handlers.remove(record))
+        self.assertEqual(self.load(local_id, "check")[0], {"FINISHED"})
+        self.ready(local_id, "asset-render")
+        bpy.context.view_layer.update()
+        self.assertTrue(session._origins.current(origin))
+        before = open_file_state()
+        updates.clear()
+        self.assertTrue(self.owner().pump())
+        self.assertEqual(self.owner().get(local_id, "asset-render").state, "ready")
+        bpy.context.view_layer.update()
+        self.assertTrue(session._origins.current(origin))
+        self.assertEqual(session.capture(bpy.context.scene), origin)
+        # No image entered or left the open file, so no ID was updated.
+        self.assertEqual(open_file_state(), before)
+        self.assertEqual([names for names in updates if names], [])
+
+    def test_a_lost_cached_still_is_fetched_again_once_then_by_retry(self):
+        local_id = self.paused(self.fixture.approval())
+        self.assertEqual(self.load(local_id, "check")[0], {"FINISHED"})
+        self.ready(local_id, "asset-render")
+        owner, transfers = self.owner(), self.transfers()
+        # The disposable cache loses the file after the lane verified it and
+        # before the pump decodes it: the pump fetches it again by itself.
+        self.still(local_id, "asset-render").preview.path.unlink()
+        self.assertTrue(owner.pump())
+        self.assertEqual(
+            owner.get(local_id, "asset-render"),
+            self.module.AssetPreview("loading", reason="Fetching preview again"),
+        )
+        self.assertEqual(self.still(local_id, "asset-render").state.value, "queued")
+        self.ready(local_id, "asset-render")
+        self.assertEqual(self.transfers(), (transfers[0] + 1, transfers[1] + 1))
+        # Lost again before decoding: only once by itself, then Retry previews.
+        self.still(local_id, "asset-render").preview.path.unlink()
+        self.assertTrue(owner.pump())
+        value = owner.get(local_id, "asset-render")
+        self.assertEqual(value.state, "unavailable")
+        self.assertIn("unavailable; use Retry", value.reason)
+        self.assertEqual(self.still(local_id, "asset-render").state.value, "ready")
+        self.assertFalse(owner.pump())
+        self.assertEqual(self.transfers(), (transfers[0] + 1, transfers[1] + 1))
+        rows = self.rows(local_id)
+        self.assertIn("Previews: 0 of 1 ready, 1 unavailable", rows.labels())
+        self.assertEqual(
+            [(call[2], call[3]["retry"]) for call in rows.operators(LOAD)],
+            [("Retry previews", True)],
+        )
+        self.assertEqual(self.load(local_id, "check", retry=True)[0], {"FINISHED"})
+        self.assertEqual(self.still(local_id, "asset-render").state.value, "queued")
+        self.settled(local_id, "asset-render")
+        self.assertEqual(owner.get(local_id, "asset-render").state, "ready")
+        self.assertEqual(self.transfers(), (transfers[0] + 2, transfers[1] + 2))
+        self.assertFalse(self.fixture.decisions)
+
+    def test_retry_checks_again_and_decodes_again_a_still_blender_could_not_decode(self):
+        local_id = self.paused(self.fixture.approval())
+        self.assertEqual(self.load(local_id, "check")[0], {"FINISHED"})
+        decode = submodule("blender.preview_decode")
+        with patch.object(
+            decode, "decode", side_effect=decode.PreviewDecodeError("Blender could not decode")
+        ):
+            self.settled(local_id, "asset-render")
+        owner, transfers = self.owner(), self.transfers()
+        value = owner.get(local_id, "asset-render")
+        self.assertEqual((value.state, value.reason), ("unavailable", "Blender could not decode"))
+        # Never decoded again by itself.
+        self.assertFalse(owner.pump())
+        self.assertEqual(owner.get(local_id, "asset-render"), value)
+        # Retry sends it through the lane again, which verifies the cache entry.
+        self.assertEqual(self.load(local_id, "check", retry=True)[0], {"FINISHED"})
+        self.assertEqual(self.still(local_id, "asset-render").state.value, "queued")
+        self.settled(local_id, "asset-render")
+        self.assertEqual(owner.get(local_id, "asset-render").state, "ready")
+        # The entry still verified, so nothing was fetched again.
+        self.assertEqual(self.transfers(), transfers)
 
     def test_unavailable_candidates_are_reported_and_retried_explicitly(self):
         local_id = self.paused(self.fixture.selection())

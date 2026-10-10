@@ -917,7 +917,7 @@ To see the images first, choose **Load previews** below the step in Jobs or on
 the Workflows page: Blender downloads private copies of those images (each up to
 8 MiB and 4096 pixels per side, otherwise Scenario's thumbnail when it offers
 one) into its extension cache and shows small previews there and in the review.
-**Retry previews** fetches the ones that failed. Loading previews needs Online
+**Retry previews** tries the unavailable ones again. Loading previews needs Online
 Access and never decides, spends or applies anything. Choose **Approve** or
 **Select** with the items you want, or **Stop workflow** to reject the step,
 then **Send decision**. Continuing runs the remaining steps, which spend

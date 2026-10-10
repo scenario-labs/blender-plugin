@@ -54,8 +54,10 @@ closes and raises only after the block is freed. Neither the error's context
 nor the locals of the helper frames on its traceback refer into the block,
 which the native tests check for every refusal. The helper does not inspect the
 file first: `limit` sees the dimensions only after Blender has loaded the whole
-image, so callers check the format and declared dimensions before decoding. No
-UI or MCP path uses the helper yet.
+image, so callers check the format and declared dimensions before decoding.
+[Workflow review previews](../RESULT_PREVIEWS.md#workflow-review-assets) decode
+their icons with it after verifying the cached file, its format and its declared
+dimensions; no other UI or MCP path uses it yet.
 
 ## Scene application
 

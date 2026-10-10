@@ -247,13 +247,29 @@ for server stills, and failures and `missing` markers need an explicit retry.
 The [Blender owner](../scenario/blender/review_previews.py) runs on the main
 thread. The GUI pump copies scheduler statuses into memory and, for each newly
 ready still, verifies the cached file again with `check_still` (size, digest and
-signature against its entry), reads it through a temporary image datablock with
-the Non-Color color space, fits it to 256 pixels per side and removes the
-datablock. At most two stills are decoded per pump tick, and none while a render
-job runs. The pixels fill an icon of a private `bpy.utils.previews` collection,
-so Blender's file-thumbnail cache is never written. At most 128 review assets
-are tracked; icons of a step that no longer waits are released, and retiring the
-job context releases them all. Drawing reads only that memory.
+signature against its entry). It then decodes the file with the
+[temporary preview decoder](architecture/blender.md#temporary-preview-decoding),
+inside `bpy.data.temp_data()`: Blender must read the dimensions the lane
+verified, and the still is fitted to 256 pixels per side as RGBA display values.
+The open file never gains or loses an image, so its dependency graph reports no
+update and job origins captured in its scenes stay current, with the quotes and
+automatic application bound to them
+([origin lifetime](BLENDER_JOB_CONTEXT.md#origin-and-quote-lifetime)). At most
+two stills are decoded per pump tick, and none while a render job runs. The
+pixels fill an icon of a private `bpy.utils.previews` collection, so Blender's
+file-thumbnail cache is never written. At most 128 review assets are tracked;
+icons of a step that no longer waits are released, and retiring the job context
+releases them all. Drawing reads only that memory.
+
+The cache is disposable, so eviction or a person can delete a ready still's file
+after the lane verified it. When `check_still` then finds the file lost or
+changed, the pump calls `retry(..., review=True)` once by itself, as part of the
+request already made; the lane's own cache check rejects the entry and fetches
+the still again. If that happens again, the asset stays unavailable until
+**Retry previews**. Retry sends through the lane again each still that failed or
+is missing, and each ready still whose cached file was lost or changed or that
+Blender could not decode. The lane reuses an entry that still verifies and
+fetches the others again; the pump then decodes them again.
 
 ## Lane and ownership
 

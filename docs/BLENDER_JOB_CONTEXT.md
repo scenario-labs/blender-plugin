@@ -491,7 +491,10 @@ keyed by the saved workflow job instead and requested with `request_review`;
 `runtime.load_review_previews` binds that request to the context, saved
 revision and step `review_id`, and the runtime-owned
 [review previews](RESULT_PREVIEWS.md#workflow-review-assets) object, cleared
-when jobs retire, turns ready stills into icons in the GUI pump.
+when jobs retire, turns ready stills into icons in the GUI pump. It decodes them
+in [temporary Blender data](architecture/blender.md#temporary-preview-decoding),
+never by loading and removing a `bpy.data` image, so the dependency handler sees
+no update and origins captured in the scene stay current.
 
 The optional `preview_waveform` argument is the
 [offline audio decoder](RESULT_PREVIEWS.md#offline-audio-envelopes)

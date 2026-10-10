@@ -781,6 +781,28 @@ class WorkflowUploadTests(unittest.TestCase):
             self.ui.parameters(self.form)
         self.assertEqual(replacement.references, {})
 
+    def test_file_load_replaces_the_facade_with_its_handles_and_notes(self):
+        sessions = submodule("blender.job_session")
+        self.populated()
+        stopped = self.start("images")
+        stopped.ticket.task.result(5)
+        self.scene_changes()[0]()
+        self.pump(stopped)
+        note = "The upload stopped before sending; nothing was uploaded"
+        self.assertIn(note, self.drawn("images")[1])
+        self.assertTrue(self.upload().attached)
+        self.assertEqual(len(self.owner.references), 2)  # Finished uploads keep handles.
+        session = self.runtime.state.job_session
+        self.assertIn(sessions._load_pre, bpy.app.handlers.load_pre)
+        sessions._load_pre(None)  # Open, Revert and File > New all run load_pre.
+        self.assertFalse(session.active)
+        self.runtime.sync_catalog_context()
+        self.assertIsNone(self.runtime.state.reference_uploads)
+        self.assertNotIn(note, self.drawn("images")[1])  # Notes lived on the old facade.
+        replacement = self.runtime.ensure_reference_uploads()
+        self.assertIsNot(replacement, self.owner)
+        self.assertEqual((replacement.references, replacement.workflow_notices), ({}, {}))
+
     def test_pending_marker_blocks_pricing_and_generate(self):
         workflow, view = self.price()
         binding = self.start()

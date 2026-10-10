@@ -118,19 +118,25 @@ def decode(path, edge, limit, *, output=None):
     and raised only after the block is gone. Neither the error's context nor
     the locals of the frames on its traceback refer into the block. Every
     failure raises ``PreviewDecodeError`` with a message that names neither
-    the path nor Blender's own error.
+    the path nor Blender's own error, and with no original error as its cause
+    or context.
     """
     _main_thread()
+    # Raising inside an except suite would keep the original error, which holds
+    # the path, as the new error's context, even with ``from None``.
+    refused = None
     try:
         # A path object applies the Windows path check to strings as well.
         source = blender_path(Path(path))
         output = None if output is None else blender_path(Path(output))
     except LocalRenderError:
-        raise PreviewDecodeError("Preview paths are too long for Blender on this system") from None
+        refused = "Preview paths are too long for Blender on this system"
     except ValueError:
         # On Windows the check encodes paths as UTF-16, which rejects a lone
         # surrogate with UnicodeEncodeError.
-        raise PreviewDecodeError("Blender cannot use these preview paths on this system") from None
+        refused = "Blender cannot use these preview paths on this system"
+    if refused is not None:
+        raise PreviewDecodeError(refused)
     result, failed, scene = None, False, None
     with bpy.data.temp_data() as data:
         try:

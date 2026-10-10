@@ -289,8 +289,9 @@ class PreviewDecodeTests(unittest.TestCase):
         self.assertEqual(
             str(caught.exception), "Preview paths are too long for Blender on this system"
         )
+        # The original error, which names the path here, is not reachable.
         self.assertIsNone(caught.exception.__cause__)
-        self.assertTrue(caught.exception.__suppress_context__)
+        self.assertIsNone(caught.exception.__context__)
 
     def test_paths_blender_cannot_encode_raise_a_sanitized_error(self):
         # On Windows the path check encodes paths as UTF-16, which rejects a lone
@@ -316,8 +317,9 @@ class PreviewDecodeTests(unittest.TestCase):
                 message = str(caught.exception)
                 self.assertEqual(message, "Blender cannot use these preview paths on this system")
                 self.assertNotIn("previews", message)
+                # UnicodeEncodeError.object would hold the whole path.
                 self.assertIsNone(caught.exception.__cause__)
-                self.assertTrue(caught.exception.__suppress_context__)
+                self.assertIsNone(caught.exception.__context__)
 
     def test_decode_refuses_other_threads(self):
         path = self.file("result.png", png(8, 8))

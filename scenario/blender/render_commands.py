@@ -10,7 +10,16 @@ from dataclasses import replace
 from ..core.api.catalog import RENDER_LANES
 from ..core.api.errors import ScenarioError
 from ..core.schema.params import validate
-from . import generation, params_ui, props, reference_form, render_lanes, render_references, runtime
+from . import (
+    first_frame_handoff,
+    generation,
+    params_ui,
+    props,
+    reference_form,
+    render_lanes,
+    render_references,
+    runtime,
+)
 
 _FIELDS = {
     "look": ("prompt", str),
@@ -57,6 +66,15 @@ def _reference_key(scene, lane, ref):
     return hashlib.sha256(json.dumps(value).encode()).hexdigest()
 
 
+def _source_result(ref):
+    """Provenance of a slot handed from a saved result, found again in this scope."""
+    source = first_frame_handoff.provenance(ref)
+    if source is None:
+        return None
+    saved = first_frame_handoff.saved_source(runtime.state.job_store, ref) is not None
+    return {"request_id": source["request_id"], "asset_id": source["asset_id"], "saved": saved}
+
+
 def inspect(scene, lane):
     state = lane_state(scene, lane)
     schema = generation.schema_for(state.model_id)
@@ -75,6 +93,7 @@ def inspect(scene, lane):
                 "asset_id": ref.asset_id if ref.source == "ASSET" else "",
                 "upload_id": ref.get(reference_form._REQUEST, ""),
                 "upload_marked": bool(ref.get(reference_form._MARKER)),
+                "source_result": _source_result(ref),
             }
         )
     result = generation.build_request(scene, lane, for_estimate=True)
@@ -87,6 +106,9 @@ def inspect(scene, lane):
             key: value for key, value in values.items() if enabled.get(key) and key not in hidden
         },
         "references": references,
+        "first_frame_route": render_lanes.first_frame_route(schema)
+        if schema is not None and lane == "render_video"
+        else None,
         "errors": result.errors,
         "ready_to_estimate": not (result.errors or result.files or result.captures or result.spark),
         "spark_required": bool(result.spark),
@@ -210,6 +232,15 @@ def configure(scene, lane, changes):
             # Reserve the scene slot even when it has not been uploaded yet.
             if style_spec is scene_spec and not render_references.slot(
                 state, render_references.SCENE
+            ):
+                occupied += 1
+            # Likewise an enabled first frame sent as image 1 of the style input.
+            first_frame = render_references.target(lane, schema, render_references.FIRST_FRAME)
+            if (
+                style_spec is first_frame
+                and changes.get("use_first_frame", state.use_first_frame)
+                and changes.get("first_frame_path", state.first_frame_path)
+                and not render_references.slot(state, render_references.FIRST_FRAME)
             ):
                 occupied += 1
             limit = 1 if style_spec.ptype == "file" else style_spec.max_length

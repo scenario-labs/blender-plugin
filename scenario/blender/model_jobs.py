@@ -19,6 +19,7 @@ from ..core.jobs import progress
 from ..core.jobs.records import JobRecord
 from ..core.jobs.store import JobOrigin, JobState, LocalApplicationState, StoredJob, _identity
 from ..core.scene.panorama import WORLD_MEDIA_TYPES
+from . import first_frame_handoff
 from .blockout_jobs import MODEL as BLOCKOUT_MODEL
 from .job_session import (
     ImageResultUncertain,
@@ -40,6 +41,9 @@ from .model_application import validate_destination as validate_model_destinatio
 from .world_application import PanoramaError, WorldApplicationError
 
 _log = logging.getLogger("scenario.jobs")
+
+# Session-local first-frame outcomes reported by status; never persisted.
+_FIRST_FRAME_HISTORY = 128
 
 # Seconds between automatic refreshes of a known remote job. A reading becomes
 # stale once its scheduled refresh is overdue by the grace, so a longer
@@ -251,6 +255,8 @@ class ModelJobs:
         self._materials = {}
         self._mesh_destinations = {}
         self._mesh_edits = {}
+        self._first_frame_destinations = {}
+        self._first_frames = {}
         self.cloud_reads = {}
         self._cloud_read_owner = object()
 
@@ -482,6 +488,7 @@ class ModelJobs:
             world = self._world_destinations.pop(request_id, None)
             material = self._material_destinations.pop(request_id, None)
             mesh = self._mesh_destinations.pop(request_id, None)
+            first_frame = self._first_frame_destinations.pop(request_id, None)
             observed = None
             try:
                 completions = self.session.drain(task=task)
@@ -490,7 +497,11 @@ class ModelJobs:
                 completion = completions[0]
                 if completion.error is not None:
                     raise completion.error
-                if command == "verify_mesh_edit":
+                if command == "verify_first_frame":
+                    bound = first_frame_handoff.bind(self.session, completion, first_frame)
+                    self._remember_first_frame(request_id, first_frame, bound=bound)
+                    self._paused.discard(request_id)
+                elif command == "verify_mesh_edit":
                     applied = self.session.apply_recovered_mesh(
                         completion,
                         destination=mesh.destination,
@@ -553,6 +564,9 @@ class ModelJobs:
                 elif command in ("refresh_remote", "cancel_remote"):
                     observed = completion.result
                 self._next_poll[request_id] = time.monotonic() + POLL_INTERVAL
+            except first_frame_handoff.FirstFrameHandoffError as error:
+                self._remember_first_frame(request_id, first_frame, error=error.reason)
+                self._pause(request_id, first_frame_handoff.STOPPED)
             except MaterialResultUncertain as error:
                 if error.application is not None:
                     self._receipts[request_id] = error
@@ -604,10 +618,15 @@ class ModelJobs:
                     _remember(self._images, request_id, error.images, bpy.data.images)
                 self._pause(request_id, "Image import needs receipt recovery; do not import again")
             except Exception:
-                self._pause(
-                    request_id,
-                    "Result delivery stopped; review the saved job before retrying",
-                )
+                if command == "verify_first_frame":
+                    # Verification failed before binding: the form is unchanged.
+                    self._remember_first_frame(request_id, first_frame, error=None)
+                    self._pause(request_id, first_frame_handoff.STOPPED)
+                else:
+                    self._pause(
+                        request_id,
+                        "Result delivery stopped; review the saved job before retrying",
+                    )
             if observed is not None:
                 # Display only: outside the delivery error mapping, so a failed
                 # projection can never pause delivery or skip the next poll.
@@ -794,6 +813,8 @@ class ModelJobs:
                 actions.append("apply_mesh_source")
         if reusable and any(item.asset.media_type in WORLD_MEDIA_TYPES for item in record.results):
             actions.append("apply_world")
+        if reusable and first_frame_handoff.eligible_assets(record):
+            actions.append("use_first_frame")
         if reusable:
             try:
                 selected_maps(record)
@@ -828,6 +849,7 @@ class ModelJobs:
                 "apply_material",
                 "apply_mesh",
                 "apply_mesh_source",
+                "use_first_frame",
                 "recover_blockout",
             }
         ):
@@ -1246,6 +1268,86 @@ class ModelJobs:
         if ticket.scene.world != ticket.previous:
             raise ScenarioError(0, "The scene World changed; approve its replacement again")
 
+    def prepare_first_frame_application(self, request_id, expected_revision, scene, asset_id):
+        """Review one saved image for the Render Video first frame; no read, network or edit.
+
+        The approval binds the job revision, the asset and its receipt digest,
+        the captured scene and the reviewed form (model, input, existing slots,
+        chosen file and enabled state). It is single-use.
+        """
+        record = self.store.get(request_id)
+        if (
+            type(expected_revision) is not int
+            or record is None
+            or record.revision != expected_revision
+            or "use_first_frame" not in self.actions(record)
+        ):
+            raise ScenarioError(0, "The saved image changed; inspect the job again")
+        if record.intent.scope != self.session.scope:
+            raise ScenarioError(0, "The saved image belongs to another connection")
+        selected = [
+            item
+            for item in first_frame_handoff.eligible_assets(record)
+            if item.asset.asset_id == asset_id
+        ]
+        if len(selected) != 1:
+            raise ScenarioError(0, "Choose one downloaded PNG, JPEG or WebP saved image")
+        if len(self._application_approvals) >= 128:
+            raise ScenarioError(0, "Complete or cancel an existing application review first")
+        if scene != bpy.context.scene:
+            raise ScenarioError(0, "Select the destination scene before reviewing the first frame")
+        target = first_frame_handoff.target(scene)
+        bpy.context.view_layer.update()
+        item = selected[0]
+        ticket = first_frame_handoff.FirstFrameApproval(
+            uuid.uuid4().hex,
+            record,
+            self.session.capture(scene),
+            scene.name,
+            scene,
+            item.asset,
+            item.receipt.sha256,
+            target,
+        )
+        self._application_approvals[ticket.identifier] = ticket
+        return ticket
+
+    def _apply_first_frame(self, ticket):
+        self._application_approvals.pop(ticket.identifier)
+        if not self.session.active:
+            raise ScenarioError(0, "Review the current connection and first frame again")
+        record = self.store.get(ticket.record.intent.request_id)
+        if record != ticket.record or "use_first_frame" not in self.actions(record):
+            raise ScenarioError(0, "The saved image changed; inspect the job again")
+        self.session.validate_destination(ticket.destination)
+        if first_frame_handoff.target(ticket.scene).key != ticket.target.key:
+            raise ScenarioError(0, "The Render Video form changed; review the first frame again")
+        request_id = record.intent.request_id
+        task = self.session.verify_results(request_id, expected_revision=record.revision)
+        self._first_frame_destinations[request_id] = ticket
+        self._commands[request_id] = ("verify_first_frame", task)
+        self._automatic_application.discard(request_id)
+        self._paused.add(request_id)
+        view = self._view(record)
+        view.meta["recovery_actions"], view.error = (), None
+        return request_id, task
+
+    def _remember_first_frame(self, request_id, ticket, *, bound=None, error=None):
+        if ticket is None:
+            return
+        self._first_frames.pop(request_id, None)
+        while len(self._first_frames) >= _FIRST_FRAME_HISTORY:
+            del self._first_frames[next(iter(self._first_frames))]
+        self._first_frames[request_id] = {
+            "state": "bound" if bound is not None else "failed",
+            "scene": ticket.scene_name,
+            "lane": first_frame_handoff.LANE,
+            "input": ticket.target.param_name,
+            "asset_id": ticket.asset.asset_id,
+            "undo_recorded": bound.undo_recorded if bound is not None else False,
+            "error": None if bound is not None else (error or first_frame_handoff.STOPPED),
+        }
+
     def prepare_asset_application(self, request_id, expected_revision, scene, asset_id):
         record = self.store.get(request_id)
         if record is not None and any(
@@ -1259,6 +1361,8 @@ class ModelJobs:
         ticket = (
             self._application_approvals.get(identifier) if isinstance(identifier, str) else None
         )
+        if isinstance(ticket, first_frame_handoff.FirstFrameApproval):
+            return self._apply_first_frame(ticket)
         if isinstance(ticket, MeshApplicationApproval):
             return self._apply_saved_mesh(ticket)
         if isinstance(ticket, MaterialApplicationApproval):
@@ -1456,6 +1560,7 @@ class ModelJobs:
             if record.intent.request_id in self.views
             else None,
             "mesh_edit": self._mesh_status(record.intent.request_id),
+            "first_frame": dict(self._first_frames.get(record.intent.request_id) or {}) or None,
             "objects": [
                 obj.name
                 for obj in self._objects.get(record.intent.request_id, ())

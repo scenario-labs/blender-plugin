@@ -22,6 +22,8 @@ _SCOPE = "_scenario_reference_scope"
 _REQUEST = "_scenario_reference_request"
 _ASSET = "_scenario_reference_asset"
 _KIND = "_scenario_reference_kind"
+# Provenance of a slot handed from a saved result; never an authorization.
+_RESULT = "_scenario_reference_result"
 _KINDS = {"image", "audio", "video", "3d"}
 RENDER_ROLE = "_scenario_render_role"
 
@@ -103,6 +105,7 @@ def _form_snapshot(lane):
             ref.get(_ASSET),
             ref.get(_KIND),
             ref.get(RENDER_ROLE),
+            ref.get(_RESULT),
         )
         for ref in lane.references
     )
@@ -222,7 +225,7 @@ def apply_attachment(context_id, identifier):
     added = ref is None
     if added:
         ref = lane.references.add()
-    marker_keys = (_MARKER, _SCOPE, _REQUEST, _ASSET, _KIND)
+    marker_keys = (_MARKER, _SCOPE, _REQUEST, _ASSET, _KIND, _RESULT)
     previous = (
         reference_values(ref),
         ref.label,
@@ -238,6 +241,8 @@ def apply_attachment(context_id, identifier):
         ref[_REQUEST] = approval.record.intent.request_id
         ref[_ASSET] = approval.record.asset_id
         ref[_KIND] = approval.record.intent.kind
+        if _RESULT in ref:
+            del ref[_RESULT]  # The upload replaces a slot handed from a saved result.
         ref.asset_id = approval.record.asset_id
         ref.source = "ASSET"
         ref.label = approval.record.intent.file_name + " (uploaded snapshot)"

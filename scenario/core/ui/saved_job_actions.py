@@ -53,6 +53,9 @@ SINGLE_APPLY = {
 }
 # Offered alone on an applied job, these do not reuse its results.
 NOT_REUSE = frozenset({"restore_world", "retry_receipt"})
+# Offered through local MCP before any native control exists. Native surfaces
+# skip only these, by name; any other unknown action still fails to describe.
+MCP_ONLY = frozenset({"use_first_frame"})
 
 
 @dataclass(frozen=True, eq=False)
@@ -233,9 +236,11 @@ def describe(view, context_id, result_types, blockout_review=None):
         ("expected_revision", meta["saved_revision"]),
     )
     items = []
-    if state == "applied" and any(action not in NOT_REUSE for action in actions):
+    if state == "applied" and any(action not in NOT_REUSE | MCP_ONLY for action in actions):
         items.append(_status("reuse", "", "Reuse saved results", "FILE_REFRESH"))
     for action in actions:
+        if action in MCP_ONLY:
+            continue
         items.extend(_describe_action(action, view, job, result_types, blockout_review))
     if state in ("ready", "apply_failed"):
         items.append(

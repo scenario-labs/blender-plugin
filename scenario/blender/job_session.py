@@ -973,6 +973,32 @@ class JobSession:
         if cursor is not None and tuple(scene.cursor.location) != cursor:
             raise OriginUnavailable("The destination cursor changed; review it again")
 
+    def verified_result(self, completion, *, destination, asset_id):
+        """Consume one verification for an approved destination, without a claim.
+
+        For form bindings that reuse a saved asset rather than change scene
+        content. Returns the resolved scene, the selected result and its path;
+        the caller rechecks its own destination before any mutation.
+        """
+        _main_thread()
+        if self._issued.get(id(completion)) is not completion:
+            raise OriginUnavailable("Use an unconsumed verification from this session")
+        if completion.error is not None:
+            raise completion.error
+        verified = completion.result
+        if not isinstance(verified, VerifiedResults) or not isinstance(destination, JobOrigin):
+            raise OriginUnavailable("Verify the saved result and approve its destination")
+        scene, _ = self._resolve(destination)
+        selected = [
+            (item, path)
+            for item, path in zip(verified.record.results, verified.paths, strict=True)
+            if item.asset.asset_id == asset_id
+        ]
+        if len(selected) != 1:
+            raise OriginUnavailable("Select one saved result asset")
+        del self._issued[id(completion)]
+        return (scene, *selected[0])
+
     def _claim_saved_application(self, verified, destination, purpose, asset_ids):
         """Explicit recovered delivery may reuse a completed job under a new claim."""
         if verified.record.state == JobState.APPLIED:

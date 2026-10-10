@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Turn a model record's parameter schema into UI specs and request bodies."""
 
+import re
 from dataclasses import dataclass, field
 
 FILE_TYPES = ("file", "file_array")
@@ -56,9 +57,16 @@ class Schema:
     one_of: list = field(
         default_factory=list
     )  # groups where at least one member must be provided (either image or prompt)
+    exclusive: list = field(
+        default_factory=list
+    )  # sorted name pairs that must not both be provided (first frame and reference video)
 
     def by_name(self, name):
         return next((s for s in self.specs if s.name == name), None)
+
+    def excludes(self, first, second):
+        """Whether the model says these two inputs cannot be sent together."""
+        return tuple(sorted((first, second))) in self.exclusive
 
 
 # Some models mark a file input `required: true` when it is really required only in the absence of an alternative
@@ -70,6 +78,73 @@ CONDITIONAL_MARKERS = ("if no ", "if not ", "when no ", "when not ", "unless ", 
 def _is_conditional(description):
     text = (description or "").lower()
     return any(marker in text for marker in CONDITIONAL_MARKERS)
+
+
+# No schema field marks inputs that cannot be sent together, but some file inputs
+# say so in their description: Seedance 2.x "Mutually exclusive with reference
+# images/videos.", Minimax H3 and Wan 3.0 "Can't be combined with reference images,
+# videos, or audio." The service quotes such a body and accepts the job, which then
+# fails. This narrow rule pairs file inputs only and reads file-input descriptions
+# only. After a marker, the clause names a sibling input when every word of its label
+# (its server name when unlabelled) appears in it: "a first or last frame" names First
+# Frame and Last Frame. A clause that names no file input but mentions references
+# ("reference inputs") names the file inputs whose server names start with
+# "reference". Either side is enough. A setting on either side is not guarded (Kling
+# V3 Omni Generate Audio: "Mutually exclusive with reference video."), and wording
+# that names no sibling maps to nothing; tools/audit_payloads.py reports both.
+EXCLUSIVE_MARKERS = (
+    "mutually exclusive with",
+    "can't be combined with",
+    "cannot be combined with",
+    "can not be combined with",
+)
+
+
+def exclusive_clauses(description):
+    """The text after each exclusivity marker, up to the end of its sentence."""
+    text = (description or "").replace("\u2019", "'").lower()
+    clauses = []
+    for marker in EXCLUSIVE_MARKERS:
+        for match in re.finditer(re.escape(marker), text):
+            clauses.append(re.split(r"[.;]", text[match.end() :], maxsplit=1)[0])
+    return clauses
+
+
+def _words(text):
+    """Lowercase words of a label or sentence; a plural s is dropped."""
+    spaced = re.sub(r"([a-z0-9])([A-Z])", r"\1 \2", text or "").lower()
+    return {
+        word[:-1] if len(word) > 3 and word.endswith("s") else word
+        for word in re.findall(r"[a-z0-9]+", spaced)
+    }
+
+
+def clause_inputs(spec, specs, clause):
+    """The sibling inputs, files and settings alike, that one exclusivity clause names."""
+    words = _words(clause)
+    others = [other for other in specs if other is not spec]
+    named = [other for other in others if set() < _words(other.label) <= words]
+    if not any(other.is_file for other in named) and "reference" in words:
+        named += [
+            other
+            for other in others
+            if other.is_file and other.name.lower().startswith("reference")
+        ]
+    return named
+
+
+def _exclusive_pairs(specs):
+    pairs = set()
+    for spec in specs:
+        if not spec.is_file:
+            continue
+        for clause in exclusive_clauses(spec.description):
+            pairs.update(
+                tuple(sorted((spec.name, other.name)))
+                for other in clause_inputs(spec, specs, clause)
+                if other.is_file
+            )
+    return sorted(pairs)
 
 
 def _parse_required(raw):
@@ -162,7 +237,13 @@ def parse_schema(record):
             for spec in conditional:
                 spec.required_always = False
                 one_of.append((spec.name, prompt_name))
-    return Schema(specs=specs, resolution_presets=presets, prompt_name=prompt_name, one_of=one_of)
+    return Schema(
+        specs=specs,
+        resolution_presets=presets,
+        prompt_name=prompt_name,
+        one_of=one_of,
+        exclusive=_exclusive_pairs(specs),
+    )
 
 
 def _coerce(spec, value):
@@ -210,7 +291,7 @@ def _defined(value):
     return value is not None and value != [] and not (isinstance(value, str) and not value.strip())
 
 
-def validate(specs, body, one_of=()):
+def validate(specs, body, one_of=(), exclusive=()):
     errors = []
     for spec in specs:
         value = body.get(spec.name)
@@ -233,11 +314,11 @@ def validate(specs, body, one_of=()):
             lo, hi = spec.min, spec.max
             if (lo is not None and value < lo) or (hi is not None and value > hi):
                 errors.append(f"{spec.label} must be between {_fmt(lo)} and {_fmt(hi)}")
-    errors.extend(validate_requirements(specs, body, one_of))
+    errors.extend(validate_requirements(specs, body, one_of, exclusive))
     return errors
 
 
-def validate_requirements(specs, body, one_of=()):
+def validate_requirements(specs, body, one_of=(), exclusive=()):
     """Validate sibling relationships independently of field type/value checks."""
     errors = []
     by_name = {s.name: s for s in specs}
@@ -254,6 +335,12 @@ def validate_requirements(specs, body, one_of=()):
         if not any(_defined(body.get(name)) for name in group):
             labels = [(by_name[name].label if name in by_name else name) for name in group]
             errors.append("Provide one of: " + " or ".join(labels))
+    for first, second in exclusive:
+        if _defined(body.get(first)) and _defined(body.get(second)):
+            labels = [
+                (by_name[name].label if name in by_name else name) for name in (first, second)
+            ]
+            errors.append(f"{labels[0]} can't be combined with {labels[1]}; remove one of them")
     return errors
 
 

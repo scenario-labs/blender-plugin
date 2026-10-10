@@ -345,7 +345,7 @@ Do not edit this block by hand; run `make mcp-docs`. An asterisk marks a require
 | `reference_upload_status` | Read a reference upload's progress while the shared session advances its already authorized work. | `context_id`*: string<br>`reference_id`*: string | read-only annotation |
 | `list_reference_uploads` | Inspect saved uploads under the selected credential scope, including after restart. | none | read-only annotation |
 | `recover_reference_upload` | Explicitly inspect a known remote upload, cancel unclaimed preparation, or clean its finished private source copy. | `context_id`*: string<br>`request_id`*: string<br>`expected_revision`*: integer<br>`action`*: string (['refresh', 'cancel_prepared', 'cleanup']) | destructive annotation |
-| `prepare_result_application` | Prepare explicit saved image/media/model import, material assignment, panorama World replacement, or session-local World restoration. | `context_id`*: string<br>`request_id`*: string<br>`expected_revision`*: integer<br>`asset_id`: string<br>`purpose`: string (['import', 'material', 'world', 'restore_world', 'mesh_edit', 'mesh_source'])<br>`mesh_policy`: string (['REMESH', 'UV', 'RETEXTURE', 'PARTS', 'RIG'])<br>`mesh_placement`: string (['WORLD', 'LOCAL'])<br>`keep_original`: boolean | read-only annotation |
+| `prepare_result_application` | Prepare explicit saved image/media/model import, material assignment, panorama World replacement, session-local World restoration, or a Render Video first frame from a saved image. | `context_id`*: string<br>`request_id`*: string<br>`expected_revision`*: integer<br>`asset_id`: string<br>`purpose`: string (['import', 'material', 'world', 'restore_world', 'mesh_edit', 'mesh_source', 'video_first_frame'])<br>`mesh_policy`: string (['REMESH', 'UV', 'RETEXTURE', 'PARTS', 'RIG'])<br>`mesh_placement`: string (['WORLD', 'LOCAL'])<br>`keep_original`: boolean | read-only annotation |
 | `apply_result_application` | Apply or restore saved results after the user approves the prepared destination and operation. | `context_id`*: string<br>`application_id`*: string | destructive annotation |
 | `recover_local_job` | Explicitly recover a saved job without repeating generation or importing into another scene. | `context_id`*: string<br>`request_id`*: string<br>`expected_revision`*: integer<br>`action`*: string (['refresh', 'resume', 'cancel', 'recover_download', 'retry_receipt']) | destructive annotation |
 | `list_local_jobs` | Inspect durable local jobs for the selected API-key pair without network requests. | none | read-only annotation |
@@ -550,13 +550,27 @@ only; motion and transcription handling is not accepted ([#190](https://github.c
    the current native form; they do not capture, upload or submit generation.
 3. Call `render_form(action=prepare, role=scene)` to capture and upload the current
    camera/viewport. For Render Video, set `first_frame_path` and prepare
-   `role=first_frame` when using it. Inspect until uploads finish. Captures use
+   `role=first_frame` when using it. `render_form` reports `first_frame_route`:
+   `sent_as=first_frame` uses the model's own first-frame input, while
+   `sent_as=reference_image` sends the image as image 1 of the named input and
+   keeps the scene clip. Its `reason` is `exclusive` when the model's input
+   descriptions say a first frame can't be combined with reference videos
+   (Seedance 2.x, Minimax H3, Wan 3.0), or `no_first_frame_input`; show the
+   `note` to the user. Inspect until uploads finish. Captures use
    the current scene/camera and existing clip range; later scene edits do not
-   change these uploaded snapshots.
+   change these uploaded snapshots. To use a downloaded saved image instead,
+   find `use_first_frame` in its `job_status` actions, then call
+   `prepare_result_application` with `purpose=video_first_frame` and its
+   `asset_id`. Show the scene, model, input, `sent_as` with its `note`, file
+   and whether a chosen first-frame file is replaced; after approval, `apply_result_application`
+   binds the saved asset ID without an upload or a stored file path, and status
+   `first_frame` reports `bound` or `failed`. `render_form` then reports an empty
+   `first_frame_path` and the slot's `source_result`.
 4. An empty look with automatic Spark enabled requires a separate
    `estimate_prompt(lane=..., action=GENERATE)` and explicit `approve_prompt`
    with its exact approved cost. The shared pump delivers the look only to the
-   unchanged form. Render Video Spark requires the uploaded first frame.
+   unchanged form. Render Video Spark requires the uploaded or handed-off first
+   frame.
 5. Call `estimate_cost` with the same lane/model and **omit `parameters`**. Show
    `cu_cost_exact`, obtain approval, then pass that exact string and `quote_id`
    to `generate`, again omitting `parameters`. Both tools rebuild the native
@@ -569,9 +583,15 @@ that slot without canceling or deleting its saved upload. Repeated preparation
 refuses an occupied slot, including uncertain uploads. Inspect saved progress
 before explicitly replacing a snapshot. A model change requires removing its
 old references first. `style_assets` replaces only unmarked style references;
-marked uploads require explicit removal. Optional scalar parameters accept null
+marked uploads require explicit removal. When the style input also takes the
+scene capture or an enabled first frame sent as a reference image, it keeps
+one slot free for each that is not prepared yet. Optional scalar parameters accept null
 to disable them; invalid edits fail before changing the form. Final quotes still
-validate conditional and one-of schema requirements.
+validate conditional and one-of schema requirements, and refuse two file inputs
+whose descriptions say they can't be combined. That guard reads description
+wording and checks file inputs only: a setting described as exclusive, such as
+Kling V3 Omni's `generateAudio` with a reference video, is still sent (see
+[known limitations](KNOWN_LIMITATIONS.md#creation-and-scene-application)).
 
 Inspection returns only the enabled parameters used by the render lane. Its
 `parameters` object can be passed back to `configure`, including numeric choices

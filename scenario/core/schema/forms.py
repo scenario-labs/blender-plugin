@@ -304,7 +304,7 @@ def _parameter_errors(schema, parameters, *, complete):
     if complete:
         values = schema_defaults(schema)
         values.update(parameters)
-        errors.extend(validate_requirements(parsed.specs, values, parsed.one_of))
+        errors.extend(validate_requirements(parsed.specs, values, parsed.one_of, parsed.exclusive))
     return errors
 
 

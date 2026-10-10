@@ -13,7 +13,7 @@ import pytest
 
 from scenario.core.api.sdk_adapter import Credentials, SDKAdapter
 from scenario.core.schema.forms import prepare_run, validate_parameters
-from scenario.core.schema.params import parse_schema, validate
+from scenario.core.schema.params import clause_inputs, exclusive_clauses, parse_schema, validate
 
 FIXTURES = Path(__file__).parents[1] / "fixtures/models"
 
@@ -422,3 +422,196 @@ def test_blank_trigger_does_not_require_dependent_but_self_alternative_does():
     }
     with pytest.raises(ValueError, match="Provide one"):
         prepare_run("base", schema, {})
+
+
+# No schema field marks inputs that cannot be sent together. These models say so
+# only in input descriptions (wording checked against live schemas on 2026-10-10).
+# The service still quotes such a body and accepts the job, which then fails.
+SEEDANCE_MINI_WORDING = [
+    {"name": "prompt", "type": "string", "prompt": True},
+    {
+        "name": "image",
+        "type": "file",
+        "kind": "image",
+        "label": "First Frame",
+        "description": "An image to use as the video's opening frame. "
+        "Can’t be combined with reference images or videos.",
+    },
+    {
+        "name": "referenceImages",
+        "type": "file_array",
+        "kind": "image",
+        "label": "Reference Images",
+        "description": "Images to guide the video's subjects and style (up to 9). "
+        "Can't be combined with a first frame.",
+    },
+    {
+        "name": "referenceVideos",
+        "type": "file_array",
+        "kind": "video",
+        "label": "Reference Videos",
+        "description": "Videos to guide the motion and style (up to 3). "
+        "Can't be combined with a first frame.",
+    },
+]
+WAN_GENERIC_REFERENCES = [
+    {"name": "image", "type": "file", "kind": "image", "label": "First Frame"},
+    {
+        "name": "endImage",
+        "type": "file",
+        "kind": "image",
+        "label": "Last Frame",
+        "description": "An optional closing frame. Only works when a first frame is also set. "
+        "Can't be combined with reference inputs.",
+    },
+    {"name": "referenceImages", "type": "file_array", "kind": "image", "label": "Reference Images"},
+    {"name": "referenceVideos", "type": "file_array", "kind": "video", "label": "Reference Videos"},
+]
+
+
+def parsed_inputs(inputs):
+    return parse_schema(SimpleNamespace(parameters=inputs, ui_config={}))
+
+
+@pytest.mark.parametrize(
+    "inputs,pairs",
+    [
+        (
+            model("model_bytedance-seedance-2-0")["inputs"],
+            [("image", "referenceImages"), ("image", "referenceVideos")],
+        ),
+        (
+            model("model_minimax-h3")["inputs"],
+            [
+                (first, reference)
+                for first in ("firstFrameImage", "lastFrameImage")
+                for reference in ("referenceAudio", "referenceImages", "referenceVideos")
+            ],
+        ),
+        (SEEDANCE_MINI_WORDING, [("image", "referenceImages"), ("image", "referenceVideos")]),
+        (
+            WAN_GENERIC_REFERENCES,
+            [("endImage", "referenceImages"), ("endImage", "referenceVideos")],
+        ),
+    ],
+)
+def test_described_exclusivity_pairs_frames_with_reference_inputs(inputs, pairs):
+    parsed = parsed_inputs(inputs)
+    assert parsed.exclusive == sorted(tuple(sorted(pair)) for pair in pairs)
+    first, second = pairs[0]
+    assert parsed.excludes(first, second) and parsed.excludes(second, first)
+
+
+def test_undeclared_or_non_file_exclusivity_is_not_inferred():
+    render_to_real = [
+        {"name": "video", "type": "file", "kind": "video", "label": "Input Video"},
+        {
+            "name": "image",
+            "type": "file",
+            "kind": "image",
+            "label": "First Frame Image",
+            "description": "An optional photo to set the realistic look of the opening frame.",
+        },
+    ]
+    setting = [
+        {"name": "referenceVideo", "type": "file", "kind": "video", "label": "Reference Video"},
+        {
+            "name": "generateAudio",
+            "type": "boolean",
+            "label": "Generate Audio",
+            "description": "Generate native audio. Mutually exclusive with reference video.",
+        },
+    ]
+    for inputs in (render_to_real, setting):
+        parsed = parsed_inputs(inputs)
+        assert parsed.exclusive == []
+        assert not parsed.excludes(inputs[0]["name"], inputs[1]["name"])
+
+
+def test_described_exclusive_inputs_fail_closed_before_dispatch():
+    record = model("model_bytedance-seedance-2-0")
+    schema = {"parameters": record["inputs"]}
+    invalid = {"prompt": "fixture", "image": "frame", "referenceVideos": ["clip"]}
+    valid = {"prompt": "fixture", "referenceImages": ["frame"], "referenceVideos": ["clip"]}
+    calls = []
+
+    def respond(request):
+        calls.append(request)
+        return httpx.Response(200, json={"creativeUnitsCost": 1})
+
+    message = "First Frame can't be combined with Reference Videos"
+    assert any(message in error for error in validate_parameters(schema, invalid))
+    with pytest.raises(ValueError, match=message):
+        prepare_run(record["id"], schema, invalid)
+    with SDKAdapter(
+        Credentials("fixture-key", "fixture-secret"),
+        online=lambda: True,
+        transport=httpx.MockTransport(respond),
+    ) as adapter:
+        with pytest.raises(ValueError, match=message):
+            adapter.estimate_model(record, invalid)
+        assert calls == []
+        quote = adapter.estimate_model(record, valid)
+    parsed = parsed_inputs(record["inputs"])
+    assert any(
+        message in error
+        for error in validate(parsed.specs, invalid, parsed.one_of, parsed.exclusive)
+    )
+    assert validate(parsed.specs, valid, parsed.one_of, parsed.exclusive) == []
+    assert len(calls) == 1
+    sent = json.loads(calls[0].content)
+    assert "image" not in sent
+    assert (sent["referenceImages"], sent["referenceVideos"]) == (["frame"], ["clip"])
+    assert quote.payload == sent
+
+
+def test_exclusivity_clauses_name_settings_but_only_file_pairs_are_guarded():
+    inputs = [
+        {"name": "referenceVideo", "type": "file", "kind": "video", "label": "Reference Video"},
+        {
+            "name": "referenceImages",
+            "type": "file_array",
+            "kind": "image",
+            "label": "Reference Images",
+        },
+        {
+            "name": "generateAudio",
+            "type": "boolean",
+            "label": "Generate Audio",
+            "default": False,
+            "description": "Generate native audio. Mutually exclusive with reference video.",
+        },
+    ]
+    parsed = parsed_inputs(inputs)
+    audio = parsed.by_name("generateAudio")
+    (clause,) = exclusive_clauses(audio.description)
+    assert [spec.name for spec in clause_inputs(audio, parsed.specs, clause)] == ["referenceVideo"]
+    # The guard pairs file inputs only: a setting is never refused, whatever its value.
+    assert parsed.exclusive == []
+    for generate_audio in (False, True):
+        body = {"referenceVideo": "clip", "generateAudio": generate_audio}
+        assert validate(parsed.specs, body, parsed.one_of, parsed.exclusive) == []
+
+
+def test_reference_fallback_names_file_inputs_only():
+    inputs = [
+        {
+            "name": "endImage",
+            "type": "file",
+            "kind": "image",
+            "label": "Last Frame",
+            "description": "Can't be combined with reference inputs.",
+        },
+        {
+            "name": "referenceImages",
+            "type": "file_array",
+            "kind": "image",
+            "label": "Reference Images",
+        },
+        {"name": "referenceStrength", "type": "number", "label": "Strength"},
+    ]
+    parsed = parsed_inputs(inputs)
+    end = parsed.by_name("endImage")
+    (clause,) = exclusive_clauses(end.description)
+    assert [spec.name for spec in clause_inputs(end, parsed.specs, clause)] == ["referenceImages"]
+    assert parsed.exclusive == [("endImage", "referenceImages")]

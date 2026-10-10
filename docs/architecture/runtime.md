@@ -212,7 +212,10 @@ must be uploaded before pricing/submission. Local MCP now uses the
 generation forms expose **Upload reference** for typed local files and image
 stills, with guarded lane/input attachment and saved inspection.
 Render forms prepare scene snapshots and optional first-frame uploads in
-explicit role-bound slots. Saved video/audio, GLB models, material maps and supported
+explicit role-bound slots. Local MCP can also hand one downloaded saved PNG,
+JPEG or WebP result to the Render Video first-frame slot by reusing its asset
+ID, without an upload or a stored file path; see the
+[handoff command](../BLENDER_JOB_CONTEXT.md#saved-image-to-render-video-first-frame). Saved video/audio, GLB models, material maps and supported
 mesh edits use explicit destination approval through the shared session; their
 format and target limits are described below and in the application guides.
 Explicit viewport/camera clips and selected-mesh GLB uploads now share the typed
@@ -247,8 +250,8 @@ review-required state or timeout, and rejects a changed credential context.
 An unresumed restarted record is returned immediately.
 Native model forms no longer dispatch through the prototype manager. Files,
 captures and Spark preparation must finish before the final quote. Render forms
-require uploaded scene/first-frame snapshots, then use the same quote and submit
-path. An empty look with automatic Spark enabled remains blocked; users can enter
+require an uploaded scene snapshot and, when enabled, an uploaded or handed-off
+first frame, then use the same quote and submit path. An empty look with automatic Spark enabled remains blocked; users can enter
 a look or disable automatic Spark for the default look. Non-image model jobs now
 use the same durable submission, polling, download, cancellation and recovery
 commands. They stop at saved `ready` results without automatically assigning
@@ -324,7 +327,7 @@ and environments.
 | Worker ownership | [RuntimeState](../../scenario/blender/runtime.py) selects one active session; its [workers](../../scenario/core/jobs/workers.py) outlive panel closure. Retirement stops admission while old owners retain in-flight persistence and cleanup. | Retired owners cannot deliver into a replacement connection or scene; cleanup failures may retain ownership for retry. |
 | Origin and stale-result protection | [JobSession](../../scenario/blender/job_session.py) binds entry points to the selected credentials/project and captured scene/target. Restart recovery uses fresh context and destination approval. | Saved names or IDs cannot restore live scene authority; see the [context contract](../BLENDER_JOB_CONTEXT.md). |
 | Result downloads | [ModelJobs](../../scenario/blender/model_jobs.py) drives saved manifests, bounded transfers and explicit interrupted-download recovery for model lanes. [Transfers](../RESULT_TRANSFERS.md) retain verified receipts and configured storage hosts. | Only admitted Image jobs automatically apply supported images to their original scene; other model results need explicit destination approval. Unsupported formats and uncertain states remain saved for inspection. |
-| Application claims | Native [saved-job controls](../../scenario/blender/job_recovery.py) and [MCP result commands](../MCP.md) prepare and apply image, media, GLB, material, World and supported mesh-edit destinations through ModelJobs/JobSession. Claims precede scene mutation; known receipt retries do not repeat it. | Restarted uncertain claims require inspection. Format, target, rollback and undo limits differ by application; no atomic blend-file save is promised. |
+| Application claims | Native [saved-job controls](../../scenario/blender/job_recovery.py) and [MCP result commands](../MCP.md) prepare and apply image, media, GLB, material, World and supported mesh-edit destinations through ModelJobs/JobSession. Claims precede scene mutation; known receipt retries do not repeat it. MCP's Render Video first-frame handoff is a form binding: it verifies the saved image but takes no claim and leaves the job state unchanged. | Restarted uncertain claims require inspection. Format, target, rollback and undo limits differ by application; no atomic blend-file save is promised. The first-frame handoff has no native control yet. |
 | Prompt Spark | [Prompt commands](../SDK_ADOPTION.md#prompt-spark-command-boundary) use exact quotes, durable submission and complete text recovery on the shared workers. Native/MCP New, Rewrite and Translate require unchanged-field approval; render preparation has a separate Spark approval. | Live provider acceptance remains; Spark approval does not authorize the subsequent render generation. |
 | Uploads | [Reference uploads](../SDK_UPLOADS.md) use private staging, signed storage transfers and durable SDK commands on the shared workers. Native/MCP recovery and saved-reference attachment require the selected scope and fresh destination approval. | Workflow direct-file upload integration and live upload/result journeys remain open. |
 | Model forms | [Schema forms](../../scenario/core/schema/forms.py) validate adopted model inputs before shared pricing and submission. | Trained/custom-model discovery and verified routing remain under #97. |

@@ -361,7 +361,12 @@ Their role is part of asynchronous attachment and saved-confirmation guards.
 A disabled first-frame slot is omitted from generation while its upload retains
 its independent lifetime; changing the chosen path requires a new preparation.
 Requests require one uploaded scene slot in the current model input and place it
-before style references. Automatic Spark and non-image result application remain
+before style references. A Render Video first frame goes to the model's
+first-frame input, or first in its reference-image array when the model has no
+such input or says its first frame can't be combined with the scene clip. A Render Video first frame
+[handed from a saved image result](BLENDER_JOB_CONTEXT.md#saved-image-to-render-video-first-frame)
+needs no upload: it reuses that result's existing asset ID under the same scope,
+asset and kind markers, with no upload marker or local file path. Automatic Spark and non-image result application remain
 separate integration; preparation does not establish their acceptance.
 
 The upload kind and final file extension must match the local format policy.

@@ -4,11 +4,40 @@
 
 import os
 import sys
+import traceback
 import types
 
 import pytest
 
 from scenario.mcp import sandbox
+
+_DIVE = "def dive(depth):\n    return dive(depth + 1)\n"
+_LEAVE = "def leave():\n    import sys\n    sys.exit(3)\n"
+_FAILURES = {
+    "raise": ("def place():\n    raise ValueError('agent failure')\nplace()\n", False),
+    "raise-from": (
+        "def load():\n    {}['missing']\n"
+        "try:\n    load()\nexcept KeyError as exc:\n    raise ValueError('wrapped') from exc\n",
+        False,
+    ),
+    "implicit-context": (
+        "def load():\n    {}['missing']\n"
+        "try:\n    load()\nexcept KeyError:\n    raise ValueError('while handling')\n",
+        False,
+    ),
+    "blocked-exit": (_LEAVE + "leave()\n", False),
+    "group-member": (
+        _LEAVE + "try:\n    leave()\nexcept RuntimeError as exc:\n"
+        "    raise ExceptionGroup('batch failed', [exc])\n",
+        False,
+    ),
+    "deep-recursion": (_DIVE + "dive(0)\n", True),
+    "deep-recursion-chained": (
+        _DIVE + "try:\n    dive(0)\nexcept RecursionError as exc:\n"
+        "    raise ValueError('too deep') from exc\n",
+        True,
+    ),
+}
 
 
 @pytest.fixture
@@ -61,3 +90,51 @@ def test_chained_errors_keep_agent_context_without_installed_sandbox_frame(fake_
     assert "KeyError: 'missing'" in error and "During handling of the above exception" in error
     assert error.rstrip().endswith("ValueError: agent failure")
     _assert_agent_frames_only(error)
+
+
+def _full_walk(exc, limit=4):
+    """Reference text: extract every frame of every chain link, then keep the agent's first ones.
+
+    Returns the text, the number of formatted exceptions and the number of frames a full walk
+    extracts.
+    """
+    report = traceback.TracebackException(type(exc), exc, exc.__traceback__)
+    pending, seen, extracted = [report], set(), 0
+    while pending:
+        item = pending.pop()
+        if item is None or id(item) in seen:
+            continue
+        seen.add(id(item))
+        extracted += len(item.stack)
+        frames = [frame for frame in item.stack if frame.filename != sandbox.__file__]
+        item.stack = traceback.StackSummary.from_list(frames[:limit])
+        pending += [item.__cause__, item.__context__, *(item.exceptions or ())]
+    return "".join(report.format()), len(seen), extracted
+
+
+@pytest.mark.parametrize(("code", "deep"), _FAILURES.values(), ids=list(_FAILURES))
+def test_traceback_extraction_is_bounded_and_matches_a_full_walk(fake_bpy, monkeypatch, code, deep):
+    failures, built = [], []
+    agent_traceback, frame_init = sandbox._agent_traceback, traceback.FrameSummary.__init__
+
+    def recording(exc):
+        failures.append(exc)
+        return agent_traceback(exc)
+
+    def counting_init(self, *args, **kwargs):
+        built.append(1)
+        frame_init(self, *args, **kwargs)
+
+    monkeypatch.setattr(sandbox, "_agent_traceback", recording)
+    monkeypatch.setattr(traceback.FrameSummary, "__init__", counting_init)
+    error = sandbox.run_python(code)["error"]
+    extracted = len(built)
+
+    (exc,) = failures
+    expected, exceptions, full_walk_frames = _full_walk(exc)
+    assert error == f"{type(exc).__name__}: {exc}\n{expected}"
+    _assert_agent_frames_only(error)
+    # run_python's own frame leads the traceback; at most four agent frames follow it.
+    assert extracted <= exceptions * (4 + 1)
+    if deep:
+        assert full_walk_frames > 10 * exceptions * (4 + 1)

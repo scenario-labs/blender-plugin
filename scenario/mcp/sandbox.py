@@ -44,12 +44,20 @@ def blocked_token(code):
 
 
 def _agent_traceback(exc, limit=4):
-    """Format exc and its chain with the agent's frames only.
+    """Format exc, its cause/context chain and group members with the agent's frames only.
 
     This module's own frames (run_python, the sys.exit guard) would show the installed
     extension's absolute path, which names the user's home and Blender profile.
+
+    Extraction stops early so a deep RecursionError does not read every frame's source line.
+    This module's frames lead a traceback (run_python) or end it (the guard), so extracting
+    limit frames past the leading ones keeps the same first agent frames as a full walk.
+    TracebackException applies that limit to each chained exception and group member too.
     """
-    report = traceback.TracebackException(type(exc), exc, exc.__traceback__)
+    leading, tb = 0, exc.__traceback__
+    while tb is not None and tb.tb_frame.f_code.co_filename == __file__:
+        leading, tb = leading + 1, tb.tb_next
+    report = traceback.TracebackException(type(exc), exc, exc.__traceback__, limit=limit + leading)
     pending, seen = [report], set()
     while pending:
         item = pending.pop()
@@ -58,7 +66,7 @@ def _agent_traceback(exc, limit=4):
         seen.add(id(item))
         frames = [frame for frame in item.stack if frame.filename != __file__]
         item.stack = traceback.StackSummary.from_list(frames[:limit])
-        pending += [item.__cause__, item.__context__]
+        pending += [item.__cause__, item.__context__, *(item.exceptions or ())]
     return "".join(report.format())
 
 

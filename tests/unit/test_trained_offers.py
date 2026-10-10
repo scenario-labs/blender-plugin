@@ -388,6 +388,53 @@ def test_requested_picks_refuse_what_no_form_could_send(parameters, message):
         trained_offers.requested_picks(slot, parameters)
 
 
+def test_placement_refuses_a_trained_model_named_in_the_other_lora_input():
+    """apply routes by kind; a request names its input, so a wrong one is refused, not moved.
+
+    The service refuses a composition in the stack input (#374 check_composition_in_loras).
+    """
+    slot = LoraSlot.from_record(BASES[FLUX1])
+    listed = {model_id: record(PUBLIC[model_id]) for model_id in (LORA_A, COMPOSITION)}
+    check = trained_offers.placement_error
+    assert check(slot, (Pick(LORA_A, 0.8),), listed, composition=False) == ""
+    assert check(slot, (Pick(COMPOSITION),), listed, composition=True) == ""
+    assert check(slot, (), listed, composition=False) == ""
+    assert check(slot, (Pick("model_gone"),), listed, composition=False) == ""  # apply refuses it
+    stacked = (
+        "Flux LoRA [{}] is a composition; Flux LoRA accepts flux.1-lora. "
+        "Use it alone in LoRA or Composition Model, without a strength."
+    )
+    assert check(slot, (Pick(COMPOSITION),), listed, composition=False) == stacked.format(1)
+    assert check(slot, (Pick(COMPOSITION, 0.8),), listed, composition=False) == stacked.format(1)
+    two = (Pick(LORA_A, 0.5), Pick(COMPOSITION, 0.5))
+    assert check(slot, two, listed, composition=False) == stacked.format(2)
+    assert check(slot, (Pick(LORA_A),), listed, composition=True) == (
+        "LoRA or Composition Model is a LoRA. Add it to Flux LoRA with a strength instead."
+    )
+    # No hint toward a composition input that is absent or does not take this composition.
+    for base in (KONTEXT, FLUX2):
+        other = LoraSlot.from_record(BASES[base])
+        message = check(other, (Pick(COMPOSITION),), listed, composition=False)
+        assert message == (
+            f"{other.model_label} [1] is a composition; {other.model_label} accepts "
+            f"{', '.join(other.model_types)}."
+        )
+
+
+def test_a_model_without_inputs_gets_a_final_reason_naming_its_route():
+    reason = trained_offers.no_inputs_reason
+    assert reason(catalog.TRAINED_LORA) == (
+        "This model is a LoRA: it has no inputs of its own and runs only through a base model "
+        "that accepts LoRAs"
+    )
+    assert reason(catalog.TRAINED_COMPOSITION) == (
+        "This model is a composition: it has no inputs of its own and runs only through a base "
+        "model that accepts compositions"
+    )
+    for kind in (None, catalog.PRIVATE_CUSTOM, catalog.TRAINED_UNSUPPORTED):
+        assert reason(kind) == "This model declares no inputs, so it cannot run; choose another"
+
+
 def test_picks_from_list_take_model_ids_and_optional_strengths():
     read = trained_offers.picks_from_list
     assert read([]) == ()

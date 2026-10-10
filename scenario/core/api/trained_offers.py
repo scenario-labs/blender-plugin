@@ -29,9 +29,11 @@ __all__ = [
     "describe_slot",
     "lora_bases",
     "merged",
+    "no_inputs_reason",
     "offers",
     "picks_from_list",
     "picks_from_payload",
+    "placement_error",
     "requested_picks",
     "runs",
     "saved_ids",
@@ -382,6 +384,57 @@ def requested_picks(slot, parameters):
         Pick(item, strength_value(value, slot.scale_label))
         for item, value in zip(loras, scales, strict=True)
     )
+
+
+def placement_error(slot, picks, records, *, composition):
+    """Why a request names a listed trained model in the other LoRA input, or "".
+
+    trained_routes.apply routes each pick by its kind, which suits a form's
+    choice. A request names its input, and the service refuses a LoRA in a
+    composition-only position and a composition in the stack input (#374), as
+    the quote check does. So a model in the wrong input is refused, never moved.
+    `records` maps listed IDs to records; `composition` says the picks came from
+    the composition input. An unlisted pick is left to apply, which refuses it.
+    """
+    for index, pick in enumerate(picks, 1):
+        record = records.get(pick.model_id)
+        kind = catalog.trained_kind(record) if record is not None else None
+        if composition and kind == catalog.TRAINED_LORA:
+            return (
+                f"{slot.model_id_label} is a LoRA. Add it to {slot.model_label} with a strength "
+                "instead."
+            )
+        if not composition and kind == catalog.TRAINED_COMPOSITION:
+            hint = (
+                f" Use it alone in {slot.model_id_label}, without a strength."
+                if slot.model_id_input and record.type in slot.model_id_types
+                else ""
+            )
+            return (
+                f"{slot.model_label} [{index}] is a composition; {slot.model_label} accepts "
+                f"{', '.join(slot.model_types)}.{hint}"
+            )
+    return ""
+
+
+def no_inputs_reason(kind):
+    """The final reason a model whose record declares no inputs cannot be the target.
+
+    `kind` is catalog.trained_kind of its record. A LoRA or composition has no
+    inputs of its own and runs only through a base model's LoRA inputs. Reading
+    the description again returns the same record, so this answer never waits.
+    """
+    if kind == catalog.TRAINED_LORA:
+        return (
+            "This model is a LoRA: it has no inputs of its own and runs only through a base "
+            "model that accepts LoRAs"
+        )
+    if kind == catalog.TRAINED_COMPOSITION:
+        return (
+            "This model is a composition: it has no inputs of its own and runs only through a "
+            "base model that accepts compositions"
+        )
+    return "This model declares no inputs, so it cannot run; choose another"
 
 
 def picks_from_list(items):

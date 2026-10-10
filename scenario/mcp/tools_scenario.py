@@ -14,7 +14,7 @@ from ..blender import generation, runtime, trained_defaults, trained_models
 from ..blender import result_previews as preview_tiles
 from ..blender.props import GENERATION_LANES as NATIVE_LANES
 from ..core import audio_waveform
-from ..core.api import trained_offers
+from ..core.api import catalog, trained_offers
 from ..core.api.catalog import GENERATION_LANES as LANES
 from ..core.api.catalog import models_for_lane
 from ..core.api.errors import ScenarioError
@@ -152,8 +152,32 @@ def _item_count(raw, *names):
     return int(value) if value == int(value) else None
 
 
+_TRAINED_ROUTE = (
+    "Call list_models(source=trained) for its routes, then pass the route's base as model_id "
+    "with this ID in the route's model_input"
+)
+TRAINED_TARGET_HELP = {
+    catalog.TRAINED_LORA: f"{_TRAINED_ROUTE} and a strength in its scale_input.",
+    catalog.TRAINED_COMPOSITION: f"{_TRAINED_ROUTE}, without a strength.",
+}
+
+
+def _described(model_id):
+    """generation.ensure_record; a LoRA or composition is refused with its route, finally.
+
+    It has no inputs of its own, so polling for its description would never end.
+    """
+    try:
+        return generation.ensure_record(model_id)
+    except generation.WithoutInputs as error:
+        help_text = TRAINED_TARGET_HELP.get(error.kind)
+        if help_text is None:
+            raise
+        raise ScenarioError(0, f"{error.reason}. {help_text}") from None
+
+
 def model_schema(args):
-    record = generation.ensure_record(args["model_id"])
+    record = _described(args["model_id"])
     schema = generation.schema_for(record.id)
     inputs = {
         raw.get("name"): raw
@@ -226,7 +250,7 @@ def _body_for(model_id, parameters, *, lane="image"):
         contract = panorama_contract.contract_for(model_id)
         if contract is None:
             raise ValueError("Use a verified panorama model from list_models(lane=panorama)")
-    record = generation.ensure_record(model_id)
+    record = _described(model_id)
     schema = generation.schema_for(record.id)
     parameters = dict(parameters or {})
     # A base's LoRA inputs are read strictly and rebuilt by trained_routes.apply,
@@ -3557,7 +3581,7 @@ SPECS = (
         (
             "Read the model's current form parameters for this Blender extension.\n"
             "Args:\n"
-            "  - model_id: required string, the exact model identifier from list_models.\n"
+            "  - model_id: required string, the exact model identifier from list_models. A LoRA or composition has no inputs of its own: it is refused with how to run it through a base from list_models(source=trained) routes.\n"
             "Returns: model_id, name, prompt_parameter, parameters[] with name, type, label, required, default, allowed_values, range (per item for number arrays), cost_impact, file_kind, model_types, min_items/max_items for arrays and role (lora_models, lora_strengths or composition) when present, and lora_component: the base's LoRA inputs (model_input, scale_input, model_id_input, model_types, model_id_types, min_items, max_items, scale_range, scale_step, scale_default) or null; lora_component_error explains a malformed one. File parameters take Scenario asset ids.\n"
             'Example: {"model_id": "model_example"}.\n'
             "Prefer this before estimate_cost; do not guess parameter names or supported inputs. No LoRA strength is invented: pass one per LoRA within scale_range, at most 4 decimals, as the native strength fields send.\n"

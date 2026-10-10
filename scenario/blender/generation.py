@@ -9,15 +9,18 @@ from dataclasses import dataclass, field
 
 import bpy
 
+from ..core.api import trained_offers
 from ..core.api.catalog import (
     DEFAULT_MODELS,
     LANE_KIND,
     MULTIVIEW_HINTS,
     RENDER_LANES,
+    USABLE_TRAINED_KINDS,
     edit3d_models,
     lane_kind,
     mesh_param,
     models_for_lane,
+    trained_kind,
 )
 from ..core.api.errors import ScenarioError
 from ..core.jobs.coordinator import RouteQuoteError
@@ -464,15 +467,29 @@ def request_models(model_ids, *, mark_dirty=True):
     manager.fetch_models(catalog, list(model_ids), mark_dirty=mark_dirty)
 
 
+class WithoutInputs(ScenarioError):
+    """A model whose record declares no inputs: a final answer that no new read changes."""
+
+    def __init__(self, record):
+        self.kind = trained_kind(record)
+        super().__init__(0, trained_offers.no_inputs_reason(self.kind))
+
+
 def ensure_record(model_id, *, mark_dirty=True):
     """Read the selected connection's cache or queue a description for UI/MCP.
 
     Both entry points run on the main thread and retry after asynchronous delivery.
+    A listed LoRA or composition, or a completed description without inputs,
+    raises WithoutInputs instead: reading it again would return the same record,
+    so callers polling a "Loading" answer would never finish.
     """
     process_catalog_events()
     record = runtime.state.records.get(model_id)
     if record is not None and record.parameters:
         return record
+    listed = runtime.state.trained_records.get(model_id) or record
+    if listed is not None and trained_kind(listed) in USABLE_TRAINED_KINDS:
+        raise WithoutInputs(listed)
     catalog = runtime.ensure_catalog()
     cached = catalog.load_cached(model_id)
     if cached is not None and cached.parameters:
@@ -480,6 +497,8 @@ def ensure_record(model_id, *, mark_dirty=True):
         _schemas.pop(model_id, None)
         _clear_model_failures((model_id,))
         return cached
+    if cached is not None:
+        raise WithoutInputs(cached)  # this connection already read its description
     failure = runtime.state.model_errors.get(model_id)
     refusal = _start_model_read(model_id, mark_dirty)
     if refusal:

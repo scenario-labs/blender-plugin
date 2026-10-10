@@ -682,8 +682,12 @@ inputs as `lora_component`; its parameters carry `model_types`,
 `composition`).
 
 A trained model is never the generation target; it runs through a base model from
-its routes. In the Image lane, pass the base as `model_id` and the trained models
-in its own inputs, for example
+its routes. A LoRA or composition has no inputs of its own, so `model_schema`,
+`estimate_cost` and `generate` refuse its ID as `model_id` with a final answer that
+points to those routes: a listed one before any request, an unlisted one after its
+single description read. Any other description without inputs gets the same final
+refusal; neither is read again. In the Image lane, pass the base as `model_id` and
+the trained models in its own inputs, for example
 `{"prompt": "...", "loras": ["model_a", "model_b"], "lorasScale": [0.8, 1.25]}`,
 or `{"prompt": "...", "modelId": "model_c"}` for a composition. `estimate_cost`
 and `generate` read these inputs strictly and rebuild them with
@@ -695,7 +699,10 @@ refuse is refused before any request:
 - a missing strength (no captured base declares a default), a strength outside
   the declared range or with more than four decimals, or strengths that do not
   line up one per LoRA;
-- a LoRA in the composition input, or a composition combined with LoRAs.
+- a LoRA in the composition input, a composition in the LoRA input (with or
+  without a strength), or a composition combined with LoRAs. A model in the other
+  input is refused, never moved: the service refuses a composition in the LoRA
+  input.
 
 Other lanes refuse these inputs. The quote then reads every chosen model again,
 as it does for the form. For Render Image, `render_form` `configure` takes

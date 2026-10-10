@@ -698,8 +698,9 @@ def apply_picks(record, requested, body):
 
     Raises ScenarioError while the trained list is not loaded, and RouteError
     for a choice the base's current schema refuses, before any request. A LoRA
-    named in the composition input is refused, as the quote check refuses it,
-    rather than moved into the stack.
+    named in the composition input, or a composition named in the stack input,
+    is refused, as the service and the quote check refuse it, rather than moved
+    into the input apply would route it to.
     """
     picks = requested.picks
     if picks:
@@ -707,12 +708,11 @@ def apply_picks(record, requested, body):
         if reason:
             raise ScenarioError(0, reason)
     slot = LoraSlot.from_record(record.raw)
-    kinds = {item.id: kind for kind, item in runtime.state.trained_pairs}
-    if requested.composition and kinds.get(picks[0].model_id) == catalog.TRAINED_LORA:
-        raise RouteError(
-            f"{slot.model_id_label} is a LoRA. Add it to {slot.model_label} with a strength "
-            "instead."
-        )
+    misplaced = trained_offers.placement_error(
+        slot, picks, runtime.state.trained_records, composition=requested.composition
+    )
+    if misplaced:
+        raise RouteError(misplaced)
     result = apply(record.raw, picks, runtime.state.trained_records, body)
     _strengths_drawable(slot, picks)
     return result

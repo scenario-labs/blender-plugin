@@ -456,13 +456,18 @@ trained list through `SDKAdapter.models(privacy="private")`
 selected project), read again only after a failed read, and the lane's unknown
 base-model descriptions through `SDKCatalog.get` (`SDKAdapter.model`,
 `models.with_raw_response.retrieve` with the selected project), once per
-connection. `model_schema` reads a description the same way. `estimate_cost`
-rebuilds a base's LoRA inputs with `trained_routes.apply` from the listed records
-before the unchanged quote: the fresh reads above, then
-`generate.with_raw_response.run_model` with `dry_run="true"`; `generate` submits
-through the same coordinator with `max_retries=0`. A refused choice makes no
-request. `model_defaults` reads and writes only the local job store, and checks a
-new default against the descriptions and trained list already read, starting one
+connection. `model_schema` reads a description the same way. A LoRA or composition
+ID given as `model_id` makes no read when it is listed and one at most otherwise:
+`generation.ensure_record` treats a listed trained model, or a description this
+connection already read without inputs, as final instead of reading it again on
+every call. `estimate_cost` rebuilds a base's LoRA inputs with
+`trained_routes.apply` from the listed records before the unchanged quote: the
+fresh reads above, then `generate.with_raw_response.run_model` with
+`dry_run="true"`; `generate` submits through the same coordinator with
+`max_retries=0`. A refused choice makes no request, including a composition named
+in the LoRA input, which is refused rather than sent in the composition input.
+`model_defaults` reads and writes only the local job store, and checks a new
+default against the descriptions and trained list already read, starting one
 missing base description read like a form's default does.
 
 The same choice through the form and through MCP builds byte-identical payloads,

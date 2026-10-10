@@ -227,6 +227,98 @@ class McpTrainedModelTests(unittest.TestCase):
             self.runtime.state.model_jobs.quotes if self.runtime.state.model_jobs else {}, {}
         )
 
+    def test_a_composition_in_the_lora_stack_is_refused_not_moved(self):
+        """The service refuses it in that input (#374); it is never sent in modelId instead."""
+        self.load_catalog()
+        self.open_trained()  # reads the FLUX.1 Dev description
+        quote = self.mcp_estimate({"prompt": PROMPT})  # a plain quote for the generate case
+        self.calls.clear()
+        self.posts.clear()
+        stacked = (
+            "Flux LoRA [{}] is a composition; Flux LoRA accepts flux.1-lora. "
+            "Use it alone in LoRA or Composition Model, without a strength."
+        )
+        cases = [
+            ({"loras": [COMPOSITION]}, stacked.format(1)),
+            ({"loras": [COMPOSITION], "lorasScale": [0.8]}, stacked.format(1)),
+            ({"loras": [LORA_A, COMPOSITION], "lorasScale": [0.5, 0.5]}, stacked.format(2)),
+        ]
+        approval = {"quote_id": quote["quote_id"], "approved_cost": quote["cu_cost_exact"]}
+        for parameters, message in cases:
+            request = {"model_id": FLUX1, "parameters": {"prompt": PROMPT, **parameters}}
+            with self.subTest(parameters=parameters):
+                for tool, args in (
+                    (self.tools.estimate_cost, request),
+                    (self.tools.generate, {**request, "lane": "image", **approval}),
+                ):
+                    with self.assertRaises((ValueError, self.error)) as caught:
+                        tool(args)
+                    self.assertEqual(str(caught.exception), message)
+                    self.assertNotIn("remove the strength", str(caught.exception))
+        self.assertEqual(self.calls, [])  # no description, quote or any other request
+        self.assertEqual((self.posts, self.submitted), ([], []))
+        self.assertEqual(self.runtime.state.job_store.records(), ())
+
+    def test_a_trained_model_as_model_id_gets_a_final_refusal_without_repeated_reads(self):
+        """A LoRA or composition has no schema of its own; polling it must not loop on reads."""
+        route = (
+            "Call list_models(source=trained) for its routes, then pass the route's base as "
+            "model_id with this ID in the route's model_input"
+        )
+        lora = (
+            "This model is a LoRA: it has no inputs of its own and runs only through a base model "
+            f"that accepts LoRAs. {route} and a strength in its scale_input."
+        )
+        composition = (
+            "This model is a composition: it has no inputs of its own and runs only through a "
+            f"base model that accepts compositions. {route}, without a strength."
+        )
+        self.load_catalog()
+        self.calls.clear()
+
+        def calls(model_id):
+            return (
+                lambda: self.tools.model_schema({"model_id": model_id}),
+                lambda: self.tools.estimate_cost(
+                    {"model_id": model_id, "parameters": {"prompt": PROMPT}}
+                ),
+            )
+
+        # Listed private and public trained models are refused before any request.
+        for model_id, message in ((STUDIO_LORA, lora), (LORA_A, lora), (COMPOSITION, composition)):
+            with self.subTest(model_id=model_id):
+                for _ in range(2):
+                    for call in calls(model_id):
+                        self.assert_refused(call, message)
+                    self.settle()
+        self.assertEqual(self.calls, [])
+        # An unlisted LoRA (a composition's concept) is read once: its description has no
+        # inputs, so every later call gets the same final answer without another read.
+        concept = trained_tests.load(f"public/{COMPOSITION}.json")["concepts"][0]["modelId"]
+        self.assertNotIn(concept, self.runtime.state.trained_records)
+        with self.assertRaisesRegex(self.error, "Loading the model description"):
+            self.tools.model_schema({"model_id": concept})
+        self.settle()
+        for _ in range(3):
+            for call in calls(concept):
+                self.assert_refused(call, lora)
+            self.settle()
+        self.assertEqual(len(self.gets(concept)), 1)
+        # The same holds for any description without inputs; it is not a trained model.
+        plain = "model_no-inputs"
+        self.details[plain] = {"id": plain, "name": "No Inputs", "type": "custom"}
+        with self.assertRaisesRegex(self.error, "Loading the model description"):
+            self.tools.model_schema({"model_id": plain})
+        self.settle()
+        for _ in range(3):
+            for call in calls(plain):
+                self.assert_refused(
+                    call, "This model declares no inputs, so it cannot run; choose another"
+                )
+            self.settle()
+        self.assertEqual(len(self.gets(plain)), 1)
+        self.assertEqual(self.posts, [])
+
     def test_a_failed_trained_list_blocks_only_requests_that_name_trained_models(self):
         self.private_error = 500
         self.load_catalog()

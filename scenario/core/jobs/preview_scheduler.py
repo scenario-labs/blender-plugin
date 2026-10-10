@@ -93,7 +93,8 @@ class _Entry:
         self.window = None
         self.used = 0.0
         self.force = False
-        # An explicit retry received while this entry's batch was in flight.
+        # An explicit retry received while this entry's batch was in flight:
+        # its renditions already read queued; the restart follows that batch.
         self.retry = False
         # A rendition added while this entry's batch was in flight, so that
         # batch's final flag predates the new window.
@@ -240,20 +241,27 @@ class ResultPreviewScheduler:
     def retry(self, request_id, asset_id):
         """Explicitly fetch again, clearing a missing marker and the polling window.
 
-        While a lane batch for this result is in flight, the retry is recorded
-        and applied when that batch returns, so its late outcome cannot undo it.
+        Every rendition except unsupported ones and decoded previews being
+        published is queued at once, and its outstanding decode request is
+        withdrawn, so the returned snapshot and ``status`` report the retry.
+        While a lane batch for this result is in flight, the fetch waits for
+        it: the pump that collects that batch applies its outcome and queues
+        the renditions again in the same call, so a late outcome is never
+        reported as settled and cannot undo the retry.
         """
         self._check()
         entry = self._entries.get((request_id, asset_id))
         if entry is None:
             raise previews.PreviewError("Request a preview for this saved result first")
         if entry.inflight:
+            self._requeue(entry)
             entry.retry = True
         else:
             self._restart(entry, self._clock())
         return self._snapshot(entry)
 
-    def _restart(self, entry, now):
+    def _requeue(self, entry):
+        """Queue every rendition a retry fetches again and withdraw its decode requests."""
         self._release(entry)
         publishing = {
             request.rendition
@@ -263,6 +271,9 @@ class ResultPreviewScheduler:
         for rendition, status in tuple(entry.states.items()):
             if status.state != State.UNSUPPORTED and rendition not in publishing:
                 entry.states[rendition] = RenditionStatus(State.QUEUED)
+
+    def _restart(self, entry, now):
+        self._requeue(entry)
         entry.force, entry.retry, entry.attempts = True, False, 0
         entry.window, entry.used = None, 0.0
         entry.poll = entry.due = now

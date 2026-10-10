@@ -930,7 +930,9 @@ tag listing are not provided locally. The already-member refusal of an add (a
 yet checked live from this repository. Name uniqueness, DELETE body survival
 through the production edge, tag normalization and service limits are
 unverified live; a tag the service normalizes reads back as `UNCONFIRMED`.
-Native Library controls, desktop interaction and live acceptance
+Studio's [Library organization](UI_STYLE.md#library-organization) controls
+prepare and apply the same reviews, one asset at a time, and disable Organize
+on pages loaded with Public assets. Desktop interaction and live acceptance
 remain under [#64](https://github.com/scenario-labs/blender-plugin/issues/64),
 [#65](https://github.com/scenario-labs/blender-plugin/issues/65),
 [#66](https://github.com/scenario-labs/blender-plugin/issues/66) and

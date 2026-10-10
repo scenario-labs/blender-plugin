@@ -477,38 +477,49 @@ class SDKEstimateTests(unittest.TestCase):
             self.lane.estimate_error, "Flux LoRA [1] is not ready to use (status: training)."
         )
         self.assertFalse(self.runtime.state.estimates)
-        self.trained["fixture-lora"]["status"] = "trained"
-        reason = "LoRA or Composition Model is a LoRA. Add it to Flux LoRA with a strength instead."
         registry = submodule("blender.mcp_service").build_registry()
         server = submodule("mcp.server").McpServer(
             "127.0.0.1", 0, "fixture-token", registry, {}, timeout=5
         )
-        message = {
-            "id": 1,
-            "method": "tools/call",
-            "params": {
-                "name": "estimate_cost",
-                "arguments": {
-                    "model_id": self.model["id"],
-                    "parameters": {"prompt": "a teapot", "modelId": "fixture-lora"},
+
+        def mcp_refusal(parameters):
+            message = {
+                "id": 1,
+                "method": "tools/call",
+                "params": {
+                    "name": "estimate_cost",
+                    "arguments": {"model_id": self.model["id"], "parameters": parameters},
                 },
-            },
-        }
-        with ThreadPoolExecutor(max_workers=1) as worker:
-            result = worker.submit(server.handle, message)
-            deadline = time.monotonic() + 5
-            while not result.done() and time.monotonic() < deadline:
-                server.process_pending()
-                time.sleep(0.001)
-            response = result.result(1)
-        self.assertTrue(response["result"]["isError"], response)
+            }
+            with ThreadPoolExecutor(max_workers=1) as worker:
+                result = worker.submit(server.handle, message)
+                deadline = time.monotonic() + 5
+                while not result.done() and time.monotonic() < deadline:
+                    server.process_pending()
+                    time.sleep(0.001)
+                response = result.result(1)
+            self.assertTrue(response["result"]["isError"], response)
+            return response["result"]["content"][0]["text"]
+
+        # The same listed LoRA passes MCP's local checks, so its quote reads it fresh too.
+        stack = {"prompt": "a teapot", "loras": ["fixture-lora"], "lorasScale": [0.8]}
+        self.assertIn(
+            "RouteQuoteError: Flux LoRA [1] is not ready to use (status: training).",
+            mcp_refusal(stack),
+        )
+        self.trained["fixture-lora"]["status"] = "trained"
+        reason = "LoRA or Composition Model is a LoRA. Add it to Flux LoRA with a strength instead."
         # MCP checks a listed LoRA's kind like the form does, so it refuses before any request.
-        self.assertIn(f"RouteError: {reason}", response["result"]["content"][0]["text"])
+        self.assertIn(
+            f"RouteError: {reason}",
+            mcp_refusal({"prompt": "a teapot", "modelId": "fixture-lora"}),
+        )
         self.assertFalse([call for call in self.calls if call.method == "POST"])
-        # Only the form's quote read the base and the referenced model, then stopped.
+        # The form's and MCP's quotes each read the base and the LoRA, then stopped;
+        # the LoRA in the composition input made no request.
         self.assertEqual(
             [call.url.path.rsplit("/", 1)[1] for call in self.calls],
-            ["fixture-price", "fixture-lora"],
+            ["fixture-price", "fixture-lora"] * 2,
         )
 
     def test_a_missing_model_is_explained_and_other_failures_stay_generic(self):

@@ -225,8 +225,10 @@ def test_capture_reads_and_quotes_with_dry_runs_only(service, capsys):
         for _, path in calls
     )
     # Each case dry-runs once; accepted base routes are quoted again through
-    # estimate_model; the private LoRA gets a direct and a via-base dry run.
-    assert len(generate) == 5 + 3 + 2
+    # estimate_model, except the reference case, whose LoRA has no strength:
+    # the production path refuses it before any request. The private LoRA gets
+    # a direct and a via-base dry run.
+    assert len(generate) == 5 + 2 + 2
     assert all(r.url.params["dryRun"] == "true" for r in generate)
     assert all(client._closed for client in service.clients)
     files = written(service.root)
@@ -237,6 +239,14 @@ def test_capture_reads_and_quotes_with_dry_runs_only(service, capsys):
         f"models/trained/public/{LORA}.json",
     ]
     assert not list(service.root.glob(".recording-*"))
+    cases = {
+        case["case"]: case for case in json.loads(files["models/trained/contracts.json"])["dryRuns"]
+    }
+    assert cases["reference"]["status"] == 269
+    assert cases["reference"]["adapterQuote"] == {
+        "rejected": "Loras scale: provide a strength for each LoRA in Loras."
+    }
+    assert "rejected" not in cases["stack"]["adapterQuote"]
     output = capsys.readouterr()
     assert output.out.splitlines()[:4] == [
         "stack: accepted",

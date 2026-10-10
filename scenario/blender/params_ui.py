@@ -6,6 +6,9 @@ from ..core.api.catalog import param_override
 from . import props, runtime
 
 SEP = ","
+# Inputs a text field cannot edit: model and strength lists. LoRAs and compositions are
+# chosen in the picker's Trained chip and written by trained_models.apply_to instead.
+LIST_TYPES = ("model_array", "number_array")
 
 
 def multi_selection(item):
@@ -16,8 +19,19 @@ def set_multi_selection(item, values):
     item.multi_value = SEP.join(str(v) for v in values)
 
 
-def _drawable(spec):
-    return not spec.is_prompt and not spec.is_file
+def _drawable(spec, hidden=()):
+    return (
+        not spec.is_prompt
+        and not spec.is_file
+        and spec.ptype not in LIST_TYPES
+        and spec.name not in hidden
+    )
+
+
+def _hidden(model_id):
+    from . import trained_models
+
+    return trained_models.hidden_inputs(model_id)
 
 
 def _seed(item, name, value):
@@ -38,8 +52,9 @@ def sync_params(lane_state, schema, model_id):
     """
     keep = {}
     seeded = set()
+    hidden = _hidden(model_id)
     for spec in schema.specs:
-        if not _drawable(spec):
+        if not _drawable(spec, hidden):
             continue
         # Collection removals invalidate cached RNA item references. Resolve each
         # item from the current collection after any preceding removal/addition.
@@ -136,8 +151,9 @@ def collect_values(lane_state, schema):
     values, enabled = {}, {}
     if schema.prompt_name:
         values[schema.prompt_name] = lane_state.prompt
+    hidden = _hidden(lane_state.model_id)
     for spec in schema.specs:
-        if not _drawable(spec):
+        if not _drawable(spec, hidden):
             continue
         index = lane_state.params.find(spec.name)
         if index < 0:
@@ -170,8 +186,9 @@ def collect_file_refs(lane_state, schema):
 def draw_params(layout, lane_state, schema, exclude=(), locked=()):
     """`locked` names parameters shown greyed out because something else drives them (duration under Match timeline)."""
     groups = {}
+    hidden = _hidden(lane_state.model_id)
     for spec in schema.specs:
-        if not _drawable(spec) or spec.name in exclude:
+        if not _drawable(spec, hidden) or spec.name in exclude:
             continue
         groups.setdefault(spec.group or "Settings", []).append(spec)
     for group, specs in groups.items():

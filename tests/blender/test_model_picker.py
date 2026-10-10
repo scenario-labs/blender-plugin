@@ -459,8 +459,12 @@ class ModelPickerTests(unittest.TestCase):
                 "vectorize",
                 "remove_background",
                 "tools",
+                "trained",
             ],
         )
+        self.assertEqual(
+            [len(r) for r in self.picker.chip_rows(self.mf.category_items("image"))], [5, 4]
+        )  # nine Image chips, Trained last, wrap onto two balanced rows
         self.assertFalse(
             any(c[2].get("expand") for node in root.walk() for c in node.named("prop"))
         )  # no all-in-one expand enum

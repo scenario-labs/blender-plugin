@@ -6,7 +6,7 @@ import logging
 
 import bpy
 
-from . import generation, props, runtime
+from . import generation, props, runtime, trained_models
 
 log = logging.getLogger("scenario.handlers")
 
@@ -14,7 +14,16 @@ log = logging.getLogger("scenario.handlers")
 def dispatch(event):
     name, payload = event
     if (
-        name in {"catalog", "catalog_failed", "models", "connection"}
+        name
+        in {
+            "catalog",
+            "catalog_failed",
+            "models",
+            "connection",
+            "trained_catalog",
+            "trained_catalog_failed",
+            "trained_bases",
+        }
         and isinstance(payload, dict)
         and "catalog" in payload
     ):
@@ -47,6 +56,12 @@ def dispatch(event):
         generation.set_models(
             payload["detailed"], payload["failed"], mark_dirty=payload.get("mark_dirty", True)
         )
+    elif name == "trained_catalog":
+        trained_models.on_catalog(payload["pairs"], payload.get("private", ()))
+    elif name == "trained_catalog_failed":
+        trained_models.on_catalog_failed(payload["error"])
+    elif name == "trained_bases":
+        trained_models.on_bases(payload)
     elif name == "estimate":
         _on_estimate(payload)
     elif name in ("job", "job_done", "job_failed"):

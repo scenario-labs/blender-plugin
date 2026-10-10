@@ -116,10 +116,17 @@ class OfflineRuntimeTests(unittest.TestCase):
             "model"
         ]
         calls = []
+        self.private_reads = []  # the trained-model list each catalog load reads too (#97)
         adapter = submodule("core.api.sdk_adapter")
 
         def respond(request):
             path = request.url.path.removeprefix("/v1")
+            if path == "/models" and request.url.params.get("privacy") == "private":
+                self.assertEqual(request.url.params.get("status"), "trained")
+                self.private_reads.append(threading.current_thread())
+                if fail:
+                    return httpx.Response(503, json={"error": "Synthetic catalog outage"})
+                return httpx.Response(200, json={"models": []})
             calls.append((path, threading.current_thread()))
             if fail:
                 return httpx.Response(503, json={"error": "Synthetic catalog outage"})
@@ -157,6 +164,9 @@ class OfflineRuntimeTests(unittest.TestCase):
         self.assertEqual(len(calls), before)
         self.assertEqual([path for path, _ in calls], ["/models", f"/models/{model['id']}"])
         self.assertTrue(all(thread is not threading.main_thread() for _, thread in calls))
+        self.assertEqual(len(self.private_reads), 1)
+        self.assertIsNot(self.private_reads[0], threading.main_thread())
+        self.assertTrue(self.runtime.state.trained_loaded)
 
     def test_catalog_service_failure_clears_loading_and_reaches_ui_state(self):
         _, calls = self.catalog_client(fail=True)
@@ -168,6 +178,8 @@ class OfflineRuntimeTests(unittest.TestCase):
         self.assertIn("HTTP 503", self.runtime.state.catalog_error)
         self.assertIn("Could not load models", self.runtime.state.last_message)
         self.assertEqual(len(calls), 1)
+        self.assertEqual(len(self.private_reads), 1)
+        self.assertIn("HTTP 503", self.runtime.state.trained_error)
         self.assertFalse(self.generation.request_catalog())
 
     def test_headless_mcp_and_ui_deliver_the_same_sdk_catalog_and_schema(self):
@@ -253,7 +265,11 @@ class OfflineRuntimeTests(unittest.TestCase):
             self.assertEqual(self.runtime.state.records["fixture"].name, "Current")
             self.assertTrue(pools[0]._closed)
             self.assertFalse(pools[1]._closed)
-            self.assertEqual(sum(first for first, _ in calls), 1)
+            # The retired connection made only its list reads: the public one and, if it
+            # started before retirement, the private trained list; no description read.
+            retired = [path for first, path in calls if first]
+            self.assertIn(len(retired), (1, 2))
+            self.assertEqual(set(retired), {"/v1/models"})
 
     def test_catalog_reset_returns_before_blocked_read_and_worker_closes_its_pool(self):
         catalog_module = submodule("core.api.sdk_catalog")

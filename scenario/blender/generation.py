@@ -23,7 +23,7 @@ from ..core.api.errors import ScenarioError
 from ..core.jobs.coordinator import RouteQuoteError
 from ..core.scene import capture_plan, panorama_contract
 from ..core.schema.params import build_body, missing_required_files, parse_schema, validate
-from . import params_ui, props, runtime
+from . import params_ui, props, runtime, trained_models
 from .job_session import OriginUnavailable
 
 log = logging.getLogger("scenario.generation")
@@ -84,6 +84,7 @@ def request_catalog():
         set_catalog(cached, detailed)
     runtime.state.catalog_loading = True
     manager.fetch_catalog(catalog, "public", wanted)
+    trained_models.request(manager, catalog)
     return True
 
 
@@ -102,6 +103,7 @@ def clear_catalog():
     runtime.state.catalog_loading = False
     runtime.state.catalog_error = ""
     runtime.state.catalog_error_selection = None
+    trained_models.clear()
     for scene in bpy.data.scenes:
         if not hasattr(scene, "scenario"):
             continue
@@ -132,6 +134,10 @@ def process_catalog_events():
                     runtime.state.catalog_loading = False
                     runtime.state.catalog_loaded = False
                     runtime.state.catalog_error = "Could not read the model catalog"
+                elif event[0] in ("trained_catalog", "trained_catalog_failed"):
+                    # A later Trained chip or refresh may read the private list again.
+                    runtime.state.trained_loading = False
+                    runtime.state.trained_error = "Could not read trained models"
                 runtime.set_message("Could not read a model description; refresh the catalog")
         return bool(events)
     return False
@@ -575,6 +581,7 @@ def build_request(scene, lane, for_estimate=False):
             scene, lane_state, schema
         )  # base Video: the model duration follows the timeline
     values, enabled = params_ui.collect_values(lane_state, schema)
+    record = runtime.state.records.get(model_id)
     refs = {
         spec.name: [ref for ref in references if ref.param_name == spec.name]
         for spec in schema.specs
@@ -584,7 +591,6 @@ def build_request(scene, lane, for_estimate=False):
     # A model's 3D mesh input is fed by the scene selection automatically, in every lane: the Edit lane requires it,
     # elsewhere (a text-to-motion model's character mesh) it is optional but still used when something is selected.
     # Skip it only when the user attached an explicit file/asset for that input.
-    record = runtime.state.records.get(model_id)
     mesh_name = mesh_param(record) if record is not None else None
     if lane == "edit3d" and mesh_name is None:
         return Request(
@@ -623,6 +629,12 @@ def build_request(scene, lane, for_estimate=False):
                 # model's optional character mesh); export it at generate time just like edit3d does
                 captures.append({"param": spec.name, "source": "MESH", "camera": None})
     body = build_body(schema.specs, values, asset_ids, enabled=enabled)
+    if record is not None:
+        # The lane's LoRAs or composition go into the base's own lorasComponent inputs,
+        # built by the same trained_routes.apply that local MCP and the quote check use.
+        body, error = trained_models.apply_to(lane_state, record, body)
+        if error:
+            return Request(lane, lane_kind(lane), model_id, {}, errors=[error])
     request = Request(
         lane, lane_kind(lane), model_id, body, files, array_params, [], False, captures
     )

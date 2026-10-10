@@ -54,6 +54,14 @@ class JobManager:
         """Fetch detailed records for a few models without re-fetching the list."""
         self._spawn(self._run_models, catalog, tuple(model_ids), mark_dirty)
 
+    def fetch_trained(self, catalog):
+        """Read the scope's private trained list again, then pair it with public LoRAs."""
+        self._spawn(self._run_trained, catalog)
+
+    def fetch_base_schemas(self, catalog, lane, model_ids):
+        """Read lane base descriptions in order, reporting progress, to find LoRA slots."""
+        self._spawn(self._run_base_schemas, catalog, lane, tuple(model_ids))
+
     def drain(self):
         out = []
         while True:
@@ -190,6 +198,86 @@ class JobManager:
                 {"catalog": catalog, "privacy": privacy, "records": records, "detailed": detailed},
             )
         )
+
+    def _run_trained(self, catalog):
+        try:
+            # A fresh private read; the public list is reused when this connection
+            # already holds it, or joins the catalog's own read when one is pending.
+            private = catalog.fetch_list(privacy="private")
+            pairs = catalog.trained_models()
+        except (ScenarioError, OSError) as err:
+            self.catalog_events.put(
+                (
+                    "trained_catalog_failed",
+                    {"catalog": catalog, "error": str(getattr(err, "reason", err))},
+                )
+            )
+            return
+        self.catalog_events.put(
+            (
+                "trained_catalog",
+                {"catalog": catalog, "pairs": pairs, "private": [record.id for record in private]},
+            )
+        )
+
+    def _run_base_schemas(self, catalog, lane, model_ids, batch_size=10, give_up=3):
+        """One unreadable model is skipped; `give_up` failures in a row end the scan.
+
+        Lost access, a retired connection or rate limiting fail every read, so
+        the scan stops with that reason instead of trying every remaining model.
+        """
+        batch, failed, streak, error = [], 0, 0, ""
+        for checked, model_id in enumerate(model_ids, 1):
+            if self._stop.is_set():
+                return
+            try:
+                batch.append(catalog.get(model_id))
+                streak = 0
+            except ScenarioError as err:
+                failed, streak = failed + 1, streak + 1
+                reason = err.reason or "Could not read a model description"
+            except Exception as err:
+                log.warning("model %s: %s", model_id, type(err).__name__)
+                failed, streak = failed + 1, streak + 1
+                reason = "Unexpected read failure"
+            if streak >= give_up:
+                error = reason
+            done = bool(error) or checked == len(model_ids)
+            if done or len(batch) >= batch_size:
+                self.catalog_events.put(
+                    (
+                        "trained_bases",
+                        {
+                            "catalog": catalog,
+                            "lane": lane,
+                            "detailed": batch,
+                            "checked": checked,
+                            "total": len(model_ids),
+                            "failed": failed,
+                            "error": error,
+                            "done": done,
+                        },
+                    )
+                )
+                batch = []
+            if error:
+                return
+        if not model_ids:
+            self.catalog_events.put(
+                (
+                    "trained_bases",
+                    {
+                        "catalog": catalog,
+                        "lane": lane,
+                        "detailed": [],
+                        "checked": 0,
+                        "total": 0,
+                        "failed": 0,
+                        "error": "",
+                        "done": True,
+                    },
+                )
+            )
 
     def _run_models(self, catalog, model_ids, mark_dirty=True):
         detailed, failed = [], {}

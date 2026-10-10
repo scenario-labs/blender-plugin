@@ -200,6 +200,15 @@ def test_modalities_and_categories_match_the_web_app():
         "Vectorize",
         "Remove Background",
         "Tools",
+        "Trained",
+    ]
+    # Trained LoRAs and compositions have their own Image chip; no other tab offers them.
+    assert mf.TRAINED_CATEGORY == "trained"
+    assert [mf.TRAINED_CATEGORY in dict(items) for items in mf.CATEGORIES.values()] == [
+        True,
+        False,
+        False,
+        False,
     ]
     assert [c[1] for c in mf.CATEGORIES["video"]] == [
         "All",
@@ -318,6 +327,8 @@ def test_filter_by_modality_category_and_query():
     assert set(ids(mf.filter_records(ALL, "3d", "retexture"))) == {"model_rodin-hyper3d-bang"}
     assert ids(mf.filter_records(ALL, "3d", query="bang")) == ["model_rodin-hyper3d-bang"]
     assert mf.filter_records(ALL, "image", query="nothing-here") == []
+    # Base models never fill the Trained chip; trained_offers builds its rows apart.
+    assert mf.filter_records(ALL, "image", mf.TRAINED_CATEGORY) == []
 
 
 def test_recently_used_come_first_only_under_all_without_query():

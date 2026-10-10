@@ -4,8 +4,9 @@
 
 Mirrors "Choose a Model" in the web app (2026-08-28): tabs Image / Video / Audio / 3D and, per tab, the category
 chips listed in CATEGORIES. Trained models (LoRAs, compositions and other trained or unsupported types) and
-deprecated models never appear here: catalog.is_trained classifies them for separate routing work. A private
-custom model is an ordinary model and stays visible."""
+deprecated models never appear in these lists: catalog.is_trained classifies them, and the Image tab's Trained
+chip lists them apart with the base models that run them (#97). A private custom model is an ordinary model and
+stays visible."""
 
 import json
 import pathlib
@@ -28,6 +29,7 @@ CATEGORIES = {
         ("vectorize", "Vectorize"),
         ("remove_background", "Remove Background"),
         ("tools", "Tools"),
+        ("trained", "Trained"),
     ],
     "video": [
         ("all", "All"),
@@ -71,6 +73,8 @@ LANE_MODALITY = {
     "panorama": "image",
 }
 BASE_LANE = {"image": "image", "video": "video", "3d": "3d", "audio": "audio"}
+# The Image chip that lists LoRAs and compositions instead of base models.
+TRAINED_CATEGORY = "trained"
 FEATURED_TAG = "sc:featured"
 BUILTIN_ICONS = {
     "image": "IMAGE_DATA",

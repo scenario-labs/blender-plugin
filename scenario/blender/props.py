@@ -302,6 +302,40 @@ class ScenarioParamValue(bpy.types.PropertyGroup):
     has_range: BoolProperty(default=False)
 
 
+def _on_trained_update(self, context):
+    if self.has_scale:
+        value = min(max(self.scale, self.fmin), self.fmax)
+        if value != self.scale:
+            self.scale = value  # this assignment runs the callback once more, within bounds
+            return
+    lane_state = _find_lane_state(context, self.lane)
+    if lane_state is not None:
+        mark_estimate_dirty(lane_state)
+
+
+class ScenarioTrainedSlot(bpy.types.PropertyGroup):
+    """One trained model chosen for a lane's base model (#97).
+
+    Only its identity and strength are saved; the routing is derived again from
+    the base's REST schema at every request, and the quote reads it fresh.
+    """
+
+    model_id: StringProperty()
+    name: StringProperty()
+    kind: StringProperty(description="lora or composition")
+    lane: StringProperty()
+    scale: FloatProperty(
+        name="Strength",
+        description="LoRA strength, within the range the base model declares",
+        precision=2,
+        step=5,
+        update=_on_trained_update,
+    )
+    has_scale: BoolProperty(default=False)
+    fmin: FloatProperty(default=0.0)
+    fmax: FloatProperty(default=0.0)
+
+
 class ScenarioReference(bpy.types.PropertyGroup):
     param_name: StringProperty()
     source: EnumProperty(items=REFERENCE_SOURCES, default="FILE")
@@ -375,6 +409,7 @@ class ScenarioLaneState(bpy.types.PropertyGroup):
     )
     params: CollectionProperty(type=ScenarioParamValue)
     references: CollectionProperty(type=ScenarioReference)
+    trained: CollectionProperty(type=ScenarioTrainedSlot)
     estimate_state: EnumProperty(
         items=[
             ("IDLE", "Idle", ""),
@@ -520,6 +555,7 @@ class ScenarioBlockoutProps(bpy.types.PropertyGroup):
 
 CLASSES = (
     ScenarioParamValue,
+    ScenarioTrainedSlot,
     ScenarioReference,
     ScenarioLaneState,
     ScenarioSceneProps,

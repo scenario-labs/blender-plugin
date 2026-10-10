@@ -58,6 +58,14 @@ class RuntimeState:
         self.catalog_loading = False
         self.catalog_error = ""
         self.catalog_error_selection = None
+        # Trained LoRAs and compositions of the selected connection (#97), main thread only.
+        self.trained_pairs = []  # (kind, ModelRecord): private trained list, then public
+        self.trained_records = {}  # model_id -> ModelRecord of trained_pairs
+        self.trained_private = set()  # IDs the private list returned
+        self.trained_loading = False
+        self.trained_loaded = False
+        self.trained_error = ""
+        self.trained_scans = {}  # lane -> progress of its lazy base-description reads
         self.catalog_credentials = None
         self.catalog_project_id = None
         self.retired_catalogs = []

@@ -756,6 +756,7 @@ class SCENARIO_OT_remove_background(bpy.types.Operator):
         props.mark_estimate_dirty(lane_state)
         lane_state.references.clear()
         lane_state.params.clear()
+        lane_state.trained.clear()
         lane_state.prompt = ""
         lane_state.model_id = record.id
         lane_state.model_key = record.id
@@ -836,9 +837,20 @@ class SCENARIO_OT_reload_generation(bpy.types.Operator):
             )
         )
         if schema is None:
+            # Without the schema the job's LoRAs cannot be read; drop the former choice.
+            lane_state.trained.clear()
             self.report({"WARNING"}, "Model schema not loaded yet; lane, model and prompt restored")
             return {"FINISHED"}
         params_ui.sync_params(lane_state, schema, rec.model_id)
+        from . import trained_models
+
+        record = runtime.state.records.get(rec.model_id)
+        # The job's own LoRAs or composition replace the form's; none are kept from before.
+        skipped = (
+            trained_models.restore(lane_state, lane, record, rec.body) if record is not None else 0
+        )
+        if record is None:
+            lane_state.trained.clear()
         restored = 0
         for spec in schema.specs:
             if spec.is_prompt or spec.is_file:
@@ -920,9 +932,16 @@ class SCENARIO_OT_reload_generation(bpy.types.Operator):
                     if isinstance(asset_id, str) and asset_id.startswith("asset_"):
                         _add_asset_reference(lane_state, spec.name, asset_id)
         props.mark_estimate_dirty(lane_state)
+        trained = len(lane_state.trained)
         self.report(
-            {"INFO"},
-            f"Restored {rec.meta.get('model_name') or rec.model_id}: prompt, {restored} setting(s), {len(lane_state.references)} reference(s)",
+            {"WARNING"} if skipped else {"INFO"},
+            f"Restored {rec.meta.get('model_name') or rec.model_id}: prompt, {restored} setting(s), {len(lane_state.references)} reference(s)"
+            + (f", {trained} trained model(s)" if trained else "")
+            + (
+                f"; {skipped} trained model(s) are not listed now, choose them again in the picker"
+                if skipped
+                else ""
+            ),
         )
         return {"FINISHED"}
 

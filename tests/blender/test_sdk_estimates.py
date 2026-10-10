@@ -448,17 +448,37 @@ class SDKEstimateTests(unittest.TestCase):
             "status": "trained",
         }
 
+    def choose_trained(self, model_id, kind, scale=None):
+        """A listed trained model chosen in the form, as the picker's Trained chip leaves it."""
+        catalog = submodule("core.api.catalog")
+        trained = submodule("blender.trained_models")
+        listed = {"id": model_id, "type": f"flux.1-{kind}", "status": "trained"}
+        state = self.runtime.state
+        state.trained_pairs = [(kind, catalog.ModelRecord.from_api(listed))]
+        state.trained_records = {model_id: state.trained_pairs[0][1]}
+        state.trained_loaded = True
+        slot = self.lane.trained.add()
+        slot.model_id, slot.kind, slot.lane = model_id, kind, "image"
+        if scale is not None:
+            slot.fmin, slot.fmax, slot.has_scale = 0.0, 2.0, True
+            slot.scale = scale
+        slot[trained.SCOPE] = trained.current_scope()
+        self.assertLess(self.lane.params.find("modelId"), 0)  # no text field for LoRA inputs
+
     def test_a_refused_lora_shows_its_reason_without_pricing_in_ui_and_mcp(self):
         self.use_lora_base()
-        reason = "LoRA or Composition Model is a LoRA. Add it to Flux LoRA with a strength instead."
-        item = self.lane.params["modelId"]
-        item.enabled = True
-        item.str_value = "fixture-lora"
+        # The listed LoRA is still training when the quote reads it fresh.
+        self.trained["fixture-lora"] = {**self.trained["fixture-lora"], "status": "training"}
+        self.choose_trained("fixture-lora", "lora", 0.8)
         self.generation.request_estimate(bpy.context.scene, "image")
         self.deliver()
         self.assertEqual(self.lane.estimate_state, "ERROR")
-        self.assertEqual(self.lane.estimate_error, reason)
+        self.assertEqual(
+            self.lane.estimate_error, "Flux LoRA [1] is not ready to use (status: training)."
+        )
         self.assertFalse(self.runtime.state.estimates)
+        self.trained["fixture-lora"]["status"] = "trained"
+        reason = "LoRA or Composition Model is a LoRA. Add it to Flux LoRA with a strength instead."
         registry = submodule("blender.mcp_service").build_registry()
         server = submodule("mcp.server").McpServer(
             "127.0.0.1", 0, "fixture-token", registry, {}, timeout=5
@@ -492,9 +512,7 @@ class SDKEstimateTests(unittest.TestCase):
 
     def test_a_missing_model_is_explained_and_other_failures_stay_generic(self):
         self.use_lora_base()
-        item = self.lane.params["modelId"]
-        item.enabled = True
-        item.str_value = "fixture-missing"
+        self.choose_trained("fixture-missing", "composition")
         self.response = b"{}"
         self.generation.request_estimate(bpy.context.scene, "image")
         self.deliver()
@@ -505,7 +523,7 @@ class SDKEstimateTests(unittest.TestCase):
             "(HTTP 404). Remove it or choose another model.",
         )
         del self.trained["fixture-lora"]
-        item.str_value = ""
+        self.lane.trained.clear()
         self.generation.request_estimate(bpy.context.scene, "image")
         self.deliver()
         self.assertEqual(self.lane.estimate_state, "ERROR")

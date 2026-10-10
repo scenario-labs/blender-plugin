@@ -323,6 +323,49 @@ All inputs must import before any case is quoted; every quote must fit the same
 aggregate budget before generation begins. Ordinary `quote` never uploads, and
 version-1 automation is unchanged.
 
+### Committed reference image
+
+The repository includes one first-party image for reference checks:
+[`synthetic/reference-toadstool-512.png`](../fixtures/README.md#synthetic-rendered-reference-image),
+a 512x512 RGB render of a toadstool produced by a committed Blender script and
+licensed GPL-3.0-or-later. It is not provider output and shows no person, brand
+or private data. A plan can name it relative to the repository root. Keep the
+path and real digest below; replace the case name, result kind, model ID and
+parameter name with the reviewed model contract:
+
+```json
+{
+  "schema_version": 2,
+  "project_id": null,
+  "inputs": [
+    {
+      "name": "reference",
+      "file": "tests/fixtures/synthetic/reference-toadstool-512.png",
+      "sha256": "b70e8debff0ba0fc7dd8823a9a38229600e3fd7b8f22a1a32c490b4310182e02",
+      "kind": "image",
+      "content_type": "image/png"
+    }
+  ],
+  "cases": [
+    {
+      "name": "image-to-3d",
+      "result_kind": "model",
+      "model": "MODEL_ID",
+      "parameters": {"image": {"$input": "reference"}}
+    }
+  ]
+}
+```
+
+The protected workflow passes the checkout as `--input-root`. Locally, pass the
+repository root, for example `--input-root "$PWD"` from a checkout path without
+symbolic links. The digest binds the exact bytes; approving this plan still
+authorizes an upload to the selected test scope, and generation keeps its own
+quote approval. An offline unit test validates this example against the plan
+checker, the committed file and the shared upload staging. It does not show that
+a provider accepts this image, and it is not live upload or paid generation
+acceptance.
+
 ## Protected hosted execution and recovery
 
 The `smoke` workflow dispatches on `main` or on the first of each month. Forks,

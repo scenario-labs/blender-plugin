@@ -104,6 +104,68 @@ image.save("tests/fixtures/synthetic/panorama-progressive.jpg",
            quality=95, subsampling=0, progressive=True)'
 ```
 
+## Synthetic rendered reference image
+
+`synthetic/reference-toadstool-512.png` is a first-party GPL-3.0-or-later
+fixture: a 512x512 8-bit RGB render of a red toadstool with white spots, standing
+on a green base with pebbles, in front of a plain blue-gray backdrop. It contains
+no recording, provider output, external asset or PNG metadata. Smoke plans can
+name it as an explicitly authorized
+[reference input](../smoke/README.md#committed-reference-image).
+
+[The committed script](../../tools/render_reference_fixture.py) builds the scene
+from code in an empty factory scene, placing the spots and pebbles with seed 40.
+It renders with Workbench: Studio lighting, object colors, eight-sample
+anti-aliasing, no shadows or cavity, the Standard view transform and no dither.
+It then decodes Blender's PNG output and writes a canonical PNG holding only
+IHDR, one IDAT and IEND, with every row unfiltered. It refuses to run outside
+background Blender 5.1.2. The file was generated with Blender 5.1.2 on macOS
+arm64 (Metal GPU backend) through the isolated command wrapper, which owns a
+fresh offline profile. The tests do not run this command:
+
+```sh
+uv run --locked --no-env-file python tools/blender_env.py run --blender /path/to/blender-5.1.2 -- \
+  --background --factory-startup --python-exit-code 1 \
+  --python tools/render_reference_fixture.py -- write tests/fixtures/synthetic/reference-toadstool-512.png
+```
+
+| Digest | SHA-256 |
+| --- | --- |
+| File bytes | `b70e8debff0ba0fc7dd8823a9a38229600e3fd7b8f22a1a32c490b4310182e02` |
+| Decoded RGB pixels, top row first | `5ec27e71b80a93737e51e354eac42d1341d0737d90f0cede8f4a8dcd269e4a71` |
+
+To check a fresh render against the committed pixels without rewriting the file:
+
+```sh
+uv run --locked --no-env-file python tools/blender_env.py run --blender /path/to/blender-5.1.2 -- \
+  --background --factory-startup --python-exit-code 1 \
+  --python tools/render_reference_fixture.py -- check tests/fixtures/synthetic/reference-toadstool-512.png
+```
+
+`check` prints the pixel digest, the number of differing pixels and the largest
+channel difference. It fails when that difference exceeds `--tolerance`, which
+defaults to 0 (exact pixels). On macOS arm64, repeated `write` runs produced
+identical bytes and `check` reported no differing pixel. A scratch copy without
+the version guard also reproduced the same pixels with Blender 5.0.1 and 5.2.1 on
+that machine; this is an observation, not a supported way to regenerate.
+
+The pixel digest is the reproducibility contract. The compressed bytes also
+depend on the zlib bundled with Blender. Other GPUs, drivers and operating
+systems were not checked, and their Workbench rasterization or anti-aliasing may
+differ slightly. Accept a nonzero `--tolerance` only after inspecting the
+reported difference. A changed scene needs a regenerated file with new digests,
+tests and evidence, not a wider tolerance.
+
+[Offline unit tests](../unit/test_reference_fixture.py) pin both digests, the
+size and the chunk layout. They check that Pillow reads the same pixels, that
+the object stays inside a plain backdrop border, and that the PNG helpers
+reverse every row filter and reject malformed or unsupported files. They also
+validate the smoke guide's example plan against this file and stage it through
+the shared upload staging with the documented digest. They do not render,
+upload or contact Scenario. Live upload acceptance and paid generation with this
+image remain separate checks under
+[#40](https://github.com/scenario-labs/blender-plugin/issues/40).
+
 ## Identifiers and URLs
 
 The recorder replaces string-valued account fields `userId`, `authorId`,

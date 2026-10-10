@@ -201,9 +201,12 @@ simulated unexpected color spaces fail closed after decoding. They make no
 Scenario service calls.
 
 This is a partial slice of #98 and #65. Optional JobSession integration now binds
-verified downloads to guarded durable World application. SDK model validation,
-estimate/confirmation, production storage policy, global undo operators,
-seam/pole quality and authorized live generation remain separate integration work.
+verified downloads to guarded durable World application. Local MCP's
+[Environment lane](MCP.md#environment-lane-360-panoramas) quotes and submits
+verified panorama model contracts, and its results stay saved for the approval
+below. The native Environment tab, production storage policy, global undo
+operators, seam/pole quality and authorized live generation remain separate
+integration work.
 
 ## Saved-result UI and MCP approval
 
@@ -265,5 +268,5 @@ Undo/Redo invalidates live scene ownership and retires restoration handles,
 as do session retirement/restart and file load. Deleted or retired destinations
 do not offer restoration, and maintenance removes their handles without touching
 stale Blender data. Manually select a retained World in Blender when needed.
-No global undo transaction, cloud panorama preset, seam/pole acceptance or
+No global undo transaction, native panorama generation, seam/pole acceptance or
 completion of #98 is claimed.

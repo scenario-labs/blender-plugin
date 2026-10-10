@@ -9,13 +9,19 @@ import bpy
 
 from ..blender import generation, runtime
 from ..core.api.catalog import GENERATION_LANES as LANES
+from ..core.api.catalog import models_for_lane
 from ..core.api.errors import ScenarioError
 from ..core.api.library import asset_summary as _asset_summary
+from ..core.jobs.result_metadata import ORIGINAL_MEDIA_TYPES
+from ..core.scene import panorama_contract
 from ..core.scene.panorama import describe_world_media
 from ..core.schema.params import build_body, validate
 from ..core.ui import capability_status
 from ..core.ui.costs import workflow_quote_notice
 from .protocol import DeferredTool, ToolSpec
+
+# Saved OpenEXR files are HDR environments, not LDR panorama inputs.
+_HDR_MEDIA_TYPES = ORIGINAL_MEDIA_TYPES | {"image/exr"}
 
 
 def _catalog_ready():
@@ -37,6 +43,9 @@ def list_models(args):
         records = generation.three_d_models("TEXT", everything) + generation.three_d_models(
             "IMAGE", everything
         )
+    elif lane == "panorama":
+        # The Environment lane has no native form yet, so derive it like 3D.
+        records = models_for_lane(lane, list(runtime.state.records.values()))
     out, seen = [], set()
     for rec in records:
         if rec.id in seen:
@@ -44,15 +53,17 @@ def list_models(args):
         seen.add(rec.id)
         if query and query not in (rec.name + " " + rec.short_description + " " + rec.id).lower():
             continue
-        out.append(
-            {
-                "id": rec.id,
-                "name": rec.name,
-                "description": rec.short_description,
-                "capabilities": list(rec.capabilities),
-                "capability_status": capability_status.model_status(rec.capabilities),
-            }
-        )
+        entry = {
+            "id": rec.id,
+            "name": rec.name,
+            "description": rec.short_description,
+            "capabilities": list(rec.capabilities),
+            "capability_status": capability_status.model_status(rec.capabilities),
+        }
+        contract = panorama_contract.contract_for(rec.id) if lane == "panorama" else None
+        if contract is not None:
+            entry["contract"] = panorama_contract.summary(contract)
+        out.append(entry)
     return {"lane": lane, "models": out[:40]}
 
 
@@ -90,7 +101,12 @@ def model_schema(args):
     }
 
 
-def _body_for(model_id, parameters):
+def _body_for(model_id, parameters, *, lane=None):
+    contract = None
+    if lane == "panorama":
+        contract = panorama_contract.contract_for(model_id)
+        if contract is None:
+            raise ValueError("Use a verified panorama model from list_models(lane=panorama)")
     record = generation.ensure_record(model_id)
     schema = generation.schema_for(record.id)
     parameters = dict(parameters or {})
@@ -100,10 +116,52 @@ def _body_for(model_id, parameters):
             value = parameters.pop(spec.name)
             files[spec.name] = list(value) if isinstance(value, list) else [value]
     body = build_body(schema.specs, parameters, files)
-    errors = validate(schema.specs, body, schema.one_of, schema.exclusive)
+    errors = []
+    if contract is not None:
+        body, errors = panorama_contract.prepare(
+            contract, schema.specs, body, panorama_refs=_saved_panoramas(contract, body)
+        )
+    errors += [
+        error
+        for error in validate(schema.specs, body, schema.one_of, schema.exclusive)
+        if error not in errors
+    ]
     if errors:
         raise ValueError("; ".join(errors))
     return record, body
+
+
+def _saved_panoramas(contract, body):
+    """Saved, downloaded LDR 360 results of the selected scope named by this request.
+
+    Projection comes only from Scenario's saved result metadata. An HDR original
+    is not an input image, and other asset IDs are never assumed to be panoramas.
+    """
+    from ..blender import history
+
+    wanted = set()
+    for rule in contract.references:
+        if rule.kind == panorama_contract.PANORAMA:
+            value = body.get(rule.param)
+            values = value if isinstance(value, list) else [value]
+            wanted.update(item for item in values if isinstance(item, str))
+    if not wanted:
+        return {}
+    refs = {}
+    for record in history.saved_records():
+        for item in record.results:
+            asset = item.asset
+            if (
+                asset.asset_id in wanted
+                and item.receipt is not None
+                and asset.projection == "equirectangular"
+                and asset.source == "asset"
+                and asset.media_type not in _HDR_MEDIA_TYPES
+            ):
+                refs[asset.asset_id] = panorama_contract.PanoramaRef(
+                    asset.asset_id, producer=record.intent.target_id
+                )
+    return refs
 
 
 def _generation_input(args, lane):
@@ -115,7 +173,7 @@ def _generation_input(args, lane):
             bpy.context.scene, lane, args["model_id"], args.get("parameters")
         )
         return generation.ensure_record(request.model_id), request.body, request
-    record, body = _body_for(args["model_id"], args.get("parameters"))
+    record, body = _body_for(args["model_id"], args.get("parameters"), lane=lane)
     return record, body, None
 
 
@@ -985,6 +1043,9 @@ def generate(args):
         + (
             "Image jobs import supported images only into their unchanged original scene. "
             if lane == "image"
+            else "Panorama results stay saved; change a scene World only through "
+            "prepare_result_application(purpose=world) and explicit approval. "
+            if lane == "panorama"
             else "Results remain saved for explicit application; this lane does not import automatically. "
         )
         + "Paused or restarted jobs require explicit recovery; never repeat an uncertain request.",
@@ -2629,9 +2690,9 @@ SPECS = (
         (
             "List the loaded lane catalog, with curated models first and at most 40 matches.\n"
             "Args:\n"
-            "  - lane: optional string, default image; image, video, 3d, material, audio, render_image, render_video or edit3d.\n"
+            "  - lane: optional string, default image; image, video, 3d, material, audio, render_image, render_video, edit3d or panorama.\n"
             "  - query: optional string, substring of the model name, description or id.\n"
-            "Returns: lane, models[] with id, name, description, capabilities and capability_status (empty, or the experimental note the picker shows). Retry after catalog loading completes.\n"
+            "Returns: lane, models[] with id, name, description, capabilities and capability_status (empty, or the experimental note the picker shows). Retry after catalog loading completes. Lane panorama (Environment) lists only models with a verified 360 panorama contract; each entry adds contract with mode (GENERATE, FROM_IMAGE, HDRI or UPSCALE), output (ldr or hdr), description, references (parameter, kind still or panorama, required, max), sizes, locked, defaults and factor_parameter.\n"
             'Example: {"lane": "material", "query": "patina"}.\n'
             "Prefer model_schema before choosing generation parameters; this is not the full platform catalog.\n"
             "Platform equivalent: models_list, recommend."
@@ -2708,7 +2769,7 @@ SPECS = (
             "Args:\n"
             "  - model_id: required string, the model identifier.\n"
             "  - parameters: optional object, model parameters including Scenario asset ids for file inputs. Omit for render lanes: prepare render_form first; pricing uses its native scene prompt and uploaded snapshots.\n"
-            "  - lane: optional generation lane, default image. Every lane issues a single-use quote_id.\n"
+            "  - lane: optional generation lane, default image. Every lane issues a single-use quote_id. Lane panorama accepts only list_models(lane=panorama) models and applies their contract: locked values (a different value is refused), lane defaults when unset, 2:1 sizes and reference rules. A panorama-kind reference must be the asset_id of a saved, downloaded 360 result of this account and project (job_status projection equirectangular, source asset); other asset IDs are refused. Upscale factors stay within the 32-megapixel World limit, at most 2 for a reference of unknown size. A changed model schema fails closed.\n"
             "Returns: model_id, lane, cu_cost, cu_cost_exact (decimal string), details, mesh_sources (local captured 3D input provenance) and quote_id bound to the lane, model, inputs, scene and credential context.\n"
             'Example: {"model_id": "model_example", "parameters": {"prompt": "a wooden crate"}}.\n'
             "Call before generate and show the cost to the user; an estimate does not authorize spending. Speech-to-text (audio2txt) and video-to-motion (video23d) models are experimental: they can be estimated and generated and their results stay in saved jobs, but motion and transcription handling is not accepted. prepare_result_application imports a returned model or media file by file type only.\n"
@@ -2730,12 +2791,12 @@ SPECS = (
         (
             "Submit a generation that spends the user's credits. Every model lane uses durable shared jobs.\n"
             "Args:\n"
-            "  - lane: required string; image, video, 3d, material, audio, render_image, render_video or edit3d.\n"
+            "  - lane: required string; image, video, 3d, material, audio, render_image, render_video, edit3d or panorama.\n"
             "  - model_id: required string, the exact model to run.\n"
             "  - parameters: optional object, model parameters; file inputs take Scenario asset ids. Omit for render lanes, which rebuild the current render_form before checking the approved quote.\n"
             "  - quote_id: required, from estimate_cost with the same lane, model, inputs and scene.\n"
             "  - approved_cost: required, the exact cu_cost_exact string explicitly approved by the user.\n"
-            "Returns: local_id, status, lane, model_id and note. All model jobs poll and download through the shared session. Only the Image lane imports verified PNG/EXR images automatically into the unchanged origin. Other lanes stop at saved ready results; their scene application remains separate. Render lanes require explicit render_form uploads and separate Prompt Spark approval when enabled with an empty look. No capture, upload or Spark submission occurs during generate.\n"
+            "Returns: local_id, status, lane, model_id and note. All model jobs poll and download through the shared session. Only the Image lane imports verified PNG/EXR images automatically into the unchanged origin. Other lanes stop at saved ready results; their scene application remains separate. Panorama results never change a World automatically; use prepare_result_application(purpose=world). Render lanes require explicit render_form uploads and separate Prompt Spark approval when enabled with an empty look. No capture, upload or Spark submission occurs during generate.\n"
             'Example: {"lane": "image", "model_id": "model_example", "parameters": {"prompt": "a wooden crate"}, "quote_id": "quote_from_estimate", "approved_cost": "1.25"}.\n'
             "Do not call before estimate_cost and explicit spending approval. Do not repeat a timed-out submission. Use prepare_result_application for saved-result imports. Speech-to-text (audio2txt) and video-to-motion (video23d) models are experimental: their results stay in saved jobs, but motion and transcription handling is not accepted. prepare_result_application imports a returned model or media file by file type only.\n"
             "Platform equivalent: model_run."

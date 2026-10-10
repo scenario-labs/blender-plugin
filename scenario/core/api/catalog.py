@@ -7,6 +7,8 @@ Service reads and connection-local caches belong to SDKCatalog.
 
 from dataclasses import dataclass, field
 
+from ..scene.panorama_contract import PANORAMA_MODELS
+
 GENERATION_LANES = (
     "image",
     "video",
@@ -16,6 +18,7 @@ GENERATION_LANES = (
     "render_image",
     "render_video",
     "edit3d",
+    "panorama",
 )
 LANE_CAPS = {
     "image": {"txt2img", "img2img", "video2img"},
@@ -100,6 +103,9 @@ DEFAULT_MODELS = {
         "model_meshy-uv-unwrap",
         "model_tripo-segmentation-v2",
     ],
+    # The Environment lane lists only models with a verified panorama contract.
+    # They also keep their capability lanes (Image, Render Image) unchanged.
+    "panorama": list(PANORAMA_MODELS),
 }
 RENDER_LANES = ("render_image", "render_video")
 # The kind of asset each lane produces (image / video / 3d / material / audio). One source of truth.
@@ -112,6 +118,7 @@ LANE_KIND = {
     "render_image": "image",
     "render_video": "video",
     "edit3d": "3d",
+    "panorama": "image",
 }
 
 
@@ -285,6 +292,8 @@ class ModelRecord:
         lanes = {lane for lane, wanted in LANE_CAPS.items() if caps & wanted}
         if self.id in PATINA_MODELS:
             lanes.add("material")
+        if self.id in PANORAMA_MODELS:
+            lanes.add("panorama")
         return lanes
 
 
@@ -393,6 +402,8 @@ def models_for_lane(lane, records):
     ]
     if lane == "material":
         usable = [r for r in usable if r.id in PATINA_MODELS]
+    elif lane == "panorama":
+        usable = [r for r in usable if r.id in PANORAMA_MODELS]
     elif lane == "render_image":
         usable = [r for r in usable if r.id not in PATINA_MODELS and not is_utility(r)]
     return sorted(usable, key=lambda r: (rank.get(r.id, len(rank)), r.name.lower()))

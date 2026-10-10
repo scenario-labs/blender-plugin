@@ -58,6 +58,22 @@ def test_offline_wrapped_fixtures_need_no_configuration_or_client(tmp_path, monk
     forbidden.assert_not_called()
 
 
+def test_recorded_panorama_contract_models_have_no_offline_findings(tmp_path, monkeypatch):
+    forbidden = Mock(side_effect=AssertionError("offline must not use credentials or SDK"))
+    monkeypatch.setattr(audit, "live_settings", forbidden)
+    report = tmp_path / "audit.md"
+    models = sorted(
+        model_id
+        for model_id, where in audit.surfaced_model_ids().items()
+        if "lane:panorama" in where
+    )
+    assert len(models) == 5
+    argv = ["--offline", "--cache", str(FIXTURES), "--models", *models]
+    argv += ["--fail-on", "LOW", "--report", str(report)]
+    assert audit.run(argv, client_factory=forbidden) == 0
+    assert "5 schemas checked; 0 fetch/schema failures; 0 findings" in report.read_text()
+
+
 def test_missing_credentials_return_usage_error_without_constructing_client(tmp_path, capsys):
     forbidden = Mock(side_effect=AssertionError("no SDK without credentials"))
     assert (

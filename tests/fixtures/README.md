@@ -7,7 +7,7 @@ below come from the commits that first added each file, not a recent API refresh
 
 | Path | Contents and source | Recorded |
 | --- | --- | --- |
-| `models/*.json` | Nineteen model records from `GET /models/{id}` | 2026-08-28 and 2026-08-29; Seedance 2.0 Mini 2026-10-10 |
+| `models/*.json` | Twenty-four model records from `GET /models/{id}`, including the five [panorama contract models](#panorama-contract-models) | 2026-08-28 and 2026-08-29; Seedance 2.0 Mini and the five panorama contract models 2026-10-10 |
 | `models_list_page1.json` | Five public models from `GET /models?privacy=public&pageSize=5` | 2026-08-28 |
 | `models/trained/bases/*.json` | Five public LoRA-capable base model records from `GET /models/{id}`; see [trained-model contracts](#trained-model-contracts) | 2026-10-09 |
 | `models/trained/public/*.json` | Routing-field projections of six public Scenario LoRA and composition records from `GET /models/{id}` | 2026-10-09 |
@@ -206,7 +206,7 @@ It skips dot-prefixed directories, including private recorder staging left by an
 interrupted process; those files are not part of the published fixture inventory.
 
 The normal recorder uses the shared SDK adapter and the pinned SDK's public
-`models.with_raw_response.retrieve/list` methods. It reads all nineteen model
+`models.with_raw_response.retrieve/list` methods. It reads all twenty-four model
 records named in `MODEL_IDS` and one public page of five models, using the
 explicit test credential pair and optional project from the environment. It
 reconstructs each detail's `model` wrapper around the adapter's complete model
@@ -232,12 +232,27 @@ Mini record was added alone on 2026-10-10: one detail read through the same
 adapter `model` read and `write_fixture` scrub, without regenerating the other
 records, the list page or `PROVENANCE.json`. Its public schema keeps a
 first-frame rule naming a last-frame input that the schema does not declare.
+The five [panorama contract models](#panorama-contract-models) were also added
+on 2026-10-10, from a recorder run whose other outputs were discarded.
 Real endpoint acceptance and maintainer confirmation of media rights remain
 under #9.
 
 Live recording requires explicitly selected test credentials and authorization;
 see [contributor configuration](../../CONTRIBUTING.md#environment-variables).
 The default test suite needs neither credentials nor a Scenario account.
+
+## Panorama contract models
+
+The five records `model_scenario-skybox-flux`, `model_scenario-skybox-gpt`,
+`model_hunyuan-world-image-to-skybox`, `model_hdri-skybox` and
+`model_sc-upscale-flux-skybox` come from a recorder run on 2026-10-10, with an
+API-key pair in its credential-bound scope and SDK 2.2.0. That run also refreshed
+the eighteen other records it then listed, the list page and `PROVENANCE.json`; those outputs
+were discarded, so the earlier records keep their original recordings and no
+provenance file claims a complete refresh. The new files are the recorder's
+unmodified sanitized output. They pin the inputs that the
+[panorama contracts](../../scenario/core/scene/panorama_contract.py) depend on;
+see [panorama model contracts](../../docs/SDK_ADOPTION.md#panorama-model-contracts).
 
 ## Trained-model contracts
 

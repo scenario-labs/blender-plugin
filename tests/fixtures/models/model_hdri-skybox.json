@@ -1,0 +1,86 @@
+{
+ "model": {
+  "id": "model_hdri-skybox",
+  "userId": "apiu_FIXTURE0000000000000000",
+  "authorId": "apiu_FIXTURE0000000000000000",
+  "ownerId": "proj_FIXTURE00000000000000000",
+  "createdAt": "2025-12-02T13:42:52.687Z",
+  "updatedAt": "2026-10-09T17:41:47.661Z",
+  "name": "HDRi Skybox",
+  "shortDescription": "Convert a standard skybox image into an HDRi environment, saved as EXR and HDR files, with optional cubemap output.",
+  "type": "custom",
+  "privacy": "public",
+  "capabilities": [
+   "img2img"
+  ],
+  "source": "other",
+  "status": "trained",
+  "trainingProgress": {},
+  "parameters": {},
+  "trainingImagesNumber": 0,
+  "trainingImagePairs": [],
+  "tags": [
+   "3D",
+   "HDRi",
+   "sc:skybox"
+  ],
+  "collectionIds": [],
+  "exampleAssetIds": [],
+  "custom": true,
+  "accessRestrictions": 25,
+  "complianceMetadata": {
+   "enterpriseStatus": "Ready",
+   "maintainer": "Scenario",
+   "subProcessor": "Modal",
+   "dataProcessingComment": "temporaryRetention",
+   "licenseTerms": "https://www.scenario.com/terms-and-conditions",
+   "modelProvider": "Scenario"
+  },
+  "inputs": [
+   {
+    "description": "The standard (low-dynamic-range) skybox image you want to convert into an HDRi environment.",
+    "kind": "image",
+    "label": "Skybox Image",
+    "name": "image",
+    "costImpact": true,
+    "parent": true,
+    "required": {
+     "always": true
+    },
+    "type": "file"
+   },
+   {
+    "description": "Saves the result as an OpenEXR file (.exr) - a high-dynamic-range format widely used in 3D and VFX software.",
+    "default": true,
+    "label": "Output EXR",
+    "name": "outputExr",
+    "costImpact": true,
+    "type": "boolean"
+   },
+   {
+    "description": "Saves the result as a Radiance HDR file (.hdr) - a common high-dynamic-range format for environment lighting.",
+    "default": true,
+    "label": "Output HDR",
+    "name": "outputHdr",
+    "costImpact": true,
+    "type": "boolean"
+   },
+   {
+    "description": "Also outputs a cubemap in \"cross\" layout: the six faces of the environment unfolded into a single cross-shaped image. Applies to the input and all generated outputs.",
+    "default": false,
+    "label": "Conversion Cubemap Cross",
+    "name": "conversionCubemapCross",
+    "costImpact": true,
+    "type": "boolean"
+   },
+   {
+    "description": "Also outputs a cubemap as six separate square face images. Applies to the input and all generated outputs.",
+    "default": false,
+    "label": "Conversion Cubemap Faces",
+    "name": "conversionCubemapFaces",
+    "costImpact": true,
+    "type": "boolean"
+   }
+  ]
+ }
+}

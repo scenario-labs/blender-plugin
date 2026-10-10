@@ -11,6 +11,11 @@ JSON Schema validation.
 
 The default inventory combines the curated creation lanes, Edit 3D task models
 and Patina models. It is not the whole service catalog or every trained model.
+The curated lanes include the five
+[panorama contract](SDK_ADOPTION.md#panorama-model-contracts) models of the
+Environment lane. Their recorded records in `tests/fixtures/models` produce no
+findings offline at any threshold, which a
+[unit test](../tests/unit/test_audit_payloads.py) rechecks.
 The checks flag:
 
 - Required files whose descriptions make them conditional, unless the parser

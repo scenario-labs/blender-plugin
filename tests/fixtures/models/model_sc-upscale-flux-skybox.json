@@ -1,0 +1,178 @@
+{
+ "model": {
+  "id": "model_sc-upscale-flux-skybox",
+  "userId": "apiu_FIXTURE0000000000000000",
+  "authorId": "apiu_FIXTURE0000000000000000",
+  "ownerId": "proj_FIXTURE00000000000000000",
+  "createdAt": "2025-08-06T12:46:06.572Z",
+  "updatedAt": "2026-08-31T09:11:48.041Z",
+  "name": "Scenario Skybox Upscale",
+  "shortDescription": "Upscale 360 skybox panoramas up to 8x using FLUX, preserving seamless continuity. Choose stylized or realism mode, add prompts, and enhance fine details.",
+  "type": "custom",
+  "privacy": "public",
+  "capabilities": [
+   "img2img"
+  ],
+  "source": "other",
+  "status": "trained",
+  "trainingProgress": {},
+  "parameters": {},
+  "trainingImagesNumber": 0,
+  "trainingImagePairs": [],
+  "tags": [
+   "Flux",
+   "Skybox",
+   "Upscale",
+   "sc:scenario",
+   "skybox-upscale",
+   "tool"
+  ],
+  "collectionIds": [],
+  "exampleAssetIds": [],
+  "custom": true,
+  "accessRestrictions": 50,
+  "complianceMetadata": {
+   "enterpriseStatus": "Ready",
+   "licenseTerms": "https://www.scenario.com/terms-and-conditions",
+   "dataProcessingComment": "temporaryRetention",
+   "modelProvider": "BFL",
+   "subProcessor": "Modal",
+   "maintainer": "Scenario"
+  },
+  "inputs": [
+   {
+    "description": "The skybox image you want to upscale.",
+    "kind": "image",
+    "label": "Image",
+    "name": "image",
+    "costImpact": true,
+    "parent": true,
+    "required": {
+     "always": true
+    },
+    "type": "file"
+   },
+   {
+    "description": "How much to enlarge the image. The model adds real new detail up to 4096x4096px (for example, a 2048x2048 image at 2x); beyond that size it enlarges without inventing new detail.",
+    "default": 2,
+    "label": "Scaling Factor",
+    "max": 8,
+    "min": 2,
+    "name": "upscaleFactor",
+    "costImpact": true,
+    "step": 1,
+    "type": "number"
+   },
+   {
+    "description": "Optional text describing the scene or the detail you want emphasized as it's enhanced.",
+    "default": "",
+    "label": "Prompt",
+    "maxLength": 2048,
+    "name": "prompt",
+    "costImpact": false,
+    "prompt": true,
+    "type": "string",
+    "promptSpark": true
+   },
+   {
+    "description": "Optional images to guide the visual style of the result. Add up to 4.",
+    "group": "Style Images",
+    "kind": "image",
+    "label": "Style Images",
+    "maxLength": 4,
+    "name": "imagePrompt",
+    "costImpact": false,
+    "parent": true,
+    "type": "file_array"
+   },
+   {
+    "description": "How closely the result follows your style images. Higher values match them more tightly.",
+    "default": 0.6,
+    "group": "Style Images",
+    "label": "Style Fidelity",
+    "max": 1,
+    "min": 0,
+    "name": "imagePromptStrength",
+    "costImpact": false,
+    "type": "number"
+   },
+   {
+    "description": "How closely the result preserves the original image's structure. Higher values stay truer to the original layout and shapes.",
+    "default": 0.5,
+    "group": "Settings",
+    "label": "Structure Fidelity",
+    "max": 1,
+    "min": 0,
+    "name": "controlnetConditioningScale",
+    "costImpact": false,
+    "type": "number"
+   },
+   {
+    "description": "How much new, imaginative detail the model adds. Higher values invent more; lower values stay faithful to the source.",
+    "default": 0.6,
+    "group": "Settings",
+    "label": "Creativity",
+    "max": 1,
+    "min": 0,
+    "name": "strength",
+    "costImpact": true,
+    "type": "number"
+   },
+   {
+    "description": "How many refinement passes the model makes. More can improve quality but take longer.",
+    "default": 28,
+    "group": "Settings",
+    "label": "Steps",
+    "max": 50,
+    "min": 1,
+    "name": "numInferenceSteps",
+    "costImpact": true,
+    "type": "number"
+   },
+   {
+    "description": "Sharpens and enhances fine details in the result. On by default.",
+    "default": true,
+    "group": "Settings",
+    "label": "Enhance Details",
+    "name": "detailsEnable",
+    "costImpact": false,
+    "type": "boolean"
+   },
+   {
+    "allowedValues": [
+     "FLUX.1-dev",
+     "FLUX.1-Krea-dev"
+    ],
+    "description": "The base model to use: Stylized (Flux Dev) for artistic or illustrated skyboxes, Realism (Flux Krea Dev) for photographic ones.",
+    "default": "FLUX.1-dev",
+    "group": "Settings",
+    "label": "Style Preset",
+    "name": "baseModel",
+    "costImpact": false,
+    "type": "string"
+   },
+   {
+    "description": "A number that makes results repeatable. Reusing the same seed and settings produces the same image; leave it empty for a random result each time.",
+    "label": "Seed",
+    "max": 2147483647,
+    "min": 0,
+    "name": "seed",
+    "costImpact": false,
+    "type": "number"
+   }
+  ],
+  "uiConfig": {
+   "selects": {
+    "baseModel": {
+     "FLUX.1-Krea-dev": "Realism (Flux Krea Dev)",
+     "FLUX.1-dev": "Stylized (Flux Dev)"
+    }
+   },
+   "lorasComponent": {
+    "label": "Loras",
+    "modelInput": "loras",
+    "scaleInput": "lorasScale"
+   }
+  }
+ }
+}

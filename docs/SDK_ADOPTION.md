@@ -20,7 +20,7 @@ submission now use the selected shared JobSession and existing adapter
 [SDK_BUNDLE.md](SDK_BUNDLE.md) for exact artifact/notice pinning,
 supported wheel targets, staging and installed-runtime verification.
 
-The development fixture recorder also uses this adapter for the nineteen selected
+The development fixture recorder also uses this adapter for the twenty-four selected
 model detail reads and one bounded public model-list page. `SDKAdapter.model_page`
 returns a single validated response wrapper without exhausting its cursor; the
 recorder retains that wrapper and reconstructs the detail `model` wrapper from
@@ -997,6 +997,42 @@ used: it requests a converted download with a status poll, and none of its
 and [schema 10](JOB_STORAGE.md#schema-10-declared-originals-and-lane-defaults).
 Live original hosts, sizes and asset layouts remain unverified until an authorized
 panorama run.
+
+## Panorama model contracts
+
+The [panorama contracts](../scenario/core/scene/panorama_contract.py) behind the
+MCP [Environment lane](MCP.md#environment-lane-360-panoramas) use no new SDK
+method, extension or raw fallback. Model records come from
+`models.with_raw_response.retrieve`; quotes and the single submission use
+`generate.with_raw_response.run_model` through `SDKAdapter.estimate_model` and the
+coordinator, with `dry_run="true"` only for quotes and `max_retries=0` unchanged.
+The API reference has no skybox-specific pages, so each contract was checked
+against the model's own `GET /models/{id}` inputs, as `run_model` documents.
+
+On 2026-10-10 the read-only [fixture recorder](../tests/fixtures/README.md)
+recorded the five contract models' records with an API-key pair in its
+credential-bound scope. All five are public `custom` models with status
+`trained` and no training lineage, so the adapter's estimate gate accepts them
+and the catalog classifies none as trained. The contracts rely only on inputs
+present in these records. The GPT skybox model's free `width` and `height`
+accept any ratio and its resolution presets include cubemap layouts, so the
+contract offers only its 2:1 sizes.
+
+In the same scope, 21 `dryRun=true` quotes through `SDKAdapter.estimate_model`
+covered every contract preset; none was submitted. The service accepted each
+one. The Flux quote scales with `numOutputs`, so the lane default of one output
+costs about half the schema default of two. GPT quality, size and reference
+count, the HY World backend and the upscale factor each change the quote; the
+HDRI output toggles do not. The dry runs also accepted an ordinary generated
+still as the `image` of the HDRI, upscale and Flux models, so an accepted quote
+does not show that a reference is a 360 panorama; the contract checks that
+locally. Offline [contract tests](../tests/unit/test_panorama_contract.py)
+prepare each preset against the recorded schemas and the shared form
+preparation. Output formats, dimensions, asset counts, `metadata.type` on
+returned assets and the HDR original's host remain unverified until an
+authorized paid run under
+[#98](https://github.com/scenario-labs/blender-plugin/issues/98). No SDK gap was
+found, so no scenario-sdk-python issue is needed.
 
 ## Verified Film composition quotes
 

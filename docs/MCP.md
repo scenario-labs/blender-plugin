@@ -692,6 +692,54 @@ session-owned `retry_receipt` action saves only the known outcome. No tool clear
 uncertainty or automatically repeats scene work. Each job retains at most 128
 local claims without evicting earlier records.
 
+### Environment lane (360 panoramas)
+
+Lane `panorama` (Environment) generates 2:1 equirectangular panoramas and HDR
+environments through dedicated Scenario models. It is available through local
+MCP before the native Environment tab. `list_models(lane="panorama")` returns
+only models with a verified [panorama contract](../scenario/core/scene/panorama_contract.py),
+each with a `contract` object:
+
+| Mode | Model | Output | References |
+| --- | --- | --- | --- |
+| `GENERATE` | `model_scenario-skybox-flux` | LDR | optional `image`: a saved 360 panorama to restyle |
+| `GENERATE` | `model_scenario-skybox-gpt` | LDR | up to ten `referenceImages` of any image asset |
+| `FROM_IMAGE` | `model_hunyuan-world-image-to-skybox` | LDR | one `image` of a place, such as an uploaded capture |
+| `HDRI` | `model_hdri-skybox` | HDR OpenEXR behind an LDR preview | one saved 360 panorama as `image` |
+| `UPSCALE` | `model_sc-upscale-flux-skybox` | LDR | one saved 360 panorama as `image`, up to four style `imagePrompt` images |
+
+`estimate_cost` and `generate` refuse other models in this lane and apply the
+same contract to the parameters before the exact quote:
+
+- Locked values are set on every request, and a different value is refused. The
+  HDRI model saves only its OpenEXR output: `outputExr` true, `outputHdr`,
+  `conversionCubemapCross` and `conversionCubemapFaces` false.
+- Lane defaults apply when a parameter is unset: the Flux model makes one
+  panorama (`numOutputs` 1) instead of the schema's two. The Image lane keeps
+  the schema defaults of the same models.
+- The GPT model takes only 2048x1024 (default), 3072x1536 or 3840x1920.
+- A panorama-kind reference must be the `asset_id` of a saved, downloaded result
+  of this account and project whose `job_status` result shows
+  `projection: equirectangular` and `source: asset`. Other asset IDs, OpenEXR
+  originals and results without a declared projection are refused, never assumed
+  to be panoramas.
+- The upscale factor must keep the result within the 32-megapixel World limit.
+  The saved reference's pixel size is not stored, so the factor is at most 2,
+  and an upscaled result cannot be upscaled again here.
+- A model schema that no longer has an input the contract depends on, or no
+  longer accepts a locked value, fails with "This panorama model's contract
+  changed; update the extension".
+
+Quotes, single-use approval, durable submission and recovery are the same as in
+the other model lanes. Panorama jobs never import an image or change a World by
+themselves: apply a saved result with `prepare_result_application(purpose="world")`
+and [explicit approval](WORLD_APPLICATION.md#saved-result-ui-and-mcp-approval).
+The contracts come from recorded model records and zero-spend dry-run quotes;
+output formats, dimensions, asset layout and the HDR original's host are
+unverified until an authorized paid run under
+[#98](https://github.com/scenario-labs/blender-plugin/issues/98). The Image and
+Render Image lanes still list these models as before.
+
 ## Captured mesh input history
 
 `estimate_cost` also returns `mesh_sources` for typed 3D inputs that identify

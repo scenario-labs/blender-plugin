@@ -2,9 +2,13 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Lane filters added in 0.6.0: Render Image, Render Video, Edit 3D."""
 
+import json
 import typing
+from pathlib import Path
 
 from scenario.core.api import catalog
+from scenario.core.scene.panorama_contract import PANORAMA_MODELS
+from tools import audit_payloads
 
 
 def rec(model_id, name, caps, tags=(), inputs=(), desc=""):
@@ -401,3 +405,43 @@ def test_audio_lane_lists_speech_music_and_sfx_models():
     assert got == ["model_elevenlabs-music-v2", "model_minimax-music-cover"]
     assert "model_google-gemini-3-1-flash" not in got
     assert catalog.DEFAULT_MODELS["render_image"][0] == "model_openai-gpt-image-2"
+
+
+def _recorded(model_id):
+    path = Path(__file__).resolve().parents[1] / f"fixtures/models/{model_id}.json"
+    return catalog.ModelRecord.from_api(json.loads(path.read_text())["model"])
+
+
+def test_environment_lane_lists_only_verified_panorama_contracts_in_curated_order():
+    panoramas = [_recorded(model_id) for model_id in reversed(PANORAMA_MODELS)]
+    lookalike = rec(
+        "model_other-skybox", "Other Skybox", ["txt2img", "img2img"], ["sc:skybox", "skybox"]
+    )
+    records = RECORDS + panoramas + [lookalike]
+    assert catalog.GENERATION_LANES[-1] == "panorama"
+    assert catalog.lane_kind("panorama") == "image"
+    assert catalog.DEFAULT_MODELS["panorama"] == list(PANORAMA_MODELS)
+    assert ids(catalog.models_for_lane("panorama", records)) == list(PANORAMA_MODELS)
+    for record in panoramas:
+        assert "panorama" in record.lanes
+    assert "panorama" not in lookalike.lanes
+    assert "panorama" not in catalog.ModelRecord.from_api({"id": "model_x"}).lanes
+
+
+def test_panorama_models_keep_their_former_image_and_render_image_lanes():
+    # Removing them from these lanes is a behavior change awaiting a maintainer
+    # decision; the Environment lane is added alongside them.
+    records = RECORDS + [_recorded(model_id) for model_id in PANORAMA_MODELS]
+    image = ids(catalog.models_for_lane("image", records))
+    render = ids(catalog.models_for_lane("render_image", records))
+    assert set(PANORAMA_MODELS) <= set(image)
+    # The upscaler is tagged as a tool, so Render Image already left it out.
+    assert set(render) & set(PANORAMA_MODELS) == set(PANORAMA_MODELS) - {
+        "model_sc-upscale-flux-skybox"
+    }
+
+
+def test_payload_audit_inventory_includes_the_environment_lane():
+    surfaced = audit_payloads.surfaced_model_ids()
+    for model_id in PANORAMA_MODELS:
+        assert "lane:panorama" in surfaced[model_id]

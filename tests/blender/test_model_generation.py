@@ -19,6 +19,7 @@ import bpy
 import httpx
 from helpers import (
     ACES_AP0,
+    FIXTURES,
     animated_glb,
     draw_job_panels,
     drawn_texts,
@@ -83,6 +84,20 @@ class ModelGenerationTests(unittest.TestCase):
             "capabilities": ["txt2img"],
             "inputs": [{"name": "prompt", "type": "string", "required": True, "prompt": True}],
         }
+        # A minimal record with the inputs the Flux skybox contract depends on.
+        self.panorama_model = {
+            "id": "model_scenario-skybox-flux",
+            "name": "Skybox fixture",
+            "type": "custom",
+            "status": "trained",
+            "capabilities": ["txt2img", "img2img"],
+            "inputs": [
+                {"name": "prompt", "type": "string", "required": True, "prompt": True},
+                {"name": "image", "type": "file", "kind": "image"},
+                {"name": "numOutputs", "type": "number", "min": 1, "max": 4, "default": 2},
+            ],
+        }
+        self.extra_models = {}
         api = submodule("core.api.sdk_adapter")
         catalog_type, session_type = self.runtime.SDKCatalog, self.runtime.JobSession
 
@@ -99,7 +114,7 @@ class ModelGenerationTests(unittest.TestCase):
                         "status": self.remote_status,
                         "jobType": self.job_type,
                         "metadata": {
-                            "input": {"modelId": self.model["id"]},
+                            "input": {"modelId": getattr(self, "job_model_id", self.model["id"])},
                             "assetIds": list(
                                 self.asset_files or getattr(self, "result_assets", ["result-image"])
                             ),
@@ -142,7 +157,10 @@ class ModelGenerationTests(unittest.TestCase):
                             }
                         },
                     )
-                return httpx.Response(200, json={"model": self.model})
+                model_id = request.url.path.rsplit("/", 1)[-1]
+                return httpx.Response(
+                    200, json={"model": self.extra_models.get(model_id, self.model)}
+                )
             if "/jobs/" in request.url.path:
                 self.assertEqual(json.loads(request.content), {"action": "cancel"})
                 self.cancel_calls.append(request)
@@ -1646,6 +1664,19 @@ class ModelGenerationTests(unittest.TestCase):
             ref.param_name, ref.source, ref.asset_id = "mesh", "ASSET", "uploaded-mesh"
         return state
 
+    def use_model(self, model):
+        """Load one more model record, as a catalog warmup would."""
+        record = submodule("core.api.catalog").ModelRecord.from_api(model)
+        self.extra_models[record.id] = model
+        self.runtime.state.records[record.id] = record
+        self.generation._schemas.pop(record.id, None)
+        return record.id
+
+    def lane_model(self, lane):
+        if lane == "panorama":
+            return self.use_model(self.panorama_model)
+        return self.model["id"]
+
     def mcp_quote(self, lane="image"):
         parameters = {"prompt": "a teapot"}
         if lane in {"render_image", "render_video"}:
@@ -1657,14 +1688,14 @@ class ModelGenerationTests(unittest.TestCase):
                 ref[references.ROLE] = references.SCENE
             parameters = {}
         deferred = self.tools.estimate_cost(
-            {"model_id": self.model["id"], "parameters": parameters, "lane": lane}
+            {"model_id": self.lane_model(lane), "parameters": parameters, "lane": lane}
         )
         return deferred.finish(deferred.run())
 
     def mcp_submit(self, quote, **changes):
         args = dict(
             lane=quote["lane"],
-            model_id=self.model["id"],
+            model_id=quote["model_id"],
             parameters={}
             if quote["lane"] in {"render_image", "render_video"}
             else {"prompt": "a teapot"},
@@ -1974,6 +2005,9 @@ class ModelGenerationTests(unittest.TestCase):
                 expected = (
                     self.generation.build_request(bpy.context.scene, lane, for_estimate=True).body
                     if lane in {"render_image", "render_video"}
+                    # The Environment lane's Flux default replaces the schema's two outputs.
+                    else {"prompt": "a teapot", "numOutputs": 1}
+                    if lane == "panorama"
                     else {"prompt": "a teapot"}
                 )
                 self.assertEqual(json.loads(self.paid[-1].content), expected)
@@ -2007,6 +2041,114 @@ class ModelGenerationTests(unittest.TestCase):
         for reference in references:
             self.assertEqual(self.tools.job_status({"job_id": reference})["status"], "uncertain")
         self.assertEqual(len(self.paid), len(references))
+
+    def recorded_model(self, model_id):
+        return json.loads((FIXTURES / f"models/{model_id}.json").read_text())["model"]
+
+    def panorama_estimate(self, model_id, parameters):
+        deferred = self.tools.estimate_cost(
+            {"lane": "panorama", "model_id": model_id, "parameters": parameters}
+        )
+        return deferred.finish(deferred.run())
+
+    def dry_runs(self):
+        return [
+            json.loads(request.content)
+            for request in self.calls
+            if request.method == "POST" and request.url.params.get("dryRun") == "true"
+        ]
+
+    def saved_panorama(self, asset_id="saved-panorama"):
+        """Run one Flux skybox job to a saved, downloaded 360 result."""
+        model_id = self.use_model(self.recorded_model("model_scenario-skybox-flux"))
+        self.job_model_id = model_id
+        self.result_fixture()
+        self.result_assets = {asset_id: {"type": "skybox-base-360"}}
+        quote = self.panorama_estimate(model_id, {"prompt": "a dome"})
+        result = self.mcp_submit(quote, parameters={"prompt": "a dome"})
+        self.deliver_results()
+        return quote, result
+
+    def test_mcp_environment_lane_lists_only_contract_models_with_their_contract(self):
+        flux = self.use_model(self.recorded_model("model_scenario-skybox-flux"))
+        hdri = self.use_model(self.recorded_model("model_hdri-skybox"))
+        models = self.tools.list_models({"lane": "panorama"})["models"]
+        self.assertEqual([model["id"] for model in models], [flux, hdri])
+        self.assertEqual(models[0]["contract"]["defaults"], {"numOutputs": 1})
+        contract = models[1]["contract"]
+        self.assertEqual((contract["mode"], contract["output"]), ("HDRI", "hdr"))
+        self.assertIs(contract["locked"]["outputHdr"], False)
+        self.assertEqual(
+            contract["references"],
+            [{"parameter": "image", "kind": "panorama", "required": True, "max": 1}],
+        )
+        self.assertNotIn("contract", self.tools.list_models({"lane": "image"})["models"][0])
+        self.assertEqual(self.paid, [])
+
+    def test_mcp_environment_lane_refuses_models_without_a_verified_contract(self):
+        self.use_model(dict(self.panorama_model, id="model_other-skybox"))
+        for model_id in (self.model["id"], "model_other-skybox"):
+            with self.assertRaisesRegex(ValueError, "verified panorama model"):
+                self.panorama_estimate(model_id, {"prompt": "a dome"})
+        self.assertEqual(self.dry_runs(), [])
+        self.assertEqual(self.store.records(), ())
+
+    def test_mcp_environment_lane_quotes_lane_defaults_and_keeps_results_saved(self):
+        scene, world, images = bpy.context.scene, bpy.context.scene.world, set(bpy.data.images)
+        quote, result = self.saved_panorama()
+        sent = self.dry_runs()[-1]
+        self.assertEqual((sent["prompt"], sent["numOutputs"]), ("a dome", 1))
+        self.assertEqual(json.loads(self.paid[-1].content), sent)
+        self.assertIn("prepare_result_application(purpose=world)", result["note"])
+        with self.assertRaises(self.request_error):
+            self.mcp_submit(quote, parameters={"prompt": "a dome"})
+        status = self.tools.job_status({"job_id": result["local_id"]})
+        self.assertEqual((status["status"], status["lane"]), ("ready", "panorama"), status)
+        self.assertEqual(
+            [(item["projection"], item["source"]) for item in status["results"]],
+            [("equirectangular", "asset")],
+        )
+        # No automatic image import or World replacement.
+        self.assertEqual((scene.world, set(bpy.data.images)), (world, images))
+        self.assertEqual(len(self.paid), 1)
+
+    def test_mcp_panorama_references_must_be_saved_downloaded_projection_results(self):
+        hdri = self.use_model(self.recorded_model("model_hdri-skybox"))
+        with self.assertRaisesRegex(ValueError, "saved, downloaded 360 panorama"):
+            self.panorama_estimate(hdri, {"image": "saved-panorama"})
+        # A saved Image lane result has no declared 360 projection.
+        self.result_fixture()
+        self.result_assets = {"plain-image": {}}
+        self.mcp_submit(self.mcp_quote())
+        self.deliver_results()
+        with self.assertRaisesRegex(ValueError, "saved, downloaded 360 panorama"):
+            self.panorama_estimate(hdri, {"image": "plain-image"})
+        self.assertEqual(self.dry_runs(), [{"prompt": "a teapot"}])
+        self.saved_panorama()
+        quote = self.panorama_estimate(hdri, {"image": "saved-panorama"})
+        self.assertEqual(
+            self.dry_runs()[-1],
+            {
+                "image": "saved-panorama",
+                "outputExr": True,
+                "outputHdr": False,
+                "conversionCubemapCross": False,
+                "conversionCubemapFaces": False,
+            },
+        )
+        with self.assertRaisesRegex(ValueError, "fixed to False"):
+            self.panorama_estimate(hdri, {"image": "saved-panorama", "outputHdr": True})
+        upscale = self.use_model(self.recorded_model("model_sc-upscale-flux-skybox"))
+        with self.assertRaisesRegex(ValueError, "at most 2"):
+            self.panorama_estimate(upscale, {"image": "saved-panorama", "upscaleFactor": 3})
+        self.panorama_estimate(upscale, {"image": "saved-panorama"})
+        self.assertEqual(self.dry_runs()[-1]["upscaleFactor"], 2)
+        paid = len(self.paid)
+        self.job_model_id = hdri
+        self.mcp_submit(quote, parameters={"image": "saved-panorama"})
+        self.settle()
+        self.assertEqual(len(self.paid), paid + 1)
+        self.assertEqual(json.loads(self.paid[-1].content)["outputHdr"], False)
 
     def test_non_image_downloads_remain_saved_without_scene_application(self):
         before = set(bpy.data.images), set(bpy.data.objects), set(bpy.data.materials)
@@ -2172,7 +2314,7 @@ class ModelGenerationTests(unittest.TestCase):
         self.assertEqual(self.store.records(), ())
 
     def test_ui_pending_files_captures_and_spark_cannot_quote_or_dispatch(self):
-        for lane in submodule("core.api.catalog").GENERATION_LANES:
+        for lane in submodule("blender.props").GENERATION_LANES:
             for pending in ("files", "captures", "spark"):
                 with self.subTest(lane=lane, pending=pending):
                     state = self.configure_ui_lane(lane)

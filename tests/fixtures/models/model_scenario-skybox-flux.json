@@ -1,0 +1,224 @@
+{
+ "model": {
+  "id": "model_scenario-skybox-flux",
+  "userId": "apiu_FIXTURE0000000000000000",
+  "authorId": "apiu_FIXTURE0000000000000000",
+  "ownerId": "proj_FIXTURE00000000000000000",
+  "createdAt": "2026-06-08T12:37:28.606Z",
+  "updatedAt": "2026-10-09T17:41:01.894Z",
+  "name": "Scenario Skybox Flux.1",
+  "shortDescription": "Generate seamless 360 equirectangular panoramas from a text prompt, powered by FLUX.1. Choose from 22 styles with automatic seam and pole correction.",
+  "type": "custom",
+  "privacy": "public",
+  "capabilities": [
+   "txt2img",
+   "img2img"
+  ],
+  "source": "other",
+  "status": "trained",
+  "trainingProgress": {},
+  "parameters": {},
+  "trainingImagesNumber": 0,
+  "trainingImagePairs": [],
+  "tags": [
+   "sc:skybox"
+  ],
+  "collectionIds": [],
+  "exampleAssetIds": [
+   "asset_3wxQbF7fgmnmXD4BUwWm8aVF",
+   "asset_zWmvsJZ4go2VisUQ644DuRxe",
+   "asset_54ECShhRbDenhmMYDHTusfAt",
+   "asset_mpdhGGWkMCFpMP8PQtn4Jyc8",
+   "asset_9zpFGDGGWvAoA5VyRTXpJvGr",
+   "asset_Skd6YvPjFB3XJEj9vigMmqfQ",
+   "asset_V4DeW2oEznqUSRx6mXmvk9Qx",
+   "asset_LqPwdGVhQv4UJEYZyNQYZNPM",
+   "asset_PEhhKUzrk7sGGGMwp31Ua4Lc",
+   "asset_RE6wxtNoiKoeNqrxaP966KHo",
+   "asset_oFqXpuW1VzWrSFMzHKrZDT4R",
+   "asset_k8K1cJa26GdNobRV6gWLqCiu",
+   "asset_68gvfNMB1TF2pxiVCkiArywo",
+   "asset_bmq4u7yVr2wEYtWdTbq7sDmZ",
+   "asset_JLBGvUgkUnnBzLuZkQwYGRs6",
+   "asset_fURrHkJDo7AkZq1mPoVBnZaB",
+   "asset_DGNQJBycWHBRGv7yGTSxLTFh",
+   "asset_834DJVp8Kg2iAwpCtkQhucLu",
+   "asset_i1NPPrmRr3NQwEizwo9wkMSS",
+   "asset_Cf1dbTaKFW4v6ggQTycAp9kg"
+  ],
+  "custom": true,
+  "accessRestrictions": 1,
+  "complianceMetadata": {
+   "enterpriseStatus": "Ready",
+   "licenseTerms": "https://www.scenario.com/terms-and-conditions",
+   "subProcessor": "Modal",
+   "dataProcessingComment": "temporaryRetention",
+   "maintainer": "Scenario",
+   "modelProvider": "BFL"
+  },
+  "inputs": [
+   {
+    "description": "Describe the scene you want to see all around you \u2014 a sunset beach, a futuristic city, a forest at dawn. The model automatically formats your prompt to produce a seamless 360\u00b0 panorama.",
+    "label": "Prompt",
+    "maxLength": 2048,
+    "name": "prompt",
+    "costImpact": false,
+    "prompt": true,
+    "required": {
+     "always": true
+    },
+    "type": "string",
+    "promptSpark": true
+   },
+   {
+    "allowedValues": [
+     "standard",
+     "cinematic",
+     "claymation",
+     "cloud-skydome",
+     "cyberpunk",
+     "fantasy",
+     "neon-tron",
+     "photo",
+     "psychedelic",
+     "retro-fantasy",
+     "scifi-concept-art",
+     "space",
+     "whimsical",
+     "3d-cartoon",
+     "cartoon",
+     "comic",
+     "manga",
+     "ink",
+     "pastel",
+     "oil-painting",
+     "enchanted",
+     "manga-color"
+    ],
+    "description": "The artistic look of your panorama. Choose from cinematic, fantasy, cyberpunk, oil painting, and more. Each style shapes the color palette, lighting, and overall mood. Use Standard for a neutral, unstyled result.",
+    "default": "cinematic",
+    "label": "Style",
+    "name": "style",
+    "costImpact": false,
+    "type": "string"
+   },
+   {
+    "description": "Describe what you don't want in the image \u2014 e.g. 'blurry, people, text'. Has no effect unless Negative Prompt Strength is above 0. Try generating without one first to see if it's needed.",
+    "group": "Negative Prompt",
+    "label": "Negative Prompt",
+    "maxLength": 2048,
+    "name": "negativePrompt",
+    "costImpact": false,
+    "prompt": true,
+    "type": "string"
+   },
+   {
+    "description": "How strongly the model avoids what you described in the Negative Prompt. Leave at 0 to disable it entirely. Increase gradually \u2014 values between 1\u20134 are usually enough.",
+    "default": 0,
+    "label": "Negative Prompt Strength",
+    "max": 10,
+    "min": 0,
+    "name": "negativePromptStrength",
+    "costImpact": false,
+    "step": 0.1,
+    "type": "number"
+   },
+   {
+    "description": "Upload an existing image to use as a starting point. The model will generate a new panorama inspired by it, with the amount of change controlled by the Strength slider below.",
+    "group": "Reference Image",
+    "kind": "image",
+    "label": "Reference Image",
+    "name": "image",
+    "costImpact": false,
+    "parent": true,
+    "type": "file"
+   },
+   {
+    "description": "How much the model transforms your reference image. Low values stay close to the original; high values produce a more creative, reimagined result.",
+    "default": 0.8,
+    "group": "Reference Image",
+    "label": "Strength",
+    "max": 1,
+    "min": 0.01,
+    "name": "strength",
+    "costImpact": false,
+    "step": 0.01,
+    "type": "number"
+   },
+   {
+    "description": "How many panoramas to generate at once. Useful for exploring variations before committing to one.",
+    "default": 2,
+    "group": "Settings",
+    "label": "Skybox Count",
+    "max": 4,
+    "min": 1,
+    "name": "numOutputs",
+    "costImpact": true,
+    "step": 1,
+    "type": "number"
+   },
+   {
+    "description": "Number of refinement passes the model takes. More steps generally produce sharper, more detailed results but take longer. 30 is a good default.",
+    "default": 30,
+    "group": "Settings",
+    "label": "Sampling Steps",
+    "max": 50,
+    "min": 20,
+    "name": "numInferenceSteps",
+    "costImpact": true,
+    "step": 1,
+    "type": "number"
+   },
+   {
+    "description": "Fine-tunes how strongly the model enforces correct 360\u00b0 geometry. Leave at 0 to use the recommended level for your chosen style. Increase only if the panorama seam or poles look distorted.",
+    "default": 0,
+    "group": "Settings",
+    "label": "360 Scale Level",
+    "max": 100,
+    "min": 0,
+    "name": "geometryEnforcement",
+    "costImpact": false,
+    "step": 1,
+    "type": "number"
+   },
+   {
+    "description": "A number that locks in the randomness of the generation. Copy the seed from a result you liked to reproduce it exactly, or leave blank for a new result each time.",
+    "group": "Settings",
+    "label": "Seed",
+    "max": 2147483647,
+    "min": 0,
+    "name": "seed",
+    "costImpact": false,
+    "type": "number"
+   }
+  ],
+  "uiConfig": {
+   "selects": {
+    "style": {
+     "standard": "Standard",
+     "fantasy": "Fantasy",
+     "neon-tron": "Neon Tron",
+     "cartoon": "Cartoon",
+     "cyberpunk": "Cyberpunk",
+     "ink": "Ink",
+     "manga-color": "Manga Color",
+     "photo": "Photo",
+     "space": "Space",
+     "cloud-skydome": "Cloud Skydome",
+     "3d-cartoon": "3D Cartoon",
+     "psychedelic": "Psychedelic",
+     "pastel": "Pastel",
+     "scifi-concept-art": "Sci-Fi Concept Art",
+     "enchanted": "Enchanted",
+     "oil-painting": "Oil Painting",
+     "manga": "Manga",
+     "cinematic": "Cinematic",
+     "retro-fantasy": "Retro Fantasy",
+     "comic": "Comic",
+     "whimsical": "Whimsical",
+     "claymation": "Claymation"
+    }
+   }
+  }
+ }
+}

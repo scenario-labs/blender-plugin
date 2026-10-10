@@ -1,0 +1,164 @@
+{
+ "model": {
+  "id": "model_scenario-skybox-gpt",
+  "userId": "apiu_FIXTURE0000000000000000",
+  "authorId": "apiu_FIXTURE0000000000000000",
+  "ownerId": "proj_FIXTURE00000000000000000",
+  "createdAt": "2026-06-08T12:37:18.470Z",
+  "updatedAt": "2026-08-03T20:11:37.234Z",
+  "name": "Scenario Skybox GPT",
+  "shortDescription": "Generate seamless 360\u00b0 skyboxes from a text prompt. Outputs equirectangular panoramas and cubemap formats, engine-ready for real-time scenes.",
+  "type": "custom",
+  "privacy": "public",
+  "capabilities": [
+   "txt2img",
+   "img2img"
+  ],
+  "source": "other",
+  "status": "trained",
+  "trainingProgress": {},
+  "parameters": {},
+  "trainingImagesNumber": 0,
+  "trainingImagePairs": [],
+  "tags": [
+   "sc:skybox"
+  ],
+  "collectionIds": [],
+  "exampleAssetIds": [
+   "asset_z6Wckw9NzLYg8NgHcAYvtnzf",
+   "asset_Coarh6Y4viogJyH9eCRiTVkD",
+   "asset_6e2Gh13kQRXzYhVrBfnV4ZwQ",
+   "asset_jGWnrsJtZGFoe37EHGq69Thw",
+   "asset_W7gV6LmMmXg4qLx6UGUpSU2v",
+   "asset_PwKgRyHLXhJeCJcWxghyGyy9",
+   "asset_oRL9eDzEWDqBZ3zRqamrs5Tw",
+   "asset_amDxsd1GQbZdUsfEiAjXKcXD",
+   "asset_JsRKd4ZCdL3sePc61Pc8gnD7",
+   "asset_9BdWEp9jnMryjGnQFdaBXUCj",
+   "asset_T4G7uZbCYDo4Co3BpJd2uFe9",
+   "asset_Bv3iyUfBTw7pWPukRULtSoxP",
+   "asset_59UBij6bzqmSiEEjM83Hbyf4",
+   "asset_HHrUhdwHKgYMYxNRfxENttq9",
+   "asset_DKBKcSWrTqmM4rkFryZX2Lzc",
+   "asset_keKfyh7NZto7VADbnxUUbVsS",
+   "asset_KXRDaN3MrBUGvtk5b2JotSnA",
+   "asset_oSvvU26oUo8dKBvbZyjhG2ib",
+   "asset_mjpoeHePtCEdwwxjyJ6FHtU1",
+   "asset_qe2znSGHaMSsHqGiTRNVCykV"
+  ],
+  "custom": true,
+  "accessRestrictions": 1,
+  "complianceMetadata": {
+   "enterpriseStatus": "Ready",
+   "licenseTerms": "https://www.scenario.com/terms-and-conditions",
+   "maintainer": "Scenario",
+   "subProcessor": "Modal",
+   "modelProvider": "Scenario",
+   "dataProcessingComment": "temporaryRetention"
+  },
+  "inputs": [
+   {
+    "description": "Describe the scene you want to see all around you \u2014 a mountain pass at dusk, a cathedral interior, an alien landscape. The model automatically formats your prompt to produce a seamless 360\u00b0 panorama.",
+    "label": "Prompt",
+    "maxLength": 2048,
+    "name": "prompt",
+    "costImpact": false,
+    "prompt": true,
+    "required": {
+     "always": true
+    },
+    "type": "string",
+    "promptSpark": true
+   },
+   {
+    "description": "Upload one or more images to guide the style, mood, or content of the skybox. The model draws inspiration from them while still following your prompt. Up to 10 images accepted.",
+    "kind": "image",
+    "label": "Reference Images",
+    "maxLength": 10,
+    "name": "referenceImages",
+    "costImpact": true,
+    "parent": true,
+    "type": "file_array"
+   },
+   {
+    "description": "Width of the generated panorama in pixels, must be a multiple of 16. A 2:1 width-to-height ratio is recommended for correct 360\u00b0 viewing.",
+    "default": 2048,
+    "group": "Settings",
+    "label": "Width",
+    "max": 3840,
+    "min": 16,
+    "name": "width",
+    "costImpact": true,
+    "step": 16,
+    "type": "number"
+   },
+   {
+    "description": "Height of the generated panorama in pixels, must be a multiple of 16. A 2:1 width-to-height ratio is recommended for correct 360\u00b0 viewing.",
+    "default": 1024,
+    "group": "Settings",
+    "label": "Height",
+    "max": 3840,
+    "min": 16,
+    "name": "height",
+    "costImpact": true,
+    "step": 16,
+    "type": "number"
+   },
+   {
+    "allowedValues": [
+     "auto",
+     "high",
+     "medium",
+     "low"
+    ],
+    "description": "Controls the detail and generation time of the output. High produces the best results; Medium and Low are faster and more cost-efficient. Auto lets the model decide based on your input.",
+    "default": "high",
+    "group": "Settings",
+    "label": "Quality",
+    "name": "quality",
+    "costImpact": true,
+    "type": "string"
+   }
+  ],
+  "uiConfig": {
+   "resolutionComponent": {
+    "heightInput": "height",
+    "label": "Dimensions",
+    "widthInput": "width",
+    "presets": [
+     {
+      "label": "Auto (match input)"
+     },
+     {
+      "width": 3840,
+      "label": "Equirectangular 2:1 (3840x1920)",
+      "height": 1920
+     },
+     {
+      "height": 1024,
+      "width": 2048,
+      "label": "Equirectangular 2:1 (2048x1024)"
+     },
+     {
+      "label": "Cubemap strip 6:1 (3840x640)",
+      "height": 640,
+      "width": 3840
+     },
+     {
+      "height": 1536,
+      "label": "Cubemap cross 4:3 (2048x1536)",
+      "width": 2048
+     }
+    ]
+   },
+   "selects": {
+    "quality": {
+     "high": "High",
+     "medium": "Medium",
+     "auto": "Auto",
+     "low": "Low"
+    }
+   }
+  }
+ }
+}

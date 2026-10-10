@@ -301,3 +301,19 @@ def test_splat_options_match_the_reviewed_choices_everywhere():
     status = next(call for call in calls if call.args[0].value == "job_status").args[1].value
     assert "importable (true for every listed format in this release)" in status
     assert "spz_extensions" in status
+
+
+def test_panorama_lane_contract_is_described_where_agents_choose_and_spend():
+    _, calls = specs("tools_scenario")
+    descriptions = {call.args[0].value: call.args[1].value for call in calls}
+    listing = descriptions["list_models"]
+    assert "edit3d or panorama" in listing
+    assert "contract with mode (GENERATE, FROM_IMAGE, HDRI or UPSCALE)" in listing
+    estimate = descriptions["estimate_cost"]
+    assert "Lane panorama accepts only list_models(lane=panorama) models" in estimate
+    assert "saved, downloaded 360 result of this account and project" in estimate
+    assert "A changed model schema fails closed" in estimate
+    generate = descriptions["generate"]
+    assert "edit3d or panorama" in generate
+    assert "Panorama results never change a World automatically" in generate
+    assert "prepare_result_application(purpose=world)" in generate

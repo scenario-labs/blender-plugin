@@ -1,0 +1,112 @@
+{
+ "model": {
+  "id": "model_hunyuan-world-image-to-skybox",
+  "userId": "apiu_FIXTURE0000000000000000",
+  "authorId": "apiu_FIXTURE0000000000000000",
+  "ownerId": "proj_FIXTURE00000000000000000",
+  "createdAt": "2026-07-27T15:14:12.860Z",
+  "updatedAt": "2026-07-28T13:27:46.924Z",
+  "name": "HY World - Image to Skybox",
+  "shortDescription": "Turn one photo of a place into a seamless 360 degree equirectangular skybox. Pick a high-fidelity or fast backend, and optionally describe the unseen surroundings.",
+  "type": "custom",
+  "privacy": "public",
+  "capabilities": [
+   "img2img"
+  ],
+  "source": "other",
+  "status": "trained",
+  "trainingProgress": {},
+  "parameters": {},
+  "trainingImagesNumber": 0,
+  "trainingImagePairs": [],
+  "tags": [
+   "360",
+   "environment",
+   "geoRestriction:EU/US/KR",
+   "hunyuan",
+   "hunyuan world",
+   "panorama",
+   "sc:skybox",
+   "world"
+  ],
+  "collectionIds": [],
+  "exampleAssetIds": [
+   "asset_ZJXpVAzufT2JRLezqALpmvKY",
+   "asset_jrYcr8GNQ5JrvhkE2KZ43Lt8",
+   "asset_5oPe2hU1iegPBsa4bsUPitQJ",
+   "asset_qeMNJ8y6e3zMfVZ7NVuK652f",
+   "asset_BHS1oQ7URd7fhwUrkeTyFGMM",
+   "asset_ZiuXEcXMBrLGdzeJjeXr1aSY",
+   "asset_F7TFi1ak3i6MifpX84U5Wn7S",
+   "asset_gy1vuN1CHfq93esSPd7rZZkP",
+   "asset_RRcQRmau9r4LMDz98Ea6KLLy",
+   "asset_iG2uGHgtPq9EcqjdnS3ahPRk",
+   "asset_t1djcR2VbmD6PP9NeJ8ZBex8",
+   "asset_iqBLZkwih6PmqaUFCiphCfH7",
+   "asset_dCgUqipfeuCjTAVgmqc8YJjz",
+   "asset_J5kcYKDuqsZ3onWheKU6tigK",
+   "asset_g7TYkGnyQrugsV29TV4XAnr4",
+   "asset_DUx8EoiLvrewh9HsYgr1mnvm",
+   "asset_JfARGTNbqLnoasFLJgh6ToxY",
+   "asset_xiqKefJRmBuQCY7WMRtXPHwB",
+   "asset_TFpjFNv33z87GTWAvxtqTh6R",
+   "asset_zsALsCNi22w2ANAvCKjHAeX9",
+   "asset_QvzkaP94RQZ7XZkQxQKnC8DJ"
+  ],
+  "custom": true,
+  "accessRestrictions": 25,
+  "complianceMetadata": {
+   "enterpriseStatus": "Ready",
+   "licenseTerms": "https://www.scenario.com/terms-and-conditions",
+   "subProcessor": "Modal",
+   "modelProvider": "Tencent",
+   "maintainer": "Scenario",
+   "dataProcessingComment": "temporaryRetention"
+  },
+  "inputs": [
+   {
+    "description": "A single photo of a PLACE/scene (indoor or outdoor), NOT an object \u2014 expanded into a 360\u00b0 equirectangular panorama.",
+    "kind": "image",
+    "label": "Image",
+    "name": "image",
+    "costImpact": false,
+    "parent": true,
+    "required": {
+     "always": true
+    },
+    "type": "file"
+   },
+   {
+    "description": "Optional text describing what should fill the unseen surroundings.",
+    "label": "Prompt",
+    "name": "prompt",
+    "costImpact": false,
+    "prompt": true,
+    "type": "string"
+   },
+   {
+    "allowedValues": [
+     "full",
+     "qwen"
+    ],
+    "description": "Panorama backend. `full` = HunyuanImage-3 (highest quality, slower & costlier); `qwen` = faster and cheaper, lower fidelity.",
+    "default": "full",
+    "group": "Settings",
+    "label": "Panorama backend",
+    "name": "backend",
+    "costImpact": true,
+    "type": "string"
+   },
+   {
+    "description": "Seed for reproducible results; leave blank for random.",
+    "group": "Settings",
+    "label": "Seed",
+    "max": 2147483647,
+    "min": 0,
+    "name": "seed",
+    "costImpact": false,
+    "type": "number"
+   }
+  ]
+ }
+}

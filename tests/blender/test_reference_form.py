@@ -22,6 +22,7 @@ class ReferenceFormTests(unittest.TestCase):
         self.addCleanup(fixture.doCleanups)
         self.runtime, self.owner = fixture.runtime, fixture.owner
         self.form = submodule("blender.reference_form")
+        self.uploads = submodule("blender.reference_uploads")
         self.generation = submodule("blender.generation")
         model = {
             "id": "fixture-reference-form",
@@ -655,6 +656,8 @@ class ReferenceFormTests(unittest.TestCase):
 
         self.fixture.fixture.handler = held_read
         self.addCleanup(release.set)
+        # A slow host must not age the shown view out between its draw and poll().
+        self.enterContext(patch.object(self.uploads, "_VIEW_SECONDS", 60.0))
         ticket = self.start().ticket
         for _ in ("prepare_upload", "initialize_upload"):
             ticket.task.result(5)
@@ -674,6 +677,29 @@ class ReferenceFormTests(unittest.TestCase):
         # Background poll() refreshes the suggestion; draw() only reads it.
         self.assertIn("Upload again", self.draw_labels(*dialog))
         self.fixture.fixture.uploader.upload.assert_not_called()
+
+    def test_closed_saved_uploads_view_stops_recovery_scans(self):
+        self.saved_upload()
+        dialog = self.open_inspection()
+        self.assertTrue(self.owner.saved_actions)
+        self.draw_labels(*dialog)
+        scans = Mock(wraps=self.owner.session.upload_recovery_plan)
+        self.enterContext(patch.object(self.owner.session, "upload_recovery_plan", scans))
+        # Popups report no close: a view not drawn within the window counts as
+        # closed. A negative window makes even the latest draw too old.
+        with patch.object(self.uploads, "_VIEW_SECONDS", -1.0):
+            ticket = self.owner.start(self.scene, self.fixture.fixture.source)
+            self.fixture.settle()
+            self.assertEqual(ticket.record.state.value, "imported")
+            for _ in range(3):
+                self.owner.poll()
+        scans.assert_not_called()
+        # Drawing the view again resumes one refresh on the next pump tick only.
+        self.draw_labels(*dialog)
+        for _ in range(3):
+            self.owner.poll()
+        scans.assert_called_once()
+        self.assertIn(ticket.record.intent.request_id, self.owner.saved_actions)
 
     def test_native_cleanup_runs_without_dialog_and_preserves_original(self):
         record = self.saved_upload()

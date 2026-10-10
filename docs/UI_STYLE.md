@@ -123,8 +123,10 @@ uncertain admitted work retains its duplicate-upload guard.
 **Inspect uploads** offers explicit known-status refresh, unclaimed preparation
 cancellation, **Upload again** for an unfinished upload whose suggested recovery is
 a restart, and finished staging cleanup; cancellation, restart and cleanup require
-confirmation. When a transfer stops or a recovery finishes while the view is open,
-the maintenance pump refreshes those suggestions; drawing only reads them.
+confirmation. When a transfer stops or a recovery finishes while the view is shown,
+the maintenance pump refreshes those suggestions. Drawing reads them and records
+only an in-memory time of its last draw. Popups report no close, so a view not
+drawn for two seconds stops that store read until it draws again.
 A restarted upload never attaches itself to the slot.
 **Use saved upload** and an input's **Saved uploads** open the same paginated
 view. Offer attachment only for imported uploads matching the input kind

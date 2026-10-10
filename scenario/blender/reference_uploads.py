@@ -53,6 +53,11 @@ _REFERENCE_TYPES = {
 }
 
 
+# Popups report no close. The saved-uploads view counts as shown for this long
+# after its last draw, which spans several maintenance pump ticks.
+_VIEW_SECONDS = 2.0
+
+
 class UploadNotStarted(ScenarioError):
     """Local validation or queue admission failed before any task was accepted."""
 
@@ -166,6 +171,8 @@ class ReferenceUploads:
         self._recoveries = WeakSet()
         self.saved = {}
         self.saved_actions = {}
+        self._actions_stale = False
+        self._view_drawn_at = None
         self.recovery_errors = {}
         self.forms = {}
         self.form_errors = deque(maxlen=16)
@@ -297,7 +304,8 @@ class ReferenceUploads:
                         "The upload origin changed or work could not start; inspect saved progress"
                     )
         if completed:
-            self._observe_actions()
+            self._invalidate_actions()
+        self._refresh_actions()
         if self.forms:
             from .reference_form import deliver
 
@@ -340,24 +348,38 @@ class ReferenceUploads:
                     if record.state in {UploadState.IMPORTED, UploadState.PROCESSING}:
                         ticket.error = None
                         ticket.next_poll = time.monotonic() + 2.0
-        self._observe_actions()
+        self._invalidate_actions()
 
     def inspect_saved(self):
         items = self.session.upload_recovery_plan()
         self.saved = {item.record.intent.request_id: item.record for item in items}
         self.saved_actions = {item.record.intent.request_id: item.action for item in items}
+        self._actions_stale = False
         return tuple(item.record for item in items)
 
-    def _observe_actions(self):
-        """Keep inspected suggestions current on the main thread; draw() only reads them.
+    def note_view_drawn(self):
+        """Record that saved uploads drew: Python memory only, no I/O or Blender data."""
+        self._view_drawn_at = time.monotonic()
 
-        A transfer can stop or a recovery finish while saved uploads are open.
-        Records and actions come from one recovery plan, the same eligibility
-        check a restart repeats. A failed read hides every suggestion until a
-        new inspection.
+    def _invalidate_actions(self):
+        """A record or part plan may have changed; never scan the store here."""
+        if self.saved_actions:
+            self._actions_stale = True
+
+    def _refresh_actions(self):
+        """Recompute stale suggestions on the main thread only while saved uploads show.
+
+        A transfer can stop or a recovery finish while the view is open. Records
+        and actions come from one recovery plan, the same eligibility check a
+        restart repeats; draw() only reads them. A closed or idle view leaves
+        them stale without scanning the store, and its next draw resumes the
+        refresh on a following pump tick. A failed read hides every suggestion
+        until a new inspection.
         """
-        if not self.saved_actions:
+        drawn = self._view_drawn_at
+        if not self._actions_stale or drawn is None or time.monotonic() - drawn > _VIEW_SECONDS:
             return
+        self._actions_stale = False
         try:
             items = self.session.upload_recovery_plan()
         except Exception:

@@ -581,7 +581,10 @@ class SCENARIO_OT_inspect_uploads(bpy.types.Operator):
         valid = (
             owner is not None and owner is runtime.state.reference_uploads and owner.session.active
         )
-        if not valid:
+        if valid:
+            # Lets the pump refresh suggestions only while this popup is shown.
+            owner.note_view_drawn()
+        else:
             layout.label(text="The connection changed; close and reopen this view", icon="ERROR")
         records = getattr(self, "_records", ())
         if not records:

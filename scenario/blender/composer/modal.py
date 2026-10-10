@@ -8,13 +8,34 @@ import time
 import bpy
 
 from ...core.ui import composer_layout as cl
+from ...core.ui import job_strip
 from .. import panels, runtime
+
+# shown when a strip click no longer matches what the strip showed
+JOB_CHANGED = "The job changed; check its updated actions"
+# shown when a strip action is clicked while the job's status refresh or another command runs
+JOB_BUSY = "The job is updating; try again in a moment"
+ACTION_UNAVAILABLE = "This action is not available here; inspect the job"
+JOB_CARD = "scenario.composer_job_card"
 
 
 def _layout(context, state):
     from .draw import composer_layout
 
     return composer_layout(context, state)
+
+
+def _geometry(context, state):
+    """The composer and its job strip exactly as drawing computes them, for hit testing."""
+    from .draw import composer_geometry
+
+    return composer_geometry(context, state)
+
+
+def _region_key(context):
+    from .draw import region_key
+
+    return region_key(context.region)
 
 
 def _redraw(context):
@@ -118,6 +139,69 @@ def _generate(operator, scene, state):
         message = str(error).strip()
         reason = message.removeprefix("Error:").strip() if message.startswith("Error:") else ""
         operator.report({"WARNING"}, reason or "Generation is not available right now")
+
+
+def _invoke(operator, idname, **properties):
+    """Run an operator through its own invoke path: its confirmation, review dialog or popup decides.
+
+    Never EXEC: a strip click is not an approval. Errors keep this handler alive."""
+    category, name = idname.split(".", 1)
+    try:
+        getattr(getattr(bpy.ops, category), name)("INVOKE_DEFAULT", **properties)
+    except RuntimeError as error:
+        # An operator's error report arrives as an exception; keep its reason when it has one.
+        message = str(error).strip()
+        reason = message.removeprefix("Error:").strip() if message.startswith("Error:") else ""
+        operator.report({"WARNING"}, reason or ACTION_UNAVAILABLE)
+    except (AttributeError, TypeError):
+        operator.report({"WARNING"}, ACTION_UNAVAILABLE)
+
+
+def _still_drawn(context, state, geometry):
+    """Whether this region last drew the strip the current geometry computes: same job, revision and chips."""
+    drawn = state.drawn_strips.get(_region_key(context))
+    return geometry.job is not None and drawn is not None and geometry.signature() == drawn
+
+
+def _job_click(operator, context, scene, state, geometry, key):
+    """Dispatch one strip chip exactly as it was drawn; never act on a job that changed since.
+
+    Inspect and the choice between several actions open the job card. Any other chip runs its
+    saved-job action descriptor's operator, whose own dialog is the approval."""
+    if not _still_drawn(context, state, geometry):
+        operator.report({"INFO"}, JOB_CHANGED)
+        return
+    job = geometry.job
+    item = None
+    if key not in (cl.INSPECT_CHIP, job_strip.CHOOSE_CHIP):
+        item = next((d for d in job.actions if d.key == key and d.operator), None)
+        if item is None:
+            operator.report({"INFO"}, JOB_CHANGED)
+            return
+        if job.held:
+            # The chip shows the action last offered; the job offers it again once the command ends.
+            operator.report({"INFO"}, JOB_BUSY)
+            return
+    # The same guard as a click outside: commit the focused prompt to its own form, or stop.
+    try:
+        state.flush_focused_prompt(scene)
+    except RuntimeError as error:
+        operator.report({"WARNING"}, str(error))
+        return
+    if item is None:
+        _invoke(operator, JOB_CARD, request_id=job.request_id)
+    else:
+        _invoke(operator, item.operator, **dict(item.properties))
+
+
+def _job_dismiss(operator, context, state, geometry):
+    """Hide the drawn job's strip for its scene lane; the job continues in the Jobs panel."""
+    drawn = state.drawn_strips.get(_region_key(context))
+    job = geometry.job
+    if job is None or drawn is None or drawn[0] != job.request_id:
+        operator.report({"INFO"}, JOB_CHANGED)
+        return
+    state.dismiss(job.key, job.request_id)
 
 
 def _takes_prompt(scene, state):
@@ -285,8 +369,8 @@ class SCENARIO_OT_composer_modal(bpy.types.Operator):
         state = runtime.state.composer
         if state is None or context.region is None or context.region.type != "WINDOW":
             return {"PASS_THROUGH", "CANCELLED"}
-        layout = _layout(context, state)
-        inside = layout.hit(event.mouse_region_x, event.mouse_region_y) is not None
+        geometry = _geometry(context, state)
+        inside = geometry.hit(event.mouse_region_x, event.mouse_region_y) is not None
         if not inside and not state.focused:
             return {"PASS_THROUGH", "CANCELLED"}
         if getattr(runtime.state, "composer_modal_running", False):
@@ -385,7 +469,8 @@ class SCENARIO_OT_composer_modal(bpy.types.Operator):
         if state is None or context.region is None:
             return self._finish(context)
         scene = context.scene
-        layout = _layout(context, state)
+        geometry = _geometry(context, state)
+        layout = geometry.layout
         if state.focused and not layout.expanded:
             # The card gave way to the pill (the viewport lost the room for it): leave the prompt it no longer
             # draws, as a click outside would, so keys never type into a hidden field.
@@ -422,7 +507,7 @@ class SCENARIO_OT_composer_modal(bpy.types.Operator):
                 )
                 _redraw(context)
                 return {"RUNNING_MODAL"}
-            hit = layout.hit(*state.mouse)
+            hit = geometry.hit(*state.mouse)
             if hit != state.hover:
                 if hit == ("resize",):
                     # the corner shows a resize cursor instead of a permanent grip
@@ -448,7 +533,7 @@ class SCENARIO_OT_composer_modal(bpy.types.Operator):
             value = "DOUBLE_CLICK"
         if event.type == "LEFTMOUSE" and value == "DOUBLE_CLICK":
             state.presses.reset()
-            hit = layout.hit(event.mouse_region_x, event.mouse_region_y)
+            hit = geometry.hit(event.mouse_region_x, event.mouse_region_y)
             if hit == ("prompt",) and state.expanded:
                 # The press before it already explained a form without a prompt. A focused field
                 # keeps the form it was synchronized from, even one that was replaced.
@@ -470,7 +555,7 @@ class SCENARIO_OT_composer_modal(bpy.types.Operator):
             # elsewhere the second press does nothing more: a double-click on Generate submits once
             return {"RUNNING_MODAL"}
         if event.type == "LEFTMOUSE" and value == "PRESS":
-            hit = layout.hit(event.mouse_region_x, event.mouse_region_y)
+            hit = geometry.hit(event.mouse_region_x, event.mouse_region_y)
             if hit is None:
                 try:
                     state.flush_focused_prompt(scene)
@@ -518,6 +603,10 @@ class SCENARIO_OT_composer_modal(bpy.types.Operator):
             elif kind == "generate":
                 state.leave_focus(scene)
                 _generate(self, scene, state)
+            elif kind == "job":
+                _job_click(self, context, scene, state, geometry, hit[1])
+            elif kind == "job_dismiss":
+                _job_dismiss(self, context, state, geometry)
             elif kind in ("model", "settings"):
                 # Their dialogs can switch the form (3D mode, model lane): commit and blur first.
                 try:

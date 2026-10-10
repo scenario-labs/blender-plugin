@@ -1361,7 +1361,7 @@ class ComposerSideRegionTests(unittest.TestCase):
                             return
                         # an error before the event's type is read, here while laying out a pointer move
                         with (
-                            mock.patch.object(self.modal, "_layout", side_effect=failure),
+                            mock.patch.object(self.modal, "_geometry", side_effect=failure),
                             self.assertRaises(ValueError),
                         ):
                             self._event(operator, ctx, "MOUSEMOVE", "NOTHING", point)
@@ -1417,7 +1417,7 @@ class ComposerSideRegionTests(unittest.TestCase):
                         self.modal.SCENARIO_OT_composer_modal.cancel(operator, ctx)
                     else:  # an error while laying out the next pointer move
                         with (
-                            mock.patch.object(self.modal, "_layout", side_effect=failure),
+                            mock.patch.object(self.modal, "_geometry", side_effect=failure),
                             self.assertRaises(ValueError),
                         ):
                             self._event(operator, ctx, "MOUSEMOVE", "NOTHING", corner)
@@ -1713,12 +1713,12 @@ class ComposerEditFormTests(unittest.TestCase):
         operator = SimpleNamespace(report=MagicMock(), _finish=MagicMock())
         hit = ("tab", tab) if tab else (kind,) if kind else None
         with (
-            patch.object(self.modal, "_layout") as layout,
+            patch.object(self.modal, "_geometry") as geometry,
             patch.object(self.modal, "_caret_index", return_value=0),
             patch.object(self.modal, "_now", return_value=when),
         ):
-            layout.return_value.hit.return_value = hit
-            layout.return_value.scale = 1.0
+            geometry.return_value.hit.return_value = hit
+            geometry.return_value.layout.scale = 1.0
             result = self.modal.SCENARIO_OT_composer_modal.modal(operator, context, event)
         self.assertEqual(result, set(expect))
         return operator
@@ -2111,11 +2111,11 @@ class ComposerEditFormTests(unittest.TestCase):
         call_panel = MagicMock(return_value={"INTERFACE"})
         ops = SimpleNamespace(wm=SimpleNamespace(call_panel=call_panel))
         with (
-            patch.object(self.modal, "_layout") as layout,
+            patch.object(self.modal, "_geometry") as geometry,
             patch.object(self.modal, "bpy", SimpleNamespace(ops=ops)),
         ):
-            layout.return_value.hit.return_value = None
-            layout.return_value.scale = 1.0
+            geometry.return_value.hit.return_value = None
+            geometry.return_value.layout.scale = 1.0
             result = self.modal.SCENARIO_OT_composer_modal.modal(operator, context, event)
         self.assertEqual(result, {"RUNNING_MODAL"})
         return operator, call_panel

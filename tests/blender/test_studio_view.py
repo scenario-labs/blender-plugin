@@ -143,8 +143,8 @@ class StudioViewTests(unittest.TestCase):
         )
         operator = SimpleNamespace()
         operator._finish = lambda ctx: modal.SCENARIO_OT_composer_modal._finish(operator, ctx)
-        with patch.object(modal, "_layout") as layout:
-            layout.return_value.hit.return_value = None
+        with patch.object(modal, "_geometry") as geometry:
+            geometry.return_value.hit.return_value = None
             result = modal.SCENARIO_OT_composer_modal.modal(operator, context, event)
         self.assertEqual(result, {"FINISHED", "PASS_THROUGH"})
         self.assertEqual(scene.scenario.image.prompt, "Café 雪 pending")
@@ -197,8 +197,8 @@ class StudioViewTests(unittest.TestCase):
                     type="LEFTMOUSE", value="PRESS", mouse_region_x=10, mouse_region_y=10
                 )
                 operator = SimpleNamespace(report=MagicMock(), _finish=MagicMock())
-                with patch.object(modal, "_layout") as layout:
-                    layout.return_value.hit.return_value = None
+                with patch.object(modal, "_geometry") as geometry:
+                    geometry.return_value.hit.return_value = None
                     result = modal.SCENARIO_OT_composer_modal.modal(operator, context, event)
                 self.assertEqual(lane_state.prompt, before)
                 self.assertEqual(self.composer.field.text, "pending composer")
@@ -222,8 +222,8 @@ class StudioViewTests(unittest.TestCase):
             type="LEFTMOUSE", value="PRESS", mouse_region_x=10, mouse_region_y=10
         )
         operator = SimpleNamespace(_finish=MagicMock(return_value={"FINISHED"}))
-        with patch.object(modal, "_layout") as layout:
-            layout.return_value.hit.return_value = None
+        with patch.object(modal, "_geometry") as geometry:
+            geometry.return_value.hit.return_value = None
             result = modal.SCENARIO_OT_composer_modal.modal(operator, context, event)
         self.assertEqual(scene.scenario.image.prompt, "new sidebar value")
         self.assertEqual(result, {"FINISHED", "PASS_THROUGH"})

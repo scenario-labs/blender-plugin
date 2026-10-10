@@ -19,6 +19,7 @@ import math
 import re
 from dataclasses import dataclass
 
+from ..jobs.progress import LABELS as REMOTE_LABELS
 from .composer_layout import INSPECT_CHIP
 
 ACTIVE_REMOTE_STATUSES = ("pending", "queued", "warming-up", "in-progress", "finalizing")
@@ -28,13 +29,9 @@ TONES = ("active", "ready", "done", "review", "error")
 INSPECT_LABEL = "Inspect"
 CHOOSE_CHIP = "choose"  # several result actions: the chip opens the job card to pick one
 
-_REMOTE_TEXT = {
-    "pending": "Queued",
-    "queued": "Queued",
-    "warming-up": "Starting",
-    "in-progress": "Generating",
-    "finalizing": "Finalizing",
-}
+# The Jobs panel's words for an active remote status, capitalized, so one job reads the same in
+# the strip and in Jobs rows: Waiting, Queued, Starting, Generating, Finishing.
+_REMOTE_TEXT = {status: label.capitalize() for status, label in REMOTE_LABELS.items()}
 _STATE_TEXT = {
     "prepared": ("Preparing submission", "active"),
     "submitting": ("Submitting...", "active"),

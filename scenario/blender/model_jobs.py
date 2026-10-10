@@ -852,6 +852,23 @@ class ModelJobs:
             if binding == key and request_id in self.views
         )
 
+    def busy(self, request_id):
+        """Whether a submission or a job command for this request is still running.
+
+        `actions` offers nothing for such a job until it finishes, including during
+        each automatic status refresh. Reads memory only, so drawing code may call it.
+        """
+        return request_id in self.submissions or request_id in self._commands
+
+    def imports_automatically(self, request_id):
+        """Whether this session imports the job's ready Image results without another review.
+
+        True from an Image lane submission until that import is applied, canceled or
+        handed to an explicit action. A paused import stays true, so callers also read
+        the view's error. Reads memory only.
+        """
+        return request_id in self._automatic_application
+
     def inspect(self):
         """Attach saved display projections without resuming or applying old work."""
         for record in self.store.records():

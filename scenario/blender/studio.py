@@ -24,6 +24,12 @@ from . import (
 _popups = WeakKeyDictionary()
 
 
+def track_popup(operator, region):
+    """Refresh `operator`'s open popup `region` from the pump; ownership stays weak."""
+    if region is not None:
+        _popups[operator] = region
+
+
 def redraw_popups():
     """Temporary popup regions are not among an area's normal regions."""
     for operator, region in list(_popups.items()):
@@ -165,8 +171,7 @@ class SCENARIO_OT_open_studio(bpy.types.Operator):
         return context.window_manager.invoke_popup(self, width=self._width)
 
     def draw(self, context):
-        if context.region_popup is not None:
-            _popups[self] = context.region_popup
+        track_popup(self, context.region_popup)
         draw_view(self.layout, context, width=self._width)
 
     def execute(self, context):

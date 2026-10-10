@@ -3,6 +3,7 @@
 """gpu/blf drawing of the floating composer. Runs inside a POST_PIXEL draw handler on the main thread; no IO."""
 
 import math
+from dataclasses import dataclass
 
 import blf
 import bpy
@@ -10,7 +11,9 @@ import gpu
 from gpu_extras.batch import batch_for_shader
 
 from ...core.ui import composer_layout as cl
-from .. import generation, panels, runtime
+from ...core.ui import job_strip
+from ...core.ui.costs import format_cu
+from .. import generation, job_recovery, panels, runtime
 
 _batches = {}
 _shader = None
@@ -24,7 +27,17 @@ MUTED = (0.6, 0.6, 0.62, 1.0)
 TAB = (0.2, 0.2, 0.22, 1.0)
 TAB_HOVER = (0.28, 0.28, 0.3, 1.0)
 SELECTION = (0.36, 0.55, 1.0, 0.45)
+READY = (0.36, 0.78, 0.48, 1.0)
+REVIEW = (0.96, 0.69, 0.25, 1.0)
+ERROR = (0.95, 0.38, 0.38, 1.0)
+# The job strip's tone dot; its line always states the status in words too.
+TONE_COLORS = {"active": ACCENT, "ready": READY, "done": MUTED, "review": REVIEW, "error": ERROR}
 PROMPT_INSET = 12  # horizontal text inset inside the prompt field, in unscaled pixels
+STRIP_FONT = 11  # unscaled font size of the job strip's line and chips
+STRIP_CHIP_PAD = 10  # unscaled room on each side of a strip chip's label
+STRIP_TITLE = 32  # characters of the prompt the strip's line keeps
+# Saved states with nothing left to follow; the strip's "+N more" counts the lane's other jobs.
+SETTLED_STATES = frozenset({"applied", "canceled", "failed"})
 
 
 def _shader_get():
@@ -168,6 +181,158 @@ def composer_layout(context, state):
     )
 
 
+# Horizontal regions drawn over the viewport with region overlap, and the space flag showing each.
+# Blender sends clicks over them to those regions, so the job strip stays clear of them.
+EDGE_REGIONS = {
+    "HEADER": "show_region_header",
+    "TOOL_HEADER": "show_region_tool_header",
+    "ASSET_SHELF": "show_region_asset_shelf",
+    "ASSET_SHELF_HEADER": "show_region_asset_shelf",
+}
+
+
+def overlap_vertical_insets(area, region):
+    """(bottom, top) heights of `region` covered by the area's visible headers and asset shelf.
+
+    Measured like overlap_insets along the other axis: a covering region counts from the edge it
+    is closer to. Regions beside the viewport (no overlap) do not cover it."""
+    if area is None or region is None:
+        return (0.0, 0.0)
+    space = getattr(getattr(area, "spaces", None), "active", None)
+    y0 = region.y
+    y1 = y0 + region.height
+    centre = (y0 + y1) / 2
+    bottom = top = 0.0
+    for other in area.regions:
+        flag = EDGE_REGIONS.get(other.type)
+        if flag is None or other.height <= 1 or not getattr(space, flag, True):
+            continue
+        lo, hi = max(y0, other.y), min(y1, other.y + other.height)
+        if hi <= lo:
+            continue
+        if other.y + other.height / 2 >= centre:
+            top = max(top, float(y1 - lo))
+        else:
+            bottom = max(bottom, float(hi - y0))
+    return (bottom, top)
+
+
+@dataclass(frozen=True)
+class StripJob:
+    """What the job strip shows for the current job of one scene lane, read from memory only.
+
+    `actions` are the saved-job action descriptors its chips dispatch. While a status refresh or
+    another command runs, the job offers none; `held` then marks the actions last offered for this
+    saved revision, shown so the chips do not blink, of which only Inspect dispatches."""
+
+    key: tuple  # (scene session_uid, lane)
+    request_id: str
+    revision: object  # saved revision; None before the first poll
+    status: job_strip.StripStatus
+    line: str
+    chips: tuple
+    actions: tuple
+    held: bool = False
+
+
+def strip_job(scene, state, lane):
+    """The newest job this session submitted from `scene`'s `lane`, unless its strip was dismissed.
+
+    Reads ModelJobs' in-memory bindings and views: it never creates a job owner or session and
+    never reads the job store. Only the composer's Python display cache changes."""
+    jobs = runtime.state.model_jobs
+    if jobs is None:
+        return None
+    try:
+        key = (scene.session_uid, lane)
+    except ReferenceError:
+        return None
+    views = jobs.bound_views(scene, lane)
+    if not views or state.is_dismissed(key, views[0].local_id):
+        return None
+    view = views[0]
+    meta = view.meta
+    saved = meta.get("saved_state")
+    revision = meta.get("saved_revision")
+    reading = meta.get("remote")
+    automatic = jobs.imports_automatically(view.local_id)
+    status = job_strip.strip_status(
+        saved,
+        remote_status=getattr(reading, "status", None),
+        progress=getattr(reading, "fraction", None),
+        error=view.error,
+        automatic=automatic,
+        in_flight=view.local_id in jobs.submissions,
+        online=runtime.online(),
+        stale=bool(getattr(reading, "stale", False)),
+    )
+    actions, held = state.shown_actions(
+        view.local_id, revision, job_recovery.result_actions(view), jobs.busy(view.local_id)
+    )
+    chips = job_strip.strip_chips(actions, saved, automatic=automatic, error=view.error)
+    price = f"{format_cu(view.cu_cost)} CU" if view.cu_cost is not None else ""
+    more = sum(1 for other in views[1:] if other.meta.get("saved_state") not in SETTLED_STATES)
+    title = panels._short_prompt(view, STRIP_TITLE)
+    line = job_strip.strip_line(title, status.text, price, more)
+    return StripJob(key, view.local_id, revision, status, line, chips, actions, held)
+
+
+def strip_spec(chips, scale):
+    """Each chip's width at the strip's font size, measured as it is drawn."""
+    measure = _measure(int(STRIP_FONT * scale))
+    pad = 2 * STRIP_CHIP_PAD * scale
+    return cl.StripSpec(tuple((chip.key, measure(chip.label) + pad) for chip in chips))
+
+
+@dataclass(frozen=True)
+class ComposerGeometry:
+    """The composer's card or pill and its job strip: what drawing shows and clicks reach."""
+
+    layout: cl.Layout
+    strip: cl.StripLayout = None
+    job: StripJob = None
+
+    def hit(self, px, py):
+        return cl.composer_hit(self.layout, self.strip, px, py)
+
+    def signature(self):
+        """The job, revision and chips the strip offers clicks on; None while it takes none."""
+        if self.job is None or self.strip is None or self.strip.hidden:
+            return None
+        shown = {key for key, _ in self.strip.chip_rects}
+        chips = tuple(chip for chip in self.job.chips if chip.key in shown)
+        return job_strip.strip_signature(self.job.request_id, self.job.revision, chips)
+
+
+def composer_geometry(context, state):
+    """The one geometry drawing and the modal share: the composer, then its job strip."""
+    layout = composer_layout(context, state)
+    scene = getattr(context, "scene", None)
+    if scene is None or not hasattr(scene, "scenario"):
+        return ComposerGeometry(layout)
+    _, lane = state.shown_form(scene)
+    job = strip_job(scene, state, lane)
+    if job is None:
+        return ComposerGeometry(layout)
+    region = context.region
+    strip = cl.strip_placement(
+        layout,
+        region.width,
+        region.height,
+        strip_spec(job.chips, layout.scale),
+        vertical_insets=overlap_vertical_insets(getattr(context, "area", None), region),
+    )
+    return ComposerGeometry(layout, strip, job)
+
+
+def region_key(region):
+    """A stable key for one viewport region while it exists."""
+    try:
+        return region.as_pointer()
+    except (AttributeError, ReferenceError):
+        return id(region)
+
+
 def prompt_metrics(prompt_rect, field, scale):
     """Font size, visible slice and text origin of the prompt field: shared by drawing and mouse hit testing."""
     font_px = int(12 * scale)
@@ -238,6 +403,71 @@ def _grip(gr, scale, hovered):
     gpu.state.line_width_set(1.0)
 
 
+def _dismiss(dr, scale, hovered):
+    """A small cross that hides the job strip; the job itself continues."""
+    if hovered:
+        rect(dr.x, dr.y, dr.w, dr.h, TAB_HOVER, 4 * scale)
+    shader = _shader_get()
+    inset = dr.w * 0.3
+    x0, y0, x1, y1 = dr.x + inset, dr.y + inset, dr.right - inset, dr.top - inset
+    batch = batch_for_shader(shader, "LINES", {"pos": [(x0, y0), (x1, y1), (x0, y1), (x1, y0)]})
+    gpu.state.line_width_set(max(1.0, 1.5 * scale))
+    shader.uniform_float("color", TEXT if hovered else MUTED)
+    batch.draw(shader)
+    gpu.state.line_width_set(1.0)
+
+
+def _progress(bar, status):
+    """A thin bar: filled to a reported fraction, else a dim full track that shows activity."""
+    rect(bar.x, bar.y, bar.w, bar.h, ACCENT_DIM, 0)
+    if status.fraction is not None:
+        rect(bar.x, bar.y, bar.w * status.fraction, bar.h, ACCENT, 0)
+
+
+def _draw_strip(geometry, state, scale):
+    """The job strip's tray, or its indicator line inside the pill; drawing only, no state."""
+    strip, job = geometry.strip, geometry.job
+    if strip is None or job is None:
+        return
+    tone = TONE_COLORS.get(job.status.tone, MUTED)
+    if strip.hidden:
+        bar = strip.indicator_rect
+        if bar is None:
+            return
+        if job.status.tone == "active":
+            _progress(bar, job.status)
+        else:
+            rect(bar.x, bar.y, bar.w, bar.h, tone, 0)
+        return
+    r = strip.rect
+    rect(r.x, r.y, r.w, r.h, CARD, 8 * scale)
+    dot = strip.dot_rect
+    rect(dot.x, dot.y, dot.w, dot.h, tone, dot.w / 2)
+    font_px = int(STRIP_FONT * scale)
+    line = strip.text_rect
+    text(
+        line.x,
+        line.y + (line.h - font_px) / 2 + 2 * scale,
+        font_px,
+        job.line,
+        TEXT,
+        max_width=line.w,
+    )
+    if job.status.tone == "active":
+        _progress(strip.progress_rect, job.status)
+    labels = {chip.key: chip.label for chip in job.chips}
+    for key, chip_rect in strip.chip_rects:
+        _chip(
+            chip_rect,
+            labels[key],
+            scale,
+            font_px,
+            hovered=state.hover == ("job", key),
+            centered=True,
+        )
+    _dismiss(strip.dismiss_rect, scale, hovered=state.hover == ("job_dismiss",))
+
+
 def status_note(lane_state):
     """The line shown next to the model chip: a failed model description, a quote problem, the lane's error, else the add-on's temporary message."""
     error = generation.lane_error(lane_state)  # without a stale saved model-load failure
@@ -301,17 +531,16 @@ def draw_composer():
     state = runtime.state.composer
     if state is None:
         return
-    layout = composer_layout(context, state)
+    geometry = composer_geometry(context, state)
+    layout = geometry.layout
     scale = layout.scale
+    # Python display caches only: what clicks hit-test against and what the strip offered.
     state.layout = layout
+    state.remember_strip(region_key(region), geometry.signature())
     # The tab stays highlighted; prompt, model, price and Generate follow the form it drives.
-    tab = state.lane_for(scene)
-    lane = state.generation_lane(scene)
+    # Until Esc, the card keeps describing the form a replaced focused prompt belongs to.
+    tab, lane = state.shown_form(scene)
     replaced = state.form_replaced(scene)
-    original = state.replaced_form(scene)
-    if original is not None:
-        # Until Esc, the card keeps describing the form the focused text belongs to.
-        tab, lane = original
     lane_state = (
         state.sync_from_lane(scene) if not state.focused else scene.scenario.lane_state(lane)
     )
@@ -360,6 +589,7 @@ def draw_composer():
                 TEXT if enabled else MUTED,
                 max_width=gen_w - 8 * scale,
             )
+            _draw_strip(geometry, state, scale)
             return
         card = layout.card_rect
         rect(card.x, card.y, card.w, card.h, CARD, 12 * scale)
@@ -425,5 +655,6 @@ def draw_composer():
                 MUTED,
                 max_width=gr.x - note_x - 10 * scale,
             )
+        _draw_strip(geometry, state, scale)
     finally:
         gpu.state.blend_set("NONE")

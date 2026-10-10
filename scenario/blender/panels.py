@@ -507,19 +507,21 @@ def _primary_asset(rec):
     return rec.asset_ids[0] if rec.asset_ids else ""
 
 
-def draw_result(layout, rec):
+def draw_result(layout, rec, *, collapsible=True):
     """One generation: a header (type icon, prompt start, cost, collapse arrow), then model, asset id and actions.
-    Only the output is shown; the inputs and settings live behind Details."""
-    collapsed = bool(rec.meta.get("collapsed"))
+    Only the output is shown; the inputs and settings live behind Details. `collapsible=False` (the composer's
+    job card) always shows it expanded, without the arrow, and leaves the sidebar's collapsed flag alone."""
+    collapsed = collapsible and bool(rec.meta.get("collapsed"))
     box = layout.box()
     header = box.row(align=True)
-    toggle = header.operator(
-        "scenario.toggle_result",
-        text="",
-        icon="TRIA_RIGHT" if collapsed else "TRIA_DOWN",
-        emboss=False,
-    )
-    toggle.local_id = rec.local_id
+    if collapsible:
+        toggle = header.operator(
+            "scenario.toggle_result",
+            text="",
+            icon="TRIA_RIGHT" if collapsed else "TRIA_DOWN",
+            emboss=False,
+        )
+        toggle.local_id = rec.local_id
     header.label(text=_short_prompt(rec), icon=KIND_ICON.get(rec.kind, "FILE"))
     if not rec.is_success and rec.error:
         # a red error button whose tooltip is the full message, and which opens it in full on click (like the web app)

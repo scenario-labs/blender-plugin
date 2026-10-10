@@ -218,7 +218,11 @@ display-only scene and lane binding; both stay in memory and MCP `job_status`
 reports the same values ([projection rules](../BLENDER_JOB_CONTEXT.md#remote-progress-and-scene-lane-binding)).
 The GUI pump compares the drawn job rows and online access each tick and
 redraws the 3D viewport and Preferences regions only when they change, so
-progress and the offline line update without hovering. Closing a
+progress and the offline line update without hovering. The compact composer's
+job strip reads the newest bound view of its scene and form from that same
+in-memory projection, without creating an owner or reading storage, and
+dispatches only the shared saved-job descriptors' operators through their own
+invoke path ([strip rules](../UI_STYLE.md#compact-job-strip)). Closing a
 panel does not stop work; credential/file changes retire the owner while
 in-flight receipts stay in the original store. Local MCP status can inspect
 these records after restart.

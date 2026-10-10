@@ -215,6 +215,14 @@ establish live generation or full render-lane desktop acceptance.
   viewport shortcuts too. Installed tests simulate these events; physical
   composition, candidate-window placement and other platforms' input methods
   remain unverified under #66.
+- The composer's [job strip](UI_STYLE.md#compact-job-strip) shows only jobs
+  submitted from that scene and form in the current Blender session: jobs from
+  before a restart, recovered cloud jobs, workflows and Film tasks are not bound
+  to a form and stay in Jobs. A viewport too small for the tray hides it. While
+  an automatic status refresh runs, its held action answers *try again in a
+  moment* instead of dispatching. The confirmation, destination dialogs and job
+  card a strip click opens from the composer have only headless coverage so far;
+  desktop interaction, alternate UI scales and screenshots remain #66 work.
 - Viewport screenshots and OpenGL capture require a GUI. Automated GUI probes
   can take keyboard focus; follow the isolated-profile validation procedure.
 - Downloaded audio has an explicit local waveform preview in Generations.

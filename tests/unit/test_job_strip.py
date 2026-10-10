@@ -88,13 +88,22 @@ def test_remote_vocabulary_is_the_pinned_sdk_job_status():
         assert js.known_remote_status(value) is None
 
 
+def test_remote_words_are_the_jobs_panel_words_capitalized():
+    from scenario.core.jobs import progress
+
+    assert set(progress.ACTIVE) == set(js.ACTIVE_REMOTE_STATUSES)
+    for status, label in progress.LABELS.items():
+        text = js.strip_status("remote", remote_status=status).text
+        assert text == label[0].upper() + label[1:], status
+
+
 TABLE = [
     ("prepared", {}, "Preparing submission", "active", None),
     ("submitting", {"in_flight": True}, "Submitting...", "active", None),
     ("submitting", {}, "Submission unconfirmed; do not resubmit", "review", None),
     ("uncertain", {}, "Submission unconfirmed; do not resubmit", "review", None),
     ("remote", {}, "Submitted", "active", None),
-    ("remote", {"remote_status": "pending"}, "Queued", "active", None),
+    ("remote", {"remote_status": "pending"}, "Waiting", "active", None),
     ("remote", {"remote_status": "queued"}, "Queued", "active", None),
     ("remote", {"remote_status": "warming-up"}, "Starting", "active", None),
     ("remote", {"remote_status": "in-progress"}, "Generating", "active", None),
@@ -106,7 +115,7 @@ TABLE = [
         0.42,
     ),
     ("remote", {"remote_status": "in-progress", "progress": 1}, "Generating", "active", None),
-    ("remote", {"remote_status": "finalizing", "progress": 0.99}, "Finalizing", "active", None),
+    ("remote", {"remote_status": "finalizing", "progress": 0.99}, "Finishing", "active", None),
     ("remote", {"remote_status": "queued", "progress": 0.5}, "Queued", "active", None),
     ("remote", {"remote_status": "success"}, "Submitted", "active", None),
     ("remote", {"remote_status": "running"}, "Submitted", "active", None),

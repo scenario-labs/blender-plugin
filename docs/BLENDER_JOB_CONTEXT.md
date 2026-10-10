@@ -745,8 +745,10 @@ keeps the `ModelJobs.actions` name that MCP `job_status` reports. `import_model`
 draws one control per importable unit that `ModelJobs` projected into the view,
 in classified order, instead of one per GLB media type. The sidebar
 Jobs and Generations panels, and the Studio Jobs and Results pages that reuse
-them, draw through `job_recovery.draw_controls`; a future surface such as the
-compact composer can dispatch the same descriptors. Presence means enabled:
+them, draw through `job_recovery.draw_controls`; the compact composer's
+[job strip](UI_STYLE.md#compact-job-strip) dispatches the same descriptors'
+operators with `INVOKE_DEFAULT`, and its job card draws those panels' rows.
+Presence means enabled:
 a descriptor appears only while its action is offered, and rows without an
 operator are status text. Building descriptors reads only in-memory views and
 the current scene's Blockout review, without store reads, session creation or
@@ -823,8 +825,8 @@ status** or **Resume download**.
 `ModelJobs.submit` records a display-only `JobBinding`: the submitting scene's
 `session_uid` and the submitted generation lane, for UI forms and MCP `generate`
 alike, before dispatch. `bound_views(scene, lane)` returns that scene lane's
-views newest first from in-memory dictionaries only, so drawing code such as a
-compact composer strip can find the current job without guessing. A binding
+views newest first from in-memory dictionaries only, so the compact composer's
+job strip finds the current job of the form it shows without guessing. A binding
 grants no destination, origin or application authority; results still apply
 only through their own approvals and origin checks. Workflow and Film
 submissions are unbound. Bindings and readings retire with their owner on a

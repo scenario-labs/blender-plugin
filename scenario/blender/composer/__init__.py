@@ -9,6 +9,7 @@ import bpy
 from .. import runtime
 from . import text_field
 from .breaker import Breaker
+from .job_card import SCENARIO_OT_composer_job_card
 from .modal import SCENARIO_OT_composer_modal
 from .state import ComposerState
 
@@ -104,6 +105,7 @@ def load_layout():
 
 @bpy.app.handlers.persistent  # without it, Blender removes this handler at the first file load
 def _load_pre(*args):
+    # Re-initialising also forgets job strip dismissals and click guards: a loaded file starts over.
     if runtime.state.composer is not None:
         runtime.state.composer.__init__()
         load_layout()
@@ -135,6 +137,7 @@ def register():
     bpy.utils.register_class(SCENARIO_OT_composer_modal)
     bpy.utils.register_class(SCENARIO_OT_composer_reset_layout)
     text_field.register()
+    bpy.utils.register_class(SCENARIO_OT_composer_job_card)
     runtime.state.composer = ComposerState()
     runtime.state.composer_modal_running = False
     load_layout()
@@ -167,6 +170,7 @@ def unregister():
             pass
         _keymap = None
     runtime.state.composer = None
+    bpy.utils.unregister_class(SCENARIO_OT_composer_job_card)
     text_field.unregister()
     bpy.utils.unregister_class(SCENARIO_OT_composer_reset_layout)
     bpy.utils.unregister_class(SCENARIO_OT_composer_modal)

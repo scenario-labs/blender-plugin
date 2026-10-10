@@ -77,6 +77,7 @@ class ComposerTextInputTests(unittest.TestCase):
         )
         # an expanded card with nothing under the pointer: only the key handling matters here
         self.layout = SimpleNamespace(expanded=True, hit=lambda _x, _y: None, prompt_rect=None)
+        self.geometry = SimpleNamespace(layout=self.layout, hit=self.layout.hit)
 
     def tearDown(self):
         self.wm.scenario_composer_text = ""
@@ -87,7 +88,7 @@ class ComposerTextInputTests(unittest.TestCase):
         ops = SimpleNamespace(wm=SimpleNamespace(call_panel=call_panel))
         with (
             patch.object(self.runtime.state, "composer", self.state),
-            patch.object(self.modal, "_layout", return_value=self.layout),
+            patch.object(self.modal, "_geometry", return_value=self.geometry),
             patch.object(self.modal, "bpy", SimpleNamespace(ops=ops)),
         ):
             result = self.modal.SCENARIO_OT_composer_modal.modal(operator, self.context, event)

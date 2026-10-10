@@ -4,9 +4,12 @@
 
 No bpy imports and no persistence: reviews are session-local and the service
 state read back after a write stays authoritative. Writes are unpaid account
-mutations sent once each through the shared SDK adapter. A guard admits every
-write, the first uncertain outcome stops further writes, and uncertainty is
-resolved by reading back, never by sending again.
+mutations sent through the shared SDK adapter. A guard admits every write, the
+first uncertain outcome stops further writes, and uncertainty is resolved by
+reading back, never by sending again. The one resend is bounded: after the
+service refuses a whole add because some assets were already members, only the
+assets read back as not yet members are sent again, within ``ADD_ATTEMPTS`` add
+requests in all.
 
 The exact-name create guard, the in-session record of uncertain creates and
 the read-back verification adapt Scenario Blender Studio's organization helpers
@@ -25,6 +28,7 @@ from ..api.sdk_adapter import (
     MAX_COLLECTION_ASSETS,
     MAX_TAG_CHANGES,
     AdapterError,
+    AlreadyMembers,
     WriteRejected,
     WriteUncertain,
     _identifier,
@@ -40,6 +44,9 @@ REVIEW_TTL = 600.0
 REVIEW_LIMIT = 32
 LOOKUP_PAGE_SIZE = 100
 LOOKUP_PAGES = 20
+# Add requests one review may send when the service refuses an add because
+# assets were already members, as another client can keep adding them.
+ADD_ATTEMPTS = 3
 _RAW_TAG_LIMIT = 200
 _UNCERTAIN_CREATE = (
     "A previous create with this name has an unknown outcome; refresh collections "
@@ -285,7 +292,11 @@ class OrganizationSnapshot:
 
     @property
     def request_count(self):
-        """Writes apply would send at most, assuming each one succeeds."""
+        """Writes apply sends when each one succeeds.
+
+        An add refused because another client made some assets members after
+        this read sends the rest again, up to ADD_ATTEMPTS add requests.
+        """
         if self.problem:
             return 0
         changed = [change for change in self.changes if change.changed]
@@ -433,8 +444,11 @@ class OrganizationCommands:
         )
 
     def execute(self, snapshot, guard: Callable[[], None]):
-        """Send an approved snapshot's writes once each and verify them by reading back.
+        """Send an approved snapshot's writes and verify them by reading back.
 
+        Nothing is resent after an uncertain outcome. After an add refused as
+        AlreadyMembers, which writes nothing, the assets read back as not yet
+        members are sent again, within ADD_ATTEMPTS add requests in all.
         ``guard`` runs before every write and raises when the context is no
         longer active; it never runs after the last write. Raises
         OrganizationNotSent only when no write was sent.
@@ -467,6 +481,7 @@ class _Execution:
         self.requests = 0
         self.stopped = False
         self.note = ""
+        self.info = ""  # already-member count after a refused add; never a stop reason
         self.collection_id = self.request.collection_id
         self.created_id = None
         self.create = None  # _Write for the collection create, or None
@@ -490,8 +505,10 @@ class _Execution:
             value = call()
         except WriteRejected as error:
             self.requests += 1
-            # Adapter rejection text is sanitized and keyed by status class.
-            self.note = self.note or str(error)
+            # Adapter rejection text is sanitized and keyed by status class. An
+            # already-member refusal is resolved by change_membership instead.
+            if not isinstance(error, AlreadyMembers):
+                self.note = self.note or str(error)
             return _Write("rejected", error.status), error
         except WriteUncertain as error:
             self.requests += 1
@@ -574,20 +591,69 @@ class _Execution:
         self.create = _Write("reconciled")
 
     def change_membership(self):
+        """Send one membership change; after an AlreadyMembers add, send the rest.
+
+        The service refuses an add as a whole, writing nothing, when any asset
+        is already a member. One read then drops the assets now in the
+        collection, and the guard admits one more add for the others. A failed
+        read, a refusal the read cannot explain, any other outcome or the
+        ADD_ATTEMPTS bound ends the loop.
+        """
         targets = [change.asset_id for change in self.snapshot.changes if change.membership]
-        if not targets or self.stopped or not self.admit():
-            return
-        if self.request.operation == Operation.REMOVE_FROM_COLLECTION:
+        removing = self.request.operation == Operation.REMOVE_FROM_COLLECTION
+        if removing:
             method = self.adapter.remove_collection_assets
         else:
             method = self.adapter.add_collection_assets
-        write, value = self.send(lambda: method(self.collection_id, targets))
-        for asset_id in targets:
-            self.writes[asset_id] = write
-        if write.kind == "unsent":
-            self.stop(str(value))
-        elif write.kind == "uncertain":
-            self.stop("Scenario did not confirm the collection change")
+        total, present, attempts = len(targets), 0, 0
+        while targets and not self.stopped and self.admit():
+            attempts += 1
+            write, value = self.send(lambda batch=list(targets): method(self.collection_id, batch))
+            for asset_id in targets:
+                self.writes[asset_id] = write
+            if write.kind == "unsent":
+                self.stop(str(value))
+            elif write.kind == "uncertain":
+                self.stop("Scenario did not confirm the collection change")
+            if removing or not isinstance(value, AlreadyMembers):
+                break
+            if attempts == ADD_ATTEMPTS:
+                self.stop(
+                    f"Scenario still refused the add after {ADD_ATTEMPTS} requests because "
+                    "more assets were already in the collection; prepare the rest again"
+                )
+                return
+            members, targets = self.read_members(targets)
+            if not members:
+                self.stop(str(value))
+                break
+            present += len(members)
+        if present == total == 1:
+            self.info = "The asset was already in the collection"
+        elif present == total:
+            self.info = f"All {total} assets were already in the collection"
+        elif present:
+            again = "; the rest were sent again" if attempts > 1 else ""
+            self.info = f"Already in the collection: {present} of {total} assets{again}"
+
+    def read_members(self, targets):
+        """Split targets into those read back as members and those to send again.
+
+        Assets the read omits are neither: they are not sent again. A failed
+        read proves nothing, so it returns no members.
+        """
+        try:
+            records = self.adapter.asset_records(list(targets))
+        except Exception:
+            return set(), []
+        members = {
+            asset_id
+            for asset_id in targets
+            if asset_id in records
+            and self.collection_id in _texts(records[asset_id], "collectionIds")
+        }
+        rest = [asset_id for asset_id in targets if asset_id in records and asset_id not in members]
+        return members, rest
 
     def update_tags(self):
         for change in self.snapshot.changes:
@@ -633,7 +699,8 @@ class _Execution:
         if write is None or write.kind == "unsent":
             return outcome(Outcome.NOT_SENT)
         if write.kind == "rejected":
-            # A refused multi-asset request is not proof no member changed.
+            # A refused multi-asset request is not proof no member changed;
+            # only the read shows the state (AlreadyMembers wrote nothing).
             single = self.request.operation == Operation.UPDATE_TAGS
             definite = record is not None or single
             return outcome(Outcome.REJECTED if definite else Outcome.UNVERIFIED, write.status)
@@ -694,7 +761,7 @@ class _Execution:
             create_outcome,
             create_status,
             self.requests,
-            f"{text}. {self.note}" if self.note else text,
+            ". ".join(part for part in (text, self.note, self.info) if part),
         )
 
 

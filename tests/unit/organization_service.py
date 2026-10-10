@@ -5,6 +5,10 @@
 It implements only the SDK 2.2.0 wire forms the adapter uses. Scripted faults
 let tests apply a change and then lose the response, refuse it, or acknowledge
 it without applying it, so verification by reading back can be exercised.
+
+Adds follow the service behavior observed by the hosted Scenario MCP: an add
+is one transaction, refused as a whole with HTTP 400 when any asset is already
+a member or when it names more than 49 assets, and then writes nothing.
 """
 
 import json
@@ -16,6 +20,8 @@ from scenario.core.api.sdk_adapter import Credentials, SDKAdapter
 
 URL = "https://service.example.invalid/v1"
 PRIVATE = "private-service-text"
+ALREADY_MEMBERS = "One or more assets are already part of the collection"
+TOO_MANY = "You can not add more than 49 assets at once."
 
 
 def asset(identifier, *, name=None, tags=(), collections=()):
@@ -46,10 +52,12 @@ def collection(identifier, name):
 class OrganizationService:
     """Record every request; ``faults`` maps (method, path) to scripted behaviors.
 
-    Behaviors are consumed in order: an int status refuses without applying,
-    ``"timeout"`` loses the request, ``"apply-timeout"`` applies then loses
-    the response, ``"ack-only"`` acknowledges without applying and
-    ``"rename"`` creates under another name.
+    Behaviors are consumed in order: ``None`` behaves normally, an int status
+    refuses without applying, ``"timeout"`` loses the request,
+    ``"apply-timeout"`` applies then loses the response, ``"ack-only"``
+    acknowledges without applying, ``"already-members"`` refuses an add with
+    the already-member reason whatever the membership, and ``"rename"`` creates
+    under another name.
     """
 
     def __init__(self, *, assets=(), collections=(), page_size=None):
@@ -100,6 +108,8 @@ class OrganizationService:
             return httpx.Response(behavior, json={"message": PRIVATE})
         if behavior == "timeout":
             raise httpx.ReadTimeout(PRIVATE, request=request)
+        if behavior == "already-members":
+            return self.refuse(ALREADY_MEMBERS)
         response = self.route(method, path, body, request, behavior)
         if behavior == "apply-timeout":
             raise httpx.ReadTimeout(PRIVATE, request=request)
@@ -126,6 +136,14 @@ class OrganizationService:
             record = self.collections.get(parts[1])
             if record is None:
                 return httpx.Response(404, json={"message": PRIVATE})
+            if method == "PUT" and apply:
+                if len(body["assetIds"]) > 49:
+                    return self.refuse(TOO_MANY)
+                if any(
+                    parts[1] in self.assets.get(identifier, {}).get("collectionIds", ())
+                    for identifier in body["assetIds"]
+                ):
+                    return self.refuse(ALREADY_MEMBERS)
             for identifier in body["assetIds"]:
                 item = self.assets.get(identifier)
                 if item is None or not apply:
@@ -150,6 +168,10 @@ class OrganizationService:
             records = [self.assets[i] for i in body["assetIds"] if i in self.assets]
             return httpx.Response(200, json={"assets": json.loads(json.dumps(records))})
         raise AssertionError(f"Unexpected request {method} {path}")
+
+    @staticmethod
+    def refuse(reason):
+        return httpx.Response(400, json={"reason": reason, "detail": PRIVATE})
 
     def page(self, request):
         size = int(request.url.params.get("pageSize", 10))

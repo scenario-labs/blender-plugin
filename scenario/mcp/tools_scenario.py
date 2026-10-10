@@ -99,7 +99,7 @@ def _body_for(model_id, parameters):
             value = parameters.pop(spec.name)
             files[spec.name] = list(value) if isinstance(value, list) else [value]
     body = build_body(schema.specs, parameters, files)
-    errors = validate(schema.specs, body, schema.one_of)
+    errors = validate(schema.specs, body, schema.one_of, schema.exclusive)
     if errors:
         raise ValueError("; ".join(errors))
     return record, body
@@ -964,12 +964,16 @@ def prepare_result_application(args):
             "lane": "render_video",
             "model_id": target.model_id,
             "input": target.param_name,
+            "input_label": target.input_label,
+            "sent_as": target.sent_as,
+            "reason": target.reason,
             "asset_id": approval.asset.asset_id,
             "file": approval.asset.name,
             "replaces_first_frame_path": bool(target.previous_path),
             "enables_first_frame": not target.previous_enabled,
             "mode": "reuse_asset",
-            "note": "Approve using this saved image as the Render Video first frame. "
+            "note": (target.note + " " if target.note else "")
+            + "Approve using this saved image as the Render Video first frame. "
             "It reuses the saved Scenario asset; nothing is uploaded, generated or spent, and no "
             "local file path is stored in the form or blend file. It turns the first frame on, "
             "replaces any chosen first-frame file and invalidates Render Video and Prompt Spark "
@@ -1902,14 +1906,14 @@ SPECS = (
             "  - context_id: required string, current context from list_local_jobs.\n"
             "  - request_id: required string, saved local job identity.\n"
             "  - expected_revision: required nonnegative integer, observed saved revision.\n"
-            "  - purpose: import (default), material, world, restore_world, mesh_edit, mesh_source or video_first_frame; material uses the active mesh and saved unambiguous texture roles; World replacement requires asset_id. video_first_frame binds one downloaded PNG, JPEG or WebP colour result (job_status action use_first_frame) to the current scene's Render Video first-frame input by reusing its saved asset ID; it requires asset_id, a loaded Render Video model with an image input and no existing first-frame slot.\n"
+            "  - purpose: import (default), material, world, restore_world, mesh_edit, mesh_source or video_first_frame; material uses the active mesh and saved unambiguous texture roles; World replacement requires asset_id. video_first_frame binds one downloaded PNG, JPEG or WebP colour result (job_status action use_first_frame) to the current scene's Render Video first frame by reusing its saved asset ID; it requires asset_id, a loaded Render Video model with an image input and no existing first-frame slot. The frame goes where render_form first_frame_route says.\n"
             "  - asset_id: optional saved asset ID; required for one MP4/WebM video, MP3/WAV/OGG audio strip, embedded GLB model or video_first_frame image. Omit for PNG/EXR image import.\n"
             "  - mesh_policy: REMESH (default) replaces geometry/UV/materials; UV replaces only active UVs; RETEXTURE preserves geometry/non-UV attributes and replaces all UV layers/materials. UV and RETEXTURE require exact topology/position matching. PARTS replaces source geometry with an empty mesh parent and 2 to 128 named parts from the selected static GLB; every mesh is a part, not an alternate variant. RIG preserves source geometry, UVs and materials and attaches matching weights and one rig with clips; it requires exact indexed geometry and rejects morphs/mesh animation.\n"
             "  - mesh_placement: WORLD (default) preserves imported scene positions; LOCAL uses imported positions in the object's local coordinates. No fitting is inferred.\n"
             "  - keep_original: boolean, default true; preserve an unselected original mesh copy. These mesh options apply to mesh_edit and mesh_source, which require asset_id. mesh_source requires exactly one captured input and its unchanged live export source; it ignores current selection and cannot restore authority after undo/load/restart.\n"
-            "Returns: context_id, application_id, request_id, revision, reuse, scene, images or asset_id/kind/frame, cursor or World format, and note. video_first_frame returns kind, lane, model_id, input, asset_id, file, replaces_first_frame_path, enables_first_frame and mode=reuse_asset instead of reuse.\n"
+            "Returns: context_id, application_id, request_id, revision, reuse, scene, images or asset_id/kind/frame, cursor or World format, and note. video_first_frame returns kind, lane, model_id, input, input_label, sent_as, reason, asset_id, file, replaces_first_frame_path, enables_first_frame and mode=reuse_asset instead of reuse; sent_as=reference_image means the image becomes image 1 of input, and note says why.\n"
             'Example: {"context_id": "from-list", "request_id": "from-list", "expected_revision": 8}.\n'
-            "Show the destination, selected assets and media frame, model cursor, material target/slot/roles, World operation/format, mesh target/policy/placement/Keep original, or first-frame model/input and replaced file before apply_result_application. This makes no network request, spends no credits and imports nothing. Ready or confirmed rolled-back results use their original application claim. Completed results require a new local reuse approval; show reuse=true as another application, never another generation. Unfinished reuse blocks another attempt. Restoration applies to this session's most recent World assignment for this job.\n"
+            "Show the destination, selected assets and media frame, model cursor, material target/slot/roles, World operation/format, mesh target/policy/placement/Keep original, or first-frame model/input, sent_as with its note and replaced file before apply_result_application. This makes no network request, spends no credits and imports nothing. Ready or confirmed rolled-back results use their original application claim. Completed results require a new local reuse approval; show reuse=true as another application, never another generation. Unfinished reuse blocks another attempt. Restoration applies to this session's most recent World assignment for this job.\n"
             "Platform equivalent: none; this captures a local Blender destination."
         ),
         _schema(
@@ -2176,7 +2180,7 @@ SPECS = (
             "  - settings: configure edits model_id, look, capture_source (CAMERA/VIEWPORT), force_solid, spark_enabled, first_frame_path, use_first_frame, match_timeline, scalar parameters and style_assets (replaces unmarked styles). Optional parameters accept null to disable them. Choose a model from list_models. Remove references before changing models.\n"
             "  - role: prepare explicitly captures/uploads scene or uploads the selected first_frame file using the shared reference lifecycle. Repeated preparation refuses an occupied slot.\n"
             "  - reference_key: remove requires the exact key from a fresh inspection; detaches only that reference and does not cancel its saved upload. Inspect uncertain uploads before preparing another.\n"
-            "Returns: current settings, references with reference_key/upload_id/source_result, preparation errors, ready_to_estimate and spark_required. Uploaded snapshots remain fixed when capture settings or the scene change. A first frame handed from a saved image (prepare_result_application purpose video_first_frame) keeps an empty first_frame_path and reports source_result: its saved request_id and asset_id, and saved=true while this credential scope still holds that verified download; source_result is null for other references.\n"
+            "Returns: current settings, references with reference_key/upload_id/source_result, first_frame_route, preparation errors, ready_to_estimate and spark_required. Uploaded snapshots remain fixed when capture settings or the scene change. For render_video, first_frame_route gives the first frame's input, label and sent_as: first_frame for the model's own first-frame input, or reference_image with a reason and note when the image becomes image 1 of that input (exclusive: the model says its first frame cannot be combined with reference videos such as the scene clip; no_first_frame_input). It is null when no image input can go with the clip, and for render_image. Requests that combine inputs a model says are mutually exclusive are refused before any quote. A first frame handed from a saved image (prepare_result_application purpose video_first_frame) keeps an empty first_frame_path and reports source_result: its saved request_id and asset_id, and saved=true while this credential scope still holds that verified download; source_result is null for other references.\n"
             'Example: {"lane":"render_image","action":"configure","settings":{"look":"copper sculpture","capture_source":"CAMERA"}}.\n'
             "Configure, prepare the scene and optional first frame, then inspect until ready. An empty automatic look needs estimate_prompt(action=GENERATE), separate approve_prompt spending approval and result delivery first. Finally use estimate_cost/generate with this lane/model and no parameters. File uploads and captures are explicit; no Python execution is required.\n"
             "Platform equivalent: upload_create and upload_complete for prepared snapshots; native form editing is local."

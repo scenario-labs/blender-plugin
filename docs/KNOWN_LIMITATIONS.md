@@ -27,11 +27,19 @@ establish live generation or full render-lane desktop acceptance.
   quotes and jobs too. Files, mesh/clip captures and render scene/first-frame inputs
   use explicit uploads before the final quote. Local MCP can instead hand a
   downloaded saved PNG, JPEG or WebP result to the Render Video first frame by
-  reusing its asset ID. A free dry run on 2026-10-10, in the developer test scope,
-  accepted a generated PNG asset ID as the first frame of Seedance 2.0 and Minimax
-  H3 through the shared quote path and rejected an unknown ID with HTTP 404. No paid Render
-  Video job has used a handed-off frame, the clip's visual match is unverified,
-  the native control is not implemented yet and the desktop undo step is unproven.
+  reusing its asset ID. A free dry run resolves that asset ID (an unknown ID
+  returns HTTP 404) but does not check which inputs may be combined: on
+  2026-10-10 it priced a Seedance 2.0 Fast first frame sent with the scene clip.
+  The service accepts that submission, then the job fails because an image and
+  reference videos aren't allowed together. Seedance 2.x, Minimax H3 and Wan 3.0
+  state that limit only in input description text. Their first frame is now sent
+  as image 1 of the reference images with the clip, and every shared quote path
+  refuses inputs a model describes as mutually exclusive. That rule reads
+  description wording, so differently worded limits are not caught; the payload
+  audit reports unrecognized ones. No successful paid Render Video job has used a
+  first frame sent this way, so how closely the clip opens on that image is
+  unverified. The native control is not implemented yet and the desktop undo
+  step is unproven.
   The handoff stores no file path, so the blend shows no first-frame thumbnail. Render forms accept a written look
   or the default look with automatic Spark disabled. An empty automatic look
   requires its own exact Spark quote, approval and guarded result delivery before

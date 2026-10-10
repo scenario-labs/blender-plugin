@@ -106,6 +106,9 @@ def inspect(scene, lane):
             key: value for key, value in values.items() if enabled.get(key) and key not in hidden
         },
         "references": references,
+        "first_frame_route": render_lanes.first_frame_route(schema)
+        if schema is not None and lane == "render_video"
+        else None,
         "errors": result.errors,
         "ready_to_estimate": not (result.errors or result.files or result.captures or result.spark),
         "spark_required": bool(result.spark),

@@ -23,7 +23,7 @@ sys.path.insert(0, str(ROOT))
 
 from scenario.core.api import catalog as C
 from scenario.core.api.sdk_adapter import API_URL, AdapterError, Credentials, SDKAdapter
-from scenario.core.schema.params import parse_schema
+from scenario.core.schema.params import exclusive_clauses, parse_schema
 from tools.dev_config import live_settings
 
 MODEL_ID = re.compile(r"model_[A-Za-z0-9][A-Za-z0-9_.-]{0,240}\Z")
@@ -293,6 +293,19 @@ def audit_one(model_id, contexts, record, schema):
     # 6. no prompt and no file and no settings at all -> empty payload (model unusable as wired).
     if not specs:
         out.append(("HIGH", "empty-schema", "no parameters in the schema at all"))
+
+    # 7. A file description says it cannot be combined with other inputs, but the parser named no sibling,
+    #    so the shared guard cannot refuse that body before a paid job fails (Seedance: first frame + reference video).
+    paired = {name for pair in schema.exclusive for name in pair}
+    for s in files:
+        if exclusive_clauses(s.description) and s.name not in paired:
+            out.append(
+                (
+                    "HIGH",
+                    "unparsed-exclusive-input",
+                    f"file '{s.name}' ({s.label}) reads mutually exclusive but no sibling file input was recognized",
+                )
+            )
     return out
 
 

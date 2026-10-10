@@ -51,6 +51,70 @@ def first_frame_spec(schema):
     return None
 
 
+def first_frame_target(schema):
+    """Where Render Video sends its first frame: the first-frame input, else reference image 1.
+
+    Some models say their first-frame input cannot be sent with reference videos
+    (Seedance 2.x, Minimax H3, Wan 3.0; `Schema.exclusive`). Their first frame
+    becomes the first image of the reference-image list, so the scene clip is kept.
+    None when no image input can go with the clip; the first frame is then refused.
+    """
+    clip = video_spec(schema)
+    first = first_frame_spec(schema)
+    if first is None:
+        options = [style_spec(schema)]
+    else:
+        options = [first, *(s for s in image_specs(schema) if s.ptype == "file_array")]
+    return next(
+        (
+            spec
+            for spec in options
+            if spec is not None and (clip is None or not schema.excludes(spec.name, clip.name))
+        ),
+        None,
+    )
+
+
+_FIRST_FRAME_REASONS = {
+    "exclusive": (
+        "This model can't use an exact first frame with the scene clip",
+        "No exact first frame with the scene clip",
+    ),
+    "no_first_frame_input": (
+        "This model has no first-frame input",
+        "No first-frame input on this model",
+    ),
+}
+
+
+def first_frame_route(schema):
+    """How Render Video sends the first frame, for MCP and the form; None when it cannot.
+
+    `sent_as` is `first_frame` for the model's own first-frame input, else
+    `reference_image` with a `reason` and a `note` naming the input it joins.
+    """
+    spec = first_frame_target(schema)
+    if spec is None:
+        return None
+    label = spec.label or spec.name
+    if spec is first_frame_spec(schema):
+        return {
+            "input": spec.name,
+            "label": label,
+            "sent_as": "first_frame",
+            "reason": None,
+            "note": None,
+        }
+    reason = "no_first_frame_input" if first_frame_spec(schema) is None else "exclusive"
+    return {
+        "input": spec.name,
+        "label": label,
+        "sent_as": "reference_image",
+        "reason": reason,
+        "note": f"{_FIRST_FRAME_REASONS[reason][0]}, so the image is sent as image 1 of {label}.",
+    }
+
+
 def style_input(lane, schema):
     """The native style slot; Render Video reserves its first-frame input."""
     return (
@@ -252,6 +316,11 @@ def _draw_first_frame(box, lane_state, schema):
         render_references.draw_slot(
             box, "render_video", lane_state, schema, render_references.FIRST_FRAME
         )
+        route = first_frame_route(schema)
+        if route is not None and route["reason"] is not None:
+            # Say where the image goes before it is uploaded and while it is used.
+            box.label(text=_FIRST_FRAME_REASONS[route["reason"]][1], icon="INFO")
+            box.label(text=f"Sent as image 1 of {route['label']}")
 
 
 def draw_render_image_lane(layout, context):

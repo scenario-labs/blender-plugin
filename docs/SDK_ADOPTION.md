@@ -563,8 +563,11 @@ upload commands; final render generation uses the existing shared model quote
 and submission path. Render Spark preparation has a separate exact-price approval. The
 [Render Video first-frame handoff](BLENDER_JOB_CONTEXT.md#saved-image-to-render-video-first-frame)
 adds no Scenario operation: it places a saved result's existing asset ID in the
-first-frame input, and the existing `generate.with_raw_response.run_model` dry
-run and submission send it like any other asset ID. There is no new Scenario API
+Render Video first-frame target, and the existing
+`generate.with_raw_response.run_model` dry run and submission send it like any
+other asset ID. That dry run resolves asset IDs but does not check which inputs
+may be combined, so the shared form preparation refuses inputs a model describes
+as mutually exclusive before any quote. This is local validation, not an SDK gap. There is no new Scenario API
 fallback or dependency change. See the [active upload contract](SDK_UPLOADS.md#active-reference-uploads)
 for destination trust, source limits and recovery. Form attachment captures
 scene, lane, model, input kind and slot; pending marked uploads block duplicate

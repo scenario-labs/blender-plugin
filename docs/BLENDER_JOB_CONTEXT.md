@@ -853,10 +853,15 @@ claim and at most 128 local applications. Prompt and translate jobs never offer 
 `ModelJobs.prepare_first_frame_application`, reached through MCP
 `prepare_result_application` with `purpose="video_first_frame"` and the
 `asset_id`, reads no file, sends no request and changes no form. It requires the
-selected scene, a loaded Render Video model whose first-frame target (a single
-image input named like a first frame, else the image array) is an image input,
-no existing first-frame slot (including a pending or uncertain upload marker)
-and room in that input. A model whose schema is not loaded is refused without
+selected scene, a loaded Render Video model whose first-frame target is an
+image input, no existing first-frame slot (including a pending or uncertain
+upload marker) and room in that input. The target is
+[`render_lanes.first_frame_target`](../scenario/blender/render_lanes.py), shared
+with uploaded first frames: a single image input named like a first frame, unless
+the model says it can't be combined with the reference video that carries the
+scene clip, else the first image array that can go with the clip. The review
+reports `sent_as` (`first_frame`, or `reference_image` for image 1 of that
+array), its `reason` and a `note`. A model whose schema is not loaded is refused without
 starting a read; select or configure it in the form first. The single-use
 approval binds the job revision, the asset and its receipt digest, the scene
 revision and the reviewed form: model, input, existing references, any chosen

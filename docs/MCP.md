@@ -550,13 +550,19 @@ only; motion and transcription handling is not accepted ([#190](https://github.c
    the current native form; they do not capture, upload or submit generation.
 3. Call `render_form(action=prepare, role=scene)` to capture and upload the current
    camera/viewport. For Render Video, set `first_frame_path` and prepare
-   `role=first_frame` when using it. Inspect until uploads finish. Captures use
+   `role=first_frame` when using it. `render_form` reports `first_frame_route`:
+   `sent_as=first_frame` uses the model's own first-frame input, while
+   `sent_as=reference_image` sends the image as image 1 of the named input and
+   keeps the scene clip. Its `reason` is `exclusive` when the model's input
+   descriptions say a first frame can't be combined with reference videos
+   (Seedance 2.x, Minimax H3, Wan 3.0), or `no_first_frame_input`; show the
+   `note` to the user. Inspect until uploads finish. Captures use
    the current scene/camera and existing clip range; later scene edits do not
    change these uploaded snapshots. To use a downloaded saved image instead,
    find `use_first_frame` in its `job_status` actions, then call
    `prepare_result_application` with `purpose=video_first_frame` and its
-   `asset_id`. Show the scene, model, input, file and whether a chosen
-   first-frame file is replaced; after approval, `apply_result_application`
+   `asset_id`. Show the scene, model, input, `sent_as` with its `note`, file
+   and whether a chosen first-frame file is replaced; after approval, `apply_result_application`
    binds the saved asset ID without an upload or a stored file path, and status
    `first_frame` reports `bound` or `failed`. `render_form` then reports an empty
    `first_frame_path` and the slot's `source_result`.
@@ -579,7 +585,8 @@ before explicitly replacing a snapshot. A model change requires removing its
 old references first. `style_assets` replaces only unmarked style references;
 marked uploads require explicit removal. Optional scalar parameters accept null
 to disable them; invalid edits fail before changing the form. Final quotes still
-validate conditional and one-of schema requirements.
+validate conditional and one-of schema requirements, and refuse inputs a model
+describes as mutually exclusive.
 
 Inspection returns only the enabled parameters used by the render lane. Its
 `parameters` object can be passed back to `configure`, including numeric choices

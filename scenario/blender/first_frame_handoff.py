@@ -26,7 +26,7 @@ from ..core.api.errors import ScenarioError
 from ..core.jobs.result_metadata import IMAGE_SIGNATURE_TYPES, image_signature_matches
 from ..core.jobs.store import JobOrigin, ResultAsset, StoredJob
 from ..core.scene.panorama import MAX_FILE_BYTES
-from . import generation, props, reference_form, render_references, runtime
+from . import generation, props, reference_form, render_lanes, render_references, runtime
 
 _log = logging.getLogger("scenario.jobs")
 
@@ -58,6 +58,11 @@ class FirstFrameTarget:
     previous_enabled: bool
     model_label: str = field(default="", compare=False)
     input_label: str = field(default="", compare=False)
+    # `first_frame`, or `reference_image` when the model cannot take an exact
+    # first frame with the clip; `note` says so in user words.
+    sent_as: str = field(default="first_frame", compare=False)
+    reason: str = field(default=None, compare=False)
+    note: str = field(default=None, compare=False)
 
     @property
     def key(self):
@@ -134,6 +139,7 @@ def target(scene):
     if limit and used >= limit:
         raise ScenarioError(0, f"Remove a reference from {spec.label or spec.name} first")
     record = runtime.state.records.get(lane.model_id)
+    route = render_lanes.first_frame_route(schema) or {}
     return FirstFrameTarget(
         reference_form._destination_key(scene, LANE),
         lane.model_id,
@@ -142,6 +148,9 @@ def target(scene):
         bool(lane.use_first_frame),
         record.name if record is not None else lane.model_id,
         spec.label or spec.name,
+        route.get("sent_as", "first_frame"),
+        route.get("reason"),
+        route.get("note"),
     )
 
 

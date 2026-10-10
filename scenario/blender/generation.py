@@ -558,7 +558,7 @@ def build_request(scene, lane, for_estimate=False):
             body.get(schema.prompt_name, ""), has_video, has_image
         )
         check[schema.prompt_name] = body[schema.prompt_name]
-    errors = validate(schema.specs, check, schema.one_of)
+    errors = validate(schema.specs, check, schema.one_of, schema.exclusive)
     if lane == "edit3d":
         from . import mesh_export
 

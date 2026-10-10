@@ -2,9 +2,15 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """JSON-RPC 2.0 + MCP method handling. No bpy, no sockets: pure functions over dicts."""
 
+import dis
 import json
-import traceback
+import logging
 from dataclasses import dataclass, field
+
+log = logging.getLogger("scenario.mcp")
+# "scenario" in tests, "bl_ext.<repository>.scenario" when installed.
+_EXTENSION_PACKAGE = __name__.rsplit(".", 2)[0]
+_RAISE_VARARGS = dis.opmap["RAISE_VARARGS"]
 
 PROTOCOL_VERSIONS = ("2025-06-18", "2025-03-26", "2024-11-05")
 PARSE_ERROR, INVALID_REQUEST, METHOD_NOT_FOUND, INVALID_PARAMS, INTERNAL_ERROR, TOOL_TIMEOUT = (
@@ -85,6 +91,46 @@ def _result(msg_id, result):
     return {"jsonrpc": "2.0", "id": msg_id, "result": result}
 
 
+def _in_extension(module):
+    return module == _EXTENSION_PACKAGE or module.startswith(_EXTENSION_PACKAGE + ".")
+
+
+def _written_by_extension(error):
+    """True when this extension wrote the failure's message, so the client may read it.
+
+    Tool handlers and the code they call report user-facing failures with their own text: an
+    error class this extension defines (ScenarioError, StoreError and the other sanitized UI and
+    worker errors), or a raise statement in its own code (a validation ValueError, a refusing
+    PermissionError, a "still loading" RuntimeError). A failure raised by the OS, bpy or a
+    library can carry local paths, profile layout or service details. That includes one raised
+    by a C function called directly from extension code: its innermost instruction is the call,
+    not a raise. An OSError naming a file is never returned.
+    """
+    if isinstance(error, OSError) and (error.filename is not None or error.filename2 is not None):
+        return False
+    if _in_extension(getattr(type(error), "__module__", None) or ""):
+        return True
+    tb = error.__traceback__
+    if tb is None:
+        return False
+    while tb.tb_next is not None:
+        tb = tb.tb_next
+    if not _in_extension(tb.tb_frame.f_globals.get("__name__") or ""):
+        return False
+    code = tb.tb_frame.f_code.co_code
+    return 0 <= tb.tb_lasti < len(code) and code[tb.tb_lasti] == _RAISE_VARARGS
+
+
+def tool_failure_text(name, error):
+    """Client text for a failed tool call; the traceback stays in the local log."""
+    kind = type(error).__name__
+    if _written_by_extension(error):
+        log.debug("MCP tool %s failed", name, exc_info=error)
+        return f"{kind}: {error}"
+    log.error("MCP tool %s failed unexpectedly", name, exc_info=error)
+    return f"{kind}: {name} failed unexpectedly; see the Blender console"
+
+
 def to_content(value):
     if isinstance(value, dict) and "_image" in value:
         return [
@@ -153,7 +199,7 @@ def handle_message(message, registry, server_info, executor=None):
         except ToolTimeout as err:
             return _error(msg_id, TOOL_TIMEOUT, f"Tool timeout: {err}")
         except Exception as err:  # tool failures are results, not protocol errors
-            text = f"{type(err).__name__}: {err}\n{traceback.format_exc(limit=3)}"
+            text = tool_failure_text(spec.name, err)
             return _result(msg_id, {"content": [{"type": "text", "text": text}], "isError": True})
         return _result(msg_id, {"content": to_content(value)})
     return _error(msg_id, METHOD_NOT_FOUND, f"Method not found: {method}")

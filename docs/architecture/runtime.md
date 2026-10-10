@@ -646,8 +646,9 @@ session. No job, upload or store schema change is involved, and no credits are
 spent. See [the command contract](../JOB_COORDINATOR.md#asset-organization-commands)
 and [session ownership](../BLENDER_JOB_CONTEXT.md#asset-organization-reviews).
 Local MCP tools prepare, apply and inspect these reviews; see
-[asset organization](../MCP.md#asset-organization). Native Library controls,
-desktop interaction and live acceptance remain under
+[asset organization](../MCP.md#asset-organization). The native Library uses the
+same owner through the projection described below. Desktop interaction and live
+acceptance remain under
 [#64](https://github.com/scenario-labs/blender-plugin/issues/64),
 [#65](https://github.com/scenario-labs/blender-plugin/issues/65),
 [#66](https://github.com/scenario-labs/blender-plugin/issues/66) and
@@ -670,8 +671,24 @@ time; drawing does not dereference a removed scene. Attachment adds only a match
 unoccupied model reference, preserves existing slots, records the selected scope,
 and invalidates the old price. It does not start a transfer or paid submission.
 The existing persisted reference-scope guard applies after reopening as well.
-Organization mutations and physical/live acceptance remain outside this UI layer.
 No new SDK transport, worker pool or job store is added.
+
+### Native Library organization
+
+The same view holds explicitly loaded collection pages (50 per read, at most 200,
+repeated cursors rejected) and one review card. Collection reads and reviews go
+through `session.asset_organization`, the owner local MCP uses; the view adds no
+worker, transport or persisted property. Its operators prepare, apply and discard
+reviews; drawing only renders the cached review projection and row summaries built
+by [library_organization.py](../../scenario/core/ui/library_organization.py), a
+pure core module. The maintenance pump polls the shared owner before the Library
+view, so a finished review reaches the card on the same tick. A finished result
+updates loaded rows once from the read-back records: tags and memberships come
+from Scenario, and a row that left the browsed collection is marked for refresh
+rather than removed. A verified new collection joins the loaded list. Retirement
+on a credential, Project ID or file change drops the view with the session and
+its reviews. See [the UI contract](../UI_STYLE.md#library-organization); physical
+desktop and live acceptance remain pending.
 
 ## Workflow Library reference bindings
 

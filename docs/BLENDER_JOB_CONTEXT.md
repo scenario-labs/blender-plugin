@@ -522,7 +522,10 @@ be delivered to the replacement session. Inspect the assets in the Library of
 the right connection; nothing is resent automatically. The local
 [MCP organization tools](MCP.md#asset-organization) use this owner and accept a
 review only with the `job_context_id` issued alongside it, so a replaced session
-rejects an old context. No native Library control uses it yet.
+rejects an old context. The native Library's
+[Organize dialog and review card](UI_STYLE.md#library-organization) use the same
+owner; `review(review_id)` returns the raw review state, including read-back
+records, so the view can update its loaded rows without another request.
 
 ## Upload references
 

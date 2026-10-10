@@ -15,13 +15,13 @@
       "docs/MCP.md": "6b532b51b8ed9e5bb54a58220193b3a6d7f45fd0322b439e50785269cb067fda",
       "scenario/mcp/tools_scenario.py": "f4e87186806f93466220ef04f7c2530f0532ded790d4a8754a2a5b81183db08a",
       "scenario/mcp/protocol.py": "a33b66bdc80e18dbee8d283bf6c2e4a507025a0be93f39773a1b138c7fba8ce7",
-      "scenario/blender/asset_organization.py": "553512e5363e7784a8b7f73b7578d4d670a877c65faf8f4c3d7c0d500fa40e51",
+      "scenario/blender/asset_organization.py": "597a1026ad96d07f563f54ff2651591dc9c9fc4bf6a3f19bee5bf43509ada7ce",
       "scenario/core/jobs/organization.py": "69ad48086ff2b763c565a22bce2bf60e142afbc10e757c56d938daf2198fbeba",
-      "scenario/blender/runtime.py": "4dd15c99e830769b970cbffb8a2d895c657bc52be66b6e4c1e01a8ebebd5ed00",
+      "scenario/blender/runtime.py": "9468693ddd2941575470018633b425885401ae68551c89fc88773ef0fce20933",
       "tools/gen_mcp_docs.py": "405471c39482b9a84853b4950d251ab159b1f0de9f45117f2405e40ee1822b0e",
       "tests/blender/test_asset_organization.py": "b00e136dfcf7667b1d93bb54b3efc84c1643380e88e8524ea12238edb6e793d5",
       "tests/blender/test_mcp_contracts.py": "cfc081b7b2d8550f778643b9a275082e92e35e11cacb56c90fae054ce605388d",
-      "tests/blender/run_all.py": "aaf1d5affa3c7e35555a318e610d6c8f13d97878a8eccf65f91a58a30c8a603e",
+      "tests/blender/run_all.py": "b3019328085a8334dd3347248a9b145d3a23533ffbafcfac9304962df189a6c8",
       "tests/unit/test_mcp_descriptions.py": "54f0dd69090d9c5b7f3c64cee686afa6c5b80b057831acb8b2e5e85326fcebfb",
       "tests/unit/test_mcp_docs.py": "2728c6d5d71e7c7661278d8b5ccd5a0e374984d35d39868e81c2e5c6f3b2ab92"
     }

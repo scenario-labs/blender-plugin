@@ -529,8 +529,9 @@ persisted and the job store schema is unchanged. The exact-name dedup, no-replay
 and read-back rules and their tests adapt Studio's `organization.py` at the
 [recorded source revision](STUDIO_ADOPTION.md#source-intake-and-provenance).
 [JobSession reviews](BLENDER_JOB_CONTEXT.md#asset-organization-reviews) own
-review state and delivery. The [local MCP tools](MCP.md#asset-organization) use
-them; native controls and live acceptance remain.
+review state and delivery. The [local MCP tools](MCP.md#asset-organization) and
+the native [Library organization](UI_STYLE.md#library-organization) controls use
+them; desktop and live acceptance remain.
 
 
 ## Shared catalog and origin-bound quotes

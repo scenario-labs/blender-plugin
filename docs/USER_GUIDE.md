@@ -789,5 +789,39 @@ available, and file allowed-value constraints are still checked before pricing.
 Previously saved file dropdowns retain their selected asset. Clear the reference
 with confirmation before choosing a replacement from Library.
 
-Collection/tag editing, thumbnails and live or physical-desktop acceptance remain
-separate. Unknown file types are displayed but cannot be attached through this view.
+Thumbnails and live or physical-desktop acceptance remain separate. Unknown file
+types are displayed but cannot be attached through this view.
+
+### Organize Library assets
+
+Each Library asset shows its tags and how many collections it belongs to. Choose
+**Load collections** to read your collections (50 at a time; **More** reads the
+next 50, up to 200) and name them on the rows. **Browse** on a collection sets
+Collection ID, clears Search and Public assets, and reads that collection's
+first page.
+
+To change one asset, choose **Organize** on its row. Pick an action: Add to
+collection or Remove from collection (choose a loaded collection), Add tags or
+Remove tags (type tags separated by commas), or New collection and add (type an
+unused exact name). Choose **OK** to prepare a review; nothing is sent yet.
+Studio's Library page then shows a review card with the asset's current and
+resulting state and the number of requests. Choose **Apply** to send the change
+once, or **Discard** to drop it. A review expires after 10 minutes.
+
+After Apply, the card shows what Scenario reports when the asset is read back:
+**Verified**, **Refused** (with the HTTP status), **Unconfirmed**, **Not sent**
+or **Not verified**. Changes are immediate Scenario account metadata. They use
+no credits, and Blender Undo does not reverse them; undo a change by organizing
+the asset again. If a result is unconfirmed, choose Refresh and inspect the
+asset. Nothing is resent automatically; organize it again only if the change is
+still needed. A row removed from the collection you are browsing stays marked
+until you refresh.
+
+Organize is unavailable for Public assets, while a page is loading and while a
+change is being applied. A new review replaces a card that is not applying.
+Closing Studio does not stop a change; reopen it to see the result. Changing
+credentials, the Project ID or the open file clears the Library and its reviews.
+With Online Access off, nothing is sent. A connected agent can make the same
+changes through [local MCP](MCP.md#asset-organization), one at a time with the
+Library. Collection rename and deletion are not available here; use the Scenario
+web app. Physical desktop checks of this dialog remain pending.

@@ -345,7 +345,7 @@ Do not edit this block by hand; run `make mcp-docs`. An asterisk marks a require
 | `reference_upload_status` | Read a reference upload's progress while the shared session advances its already authorized work. | `context_id`*: string<br>`reference_id`*: string | read-only annotation |
 | `list_reference_uploads` | Inspect saved uploads under the selected credential scope, including after restart. | none | read-only annotation |
 | `recover_reference_upload` | Explicitly inspect a known remote upload, cancel unclaimed preparation, or clean its finished private source copy. | `context_id`*: string<br>`request_id`*: string<br>`expected_revision`*: integer<br>`action`*: string (['refresh', 'cancel_prepared', 'cleanup']) | destructive annotation |
-| `prepare_result_application` | Prepare explicit saved image/media/model import, material assignment, panorama World replacement, or session-local World restoration. | `context_id`*: string<br>`request_id`*: string<br>`expected_revision`*: integer<br>`asset_id`: string<br>`purpose`: string (['import', 'material', 'world', 'restore_world', 'mesh_edit', 'mesh_source'])<br>`mesh_policy`: string (['REMESH', 'UV', 'RETEXTURE', 'PARTS', 'RIG'])<br>`mesh_placement`: string (['WORLD', 'LOCAL'])<br>`keep_original`: boolean | read-only annotation |
+| `prepare_result_application` | Prepare explicit saved image/media/model import, material assignment, panorama World replacement, session-local World restoration, or a Render Video first frame from a saved image. | `context_id`*: string<br>`request_id`*: string<br>`expected_revision`*: integer<br>`asset_id`: string<br>`purpose`: string (['import', 'material', 'world', 'restore_world', 'mesh_edit', 'mesh_source', 'video_first_frame'])<br>`mesh_policy`: string (['REMESH', 'UV', 'RETEXTURE', 'PARTS', 'RIG'])<br>`mesh_placement`: string (['WORLD', 'LOCAL'])<br>`keep_original`: boolean | read-only annotation |
 | `apply_result_application` | Apply or restore saved results after the user approves the prepared destination and operation. | `context_id`*: string<br>`application_id`*: string | destructive annotation |
 | `recover_local_job` | Explicitly recover a saved job without repeating generation or importing into another scene. | `context_id`*: string<br>`request_id`*: string<br>`expected_revision`*: integer<br>`action`*: string (['refresh', 'resume', 'cancel', 'recover_download', 'retry_receipt']) | destructive annotation |
 | `list_local_jobs` | Inspect durable local jobs for the selected API-key pair without network requests. | none | read-only annotation |
@@ -552,11 +552,19 @@ only; motion and transcription handling is not accepted ([#190](https://github.c
    camera/viewport. For Render Video, set `first_frame_path` and prepare
    `role=first_frame` when using it. Inspect until uploads finish. Captures use
    the current scene/camera and existing clip range; later scene edits do not
-   change these uploaded snapshots.
+   change these uploaded snapshots. To use a downloaded saved image instead,
+   find `use_first_frame` in its `job_status` actions, then call
+   `prepare_result_application` with `purpose=video_first_frame` and its
+   `asset_id`. Show the scene, model, input, file and whether a chosen
+   first-frame file is replaced; after approval, `apply_result_application`
+   binds the saved asset ID without an upload or a stored file path, and status
+   `first_frame` reports `bound` or `failed`. `render_form` then reports an empty
+   `first_frame_path` and the slot's `source_result`.
 4. An empty look with automatic Spark enabled requires a separate
    `estimate_prompt(lane=..., action=GENERATE)` and explicit `approve_prompt`
    with its exact approved cost. The shared pump delivers the look only to the
-   unchanged form. Render Video Spark requires the uploaded first frame.
+   unchanged form. Render Video Spark requires the uploaded or handed-off first
+   frame.
 5. Call `estimate_cost` with the same lane/model and **omit `parameters`**. Show
    `cu_cost_exact`, obtain approval, then pass that exact string and `quote_id`
    to `generate`, again omitting `parameters`. Both tools rebuild the native

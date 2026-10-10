@@ -365,3 +365,23 @@ def test_core_descriptor_source_stays_free_of_blender():
         elif isinstance(node, ast.ImportFrom):
             modules.add((node.module or "").split(".")[0])
     assert modules == {"collections", "dataclasses"}
+
+
+def test_mcp_only_first_frame_handoff_draws_no_native_control_or_reuse_row():
+    assets = (("still", "image/png"),)
+    alone = sja.describe(view(("use_first_frame",), "applied", assets), CONTEXT, TYPES)
+    assert alone == ()
+    ready = sja.describe(
+        view(("import_images", "use_first_frame"), "ready", assets), CONTEXT, TYPES
+    )
+    assert [item.key for item in ready] == ["import_images", "awaiting_review"]
+    applied = sja.describe(
+        view(("import_images", "use_first_frame"), "applied", assets), CONTEXT, TYPES
+    )
+    assert [item.key for item in applied] == ["reuse", "import_images"]
+    assert sja.MCP_ONLY == {"use_first_frame"}
+    # Agents prepare it through the shared application tool.
+    schema = ast.literal_eval(_mcp_spec("prepare_result_application")[1])
+    assert "video_first_frame" in schema["purpose"]["enum"]
+    description, _ = _mcp_spec("job_status")
+    assert "use_first_frame offers" in description

@@ -942,8 +942,42 @@ def prepare_result_application(args):
             "PNG/JPEG are LDR and EXR is not proof of actual HDR range. "
             "The original World stays untouched and this session can restore it while unchanged. Nothing has been applied.",
         }
+    if purpose == "video_first_frame":
+        if not isinstance(args.get("asset_id"), str) or not args["asset_id"]:
+            raise ValueError("video_first_frame requires the saved image asset_id")
+        _, approval = runtime.prepare_first_frame_application(
+            args["context_id"],
+            args["request_id"],
+            args["expected_revision"],
+            bpy.context.scene,
+            args["asset_id"],
+        )
+        target = approval.target
+        return {
+            "context_id": args["context_id"],
+            "application_id": approval.identifier,
+            "request_id": approval.record.intent.request_id,
+            "revision": approval.record.revision,
+            "kind": approval.kind,
+            "purpose": purpose,
+            "scene": approval.scene_name,
+            "lane": "render_video",
+            "model_id": target.model_id,
+            "input": target.param_name,
+            "asset_id": approval.asset.asset_id,
+            "file": approval.asset.name,
+            "replaces_first_frame_path": bool(target.previous_path),
+            "enables_first_frame": not target.previous_enabled,
+            "mode": "reuse_asset",
+            "note": "Approve using this saved image as the Render Video first frame. "
+            "It reuses the saved Scenario asset; nothing is uploaded, generated or spent, and no "
+            "local file path is stored in the form or blend file. It turns the first frame on, "
+            "replaces any chosen first-frame file and invalidates Render Video and Prompt Spark "
+            "prices; call estimate_cost again before generate. Remove an existing first-frame "
+            "slot with render_form first. Nothing has been changed.",
+        }
     if purpose != "import":
-        raise ValueError("Choose import, material, world or restore_world")
+        raise ValueError("Choose import, material, world, restore_world or video_first_frame")
     if args.get("asset_id"):
         _, approval = runtime.prepare_asset_application(
             args["context_id"],
@@ -1863,19 +1897,19 @@ SPECS = (
     ToolSpec(
         "prepare_result_application",
         (
-            "Prepare explicit saved image/media/model import, material assignment, panorama World replacement, or session-local World restoration.\n"
+            "Prepare explicit saved image/media/model import, material assignment, panorama World replacement, session-local World restoration, or a Render Video first frame from a saved image.\n"
             "Args:\n"
             "  - context_id: required string, current context from list_local_jobs.\n"
             "  - request_id: required string, saved local job identity.\n"
             "  - expected_revision: required nonnegative integer, observed saved revision.\n"
-            "  - purpose: import (default), material, world, restore_world, mesh_edit or mesh_source; material uses the active mesh and saved unambiguous texture roles; World replacement requires asset_id.\n"
-            "  - asset_id: optional saved asset ID; required for one MP4/WebM video, MP3/WAV/OGG audio strip or embedded GLB model. Omit for PNG/EXR image import.\n"
+            "  - purpose: import (default), material, world, restore_world, mesh_edit, mesh_source or video_first_frame; material uses the active mesh and saved unambiguous texture roles; World replacement requires asset_id. video_first_frame binds one downloaded PNG, JPEG or WebP colour result (job_status action use_first_frame) to the current scene's Render Video first-frame input by reusing its saved asset ID; it requires asset_id, a loaded Render Video model with an image input and no existing first-frame slot.\n"
+            "  - asset_id: optional saved asset ID; required for one MP4/WebM video, MP3/WAV/OGG audio strip, embedded GLB model or video_first_frame image. Omit for PNG/EXR image import.\n"
             "  - mesh_policy: REMESH (default) replaces geometry/UV/materials; UV replaces only active UVs; RETEXTURE preserves geometry/non-UV attributes and replaces all UV layers/materials. UV and RETEXTURE require exact topology/position matching. PARTS replaces source geometry with an empty mesh parent and 2 to 128 named parts from the selected static GLB; every mesh is a part, not an alternate variant. RIG preserves source geometry, UVs and materials and attaches matching weights and one rig with clips; it requires exact indexed geometry and rejects morphs/mesh animation.\n"
             "  - mesh_placement: WORLD (default) preserves imported scene positions; LOCAL uses imported positions in the object's local coordinates. No fitting is inferred.\n"
             "  - keep_original: boolean, default true; preserve an unselected original mesh copy. These mesh options apply to mesh_edit and mesh_source, which require asset_id. mesh_source requires exactly one captured input and its unchanged live export source; it ignores current selection and cannot restore authority after undo/load/restart.\n"
-            "Returns: context_id, application_id, request_id, revision, reuse, scene, images or asset_id/kind/frame, cursor or World format, and note.\n"
+            "Returns: context_id, application_id, request_id, revision, reuse, scene, images or asset_id/kind/frame, cursor or World format, and note. video_first_frame returns kind, lane, model_id, input, asset_id, file, replaces_first_frame_path, enables_first_frame and mode=reuse_asset instead of reuse.\n"
             'Example: {"context_id": "from-list", "request_id": "from-list", "expected_revision": 8}.\n'
-            "Show the destination, selected assets and media frame, model cursor, material target/slot/roles, World operation/format or mesh target/policy/placement/Keep original before apply_result_application. This makes no network request, spends no credits and imports nothing. Ready or confirmed rolled-back results use their original application claim. Completed results require a new local reuse approval; show reuse=true as another application, never another generation. Unfinished reuse blocks another attempt. Restoration applies to this session's most recent World assignment for this job.\n"
+            "Show the destination, selected assets and media frame, model cursor, material target/slot/roles, World operation/format, mesh target/policy/placement/Keep original, or first-frame model/input and replaced file before apply_result_application. This makes no network request, spends no credits and imports nothing. Ready or confirmed rolled-back results use their original application claim. Completed results require a new local reuse approval; show reuse=true as another application, never another generation. Unfinished reuse blocks another attempt. Restoration applies to this session's most recent World assignment for this job.\n"
             "Platform equivalent: none; this captures a local Blender destination."
         ),
         _schema(
@@ -1893,6 +1927,7 @@ SPECS = (
                         "restore_world",
                         "mesh_edit",
                         "mesh_source",
+                        "video_first_frame",
                     ],
                 },
                 "mesh_policy": {
@@ -1916,7 +1951,7 @@ SPECS = (
             "  - application_id: required string, single-use approval handle from prepare_result_application.\n"
             "Returns: saved job status, revision, images, imported object names, materials and any delivery error.\n"
             'Example: {"context_id": "from-prepare", "application_id": "from-prepare"}.\n'
-            "Call only after explicit destination approval. Verification runs off the main thread; application rechecks the captured scene/file revision and media frame or model cursor. Media uses a persistent private file; video omits embedded audio and scene timing is unchanged. Changed contexts or records require fresh review. World replacement or restoration changes only the approved scene World with guarded owned-data cleanup. Material assignment changes only the approved mesh slot to a new packed material; it preserves old materials and other slots. Mesh edit replaces only the captured target under its prepared policy, placement and Keep original choice. This performs no generation, downloads or file save. Never repeat an uncertain import; inspect the saved job.\n"
+            "Call only after explicit destination approval. Verification runs off the main thread; application rechecks the captured scene/file revision and media frame or model cursor. Media uses a persistent private file; video omits embedded audio and scene timing is unchanged. Changed contexts or records require fresh review. World replacement or restoration changes only the approved scene World with guarded owned-data cleanup. Material assignment changes only the approved mesh slot to a new packed material; it preserves old materials and other slots. Mesh edit replaces only the captured target under its prepared policy, placement and Keep original choice. A video first frame rehashes the saved image against its receipt, then binds its saved asset ID to the unchanged Render Video form without an upload, a local path or a saved-job change; status first_frame reports bound or failed, and the next quote needs a fresh estimate_cost. This performs no generation, downloads or file save. Never repeat an uncertain import; inspect the saved job.\n"
             "Platform equivalent: none; this applies saved results locally in Blender."
         ),
         _schema(
@@ -2141,7 +2176,7 @@ SPECS = (
             "  - settings: configure edits model_id, look, capture_source (CAMERA/VIEWPORT), force_solid, spark_enabled, first_frame_path, use_first_frame, match_timeline, scalar parameters and style_assets (replaces unmarked styles). Optional parameters accept null to disable them. Choose a model from list_models. Remove references before changing models.\n"
             "  - role: prepare explicitly captures/uploads scene or uploads the selected first_frame file using the shared reference lifecycle. Repeated preparation refuses an occupied slot.\n"
             "  - reference_key: remove requires the exact key from a fresh inspection; detaches only that reference and does not cancel its saved upload. Inspect uncertain uploads before preparing another.\n"
-            "Returns: current settings, references with reference_key/upload_id, preparation errors, ready_to_estimate and spark_required. Uploaded snapshots remain fixed when capture settings or the scene change.\n"
+            "Returns: current settings, references with reference_key/upload_id/source_result, preparation errors, ready_to_estimate and spark_required. Uploaded snapshots remain fixed when capture settings or the scene change. A first frame handed from a saved image (prepare_result_application purpose video_first_frame) keeps an empty first_frame_path and reports source_result: its saved request_id and asset_id, and saved=true while this credential scope still holds that verified download; source_result is null for other references.\n"
             'Example: {"lane":"render_image","action":"configure","settings":{"look":"copper sculpture","capture_source":"CAMERA"}}.\n'
             "Configure, prepare the scene and optional first frame, then inspect until ready. An empty automatic look needs estimate_prompt(action=GENERATE), separate approve_prompt spending approval and result delivery first. Finally use estimate_cost/generate with this lane/model and no parameters. File uploads and captures are explicit; no Python execution is required.\n"
             "Platform equivalent: upload_create and upload_complete for prepared snapshots; native form editing is local."
@@ -2238,7 +2273,7 @@ SPECS = (
             "Args:\n"
             "  - job_id: optional string, a Scenario job id or the local_id returned by generate.\n"
             "  - id: optional string, compatibility alias; provide job_id or id. job_id takes precedence if both are supplied.\n"
-            "Returns: local_id, job_id, status, cu_cost, files, error and kind. Shared jobs also return revision, cu_cost_exact, results (asset_id, name, media_type, size, downloaded), actions, images and mesh_sources. actions name explicit follow-ups that never run automatically: cancel_prepared maps to the cancel_prepared_job tool; refresh, resume, cancel, recover_download and retry_receipt map to recover_local_job. Source records describe uploaded snapshots; they do not authorize finding or replacing an object after restart. Recovered jobs report kind=model; result media types remain available. Unknown jobs raise ValueError.\n"
+            "Returns: local_id, job_id, status, cu_cost, files, error and kind. Shared jobs also return revision, cu_cost_exact, results (asset_id, name, media_type, size, downloaded), actions, images and mesh_sources. actions name explicit follow-ups that never run automatically: cancel_prepared maps to the cancel_prepared_job tool; refresh, resume, cancel, recover_download and retry_receipt map to recover_local_job. use_first_frame offers a downloaded PNG, JPEG or WebP result to prepare_result_application with purpose video_first_frame, and first_frame reports this session's latest handoff for the job (state bound or failed, scene, input, asset_id, undo_recorded and error), or null. Source records describe uploaded snapshots; they do not authorize finding or replacing an object after restart. Recovered jobs report kind=model; result media types remain available. Unknown jobs raise ValueError.\n"
             "Shared jobs also return the same advisory in-memory projection as the native Jobs views, never persisted: lane is the model lane that submitted the job in this Blender session (null for workflow, Film, restarted and recovered jobs; it grants no destination). While a known remote job is active, remote_status is its latest validated Scenario status (pending, queued, warming-up, in-progress or finalizing), progress is the reported fraction from 0 to 1 or null when missing or invalid, remote_observed_at is that reading's UTC time and remote_stale is true when automatic polling is not keeping it current (delivery paused, Online Access off or a refresh overdue). All four are null otherwise. Only in-progress and finalizing fractions measure generation; the native Jobs views show a percentage only for those statuses above 0. Providers may keep progress at 0 until completion, so it is never a time estimate. delivery_paused is true while delivery waits for explicit review or recovery. delivery_active is true while this Blender session still advances the job by itself (submission, polling, download or an automatic image import); prepare no result application while it is true. delivery_offline is true while Blender's Online Access is disabled and holds a step this session would take by itself: status polling, or the download of a finished model or workflow job's results; delivery_active is then false, nothing is sent and the job resumes by itself once the user allows Online Access. It is false for paused, restarted and settled jobs and for finished Prompt Spark, Translate and Blockout jobs, whose text is read without a download.\n"
             'Example: {"job_id": "job_example"}.\n'
             "Prefer this for one status check; it only knows jobs tracked by this Blender runtime.\n"

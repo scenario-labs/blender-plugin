@@ -421,6 +421,15 @@ def prepare_world_application(
     )
 
 
+def prepare_first_frame_application(context_id, request_id, expected_revision, scene, asset_id):
+    jobs = ensure_model_jobs()
+    if context_id != state.job_context_id:
+        raise ScenarioError(0, "The selected job context changed; list local jobs again")
+    return jobs, jobs.prepare_first_frame_application(
+        request_id, expected_revision, scene, asset_id
+    )
+
+
 def prepare_asset_application(context_id, request_id, expected_revision, scene, asset_id):
     jobs = ensure_model_jobs()
     if context_id != state.job_context_id:

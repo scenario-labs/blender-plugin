@@ -435,6 +435,20 @@ class ReferenceFormTests(unittest.TestCase):
             self.form.apply_attachment(self.runtime.state.job_context_id, approval.identifier)
         self.fixture.fixture.uploader.upload.assert_called_once()
 
+    def test_saved_upload_replacing_a_saved_result_slot_drops_its_provenance(self):
+        record = self.saved_upload()
+        self.owner.session.invalidate_all()
+        self.ref.source, self.ref.asset_id = "ASSET", "saved-result"
+        self.ref[self.form._RESULT] = json.dumps(
+            {"request_id": "saved-job", "asset_id": "saved-result", "sha256": "0" * 64}
+        )
+        approval = self.approve(record)
+        ref = self.form.apply_attachment(self.runtime.state.job_context_id, approval.identifier)
+        self.assertEqual(ref.asset_id, "reference-asset")
+        # The upload, not the saved result, now fills the slot.
+        self.assertNotIn(self.form._RESULT, ref)
+        self.assertIsNone(submodule("blender.first_frame_handoff").provenance(ref))
+
     def test_changed_form_rejects_attachment_and_consumes_confirmation(self):
         record = self.saved_upload()
         approval = self.approve(record)

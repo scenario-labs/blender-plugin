@@ -28,6 +28,21 @@ TEXTURE_ROLES = frozenset(_TEXTURE_ROLES.values())
 # Filename rewriting during ingestion left legacy OBJ/MTL byte counts stale.
 REWRITTEN_MESH_TYPES = frozenset({"model/obj", "model/mtl"})
 
+# Container signatures of still images a saved result can hand to another model
+# input. A match proves only the container, never that a decoder accepts it.
+_IMAGE_SIGNATURES = {
+    "image/png": lambda head: head.startswith(b"\x89PNG\r\n\x1a\n"),
+    "image/jpeg": lambda head: head.startswith(b"\xff\xd8\xff"),
+    "image/webp": lambda head: head[:4] == b"RIFF" and head[8:12] == b"WEBP",
+}
+IMAGE_SIGNATURE_TYPES = frozenset(_IMAGE_SIGNATURES)
+
+
+def image_signature_matches(head, media_type):
+    """Whether the first bytes of a file carry the container of its saved media type."""
+    check = _IMAGE_SIGNATURES.get(media_type)
+    return check is not None and isinstance(head, bytes) and len(head) >= 12 and check(head)
+
 
 def texture_role(record):
     """Use documented semantic metadata only for delivered image files."""

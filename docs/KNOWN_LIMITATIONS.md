@@ -25,7 +25,14 @@ establish live generation or full render-lane desktop acceptance.
   lanes now use shared quotes, durable submission and downloads; only Image
   automatically imports results. Native form generation now uses those shared
   quotes and jobs too. Files, mesh/clip captures and render scene/first-frame inputs
-  use explicit uploads before the final quote. Render forms accept a written look
+  use explicit uploads before the final quote. Local MCP can instead hand a
+  downloaded saved PNG, JPEG or WebP result to the Render Video first frame by
+  reusing its asset ID. A free dry run on 2026-10-10, in the developer test scope,
+  accepted a generated PNG asset ID as the first frame of Seedance 2.0 and Minimax
+  H3 through the shared quote path and rejected an unknown ID with HTTP 404. No paid Render
+  Video job has used a handed-off frame, the clip's visual match is unverified,
+  the native control is not implemented yet and the desktop undo step is unproven.
+  The handoff stores no file path, so the blend shows no first-frame thumbnail. Render forms accept a written look
   or the default look with automatic Spark disabled. An empty automatic look
   requires its own exact Spark quote, approval and guarded result delivery before
   the final render quote. Film task quotes, approvals and saved-upload associations

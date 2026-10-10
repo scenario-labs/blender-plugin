@@ -624,6 +624,10 @@ scene changes. A descriptor grants nothing: each operator still checks its
 context token and saved revision or review, and opens its own confirmation or
 destination review where one applies.
 A new saved-job action adds one descriptor here, not a surface-specific branch.
+`use_first_frame` is the one action offered to local MCP before any native
+control exists: `saved_job_actions.MCP_ONLY` names it, native surfaces skip it
+and draw no reuse row for it alone, and any other unknown action still fails
+to describe.
 
 No action reconstructs a quote, replays an uncertain submission, guesses a remote
 ID or rebinds the original scene. Missing/stale revisions and retired contexts fail
@@ -786,7 +790,8 @@ approval. Repeated price refreshes reuse the pending look action; errors and
 uncertainty do not automatically start another attempt.
 
 `render_prompt_jobs.parameters` uses the uploaded scene still followed by style
-images for Render Image. Render Video requires an enabled uploaded first frame;
+images for Render Image. Render Video requires an enabled first frame, uploaded or
+[handed from a saved image](#saved-image-to-render-video-first-frame);
 only that frame and style images enter Spark's `images`, never the video asset.
 The selected model, look, ordered references and their roles, Spark toggle and
 first-frame identity are checked again at approval and delivery. Pending files,
@@ -836,6 +841,61 @@ Film integration are separate from this video/audio path.
 Shutdown releases pending media receipt handles after its workers stop, matching
 image and World ownership. A retained exception cannot persist success after
 shutdown; the saved uncertain record and any existing strip remain unchanged.
+
+## Saved image to Render Video first frame
+
+`use_first_frame` is offered for a `ready`, `apply_failed` or `applied` job
+with at least one downloaded PNG, JPEG or WebP colour result: no texture role,
+or the base role. EXR and normal, height or other maps are excluded. The same
+gates as other reuse apply: no pending command or receipt, no unfinished local
+claim and at most 128 local applications. Prompt and translate jobs never offer it.
+
+`ModelJobs.prepare_first_frame_application`, reached through MCP
+`prepare_result_application` with `purpose="video_first_frame"` and the
+`asset_id`, reads no file, sends no request and changes no form. It requires the
+selected scene, a loaded Render Video model whose first-frame target (a single
+image input named like a first frame, else the image array) is an image input,
+no existing first-frame slot (including a pending or uncertain upload marker)
+and room in that input. A model whose schema is not loaded is refused without
+starting a read; select or configure it in the form first. The single-use
+approval binds the job revision, the asset and its receipt digest, the scene
+revision and the reviewed form: model, input, existing references, any chosen
+first-frame file and whether the first frame is enabled.
+
+`apply_result_application` rechecks the record, the scene and that form, then
+queues the existing receipt verification. On delivery,
+[`first_frame_handoff.bind`](../scenario/blender/first_frame_handoff.py) consumes
+the verification through `JobSession.verified_result`, which takes no
+application claim. It rehashes the file against its receipt (at most 128 MiB,
+no symbolic link), checks its PNG, JPEG or WebP container and rechecks the
+scene and form. It then adds one role-tagged first-frame slot with
+`source="ASSET"`, the saved asset ID, the existing scope, asset and kind
+markers, and provenance: request ID, asset ID and receipt digest. It clears any
+chosen first-frame file, enables the first frame and invalidates the Render
+Video and Prompt Spark prices. A failure removes the new slot and restores the
+file and enabled state. It then records one Blender undo step when global undo,
+the undo step count and a window context allow it, and status reports whether
+it did (`undo_recorded`). Background sessions have no desktop history; the undo
+step is not yet proven on the desktop.
+
+The handoff is a form binding like a saved-upload or Library attachment, not a
+scene application. The job keeps its state and gains no `local_applications`
+entry, and nothing is uploaded, generated or spent. MCP status reports this
+session's latest outcome as `first_frame` (`bound` or `failed`); it is not
+persisted. A failed or stale handoff leaves the form unchanged and pauses the
+job with an error until the next explicit action. A changed scene, frame or
+form, or a retired context, requires a fresh review.
+
+No local path is written to the form or the saved blend. The verified result
+stays in private extension storage, and the slot's provenance lets a reader find
+that saved job again in the same credential scope: MCP `render_form` reports
+`source_result` with `saved`. After restart, `reference_form.scope_error`
+accepts the slot only under the same credential and project scope. Choosing a
+local first-frame file afterwards requires removing the slot, as for any changed
+first frame, and a saved upload attached over the slot drops its provenance.
+Quotes send the asset ID like any other existing asset; a deleted or
+inaccessible asset fails the quote and nothing retries. Native sidebar and
+Studio controls are not implemented yet.
 
 ## Explicit saved model application
 

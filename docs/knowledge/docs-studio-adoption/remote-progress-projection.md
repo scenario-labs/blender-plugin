@@ -10,12 +10,12 @@
     "coverage": "source-reviewed",
     "reviewed_at": "2026-10-09",
     "base_revision": "33d00b0554151c4de04731fd1a5e5c64ed50855b",
-    "limits": "Reviewed that shared jobs project validated in-memory progress into SCENARIO_PT_jobs, which Studio Jobs reuses, and into MCP job_status. Studio previews.py and preview_worker.py adoption, automatic result previews, the compact composer surface and live or desktop acceptance are not implemented by this change.",
+    "limits": "Reviewed that shared jobs project validated in-memory progress into SCENARIO_PT_jobs, which Studio Jobs reuses, and into MCP job_status. Studio previews.py and preview_worker.py adoption, automatic result previews, the compact composer surface and live or desktop acceptance are not implemented by this change. Scoped 2026-10-10 check of the Render Video first-frame handoff, not a full re-review: ModelJobs adds the use_first_frame action, its single-use approval, the verify_first_frame command and the session-local first_frame status field; polling, delivery predicates, progress projection, bindings and other actions are unchanged; tools_scenario adds the video_first_frame purpose and description text for it, job_status first_frame and render_form source_result; other contracts are unchanged. The claims above still hold; the review date and base revision are unchanged.",
     "sources": {
-      "scenario/blender/model_jobs.py": "ff575c16838b19ef950d8825dc80d8d42c1b81f89a3763f5c50245da091fa33a",
+      "scenario/blender/model_jobs.py": "fcd51b54adfdc215e2fafda7267914ef3d6a800093f48f60cf1f140b6b048dea",
       "scenario/blender/panels.py": "683cbe1ba4486ce2e59cc203bbac153d9ea6c31e3f0bc7710cf01bb028019d54",
       "scenario/blender/studio.py": "d4ba0b268cdcc1a6d9477cb5f190ebb18233010de5b5963fecf941ba05995fb8",
-      "scenario/mcp/tools_scenario.py": "9c48234b23d9756877184ee0f0536253741320ee80239484e172bf351dec2b83",
+      "scenario/mcp/tools_scenario.py": "78997d23290c801cdf6926dc4d53d125b2dcc045c39cbcaad505150affeb008f",
       "scenario/core/jobs/progress.py": "bf8bea9be0d1ba3c6ca7c2495fecf61eb67481ffb7499d1e30633cc154871af5"
     }
   }

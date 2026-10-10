@@ -11,7 +11,20 @@ FIRST_FRAME = "first_frame"
 
 
 def first_frame_enabled(lane):
-    return bool(lane.use_first_frame and lane.first_frame_path)
+    """A chosen local file, or a first-frame slot that already holds a Scenario asset."""
+    return bool(lane.use_first_frame and (lane.first_frame_path or asset_first_frame(lane)))
+
+
+def asset_first_frame(lane):
+    """A role-tagged first frame with an asset but no local file, such as a saved result.
+
+    Such a slot keeps no path in the blend. Choosing a local file afterwards
+    makes `require_uploaded` ask for the old slot's removal, as for any change.
+    """
+    return any(
+        ref.source == "ASSET" and ref.asset_id and not ref.filepath
+        for _, ref in slot(lane, FIRST_FRAME)
+    )
 
 
 def active_references(lane):

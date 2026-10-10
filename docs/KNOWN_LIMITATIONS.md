@@ -345,7 +345,8 @@ establish live generation or full render-lane desktop acceptance.
   turntables are fetched by the runtime but not displayed, the preview of a
   video is Scenario's image rather than a chosen frame, and MP3 or other audio
   waveforms stay behind the explicit **Waveform** control. Images over 8192
-  pixels per side or 8192 by 4096 pixels in all show no preview. Decoding runs
+  pixels per side or 8192 by 4096 pixels in all show no preview, nor do
+  multi-part, deep or layered OpenEXR files. Decoding runs
   on Blender's main thread, one image per timer tick: about 0.1 s for a
   4096-pixel JPEG and 0.2 s at 8192 by 4096 pixels on macOS arm64, longer for
   real photographs and on slower machines. Background Blender decodes no image

@@ -58,6 +58,9 @@ IMAGE_SOURCE_MAX_BYTES = 128 * 1024 * 1024
 # are bounded before a copy is issued: 8192 by 4096 decodes in about 0.2 s.
 LOCAL_IMAGE_MAX_EDGE = 8192
 LOCAL_IMAGE_MAX_PIXELS = 8192 * 4096
+# Decoded channels times pixels: an OpenEXR image with more channels than RGBA
+# must have fewer pixels, because Blender can allocate every channel.
+LOCAL_IMAGE_MAX_SAMPLES = 4 * LOCAL_IMAGE_MAX_PIXELS
 LOCAL_HEADER_BYTES = 2 * 1024 * 1024
 AUDIO_SOURCE_MAX_BYTES = 256 * 1024 * 1024
 SIDECAR_MAX_BYTES = 128 * 1024
@@ -191,18 +194,43 @@ def _bounded_edges(width, height, limit=STILL_MAX_EDGE):
 
 
 _EXR_WINDOWS = (b"dataWindow", b"displayWindow")
+# OpenEXR version 2 with only the tiled (bit 9) and long-name (bit 10) flags:
+# deep (bit 11) and multi-part (bit 12) files are refused, like panoramas.
+_EXR_FLAGS = 0x200 | 0x400
+_EXR_IMAGE_TYPES = (b"scanlineimage", b"tiledimage")
 
 
-def _exr_size(data):
-    """Data window dimensions from an OpenEXR header, or None.
+def _exr_channels(value):
+    """Channel names of an OpenEXR ``chlist`` attribute value, or None."""
+    names, index = [], 0
+    while index < len(value) and value[index] != 0:
+        end = value.find(b"\x00", index, index + 256)
+        # Each name is followed by its pixel type, linearity, three reserved
+        # bytes and x and y sampling: 16 bytes.
+        if end < 0 or end + 17 > len(value):
+            return None
+        names.append(value[index:end])
+        index = end + 17
+    return names if index + 1 == len(value) else None
 
-    Both the data and display windows, when declared, must be readable boxes;
-    the larger of each side bounds the decode. Only the first part's header is
-    read, which is the one Blender loads.
+
+def _exr_layout(data):
+    """Dimensions and channel count of a single-image OpenEXR header, or None.
+
+    Blender loads every part of a multi-part file into buffers sized by the
+    first part, and crashed on a later part with a larger data window in
+    Blender 5.0.1, 5.1.2 and 5.2.1. Layered channels, named ``layer.pass``,
+    load as a multilayer image that has no single picture to preview, after
+    allocating every channel. Such files, deep data and other part types read
+    as undeclared. Both the data and display windows, when declared, must be
+    readable boxes; the larger of each side bounds the decode.
     """
     if len(data) < 8 or not _exr(data):
         return None
-    index, sizes = 8, {}
+    version = int.from_bytes(data[4:8], "little")
+    if version & 0xFF != 2 or version & ~0xFF & ~_EXR_FLAGS:
+        return None
+    index, sizes, channels = 8, {}, None
     while index < len(data) and data[index] != 0:
         name_end = data.find(b"\x00", index, index + 256)
         if name_end < 0:
@@ -214,34 +242,55 @@ def _exr_size(data):
         start = type_end + 5
         if length < 0 or start + length > len(data):
             return None
-        name = data[index:name_end]
+        name, kind = data[index:name_end], data[name_end + 1 : type_end]
+        value = data[start : start + length]
         if name in _EXR_WINDOWS:
-            if data[name_end + 1 : type_end] != b"box2i" or length != 16:
+            if name in sizes or kind != b"box2i" or length != 16:
                 return None
-            x0, y0, x1, y1 = struct.unpack("<iiii", data[start : start + 16])
+            x0, y0, x1, y1 = struct.unpack("<iiii", value)
             sizes[name] = (x1 - x0 + 1, y1 - y0 + 1)
+        elif name == b"channels":
+            if channels is not None or kind != b"chlist":
+                return None
+            channels = _exr_channels(value)
+            if not channels or any(b"." in channel for channel in channels):
+                return None
+        elif name == b"type" and (kind != b"string" or value not in _EXR_IMAGE_TYPES):
+            return None
         index = start + length
-    if index >= len(data) or b"dataWindow" not in sizes:
+    if index >= len(data) or b"dataWindow" not in sizes or channels is None:
         return None
-    return tuple(max(size[axis] for size in sizes.values()) for axis in (0, 1))
+    width, height = (max(size[axis] for size in sizes.values()) for axis in (0, 1))
+    # Blender decodes fewer channels into RGBA.
+    return width, height, max(4, len(channels))
+
+
+def local_image_layout(data):
+    """Declared width, height and decoded channels of a saved image, or None.
+
+    ``data`` is the file's first bytes; a JPEG frame header or an EXR header
+    beyond them reads as undeclared. PNG, JPEG and WebP decode to four
+    channels; an OpenEXR file must be one single-part image (``_exr_layout``).
+    """
+    if _exr(data):
+        return _exr_layout(data)
+    size = still_size(data)
+    return None if size is None else (*size, 4)
 
 
 def local_image_size(data):
-    """Declared pixel dimensions of a saved PNG, JPEG, WebP or OpenEXR image, or None.
-
-    ``data`` is the file's first bytes; a JPEG frame header or an EXR header
-    beyond them reads as undeclared.
-    """
-    if _exr(data):
-        return _exr_size(data)
-    return still_size(data)
+    """Declared pixel dimensions of a saved PNG, JPEG, WebP or OpenEXR image, or None."""
+    layout = local_image_layout(data)
+    return None if layout is None else layout[:2]
 
 
-def bounded_local_image(width, height):
+def bounded_local_image(width, height, channels=4):
     """Whether Blender's main thread may decode a saved image of this size."""
     return (
         _bounded_edges(width, height, LOCAL_IMAGE_MAX_EDGE)
         and width * height <= LOCAL_IMAGE_MAX_PIXELS
+        and type(channels) is int
+        and max(4, channels) * width * height <= LOCAL_IMAGE_MAX_SAMPLES
     )
 
 
@@ -1096,10 +1145,10 @@ def prepare_decode(cache, target, rendition, source, cancel):
             raise PreviewError("The saved result contents do not match its type")
         if rendition == STILL:
             # Bound Blender's main-thread decode by what the file declares.
-            size = local_image_size(head)
-            if size is None or 0 in size:
+            layout = local_image_layout(head)
+            if layout is None or 0 in layout[:2]:
                 raise PreviewError("The saved image does not declare readable dimensions")
-            if not bounded_local_image(*size):
+            if not bounded_local_image(*layout):
                 raise PreviewError("The saved image is too large to preview")
         return DecodeRequest(
             target.key,

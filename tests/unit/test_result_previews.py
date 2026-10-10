@@ -394,20 +394,39 @@ def png_header(width, height):
     )
 
 
-def exr(width, height, *, display=None, window_type=b"box2i", end=True):
-    """An OpenEXR header declaring a data window and optionally a display window."""
+def exr_attribute(name, kind, value):
+    return name + b"\x00" + kind + b"\x00" + struct.pack("<i", len(value)) + value
 
-    def attribute(name, kind, value):
-        return name + b"\x00" + kind + b"\x00" + struct.pack("<i", len(value)) + value
 
-    data = b"\x76\x2f\x31\x01\x02\x00\x00\x00"
-    data += attribute(b"compression", b"compression", b"\x00")
-    data += attribute(b"dataWindow", window_type, struct.pack("<iiii", 0, 0, width - 1, height - 1))
+def exr_channels(*names):
+    """A ``chlist`` value: half channels, linear flag, reserved bytes, sampling 1."""
+    return b"".join(name + b"\x00" + struct.pack("<iB3xii", 1, 0, 1, 1) for name in names) + b"\x00"
+
+
+def exr(
+    width,
+    height,
+    *,
+    display=None,
+    window_type=b"box2i",
+    end=True,
+    version=2,
+    channels=(b"R", b"G", b"B", b"A"),
+    extra=b"",
+):
+    """An OpenEXR header declaring channels, a data window and optionally a display window."""
+    data = b"\x76\x2f\x31\x01" + struct.pack("<I", version)
+    if channels is not None:
+        data += exr_attribute(b"channels", b"chlist", exr_channels(*channels))
+    data += exr_attribute(b"compression", b"compression", b"\x00")
+    data += exr_attribute(
+        b"dataWindow", window_type, struct.pack("<iiii", 0, 0, width - 1, height - 1)
+    )
     if display is not None:
-        data += attribute(
+        data += exr_attribute(
             b"displayWindow", b"box2i", struct.pack("<iiii", 0, 0, display[0] - 1, display[1] - 1)
         )
-    return data + (b"\x00" + b"\x00" * 64 if end else b"")
+    return data + extra + (b"\x00" + b"\x00" * 64 if end else b"")
 
 
 @pytest.mark.parametrize(
@@ -415,6 +434,7 @@ def exr(width, height, *, display=None, window_type=b"box2i", end=True):
     [
         (exr(4096, 2048), (4096, 2048)),
         (exr(64, 32, display=(128, 16)), (128, 32)),
+        (exr(64, 32, version=0x202), (64, 32)),
         (exr(64, 32, window_type=b"box2f"), None),
         (exr(64, 32, end=False), None),
         (png_header(9, 4), (9, 4)),
@@ -427,12 +447,70 @@ def test_local_image_size_reads_declared_dimensions(data, size):
 
 
 @pytest.mark.parametrize(
+    "data",
+    [
+        # Blender sizes every part by the first one and crashed on a larger later part.
+        exr(16, 16, version=0x1002),
+        exr(16, 16, version=0x802),
+        exr(16, 16, version=0x2002),
+        exr(16, 16, version=1),
+        # Layered channels load as a multilayer image with no single picture.
+        exr(16, 16, channels=(b"diffuse.R", b"diffuse.G", b"diffuse.B")),
+        exr(16, 16, channels=None),
+        exr(16, 16, channels=()),
+        exr(16, 16, extra=exr_attribute(b"channels", b"chlist", exr_channels(b"Y"))),
+        exr(16, 16, channels=None, extra=exr_attribute(b"channels", b"chlist", b"R\x00\x01\x00")),
+        exr(16, 16, extra=exr_attribute(b"dataWindow", b"box2i", bytes(16))),
+        exr(16, 16, extra=exr_attribute(b"type", b"string", b"deepscanline")),
+        exr(16, 16, extra=exr_attribute(b"type", b"string", b"multipart")),
+    ],
+    ids=[
+        "multi-part",
+        "deep",
+        "unknown-flag",
+        "version-1",
+        "layered",
+        "no-channels",
+        "empty-channels",
+        "duplicate-channels",
+        "truncated-channels",
+        "duplicate-window",
+        "deep-type",
+        "unknown-type",
+    ],
+)
+def test_openexr_files_that_are_not_one_single_part_image_read_as_undeclared(data):
+    assert previews.local_image_layout(data) is None
+    assert previews.local_image_size(data) is None
+
+
+def test_openexr_channels_bound_the_decoded_samples():
+    names = tuple(b"C%d" % index for index in range(64))
+    assert previews.local_image_layout(exr(64, 32, channels=(b"Y",))) == (64, 32, 4)
+    assert previews.local_image_layout(exr(2048, 2048, channels=names)) == (2048, 2048, 64)
+    assert previews.local_image_layout(
+        exr(64, 32, extra=exr_attribute(b"type", b"string", b"tiledimage"))
+    ) == (64, 32, 4)
+    assert previews.bounded_local_image(8192, 4096, 4)
+    assert previews.bounded_local_image(2048, 1024, 64)
+    assert not previews.bounded_local_image(2048, 2048, 64)
+    assert not previews.bounded_local_image(64, 32, "4")
+
+
+@pytest.mark.parametrize(
     "media_type,data,reason",
     [
         ("image/png", png_header(previews.LOCAL_IMAGE_MAX_EDGE + 1, 1), "too large"),
         ("image/png", png_header(8192, 4097), "too large"),
         ("image/x-exr", exr(9000, 8), "too large"),
+        (
+            "image/x-exr",
+            exr(2048, 2048, channels=tuple(b"C%d" % i for i in range(64))),
+            "too large",
+        ),
         ("image/x-exr", exr(64, 32, end=False), "readable dimensions"),
+        ("image/x-exr", exr(16, 16, version=0x1002), "readable dimensions"),
+        ("image/x-exr", exr(16, 16, channels=(b"layer.R",)), "readable dimensions"),
         ("image/jpeg", jpeg(4, 4).replace(b"\xff\xc0", b"\xff\xe1"), "readable dimensions"),
         ("image/webp", webp(4, 4)[:24], "readable dimensions"),
     ],

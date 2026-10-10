@@ -145,9 +145,17 @@ lane reads the dimensions the copy declares in its PNG header, JPEG frame
 header, WebP header or OpenEXR data and display windows, within its first
 2 MiB. An image over 8192 pixels per side or 8192 by 4096 pixels in all, or one
 whose dimensions cannot be read there, fails with a reason instead, so a small
-file cannot request a long decode on the main thread. Publication checks the
-PNG signature, header checksum, dimensions and a 4 MiB size limit before caching
-it. Every finished or discarded request removes its private copy.
+file cannot request a long decode on the main thread. An OpenEXR copy must also
+be a single image: format version 2, one part, no deep data, and a channel list
+without layered `layer.pass` names whose channel count, at least four, times
+its pixels stays within 4 by 8192 by 4096 samples. Blender loads every part of
+a multi-part file into buffers sized by the first part: in offline probes, a
+generated file whose second part had a larger data window crashed Blender
+5.0.1, 5.1.2 and 5.2.1, and a 276 KB layered file raised peak memory by about
+610 MiB while loading as a multilayer image with no single picture to preview.
+Publication checks the PNG signature, header checksum, dimensions and a 4 MiB
+size limit before caching it. Every finished or discarded request removes its
+private copy.
 
 ## Offline audio envelopes
 

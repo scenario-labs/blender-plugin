@@ -22,6 +22,41 @@ target identity. [JobSession](../BLENDER_JOB_CONTEXT.md) captures and validates
 origins; names alone cannot identify a deleted or replaced object. Closing a
 view must not cancel application-owned jobs or route their results elsewhere.
 
+## Temporary preview decoding
+
+[`preview_decode.py`](../../scenario/blender/preview_decode.py) decodes a local
+image into a bounded preview on Blender's main thread. It loads the file inside
+`bpy.data.temp_data()` and fits it within a requested edge without upscaling.
+It then returns RGBA display values with straight alpha, unpremultiplying high
+bit-depth and float images and converting them from linear to sRGB, or writes
+an 8-bit RGBA PNG through a temporary scene with the Standard view transform.
+String and path arguments both pass the local capture path check as path
+objects. Every failure raises `PreviewDecodeError` with a message that names
+neither the path nor Blender's own error.
+
+Decode display-only images this way, never by loading them into `bpy.data` and
+removing them again. On Blender 5.0.1, 5.1.2 and 5.2.1, removing a main-data
+image makes the next dependency-graph evaluation report updates for the scene,
+its objects and its collections. The JobSession dependency handler then
+invalidates every origin captured in that scene (see
+[origin lifetime](../BLENDER_JOB_CONTEXT.md#origin-and-quote-lifetime)): quotes
+bound to them can no longer be prepared or spent, and completed results wait
+for review instead of automatic application. The temporary block reports no
+ID updates. Writing the PNG runs the handler with an empty update list, which
+JobSession ignores. Installed native tests check this property next to a
+main-data control that does invalidate the origin.
+
+A Python reference into the temporary block that outlives it reads freed
+memory: it can crash Blender or reach data that later reuses the memory. The
+helper therefore keeps the image, the scene and its render settings in helper
+frames that end inside the block, drops its own references before the block
+closes and raises only after the block is freed. Neither the error's context
+nor the locals of the helper frames on its traceback refer into the block,
+which the native tests check for every refusal. The helper does not inspect the
+file first: `limit` sees the dimensions only after Blender has loaded the whole
+image, so callers check the format and declared dimensions before decoding. No
+UI or MCP path uses the helper yet.
+
 ## Scene application
 
 [Mesh application](../MESH_APPLICATION.md) supports explicit reversible remesh

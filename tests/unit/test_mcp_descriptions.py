@@ -31,6 +31,10 @@ EXPECTED = {
         "prepare_film_review",
         "film_review_status",
         "build_film_review",
+        "film_export_sources",
+        "prepare_film_export",
+        "render_film_export",
+        "film_export_review",
         "film_capture_sources",
         "prepare_film_capture",
         "render_film_capture",
@@ -171,6 +175,24 @@ def test_film_review_descriptions_name_every_pre_build_invalidation():
             "selecting it again",
         ):
             assert change in description, (name, change)
+
+
+def test_film_export_descriptions_state_the_destination_contract():
+    _, calls = specs("tools_scenario")
+    descriptions = {call.args[0].value: call.args[1].value for call in calls}
+    assert "only inside the configured Output Folder" in descriptions["prepare_film_export"]
+    assert "never overwritten" in descriptions["prepare_film_export"]
+    assert (
+        "obtain explicit approval before render_film_export" in descriptions["prepare_film_export"]
+    )
+    assert (
+        "approve the destination returned by prepare_film_export verbatim"
+        in descriptions["render_film_export"]
+    )
+    assert "own destination approval" in descriptions["film_export_review"]
+    assert "Nothing renders yet" in descriptions["prepare_film_export"]
+    assert "No upload, generation or spending" in descriptions["render_film_export"]
+    assert "never renders again" in descriptions["film_export_review"]
 
 
 def test_list_models_reports_the_picker_status():

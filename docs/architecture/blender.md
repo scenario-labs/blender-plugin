@@ -181,5 +181,8 @@ root, extension storage and Blender's user folders before any work starts.
 Rendering, verification and no-overwrite publishing stay in bpy-free core code on
 a session-owned export thread; no bpy runs there. See the
 [export contract](../FILM_PLAN.md#offline-film-video-export-primitive) for bounds,
-verification levels, cancellation and crash leftovers. Native/MCP export controls
-remain pending.
+verification levels, cancellation and crash leftovers. Session-owned
+[native/MCP export controls](../FILM_PLAN.md#native-and-mcp-video-export-controls)
+inspect review scenes and snapshot on the main thread, separate the destination
+choice from the render approval and read cached status while drawing; the
+maintenance pump delivers outcomes. Desktop interaction remains pending.

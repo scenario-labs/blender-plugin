@@ -4,6 +4,7 @@
 
 import json
 from dataclasses import asdict
+from pathlib import Path
 
 import bpy
 
@@ -737,6 +738,62 @@ def film_review_status(args):
 
 def build_film_review(args):
     return runtime.ensure_film_jobs().session.film_review.approve(args["review_id"])
+
+
+def _output_folder():
+    """Agents may export only inside the configured Output Folder; see film_export."""
+    return Path(runtime.paths().output_dir)
+
+
+def film_export_sources(args):
+    owner = _film_owner(args).session.film_export
+    return {
+        "context_id": runtime.state.job_context_id,
+        "default_directory": str(_output_folder() / "Film"),
+        **owner.inspect(bpy.context.scene),
+    }
+
+
+def prepare_film_export(args):
+    owner = _film_owner(args).session.film_export
+    if args["context_id"] != runtime.state.job_context_id:
+        raise ValueError("The export connection changed; inspect export sources again")
+    return owner.prepare(
+        bpy.context.scene,
+        source_id=args["source_id"],
+        destination=args["destination_path"],
+        width=args.get("width"),
+        height=args.get("height"),
+        audio=args.get("include_audio"),
+        within=_output_folder(),
+    )
+
+
+def render_film_export(args):
+    return runtime.ensure_film_jobs().session.film_export.approve(
+        args["review_id"], approved_destination=args["approved_destination"]
+    )
+
+
+def film_export_review(args):
+    owner = runtime.ensure_film_jobs().session.film_export
+    action = args.get("action", "status")
+    if action == "cancel":
+        return owner.cancel(args["review_id"])
+    owner.poll()
+    if action == "status":
+        return owner.status(args["review_id"])
+    if action == "discard":
+        return owner.discard(args["review_id"])
+    if action == "prepare_republish":
+        return owner.prepare_republish(
+            args["review_id"], args.get("destination_path"), within=_output_folder()
+        )
+    if action == "republish":
+        return owner.republish(
+            args["review_id"], approved_destination=args.get("approved_destination")
+        )
+    raise ValueError("Choose status, cancel, discard, prepare_republish or republish")
 
 
 def film_capture_sources(args):
@@ -1904,6 +1961,84 @@ SPECS = (
         ),
         _schema({"review_id": {"type": "string"}}, ["review_id"]),
         build_film_review,
+    ),
+    ToolSpec(
+        "film_export_sources",
+        (
+            "Inspect the built Film review scenes of the current recipe that can be exported as video.\n"
+            "Args: production_id is the required string from film_recipe.\n"
+            "Returns: context_id, production_id, recipe scene, default_directory (the Output Folder's Film subfolder), encoder_available, verification (ffprobe or blender) and sources with source_id, scene, kind (final/previs), frames/fps, width/height, strips, media, audible, blocked_reason and default_name.\n"
+            'Example: {"production_id": "saved-production"}.\n'
+            "Film is experimental. Lists only local review scenes built for this production and unchanged recipe; timeline, foreign and library scenes are excluded. Fresh inspection replaces unprepared source handles. No rendering, file write, upload or generation.\n"
+            "Platform equivalent: none; local Film export inspection."
+        ),
+        _schema({"production_id": {"type": "string"}}, ["production_id"]),
+        film_export_sources,
+        {"readOnlyHint": True},
+    ),
+    ToolSpec(
+        "prepare_film_export",
+        (
+            "Bind one built Film review scene and a new MP4 destination for a separate render approval.\n"
+            "Args: context_id, production_id, source_id and destination_path are required; destination_path is an absolute new .mp4 path inside the Output Folder; width/height default to the scene's output size (even, 64 to 4096); include_audio defaults to whether a sound strip is audible.\n"
+            "Returns: review_id, READY phase, the exact resolved destination, source scene, frames/fps, duration, width/height, audio and media count.\n"
+            'Example: {"context_id": "current-context", "production_id": "saved-production", "source_id": "current-source", "destination_path": "<default_directory>/Cut - Final Review.mp4"}.\n'
+            "Film is experimental. Agents may write only inside the configured Output Folder, after resolving links; only its default Film subfolder is created when missing. The file must not exist and is never overwritten. Nothing renders yet: show the returned destination and settings and obtain explicit approval before render_film_export. Keep the recipe scene selected and both scenes unchanged until rendering: frame changes, object selection or edits, Undo or Redo, or leaving and selecting a scene again invalidate it. Exports are session-local.\n"
+            "Platform equivalent: none; local video export settings review."
+        ),
+        _schema(
+            {
+                "context_id": {"type": "string"},
+                "production_id": {"type": "string"},
+                "source_id": {"type": "string"},
+                "destination_path": {"type": "string"},
+                "width": {"type": "integer", "minimum": 64, "maximum": 4096},
+                "height": {"type": "integer", "minimum": 64, "maximum": 4096},
+                "include_audio": {"type": "boolean"},
+            },
+            ["context_id", "production_id", "source_id", "destination_path"],
+        ),
+        prepare_film_export,
+    ),
+    ToolSpec(
+        "render_film_export",
+        (
+            "Approve one READY Film export and render it to its destination in an offline Blender process.\n"
+            "Args: review_id and approved_destination are required strings; approve the destination returned by prepare_film_export verbatim.\n"
+            "Returns: export status with EXPORTING phase and progress; poll film_export_review until EXPORTED, PUBLISH_FAILED, ERROR or CANCELLED.\n"
+            'Example: {"review_id": "ready-export", "approved_destination": "<default_directory>/Cut - Final Review.mp4"}.\n'
+            "Film is experimental. Requires explicit approval of the exact destination and settings, Object Mode and the unchanged recipe scene selected. Consumes the approval even when it cannot start. Snapshots the review scene privately, encodes H.264/AAC MP4 with Blender's FFmpeg, verifies it with installed ffprobe or Blender's decoder, then saves it without overwriting; the working file and scenes stay unchanged. One export runs at a time; later scene edits do not stop it. No upload, generation or spending.\n"
+            "Platform equivalent: none; local offline video export."
+        ),
+        _schema(
+            {"review_id": {"type": "string"}, "approved_destination": {"type": "string"}},
+            ["review_id", "approved_destination"],
+        ),
+        render_film_export,
+    ),
+    ToolSpec(
+        "film_export_review",
+        (
+            "Inspect, cancel or discard a session-local Film export, or save its verified video to another new file after saving failed.\n"
+            "Args: review_id is required; action is status (default), cancel, discard, prepare_republish (requires destination_path inside the Output Folder) or republish (requires approved_destination equal to the returned pending_destination).\n"
+            "Returns: review_id, phase, scenes, frames/fps, duration, width/height, audio, destination, pending_destination, progress stage/done/total and percent, published, sha256, size, verification, republish_available, private directory and error.\n"
+            'Example: {"review_id": "current-export", "action": "status"}.\n'
+            "Film is experimental. Status advances local work but never starts a render. Cancel stops the export and leaves the destination absent. Discard deletes only the private snapshot, staged video and logs; an exported file stays. Republish copies the verified video only after a failed save and never renders again; it needs its own destination approval. Handles and private files end with the session.\n"
+            "Platform equivalent: none; local video export lifecycle."
+        ),
+        _schema(
+            {
+                "review_id": {"type": "string"},
+                "action": {
+                    "type": "string",
+                    "enum": ["status", "cancel", "discard", "prepare_republish", "republish"],
+                },
+                "destination_path": {"type": "string"},
+                "approved_destination": {"type": "string"},
+            },
+            ["review_id"],
+        ),
+        film_export_review,
     ),
     ToolSpec(
         "film_capture_sources",

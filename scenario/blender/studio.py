@@ -12,6 +12,7 @@ from . import (
     film,
     film_capture_controls,
     film_composition_controls,
+    film_export_controls,
     film_review_controls,
     film_scene_controls,
     film_timeline_controls,
@@ -35,7 +36,11 @@ def redraw_popups():
 
 PAGES = (
     ("CREATE", "Create", "Use the same model, prompt, references and settings as the composer"),
-    ("FILM", "Film", "Prepare Film tasks, shots, captures, timeline, composition and review"),
+    (
+        "FILM",
+        "Film",
+        "Prepare Film tasks, shots, captures, timeline, composition, review and export",
+    ),
     ("WORKFLOWS", "Workflows", "Choose a workflow, edit its inputs and approve its exact price"),
     ("LIBRARY", "Library", "Browse and search assets in the selected connection"),
     ("JOBS", "Jobs", "Inspect running and saved jobs in the selected connection"),
@@ -48,15 +53,19 @@ FILM_PAGES = (
     ("CAPTURE", "Capture", "Review local rendering and separately approve capture upload"),
     ("TIMELINE", "Timeline", "Build an editable sequence from selected shot scenes"),
     ("COMPOSITION", "Composition", "Review and approve final or previs composition"),
-    ("REVIEW", "Review", "Assemble saved media into a new final or previs review scene"),
+    ("REVIEW", "Review", "Assemble saved media into a review scene and export a video file"),
 )
+# Each page draws its panels in order; Review also offers the video export.
 FILM_PANELS = {
-    "TASKS": film.SCENARIO_PT_film,
-    "SHOTS": film_scene_controls.SCENARIO_PT_film_shots,
-    "CAPTURE": film_capture_controls.SCENARIO_PT_film_capture,
-    "TIMELINE": film_timeline_controls.SCENARIO_PT_film_timeline,
-    "COMPOSITION": film_composition_controls.SCENARIO_PT_film_composition,
-    "REVIEW": film_review_controls.SCENARIO_PT_film_review,
+    "TASKS": (film.SCENARIO_PT_film,),
+    "SHOTS": (film_scene_controls.SCENARIO_PT_film_shots,),
+    "CAPTURE": (film_capture_controls.SCENARIO_PT_film_capture,),
+    "TIMELINE": (film_timeline_controls.SCENARIO_PT_film_timeline,),
+    "COMPOSITION": (film_composition_controls.SCENARIO_PT_film_composition,),
+    "REVIEW": (
+        film_review_controls.SCENARIO_PT_film_review,
+        film_export_controls.SCENARIO_PT_film_export,
+    ),
 }
 
 
@@ -126,8 +135,9 @@ def draw_view(layout, context, *, width):
             else tuple(identifiers[i : i + 3] for i in range(0, len(identifiers), 3))
         )
         panels.draw_enum_tabs(layout, view, "film_page", rows)
-        layout.separator(factor=0.5)
-        draw_panel(layout, context, FILM_PANELS[view.film_page])
+        for index, panel in enumerate(FILM_PANELS[view.film_page]):
+            layout.separator(factor=0.5 if index == 0 else 1.0)
+            draw_panel(layout, context, panel)
     elif view.page == "JOBS":
         draw_panel(layout, context, panels.SCENARIO_PT_jobs)
     elif view.page == "WORKFLOWS":

@@ -1658,6 +1658,45 @@ parity, read-only panel and Studio drawing, mode navigation, Edit Mode gating an
 the build operator's options. Physical desktop interaction, screenshots and other
 OS/DPI behavior for these controls have not been captured; that evidence is pending.
 
+### Film export controls
+
+The **Export** child panel follows Review, and Studio's Film **Review** tab draws
+it below the review controls after a separator. It holds one **Export video** box
+with a `FILE_MOVIE` header icon. Without a current export it shows **Export
+video...** with two lines: it renders a built review scene to a new MP4, in an
+offline Blender process that never overwrites. That action opens Blender's file
+browser at the Output Folder's Film subfolder with a suggested portable name. The
+browser's side panel shows a list of the recipe's review scenes (an `ERROR` icon
+marks a blocked one, with its reason wrapped below), frames and rate, scene size,
+media count and whether sound strips are audible. It offers **Audio** (Match sound
+strips, Include or None), **Use review scene size** with Width and Height enabled
+only when it is off, and the lines "Nothing renders yet." and "Render video asks
+again." Its confirm button reads **Choose video file**.
+
+A ready export lists the review scene and mode, frames and rate, the destination
+file name and "Selecting, editing or Undo here discards it", then **Render video**
+and **Discard export**. **Render video** opens a separate confirmation with the
+review scene, timing and size, codec and audio track, media count, the full
+wrapped destination, "Renders in an offline Blender process; never overwrites a
+file.", that the working file and scenes stay unchanged and no credits are spent,
+and which verification runs. It is unavailable outside Object Mode, with a poll
+message. A running export shows its stage with a `TIME` icon (for example
+"Rendering 24/48 frames (50%)") and **Cancel export** with confirmation; stopping
+shows status only. A failed save shows "Video verified but not saved", **Choose
+new file...** (a file browser), then **Save video copy** (a confirmation of the
+exact new file) and **Discard export**. An exported video shows its name with a
+`CHECKMARK`, then a row with **Open folder** and **Copy SHA-256**, **Export
+video...** again and **Discard private files**. Errors add **Error details**,
+which wraps the complete error and offers copying. Drawing reads cached status
+only; runtime maintenance owns progress and redraws the sidebar when it changes.
+
+Installed synthetic tests cover the file browser invoke and side panel, dismissal,
+numbered suggestions, explicit audio and size choices, the Render dialog and its
+inert dismissal, the failed-save copy dialogs, the panel's ready, running and
+exported states, read-only panel and Studio drawing and Edit Mode gating. Physical
+desktop interaction, screenshots and other OS/DPI behavior for these controls have
+not been captured; that evidence is pending.
+
 
 ## Explicit Studio view
 
@@ -1669,10 +1708,11 @@ opens the sidebar; the compact composer remains the default creation surface.
 
 Studio reuses the actual native panel controls and their operators. Create keeps
 the same scene form, model, prompt, references and parameters. Film separates
-Tasks, Shots, Capture, Timeline, Composition and Review; each keeps its existing
-confirmation boundary. Results reuse the saved-result and explicit application
-controls. Connection names the selected credential source/project and links to
-Preferences and local agent setup without displaying credentials.
+Tasks, Shots, Capture, Timeline, Composition and Review, whose page also draws
+the video Export panel; each keeps its existing confirmation boundary. Results
+reuse the saved-result and explicit application controls. Connection names the
+selected credential source/project and links to Preferences and local agent setup
+without displaying credentials.
 
 Navigation is an unsaved WindowManager property group. Native navigation edits
 must not tag a scene or invalidate its exact quote. Before opening, focused

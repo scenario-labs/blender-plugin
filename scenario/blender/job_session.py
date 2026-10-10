@@ -250,6 +250,9 @@ class JobSession:
         from .film_review_commands import FilmReviewCommands
 
         self.film_review = FilmReviewCommands(self, store)
+        from .film_export import FilmExportCommands
+
+        self.film_export = FilmExportCommands(self)
         from .asset_organization import AssetOrganization
 
         self.asset_organization = AssetOrganization(self)
@@ -1686,6 +1689,8 @@ class JobSession:
                 self.film_timeline.close()
                 self.film_capture.close()
                 self.film_review.close()
+                # The export thread has joined, so its private staging can be removed.
+                self.film_export.close()
                 if self._coordinator.film_review_cleanup_pending:
                     self._film_cleanup_retry_at = time.monotonic() + 5.0
                 else:

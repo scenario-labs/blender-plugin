@@ -337,6 +337,10 @@ Do not edit this block by hand; run `make mcp-docs`. An asterisk marks a require
 | `prepare_film_review` | Copy and measure saved Film media for a final or previs review scene without building or spending. | `context_id`*: string<br>`production_id`*: string<br>`mode`: string (['final', 'previs'])<br>`score_task_id`: string<br>`include_master`: boolean | - |
 | `film_review_status` | Inspect, cancel or discard a session-local Film review, or retry only its known saved receipt. | `review_id`*: string<br>`action`: string (['status', 'cancel', 'discard', 'retry_receipt', 'dismiss_uncertain'])<br>`inspected`: boolean | - |
 | `build_film_review` | Approve one READY Film review and build a new review scene from its private copies. | `review_id`*: string | - |
+| `film_export_sources` | Inspect the built Film review scenes of the current recipe that can be exported as video. | `production_id`*: string | read-only annotation |
+| `prepare_film_export` | Bind one built Film review scene and a new MP4 destination for a separate render approval. | `context_id`*: string<br>`production_id`*: string<br>`source_id`*: string<br>`destination_path`*: string<br>`width`: integer<br>`height`: integer<br>`include_audio`: boolean | - |
+| `render_film_export` | Approve one READY Film export and render it to its destination in an offline Blender process. | `review_id`*: string<br>`approved_destination`*: string | - |
+| `film_export_review` | Inspect, cancel or discard a session-local Film export, or save its verified video to another new file after saving failed. | `review_id`*: string<br>`action`: string (['status', 'cancel', 'discard', 'prepare_republish', 'republish'])<br>`destination_path`: string<br>`approved_destination`: string | - |
 | `film_capture_sources` | Inspect matching local scenes for one Film shot before capture. | `production_id`*: string<br>`shot_id`*: string | read-only annotation |
 | `prepare_film_capture` | Prepare a local shot capture for separate render approval. | `context_id`*: string<br>`production_id`*: string<br>`shot_id`*: string<br>`source_id`*: string<br>`kind`: string (['STILL', 'VIDEO'])<br>`width`: integer<br>`height`: integer<br>`color_type`: string (['MATERIAL', 'TEXTURE', 'OBJECT']) | - |
 | `render_film_capture` | Approve a READY Film capture and start one local render on the shared workers. | `review_id`*: string | - |
@@ -437,7 +441,16 @@ With Python enabled, a connected agent can run arbitrary Python with your user's
 permissions. The blocklist in `scenario/mcp/sandbox.py` is a guard rail, not a
 security boundary. The token can be copied into client configuration files and,
 for the stdio bridge, command arguments. Do not expose the port through a public
-proxy or share setup snippets. Report vulnerabilities through
+proxy or share setup snippets.
+
+Film video export lets an agent write new MP4 files only inside the configured
+Output Folder. The destination's folder is resolved, following links, and must lie
+in the resolved Output Folder; spellings are compared exactly. Only the missing
+default `Film` subfolder can be created, an existing file is never overwritten,
+and Blender, extension and staging storage stay refused even when the Output
+Folder points there. Render approval must repeat the exact resolved destination.
+This is a policy check before a long render, not a sandbox: with Python
+execution enabled, a token holder can still write elsewhere. Report vulnerabilities through
 [SECURITY.md](../SECURITY.md); see [privacy and local data](PRIVACY.md) for uploads,
 credential storage and data handling.
 
@@ -906,8 +919,8 @@ cleanup requires `inspected: true` and must never be replayed automatically.
 These four local commands have no platform equivalent, make no service call and
 never change saved jobs or import result files. Local scene markers establish
 recipe compatibility, not service provenance. They share the native command
-owner but do not create a native operator Undo entry. Capture and review assembly
-use the separate commands in this section; video export remains unavailable.
+owner but do not create a native operator Undo entry. Capture, review assembly
+and video export use the separate commands in this section.
 
 ### Film composition commands
 
@@ -956,8 +969,42 @@ scene until its receipt is saved or it is dismissed.
 These three local commands have no platform equivalent, make no service call and
 share the [native review controls](FILM_PLAN.md#native-and-mcp-review-controls).
 They do not create a native operator Undo entry. Handles expire with the session.
-Installed synthetic tests cover them; desktop interaction, live media and video
-export remain pending.
+Installed synthetic tests cover them; desktop interaction and live media remain
+pending. Built review scenes export through the commands below.
+
+### Film export commands
+
+`film_export_sources(production_id)` lists the review scenes built for the
+current production and unchanged recipe as opaque `source_id` handles, with frames,
+rate, size, media count, audible sound strips and any blocking reason. It also
+returns the context, `default_directory` (the Output Folder's Film subfolder), a
+suggested `default_name` per source and the verification that will run. Call
+`prepare_film_export` with that context, production and source and an absolute new
+`destination_path` inside the Output Folder; optional even `width`/`height` and
+`include_audio` override the scene's size and audible sound strips. Nothing
+renders. Show the returned `destination`, timing, size, audio and media count and
+obtain explicit approval before `render_film_export(review_id,
+approved_destination)`, sending that destination verbatim like an exact cost.
+
+Rendering needs Object Mode with the recipe scene selected and both scenes
+unchanged since preparation: a frame change, object selection or edits, Undo or
+Redo, or leaving a scene and selecting it again invalidate a ready export, as does
+the destination appearing. It snapshots the review scene privately, encodes an
+H.264 MP4 with an AAC track only when requested in an offline Blender child,
+verifies it with installed `ffprobe` or, more weakly, with Blender's decoder, and
+saves it without overwriting. Later scene edits do not stop a running export; one
+export runs at a time. Poll `film_export_review` for the stage, percentage,
+`sha256`, size and verification. Its actions cancel (the destination stays
+absent), discard the private snapshot, staged video and logs (an exported file
+stays), and after a failed save `prepare_republish` with a new `destination_path`,
+then `republish` with the returned `pending_destination` as `approved_destination`.
+A re-publish copies the verified video and never renders again.
+
+These four local commands have no platform equivalent, make no service call and
+spend nothing. They share the [native export controls](FILM_PLAN.md#native-and-mcp-video-export-controls)
+and their handles; handles and private files end with the session. Installed
+synthetic tests cover them, including one real child export; desktop interaction,
+human playback review and the Studio case-study bundle remain pending.
 
 
 ## Workflow execution

@@ -15,6 +15,7 @@ from ..core.ui.costs import format_cu
 from . import (
     film_capture_controls,
     film_composition_controls,
+    film_export_controls,
     film_jobs,
     film_review_controls,
     film_scene_controls,
@@ -295,7 +296,7 @@ class SCENARIO_PT_film(bpy.types.Panel):
         if item is not None and item.error:
             box.label(text="Action needs review. Inspect saved jobs.", icon="ERROR")
         layout.operator("scenario.inspect_saved_jobs", icon="FILE_REFRESH")
-        layout.label(text="Assemble saved media under Review; video export is not available yet")
+        layout.label(text="Assemble saved media under Review; export a video under Export")
 
 
 CLASSES = (
@@ -317,6 +318,7 @@ CLASSES = (
     *film_capture_controls.CLASSES,
     *film_composition_controls.CLASSES,
     *film_review_controls.CLASSES,
+    *film_export_controls.CLASSES,
 )
 
 

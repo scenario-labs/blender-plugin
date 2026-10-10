@@ -266,7 +266,16 @@ class StudioViewTests(unittest.TestCase):
     def test_film_review_page_draws_shared_review_panel_in_bounded_rows(self):
         panels = submodule("blender.panels")
         review = submodule("blender.film_review_controls")
-        self.assertIs(self.studio.FILM_PANELS["REVIEW"], review.SCENARIO_PT_film_review)
+        export = submodule("blender.film_export_controls")
+        self.assertEqual(
+            self.studio.FILM_PANELS["REVIEW"],
+            (review.SCENARIO_PT_film_review, export.SCENARIO_PT_film_export),
+        )
+        self.assertTrue(
+            all(
+                len(value) == 1 for key, value in self.studio.FILM_PANELS.items() if key != "REVIEW"
+            )
+        )
         self.view.page, self.view.film_page = "FILM", "REVIEW"
         layout = MagicMock()
         with patch.object(panels, "draw_enum_tabs") as tabs:
@@ -282,6 +291,16 @@ class StudioViewTests(unittest.TestCase):
         )
         self.assertIn(
             "scenario.prepare_film_review", [c.args[0] for c in box.operator.call_args_list]
+        )
+        # The export panel follows the review panel on the same page.
+        labels = [c.kwargs for c in box.label.call_args_list]
+        self.assertIn({"text": "Export video", "icon": "FILE_MOVIE"}, labels)
+        self.assertLess(
+            labels.index({"text": "Assemble review", "icon": "SEQUENCE"}),
+            labels.index({"text": "Export video", "icon": "FILE_MOVIE"}),
+        )
+        self.assertIn(
+            "scenario.prepare_film_export", [c.args[0] for c in box.operator.call_args_list]
         )
         self.assertFalse(self.workflow.calls)
 

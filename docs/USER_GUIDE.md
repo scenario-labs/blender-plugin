@@ -598,6 +598,7 @@ and the current limits of online-access and agent controls.
 ## Files and folders
 
 - Results: your Output Folder (`~/Downloads/Scenario` by default), `<kind>/<YYYYMMDD>/<date>_<model>_<asset id>_<n>.<ext>`.
+- Film videos: the new `.mp4` file you choose; **Export video...** suggests your Output Folder's `Film` subfolder, and agents can export only inside the Output Folder. Export staging stays in the extension's user state until discarded or the session ends.
 - Captures, Prompt Spark stills and Edit 3D exports: the extension cache (`captures/`, `exports/` under Blender's extension user directory), thumbnails of models in `thumbs/`.
 - Job registry, recent models and model cache: the extension's own user directory under Blender's extensions folder; delete it yourself for a clean removal.
 - Your key: saved as plain text in Blender's `userpref.blend` preferences file. Select Credentials > Environment to use `SCENARIO_API_KEY` and `SCENARIO_API_SECRET` instead; switching sources does not erase saved values. Clear both saved fields and save preferences to remove them; rotate the key in Scenario if it leaks.
@@ -715,7 +716,8 @@ private local files after work stops, preserving saved uploads. Capture files
 also expire when the session shuts down; upload the desired output or copy it
 elsewhere before that. Captures do not resume automatically after restart.
 See [capture approval](FILM_PLAN.md#shared-capture-and-upload-approval) for limits
-and MCP equivalents. Film video export is not available yet.
+and MCP equivalents. To export a finished cut as video, build a review scene and
+use **Film > Export** below.
 Desktop still capture, approval cancellation, synthetic upload and cleanup pass
 on macOS Blender 5.1.2; see [the evidence and limits](UI_STYLE.md#film-capture-controls).
 Live uploads, desktop video cancellation, other OS/DPI and integrated release
@@ -752,8 +754,32 @@ If a build is uncertain, save the offered receipt, or inspect saved jobs and
 acknowledge the inspection; never build the same review again. Undo removes the
 review scene but keeps its private copies and saved receipts. See
 [review controls](FILM_PLAN.md#native-and-mcp-review-controls) for MCP equivalents
-and limits. Desktop interaction for these controls has not been verified, and video
-export is not available yet.
+and limits. Desktop interaction for these controls has not been verified.
+
+**Film > Export** renders a built review scene to a new MP4 file. Choose **Export
+video...**: Blender's file browser opens in your Output Folder's `Film` subfolder
+with a suggested name, and its side panel lists the review scenes for this recipe.
+Pick one, and optionally the audio track or a different even size, then confirm
+the file. Nothing renders yet. Choose **Render video** and check the separate
+confirmation, which repeats the full file path. An offline Blender process
+renders an H.264 video with AAC audio when requested, checks it with installed
+`ffprobe` or, more weakly, with Blender itself, and saves it without overwriting
+any file. Your working file and scenes are not changed and nothing is spent. You
+can close the panel while it renders; **Cancel export** leaves no file behind.
+
+Keep the working scene selected and unchanged between choosing the file and
+rendering: changing the frame, selecting or editing objects, Undo or Redo, or
+viewing the review scene and returning asks you to choose again. After rendering
+starts, later edits do not affect the video. When saving fails after a verified
+render, **Choose new file...** and **Save video copy** copy that video to another
+file without rendering again. **Open folder** and **Copy SHA-256** help you find
+and check the result; **Discard private files** removes the export's private
+snapshot and logs but never your video. One export runs at a time, and exports
+stop when you change credentials or project, open another file or disable the
+extension. Agents can export only inside the Output Folder. See
+[export controls](FILM_PLAN.md#native-and-mcp-video-export-controls). Desktop
+interaction for these controls has not been verified, and the Studio case-study
+bundle is not available yet.
 
 
 ## Expanded Studio view
@@ -761,9 +787,10 @@ export is not available yet.
 Choose **Studio** beside **Scenario** in the 3D viewport header to open expanded
 controls. It opens only when requested. Create uses the same prompt, model,
 references and settings as the composer and sidebar. Film groups task, shot,
-capture, timeline, composition and review controls; Jobs and Results expose the same
-saved work and explicit apply actions. Connection shows the selected credential
-source and optional project and provides Preferences and local agent setup.
+capture, timeline, composition, review and video export controls; Jobs and
+Results expose the same saved work and explicit apply actions. Connection shows
+the selected credential source and optional project and provides Preferences and
+local agent setup.
 
 Page changes preserve the form and saved work. Press Escape or click outside to
 return to Blender; admitted jobs keep running. Actions that need a separate

@@ -10,7 +10,7 @@ is Blender 5.0; dependency and runtime acceptance have separate gates.
 | Responsibility | Source | Current behavior |
 | --- | --- | --- |
 | Registration | [registry.py](../../scenario/blender/registry.py) | Registers properties, panels, operators, composer, pump and local server integration. The `scenario_blender` headless command serves local MCP on the main thread. |
-| UI lifetime and state | [runtime.py](../../scenario/blender/runtime.py) | Owns the credential-bound SDK catalog and process-wide UI/MCP state; native form quote/submission and Film task/capture/composition/review controls use the selected `JobSession`; Film video export controls remain to integrate over existing session commands. |
+| UI lifetime and state | [runtime.py](../../scenario/blender/runtime.py) | Owns the credential-bound SDK catalog and process-wide UI/MCP state; native form quote/submission and Film task/capture/composition/review/video export controls use the selected `JobSession`. |
 | UI generation | [generation.py](../../scenario/blender/generation.py) | Every native model form consumes a lane-bound session quote before durable submission; unfinished file/capture/Spark inputs block final pricing and submission. |
 | Main-thread application | [pump.py](../../scenario/blender/pump.py) | Drains SDK catalog events, maintains shared job delivery and redraws when events arrive or drawn job rows change. Unbound prototype completions cannot apply results. GUI timer handling differs from headless execution. |
 | Local MCP | [server.py](../../scenario/mcp/server.py), [tools_scenario.py](../../scenario/mcp/tools_scenario.py), [mcp_service.py](../../scenario/blender/mcp_service.py) | Queues scene tools for main-thread execution; model listing/schema use the same SDK catalog as the UI, all model generation lanes use the shared session; prototype records remain local snapshots. |
@@ -622,8 +622,13 @@ the panel. Installed synthetic tests cover the controls; desktop interaction is
 pending. The
 [offline video export primitive](../FILM_PLAN.md#offline-film-video-export-primitive)
 renders an assembled sequencer scene to a verified MP4 on a session-owned thread,
-outside the shared workers, and publishes it without overwriting. Its native/MCP
-controls and the portable case-study bundle remain unimplemented.
+outside the shared workers, and publishes it without overwriting.
+[Native/MCP export controls](../FILM_PLAN.md#native-and-mcp-video-export-controls)
+present it through session-owned `JobSession.film_export` handles with a
+destination choice and a separate render approval; runtime maintenance polls
+them, and agent destinations stay inside the Output Folder. Installed synthetic
+tests cover them; desktop interaction is pending. The portable case-study bundle
+remains unimplemented.
 
 
 ## Active workflow commands

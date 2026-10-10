@@ -71,10 +71,15 @@ establish live generation or full render-lane desktop acceptance.
   another review for the same scene, or leaving the recipe scene and selecting it
   again, before building deletes the copies and requires a fresh preparation;
   Undo after a build keeps them. See
-  [review controls](FILM_PLAN.md#native-and-mcp-review-controls). An offline MP4
-  export primitive exists as session commands, but it has no native/MCP controls
-  yet, and the Studio case-study bundle is unavailable. Export verification uses
-  an installed ffprobe when present and otherwise a weaker Blender decode check.
+  [review controls](FILM_PLAN.md#native-and-mcp-review-controls). Native/MCP
+  [video export controls](FILM_PLAN.md#native-and-mcp-video-export-controls) render
+  a built review scene to a new MP4 after a destination choice and a separate
+  render approval; agents may write only inside the Output Folder. They have
+  installed synthetic coverage only; desktop interaction and human playback review
+  remain pending. A ready export is invalidated by the same scene changes as a
+  review, and one export runs at a time. The Studio case-study bundle is
+  unavailable. Export verification uses an
+  installed ffprobe when present and otherwise a weaker Blender decode check.
   Blender builds without H.264/AAC encoders cannot export; they are detected only
   when the render child fails, with its log retained. Complete runtime adoption
   and live/native acceptance remain open

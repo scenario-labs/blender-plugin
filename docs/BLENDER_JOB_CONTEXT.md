@@ -148,6 +148,17 @@ copies it to another approved destination without rendering. Handles, receipts
 and progress are session-local; no job store, blend property or restart replay
 is added.
 
+`JobSession.film_export` is the session-owned `FilmExportCommands` behind the
+[native and MCP export controls](FILM_PLAN.md#native-and-mcp-video-export-controls).
+Inspection captures each review scene's origin after synchronizing its own view
+layers; preparation captures the selected recipe scene's origin and binds both
+with the resolved destination. Approval rechecks both origins in Object Mode,
+snapshots on the main thread and calls `export_film`; runtime maintenance drains
+the export task and delivers it with `deliver_local_export`, never through a
+scene callback. A frame, recipe or object change, Undo/Redo or scene reselection
+invalidates a ready export, while a running export keeps its snapshot. The handles
+are closed after the export thread joins, removing their private staging.
+
 ## Film media preparation ownership
 
 `JobSession.prepare_film_composition` captures the supplied current origin and

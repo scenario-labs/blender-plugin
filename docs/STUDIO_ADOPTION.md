@@ -228,9 +228,12 @@ The first-party [Film video export](FILM_PLAN.md#offline-film-video-export-primi
 needs no external encoder: an offline Blender child uses Blender's built-in
 FFmpeg. An installed ffprobe adds a full decoded-frame check; without it, a
 second Blender child performs a weaker decode check and the receipt records which
-verification ran. This MP4 export is new first-party code, not an adaptation of
-Studio's `film_export.py`. It does not replace Studio's retained case-study
-bundle, which remains separate work under #64.
+verification ran. This MP4 export, and its
+[native/MCP controls](FILM_PLAN.md#native-and-mcp-video-export-controls) under
+Film > Export and the Studio Film Review page, are new first-party code, not an
+adaptation of Studio's `film_export.py` or its UI. They do not replace Studio's
+retained case-study bundle (the Film row above), which remains separate work
+under #64.
 
 ## Local background capture adaptation
 
@@ -302,8 +305,11 @@ with generated-source claims and receipt-only recovery. First-party
 [native/MCP review controls](FILM_PLAN.md#native-and-mcp-review-controls) expose
 those commands in the sidebar, the Studio Film **Review** page and local MCP, with
 separate preparation and build approvals; no Studio UI code is copied for them.
-Video export, the retained case-study bundle and provider/desktop acceptance
-remain separate; no prototype client or production ledger is imported.
+First-party [native/MCP video export controls](FILM_PLAN.md#native-and-mcp-video-export-controls)
+over the [export primitive](FILM_PLAN.md#offline-film-video-export-primitive)
+render a built review scene to MP4. The retained case-study bundle and
+provider/desktop acceptance remain separate; no prototype client or production
+ledger is imported.
 
 ## Next implementation gates
 

@@ -13,26 +13,32 @@ import math
 from dataclasses import dataclass
 
 from . import catalog
-from .trained_routes import ROUTE_STACK, LoraSlot, Pick, _type_text
+from .trained_routes import ROUTE_STACK, LoraSlot, Pick, RouteError, _type_text
 
 __all__ = [
     "DEFAULT_STRENGTH",
     "MAX_BASE_READS",
+    "MAX_PICKS",
     "Base",
     "Offer",
     "Strength",
     "base_candidates",
     "concepts",
     "declared_strength",
+    "describe_offer",
+    "describe_slot",
     "lora_bases",
     "merged",
     "offers",
+    "picks_from_list",
     "picks_from_payload",
+    "requested_picks",
     "runs",
     "saved_ids",
     "selection_label",
     "starting_strength",
     "strength",
+    "strength_value",
 ]
 
 # Visible starting strength of a newly chosen LoRA, and of a reset strength field,
@@ -45,6 +51,8 @@ MAX_BASE_READS = 400
 # Strength resolution sent to the service. Blender stores 32-bit floats, so 0.8
 # reads back as 0.800000011920929; rounding keeps equal choices byte-identical.
 STRENGTH_DIGITS = 4
+# Trained models one explicit choice may name: the job store's bound for a saved default.
+MAX_PICKS = 16
 UNSUPPORTED = "Not available in Blender: no base model runs this type."
 
 
@@ -305,3 +313,163 @@ def saved_ids(raw, payload):
             if isinstance(item, str) and item and item not in ids:
                 ids.append(item)
     return ids
+
+
+# -- explicit choices from local MCP -------------------------------------------------
+def strength_value(value, label="Strength"):
+    """A LoRA strength as the native forms send it: finite, at most STRENGTH_DIGITS decimals.
+
+    The forms round every strength to STRENGTH_DIGITS, so a more precise value
+    could only reach the service through another surface. It is refused rather
+    than rounded silently; equal choices then give equal payloads everywhere.
+    """
+    if isinstance(value, bool) or not isinstance(value, int | float):
+        raise RouteError(f"{label}: enter a number for each strength.")
+    try:
+        value = float(value)
+    except OverflowError:
+        raise RouteError(f"{label}: enter a finite strength.") from None
+    if not math.isfinite(value):
+        raise RouteError(f"{label}: enter a finite strength.")
+    if round(value, STRENGTH_DIGITS) != value:
+        raise RouteError(f"{label}: use at most {STRENGTH_DIGITS} decimal places.")
+    return value
+
+
+def _empty(value):
+    return value is None or value == "" or value == []
+
+
+def requested_picks(slot, parameters):
+    """The picks a request names in this slot's inputs, in order; () when it names none.
+
+    Local MCP passes a base model's own LoRA inputs as parameters (for example
+    `loras` and `lorasScale`, or `modelId` for a composition). They are read
+    strictly here, then rebuilt with trained_routes.apply like a form's choice:
+    one composition alone, or LoRA IDs with one strength each in the same
+    order. A LoRA without a strength keeps None, which apply resolves to the
+    scale input's declared default or refuses. Raises RouteError.
+    """
+    component = slot.component
+    composition = parameters.get(component.model_id_input) if component.model_id_input else None
+    loras = parameters.get(component.model_input)
+    scales = parameters.get(component.scale_input)
+    if not _empty(composition):
+        if not isinstance(composition, str):
+            raise RouteError(f"{slot.model_id_label}: enter one composition model ID.")
+        if not _empty(loras):
+            raise RouteError("Use a composition on its own; it already combines its LoRAs.")
+        if not _empty(scales):
+            raise RouteError("A composition applies its own strengths; remove the strength.")
+        return (Pick(composition),)
+    if _empty(loras):
+        if not _empty(scales):
+            raise RouteError(
+                f"{slot.scale_label}: send strengths only with LoRAs in {slot.model_label}."
+            )
+        return ()
+    if (
+        not isinstance(loras, list)
+        or len(loras) > MAX_PICKS
+        or any(not isinstance(item, str) or not item for item in loras)
+    ):
+        raise RouteError(f"{slot.model_label}: give a list of at most {MAX_PICKS} LoRA model IDs.")
+    if scales is None:
+        return tuple(Pick(item) for item in loras)
+    if not isinstance(scales, list) or len(scales) != len(loras):
+        raise RouteError(f"{slot.scale_label}: give one strength per LoRA, in the same order.")
+    return tuple(
+        Pick(item, strength_value(value, slot.scale_label))
+        for item, value in zip(loras, scales, strict=True)
+    )
+
+
+def picks_from_list(items):
+    """Picks from `[{"model_id": ..., "scale": ...}]`, as render_form and model_defaults take them.
+
+    `scale` is optional (null or absent means none). Unknown fields, empty IDs
+    and imprecise strengths are refused, never coerced. Raises RouteError.
+    """
+    if not isinstance(items, list) or len(items) > MAX_PICKS:
+        raise RouteError(f"Give at most {MAX_PICKS} trained models as a list.")
+    picks = []
+    for item in items:
+        if (
+            not isinstance(item, dict)
+            or not {"model_id"} <= set(item) <= {"model_id", "scale"}
+            or not isinstance(item["model_id"], str)
+            or not item["model_id"]
+        ):
+            raise RouteError("Give each trained model as model_id and an optional scale.")
+        scale = item.get("scale")
+        picks.append(Pick(item["model_id"], None if scale is None else strength_value(scale)))
+    return tuple(picks)
+
+
+def describe_slot(slot):
+    """A base model's LoRA inputs and their declared bounds as plain JSON values."""
+    component = slot.component
+    declared = slot.scale_min is not None and slot.scale_max is not None
+    return {
+        "model_input": component.model_input,
+        "scale_input": component.scale_input,
+        "model_id_input": component.model_id_input,
+        "model_types": list(slot.model_types),
+        "model_id_types": list(slot.model_id_types),
+        "min_items": slot.min_items,
+        "max_items": slot.max_items,
+        "scale_range": [slot.scale_min, slot.scale_max] if declared else None,
+        "scale_step": slot.scale_step,
+        "scale_default": slot.scale_default,
+    }
+
+
+def _route_entry(base, record, default):
+    route, _reason = runs(base.slot, record.raw)
+    slot = base.slot
+    entry = {"route": route, "model_id": base.id, "name": base.record.name}
+    if route == ROUTE_STACK:
+        bounded = strength(slot) is not None
+        entry.update(
+            model_input=slot.component.model_input,
+            scale_input=slot.component.scale_input,
+            scale_range=[slot.scale_min, slot.scale_max] if bounded else None,
+            scale_step=slot.scale_step,
+            default_scale=slot.scale_default,
+            min_items=slot.min_items,
+            max_items=slot.max_items,
+        )
+    else:
+        entry["model_input"] = slot.component.model_id_input
+    if default is not None and default.base_model_id == base.id:
+        entry["default"] = True
+    return entry
+
+
+def describe_offer(offer, *, private=False, default=None):
+    """One trained model as local MCP lists it, from the same Offer the picker draws.
+
+    `routes` names every base model that runs it in the lane and the inputs
+    that carry it. `default` is the lane's saved default (a TrainedModelDefault
+    or None); rows and routes it uses are marked. Nothing here is a quote.
+    """
+    record = offer.record
+    names = default is not None and any(pick.model_id == offer.id for pick in default.picks)
+    row = {
+        "id": offer.id,
+        "name": record.name,
+        "kind": offer.kind,
+        "type": _type_text(record.type),
+        "private": bool(private),
+        "available": offer.available,
+        "routes": [_route_entry(base, record, default if names else None) for base in offer.bases],
+    }
+    if not offer.available:
+        row["reason"] = offer.reason
+    if offer.kind == catalog.TRAINED_COMPOSITION:
+        row["concepts"] = [
+            {"model_id": model_id, "scale": scale} for model_id, scale in concepts(record)
+        ]
+    if names:
+        row["default"] = True
+    return row

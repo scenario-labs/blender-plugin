@@ -12,6 +12,7 @@ strengths, and trained_defaults keeps the explicit per-scope project defaults.
 """
 
 import math
+from dataclasses import dataclass
 
 import bpy
 from bpy.props import IntProperty, StringProperty
@@ -625,6 +626,163 @@ def selection_error(lane_state):
     if record is None or not record.parameters:
         return ""  # the form already explains a model without its description
     return apply_to(lane_state, record, {})[1]
+
+
+# -- explicit choices from local MCP ----------------------------------------------------
+def listed_reason():
+    """Why the trained list cannot check a choice yet, or "" once it is loaded (main thread).
+
+    A list this connection never requested is requested now; a failed read is
+    not repeated here; the picker's Trained chip, a refresh or list_models
+    with the trained source reads it again, as the native forms do.
+    """
+    from . import generation
+
+    generation.process_catalog_events()
+    state = runtime.state
+    if state.trained_loaded:
+        return ""
+    if state.trained_loading:
+        return "Trained models are still loading; call again in a few seconds."
+    if state.trained_error:
+        return f"Could not load trained models: {state.trained_error}"
+    if not runtime.online():
+        return "Online access is disabled; trained models cannot be listed."
+    try:
+        request(runtime.ensure_manager(), runtime.ensure_catalog())
+    except ScenarioError as err:
+        return err.reason
+    return "Trained models are still loading; call again in a few seconds."
+
+
+@dataclass(frozen=True)
+class Requested:
+    """The trained models a request names in a base's LoRA inputs (local MCP)."""
+
+    picks: tuple
+    composition: bool  # named in the composition input, so it must be a composition
+
+
+def split_parameters(record, parameters):
+    """(other parameters, Requested or None) for parameters naming the base's LoRA inputs.
+
+    Local MCP passes the inputs model_schema reports (for example `loras` and
+    `lorasScale`); they are read strictly and later rebuilt by apply_picks, the
+    trained_routes.apply the forms use. None means the request names none of
+    them, or the base declares no valid LoRA slot (form preparation then
+    checks those values as before). Raises RouteError.
+    """
+    slot = base_slot(record.id)
+    if slot is None or not set(slot.inputs) & set(parameters):
+        return parameters, None
+    picks = trained_offers.requested_picks(slot, parameters)
+    composition = bool(picks) and bool(slot.model_id_input and parameters.get(slot.model_id_input))
+    others = {k: v for k, v in parameters.items() if k not in slot.inputs}
+    return others, Requested(picks, composition)
+
+
+NO_STRENGTH_RANGE = (
+    "This base model declares no strength range for its LoRAs; omit the strengths to "
+    "use its declared default"
+)
+
+
+def _strengths_drawable(slot, picks):
+    """Explicit strengths need the range a form's strength field shows; raises otherwise."""
+    if any(pick.scale is not None for pick in picks) and trained_offers.strength(slot) is None:
+        raise RouteError(NO_STRENGTH_RANGE)
+
+
+def apply_picks(record, requested, body):
+    """`body` with the requested picks written into the base's LoRA inputs, as a form's are.
+
+    Raises ScenarioError while the trained list is not loaded, and RouteError
+    for a choice the base's current schema refuses, before any request. A LoRA
+    named in the composition input is refused, as the quote check refuses it,
+    rather than moved into the stack.
+    """
+    picks = requested.picks
+    if picks:
+        reason = listed_reason()
+        if reason:
+            raise ScenarioError(0, reason)
+    slot = LoraSlot.from_record(record.raw)
+    kinds = {item.id: kind for kind, item in runtime.state.trained_pairs}
+    if requested.composition and kinds.get(picks[0].model_id) == catalog.TRAINED_LORA:
+        raise RouteError(
+            f"{slot.model_id_label} is a LoRA. Add it to {slot.model_label} with a strength "
+            "instead."
+        )
+    result = apply(record.raw, picks, runtime.state.trained_records, body)
+    _strengths_drawable(slot, picks)
+    return result
+
+
+def checked_choice(record, picks):
+    """(model_id, kind, scale) for explicit picks the base runs now; raises before any change.
+
+    The same rules as a picker choice: listed LoRAs or one composition,
+    trained_routes.apply, and a strength only where the base declares a range.
+    No picks always passes, so a choice a new base refuses can be removed.
+    """
+    if not picks:
+        return []
+    slot = base_slot(record.id)
+    if slot is None:
+        raise ScenarioError(0, "This model does not accept LoRAs or compositions")
+    if current_scope() is None:
+        raise ScenarioError(0, "Connect to Scenario before choosing a trained model")
+    reason = listed_reason()
+    if reason:
+        raise ScenarioError(0, reason)
+    kinds = {item.id: kind for kind, item in runtime.state.trained_pairs}
+    chosen = []
+    for pick in picks:
+        kind = kinds.get(pick.model_id)
+        if kind not in catalog.USABLE_TRAINED_KINDS:
+            raise ScenarioError(0, "Refresh trained models; a selected model is no longer listed.")
+        chosen.append((pick.model_id, kind, pick.scale))
+    try:
+        apply(record.raw, picks, runtime.state.trained_records)
+        _strengths_drawable(slot, picks)
+    except RouteError as err:
+        raise ScenarioError(0, str(err)) from None
+    return chosen
+
+
+def replace_choice(lane_state, lane, chosen):
+    """Replace the form's trained choice with checked_choice's result (main thread)."""
+    scope = current_scope()
+    if scope is None:
+        raise ScenarioError(0, "Connect to Scenario before choosing a trained model")
+    slot = base_slot(lane_state.model_id)
+    if chosen and slot is None:
+        raise ScenarioError(0, "This model does not accept LoRAs or compositions")
+    if chosen:
+        write_slots(lane_state, lane, chosen, slot, scope)
+    else:
+        lane_state.trained.clear()
+    props.mark_estimate_dirty(lane_state)
+
+
+def payload_meta(record, body):
+    """Job-view entries for the trained models a request body runs, like selection_meta."""
+    slot = base_slot(record.id)
+    if slot is None:
+        return []
+    kinds = {item.id: kind for kind, item in runtime.state.trained_pairs}
+    entries = []
+    for pick in trained_offers.picks_from_payload(slot, body):
+        listed = runtime.state.trained_records.get(pick.model_id)
+        entries.append(
+            {
+                "model_id": pick.model_id,
+                "name": listed.name if listed is not None and listed.name else pick.model_id,
+                "kind": kinds.get(pick.model_id, ""),
+                "strength": pick.scale,
+            }
+        )
+    return entries
 
 
 def slot_name(slot):

@@ -65,6 +65,7 @@ BASELINE = (
     "test_model_defaults",
     "test_trained_models",
     "test_trained_section",
+    "test_mcp_trained_models",
     "test_result_transfers",
     "test_local_capture",
     "test_job_session",

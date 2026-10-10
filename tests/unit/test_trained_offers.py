@@ -345,3 +345,150 @@ def test_selection_label_names_the_first_trained_model_and_counts_the_rest():
         trained_offers.selection_label("FLUX.1 Dev", ["Studio", "Ink", "Grain"])
         == "FLUX.1 Dev \u00b7 Studio (+2)"
     )
+
+
+# -- explicit choices from local MCP -------------------------------------------------
+def test_requested_picks_read_a_bases_lora_inputs_strictly_in_order():
+    slot = LoraSlot.from_record(BASES[FLUX1])
+    read = trained_offers.requested_picks
+    assert read(slot, {"prompt": "p"}) == ()
+    assert read(slot, {"loras": [], "lorasScale": [], "modelId": ""}) == ()
+    assert read(slot, {"loras": [LORA_B, LORA_A], "lorasScale": [1, 0.8]}) == (
+        Pick(LORA_B, 1.0),
+        Pick(LORA_A, 0.8),
+    )
+    assert read(slot, {"loras": [LORA_A]}) == (Pick(LORA_A),)  # apply decides on a strength
+    assert read(slot, {"modelId": COMPOSITION, "loras": []}) == (Pick(COMPOSITION),)
+    scale = read(slot, {"loras": [LORA_A], "lorasScale": [1]})[0].scale
+    assert type(scale) is float  # 1 and 1.0 serialize alike, as the forms send them
+
+
+@pytest.mark.parametrize(
+    ("parameters", "message"),
+    [
+        ({"modelId": COMPOSITION, "loras": [LORA_A]}, "Use a composition on its own"),
+        ({"modelId": COMPOSITION, "lorasScale": [0.5]}, "applies its own strengths"),
+        ({"modelId": ["x"]}, "LoRA or Composition Model: enter one composition"),
+        ({"lorasScale": [0.5]}, "LoRA Scale: send strengths only with LoRAs in Flux LoRA"),
+        ({"loras": LORA_A}, "Flux LoRA: give a list of at most 16"),
+        ({"loras": [LORA_A, ""]}, "Flux LoRA: give a list"),
+        ({"loras": [LORA_A] * 17}, "at most 16"),
+        ({"loras": [LORA_A, LORA_B], "lorasScale": [0.5]}, "one strength per LoRA"),
+        ({"loras": [LORA_A], "lorasScale": 0.5}, "one strength per LoRA"),
+        ({"loras": [LORA_A], "lorasScale": [True]}, "enter a number"),
+        ({"loras": [LORA_A], "lorasScale": ["0.5"]}, "enter a number"),
+        ({"loras": [LORA_A], "lorasScale": [float("nan")]}, "finite"),
+        ({"loras": [LORA_A], "lorasScale": [10**400]}, "finite"),
+        ({"loras": [LORA_A], "lorasScale": [0.83333]}, "at most 4 decimal places"),
+    ],
+)
+def test_requested_picks_refuse_what_no_form_could_send(parameters, message):
+    slot = LoraSlot.from_record(BASES[FLUX1])
+    with pytest.raises(trained_routes.RouteError, match=message):
+        trained_offers.requested_picks(slot, parameters)
+
+
+def test_picks_from_list_take_model_ids_and_optional_strengths():
+    read = trained_offers.picks_from_list
+    assert read([]) == ()
+    assert read([{"model_id": LORA_A, "scale": 0.8}, {"model_id": COMPOSITION}]) == (
+        Pick(LORA_A, 0.8),
+        Pick(COMPOSITION),
+    )
+    assert read([{"model_id": LORA_A, "scale": None}]) == (Pick(LORA_A),)
+    for items in (
+        None,
+        {"model_id": LORA_A},
+        [{"model_id": LORA_A}] * 17,
+        [{"model_id": ""}],
+        [{"model_id": 5}],
+        [{"id": LORA_A}],
+        [{"model_id": LORA_A, "scale": 0.5, "kind": "lora"}],
+        [{"model_id": LORA_A, "scale": "0.5"}],
+        [{"model_id": LORA_A, "scale": 0.12345}],
+        [LORA_A],
+    ):
+        with pytest.raises(trained_routes.RouteError):
+            read(items)
+
+
+def test_the_pick_bound_matches_the_saved_default_bound():
+    from scenario.core.jobs.store import MAX_TRAINED_PICKS
+
+    assert trained_offers.MAX_PICKS == MAX_TRAINED_PICKS
+
+
+def test_describe_slot_reports_the_declared_lora_inputs_and_bounds():
+    assert trained_offers.describe_slot(LoraSlot.from_record(BASES[FLUX1])) == {
+        "model_input": "loras",
+        "scale_input": "lorasScale",
+        "model_id_input": "modelId",
+        "model_types": ["flux.1-lora"],
+        "model_id_types": ["flux.1-lora", "flux.1-composition"],
+        "min_items": 0,
+        "max_items": 6,
+        "scale_range": [0, 2],
+        "scale_step": 0.05,
+        "scale_default": None,
+    }
+    unbounded = deepcopy(BASES[FLUX1])
+    scale_input(unbounded).pop("max")
+    described = trained_offers.describe_slot(LoraSlot.from_record(unbounded))
+    assert described["scale_range"] is None
+    json.dumps(described)  # plain JSON values only
+
+
+def test_describe_offer_lists_routes_reasons_and_the_saved_default():
+    from scenario.core.jobs.store import TrainedModelDefault, TrainedModelPick
+
+    voice = record(PUBLIC[LORA_A], id="model_voice", type="elevenlabs-voice")
+    offered = trained_offers.offers(
+        [*pairs(LORA_A, COMPOSITION), (catalog.TRAINED_UNSUPPORTED, voice)], bases()
+    )
+    default = TrainedModelDefault("image", "stack", FLUX1, (TrainedModelPick(LORA_A, 0.8),))
+    lora, composition, unsupported = (
+        trained_offers.describe_offer(offer, private=offer.id == LORA_A, default=default)
+        for offer in offered
+    )
+    assert lora == {
+        "id": LORA_A,
+        "name": record(PUBLIC[LORA_A]).name,
+        "kind": "lora",
+        "type": "flux.1-lora",
+        "private": True,
+        "available": True,
+        "routes": [
+            {
+                "route": "stack",
+                "model_id": FLUX1,
+                "name": record(BASES[FLUX1]).name,
+                "model_input": "loras",
+                "scale_input": "lorasScale",
+                "scale_range": [0, 2],
+                "scale_step": 0.05,
+                "default_scale": None,
+                "min_items": 0,
+                "max_items": 6,
+                "default": True,
+            }
+        ],
+        "default": True,
+    }
+    assert composition["routes"] == [
+        {
+            "route": "composition",
+            "model_id": FLUX1,
+            "name": record(BASES[FLUX1]).name,
+            "model_input": "modelId",
+        }
+    ]
+    assert "default" not in composition
+    assert composition["concepts"] == [
+        {"model_id": model_id, "scale": scale}
+        for model_id, scale in trained_offers.concepts(PUBLIC[COMPOSITION])
+    ]
+    assert unsupported["available"] is False and unsupported["routes"] == []
+    assert unsupported["reason"] == "Not available in Blender: no base model runs this type."
+    assert unsupported["type"] == "elevenlabs-voice"
+    for row in (lora, composition, unsupported):
+        json.dumps(row)

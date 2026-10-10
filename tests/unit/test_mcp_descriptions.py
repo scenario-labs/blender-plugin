@@ -67,6 +67,7 @@ EXPECTED = {
         "apply_result_application",
         "list_models",
         "model_schema",
+        "model_defaults",
         "estimate_cost",
         "render_form",
         "estimate_prompt",

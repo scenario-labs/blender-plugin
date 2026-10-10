@@ -96,6 +96,8 @@ class TrainedModelTests(unittest.TestCase):
                 {"id": concept["modelId"], "type": "flux.1-lora", "status": "trained"},
             )
         self.private_error = None
+        # Submissions are refused unless a test opts in; they reach this synthetic service only.
+        self.accept_submissions, self.submitted = False, []
         adapter = submodule("core.api.sdk_adapter")
 
         def respond(request):
@@ -114,8 +116,18 @@ class TrainedModelTests(unittest.TestCase):
                 if record is None:
                     return httpx.Response(404, json={"reason": "not found"})
                 return httpx.Response(200, json={"model": record})
+            if request.method == "GET" and path.startswith("/v1/jobs/") and self.accept_submissions:
+                job = {
+                    "jobId": path.rsplit("/", 1)[1],
+                    "status": "in-progress",
+                    "jobType": "custom",
+                }
+                return httpx.Response(200, json={"job": job})
             self.assertEqual(request.method, "POST")
             self.assertEqual(path, f"/v1/generate/custom/{FLUX1}")
+            if self.accept_submissions and "dryRun" not in request.url.params:
+                self.submitted.append(request.content)
+                return httpx.Response(200, json={"job": {"jobId": f"job-{len(self.submitted)}"}})
             self.assertEqual(dict(request.url.params), {"dryRun": "true"})
             self.posts.append(json.loads(request.content))
             return httpx.Response(269, json={"creativeUnitsCost": 10.75})

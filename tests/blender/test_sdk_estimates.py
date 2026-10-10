@@ -502,12 +502,13 @@ class SDKEstimateTests(unittest.TestCase):
                 time.sleep(0.001)
             response = result.result(1)
         self.assertTrue(response["result"]["isError"], response)
-        self.assertIn(f"RouteQuoteError: {reason}", response["result"]["content"][0]["text"])
+        # MCP checks a listed LoRA's kind like the form does, so it refuses before any request.
+        self.assertIn(f"RouteError: {reason}", response["result"]["content"][0]["text"])
         self.assertFalse([call for call in self.calls if call.method == "POST"])
-        # Each quote read the base and the referenced model, then stopped.
+        # Only the form's quote read the base and the referenced model, then stopped.
         self.assertEqual(
             [call.url.path.rsplit("/", 1)[1] for call in self.calls],
-            ["fixture-price", "fixture-lora"] * 2,
+            ["fixture-price", "fixture-lora"],
         )
 
     def test_a_missing_model_is_explained_and_other_failures_stay_generic(self):

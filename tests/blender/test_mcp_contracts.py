@@ -210,6 +210,7 @@ class McpContractTests(unittest.TestCase):
                 "read_model_text",
                 "inspect_result_previews",
                 "recover_cloud_job",
+                "model_defaults",
             ):
                 self.assertIn(name, {tool["name"] for tool in tools})
             for tool in tools:

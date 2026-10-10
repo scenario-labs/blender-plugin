@@ -8,6 +8,7 @@ import logging
 import math
 from dataclasses import replace
 
+from ..core.api import trained_offers
 from ..core.api.catalog import RENDER_LANES
 from ..core.api.errors import ScenarioError
 from ..core.schema.params import validate
@@ -211,6 +212,7 @@ def configure(scene, lane, changes):
         "model_id",
         "parameters",
         "style_assets",
+        "trained",
     }:
         raise ValueError("Unknown render setting")
     if "model_id" not in changes:
@@ -220,13 +222,21 @@ def configure(scene, lane, changes):
     model_id = changes.get("model_id", state.model_id)
     if not isinstance(model_id, str) or not model_id:
         raise ValueError("Choose a render model")
-    generation.ensure_record(model_id)
+    record = generation.ensure_record(model_id)
     schema = generation.schema_for(model_id)
     choices = runtime.enum_items(("models", lane))
     if model_id not in {item[0] for item in choices} or schema is None:
         raise ValueError("Choose a model from list_models for this render lane")
     if state.model_id != model_id and state.references:
         raise ValueError("Remove the old render references explicitly before changing models")
+    trained = None
+    if "trained" in changes:
+        if lane not in trained_models.LANES:
+            raise ValueError("Trained models run in the Image and Render Image forms only")
+        # The picker's rules, checked against the form's (new) model before any change.
+        trained = trained_models.checked_choice(
+            record, trained_offers.picks_from_list(changes["trained"])
+        )
     for name, (_, kind) in _FIELDS.items():
         if name in changes and type(changes[name]) is not kind:
             raise ValueError(f"Invalid {name}")
@@ -305,6 +315,10 @@ def configure(scene, lane, changes):
         for asset in styles:
             ref = state.references.add()
             ref.param_name, ref.source, ref.asset_id = style_spec.name, "ASSET", asset
+    if trained is not None:
+        # Replaces the whole trained choice, as an explicit choice the default no longer replaces.
+        state.model_key = model_id
+        trained_models.replace_choice(state, lane, trained)
     props.mark_estimate_dirty(state)
     return inspect(scene, lane)
 

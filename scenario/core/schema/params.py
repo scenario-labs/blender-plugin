@@ -2,10 +2,41 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Turn a model record's parameter schema into UI specs and request bodies."""
 
+import math
 import re
+import struct
 from dataclasses import dataclass, field
 
 FILE_TYPES = ("file", "file_array")
+
+
+def _float32(value):
+    return struct.unpack("<f", struct.pack("<f", value))[0]
+
+
+def float32_decimal(value):
+    """The shortest decimal that 32-bit float storage reads back as `value`.
+
+    Blender's FloatProperty holds 0.8 as 0.800000011920929. A request carries the
+    0.8 the form shows and the schema declares instead, so a form value and the
+    same value passed through local MCP serialize alike. Whole numbers are exact
+    already, and a value that is not a 32-bit reading, or not finite, is
+    returned unchanged.
+    """
+    value = float(value)
+    if not math.isfinite(value) or value.is_integer():
+        return value
+    try:
+        stored = _float32(value)
+    except OverflowError:
+        return value
+    if stored != value:
+        return value
+    for digits in range(1, 10):  # nine significant digits always read back exactly
+        candidate = float(f"{value:.{digits}g}")
+        if _float32(candidate) == stored:
+            return candidate
+    return value
 
 
 @dataclass

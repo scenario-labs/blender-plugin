@@ -3,6 +3,7 @@
 """Bridge between ParamSpec schemas and the ScenarioParamValue collection, plus drawing."""
 
 from ..core.api.catalog import param_override
+from ..core.schema.params import float32_decimal
 from . import props, runtime
 
 SEP = ","
@@ -181,7 +182,10 @@ def collect_values(lane_state, schema):
             # numeric choices (Seedance duration: -1, 4..15) are edited through the enum, so read the enum, not int_value
             values[spec.name] = item.enum_value if item.enum_value != "NONE" else None
         elif spec.ptype == "number":
-            values[spec.name] = item.int_value if spec.is_integer else item.float_value
+            # 32-bit storage reads 0.8 back as 0.800000011920929; send the 0.8 the form shows.
+            values[spec.name] = (
+                item.int_value if spec.is_integer else float32_decimal(item.float_value)
+            )
         elif spec.ptype == "boolean":
             values[spec.name] = item.bool_value
         else:

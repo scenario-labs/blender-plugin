@@ -29,6 +29,7 @@ import bpy
 from ..core.api import catalog, trained_offers
 from ..core.api.errors import ScenarioError
 from ..core.api.trained_routes import Pick, RouteError, apply
+from ..core.jobs import model_defaults
 from ..core.jobs.store import StoreError, TrainedModelDefault, TrainedModelPick
 from . import props, runtime, trained_models
 
@@ -553,9 +554,16 @@ def save(lane_state, lane, context_id, expected_revision):
     The saving form keeps its choice and its price; forms the default governs
     (other scenes without an explicit choice) take it at once.
     """
-    default = selection_default(lane_state, lane)
+    return store(selection_default(lane_state, lane), context_id, expected_revision)
+
+
+def store(default, context_id, expected_revision):
+    """Save a checked default over the reviewed context and revision (Save and local MCP).
+
+    Forms the default governs take it at once; no price is requested.
+    """
     updated = _write(
-        lane,
+        default.lane,
         context_id,
         expected_revision,
         lambda: runtime.save_model_default(
@@ -564,6 +572,70 @@ def save(lane_state, lane, context_id, expected_revision):
     )
     _apply_written()
     return updated
+
+
+def explicit_default(lane, base_model_id, picks):
+    """A default named by IDs (local MCP), refused unless it runs in `lane` now, like Save.
+
+    `picks` are trained_routes.Pick values. The route follows the listed kinds:
+    one composition alone, otherwise a LoRA stack. The check is the one forms
+    use to apply a default (resolve), so a saved default runs wherever it lands.
+    """
+    if lane not in LANES:
+        raise ScenarioError(0, "Project defaults are kept for the Image and Render Image forms")
+    if not picks:
+        raise ScenarioError(0, "Choose a LoRA or composition before saving a project default")
+    runtime.sync_catalog_context()
+    reason = trained_models.listed_reason()
+    if reason:
+        raise ScenarioError(0, reason)
+    kinds = {item.id: kind for kind, item in runtime.state.trained_pairs}
+    composition = [kinds.get(pick.model_id) for pick in picks] == [catalog.TRAINED_COMPOSITION]
+    if composition and picks[0].scale is not None:
+        raise ScenarioError(0, "A composition applies its own strengths; remove the strength.")
+    try:
+        default = TrainedModelDefault(
+            lane,
+            "composition" if composition else "stack",
+            base_model_id,
+            tuple(TrainedModelPick(pick.model_id, pick.scale) for pick in picks),
+        )
+    except ValueError as err:
+        raise ScenarioError(0, _sentence(err)) from None
+    resolution = resolve(default, lane, read=True)
+    if resolution.reason:
+        raise ScenarioError(0, _sentence(resolution.reason))
+    if resolution.waiting:
+        raise ScenarioError(0, f"This default cannot be checked yet: {resolution.waiting}")
+    return default
+
+
+def lane_summary(cache, lane, *, read=False):
+    """One lane's saved default as plain JSON values, with whether it runs now (not in draw).
+
+    `parameters` holds the base's LoRA inputs the default writes, as a form
+    would send them, when it runs; otherwise `reason` or `waiting` says why not.
+    """
+    summary = {"lane": lane, "revision": revision(cache, lane), "default": None}
+    if lane in cache.errors:
+        summary["error"] = UNREADABLE.format(reason=cache.errors[lane])
+        return summary
+    default = saved(cache, lane)
+    if default is None:
+        return summary
+    summary["default"] = model_defaults.describe(cache.lanes[lane])["default"]
+    resolution = resolve(default, lane, read=read)
+    summary.update(label=resolution.label, available=resolution.ready)
+    if resolution.reason:
+        summary["reason"] = resolution.text
+    elif resolution.waiting:
+        summary["waiting"] = resolution.waiting
+    else:
+        picks = [Pick(model_id, scale) for model_id, _kind, scale in resolution.chosen]
+        summary["parameters"] = apply(
+            resolution.base.record.raw, picks, runtime.state.trained_records
+        )
+    return summary
 
 
 def clear(lane, context_id, expected_revision):

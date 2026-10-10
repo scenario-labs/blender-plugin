@@ -441,8 +441,9 @@ Do not edit this block by hand; run `make mcp-docs`. An asterisk marks a require
 | `estimate_prompt` | Get the exact server price for New, Rewrite or Translate on the current scene's native prompt field. This does not generate or change text. Args: lane and action (GENERATE, REWRITE, TRANSLATE). Returns: quote_id and cu_cost_exact. Obtain explicit approval of that exact cost before approve_prompt. The current field text/model must remain unchanged. | `lane`: string (enum: see tools/list)<br>`action`*: string (['GENERATE', 'REWRITE', 'TRANSLATE']) | read-only annotation |
 | `approve_prompt` | Spend the explicitly approved exact price once for a quote from estimate_prompt. Args: quote_id and approved_cost (the unchanged decimal string). Returns: request_id and queued state. Queues one durable submission; never retry an uncertain outcome. The shared runtime updates only the unchanged original prompt field. Inspect list_local_jobs for recovery. | `quote_id`*: string<br>`approved_cost`*: string | destructive annotation |
 | `read_prompt_result` | Read full text from a saved successful prompt or translation job without generating, spending or applying it. Args: context_id, request_id and expected_revision from list_local_jobs; refresh a known remote job's status first if necessary. Returns: prompts; old scene origins are readable but are never silently applied to the current scene. | `context_id`*: string<br>`request_id`*: string<br>`expected_revision`*: integer | read-only annotation |
-| `list_models` | List the loaded lane catalog, with curated models first and at most 40 matches. | `lane`: string (enum: see tools/list)<br>`query`: string | read-only annotation |
+| `list_models` | List the loaded lane catalog, with curated models first and at most 40 matches, or the trained LoRAs and compositions the native picker offers. | `lane`: string (enum: see tools/list)<br>`query`: string<br>`source`: string (['catalog', 'trained', 'all']) | read-only annotation |
 | `model_schema` | Read the model's current form parameters for this Blender extension. | `model_id`*: string | read-only annotation |
+| `model_defaults` | Read, save or clear the selected credentials and project's trained-model default of the Image or Render Image form, without spending. | `action`: string (['get', 'set', 'clear'])<br>`lane`: string (['image', 'render_image'])<br>`context_id`: string<br>`expected_revision`: integer<br>`base_model_id`: string<br>`picks`: array | - |
 | `render_form` | Inspect or prepare the native Render Image/Video form without submitting generation. | `lane`*: string (['render_image', 'render_video'])<br>`action`: string (['inspect', 'configure', 'prepare', 'remove'])<br>`settings`: object<br>`role`: string (['scene', 'first_frame'])<br>`reference_key`: string | - |
 | `estimate_cost` | Get the exact CU cost with a dry run that spends no credits. | `model_id`*: string<br>`parameters`: object<br>`lane`: string (enum: see tools/list) | read-only annotation |
 | `generate` | Submit a generation that spends the user's credits. Every model lane uses durable shared jobs. | `lane`*: string (enum: see tools/list)<br>`quote_id`*: string<br>`approved_cost`*: string<br>`model_id`*: string<br>`parameters`: object; Model parameters; file parameters take Scenario asset ids | spends credits |
@@ -532,6 +533,7 @@ behavior interchangeable. Remote names below were checked against the
 | --- | --- | --- |
 | Choose models | `list_models(lane, query)` | `models_list`, `search`, `recommend` |
 | Model parameters | `model_schema(model_id)` | `model_schema_get` |
+| Trained LoRAs, compositions and project defaults | `list_models(lane, source=trained)`, base LoRA inputs in `estimate_cost`/`generate` or `render_form` `trained`, `model_defaults(action, lane)` | `models_list` lists models; no hosted equivalent of the local per-project defaults is asserted here |
 | Price without generating | `estimate_cost(model_id, parameters)` | `model_run` with `dry_run=true` |
 | Generate | `generate(lane, model_id, parameters)`, automatic scene application | `model_run` |
 | Job status | `job_status(job_id or id)` | `job_get` |
@@ -659,6 +661,72 @@ server's model status. Their results stay in saved jobs.
 `prepare_result_application` imports a returned model or media file by file type
 only; motion and transcription handling is not accepted ([#190](https://github.com/scenario-labs/blender-plugin/issues/190)).
 
+### Trained models (LoRAs and compositions)
+
+`list_models(lane=image|render_image, source=trained)` lists the LoRAs and
+compositions the native picker's **Trained** chip offers for the selected
+credentials and project: private trained models first, then public Scenario LoRAs
+and compositions, available rows first. Like the chip, a call reads the trained
+list again after a failed read, and reads the lane's base-model descriptions that
+are still unknown, once per connection. While those reads run, `bases.pending` is
+true, rows wait with a reason and `note` asks to call again. `source=all` adds the
+same rows to the catalog listing; other lanes refuse both sources. Each row has
+`kind`, the REST `type`, `private`, and `available` or a `reason`. Its `routes`
+name each base model that runs it and the inputs that carry it: `model_input`,
+plus `scale_input`, `scale_range`, `scale_step`, `default_scale`, `min_items` and
+`max_items` for a LoRA stack. A composition also lists its `concepts`. Rows and
+routes that the lane's saved default uses are marked `default`. Private plain
+custom models are not listed, as in the picker. `model_schema` reports the same
+inputs as `lora_component`; its parameters carry `model_types`,
+`min_items`/`max_items` and a `role` (`lora_models`, `lora_strengths` or
+`composition`).
+
+A trained model is never the generation target; it runs through a base model from
+its routes. In the Image lane, pass the base as `model_id` and the trained models
+in its own inputs, for example
+`{"prompt": "...", "loras": ["model_a", "model_b"], "lorasScale": [0.8, 1.25]}`,
+or `{"prompt": "...", "modelId": "model_c"}` for a composition. `estimate_cost`
+and `generate` read these inputs strictly and rebuild them with
+`trained_routes.apply`, the function the native form uses. A choice the form would
+refuse is refused before any request:
+
+- a model that is not listed, not trained, or not a LoRA or composition;
+- a type the base does not accept, or more LoRAs than it allows;
+- a missing strength (no captured base declares a default), a strength outside
+  the declared range or with more than four decimals, or strengths that do not
+  line up one per LoRA;
+- a LoRA in the composition input, or a composition combined with LoRAs.
+
+Other lanes refuse these inputs. The quote then reads every chosen model again,
+as it does for the form. For Render Image, `render_form` `configure` takes
+`trained: [{model_id, scale}]`, checked the same way before the form changes;
+`[]` removes the choice.
+
+The same choice through the native form and through MCP builds the same target
+and payload, so its saved intent has the same `payload_sha256`. For equal bytes,
+a form now sends each decimal field as the shortest decimal its 32-bit storage
+holds (`0.8`, no longer `0.800000011920929`). `estimate_cost` and `generate` start
+each number parameter that is not given at its declared default, in the field's
+own type (`0.0` in a decimal field), as a form does. `null` still leaves an
+optional parameter to the service, like a field switched off in the form.
+Approval is unchanged: `generate` needs the same parameters and the exact
+`cu_cost_exact`.
+
+`model_defaults` reads, saves and clears the per-project defaults that the native
+**Trained models** box shows for the Image and Render Image forms. `get` returns
+`context_id` and, for each lane, `revision`, `default`, `label` and whether it
+runs now; when it runs, `parameters` holds the base's LoRA inputs to add to an
+Image `estimate_cost` call. `set` takes `context_id`, `expected_revision`,
+`base_model_id` and `picks`. Like the native **Save**, it refuses a choice that
+cannot run in that form now, a stale revision, or a context from other credentials
+or another project; `clear` takes the same context and revision. Neither requests
+a price or changes a payload. A form without an explicit choice takes the saved
+default, as in the native UI, while Image `estimate_cost` uses only the parameters
+it is given. A default is a local choice kept in the job store, not spending
+authority. Results with trained models have not been accepted yet, and private
+LoRAs and compositions are unverified against the service
+([#97](https://github.com/scenario-labs/blender-plugin/issues/97)).
+
 ### Preparing Render Image and Render Video
 
 1. Discover a model with `list_models(lane=render_image|render_video)` and inspect
@@ -725,12 +793,14 @@ generation include them, and a choice
 that cannot run blocks preparation with its reason. A Render Image form whose
 model was never chosen takes the selected credentials and project's saved
 default when it is inspected, configured or quoted, as in the native form, or
-reports why it cannot. A `configure` without `model_id` edits the form once it
-holds that default; while the default is still applying or unavailable, it
-changes nothing and returns that reason. Naming `model_id` in `configure` is an
-explicit choice that the default no longer replaces. MCP cannot change the
-trained choice or the defaults yet
-([#97](https://github.com/scenario-labs/blender-plugin/issues/97)).
+reports why it cannot. A `configure` without `model_id`, `trained` included,
+edits the form once it holds that default; while the default is still applying
+or unavailable, it changes nothing and returns that reason. Naming `model_id` in
+`configure` is an explicit choice that the default no longer replaces.
+`configure` with `trained` replaces the choice, checked like a picker choice
+before the form changes, and is an explicit choice too; see
+[trained models](#trained-models-loras-and-compositions) for the rules and
+`model_defaults` ([#97](https://github.com/scenario-labs/blender-plugin/issues/97)).
 
 Raw render-lane parameter calls now fail with preparation guidance. Use the
 ordinary Image/Video lanes for direct model parameters. Scene capture, file

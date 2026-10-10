@@ -10,14 +10,16 @@ from pathlib import Path
 
 import bpy
 
-from ..blender import generation, runtime
+from ..blender import generation, runtime, trained_defaults, trained_models
 from ..blender import result_previews as preview_tiles
 from ..blender.props import GENERATION_LANES as NATIVE_LANES
 from ..core import audio_waveform
+from ..core.api import trained_offers
 from ..core.api.catalog import GENERATION_LANES as LANES
 from ..core.api.catalog import models_for_lane
 from ..core.api.errors import ScenarioError
 from ..core.api.library import asset_summary as _asset_summary
+from ..core.api.trained_routes import LoraSlot
 from ..core.jobs.result_previews import (
     ENVELOPE,
     STILL,
@@ -44,12 +46,65 @@ def _catalog_ready():
         raise RuntimeError("The model catalog is still loading; call again in a few seconds")
 
 
+SOURCES = ("catalog", "trained", "all")
+TRAINED_LIMIT = 40
+
+
+def _trained_listing(lane, query):
+    """The picker's Trained chip rows for `lane`, with routes, availability and default marks.
+
+    Like the chip, this reads a failed trained list again and the lane's
+    unknown base descriptions once per connection; rows wait for those reads.
+    """
+    state = runtime.state
+    trained_models.request_bases(lane)
+    if not state.trained_loaded:
+        if state.trained_loading:
+            raise RuntimeError("Trained models are still loading; call again in a few seconds")
+        raise ScenarioError(
+            0, f"Could not load trained models: {state.trained_error or 'online access is off'}"
+        )
+    default = None
+    try:
+        default = trained_defaults.saved(trained_defaults.load(), lane)
+    except ScenarioError:
+        pass  # no selected scope, so no default; the rows themselves need no store
+    rows = []
+    for offer in trained_models.offers(lane):
+        record = offer.record
+        if query and query not in (record.name + " " + record.id).lower():
+            continue
+        rows.append(
+            trained_offers.describe_offer(
+                offer, private=trained_models.is_private(record), default=default
+            )
+        )
+    scan = state.trained_scans.get(lane) or {}
+    bases = {
+        "checked": scan.get("checked", 0),
+        "total": scan.get("total", 0),
+        "pending": bool(scan.get("pending")),
+        "error": scan.get("error", ""),
+    }
+    result = {"trained": rows[:TRAINED_LIMIT], "bases": bases}
+    if bases["pending"]:
+        result["note"] = "base model descriptions are still being checked; call again for routes"
+    return result
+
+
 def list_models(args):
     _catalog_ready()
     lane = args.get("lane") or "image"
     if lane not in LANES:
         raise ValueError(f"lane must be one of {LANES}")
+    source = args.get("source") or "catalog"
+    if source not in SOURCES:
+        raise ValueError(f"source must be one of {SOURCES}")
     query = (args.get("query") or "").lower()
+    if source != "catalog" and lane not in trained_models.LANES:
+        raise ValueError("Trained models run in the image and render_image lanes")
+    if source == "trained":
+        return {"lane": lane, "source": source, **_trained_listing(lane, query)}
     records = runtime.state.lane_models.get(lane, [])
     if lane == "3d":
         everything = list(runtime.state.records.values())
@@ -78,12 +133,44 @@ def list_models(args):
         if contract is not None:
             entry["contract"] = panorama_contract.summary(contract)
         out.append(entry)
+    if source == "all":
+        return {"lane": lane, "source": source, "models": out[:40], **_trained_listing(lane, query)}
     return {"lane": lane, "models": out[:40]}
+
+
+LORA_ROLES = (
+    ("model_input", "lora_models"),
+    ("scale_input", "lora_strengths"),
+    ("model_id_input", "composition"),
+)
+
+
+def _item_count(raw, *names):
+    value = next((raw.get(name) for name in names if raw.get(name) is not None), None)
+    if isinstance(value, bool) or not isinstance(value, int | float) or value < 0:
+        return None
+    return int(value) if value == int(value) else None
 
 
 def model_schema(args):
     record = generation.ensure_record(args["model_id"])
     schema = generation.schema_for(record.id)
+    inputs = {
+        raw.get("name"): raw
+        for raw in record.parameters
+        if isinstance(raw, dict) and isinstance(raw.get("name"), str)
+    }
+    try:
+        slot, slot_error = LoraSlot.from_record(record.raw), ""
+    except ValueError as error:
+        slot, slot_error = None, str(error)
+    roles = {}
+    if slot is not None:
+        roles = {
+            getattr(slot.component, field): role
+            for field, role in LORA_ROLES
+            if getattr(slot.component, field)
+        }
     params = []
     for spec in schema.specs:
         item = {
@@ -106,16 +193,34 @@ def model_schema(args):
             )
         if spec.description:
             item["description"] = spec.description
+        raw = inputs.get(spec.name, {})
+        types = raw.get("modelTypes")
+        if spec.ptype in ("model", "model_array") and isinstance(types, list):
+            item["model_types"] = [value for value in types if isinstance(value, str)]
+        if spec.ptype.endswith("_array"):
+            for key, names in (
+                ("min_items", ("minLength", "min_length", "minItems")),
+                ("max_items", ("maxLength", "max_length", "maxItems")),
+            ):
+                count = _item_count(raw, *names)
+                if count is not None:
+                    item[key] = count
+        if spec.name in roles:
+            item["role"] = roles[spec.name]
         params.append(item)
-    return {
+    result = {
         "model_id": record.id,
         "name": record.name,
         "prompt_parameter": schema.prompt_name,
         "parameters": params,
+        "lora_component": trained_offers.describe_slot(slot) if slot is not None else None,
     }
+    if slot_error:
+        result["lora_component_error"] = slot_error
+    return result
 
 
-def _body_for(model_id, parameters, *, lane=None):
+def _body_for(model_id, parameters, *, lane="image"):
     contract = None
     if lane == "panorama":
         contract = panorama_contract.contract_for(model_id)
@@ -124,12 +229,35 @@ def _body_for(model_id, parameters, *, lane=None):
     record = generation.ensure_record(model_id)
     schema = generation.schema_for(record.id)
     parameters = dict(parameters or {})
+    # A base's LoRA inputs are read strictly and rebuilt by trained_routes.apply,
+    # as a form's trained choice is, so equal choices give equal payloads.
+    parameters, requested = trained_models.split_parameters(record, parameters)
+    if requested is not None and requested.picks and lane not in trained_models.LANES:
+        raise ValueError("Trained models run in the image and render_image lanes")
+    for spec in schema.specs:
+        # A form starts each number field at its declared default and sends it in the
+        # field's own type (0.0 in a decimal field, 1 in a whole one); do the same so an
+        # unchanged form and this request serialize alike. null still leaves it out.
+        # A panorama contract applies its own lane defaults and 2:1 sizes instead;
+        # the Environment lane has no native form to match.
+        default = spec.default
+        if (
+            contract is None
+            and spec.ptype == "number"
+            and not spec.allowed_values
+            and spec.name not in parameters
+            and isinstance(default, int | float)
+            and not isinstance(default, bool)
+        ):
+            parameters[spec.name] = default
     files = {}
     for spec in schema.specs:
         if spec.is_file and spec.name in parameters:
             value = parameters.pop(spec.name)
             files[spec.name] = list(value) if isinstance(value, list) else [value]
     body = build_body(schema.specs, parameters, files)
+    if requested is not None:
+        body = trained_models.apply_picks(record, requested, body)
     errors = []
     if contract is not None:
         body, errors = panorama_contract.prepare(
@@ -181,6 +309,47 @@ def render_form(args):
     from ..blender import render_commands
 
     return render_commands.execute(bpy.context, args)
+
+
+DEFAULT_ACTIONS = ("get", "set", "clear")
+
+
+def model_defaults(args):
+    """Read, save or clear per-scope trained-model defaults with the native forms' rules."""
+    action = args.get("action") or "get"
+    if action not in DEFAULT_ACTIONS:
+        raise ValueError(f"action must be one of {DEFAULT_ACTIONS}")
+    lane = args.get("lane")
+    if lane is not None and lane not in trained_models.LANES:
+        raise ValueError("lane must be image or render_image")
+    generation.process_catalog_events()  # also selects the current credentials and project
+    if not runtime.state.catalog_loaded:
+        generation.request_catalog()  # defaults are checked against loaded descriptions
+    if action == "get":
+        cache = trained_defaults.load()
+        names = (lane,) if lane else trained_models.LANES
+        return {
+            "context_id": cache.context,
+            "lanes": [trained_defaults.lane_summary(cache, name, read=True) for name in names],
+        }
+    if lane is None:
+        raise ValueError("lane is required to set or clear a default")
+    context_id, revision = args.get("context_id"), args.get("expected_revision")
+    if not isinstance(context_id, str) or not context_id:
+        raise ValueError("Use the context_id returned by model_defaults(action=get)")
+    if type(revision) is not int or revision < 0:
+        raise ValueError("expected_revision must be the nonnegative revision get returned")
+    if action == "set":
+        base_model_id = args.get("base_model_id")
+        if not isinstance(base_model_id, str) or not base_model_id:
+            raise ValueError("base_model_id is required to set a default")
+        picks = trained_offers.picks_from_list(args.get("picks"))
+        default = trained_defaults.explicit_default(lane, base_model_id, picks)
+        trained_defaults.store(default, context_id, revision)
+    else:
+        trained_defaults.clear(lane, context_id, revision)
+    cache = trained_defaults.load()
+    return {"context_id": cache.context, "lanes": [trained_defaults.lane_summary(cache, lane)]}
 
 
 def estimate_cost(args):
@@ -1439,6 +1608,12 @@ def generate(args):
     if render_request is not None:
         meta.update(generation.request_meta(bpy.context, lane, render_request))
         meta["source"] = "mcp"
+    elif trained := trained_models.payload_meta(record, body):
+        # Job views name the LoRAs or composition with the base, as for a form's choice.
+        meta["model_name"] = trained_offers.selection_label(
+            record.name, [item["name"] for item in trained]
+        )
+        meta["trained_models"] = trained
     jobs = runtime.ensure_model_jobs()
     rec = jobs.submit(
         args.get("quote_id"),
@@ -3357,16 +3532,23 @@ SPECS = (
     ToolSpec(
         "list_models",
         (
-            "List the loaded lane catalog, with curated models first and at most 40 matches.\n"
+            "List the loaded lane catalog, with curated models first and at most 40 matches, or the trained LoRAs and compositions the native picker offers.\n"
             "Args:\n"
             "  - lane: optional string, default image; image, video, 3d, material, audio, render_image, render_video, edit3d or panorama.\n"
             "  - query: optional string, substring of the model name, description or id.\n"
-            "Returns: lane, models[] with id, name, description, capabilities and capability_status (empty, or the experimental note the picker shows). Retry after catalog loading completes. Lane panorama (Environment) lists only models with a verified 360 panorama contract; each entry adds contract with mode (GENERATE, FROM_IMAGE, HDRI or UPSCALE), output (ldr or hdr), description, references (parameter, kind still or panorama, required, max), sizes, locked, defaults and factor_parameter.\n"
-            'Example: {"lane": "material", "query": "patina"}.\n'
-            "Prefer model_schema before choosing generation parameters; this is not the full platform catalog.\n"
+            "  - source: optional string, catalog (default), trained or all. trained and all need lane image or render_image.\n"
+            "Returns: lane, models[] with id, name, description, capabilities and capability_status (empty, or the experimental note the picker shows). Retry after catalog loading completes. Lane panorama (Environment) lists only models with a verified 360 panorama contract; each entry adds contract with mode (GENERATE, FROM_IMAGE, HDRI or UPSCALE), output (ldr or hdr), description, references (parameter, kind still or panorama, required, max), sizes, locked, defaults and factor_parameter. trained and all also return trained[] (at most 40, available first) with id, name, kind (lora or composition, or unsupported), type, private, available, reason when unavailable, routes[] (route stack or composition, model_id and name of the base model to run it with, model_input, and for stack scale_input, scale_range, scale_step, default_scale, min_items and max_items), concepts for a composition and default when the lane's saved default uses it; bases reports checked/total/pending/error of base description reads and note asks to call again while they run.\n"
+            'Example: {"lane": "image", "source": "trained"}.\n'
+            "Prefer model_schema before choosing generation parameters; this is not the full platform catalog. A trained model runs only through a listed base: pass that base as model_id with the LoRA IDs and one strength each in its model_input/scale_input (or the composition in its model_input) to estimate_cost. Trained listing reads the selected credentials and project's trained list and base model descriptions, like the picker's Trained chip; it never trains or spends.\n"
             "Platform equivalent: models_list, recommend."
         ),
-        _schema({"lane": {"type": "string", "enum": list(LANES)}, "query": {"type": "string"}}),
+        _schema(
+            {
+                "lane": {"type": "string", "enum": list(LANES)},
+                "query": {"type": "string"},
+                "source": {"type": "string", "enum": ["catalog", "trained", "all"]},
+            }
+        ),
         list_models,
         {"readOnlyHint": True},
     ),
@@ -3376,14 +3558,53 @@ SPECS = (
             "Read the model's current form parameters for this Blender extension.\n"
             "Args:\n"
             "  - model_id: required string, the exact model identifier from list_models.\n"
-            "Returns: model_id, name, prompt_parameter, parameters[] with name, type, label, required, default, allowed_values, range, cost_impact and file_kind when present. File parameters take Scenario asset ids.\n"
+            "Returns: model_id, name, prompt_parameter, parameters[] with name, type, label, required, default, allowed_values, range (per item for number arrays), cost_impact, file_kind, model_types, min_items/max_items for arrays and role (lora_models, lora_strengths or composition) when present, and lora_component: the base's LoRA inputs (model_input, scale_input, model_id_input, model_types, model_id_types, min_items, max_items, scale_range, scale_step, scale_default) or null; lora_component_error explains a malformed one. File parameters take Scenario asset ids.\n"
             'Example: {"model_id": "model_example"}.\n'
-            "Prefer this before estimate_cost; do not guess parameter names or supported inputs.\n"
+            "Prefer this before estimate_cost; do not guess parameter names or supported inputs. No LoRA strength is invented: pass one per LoRA within scale_range, at most 4 decimals, as the native strength fields send.\n"
             "Platform equivalent: model_schema_get."
         ),
         _schema({"model_id": {"type": "string"}}, ["model_id"]),
         model_schema,
         {"readOnlyHint": True},
+    ),
+    ToolSpec(
+        "model_defaults",
+        (
+            "Read, save or clear the selected credentials and project's trained-model default of the Image or Render Image form, without spending.\n"
+            "Args:\n"
+            "  - action: optional string, get (default), set or clear.\n"
+            "  - lane: image or render_image; required for set and clear, get without it returns both.\n"
+            "  - context_id and expected_revision: required for set and clear, from the latest get of that lane (revision 0 when none was ever saved).\n"
+            "  - base_model_id: required for set, a base from list_models(source=trained) routes.\n"
+            "  - picks: required for set, [{model_id, scale}] with one strength per LoRA (at most 4 decimals) or one composition without scale.\n"
+            "Returns: context_id and lanes[] with lane, revision, default (route, base_model_id, picks) or null, label, available, then reason or waiting, or parameters: the base's LoRA inputs to add to estimate_cost parameters when it runs now; error reports an unreadable stored default, which is kept.\n"
+            'Example: {"action": "set", "lane": "image", "context_id": "from-get", "expected_revision": 0, "base_model_id": "model_example", "picks": [{"model_id": "model_lora", "scale": 0.8}]}.\n'
+            "set refuses a choice that cannot run in that form now, as the native Save does; a stale revision or a context_id from other credentials or another project is refused. A default is not spending authority: estimate_cost and render quotes price the exact payload again. A form with no explicit choice takes it, as in the native UI; the image lane's estimate_cost uses only the parameters given.\n"
+            "Platform equivalent: none; local per-project defaults."
+        ),
+        _schema(
+            {
+                "action": {"type": "string", "enum": ["get", "set", "clear"]},
+                "lane": {"type": "string", "enum": ["image", "render_image"]},
+                "context_id": {"type": "string"},
+                "expected_revision": {"type": "integer", "minimum": 0},
+                "base_model_id": {"type": "string"},
+                "picks": {
+                    "type": "array",
+                    "maxItems": 16,
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "model_id": {"type": "string"},
+                            "scale": {"type": "number"},
+                        },
+                        "required": ["model_id"],
+                        "additionalProperties": False,
+                    },
+                },
+            }
+        ),
+        model_defaults,
     ),
     ToolSpec(
         "render_form",
@@ -3392,10 +3613,10 @@ SPECS = (
             "Args:\n"
             "  - lane: required render_image or render_video.\n"
             "  - action: inspect (default), configure, prepare or remove.\n"
-            "  - settings: configure edits model_id, look, capture_source (CAMERA/VIEWPORT), force_solid, spark_enabled, first_frame_path, use_first_frame, match_timeline, scalar parameters and style_assets (replaces unmarked styles). Optional parameters accept null to disable them. Choose a model from list_models. Remove references before changing models.\n"
+            "  - settings: configure edits model_id, look, capture_source (CAMERA/VIEWPORT), force_solid, spark_enabled, first_frame_path, use_first_frame, match_timeline, scalar parameters, style_assets (replaces unmarked styles) and, for render_image, trained: [{model_id, scale}] replacing the form's LoRAs (one strength each, at most 4 decimals) or composition, checked like a picker choice ([] removes them). Optional parameters accept null to disable them. Choose a model from list_models. Remove references before changing models.\n"
             "  - role: prepare explicitly captures/uploads scene or uploads the selected first_frame file using the shared reference lifecycle. Repeated preparation refuses an occupied slot.\n"
             "  - reference_key: remove requires the exact key from a fresh inspection; detaches only that reference and does not cancel its saved upload. Inspect uncertain uploads before preparing another.\n"
-            "Returns: current settings, trained_models (LoRAs or a composition chosen in the native picker, with kind and strength; quotes and generation include them), references with reference_key/upload_id/source_result, first_frame_route, preparation errors, ready_to_estimate and spark_required. Uploaded snapshots remain fixed when capture settings or the scene change. For render_video, first_frame_route gives the first frame's input, label and sent_as: first_frame for the model's own first-frame input, or reference_image with a reason and note when the image becomes image 1 of that input (exclusive: the model says its first frame cannot be combined with reference videos such as the scene clip; no_first_frame_input). It is null when no image input can go with the clip, and for render_image. Requests sending two file inputs whose descriptions say they can't be combined are refused before any quote; settings described that way are not checked. A first frame handed from a saved image (prepare_result_application purpose video_first_frame) keeps an empty first_frame_path and reports source_result: its saved request_id and asset_id, and saved=true while this credential scope still holds that verified download; source_result is null for other references.\n"
+            "Returns: current settings, trained_models (LoRAs or a composition chosen in the native picker or with trained, with kind and strength; quotes and generation include them), references with reference_key/upload_id/source_result, first_frame_route, preparation errors, ready_to_estimate and spark_required. Uploaded snapshots remain fixed when capture settings or the scene change. For render_video, first_frame_route gives the first frame's input, label and sent_as: first_frame for the model's own first-frame input, or reference_image with a reason and note when the image becomes image 1 of that input (exclusive: the model says its first frame cannot be combined with reference videos such as the scene clip; no_first_frame_input). It is null when no image input can go with the clip, and for render_image. Requests sending two file inputs whose descriptions say they can't be combined are refused before any quote; settings described that way are not checked. A first frame handed from a saved image (prepare_result_application purpose video_first_frame) keeps an empty first_frame_path and reports source_result: its saved request_id and asset_id, and saved=true while this credential scope still holds that verified download; source_result is null for other references.\n"
             'Example: {"lane":"render_image","action":"configure","settings":{"look":"copper sculpture","capture_source":"CAMERA"}}.\n'
             "Configure, prepare the scene and optional first frame, then inspect until ready. An empty automatic look needs estimate_prompt(action=GENERATE), separate approve_prompt spending approval and result delivery first. Finally use estimate_cost/generate with this lane/model and no parameters. File uploads and captures are explicit; no Python execution is required.\n"
             "Platform equivalent: upload_create and upload_complete for prepared snapshots; native form editing is local."
@@ -3421,6 +3642,19 @@ SPECS = (
                             "items": {"type": "string"},
                             "maxItems": 15,
                         },
+                        "trained": {
+                            "type": "array",
+                            "maxItems": 16,
+                            "items": {
+                                "type": "object",
+                                "properties": {
+                                    "model_id": {"type": "string"},
+                                    "scale": {"type": "number"},
+                                },
+                                "required": ["model_id"],
+                                "additionalProperties": False,
+                            },
+                        },
                     },
                     "additionalProperties": False,
                 },
@@ -3437,7 +3671,7 @@ SPECS = (
             "Get the exact CU cost with a dry run that spends no credits.\n"
             "Args:\n"
             "  - model_id: required string, the model identifier.\n"
-            "  - parameters: optional object, model parameters including Scenario asset ids for file inputs. Omit for render lanes: prepare render_form first; pricing uses its native scene prompt and uploaded snapshots.\n"
+            "  - parameters: optional object, model parameters including Scenario asset ids for file inputs. LoRAs or a composition go in the base model's lora_component inputs from model_schema, one strength per LoRA; they are checked against the listed trained models and rebuilt as the native form builds them, refusing before any request what the form would refuse. Omit for render lanes: prepare render_form first; pricing uses its native scene prompt, uploaded snapshots and trained choice.\n"
             "  - lane: optional generation lane, default image. Every lane issues a single-use quote_id. Lane panorama accepts only list_models(lane=panorama) models and applies their contract: locked values (a different value is refused), lane defaults when unset, 2:1 sizes and reference rules. A panorama-kind reference must be the asset_id of a saved, downloaded 360 result of this account and project (job_status projection equirectangular, source asset); other asset IDs are refused. Upscale factors are capped for the 32-megapixel World limit: at most 2 for a reference of unknown size, which fits a 2:1 panorama up to 4096 pixels wide, and an upscaled result is not upscaled again. A changed model schema fails closed.\n"
             "Returns: model_id, lane, cu_cost, cu_cost_exact (decimal string), details, mesh_sources (local captured 3D input provenance) and quote_id bound to the lane, model, inputs, scene and credential context.\n"
             'Example: {"model_id": "model_example", "parameters": {"prompt": "a wooden crate"}}.\n'
@@ -3462,7 +3696,7 @@ SPECS = (
             "Args:\n"
             "  - lane: required string; image, video, 3d, material, audio, render_image, render_video, edit3d or panorama.\n"
             "  - model_id: required string, the exact model to run.\n"
-            "  - parameters: optional object, model parameters; file inputs take Scenario asset ids. Omit for render lanes, which rebuild the current render_form before checking the approved quote.\n"
+            "  - parameters: optional object, model parameters; file inputs take Scenario asset ids and LoRA inputs follow estimate_cost. Omit for render lanes, which rebuild the current render_form before checking the approved quote.\n"
             "  - quote_id: required, from estimate_cost with the same lane, model, inputs and scene.\n"
             "  - approved_cost: required, the exact cu_cost_exact string explicitly approved by the user.\n"
             "Returns: local_id, status, lane, model_id and note. All model jobs poll and download through the shared session. Only the Image lane imports verified PNG/EXR images automatically into the unchanged origin. Other lanes stop at saved ready results; their scene application remains separate. Panorama results never change a World automatically; use prepare_result_application(purpose=world). Render lanes require explicit render_form uploads and separate Prompt Spark approval when enabled with an empty look. No capture, upload or Spark submission occurs during generate.\n"

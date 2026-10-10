@@ -90,6 +90,11 @@ class AssetOrganization:
         _main_thread()
         return review_payload(self.reviews.status(review_id))
 
+    def review(self, review_id):
+        """Return the review's raw state, including read-back records, for the native Library."""
+        _main_thread()
+        return self.reviews.status(review_id)
+
     def discard(self, review_id):
         _main_thread()
         return review_payload(self.reviews.discard(review_id))

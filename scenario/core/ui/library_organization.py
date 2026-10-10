@@ -50,6 +50,12 @@ RESULT_LABELS = {
 TERMINAL_PHASES = frozenset(
     {"UNCHANGED", "REJECTED", "FINISHED", "NOT_SENT", "DISCARDED", "EXPIRED", "UNAVAILABLE"}
 )
+# Library holds one review at a time, so a full shared pool means local MCP
+# reviews fill it; name that cause instead of a review this card cannot show.
+REVIEWS_FULL = (
+    "Too many organization reviews are open, including a connected agent's. Retry after "
+    "they are applied or discarded; unapplied reviews expire after 10 minutes"
+)
 
 
 def clip(text, width=WIDTH):

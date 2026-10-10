@@ -15,6 +15,7 @@ directly; the host side imports the shared smoke engine when it needs it.
 
 import argparse
 import array
+import hashlib
 import json
 import math
 import operator
@@ -180,7 +181,9 @@ def _json(value):
 
 
 def _create(path, data):
-    descriptor = os.open(path, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
+    # Binary mode: on Windows the default text mode would translate line feeds.
+    flags = os.O_CREAT | os.O_EXCL | os.O_WRONLY | getattr(os, "O_BINARY", 0)
+    descriptor = os.open(path, flags, 0o600)
     with os.fdopen(descriptor, "wb") as output:
         output.write(data)
         output.flush()
@@ -348,6 +351,15 @@ def _checked(measured, names):
     return files
 
 
+def _copy_matches(path, entry):
+    """Whether a private copy holds exactly the bytes its download receipt describes."""
+    try:
+        data = path.read_bytes()
+    except OSError:
+        return False
+    return len(data) == entry["size"] and hashlib.sha256(data).hexdigest() == entry["sha256"]
+
+
 def report(run_dirs, settings, *, blender=None, timeout=600, runner=_isolated):
     """Measure the saved 360 results of completed runs; returns the report object."""
     found, skipped = collect(run_dirs, settings)
@@ -369,6 +381,14 @@ def report(run_dirs, settings, *, blender=None, timeout=600, runner=_isolated):
             )
         manifest, output = root / "manifest.json", root / "measurements.json"
         _create(manifest, _json({"files": files}))
+        # Blender must measure the verified bytes, so read every copy back first.
+        if not all(
+            _copy_matches(root / name, entry)
+            for name, (entry, _, _) in zip(names, found, strict=True)
+        ):
+            raise ReportError(
+                "A private panorama copy does not match its download receipt; nothing was measured"
+            )
         try:
             runner(blender_arguments(manifest, output), blender=blender, timeout=timeout)
             measured = _read_json(output)

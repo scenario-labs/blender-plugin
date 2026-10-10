@@ -513,11 +513,12 @@ uv run --locked --env-file .env.local python -m tools.panorama_report report \
 `tools.panorama_report` reads completed runs only. With the runs' API-key pair
 and project it verifies their saved files against the download receipts
 offline, as `--saved-runs` does, and selects up to 16 results whose saved
-metadata declares an equirectangular projection. It copies them to a private
-temporary directory and runs background Blender with a fresh offline profile
-through `tools/blender_env.py run`; choose the executable with `--blender` or
-`BLENDER`. Blender decodes each copy, which must match the preflight's format
-and size, and the report lists for each file:
+metadata declares an equirectangular projection. It copies them in binary mode
+to a private temporary directory, reads each copy back and refuses to continue
+unless its size and SHA-256 match the download receipt, then runs background
+Blender with a fresh offline profile through `tools/blender_env.py run`; choose
+the executable with `--blender` or `BLENDER`. Blender decodes each copy, which
+must match the preflight's format and size, and the report lists for each file:
 
 | Field | Meaning |
 | --- | --- |

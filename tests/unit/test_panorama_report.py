@@ -4,6 +4,7 @@
 
 import json
 import math
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -227,6 +228,43 @@ def test_report_skips_unprojected_results_and_hides_other_model_ids(saved):
     assert value["skipped_results"] == 1
     [result] = value["results"]
     assert (result["result"], result["model"]) == (2, None)
+
+
+def test_report_writes_private_copies_and_manifest_in_binary_mode(saved, monkeypatch):
+    runs, _ = saved
+    # A sentinel bit stands in for Windows's O_BINARY; it is cleared before the real call.
+    sentinel = 1 << 40
+    monkeypatch.setattr(os, "O_BINARY", sentinel, raising=False)
+    real_open, opened = os.open, []
+
+    def recording(path, flags, mode=0o777, *args, **kwargs):
+        if Path(path).parent.name.startswith("panorama-report-"):
+            opened.append((Path(path).name, flags))
+        return real_open(path, flags & ~sentinel, mode, *args, **kwargs)
+
+    monkeypatch.setattr(os, "open", recording)
+    value, _ = measure(runs, ["text", "hdri"])
+    assert len(value["results"]) == 2
+    assert [name for name, _ in opened] == ["panorama-1.png", "panorama-2.exr", "manifest.json"]
+    assert all(flags & sentinel for _, flags in opened)
+
+
+def test_report_refuses_a_copy_that_differs_from_its_receipt_before_blender(saved, monkeypatch):
+    runs, _ = saved
+    original, directories = report._create, []
+
+    def text_mode(path, data):
+        # What a text-mode write on Windows does to a PNG: LF becomes CRLF.
+        directories.append(path.parent)
+        original(path, data.replace(b"\n", b"\r\n") if path.suffix == ".png" else data)
+
+    monkeypatch.setattr(report, "_create", text_mode)
+    blender = FakeBlender()
+    with pytest.raises(report.ReportError, match="does not match its download receipt") as error:
+        measure(runs, ["text", "hdri"], blender)
+    assert error.value.code == 1
+    assert blender.directory is None and not blender.seen
+    assert directories and not directories[0].exists()
 
 
 @pytest.mark.parametrize("change", ["fail", "names"])

@@ -182,7 +182,10 @@ then sends the dry runs listed in its `CASES` and quotes each accepted base-mode
 route again through `SDKAdapter.estimate_model`. A fixed public model missing
 from the public catalog, a server error or any other failed read stops the run;
 a 4xx dry-run reply is recorded as evidence. The whole directory is staged and
-replaced in one step, so a failed run leaves the previous fixtures in place.
+replaced in one step, so a failed run leaves the previous fixtures in place. If
+the replacement fails and moving the previous directory back fails too, the
+recorder keeps its `.recording-*` staging directory, which then holds the only
+previous copy, and prints where it is.
 
 What is written:
 

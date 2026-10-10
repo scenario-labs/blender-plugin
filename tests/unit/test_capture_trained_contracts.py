@@ -477,6 +477,44 @@ def test_publish_restores_the_previous_directory_when_replacement_fails(tmp_path
     assert not list(tmp_path.glob(".recording-*"))
 
 
+def test_publish_keeps_the_previous_directory_when_the_restore_also_fails(tmp_path, monkeypatch):
+    target = tmp_path / "models/trained"
+    target.mkdir(parents=True)
+    (target / "contracts.json").write_text("previous", encoding="utf-8")
+    replace = capture.os.replace
+    calls = []
+
+    def fail_after_first(source, destination):
+        calls.append(Path(destination).name)
+        if len(calls) > 1:
+            raise OSError("disk full")
+        replace(source, destination)
+
+    monkeypatch.setattr(capture.os, "replace", fail_after_first)
+    with pytest.raises(capture.RestoreFailed) as error:
+        capture.publish({"models/trained/contracts.json": {"new": True}}, tmp_path)
+    assert calls == ["previous", "trained", "trained"]
+    assert not target.exists()
+    (kept,) = tmp_path.glob(".recording-*/previous")
+    assert error.value.kept == kept
+    assert (kept / "contracts.json").read_text(encoding="utf-8") == "previous"
+
+
+def test_cli_names_the_kept_copy_when_the_restore_fails(service, monkeypatch, capsys):
+    kept = service.root / ".recording-kept/previous"
+
+    def fail(files):
+        raise capture.RestoreFailed(kept)
+
+    monkeypatch.setattr(capture, "publish", fail)
+    assert capture.main([]) == 1
+    output = capsys.readouterr()
+    assert output.err == (
+        f"Could not restore the previous trained-model fixtures; they are kept in {kept}.\n"
+    )
+    assert output.out == ""
+
+
 def test_publish_replaces_stale_files(tmp_path):
     target = tmp_path / "models/trained"
     (target / "public").mkdir(parents=True)

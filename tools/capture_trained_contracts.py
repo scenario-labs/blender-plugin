@@ -18,6 +18,7 @@ import json
 import os
 import pathlib
 import re
+import shutil
 import sys
 import tempfile
 from importlib.metadata import version
@@ -587,15 +588,28 @@ def capture(client, *, project_override):
     return files
 
 
+class RestoreFailed(OSError):
+    """The previous fixtures could not be moved back; they stay at `kept`."""
+
+    def __init__(self, kept):
+        super().__init__("The previous trained-model fixtures could not be restored")
+        self.kept = kept
+
+
 def publish(files, fixtures=None):
-    """Replace the whole trained fixture directory only after every file is staged."""
+    """Replace the whole trained fixture directory only after every file is staged.
+
+    A failed replacement moves the previous directory back. If that also fails,
+    the staging directory is kept, since it then holds the only previous copy.
+    """
     fixtures = FIXTURES if fixtures is None else fixtures
     target = fixtures / OUTPUT
     if target.is_symlink() or not target.resolve().is_relative_to(fixtures.resolve()):
         raise ValueError("Fixture output must stay inside its directory")
     target.parent.mkdir(parents=True, exist_ok=True)
-    with tempfile.TemporaryDirectory(prefix=".recording-", dir=fixtures) as temp:
-        staged = pathlib.Path(temp)
+    staged = pathlib.Path(tempfile.mkdtemp(prefix=".recording-", dir=fixtures))
+    keep = False
+    try:
         for relative, data in files.items():
             path = staged / "new" / pathlib.PurePosixPath(relative).relative_to(OUTPUT)
             path.parent.mkdir(parents=True, exist_ok=True)
@@ -606,8 +620,15 @@ def publish(files, fixtures=None):
             os.replace(staged / "new", target)
         except OSError:
             if (staged / "previous").exists():
-                os.replace(staged / "previous", target)
+                try:
+                    os.replace(staged / "previous", target)
+                except OSError as error:
+                    keep = True
+                    raise RestoreFailed(staged / "previous") from error
             raise
+    finally:
+        if not keep:
+            shutil.rmtree(staged)
 
 
 def main(argv=None):
@@ -625,6 +646,13 @@ def main(argv=None):
     except (AdapterError, ValueError):
         # Keep response, record and configuration text out of the terminal.
         print("Trained-model contract capture failed; no fixture was changed.", file=sys.stderr)
+        return 1
+    except RestoreFailed as error:
+        print(
+            "Could not restore the previous trained-model fixtures; "
+            f"they are kept in {error.kept}.",
+            file=sys.stderr,
+        )
         return 1
     except OSError:
         print("Could not write trained-model fixtures; inspect the diff.", file=sys.stderr)

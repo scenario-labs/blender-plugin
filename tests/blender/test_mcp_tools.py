@@ -92,6 +92,60 @@ class McpToolsTests(unittest.TestCase):
         self.assertTrue(any(s.name == "generate" for s in self.ts.SPECS))
         self.assertTrue(any(s.name == "scene_summary" for s in self.tb.SPECS))
 
+    def test_schema_and_validation_treat_undeclared_siblings_as_never_defined(self):
+        runtime = submodule("blender.runtime")
+        catalog = submodule("core.api.catalog")
+        handlers = submodule("blender.handlers")
+        runtime.state.reset()
+        mini = catalog.ModelRecord.from_api(
+            json.loads(
+                (FIXTURES / "models" / "model_bytedance-seedance-2-0-mini.json").read_text()
+            )["model"]
+        )
+        # Synthetic, shaped like a live video-extension schema whose prompt rule
+        # names an image input the schema does not declare.
+        extend = catalog.ModelRecord.from_api(
+            {
+                "id": "model_fixture-extend",
+                "type": "custom",
+                "capabilities": ["video2video"],
+                "inputs": [
+                    {
+                        "name": "prompt",
+                        "label": "Prompt",
+                        "type": "string",
+                        "prompt": True,
+                        "required": {"ifNotDefined": {"image": {}}},
+                    },
+                    {"name": "video", "type": "file", "kind": "video", "required": True},
+                ],
+            }
+        )
+        records = [mini, extend]
+        handlers.dispatch(
+            ("catalog", {"privacy": "public", "records": records, "detailed": records})
+        )
+        required = {
+            p["name"]: p["required"]
+            for p in self.ts.model_schema({"model_id": mini.id})["parameters"]
+        }
+        self.assertNotIn("lastFrameImage", required)
+        self.assertFalse(required["image"])
+        record, body = self.ts._body_for(mini.id, {"prompt": "fixture"})
+        self.assertEqual((record.id, body["prompt"]), (mini.id, "fixture"))
+        self.assertNotIn("image", body)
+        required = {
+            p["name"]: p["required"]
+            for p in self.ts.model_schema({"model_id": extend.id})["parameters"]
+        }
+        self.assertEqual(required, {"prompt": True, "video": True})
+        with self.assertRaisesRegex(ValueError, "Prompt is required"):
+            self.ts._body_for(extend.id, {"video": "clip"})
+        self.assertEqual(
+            self.ts._body_for(extend.id, {"video": "clip", "prompt": "fixture"})[1],
+            {"prompt": "fixture", "video": "clip"},
+        )
+
     def test_list_models_reports_the_picker_experimental_status(self):
         runtime = submodule("blender.runtime")
         catalog = submodule("core.api.catalog")

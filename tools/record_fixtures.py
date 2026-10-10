@@ -39,6 +39,7 @@ SIGNED_URL_PLACEHOLDER = "https://cdn.example/FIXTURE"
 
 MODEL_IDS = [
     "model_bytedance-seedance-2-0",
+    "model_bytedance-seedance-2-0-mini",
     "model_cartwheel-text-to-motion",
     "model_google-gemini-3-1-flash",
     "model_meshy-7-img23d",

@@ -39,13 +39,30 @@ DEFAULT_MINIMUM, DEFAULT_MAXIMUM = 1, 100
 # Nodes whose run count can grow with the items a selection passes on: a
 # ForEach loop, or a nested workflow whose own loops this flow does not show.
 LOOPING = frozenset({"for-each", "workflow"})
+# Flow node types the API reference lists. Any other type may loop too, so it
+# blocks a selection like LOOPING: an unknown type never unblocks choosing items.
+DOCUMENTED_TYPES = frozenset(
+    {
+        "custom-model",
+        "for-each",
+        "generate-prompt",
+        "list",
+        "logic",
+        "model",
+        "remove-background",
+        "transform",
+        "user-approval",
+        "user-selection",
+        "workflow",
+    }
+)
 _ARRAY_KINDS = {"file_array": "asset", "string_array": "text"}
 # Why a step offers only rejection (or nothing, without a sendable node ID).
 BLOCKED = {
     "loop": (
-        "This selection feeds a ForEach loop or a nested workflow, which the approved "
-        "price may not cover, so choosing items is blocked here. Rejecting the step "
-        "stops the workflow."
+        "This selection feeds a ForEach loop, a nested workflow or a step type this "
+        "extension does not know, which the approved price may not cover, so choosing "
+        "items is blocked here. Rejecting the step stops the workflow."
     ),
     "unsupported": (
         "This selection cannot be reviewed here: its candidates or limits are missing, "
@@ -187,6 +204,11 @@ def _references(node, budget):
     return found
 
 
+def _may_loop(node):
+    """A ForEach loop, a nested workflow or a node type the API reference does not list."""
+    return node["type"] in LOOPING or node["type"] not in DOCUMENTED_TYPES
+
+
 class _Flow:
     """Node index and downstream edges of one retrieved flow."""
 
@@ -204,13 +226,14 @@ class _Flow:
                 continue
             for reference in references:
                 self.children.setdefault(reference, set()).add(node["id"])
-        self.looping = any(node["type"] in LOOPING for node in nodes)
+        self.looping = any(_may_loop(node) for node in nodes)
 
     def feeds_loop(self, node_id):
         """Whether anything that reads this node, directly or not, may loop over it.
 
-        Unreadable references anywhere in a flow that has a loop count as
-        feeding it, so a parsing gap never unblocks a selection.
+        Unreadable references anywhere in a flow that has a loop, or a node of
+        an undocumented type, count as feeding it, so a parsing gap never
+        unblocks a selection.
         """
         if self.unreadable and self.looping:
             return True
@@ -219,7 +242,7 @@ class _Flow:
             for child in self.children.get(queue.pop(), ()):
                 if child in seen:
                     continue
-                if any(node["type"] in LOOPING for node in self.by_id.get(child, ())):
+                if any(_may_loop(node) for node in self.by_id.get(child, ())):
                     return True
                 seen.add(child)
                 queue.append(child)

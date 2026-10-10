@@ -98,8 +98,9 @@ node ID and type, loop iteration, dependencies, up to 50 review asset IDs with
 their total, a selection's frozen candidates (`items`: asset IDs or texts, per
 `item_kind`) with `min` and `max`, the decisions that may be sent (`actions`),
 `blocked` and `review_id`. Signed URLs are never included. `blocked` is `loop`
-when the selection feeds a ForEach loop or nested workflow, which the approved
-price may not cover, and `unsupported` for unreadable candidates or limits; both
+when the selection feeds a ForEach loop, a nested workflow or a node type the
+API reference does not list, which the approved price may not cover, and
+`unsupported` for unreadable candidates or limits; both
 leave only `reject`, while `unidentified` leaves no decision. Rejecting stops the
 workflow and is the only workflow cancellation. `decision_error` explains the
 last refused, unsent or uncertain decision; never repeat an uncertain one until

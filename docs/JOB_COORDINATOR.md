@@ -345,12 +345,13 @@ record's workflow job; a flow of more than 2,048 nodes, or nodes without string
 
 Each step lists the decisions this extension may send. A selection with
 unreadable candidates or bounds is `unsupported`. A selection whose output
-reaches a ForEach loop or a nested workflow, through input, conditional or
-nested references or `dependsOn`, is blocked as `loop`. Both offer only
-`reject`. The exact estimate approved before the run is not shown to cover the
-runs such a selection starts, so choosing items stays blocked until live
-evidence shows the charge stays within that approval. In a flow with a loop,
-unreadable references block every selection. A node ID the adapter could not
+reaches a ForEach loop, a nested workflow or a node of a type the API reference
+does not list, through input, conditional or nested references or `dependsOn`,
+is blocked as `loop`. Both offer only `reject`. The exact estimate approved
+before the run is not shown to cover the runs such a selection starts, so
+choosing items stays blocked until live evidence shows the charge stays within
+that approval. In a flow with a loop or an unlisted node type, unreadable
+references block every selection. A node ID the adapter could not
 send, or one shared by several waiting steps, is `unidentified` and offers no
 decision.
 

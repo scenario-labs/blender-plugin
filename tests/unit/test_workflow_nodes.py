@@ -233,6 +233,8 @@ def test_jobs_without_metadata_or_flow_have_no_steps():
         ],
         # A nested workflow may loop over the items without showing it here.
         [node("inner", "workflow", "pending", inputs=[{"name": "a", "ref": {"node": "pick"}}])],
+        # So may a node type the API reference does not list.
+        [node("next", "batch-run", "pending", inputs=[{"name": "a", "ref": {"node": "pick"}}])],
     ],
 )
 def test_selections_feeding_a_loop_are_blocked_but_can_be_rejected(downstream):
@@ -258,6 +260,23 @@ def test_unreadable_references_block_selections_only_when_a_loop_exists():
     assert only(selection(), unreadable).blocked == ""
     looped = only(selection(), unreadable, node("loop", "for-each", "pending"))
     assert looped.blocked == "loop"
+    unknown = only(selection(), unreadable, node("next", "batch-run", "pending"))
+    assert unknown.blocked == "loop"
+
+
+@pytest.mark.parametrize("kind", sorted(nodes.DOCUMENTED_TYPES - nodes.LOOPING))
+def test_documented_non_loop_nodes_reading_a_selection_do_not_block_it(kind):
+    reader = node("next", kind, "pending", inputs=[{"name": "a", "ref": {"node": "pick"}}])
+    step = only(selection(), reader)
+    assert step.blocked == "" and step.actions == ("select", "reject")
+
+
+def test_unknown_node_types_that_do_not_read_the_selection_do_not_block_it():
+    step = only(
+        selection(),
+        node("next", "batch-run", "pending", inputs=[{"name": "a", "ref": {"node": "workflow"}}]),
+    )
+    assert step.blocked == "" and step.actions == ("select", "reject")
 
 
 @pytest.mark.parametrize("identifier", [" padded", "line\nbreak", "bidi‮", "x" * 1025, ""])

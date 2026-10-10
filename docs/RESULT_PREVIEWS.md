@@ -93,12 +93,14 @@ download in that final poll is polled again too, because its outcome does not
 show whether the window's end caused it.
 
 A retry queues every rendition of the result at once, except unsupported ones
-and decoded previews being published, and withdraws their outstanding decode
-requests, so the snapshot it returns and later `status` reads report the retry
-rather than the old outcome. When that result's batch is already on the lane,
-the forced fetch waits for it. The pump that collects the batch applies its
-late outcome and queues the renditions again in the same call, so that outcome
-is never reported as settled and cannot undo the retry.
+and previews the lane is already decoding or publishing, such as an audio
+envelope whose offline decode is running. It withdraws their outstanding decode
+requests, including an envelope still waiting for room on the lane, so the
+snapshot it returns and later `status` reads report the retry rather than the
+old outcome. When that result's batch is already on the lane, the forced fetch
+waits for it. The pump that collects the batch applies its late outcome and
+queues the renditions again in the same call, so that outcome is never reported
+as settled and cannot undo the retry.
 
 Without online access, renditions report `offline` and are checked every five
 seconds. An offline poll pauses the window, keeping the time already used since

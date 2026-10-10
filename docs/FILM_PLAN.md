@@ -1123,9 +1123,10 @@ destination and names the verification that will run (installed `ffprobe`, else
 Blender's weaker decode check). Confirming approves that exact destination once.
 The command requires Object Mode, the selected recipe scene, both captured
 origins and an absent destination, then writes the private snapshot and starts
-the session-owned export thread. A different destination string, Edit Mode or
-another running export refuses without consuming the approval; once those checks
-pass, the approval is consumed even if the export cannot start. The panel shows
+the session-owned export thread. A different destination string, an agent
+approval of a destination outside the Output Folder, Edit Mode or another running
+export refuses without consuming the approval; once those checks pass, the
+approval is consumed even if the export cannot start. The panel shows
 the media check, rendered frames and percentage, verification and saving;
 runtime maintenance advances and redraws it while the panel is closed.
 **Cancel export** stops the child, the destination stays absent and the private
@@ -1159,22 +1160,27 @@ Local MCP uses `film_export_sources(production_id)` for the context, sources,
 verification. `prepare_film_export` takes that context, the production, a
 `source_id` and an absolute new `destination_path`, with optional even
 width/height and `include_audio`. Agent destinations must resolve inside the
-configured Output Folder after following links, compared without folding case or
-Unicode composition; only the missing default Film folder may be created. Show the
+configured Output Folder after following links, compared part by part without
+folding case or Unicode composition, although Windows resolution returns an
+existing folder's on-disk spelling. Only the missing default Film folder, with a
+missing Output Folder above it, may be created. Show the
 returned destination and settings for approval, then call
 `render_film_export(review_id, approved_destination)` with that destination
 verbatim, like an exact cost. Poll `film_export_review`; it also cancels,
 discards, and after a failed save uses `prepare_republish` for a new Output
 Folder destination, then `republish` with the returned `pending_destination`
 verbatim. Native file browser choices are limited only by the session policy
-above. Native and MCP controls share the same handles. See
+above. Native and MCP controls share the same handles, but agent render and
+copy approvals recheck the Output Folder: an agent cannot approve a file chosen
+natively elsewhere, which stays for native confirmation. See
 [MCP export commands](MCP.md#film-export-commands).
 
 Installed synthetic tests cover inspection filters and blocking reasons, the
 native file browser and Render dialogs (including dismissal, numbered names,
 explicit audio and size choices), destination refusals (existing, relative, wrong
 suffix, non-portable, private storage, outside the Output Folder or through a
-link), exact-destination approval, MCP/native handle sharing, cached progress,
+link), agent approval refusal for native exports and copies outside the Output
+Folder, exact-destination approval, MCP/native handle sharing, cached progress,
 cancellation without a destination, a failed save followed by a copy-only native
 re-publish, READY invalidation by a frame change, object selection or a new
 destination file, an export surviving a later edit, read-only panel and Studio

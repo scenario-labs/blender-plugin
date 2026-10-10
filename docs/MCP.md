@@ -445,11 +445,14 @@ proxy or share setup snippets.
 
 Film video export lets an agent write new MP4 files only inside the configured
 Output Folder. The destination's folder is resolved, following links, and must lie
-in the resolved Output Folder; spellings are compared exactly. Only the missing
-default `Film` subfolder can be created, an existing file is never overwritten,
-and Blender, extension and staging storage stay refused even when the Output
-Folder points there. Render approval must repeat the exact resolved destination.
-This is a policy check before a long render, not a sandbox: with Python
+in the resolved Output Folder. Each part's spelling is compared exactly, although
+Windows resolution returns an existing folder's on-disk spelling. Only the missing
+default `Film` subfolder, with a missing Output Folder above it, can be created,
+an existing file is never overwritten, and Blender, extension and staging storage
+stay refused even when the Output Folder points there. Render and copy approvals
+must repeat the exact resolved destination and recheck the Output Folder, so an
+agent cannot approve a file chosen elsewhere in Blender's file browser. This is a
+policy check before a long render, not a sandbox: with Python
 execution enabled, a token holder can still write elsewhere. Report vulnerabilities through
 [SECURITY.md](../SECURITY.md); see [privacy and local data](PRIVACY.md) for uploads,
 credential storage and data handling.
@@ -998,7 +1001,9 @@ export runs at a time. Poll `film_export_review` for the stage, percentage,
 absent), discard the private snapshot, staged video and logs (an exported file
 stays), and after a failed save `prepare_republish` with a new `destination_path`,
 then `republish` with the returned `pending_destination` as `approved_destination`.
-A re-publish copies the verified video and never renders again.
+A re-publish copies the verified video and never renders again. Both approvals
+recheck that the destination resolves inside the Output Folder; a native choice
+elsewhere is refused without consuming it and stays for native confirmation.
 
 These four local commands have no platform equivalent, make no service call and
 spend nothing. They share the [native export controls](FILM_PLAN.md#native-and-mcp-video-export-controls)

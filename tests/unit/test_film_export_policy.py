@@ -2,7 +2,8 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Film export name suggestions and the agent Output Folder policy, without Blender."""
 
-from pathlib import Path
+import os
+from pathlib import Path, PurePosixPath, PureWindowsPath
 
 import pytest
 
@@ -72,6 +73,7 @@ def test_agent_destinations_stay_inside_the_output_folder(tmp_path):
     assert list(film.iterdir()) == []
 
 
+@pytest.mark.skipif(os.name == "nt", reason="Windows resolves to the on-disk spelling")
 def test_agent_destination_folder_spelling_is_not_folded(tmp_path):
     output = tmp_path / "Scenario"
     output.mkdir()
@@ -82,6 +84,27 @@ def test_agent_destination_folder_spelling_is_not_folded(tmp_path):
         alias.mkdir()
     with pytest.raises(export.LocalExportError, match="only inside"):
         policy.require_within(alias / "Review.mp4", output)
+
+
+@pytest.mark.parametrize(
+    "path, folder, expected",
+    [
+        (PureWindowsPath("C:/Out/Film"), PureWindowsPath("C:/Out"), True),
+        (PureWindowsPath("C:/Out"), PureWindowsPath("C:/Out"), True),
+        (PureWindowsPath("C:/Film"), PureWindowsPath("C:/"), True),
+        (PureWindowsPath("//host/share/Out/Film"), PureWindowsPath("//host/share/Out"), True),
+        # pathlib folds these on Windows; the agent policy never does.
+        (PureWindowsPath("C:/out/Film"), PureWindowsPath("C:/Out"), False),
+        (PureWindowsPath("c:/Out/Film"), PureWindowsPath("C:/Out"), False),
+        (PureWindowsPath("C:/Out-x/Film"), PureWindowsPath("C:/Out"), False),
+        (PureWindowsPath("D:/Out/Film"), PureWindowsPath("C:/Out"), False),
+        (PurePosixPath("/out/Film"), PurePosixPath("/Out"), False),
+        (PurePosixPath("/Caf\u00e9/Film"), PurePosixPath("/Cafe\u0301"), False),
+        (PurePosixPath("/Out"), PurePosixPath("/Out/Film"), False),
+    ],
+)
+def test_folder_containment_compares_each_part_exactly(path, folder, expected):
+    assert policy.inside(path, folder) is expected
 
 
 def test_an_uncreatable_film_folder_is_reported_without_a_path(monkeypatch, tmp_path):

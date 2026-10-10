@@ -193,6 +193,12 @@ class FilmExportControlTests(unittest.TestCase):
         self.assertIn("movie, sound", sources[nested.name]["blocked_reason"])
         with self.assertRaisesRegex(ValueError, "movie, sound"):
             self.mcp_prepare(source_id=sources[nested.name]["source_id"])
+        # The snapshot's media byte budget blocks before preparation, not after approval.
+        with patch.object(self.export, "MAX_MEDIA_BYTES", 1):
+            budget = {item["scene"]: item for item in self.sources()["sources"]}
+        self.assertIn("16 GiB", budget[self.review.name]["blocked_reason"])
+        with self.assertRaisesRegex(ValueError, "16 GiB"):
+            self.mcp_prepare(source_id=budget[self.review.name]["source_id"])
         self.assertFalse(self.output.exists())
         self.assertEqual(self.commands._reviews, {})
         self.assert_offline()
@@ -262,6 +268,11 @@ class FilmExportControlTests(unittest.TestCase):
         )
         self.assertEqual(native["phase"], "READY")
         self.assertFalse(native["output_folder_only"])
+        # Agents cannot approve it: refused before the snapshot, without consuming it.
+        with self.assertRaisesRegex(self.export.LocalExportError, "only inside"):
+            self.render(native)
+        self.assertEqual(self.commands.status(native["review_id"])["phase"], "READY")
+        self.assertEqual(self.staging(), [])
         self.assertEqual(list(self.outside.iterdir()), [])
         self.assert_offline()
 
@@ -454,6 +465,22 @@ class FilmExportControlTests(unittest.TestCase):
                 )
             with self.assertRaisesRegex(ValueError, "new destination"):
                 self.tools.film_export_review({"review_id": identifier, "action": "republish"})
+            # A native choice outside the Output Folder stays pending for the user to confirm.
+            elsewhere = self.commands.prepare_republish(identifier, str(self.outside / "Copy.mp4"))
+            with self.assertRaisesRegex(self.export.LocalExportError, "only inside"):
+                self.tools.film_export_review(
+                    {
+                        "review_id": identifier,
+                        "action": "republish",
+                        "approved_destination": elsewhere["pending_destination"],
+                    }
+                )
+            status = self.commands.status(identifier)
+            self.assertEqual(
+                (status["phase"], status["pending_destination"]),
+                ("PUBLISH_FAILED", elsewhere["pending_destination"]),
+            )
+            self.assertEqual(list(self.outside.iterdir()), [])
             # The native file choice, then a separate confirmation of the exact file.
             choose = self.ui.SCENARIO_OT_choose_film_export_copy
             manager = Mock()
@@ -482,6 +509,7 @@ class FilmExportControlTests(unittest.TestCase):
             status = self.settle(identifier)
         self.assertEqual(status["phase"], "EXPORTED", status["error"])
         self.assertEqual(sorted(p.name for p in self.folder.iterdir()), ["Copy.mp4"])
+        self.assertEqual(list(self.outside.iterdir()), [])
         self.assertEqual(len(calls), 1)  # Copy-only: rendered once.
         self.assertEqual(status["sha256"], hashlib.sha256(b"verified fixture video").hexdigest())
         self.assert_offline()

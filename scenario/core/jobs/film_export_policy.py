@@ -33,11 +33,13 @@ def require_within(destination, folder, *, create=None):
     """Accept a destination only when its resolved folder lies inside ``folder``.
 
     Both sides are resolved, so a link inside ``folder`` cannot send the export
-    elsewhere. Unlike private-root refusal, spellings are not folded: a folder
-    that differs only in case or composition is refused. ``create`` names the one
-    folder that may be created, with its missing parents, when it is exactly the
-    destination's missing folder. This is the agent policy; the session still
-    applies ``validate_destination``.
+    elsewhere. Unlike private-root refusal, the comparison never folds spellings,
+    including on Windows where pathlib would: a resolved folder that differs only
+    in case or composition is refused. Windows resolution itself returns an
+    existing folder's on-disk spelling. ``create`` names the one folder that may
+    be created, with its missing parents, when it is exactly the destination's
+    missing folder. This is the agent policy; the session still applies
+    ``validate_destination``.
     """
     raw = os.fspath(destination) if isinstance(destination, (str, os.PathLike)) else None
     if not isinstance(raw, str) or not raw or any(ord(c) < 32 or ord(c) == 127 for c in raw):
@@ -60,6 +62,15 @@ def require_within(destination, folder, *, create=None):
         raise LocalExportError(
             "The destination folder must already exist inside the Output Folder"
         ) from None
-    if parent != root and not parent.is_relative_to(root):
+    if not inside(parent, root):
         raise LocalExportError("Agents may export videos only inside the Output Folder")
     return path
+
+
+def inside(path, folder):
+    """Whether ``path`` is ``folder`` or below it, comparing each part exactly.
+
+    pathlib equality and ``is_relative_to`` fold case on Windows; this does not.
+    """
+    root = folder.parts
+    return path.parts[: len(root)] == root

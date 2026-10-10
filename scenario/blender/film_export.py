@@ -195,11 +195,16 @@ class FilmExportCommands:
             details["blocked"] = "Export at most fifteen minutes of positive frames"
         else:
             try:
-                details["media"] = len(local_capture._export_media(candidate))
+                media = local_capture._export_media(candidate)
+                details["media"] = len(media)
                 details["audible"] = local_capture._audible(candidate)
             except (ValueError, local_export.LocalExportError) as error:
-                # Blocked strip types, missing media or the media budget, in first-party text.
+                # Blocked strip types, missing media or the media count, in first-party text.
                 details["blocked"] = str(error)
+            else:
+                # The snapshot enforces the byte budget too; report it before any approval.
+                if sum(item.size for item in media) > local_export.MAX_MEDIA_BYTES:
+                    details["blocked"] = "Export at most 16 GiB of distinct media files"
         return details
 
     @staticmethod
@@ -384,8 +389,12 @@ class FilmExportCommands:
         review.directory, review.staged = None, None
         return True
 
-    def approve(self, identifier, *, approved_destination):
-        """Separately approve one ready export; consumed even if it cannot start."""
+    def approve(self, identifier, *, approved_destination, within=None):
+        """Separately approve one ready export; consumed even if it cannot start.
+
+        ``within`` is the approver's folder policy: an agent approval passes the
+        Output Folder, so it cannot approve a native choice elsewhere.
+        """
         _main_thread()
         self.poll()
         review = self._get(identifier)
@@ -393,6 +402,9 @@ class FilmExportCommands:
             raise ValueError("Prepare and approve a fresh ready Film export")
         if type(approved_destination) is not str or approved_destination != review.destination:
             raise ValueError("Approve the exact destination shown for this Film export")
+        if within is not None:
+            # Refused without consuming: the handle stays for an approver allowed to use it.
+            film_export_policy.require_within(review.destination, within)
         if bpy.context.mode != "OBJECT":
             raise ValueError("Switch to Object Mode to export video")
         if self._running():
@@ -518,8 +530,11 @@ class FilmExportCommands:
         review.pending_within = Path(within) if within is not None else None
         return self.status(identifier)
 
-    def republish(self, identifier, *, approved_destination):
-        """Copy the verified staged video to the approved new destination; never re-renders."""
+    def republish(self, identifier, *, approved_destination, within=None):
+        """Copy the verified staged video to the approved new destination; never re-renders.
+
+        ``within`` is the approver's folder policy, as for ``approve``.
+        """
         _main_thread()
         self.poll()
         review = self._get(identifier)
@@ -529,11 +544,14 @@ class FilmExportCommands:
             raise ValueError("Approve the exact new destination shown for this Film export")
         if self._running():
             raise ValueError("Wait for the current Film export to finish")
-        destination, within = review.pending, review.pending_within
+        if within is not None:
+            # An agent cannot confirm a native choice elsewhere; that choice stays pending.
+            film_export_policy.require_within(review.pending, within)
+        destination, bound = review.pending, review.pending_within
         review.pending, review.pending_within = "", None
         try:
-            if within is not None:
-                film_export_policy.require_within(destination, within)
+            if bound is not None:
+                film_export_policy.require_within(destination, bound)
             review.task = self.session.publish_film_export(
                 review.staged,
                 destination,
@@ -543,7 +561,7 @@ class FilmExportCommands:
         except Exception as error:
             review.error = _readable(error, "The copy could not start; choose another destination")
             return self.status(identifier)
-        review.destination, review.within = destination, within
+        review.destination, review.within = destination, bound
         review.phase, review.error = "PUBLISHING", ""
         review.progress = review.task.progress()
         return self.status(identifier)

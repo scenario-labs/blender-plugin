@@ -190,6 +190,9 @@ def test_film_export_descriptions_state_the_destination_contract():
         in descriptions["render_film_export"]
     )
     assert "own destination approval" in descriptions["film_export_review"]
+    # Agent approvals recheck the folder, including for a destination chosen natively.
+    assert "a destination still inside the Output Folder" in descriptions["render_film_export"]
+    assert "pending_destination, inside the Output Folder" in descriptions["film_export_review"]
     assert "Nothing renders yet" in descriptions["prepare_film_export"]
     assert "No upload, generation or spending" in descriptions["render_film_export"]
     assert "never renders again" in descriptions["film_export_review"]

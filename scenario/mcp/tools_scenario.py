@@ -770,8 +770,11 @@ def prepare_film_export(args):
 
 
 def render_film_export(args):
+    # Agent approvals recheck the Output Folder, even for a native file choice.
     return runtime.ensure_film_jobs().session.film_export.approve(
-        args["review_id"], approved_destination=args["approved_destination"]
+        args["review_id"],
+        approved_destination=args["approved_destination"],
+        within=_output_folder(),
     )
 
 
@@ -791,7 +794,9 @@ def film_export_review(args):
         )
     if action == "republish":
         return owner.republish(
-            args["review_id"], approved_destination=args.get("approved_destination")
+            args["review_id"],
+            approved_destination=args.get("approved_destination"),
+            within=_output_folder(),
         )
     raise ValueError("Choose status, cancel, discard, prepare_republish or republish")
 
@@ -2007,7 +2012,7 @@ SPECS = (
             "Args: review_id and approved_destination are required strings; approve the destination returned by prepare_film_export verbatim.\n"
             "Returns: export status with EXPORTING phase and progress; poll film_export_review until EXPORTED, PUBLISH_FAILED, ERROR or CANCELLED.\n"
             'Example: {"review_id": "ready-export", "approved_destination": "<default_directory>/Cut - Final Review.mp4"}.\n'
-            "Film is experimental. Requires explicit approval of the exact destination and settings, Object Mode and the unchanged recipe scene selected. Consumes the approval even when it cannot start. Snapshots the review scene privately, encodes H.264/AAC MP4 with Blender's FFmpeg, verifies it with installed ffprobe or Blender's decoder, then saves it without overwriting; the working file and scenes stay unchanged. One export runs at a time; later scene edits do not stop it. No upload, generation or spending.\n"
+            "Film is experimental. Requires explicit approval of the exact destination and settings, a destination still inside the Output Folder, Object Mode and the unchanged recipe scene selected. Consumes the approval even when it cannot start. Snapshots the review scene privately, encodes H.264/AAC MP4 with Blender's FFmpeg, verifies it with installed ffprobe or Blender's decoder, then saves it without overwriting; the working file and scenes stay unchanged. One export runs at a time; later scene edits do not stop it. No upload, generation or spending.\n"
             "Platform equivalent: none; local offline video export."
         ),
         _schema(
@@ -2020,7 +2025,7 @@ SPECS = (
         "film_export_review",
         (
             "Inspect, cancel or discard a session-local Film export, or save its verified video to another new file after saving failed.\n"
-            "Args: review_id is required; action is status (default), cancel, discard, prepare_republish (requires destination_path inside the Output Folder) or republish (requires approved_destination equal to the returned pending_destination).\n"
+            "Args: review_id is required; action is status (default), cancel, discard, prepare_republish (requires destination_path inside the Output Folder) or republish (requires approved_destination equal to the returned pending_destination, inside the Output Folder).\n"
             "Returns: review_id, phase, scenes, frames/fps, duration, width/height, audio, destination, pending_destination, progress stage/done/total and percent, published, sha256, size, verification, republish_available, private directory and error.\n"
             'Example: {"review_id": "current-export", "action": "status"}.\n'
             "Film is experimental. Status advances local work but never starts a render. Cancel stops the export and leaves the destination absent. Discard deletes only the private snapshot, staged video and logs; an exported file stays. Republish copies the verified video only after a failed save and never renders again; it needs its own destination approval. Handles and private files end with the session.\n"

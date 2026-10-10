@@ -881,7 +881,9 @@ one bulk read, plus the target collection or, for a create, an exact-name lookup
 It sends no write. The review lists each asset's change and `request_count`, the
 most writes apply may send. A missing asset, an existing exact collection name
 (returned in `existing_collection_ids`) or a name whose earlier create in this
-session had an unknown outcome makes the review `REJECTED`. A request with nothing
+session had an unknown outcome makes the review `REJECTED`. Apply checks the name
+again before creating: a name taken since preparation sends nothing and returns
+`NOT_SENT` with those IDs in `existing_collection_ids`. A request with nothing
 to change is `UNCHANGED`. `project_id` is the Project ID override, or `null` for
 the key's own scope.
 
@@ -903,6 +905,7 @@ report a delivery timeout after the apply was already queued; the status shows
 whether the review is still `READY` (nothing was queued), applying or finished.
 A change continues in Blender after a client timeout, and a review never applies
 twice. `action: discard` releases a review that is not applying; nothing is sent.
+A discarded review that was already applied keeps its `result`.
 
 Reviews belong to the selected connection, not to a scene: undo and scene
 switches keep them. Loading a file, changing credentials or the Project ID, or a

@@ -250,8 +250,10 @@ def _organization_note(status):
         )
     if phase == "UNCHANGED":
         return "Nothing to change; nothing will be sent for this review."
-    if phase == "REJECTED":
-        note = "Nothing was sent. Correct the request, then prepare a new review."
+    if phase in {"REJECTED", "NOT_SENT"}:
+        # Prepare and apply both refuse an exact collection name already in use.
+        step = "Correct the request" if phase == "REJECTED" else "Resolve the message"
+        note = f"Nothing was sent. {step}, then prepare a new review."
         if status["existing_collection_ids"]:
             note += " To use an existing collection, prepare add_to_collection with its ID."
         return note
@@ -260,9 +262,12 @@ def _organization_note(status):
             "Applying. Call asset_organization_status until it finishes; never apply this "
             "review again or repeat the change."
         )
-    if phase == "NOT_SENT":
-        return "Nothing was sent. Resolve the message, then prepare a new review."
     if phase == "DISCARDED":
+        if result is not None:
+            return (
+                "Discarded locally after it was applied; report its result, which still "
+                "describes what Scenario changed. This review sends nothing more."
+            )
         return "Discarded locally; this review sends nothing more."
     if phase == "EXPIRED":
         return "Expired without sending; prepare a new review."

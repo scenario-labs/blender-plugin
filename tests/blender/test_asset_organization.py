@@ -357,6 +357,20 @@ class AssetOrganizationToolTests(unittest.TestCase):
         self.assertIn("add_to_collection", again["note"])
         self.assertEqual(len(self.service.writes), 2)
 
+    def test_name_taken_before_apply_points_to_the_existing_collection(self):
+        review = self.ready(
+            operation="create_collection", collection_name="Rival set", asset_ids=["asset-a"]
+        )
+        # Another client creates the same exact name after the review was prepared.
+        self.service.collections["rival"] = collection("rival", "Rival set")
+        result = self.apply(review)
+        self.assertEqual(result["phase"], "NOT_SENT")
+        self.assertIsNone(result["result"])
+        self.assertEqual(result["existing_collection_ids"], ["rival"])
+        self.assertIn("Nothing was sent", result["note"])
+        self.assertIn("prepare add_to_collection with its ID", result["note"])
+        self.assertEqual(self.service.writes, [])
+
     def test_mismatched_context_and_reused_review_are_rejected(self):
         review = self.ready(operation="update_tags", asset_ids=["asset-a"], add_tags=["x"])
         with self.assertRaisesRegex(self.errors.ScenarioError, "connection changed"):
@@ -521,3 +535,13 @@ class AssetOrganizationToolTests(unittest.TestCase):
         with self.assertRaises(self.organization.ReviewUnavailable):
             self.apply(review)
         self.assertEqual(self.service.writes, [])
+
+    def test_discarding_an_applied_review_keeps_its_result(self):
+        review = self.ready(operation="update_tags", asset_ids=["asset-a"], add_tags=["x"])
+        self.assertEqual(self.apply(review)["result"]["state"], "VERIFIED")
+        discarded = self.status(review, action="discard")
+        self.assertEqual(discarded["phase"], "DISCARDED")
+        self.assertEqual(discarded["result"]["state"], "VERIFIED")
+        self.assertIn("after it was applied", discarded["note"])
+        self.assertIn("report its result", discarded["note"])
+        self.assertEqual(len(self.service.writes), 1)

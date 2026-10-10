@@ -645,7 +645,9 @@ them, while file load and credential or project changes retire them with the
 session. No job, upload or store schema change is involved, and no credits are
 spent. See [the command contract](../JOB_COORDINATOR.md#asset-organization-commands)
 and [session ownership](../BLENDER_JOB_CONTEXT.md#asset-organization-reviews).
-Native and MCP controls, desktop interaction and live acceptance remain under
+Local MCP tools prepare, apply and inspect these reviews; see
+[asset organization](../MCP.md#asset-organization). Native Library controls,
+desktop interaction and live acceptance remain under
 [#64](https://github.com/scenario-labs/blender-plugin/issues/64),
 [#65](https://github.com/scenario-labs/blender-plugin/issues/65),
 [#66](https://github.com/scenario-labs/blender-plugin/issues/66) and

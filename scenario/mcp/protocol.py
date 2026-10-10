@@ -20,7 +20,11 @@ INSTRUCTIONS = (
     "quote the CU cost (estimate_cost) before generating, and place results where the user is working. "
     "Use list_assets or search_assets for scoped library metadata and reusable asset IDs; these do not download or apply assets. "
     "Use estimate_workflow then run_workflow for an explicitly approved workflow in this local scope. "
-    "For platform-wide work (collections, training, workflow authoring, usage) use the mcp.scenario.com server when it is connected."
+    "To add library assets to or remove them from collections, change their tags or create a collection, "
+    "call prepare_asset_organization, show the review and call apply_asset_organization only after explicit approval; "
+    "never repeat an unconfirmed change. "
+    "For other platform-wide work (collection rename or deletion, training, workflow authoring, usage) "
+    "use the mcp.scenario.com server when it is connected."
 )
 
 

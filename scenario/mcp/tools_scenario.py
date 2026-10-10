@@ -200,6 +200,191 @@ def search_assets(args):
     return _asset_library(args, search=True)
 
 
+_ORGANIZATION_ARGUMENTS = frozenset(
+    {"operation", "asset_ids", "collection_id", "collection_name", "add_tags", "remove_tags"}
+)
+_ORGANIZATION_CHANGED = (
+    "The Scenario connection changed; reviews from another connection or an earlier "
+    "session are discarded. Inspect assets with list_assets, then prepare the change again"
+)
+_DISCARDED_UNKNOWN = (
+    "Discarded locally, but its apply outcome is unknown: the change may already be in "
+    "Scenario. Tell the user, then inspect the assets' collections and tags with list_assets "
+    "before assuming nothing changed; never repeat the change automatically. This review "
+    "sends nothing more."
+)
+
+
+def _wait_task(task):
+    if task is not None:
+        _wait_workflow(task)
+
+
+def list_collections(args):
+    page_size = args.get("page_size", 50)
+    if type(page_size) is not int or not 1 <= page_size <= 100:
+        raise ValueError("page_size must be an integer from 1 to 100")
+    token = args.get("pagination_token")
+    if token is not None and (not isinstance(token, str) or not token):
+        raise ValueError("pagination_token must be a nonempty string from list_collections")
+    session = runtime.ensure_job_session()
+    owner = session.asset_organization
+    task = owner.collections(page_size=page_size, pagination_token=token)
+
+    def finish(_):
+        runtime.sync_catalog_context()
+        if runtime.state.job_session is not session or not session.active:
+            raise ScenarioError(0, "The Scenario connection changed; list collections again")
+        return owner.take_collections(task)
+
+    return DeferredTool(lambda: _wait_task(task), finish)
+
+
+def _organization_note(status):
+    """Guidance for the connected agent; the review state remains authoritative."""
+    phase, result = status["phase"], status["result"]
+    if phase == "PREPARING":
+        return (
+            "Reading the current state; nothing is sent while preparing. Call "
+            "asset_organization_status with this context_id and review_id until the phase changes."
+        )
+    if phase == "READY":
+        return (
+            "Show the user the operation, collection, each asset's change, request_count and "
+            "notice. Call apply_asset_organization once, only after explicit approval, before "
+            "expires_in seconds pass."
+        )
+    if phase == "UNCHANGED":
+        return "Nothing to change; nothing will be sent for this review."
+    if phase in {"REJECTED", "NOT_SENT"}:
+        # Prepare and apply both refuse an exact collection name already in use.
+        step = "Correct the request" if phase == "REJECTED" else "Resolve the message"
+        note = f"Nothing was sent. {step}, then prepare a new review."
+        if status["existing_collection_ids"]:
+            note += " To use an existing collection, prepare add_to_collection with its ID."
+        return note
+    if phase == "APPLYING":
+        return (
+            "Applying. Call asset_organization_status until it finishes; never apply this "
+            "review again or repeat the change."
+        )
+    if phase == "DISCARDED":
+        if result is not None:
+            return (
+                "Discarded locally after it was applied; report its result, which still "
+                "describes what Scenario changed. This review sends nothing more."
+            )
+        return "Discarded locally; this review sends nothing more."
+    if phase == "EXPIRED":
+        return "Expired without sending; prepare a new review."
+    if result is not None and result["state"] == "VERIFIED":
+        return "Scenario confirmed every change by reading the assets back."
+    if result is not None and result["state"] in {"PARTIAL", "REJECTED"}:
+        return (
+            "Report each asset outcome. To retry refused assets, prepare a new review; it "
+            "reads the current state first and sends only what still differs."
+        )
+    return (
+        "Never repeat unconfirmed work automatically. Inspect the assets with list_assets; "
+        "a new review reads the current state first, so prepare one only if the user still "
+        "wants the change."
+    )
+
+
+def _organization_payload(context_id, status):
+    return {"context_id": context_id, **status, "note": _organization_note(status)}
+
+
+def _organization_context(args):
+    """Return the active session's owner for a context_id issued by an earlier call."""
+    context_id, review_id = args.get("context_id"), args.get("review_id")
+    if not isinstance(context_id, str) or not context_id:
+        raise ValueError("Use the context_id returned by prepare_asset_organization")
+    if not isinstance(review_id, str) or not review_id:
+        raise ValueError("Use the review_id returned by prepare_asset_organization")
+    session = runtime.ensure_job_session()
+    if context_id != runtime.state.job_context_id:
+        raise ScenarioError(0, _ORGANIZATION_CHANGED)
+    return session, session.asset_organization, context_id, review_id
+
+
+def _organization_finish(session, context_id, review_id, *, applying):
+    def finish(_):
+        runtime.sync_catalog_context()
+        if (
+            runtime.state.job_session is not session
+            or not session.active
+            or runtime.state.job_context_id != context_id
+        ):
+            if applying:
+                raise ScenarioError(
+                    0,
+                    "The Scenario connection changed while this change was applying; its "
+                    "outcome is unknown in this context. Inspect the assets with list_assets "
+                    "in the selected connection; nothing is resent automatically",
+                )
+            raise ScenarioError(0, _ORGANIZATION_CHANGED)
+        owner = session.asset_organization
+        owner.poll()
+        return _organization_payload(context_id, owner.status(review_id))
+
+    return finish
+
+
+def prepare_asset_organization(args):
+    unknown = sorted(set(args) - _ORGANIZATION_ARGUMENTS)
+    if unknown:
+        raise ValueError(f"Unknown organization argument: {', '.join(unknown)}")
+    if not isinstance(args.get("operation"), str):
+        raise ValueError("operation is required")
+    # JSON null means an omitted list; build_request validates everything else.
+    lists = {
+        key: () if args.get(key) is None else args[key]
+        for key in ("asset_ids", "add_tags", "remove_tags")
+    }
+    session = runtime.ensure_job_session()
+    owner = session.asset_organization
+    review_id = owner.prepare(
+        args["operation"],
+        collection_id=args.get("collection_id"),
+        collection_name=args.get("collection_name"),
+        **lists,
+    )
+    task = owner.task(review_id)
+    context_id = runtime.state.job_context_id
+    return DeferredTool(
+        lambda: _wait_task(task),
+        _organization_finish(session, context_id, review_id, applying=False),
+    )
+
+
+def apply_asset_organization(args):
+    session, owner, context_id, review_id = _organization_context(args)
+    owner.apply(review_id)
+    task = owner.task(review_id)
+    return DeferredTool(
+        lambda: _wait_task(task),
+        _organization_finish(session, context_id, review_id, applying=True),
+    )
+
+
+def asset_organization_status(args):
+    action = args.get("action", "status")
+    if action not in {"status", "discard"}:
+        raise ValueError("action must be status or discard")
+    _, owner, context_id, review_id = _organization_context(args)
+    owner.poll()
+    if action == "status":
+        return _organization_payload(context_id, owner.status(review_id))
+    # FINISHED without a result is an unknown apply outcome; discard replaces its
+    # message, so warn here, where poll may have just delivered that outcome.
+    before = owner.status(review_id)
+    payload = _organization_payload(context_id, owner.discard(review_id))
+    if before["phase"] == "FINISHED" and before["result"] is None:
+        payload["note"] = _DISCARDED_UNKNOWN
+    return payload
+
+
 def _workflow_metadata(args, *, detail=False):
     privacy = args.get("privacy", "private")
     if privacy not in {"private", "public"}:
@@ -1296,6 +1481,105 @@ SPECS = (
             ["query"],
         ),
         search_assets,
+        {"readOnlyHint": True},
+    ),
+    ToolSpec(
+        "list_collections",
+        (
+            "Read one page of Scenario collections in Blender's selected credential and optional project scope.\n"
+            "Args: page_size is 1 to 100, default 50; pagination_token is optional, from the previous page.\n"
+            "Returns: collections[] with collection_id, name, asset_count, model_count and updated_at, plus next_pagination_token.\n"
+            'Example: {"page_size": 20}.\n'
+            "Use a returned collection_id with prepare_asset_organization or as the list_assets collection_id filter. No cursor is followed automatically. Thumbnail URLs and owner IDs are omitted. No write, upload or generation.\n"
+            "Platform equivalent: collections_list."
+        ),
+        _schema(
+            {
+                "page_size": {"type": "integer", "minimum": 1, "maximum": 100},
+                "pagination_token": {"type": "string"},
+            }
+        ),
+        list_collections,
+        {"readOnlyHint": True},
+    ),
+    ToolSpec(
+        "prepare_asset_organization",
+        (
+            "Read the current tags and collection memberships of library assets and prepare one reviewed collection or tag change, without sending it.\n"
+            "Args:\n"
+            "  - operation: required, add_to_collection, remove_from_collection, update_tags or create_collection.\n"
+            "  - asset_ids: 1 to 49 unique asset IDs from list_assets or search_assets; optional only for create_collection, whose assets are added after the create.\n"
+            "  - collection_id: required for add_to_collection and remove_from_collection, from list_collections.\n"
+            "  - collection_name: required for create_collection; an existing exact name is refused and its IDs returned.\n"
+            "  - add_tags, remove_tags: for update_tags, at most 30 unique tags each, without commas; a tag cannot be in both.\n"
+            "Returns: context_id, review_id, phase (READY, UNCHANGED or REJECTED; PREPARING while the read is pending), project_id (null for the key's own scope), operation, collection_id/collection_name, assets[] with asset_id, name, tags, in_collection and change, missing_asset_ids, existing_collection_ids, request_count, expires_in, message, notice and note.\n"
+            'Example: {"operation": "add_to_collection", "asset_ids": ["asset-id"], "collection_id": "collection-id"}.\n'
+            "Show the per-asset change and notice to the user and obtain explicit approval before apply_asset_organization. The change will be immediate Scenario account metadata, uses no credits and is not reversed by Blender Undo. A READY review expires after 10 minutes. This organizes assets in Blender's selected connection; collection rename/delete and model collections are hosted-server operations.\n"
+            "Platform equivalent: collection_add_assets, collection_remove_assets, collection_create, asset_add_tags and asset_remove_tags, reviewed locally before any write."
+        ),
+        _schema(
+            {
+                "operation": {
+                    "type": "string",
+                    "enum": [
+                        "add_to_collection",
+                        "remove_from_collection",
+                        "update_tags",
+                        "create_collection",
+                    ],
+                },
+                "asset_ids": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "maxItems": 49,
+                    "uniqueItems": True,
+                },
+                "collection_id": {"type": "string"},
+                "collection_name": {"type": "string"},
+                "add_tags": {"type": "array", "items": {"type": "string"}, "maxItems": 30},
+                "remove_tags": {"type": "array", "items": {"type": "string"}, "maxItems": 30},
+            },
+            ["operation"],
+        ),
+        prepare_asset_organization,
+        {"readOnlyHint": True},
+    ),
+    ToolSpec(
+        "apply_asset_organization",
+        (
+            "Apply one READY organization review once, after the user explicitly approved its shown change.\n"
+            "Args: context_id and review_id are required, from prepare_asset_organization.\n"
+            "Returns: the review with phase FINISHED or NOT_SENT and result {state VERIFIED, PARTIAL, UNCONFIRMED or REJECTED, requests_sent, collection_id, created_collection_id, create_outcome, outcomes[] with asset_id, state, status, tags and in_collection}, message and note.\n"
+            'Example: {"context_id": "from-prepare", "review_id": "from-prepare"}.\n'
+            "Assets already in the collection are skipped; if another client added one after the review, the rest are sent again within a fixed bound. Nothing else is retried, then the assets are read back. Never repeat UNCONFIRMED work: inspect with list_assets, then prepare a new review, which reads the current state first. After a timeout or error from this call, even one saying the tool was not executed, call asset_organization_status first: it shows whether the review is still READY, applying or finished, and a review never applies twice. A connection change during apply reports an unknown outcome in this context. Spends no credits; Blender Undo does not reverse it.\n"
+            "Platform equivalent: collection_add_assets, collection_remove_assets, collection_create, asset_add_tags and asset_remove_tags, through the shared SDK."
+        ),
+        _schema(
+            {"context_id": {"type": "string"}, "review_id": {"type": "string"}},
+            ["context_id", "review_id"],
+        ),
+        apply_asset_organization,
+        {"destructiveHint": True},
+    ),
+    ToolSpec(
+        "asset_organization_status",
+        (
+            "Inspect an organization review, including an apply whose call timed out, or discard a review that is not applying.\n"
+            "Args: context_id and review_id are required, from prepare_asset_organization; action is status (default) or discard.\n"
+            "Returns: the same review payload as prepare_asset_organization or apply_asset_organization, with the current phase, result when finished, message and note.\n"
+            'Example: {"context_id": "from-prepare", "review_id": "from-prepare", "action": "status"}.\n'
+            "Never sends an organization write. Reviews live in this Blender session only: a file load, credential or project change discards them, and a write already sent keeps its effect.\n"
+            "Platform equivalent: none; this reads the local review, while collection_get and asset_get read service state."
+        ),
+        _schema(
+            {
+                "context_id": {"type": "string"},
+                "review_id": {"type": "string"},
+                "action": {"type": "string", "enum": ["status", "discard"]},
+            },
+            ["context_id", "review_id"],
+        ),
+        asset_organization_status,
         {"readOnlyHint": True},
     ),
     ToolSpec(

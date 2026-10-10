@@ -30,8 +30,10 @@ limits of its current controls. It does not replace Scenario's service policies.
   `ScenarioBlender/<version>`. Signed storage transfers use the URL's authorization;
   they do not forward the Scenario API key/secret header.
 - An agent connected to the local MCP server can request scene information,
-  captures, uploads and paid generations on your behalf. Its own service may
-  receive what that agent reads from Blender.
+  captures, uploads and paid generations on your behalf. It can also change
+  the collection membership and tags of your Scenario assets or create a
+  collection, sending the chosen asset IDs, tags and collection names. Its own
+  service may receive what that agent reads from Blender.
 - Set up official repository and Check for updates use Blender's native extension
   manager to contact the public repository. Blender sends its usual compatibility
   parameters and network metadata; these actions do not send Scenario credentials,
@@ -122,10 +124,12 @@ connection, not Scenario's API credential, and programs holding it can read the
 scene, take captures and request generation that spends your Scenario credits.
 MCP `generate` requires the unchanged shared quote ID and exact approved cost.
 Prompt, Blockout and Film commands likewise expose separate estimate/approval
-steps. Recovery cannot resubmit an uncertain generation, and applying recovered
-results requires explicit destination approval. These controls do not establish
-that an agent has obtained your permission: only connect agents you authorize
-to perform those actions.
+steps. Collection and tag changes need a separate review and apply call; once
+applied they change Scenario account metadata immediately, use no credits and
+are not reversed by Blender Undo. Recovery cannot resubmit an uncertain
+generation, and applying recovered results requires explicit destination
+approval. These controls do not establish that an agent has obtained your
+permission: only connect agents you authorize to perform those actions.
 
 Arbitrary Python execution is disabled by default. Enabling it gives a connected
 agent code execution in Blender with your user's permissions. That switch is not

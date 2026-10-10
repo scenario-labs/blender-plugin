@@ -690,6 +690,30 @@ def test_translate_keeps_scope_and_dry_run_in_query(client_factory, dry_run):
     assert json.loads(calls[0].content) == {"prompt": "théière"}
 
 
+@pytest.mark.parametrize("project", [None, PROJECT])
+def test_asset_original_assets_is_one_boolean_query_flag(client_factory, project):
+    # SDK 2.2.0 assets.retrieve(original_assets=True): "returns the original
+    # asset without transformation". The adapter sends it only for downloads.
+    requests = []
+
+    def respond(request):
+        requests.append(request)
+        return httpx.Response(200, json={"asset": {"id": "fixture-panorama"}})
+
+    sdk = client_factory(respond)
+    scope = {} if project is None else {"project_id": project}
+    sdk.assets.with_raw_response.retrieve("fixture-panorama", original_assets=True, **scope)
+    sdk.assets.with_raw_response.retrieve("fixture-panorama", original_assets=False, **scope)
+    assert [(r.method, r.url.path, r.content) for r in requests] == [
+        ("GET", "/v1/assets/fixture-panorama", b"")
+    ] * 2
+    projected = {} if project is None else {"projectId": project}
+    assert [dict(r.url.params) for r in requests] == [
+        {"originalAssets": "true", **projected},
+        {"originalAssets": "false", **projected},
+    ]
+
+
 def test_asset_raw_response_preserves_texture_role_separately_from_mime(client_factory):
     fixture = {
         "asset": {

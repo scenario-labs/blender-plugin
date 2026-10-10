@@ -678,6 +678,19 @@ through `estimate_translate` and `quote_translate`. It accepts only nonempty
 A successful `translate` job returns `metadata.output.translation`, read through
 the same bounded text-result command. No LLM substitution or raw endpoint is used.
 
+## Original result assets
+
+`SDKAdapter.asset(identifier, original_assets=True)` passes the SDK 2.2.0
+`assets.with_raw_response.retrieve` keyword of the same name, serialized as the
+`originalAssets=true` query beside any `projectId`. The
+[asset API contract](https://docs.scenario.com/api/python/resources/assets/methods/retrieve)
+describes it as returning the original asset without transformation. Result
+manifests, fresh download URLs and complete text reads request it, because a
+large image's default `url` can serve converted bytes. Metadata-only reads, such
+as history prompt previews, omit it. Offline contracts check the exact query; no
+raw fallback, retry, authentication or dependency change is involved. See
+[untransformed result assets](RESULT_TRANSFERS.md#untransformed-result-assets).
+
 ## Saved texture-map roles
 
 The existing `SDKAdapter.asset` path uses SDK 2.2.0

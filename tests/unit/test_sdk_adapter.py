@@ -163,6 +163,32 @@ def test_reads_preserve_extended_records(adapter, method, wrapper):
     assert getattr(client, method)("fixture-record") == record
     assert seen[0].url.path == f"/v1/{wrapper}s/fixture-record"
     assert "projectId" not in seen[0].url.params
+    assert "originalAssets" not in seen[0].url.params
+
+
+@pytest.mark.parametrize("project", [None, "selected-project"])
+def test_asset_reads_request_untransformed_originals_only_when_asked(adapter, project):
+    seen = []
+    record = {"id": "fixture-record", "url": "https://storage.example.invalid/a"}
+
+    def handler(request):
+        seen.append(request)
+        return httpx.Response(200, json={"asset": record})
+
+    client = adapter(handler, project_id=project)
+    assert client.asset("fixture-record", original_assets=True) == record
+    assert client.asset("fixture-record", original_assets=False) == record
+    assert client.asset("fixture-record") == record
+    scope = {} if project is None else {"projectId": project}
+    assert [(r.method, r.url.path) for r in seen] == [("GET", "/v1/assets/fixture-record")] * 3
+    assert [dict(r.url.params) for r in seen] == [{"originalAssets": "true", **scope}, scope, scope]
+
+
+@pytest.mark.parametrize("value", [None, 1, "true"])
+def test_asset_original_flag_must_be_boolean_before_network(adapter, value):
+    client = adapter(lambda request: pytest.fail("Invalid options must not reach transport"))
+    with pytest.raises(ValueError):
+        client.asset("fixture-record", original_assets=value)
 
 
 def test_retrieved_numeric_schema_can_be_used_for_an_estimate(adapter):

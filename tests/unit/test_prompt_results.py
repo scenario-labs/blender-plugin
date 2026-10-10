@@ -63,7 +63,9 @@ def setup(tmp_path):
 
     def handler(request):
         assert request.method == "GET"
-        assert dict(request.url.params) == {"projectId": "project"}
+        # Text result reads can download bytes, so they request the original asset.
+        original = {"originalAssets": "true"} if "/assets/" in request.url.path else {}
+        assert dict(request.url.params) == {"projectId": "project", **original}
         calls.append(request.url.path)
         if after_request:
             after_request.pop()()

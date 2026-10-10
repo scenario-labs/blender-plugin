@@ -387,6 +387,36 @@ def test_same_version_previous_code_becomes_the_test_predecessor(
     A seeded Environment lane must be reported preserved; an older predecessor
     seeds none and reports false.
     """
+    _same_version_run(
+        runner, tmp_path, monkeypatch, schemas, owner, claimed, environment=environment
+    )
+
+
+@pytest.mark.parametrize(
+    ("seeded", "claimed"), [(True, True), (False, False), (True, False), (False, True)]
+)
+def test_saved_trained_choices_must_survive_when_the_predecessor_seeded_them(
+    runner, tmp_path, monkeypatch, seeded, claimed
+):
+    """The probe seeds trained choices only into a package that saves them (#97)."""
+    trained = [{"model_id": "update-lora", "scale": 0.8}] if seeded else None
+    _same_version_run(
+        runner, tmp_path, monkeypatch, (10, 10), True, True, trained=trained, trained_claim=claimed
+    )
+
+
+def _same_version_run(
+    runner,
+    tmp_path,
+    monkeypatch,
+    schemas,
+    owner,
+    claimed,
+    *,
+    environment="absent",
+    trained=None,
+    trained_claim=False,
+):
     import contextlib
     import zipfile
 
@@ -439,6 +469,7 @@ def test_same_version_previous_code_becomes_the_test_predecessor(
             "workflow_references_preserved": False,
             "workflow_uploads_preserved": False,
             "environment_lane_preserved": environment == "preserved",
+            "trained_selection_preserved": trained_claim,
             "service_requests": 0,
             "store_schema": {"before": schemas[0], "after": schemas[1]},
             "schema_10_state": "before-update"
@@ -450,7 +481,7 @@ def test_same_version_previous_code_becomes_the_test_predecessor(
         }
         seeded = None if environment == "absent" else {"lane": "panorama"}
         (session.directory / "expected-state.json").write_text(
-            json.dumps({"workflow": None, "environment": seeded})
+            json.dumps({"workflow": None, "environment": seeded, "trained": trained})
         )
         report.write_text(json.dumps(reports[name]))
         return None
@@ -476,7 +507,7 @@ def test_same_version_previous_code_becomes_the_test_predecessor(
         candidate_zip=candidate,
         test_predecessor=True,
     )
-    if claimed != owner or environment == "lost":
+    if claimed != owner or environment == "lost" or trained_claim != (trained is not None):
         assert runner.run(args) == 1
         result = json.loads(next(args.artifacts.glob("*/result.json")).read_text())
         assert result["error"] == "Missing native update and enabled-state evidence"

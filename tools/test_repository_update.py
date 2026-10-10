@@ -409,6 +409,8 @@ def run(args):
                     workflow_references_preserved=workflow is not None,
                     workflow_uploads_preserved=bool(workflow and workflow.get("pending_upload")),
                     environment_lane_preserved=state.get("environment") is not None,
+                    # Saved trained choices, when the predecessor could seed them (#97).
+                    trained_selection_preserved=state.get("trained") is not None,
                     service_requests=0,
                     store_schema=schemas,
                     schema_10_state=(

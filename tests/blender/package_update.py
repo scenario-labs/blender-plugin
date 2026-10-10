@@ -590,6 +590,62 @@ def environment_snapshot():
     }
 
 
+TRAINED_SCOPE = "_scenario_trained_scope"
+
+
+def trained_lane(scene):
+    """The Image form when the package saves trained choices with it (#97)."""
+    lane = scene.scenario.lane_state("image")
+    if "trained" not in lane.bl_rna.properties:
+        return None
+    return lane
+
+
+def seed_trained(scene, selected):
+    """Two LoRAs with strengths, tagged with the selected connection's scope."""
+    lane = trained_lane(scene)
+    if lane is None:
+        return
+    scope = module("blender.reference_form").scope_key(selected.scope)
+    for model_id, name, scale in (
+        ("update-lora", "Preserved LoRA Café 雪", 0.8),
+        ("update-lora-second", "Second preserved LoRA", 1.25),
+    ):
+        slot = lane.trained.add()
+        slot.model_id, slot.name, slot.kind, slot.lane = model_id, name, "lora", "image"
+        slot.fmin, slot.fmax, slot.has_scale = 0.0, 2.0, True
+        slot.scale = scale
+        slot[TRAINED_SCOPE] = scope
+
+
+def trained_snapshot(scene, other=None):
+    """The saved choice, which only its own connection may use for a request."""
+    lane = trained_lane(scene)
+    if lane is None or not len(lane.trained):
+        return None
+    if other is not None:
+        trained = module("blender.trained_models")
+        runtime = module("blender.runtime")
+        if trained.scope_error(lane) is not None:
+            raise RuntimeError("Update separated the trained choice from its connection")
+        with patch.object(runtime.state, "job_store", other):
+            if trained.scope_error(lane) is None:
+                raise RuntimeError("Trained choices escaped their selected connection")
+    return [
+        {
+            "model_id": slot.model_id,
+            "name": slot.name,
+            "kind": slot.kind,
+            "lane": slot.lane,
+            "scale": round(slot.scale, 4),
+            "has_scale": slot.has_scale,
+            "range": [round(slot.fmin, 4), round(slot.fmax, 4)],
+            "scope": slot.get(TRAINED_SCOPE),
+        }
+        for slot in lane.trained
+    ]
+
+
 def seed(profile):
     import bpy
 
@@ -719,6 +775,7 @@ def seed(profile):
     ref["_scenario_reference_asset"] = "update-asset"
     seed_workflow(scene, selected)
     seed_lanes(scene, selected)
+    seed_trained(scene, selected)
     bpy.ops.wm.save_userpref()
     bpy.ops.wm.save_as_mainfile(filepath=str(profile / "state.blend"), check_existing=False)
 
@@ -739,6 +796,7 @@ def check_project_scope(paths, prefs, selected, *, scene=None):
         film_upload_snapshot(selected, other)
         if scene is not None:
             workflow_snapshot(scene, other)
+            trained_snapshot(scene, other)
         if other.records() or uploads.records():
             raise RuntimeError("Update lost job or upload project isolation")
         if hasattr(other, "trained_defaults") and (
@@ -835,6 +893,7 @@ def snapshot(profile):
         "scene": scene,
         "workflow": workflow_snapshot(bpy.context.scene, other),
         "environment": environment_snapshot(),
+        "trained": trained_snapshot(bpy.context.scene, other),
         "original_source": digest((profile / "reference.png").read_bytes()),
         "original_mesh_source": digest((profile / "reference.glb").read_bytes()),
     }
@@ -927,6 +986,7 @@ def main():
                         expected["workflow"] and expected["workflow"].get("pending_upload")
                     ),
                     "environment_lane_preserved": expected["environment"] is not None,
+                    "trained_selection_preserved": expected["trained"] is not None,
                     "service_requests": 0,
                     **evidence,
                 }

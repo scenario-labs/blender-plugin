@@ -39,7 +39,9 @@ class Service:
     """Record every request; ``faults`` maps (method, path) to scripted behaviors.
 
     An int status refuses without applying, ``"apply-timeout"`` applies the
-    change and then loses the response.
+    change and then loses the response. An add is one transaction, as the
+    service was observed to behave: a re-add or more than 49 assets refuses the
+    whole request with a 400 and writes nothing.
     """
 
     def __init__(self):
@@ -117,6 +119,14 @@ class Service:
         if len(parts) == 2 and parts[0] == "collections" and method == "GET":
             return httpx.Response(200, json={"collection": self.collections[parts[1]]})
         if len(parts) == 3 and parts[0] == "collections" and parts[2] == "assets":
+            if method == "PUT" and len(body["assetIds"]) > 49:
+                reason = "You can not add more than 49 assets at once."
+                return httpx.Response(400, json={"reason": reason, "detail": PRIVATE})
+            if method == "PUT" and any(
+                parts[1] in self.assets[i]["collectionIds"] for i in body["assetIds"]
+            ):
+                reason = "One or more assets are already part of the collection"
+                return httpx.Response(400, json={"reason": reason, "detail": PRIVATE})
             for identifier in body["assetIds"]:
                 members = self.assets[identifier]["collectionIds"]
                 if method == "PUT" and parts[1] not in members:
@@ -301,6 +311,37 @@ class AssetOrganizationToolTests(unittest.TestCase):
         self.assertEqual(
             {**shared, "context_id": result["context_id"], "note": result["note"]}, result
         )
+
+    def test_member_added_after_prepare_is_skipped_and_the_rest_sent_again(self):
+        arguments = {"asset_ids": ["asset-a", "asset-b"], "collection_id": "props"}
+        review = self.ready(operation="add_to_collection", **arguments)
+        self.assertEqual(review["request_count"], 1)
+        # Another client adds one asset before apply; the service then refuses
+        # the whole add, writing nothing, and only the other asset is resent.
+        self.service.assets["asset-a"]["collectionIds"].append("props")
+        result = self.apply(review)
+        self.assertEqual(result["phase"], "FINISHED")
+        self.assertEqual(result["result"]["state"], "VERIFIED")
+        self.assertEqual(result["result"]["requests_sent"], 2)
+        self.assertEqual(
+            [(row["state"], row["in_collection"]) for row in result["result"]["outcomes"]],
+            [("VERIFIED", True), ("VERIFIED", True)],
+        )
+        self.assertEqual(
+            self.service.writes,
+            [
+                ("PUT", "/v1/collections/props/assets", {"assetIds": ["asset-a", "asset-b"]}),
+                ("PUT", "/v1/collections/props/assets", {"assetIds": ["asset-b"]}),
+            ],
+        )
+        self.assertTrue(
+            result["message"].endswith(
+                "Already in the collection: 1 of 2 assets; the rest were sent again"
+            ),
+            result["message"],
+        )
+        self.assertIn("confirmed every change", result["note"])
+        self.assert_public(result)
 
     def test_tag_changes_send_only_what_differs(self):
         self.service.assets["asset-a"]["tags"] = ["hero"]

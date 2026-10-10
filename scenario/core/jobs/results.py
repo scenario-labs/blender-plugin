@@ -142,11 +142,11 @@ class ResultCommands:
                 raise StoreConflict("Result job is missing or changed; reload before acting")
             return current
 
-    def _request(self, method, identifier):
+    def _request(self, method, identifier, **options):
         with self._guard():
             pass
         try:
-            return method(identifier)
+            return method(identifier, **options)
         except ValueError:
             raise ResultError("Scenario result metadata could not be retrieved") from None
 
@@ -235,7 +235,7 @@ class ResultCommands:
             return ModelTextResult(current, asset_id, text)
 
     def _read_text_asset(self, identifier):
-        asset = self._request(self._adapter.asset, identifier)
+        asset = self._request(self._adapter.asset, identifier, original_assets=True)
         if (
             asset.get("id") != identifier
             or asset.get("status") != "success"
@@ -312,7 +312,8 @@ class ResultCommands:
             raise ResultError("Scenario returned invalid result asset identities") from None
         assets = []
         for index, identifier in enumerate(identifiers):
-            record = self._request(self._adapter.asset, identifier)
+            # Downloads need the untransformed bytes that mimeType and size describe.
+            record = self._request(self._adapter.asset, identifier, original_assets=True)
             # Provider filenames/URL paths never choose local storage paths.
             mime = original_media_type(record) or record.get("mimeType")
             suffix = ext_for_mime(mime) if isinstance(mime, str) else "bin"
@@ -366,7 +367,9 @@ class ResultCommands:
                 if item.receipt is not None:
                     self._downloader.verify(directory, item.receipt)
                     continue
-                response = self._request(self._adapter.asset, item.asset.asset_id)
+                response = self._request(
+                    self._adapter.asset, item.asset.asset_id, original_assets=True
+                )
                 # The saved manifest chose the file; schema 9 manifests keep the asset
                 # file even if Scenario now declares an original.
                 fresh = _asset(

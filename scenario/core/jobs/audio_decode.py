@@ -38,7 +38,14 @@ from ..audio_waveform import (
     WaveformCanceled,
     WaveformError,
 )
-from .local_render import LocalRenderError, RenderCancelled, _environment, _run, blender_path
+from .local_render import (
+    LocalRenderError,
+    LocalRenderTimeout,
+    RenderCancelled,
+    _environment,
+    _run,
+    blender_path,
+)
 from .transfers import TransferError
 from .upload_sources import _open
 
@@ -246,7 +253,6 @@ def decode(source, directory, spec, *, cancel=None, max_seconds=MAX_SECONDS, bin
             "--",
             blender_path(request),
         ]
-        started = time.monotonic()
         try:
             _run(
                 command,
@@ -257,9 +263,11 @@ def decode(source, directory, spec, *, cancel=None, max_seconds=MAX_SECONDS, bin
             )
         except RenderCancelled:
             raise WaveformCanceled("Waveform preview canceled") from None
+        except LocalRenderTimeout:
+            # Only a child still running at the deadline timed out. One that exited
+            # with a failure near the deadline keeps the reason it reported.
+            raise WaveformError("Waveform decoding timed out; use Retry") from None
         except LocalRenderError:
-            if time.monotonic() - started >= spec.timeout:
-                raise WaveformError("Waveform decoding timed out; use Retry") from None
             raise WaveformError(_failure(output)) from None
         if cancel.is_set():
             raise WaveformCanceled("Waveform preview canceled")

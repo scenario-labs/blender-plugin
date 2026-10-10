@@ -1254,6 +1254,14 @@ def list_generations(args):
         result["more_loaded"] = hidden
     if runtime.state.history_token:
         result["older_page"] = True
+    if runtime.state.history_older_error:
+        # Like native Load older: keep loaded rows and retry the same cursor, unless it cycled.
+        result["older_error"] = runtime.state.history_older_error
+        result["note"] = (
+            "older pages repeated a cursor; loaded rows kept; call with refresh=true to restart"
+            if runtime.state.history_older_error == history.CURSOR_CYCLE
+            else "older page read failed; loaded rows kept; retry with older=true"
+        )
     if runtime.state.history_loading:
         result["note"] = "showing loaded history while refresh is pending; call again"
     return result
@@ -2341,7 +2349,7 @@ SPECS = (
             "List recent cloud generations using this Blender runtime's loaded history.\n"
             "Args:\n"
             "  - limit: optional integer, default 20, maximum number of rows to return.\n"
-            "  - older: optional boolean, load the next older cloud page when older_page is true, or retry a failed older read; then poll without older. more_loaded counts loaded rows beyond limit.\n"
+            "  - older: optional boolean, load the next older cloud page when older_page is true, or retry a failed older read; then poll without older. more_loaded counts loaded rows beyond limit. A failed older read keeps the loaded rows and returns older_error; retry it with older, or use refresh when the note reports a repeated cursor.\n"
             "  - refresh: optional boolean, request a new cloud page or retry a failed read; then poll without refresh.\n"
             "Returns: generations[] with job_id, kind, model_id, prompt, status, cu_cost, empty local_files and local_request_ids. Matching scoped saved jobs expose request IDs; inspect list_local_jobs and use explicit result approval. Use recover_cloud_job for unsaved completed model jobs. The first call may return an empty list and a note while history loads; call again after loading.\n"
             'Example: {"limit": 10}.\n'

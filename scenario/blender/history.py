@@ -10,6 +10,9 @@ from ..core.api.errors import ScenarioError
 from ..core.jobs.store import StoreError
 from . import runtime
 
+# Retrying the cursor would repeat the cycle; only a refresh restarts paging.
+CURSOR_CYCLE = "Scenario repeated a history cursor; refresh history"
+
 
 def saved_records():
     """Read current scoped storage, independently of the displayed cloud page."""
@@ -59,6 +62,7 @@ def _request(catalog, token, append):
     runtime.state.history_request = key
     runtime.state.history_loading = True
     runtime.state.history_error = ""
+    runtime.state.history_older_error = ""
     manager.fetch_history(catalog, key, token, append=append)
     return manager
 
@@ -94,7 +98,7 @@ def on_history_event(payload):
     if payload.get("cursor"):
         cursors.add(payload["cursor"])
     if payload.get("token") in cursors:
-        error = "Scenario repeated a history cursor; refresh history"
+        error = CURSOR_CYCLE
     if not error:
         try:
             manager = runtime.ensure_manager()
@@ -109,7 +113,11 @@ def on_history_event(payload):
         except (AttributeError, TypeError, ValueError, KeyError):
             error = "Scenario returned an invalid history page"
     if error:
-        runtime.state.history_error = error
+        if payload.get("append"):
+            # Loaded rows and the cursor stay valid: retry the same older page, as Load older does.
+            runtime.state.history_older_error = error
+        else:
+            runtime.state.history_error = error
         runtime.set_message(f"Could not load history: {error}")
         return
     if payload.get("append"):
@@ -121,3 +129,4 @@ def on_history_event(payload):
     runtime.state.history_cursors = cursors
     runtime.state.history_loaded = True
     runtime.state.history_error = ""
+    runtime.state.history_older_error = ""

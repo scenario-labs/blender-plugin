@@ -370,7 +370,10 @@ cursor remains, and says so when a page listed no generation. MCP
 `list_generations` reports rows beyond its `limit` as `more_loaded` and a
 remaining cursor as `older_page`; `older=true` requests that page through the
 same cursor and pending-read rules as **Load older**, and retries a failed older
-read. It accepts only JSON booleans and cannot be combined with `refresh`.
+read. It accepts only JSON booleans and cannot be combined with `refresh`. A
+failed older read sets a separate older-page error and keeps the loaded rows and
+cursor, as **Load older** does: later MCP calls return those rows with
+`older_error` and a retry note, and only a repeated cursor points to `refresh=true`.
 
 Cloud rows now identify matching jobs in the selected credential-bound store.
 Those rows offer **Inspect saved jobs**, which exposes the existing recovery and

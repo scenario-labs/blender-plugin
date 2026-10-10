@@ -502,7 +502,9 @@ def _align_lora_scales(component, fields, selected, values):
     missing = RouteError(f"{_label(scale)}: provide a strength for each LoRA in {_label(model)}.")
     if scales is None:
         if isinstance(default, list) and len(default) == len(loras):
-            return  # schema_defaults already copied the declared strengths.
+            # An empty caller value may have replaced the copied default.
+            values[component.scale_input] = deepcopy(default)
+            return
         if per_item is None:
             raise missing
         values[component.scale_input] = [per_item] * len(loras)

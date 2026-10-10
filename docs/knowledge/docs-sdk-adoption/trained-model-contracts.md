@@ -18,7 +18,7 @@
       "tests/fixtures/models/trained/contracts.json": "15c19f7c77dd5dbc9c94b61a1cad8b3785a0105d7c4f21c984bdabf26e0fa779",
       "scenario/core/api/sdk_adapter.py": "7909438eeba80757ded5f6ce531a5a82b86bfc1ca812215a3e8b868b2ff6fa19",
       "scenario/core/api/catalog.py": "b6ba46cea2581665879d6083330fa2aae536af42b31c80420f16ba49e92fb08f",
-      "scenario/core/schema/forms.py": "eb04a03f257b330a79786232d7e8a4c285dd74a89089a3a22d7f4b19e6d13408"
+      "scenario/core/schema/forms.py": "249d12ebf9d86a3db957896b8a16730841c86794489f80bf77a862de86a0a0da"
     }
   }
 }

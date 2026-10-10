@@ -574,6 +574,19 @@ def test_prepare_takes_a_declared_strength_default_but_never_invents_one():
         prepare({**PROMPT, "loras": [LORA_A]}, record)
 
 
+@pytest.mark.parametrize("empty", [None, []])
+@pytest.mark.parametrize("default,expected", [(0.65, [0.65, 0.65]), ([0.4, 0.6], [0.4, 0.6])])
+def test_an_empty_strength_takes_the_declared_default_instead_of_dropping_it(
+    empty, default, expected
+):
+    # An empty scale replaces the copied default in the payload; the declared
+    # default must be written back rather than sending LoRAs without strengths.
+    record = base()
+    inputs(record)["lorasScale"]["default"] = default
+    payload = {**PROMPT, "loras": [LORA_A, LORA_B], "lorasScale": empty}
+    assert prepare(payload, record)["lorasScale"] == expected
+
+
 def test_a_selection_from_schema_defaults_alone_is_left_to_the_service():
     record = base()
     inputs(record)["loras"]["default"] = [LORA_A]

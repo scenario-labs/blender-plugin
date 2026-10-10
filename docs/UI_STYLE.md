@@ -842,8 +842,10 @@ A workflow run has its own row with the node-tree icon and the sum of its step
 charges; when a step cannot be read, it shows **Cost unavailable** rather than
 0 CU. Its steps keep their rows with a linked note that they are included in
 the run's total once it is known, which stays true while the run is running or
-its cost is unavailable. Workflow rows offer no **Save for recovery**; their
-model steps do. Step reads happen on the history worker, never while drawing.
+its cost is unavailable. A row whose own charge is malformed also shows
+**Cost unavailable**, while the other rows still load. Workflow rows offer no
+**Save for recovery**; their model steps do. Step reads happen on the history
+worker, never while drawing.
 
 The exact ZIP with SHA-256
 `30b0e2c03268e81a64ad83d0cc2924be9d0afaac8d7aebf9a80b3aafc9349b2c`

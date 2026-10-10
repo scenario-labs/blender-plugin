@@ -358,11 +358,17 @@ the main action. Workflow runs (`jobType: workflow`) are listed beside their
 model steps. A run's own charge is normally 0, so its row adds the charges of
 the steps named by `metadata.flow[].jobId` or by a step's `metadata.workflowJobId`.
 The history worker reads a finished run's missing steps with
-`jobs.with_raw_response.retrieve`, at most 24 per page. A failed or malformed
-step read, a cycle or nesting deeper than four runs leaves the run's cost
-unavailable instead of reporting 0; a running workflow shows no cost yet. Step
-rows name their run so the total is not counted twice. Malformed billing on a
-listed row still fails the page, and drawing performs no reads.
+`jobs.with_raw_response.retrieve`, at most 24 per page. It chooses whole runs,
+those needing the fewest reads first, so one large loop cannot starve the other
+runs on the page; a run that does not fit gets no reads, since a partial read
+could not price it. A second pass reads the missing steps of nested runs that the
+first pass found, within the same 24 reads, and never retries an identifier.
+A failed or malformed step read, a cycle, nesting deeper than four runs or
+nesting that would need a third pass leaves the run's cost unavailable instead
+of reporting 0; a running workflow shows no cost yet. Step rows name their run
+so the total is not counted twice. Malformed billing on a listed row makes only
+that row's cost unavailable; malformed metadata still fails the page. Drawing
+performs no reads.
 
 The existing worker queue delivers pages to both the GUI and headless MCP.
 Connection identity and request keys reject superseded results and errors;

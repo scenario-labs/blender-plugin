@@ -435,7 +435,8 @@ A price includes add-on fees, such as quality checks, charged on top of the
 generation. A workflow run shows the total of its steps. If a step cannot be
 read, the run shows **Cost unavailable**, not 0 CU. Its steps also appear with
 a note that they are included in the run's total once it is known, so do not
-add them to that total again.
+add them to that total again. A job whose charge Scenario reports in an
+unexpected form also shows **Cost unavailable**.
 
 For a job saved by this extension's shared runtime, choose **Inspect saved jobs**.
 Use its explicit recovery controls to resume a download, then review the selected

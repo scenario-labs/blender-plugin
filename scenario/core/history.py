@@ -22,7 +22,7 @@ class HistoryEntry:
     local_files: list = field(default_factory=list)
     local_request_ids: tuple[str, ...] = ()
     workflow_id: str = ""
-    # A finished workflow run whose step charges could not all be read.
+    # Malformed billing, or a finished workflow run whose step charges could not all be read.
     cost_unavailable: bool = False
     # The workflow run this step belongs to; its cost is part of that total.
     workflow_job_id: str = ""
@@ -102,21 +102,30 @@ def _parents(rows):
     return children
 
 
-def missing_workflow_steps(jobs, limit=24):
-    """Step job IDs that finished workflow runs name but `jobs` does not contain."""
+def missing_workflow_steps(jobs, limit=24, *, attempted=()):
+    """Step job IDs that finished workflow runs name but `jobs` does not contain.
+
+    At most `limit` IDs, chosen by whole run, fewest first, so one large loop
+    cannot starve the other runs. A run that does not fit, or names an
+    `attempted` step still absent, gets no reads: it could not be priced.
+    """
     jobs = [row for row in jobs if isinstance(row, dict)]
     known = {row.get("jobId") for row in jobs}
+    attempted = set(attempted)
     children = _parents(jobs)
-    missing = []
+    needs = []
     for job in jobs:
         status = job.get("status")
         if job.get("jobType") != "workflow" or str(status or "").lower() not in TERMINAL:
             continue
-        for identifier in _step_ids(job, children):
-            if identifier not in known and identifier not in missing:
-                if len(missing) >= limit:
-                    return missing
-                missing.append(identifier)
+        need = [identifier for identifier in _step_ids(job, children) if identifier not in known]
+        if need and attempted.isdisjoint(need):
+            needs.append(need)
+    missing = []
+    for need in sorted(needs, key=len):  # Stable: page order among equal needs.
+        new = [identifier for identifier in need if identifier not in missing]
+        if len(missing) + len(new) <= limit:
+            missing.extend(new)
     return missing
 
 
@@ -193,7 +202,10 @@ def entries_from_jobs(jobs, local_records, kinds=None, *, shared_records=(), rel
         local = None if shared else local_by_job.get(job_id)
         model_id = "" if workflow else inp.get("modelId") or (local.model_id if local else "")
         status = (job.get("status") or "").lower()
-        cost = job_cost(job)  # Malformed billing on a listed row fails the page.
+        try:
+            cost, malformed = job_cost(job), False
+        except (AttributeError, TypeError, ValueError):
+            cost, malformed = None, True  # Only this row's cost becomes unavailable.
         if workflow:
             # A running workflow has not charged every step yet.
             cost = workflow_cost(job, rows, children) if status in TERMINAL else None
@@ -217,7 +229,7 @@ def entries_from_jobs(jobs, local_records, kinds=None, *, shared_records=(), rel
                 local_files=list(local.files) if local else [],
                 local_request_ids=shared,
                 workflow_id=str(meta.get("workflowId") or "") if workflow else "",
-                cost_unavailable=workflow and status in TERMINAL and cost is None,
+                cost_unavailable=cost is None and (malformed or (workflow and status in TERMINAL)),
                 workflow_job_id=_identity(meta.get("workflowJobId")) or "",
             )
         )

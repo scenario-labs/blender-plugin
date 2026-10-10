@@ -487,15 +487,36 @@ class SDKHistoryTests(unittest.TestCase):
         self.assertEqual(self.runtime.state.history_token, "page-three")
         self.assertIn("repeated", self.runtime.state.history_error)
 
-    def test_malformed_metadata_and_billing_fail_without_partial_delivery(self):
-        for malformed in ({"metadata": [1]}, {"billing": {"cuCost": "invalid"}}):
-            with self.subTest(malformed=malformed):
-                self.page = {"jobs": [{**job(prompt="text"), **malformed}]}
+    def test_malformed_metadata_fails_the_page_and_malformed_billing_only_its_cost(self):
+        self.page = {"jobs": [{**job(prompt="text"), "metadata": [1]}]}
+        self.history.refresh()
+        self.deliver()
+        self.assertFalse(self.runtime.state.history)
+        self.assertFalse(self.runtime.state.history_loading)
+        self.assertTrue(self.runtime.state.history_error)
+        for billing in (
+            {"cuCost": "invalid"},
+            {"cuCost": 1, "cuCostDetails": {"quality-gate": "x"}},
+            [1],
+        ):
+            with self.subTest(billing=billing):
+                self.page = {
+                    "jobs": [
+                        {**job("job-bad", "text"), "billing": billing},
+                        {**job("job-good", "text"), "billing": {"cuCost": 2}},
+                    ]
+                }
                 self.history.refresh()
                 self.deliver()
-                self.assertFalse(self.runtime.state.history)
-                self.assertFalse(self.runtime.state.history_loading)
-                self.assertTrue(self.runtime.state.history_error)
+                self.assertFalse(self.runtime.state.history_error)
+                entries = {e.job_id: e for e in self.runtime.state.history}
+                self.assertIsNone(entries["job-bad"].cu_cost)
+                self.assertTrue(entries["job-bad"].cost_unavailable)
+                self.assertEqual(entries["job-good"].cu_cost, 2.0)
+                self.assertFalse(entries["job-good"].cost_unavailable)
+                rows = {r["job_id"]: r for r in self.tools.list_generations({})["generations"]}
+                self.assertTrue(rows["job-bad"]["cost_unavailable"])
+                self.assertEqual(rows["job-good"]["cu_cost"], 2.0)
 
     def test_workflow_run_cost_sums_steps_and_unknown_steps_are_unavailable(self):
         from test_model_picker import FakeLayout

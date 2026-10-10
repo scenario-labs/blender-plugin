@@ -230,20 +230,57 @@ def test_nested_workflow_runs_are_bounded_and_cycles_are_unavailable():
     assert entries["job_x"].cost_unavailable and entries["job_x"].cu_cost is None
 
 
-def test_missing_steps_are_bounded_unique_and_skip_running_runs():
+def test_missing_steps_are_bounded_unique_and_read_only_for_runs_that_fit():
     runs = [workflow_run(f"job_run{i}", [f"job_{i}_{j}" for j in range(10)]) for i in range(5)]
     missing = history.missing_workflow_steps(runs, limit=24)
-    assert len(missing) == 24 and len(set(missing)) == 24
-    assert missing[:10] == [f"job_0_{j}" for j in range(10)]
+    # Whole runs only: a third run would not fit, and a partial read cannot price it.
+    assert missing == [f"job_{i}_{j}" for i in range(2) for j in range(10)]
     bad = workflow_run("job_bad", ["job_a"])
     bad["metadata"]["flow"] = [{"jobId": "bad/id"}, "node", {"jobId": 3}]
     assert history.missing_workflow_steps([bad]) == []
 
 
-def test_malformed_listed_run_billing_fails_but_malformed_rows_do_not_break_step_discovery():
+def test_one_large_loop_cannot_starve_sibling_runs():
+    large = workflow_run("job_large", [f"job_l{i}" for i in range(30)])
+    pair = workflow_run("job_pair", ["job_p0", "job_p1", "job_shared"])
+    single = workflow_run("job_single", ["job_shared"])
+    runs = [large, pair, single]
+    # Fewest reads first, steps shared between runs once, the oversized loop never.
+    assert history.missing_workflow_steps(runs, limit=24) == ["job_shared", "job_p0", "job_p1"]
+    assert history.missing_workflow_steps([large], limit=24) == []
+    assert history.missing_workflow_steps(runs, limit=2) == ["job_shared"]
+    # A step already attempted but still absent makes its run unpriceable.
+    assert history.missing_workflow_steps(runs, limit=24, attempted=["job_shared"]) == []
+    assert history.missing_workflow_steps(runs, limit=24, attempted=["job_p0"]) == ["job_shared"]
+
+
+def test_malformed_listed_billing_makes_only_that_rows_cost_unavailable():
     run = workflow_run("job_run", ["job_a"])
     run["billing"] = {"cuCost": "invalid"}
-    with pytest.raises(ValueError):
-        history.entries_from_jobs([step("job_a", "job_run", 1), run], [])
+    bad = step("job_bad", None, 1, "x")
+    bad["metadata"].pop("workflowJobId")
+    unknown = step("job_list", None, 1)
+    unknown["billing"] = [1]
+    plain = step("job_plain", None, 1)
+    plain.pop("billing")
+    jobs = [step("job_a", "job_run", 1), run, bad, unknown, plain]
+    entries = {e.job_id: e for e in history.entries_from_jobs(jobs, [])}
+    for identifier in ("job_run", "job_bad", "job_list"):
+        assert entries[identifier].cu_cost is None, identifier
+        assert entries[identifier].cost_unavailable, identifier
+    assert entries["job_a"].cu_cost == 2.75 and not entries["job_a"].cost_unavailable
+    # No billing at all is still no cost, not an unavailable one.
+    assert entries["job_plain"].cu_cost is None and not entries["job_plain"].cost_unavailable
+    running = workflow_run("job_run", ["job_a"], status="in-progress")
+    running["billing"] = {"cuCost": 0, "cuCostDetails": []}
+    [entry] = history.entries_from_jobs([running], [])
+    assert entry.cu_cost is None and entry.cost_unavailable
     rows = [{"jobId": "job_x", "metadata": [1]}, workflow_run("job_run", ["job_a"]), "row"]
     assert history.missing_workflow_steps(rows) == ["job_a"]
+
+
+def test_malformed_listed_metadata_still_fails_the_page():
+    row = step("job_a", None, 1)
+    row["metadata"] = [1]
+    with pytest.raises(AttributeError):
+        history.entries_from_jobs([row], [])

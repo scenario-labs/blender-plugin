@@ -682,9 +682,12 @@ Each row's `cu_cost` is the job's `billing.cuCost` plus its `cuCostDetails`
 add-ons, such as quality-gate fees. Workflow runs appear as `kind=workflow`
 rows whose own charge is normally 0; their `cu_cost` adds the charges of the
 step jobs named by the run's flow or by each step's `workflowJobId`. Steps
-missing from the page are read on the history worker, at most 24 per page. If
-any step cannot be read or priced, the finished run reports `cu_cost: null` and
-`cost_unavailable: true` instead of 0; a running workflow reports no cost yet.
+missing from the page are read on the history worker, at most 24 per page,
+whole runs with the fewest missing steps first, then once more for the steps of
+nested runs within the same limit. If any step cannot be read or priced, the
+finished run reports `cu_cost: null` and `cost_unavailable: true` instead of 0;
+a running workflow reports no cost yet. A row whose own billing is malformed
+reports the same, while the other rows keep their costs.
 Step rows keep their own cost and name their run in `workflow_job_id`. A run's
 non-null `cu_cost` already includes them, so do not add them again; while the
 run is running or its cost is unavailable, no total includes them yet. Workflow

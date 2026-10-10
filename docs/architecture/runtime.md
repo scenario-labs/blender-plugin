@@ -60,8 +60,12 @@ from the private list and public LoRAs are classified from REST fields; a
 malformed `type` is unsupported rather than an exception. The native catalog
 load now reads the private trained list as well, and the picker's Trained chip
 reads base-model descriptions on demand
-([trained models in the native picker](../SDK_ADOPTION.md#trained-models-in-the-native-picker));
-local MCP does not list trained models yet. Lane lists and the picker's other
+([trained models in the native picker](../SDK_ADOPTION.md#trained-models-in-the-native-picker)).
+Local MCP `list_models` with the trained source starts the same reads and lists the
+same rows, `estimate_cost` and `render_form` build trained choices with the same
+`trained_routes.apply` as the forms, and `model_defaults` uses the forms' defaults
+owner ([trained models through local MCP](../MCP.md#trained-models-loras-and-compositions)).
+Lane lists and the picker's other
 chips keep their former exclusion of LoRAs, compositions and other trained
 types, and still list a private custom model that reaches them.
 See [trained-model catalog reads](../SDK_ADOPTION.md#trained-model-catalog-reads).

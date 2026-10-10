@@ -49,7 +49,9 @@ limits of its current controls. It does not replace Scenario's service policies.
   captures, uploads and paid generations on your behalf. It can also change
   the collection membership and tags of your Scenario assets or create a
   collection, sending the chosen asset IDs, tags and collection names. Its own
-  service may receive what that agent reads from Blender.
+  service may receive what that agent reads from Blender. That includes the
+  names, IDs and types of the selected project's trained models, and its
+  per-project trained-model defaults, which the agent can also save or clear.
 - Set up official repository and Check for updates use Blender's native extension
   manager to contact the public repository. Blender sends its usual compatibility
   parameters and network metadata; these actions do not send Scenario credentials,

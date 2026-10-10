@@ -382,8 +382,11 @@ is not available to the selected credentials or project (HTTP 404)", never a
 model ID, name or service reply. The sidebar estimate status shows it instead of
 the generic price error, and local MCP `estimate_cost` returns it as the tool
 error. The native picker and every form request now build selections with `apply`
-(see [trained models in the native picker](#trained-models-in-the-native-picker));
-local MCP listings and MCP defaults remain #97 work.
+(see [trained models in the native picker](#trained-models-in-the-native-picker)),
+and so do local MCP requests ([trained models through local MCP](#trained-models-through-local-mcp)).
+A problem the listed records already show, such as a LoRA in `modelIdInput`, is
+then refused before any request with the same text as a `RouteError`; the fresh
+reads still catch what changed since the listing.
 
 Every call here is an existing public SDK 2.2.0 method; there is no raw
 fallback, SDK extension, SDK issue or dependency change. Offline tests compare
@@ -443,6 +446,37 @@ raw fallback, SDK extension, SDK issue or dependency change. Offline and install
 tests use the captured public fixtures and synthetic private records behind a
 socket-free transport. No live read, dry run or paid run was made for this work,
 and private LoRAs and compositions remain unverified against the service.
+
+## Trained models through local MCP
+
+Local MCP adds no Scenario operation for trained models. `list_models` with the
+trained source starts the same reads as the picker's Trained chip: the private
+trained list through `SDKAdapter.models(privacy="private")`
+(`models.with_raw_response.list` with `privacy=private`, `status=trained` and the
+selected project), read again only after a failed read, and the lane's unknown
+base-model descriptions through `SDKCatalog.get` (`SDKAdapter.model`,
+`models.with_raw_response.retrieve` with the selected project), once per
+connection. `model_schema` reads a description the same way. `estimate_cost`
+rebuilds a base's LoRA inputs with `trained_routes.apply` from the listed records
+before the unchanged quote: the fresh reads above, then
+`generate.with_raw_response.run_model` with `dry_run="true"`; `generate` submits
+through the same coordinator with `max_retries=0`. A refused choice makes no
+request. `model_defaults` reads and writes only the local job store, and checks a
+new default against the descriptions and trained list already read, starting one
+missing base description read like a form's default does.
+
+The same choice through the form and through MCP builds byte-identical payloads,
+so the saved intent's `payload_sha256` and target match. Two client-side
+representations changed for this: form decimal fields send the shortest decimal
+their 32-bit storage holds, and MCP model requests start number parameters that
+are not given at their declared default in the field's type, as a form does. The
+service receives the same values as before in a different JSON spelling (`0.8`
+rather than `0.800000011920929`, `0.0` rather than `0`).
+
+Every call is an existing public SDK 2.2.0 method; there is no new SDK method, raw
+fallback, SDK extension, SDK issue or dependency change. Installed tests use the
+captured public fixtures and synthetic private records behind a socket-free
+transport; no live read, dry run or paid run was made for this work.
 
 ## Model acceptance commands
 

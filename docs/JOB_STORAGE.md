@@ -526,9 +526,18 @@ read again. Only `stack` and `composition` defaults are written. A form with no
 explicit choice in the scope takes its lane default once the routes check against
 fresh descriptions and the form lists its base; otherwise its price stays blocked
 with the reason, never falling back to the base model. An unreadable row is
-reported for its lane and left unchanged. Local MCP has no tool to read, save or
-clear defaults yet; `render_form` inspection and render quotes apply a Render
-Image form's default the way the GUI pump does.
+reported for its lane and left unchanged. `render_form` inspection and render
+quotes apply a Render Image form's default the way the GUI pump does.
+
+Local MCP `model_defaults` reads, saves and clears the same rows through the same
+module ([trained models](MCP.md#trained-models-loras-and-compositions)). `get`
+returns the owner's `context_id` with each lane's revision and default; `set` and
+`clear` pass that context and revision back, like **Save** and **Clear**, and go
+through the same write path (`trained_defaults.store` and `clear`). A default set
+through MCP names a base and its picks explicitly; it is checked with the same
+`resolve` that applies a default to a form, so a choice that cannot run in that
+form now is refused, and only `stack` and `composition` defaults are written. An
+unreadable row is reported in `error` and left unchanged.
 
 ### Upgrade from schema 9
 

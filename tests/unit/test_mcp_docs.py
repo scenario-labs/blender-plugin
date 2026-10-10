@@ -76,3 +76,15 @@ def test_initialize_guidance_identifies_hosted_platform_boundary():
 
     # This is explanatory prose, not a URL validation boundary.
     assert any(word == "mcp.scenario.com" for word in INSTRUCTIONS.split())
+
+
+def test_initialize_guidance_routes_local_organization_through_review():
+    from scenario.mcp.protocol import INSTRUCTIONS
+
+    review = INSTRUCTIONS.index("prepare_asset_organization")
+    assert review < INSTRUCTIONS.index("apply_asset_organization")
+    assert "explicit approval" in INSTRUCTIONS
+    assert "never repeat an unconfirmed change" in INSTRUCTIONS
+    reference = (ROOT / "docs/MCP.md").read_text()
+    assert "\n## Asset organization\n" in reference
+    assert "(#asset-organization)" in reference

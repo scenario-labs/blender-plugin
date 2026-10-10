@@ -1,6 +1,7 @@
 # SPDX-FileCopyrightText: 2026 Scenario Inc.
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""Saved image results handed to the Render Video first frame through the shared runtime and MCP.
+"""Saved image results handed to the Render Video first frame through the shared runtime,
+local MCP and the native saved-job controls.
 
 Synthetic SDK transport and real job storage; no physical desktop interaction.
 """
@@ -10,7 +11,8 @@ import tempfile
 import unittest
 from dataclasses import replace
 from pathlib import Path
-from unittest.mock import patch
+from types import SimpleNamespace
+from unittest.mock import MagicMock, patch
 
 import bpy
 import test_model_generation as model_tests
@@ -182,6 +184,16 @@ class FirstFrameHandoffTests(unittest.TestCase):
     def network(self):
         return len(self.calls), len(self.paid), len(self.downloads)
 
+    def slot_values(self, lane):
+        """Every first-frame slot's RNA fields and ID properties, for change checks."""
+        return [
+            (
+                (ref.param_name, ref.source, ref.asset_id, ref.filepath, ref.label),
+                {key: str(ref[key]) for key in ref.keys()},
+            )
+            for _, ref in self.first_frames(lane)
+        ] + [(lane.first_frame_path, lane.use_first_frame, lane.estimate_state)]
+
     # -- tests ------------------------------------------------------------
 
     def test_saved_png_binds_its_asset_without_upload_path_spend_or_job_change(self):
@@ -191,10 +203,17 @@ class FirstFrameHandoffTests(unittest.TestCase):
         record, before = self.store.get(request_id), self.network()
         owner = self.runtime.state.model_jobs
         self.assertIn("use_first_frame", owner.status(request_id)["actions"])
-        # Native surfaces draw nothing for this MCP-only action, without failing.
+        # Native surfaces offer the same review for the projected still.
         recovery = submodule("blender.job_recovery")
-        drawn = recovery.result_actions(owner.views[request_id])
-        self.assertNotIn("use_first_frame", {item.action for item in drawn})
+        drawn = [
+            (item.label, item.operator, dict(item.properties)["asset_id"])
+            for item in recovery.result_actions(owner.views[request_id])
+            if item.action == "use_first_frame"
+        ]
+        self.assertEqual(
+            drawn,
+            [("Use as video first frame (1)", "scenario.use_saved_first_frame", "result-image")],
+        )
         approval = self.prepare(request_id)
         self.assertEqual(
             {
@@ -599,6 +618,276 @@ class FirstFrameHandoffTests(unittest.TestCase):
         self.runtime.ensure_job_session()
         self.assertIn("another connection", self.form.scope_error(lane))
         self.assertIsNone(self.handoff.saved_source(self.runtime.state.job_store, ref))
+
+    # -- native controls --------------------------------------------------
+
+    def native_operator(self, request_id, asset_id="result-image"):
+        """The native review operator on a stand-in instance with a recording layout."""
+        args = self.recovery_args(request_id, "use_first_frame")
+        operator = submodule("blender.job_recovery").SCENARIO_OT_use_saved_first_frame
+        fake = SimpleNamespace(
+            context_id=args["context_id"],
+            request_id=request_id,
+            expected_revision=args["expected_revision"],
+            asset_id=asset_id,
+            layout=MagicMock(),
+            report=MagicMock(),
+        )
+        manager = MagicMock()
+        manager.invoke_props_dialog.return_value = {"RUNNING_MODAL"}
+        return operator, fake, SimpleNamespace(scene=bpy.context.scene, window_manager=manager)
+
+    def test_native_controls_offer_each_downloaded_colour_still_without_reading_jobs(self):
+        self.result_assets = {
+            "colour-a": {},
+            "normal-map": {"type": "texture-normal"},
+            "colour-b": {"type": "texture"},
+        }
+        request_id = self.saved_image()
+        owner = self.runtime.state.model_jobs
+        view = owner.views[request_id]
+        self.assertEqual(view.meta["first_frame_assets"], ("colour-a", "colour-b"))
+        recovery = submodule("blender.job_recovery")
+        store = self.runtime.state.job_store
+        before = (self.store.get(request_id), self.network(), dict(view.meta))
+        layout = MagicMock()
+        refuse = AssertionError("drawing read or started jobs")
+        with (
+            patch.object(self.runtime, "ensure_model_jobs", side_effect=refuse),
+            patch.object(self.runtime, "ensure_job_session", side_effect=refuse),
+            patch.object(self.runtime, "ensure_job_store", side_effect=refuse),
+            patch.object(store, "get", side_effect=refuse),
+            patch.object(store, "records", side_effect=refuse),
+        ):
+            recovery.draw_controls(layout, view)
+        buttons = [
+            (call.args[0], call.kwargs["text"])
+            for call in layout.operator.call_args_list
+            if call.args[0] == "scenario.use_saved_first_frame"
+        ]
+        # Numbering counts every saved asset; the normal map gets no button.
+        self.assertEqual(
+            buttons,
+            [
+                ("scenario.use_saved_first_frame", "Use as video first frame (1)"),
+                ("scenario.use_saved_first_frame", "Use as video first frame (3)"),
+            ],
+        )
+        drawn = [
+            dict(item.properties)
+            for item in recovery.result_actions(view)
+            if item.action == "use_first_frame"
+        ]
+        self.assertEqual(
+            [(item["request_id"], item["asset_id"]) for item in drawn],
+            [(request_id, "colour-a"), (request_id, "colour-b")],
+        )
+        self.assertEqual(
+            {(item["context_id"], item["expected_revision"]) for item in drawn},
+            {(self.runtime.state.job_context_id, self.store.get(request_id).revision)},
+        )
+        self.assertEqual((self.store.get(request_id), self.network(), dict(view.meta)), before)
+        lane = self.render_video(FRAME_AND_CLIP)
+        with self.assertRaisesRegex(self.request_error, "Choose one downloaded PNG"):
+            self.prepare(request_id, "normal-map")
+        status = self.apply(self.prepare(request_id, "colour-b"))
+        self.assertEqual(status["first_frame"]["asset_id"], "colour-b")
+        self.assertEqual([ref.asset_id for _, ref in self.first_frames(lane)], ["colour-b"])
+
+    def test_native_dialog_reviews_the_destination_and_cancel_discards_it(self):
+        request_id = self.saved_image()
+        record = self.store.get(request_id)
+        lane = self.render_video(FRAME_AND_CLIP)
+        lane.first_frame_path, lane.use_first_frame = "chosen-first-frame.png", False
+        operator, fake, context = self.native_operator(request_id)
+        before = self.network()
+        self.assertEqual(operator.invoke(fake, context, None), {"RUNNING_MODAL"})
+        context.window_manager.invoke_props_dialog.assert_called_once_with(
+            fake, width=520, title="Use as video first frame", confirm_text="Use as first frame"
+        )
+        owner = self.runtime.state.model_jobs
+        self.assertIn(fake.application_id, owner._application_approvals)
+        snapshot = dict(vars(fake))
+        operator.draw(fake, context)
+        self.assertEqual(vars(fake), snapshot)  # Drawing only displays prepared text.
+        labels = [call.kwargs.get("text") for call in fake.layout.label.call_args_list]
+        self.assertEqual(
+            labels,
+            [
+                f"Scene: {bpy.context.scene.name}",
+                "Form: Render Video",
+                "Model: Render video fixture",
+                "Input: First Frame",
+                f"Image: {record.results[0].asset.name} (saved result)",
+                "Use the saved Scenario asset; nothing is uploaded.",
+                "No new generation; the blend stores no file path.",
+                "Replace the chosen first-frame file: chosen-first-frame.png",
+                "Turn on the video first frame.",
+                "Invalidate the Render Video and Prompt Spark prices.",
+                "Remove the first-frame slot to undo this.",
+            ],
+        )
+        # The 520 px dialog was verified on the desktop with 59-character lines.
+        fixed = [label for label in labels if not label.startswith(("Scene:", "Image:"))]
+        self.assertLessEqual(max(len(label) for label in fixed), 59)
+        operator.cancel(fake, context)
+        self.assertNotIn(fake.application_id, owner._application_approvals)
+        # Review and cancel change nothing and contact nobody.
+        self.assertEqual(self.first_frames(lane), [])
+        self.assertEqual(
+            (lane.first_frame_path, lane.use_first_frame), ("chosen-first-frame.png", False)
+        )
+        self.assertEqual(self.store.get(request_id), record)
+        self.assertEqual(self.network(), before)
+        # An enabled first frame without a chosen file states neither change.
+        lane.first_frame_path, lane.use_first_frame = "", True
+        operator, fake, context = self.native_operator(request_id)
+        operator.invoke(fake, context, None)
+        operator.draw(fake, context)
+        labels = [call.kwargs.get("text") for call in fake.layout.label.call_args_list]
+        self.assertFalse(any(label.startswith(("Replace", "Turn on")) for label in labels))
+        operator.cancel(fake, context)
+        self.assertEqual(owner._application_approvals, {})
+
+    def test_native_review_reports_the_refusal_reason_without_an_approval(self):
+        request_id = self.saved_image()
+        self.render_video(NO_IMAGE, "fixture-render-no-image")
+        owner = self.runtime.state.model_jobs
+        operator, fake, context = self.native_operator(request_id)
+        self.assertEqual(operator.invoke(fake, context, None), {"CANCELLED"})
+        fake.report.assert_called_once_with(
+            {"ERROR"}, "Choose a Render Video model with an image input"
+        )
+        lane = self.render_video(FRAME_AND_CLIP)
+        self.apply(self.prepare(request_id))
+        operator, fake, context = self.native_operator(request_id)
+        self.assertEqual(operator.invoke(fake, context, None), {"CANCELLED"})
+        fake.report.assert_called_once_with(
+            {"ERROR"}, "Remove the current Render Video first frame first"
+        )
+        context.window_manager.invoke_props_dialog.assert_not_called()
+        self.assertEqual(owner._application_approvals, {})
+        self.assertEqual(len(self.first_frames(lane)), 1)
+        # A button drawn for a retired connection names the native next step.
+        lane.references.remove(self.first_frames(lane)[0][0])
+        operator, fake, context = self.native_operator(request_id)
+        fake.context_id = "retired-context"
+        self.assertEqual(operator.invoke(fake, context, None), {"CANCELLED"})
+        fake.report.assert_called_once_with(
+            {"ERROR"}, "The connection changed; inspect saved jobs again"
+        )
+        self.assertEqual(owner._application_approvals, {})
+
+    def test_native_operator_consumes_an_mcp_approval_once(self):
+        request_id = self.saved_image()
+        lane = self.render_video(FRAME_AND_CLIP)
+        approval = self.prepare(request_id)
+        args = {
+            "context_id": approval["context_id"],
+            "application_id": approval["application_id"],
+            "request_id": request_id,
+            "expected_revision": approval["revision"],
+            "asset_id": approval["asset_id"],
+        }
+        record, before = self.store.get(request_id), self.network()
+        self.assertEqual(bpy.ops.scenario.use_saved_first_frame(**args), {"FINISHED"})
+        self.assertEqual(
+            self.runtime.state.last_message,
+            "Verifying the saved image for the Render Video first frame",
+        )
+        self.deliver_results()
+        ((_, ref),) = self.first_frames(lane)
+        self.assertEqual((ref.source, ref.asset_id), ("ASSET", "result-image"))
+        self.assertEqual(
+            self.tools.job_status({"job_id": request_id})["first_frame"]["state"], "bound"
+        )
+        with self.assertRaisesRegex(RuntimeError, "First frame was not set"):
+            bpy.ops.scenario.use_saved_first_frame(**args)
+        self.assertEqual(len(self.first_frames(lane)), 1)
+        self.assertEqual(self.store.get(request_id), record)
+        self.assertEqual(self.network(), before)
+        # A fresh approval from a retired connection is refused in native words.
+        lane.references.remove(self.first_frames(lane)[0][0])
+        args.update(application_id=self.prepare(request_id)["application_id"])
+        args.update(context_id="retired-context")
+        with self.assertRaisesRegex(RuntimeError, "The connection changed; inspect saved jobs"):
+            bpy.ops.scenario.use_saved_first_frame(**args)
+        self.assertEqual(self.first_frames(lane), [])
+
+    def test_render_lane_labels_a_saved_result_slot_read_only(self):
+        request_id = self.saved_image()
+        lane = self.render_video(FRAME_AND_CLIP)
+        render_lanes = submodule("blender.render_lanes")
+        schema = self.generation.schema_for(lane.model_id)
+        saved = ("From a saved result",), {"icon": "FILE_REFRESH"}
+
+        def drawn_labels():
+            layout = MagicMock()
+            values = self.slot_values(lane)
+            store = self.runtime.state.job_store
+            refuse = AssertionError("drawing read jobs")
+            with (
+                patch.object(store, "get", side_effect=refuse),
+                patch.object(store, "records", side_effect=refuse),
+            ):
+                render_lanes._draw_first_frame(layout, lane, schema)
+            self.assertEqual(self.slot_values(lane), values)  # Drawing changes no slot.
+            return [
+                ((call.kwargs.get("text"),), {"icon": call.kwargs.get("icon")})
+                for call in layout.label.call_args_list
+            ]
+
+        self.assertNotIn(saved, drawn_labels())
+        self.apply(self.prepare(request_id))
+        self.assertIn(saved, drawn_labels())
+        ((_, ref),) = self.first_frames(lane)
+        provenance = ref[self.form._RESULT]
+        # Edited or absent provenance is not presented as a saved result.
+        ref[self.form._RESULT] = provenance.replace("result-image", "another-asset")
+        self.assertNotIn(saved, drawn_labels())
+        del ref[self.form._RESULT]
+        self.assertNotIn(saved, drawn_labels())
+
+    def test_bound_first_frame_records_one_native_undo_step(self):
+        """Headless memfile history; the desktop timer context needs separate proof."""
+        request_id = self.saved_image()
+        lane = self.render_video(FRAME_AND_CLIP)
+        lane.use_first_frame = False
+        names = bpy.context.scene.name
+        module = submodule("blender.mesh_result_application")
+        preferences = bpy.context.preferences.edit
+        settings = preferences.use_global_undo, preferences.undo_steps
+        preferences.use_global_undo, preferences.undo_steps = True, 32
+
+        def current_lane():
+            scene = bpy.data.scenes[names]
+            bpy.context.window.scene = scene
+            return scene.scenario.lane_state("render_video")
+
+        try:
+            self.assertEqual(bpy.ops.ed.undo_push(message="Fixture before handoff"), {"FINISHED"})
+            record, before = self.store.get(request_id), self.network()
+            # The installed runner has a window; production records only on the desktop.
+            with patch.object(module, "_undo_enabled", return_value=True):
+                status = self.apply(self.prepare(request_id))
+            self.assertEqual(status["first_frame"]["state"], "bound", status)
+            self.assertTrue(status["first_frame"]["undo_recorded"])
+            self.assertEqual(bpy.ops.ed.undo(), {"FINISHED"})
+            lane = current_lane()
+            self.assertEqual(self.first_frames(lane), [])
+            self.assertFalse(lane.use_first_frame)
+            self.assertEqual(bpy.ops.ed.redo(), {"FINISHED"})
+            lane = current_lane()
+            ((_, ref),) = self.first_frames(lane)
+            self.assertEqual((ref.source, ref.asset_id), ("ASSET", "result-image"))
+            self.assertIsNotNone(self.handoff.provenance(ref))
+            self.assertTrue(lane.use_first_frame)
+            # History restores the form only: no saved-job change, request or upload.
+            self.assertEqual(self.store.get(request_id), record)
+            self.assertEqual(self.network(), before)
+            self.assertFalse(self.runtime.state.job_session.upload_recovery_plan())
+        finally:
+            preferences.use_global_undo, preferences.undo_steps = settings
 
     def render_video_records(self, inputs, model_id="fixture-render-video"):
         """Register the model again after a reset, keeping the reopened form."""

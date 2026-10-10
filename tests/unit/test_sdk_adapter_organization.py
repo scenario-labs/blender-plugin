@@ -21,6 +21,7 @@ from scenario.core.api.sdk_adapter import (
     MAX_COLLECTION_ASSETS,
     MAX_TAG_CHANGES,
     AdapterError,
+    AlreadyMembers,
     Credentials,
     SDKAdapter,
     WriteRejected,
@@ -29,6 +30,8 @@ from scenario.core.api.sdk_adapter import (
 
 URL = "https://service.example.invalid/v1"
 PRIVATE = "private-service-text"
+# The add refusal's exact reason text, as the service was observed to send it.
+ALREADY_MEMBERS = "One or more assets are already part of the collection"
 COLLECTION = {
     "id": "fixture-collection",
     "name": "Hero props",
@@ -347,6 +350,7 @@ def test_create_without_a_valid_acknowledged_id_carries_none(adapter, reply):
     "error",
     [
         WriteRejected("Scenario rejected this organization change (HTTP 422)", 422),
+        AlreadyMembers(),
         WriteUncertain("Scenario did not confirm this change", 503),
         WriteUncertain("Scenario did not confirm this change", collection_id="fixture-collection"),
     ],
@@ -726,13 +730,17 @@ def test_failed_verification_read_is_a_sanitized_adapter_error(adapter, failure)
 
 
 class FakeLibrary:
-    """A stateful service that can apply a change and then lose the response."""
+    """A stateful service that can apply a change and then lose the response.
 
-    def __init__(self, *, lose_response=False, conflict_on_existing=False):
+    Re-adding a member refuses the whole add with the observed 400 reason and
+    writes nothing; ``existing_status=409`` models an undocumented conflict.
+    """
+
+    def __init__(self, *, lose_response=False, existing_status=400):
         self.members = {"asset-a"}
         self.tags = {"asset-a": ["draft"], "asset-b": []}
         self.lose_response = lose_response
-        self.conflict_on_existing = conflict_on_existing
+        self.existing_status = existing_status
         self.writes = []
 
     def __call__(self, request):
@@ -753,8 +761,10 @@ class FakeLibrary:
             current = self.tags["asset-b"]
             current.extend(tag for tag in body.get("add", []) if tag not in current)
         elif request.method == "PUT":
-            if self.conflict_on_existing and set(body["assetIds"]) & self.members:
-                return httpx.Response(409, json={"error": PRIVATE})
+            if set(body["assetIds"]) & self.members:
+                if self.existing_status == 409:
+                    return httpx.Response(409, json={"error": PRIVATE})
+                return httpx.Response(400, json={"reason": ALREADY_MEMBERS, "detail": PRIVATE})
             self.members.update(body["assetIds"])
         else:
             self.members.difference_update(body["assetIds"])
@@ -782,16 +792,90 @@ def test_applied_then_lost_tag_change_is_reconciled_by_reading_back(adapter):
     assert service.writes == [("PUT", "/v1/assets/asset-b/tags")]
 
 
+def test_already_member_refusal_is_typed_and_writes_nothing(adapter):
+    # The service refuses the whole add when any asset is already a member and
+    # writes nothing, so the caller can read back and send only the rest.
+    service = FakeLibrary()
+    client = adapter(service)
+    with pytest.raises(AlreadyMembers) as error:
+        client.add_collection_assets("fixture-collection", ["asset-b", "asset-a"])
+    assert isinstance(error.value, WriteRejected)
+    assert error.value.status == 400
+    assert "already in the collection" in str(error.value)
+    assert str(error.value).endswith("(HTTP 400)")
+    assert ALREADY_MEMBERS not in str(error.value)
+    assert_sanitized(error.value)
+    assert len(service.writes) == 1
+    records = client.asset_records(["asset-a", "asset-b"])
+    assert records["asset-a"]["collectionIds"] == ["fixture-collection"]
+    assert records["asset-b"]["collectionIds"] == []
+
+
 def test_conflict_on_existing_member_is_uncertain_and_read_back_shows_membership(adapter):
-    # Re-adding a member has undocumented status behavior. A 409 is neither
-    # success nor rejection here; the read shows the actual state.
-    service = FakeLibrary(conflict_on_existing=True)
+    # A 409 has no documented meaning for this endpoint. It is neither success
+    # nor rejection here; the read shows the actual state.
+    service = FakeLibrary(existing_status=409)
     client = adapter(service)
     with pytest.raises(WriteUncertain) as error:
         client.add_collection_assets("fixture-collection", ["asset-a"])
     assert error.value.status == 409
     assert client.asset_records(["asset-a"])["asset-a"]["collectionIds"] == ["fixture-collection"]
     assert len(service.writes) == 1
+
+
+@pytest.mark.parametrize(
+    "operation,status,body,expected",
+    [
+        ("add", 400, {"reason": "Some other refusal", "detail": PRIVATE}, WriteRejected),
+        ("add", 400, {"reason": ALREADY_MEMBERS + "."}, WriteRejected),
+        ("add", 400, {"reason": ALREADY_MEMBERS.lower()}, WriteRejected),
+        ("add", 400, {"reason": [ALREADY_MEMBERS]}, WriteRejected),
+        ("add", 400, {"reason": None}, WriteRejected),
+        ("add", 400, {"error": {"reason": ALREADY_MEMBERS}}, WriteRejected),
+        ("add", 400, [ALREADY_MEMBERS], WriteRejected),
+        ("add", 400, ALREADY_MEMBERS, WriteRejected),
+        ("add", 400, ALREADY_MEMBERS.encode(), WriteRejected),
+        ("add", 400, b"", WriteRejected),
+        ("add", 403, {"reason": ALREADY_MEMBERS}, WriteRejected),
+        ("add", 404, {"reason": ALREADY_MEMBERS}, WriteRejected),
+        ("add", 422, {"reason": ALREADY_MEMBERS}, WriteRejected),
+        ("add", 409, {"reason": ALREADY_MEMBERS}, WriteUncertain),
+        ("remove", 400, {"reason": ALREADY_MEMBERS}, WriteRejected),
+        ("create", 400, {"reason": ALREADY_MEMBERS}, WriteRejected),
+        ("tags", 400, {"reason": ALREADY_MEMBERS}, WriteRejected),
+    ],
+    ids=[
+        "other-reason",
+        "suffixed",
+        "lowercase",
+        "list-reason",
+        "null-reason",
+        "nested",
+        "list-body",
+        "json-string",
+        "text",
+        "empty",
+        "403",
+        "404",
+        "422",
+        "409",
+        "remove",
+        "create",
+        "tags",
+    ],
+)
+def test_only_the_exact_add_refusal_is_already_members(adapter, operation, status, body, expected):
+    content = body if isinstance(body, bytes) else json.dumps(body).encode()
+    requests, handler = recorder(
+        httpx.Response(status, content=content, headers={"Content-Type": "application/json"})
+    )
+    with pytest.raises(expected) as error:
+        WRITES[operation](adapter(handler, project_id="selected-project"))
+    assert type(error.value) is expected
+    assert error.value.status == status
+    assert ALREADY_MEMBERS.lower() not in str(error.value).lower()
+    assert len(requests) == 1
+    assert_sanitized(error.value)
 
 
 def test_removal_body_reaches_transport_and_is_verified_by_reading_back(adapter):

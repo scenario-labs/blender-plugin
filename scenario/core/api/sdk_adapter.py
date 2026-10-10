@@ -68,9 +68,10 @@ def _unavailable_on_denial(method):
 class WriteRejected(AdapterError):
     """Scenario refused a sent organization write with a definite client error.
 
-    The adapter never resends it. The API documents no transaction contract, so
-    a refused multi-asset request is not proof that no member changed; read the
-    assets back with ``asset_records`` before reporting that nothing changed.
+    The adapter never resends it. Apart from the add refusal typed as
+    AlreadyMembers, the API documents no transaction contract, so a refused
+    multi-asset request is not proof that no member changed; read the assets
+    back with ``asset_records`` before reporting that nothing changed.
     """
 
     # Keyword defaults keep copy and pickle working: BaseException rebuilds the
@@ -78,6 +79,20 @@ class WriteRejected(AdapterError):
     def __init__(self, message, status=None):
         super().__init__(message)
         self.status = status
+
+
+class AlreadyMembers(WriteRejected):
+    """Scenario refused a whole add because some assets were already members.
+
+    Raised only for a 400 from the add endpoint whose JSON ``reason`` is the
+    service's exact already-member text. The add was observed to be one
+    transaction: this refusal writes nothing, so repeating the same request can
+    never succeed. Read the assets back with ``asset_records``; the caller may
+    send only those that are not members yet. The adapter never resends.
+    """
+
+    def __init__(self, message=None, status=400):
+        super().__init__(message or _ALREADY_MEMBERS_TEXT, status)
 
 
 class WriteUncertain(AdapterError):
@@ -110,6 +125,12 @@ _LABEL_JOINERS = frozenset("\u200c\u200d")
 # no documented meaning for these endpoints (duplicate member, name or lock).
 _UNCERTAIN_CLIENT_STATUSES = frozenset({408, 409, 425, 429})
 _UNCONFIRMED = "Scenario did not confirm this change; read it back before changing it again"
+# The add endpoint's reason for refusing a request that names an existing
+# member. Matched exactly; the body itself is never echoed.
+_ALREADY_MEMBERS_REASON = "One or more assets are already part of the collection"
+_ALREADY_MEMBERS_TEXT = (
+    "Scenario added none of these assets because some are already in the collection (HTTP 400)"
+)
 
 
 @dataclass(frozen=True)
@@ -334,6 +355,13 @@ def _bulk_records(rows, requested, noun):
     return {identifier: records[identifier] for identifier in requested if identifier in records}
 
 
+def _already_members(status, body):
+    """Whether an add refusal is the service's exact already-member refusal."""
+    return (
+        status == 400 and isinstance(body, dict) and body.get("reason") == _ALREADY_MEMBERS_REASON
+    )
+
+
 def _write_rejected(status):
     if status == 401:
         text = "Scenario rejected the selected credentials"
@@ -502,17 +530,18 @@ class SDKAdapter:
         except APIConnectionError:
             raise AdapterError("Could not reach Scenario") from None
 
-    def _write(self, method, *args, **kwargs):
+    def _write(self, method, *args, adding=False, **kwargs):
         """Send one unpaid account mutation through a public SDK raw wrapper.
 
         A plain AdapterError (closed client, online access disabled) means
         nothing was sent. After dispatch, failures raise only WriteRejected or
-        WriteUncertain. The client keeps max_retries=0 because the SDK would
-        otherwise retry 408/409/429/5xx. Collection creation and membership
-        changes document no idempotency contract. Non-strict tag changes are
-        documented to behave as if idempotent, but a resend after an unknown
-        outcome could reapply a change another client has since reverted, so
-        callers read back instead.
+        WriteUncertain; with ``adding``, the add endpoint's exact already-member
+        refusal raises the AlreadyMembers subclass. The client keeps
+        max_retries=0 because the SDK would otherwise retry 408/409/429/5xx.
+        Collection creation and membership changes document no idempotency
+        contract. Non-strict tag changes are documented to behave as if
+        idempotent, but a resend after an unknown outcome could reapply a change
+        another client has since reverted, so callers read back instead.
         """
         from scenario_sdk import APIStatusError
 
@@ -526,6 +555,8 @@ class SDKAdapter:
             return method(*args, **kwargs).read()
         except APIStatusError as error:
             status = error.status_code
+            if adding and _already_members(status, error.body):
+                raise AlreadyMembers() from None
             if 400 <= status < 500 and status not in _UNCERTAIN_CLIENT_STATUSES:
                 raise _write_rejected(status) from None
             raise WriteUncertain(
@@ -739,10 +770,10 @@ class SDKAdapter:
             raise WriteUncertain(_UNCONFIRMED, collection_id=identifier)
         return record
 
-    def _membership(self, method, collection_id, asset_ids):
+    def _membership(self, method, collection_id, asset_ids, *, adding=False):
         collection_id = _identifier(collection_id)
         identifiers = _asset_ids(asset_ids, MAX_COLLECTION_ASSETS, unique=True)
-        raw = self._write(method, collection_id, asset_ids=identifiers)
+        raw = self._write(method, collection_id, asset_ids=identifiers, adding=adding)
         record = _confirmed(raw).get("collection")
         if not isinstance(record, dict) or record.get("id") != collection_id:
             raise WriteUncertain(_UNCONFIRMED)
@@ -751,12 +782,18 @@ class SDKAdapter:
     def add_collection_assets(self, collection_id, asset_ids):
         """Add 1 to 49 unique assets to one collection with a single request.
 
-        The acknowledgement names the collection, not each asset. Re-adding a
-        member has undocumented status behavior; a 409 is uncertain. Verify the
-        membership with ``asset_records``.
+        49 is the API's per-request cap, as the SDK docstring states. The
+        acknowledgement names the collection, not each asset. The add was
+        observed to be one transaction: when any asset is already a member, the
+        service refuses the whole request with a 400 and writes nothing, raised
+        here as AlreadyMembers. Any other 400 stays a plain WriteRejected and a
+        409 is uncertain. Verify the membership with ``asset_records``.
         """
         return self._membership(
-            self._sdk.collections.with_raw_response.assets.add, collection_id, asset_ids
+            self._sdk.collections.with_raw_response.assets.add,
+            collection_id,
+            asset_ids,
+            adding=True,
         )
 
     def remove_collection_assets(self, collection_id, asset_ids):

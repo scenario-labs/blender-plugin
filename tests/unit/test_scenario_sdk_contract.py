@@ -848,6 +848,33 @@ def test_collection_membership_sends_asset_ids_as_json_body(client_factory, oper
     assert json.loads(request.content) == {"assetIds": ["fixture-a", "fixture-b"]}
 
 
+@pytest.mark.parametrize(
+    "content,body",
+    [
+        (b'{"reason": "fixture reason"}', {"reason": "fixture reason"}),
+        (b"fixture reason", "fixture reason"),
+    ],
+    ids=["json", "text"],
+)
+def test_collection_add_refusal_keeps_the_decoded_body_once(client_factory, content, body):
+    # The adapter types one add refusal by its JSON reason. SDK 2.2.0 exposes
+    # the decoded JSON (or the raw text) as APIStatusError.body, without retry.
+    requests = []
+
+    def refuse(request):
+        requests.append(request)
+        return httpx.Response(400, content=content, headers={"x-should-retry": "true"})
+
+    sdk = client_factory(refuse)
+    with pytest.raises(APIStatusError) as error:
+        sdk.collections.with_raw_response.assets.add(
+            "fixture-collection", asset_ids=["fixture-a"], project_id=PROJECT
+        )
+    assert error.value.status_code == 400
+    assert error.value.body == body
+    assert len(requests) == 1
+
+
 def test_collection_create_sends_only_the_name_with_scope_in_query(client_factory):
     requests = []
     fixture = {"collection": _collection_record(assetCount=0, itemCount=0)}

@@ -98,7 +98,7 @@ using the locked environment.
 | Job discovery | `jobs.list`: `jobs` page wrapper, filters, comma-separated `types`, opaque cursor and project/filter preservation on the next page |
 | Workflow approval rejection | `workflows.user_approval(action="reject")`: workflow, job and node identity; this is not general workflow cancellation |
 | Remote cancellation | `jobs.trigger_action(action="cancel")`: POST action and project query; acknowledgements can remain in progress or report a completion race; upload/cancel failures make one attempt |
-| Collection and tag writes | `collections.assets.add/remove`: PUT and DELETE with a JSON `assetIds` body; `collections.create`: POST `name`; `assets.update_tags`: PUT `add`/`delete` with explicit `strict=false`; `projectId` stays in the query. Timeouts, lost connections and 408/409/429/5xx make one attempt even with `x-should-retry: true`, and no idempotency header is sent |
+| Collection and tag writes | `collections.assets.add/remove`: PUT and DELETE with a JSON `assetIds` body; `collections.create`: POST `name`; `assets.update_tags`: PUT `add`/`delete` with explicit `strict=false`; `projectId` stays in the query. Timeouts, lost connections and 408/409/429/5xx make one attempt even with `x-should-retry: true`, and no idempotency header is sent. A refused add exposes its decoded JSON body, or the raw text, as `APIStatusError.body` |
 | Collection pages and organization read-back | `collections.list/retrieve`: `collections` page wrapper, opaque cursor with unchanged scope and `collection` wrapper; `assets.get_bulk`: POST `assetIds` body, `projectId` query, `tags` and `collectionIds` retained, and a synthetic partial response passes through unchanged |
 | Uncertain submissions | `max_retries=0` makes one attempt for model/workflow transport errors and retryable HTTP statuses, even with `Retry-After` |
 | Redirect handling | An explicit HTTP client with `follow_redirects=False` prevents a second request; also use `trust_env=False` to avoid ambient proxy configuration |
@@ -515,7 +515,7 @@ The named discovery exceptions also use the same zero-retry SDK client.
 | Known model-job cancellation | `jobs.trigger_action(action="cancel")` through its public raw-response wrapper: one attempt, selected project, no terminal-state assumption from acknowledgement; coordinator retrieves before and after the action |
 | Scoped job discovery | `jobs.list` through the public raw-response wrapper: optional author/workflow/type/status filters, 1–200 items per page, bounded pagination and explicit errors instead of partial or conflicting history |
 | Multipart upload metadata | `uploads.create/retrieve/trigger_action(action="complete")`: immutable project scope, strict input/receipt identity, retained processing/future fields; no byte transfer, retry or automatic completion |
-| Collection and tag writes | `collections.create`, `collections.assets.add/remove` and `assets.update_tags(strict=false)` through public raw-response wrappers: one attempt, selected project, acknowledged identity checks, and `WriteRejected` or `WriteUncertain` after dispatch |
+| Collection and tag writes | `collections.create`, `collections.assets.add/remove` and `assets.update_tags(strict=false)` through public raw-response wrappers: one attempt, selected project, acknowledged identity checks, and `WriteRejected` (`AlreadyMembers` for the exact already-member add refusal) or `WriteUncertain` after dispatch |
 | Collection pages and organization read-back | `collections.list/retrieve` and `assets.get_bulk`: one bounded collection page with cursor-loop failure, matching collection identity, and requested-only asset records whose `tags` and `collectionIds` must be lists of strings |
 | Model/workflow/asset/job records | `models.retrieve`, `workflows.retrieve`, `assets.retrieve`, `jobs.retrieve`: unwrap the named record and retain unknown fields |
 | Custom-model estimate | `generate.run_model(dry_run="true")`: adopted form value validation plus retained conditional/one-of rules; inputs in JSON and dry-run/project in query |
@@ -774,7 +774,7 @@ Blender Undo.
 | `collection` | `collections.with_raw_response.retrieve` | The returned `collection.id` must equal the requested ID. |
 | `asset_records` | `assets.with_raw_response.get_bulk` | POST with 1 to 200 IDs in the body; repeated IDs are read once. Found records are returned by ID in request order, with unknown fields kept. When a response omits a requested asset, the result leaves it out and the caller treats it as unverified; this is adapter handling, not a documented service contract. The identifier and record checks are the ones `models_bulk` uses: unrequested or conflicting records fail. Records whose `tags` or `collectionIds` are absent, null or not lists of strings also fail: SDK 2.2.0 declares both required, so missing metadata never reads as empty. |
 | `create_collection` | `collections.with_raw_response.create` | POST `{"name": ...}`. The acknowledged `collection.name` must match exactly and its ID must be valid. A valid ID with another name raises `WriteUncertain` with that `collection_id`. |
-| `add_collection_assets`, `remove_collection_assets` | `collections.with_raw_response.assets.add/remove` | PUT or DELETE with a JSON `assetIds` body of 1 to 49 unique IDs, the documented maximum. The acknowledged `collection.id` must match. |
+| `add_collection_assets`, `remove_collection_assets` | `collections.with_raw_response.assets.add/remove` | PUT or DELETE with a JSON `assetIds` body of 1 to 49 unique IDs, the per-request maximum the SDK docstring states ("Max 49 at once"). The acknowledged `collection.id` must match. An add refused because an asset is already a member raises `AlreadyMembers`. |
 | `update_asset_tags` | `assets.with_raw_response.update_tags` | PUT with explicit `strict=false` and a nonempty `add` and/or `delete` list. The reported `added` and `deleted` lists must be subsets of the request and may be empty for documented non-strict no-ops. |
 
 Every request uses the adapter's selected credentials, its optional project
@@ -798,6 +798,12 @@ sanitized `AdapterError` behavior. Write outcomes are classified as follows:
   The fixed text names the status class: rejected credentials (401), no
   permission for this asset or collection (403), not found in the selected
   connection (404), or a rejected change.
+- **`AlreadyMembers`**, a `WriteRejected` subclass with status 400, only for an
+  add refused with HTTP 400 whose JSON body has a `reason` exactly equal to
+  "One or more assets are already part of the collection". It reads the
+  decoded body the SDK exposes as `APIStatusError.body` and never echoes it.
+  Another reason, a non-JSON body, a non-string `reason`, another status or
+  another endpoint stays a plain `WriteRejected` (or `WriteUncertain` for 409).
 - **`WriteUncertain(status or None)`.** Redirects (never followed), 408, 409,
   425, 429 and 5xx responses, timeouts, lost connections, other transport
   failures, and a 2xx response with invalid JSON (including nesting deeper
@@ -816,15 +822,25 @@ sanitized `AdapterError` behavior. Write outcomes are classified as follows:
 
 The adapter never resends a write. A caller reconciles an uncertain outcome by
 reading the assets back with `asset_records`, not with search, whose index may
-lag. A refused multi-asset request is not proof that no member changed, because
-no transaction contract is documented; read those assets back too.
+lag. Apart from `AlreadyMembers`, a refused multi-asset request is not proof
+that no member changed, because no transaction contract is documented; read
+those assets back too.
 
 Behavior that the documentation does not establish is handled conservatively
 and still needs authorized live evidence:
 
-- **Re-adding an existing member** may return 200 or 409. A 409 is uncertain,
-  and the read-back shows the actual membership. Offline tests cover this case
-  with exactly one write request.
+- **Re-adding an existing member.** The API reference does not document it,
+  but the service was observed to treat an add as one transaction: if any
+  requested asset is already a member, it refuses the whole request with HTTP
+  400 and the `reason` above, and writes nothing, so repeating the same request
+  can never succeed. More than 49 IDs were observed to be refused with a 400
+  too. The hosted Scenario MCP's `collection_add_assets` relies on this: it
+  skips assets already in the collection and sends the rest, in batches of 49.
+  This repository has not yet checked the behavior live. The adapter raises
+  `AlreadyMembers` and sends nothing more; a caller reads the assets back and
+  may send only those that are not members yet. A 409 stays uncertain, and the
+  read-back shows the actual membership. Offline tests cover both with exactly
+  one write request each.
 - **The DELETE JSON body** is serialized by the SDK, as the offline contracts
   check. Whether the production edge preserves it is unverified, so a 2xx
   removal acknowledgement is not proof of removal and must be read back.

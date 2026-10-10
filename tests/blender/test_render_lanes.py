@@ -351,26 +351,99 @@ class RenderLanesTests(unittest.TestCase):
         request = self.generation.build_request(self.scene, "render_image")
         self.assertIsNone(request.spark)
 
-    def test_render_video_seedance_request_tags_inputs_and_uses_the_first_frame(self):
+    def test_render_video_seedance_sends_its_first_frame_as_reference_image_1_with_the_clip(self):
+        # The captured Seedance schema says its first frame is mutually exclusive with
+        # reference images/videos; a paid job with both failed after being accepted.
         self.video_lane.model_id = "model_bytedance-seedance-2-0"
         self.video_lane.prompt = "claymation"
         self.video_lane.first_frame_path = str(FIXTURES / "patina-copper-512" / "albedo.png")
         self.scene.frame_start, self.scene.frame_end = 1, 48
         self.uploaded("render_video")
-        self.uploaded("render_video", "first_frame", "uploaded-first")
+        style = self.video_lane.references.add()
+        style.param_name, style.source, style.asset_id = "referenceImages", "ASSET", "style-a"
+        first = self.uploaded("render_video", "first_frame", "uploaded-first")
+        self.assertEqual(first.param_name, "referenceImages")
         request = self.generation.build_request(self.scene, "render_video")
         self.assertEqual(request.errors, [])
         self.assertEqual(request.kind, "video")
         self.assertEqual(request.captures, [])
         self.assertEqual(request.body["referenceVideos"], ["uploaded-scene"])
-        self.assertEqual(request.body["image"], "uploaded-first")
+        self.assertNotIn("image", request.body)
+        # The first frame orders before style references in the shared array.
+        self.assertEqual(request.body["referenceImages"], ["uploaded-first", "style-a"])
         self.assertEqual(request.files, {})
         prompt = request.body["prompt"]
         self.assertIn("@video1 is a playblast", prompt)
         self.assertIn("@image1 shows how the finished first frame must look", prompt)
+        self.assertIn("@image2 are style references only", prompt)
         self.assertIn("claymation", prompt)
         # Render Video: the model's own duration is the source (Seedance default -1 = Auto), not the clip length
         self.assertEqual(request.body["duration"], -1)
+        inspection = submodule("mcp.tools_scenario").render_form({"lane": "render_video"})
+        route = inspection["first_frame_route"]
+        self.assertEqual(
+            route,
+            {
+                "input": "referenceImages",
+                "label": "Reference Images",
+                "sent_as": "reference_image",
+                "reason": "exclusive",
+                "note": "This model can't use an exact first frame with the scene clip, "
+                "so the image is sent as image 1 of Reference Images.",
+            },
+        )
+        self.assertTrue(inspection["ready_to_estimate"], inspection["errors"])
+
+    def test_render_video_keeps_an_exact_first_frame_without_declared_exclusivity(self):
+        self.video_lane.model_id = "model_bytedance-seedance-2-0"
+        schema = self.generation.schema_for(self.video_lane.model_id)
+        params = submodule("core.schema.params")
+        undeclared = params.Schema(schema.specs, prompt_name=schema.prompt_name)
+        references = submodule("blender.render_references")
+        target = references.target("render_video", undeclared, references.FIRST_FRAME)
+        self.assertEqual(target.name, "image")
+        self.assertEqual(
+            self.render_lanes.first_frame_route(undeclared),
+            {
+                "input": "image",
+                "label": "First Frame",
+                "sent_as": "first_frame",
+                "reason": None,
+                "note": None,
+            },
+        )
+        # No image input that can go with the clip: the first frame is refused, never misrouted.
+        frames = [
+            s for s in schema.specs if s.name in {"image", "lastFrameImage", "referenceVideos"}
+        ]
+        exclusive = [("image", "referenceVideos"), ("lastFrameImage", "referenceVideos")]
+        alone = params.Schema(frames, exclusive=exclusive)
+        self.assertIsNone(references.target("render_video", alone, references.FIRST_FRAME))
+        self.assertIsNone(self.render_lanes.first_frame_route(alone))
+
+    def test_exclusive_inputs_and_old_first_frame_slots_are_refused_before_pricing(self):
+        self.video_lane.model_id = "model_bytedance-seedance-2-0"
+        self.video_lane.prompt = "claymation"
+        self.uploaded("render_video")
+        # A first-frame slot saved before this rule still targets the exact input.
+        old = self.video_lane.references.add()
+        old.param_name, old.source, old.asset_id = "image", "ASSET", "uploaded-first"
+        old[submodule("blender.render_references").ROLE] = "first_frame"
+        self.video_lane.first_frame_path = ""
+        request = self.generation.build_request(self.scene, "render_video", True)
+        self.assertEqual(request.errors, ["The model input changed; prepare the first frame again"])
+        # Every lane shares the guard: the base Video lane cannot send both either.
+        lane = self.scene.scenario.lane_state("video")
+        lane.model_id = "model_bytedance-seedance-2-0"
+        lane.prompt = "claymation"
+        for name, value in (("image", "frame"), ("referenceVideos", "clip")):
+            ref = lane.references.add()
+            ref.param_name, ref.source, ref.asset_id = name, "ASSET", value
+        request = self.generation.build_request(self.scene, "video", True)
+        self.assertIn(
+            "First Frame can't be combined with Reference Videos; remove one of them",
+            request.errors,
+        )
 
     def test_render_video_without_tags_for_minimax(self):
         self.video_lane.model_id = "model_minimax-h3"
@@ -403,6 +476,23 @@ class RenderLanesTests(unittest.TestCase):
         layout.row.return_value.prop.assert_any_call(self.video_lane, "first_frame_path", text="")
         self.assertEqual(self.video_lane.bl_rna.properties["first_frame_path"].subtype, "FILE_PATH")
         self.assertEqual(self.video_lane.first_frame_path, "")
+        layout.label.assert_not_called()  # the compact form adds nothing until a frame is chosen
+        # Once chosen, the form says where the image goes when the model cannot pin a first frame.
+        self.video_lane.first_frame_path = "chosen-first-frame.png"
+        schema = self.generation.schema_for(self.video_lane.model_id)
+        layout = MagicMock()
+        self.render_lanes._draw_first_frame(layout, self.video_lane, schema)
+        drawn = [call.kwargs.get("text", "") for call in layout.label.call_args_list]
+        self.assertIn("No exact first frame with the scene clip", drawn)
+        self.assertIn("Sent as image 1 of Reference Images", drawn)
+        params = submodule("core.schema.params")
+        layout = MagicMock()
+        self.render_lanes._draw_first_frame(
+            layout, self.video_lane, params.Schema(schema.specs, prompt_name=schema.prompt_name)
+        )
+        drawn = [call.kwargs.get("text", "") for call in layout.label.call_args_list]
+        self.assertNotIn("No exact first frame with the scene clip", drawn)
+        self.assertEqual(self.video_lane.first_frame_path, "chosen-first-frame.png")
 
     def test_result_reference_action_preserves_prepared_single_file_render_slots(self):
         catalog = submodule("core.api.catalog")

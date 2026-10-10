@@ -43,7 +43,7 @@ def target(lane_name, schema, role):
     if role == SCENE:
         return render_lanes.scene_spec(lane_name, schema)
     if role == FIRST_FRAME and lane_name == "render_video":
-        return render_lanes.first_frame_spec(schema) or render_lanes.style_spec(schema)
+        return render_lanes.first_frame_target(schema)
     return None
 
 

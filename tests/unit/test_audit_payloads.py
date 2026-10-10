@@ -723,3 +723,24 @@ def test_offline_nonregular_entry_is_reported_without_reading_it(tmp_path, capsy
         == 1
     )
     assert "must be a regular file" in capsys.readouterr().out
+
+
+def test_described_exclusivity_without_a_matching_sibling_is_high_finding(tmp_path, capsys):
+    inputs = [
+        {
+            "name": "image",
+            "type": "file",
+            "kind": "image",
+            "description": "First frame. Mutually exclusive with multi-anchor keyframes.",
+        },
+        {"name": "video", "type": "file", "kind": "video"},
+    ]
+    (tmp_path / "model_unparsed.json").write_text(
+        json.dumps({"id": "model_unparsed", "inputs": inputs})
+    )
+    args = ["--offline", "--cache", str(tmp_path), "--models", "model_unparsed"]
+    assert audit.run([*args, "--fail-on", "HIGH"]) == 1
+    assert "**HIGH** `unparsed-exclusive-input`" in capsys.readouterr().out
+    captured = ["model_bytedance-seedance-2-0", "model_minimax-h3"]
+    assert audit.run(["--offline", "--cache", str(FIXTURES), "--models", *captured]) == 0
+    assert "unparsed-exclusive-input" not in capsys.readouterr().out

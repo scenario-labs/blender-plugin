@@ -20,6 +20,10 @@ The checks flag:
 - Edit 3D models without a detectable mesh input.
 - Prompts that the Edit 3D schema fails to select for drawing.
 - Required flags lost during parsing, and empty schemas.
+- File inputs whose descriptions say they are mutually exclusive with, or can't
+  be combined with, other inputs when the parser recognizes no sibling file
+  input. Recognized pairs become `Schema.exclusive`, which every shared quote
+  path refuses to send together; an unrecognized one would reach a paid job.
 
 The implementation retains the existing heuristics. It does not automatically
 repair schemas or loosen requirements. A finding needs investigation; for example,

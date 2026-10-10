@@ -16,11 +16,51 @@ import bpy
 import test_model_generation as model_tests
 from helpers import submodule
 
-SEEDANCE = [
+# A first-frame input the schema lets go with the clip (no declared exclusivity).
+FRAME_AND_CLIP = [
     {"name": "prompt", "type": "string", "prompt": True},
     {"name": "image", "type": "file", "kind": "image", "label": "First Frame"},
     {"name": "referenceImages", "type": "file_array", "kind": "image", "maxLength": 9},
     {"name": "referenceVideos", "type": "file_array", "kind": "video", "maxLength": 3},
+]
+# Seedance 2.0 Fast's live wording (2026-10-10): its first frame cannot be sent
+# with reference images or videos. A paid job with both was accepted, then failed.
+SEEDANCE = [
+    {"name": "prompt", "type": "string", "prompt": True},
+    {
+        "name": "image",
+        "type": "file",
+        "kind": "image",
+        "label": "First Frame",
+        "description": "First frame image (frame mode). "
+        "Mutually exclusive with reference images/videos.",
+        "required": {"ifDefined": {"lastFrameImage": {}}},
+    },
+    {
+        "name": "lastFrameImage",
+        "type": "file",
+        "kind": "image",
+        "label": "Last Frame",
+        "description": "Last frame image. Only valid when a first frame image is provided.",
+    },
+    {
+        "name": "referenceImages",
+        "type": "file_array",
+        "kind": "image",
+        "label": "Reference Images",
+        "maxLength": 9,
+        "description": "Reference images for multimodal mode (up to 9). "
+        "Mutually exclusive with first frame.",
+    },
+    {
+        "name": "referenceVideos",
+        "type": "file_array",
+        "kind": "video",
+        "label": "Reference Videos",
+        "maxLength": 3,
+        "description": "Reference videos for multimodal mode (up to 3). "
+        "Mutually exclusive with first frame.",
+    },
 ]
 H3 = [
     {"name": "prompt", "type": "string", "required": True, "prompt": True},
@@ -146,7 +186,7 @@ class FirstFrameHandoffTests(unittest.TestCase):
 
     def test_saved_png_binds_its_asset_without_upload_path_spend_or_job_change(self):
         request_id = self.saved_image()
-        lane = self.render_video(SEEDANCE)
+        lane = self.render_video(FRAME_AND_CLIP)
         lane.first_frame_path = "chosen-first-frame.png"
         record, before = self.store.get(request_id), self.network()
         owner = self.runtime.state.model_jobs
@@ -167,6 +207,7 @@ class FirstFrameHandoffTests(unittest.TestCase):
                     "input",
                     "asset_id",
                     "mode",
+                    "sent_as",
                     "replaces_first_frame_path",
                     "enables_first_frame",
                     "scene",
@@ -180,6 +221,7 @@ class FirstFrameHandoffTests(unittest.TestCase):
                 "input": "image",
                 "asset_id": "result-image",
                 "mode": "reuse_asset",
+                "sent_as": "first_frame",
                 "replaces_first_frame_path": True,
                 "enables_first_frame": False,
                 "scene": bpy.context.scene.name,
@@ -285,6 +327,48 @@ class FirstFrameHandoffTests(unittest.TestCase):
         # The first frame orders before style references in the shared array.
         self.assertEqual(request.body["referenceImages"], ["result-image", "style-a"])
 
+    def test_seedance_first_frame_is_sent_as_reference_image_1_with_the_scene_clip(self):
+        request_id = self.saved_image()
+        lane = self.render_video(SEEDANCE, "fixture-render-seedance")
+        style = lane.references.add()
+        style.param_name, style.source, style.asset_id = "referenceImages", "ASSET", "style-a"
+        approval = self.prepare(request_id)
+        # The review says what will be sent before anything changes.
+        self.assertEqual(
+            {key: approval[key] for key in ("input", "input_label", "sent_as", "reason")},
+            {
+                "input": "referenceImages",
+                "input_label": "Reference Images",
+                "sent_as": "reference_image",
+                "reason": "exclusive",
+            },
+        )
+        self.assertIn(
+            "This model can't use an exact first frame with the scene clip, "
+            "so the image is sent as image 1 of Reference Images.",
+            approval["note"],
+        )
+        status = self.apply(approval)
+        self.assertEqual(status["first_frame"]["state"], "bound", status)
+        self.assertEqual(status["first_frame"]["input"], "referenceImages")
+        request = self.generation.build_request(bpy.context.scene, "render_video", True)
+        self.assertEqual(request.errors, [])
+        self.assertNotIn("image", request.body)
+        self.assertEqual(request.body["referenceImages"], ["result-image", "style-a"])
+        self.assertEqual(request.body["referenceVideos"], ["scene-clip"])
+        self.assertIn(
+            "@image1 shows how the finished first frame must look", request.body["prompt"]
+        )
+        self.estimate()
+        dry_run = [
+            json.loads(call.content)
+            for call in self.calls
+            if call.url.params.get("dryRun") == "true"
+        ][-1]
+        self.assertNotIn("image", dry_run)
+        self.assertEqual(dry_run["referenceImages"], ["result-image", "style-a"])
+        self.assertEqual(dry_run["referenceVideos"], ["scene-clip"])
+
     def test_eligibility_offers_only_downloaded_colour_stills(self):
         for media_type, data in (("image/jpeg", JPEG), ("image/webp", WEBP)):
             with self.subTest(media_type=media_type):
@@ -292,7 +376,7 @@ class FirstFrameHandoffTests(unittest.TestCase):
                 owner = self.runtime.state.model_jobs
                 record = self.store.get(request_id)
                 self.assertIn("use_first_frame", owner.actions(record))
-                self.render_video(SEEDANCE)
+                self.render_video(FRAME_AND_CLIP)
                 status = self.apply(self.prepare(request_id))
                 self.assertEqual(status["first_frame"]["state"], "bound", status)
         item = record.results[0]
@@ -317,7 +401,7 @@ class FirstFrameHandoffTests(unittest.TestCase):
     def test_refusals_leave_the_form_and_saved_job_unchanged(self):
         request_id = self.saved_image()
         record = self.store.get(request_id)
-        lane = self.render_video(SEEDANCE)
+        lane = self.render_video(FRAME_AND_CLIP)
         with self.assertRaisesRegex(self.request_error, "Choose one downloaded PNG"):
             self.prepare(request_id, "another-asset")
         with self.assertRaisesRegex(ValueError, "requires the saved image asset_id"):
@@ -342,7 +426,7 @@ class FirstFrameHandoffTests(unittest.TestCase):
         self.render_video(NO_IMAGE, "fixture-render-no-image")
         with self.assertRaisesRegex(self.request_error, "with an image input"):
             self.prepare(request_id)
-        lane = self.render_video(SEEDANCE)
+        lane = self.render_video(FRAME_AND_CLIP)
         reads = AssertionError("Reviewing started a model read")
         with (
             patch.object(self.generation, "schema_for", return_value=None),
@@ -371,7 +455,7 @@ class FirstFrameHandoffTests(unittest.TestCase):
         }
         for name, edit in edits.items():
             with self.subTest(edit=name):
-                lane = self.render_video(SEEDANCE)
+                lane = self.render_video(FRAME_AND_CLIP)
                 lane.use_first_frame = True
                 approval = self.prepare(request_id)
                 edit(lane)
@@ -379,7 +463,7 @@ class FirstFrameHandoffTests(unittest.TestCase):
                     self.apply(approval)
                 lane = bpy.context.scene.scenario.lane_state("render_video")
                 self.assertEqual(self.first_frames(lane), [])
-        self.render_video(SEEDANCE)
+        self.render_video(FRAME_AND_CLIP)
         approval = self.prepare(request_id)
         self.runtime.state.model_jobs.session.invalidate_all()  # undo, redo or file load
         with self.assertRaises(self.origin_error):
@@ -392,7 +476,7 @@ class FirstFrameHandoffTests(unittest.TestCase):
             self.tools.apply_result_application(
                 {"context_id": context_id, "application_id": approval["application_id"]}
             )
-        self.assertEqual(self.first_frames(self.render_video(SEEDANCE)), [])
+        self.assertEqual(self.first_frames(self.render_video(FRAME_AND_CLIP)), [])
 
     def test_changes_during_verification_stop_without_binding(self):
         request_id = self.saved_image()
@@ -406,7 +490,7 @@ class FirstFrameHandoffTests(unittest.TestCase):
         }
         for name, change in changes.items():
             with self.subTest(change=name):
-                lane = self.render_video(SEEDANCE)
+                lane = self.render_video(FRAME_AND_CLIP)
                 lane.use_first_frame = True
                 approval = self.prepare(request_id)
                 deferred = self.tools.apply_result_application(
@@ -434,7 +518,7 @@ class FirstFrameHandoffTests(unittest.TestCase):
         self.addCleanup(path.write_bytes, original)
         for moment in ("before verification", "after verification"):
             with self.subTest(moment=moment):
-                lane = self.render_video(SEEDANCE)
+                lane = self.render_video(FRAME_AND_CLIP)
                 approval = self.prepare(request_id)
                 if moment == "before verification":
                     path.write_bytes(original[:-1] + b"\x00")
@@ -450,7 +534,7 @@ class FirstFrameHandoffTests(unittest.TestCase):
                 self.assertEqual(status["first_frame"]["state"], "failed", status)
                 self.assertEqual(self.first_frames(lane), [])
         mislabelled = self.saved_image(b"GIF89a" + bytes(64), "image/png")
-        lane = self.render_video(SEEDANCE)
+        lane = self.render_video(FRAME_AND_CLIP)
         status = self.apply(self.prepare(mislabelled))
         self.assertEqual(
             status["first_frame"]["error"], "Image contents do not match the saved media type"
@@ -459,7 +543,7 @@ class FirstFrameHandoffTests(unittest.TestCase):
 
     def test_bound_frame_drives_spark_and_changes_follow_the_existing_slot_rules(self):
         request_id = self.saved_image()
-        lane = self.render_video(SEEDANCE)
+        lane = self.render_video(FRAME_AND_CLIP)
         lane.prompt = ""
         spark = submodule("blender.render_prompt_jobs")
         with self.assertRaisesRegex(self.request_error, "first frame for video Prompt Spark"):
@@ -488,7 +572,7 @@ class FirstFrameHandoffTests(unittest.TestCase):
 
     def test_saved_blend_keeps_no_private_path_and_is_scoped_on_reopen(self):
         request_id = self.saved_image()
-        lane = self.render_video(SEEDANCE)
+        lane = self.render_video(FRAME_AND_CLIP)
         self.apply(self.prepare(request_id))
         state_dir = str(self.runtime.paths().state_dir)
         with tempfile.TemporaryDirectory() as directory:
@@ -504,7 +588,7 @@ class FirstFrameHandoffTests(unittest.TestCase):
         (_, ref), *_ = self.first_frames(lane)
         self.assertEqual(self.handoff.provenance(ref)["request_id"], request_id)
         self.runtime.inspect_model_jobs()
-        self.render_video_records(SEEDANCE)
+        self.render_video_records(FRAME_AND_CLIP)
         self.assertIsNone(self.form.scope_error(lane))
         self.assertIsNotNone(self.handoff.saved_source(self.runtime.state.job_store, ref))
         request = self.generation.build_request(bpy.context.scene, "render_video", True)

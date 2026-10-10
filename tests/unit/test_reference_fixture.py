@@ -193,10 +193,11 @@ def test_decoder_rejects_invalid_or_unsupported_png(mutate, message):
 def test_compare_counts_differing_pixels_and_largest_channel_change():
     rows = noise(4, 4)
     changed = bytearray(rows)
-    changed[0] ^= 1
-    changed[10] = (changed[10] + 7) & 255
+    changed[0] ^= 1  # red of pixel 0
+    changed[10] = (changed[10] + 7) & 255  # green of pixel 3
+    changed[20] ^= 2  # blue of pixel 6
     assert fixture.compare(rows, rows) == (0, 0)
-    assert fixture.compare(rows, bytes(changed)) == (2, 7)
+    assert fixture.compare(rows, bytes(changed)) == (3, 7)
     with pytest.raises(ValueError):
         fixture.compare(rows, rows[:-3])
 

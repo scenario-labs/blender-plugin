@@ -414,7 +414,7 @@ behavior interchangeable. Remote names below were checked against the
 | Workflow discovery | `list_workflows`, `workflow_schema` | `workflows_list`, `workflow_get` |
 | Asset library metadata | `list_assets`, `search_assets` | SDK `assets.list` and `search.asset_search`; no hosted tool-name equivalence asserted here |
 | Collections | `list_collections(page_size, pagination_token)` | `collections_list` |
-| Organize library assets | `prepare_asset_organization(operation, asset_ids, collection_id or collection_name, add_tags, remove_tags)`, then `apply_asset_organization(context_id, review_id)` after explicit approval | `collection_add_assets`, `collection_remove_assets`, `collection_create`, `asset_add_tags`, `asset_remove_tags`; the local review reads current state first and verifies by reading back |
+| Organize library assets | `prepare_asset_organization(operation, asset_ids, collection_id or collection_name, add_tags, remove_tags)`, then `apply_asset_organization(context_id, review_id)` after explicit approval | `collection_add_assets`, `collection_remove_assets`, `collection_create`, `asset_add_tags`, `asset_remove_tags`; the local review reads current state first and verifies by reading back. Both skip assets already in the collection; the hosted `collection_add_assets` also batches beyond 49, while a local review takes at most 49, the API's per-request cap |
 | Organization outcome or discard | `asset_organization_status(context_id, review_id, action)` | Local session review; `collection_get` and `asset_get` read service state |
 | Workflow price and execution | `estimate_workflow`, `run_workflow` | `workflow_run` |
 | Discard workflow approval | `discard_workflow_estimate` | Local only; no remote cancellation |
@@ -867,7 +867,7 @@ To change organization, call `prepare_asset_organization` with one operation:
 
 | Operation | Arguments | Change applied after approval |
 | --- | --- | --- |
-| `add_to_collection` | `asset_ids`, `collection_id` | One request adds the assets that are not yet members |
+| `add_to_collection` | `asset_ids`, `collection_id` | One request adds the assets that are not yet members; if another client added some after the review, the rest are sent again, in at most three requests |
 | `remove_from_collection` | `asset_ids`, `collection_id` | One request removes the assets that are members |
 | `update_tags` | `asset_ids`, `add_tags` and/or `remove_tags` | One non-strict tag request per asset that still differs |
 | `create_collection` | `collection_name`, optional `asset_ids` | One create, then one request adding the assets |
@@ -879,7 +879,7 @@ and a tag cannot be added and removed together. See the
 validation rule. Preparation reads each asset's current tags and memberships with
 one bulk read, plus the target collection or, for a create, an exact-name lookup.
 It sends no write. The review lists each asset's change and `request_count`, the
-most writes apply may send. A missing asset, an existing exact collection name
+writes apply sends when each one succeeds. A missing asset, an existing exact collection name
 (returned in `existing_collection_ids`) or a name whose earlier create in this
 session had an unknown outcome makes the review `REJECTED`. Apply checks the name
 again before creating: a name taken since preparation sends nothing and returns
@@ -890,9 +890,13 @@ the key's own scope.
 Show the review to the user before applying. Organization changes are immediate
 Scenario account metadata: they use no credits and Blender Undo does not reverse
 them. A `READY` review expires after 10 minutes and applies once through
-`apply_asset_organization(context_id, review_id)`. Each write is sent once with
-no automatic retry. The first uncertain tag write stops the remaining assets,
-which stay `NOT_SENT`. The assets are then read back: each outcome is `VERIFIED`,
+`apply_asset_organization(context_id, review_id)`. Writes are not retried, with
+one bounded exception: the service refuses a whole add, writing nothing, when
+any asset is already a member. If another client added some assets after the
+review, apply reads them back and sends only the rest again, within three add
+requests; the result message counts the assets that were already members. The
+first uncertain tag write stops the remaining assets, which stay `NOT_SENT`.
+The assets are then read back: each outcome is `VERIFIED`,
 `REJECTED` (with the HTTP status), `UNCONFIRMED`, `NOT_SENT` or `UNVERIFIED`, and
 the result is `VERIFIED`, `PARTIAL`, `UNCONFIRMED` or `REJECTED`. Never repeat
 unconfirmed work. Inspect the assets with `list_assets`, then prepare a new review
@@ -921,10 +925,12 @@ kept. Public library assets are not blocked locally; the service decides.
 These tools use the shared [session reviews](BLENDER_JOB_CONTEXT.md#asset-organization-reviews)
 and the SDK methods listed in [asset organization writes](SDK_ADOPTION.md#asset-organization-writes),
 with no raw API fallback. Collection rename and deletion, model collections and
-tag listing are not provided locally. Name uniqueness, re-adding an existing
-member, DELETE body survival through the production edge, tag normalization and
-service limits are unverified live; a tag the service normalizes reads back as
-`UNCONFIRMED`. Native Library controls, desktop interaction and live acceptance
+tag listing are not provided locally. The already-member refusal of an add (a
+400 that writes nothing) is the behavior the service was observed to have, not
+yet checked live from this repository. Name uniqueness, DELETE body survival
+through the production edge, tag normalization and service limits are
+unverified live; a tag the service normalizes reads back as `UNCONFIRMED`.
+Native Library controls, desktop interaction and live acceptance
 remain under [#64](https://github.com/scenario-labs/blender-plugin/issues/64),
 [#65](https://github.com/scenario-labs/blender-plugin/issues/65),
 [#66](https://github.com/scenario-labs/blender-plugin/issues/66) and

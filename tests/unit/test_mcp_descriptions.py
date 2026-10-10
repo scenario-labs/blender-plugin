@@ -222,8 +222,14 @@ def test_organization_tools_review_before_one_unrepeated_write():
     assert schema["add_tags"]["maxItems"] == schema["remove_tags"]["maxItems"] == MAX_TAG_CHANGES
     assert ast.literal_eval(prepare.args[2].args[1]) == ["operation"]
     apply = found["apply_asset_organization"].args[1].value
-    for text in ("Never repeat UNCONFIRMED", "asset_organization_status", "no automatic retry"):
+    for text in (
+        "Never repeat UNCONFIRMED",
+        "asset_organization_status",
+        "Assets already in the collection are skipped",
+        "sent again within a fixed bound",
+    ):
         assert text in apply, text
+    assert "sent once" not in apply
     for name in ("apply_asset_organization", "asset_organization_status"):
         assert ast.literal_eval(found[name].args[2].args[1]) == ["context_id", "review_id"]
     status = found["asset_organization_status"].args[1].value

@@ -16,9 +16,9 @@
       "scenario/core/jobs/organization.py": "69ad48086ff2b763c565a22bce2bf60e142afbc10e757c56d938daf2198fbeba",
       "scenario/core/jobs/coordinator.py": "329f641b24e7cd23603d1eae840072006a080a03b2911dca44d17b8b9aa56e9a",
       "scenario/blender/asset_organization.py": "553512e5363e7784a8b7f73b7578d4d670a877c65faf8f4c3d7c0d500fa40e51",
-      "scenario/mcp/tools_scenario.py": "ea3a218ec89fff1f01c6e52484e5552e4a3e09caee678ac7fc59d0013ea39d61",
+      "scenario/mcp/tools_scenario.py": "f4e87186806f93466220ef04f7c2530f0532ded790d4a8754a2a5b81183db08a",
       "scenario/blender/library_view.py": "4ce0e8ca5a402136d7b5e2dbbe5b0f24f2b5480ed81afb3782c38252b3a65039",
-      "tests/blender/test_asset_organization.py": "0d3264d136215d276cbadaaffc161d31d6ab60299dbae0085426fb20fd74154b"
+      "tests/blender/test_asset_organization.py": "b00e136dfcf7667b1d93bb54b3efc84c1643380e88e8524ea12238edb6e793d5"
     }
   }
 }

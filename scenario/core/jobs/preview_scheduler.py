@@ -42,6 +42,7 @@ DECODE_LIMIT = 4
 DECODE_SECONDS = 120.0
 MAINTAIN_SECONDS = 600.0
 NO_WAVEFORM = "Audio waveforms need Blender's executable"
+CANCELED = "Preview decoding was canceled; use Retry"
 ENTRY_LIMIT = 256
 # Renditions that the next lane batch must resolve.
 _ACTIVE = frozenset({State.QUEUED, State.PENDING, State.OFFLINE})
@@ -73,6 +74,7 @@ class PreviewStatus:
 class _Entry:
     __slots__ = (
         "attempts",
+        "canceled",
         "due",
         "force",
         "inflight",
@@ -107,6 +109,9 @@ class _Entry:
         # batch's final flag predates the new window.
         self.renew = False
         self.inflight = False
+        # Local decoding canceled while this entry's batch was in flight: the
+        # decode request the batch returns is discarded instead of issued.
+        self.canceled = False
         self.seen = now
 
 
@@ -157,6 +162,9 @@ class ResultPreviewScheduler:
         self._batch = ()
         self._issued = {}
         self._publishing = {}
+        # Publications whose local decode ``cancel`` signaled; their failure
+        # leaves the canceled or restarted rendition state alone.
+        self._canceled = set()
         self._discards = []
         self._maintained = None
         # A maintenance-only lane command, and whether previews were written to
@@ -210,16 +218,22 @@ class ResultPreviewScheduler:
         """Entries of a review asset never share state with a saved result's."""
         return target.request_id, target.asset_id, target.kind == previews.REVIEW
 
-    def request(self, request_id, *, asset_ids=None, clip=False):
+    def request(self, request_id, *, asset_ids=None, clip=False, renditions=None):
         """Track previews for a saved job's downloaded assets and return their status.
 
         Server stills are polled; clips are fetched only when ``clip`` is true.
+        ``renditions`` limits the request to some of a kind's renditions, such
+        as only a local audio envelope, which never contacts Scenario.
         Requesting again keeps existing state; use ``retry`` after a failure.
         Adding a rendition opens a new polling window for that result.
         """
         self._check()
+        if renditions is not None:
+            renditions = tuple(renditions)
+            if not renditions or not set(renditions) <= set(previews.RENDITIONS):
+                raise previews.PreviewError("Request supported preview renditions")
         targets = self._coordinator.result_preview_targets(request_id, asset_ids)
-        return self._track(targets, clip=clip)
+        return self._track(targets, clip=clip, renditions=renditions)
 
     def request_review(self, request_id, asset_ids):
         """Track stills of the assets a saved workflow job's waiting step lists.
@@ -234,7 +248,7 @@ class ResultPreviewScheduler:
         targets = self._coordinator.review_preview_targets(request_id, tuple(asset_ids))
         return self._track(targets)
 
-    def _track(self, targets, *, clip=False):
+    def _track(self, targets, *, clip=False, renditions=None):
         now = self._clock()
         result = []
         for target in targets:
@@ -248,6 +262,8 @@ class ResultPreviewScheduler:
                 entry = self._entries[key] = _Entry(target, now)
             entry.seen = now
             wanted = previews.renditions(target.kind, clip=clip)
+            if renditions is not None:
+                wanted = tuple(rendition for rendition in wanted if rendition in renditions)
             if not wanted:
                 entry.states.setdefault(
                     previews.STILL,
@@ -292,13 +308,45 @@ class ResultPreviewScheduler:
             self._restart(entry, self._clock())
         return self._snapshot(entry)
 
+    def cancel(self, request_id, asset_id):
+        """Stop local decoding for one result; its unfinished local renditions fail.
+
+        Server stills and clips keep polling. An issued decode request is
+        discarded and a running decode is signaled, which terminates its offline
+        Blender process. A copy that an in-flight batch is still preparing is
+        discarded when that batch returns. ``retry`` starts again.
+        """
+        self._check()
+        # Saved results only: a workflow review asset has no local renditions.
+        entry = self._entries.get((request_id, asset_id, False))
+        if entry is None:
+            return None
+        key = entry.target.key
+        for identity, (request, _) in tuple(self._issued.items()):
+            if request.key == key:
+                del self._issued[identity]
+                self._discard(request)
+        for task, request in self._publishing.items():
+            if request.key == key:
+                self._workers.cancel_preview(task)
+                self._canceled.add(task)
+        for rendition, status in tuple(entry.states.items()):
+            if previews.is_local(entry.target.kind, rendition) and status.state in (
+                State.QUEUED,
+                State.DECODE,
+            ):
+                entry.states[rendition] = RenditionStatus(State.FAILED, reason=CANCELED)
+        entry.canceled |= entry.inflight
+        self._schedule(entry, self._clock())
+        return self._snapshot(entry)
+
     def _requeue(self, entry):
         """Queue every rendition a retry fetches again and withdraw its decode requests."""
         self._release(entry)
         publishing = {
             request.rendition
-            for request in self._publishing.values()
-            if request.key == entry.target.key
+            for task, request in self._publishing.items()
+            if request.key == entry.target.key and task not in self._canceled
         }
         for rendition, status in tuple(entry.states.items()):
             if status.state != State.UNSUPPORTED and rendition not in publishing:
@@ -307,6 +355,7 @@ class ResultPreviewScheduler:
     def _restart(self, entry, now):
         self._requeue(entry)
         entry.force, entry.retry, entry.attempts = True, False, 0
+        entry.canceled = False
         entry.window, entry.used = None, 0.0
         entry.poll = entry.due = now
 
@@ -409,6 +458,7 @@ class ResultPreviewScheduler:
         for entry, work in batch:
             target = entry.target
             renew, entry.renew = entry.renew, False
+            entry.canceled = False
             if self._entries.get(self._key(target)) is entry:
                 if entry.retry:
                     self._restart(entry, now)
@@ -474,6 +524,10 @@ class ResultPreviewScheduler:
                 continue
             pending = offline = False
             for item in outcome.renditions:
+                if item.request is not None and entry.canceled:
+                    self._discard(item.request)
+                    entry.states[item.rendition] = RenditionStatus(State.FAILED, reason=CANCELED)
+                    continue
                 entry.states[item.rendition] = RenditionStatus(
                     item.state, item.preview, item.request, item.reason
                 )
@@ -525,6 +579,8 @@ class ResultPreviewScheduler:
             if not task.done():
                 continue
             del self._publishing[task]
+            canceled = task in self._canceled
+            self._canceled.discard(task)
             try:
                 preview = task.result()
             except CancelledError:
@@ -538,9 +594,11 @@ class ResultPreviewScheduler:
                 )
                 status = RenditionStatus(State.FAILED, reason=reason)
             else:
-                status = RenditionStatus(State.READY, preview)
+                # A decode that finished before its cancellation is still valid.
+                status, canceled = RenditionStatus(State.READY, preview), False
                 self._written = True
-            self._set(request, status)
+            if not canceled:
+                self._set(request, status)
 
     def _consume_discards(self):
         remaining = []
@@ -669,6 +727,7 @@ class ResultPreviewScheduler:
             previews.discard_directory(request.directory)
         self._issued.clear()
         self._publishing.clear()
+        self._canceled.clear()
         self._discards.clear()
         self._task, self._batch, self._maintenance = None, (), None
         self._entries.clear()

@@ -317,6 +317,34 @@ class JobSession:
             return False
         return self._previews.pump()
 
+    def prepare_playback(
+        self, request_id, *, expected_revision, asset_id, root, reuse=None, discard=(), keep=()
+    ):
+        """Queue a private verified player copy of one saved result on the preview lane.
+
+        The returned task resolves to a ``PlaybackCopy`` that the caller owns
+        and must discard; it is not a session completion, so ``drain`` never
+        returns it. Like previews, it resolves no origin and grants no
+        application authority.
+        """
+        _main_thread()
+        if not self._active:
+            raise OriginUnavailable("This job connection is no longer active")
+        return self._workers.prepare_playback(
+            request_id,
+            expected_revision=expected_revision,
+            asset_id=asset_id,
+            root=root,
+            reuse=reuse,
+            discard=discard,
+            keep=keep,
+        )
+
+    def cancel_playback(self, task):
+        """Signal a queued or running playback copy; its partial copy is removed."""
+        _main_thread()
+        self._workers.cancel_preview(task)
+
     @staticmethod
     def _identity(records, value):
         for identity, existing in records.items():

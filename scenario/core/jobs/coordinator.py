@@ -19,7 +19,7 @@ from ..api import trained_routes
 from ..api.sdk_adapter import AdapterStatusError, Estimate, SDKAdapter
 from ..scene.splats import SplatCancelled
 from ..schema.forms import RouteError, _fields, chosen_inputs, is_file_field, record_schema
-from . import local_case_study, local_export, local_render
+from . import local_case_study, local_export, local_render, playback
 from .film_finishing import (
     CompositionDraft,
     validate_composition_draft,
@@ -774,6 +774,39 @@ class JobCoordinator:
                 raise SplatCancelled("Splat preparation cancelled")
             self._verified_results[id(prepared.verified)] = prepared.verified
         return prepared
+
+    def prepare_playback(
+        self,
+        request_id,
+        *,
+        expected_revision,
+        asset_id,
+        root,
+        cancel,
+        reuse=None,
+        discard=(),
+        keep=(),
+    ):
+        """Preview-lane command: a private verified copy of one saved video or audio result."""
+        copy = self._results.playback_copy(
+            request_id,
+            expected_revision=expected_revision,
+            asset_id=asset_id,
+            root=root,
+            cancel=cancel,
+            reuse=reuse,
+            discard=discard,
+            keep=keep,
+        )
+        try:
+            with self._result_guard():
+                if cancel.is_set():
+                    raise PreviewCanceled("Playback preparation was canceled")
+                return copy
+        except BaseException:
+            if copy is not reuse:
+                playback.discard(root, copy.directory)
+            raise
 
     def claim_application(self, verified: VerifiedResults):
         """Claim verified results before a caller mutates the captured Blender target.

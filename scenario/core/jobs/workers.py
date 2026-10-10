@@ -303,6 +303,21 @@ class JobWorkers:
             self._coordinator.discard_result_preview, request, root=os.fspath(root)
         )
 
+    def prepare_playback(
+        self, request_id, *, expected_revision, asset_id, root, reuse=None, discard=(), keep=()
+    ):
+        """Queue a private player copy of one saved result on the preview lane."""
+        return self._enqueue_preview(
+            self._coordinator.prepare_playback,
+            request_id,
+            expected_revision=expected_revision,
+            asset_id=asset_id,
+            root=os.fspath(root),
+            reuse=reuse,
+            discard=tuple(os.fspath(path) for path in discard),
+            keep=tuple(os.fspath(path) for path in keep),
+        )
+
     def cancel_preview(self, task):
         with self._preview_condition:
             cancel = self._preview_cancels.get(task)

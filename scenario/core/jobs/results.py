@@ -12,6 +12,7 @@ from ..api.sdk_adapter import AdapterError
 from ..config import ext_for_mime
 from ..scene import splats
 from ..scene.panorama import MAX_FILE_BYTES
+from . import playback
 from . import result_previews as previews
 from .result_metadata import (
     REWRITTEN_MESH_TYPES,
@@ -943,6 +944,81 @@ class ResultCommands:
                     if outcome.request is not None:
                         cache.discard(outcome.request.directory)
             raise
+
+    def playback_copy(
+        self,
+        request_id,
+        *,
+        expected_revision,
+        asset_id,
+        root,
+        cancel,
+        reuse=None,
+        discard=(),
+        keep=(),
+    ):
+        """Copy one downloaded video or audio receipt privately for a desktop player.
+
+        Preview-lane work that never fetches, generates, applies or writes the
+        job store. ``discard`` names copies the owner evicted and ``keep`` the
+        ones it still uses; both are handled first, and stale others are swept,
+        even when the request is then refused. An unchanged ``reuse``
+        copy of the same receipt is returned instead of copying again. The copy
+        is then rechecked at receipt level: an unrelated revision, such as a
+        concurrent strip application, keeps it, while a changed receipt discards it.
+        """
+        # Evicted and stale copies go first, even if this request is refused.
+        root = playback.playback_root(root)
+        for directory in discard:
+            playback.discard(root, directory)
+        playback.sweep(root, keep=keep)
+        current = self._current(request_id, expected_revision, PREVIEW_STATES)
+        chosen = [
+            item
+            for item in current.results
+            if item.asset.asset_id == asset_id
+            and item.receipt is not None
+            and playback.kind(item.asset.media_type) is not None
+        ]
+        if len(chosen) != 1:
+            raise ResultError("Choose one downloaded saved video or audio result")
+        item = chosen[0]
+        target = previews.PreviewTarget(
+            request_id,
+            asset_id,
+            item.asset.media_type,
+            playback.kind(item.asset.media_type),
+            previews.PreviewKey.for_result(self._store.scope, request_id, item),
+            item.receipt,
+        )
+        if (
+            isinstance(reuse, playback.PlaybackCopy)
+            and reuse.key == target.key
+            and playback.unchanged(reuse)
+        ):
+            copy = reuse
+        else:
+            try:
+                source = self._directory(current, create=False) / item.receipt.name
+            except (ResultError, TransferError, OSError):
+                raise ResultError("Saved result files are unavailable") from None
+            copy = playback.make_copy(root, target, source, cancel)
+        with self._guard():
+            latest = self._store.get(request_id)
+        if (
+            latest is None
+            or latest.state not in PREVIEW_STATES
+            or not any(
+                result.asset.asset_id == asset_id
+                and result.asset.media_type == item.asset.media_type
+                and result.receipt == item.receipt
+                for result in latest.results
+            )
+        ):
+            if copy is not reuse:
+                playback.discard(root, copy.directory)
+            raise StoreConflict("Result changed during playback preparation")
+        return copy
 
     def _owned_preview(self, request):
         if not isinstance(request, previews.DecodeRequest) or request.key.scope != (

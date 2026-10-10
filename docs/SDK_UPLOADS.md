@@ -237,9 +237,12 @@ creation time where available because those APIs can assign different meanings
 to `ctime`. Checks before and after reading the same open file still compare its
 `ctime`, along with identity, size and modification time, to reject changes.
 The application must retain ownership of the
-staging directory and ancestors. Failed intent persistence or deactivation after
-staging may leave a private orphan for explicit retention/cleanup policy; no
-user source is deleted. These are local resource limits, not service guarantees.
+staging directory and ancestors. When deactivation, an origin change or failed
+intent persistence stops preparation after staging, preparation removes its new
+private copy unless a saved record references it or the store cannot be read.
+A copy kept that way, or one left by a process crash before persistence, remains
+a private orphan for explicit retention/cleanup policy. No user source is deleted.
+These are local resource limits, not service guarantees.
 
 ### Part plan source and restart limit
 
@@ -283,12 +286,13 @@ asset; this client never transfers to, completes or polls it again. The remote
 pending upload stays unaborted, because no abort operation exists. A missing or
 changed snapshot abandons nothing. A restart that fails after copying, for example
 because a concurrent command changed the record's revision or the origin changed,
-abandons nothing and removes its new copy unless a saved record references it. The
-replacement keeps captured-mesh provenance only when it reuses the original, still
-current origin; otherwise it is an ordinary upload of the same verified bytes. Only
-an explicit user or caller action restarts; nothing retries automatically. An
-uncertain part is never sent to the same upload again. Older readers reject the
-new `abandoned` state; do not downgrade a store that contains one.
+abandons nothing and, like a failed preparation, removes its new copy unless a
+saved record references it or the store cannot be read. The replacement keeps
+captured-mesh provenance only when it reuses the original, still current origin;
+otherwise it is an ordinary upload of the same verified bytes. Only an explicit
+user or caller action restarts; nothing retries automatically. An uncertain part
+is never sent to the same upload again. Older readers reject the new `abandoned`
+state; do not downgrade a store that contains one.
 
 Deactivation before a mutation claim prevents dispatch. Once claimed, responses
 can persist only to the old scope; a later command is rejected by that inactive
@@ -310,15 +314,16 @@ File staging/verification and HTTP remain outside the guard. An unrelated scene'
 revision does not invalidate the captured origin.
 
 If the origin changes during staging, no upload intent is saved or dispatched.
-The completed private snapshot can remain as an orphan for explicit retention
-and cleanup, matching failed persistence or deactivation after staging. The
-finished-upload cleanup command requires a saved terminal record; it cannot remove
-these unrecorded orphans or arbitrary staging directories. A request already durably
-claimed may finish and save its receipt under the original scope/origin. Inspection
-and explicit remote refresh intentionally do not require a current origin, so a
-missing scene or a new file session does not erase recovery evidence. They never
-rebind it, release a claim or repeat a mutation. Callers without an `origin_guard`
-remain responsible for establishing their own current-origin policy.
+Preparation removes the completed private snapshot, as it does after failed
+persistence or deactivation, unless a saved record references it or the store
+cannot be read. The finished-upload cleanup command requires a saved terminal
+record; it cannot remove unrecorded orphans or arbitrary staging directories.
+A request already durably claimed may finish and save its receipt under the
+original scope/origin. Inspection and explicit remote refresh intentionally do
+not require a current origin, so a missing scene or a new file session does not
+erase recovery evidence. They never rebind it, release a claim or repeat a
+mutation. Callers without an `origin_guard` remain responsible for establishing
+their own current-origin policy.
 
 Offline tests exercise the actual SDK with synthetic HTTP responses and mocked
 storage connections, including the installed extension and shared worker queue.

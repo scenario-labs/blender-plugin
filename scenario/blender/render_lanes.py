@@ -115,6 +115,13 @@ def first_frame_route(schema):
     }
 
 
+def first_frame_route_lines(reason, label):
+    """Two short lines saying the image is sent as reference image 1, or () for an exact first frame."""
+    if reason not in _FIRST_FRAME_REASONS:
+        return ()
+    return (_FIRST_FRAME_REASONS[reason][1], f"Sent as image 1 of {label}")
+
+
 def style_input(lane, schema):
     """The native style slot; Render Video reserves its first-frame input."""
     return (
@@ -317,10 +324,11 @@ def _draw_first_frame(box, lane_state, schema):
             box, "render_video", lane_state, schema, render_references.FIRST_FRAME
         )
         route = first_frame_route(schema)
-        if route is not None and route["reason"] is not None:
+        lines = first_frame_route_lines(route["reason"], route["label"]) if route else ()
+        if lines:
             # Say where the image goes before it is uploaded and while it is used.
-            box.label(text=_FIRST_FRAME_REASONS[route["reason"]][1], icon="INFO")
-            box.label(text=f"Sent as image 1 of {route['label']}")
+            box.label(text=lines[0], icon="INFO")
+            box.label(text=lines[1])
     # Read-only: the slot's provenance only, never the saved job or its file.
     if any(first_frame_handoff.provenance(ref) is not None for _, ref in existing):
         box.label(text="From a saved result", icon="FILE_REFRESH")

@@ -8,7 +8,7 @@ from bpy.props import BoolProperty, EnumProperty, FloatVectorProperty, IntProper
 from ..core.api.errors import ScenarioError
 from ..core.scene.panorama import WORLD_MEDIA_TYPES, describe_world_media
 from ..core.ui import saved_job_actions
-from . import runtime
+from . import render_lanes, runtime
 from .media_application import MEDIA_TYPES
 from .model_application import MODEL_MEDIA_TYPE
 
@@ -683,6 +683,7 @@ class SCENARIO_OT_use_saved_first_frame(bpy.types.Operator):
     scene_name: StringProperty(options={"HIDDEN", "SKIP_SAVE"})
     model_label: StringProperty(options={"HIDDEN", "SKIP_SAVE"})
     input_label: StringProperty(options={"HIDDEN", "SKIP_SAVE"})
+    route_reason: StringProperty(options={"HIDDEN", "SKIP_SAVE"})
     file_name: StringProperty(options={"HIDDEN", "SKIP_SAVE"})
     replaced_file: StringProperty(options={"HIDDEN", "SKIP_SAVE"})
     enables_first_frame: BoolProperty(options={"HIDDEN", "SKIP_SAVE"})
@@ -707,6 +708,7 @@ class SCENARIO_OT_use_saved_first_frame(bpy.types.Operator):
         target = approval.target
         self.application_id, self.scene_name = approval.identifier, approval.scene_name
         self.model_label, self.input_label = target.model_label, target.input_label
+        self.route_reason = target.reason or ""
         self.file_name = approval.asset.name
         self.replaced_file = bpy.path.basename(target.previous_path)
         self.enables_first_frame = not target.previous_enabled
@@ -720,6 +722,11 @@ class SCENARIO_OT_use_saved_first_frame(bpy.types.Operator):
         layout.label(text="Form: Render Video")
         layout.label(text=f"Model: {self.model_label}")
         layout.label(text=f"Input: {self.input_label}")
+        lines = render_lanes.first_frame_route_lines(self.route_reason, self.input_label)
+        if lines:
+            # The model cannot pin an exact first frame with the scene clip.
+            layout.label(text=lines[0], icon="INFO")
+            layout.label(text=lines[1])
         layout.label(text=f"Image: {self.file_name} (saved result)", icon="IMAGE_DATA")
         layout.label(text="Use the saved Scenario asset; nothing is uploaded.")
         layout.label(text="No new generation; the blend stores no file path.")

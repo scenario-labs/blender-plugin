@@ -313,6 +313,18 @@ exactly when `expected-state.json` contains that Environment state. Older
 predecessors report false: they show only that an older saved tab survives the
 appended item.
 
+When the predecessor saves trained-model choices on generation forms
+([#97](https://github.com/scenario-labs/blender-plugin/issues/97)), the probe seeds
+two LoRAs with strengths and ranges on the Image form, including a Unicode name,
+each tagged with the selected connection's scope. After the update and the offline
+reopen it compares their IDs, names, kinds, strengths, ranges and scope tags. The
+candidate's trained-model scope check must accept them for the selected store and
+refuse them under the other credential scope and under the same credentials with
+the default scope or another project. Both reports include
+`trained_selection_preserved`, which must be true exactly when
+`expected-state.json` contains a trained choice; predecessors without these
+properties report false.
+
 The probe rejects Python socket connections while seeding/checking/upgrading.
 Blender's native updater uses its configured loopback repository; this is not an
 OS sandbox for arbitrary package code or subprocesses. Use only trusted archives.

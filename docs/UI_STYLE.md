@@ -139,6 +139,48 @@ or in the composer note unless this session recorded it. With online access disa
 needing the description, such as `model_schema`, reports a recorded failure once
 while it starts the next read.
 
+### Trained models in the picker
+
+The Image tab's last chip, **Trained**, lists LoRAs and compositions instead of
+base models ([#97](https://github.com/scenario-labs/blender-plugin/issues/97)):
+the selected connection's private trained models first, then public Scenario
+LoRAs and compositions. Other chips and the base lanes never list them. Each row
+says how the model runs in the form the choice lands in (Image, or Render Image
+when the picker opened from it), for example **Private LoRA via FLUX.1 Dev**. A
+model no checked base runs stays readable but greyed, with its reason: the base
+models are still being checked, no base in this form accepts its type, it is not
+trained yet, or Blender has no route for its type (**Not available in Blender**).
+Private plain custom models are not listed here.
+
+Base-model descriptions declare the LoRA inputs, so they are read only when the
+Trained chip opens: in lane order, once per connection, with a progress line and
+the reason when reading stops. A catalog refresh never starts these reads; it only
+lets a later Trained chip retry the descriptions that failed.
+
+The highlighted model's box shows its kind, **Runs with** for a single base or a
+**Run with** choice among several (the form's current base when it runs the model,
+otherwise **Choose a base model**; OK refuses until one is chosen), and for a LoRA
+a **Strength** field bounded by the base's declared range. Without a declared
+default, the strength starts at the visible value 1 within that range. A
+composition shows how many LoRAs it combines with their own strengths. One line
+states the effect on the form: adding to the LoRAs already chosen, changing this
+LoRA's strength, or replacing the form's trained models. Choosing through another
+base, choosing a composition, or choosing a LoRA over a composition replaces the
+form's choice; that line says so before OK. The whole new choice is checked against
+the base's current schema before the form changes, and then the price is
+invalidated. The box ends with **Experimental: LoRAs and compositions not
+accepted**. Drawing reads this state only.
+
+The persistent **Model** row lists the form's choice under the model button, for
+example **Studio LoRA (strength 0.8)** or **Name (composition)**, each with a
+remove button that reprices the form, followed by the same experimental line. The
+base's LoRA inputs are never drawn as text fields. Every request writes the choice
+into the base's declared inputs with the same route function local MCP and the
+quote check use; a base change, a model no longer listed, a choice saved under
+another connection or project, or a route the current schema refuses keeps the
+choice and blocks the price with its reason. Strength editing in the sidebar and
+Studio, project defaults and the composer chip label are follow-up work.
+
 ## Duration and Match timeline
 
 The video model's `Duration (cost)` drives the camera-path duration for **Render

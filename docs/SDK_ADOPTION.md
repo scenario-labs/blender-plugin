@@ -168,8 +168,8 @@ estimate and no automatic retry.
 The 0.10.0 scope for [#97](https://github.com/scenario-labs/blender-plugin/issues/97)
 is using existing trained models: private LoRAs and compositions of the selected
 credentials and project, plus public Scenario LoRAs. Training is out of scope.
-These core reads and classifications enable no route, picker entry or quote;
-lane lists and the picker are unchanged.
+Lane lists are unchanged; the picker lists these records only under its Trained
+chip (see [trained models in the native picker](#trained-models-in-the-native-picker)).
 
 `SDKAdapter.models(privacy="private")` uses `models.with_raw_response.list` with
 `privacy=private`, `status=trained`, page size 100 and the selected project on
@@ -190,8 +190,9 @@ A `custom` record without lineage that is neither marked private nor returned
 by the private list has no kind. Offline tests cover every SDK 2.2.0 type
 literal and fail when an SDK upgrade changes that set. `catalog.is_trained`
 keeps `lora`, `composition` and `unsupported` records out of the base lanes and
-picker. For every type literal, privacy and lineage it gives the same result as
-the former blanket exclusion, so lane lists and the picker are unchanged. It is
+the picker's base-model chips. For every type literal, privacy and lineage it
+gives the same result as the former blanket exclusion, so lane lists and those
+chips are unchanged. It is
 a lane filter, not a trained-model test: it is also true for hosted base types
 such as `flux.1-pro` and false for `custom_private`. Routing selects trained
 models with `trained_kind` and `USABLE_TRAINED_KINDS` instead. A
@@ -380,9 +381,9 @@ strengths and composition ID.
 is not available to the selected credentials or project (HTTP 404)", never a
 model ID, name or service reply. The sidebar estimate status shows it instead of
 the generic price error, and local MCP `estimate_cost` returns it as the tool
-error. `apply`, `compatibility` and `compatible_bases` build and explain
-selections for later picker, sidebar and MCP surfaces; no surface lists trained
-models or offers strength controls yet.
+error. The native picker and every form request now build selections with `apply`
+(see [trained models in the native picker](#trained-models-in-the-native-picker));
+local MCP listings, sidebar strength controls and project defaults remain #97 work.
 
 Every call here is an existing public SDK 2.2.0 method; there is no raw
 fallback, SDK extension, SDK issue or dependency change. Offline tests compare
@@ -390,6 +391,43 @@ the policy with every captured dry run and exercise the coordinator through the
 real SDK and a socket-free `MockTransport`. Private LoRAs and compositions, paid
 results, the Z-Image and Qwen slots and workflow LoRA inputs remain unverified
 against the service.
+
+## Trained models in the native picker
+
+The native catalog load also reads the selected connection's private trained list
+with the existing `SDKAdapter.models(privacy="private")`
+(`models.with_raw_response.list` with `privacy=private`, `status=trained` and the
+selected project on every page), then pairs it with public LoRAs and compositions
+through `SDKCatalog.trained_models`, reusing the public list the same load reads.
+A failed private read is reported apart and never blocks the public lanes; the
+picker's Trained chip or an explicit refresh reads it again.
+
+List rows carry no `inputs` or `uiConfig`, and neither do the captured bulk rows,
+so base-model slots come from description reads through the existing
+`SDKCatalog.get` (`SDKAdapter.model`, `models.with_raw_response.retrieve` with the
+selected project in the query), cached per connection. These reads start only when
+the picker shows its Trained chip, never on a catalog refresh. One worker reads the
+lane's base models whose descriptions are still unknown, in lane order, at most 400
+per lane and connection, and reports progress every 10. One unreadable model is
+skipped; three failures in a row stop the scan with the last sanitized reason, and
+an explicit refresh lets the next Trained chip retry them. The pure
+[trained_offers](../scenario/core/api/trained_offers.py) module pairs each trained
+record with the detailed bases whose slot runs it; a LoRA also needs declared
+strength bounds or a declared default.
+
+A form keeps only the chosen IDs, kinds, strengths and a scope tag. Each request
+rebuilds the payload with `trained_routes.apply`, and the unchanged quote check
+reads every chosen model again before any dry run. Strengths are rounded to four
+decimals, so Blender's 32-bit property storage does not change the payload. Local
+MCP still takes the same inputs as base-model parameters; an installed test shows
+that the form's payload and an MCP `estimate_cost` given those parameters dry-run
+identical bytes.
+
+Every call here is an existing public SDK 2.2.0 method; there is no new SDK method,
+raw fallback, SDK extension, SDK issue or dependency change. Offline and installed
+tests use the captured public fixtures and synthetic private records behind a
+socket-free transport. No live read, dry run or paid run was made for this work,
+and private LoRAs and compositions remain unverified against the service.
 
 ## Model acceptance commands
 

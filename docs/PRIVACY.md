@@ -21,7 +21,9 @@ limits of its current controls. It does not replace Scenario's service policies.
   their own approval before the final render quote. Prompt helpers can spend
   credits independently of generation.
 - The model catalog is requested automatically when credentials are available;
-  opening the model picker can download thumbnails. Test connection requests one
+  opening the model picker can download thumbnails. The same load lists the
+  trained models of the selected credentials and project. Opening the picker's
+  Trained chip reads base-model descriptions to find which accept LoRAs. Test connection requests one
   public-model list page with at most one model to verify model access; it does
   not discover account or project identity. Refresh cloud and Older in Generations retrieve job
   history and prompt text; connected agents can request history too.
@@ -157,6 +159,11 @@ media folder. Model IDs, scene and object names, other custom properties and
 unused bytes Blender keeps from earlier settings can remain; review a bundle
 before sharing it.
 Scene properties, imported media and prompts can be saved in your `.blend` file.
+A form's chosen LoRAs and compositions are saved there too: their model IDs,
+names, strengths and a hashed connection scope that stops another credential pair
+or project from using them. Model IDs are opaque references, not credentials.
+Thumbnails of your private models are cached in a separate folder per credential
+and project scope, apart from public model thumbnails.
 Older `state/jobs.json` or model-cache files may remain from the prototype; local
 record inspection does not resume their cloud jobs or migrate their ownership.
 

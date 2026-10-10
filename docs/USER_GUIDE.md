@@ -152,7 +152,7 @@ retry the action once it is available.
 From top to bottom:
 
 - **Account strip**: the connection or credential status, a refresh button for the model list and a shortcut to the preferences. Project overrides are selected in Preferences; browser sign-in and account discovery remain subject to the [known limitations](KNOWN_LIMITATIONS.md).
-- **Model**: a button showing the current model. It opens the model picker, laid out like Scenario's "Choose a Model": modality tabs (Image, Video, Audio, 3D) and the web app's category chips (Image: All, Generate, Edit, Expand, Upscale, Vectorize, Remove Background, Tools; Video: All, Generate, Edit, Lipsync, Upscale, Reframe, Remove Background, Tools; Audio: All, Speech, Music, SFX, Tools; 3D: All, Generate, Splat, Remesh, Retexture, UV Unwrap, Rigging, Animate, Parts), a search field, the list with thumbnails and the description of the highlighted model. Availability depends on the selected credentials and the model catalog. See the [known limitations](KNOWN_LIMITATIONS.md) for trained/custom-model integration boundaries. A speech-to-text or video-to-motion model shows **Experimental: speech-to-text not accepted** or **Experimental: video-to-motion not accepted** in the picker and below the Model button. You can still estimate and generate, and the result stays in saved jobs. Import is offered by file type, so a returned model (GLB, glTF, FBX, OBJ or mesh PLY) or media file may import, but motion and transcription handling has not been accepted ([#190](https://github.com/scenario-labs/blender-plugin/issues/190)). Picking a model of another modality switches to that lane. The small arrow next to the button is the plain dropdown.
+- **Model**: a button showing the current model. It opens the model picker, laid out like Scenario's "Choose a Model": modality tabs (Image, Video, Audio, 3D) and the web app's category chips (Image: All, Generate, Edit, Expand, Upscale, Vectorize, Remove Background, Tools, Trained; Video: All, Generate, Edit, Lipsync, Upscale, Reframe, Remove Background, Tools; Audio: All, Speech, Music, SFX, Tools; 3D: All, Generate, Splat, Remesh, Retexture, UV Unwrap, Rigging, Animate, Parts), a search field, the list with thumbnails and the description of the highlighted model. Availability depends on the selected credentials and the model catalog. The Image tab's **Trained** chip lists LoRAs and compositions; see [use a LoRA or composition](#use-a-lora-or-composition) and the [known limitations](KNOWN_LIMITATIONS.md) for trained/custom-model integration boundaries. A speech-to-text or video-to-motion model shows **Experimental: speech-to-text not accepted** or **Experimental: video-to-motion not accepted** in the picker and below the Model button. You can still estimate and generate, and the result stays in saved jobs. Import is offered by file type, so a returned model (GLB, glTF, FBX, OBJ or mesh PLY) or media file may import, but motion and transcription handling has not been accepted ([#190](https://github.com/scenario-labs/blender-plugin/issues/190)). Picking a model of another modality switches to that lane. The small arrow next to the button is the plain dropdown.
 - **Prompt**: its own box, like Scenario's. The prompt lives in the field; drag the small size control in the header to make the box taller. Below it, three equal full-width buttons with Scenario's icons: **New** (dice, Prompt Spark writes a prompt for the model), **Rewrite** (sparkles, Prompt Spark improves yours), and **Translate** (to English). Each helper first requests a free server price. Review the CU amount below the row, then click **Approve New prompt**, **Approve Rewrite** or **Approve Translate** to submit once. The background result updates only the original, unchanged prompt field; changing its text, model, scene or credentials prevents stale delivery. An uncertain submission stays in saved jobs for inspection and must not be repeated. The trash button confirms before clearing the prompt and is disabled when it is empty.
 - **References**: one box per file input the model accepts (image, video, audio, 3D), with a thumbnail per file. Add offers File, Viewport still, Camera still, Viewport clip, Camera clip and Render Result. Choose **Upload reference** to capture and upload a still or clip before pricing. For an empty 3D input, **Upload selected mesh** exports and uploads the current selection. Render forms provide **Capture and upload scene** and, for a chosen video first frame, **Upload first frame**. Generate never captures or uploads implicitly.
 - **Parameters**: built from the model's own schema. A checkbox in front of an optional parameter means "send this value"; unchecked, Scenario uses its default. `(cost)` marks parameters that change the price.
@@ -229,6 +229,33 @@ refresh/download or explicitly import recovered images into a reviewed destinati
 see the [current runtime limits](architecture/runtime.md#active-sdk-cost-previews-and-model-submission).
 Other generation lanes and result actions retain their earlier integration and
 need their own acceptance checks.
+
+#### Use a LoRA or composition
+
+Open the model picker and choose the Image tab's **Trained** chip. It lists your
+own trained LoRAs and compositions for the selected credentials and project, then
+Scenario's public ones. The first time, Blender reads the base models'
+descriptions to find which ones accept LoRAs; a line shows the progress. Each row
+names the base models that run it, for example **LoRA via FLUX.1 Dev**. A greyed
+row explains why it cannot run in this form.
+
+Highlight a LoRA, check the base under **Runs with** (or choose one under **Run
+with** when several fit), set its **Strength** within the range the base declares
+(it starts at 1 when the base declares no default), and click OK. The form
+switches to that base and adds the LoRA; choose another LoRA the same way to stack
+it, or choose a LoRA again to change its strength. A composition already combines
+its LoRAs with their own strengths, so it replaces the form's choice. The box says
+before OK whether your choice adds to or replaces what the form holds.
+
+The chosen LoRAs or composition appear under the **Model** button with a remove
+button. Each change requests a fresh price; the quote reads every chosen model
+again and refuses one that was deleted, is no longer accessible, changed type or
+is not trained, before any price is requested. A choice belongs to the
+credentials and project that made it: after switching either, choose it again.
+**Reload parameters** restores a generation's LoRAs or composition when they are
+still listed. Trained models are experimental here: generation results with them
+have not been accepted yet, project defaults and sidebar strength sliders are not
+available yet, and training stays in Scenario's web app.
 
 ### Video
 Text, images or your Blender scene to video (Seedance 2.0 and 2.5, Kling, Veo, Wan, LTX and the other video models, including audio-to-video).

@@ -282,7 +282,10 @@ Removed RNA scene/target references are reported as `OriginUnavailable` at captu
 and delivery boundaries; callers do not need a separate stale-RNA error branch.
 Dependency updates conservatively invalidate the affected scene's revisions;
 frame changes invalidate unconditionally in their own pre-change hook, regardless
-of whether the unevaluated depsgraph lists updates. Undo/redo and file loading
+of whether the unevaluated depsgraph lists updates. Catalog loads fill and
+restore generation forms without RNA update callbacks, so they do not cause such
+an update; see [catalog delivery](architecture/runtime.md#active-sdk-catalog).
+Undo/redo and file loading
 invalidate captured state too. Every main-thread scene callback and reaper tick
 prunes removed captured scenes and deleted object wrappers, including when a surviving
 scene has no dependency updates. Deleted targets invalidate the scenes that captured

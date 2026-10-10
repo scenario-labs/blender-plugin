@@ -217,7 +217,8 @@ def configure(scene, lane, changes):
                 raise ValueError("Not enough space for these styles and the render snapshot")
     if state.model_id != model_id:
         state.model_id = model_id
-    params_ui.sync_params(state, schema, model_id)
+    if "duration" in params_ui.sync_params(state, schema, model_id):
+        generation.sync_shot_duration(scene)  # a seeded value skips its RNA callback
     for name, (prop, _) in _FIELDS.items():
         if name in changes:
             setattr(state, prop, changes[name])

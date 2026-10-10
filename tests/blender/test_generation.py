@@ -700,3 +700,151 @@ class GenerationTests(unittest.TestCase):
                 self.assertEqual(bpy.ops.scenario.retry_model(lane="edit3d"), {"FINISHED"})
             fetch.assert_called_once_with(context, [model_id], mark_dirty=True)
         self.assertEqual(lane.last_error, "")
+
+
+class FirstCatalogLoadOriginTests(unittest.TestCase):
+    """Catalog loads fill forms without making origins captured before them stale."""
+
+    def setUp(self):
+        reset_scene()
+        self.generation = submodule("blender.generation")
+        self.runtime = submodule("blender.runtime")
+        self.handlers = submodule("blender.handlers")
+        self.runtime.state.reset()
+        self.enterContext(isolated_manager())
+        self.records = [
+            fixture_record(path.stem) for path in sorted((FIXTURES / "models").glob("*.json"))
+        ]
+        self.session = self.job_session()
+        bpy.context.view_layer.update()
+
+    def job_session(self):
+        import tempfile
+        from pathlib import Path
+
+        import httpx
+
+        api = submodule("core.api.sdk_adapter")
+        storage = submodule("core.jobs.store")
+        root = self.enterContext(tempfile.TemporaryDirectory(dir=bpy.utils.resource_path("USER")))
+        scope = storage.JobScope("https://fixture.invalid/v1", "fixture-account")
+        adapter = api.SDKAdapter(
+            api.Credentials("key", "secret"),
+            online=lambda: True,
+            account_id=scope.account_id,
+            base_url=scope.service,
+            transport=httpx.MockTransport(lambda request: self.fail("Unexpected request")),
+        )
+        self.addCleanup(adapter.close)
+        session = submodule("blender.job_session").JobSession(
+            adapter, storage.JobStore(Path(root) / "jobs.sqlite3", scope), workers=1
+        )
+        self.addCleanup(session.shutdown)
+        return session
+
+    def load_catalog(self, records=None):
+        records = self.records if records is None else records
+        # The cached list and default descriptions, then the network refresh.
+        self.handlers.dispatch(("catalog", {"records": records, "detailed": records}))
+        self.handlers.dispatch(("models", {"detailed": records, "failed": {}, "mark_dirty": False}))
+        self.handlers.dispatch(("catalog", {"records": records, "detailed": records}))
+
+    def without_first_image_model(self):
+        return [r for r in self.records if r.id != "model_openai-gpt-image-2"]
+
+    def model_ids(self, lane):
+        return [item[0] for item in self.runtime.enum_items(("models", lane))]
+
+    def test_first_catalog_load_keeps_an_origin_captured_before_it(self):
+        scene = bpy.context.scene
+        origin = self.session.capture(scene)
+        self.load_catalog()
+        bpy.context.view_layer.update()
+        self.assertTrue(self.session._origins.current(origin))
+        # Every form is still seeded with its schema defaults and priced.
+        image = scene.scenario.lane_state("image")
+        self.assertEqual(image.model_id, "model_openai-gpt-image-2")
+        seeded = {
+            p.name: (p.int_value, p.enum_value if p.ptype == "string" else None, p.enabled)
+            for p in image.params
+        }
+        self.assertEqual(
+            seeded,
+            {
+                "numOutputs": (1, None, True),
+                "width": (1024, None, False),
+                "height": (1024, None, False),
+                "quality": (0, "auto", True),
+                "background": (0, "auto", True),
+            },
+        )
+        for lane in ("image", "video", "3d", "material", "render_image", "render_video"):
+            with self.subTest(lane=lane):
+                state = scene.scenario.lane_state(lane)
+                self.assertTrue(state.params)
+                self.assertEqual(state.estimate_state, "PENDING")
+
+    def test_reopened_form_restores_its_model_without_staling_an_origin(self):
+        scene = bpy.context.scene
+        self.load_catalog()
+        image = scene.scenario.lane_state("image")
+        image.model_id = "model_google-gemini-3-1-flash"
+        self.assertEqual(image.model_key, "model_google-gemini-3-1-flash")
+        saved_index = self.model_ids("image").index(image.model_key)
+        # A restart drops the in-memory catalog. A shorter list moves the saved
+        # enum index while the chosen model id is unchanged.
+        self.generation.clear_catalog()
+        render = scene.scenario.lane_state("render_image")
+        for state in (image, render):
+            state.estimate_key, state.estimate_state = "kept-quote", "READY"
+        bpy.context.view_layer.update()
+        origin = self.session.capture(scene)
+        self.load_catalog(self.without_first_image_model())
+        bpy.context.view_layer.update()
+        self.assertTrue(self.session._origins.current(origin))
+        self.assertNotEqual(self.model_ids("image").index(image.model_key), saved_index)
+        self.assertEqual(image.model_id, "model_google-gemini-3-1-flash")
+        # The restored form is unchanged and keeps its price. The form without a
+        # chosen model now shows another one, so its reseeded form is repriced.
+        self.assertEqual((image.estimate_key, image.estimate_state), ("kept-quote", "READY"))
+        self.assertEqual(render.model_id, "model_google-gemini-3-1-flash")
+        self.assertEqual((render.estimate_key, render.estimate_state), ("", "PENDING"))
+
+    def test_catalog_reseeding_reprices_each_scenes_own_form(self):
+        first = bpy.context.scene
+        second = bpy.data.scenes.new("Second catalog scene")
+        self.addCleanup(bpy.data.scenes.remove, second)
+        self.load_catalog()
+        states = [scene.scenario.lane_state("render_image") for scene in (first, second)]
+        for state in states:
+            self.assertEqual(state.model_id, "model_openai-gpt-image-2")
+            state.estimate_key, state.estimate_state = "previous-model-quote", "READY"
+        self.load_catalog(self.without_first_image_model())
+        for state in states:
+            self.assertEqual(state.model_id, "model_google-gemini-3-1-flash")
+            self.assertEqual((state.estimate_key, state.estimate_state), ("", "PENDING"))
+
+    def test_seeded_model_duration_still_drives_the_camera_path(self):
+        scene = bpy.context.scene
+        self.load_catalog()
+        render = scene.scenario.lane_state("render_video")
+        self.assertTrue(render.match_timeline)
+        render.model_id = "model_minimax-h3"
+        self.assertEqual(render.params["duration"].int_value, 5)
+        self.assertAlmostEqual(scene.scenario_shot.duration, 5.0, places=3)
+
+    def test_explicit_form_edits_after_the_load_still_stale_an_origin(self):
+        scene = bpy.context.scene
+        self.load_catalog()
+        bpy.context.view_layer.update()
+        image = scene.scenario.lane_state("image")
+        edits = (
+            lambda: setattr(image, "prompt", "a teapot"),
+            lambda: setattr(image, "model_id", "model_google-gemini-3-1-flash"),
+            lambda: setattr(image.params[0], "enabled", not image.params[0].enabled),
+        )
+        for edit in edits:
+            origin = self.session.capture(scene)
+            edit()
+            bpy.context.view_layer.update()
+            self.assertFalse(self.session._origins.current(origin))

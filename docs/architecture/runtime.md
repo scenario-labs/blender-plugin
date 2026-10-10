@@ -85,6 +85,18 @@ runtime reset clears retained intent and schema caches.
 Restoring a dynamic enum's index to the same stable model id does not count as a
 new selection. All events retain the credential-context identity check.
 
+Catalog-driven form synchronization does not tag a scene for a dependency
+update. Blender tags the scene on every RNA assignment to a property with an
+update callback, even with an unchanged value, and that update makes the scene's
+[captured origins](../BLENDER_JOB_CONTEXT.md#origin-and-quote-lifetime) stale.
+Seeding a new or replaced parameter with its schema default, correcting an enum
+value the schema no longer offers and restoring a model enum index therefore
+store raw values without callbacks. A seeded form re-arms its own price in its
+own scene, and a seeded model duration still drives the camera path. Removing an
+obsolete parameter alone does not re-arm a price. Explicit selections, mode or
+task changes and edits still use RNA and invalidate captured origins. Request
+bodies, models and render forms keep their own exact checks at approval.
+
 Caches are connection-local and in memory. The active path does not reuse the
 prototype's unscoped disk model cache. Restart therefore requires a catalog
 refresh. API-key requests use the server's credential-bound scope without requiring

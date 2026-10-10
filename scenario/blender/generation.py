@@ -26,7 +26,6 @@ from . import params_ui, props, runtime
 log = logging.getLogger("scenario.generation")
 
 _schemas = {}
-_restoring_models = set()
 MODEL_OFFLINE = "Online access is disabled; the model description cannot load"
 _MODEL_FAILED = "Could not load this model: "
 
@@ -164,15 +163,12 @@ def restore_model_key(lane_state):
         return
     valid = [item[0] for item in runtime.enum_items(("models", props.lane_of(lane_state)))]
     if key in valid and lane_state.model_id != key:
-        # Rebuilding a dynamic enum can change its numeric index while the
-        # stable chosen id is unchanged. This RNA callback is restoration, not
-        # a new selection; the caller applies its own dirty intent afterwards.
-        pointer = lane_state.as_pointer()
-        _restoring_models.add(pointer)
-        try:
-            lane_state.model_id = key
-        finally:
-            _restoring_models.discard(pointer)
+        # Rebuilding a dynamic enum can change its stored index while the
+        # stable chosen id is unchanged. Restoration is not a new selection:
+        # store the index without the RNA update, which would tag the scene and
+        # make its captured origins stale. The caller applies its own dirty
+        # intent afterwards. Each enum value is its 3-tuple item's index.
+        lane_state["model_id"] = valid.index(key)
 
 
 def set_models(detailed, failed, *, mark_dirty=True):
@@ -412,7 +408,6 @@ def on_model_changed(context, lane_state, mark_dirty=True):
     model_id = lane_state.model_id
     if not model_id or model_id == "NONE":
         return
-    mark_dirty = mark_dirty and lane_state.as_pointer() not in _restoring_models
     # User intent invalidates the old quote even while a background schema read
     # is pending. Its later background completion must not resurrect that quote.
     if mark_dirty:
@@ -433,9 +428,13 @@ def on_model_changed(context, lane_state, mark_dirty=True):
     schema = schema_for(model_id)
     if schema is None:
         return
-    params_ui.sync_params(lane_state, schema, model_id)
-    if lane_state.estimate_state == "IDLE":
+    seeded = params_ui.sync_params(lane_state, schema, model_id)
+    # Seeded values skip their RNA callbacks: re-arm this form's price and let a
+    # seeded model duration drive the camera path, as an edit would.
+    if seeded or lane_state.estimate_state == "IDLE":
         props.mark_estimate_dirty(lane_state)
+    if "duration" in seeded:
+        sync_shot_duration(lane_state.id_data)
 
 
 @dataclass

@@ -20,9 +20,24 @@ def _drawable(spec):
     return not spec.is_prompt and not spec.is_file
 
 
+def _seed(item, name, value):
+    """Store a value derived from the schema without running its RNA update.
+
+    Assigning a property that has an update callback through RNA tags the
+    scene for a dependency update, even with an unchanged value, and that
+    update makes every origin captured in the scene stale. Schema defaults and
+    corrections change only this form. The caller re-arms its price instead.
+    """
+    item[name] = value
+
+
 def sync_params(lane_state, schema, model_id):
-    """Ensure one collection item per drawable spec; keep values whose name, type and model match."""
+    """Ensure one collection item per drawable spec; keep values whose name, type and model match.
+
+    Returns the names whose values were seeded or corrected; removals are not listed.
+    """
     keep = {}
+    seeded = set()
     for spec in schema.specs:
         if not _drawable(spec):
             continue
@@ -39,6 +54,7 @@ def sync_params(lane_state, schema, model_id):
             item.model_id, item.lane, item.label = model_id, props.lane_of(lane_state), spec.label
             _apply_default(item, spec, schema)
             created = True
+            seeded.add(spec.name)
         keep[spec.name] = True
         if spec.allowed_values and spec.ptype != "string_array":
             # Blender rejects empty enum identifiers: an empty option means "unset", modelled by the enable toggle.
@@ -60,12 +76,15 @@ def sync_params(lane_state, schema, model_id):
                 )
             default = str(spec_default) if has_default else valid[0]
             if created or item.enum_value not in valid:
-                item.enum_value = default
+                # The enum items are the 3-tuples above, so each stored value is its index.
+                _seed(item, "enum_value", valid.index(default))
+                seeded.add(spec.name)
             if created and not has_default and not spec.required_always:
-                item.enabled = False
+                _seed(item, "enabled", False)
     for index in range(len(lane_state.params) - 1, -1, -1):
         if lane_state.params[index].name not in keep:
             lane_state.params.remove(index)
+    return seeded
 
 
 def _numeric_fallback(spec, schema=None):
@@ -99,17 +118,18 @@ def _apply_default(item, spec, schema=None):
     if spec.ptype == "number":
         value = default if isinstance(default, (int, float)) else _numeric_fallback(spec, schema)
         if spec.is_integer:
-            item.int_value = int(value)
+            _seed(item, "int_value", int(value))
         else:
-            item.float_value = float(value)
+            _seed(item, "float_value", float(value))
     elif spec.ptype == "boolean":
-        item.bool_value = bool(default)
+        _seed(item, "bool_value", bool(default))
     elif spec.ptype == "string_array":
         set_multi_selection(item, default or [])
     elif spec.ptype == "string" and not spec.allowed_values:
-        item.str_value = default if isinstance(default, str) else ""
+        _seed(item, "str_value", default if isinstance(default, str) else "")
     # No schema default and not required: leave it to the server unless the user opts in (seed, optional strengths).
-    item.enabled = spec.required_always or default is not None
+    _seed(item, "enabled", spec.required_always or default is not None)
+    props.clamp_param(item, _seed)
 
 
 def collect_values(lane_state, schema):

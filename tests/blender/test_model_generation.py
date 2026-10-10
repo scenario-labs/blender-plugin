@@ -1252,6 +1252,25 @@ class ModelGenerationTests(unittest.TestCase):
         with self.assertRaises((self.request_error, self.origin_error)):
             self.mcp_submit(quote)
 
+    def test_mcp_approval_survives_a_catalog_load_that_seeds_forms(self):
+        from helpers import FIXTURES
+
+        quote = self.mcp_quote()
+        catalog = submodule("core.api.catalog")
+        fixture = json.loads((FIXTURES / "models" / "model_openai-gpt-image-2.json").read_text())
+        records = [
+            catalog.ModelRecord.from_api(fixture["model"]),
+            catalog.ModelRecord.from_api(self.model),
+        ]
+        self.generation.set_catalog(records, records)
+        # The form now shows another model whose defaults were seeded.
+        self.assertEqual(self.lane.model_id, "model_openai-gpt-image-2")
+        self.assertTrue(self.lane.params)
+        bpy.context.view_layer.update()
+        self.mcp_submit(quote)
+        self.settle()
+        self.assertEqual(len(self.paid), 1)
+
     def test_scene_change_and_retired_credentials_reject_quotes(self):
         quote = self.mcp_quote()
         self.runtime.state.job_session.invalidate_scene(bpy.context.scene)

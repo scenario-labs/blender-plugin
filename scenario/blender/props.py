@@ -223,16 +223,22 @@ def _find_lane_state(context, lane):
     return scene.scenario.lane_state(lane)
 
 
+def clamp_param(item, assign=setattr):
+    """Keep both numeric fields inside the item's schema range."""
+    if not item.has_range:
+        return
+    if item.float_value < item.fmin:
+        assign(item, "float_value", item.fmin)
+    elif item.float_value > item.fmax:
+        assign(item, "float_value", item.fmax)
+    if item.int_value < int(item.fmin):
+        assign(item, "int_value", int(item.fmin))
+    elif item.int_value > int(item.fmax):
+        assign(item, "int_value", int(item.fmax))
+
+
 def _on_param_update(self, context):
-    if self.has_range:
-        if self.float_value < self.fmin:
-            self.float_value = self.fmin
-        elif self.float_value > self.fmax:
-            self.float_value = self.fmax
-        if self.int_value < int(self.fmin):
-            self.int_value = int(self.fmin)
-        elif self.int_value > int(self.fmax):
-            self.int_value = int(self.fmax)
+    clamp_param(self)
     lane_state = _find_lane_state(context, self.lane)
     if lane_state is not None:
         mark_estimate_dirty(lane_state)

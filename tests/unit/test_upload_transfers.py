@@ -27,6 +27,10 @@ DIGEST = hashlib.sha256(DATA).hexdigest()
         "fixture-bucket.s3.amazonaws.com",
         "fixture-bucket.s3.eu-west-1.amazonaws.com",
         "fixture-bucket.s3.dualstack.ap-southeast-2.amazonaws.com",
+        # Transfer Acceleration, as signed by Scenario's live create response.
+        "fixture-bucket.s3-accelerate.amazonaws.com",
+        "fixture-bucket.s3-accelerate.dualstack.amazonaws.com",
+        "abc.s3-accelerate.amazonaws.com",
     ],
 )
 def test_scoped_s3_policy_accepts_only_supported_rest_destinations(host):
@@ -55,6 +59,20 @@ def test_scoped_s3_policy_accepts_only_supported_rest_destinations(host):
         "S3.amazonaws.com",
         "bucket..name.s3.us-east-1.amazonaws.com",
         "cdn.cloud.scenario.com",
+        "s3-accelerate.amazonaws.com",
+        "s3-accelerate.dualstack.amazonaws.com",
+        "dotted.bucket.s3-accelerate.amazonaws.com",
+        "ab.s3-accelerate.amazonaws.com",
+        "-bucket.s3-accelerate.amazonaws.com",
+        "bucket-.s3-accelerate.amazonaws.com",
+        "bucket.s3-accelerate.us-east-1.amazonaws.com",
+        "bucket.dualstack.s3-accelerate.amazonaws.com",
+        "bucket.s3-accelerate-dualstack.amazonaws.com",
+        "bucket.s3-accelerate.amazonaws.com.evil.invalid",
+        "bucket.s3-accelerate.example.invalid",
+        "bucket.s3-accelerate.amazonaws.com:8443",
+        "user@bucket.s3-accelerate.amazonaws.com",
+        "BUCKET.s3-accelerate.amazonaws.com",
     ],
 )
 def test_s3_upload_rejects_other_services_hosts_and_url_confusion_before_connect(

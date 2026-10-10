@@ -334,7 +334,9 @@ The SDK returns numbered upload parts with URLs and expiry values; creating an
 upload makes only the Scenario API request. The inspected resource has no byte
 transfer or upload-abort method. The generated completion parameter is
 `Literal["complete"]`, while its docstring says `"upload-complete"`. Tests record
-the literal's serialization; service acceptance of that action remains to verify.
+the literal's serialization, and the live service accepted it with a `validating`
+acknowledgement. Only `create` returns the signed part plan; retrieval and the
+action omit it, as described in the [upload contract](SDK_UPLOADS.md#inputs-and-responses).
 Do not silently substitute the docstring value or invent an abort endpoint.
 
 The [upload components](SDK_UPLOADS.md#shared-worker-commands) now stage private

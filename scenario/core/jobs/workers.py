@@ -247,6 +247,14 @@ class JobWorkers:
             self._coordinator.finalize_upload, request_id, expected_revision=expected_revision
         )
 
+    def restart_upload(self, request_id, *, expected_revision, origin):
+        return self._enqueue(
+            self._coordinator.restart_upload,
+            request_id,
+            expected_revision=expected_revision,
+            origin=origin,
+        )
+
     def refresh_upload(self, request_id, *, expected_revision):
         return self._enqueue(
             self._coordinator.refresh_upload, request_id, expected_revision=expected_revision

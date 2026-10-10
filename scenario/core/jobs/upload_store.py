@@ -125,14 +125,22 @@ class UploadState(StrEnum):
     IMPORTED = "imported"
     FAILED = "failed"
     CANCELED = "canceled"
+    # Terminal: this client never sends, completes or polls it again. A
+    # replacement request uploads the same verified bytes; see abandon().
+    ABANDONED = "abandoned"
 
 
 _OBSERVATIONS = {UploadState.PROCESSING, UploadState.IMPORTED, UploadState.FAILED}
 _TRANSITIONS = {
     UploadState.PREPARED: {UploadState.INITIALIZING, UploadState.CANCELED},
     UploadState.INITIALIZING: {UploadState.INITIALIZATION_UNCERTAIN, UploadState.UPLOADING},
-    UploadState.UPLOADING: {UploadState.PART_UNCERTAIN, UploadState.FINALIZING} | _OBSERVATIONS,
-    UploadState.PART_UNCERTAIN: _OBSERVATIONS,
+    UploadState.UPLOADING: {
+        UploadState.PART_UNCERTAIN,
+        UploadState.FINALIZING,
+        UploadState.ABANDONED,
+    }
+    | _OBSERVATIONS,
+    UploadState.PART_UNCERTAIN: {UploadState.ABANDONED} | _OBSERVATIONS,
     UploadState.FINALIZING: {UploadState.FINALIZATION_UNCERTAIN} | _OBSERVATIONS,
     UploadState.FINALIZATION_UNCERTAIN: _OBSERVATIONS,
     UploadState.PROCESSING: {UploadState.IMPORTED, UploadState.FAILED},
@@ -470,3 +478,55 @@ class UploadStore:
             return replace(previous, active_part=None, receipts=previous.receipts + (receipt,))
 
         return self._change(request_id, expected_revision, change)
+
+    def abandon(self, request_id, *, expected_revision, replacement):
+        """Retire a never-completed upload and save its replacement in one transaction.
+
+        Completion was never requested for UPLOADING or PART_UNCERTAIN, so the
+        server cannot import it; the abandoned record keeps its remote ID and
+        receipts for audit and accepts no further transition. The replacement
+        is a new PREPARED request for the same verified bytes and metadata.
+        """
+        _identity(request_id)
+        if type(expected_revision) is not int or expected_revision < 0:
+            raise ValueError("Use a nonnegative upload revision")
+        if not isinstance(replacement, UploadIntent) or replacement.scope != self.scope:
+            raise ValueError("Replacement upload belongs to another scope")
+        created = _validate(StoredUpload(replacement))
+        with self._connection(write=True) as connection:
+            previous = self._read(connection, request_id)
+            if previous is None or previous.revision != expected_revision:
+                raise StoreConflict("Upload is missing or changed; reload before acting")
+            if UploadState.ABANDONED not in _TRANSITIONS.get(previous.state, set()):
+                raise StoreConflict("Only an uncompleted upload can be abandoned")
+            if (
+                replacement.request_id == request_id
+                or self._read(connection, replacement.request_id) is not None
+            ):
+                raise StoreConflict("Replacement upload request already exists")
+            identity = ("kind", "file_name", "content_type", "file_size", "file_sha256")
+            if any(getattr(replacement, key) != getattr(previous.intent, key) for key in identity):
+                raise ValueError("A replacement must upload the same verified source")
+            abandoned = _validate(
+                replace(
+                    previous,
+                    state=UploadState.ABANDONED,
+                    active_part=None,
+                    revision=previous.revision + 1,
+                )
+            )
+            connection.execute(
+                "UPDATE uploads SET revision=?, record=? WHERE scope=? AND request_id=? AND revision=?",
+                (
+                    abandoned.revision,
+                    _json(asdict(abandoned)),
+                    self._key,
+                    request_id,
+                    expected_revision,
+                ),
+            )
+            connection.execute(
+                "INSERT INTO uploads VALUES (?, ?, ?, ?)",
+                (self._key, replacement.request_id, 0, _json(asdict(created))),
+            )
+        return abandoned, created

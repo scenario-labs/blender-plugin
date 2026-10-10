@@ -562,3 +562,106 @@ def test_missing_mesh_index_fails_instead_of_falling_back_to_a_history_scan(stor
         connection.execute("DROP INDEX upload_mesh_asset")
     with pytest.raises(StoreError):
         store.mesh_sources("chosen-asset")
+
+
+def replacement_for(intent, request_id="reference-two", **changes):
+    return replace(intent, request_id=request_id, **changes)
+
+
+@pytest.mark.parametrize("phase", ["uploading", "partial", "claimed", "part_uncertain"])
+def test_abandon_retires_uncompleted_upload_and_saves_replacement_atomically(store, intent, phase):
+    record = uploading(store, intent)
+    if phase == "partial":
+        record = send_part(store, record)
+    elif phase in {"claimed", "part_uncertain"}:
+        record = store.claim_part(intent.request_id, expected_revision=record.revision)
+        if phase == "part_uncertain":
+            record = advance(store, record, UploadState.PART_UNCERTAIN)
+    abandoned, created = store.abandon(
+        intent.request_id, expected_revision=record.revision, replacement=replacement_for(intent)
+    )
+    assert abandoned == replace(
+        record, state=UploadState.ABANDONED, active_part=None, revision=record.revision + 1
+    )
+    assert created.state == UploadState.PREPARED
+    assert created.revision == 0
+    reopened = UploadStore(store._path, intent.scope)
+    assert reopened.records() == (abandoned, created)
+    # Terminal: never resumed, completed, observed or abandoned again.
+    for state in UploadState:
+        with pytest.raises(ValueError):
+            advance(reopened, abandoned, state)
+    with pytest.raises(StoreConflict):
+        reopened.claim_part(intent.request_id, expected_revision=abandoned.revision)
+    with pytest.raises(StoreConflict):
+        reopened.abandon(
+            intent.request_id,
+            expected_revision=abandoned.revision,
+            replacement=replacement_for(intent, "reference-three"),
+        )
+
+
+@pytest.mark.parametrize("phase", ["prepared", "finalizing", "processing", "imported", "stale"])
+def test_abandon_refuses_unstarted_completion_claimed_or_stale_records(store, intent, phase):
+    record = store.create(intent)
+    if phase != "prepared":
+        record = advance(store, record, UploadState.INITIALIZING)
+        record = advance(store, record, UploadState.UPLOADING, upload_id="remote-one")
+        if phase in {"finalizing", "processing", "imported"}:
+            record = send_part(store, send_part(store, record))
+            record = advance(store, record, UploadState.FINALIZING)
+            if phase != "finalizing":
+                record = advance(store, record, UploadState.PROCESSING)
+            if phase == "imported":
+                record = advance(store, record, UploadState.IMPORTED, asset_id="asset-one")
+    revision = record.revision + (1 if phase == "stale" else 0)
+    with pytest.raises(StoreConflict):
+        store.abandon(
+            intent.request_id, expected_revision=revision, replacement=replacement_for(intent)
+        )
+    assert store.records() == (record,)
+
+
+@pytest.mark.parametrize(
+    "change",
+    [
+        {"file_sha256": digest(b"other")},
+        {"file_name": "other.png"},
+        {"content_type": "image/jpeg"},
+        {"kind": "video"},
+        {"request_id": "reference-one"},
+        {"scope": "foreign"},
+        {"request_id": "existing"},
+    ],
+)
+def test_abandon_requires_a_new_same_source_replacement_and_writes_nothing_otherwise(
+    store, intent, change
+):
+    record = uploading(store, intent)
+    existing = store.create(replace(intent, request_id="existing"))
+    if change == {"scope": "foreign"}:
+        change = {"scope": replace(intent.scope, project_id="other-project")}
+    replacement = replace(intent, **{"request_id": "reference-two", **change})
+    with pytest.raises((StoreConflict, ValueError)):
+        store.abandon(intent.request_id, expected_revision=record.revision, replacement=replacement)
+    assert store.records() == (existing, record)
+
+
+def test_abandoned_state_is_decoded_and_requires_its_remote_identity(store, intent):
+    record = uploading(store, intent)
+    abandoned, _ = store.abandon(
+        intent.request_id, expected_revision=record.revision, replacement=replacement_for(intent)
+    )
+    with sqlite3.connect(store._path) as connection:
+        raw = connection.execute(
+            "SELECT record FROM uploads WHERE request_id=?", (intent.request_id,)
+        ).fetchone()[0]
+        value = json.loads(raw)
+        assert value["state"] == "abandoned"
+        value["upload_id"] = None
+        connection.execute(
+            "UPDATE uploads SET record=? WHERE request_id=?",
+            (json.dumps(value), intent.request_id),
+        )
+    with pytest.raises(StoreError):
+        store.get(intent.request_id)

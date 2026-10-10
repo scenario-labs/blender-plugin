@@ -13,6 +13,17 @@ import certifi
 
 from .transfers import StoragePolicy, TransferError, _cleanup, _host
 
+_S3_REST = re.compile(
+    r"(?:[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]\.)?"
+    r"s3(?:(?:\.dualstack)?[.-][a-z]{2}(?:-[a-z]+){1,2}-[0-9]+)?"
+    r"\.amazonaws\.com"
+)
+# Transfer Acceleration has no regional or path-style form, and its bucket
+# names cannot contain dots, so exactly one bucket label precedes the endpoint.
+_S3_ACCELERATE = re.compile(
+    r"[a-z0-9][a-z0-9-]{1,61}[a-z0-9]\.s3-accelerate(?:\.dualstack)?\.amazonaws\.com"
+)
+
 
 class S3UploadPolicy(StoragePolicy):
     """S3 REST destinations supplied by the scoped SDK multipart upload plan.
@@ -29,16 +40,10 @@ class S3UploadPolicy(StoragePolicy):
         if not _host(host):
             return False
         # Public S3 global/regional REST endpoints, optionally virtual-hosted or
-        # dual-stack. This is not a wildcard for all AWS services or custom CNAMEs.
-        return (
-            re.fullmatch(
-                r"(?:[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]\.)?"
-                r"s3(?:(?:\.dualstack)?[.-][a-z]{2}(?:-[a-z]+){1,2}-[0-9]+)?"
-                r"\.amazonaws\.com",
-                host,
-            )
-            is not None
-        )
+        # dual-stack, plus virtual-hosted Transfer Acceleration endpoints (the
+        # host Scenario's create response currently signs). This is not a
+        # wildcard for all AWS services or custom CNAMEs.
+        return _S3_REST.fullmatch(host) is not None or _S3_ACCELERATE.fullmatch(host) is not None
 
 
 class UploadUncertain(TransferError):

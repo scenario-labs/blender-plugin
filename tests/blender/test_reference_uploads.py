@@ -200,6 +200,127 @@ class ReferenceUploadTests(unittest.TestCase):
             sum(request.method == "POST" for request, _ in self.fixture.calls), 1
         )  # The failed completion mock above does not delegate to the request recorder.
 
+    def fail_first_read(self):
+        original, failures = self.fixture.handler, []
+
+        def fail(request):
+            if request.method == "GET" and not failures:
+                failures.append(request)
+                raise httpx.ReadTimeout("synthetic private read loss", request=request)
+            return original(request)
+
+        self.fixture.handler = fail
+        return failures
+
+    def test_mcp_restart_uploads_saved_copy_once_after_interrupted_transfer(self):
+        failures = self.fail_first_read()
+        result = self.start()
+        self.settle()
+        status = self.tools.reference_upload_status(result)
+        self.assertEqual(status["state"], "uploading", status)
+        self.assertIsNotNone(status["error"])
+        self.assertEqual(len(failures), 1)
+        self.fixture.uploader.upload.assert_not_called()
+        saved = self.tools.list_reference_uploads({})
+        item = saved["uploads"][0]
+        self.assertEqual(item["action"], "restart_upload")
+        self.fixture.remote["id"] = "upload-two"
+        deferred = self.tools.recover_reference_upload(
+            {
+                "context_id": saved["context_id"],
+                "request_id": item["request_id"],
+                "expected_revision": item["revision"],
+                "action": "restart",
+            }
+        )
+        restarted = deferred.finish(deferred.run())
+        self.assertEqual(restarted["request_id"], item["request_id"])
+        self.assertEqual(restarted["state"], "abandoned")
+        self.assertNotEqual(restarted["replacement_request_id"], item["request_id"])
+        replacement = {"context_id": saved["context_id"], "reference_id": restarted["reference_id"]}
+        self.settle()
+        status = self.tools.reference_upload_status(replacement)
+        self.assertEqual(status["state"], "imported", status)
+        self.assertEqual(status["request_id"], restarted["replacement_request_id"])
+        self.assertEqual(status["asset_id"], "reference-asset")
+        self.assertIsNone(status["error"])
+        self.fixture.uploader.upload.assert_called_once()
+        posts = [request for request, _ in self.fixture.calls if request.method == "POST"]
+        self.assertEqual(len(posts), 3)
+        self.assertTrue(posts[-1].url.path.endswith("/upload-two/action"))
+        listed = {
+            upload["request_id"]: upload
+            for upload in self.tools.list_reference_uploads({})["uploads"]
+        }
+        self.assertEqual(listed[item["request_id"]]["state"], "abandoned")
+        self.assertEqual(listed[item["request_id"]]["action"], "finished")
+        self.assertEqual(listed[item["request_id"]]["upload_id"], "upload-one")
+        # An abandoned upload cannot be restarted, resumed or completed again.
+        with self.assertRaisesRegex(submodule("core.api.errors").ScenarioError, "cannot continue"):
+            self.tools.recover_reference_upload(
+                {
+                    "context_id": saved["context_id"],
+                    "request_id": item["request_id"],
+                    "expected_revision": listed[item["request_id"]]["revision"],
+                    "action": "restart",
+                }
+            )
+        self.assertEqual(self.owner._recovering, {})
+        self.fixture.uploader.upload.assert_called_once()
+        self.assertEqual(len(self.owner.references), 2)
+        self.assertEqual(self.fixture.source.read_bytes(), b"data")
+
+    def test_unusable_create_plan_stops_before_storage_and_restart_recovers(self):
+        parts = self.fixture.remote["parts"]
+        self.fixture.remote["parts"] = [{**parts[0], "url": "https://other.example.invalid/part"}]
+        result = self.start()
+        self.settle()
+        status = self.tools.reference_upload_status(result)
+        self.assertEqual(status["state"], "uploading", status)
+        self.assertIn("restart it from saved uploads", status["error"])
+        self.fixture.uploader.upload.assert_not_called()
+        self.assertEqual([r.method for r, _ in self.fixture.calls], ["POST"])
+        record = self.fixture.session.inspect_upload(status["request_id"])
+        self.fixture.remote.update(id="upload-two", parts=parts)
+        command = self.owner.recover(record.intent.request_id, record.revision, "restart")
+        command.task.result(5)
+        self.settle()
+        self.assertEqual(self.owner.recovery_result(command).state.value, "abandoned")
+        replacement = self.owner.references[command.reference_id]
+        self.assertEqual(replacement.record.state.value, "imported")
+        self.assertEqual(replacement.record.intent.origin, record.intent.origin)
+        self.fixture.uploader.upload.assert_called_once()
+
+    def test_restart_requires_online_access_and_an_unfinished_upload(self):
+        self.start()
+        self.settle()
+        record = self.tools.list_reference_uploads({})["uploads"][0]
+        self.assertEqual(record["state"], "imported")
+        errors = submodule("core.api.errors")
+        with patch.object(self.owner, "_online", return_value=False):
+            with self.assertRaisesRegex(errors.ScenarioError, "Online Access"):
+                self.owner.recover(record["request_id"], record["revision"], "restart")
+        with self.assertRaisesRegex(errors.ScenarioError, "cannot continue"):
+            self.owner.recover(record["request_id"], record["revision"], "restart")
+        with self.assertRaisesRegex(errors.ScenarioError, "changed"):
+            self.owner.recover(record["request_id"], record["revision"] + 1, "restart")
+        self.assertEqual(self.owner._recovering, {})
+        self.assertEqual(len(self.owner.references), 1)
+        self.assertEqual(len(self.fixture.session.upload_recovery_plan()), 1)
+        # A healthy in-session transfer is not offered for restart either.
+        ticket = self.owner.start(self.fixture.scene, self.fixture.source)
+        ticket.task.result(5)
+        self.fixture.remote["id"] = "upload-two"
+        with patch.object(self.owner, "_online", return_value=False):
+            self.owner.poll()
+        initialize = self.fixture.session.initialize_upload(
+            ticket.record.intent.request_id, expected_revision=ticket.record.revision
+        )
+        uploading = initialize.result(5)
+        self.fixture.session.drain(task=initialize)
+        with self.assertRaisesRegex(errors.ScenarioError, "cannot continue"):
+            self.owner.recover(uploading.intent.request_id, uploading.revision, "restart")
+
     def test_cancel_prepared_observes_new_state_before_automatic_admission(self):
         ticket = self.owner.start(self.fixture.scene, self.fixture.source)
         ticket.task.result(5)

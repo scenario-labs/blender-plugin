@@ -524,6 +524,14 @@ durable revision claim: already claimed or uncertain uploads cannot be canceled
 through this command. Inactive sessions reject it. It does not provide remote
 abort. Local MCP exposes this through `recover_reference_upload`.
 
+`restart_upload(request_id, expected_revision=..., origin=...)` queues the
+explicit [upload restart](SDK_UPLOADS.md#part-plan-source-and-restart-limit) on
+the existing workers. Admission requires a current captured origin for the
+replacement but not the old scene or target, so it works after restart. The
+completion carries the new PREPARED record under that origin. The reference
+facade reuses the original origin while it still resolves to the selected scene
+and target, and otherwise captures the selected scene.
+
 `discard_upload_source(request_id, expected_revision=...)` queues explicit
 [finished-upload source cleanup](SDK_UPLOADS.md#explicit-finished-upload-source-cleanup)
 on the existing workers. Hashing and deletion stay off Blender's main thread.

@@ -5,6 +5,7 @@
 import copy
 import json
 from dataclasses import replace
+from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 
 import httpx
@@ -19,6 +20,8 @@ from tools import smoke_suite as suite
 from tools.dev_config import LiveSettings
 
 SETTINGS = LiveSettings(Credentials("fixture-key", "fixture-secret"), "fixture-project")
+# Only the create response carries the multipart plan; retrieval omits it.
+PLAN_FIELDS = ("originalFileName", "contentType", "fileSize", "partsCount", "parts")
 
 
 @pytest.fixture
@@ -54,7 +57,7 @@ def env(tmp_path):
     path = tmp_path / "plan.json"
     root = tmp_path / "suite-inputs"
     events, remote = [], {}
-    behavior = {"fail": None, "imported": False}
+    behavior = {"fail": None, "imported": False, "plan": {}}
 
     def handler(request):
         assert request.url.params.get("projectId") == SETTINGS.project_id
@@ -72,11 +75,13 @@ def env(tmp_path):
         if event == "initialize":
             body = json.loads(request.content)
             ident = "upload-" + str(len(remote))
+            expires = datetime.now(UTC) + timedelta(hours=48)
             remote[ident] = {
                 "id": ident,
                 "source": "multipart",
                 "kind": body["kind"],
                 "status": "pending",
+                "fileName": "uploads/synthetic-storage/" + body["fileName"],
                 "originalFileName": body["fileName"],
                 "contentType": body["contentType"],
                 "fileSize": body["fileSize"],
@@ -84,17 +89,23 @@ def env(tmp_path):
                 "parts": [
                     {
                         "number": 1,
-                        "url": "https://s3.amazonaws.com/fixture?private=fixture",
-                        "expires": "2099-01-01T00:00:00Z",
+                        "url": "https://fixture-bucket.s3-accelerate.amazonaws.com/fixture"
+                        "?partNumber=1&fixture-signature=private-fixture",
+                        "expires": expires.isoformat(timespec="milliseconds").replace(
+                            "+00:00", "Z"
+                        ),
                     }
                 ],
+                **behavior["plan"],
             }
         else:
             ident = request.url.path.split("/")[-2 if event == "finalize" else -1]
         response = copy.deepcopy(remote[ident])
+        if event != "initialize":
+            response = {key: value for key, value in response.items() if key not in PLAN_FIELDS}
         if event == "finalize" or behavior["imported"]:
             response.update(status="imported", entityId="asset-" + ident)
-            remote[ident] = response
+            remote[ident] = {**remote[ident], **response}
         return httpx.Response(200, json={"upload": response})
 
     class Uploader(PartUploader):
@@ -181,6 +192,46 @@ def test_uncertain_upload_stops_remaining_inputs_and_resume_never_writes(env, fa
         env.execute(env.args("resume"))
     assert all(event == "poll" for event in env.events)
     assert not (env.root / "prepared-plan.json").exists()
+
+
+def test_resume_after_an_interrupted_transfer_reports_restart_without_sending(env, capsys):
+    env.behavior["fail"] = "poll"
+    with pytest.raises(UploadError, match="no bytes sent"):
+        env.execute()
+    assert env.events == ["initialize", "poll"]
+    env.events.clear()
+    env.behavior["fail"] = None
+    with pytest.raises(model.SmokeError, match="start a new input upload run") as error:
+        env.execute(env.args("resume"))
+    assert error.value.code == 4
+    # Recovery read the known upload once; it never sent, completed or recreated.
+    assert env.events == ["poll"]
+    assert not (env.root / "prepared-plan.json").exists()
+    assert "private" not in capsys.readouterr().out
+
+
+@pytest.mark.parametrize(
+    "plan",
+    [
+        {"parts": []},
+        {"originalFileName": None},
+        {
+            "parts": [
+                {
+                    "number": 1,
+                    "url": "https://storage.example.invalid/part",
+                    "expires": "2099-01-01T00:00:00Z",
+                }
+            ]
+        },
+    ],
+)
+def test_unusable_create_plan_stops_with_restart_guidance_before_any_part(env, plan):
+    env.behavior["plan"] = plan
+    with pytest.raises(model.SmokeError, match="start a new input upload run") as error:
+        env.execute()
+    assert error.value.code == 4
+    assert env.events == ["initialize"]
 
 
 def test_all_source_hashes_checked_before_first_remote_write(env):

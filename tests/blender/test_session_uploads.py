@@ -8,11 +8,24 @@ import threading
 import unittest
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from unittest.mock import Mock, patch
 
 import bpy
 from helpers import submodule
+
+# Observed live contract: only the create response carries the multipart plan.
+PLAN_FIELDS = ("originalFileName", "contentType", "fileSize", "partsCount", "parts")
+PART_URL = (
+    "https://fixture-bucket.s3-accelerate.amazonaws.com/uploads/synthetic/reference.png"
+    "?x-id=UploadPart&partNumber=1&uploadId=fixture&fixture-signature=secret-fixture"
+)
+
+
+def expires(hours=48):
+    moment = datetime.now(UTC) + timedelta(hours=hours)
+    return moment.isoformat(timespec="milliseconds").replace("+00:00", "Z")
 
 
 class SessionUploadTests(unittest.TestCase):
@@ -24,7 +37,6 @@ class SessionUploadTests(unittest.TestCase):
         self.commands = submodule("core.jobs.uploads")
         self.transfer = submodule("core.jobs.upload_transfers")
         sources = submodule("core.jobs.upload_sources")
-        policy = submodule("core.jobs.transfers")
         self.temp = tempfile.TemporaryDirectory(dir=bpy.utils.resource_path("USER"))
         self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name).resolve()
@@ -49,17 +61,14 @@ class SessionUploadTests(unittest.TestCase):
             "source": "multipart",
             "status": "pending",
             "fileName": "uploads/synthetic-storage/reference.png",
+            "jobId": "upload-job",
+            "assetOptions": {"collectionIds": [], "hide": False},
+            "config": {},
             "originalFileName": "reference.png",
             "contentType": "image/png",
             "fileSize": 4,
             "partsCount": 1,
-            "parts": [
-                {
-                    "number": 1,
-                    "expires": "2099-01-01T00:00:00Z",
-                    "url": "https://storage.example.invalid/part?signature=fixture",
-                }
-            ],
+            "parts": [{"number": 1, "expires": expires(), "url": PART_URL}],
         }
 
         def respond(request):
@@ -67,14 +76,16 @@ class SessionUploadTests(unittest.TestCase):
 
             self.calls.append((request, threading.current_thread()))
             result = dict(self.remote)
-            if request.url.path.endswith("/action"):
+            action = request.url.path.endswith("/action")
+            if action or request.method != "POST":
+                result = {key: value for key, value in result.items() if key not in PLAN_FIELDS}
+            if action:
                 result["status"] = "validating"
             return httpx.Response(200, json={"upload": result})
 
         self.handler = respond
         self.uploader = self.transfer.PartUploader(
-            policy.StoragePolicy(frozenset({"storage.example.invalid"}), max_bytes=4),
-            online_access=lambda: True,
+            self.transfer.S3UploadPolicy(max_bytes=4), online_access=lambda: True
         )
 
         def put(url, data, *, number, content_type, expected_sha256):
@@ -355,7 +366,7 @@ class SessionUploadTests(unittest.TestCase):
         saved = self.session.inspect_upload(record.intent.request_id)
         self.assertEqual(saved.state, self.uploads.UploadState.PART_UNCERTAIN)
         self.assertEqual(saved.active_part, 1)
-        self.assertEqual(self.session.upload_recovery_plan()[0].action.value, "poll_remote")
+        self.assertEqual(self.session.upload_recovery_plan()[0].action.value, "restart_upload")
         before = len(self.calls)
         for method in ("initialize_upload", "transfer_upload_part", "finalize_upload"):
             with self.assertRaises(self.module.OriginUnavailable):
@@ -371,6 +382,51 @@ class SessionUploadTests(unittest.TestCase):
         self.assertEqual(self.uploader.upload.call_count, 1)
         with self.assertRaises(self.module.OriginUnavailable):
             self.session.deliver(completion, lambda *args: self.fail("Rebound restarted origin"))
+
+    def test_new_session_restarts_an_interrupted_upload_from_its_saved_copy(self):
+        record = self.initialized()
+        self.session.shutdown()
+        self.session = self.new_session()
+        saved = self.session.inspect_upload(record.intent.request_id)
+        self.assertEqual(saved, record)
+        self.assertEqual(self.session.upload_recovery_plan()[0].action.value, "restart_upload")
+        with self.assertRaises(self.module.OriginUnavailable):
+            self.session.transfer_upload_part(
+                saved.intent.request_id, expected_revision=saved.revision
+            )
+        self.source.write_bytes(b"changed user source")
+        origin = self.session.capture(self.scene)
+        task = self.session.restart_upload(
+            saved.intent.request_id, expected_revision=saved.revision, origin=origin
+        )
+        replacement = task.result(5)
+        completion = self.session.drain()[0]
+        self.assertIsNone(completion.error)
+        self.assertEqual(completion.origin, origin)
+        self.assertEqual(replacement.state, self.uploads.UploadState.PREPARED)
+        self.assertEqual(replacement.intent.origin, origin)
+        self.assertEqual(replacement.intent.file_sha256, saved.intent.file_sha256)
+        self.assertNotEqual(replacement.intent.request_id, saved.intent.request_id)
+        abandoned = self.session.inspect_upload(saved.intent.request_id)
+        self.assertEqual(abandoned.state, self.uploads.UploadState.ABANDONED)
+        self.assertEqual(abandoned.upload_id, "upload-one")
+        task = self.session.refresh_upload(
+            abandoned.intent.request_id, expected_revision=abandoned.revision
+        )
+        with self.assertRaises(self.jobs.StoreConflict):
+            task.result(5)
+        self.session.drain()
+        self.remote["id"] = "upload-two"
+        record = replacement
+        for method in ("initialize_upload", "transfer_upload_part", "finalize_upload"):
+            record, _ = self.invoke(method, record)
+        self.assertEqual(record.state, self.uploads.UploadState.PROCESSING)
+        self.assertEqual(record.upload_id, "upload-two")
+        self.uploader.upload.assert_called_once()
+        self.assertEqual(self.uploader.upload.call_args.args[:2], (PART_URL, b"data"))
+        self.assertEqual([r.method for r, _ in self.calls], ["POST", "POST", "GET", "POST"])
+        for marker in (b"secret-fixture", b"s3-accelerate", b"fixture-signature"):
+            self.assertNotIn(marker, (self.root / "uploads.sqlite3").read_bytes())
 
     def test_deleted_target_does_not_block_recovery_or_bind_a_replacement(self):
         record = self.initialized()

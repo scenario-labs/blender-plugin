@@ -14,8 +14,9 @@ import bpy
 
 from ..core.api.errors import ScenarioError
 from ..core.jobs.upload_store import UploadState
+from ..core.jobs.uploads import UploadPlanUnavailable, UploadRecoveryAction
 from ..core.jobs.workers import WorkerError
-from .job_session import SessionBusy
+from .job_session import OriginUnavailable, SessionBusy
 
 # Explicit extension policy follows the Scenario multipart upload guide. It
 # chooses metadata, not a decoder or a claim that every model accepts the file.
@@ -50,6 +51,11 @@ _REFERENCE_TYPES = {
         ".vox": "model/x-3d-vox",
     },
 }
+
+
+# Popups report no close. The saved-uploads view counts as shown for this long
+# after its last draw, which spans several maintenance pump ticks.
+_VIEW_SECONDS = 2.0
 
 
 class UploadNotStarted(ScenarioError):
@@ -149,6 +155,10 @@ class UploadRecovery:
     record: object = None
     error: str | None = None
     done: bool = False
+    # Restart only: the scene that receives the replacement upload handle.
+    scene: object = None
+    reference_id: str | None = None
+    replacement: object = None
 
 
 class ReferenceUploads:
@@ -160,6 +170,9 @@ class ReferenceUploads:
         self._recovering = {}
         self._recoveries = WeakSet()
         self.saved = {}
+        self.saved_actions = {}
+        self._actions_stale = False
+        self._view_drawn_at = None
         self.recovery_errors = {}
         self.forms = {}
         self.form_errors = deque(maxlen=16)
@@ -227,16 +240,24 @@ class ReferenceUploads:
         if not self.session.active:
             return
         self._poll_recoveries()
+        completed = False
         for ticket in tuple(self.references.values()):
             if ticket.task is not None:
                 if not ticket.task.done():
                     continue
+                completed = True
                 try:
                     completion = self.session.drain(task=ticket.task)[0]
                     if completion.error is not None:
                         raise completion.error
                     ticket.record = self.session.inspect_upload(completion.result.intent.request_id)
                     ticket.next_poll = time.monotonic() + 2.0
+                except UploadPlanUnavailable:
+                    ticket.error = (
+                        "Upload cannot continue in this session; restart it from saved uploads"
+                    )
+                    if ticket.record is not None:
+                        ticket.record = self.session.inspect_upload(ticket.record.intent.request_id)
                 except Exception:
                     ticket.error = "Upload stopped; inspect saved progress before trying again"
                     if ticket.record is not None:
@@ -282,6 +303,9 @@ class ReferenceUploads:
                     ticket.error = (
                         "The upload origin changed or work could not start; inspect saved progress"
                     )
+        if completed:
+            self._invalidate_actions()
+        self._refresh_actions()
         if self.forms:
             from .reference_form import deliver
 
@@ -324,20 +348,55 @@ class ReferenceUploads:
                     if record.state in {UploadState.IMPORTED, UploadState.PROCESSING}:
                         ticket.error = None
                         ticket.next_poll = time.monotonic() + 2.0
+        self._invalidate_actions()
 
     def inspect_saved(self):
-        records = tuple(item.record for item in self.session.upload_recovery_plan())
-        self.saved = {record.intent.request_id: record for record in records}
-        return records
+        items = self.session.upload_recovery_plan()
+        self.saved = {item.record.intent.request_id: item.record for item in items}
+        self.saved_actions = {item.record.intent.request_id: item.action for item in items}
+        self._actions_stale = False
+        return tuple(item.record for item in items)
+
+    def note_view_drawn(self):
+        """Record that saved uploads drew: Python memory only, no I/O or Blender data."""
+        self._view_drawn_at = time.monotonic()
+
+    def _invalidate_actions(self):
+        """A record or part plan may have changed; never scan the store here."""
+        if self.saved_actions:
+            self._actions_stale = True
+
+    def _refresh_actions(self):
+        """Recompute stale suggestions on the main thread only while saved uploads show.
+
+        A transfer can stop or a recovery finish while the view is open. Records
+        and actions come from one recovery plan, the same eligibility check a
+        restart repeats; draw() only reads them. A closed or idle view leaves
+        them stale without scanning the store, and its next draw resumes the
+        refresh on a following pump tick. A failed read hides every suggestion
+        until a new inspection.
+        """
+        drawn = self._view_drawn_at
+        if not self._actions_stale or drawn is None or time.monotonic() - drawn > _VIEW_SECONDS:
+            return
+        self._actions_stale = False
+        try:
+            items = self.session.upload_recovery_plan()
+        except Exception:
+            self.saved_actions = {}
+            return
+        self.saved.update((item.record.intent.request_id, item.record) for item in items)
+        self.saved_actions = {item.record.intent.request_id: item.action for item in items}
 
     def recover(self, request_id, expected_revision, action):
         commands = {
             "refresh": "refresh_upload",
             "cancel_prepared": "cancel_prepared_upload",
             "cleanup": "discard_upload_source",
+            "restart": "restart_upload",
         }
         if action not in commands:
-            raise ValueError("Choose refresh, cancel_prepared or cleanup")
+            raise ValueError("Choose refresh, cancel_prepared, cleanup or restart")
         if type(expected_revision) is not int or expected_revision < 0:
             raise ValueError("expected_revision must be a nonnegative integer")
         if request_id in self._recovering:
@@ -347,9 +406,12 @@ class ReferenceUploads:
         self._recovering[request_id] = command
         self.recovery_errors.pop(request_id, None)
         try:
-            result = getattr(self.session, commands[action])(
-                request_id, expected_revision=expected_revision
-            )
+            if action == "restart":
+                result = self._restart(request_id, expected_revision, command)
+            else:
+                result = getattr(self.session, commands[action])(
+                    request_id, expected_revision=expected_revision
+                )
             if action == "cancel_prepared":
                 command.record = result
                 self.observe_saved(result)
@@ -362,6 +424,39 @@ class ReferenceUploads:
             raise
         return command
 
+    def _restart(self, request_id, expected_revision, command):
+        """Queue an explicit restart; the replacement then advances like a new upload."""
+        if not self._online():
+            raise ScenarioError(0, "Allow Online Access before uploading a reference")
+        if len(self.references) >= 128:
+            raise ScenarioError(0, "Reference upload capacity reached; inspect existing uploads")
+        item = next(
+            (
+                item
+                for item in self.session.upload_recovery_plan()
+                if item.record.intent.request_id == request_id
+            ),
+            None,
+        )
+        if item is None or item.record.revision != expected_revision:
+            raise ScenarioError(0, "This upload changed or is not saved for this connection")
+        if item.action != UploadRecoveryAction.RESTART_UPLOAD:
+            raise ScenarioError(0, "Only an upload that cannot continue can be uploaded again")
+        record = item.record
+        scene = bpy.context.scene
+        bpy.context.view_layer.update()
+        try:
+            # Keep the original origin, and any captured-mesh provenance, only
+            # while it still identifies the selected scene and target.
+            self.session.validate_destination(record.intent.origin)
+            origin = record.intent.origin
+        except OriginUnavailable:
+            origin = self.session.capture(scene)
+        command.scene = scene
+        return self.session.restart_upload(
+            request_id, expected_revision=expected_revision, origin=origin
+        )
+
     def _poll_recoveries(self):
         for request_id, command in tuple(self._recovering.items()):
             if command.task is None or not command.task.done():
@@ -370,6 +465,18 @@ class ReferenceUploads:
                 completion = self.session.drain(task=command.task)[0]
                 if completion.error is not None:
                     raise completion.error
+                if command.scene is not None:
+                    replacement = self.session.inspect_upload(completion.result.intent.request_id)
+                    ticket = ReferenceUpload(
+                        uuid.uuid4().hex,
+                        None,
+                        command.scene,
+                        command="restart_upload",
+                        record=replacement,
+                    )
+                    self.references[ticket.identifier] = ticket
+                    self.saved[replacement.intent.request_id] = replacement
+                    command.reference_id, command.replacement = ticket.identifier, replacement
                 command.record = self.session.inspect_upload(request_id)
                 self.observe_saved(command.record)
             except Exception:

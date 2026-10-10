@@ -5,6 +5,7 @@
 import json
 import unittest
 from pathlib import Path
+from threading import Event
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
@@ -21,6 +22,7 @@ class ReferenceFormTests(unittest.TestCase):
         self.addCleanup(fixture.doCleanups)
         self.runtime, self.owner = fixture.runtime, fixture.owner
         self.form = submodule("blender.reference_form")
+        self.uploads = submodule("blender.reference_uploads")
         self.generation = submodule("blender.generation")
         model = {
             "id": "fixture-reference-form",
@@ -568,6 +570,136 @@ class ReferenceFormTests(unittest.TestCase):
         self.runtime.state.job_context_id = "another-context"
         with self.assertRaises(submodule("core.api.errors").ScenarioError):
             self.form.apply_attachment("fixture-context", approval.identifier)
+
+    def inspect_labels(self, index=0):
+        return self.draw_labels(*self.open_inspection(index))
+
+    def open_inspection(self, index=0):
+        operator = SimpleNamespace(lane="image", index=index, param_name="", page=0)
+        context = SimpleNamespace(window_manager=Mock(), scene=self.scene)
+        self.form.SCENARIO_OT_inspect_uploads.invoke(operator, context, None)
+        return operator, context
+
+    def draw_labels(self, operator, context):
+        labels, layout = [], Mock()
+        layout.row.return_value = layout
+        layout.box.return_value = layout
+
+        def operator_button(name, text="", **kwargs):
+            labels.append(text)
+            return SimpleNamespace()
+
+        layout.operator.side_effect = operator_button
+        operator.layout = layout
+        self.form.SCENARIO_OT_inspect_uploads.draw(operator, context)
+        return labels
+
+    def test_native_upload_again_restarts_only_an_unfinished_upload_after_confirmation(self):
+        original, failures = self.fixture.fixture.handler, []
+
+        def fail_first_read(request):
+            if request.method == "GET" and not failures:
+                failures.append(request)
+                raise httpx.ReadTimeout("synthetic private read loss", request=request)
+            return original(request)
+
+        self.fixture.fixture.handler = fail_first_read
+        binding = self.start()
+        self.fixture.settle()
+        self.assertTrue(binding.error)
+        record = binding.ticket.record
+        self.assertEqual(record.state.value, "uploading")
+        self.assertIn("Upload again", self.inspect_labels())
+        window_manager = Mock()
+        self.form.SCENARIO_OT_recover_upload.invoke(
+            SimpleNamespace(action="restart"), SimpleNamespace(window_manager=window_manager), None
+        )
+        window_manager.invoke_confirm.assert_called_once()
+        self.fixture.fixture.remote["id"] = "upload-two"
+        self.assertEqual(
+            bpy.ops.scenario.recover_upload(
+                context_id=self.runtime.state.job_context_id,
+                request_id=record.intent.request_id,
+                expected_revision=record.revision,
+                action="restart",
+            ),
+            {"FINISHED"},
+        )
+        command = self.owner._recovering[record.intent.request_id]
+        command.task.result(5)
+        self.fixture.settle()
+        self.assertIsNone(command.error)
+        replacement = self.owner.references[command.reference_id].record
+        self.assertEqual(replacement.state.value, "imported")
+        self.assertEqual(
+            self.owner.session.inspect_upload(record.intent.request_id).state.value, "abandoned"
+        )
+        labels = self.inspect_labels()
+        self.assertNotIn("Upload again", labels)
+        self.assertIn("Use this reference", labels)
+        # The slot still needs explicit attachment of the replacement upload.
+        self.assertEqual(self.ref.source, "FILE")
+        approval = self.approve(replacement)
+        ref = self.form.apply_attachment(self.runtime.state.job_context_id, approval.identifier)
+        self.assertEqual(ref.asset_id, "reference-asset")
+        self.fixture.fixture.uploader.upload.assert_called_once()
+
+    def test_open_saved_uploads_offer_upload_again_after_a_background_stop(self):
+        original, entered, release = self.fixture.fixture.handler, Event(), Event()
+
+        def held_read(request):
+            if request.method == "GET" and not entered.is_set():
+                entered.set()
+                self.assertTrue(release.wait(5))
+                raise httpx.ReadTimeout("synthetic private read loss", request=request)
+            return original(request)
+
+        self.fixture.fixture.handler = held_read
+        self.addCleanup(release.set)
+        # A slow host must not age the shown view out between its draw and poll().
+        self.enterContext(patch.object(self.uploads, "_VIEW_SECONDS", 60.0))
+        ticket = self.start().ticket
+        for _ in ("prepare_upload", "initialize_upload"):
+            ticket.task.result(5)
+            self.owner.poll()
+        self.assertEqual(ticket.command, "transfer_upload_part")
+        self.assertTrue(entered.wait(5))
+        # The transfer is still owned here, so the open dialog has no restart.
+        dialog = self.open_inspection()
+        record = self.owner.saved[ticket.record.intent.request_id]
+        self.assertEqual(record.state.value, "uploading")
+        self.assertNotIn("Upload again", self.draw_labels(*dialog))
+        release.set()
+        with self.assertRaisesRegex(submodule("core.jobs.uploads").UploadError, "no bytes"):
+            ticket.task.result(5)
+        self.owner.poll()
+        self.assertTrue(ticket.error)
+        # Background poll() refreshes the suggestion; draw() only reads it.
+        self.assertIn("Upload again", self.draw_labels(*dialog))
+        self.fixture.fixture.uploader.upload.assert_not_called()
+
+    def test_closed_saved_uploads_view_stops_recovery_scans(self):
+        self.saved_upload()
+        dialog = self.open_inspection()
+        self.assertTrue(self.owner.saved_actions)
+        self.draw_labels(*dialog)
+        scans = Mock(wraps=self.owner.session.upload_recovery_plan)
+        self.enterContext(patch.object(self.owner.session, "upload_recovery_plan", scans))
+        # Popups report no close: a view not drawn within the window counts as
+        # closed. A negative window makes even the latest draw too old.
+        with patch.object(self.uploads, "_VIEW_SECONDS", -1.0):
+            ticket = self.owner.start(self.scene, self.fixture.fixture.source)
+            self.fixture.settle()
+            self.assertEqual(ticket.record.state.value, "imported")
+            for _ in range(3):
+                self.owner.poll()
+        scans.assert_not_called()
+        # Drawing the view again resumes one refresh on the next pump tick only.
+        self.draw_labels(*dialog)
+        for _ in range(3):
+            self.owner.poll()
+        scans.assert_called_once()
+        self.assertIn(ticket.record.intent.request_id, self.owner.saved_actions)
 
     def test_native_cleanup_runs_without_dialog_and_preserves_original(self):
         record = self.saved_upload()

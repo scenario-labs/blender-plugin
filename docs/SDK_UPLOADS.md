@@ -46,12 +46,22 @@ terminal result. Transfer instructions are preserved as metadata; they are **not
 a validated or authorized storage transfer plan**. Do not log raw records: parts
 may contain signed URLs and other sensitive response details.
 
+Only the create response carries the multipart plan. Live service responses
+(SDK 2.2.0) return `parts` (number, signed `url`, `expires`), `partsCount`,
+`fileSize`, `contentType` and `originalFileName` from `create`. Retrieval of the
+same pending upload, before or after its part PUTs, and the completion action
+omit all five fields; the SDK's shared `Upload` model types them as optional.
+No operation reissues part URLs or aborts a pending upload. The response
+`fileName` is a server storage key, not the chosen name.
+
 ## Completion and uncertain responses
 
 The SDK 2.2.0 generated action parameter is `Literal["complete"]`; its docstring
 says `"upload-complete"`. The adapter uses the generated literal already covered
-by the dependency contracts. Actual service acceptance remains unverified; do not
-silently substitute another action or invent an abort endpoint.
+by the dependency contracts. The live service accepted `"complete"` and
+acknowledged it as `validating`; retrieval then reported `validated` and
+`imported` with an `entityId` within seconds. Do not silently substitute another
+action or invent an abort endpoint. The action takes no part list or ETags.
 
 Only an explicit caller action can initialize or finalize an upload. The caller
 must first establish that all its parts transferred successfully before calling
@@ -74,7 +84,10 @@ Signed PUT transport, private source staging, durable claims and explicit shared
 worker commands are available as described below. The active local MCP path now
 selects a host/size policy and exposes explicit saved-upload recovery. Typed form
 attachment and explicit native recovery use the controls below; automatic orphan
-retention and live acceptance remain separate work.
+retention remains separate work. The create-plan transfer, Transfer Acceleration
+part host, `complete` action and import were exercised against the live service
+with SDK 2.2.0 through the smoke input tool's shared commands. That check does
+not establish GUI interaction, every media kind or multipart files above one part.
 Finished uploads have explicit verified source cleanup as described below.
 Storage requests must check destination/online policy and never forward
 Scenario Authorization. No upload-abort method was established in this SDK.
@@ -82,9 +95,10 @@ Scenario Authorization. No upload-abort method was established in this SDK.
 Offline contracts exercise the actual SDK through MockTransport, including
 scoping, field aliases, one-attempt failures, response identity, future processing
 states, invalid inputs and ambient credential isolation. Installed-ZIP tests use
-the bundled SDK with synthetic responses. These checks do not establish live
-upload acceptance, OAuth transport or successful file import. Live checks require
-their own authorized project and applicable budget.
+the bundled SDK with synthetic responses shaped like the live contract above:
+only creation returns the part plan. These checks do not establish live upload
+acceptance, OAuth transport or successful file import. Live checks require their
+own authorized project and applicable budget.
 
 
 ## Signed part byte transfer
@@ -156,9 +170,12 @@ without a known remote ID remains uncertain; it cannot be reset or recreated.
 A part claimed without a receipt cannot be claimed again, including after a
 restart. Uncertain finalization cannot be retried. Explicit SDK reads of a known
 upload may reconcile processing, imported or failed observations without sending
-bytes again. The selected SDK has no per-part receipt or abort API; pending
-remote status alone cannot prove an interrupted part was rejected. No automatic
-retry or cleanup endpoint is invented here.
+bytes again. `abandon` is the only other exit from UPLOADING or PART_UNCERTAIN:
+one transaction retires the record as terminal `abandoned` and inserts a PREPARED
+replacement with the same name, kind, MIME, size and digest. The selected SDK has
+no per-part receipt or abort API; pending remote status alone cannot prove an
+interrupted part was rejected. No automatic retry or cleanup endpoint is invented
+here.
 
 The store validates source identity, state invariants, scope and revision when
 reading. Missing/corrupt records, foreign databases, future versions and failed
@@ -185,11 +202,12 @@ initialization or consume another queue slot.
 | --- | --- |
 | `prepare_upload` | Copy the chosen source into private storage and persist its immutable identity; no network |
 | `initialize_upload` | Verify the staged whole file, commit initialization intent, call SDK create once and preserve the returned ID |
-| `transfer_upload_part` | Retrieve the known upload, verify its metadata/next part destination and immutable bytes, claim and send exactly one part |
+| `transfer_upload_part` | Retrieve the known upload to confirm it is still pending, take the next destination from this owner's in-memory create plan, verify immutable bytes, claim and send exactly one part |
 | `finalize_upload` | Require all saved receipts, claim completion, then call the SDK completion action once |
+| `restart_upload` | Abandon an uploading or part-uncertain upload that cannot continue and stage its verified saved copy as a new PREPARED request; no service request |
 | `refresh_upload` | Retrieve a known upload and commit recognized processing/imported/failed observations without replay |
 | `cancel_prepared_upload` | Immediately cancel only PREPARED local intent at its expected revision; no source access, deletion or remote request |
-| `discard_upload_source` | Explicitly remove a verified staged copy for a CANCELED, FAILED or IMPORTED upload; retain its durable record and the user's original file |
+| `discard_upload_source` | Explicitly remove a verified staged copy for a CANCELED, FAILED, IMPORTED or ABANDONED upload; retain its durable record and the user's original file |
 
 Local cancellation requires the active selected scope but does not require the
 old Blender origin or source file to remain available. It works offline and after
@@ -223,13 +241,54 @@ staging directory and ancestors. Failed intent persistence or deactivation after
 staging may leave a private orphan for explicit retention/cleanup policy; no
 user source is deleted. These are local resource limits, not service guarantees.
 
-The SDK's pending multipart plan must match kind, filename, MIME, size, count and
-ordered part numbers. The selected URL must match the configured exact host policy
-and carry a timezone-aware expiry more than 30 seconds away. This local freshness
-margin is not a transfer-duration guarantee. A fresh plan is retrieved for each
-explicit part command; signed URLs remain ephemeral. Provider-specific size,
-part-order and expiry formats still need live acceptance. Model import is rejected
-because its entity is not an asset reference.
+### Part plan source and restart limit
+
+Initialization validates the create response's pending multipart plan: kind,
+chosen filename (`originalFileName`), MIME, size, part count, ordered part numbers
+1 to N, every URL against the storage host policy and every timezone-aware expiry
+more than 30 seconds away. The owner that created the upload keeps that plan in
+memory only, bound to the request, remote upload ID and source digests. Its object
+representation omits the URLs and it refuses serialization. Signed URLs never
+reach the upload record, SQLite, smoke manifests, logs, task results, MCP output
+or exception text. An unusable plan caches nothing: initialization reports
+`UploadPlanUnavailable` after saving the known upload ID, and no part is claimed.
+
+Each part command still retrieves the known upload first. That liveness check
+requires the same ID, kind, `multipart` source and `pending` status. Optional
+metadata must match only when present, because live retrievals omit it. If a
+future retrieval carries a full `parts` list, it must pass every create-plan check
+and is used once without being saved. The chosen destination is rechecked for
+host policy and the 30-second freshness margin before the claim. This local margin
+is not a transfer-duration guarantee; observed part URLs expired after about 48
+hours. Model import is rejected because its entity is not an asset reference.
+
+A plan serves one uninterrupted transfer in its owner. The final receipt,
+completion, an observed remote state, deactivation or context switch, an expired
+destination and any failed part attempt forget it. Losing a claim race to another
+command does not. Without a plan, `transfer_upload_part` raises
+`UploadPlanUnavailable` before any claim or PUT. A restarted process, a new session
+or a remaining part after an earlier failure therefore cannot resume the transfer.
+Scenario's upload guide says to re-initialize when URLs are needed again.
+
+`restart_upload(request_id, expected_revision=..., origin=...)` is that explicit
+re-initialization. It accepts exactly the records whose suggested action is
+`RESTART_UPLOAD` (see the recovery table below): part-uncertain uploads, and
+uploading ones this owner cannot continue. It refuses a part being sent and an
+upload that can still continue or complete. It verifies and copies the saved
+private snapshot into a new request with the same name, kind, MIME and whole-file
+digest. One SQLite transaction then moves the old record to terminal ABANDONED,
+keeping its remote ID and receipts, and saves the replacement as PREPARED.
+Completion was never requested for the abandoned upload, so it cannot become an
+asset; this client never transfers to, completes or polls it again. The remote
+pending upload stays unaborted, because no abort operation exists. A missing or
+changed snapshot abandons nothing. A restart that fails after copying, for example
+because a concurrent command changed the record's revision or the origin changed,
+abandons nothing and removes its new copy unless a saved record references it. The
+replacement keeps captured-mesh provenance only when it reuses the original, still
+current origin; otherwise it is an ordinary upload of the same verified bytes. Only
+an explicit user or caller action restarts; nothing retries automatically. An
+uncertain part is never sent to the same upload again. Older readers reject the
+new `abandoned` state; do not downgrade a store that contains one.
 
 Deactivation before a mutation claim prevents dispatch. Once claimed, responses
 can persist only to the old scope; a later command is rejected by that inactive
@@ -269,8 +328,8 @@ account discovery, production storage policy and user-facing recovery remain #65
 ## Explicit finished-upload source cleanup
 
 `discard_upload_source(request_id, expected_revision=...)` runs through the existing
-worker queue and accepts only CANCELED, FAILED or IMPORTED records in the active
-selected scope. It needs no current Blender origin or online access. PREPARED,
+worker queue and accepts only CANCELED, FAILED, IMPORTED or ABANDONED records in
+the active selected scope. An abandoned upload's replacement has its own copy. It needs no current Blender origin or online access. PREPARED,
 in-flight and uncertain uploads retain their sources. Cleanup never cancels an
 upload, calls a service, deletes a remote asset or changes its saved history.
 It returns the same immutable record, including all source hashes and receipts.
@@ -321,9 +380,10 @@ resetting the evidence or returning a partial recovery list.
 | --- | --- | --- |
 | Prepared | `REVIEW_SOURCE` | Review the staged source before any explicit initialization |
 | Initializing or initialization uncertain, without an upload ID | `RECONCILE_UNKNOWN` | Preserve uncertainty; do not guess an ID or recreate the upload |
-| Uploading, without an active part claim | `REVIEW_TRANSFER` | Review saved receipts and remaining parts or completion |
-| Uploading with an active part claim, part uncertain, finalizing, finalization uncertain, or processing | `POLL_REMOTE` | A known upload can be retrieved explicitly; pending status does not release a claim |
-| Imported, failed or canceled | `FINISHED` | No further upload recovery is suggested; import alone does not apply a Blender reference |
+| Uploading without a part claim, with every receipt saved or this owner's part plan, and a current origin | `REVIEW_TRANSFER` | The owning session can send the remaining parts or request completion |
+| Uploading without a part plan or current origin, with a claim this owner is not sending, or part uncertain | `RESTART_UPLOAD` | Part destinations cannot be recovered; explicit `restart_upload` abandons it and uploads the saved copy again |
+| Uploading with a part this owner is sending, finalizing, finalization uncertain, or processing | `POLL_REMOTE` | A known upload can be retrieved explicitly; pending status does not release a claim |
+| Imported, failed, canceled or abandoned | `FINISHED` | No further upload recovery is suggested; import alone does not apply a Blender reference |
 
 Suggestions never authorize initialization, transfer, completion, retry or a
 claim reset. An in-flight worker may still finish after inspection or context
@@ -416,14 +476,21 @@ documents multipart uploads and signed S3 destinations. The active `S3UploadPoli
 accepts HTTPS S3 global/regional REST endpoints under `amazonaws.com`, including
 virtual-hosted and dual-stack forms described by the
 [AWS S3 endpoint guide](https://docs.aws.amazon.com/AmazonS3/latest/developerguide/RESTAPI.html).
-It rejects S3 website endpoints, other AWS services, custom CNAMEs, IP literals,
+It also accepts virtual-hosted
+[Transfer Acceleration](https://docs.aws.amazon.com/AmazonS3/latest/userguide/transfer-acceleration-getting-started.html)
+endpoints, `BUCKET.s3-accelerate.amazonaws.com` and its `.dualstack` form, which
+the live create response signs today. Acceleration bucket names contain no dots,
+so exactly one bucket label is allowed. It rejects the bare acceleration endpoint,
+extra labels, S3 website endpoints, other AWS services, custom CNAMEs, IP literals,
 credentials, fragments and nonstandard ports. It is intentionally broader than
-an exact bucket allowlist: the selected SDK's validated known-upload response is
+an exact bucket allowlist: the selected SDK's validated create response is
 trusted to choose the bucket/path. No local caller supplies a transfer URL.
 The coordinator verifies upload/source identity, numbered parts and expiration
 before that URL reaches the transport. Result downloads retain their separate
 exact CDN-host policy. Neither transport sends Scenario credentials, follows
-redirects, uses ambient proxies nor retries a PUT.
+redirects, uses ambient proxies nor retries a PUT. The signed URLs authorize only
+the `host` header, so the transport's Content-Type header does not affect the
+signature; storage acknowledged such a PUT with HTTP 200.
 
 Capture files live in a private temporary directory. The session retains that
 directory until staging completes, including while retired workers finish; drain
@@ -436,10 +503,16 @@ image inputs in generation forms also offer Render Result capture.
 After restart or context change, `list_reference_uploads` reads only the current
 credential scope's saved metadata. `recover_reference_upload` requires its context
 token and observed revision. It can refresh a known remote ID, cancel an unclaimed
-local preparation, or delete the verified private source of a finished upload.
-It cannot recreate an unknown upload, resend a part, finalize again or abort
-remotely. Source cleanup never deletes the original file. Inspection/imported
-metadata does not authorize attaching a reference into a different scene.
+local preparation, restart an upload whose suggested action is `restart_upload`,
+or delete the verified private source of a finished or abandoned upload. Restart
+requires online access and handle capacity. It reuses the original origin while it
+still identifies the selected scene and target, and otherwise captures the selected
+scene. It returns the abandoned record plus a new `reference_id` that advances
+like a fresh upload; the agent polls it with `reference_upload_status`. A ticket
+stopped by `UploadPlanUnavailable` names this action. Recovery cannot recreate an
+unknown upload, resend a part to the same upload, finalize again or abort remotely.
+Source cleanup never deletes the original file. Inspection/imported metadata does
+not authorize attaching a reference into a different scene.
 
 Offline native tests exercise actual SDK wrappers, SQLite and workers through
 synthetic API/PUT responses, including changed origins, lost responses, restart
@@ -486,10 +559,13 @@ operation grants generation approval.
 
 **Inspect uploads** snapshots this connection's durable metadata without sending
 bytes. Its paginated view shows errors, state and request IDs. Explicit actions
-refresh a known upload, cancel an unclaimed preparation, or clean a terminal
-upload's verified private staging copy. Cancellation and cleanup ask for
-confirmation. These actions share MCP recovery ownership, context/revision guards
-and no-replay rules; cleanup preserves the original file.
+refresh a known upload, cancel an unclaimed preparation, upload again an
+unfinished upload whose suggested action is `restart_upload`, or clean a terminal
+upload's verified private staging copy. Cancellation, **Upload again** and cleanup
+ask for confirmation. These actions share MCP recovery ownership, context/revision
+guards and no-replay rules; cleanup preserves the original file. The replacement
+upload does not attach itself: its form slot keeps the saved-upload marker until
+**Use this reference** attaches the imported replacement.
 
 Automatic attachment handles do not survive restart. **Use saved upload** on a
 reference slot or **Saved uploads** on a typed input offers attachment only for

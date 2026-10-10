@@ -440,8 +440,12 @@ automatic delivery and explicitly approved recovered imports.
 Optional upload storage, source staging and signed PUT configuration attach to
 this same coordinator and worker queue. Their scope must match the job store.
 See [upload commands](SDK_UPLOADS.md#shared-worker-commands) for preparation,
-initialization, one-part transfer, finalization and explicit refresh. They do not
-submit generation, create another client/pool, or apply references to Blender.
+initialization, one-part transfer, finalization, explicit refresh and restart.
+They do not submit generation, create another client/pool, or apply references
+to Blender. Signed part destinations from the create response stay in the upload
+owner's memory and are forgotten on `deactivate()`; a new coordinator cannot
+resume a transfer and offers `restart_upload` instead (see the
+[restart limit](SDK_UPLOADS.md#part-plan-source-and-restart-limit)).
 `cancel_prepared_upload` synchronously cancels unclaimed local upload intent,
 including queued initialization, under the original scope and expected revision.
 It does not require a current scene origin, access sources or abort remote work.
@@ -455,7 +459,7 @@ suggestions do not grant permission to dispatch or retry. See
 the state mapping and lifecycle boundaries.
 
 `discard_upload_source(request_id, expected_revision=...)` queues explicit local
-cleanup for a saved CANCELED, FAILED or IMPORTED upload. It verifies the staged
+cleanup for a saved CANCELED, FAILED, IMPORTED or ABANDONED upload. It verifies the staged
 copy and rechecks the active scope/record before removal, preserving the original
 file and durable history. Source hashing runs outside the coordinator lock;
 guarded deletion does not require a current scene origin. See

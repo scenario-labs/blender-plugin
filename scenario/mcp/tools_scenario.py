@@ -1132,7 +1132,8 @@ def _reference_response(identifier):
         "context_id": runtime.state.job_context_id,
         **runtime.ensure_reference_uploads().status(identifier),
         "note": "Poll reference_upload_status; use its imported asset_id in estimate_cost. "
-        "Do not restart an uncertain upload. Uploading does not generate or approve spending.",
+        "Do not upload the same file again for an unfinished upload; use list_reference_uploads "
+        "and its suggested recovery. Uploading does not generate or approve spending.",
     }
 
 
@@ -1177,7 +1178,7 @@ def recover_reference_upload(args):
         if runtime.state.reference_uploads is not owner or not owner.session.active:
             raise ScenarioError(0, "The upload context changed during recovery")
         record = owner.recovery_result(command)
-        return {
+        result = {
             "request_id": record.intent.request_id,
             "state": record.state.value,
             "revision": record.revision,
@@ -1185,6 +1186,10 @@ def recover_reference_upload(args):
             "kind": record.intent.kind,
             "content_type": record.intent.content_type,
         }
+        if command.reference_id is not None:
+            result["reference_id"] = command.reference_id
+            result["replacement_request_id"] = command.replacement.intent.request_id
+        return result
 
     if command.task is None:
         return finish(None)
@@ -1828,7 +1833,7 @@ SPECS = (
             "Args: none.\n"
             "Returns: context_id and uploads with request_id, revision, state, suggested action, upload_id, asset_id, kind and content_type.\n"
             "Example: {}.\n"
-            "Inspection makes no network request, sends no bytes and never resumes uncertain initialization or parts. Use recover_reference_upload for explicit known-upload reads or local cleanup.\n"
+            "Inspection makes no network request, sends no bytes and never resumes uncertain initialization or parts. Action restart_upload marks an unfinished upload this session cannot continue. Use recover_reference_upload for explicit known-upload reads, restarts or local cleanup.\n"
             "Platform equivalent: none; this inspects local durable upload history."
         ),
         _schema({}),
@@ -1838,22 +1843,25 @@ SPECS = (
     ToolSpec(
         "recover_reference_upload",
         (
-            "Explicitly inspect a known remote upload, cancel unclaimed preparation, or clean its finished private source copy.\n"
+            "Explicitly inspect a known remote upload, cancel unclaimed preparation, restart an unfinished upload, or clean its finished private source copy.\n"
             "Args:\n  - context_id: required string, context from list_reference_uploads.\n"
             "  - request_id: required string, saved local upload identity.\n"
             "  - expected_revision: required nonnegative integer, observed saved revision.\n"
-            "  - action: required string, refresh, cancel_prepared or cleanup.\n"
-            "Returns: request_id, state, revision, asset_id, kind and content_type.\n"
+            "  - action: required string, refresh, cancel_prepared, restart or cleanup.\n"
+            "Returns: request_id, state, revision, asset_id, kind and content_type; restart also returns reference_id and replacement_request_id.\n"
             'Example: {"context_id": "from-list", "request_id": "from-list", "expected_revision": 2, "action": "refresh"}.\n'
-            "Refresh sends only a status read. Cleanup accepts only finished records and never deletes the original user file. No action repeats initialization, PUT or finalization.\n"
-            "Platform equivalent: upload retrieval or local source cleanup."
+            "Refresh sends only a status read. Restart is for an uploading or part-uncertain upload whose suggested action is restart_upload: Scenario issues part destinations only once, so it marks that upload abandoned (never completed) and uploads the verified saved copy as a new request; poll reference_upload_status with the returned reference_id. Cleanup accepts only finished records and never deletes the original user file. No action resends a part to the same upload or repeats initialization or finalization.\n"
+            "Platform equivalent: upload retrieval, a new upload of the same bytes, or local source cleanup."
         ),
         _schema(
             {
                 "context_id": {"type": "string"},
                 "request_id": {"type": "string"},
                 "expected_revision": {"type": "integer", "minimum": 0},
-                "action": {"type": "string", "enum": ["refresh", "cancel_prepared", "cleanup"]},
+                "action": {
+                    "type": "string",
+                    "enum": ["refresh", "cancel_prepared", "restart", "cleanup"],
+                },
             },
             ["context_id", "request_id", "expected_revision", "action"],
         ),

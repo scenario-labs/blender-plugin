@@ -5,9 +5,12 @@
 import copy
 import hashlib
 import json
+import pickle
 import sqlite3
 import threading
 from contextlib import contextmanager
+from dataclasses import asdict
+from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 from unittest.mock import Mock
 
@@ -18,12 +21,39 @@ from scenario.core.api.sdk_adapter import Credentials, SDKAdapter
 from scenario.core.jobs.coordinator import JobCoordinator
 from scenario.core.jobs.origins import OriginRevisions
 from scenario.core.jobs.store import JobScope, JobStore, StoreConflict, StoreError
-from scenario.core.jobs.transfers import StoragePolicy, TransferError
+from scenario.core.jobs.transfers import TransferError
 from scenario.core.jobs.upload_sources import UploadSources
 from scenario.core.jobs.upload_store import UploadState, UploadStore
-from scenario.core.jobs.upload_transfers import PartUploader, UploadedPart, UploadUncertain
-from scenario.core.jobs.uploads import UploadError, UploadMutationUncertain
+from scenario.core.jobs.upload_transfers import (
+    PartUploader,
+    S3UploadPolicy,
+    UploadedPart,
+    UploadUncertain,
+)
+from scenario.core.jobs.uploads import (
+    UploadError,
+    UploadMutationUncertain,
+    UploadPlanUnavailable,
+    UploadRecoveryAction,
+)
 from scenario.core.jobs.workers import JobWorkers
+
+# Observed live contract: only the create response carries the multipart plan.
+# Retrieval and the complete action omit these fields entirely.
+PLAN_FIELDS = ("originalFileName", "contentType", "fileSize", "partsCount", "parts")
+SIGNED = "fixture-signature=secret-fixture"
+
+
+def expires(hours=48):
+    moment = datetime.now(UTC) + timedelta(hours=hours)
+    return moment.isoformat(timespec="milliseconds").replace("+00:00", "Z")
+
+
+def part_url(number, host="fixture-bucket.s3-accelerate.amazonaws.com"):
+    return (
+        f"https://{host}/uploads/synthetic/reference.png"
+        f"?x-id=UploadPart&partNumber={number}&uploadId=fixture&{SIGNED}"
+    )
 
 
 @pytest.fixture
@@ -45,10 +75,13 @@ def env(tmp_path):
         sources=sources,
         store=store,
         requests=[],
+        responses=[],
         fail=None,
         online=True,
         origins=origins,
         origin_held=False,
+        retrieval={},
+        retrieval_plan=False,
     )
     env.remote = {
         "id": "remote-one",
@@ -56,18 +89,16 @@ def env(tmp_path):
         "source": "multipart",
         "kind": "image",
         "fileName": "uploads/synthetic-storage/reference.png",
+        "jobId": "upload-job",
+        "authorId": "fixture-author",
+        "ownerId": "fixture-owner",
+        "assetOptions": {"collectionIds": [], "hide": False},
+        "config": {},
         "originalFileName": "reference.png",
         "contentType": "image/png",
         "fileSize": 5,
         "partsCount": 2,
-        "parts": [
-            {
-                "number": i,
-                "url": f"https://storage.example.invalid/{i}?secret=fixture",
-                "expires": "2099-01-01T00:00:00Z",
-            }
-            for i in (1, 2)
-        ],
+        "parts": [{"number": i, "url": part_url(i), "expires": expires()} for i in (1, 2)],
     }
 
     def handler(request):
@@ -83,8 +114,13 @@ def env(tmp_path):
         if env.fail == operation:
             raise httpx.ReadTimeout("private-fixture", request=request)
         result = copy.deepcopy(env.remote)
+        if operation != "create":
+            if not env.retrieval_plan:
+                result = {key: value for key, value in result.items() if key not in PLAN_FIELDS}
+            result.update(copy.deepcopy(env.retrieval))
         if operation == "complete":
             result["status"] = "validating"
+        env.responses.append((operation, result))
         return httpx.Response(200, json={"upload": result})
 
     adapter = SDKAdapter(
@@ -95,16 +131,13 @@ def env(tmp_path):
         online=lambda: env.online,
         transport=httpx.MockTransport(handler),
     )
-    uploader = PartUploader(
-        StoragePolicy(frozenset({"storage.example.invalid"}), max_bytes=3),
-        online_access=lambda: env.online,
-    )
+    uploader = PartUploader(S3UploadPolicy(max_bytes=3), online_access=lambda: env.online)
 
     def put(url, data, *, number, content_type, expected_sha256):
         assert not env.origin_held, "Origin invalidation must not wait for storage PUT"
-        record = store.records()[0]
+        record = next(row for row in store.records() if row.state == UploadState.UPLOADING)
         assert record.active_part == number
-        assert record.state == UploadState.UPLOADING
+        assert url == part_url(number) or url.startswith("https://second-bucket.")
         assert hashlib.sha256(data).hexdigest() == expected_sha256
         return UploadedPart(number, len(data), expected_sha256)
 
@@ -190,7 +223,13 @@ def test_shared_workers_drive_staged_upload_to_authoritative_asset(env):
             "parts": 2,
         }
         assert json.loads(env.requests[3].content) == {"action": "complete"}
-        assert b"secret=fixture" not in env.store._path.read_bytes()
+        # The PUTs used the create plan; both part retrievals were live-shaped.
+        assert [call.args[0] for call in env.uploader.upload.call_args_list] == [
+            part_url(1),
+            part_url(2),
+        ]
+        for marker in (b"secret-fixture", b"s3-accelerate", b"fixture-signature"):
+            assert marker not in env.store._path.read_bytes()
         assert bytes(str(env.source), "utf8") not in env.store._path.read_bytes()
     finally:
         workers.shutdown()
@@ -239,24 +278,36 @@ def test_lost_mutation_response_is_durable_and_never_retried(env, phase, state):
         assert env.requests[-1].method == "GET"
 
 
+def test_live_retrieval_without_plan_fields_still_sends_from_the_create_plan(env):
+    record = initialized(env)
+    record = invoke(env, "transfer_upload_part", record)
+    assert [operation for operation, _ in env.responses] == ["create", "get"]
+    assert all(field in env.responses[0][1] for field in PLAN_FIELDS)
+    assert not any(field in env.responses[1][1] for field in PLAN_FIELDS)
+    assert record.receipts[0].number == 1
+    assert env.uploader.upload.call_args.args[0] == part_url(1)
+    assert env.coordinator.upload_recovery_plan()[0].action == UploadRecoveryAction.REVIEW_TRANSFER
+
+
 @pytest.mark.parametrize(
     "field,value",
     [
         ("originalFileName", "other.png"),
-        ("originalFileName", None),
         ("fileSize", 6),
         ("partsCount", 3),
         ("kind", "model"),
         ("source", "url"),
         ("contentType", "image/jpeg"),
         ("status", "complete"),
+        ("status", "validating"),
+        # A retrieval that does carry a plan must pass every create-plan check.
         ("parts", []),
         ("parts", [{"number": 1}, {"number": 1}]),
     ],
 )
-def test_changed_remote_plan_cannot_claim_or_send(env, field, value):
+def test_changed_retrieval_cannot_claim_or_send(env, field, value):
     record = initialized(env)
-    env.remote[field] = value
+    env.retrieval[field] = value
     with pytest.raises(UploadError):
         invoke(env, "transfer_upload_part", record)
     assert env.store.get(record.intent.request_id) == record
@@ -266,19 +317,393 @@ def test_changed_remote_plan_cannot_claim_or_send(env, field, value):
 @pytest.mark.parametrize(
     "field,value",
     [
+        ("originalFileName", "other.png"),
+        ("originalFileName", None),
+        ("contentType", "image/jpeg"),
+        ("contentType", None),
+        ("fileSize", 6),
+        ("fileSize", None),
+        ("partsCount", 3),
+        ("partsCount", None),
+        ("parts", None),
+        ("parts", []),
+        ("parts", [{"number": 1}, {"number": 1}]),
+        ("parts", [{"number": 2}, {"number": 1}]),
         ("expires", "2001-01-01T00:00:00Z"),
         ("expires", "2099-01-01T00:00:00"),
         ("expires", "invalid"),
+        ("expires", None),
         ("url", "https://other.example.invalid/part"),
+        ("url", "https://s3-accelerate.amazonaws.com/fixture-bucket/part"),
+        ("url", "http://fixture-bucket.s3-accelerate.amazonaws.com/part"),
     ],
 )
-def test_untrusted_or_expired_destination_fails_before_claim(env, field, value):
-    record = initialized(env)
-    env.remote["parts"][0][field] = value
-    with pytest.raises(UploadError):
+def test_unusable_create_plan_is_never_cached_and_needs_restart(env, field, value):
+    if field in {"expires", "url"}:
+        env.remote["parts"][0][field] = value
+    else:
+        env.remote[field] = value
+    prepared = prepare(env)
+    with pytest.raises(UploadPlanUnavailable) as error:
+        invoke(env, "initialize_upload", prepared)
+    assert "secret" not in str(error.value)
+    record = env.store.get(prepared.intent.request_id)
+    # The known remote identity is durable even though no part can be sent.
+    assert record.state == UploadState.UPLOADING
+    assert record.upload_id == "remote-one"
+    assert env.coordinator._uploads._plans == {}
+    assert env.coordinator.upload_recovery_plan()[0].action == UploadRecoveryAction.RESTART_UPLOAD
+    with pytest.raises(UploadPlanUnavailable):
         invoke(env, "transfer_upload_part", record)
     assert env.store.get(record.intent.request_id) == record
     env.uploader.upload.assert_not_called()
+    assert sum(request.method == "POST" for request in env.requests) == 1
+
+
+def test_new_owner_cannot_resume_a_transfer_and_sends_nothing(env, tmp_path):
+    record = invoke(env, "transfer_upload_part", initialized(env))
+    assert len(record.receipts) == 1
+    restarted = JobCoordinator(
+        env.coordinator._adapter,
+        JobStore(tmp_path / "jobs.sqlite3", env.scope),
+        upload_store=UploadStore(env.store._path, env.scope),
+        upload_sources=env.sources,
+        part_uploader=env.uploader,
+        origin_guard=env.origins.guard,
+    )
+    requests = len(env.requests)
+    assert restarted.upload_recovery_plan()[0].action == UploadRecoveryAction.RESTART_UPLOAD
+    with pytest.raises(UploadPlanUnavailable, match="restart the upload"):
+        restarted.transfer_upload_part(record.intent.request_id, expected_revision=record.revision)
+    # Only a liveness read was sent: no claim, PUT, completion or new initialization.
+    assert [request.method for request in env.requests[requests:]] == ["GET"]
+    assert env.store.get(record.intent.request_id) == record
+    assert env.uploader.upload.call_count == 1
+    # The original owner still holds its in-memory plan and can continue.
+    finished = invoke(env, "transfer_upload_part", record)
+    assert len(finished.receipts) == 2
+    assert env.coordinator._uploads._plans == {}
+
+
+def test_retrieval_that_carries_a_valid_plan_is_used_once_without_caching(env, tmp_path):
+    record = initialized(env)
+    env.coordinator._uploads.retire()
+    restarted = JobCoordinator(
+        env.coordinator._adapter,
+        JobStore(tmp_path / "jobs.sqlite3", env.scope),
+        upload_store=UploadStore(env.store._path, env.scope),
+        upload_sources=env.sources,
+        part_uploader=env.uploader,
+    )
+    env.retrieval_plan = True
+    record = restarted.transfer_upload_part(
+        record.intent.request_id, expected_revision=record.revision
+    )
+    assert len(record.receipts) == 1
+    assert restarted._uploads._plans == {}
+    env.retrieval_plan = False
+    with pytest.raises(UploadPlanUnavailable):
+        restarted.transfer_upload_part(record.intent.request_id, expected_revision=record.revision)
+    assert env.uploader.upload.call_count == 1
+
+
+def test_expired_plan_fails_before_claim_and_needs_restart(env):
+    record = initialized(env)
+    env.coordinator._uploads._clock = lambda: datetime.now(UTC).timestamp() + 49 * 3600
+    with pytest.raises(UploadPlanUnavailable, match="expired"):
+        invoke(env, "transfer_upload_part", record)
+    assert env.store.get(record.intent.request_id) == record
+    env.uploader.upload.assert_not_called()
+    assert env.coordinator._uploads._plans == {}
+    assert env.coordinator.upload_recovery_plan()[0].action == UploadRecoveryAction.RESTART_UPLOAD
+
+
+@pytest.mark.parametrize("failure", ["get", "source", "origin", "uncertain"])
+def test_interrupted_transfer_ends_the_plan_and_suggests_restart(env, failure):
+    record = initialized(env)
+    if failure == "get":
+        env.fail = "get"
+    elif failure == "source":
+        path = env.sources._directory(env.scope, record.intent.request_id) / "source.bin"
+        path.write_bytes(b"wrong")
+    elif failure == "origin":
+        env.origins.invalidate(env.origin.scene_id)
+    else:
+        env.uploader.upload.side_effect = UploadUncertain("private")
+    with pytest.raises(UploadError):
+        invoke(env, "transfer_upload_part", record)
+    assert env.coordinator._uploads._plans == {}
+    assert env.coordinator.upload_recovery_plan()[0].action == UploadRecoveryAction.RESTART_UPLOAD
+
+
+def test_lost_claim_race_keeps_the_plan_for_the_winning_command(env, monkeypatch):
+    record = initialized(env)
+    claim = env.store.claim_part
+    calls = []
+
+    def race(*args, **kwargs):
+        calls.append(1)
+        if len(calls) == 1:
+            raise StoreConflict("synthetic competing claim")
+        return claim(*args, **kwargs)
+
+    monkeypatch.setattr(env.store, "claim_part", race)
+    with pytest.raises(StoreConflict):
+        invoke(env, "transfer_upload_part", record)
+    assert set(env.coordinator._uploads._plans) == {record.intent.request_id}
+    assert len(invoke(env, "transfer_upload_part", record).receipts) == 1
+
+
+def test_deactivation_forgets_plans_and_a_late_create_is_not_cached(env, monkeypatch):
+    record = initialized(env)
+    assert set(env.coordinator._uploads._plans) == {record.intent.request_id}
+    env.coordinator.deactivate()
+    assert env.coordinator._uploads._plans == {}
+    env.coordinator._uploads._keep_plan("late", object())
+    assert env.coordinator._uploads._plans == {}
+
+
+def test_signed_part_destinations_are_never_persisted_logged_or_serialized(env, caplog):
+    record = initialized(env)
+    plan = env.coordinator._uploads._plans[record.intent.request_id]
+    assert repr(plan) == "<upload part plan>"
+    with pytest.raises(TypeError):
+        pickle.dumps(plan)
+    record = invoke(env, "transfer_upload_part", record)
+    item = env.coordinator.upload_recovery_plan()[0]
+    staged = env.sources._directory(env.scope, record.intent.request_id)
+    texts = [
+        repr(record),
+        repr(item),
+        json.dumps(asdict(item)),
+        caplog.text,
+        env.store._path.read_bytes().decode("latin-1"),
+        *(path.read_bytes().decode("latin-1") for path in staged.iterdir()),
+    ]
+    for text in texts:
+        for marker in ("secret-fixture", "s3-accelerate", "fixture-signature", "uploadId"):
+            assert marker not in text
+
+
+def test_restart_abandons_partial_upload_and_sends_saved_copy_as_new_request(env, tmp_path):
+    partial = invoke(env, "transfer_upload_part", initialized(env))
+    env.source.write_bytes(b"user changed original source")
+    restarted = JobCoordinator(
+        env.coordinator._adapter,
+        JobStore(tmp_path / "jobs.sqlite3", env.scope),
+        upload_store=UploadStore(env.store._path, env.scope),
+        upload_sources=env.sources,
+        part_uploader=env.uploader,
+        origin_guard=env.origins.guard,
+    )
+    origin = env.origins.capture("scene", "object")
+    replacement = restarted.restart_upload(
+        partial.intent.request_id, expected_revision=partial.revision, origin=origin
+    )
+    abandoned = env.store.get(partial.intent.request_id)
+    assert abandoned.state == UploadState.ABANDONED
+    assert abandoned.upload_id == "remote-one"
+    assert abandoned.receipts == partial.receipts
+    assert abandoned.revision == partial.revision + 1
+    assert replacement.state == UploadState.PREPARED
+    assert replacement.intent.request_id != partial.intent.request_id
+    for key in ("kind", "file_name", "content_type", "file_size", "file_sha256", "part_sha256"):
+        assert getattr(replacement.intent, key) == getattr(partial.intent, key)
+    assert restarted.upload_recovery_plan()[0].action in {
+        UploadRecoveryAction.FINISHED,
+        UploadRecoveryAction.REVIEW_SOURCE,
+    }
+    # The abandoned upload is never resumed, completed or polled again.
+    for method in ("transfer_upload_part", "finalize_upload", "refresh_upload"):
+        with pytest.raises(StoreConflict):
+            getattr(restarted, method)(
+                abandoned.intent.request_id, expected_revision=abandoned.revision
+            )
+    env.remote["id"] = "remote-two"
+    record = restarted.initialize_upload(
+        replacement.intent.request_id, expected_revision=replacement.revision
+    )
+    for method in ("transfer_upload_part", "transfer_upload_part", "finalize_upload"):
+        record = getattr(restarted, method)(
+            record.intent.request_id, expected_revision=record.revision
+        )
+    assert record.state == UploadState.PROCESSING
+    assert record.upload_id == "remote-two"
+    sent = [(call.args[1], call.kwargs["number"]) for call in env.uploader.upload.call_args_list]
+    assert sent == [(b"abc", 1), (b"abc", 1), (b"de", 2)]
+    completions = [r for r in env.requests if r.url.path.endswith("/action")]
+    assert [r.url.path.split("/")[-2] for r in completions] == ["remote-two"]
+    cleaned = restarted.discard_upload_source(
+        abandoned.intent.request_id, expected_revision=abandoned.revision
+    )
+    assert cleaned == abandoned
+    restarted.close()
+
+
+@pytest.mark.parametrize("stage", ["prepared", "finalizing", "processing", "imported", "stale"])
+def test_restart_refuses_unstarted_completed_or_stale_uploads(env, stage):
+    if stage == "prepared":
+        record = prepare(env)
+    elif stage == "imported":
+        record = initialized(env)
+        env.remote.update(status="imported", entityId="asset-one")
+        record = invoke(env, "refresh_upload", record)
+    else:
+        record = initialized(env)
+        if stage != "stale":
+            for _ in range(2):
+                record = invoke(env, "transfer_upload_part", record)
+            record = (
+                env.store.transition(
+                    record.intent.request_id,
+                    expected_revision=record.revision,
+                    state=UploadState.FINALIZING,
+                )
+                if stage == "finalizing"
+                else invoke(env, "finalize_upload", record)
+            )
+    revision = record.revision + (1 if stage == "stale" else 0)
+    roots = set(env.root.iterdir())
+    with pytest.raises(StoreConflict):
+        env.coordinator.restart_upload(
+            record.intent.request_id, expected_revision=revision, origin=env.origin
+        )
+    assert env.store.get(record.intent.request_id) == record
+    assert set(env.root.iterdir()) == roots
+
+
+def test_restart_refuses_a_part_that_is_still_being_sent(env):
+    record = initialized(env)
+    entered, release = threading.Event(), threading.Event()
+    original = env.uploader.upload.side_effect
+
+    def paused(*args, **kwargs):
+        entered.set()
+        assert release.wait(5)
+        return original(*args, **kwargs)
+
+    env.uploader.upload.side_effect = paused
+    workers = JobWorkers(env.coordinator, workers=1)
+    try:
+        task = workers.transfer_upload_part(
+            record.intent.request_id, expected_revision=record.revision
+        )
+        assert entered.wait(5)
+        claimed = env.store.get(record.intent.request_id)
+        assert claimed.active_part == 1
+        assert env.coordinator.upload_recovery_plan()[0].action == UploadRecoveryAction.POLL_REMOTE
+        with pytest.raises(StoreConflict, match="still being sent"):
+            env.coordinator.restart_upload(
+                record.intent.request_id, expected_revision=claimed.revision, origin=env.origin
+            )
+        release.set()
+        assert len(task.result(5).receipts) == 1
+    finally:
+        release.set()
+        workers.shutdown()
+    assert len(env.store.records()) == 1
+
+
+def test_restart_refuses_an_upload_its_owner_can_still_continue(env):
+    record = initialized(env)
+    assert env.coordinator.upload_recovery_plan()[0].action == UploadRecoveryAction.REVIEW_TRANSFER
+    with pytest.raises(StoreConflict, match="can still continue"):
+        env.coordinator.restart_upload(
+            record.intent.request_id, expected_revision=record.revision, origin=env.origin
+        )
+    for _ in range(2):
+        record = invoke(env, "transfer_upload_part", record)
+    # Every receipt is saved: completion needs only the known ID, so no restart.
+    with pytest.raises(StoreConflict, match="can still continue"):
+        env.coordinator.restart_upload(
+            record.intent.request_id, expected_revision=record.revision, origin=env.origin
+        )
+    assert env.store.records() == (record,)
+    assert invoke(env, "finalize_upload", record).state == UploadState.PROCESSING
+
+
+def test_restart_with_missing_saved_copy_abandons_nothing(env):
+    record = initialized(env)
+    env.fail = "get"
+    with pytest.raises(UploadError):
+        invoke(env, "transfer_upload_part", record)
+    env.fail = None
+    path = env.sources._directory(env.scope, record.intent.request_id) / "source.bin"
+    path.write_bytes(b"wrong")
+    with pytest.raises(UploadError, match="upload the original file again"):
+        env.coordinator.restart_upload(
+            record.intent.request_id, expected_revision=record.revision, origin=env.origin
+        )
+    assert env.store.records() == (record,)
+
+
+def restartable(env):
+    record = initialized(env)
+    env.fail = "get"
+    with pytest.raises(UploadError):
+        invoke(env, "transfer_upload_part", record)
+    env.fail = None
+    assert env.coordinator.upload_recovery_plan()[0].action == UploadRecoveryAction.RESTART_UPLOAD
+    return record
+
+
+@pytest.mark.parametrize("failure", ["conflict", "origin"])
+def test_failed_restart_discards_its_unrecorded_copy(env, monkeypatch, failure):
+    record = restartable(env)
+    roots = set(env.root.iterdir())
+    if failure == "conflict":
+        # A concurrent restart or refresh moved the revision after the eligibility check.
+        def abandon(*args, **kwargs):
+            raise StoreConflict("synthetic competing change")
+
+        monkeypatch.setattr(env.store, "abandon", abandon)
+    else:
+        restage = env.sources.restage
+
+        def changed(*args, **kwargs):
+            intent = restage(*args, **kwargs)
+            env.origins.invalidate(env.origin.scene_id)
+            return intent
+
+        monkeypatch.setattr(env.sources, "restage", changed)
+    with pytest.raises(StoreConflict if failure == "conflict" else UploadError):
+        env.coordinator.restart_upload(
+            record.intent.request_id, expected_revision=record.revision, origin=env.origin
+        )
+    assert env.store.records() == (record,)
+    assert set(env.root.iterdir()) == roots
+
+
+def test_restart_keeps_a_copy_its_replacement_record_may_reference(env, monkeypatch):
+    record = restartable(env)
+    abandon = env.store.abandon
+
+    def uncertain(*args, **kwargs):
+        abandon(*args, **kwargs)
+        raise StoreError("synthetic persistence failure after commit")
+
+    monkeypatch.setattr(env.store, "abandon", uncertain)
+    with pytest.raises(StoreError):
+        env.coordinator.restart_upload(
+            record.intent.request_id, expected_revision=record.revision, origin=env.origin
+        )
+    (replacement,) = (row for row in env.store.records() if row.state == UploadState.PREPARED)
+    env.sources.verify(replacement.intent)
+
+
+def test_restart_under_a_new_origin_drops_mesh_provenance_only_when_origin_changes(env):
+    record = invoke(env, "transfer_upload_part", initialized(env))
+    env.origins.invalidate(env.origin.scene_id)
+    with pytest.raises(UploadError, match="origin changed"):
+        env.coordinator.restart_upload(
+            record.intent.request_id, expected_revision=record.revision, origin=env.origin
+        )
+    origin = env.origins.capture("scene")
+    replacement = env.coordinator.restart_upload(
+        record.intent.request_id, expected_revision=record.revision, origin=origin
+    )
+    assert replacement.intent.origin == origin
+    assert replacement.intent.mesh_source is None
 
 
 @pytest.mark.parametrize("action", ["initialize_upload", "transfer_upload_part"])

@@ -196,7 +196,10 @@ Keep the scene, model and reference slot unchanged while the upload finishes.
 If they change, a late upload cannot replace the new selection. **Inspect uploads**
 shows saved progress and lets you refresh a known upload, cancel an unsubmitted
 preparation or clean up its finished staging copy. Cleanup keeps your original file.
-An uncertain upload is preserved without sending its bytes again.
+An uncertain upload is preserved without sending its bytes again. An upload that
+stopped before finishing, for example because Blender restarted, cannot continue:
+choose **Upload again** to send its saved copy as a new upload, then attach it with
+**Use this reference**.
 
 To reuse an imported image after reopening a file or changing a reference, choose
 **Use saved upload** on the reference, or **Saved uploads** on its input. Choose

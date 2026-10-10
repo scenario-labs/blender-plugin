@@ -295,7 +295,12 @@ existing coordinator's SDK upload initialization/retrieval/completion and signed
 S3 part transport. A changed file, project or approval fails before remote work;
 any upload failure or uncertainty stops subsequent inputs. No mutation is
 retried. A new run directory is required and must not be created as a workaround
-for uncertainty. On complete import, `prepared-plan.json` contains version-1
+for uncertain completion. Scenario returns signed part URLs only when an upload
+is created, and the tool never saves them, so only the original `upload` process
+can send parts. If it stops after initialization and before requesting
+completion, `resume` exits with status 4 and asks for a new input upload run.
+That upload's completion was never requested, so it cannot become an asset.
+On complete import, `prepared-plan.json` contains version-1
 cases with exact asset IDs; it remains private. Model quotes/schema validation
 then run normally. Uploads can complete even when a later model schema or budget
 check prevents generation.
@@ -310,7 +315,8 @@ uv run --locked --env-file .env.local python -m tools.smoke_inputs resume \
 This command can only poll known uploads or read imported records. It never
 initializes, transfers, finalizes or submits generation. Unknown initialization,
 incomplete transfer or unattempted inputs require explicit inspection; it cannot
-finish them by replaying writes. Fully imported records recreate the same
+finish them by replaying writes. An incomplete or part-uncertain transfer reports
+status 4 with that restart guidance. Fully imported records recreate the same
 prepared plan without service requests. Keep source snapshots and private state
 until uncertainty and acceptance evidence are resolved. `--timeout` bounds
 polling per input, not the transport's own request duration.

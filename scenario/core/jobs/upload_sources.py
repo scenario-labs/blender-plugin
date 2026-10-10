@@ -84,9 +84,11 @@ class UploadSources:
         content_type,
         mesh_source=None,
         expected_sha256=None,
+        file_name=None,
     ):
         """Return an immutable identity only after the private snapshot is durable."""
         source = Path(source)
+        file_name = source.name if file_name is None else file_name
         directory = self._directory(scope, request_id)
         created = False
         completed = False
@@ -133,7 +135,7 @@ class UploadSources:
                     scope,
                     origin,
                     kind,
-                    re.sub(r"[^A-Za-z0-9._-]", "_", source.name),
+                    re.sub(r"[^A-Za-z0-9._-]", "_", file_name),
                     content_type,
                     total,
                     whole.hexdigest(),
@@ -161,6 +163,27 @@ class UploadSources:
                     directory.rmdir()
                 except OSError:
                     pass
+
+    def restage(self, intent, *, request_id, origin, mesh_source=None):
+        """Copy a saved snapshot into a new request, keeping its name and exact bytes.
+
+        Restaging rehashes every byte and requires the saved whole-file digest,
+        so a changed or substituted snapshot cannot become a replacement upload.
+        """
+        if not isinstance(intent, UploadIntent):
+            raise TransferError("Use the saved upload source identity")
+        source = _root(self._directory(intent.scope, intent.request_id)) / "source.bin"
+        return self.stage(
+            source,
+            request_id=request_id,
+            scope=intent.scope,
+            origin=origin,
+            kind=intent.kind,
+            content_type=intent.content_type,
+            mesh_source=mesh_source,
+            expected_sha256=intent.file_sha256,
+            file_name=intent.file_name,
+        )
 
     def _source(self, intent):
         if (

@@ -4,6 +4,7 @@
 
 import tempfile
 import unittest
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from unittest.mock import Mock
 
@@ -17,7 +18,6 @@ class UploadCommandTests(unittest.TestCase):
         uploads = submodule("core.jobs.upload_store")
         sources = submodule("core.jobs.upload_sources")
         transfer = submodule("core.jobs.upload_transfers")
-        policy = submodule("core.jobs.transfers")
         coordinator = submodule("core.jobs.coordinator")
         workers = submodule("core.jobs.workers")
         import httpx
@@ -38,16 +38,24 @@ class UploadCommandTests(unittest.TestCase):
             "parts": [
                 {
                     "number": 1,
-                    "expires": "2099-01-01T00:00:00Z",
-                    "url": "https://storage.example.invalid/part?signature=fixture",
+                    "expires": (datetime.now(UTC) + timedelta(hours=48))
+                    .isoformat(timespec="milliseconds")
+                    .replace("+00:00", "Z"),
+                    "url": "https://fixture-bucket.s3-accelerate.amazonaws.com/part"
+                    "?partNumber=1&fixture-signature=fixture",
                 }
             ],
         }
+        plan = ("originalFileName", "contentType", "fileSize", "partsCount", "parts")
 
         def handler(request):
             requests.append(request)
             result = dict(remote)
-            if request.url.path.endswith("/action"):
+            action = request.url.path.endswith("/action")
+            if action or request.method != "POST":
+                # Live retrieval and completion omit the create-only part plan.
+                result = {key: value for key, value in result.items() if key not in plan}
+            if action:
                 result.update(status="imported", entityId="asset-one")
             return httpx.Response(200, json={"upload": result})
 
@@ -67,8 +75,7 @@ class UploadCommandTests(unittest.TestCase):
             )
             store = uploads.UploadStore(root / "uploads.sqlite3", scope)
             uploader = transfer.PartUploader(
-                policy.StoragePolicy(frozenset({"storage.example.invalid"})),
-                online_access=lambda: True,
+                transfer.S3UploadPolicy(max_bytes=8 * 1024 * 1024), online_access=lambda: True
             )
 
             def put(url, data, *, number, content_type, expected_sha256):

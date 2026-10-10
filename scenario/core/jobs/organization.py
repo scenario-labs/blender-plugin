@@ -622,7 +622,7 @@ class _Execution:
                     f"Scenario still refused the add after {ADD_ATTEMPTS} requests because "
                     "more assets were already in the collection; prepare the rest again"
                 )
-                return
+                break
             members, targets = self.read_members(targets)
             if not members:
                 self.stop(str(value))

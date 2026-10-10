@@ -529,7 +529,8 @@ def test_failed_read_after_an_already_member_refusal_sends_nothing_more(service)
     assert "some are already in the collection (HTTP 400)" in result.message
 
 
-def test_repeated_concurrent_adds_stop_after_three_requests():
+def race_every_add():
+    """Another client adds one more target before each of the three adds."""
     service = OrganizationService(
         assets=[asset(f"asset-{name}") for name in "acde"],
         collections=[collection("props", "Props")],
@@ -549,7 +550,11 @@ def test_repeated_concurrent_adds_stop_after_three_requests():
         )
     )
     service.gate = other_client
-    result = owner.execute(snapshot, guarded())
+    return service, owner.execute(snapshot, guarded())
+
+
+def test_repeated_concurrent_adds_stop_after_three_requests():
+    service, result = race_every_add()
     assert add_writes(service) == [
         ["asset-a", "asset-c", "asset-d", "asset-e"],
         ["asset-c", "asset-d", "asset-e"],
@@ -564,6 +569,14 @@ def test_repeated_concurrent_adds_stop_after_three_requests():
     ]
     assert result.state == ResultState.PARTIAL
     assert "after 3 requests" in result.message
+
+
+def test_add_bound_still_reports_the_assets_already_in_the_collection():
+    # Two reads confirmed members before the third refusal reached the bound.
+    _, result = race_every_add()
+    assert result.message.endswith(
+        "prepare the rest again. Already in the collection: 2 of 4 assets; the rest were sent again"
+    )
 
 
 def test_guard_failure_before_the_resend_stops_it(service):

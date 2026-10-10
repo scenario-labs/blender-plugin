@@ -381,6 +381,81 @@ def final_key(env, asset_id="asset-video"):
     return env.coordinator.result_preview_targets("request", [asset_id])[0].key
 
 
+def png_header(width, height):
+    """Only a PNG signature, checked IHDR and IEND: the dimensions a file declares."""
+    header = struct.pack(">IIBBBBB", width, height, 8, 6, 0, 0, 0)
+    ihdr = b"IHDR" + header
+    return (
+        b"\x89PNG\r\n\x1a\n"
+        + struct.pack(">I", len(header))
+        + ihdr
+        + struct.pack(">I", zlib.crc32(ihdr))
+        + b"\x00\x00\x00\x00IEND\xaeB`\x82"
+    )
+
+
+def exr(width, height, *, display=None, window_type=b"box2i", end=True):
+    """An OpenEXR header declaring a data window and optionally a display window."""
+
+    def attribute(name, kind, value):
+        return name + b"\x00" + kind + b"\x00" + struct.pack("<i", len(value)) + value
+
+    data = b"\x76\x2f\x31\x01\x02\x00\x00\x00"
+    data += attribute(b"compression", b"compression", b"\x00")
+    data += attribute(b"dataWindow", window_type, struct.pack("<iiii", 0, 0, width - 1, height - 1))
+    if display is not None:
+        data += attribute(
+            b"displayWindow", b"box2i", struct.pack("<iiii", 0, 0, display[0] - 1, display[1] - 1)
+        )
+    return data + (b"\x00" + b"\x00" * 64 if end else b"")
+
+
+@pytest.mark.parametrize(
+    "data,size",
+    [
+        (exr(4096, 2048), (4096, 2048)),
+        (exr(64, 32, display=(128, 16)), (128, 32)),
+        (exr(64, 32, window_type=b"box2f"), None),
+        (exr(64, 32, end=False), None),
+        (png_header(9, 4), (9, 4)),
+        (jpeg(640, 480), (640, 480)),
+        (b"\x76\x2f\x31\x01", None),
+    ],
+)
+def test_local_image_size_reads_declared_dimensions(data, size):
+    assert previews.local_image_size(data) == size
+
+
+@pytest.mark.parametrize(
+    "media_type,data,reason",
+    [
+        ("image/png", png_header(previews.LOCAL_IMAGE_MAX_EDGE + 1, 1), "too large"),
+        ("image/png", png_header(8192, 4097), "too large"),
+        ("image/x-exr", exr(9000, 8), "too large"),
+        ("image/x-exr", exr(64, 32, end=False), "readable dimensions"),
+        ("image/jpeg", jpeg(4, 4).replace(b"\xff\xc0", b"\xff\xe1"), "readable dimensions"),
+        ("image/webp", webp(4, 4)[:24], "readable dimensions"),
+    ],
+)
+def test_local_image_dimensions_bound_the_main_thread_decode(env, media_type, data, reason):
+    ready_job(env, "request", [("asset-image", media_type, data)])
+    result = outcome(run(env, work(env, "request", [STILL])))
+    assert result.state == State.FAILED and reason in result.reason
+    assert result.request is None and work_directories(env) == []
+
+
+@pytest.mark.parametrize(
+    "media_type,data",
+    [("image/png", png_header(8192, 4096)), ("image/x-exr", exr(4096, 2048, display=(4096, 2048)))],
+)
+def test_bounded_local_images_get_a_decode_request(env, media_type, data):
+    ready_job(env, "request", [("asset-image", media_type, data)])
+    result = outcome(run(env, work(env, "request", [STILL])))
+    assert result.state == State.DECODE and result.request.source.read_bytes() == data
+    env.coordinator.discard_result_preview(result.request, root=env.cache)
+    assert work_directories(env) == []
+
+
 @pytest.mark.parametrize("count", [1, 2])
 def test_absent_asset_is_classified_the_same_for_one_or_several_targets(env, count):
     assets = [("asset-video", "video/mp4", MP4), ("asset-model", "model/gltf-binary", GLB)]

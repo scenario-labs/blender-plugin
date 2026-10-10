@@ -54,6 +54,11 @@ STILL_MAX_BYTES = 8 * 1024 * 1024
 CLIP_MAX_BYTES = 64 * 1024 * 1024
 DECODED_STILL_MAX_BYTES = 4 * 1024 * 1024
 IMAGE_SOURCE_MAX_BYTES = 128 * 1024 * 1024
+# Saved images are decoded on Blender's main thread, so their declared pixels
+# are bounded before a copy is issued: 8192 by 4096 decodes in about 0.2 s.
+LOCAL_IMAGE_MAX_EDGE = 8192
+LOCAL_IMAGE_MAX_PIXELS = 8192 * 4096
+LOCAL_HEADER_BYTES = 2 * 1024 * 1024
 AUDIO_SOURCE_MAX_BYTES = 256 * 1024 * 1024
 SIDECAR_MAX_BYTES = 128 * 1024
 CACHE_MAX_BYTES = 512 * 1024 * 1024
@@ -183,6 +188,61 @@ def still_size(data):
 
 def _bounded_edges(width, height, limit=STILL_MAX_EDGE):
     return all(type(value) is int and 1 <= value <= limit for value in (width, height))
+
+
+_EXR_WINDOWS = (b"dataWindow", b"displayWindow")
+
+
+def _exr_size(data):
+    """Data window dimensions from an OpenEXR header, or None.
+
+    Both the data and display windows, when declared, must be readable boxes;
+    the larger of each side bounds the decode. Only the first part's header is
+    read, which is the one Blender loads.
+    """
+    if len(data) < 8 or not _exr(data):
+        return None
+    index, sizes = 8, {}
+    while index < len(data) and data[index] != 0:
+        name_end = data.find(b"\x00", index, index + 256)
+        if name_end < 0:
+            return None
+        type_end = data.find(b"\x00", name_end + 1, name_end + 257)
+        if type_end < 0 or type_end + 5 > len(data):
+            return None
+        length = int.from_bytes(data[type_end + 1 : type_end + 5], "little", signed=True)
+        start = type_end + 5
+        if length < 0 or start + length > len(data):
+            return None
+        name = data[index:name_end]
+        if name in _EXR_WINDOWS:
+            if data[name_end + 1 : type_end] != b"box2i" or length != 16:
+                return None
+            x0, y0, x1, y1 = struct.unpack("<iiii", data[start : start + 16])
+            sizes[name] = (x1 - x0 + 1, y1 - y0 + 1)
+        index = start + length
+    if index >= len(data) or b"dataWindow" not in sizes:
+        return None
+    return tuple(max(size[axis] for size in sizes.values()) for axis in (0, 1))
+
+
+def local_image_size(data):
+    """Declared pixel dimensions of a saved PNG, JPEG, WebP or OpenEXR image, or None.
+
+    ``data`` is the file's first bytes; a JPEG frame header or an EXR header
+    beyond them reads as undeclared.
+    """
+    if _exr(data):
+        return _exr_size(data)
+    return still_size(data)
+
+
+def bounded_local_image(width, height):
+    """Whether Blender's main thread may decode a saved image of this size."""
+    return (
+        _bounded_edges(width, height, LOCAL_IMAGE_MAX_EDGE)
+        and width * height <= LOCAL_IMAGE_MAX_PIXELS
+    )
 
 
 # ISO media brands for still images; a clip or audio container must not use them.
@@ -536,6 +596,11 @@ def _read_small(path, limit):
     if len(data) > limit:
         raise PreviewError("Preview metadata exceeds its size limit")
     return data
+
+
+def _read_head(path, limit):
+    with _open_regular(path) as stream:
+        return stream.read(limit)
 
 
 def discard_directory(directory):
@@ -1026,10 +1091,16 @@ def prepare_decode(cache, target, rendition, source, cancel):
         copy = directory / ("source" + suffix)
         _snapshot(Path(source), target.receipt, copy, cancel)
         os.chmod(copy, 0o600)
-        with _open_regular(copy) as stream:
-            head = stream.read(16)
-        if not check(head):
+        head = _read_head(copy, LOCAL_HEADER_BYTES if rendition == STILL else 16)
+        if not check(head[:16]):
             raise PreviewError("The saved result contents do not match its type")
+        if rendition == STILL:
+            # Bound Blender's main-thread decode by what the file declares.
+            size = local_image_size(head)
+            if size is None or 0 in size:
+                raise PreviewError("The saved image does not declare readable dimensions")
+            if not bounded_local_image(*size):
+                raise PreviewError("The saved image is too large to preview")
         return DecodeRequest(
             target.key,
             rendition,

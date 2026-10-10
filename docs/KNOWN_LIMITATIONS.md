@@ -118,8 +118,8 @@ establish live generation or full render-lane desktop acceptance.
 - Trained/custom-model discovery and routing remain incomplete
   ([#97](https://github.com/scenario-labs/blender-plugin/issues/97)).
 - Remote job progress is advisory and kept only in memory. Providers may report
-  no fraction, or 0 until completion, so a job may show only `generating`; no
-  time estimate is given. Readings and the submitting scene/lane binding are not
+  no fraction, or 0 until completion, so a job may show only `generating`; a
+  fraction below 1% shows no bar, and no time estimate is given. Readings and the submitting scene/lane binding are not
   persisted: after a restart, progress appears only after an explicit refresh or
   resume, and recovered jobs remain unbound. Which providers report intermediate
   fractions, and desktop review of the progress bar, still need live and
@@ -337,6 +337,22 @@ establish live generation or full render-lane desktop acceptance.
   shown waveform is drawn from its cached envelope and checked once per second
   for a changed connection; it does not monitor later external file changes, but
   every Play and decode rechecks the saved receipt.
+- Automatic result previews cover the first twelve jobs of Jobs and of
+  Generations and at most four results per job. Which result kinds receive a
+  Scenario preview image, how long it takes and where a first-access redirect
+  points are not established by live evidence; a preview missing after about
+  five minutes of online polling needs **Retry preview (N)**. Video clips and 3D
+  turntables are fetched by the runtime but not displayed, the preview of a
+  video is Scenario's image rather than a chosen frame, and MP3 or other audio
+  waveforms stay behind the explicit **Waveform** control. Images over 8192
+  pixels per side or 8192 by 4096 pixels in all show no preview. Decoding runs
+  on Blender's main thread, one image per timer tick: about 0.1 s for a
+  4096-pixel JPEG and 0.2 s at 8192 by 4096 pixels on macOS arm64, longer for
+  real photographs and on slower machines. Background Blender decodes no image
+  previews, and local MCP cannot read previews yet. Desktop interaction,
+  screenshots and UI scales are not recorded
+  ([#66](https://github.com/scenario-labs/blender-plugin/issues/66),
+  [#68](https://github.com/scenario-labs/blender-plugin/issues/68)).
 - Prompt helpers lack an explicit generic/model-contextual Spark preference
   ([#188](https://github.com/scenario-labs/blender-plugin/issues/188)).
 - Capture timing follows scene settings; native dialogs use Blender's theme

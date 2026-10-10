@@ -3,14 +3,15 @@
 [`result_previews`](../scenario/core/jobs/result_previews.py) and
 [`preview_scheduler`](../scenario/core/jobs/preview_scheduler.py) prepare small
 previews of downloaded saved results for the shared runtime. They are bpy-free.
-Previews are read-only: they never submit, spend, apply, resolve a scene origin or
-write the job store. Their user interfaces are the private previews of
+Previews are read-only: they never submit, spend, apply, resolve a scene origin
+or write the job store. Their user interfaces are the private previews of
 [workflow review assets](#workflow-review-assets), the saved-job **Waveform**
 control, which draws audio envelopes decoded in an owned offline Blender process
-described below, and **Play**, which opens
-[private player copies](#private-player-copies) made on the same lane. Local MCP
-has no saved-result preview tool yet. Blender-side image decoding of saved
-results and display of their stills and clips are follow-up work under
+described below, **Play**, which opens
+[private player copies](#private-player-copies) made on the same lane, and
+[automatic previews](#automatic-previews-in-blender), which show stills in Jobs,
+Generations and the Studio pages that reuse them. Local MCP has no saved-result
+preview tool yet, and clips are fetched but not displayed; both remain under
 [#189](https://github.com/scenario-labs/blender-plugin/issues/189) and
 [#66](https://github.com/scenario-labs/blender-plugin/issues/66).
 
@@ -75,7 +76,8 @@ one attempt per call and follows only the same bounded same-host redirects, and
 each attempt stays within its byte cap. Bytes that arrive but no longer match
 their download receipt, are not a supported format, or lack bounded dimensions,
 and a metadata mismatch, fail the rendition at once. Either way the reason is
-sanitized and nothing is cached.
+sanitized and nothing is cached. Each poll reads the metadata again, so it uses
+a freshly signed URL.
 
 Server previews are bound to the saved asset identity and receipt digest. Their
 bytes are produced by the service, not derived from the saved file, so they are
@@ -138,7 +140,12 @@ requests outstanding, including running audio decodes, and fails a request that
 waits 120 seconds for a decoder.
 
 Blender decodes an image request later on its main thread: it writes a PNG of
-at most 256 pixels per side to the request's `output`. Publication checks the
+at most 256 pixels per side to the request's `output`. Before issuing one, the
+lane reads the dimensions the copy declares in its PNG header, JPEG frame
+header, WebP header or OpenEXR data and display windows, within its first
+2 MiB. An image over 8192 pixels per side or 8192 by 4096 pixels in all, or one
+whose dimensions cannot be read there, fails with a reason instead, so a small
+file cannot request a long decode on the main thread. Publication checks the
 PNG signature, header checksum, dimensions and a 4 MiB size limit before caching
 it. Every finished or discarded request removes its private copy.
 
@@ -207,6 +214,51 @@ evicted copies until the command ends and removes any left, as when the
 connection retires and deactivation cancels the queued command. Copies hold the
 saved bytes; no URL, credential or prompt is written. They are disposable and
 safe to delete while no player reads them.
+
+## Automatic previews in Blender
+
+[`result_previews`](../scenario/blender/result_previews.py) in the Blender layer
+is the scheduler's main-thread owner. Its own persistent timer runs every half
+second, or every tenth of a second while it has work, and never inside drawing:
+
+- **Requests.** It takes the first twelve unfinished rows of Jobs and the first
+  twelve rows Generations lists, whether or not those panels are open, and for
+  each shared saved job whose results are downloaded (`ready`, `applying`,
+  `apply_failed` or `applied`) reads the saved record once per revision. It requests the still of at most four
+  downloaded results: video, audio, embedded models and base color or untagged
+  images first, then other texture maps and OBJ models, each in saved order.
+  It asks for stills only, so it never starts an audio envelope decode or
+  fetches a clip.
+- **Image decoding.** It decodes the oldest issued image copy, one per tick,
+  inside `bpy.data.temp_data()`, a separate data block freed right after. The
+  open file, its undo history, dependency graph and data counts never see the
+  image. The decoded size must stay within the same 8192-pixel bounds; the
+  copy is fitted to 256 pixels per side, never upscaled, and written as an
+  8-bit RGBA PNG through the Standard view transform. A file Blender cannot
+  decode fails with a reason; the lane validates and caches the PNG.
+- **Icons.** For a ready still, it rereads the cache file as a regular,
+  nonsymlink file inside the cache root and compares its size and SHA-256
+  with the cache entry, then decodes that file the same way to at most 256
+  pixels per side. It builds at most one icon per tick, none in a tick that
+  decoded an image copy, in its own `bpy.utils.previews` collection from the
+  decoded pixels, and releases the least recently used icons beyond 64 that no
+  tile draws. High bit-depth files are converted from linear to sRGB values.
+  It never calls `ImagePreviewCollection.load`: measured with a temporary home
+  on Blender 5.1.2, that call wrote the loaded image's thumbnail to
+  `~/.thumbnails/large` outside the extension's user data.
+- **Tiles.** Drawing reads only the tiles it precomputed: the icon or the
+  result kind's placeholder, a caption numbered like the saved-job controls,
+  a status line while preparing, waiting, offline or unavailable, and a
+  **Retry preview (N)** button after a missing, failed or unreadable preview.
+  Retry clears the missing marker and opens a new polling window.
+- **Lifetime.** A connection, project or file change, and unregistering the
+  extension, release the icons and tiles. A status read after that belongs to
+  another connection and is never shown.
+
+Background Blender registers no timer, so headless sessions decode no images.
+Measured with generated files on macOS arm64 Blender 5.1.2, a decode took about
+25 ms for a 2048-pixel PNG, 0.1 s for a 4096-pixel JPEG and 0.2 s at 8192 by
+4096 pixels; real photographs can take longer.
 
 ## Cache
 
@@ -369,7 +421,8 @@ the waveform's desktop Cancel and Retry were not exercised. A later private
 check there confirmed that the system player opened the private read-only copy
 and that Blender's animation player started without `SCENARIO_`, `PYTHON` or
 proxy names in its environment; real Windows and Linux launchers remain
-unverified. Blender-side image
-decoding of saved results, still and clip display, MCP parity and native desktop
-acceptance, including of the review previews, remain open under #189, #65 and
-#66.
+unverified. Automatic previews have installed native tests on Blender 5.0.1,
+5.1.2 and 5.2.1 with synthetic images and a synthetic transport, drawn through
+recording layouts; desktop interaction, screenshots and UI scales are not
+recorded. Clip display, MCP parity and native desktop acceptance, including of
+the review previews, remain open under #189, #65 and #66.

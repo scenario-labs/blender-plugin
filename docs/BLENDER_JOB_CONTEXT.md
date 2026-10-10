@@ -553,6 +553,21 @@ unregistering clear the selection and remove copies no running player reads,
 including copies evicted for a Play whose lane command, which removes them
 first, has not run: deactivation cancels a queued command.
 
+The main-thread [preview controller](../scenario/blender/result_previews.py)
+is the scheduler's Blender-side owner for
+[automatic previews](RESULT_PREVIEWS.md#automatic-previews-in-blender). Its own
+persistent timer requests the still rendition of a few downloaded results for
+the first saved jobs that Jobs and Generations draw, reading each saved record
+once per revision; it never requests envelopes or clips. It answers
+`decode_requests` one per tick, decoding the private copy inside
+`bpy.data.temp_data()` and passing the PNG to `finish_decode`, or calling
+`discard_decode` with a reason. It builds icons only from rehashed cache files,
+in its own preview collection. It binds its tiles to the context token and
+session it requested them in: a different token or session, `retire_jobs`, a
+file load and unregistering release its icons and tiles, so a late status is
+never drawn. Background Blender registers no timer, so headless loops decode no
+images and their decode requests expire.
+
 ## Explicit saved-result World application
 
 `apply_world(completion, asset_id=...)` consumes an owned `verify_results`
@@ -928,8 +943,11 @@ UTC and monotonic time) bound to the record's remote job ID and saved revision.
 The fraction must be a finite number from 0 to 1; booleans, strings, missing,
 non-finite and out-of-range values are unknown, never 0. Providers may still
 report 0 until completion, so a percentage is shown only for `in-progress` or
-`finalizing` above zero; the whole percentage snaps to the reported decimal
-before flooring, so 0.29 shows 29%. A terminal snapshot clears the reading. The
+`finalizing` from 1%; the whole percentage snaps to the reported decimal
+before flooring, so 0.29 shows 29% and 0.005 shows no bar. The reading's word
+comes from one table shared with the composer's job strip: `pending` and
+`queued` read as queued, `warming-up` as starting, `in-progress` as generating
+and `finalizing` as finalizing. A terminal snapshot clears the reading. The
 projection runs after the next poll is scheduled and outside the delivery error
 mapping: if it fails, the reading is dropped and only the error type is logged,
 never the response, and delivery is never paused. Later interpretations of the

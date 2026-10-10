@@ -76,11 +76,12 @@ def test_active_snapshot_yields_a_reading_bound_to_its_record(state):
 @pytest.mark.parametrize(
     ("status", "label"),
     [
-        ("pending", "waiting"),
+        # A pending job has not started: Jobs rows and the composer strip say queued.
+        ("pending", "queued"),
         ("queued", "queued"),
         ("warming-up", "starting"),
         ("in-progress", "generating"),
-        ("finalizing", "finishing"),
+        ("finalizing", "finalizing"),
     ],
 )
 def test_every_active_status_has_a_display_word(status, label):
@@ -92,7 +93,10 @@ def test_every_active_status_has_a_display_word(status, label):
     ("status", "value", "percent"),
     [
         ("in-progress", 0.999, 99),
-        ("in-progress", 0.005, 0),
+        # Below 1% the whole percent is 0, which reads as no progress: no bar.
+        ("in-progress", 0.005, None),
+        ("in-progress", 0.0099999, None),
+        ("in-progress", 0.01, 1),
         # Reported decimals whose binary product falls just below the whole value.
         ("in-progress", 0.29, 29),
         ("in-progress", 0.57, 57),

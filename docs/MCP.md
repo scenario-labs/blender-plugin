@@ -61,8 +61,10 @@ latest validated Scenario status, `progress` its reported fraction from 0 to 1
 `remote_stale` whether automatic polling has stopped keeping it current. They are
 `null` otherwise and are never persisted. Only `in-progress` and `finalizing`
 fractions measure generation; the native Jobs views show a percentage only for
-those statuses above 0. Providers may keep `progress` at 0 until completion, so it
-is not a time estimate. A restarted job reports progress only after explicit
+those statuses from 1%, and name the status in the words of the composer's job
+strip: queued, starting, generating or finalizing. `remote_status` and `progress`
+stay the raw validated values. Providers may keep `progress` at 0 until
+completion, so it is not a time estimate. A restarted job reports progress only after explicit
 `recover_local_job` `refresh` or `resume`; see
 [the projection rules](BLENDER_JOB_CONTEXT.md#remote-progress-and-scene-lane-binding).
 

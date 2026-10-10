@@ -21,14 +21,16 @@ from datetime import UTC, datetime
 
 from .store import JobState
 
-# Active SDK job statuses and their display words; terminal statuses are
-# committed by the coordinator and never produce a reading.
+# Active SDK job statuses and their display words, shared by Jobs rows and
+# the composer's job strip; terminal statuses are committed by the
+# coordinator and never produce a reading. A pending job has not started, so
+# it reads as queued.
 LABELS = {
-    "pending": "waiting",
+    "pending": "queued",
     "queued": "queued",
     "warming-up": "starting",
     "in-progress": "generating",
-    "finalizing": "finishing",
+    "finalizing": "finalizing",
 }
 ACTIVE = tuple(LABELS)
 # Only these statuses measure generation, so only they show a percentage.
@@ -69,12 +71,17 @@ class RemoteProgress:
 
     @property
     def percent(self):
-        """Whole percent to display, only while measured and above zero."""
+        """Whole percent to display, only while measured and at least 1%.
+
+        A fraction below 0.01 floors to 0, which would read as no progress
+        beside a moving job, so it stays indeterminate like an unknown one.
+        """
         if self.status not in _MEASURED or not self.fraction:
             return None
         # Binary floats put 0.29 * 100 just below 29; snap to the reported
         # decimal before flooring so the bar never shows one percent too low.
-        return math.floor(round(self.fraction * 100, 6))
+        whole = math.floor(round(self.fraction * 100, 6))
+        return whole if whole >= 1 else None
 
     @property
     def observed_utc(self):

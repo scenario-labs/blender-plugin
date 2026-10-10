@@ -9,7 +9,7 @@ import textwrap
 import bpy
 
 from ..core.ui.costs import format_cu, workflow_loop_warning
-from . import generation, history, job_recovery, params_ui, props, runtime
+from . import generation, history, job_recovery, params_ui, props, result_previews, runtime
 
 KIND_ICON = {
     "image": "IMAGE_DATA",
@@ -617,14 +617,18 @@ def draw_result(layout, rec, *, collapsible=True):
         row.operator(
             "scenario.error_details", text="", icon="INFO"
         ).local_id = rec.local_id  # tooltip = full message; click = full text + copy
+    result_previews.draw(box, rec)
     job_recovery.draw_controls(box, rec)
     if rec.meta.get("download_errors"):
         box.label(
             text=f"{len(rec.meta['download_errors'])} file(s) could not be downloaded", icon="ERROR"
         )
     if rec.kind == "image":
+        shared = bool(rec.meta.get("shared_job"))
         for path in rec.files[:6]:
-            icon_id = thumbnail(path)
+            # Shared rows show their receipt-bound preview above; thumbnail()
+            # would read the file while drawing.
+            icon_id = 0 if shared else thumbnail(path)
             row = box.row(align=True)
             if icon_id:
                 row.template_icon(icon_value=icon_id, scale=3.0)
@@ -942,6 +946,7 @@ def draw_active_job(layout, rec):
         box.operator(
             "scenario.error_details", text="Job needs review", icon="ERROR"
         ).local_id = rec.local_id
+    result_previews.draw(box, rec)
     job_recovery.draw_controls(box, rec)
 
 

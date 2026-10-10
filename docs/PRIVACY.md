@@ -23,7 +23,13 @@ limits of its current controls. It does not replace Scenario's service policies.
 - The model catalog is requested automatically when credentials are available;
   opening the model picker can download thumbnails. The same load lists the
   trained models of the selected credentials and project. Opening the picker's
-  Trained chip reads base-model descriptions to find which accept LoRAs. Test connection requests one
+  Trained chip reads base-model descriptions to find which accept LoRAs. For
+  downloaded saved jobs listed in Jobs or Generations, whether or not those
+  panels are open, the extension reads the asset metadata of video, 3D and
+  audio results from Scenario and downloads Scenario's preview images,
+  automatically and repeatedly for up to about five minutes per result while a
+  preview is not ready; image previews are decoded from the downloaded files
+  without a request. Test connection requests one
   public-model list page with at most one model to verify model access; it does
   not discover account or project identity. Refresh cloud and Older in Generations retrieve job
   history and prompt text; connected agents can request history too.
@@ -126,12 +132,15 @@ private source copies live under `state/shared-uploads`, including
 envelopes, temporary private copies of saved results awaiting decoding, and
 digests and asset IDs, without signed URLs. **Load previews** on a waiting
 workflow step adds stills of the assets that step lists for review: the images
-themselves, up to 8 MiB each, or their server thumbnails. Their icons stay in
-memory and never enter Blender's file-thumbnail cache. Unused entries beyond
+themselves, up to 8 MiB each, or their server thumbnails. Unused entries beyond
 512 MiB are evicted, and the directory is safe to delete, even while Blender
-runs. Audio envelopes are computed by a separate offline Blender process that
-reads only the private copy; its disposable profile, temporary files and log
-stay in that copy's work directory and are removed with it.
+runs. Preview icons, of saved results and of review assets, are built in memory
+from those files; the extension never asks Blender to load them through its
+file-thumbnail service, which writes copies to the operating system's thumbnail
+folder, and images decoded for previews never enter the open blend file. Audio
+envelopes are computed by a separate offline Blender process that reads only
+the private copy; its disposable profile, temporary files and log stay in that
+copy's work directory and are removed with it.
 **Play** and **Play in Blender** copy one verified saved video or audio result
 into a private, read-only file under `cache/media-playback` and open that copy,
 never the saved file, in the system player or a separate Blender animation

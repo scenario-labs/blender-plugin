@@ -8,6 +8,7 @@ from dataclasses import dataclass
 import pytest
 from scenario_sdk.types.job_retrieve_response import Job
 
+from scenario.core.jobs import progress
 from scenario.core.jobs.store import JobState
 from scenario.core.ui import job_strip as js
 
@@ -103,7 +104,7 @@ TABLE = [
     ("submitting", {}, "Submission unconfirmed; do not resubmit", "review", None),
     ("uncertain", {}, "Submission unconfirmed; do not resubmit", "review", None),
     ("remote", {}, "Submitted", "active", None),
-    ("remote", {"remote_status": "pending"}, "Waiting", "active", None),
+    ("remote", {"remote_status": "pending"}, "Queued", "active", None),
     ("remote", {"remote_status": "queued"}, "Queued", "active", None),
     ("remote", {"remote_status": "warming-up"}, "Starting", "active", None),
     ("remote", {"remote_status": "in-progress"}, "Generating", "active", None),
@@ -115,7 +116,7 @@ TABLE = [
         0.42,
     ),
     ("remote", {"remote_status": "in-progress", "progress": 1}, "Generating", "active", None),
-    ("remote", {"remote_status": "finalizing", "progress": 0.99}, "Finishing", "active", None),
+    ("remote", {"remote_status": "finalizing", "progress": 0.99}, "Finalizing", "active", None),
     ("remote", {"remote_status": "queued", "progress": 0.5}, "Queued", "active", None),
     ("remote", {"remote_status": "success"}, "Submitted", "active", None),
     ("remote", {"remote_status": "running"}, "Submitted", "active", None),
@@ -140,6 +141,13 @@ TABLE = [
     (None, {}, "Checking status", "active", None),
     ("not-a-state", {}, "Checking status", "active", None),
 ]
+
+
+@pytest.mark.parametrize("status", js.ACTIVE_REMOTE_STATUSES)
+def test_remote_words_match_jobs_rows(status):
+    # One vocabulary: the strip capitalizes the word Jobs rows draw for a reading.
+    text = js.strip_status("remote", remote_status=status).text
+    assert text == progress.LABELS[status].capitalize()
 
 
 @pytest.mark.parametrize(("state", "kwargs", "text", "tone", "fraction"), TABLE)

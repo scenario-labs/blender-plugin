@@ -311,10 +311,12 @@ once Scenario reports success: Generations lists it, including after **Inspect
 saved jobs**, and it never draws a Jobs row or a download line. The projection
 decides from the saved request (its operation and model), never from drawn
 text. While a known remote job is polled, the latest validated Scenario status
-replaces `submitted`: `waiting`, `queued`, `starting`, `generating` or
-`finishing`. Draw a native progress bar with its whole percentage only when
-Scenario reports a measured fraction above zero; never draw a percentage for
-zero, unknown or queued states, and never show an estimated time. With online
+replaces `submitted`: `queued` (Scenario's `pending` and `queued`), `starting`
+(`warming-up`), `generating` (`in-progress`) or `finalizing`. The composer's
+job strip uses the same words, capitalized. Draw a native progress bar with its
+whole percentage only while generating or finalizing and only from 1%; never
+draw a percentage for zero, a fraction below 1%, unknown or queued states, and
+never show an estimated time. With online
 access disabled, a `submitted` or `canceling` row
 adds `Status paused while online access is disabled` and a `finished on
 Scenario` row adds `Download paused while online access is disabled`, whether or
@@ -646,11 +648,11 @@ shows its own job or no tray.
   bottom edge in the job's tone; it keeps its own click.
 - One line reads title · status · price · +N more, cut with an ellipsis. The
   status uses the [strip wording](../scenario/core/ui/job_strip.py), whose remote
-  words are the Jobs rows' words capitalized (`Waiting`, `Queued`, `Starting`,
-  `Generating`, `Finishing`), with a tone dot that is never the only signal.
+  words are the Jobs rows' words capitalized (`Queued`, `Starting`,
+  `Generating`, `Finalizing`), with a tone dot that is never the only signal.
   While a job is active, a thin bar under the line fills to the reported
   percentage from 1% to 99%, else it stays a dim full track. Unlike the Jobs
-  bar, it shows no percentage while finishing. Without online access, states
+  bar, it shows no percentage while finalizing. Without online access, states
   that wait on Scenario add `(offline)`;
   a remote reading that polling is not keeping current adds `(last known)`.
   A paused delivery's own message replaces the status in the review tone, and
@@ -844,6 +846,34 @@ audio, the waveform's Cancel, Retry and close on the desktop, clicking **Play
 video** or **Play in Blender** at UI scale 2.0, Studio at UI scale 2.0, viewport
 interaction, other platforms and human listening are not yet recorded; they
 remain #189 and #68 acceptance.
+
+## Saved result previews
+
+Shared saved jobs whose results are downloaded show preview tiles above their
+saved-job controls, in Jobs, Generations and the Studio pages that reuse them:
+at most four per job, primary results first (video, audio, embedded model, base
+color or untagged image), then other maps. Each tile is the preview icon or,
+until it is ready, the result kind's built-in icon at the same size, with a
+caption numbered like the saved-job controls: **Video (1)**, **Albedo (3)**.
+Below the tiles, one information line per distinct status names the waiting
+tiles: preparing, waiting for Scenario, or `Preview paused while online access
+is disabled`. A missing, failed or unreadable preview gets an `ERROR` line with
+its reason and an explicit **Retry preview (N)** button; nothing retries after
+the polling window without that click. Previews are read-only and open no
+confirmation; Retry's tooltip says nothing is generated, applied, spent or
+changed in the scene. Shared image rows no longer load a draw-time thumbnail.
+
+Icon size and wrap columns follow the region width divided by
+`preferences.system.ui_scale` (1 when background Blender reports 0). Drawing
+reads only the controller's precomputed tiles: no file, store or session
+access, decode, request or property write. Requests, image decoding and icons
+happen in the controller's timer, outside drawing.
+
+Installed exact-ZIP tests on Blender 5.0.1, 5.1.2 and 5.2.1 macOS arm64 draw
+tiles through recording layouts with file and store reads refused, and through
+the real Jobs panel. Physical input, focus, viewport interaction and screenshots
+at UI scales 1.0 and 2.0 are not yet recorded; they remain #66 and #68
+acceptance.
 
 ## Saved static model confirmation
 

@@ -4,10 +4,12 @@
 
 import hashlib
 import os
+import struct
 import tempfile
 import threading
 import time
 import unittest
+import zlib
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock, call, patch
@@ -408,7 +410,16 @@ class RuntimeJobTests(unittest.TestCase):
         if os.name == "posix":
             self.assertEqual(root.stat().st_mode & 0o777, 0o700)
         # A saved image result previews through the lane into this cache, offline.
-        store, data = self.runtime.state.job_store, b"\x89PNG\r\n\x1a\n" + bytes(24)
+        # The lane reads only its signature and declared size; Blender decodes it later.
+        ihdr = b"IHDR" + struct.pack(">IIBBBBB", 8, 4, 8, 6, 0, 0, 0)
+        store = self.runtime.state.job_store
+        data = (
+            b"\x89PNG\r\n\x1a\n"
+            + struct.pack(">I", 13)
+            + ihdr
+            + struct.pack(">I", zlib.crc32(ihdr))
+            + bytes(24)
+        )
         record = store.create(
             m.JobIntent(
                 "request",

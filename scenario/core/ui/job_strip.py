@@ -30,7 +30,7 @@ INSPECT_LABEL = "Inspect"
 CHOOSE_CHIP = "choose"  # several result actions: the chip opens the job card to pick one
 
 # The Jobs panel's words for an active remote status, capitalized, so one job reads the same in
-# the strip and in Jobs rows: Waiting, Queued, Starting, Generating, Finishing.
+# the strip and in Jobs rows: Queued, Starting, Generating, Finalizing.
 _REMOTE_TEXT = {status: label.capitalize() for status, label in REMOTE_LABELS.items()}
 _STATE_TEXT = {
     "prepared": ("Preparing submission", "active"),

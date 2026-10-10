@@ -23,7 +23,7 @@ sys.path.insert(0, str(ROOT))
 
 from scenario.core.api import catalog as C
 from scenario.core.api.sdk_adapter import API_URL, AdapterError, Credentials, SDKAdapter
-from scenario.core.schema.params import exclusive_clauses, parse_schema
+from scenario.core.schema.params import clause_inputs, exclusive_clauses, parse_schema
 from tools.dev_config import live_settings
 
 MODEL_ID = re.compile(r"model_[A-Za-z0-9][A-Za-z0-9_.-]{0,240}\Z")
@@ -294,18 +294,56 @@ def audit_one(model_id, contexts, record, schema):
     if not specs:
         out.append(("HIGH", "empty-schema", "no parameters in the schema at all"))
 
-    # 7. A file description says it cannot be combined with other inputs, but the parser named no sibling,
-    #    so the shared guard cannot refuse that body before a paid job fails (Seedance: first frame + reference video).
-    paired = {name for pair in schema.exclusive for name in pair}
-    for s in files:
-        if exclusive_clauses(s.description) and s.name not in paired:
-            out.append(
-                (
-                    "HIGH",
-                    "unparsed-exclusive-input",
-                    f"file '{s.name}' ({s.label}) reads mutually exclusive but no sibling file input was recognized",
-                )
+    # 7. Descriptions saying an input cannot be combined with others. The shared guard (Schema.exclusive)
+    #    refuses only two file inputs sent together (Seedance: first frame + reference video).
+    #    HIGH: a file clause names no sibling input, so nothing maps it and a paid job may fail.
+    #    MED: a setting is on either side (Kling generateAudio + reference video); the guard does not check
+    #    settings by design, so the combination is reported for review without failing the HIGH gate.
+    out.extend(exclusive_findings(specs))
+    return out
+
+
+def exclusive_findings(specs):
+    """Findings for each exclusivity clause, quoting its wording so a loose label match stays visible."""
+    out = []
+    for s in specs:
+        kind = "file" if s.is_file else "setting"
+        for clause in exclusive_clauses(s.description):
+            said = (
+                f"{kind} '{s.name}' ({s.label}) says it can't be combined with '{clause.strip()}'"
             )
+            inputs = clause_inputs(s, specs, clause)
+            if not inputs:
+                if s.is_file:
+                    out.append(
+                        (
+                            "HIGH",
+                            "unparsed-exclusive-input",
+                            f"{said}, but no sibling input matches",
+                        )
+                    )
+                else:
+                    out.append(
+                        (
+                            "MED",
+                            "unguarded-exclusive-setting",
+                            f"{said}, but no sibling input matches; the shared guard checks file pairs only",
+                        )
+                    )
+                continue
+            unguarded = [other for other in inputs if not (s.is_file and other.is_file)]
+            if unguarded:
+                names = ", ".join(
+                    f"{'file' if other.is_file else 'setting'} '{other.name}'"
+                    for other in unguarded
+                )
+                out.append(
+                    (
+                        "MED",
+                        "unguarded-exclusive-setting",
+                        f"{said} (matches {names}); the shared guard checks file pairs only",
+                    )
+                )
     return out
 
 

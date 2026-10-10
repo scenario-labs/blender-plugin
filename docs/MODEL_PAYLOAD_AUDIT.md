@@ -20,10 +20,15 @@ The checks flag:
 - Edit 3D models without a detectable mesh input.
 - Prompts that the Edit 3D schema fails to select for drawing.
 - Required flags lost during parsing, and empty schemas.
-- File inputs whose descriptions say they are mutually exclusive with, or can't
-  be combined with, other inputs when the parser recognizes no sibling file
-  input. Recognized pairs become `Schema.exclusive`, which every shared quote
-  path refuses to send together; an unrecognized one would reach a paid job.
+- Inputs whose descriptions say they are mutually exclusive with, or can't be
+  combined with, other inputs. Only two file inputs become a `Schema.exclusive`
+  pair, which every shared quote path refuses to send together; such a pair is
+  not reported. A file input whose wording names no sibling input is `HIGH`
+  (`unparsed-exclusive-input`), because nothing stops that body before a paid
+  job. Wording with a setting on either side, such as Kling V3 Omni's Generate
+  Audio with a reference video, is `MED` (`unguarded-exclusive-setting`): the
+  guard does not check settings. Each finding quotes the wording and the inputs
+  its label match found, so a loose match stays visible.
 
 The implementation retains the existing heuristics. It does not automatically
 repair schemas or loosen requirements. A finding needs investigation; for example,

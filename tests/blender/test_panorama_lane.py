@@ -303,6 +303,19 @@ class EnvironmentFormTests(unittest.TestCase):
         self.assertEqual((self.lane.model_id, self.lane.prompt), (GPT, "a dome"))
         self.assertEqual(self.lane.params["quality"].enum_value, "medium")
         self.assertEqual(submodule("blender.history")._kinds()[FLUX], "image")
+        # The model list is shared by scenes; Reload relists an unchanged mode too.
+        other = bpy.data.scenes.new("Environment other mode")
+        self.addCleanup(bpy.data.scenes.remove, other)
+        other.scenario.panorama_mode = "HDRI"
+        self.generation.refresh_panorama_models(SimpleNamespace(scene=other))
+        self.assertEqual(self.models(), [HDRI])
+        self.assertEqual(
+            bpy.ops.scenario.reload_generation(local_id="environment-reload"), {"FINISHED"}
+        )
+        self.assertEqual(self.models(), MODE_MODELS["GENERATE"])
+        self.assertEqual((self.lane.model_id, self.lane.model_key), (GPT, GPT))
+        self.lane.prompt = "a dome"
+        self.assertEqual(self.request().errors, [])
 
 
 class EnvironmentJobTests(unittest.TestCase):
@@ -429,6 +442,30 @@ class EnvironmentJobTests(unittest.TestCase):
         fixture.panorama_estimate(HDRI, {"image": "saved-panorama"})
         self.assertEqual(fixture.dry_runs()[-1], native)
         self.assertEqual(len(fixture.paid), paid)
+
+    def test_make_hdri_relists_hdri_after_another_scene_listed_its_mode(self):
+        _, result = self.fixture.saved_panorama()
+        view = self.runtime.state.model_jobs.views[result["local_id"]]
+        item = next(i for i in self.actions(view) if i.operator == "scenario.panorama_to_hdri")
+        paid = len(self.fixture.paid)
+        self.scene.scenario.panorama_mode = "HDRI"
+        other = bpy.data.scenes.new("Environment other mode")
+        self.addCleanup(bpy.data.scenes.remove, other)
+        # The list is shared by scenes: another scene's refresh lists its Generate mode.
+        self.generation.refresh_panorama_models(SimpleNamespace(scene=other))
+        listed = [entry[0] for entry in self.runtime.enum_items(("models", "panorama"))]
+        self.assertEqual(listed, [FLUX, GPT])
+        self.assertEqual(bpy.ops.scenario.panorama_to_hdri(**dict(item.properties)), {"FINISHED"})
+        scenario = self.scene.scenario
+        self.assertEqual((scenario.lane, scenario.panorama_mode), ("panorama", "HDRI"))
+        self.assertEqual((self.lane.model_id, self.lane.model_key), (HDRI, HDRI))
+        self.assertEqual(
+            [(ref.param_name, ref.asset_id) for ref in self.lane.references],
+            [("image", "saved-panorama")],
+        )
+        request = self.generation.build_request(self.scene, "panorama", for_estimate=True)
+        self.assertEqual((request.body["image"], request.errors), ("saved-panorama", []))
+        self.assertEqual(len(self.fixture.paid), paid)
 
     def test_saved_panorama_choices_hold_only_scoped_ldr_results(self):
         fixture = self.fixture

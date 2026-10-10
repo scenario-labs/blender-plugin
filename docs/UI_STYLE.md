@@ -817,8 +817,12 @@ downloaded LDR panorama. Make HDRI only opens the HDRI form with that reference;
 it never prices, generates or changes a World. The floating composer shows an
 **Environment** tab that drives the Generate mode; choosing it selects that
 mode, and while the sidebar shows another Environment mode the composer drives
-Image. Mode, size and model changes happen in property callbacks or operators;
-drawing never writes.
+Image. Its **Settings** chip commits focused text to the original form before
+the dialog opens, so a mode change there cannot retarget that text; a form that
+changed under the text refuses to open and keeps both texts. Make HDRI and Reload
+relist the target mode's models even when the scene already shows that mode,
+because the list is shared by scenes. Mode, size and model changes happen in
+property callbacks or operators; drawing never writes.
 
 Installed tests on macOS arm64 Blender 5.1.2 cover the appended tab values
 through a saved and reopened blend, mode model lists and price invalidation,

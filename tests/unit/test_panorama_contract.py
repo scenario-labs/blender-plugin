@@ -283,3 +283,14 @@ def test_native_wording_and_lookups_follow_the_contracts():
         for rule in contract.references:
             assert contracts.reference_rule(contract, rule.param) is rule
         assert contracts.reference_rule(contract, "prompt") is None
+
+
+def test_saved_mode_and_size_indexes_keep_their_order():
+    """A saved blend stores the native mode and size as item indexes; only append."""
+    assert contracts.PANORAMA_MODES[:4] == (
+        contracts.GENERATE,
+        contracts.FROM_IMAGE,
+        contracts.HDRI,
+        contracts.UPSCALE,
+    )
+    assert contracts.SIZE_PRESETS[:3] == ((2048, 1024), (3072, 1536), (3840, 1920))

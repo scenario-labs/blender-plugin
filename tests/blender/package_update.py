@@ -525,8 +525,9 @@ def seed_lanes(scene, selected):
 
     The last tab before Environment was appended must read back unchanged after
     an update. When the predecessor has the Environment lane, a second scene also
-    saves that appended tab, its mode, size and form with a saved-panorama marker.
-    Older predecessors get no invented Environment state.
+    saves that appended tab, its mode, size and form with a saved-panorama marker
+    and a checked upload's measured size. Older predecessors get no invented
+    Environment state.
     """
     import bpy
 
@@ -550,6 +551,15 @@ def seed_lanes(scene, selected):
     ref["_scenario_reference_asset"] = "update-panorama"
     ref["_scenario_reference_kind"] = "image"
     ref["_scenario_reference_projection"] = "equirectangular"
+    checked = lane.references.add()
+    checked.param_name, checked.source, checked.asset_id = "image", "ASSET", "update-asset"
+    checked.label = "Checked 2:1 upload"
+    checked["_scenario_reference_upload"] = "update-environment-reference"
+    checked["_scenario_reference_scope"] = ref["_scenario_reference_scope"]
+    checked["_scenario_reference_request"] = "upload-imported"
+    checked["_scenario_reference_asset"] = "update-asset"
+    checked["_scenario_reference_kind"] = "image"
+    checked["_scenario_reference_panorama"] = "2048x1024"
 
 
 def environment_snapshot():

@@ -116,6 +116,72 @@ class ComposerStateTests(unittest.TestCase):
         self.state_mod.choose_lane(scene, "video")
         self.assertEqual(scene.scenario.panorama_mode, "UPSCALE")
 
+    def test_settings_dialog_gets_focused_text_before_a_mode_change_retargets_it(self):
+        modal = submodule("blender.composer.modal")
+        scene = bpy.context.scene
+        scenario = scene.scenario
+        scenario.lane_state("image").prompt = "an image prompt"
+        scenario.lane = "panorama"
+        scenario.panorama_mode = "GENERATE"
+        scenario.lane_state("panorama").prompt = "a misty valley"
+        state = self.state_mod.ComposerState()
+        self.addCleanup(setattr, self.runtime.state, "composer", self.runtime.state.composer)
+        self.runtime.state.composer = state
+        state.sync_from_lane(scene)
+        state.focused = True
+        state.field.set_text("a misty valley at dusk")
+        opened = []
+
+        def settings(_how, lane):
+            # The dialog shows the committed text; choosing HDRI there moves the composer to Image.
+            opened.append((lane, scenario.lane_state("panorama").prompt))
+            scenario.panorama_mode = "HDRI"
+            return {"RUNNING_MODAL"}
+
+        ops = SimpleNamespace(
+            scenario=SimpleNamespace(quick_settings=settings, generate=MagicMock())
+        )
+        context = SimpleNamespace(scene=scene, region=MagicMock())
+        operator = SimpleNamespace(report=MagicMock())
+        press = SimpleNamespace(type="LEFTMOUSE", value="PRESS", mouse_region_x=9, mouse_region_y=9)
+        enter = SimpleNamespace(
+            type="RET", value="PRESS", ctrl=False, oskey=False, shift=False, mouse_region_x=9
+        )
+        with (
+            patch.object(modal, "_layout") as layout,
+            patch.object(modal, "bpy", SimpleNamespace(ops=ops)),
+        ):
+            layout.return_value.hit.return_value = ("settings",)
+            result = modal.SCENARIO_OT_composer_modal.modal(operator, context, press)
+            self.assertEqual(result, {"RUNNING_MODAL"})
+            # Enter after the dialog leaves no focused text to land in the Image prompt.
+            layout.return_value.hit.return_value = None
+            modal.SCENARIO_OT_composer_modal.modal(operator, context, enter)
+        self.assertEqual(opened, [("panorama", "a misty valley at dusk")])
+        self.assertFalse(state.focused)
+        self.assertEqual(state.lane_for(scene), "image")
+        self.assertEqual(scenario.lane_state("image").prompt, "an image prompt")
+        self.assertEqual(scenario.lane_state("panorama").prompt, "a misty valley at dusk")
+        ops.scenario.generate.assert_not_called()
+        operator.report.assert_not_called()
+        # A form changed under the focused text keeps both texts and opens nothing.
+        scenario.panorama_mode = "GENERATE"
+        state.sync_from_lane(scene)
+        state.focused = True
+        state.field.set_text("pending composer")
+        scenario.lane_state("panorama").prompt = "new sidebar value"
+        with (
+            patch.object(modal, "_layout") as layout,
+            patch.object(modal, "bpy", SimpleNamespace(ops=ops)),
+        ):
+            layout.return_value.hit.return_value = ("settings",)
+            result = modal.SCENARIO_OT_composer_modal.modal(operator, context, press)
+        self.assertEqual(result, {"RUNNING_MODAL"})
+        self.assertEqual(len(opened), 1)
+        self.assertTrue(state.focused)
+        self.assertEqual(scenario.lane_state("panorama").prompt, "new sidebar value")
+        operator.report.assert_called_once()
+
     def test_selection_survives_commit_and_sync_resets_it(self):
         scene = bpy.context.scene
         scene.scenario.lane = "image"

@@ -144,7 +144,8 @@ THREE_D_MODES = [
     ("MULTI", "Multi-view", "Several views of the same object"),
     ("EDIT", "Edit", "Remesh, retexture, unwrap, rig, animate or split the selected mesh"),
 ]
-# Environment modes, each listing only its verified panorama contract models.
+# Environment modes, each listing only its verified panorama contract models. A
+# saved blend stores the mode and size as item indexes: append, never reorder.
 PANORAMA_MODES = [
     (mode, panorama_contract.MODE_LABELS[mode], panorama_contract.MODE_DESCRIPTIONS[mode])
     for mode in panorama_contract.PANORAMA_MODES

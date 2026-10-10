@@ -305,8 +305,9 @@ A saved blend stores each scene's lane tab as its item index. The probe sets the
 seeded scene's tab to Blockout, the last tab before Environment was appended, and
 the scene snapshot requires that tab after update and offline reopen. When the
 predecessor has the Environment lane, a second saved scene also seeds that tab,
-its HDRI mode, a 3072 x 1536 size, its prompt and model choice, and a saved
-panorama reference with scope, asset, kind and projection markers. Both reports
+its HDRI mode, a 3072 x 1536 size, its prompt and model choice, a saved
+panorama reference with scope, asset, kind and projection markers, and a checked
+upload's reference with its measured 2:1 size marker. Both reports
 then include `environment_lane_preserved: true`, which the runner requires
 exactly when `expected-state.json` contains that Environment state. Older
 predecessors report false: they show only that an older saved tab survives the

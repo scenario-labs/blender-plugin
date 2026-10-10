@@ -180,8 +180,7 @@ def prefill_hdri(context, context_id, request_id, asset_id):
     scene = context.scene
     scenario = scene.scenario
     scenario.lane = "panorama"
-    if scenario.panorama_mode != panorama_contract.HDRI:
-        scenario.panorama_mode = panorama_contract.HDRI  # its update lists the HDRI models
+    generation.select_panorama_mode(context, panorama_contract.HDRI)
     lane_state = scenario.panorama
     lane_state.model_key = hdri.id
     if lane_state.model_id != hdri.id:

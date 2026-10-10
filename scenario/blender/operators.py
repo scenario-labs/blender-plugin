@@ -796,8 +796,7 @@ class SCENARIO_OT_reload_generation(bpy.types.Operator):
             contract = panorama_contract.contract_for(rec.model_id) if lane == "panorama" else None
             if contract is not None:
                 # The mode lists the model; a matching 2:1 size preset is restored too.
-                if scene.scenario.panorama_mode != contract.mode:
-                    scene.scenario.panorama_mode = contract.mode
+                generation.select_panorama_mode(context, contract.mode)
                 size = tuple(rec.body.get(name) for name in contract.size_params)
                 if contract.sizes and size in contract.sizes:
                     scene.scenario.panorama_size = "{}x{}".format(*size)

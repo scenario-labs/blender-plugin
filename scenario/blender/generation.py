@@ -397,6 +397,19 @@ def refresh_panorama_models(context=None, *, mark_dirty=True, prefetch=True):
         request_models(missing, mark_dirty=mark_dirty)
 
 
+def select_panorama_mode(context, mode):
+    """Show one Environment mode with its own model list on the context scene.
+
+    The list is shared by scenes, so an unchanged mode is refreshed as well:
+    another scene may have listed a different mode since. Operators only.
+    """
+    scenario = context.scene.scenario
+    if scenario.panorama_mode != mode:
+        scenario.panorama_mode = mode  # its update refreshes the list
+    else:
+        refresh_panorama_models(context)
+
+
 def request_models(model_ids, *, mark_dirty=True):
     runtime.sync_catalog_context()
     if not runtime.online():

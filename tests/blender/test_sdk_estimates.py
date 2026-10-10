@@ -28,6 +28,7 @@ class SDKEstimateTests(unittest.TestCase):
         self.addCleanup(self.runtime.state.reset)
         self.calls = []
         self.expected_project = None
+        self.hold = None  # An Event that keeps dry runs in flight until it is set.
         self.response = b'{"creativeUnitsCost":1.1234567890123456789,"costDetails":{"base":1.25,"nested":{"parts":[0.5,2]}}}'
         self.model = {
             "id": "fixture-price",
@@ -49,6 +50,8 @@ class SDKEstimateTests(unittest.TestCase):
                 expected["projectId"] = self.expected_project
             self.assertEqual(dict(request.url.params), expected)
             self.assertEqual(request.url.path, "/v1/generate/custom/fixture-price")
+            if self.hold is not None:
+                self.assertTrue(self.hold.wait(5))
             return httpx.Response(269, content=self.response)
 
         def factory(credentials, **kwargs):
@@ -232,6 +235,139 @@ class SDKEstimateTests(unittest.TestCase):
         self.assertEqual(self.lane.estimate_state, "READY", self.lane.estimate_error)
         self.assertEqual(second_lane.estimate_state, "ERROR")
         self.assertEqual(len(self.runtime.state.estimates), 1)
+
+    def test_pump_defers_unselected_scene_until_it_becomes_current(self):
+        pump = submodule("blender.pump")
+        panels = submodule("blender.panels")
+        first, window = bpy.context.scene, bpy.context.window
+        second = first.copy()
+        self.addCleanup(bpy.data.scenes.remove, second)
+        self.addCleanup(setattr, window, "scene", first)
+        second_lane = second.scenario.lane_state("image")
+        self.lane.estimate_dirty_at = second_lane.estimate_dirty_at = 1.0
+        self.assertEqual(second_lane.estimate_state, "PENDING")
+        clock = patch.object(submodule("blender.props"), "clock", return_value=10.0)
+        with clock:
+            pump._process()
+        self.deliver()
+        self.assertEqual(self.lane.estimate_state, "READY", self.lane.estimate_error)
+        # Only the selected scene can receive a quote. The other form keeps its
+        # pending request without an error or a quote that would be refused.
+        self.assertEqual(second_lane.estimate_state, "PENDING")
+        self.assertEqual(second_lane.estimate_error, "")
+        self.assertEqual(second_lane.estimate_dirty_at, 1.0)
+        self.assertEqual(len([call for call in self.calls if call.method == "POST"]), 1)
+        window.scene = second
+        self.assertIs(bpy.context.scene, second)
+        with clock:
+            pump._process()
+        self.deliver()
+        self.assertEqual(second_lane.estimate_state, "READY", second_lane.estimate_error)
+        self.assertTrue(panels.generate_enabled(second_lane, "image"))
+        self.assertEqual(len([call for call in self.calls if call.method == "POST"]), 2)
+        window.scene = first
+        with clock:
+            pump._process()
+        self.deliver()
+        # Switching back does not reprice the first scene. This does not show
+        # that its displayed quote can still be submitted: the round trip can
+        # leave its origin stale, and submission rechecks the origin first.
+        self.assertEqual(self.lane.estimate_state, "READY", self.lane.estimate_error)
+        self.assertEqual(len([call for call in self.calls if call.method == "POST"]), 2)
+
+    def test_unselected_scene_edit_is_priced_after_switching_to_it(self):
+        pump = submodule("blender.pump")
+        first, window = bpy.context.scene, bpy.context.window
+        second = first.copy()
+        self.addCleanup(bpy.data.scenes.remove, second)
+        self.addCleanup(setattr, window, "scene", first)
+        second_lane = second.scenario.lane_state("image")
+        self.lane.estimate_dirty_at = 1.0
+        props = submodule("blender.props")
+        with patch.object(props, "clock", return_value=10.0):
+            pump._process()
+        self.deliver()
+        self.assertEqual(self.lane.estimate_state, "READY", self.lane.estimate_error)
+        with patch.object(props, "clock", return_value=20.0):
+            second_lane.prompt = "a kettle"  # A script or driver edits the hidden form.
+        self.assertEqual(second_lane.estimate_state, "PENDING")
+        with patch.object(props, "clock", return_value=21.0):
+            pump._process()
+        self.deliver()
+        self.assertEqual(second_lane.estimate_state, "PENDING")
+        self.assertEqual(second_lane.estimate_error, "")
+        self.assertFalse(second_lane.estimate_key)
+        window.scene = second
+        with patch.object(props, "clock", return_value=21.1):
+            pump._process()
+        self.deliver()
+        self.assertEqual(second_lane.estimate_state, "READY", second_lane.estimate_error)
+        posts = [json.loads(call.content) for call in self.calls if call.method == "POST"]
+        self.assertEqual(posts, [{"prompt": "a teapot"}, {"prompt": "a kettle"}])
+
+    def switch_away_during_price_request(self):
+        """Request the first scene's price, then select another scene before it arrives."""
+        first, window = bpy.context.scene, bpy.context.window
+        second = first.copy()
+        self.addCleanup(bpy.data.scenes.remove, second)
+        self.addCleanup(setattr, window, "scene", first)
+        second.scenario.lane_state("image").estimate_dirty_at = 0.0  # Nothing to price there.
+        self.hold = threading.Event()
+        self.addCleanup(self.hold.set)
+        self.lane.estimate_dirty_at = 1.0
+        props = submodule("blender.props")
+        with patch.object(props, "clock", return_value=10.0):
+            submodule("blender.pump")._process()
+        self.assertEqual(self.lane.estimate_state, "PENDING")
+        self.assertTrue(self.lane.estimate_key)
+        window.scene = second
+        bpy.context.view_layer.update()
+        self.hold.set()
+        with patch.object(props, "clock", return_value=11.0):
+            self.deliver()
+        with patch.object(props, "clock", return_value=12.0):
+            submodule("blender.pump")._process()  # The other scene is selected.
+        self.deliver()
+        self.assertEqual(len([call for call in self.calls if call.method == "POST"]), 1)
+        return first, window
+
+    def test_price_arriving_after_switching_scenes_is_requested_again_on_return(self):
+        pump = submodule("blender.pump")
+        props = submodule("blender.props")
+        first, window = self.switch_away_during_price_request()
+        # The quote cannot be used while another scene is selected. The form
+        # waits for its scene instead of keeping an error it cannot clear.
+        self.assertEqual(self.lane.estimate_state, "PENDING")
+        self.assertEqual(self.lane.estimate_error, "")
+        self.assertFalse(self.lane.estimate_key)
+        self.assertFalse(self.runtime.state.estimates)
+        window.scene = first
+        bpy.context.view_layer.update()
+        with patch.object(props, "clock", return_value=12.0):
+            pump._process()
+        self.deliver()
+        self.assertEqual(self.lane.estimate_state, "READY", self.lane.estimate_error)
+        self.assertTrue(submodule("blender.panels").generate_enabled(self.lane, "image"))
+        with patch.object(props, "clock", return_value=13.0):
+            pump._process()
+        self.deliver()
+        posts = [json.loads(call.content) for call in self.calls if call.method == "POST"]
+        self.assertEqual(posts, [{"prompt": "a teapot"}, {"prompt": "a teapot"}])
+
+    def test_failed_price_arriving_after_switching_scenes_keeps_its_error(self):
+        pump = submodule("blender.pump")
+        props = submodule("blender.props")
+        self.response = b"{}"  # The service answers without a valid price.
+        first, window = self.switch_away_during_price_request()
+        self.assertEqual(self.lane.estimate_state, "ERROR")
+        self.assertEqual(self.lane.estimate_error, "Could not confirm this price; estimate again")
+        window.scene = first
+        bpy.context.view_layer.update()
+        with patch.object(props, "clock", return_value=13.0):
+            pump._process()
+        self.deliver()
+        self.assertEqual(self.lane.estimate_state, "ERROR")
+        self.assertEqual(len([call for call in self.calls if call.method == "POST"]), 1)
 
     def test_changed_prompt_discards_queued_price(self):
         self.generation.request_estimate(bpy.context.scene, "image")

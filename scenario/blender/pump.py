@@ -63,7 +63,10 @@ def _process():
     ):
         generation.request_catalog()
     now = props.clock()
-    for scene in bpy.data.scenes:
+    # A quote binds to the selected scene, and the job session refuses any
+    # other origin. Other scenes keep their pending request until selected.
+    current = bpy.context.scene
+    for scene in (current,) if current is not None else ():
         visible = props.active_lane(scene)
         for lane in props.GENERATION_LANES:
             if lane != visible:

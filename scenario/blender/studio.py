@@ -11,6 +11,7 @@ from bpy.props import EnumProperty, PointerProperty
 from . import (
     film,
     film_capture_controls,
+    film_case_study_controls,
     film_composition_controls,
     film_export_controls,
     film_review_controls,
@@ -59,9 +60,13 @@ FILM_PAGES = (
     ("CAPTURE", "Capture", "Review local rendering and separately approve capture upload"),
     ("TIMELINE", "Timeline", "Build an editable sequence from selected shot scenes"),
     ("COMPOSITION", "Composition", "Review and approve final or previs composition"),
-    ("REVIEW", "Review", "Assemble saved media into a review scene and export a video file"),
+    (
+        "REVIEW",
+        "Review",
+        "Assemble saved media into a review scene and export a video or a case-study bundle",
+    ),
 )
-# Each page draws its panels in order; Review also offers the video export.
+# Each page draws its panels in order; Review also offers both exports.
 FILM_PANELS = {
     "TASKS": (film.SCENARIO_PT_film,),
     "SHOTS": (film_scene_controls.SCENARIO_PT_film_shots,),
@@ -71,6 +76,7 @@ FILM_PANELS = {
     "REVIEW": (
         film_review_controls.SCENARIO_PT_film_review,
         film_export_controls.SCENARIO_PT_film_export,
+        film_case_study_controls.SCENARIO_PT_film_case_study,
     ),
 }
 

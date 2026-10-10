@@ -232,8 +232,8 @@ verification ran. This MP4 export, and its
 [native/MCP controls](FILM_PLAN.md#native-and-mcp-video-export-controls) under
 Film > Export and the Studio Film Review page, are new first-party code, not an
 adaptation of Studio's `film_export.py` or its UI. They do not replace Studio's
-retained case-study bundle (the Film row above), which remains separate work
-under #64.
+retained case-study bundle (the Film row above); the
+[case-study adaptation](#film-case-study-bundle-adaptation) below provides it.
 
 ## Local background capture adaptation
 
@@ -307,9 +307,41 @@ those commands in the sidebar, the Studio Film **Review** page and local MCP, wi
 separate preparation and build approvals; no Studio UI code is copied for them.
 First-party [native/MCP video export controls](FILM_PLAN.md#native-and-mcp-video-export-controls)
 over the [export primitive](FILM_PLAN.md#offline-film-video-export-primitive)
-render a built review scene to MP4. The retained case-study bundle and
-provider/desktop acceptance remain separate; no prototype client or production
-ledger is imported.
+render a built review scene to MP4. The retained case-study bundle is adapted
+separately below; provider/desktop acceptance remains separate, and no prototype
+client or production storage is imported.
+
+## Film case-study bundle adaptation
+
+The case-study responsibility of selected Studio `src/scenario_studio/film_export.py`
+(`export_case_study`, `approved_task_ids`, `sanitized_ledger`, `sanitized_recipe`
+and its opening guide) at `e2b0277064f0c502d46524fba1d006d0ac83f846`, triggered
+from Studio's `film_ui.py` and `film.py`, is adapted into
+[`core/scene/film_case_study.py`](../scenario/core/scene/film_case_study.py),
+[`core/jobs/local_case_study.py`](../scenario/core/jobs/local_case_study.py),
+[`blender/film_case_study.py`](../scenario/blender/film_case_study.py), the bundled
+[`film_case_study_worker.py`](../scenario/blender/film_case_study_worker.py) and
+[native controls](../scenario/blender/film_case_study_controls.py). Emmanuel de
+Maistre's source attribution is retained in those modules, in the bundle manifest
+and in its opening guide. The approved-take selection, the credential and URL
+sanitizer, the curated scenes with bundle-relative media and packed textures, the
+recipe, ledger and manifest documents and the opening steps follow that source,
+and its export tests are adapted into the canonical unit tests. This is a
+functional adaptation, not a relocation of the original module.
+
+The adaptation keeps the working file unchanged: an offline child rewrites a
+private snapshot instead of temporarily rewriting and restoring the user's own
+paths and packing state. It also rebuilds sound strips whose hidden paths Blender
+cannot otherwise rewrite, removes Scenario properties that identify jobs, assets
+or productions, verifies the written library in a second child and packs one ZIP
+saved with the video export's approval, verification and never-overwrite publish.
+The ledger keeps the maintainer-approved scope: titles, kinds, models, provenance,
+saved states, exact quoted costs and result media types, without the request, job,
+asset, project or team identifiers, URLs or paths the source ledger kept. Studio's
+director-timeline validation becomes a blocking reason, a previs review may be
+bundled as well as a final one, and the timeline is optional. See the
+[bundle contract](FILM_PLAN.md#portable-case-study-bundle). No Studio client,
+production storage, media binary or sample media is imported.
 
 ## Next implementation gates
 

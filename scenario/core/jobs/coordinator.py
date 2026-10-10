@@ -19,7 +19,7 @@ from ..api import trained_routes
 from ..api.sdk_adapter import AdapterStatusError, Estimate, SDKAdapter
 from ..scene.splats import SplatCancelled
 from ..schema.forms import RouteError, _fields, chosen_inputs, is_file_field, record_schema
-from . import local_export, local_render
+from . import local_case_study, local_export, local_render
 from .film_finishing import (
     CompositionDraft,
     validate_composition_draft,
@@ -106,13 +106,13 @@ class LocalCaptureResult:
 
 @dataclass(frozen=True)
 class LocalExportResult:
-    """A published local video receipt; it grants no scene, upload or spend authority."""
+    """A published local video or case-study receipt; it grants no scene, upload or spend."""
 
     scope: JobScope
     origin: JobOrigin
     source_origin: JobOrigin
-    export: local_export.PublishedExport
-    staged: local_export.StagedExport = field(repr=False)
+    export: local_export.PublishedExport | local_case_study.PublishedBundle
+    staged: local_export.StagedFile = field(repr=False)
 
 
 class SubmissionUncertain(RuntimeError):
@@ -567,14 +567,49 @@ class JobCoordinator:
         self._log_export(published)
         return LocalExportResult(self.scope, origin, source_origin, published, staged)
 
+    def export_case_study(self, spec, destination, *, origin, source_origin, cancel, progress=None):
+        """Build, verify and publish a portable Film case-study archive; no request or spend.
+
+        Like ``export_film``, both origins must be current before the destination
+        is reserved, later scene edits do not discard the approved snapshot and
+        owner retirement before publishing releases the placeholder.
+        """
+        if not isinstance(spec, local_case_study.CaseStudySpec):
+            raise TypeError("Use an approved Film case-study specification")
+        destination = local_export.validate_destination(destination, suffix=".zip")
+        local_export.check_unused(spec)
+        self._check_export(origin, source_origin)
+        reservation = local_export.reserve(destination)
+        try:
+            local_case_study.check_space(spec, destination)
+            staged = local_case_study.build(spec, cancel=cancel, progress=progress)
+        except BaseException:
+            local_export.release(reservation)
+            raise
+        with self._lock:
+            self._staged_exports[id(staged)] = staged
+        try:
+            self._check_export()
+        except local_render.RenderCancelled:
+            local_export.release(reservation)
+            raise local_export.ExportPublishCancelled(
+                "The export context is inactive; the destination was not written", staged
+            ) from None
+        published = local_export.publish(
+            staged, destination, reservation, cancel=cancel, progress=progress
+        )
+        self._log_export(published)
+        return LocalExportResult(self.scope, origin, source_origin, published, staged)
+
     def publish_film_export(
         self, staged, destination, *, origin, source_origin, cancel, progress=None
     ):
-        """Copy this owner's verified staged video to a new destination without rendering."""
+        """Copy this owner's verified staged video or archive to a new destination only."""
         with self._lock:
             if self._staged_exports.get(id(staged)) is not staged:
                 raise ValueError("Use this connection's verified staged Film export")
-        destination = local_export.validate_destination(destination)
+        suffix = ".zip" if isinstance(staged, local_case_study.StagedBundle) else ".mp4"
+        destination = local_export.validate_destination(destination, suffix=suffix)
         self._check_export()
         published = local_export.publish(staged, destination, cancel=cancel, progress=progress)
         self._log_export(published)
@@ -583,8 +618,12 @@ class JobCoordinator:
     @staticmethod
     def _log_export(published):
         # Local diagnostics name only the chosen basename and content hash.
+        bundle = isinstance(published, local_case_study.PublishedBundle)
         logging.getLogger("scenario").info(
-            "Exported Film video %s (SHA-256 %s)", published.destination.name, published.sha256
+            "Exported Film %s %s (SHA-256 %s)",
+            "case study" if bundle else "video",
+            published.destination.name,
+            published.sha256,
         )
 
     def prepare_upload(

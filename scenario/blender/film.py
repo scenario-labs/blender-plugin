@@ -14,6 +14,7 @@ from ..core.jobs.upload_store import UploadState
 from ..core.ui.costs import format_cu
 from . import (
     film_capture_controls,
+    film_case_study_controls,
     film_composition_controls,
     film_export_controls,
     film_jobs,
@@ -319,6 +320,7 @@ CLASSES = (
     *film_composition_controls.CLASSES,
     *film_review_controls.CLASSES,
     *film_export_controls.CLASSES,
+    *film_case_study_controls.CLASSES,
 )
 
 

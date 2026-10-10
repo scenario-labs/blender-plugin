@@ -647,8 +647,12 @@ outside the shared workers, and publishes it without overwriting.
 present it through session-owned `JobSession.film_export` handles with a
 destination choice and a separate render approval; runtime maintenance polls
 them, and agent destinations stay inside the Output Folder. Installed synthetic
-tests cover them; desktop interaction is pending. The portable case-study bundle
-remains unimplemented.
+tests cover them; desktop interaction is pending. The
+[portable case-study bundle](../FILM_PLAN.md#portable-case-study-bundle) uses the
+same session-owned thread and publish step through `JobSession.film_case_study`
+handles: the main thread snapshots the chosen scenes and builds the sanitized
+documents, offline children rewrite and verify the library, and the bpy-free core
+copies media, scans for private identifiers and archives one ZIP.
 
 
 ## Active workflow commands

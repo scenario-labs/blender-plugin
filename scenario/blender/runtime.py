@@ -682,6 +682,7 @@ def sync_catalog_context():
         state.job_session.film_capture.poll()
         state.job_session.film_review.poll()
         state.job_session.film_export.poll()
+        state.job_session.film_case_study.poll()
         state.job_session.asset_organization.poll()
     # After the shared owner, so a finished review reaches the Library card this tick.
     if state.library_view is not None:

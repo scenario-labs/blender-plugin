@@ -972,6 +972,60 @@ def film_export_review(args):
     raise ValueError("Choose status, cancel, discard, prepare_republish or republish")
 
 
+def film_case_study_sources(args):
+    owner = _film_owner(args).session.film_case_study
+    return {
+        "context_id": runtime.state.job_context_id,
+        "default_directory": str(_output_folder() / "Film"),
+        **owner.inspect(bpy.context.scene),
+    }
+
+
+def prepare_film_case_study(args):
+    owner = _film_owner(args).session.film_case_study
+    if args["context_id"] != runtime.state.job_context_id:
+        raise ValueError("The case-study connection changed; inspect case-study sources again")
+    return owner.prepare(
+        bpy.context.scene,
+        source_id=args["source_id"],
+        timeline_id=args.get("timeline_id"),
+        destination=args["destination_path"],
+        within=_output_folder(),
+    )
+
+
+def export_film_case_study(args):
+    # Agent approvals recheck the Output Folder, even for a native file choice.
+    return runtime.ensure_film_jobs().session.film_case_study.approve(
+        args["review_id"],
+        approved_destination=args["approved_destination"],
+        within=_output_folder(),
+    )
+
+
+def film_case_study_review(args):
+    owner = runtime.ensure_film_jobs().session.film_case_study
+    action = args.get("action", "status")
+    if action == "cancel":
+        return owner.cancel(args["review_id"])
+    owner.poll()
+    if action == "status":
+        return owner.status(args["review_id"])
+    if action == "discard":
+        return owner.discard(args["review_id"])
+    if action == "prepare_republish":
+        return owner.prepare_republish(
+            args["review_id"], args.get("destination_path"), within=_output_folder()
+        )
+    if action == "republish":
+        return owner.republish(
+            args["review_id"],
+            approved_destination=args.get("approved_destination"),
+            within=_output_folder(),
+        )
+    raise ValueError("Choose status, cancel, discard, prepare_republish or republish")
+
+
 def film_capture_sources(args):
     owner = _film_owner(args).session.film_capture
     return {
@@ -2344,6 +2398,82 @@ SPECS = (
             ["review_id"],
         ),
         film_export_review,
+    ),
+    ToolSpec(
+        "film_case_study_sources",
+        (
+            "Inspect the built Film review scenes and director timelines of the current recipe that can form a portable case-study bundle.\n"
+            "Args: production_id is the required string from film_recipe.\n"
+            "Returns: context_id, production_id, recipe scene, default_directory (the Output Folder's Film subfolder), default_name, sources with source_id, scene, kind (final/previs), frames/fps, width/height, strips, media and blocked_reason, and timelines with timeline_id, scene, shots and blocked_reason.\n"
+            'Example: {"production_id": "saved-production"}.\n'
+            "Film is experimental. Lists only local review scenes and editable timelines built for this production and unchanged recipe; a timeline must still hold the current shot scenes in recipe order. Fresh inspection replaces unprepared source handles. No file write, upload or generation.\n"
+            "Platform equivalent: none; local Film case-study inspection."
+        ),
+        _schema({"production_id": {"type": "string"}}, ["production_id"]),
+        film_case_study_sources,
+        {"readOnlyHint": True},
+    ),
+    ToolSpec(
+        "prepare_film_case_study",
+        (
+            "Bind one built Film review scene, an optional director timeline and a new ZIP destination for a separate build approval.\n"
+            "Args: context_id, production_id, source_id and destination_path are required; destination_path is an absolute new .zip path inside the Output Folder; timeline_id adds that timeline with its shot scenes.\n"
+            "Returns: review_id, READY phase, the exact resolved destination, review and timeline scenes, shot, scene and media counts, media_bytes, approved_tasks, priced_tasks and quoted_cost_total for the ledger.\n"
+            'Example: {"context_id": "current-context", "production_id": "saved-production", "source_id": "current-source", "timeline_id": "current-timeline", "destination_path": "<default_directory>/Cut - Case Study.zip"}.\n'
+            "Film is experimental. Agents may write only inside the configured Output Folder, after resolving links; only its default Film subfolder is created when missing. The file must not exist and is never overwritten. Nothing is written yet: show the returned destination and contents and obtain explicit approval before export_film_case_study. Keep the recipe scene selected and the chosen scenes unchanged until building: frame changes, object selection or edits, Undo or Redo, or leaving and selecting a scene again invalidate it. Case studies are session-local.\n"
+            "Platform equivalent: none; local case-study settings review."
+        ),
+        _schema(
+            {
+                "context_id": {"type": "string"},
+                "production_id": {"type": "string"},
+                "source_id": {"type": "string"},
+                "timeline_id": {"type": "string"},
+                "destination_path": {"type": "string"},
+            },
+            ["context_id", "production_id", "source_id", "destination_path"],
+        ),
+        prepare_film_case_study,
+    ),
+    ToolSpec(
+        "export_film_case_study",
+        (
+            "Approve one READY Film case study and build its portable ZIP bundle in offline Blender processes.\n"
+            "Args: review_id and approved_destination are required strings; approve the destination returned by prepare_film_case_study verbatim.\n"
+            "Returns: case-study status with EXPORTING phase and progress; poll film_case_study_review until EXPORTED, PUBLISH_FAILED, ERROR or CANCELLED.\n"
+            'Example: {"review_id": "ready-case-study", "approved_destination": "<default_directory>/Cut - Case Study.zip"}.\n'
+            "Film is experimental. Requires explicit approval of the exact destination and contents, a destination still inside the Output Folder, Object Mode and the unchanged recipe scene selected. Consumes the approval even when it cannot start. Snapshots the chosen scenes privately; an offline child points media at the bundle's Media folder and removes Scenario identifiers, a second child verifies the library, then the archive with the sanitized recipe, production ledger, manifest and opening guide is saved without overwriting. The working file and scenes stay unchanged. The ledger keeps quoted costs but no credentials, URLs, service identifiers or local paths. One export runs at a time; later scene edits do not stop it. No upload, generation or spending.\n"
+            "Platform equivalent: none; local portable case-study export."
+        ),
+        _schema(
+            {"review_id": {"type": "string"}, "approved_destination": {"type": "string"}},
+            ["review_id", "approved_destination"],
+        ),
+        export_film_case_study,
+    ),
+    ToolSpec(
+        "film_case_study_review",
+        (
+            "Inspect, cancel or discard a session-local Film case study, or save its verified archive to another new file after saving failed.\n"
+            "Args: review_id is required; action is status (default), cancel, discard, prepare_republish (requires destination_path inside the Output Folder) or republish (requires approved_destination equal to the returned pending_destination, inside the Output Folder).\n"
+            "Returns: review_id, phase, review and timeline scenes, scene, shot and media counts, ledger counts and quoted_cost_total, destination, pending_destination, progress stage/done/total and percent, published, sha256, size, republish_available, private directory and error.\n"
+            'Example: {"review_id": "current-case-study", "action": "status"}.\n'
+            "Film is experimental. Status advances local work but never starts a build. Cancel stops the build and leaves the destination absent. Discard deletes only the private snapshot, staged archive and logs; a saved archive stays. Republish copies the verified archive only after a failed save and never builds again; it needs its own destination approval. Handles and private files end with the session.\n"
+            "Platform equivalent: none; local case-study export lifecycle."
+        ),
+        _schema(
+            {
+                "review_id": {"type": "string"},
+                "action": {
+                    "type": "string",
+                    "enum": ["status", "cancel", "discard", "prepare_republish", "republish"],
+                },
+                "destination_path": {"type": "string"},
+                "approved_destination": {"type": "string"},
+            },
+            ["review_id"],
+        ),
+        film_case_study_review,
     ),
     ToolSpec(
         "film_capture_sources",

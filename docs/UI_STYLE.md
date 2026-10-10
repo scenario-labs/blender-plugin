@@ -1863,6 +1863,48 @@ exported states, read-only panel and Studio drawing and Edit Mode gating. Physic
 desktop interaction, screenshots and other OS/DPI behavior for these controls have
 not been captured; that evidence is pending.
 
+### Film case-study controls
+
+The **Case study** child panel follows Export, and Studio's Film **Review** tab
+draws it below the export controls after a separator. It holds one **Case-study
+bundle** box with a `PACKAGE` header icon. Without a current case study it shows
+**Export case study...** with two lines: it packs a review, timeline, media,
+recipe and ledger into a new ZIP and never overwrites. That action opens Blender's
+file browser at the Output Folder's Film subfolder with a suggested portable
+`<Title> - Case Study.zip`. The browser's side panel lists the recipe's review
+scenes (an `ERROR` icon marks a blocked one, with its reason wrapped below), the
+chosen scene's frames and rate and media count, then **Include director
+timeline** with a list of timelines and their shot counts (disabled when the
+checkbox is off), or "No director timeline", and the lines "Nothing is written
+yet." and "Save case study asks again." Its confirm button reads **Choose
+case-study file**.
+
+A ready case study lists the review scene and mode, the timeline or "No director
+timeline", the scene and media counts with their size, the destination file name
+and "Selecting, editing or Undo here discards it", then **Save case study** and
+**Discard case study**. **Save case study** opens a separate confirmation with the
+review scene, timeline and shot count, contents, a ledger line such as "Ledger: 1
+approved task; 1 CU quoted for 1 task" (CU in the shared display format), the full
+wrapped destination, "Builds in offline Blender processes; never overwrites a
+file.", that the working file and scenes stay unchanged and no credits are spent,
+and that the documents omit credentials, URLs, service IDs and local paths. It is
+unavailable outside Object Mode, with a poll message. A running case study shows
+its stage with a `TIME` icon (for example "Packing the archive (50%)") and
+**Cancel case study** with confirmation. A failed save shows "Case study verified
+but not saved", **Choose new file...**, then **Save case-study copy** and
+**Discard case study**. A saved archive shows its name with a `CHECKMARK`, a row
+with **Open folder** and **Copy SHA-256**, **Export case study...** again and
+**Discard private files**. Errors add **Error details**. Counts use correct
+singular and plural forms. Drawing reads cached status only; runtime maintenance
+owns progress.
+
+Installed synthetic tests cover the file browser invoke and side panel, numbered
+suggestions, the Save dialog text and its inert dismissal, the failed-save copy
+dialogs, progress, the panel's ready, running and saved states, read-only panel
+and Studio drawing and Edit Mode gating. Physical desktop interaction, screenshots
+and other OS/DPI behavior for these controls have not been captured; that
+evidence is pending.
+
 
 ## Explicit Studio view
 
@@ -1875,7 +1917,8 @@ opens the sidebar; the compact composer remains the default creation surface.
 Studio reuses the actual native panel controls and their operators. Create keeps
 the same scene form, model, prompt, references and parameters. Film separates
 Tasks, Shots, Capture, Timeline, Composition and Review, whose page also draws
-the video Export panel; each keeps its existing confirmation boundary. Results
+the video Export and Case study panels; each keeps its existing confirmation
+boundary. Results
 reuse the saved-result and explicit application controls. Connection names the
 selected credential source/project and links to Preferences and local agent setup
 without displaying credentials.

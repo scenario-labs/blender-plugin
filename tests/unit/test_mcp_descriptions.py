@@ -37,6 +37,10 @@ EXPECTED = {
         "prepare_film_export",
         "render_film_export",
         "film_export_review",
+        "film_case_study_sources",
+        "prepare_film_case_study",
+        "export_film_case_study",
+        "film_case_study_review",
         "film_capture_sources",
         "prepare_film_capture",
         "render_film_capture",
@@ -198,6 +202,27 @@ def test_film_export_descriptions_state_the_destination_contract():
     assert "Nothing renders yet" in descriptions["prepare_film_export"]
     assert "No upload, generation or spending" in descriptions["render_film_export"]
     assert "never renders again" in descriptions["film_export_review"]
+
+
+def test_film_case_study_descriptions_state_the_archive_and_privacy_contract():
+    _, calls = specs("tools_scenario")
+    descriptions = {call.args[0].value: call.args[1].value for call in calls}
+    prepare = descriptions["prepare_film_case_study"]
+    assert "only inside the configured Output Folder" in prepare
+    assert "absolute new .zip path" in prepare and "never overwritten" in prepare
+    assert "obtain explicit approval before export_film_case_study" in prepare
+    assert "Nothing is written yet" in prepare
+    approve = descriptions["export_film_case_study"]
+    assert "approve the destination returned by prepare_film_case_study verbatim" in approve
+    assert "a destination still inside the Output Folder" in approve
+    assert "no credentials, URLs, service identifiers or local paths" in approve
+    assert "No upload, generation or spending" in approve
+    review = descriptions["film_case_study_review"]
+    assert "own destination approval" in review and "never builds again" in review
+    assert "pending_destination, inside the Output Folder" in review
+    assert "readOnlyHint" in ast.unparse(
+        next(call for call in calls if call.args[0].value == "film_case_study_sources")
+    )
 
 
 def test_list_models_reports_the_picker_status():

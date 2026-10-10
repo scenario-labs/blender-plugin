@@ -267,9 +267,14 @@ class StudioViewTests(unittest.TestCase):
         panels = submodule("blender.panels")
         review = submodule("blender.film_review_controls")
         export = submodule("blender.film_export_controls")
+        study = submodule("blender.film_case_study_controls")
         self.assertEqual(
             self.studio.FILM_PANELS["REVIEW"],
-            (review.SCENARIO_PT_film_review, export.SCENARIO_PT_film_export),
+            (
+                review.SCENARIO_PT_film_review,
+                export.SCENARIO_PT_film_export,
+                study.SCENARIO_PT_film_case_study,
+            ),
         )
         self.assertTrue(
             all(
@@ -301,6 +306,15 @@ class StudioViewTests(unittest.TestCase):
         )
         self.assertIn(
             "scenario.prepare_film_export", [c.args[0] for c in box.operator.call_args_list]
+        )
+        # The case-study bundle panel follows the video export.
+        self.assertIn({"text": "Case-study bundle", "icon": "PACKAGE"}, labels)
+        self.assertLess(
+            labels.index({"text": "Export video", "icon": "FILE_MOVIE"}),
+            labels.index({"text": "Case-study bundle", "icon": "PACKAGE"}),
+        )
+        self.assertIn(
+            "scenario.prepare_film_case_study", [c.args[0] for c in box.operator.call_args_list]
         )
         self.assertFalse(self.workflow.calls)
 

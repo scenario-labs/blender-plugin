@@ -23,6 +23,7 @@ import unicodedata
 from dataclasses import dataclass, field
 from fractions import Fraction
 from pathlib import Path, PureWindowsPath
+from typing import ClassVar
 
 from . import mp4_inspection
 from .local_render import (
@@ -240,10 +241,22 @@ class MediaReceipt:
     sha256: str
 
 
+class StagedFile:
+    """A verified private file that ``publish`` may copy without rebuilding it."""
+
+    noun = "file"
+    kind = "file"
+
+    def published(self, destination):
+        raise NotImplementedError
+
+
 @dataclass(frozen=True, eq=False)
-class StagedExport:
+class StagedExport(StagedFile):
     """A verified private MP4 that the caller may publish again without rendering."""
 
+    noun: ClassVar[str] = "video"
+    kind: ClassVar[str] = "video"
     directory: Path = field(repr=False)
     path: Path = field(repr=False)
     sha256: str
@@ -255,6 +268,20 @@ class StagedExport:
     audio: bool
     verification: str
     media: tuple[MediaReceipt, ...] = field(repr=False)
+
+    def published(self, destination):
+        return PublishedExport(
+            destination,
+            self.sha256,
+            self.size,
+            self.frames,
+            self.fps,
+            self.width,
+            self.height,
+            self.audio,
+            self.verification,
+            self.media,
+        )
 
 
 @dataclass(frozen=True)
@@ -347,12 +374,15 @@ def _inside(path, root):
     return path == root or path.is_relative_to(root)
 
 
-def validate_destination(path, *, private_roots=()):
+def validate_destination(path, *, private_roots=(), suffix=".mp4"):
     """Return the absolute destination with a canonical parent; never accept an existing name.
 
     ``private_roots`` are folders the export must never write into, such as
     staging, extension and Blender user storage; the session supplies them.
+    ``suffix`` is the required lowercase file extension, ``.mp4`` for video.
     """
+    if suffix not in {".mp4", ".zip"}:
+        raise ValueError("Use a supported export file extension")
     raw = os.fspath(path) if isinstance(path, (str, os.PathLike)) else None
     if not isinstance(raw, str) or not raw or any(ord(c) < 32 or ord(c) == 127 for c in raw):
         raise LocalExportError("Choose a destination path without control characters")
@@ -360,8 +390,8 @@ def validate_destination(path, *, private_roots=()):
     name = destination.name
     if not destination.is_absolute():
         raise LocalExportError("Choose an absolute destination path")
-    if not name.lower().endswith(".mp4") or len(name) < 5 or name.startswith("."):
-        raise LocalExportError("Choose a visible destination file ending in .mp4")
+    if not name.lower().endswith(suffix) or len(name) <= len(suffix) or name.startswith("."):
+        raise LocalExportError(f"Choose a visible destination file ending in {suffix}")
     if not portable_name(name):
         raise LocalExportError("Choose a portable destination file name")
     if os.path.lexists(destination):
@@ -897,9 +927,11 @@ def publish(staged, destination, reservation=None, *, cancel=None, progress=None
 
     Failure or cancellation removes the partial copy and our own placeholder,
     keeps the staged output for another explicit publish and never overwrites.
+    ``staged`` is a verified video or case-study archive.
     """
-    if not isinstance(staged, StagedExport):
+    if not isinstance(staged, StagedFile):
         raise TypeError("Use a verified staged export")
+    noun = staged.noun
     cancel = cancel if cancel is not None else threading.Event()
     progress = progress if progress is not None else (lambda *_: None)
     destination = Path(destination)
@@ -915,7 +947,9 @@ def publish(staged, destination, reservation=None, *, cancel=None, progress=None
         # The exact size is known now; a re-publish skips the export's estimate.
         free = _free(destination.parent)
         if free is None or free < staged.size + SPACE_MARGIN:
-            raise ExportPublishError("Not enough free disk space for this video export", staged)
+            raise ExportPublishError(
+                f"Not enough free disk space for this {staged.kind} export", staged
+            )
         flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
         flags |= getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_BINARY", 0)
         try:
@@ -946,10 +980,10 @@ def publish(staged, destination, reservation=None, *, cancel=None, progress=None
                 os.fsync(target.fileno())
             except OSError:
                 raise ExportPublishError(
-                    "Could not copy the verified video to the destination", staged
+                    f"Could not copy the verified {noun} to the destination", staged
                 ) from None
         if (copied, value.hexdigest()) != (staged.size, staged.sha256):
-            raise ExportPublishError("The staged video changed before publishing", staged)
+            raise ExportPublishError(f"The staged {noun} changed before publishing", staged)
         try:
             current = os.lstat(destination)
         except OSError:
@@ -972,7 +1006,7 @@ def publish(staged, destination, reservation=None, *, cancel=None, progress=None
             os.replace(partial, destination)
         except OSError:
             raise ExportPublishError(
-                "Could not move the verified video into place", staged
+                f"Could not move the verified {noun} into place", staged
             ) from None
         created = None
         _unpin(reservation)
@@ -988,18 +1022,7 @@ def publish(staged, destination, reservation=None, *, cancel=None, progress=None
                 pass
         release(reservation)
         raise
-    return PublishedExport(
-        destination,
-        staged.sha256,
-        staged.size,
-        staged.frames,
-        staged.fps,
-        staged.width,
-        staged.height,
-        staged.audio,
-        staged.verification,
-        staged.media,
-    )
+    return staged.published(destination)
 
 
 def discard_staging(directory):

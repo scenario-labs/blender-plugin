@@ -129,6 +129,9 @@ class _Export:
 class FilmExportCommands:
     """Bounded export handles; the session owns the export thread, child and receipts."""
 
+    _SUFFIX = ".mp4"
+    _STALE = STALE
+
     def __init__(self, session):
         self.session = session
         self._sources, self._reviews = {}, {}
@@ -292,7 +295,7 @@ class FilmExportCommands:
         except ReferenceError:
             current = False
         if not current:
-            raise ValueError(STALE)
+            raise ValueError(self._STALE)
         if selected:
             self.session.validate_destination(review.origin)
 
@@ -303,11 +306,19 @@ class FilmExportCommands:
             destination = film_export_policy.require_within(
                 destination, within, create=within / "Film"
             )
-        return str(self.session._export_destination(destination, staging))
+        return str(self.session._export_destination(destination, staging, suffix=self._SUFFIX))
 
     def _running(self):
+        # Video exports and case studies share the session's single export thread.
+        owners = {id(self): self}
+        for name in ("film_export", "film_case_study"):
+            owner = getattr(self.session, name, None)
+            if isinstance(owner, FilmExportCommands):
+                owners[id(owner)] = owner
         return any(
-            item.task is not None or item.phase in _RUNNING for item in self._reviews.values()
+            item.task is not None or item.phase in _RUNNING
+            for owner in owners.values()
+            for item in owner._reviews.values()
         )
 
     def prepare(
@@ -508,7 +519,7 @@ class FilmExportCommands:
                     self._check(review)
                     exists = os.path.lexists(review.destination)
                 except Exception:
-                    review.phase, review.error, changed = "ERROR", STALE, True
+                    review.phase, review.error, changed = "ERROR", self._STALE, True
                 else:
                     if exists:
                         review.phase = "ERROR"

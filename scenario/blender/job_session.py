@@ -18,7 +18,7 @@ from weakref import WeakKeyDictionary, WeakValueDictionary
 import bpy
 from bpy.app.handlers import persistent
 
-from ..core.jobs import local_export
+from ..core.jobs import local_case_study, local_export
 from ..core.jobs.coordinator import (
     FilmUploadResult,
     JobCoordinator,
@@ -269,6 +269,9 @@ class JobSession:
         from .film_export import FilmExportCommands
 
         self.film_export = FilmExportCommands(self)
+        from .film_case_study import FilmCaseStudyCommands
+
+        self.film_case_study = FilmCaseStudyCommands(self, store)
         from .asset_organization import AssetOrganization
 
         self.asset_organization = AssetOrganization(self)
@@ -840,11 +843,12 @@ class JobSession:
             self._workers.cancel_local(task)
 
     @staticmethod
-    def _export_destination(destination, staging):
-        """Resolve an approved video path outside staging, extension and Blender storage.
+    def _export_destination(destination, staging, *, suffix=".mp4"):
+        """Resolve an approved export path outside staging, extension and Blender storage.
 
         Every UI or MCP caller passes through here, so a relative, existing,
         non-portable or private destination never reaches a thread or placeholder.
+        ``suffix`` is ``.mp4`` for a video and ``.zip`` for a case-study archive.
         """
         package = __package__.rsplit(".", 1)[0]
         roots = (
@@ -854,7 +858,7 @@ class JobSession:
             bpy.utils.resource_path("USER"),
             bpy.utils.user_resource("EXTENSIONS"),
         )
-        return local_export.validate_destination(destination, private_roots=roots)
+        return local_export.validate_destination(destination, private_roots=roots, suffix=suffix)
 
     @staticmethod
     def _export_programs(spec):
@@ -891,15 +895,49 @@ class JobSession:
         self._pending.append((task, origin))
         return task
 
+    @staticmethod
+    def _case_study_programs(spec):
+        """Refuse a case study whose child is not this Blender running the bundled worker."""
+        expected = (
+            Path(bpy.app.binary_path).resolve(),
+            Path(__file__).with_name("film_case_study_worker.py").resolve(),
+        )
+        if (spec.binary, spec.worker) != expected:
+            raise ValueError("Use a Film case-study snapshot from this Blender and extension")
+
+    def export_case_study(self, spec, destination, *, origin, source_origin):
+        """Start one approved case-study bundle on the session's owned export thread.
+
+        As for ``export_film``, the caller owns approval and the staging directory,
+        and the ``.zip`` destination is validated here before any work starts. No
+        Scenario request, spend or scene mutation follows.
+        """
+        _main_thread()
+        if not isinstance(spec, local_case_study.CaseStudySpec):
+            raise TypeError("Use a Film case-study specification")
+        self._case_study_programs(spec)
+        self._check_capacity()
+        self._resolve(origin)
+        if not self._origins.current(source_origin):
+            raise OriginUnavailable("The selected case-study scene changed")
+        destination = self._export_destination(destination, spec.directory.parent, suffix=".zip")
+        local_export.check_unused(spec)
+        task = self._exports.export_case_study(
+            spec, destination, origin=origin, source_origin=source_origin
+        )
+        self._pending.append((task, origin))
+        return task
+
     def publish_film_export(self, staged, destination, *, origin, source_origin):
         """Copy a verified staged export to another approved destination; never re-render."""
         _main_thread()
-        if not isinstance(staged, local_export.StagedExport):
+        if not isinstance(staged, local_export.StagedFile):
             raise TypeError("Use a verified staged Film export")
         self._check_capacity()
         if not self._active:
             raise OriginUnavailable("This export session is inactive")
-        destination = self._export_destination(destination, staged.directory.parent)
+        suffix = ".zip" if isinstance(staged, local_case_study.StagedBundle) else ".mp4"
+        destination = self._export_destination(destination, staged.directory.parent, suffix=suffix)
         task = self._exports.publish_film_export(
             staged, destination, origin=origin, source_origin=source_origin
         )
@@ -1819,6 +1857,7 @@ class JobSession:
                 self.film_review.close()
                 # The export thread has stopped, so its private staging can be removed.
                 self.film_export.close()
+                self.film_case_study.close()
                 if self._coordinator.film_review_cleanup_pending:
                     self._film_cleanup_retry_at = time.monotonic() + 5.0
                 else:

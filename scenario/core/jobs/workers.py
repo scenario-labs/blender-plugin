@@ -601,7 +601,8 @@ class LocalExportWorker:
     """Own one Film export thread at a time, outside the shared job workers.
 
     A multi-hour local encode never occupies a polling/download worker or the
-    capture/review media slot. At most one export or re-publish runs per owner.
+    capture/review media slot. At most one video export, case-study export or
+    re-publish runs per owner.
     Deactivation cancels it and reaps its child; shutdown waits a bounded time.
     """
 
@@ -633,10 +634,23 @@ class LocalExportWorker:
             source_origin=source_origin,
         )
 
-    def publish_film_export(self, staged, destination, *, origin, source_origin):
-        from .local_export import StagedExport
+    def export_case_study(self, spec, destination, *, origin, source_origin):
+        from .local_case_study import CaseStudySpec
 
-        if not isinstance(staged, StagedExport):
+        if not isinstance(spec, CaseStudySpec):
+            raise TypeError("Use a Film case-study specification")
+        return self._start(
+            self._coordinator.export_case_study,
+            spec,
+            _absolute(destination),
+            origin=origin,
+            source_origin=source_origin,
+        )
+
+    def publish_film_export(self, staged, destination, *, origin, source_origin):
+        from .local_export import StagedFile
+
+        if not isinstance(staged, StagedFile):
             raise TypeError("Use a verified staged Film export")
         return self._start(
             self._coordinator.publish_film_export,

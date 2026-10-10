@@ -398,6 +398,10 @@ Do not edit this block by hand; run `make mcp-docs`. An asterisk marks a require
 | `prepare_film_export` | Bind one built Film review scene and a new MP4 destination for a separate render approval. | `context_id`*: string<br>`production_id`*: string<br>`source_id`*: string<br>`destination_path`*: string<br>`width`: integer<br>`height`: integer<br>`include_audio`: boolean | - |
 | `render_film_export` | Approve one READY Film export and render it to its destination in an offline Blender process. | `review_id`*: string<br>`approved_destination`*: string | - |
 | `film_export_review` | Inspect, cancel or discard a session-local Film export, or save its verified video to another new file after saving failed. | `review_id`*: string<br>`action`: string (['status', 'cancel', 'discard', 'prepare_republish', 'republish'])<br>`destination_path`: string<br>`approved_destination`: string | - |
+| `film_case_study_sources` | Inspect the built Film review scenes and director timelines of the current recipe that can form a portable case-study bundle. | `production_id`*: string | read-only annotation |
+| `prepare_film_case_study` | Bind one built Film review scene, an optional director timeline and a new ZIP destination for a separate build approval. | `context_id`*: string<br>`production_id`*: string<br>`source_id`*: string<br>`timeline_id`: string<br>`destination_path`*: string | - |
+| `export_film_case_study` | Approve one READY Film case study and build its portable ZIP bundle in offline Blender processes. | `review_id`*: string<br>`approved_destination`*: string | - |
+| `film_case_study_review` | Inspect, cancel or discard a session-local Film case study, or save its verified archive to another new file after saving failed. | `review_id`*: string<br>`action`: string (['status', 'cancel', 'discard', 'prepare_republish', 'republish'])<br>`destination_path`: string<br>`approved_destination`: string | - |
 | `film_capture_sources` | Inspect matching local scenes for one Film shot before capture. | `production_id`*: string<br>`shot_id`*: string | read-only annotation |
 | `prepare_film_capture` | Prepare a local shot capture for separate render approval. | `context_id`*: string<br>`production_id`*: string<br>`shot_id`*: string<br>`source_id`*: string<br>`kind`: string (['STILL', 'VIDEO'])<br>`width`: integer<br>`height`: integer<br>`color_type`: string (['MATERIAL', 'TEXTURE', 'OBJECT']) | - |
 | `render_film_capture` | Approve a READY Film capture and start one local render on the shared workers. | `review_id`*: string | - |
@@ -500,8 +504,8 @@ security boundary. The token can be copied into client configuration files and,
 for the stdio bridge, command arguments. Do not expose the port through a public
 proxy or share setup snippets.
 
-Film video export lets an agent write new MP4 files only inside the configured
-Output Folder. The destination's folder is resolved, following links, and must lie
+Film video and case-study exports let an agent write new MP4 or ZIP files only
+inside the configured Output Folder. The destination's folder is resolved, following links, and must lie
 in the resolved Output Folder. Each part's spelling is compared exactly, although
 Windows resolution returns an existing folder's on-disk spelling. Only the missing
 default `Film` subfolder, with a missing Output Folder above it, can be created,
@@ -1124,8 +1128,40 @@ refused without consuming it and stays for native confirmation.
 These four local commands have no platform equivalent, make no service call and
 spend nothing. They share the [native export controls](FILM_PLAN.md#native-and-mcp-video-export-controls)
 and their handles; handles and private files end with the session. Installed
-synthetic tests cover them, including one real child export; desktop interaction,
-human playback review and the Studio case-study bundle remain pending.
+synthetic tests cover them, including one real child export; desktop interaction
+and human playback review remain pending.
+
+### Film case-study commands
+
+`film_case_study_sources(production_id)` lists the recipe's built review scenes as
+`source_id` handles and its director timelines as `timeline_id` handles, each with
+any blocking reason, plus the context, `default_directory` and a suggested
+`default_name`. A timeline must still hold the current shot scenes in recipe
+order. Call `prepare_film_case_study` with that context, production and source,
+an optional `timeline_id` and an absolute new `.zip` `destination_path` inside the
+Output Folder. Nothing is written. Show the returned destination, scenes, media
+count and bytes and the ledger's approved tasks and `quoted_cost_total`, and obtain
+explicit approval before `export_film_case_study(review_id, approved_destination)`,
+sending that destination verbatim.
+
+Building needs Object Mode with the recipe scene selected and the chosen scenes
+unchanged since preparation. Offline Blender children rewrite a private snapshot
+into a portable library with bundle-relative media and without Scenario
+identifiers, then verify it; the archive adds the sanitized recipe, production
+ledger, manifest and opening guide and is saved without overwriting. The ledger
+keeps quoted costs but no credentials, URLs, service identifiers or local paths.
+Poll `film_case_study_review` for the stage, percentage, `sha256` and size. Its
+actions cancel (the destination stays absent), discard private staging (a saved
+archive stays), and after a failed save `prepare_republish` then `republish` with
+the returned `pending_destination`; a re-publish copies the verified archive and
+never builds again. Case studies and video exports share one export thread.
+
+These four local commands have no platform equivalent, make no service call and
+spend nothing. They share the
+[native case-study controls](FILM_PLAN.md#portable-case-study-bundle) and their
+handles, under the same agent folder policy as video export. Installed synthetic
+tests cover them, including a real bundle reopened in a fresh Blender; desktop
+interaction and real provider media remain pending.
 
 
 ## Workflow execution

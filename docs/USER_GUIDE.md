@@ -815,8 +815,31 @@ snapshot and logs but never your video. One export runs at a time, and exports
 stop when you change credentials or project, open another file or disable the
 extension. Agents can export only inside the Output Folder. See
 [export controls](FILM_PLAN.md#native-and-mcp-video-export-controls). Desktop
-interaction for these controls has not been verified, and the Studio case-study
-bundle is not available yet.
+interaction for these controls has not been verified.
+
+**Film > Case study** saves a portable case-study bundle: one new ZIP file with a
+built review scene, optionally the director timeline and its shot scenes, the
+media they use, the recipe, a production ledger, a manifest and an opening guide.
+Choose **Export case study...**, pick the review scene and whether to include the
+timeline in the file browser's side panel, and confirm the file; nothing is
+written yet. Choose **Save case study** and check the separate confirmation, which
+repeats the full file path, the contents and the ledger's quoted total. Offline
+Blender processes build and check the bundle from a private copy of your scenes;
+your working file and scenes are not changed, nothing is spent and no file is
+overwritten. Extract the archive before opening its `.blend` file, and keep the
+`.blend` beside its `Media` folder; `Open The Case Study.md` explains how to view
+the review in the Video Sequencer.
+
+The recipe and ledger leave out credentials, URLs, service identifiers such as job
+and asset IDs, and local paths; the ledger keeps each approved task's quoted cost.
+Model IDs stay in the recipe, including a private trained model's. Blender can keep
+fragments of earlier settings in unused parts of a `.blend` file, so review a bundle
+before publishing it widely. Unsupported data, such as linked libraries, movie
+clips, packed sound strip audio or image sequences, is reported before you approve.
+The same rules as video export apply to changes before saving, cancelling, copying
+after a failed save and discarding private files; one export or case study runs at
+a time. See the [case-study contract](FILM_PLAN.md#portable-case-study-bundle).
+Desktop interaction for these controls has not been verified.
 
 
 ## Expanded Studio view

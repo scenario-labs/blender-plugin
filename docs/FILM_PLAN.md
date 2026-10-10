@@ -752,8 +752,9 @@ their new scene/sounds and private copies. If scene cleanup fails, file copies
 remain for inspection so partial strips cannot reference deleted data. Successful
 copies persist independently of original download/upload cleanup and must remain
 available while the review references them. Saving a blend file does not pack
-these movies; a portable case-study bundle still needs explicit media gathering.
-The [offline video export](#offline-film-video-export-primitive) renders the
+these movies; the [portable case-study bundle](#portable-case-study-bundle)
+gathers them explicitly. The
+[offline video export](#offline-film-video-export-primitive) renders the
 referenced media into a new MP4 instead.
 
 Installed tests use small first-party synthetic movie/audio fixtures to cover
@@ -762,8 +763,8 @@ scope/receipt/rate failures, rollback uncertainty and a saved-scene library
 round-trip. The standalone primitive is synchronous. The shared preparation and
 application commands below move copying and probing to workers and supply
 current-source checks and application claims. [Native/MCP review controls](#native-and-mcp-review-controls)
-expose those commands; the portable case-study bundle and desktop/live acceptance
-remain separate.
+expose those commands; the [portable case-study bundle](#portable-case-study-bundle)
+is separate, and desktop/live acceptance remain pending.
 
 ## Shared native-review preparation and application
 
@@ -1098,8 +1099,9 @@ session refusal of a foreign Blender or worker
 and of relative, private, existing and non-portable destinations before any work.
 A build without an H.264 or AAC
 encoder is not exercised. The [native/MCP export controls](#native-and-mcp-video-export-controls)
-call these session commands; the Studio case-study bundle, human playback review
-and Windows/Linux desktop evidence remain separate. Export makes no Scenario
+call these session commands; the [case-study bundle](#portable-case-study-bundle)
+uses the same thread and publish step. Human playback review and Windows/Linux
+desktop evidence remain separate. Export makes no Scenario
 request, spends nothing and writes no job record.
 
 ## Native and MCP video export controls
@@ -1206,12 +1208,126 @@ real child export of a 128 by 72 review is verified by Blender's decode check;
 the other tests replace the child with a fast handoff while the real publish
 runs. Physical desktop interaction, screenshots, other OS/DPI behavior, human
 playback review and live provider media remain pending. This MP4 export does not
-replace the Studio case-study bundle.
+replace the [portable case-study bundle](#portable-case-study-bundle).
+
+## Portable case-study bundle
+
+**Film > Case study** follows Export in the sidebar and on Studio's Film
+**Review** page. It packs one built review scene, optionally the director timeline
+with its shot scenes, their media, the sanitized recipe, a production ledger, a
+manifest and an opening guide into one new ZIP archive. This adapts the retained
+case-study export of Emmanuel de Maistre's Scenario Studio (see
+[Studio adoption](STUDIO_ADOPTION.md#film-case-study-bundle-adaptation)); unlike
+that source it never rewrites the working file's own paths, and it removes
+service identifiers from the ledger. The MP4 export does not substitute for it.
+
+**Export case study...** opens Blender's file browser at `<Output Folder>/Film`
+with a portable suggested name `<Title> - Case Study.zip`, numbered when taken.
+Its side panel lists the recipe's built review scenes (the same tags as the video
+export) and its director timelines: local scenes tagged as an editable shot plan
+for this production and validated recipe whose scene strips still hold the
+current shot scenes in recipe order. **Include director timeline** adds the chosen
+timeline and its shots. Each choice shows any blocking reason. Confirming the file
+binds the choice and a destination resolved by the session policy, with a `.zip`
+suffix; nothing is written. **Save case study** is a separate confirmation that
+repeats the review scene, timeline and shot count, the scene and media counts and
+bytes, the ledger's approved tasks and quoted total, and the full destination.
+It needs Object Mode, and an approval is consumed once, as for the video export.
+
+The chosen scenes and everything they use travel together. Scene strips are
+allowed only in the timeline. Linked or overridden data, movie clips, cache files,
+volumes, clip or mask strips, packed sound strip audio, sound strip modifiers or
+retiming, image sequences, movie or tiled textures, multi-file packed images,
+missing media, more than 2,000 media files or 16 GiB of them, and more than 256
+scenes are refused with a reason before any approval.
+
+Approval writes a private snapshot of the chosen scenes on the main thread, with
+absolute media paths, and stamps every external movie, sound, image, image strip
+frame and font they read. On the session's export thread the files are copied into
+private staging and hashed. An offline Blender child then edits only that
+snapshot: it points every external reference at `//Media/<NNN kind>.<ext>`,
+rebuilds sound strips so their hidden legacy path is relative too (keeping timing,
+settings, their own properties, animation and drivers), repacks packed images
+under neutral `//Packed/` names, renames packed fonts and sounds the same way,
+sets each scene's output path to `//render/` and removes Scenario properties that
+name a job, asset or production while keeping descriptive tags. Rewritten path
+fields are filled completely before their final value, so an earlier path is not
+left in their unused bytes. It writes the scenes as an uncompressed data library
+with fake users. A second offline child reopens that library and reports its
+scenes, file references and remaining Scenario properties; the export requires
+exactly the chosen scenes, only bundle-relative Media references that exist,
+neutral packed names, no libraries and no private properties. The library and
+every document are scanned for the production, credential scope, request, job,
+asset, upload and application identifiers of the approved tasks, removed property
+values, extension storage and the source media folders. Any match refuses the
+export.
+
+The archive holds one top folder, `<Title> Case Study`, with the `.blend` file,
+`Film Recipe.json`, `Production Ledger.json`, `Case Study Manifest.json`,
+`Open The Case Study.md` and the `Media` folder. Media are stored as they are;
+other members are deflated. Every member is reread against its SHA-256 before the
+archive is hashed and saved without overwriting, exactly like the video export:
+placeholder reservation, verified copy, copy-only re-publish after a failed save,
+cancellation and discard of private staging. The working file, scenes, frame and
+live media paths never change.
+
+The approved tasks follow Studio's selection: the current final and previs master
+takes, the score or named audio tracks, hero reference, mesh and material takes,
+each shot's style, previs and video takes, dialogue tasks, and their `$task`
+parameter dependencies, limited to recipe tasks and saved observations. The
+ledger lists, per approved task, its title, kind and recipe model, how it was
+obtained (generated, selected cloud result, uploaded or not saved), the saved state,
+the exact quoted cost and the result media types, plus the total quoted cost in
+CU. It omits credentials, URLs, request, job, asset, upload, project and team
+identifiers, local paths and generation parameters. The recipe keeps only
+approved tasks, drops its project, credential and identity fields, and omits URLs
+and Scenario-shaped service identifiers in free text; it must still validate as
+a recipe, or the export is refused. Recipe identifiers and model IDs stay so the
+recipe can be loaded again, including a private trained model's ID. The manifest
+records the format, generator, Studio attribution, scenes, approved tasks,
+continuity audit, the `.blend` and media sizes and SHA-256 receipts and the
+opening steps, which the guide repeats with extraction and privacy notes.
+
+A ready case study binds the recipe, review, timeline and shot scenes' captured
+origins; the video export's invalidations apply to each of them. A running export
+keeps its snapshot. `JobSession.film_case_study` (`FilmCaseStudyCommands`) keeps
+at most eight session-local handles and one open case study per review scene.
+Video exports and case studies share the session's single export thread: while
+one runs, approving the other refuses without consuming it.
+
+Local MCP uses `film_case_study_sources(production_id)` for the context, sources,
+timelines, `default_directory` and `default_name`. `prepare_film_case_study`
+takes that context, the production, a `source_id`, an optional `timeline_id` and an
+absolute new `.zip` `destination_path` inside the Output Folder, under the video
+export's agent folder policy. Show the returned destination and contents, then
+call `export_film_case_study(review_id, approved_destination)` with that
+destination verbatim. Poll `film_case_study_review`; it also cancels, discards,
+and after a failed save uses `prepare_republish` and `republish`. See
+[MCP case-study commands](MCP.md#film-case-study-commands).
+
+Unit tests cover the approved-take selection, sanitizer, recipe reload, ledger,
+documents, specification bounds, media copies and stamps, both child reports,
+private scans across chunk boundaries, archive rereading, cancellation, `.zip`
+destinations and the shared export thread. Installed synthetic tests build a real
+bundle from a review scene and a timeline with a textured, tagged shot; reopen the
+extracted archive in a fresh offline Blender, which resolves every relative file,
+keeps the rebuilt sound strip's animation and renders a frame from the relative
+movie; and check that no archived byte holds a private identifier or the source,
+storage or output folders. They also cover inspection filters and blocking
+reasons, destination refusals, exact and agent approvals, the native file browser
+and Save dialogs, progress, cancellation, a failed save with a copy-only native
+re-publish, invalidation by a timeline or shot change, the shared export thread,
+read-only drawing, Edit Mode gating, shutdown cleanup and registration order.
+Blender keeps unused bytes of earlier settings in some fixed-size fields that this
+export does not rewrite, such as the sequencer's last-used folders; the bundle can
+carry them, so review it before publishing it widely. Physical desktop interaction,
+other OS/DPI behavior, Windows paths, real provider media and human review of a
+bundle remain pending.
 
 ## Remaining integration and evidence
 
-Mixed-rate normalization, provider-specific preparation and the Studio
-case-study bundle remain separate work. Keep useful
+Mixed-rate normalization and provider-specific preparation remain separate work.
+Keep useful
 source capabilities and tests as those paths are connected; do not describe this
 helper adoption as a completed Film workflow.
 

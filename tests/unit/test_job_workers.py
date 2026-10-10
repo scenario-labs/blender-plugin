@@ -450,3 +450,131 @@ def test_capture_origin_guard_rechecks_queued_and_finished_work(setup, tmp_path,
         task.result(2)
     assert bool(rendered) is late
     assert not calls
+
+
+def test_preview_lane_runs_beside_blocked_job_workers(setup, monkeypatch):
+    owner, coordinator, _, prepare, entered, release, calls, _ = setup()
+    lane_threads = []
+
+    def preview(work, *, root, cancel, maintain):
+        lane_threads.append(threading.current_thread())
+        return ("batch", work, root, maintain, cancel.is_set())
+
+    monkeypatch.setattr(coordinator, "prepare_result_previews", preview)
+    running = submit(owner, prepare())
+    assert entered.wait(2)
+    result = owner.prepare_result_previews(["work"], root="/private-root", maintain=True).result(2)
+    assert result == ("batch", ("work",), "/private-root", True, False)
+    assert lane_threads[0].name == "ScenarioPreview"
+    assert lane_threads[0] in owner._threads and not running.done()
+    release.set()
+    assert running.result(2).state == JobState.REMOTE
+    assert len(calls) == 1
+
+
+def test_blocked_preview_lane_never_delays_job_commands(setup, monkeypatch):
+    owner, coordinator, _, _, _, _, _, _ = setup()
+    started, release = threading.Event(), threading.Event()
+
+    def preview(work, *, root, cancel, maintain):
+        started.set()
+        assert release.wait(5), "Test did not release the preview lane"
+        return "late"
+
+    monkeypatch.setattr(coordinator, "prepare_result_previews", preview)
+    monkeypatch.setattr(
+        coordinator, "refresh_remote", lambda request_id, *, expected_revision: request_id
+    )
+    blocked = owner.prepare_result_previews(["work"], root="/root")
+    assert started.wait(2)
+    assert owner.refresh_remote("request", expected_revision=1).result(2) == "request"
+    assert not blocked.done()
+    release.set()
+    assert blocked.result(2) == "late"
+
+
+def test_preview_queue_is_bounded_and_retirement_cancels_it(setup, monkeypatch):
+    owner, coordinator, _, _, _, _, calls, _ = setup()
+    owner.shutdown()
+    owner = JobWorkers(coordinator, preview_limit=1)
+    started, signals = threading.Event(), []
+
+    def preview(work, *, root, cancel, maintain):
+        signals.append(cancel)
+        started.set()
+        assert cancel.wait(5), "Retirement did not cancel the running preview"
+        raise RuntimeError("canceled preview")
+
+    monkeypatch.setattr(coordinator, "prepare_result_previews", preview)
+    running = owner.prepare_result_previews(["first"], root="/root")
+    assert started.wait(2)
+    queued = owner.prepare_result_previews(["second"], root="/root")
+    with pytest.raises(WorkerError, match="Preview queue is full"):
+        owner.prepare_result_previews(["third"], root="/root")
+    owner.deactivate()
+    with pytest.raises(RuntimeError, match="canceled preview"):
+        running.result(2)
+    with pytest.raises(CancelledError):
+        queued.result(2)
+    with pytest.raises(WorkerError, match="inactive"):
+        owner.prepare_result_previews(["late"], root="/root")
+    owner.shutdown()
+    assert owner.stopped and not owner._preview_cancels and not calls
+
+
+def test_preview_idleness_covers_running_work_that_ignores_cancellation(setup, monkeypatch):
+    owner, coordinator, _, _, _, _, _, _ = setup()
+    started, release = threading.Event(), threading.Event()
+
+    def preview(work, *, root, cancel, maintain):
+        # Like an SDK read or socket wait, this does not watch the cancel event.
+        started.set()
+        assert release.wait(5), "Test did not release the preview lane"
+        return "late"
+
+    monkeypatch.setattr(coordinator, "prepare_result_previews", preview)
+    assert owner.previews_idle
+    task = owner.prepare_result_previews(["work"], root="/root")
+    assert started.wait(2)
+    owner.deactivate()
+    # Retirement signals the task, but the lane stays busy until it returns.
+    assert not owner.previews_idle and not task.done()
+    release.set()
+    assert task.result(2) == "late"
+    assert owner.previews_idle
+    owner.shutdown()
+
+
+def test_preview_cancellation_targets_one_task(setup, monkeypatch):
+    owner, coordinator, _, _, _, _, _, _ = setup()
+    started = threading.Event()
+
+    def preview(work, *, root, cancel, maintain):
+        started.set()
+        assert cancel.wait(5)
+        return "stopped"
+
+    monkeypatch.setattr(coordinator, "prepare_result_previews", preview)
+    task = owner.prepare_result_previews(["work"], root="/root")
+    assert started.wait(2)
+    owner.cancel_preview(task)
+    assert task.result(2) == "stopped"
+
+
+def test_preview_control_exception_retires_the_owner(setup, monkeypatch):
+    owner, coordinator, _, _, _, _, _, _ = setup()
+    reported = threading.Event()
+    monkeypatch.setattr(threading, "excepthook", lambda args: reported.set())
+
+    def interrupt(*args, **kwargs):
+        raise KeyboardInterrupt("fixture preview interruption")
+
+    monkeypatch.setattr(coordinator, "prepare_result_previews", interrupt)
+    task = owner.prepare_result_previews(["work"], root="/root")
+    with pytest.raises(KeyboardInterrupt):
+        task.result(2)
+    assert reported.wait(2)
+    with pytest.raises(WorkerError, match="inactive"):
+        owner.refresh_remote("request", expected_revision=1)
+    owner.shutdown()
+    assert owner.stopped

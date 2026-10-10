@@ -2,8 +2,11 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Selected application jobs and MCP recovery in the installed extension."""
 
+import hashlib
+import os
 import tempfile
 import threading
+import time
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
@@ -31,7 +34,11 @@ class RuntimeJobTests(unittest.TestCase):
         root = self.enterContext(tempfile.TemporaryDirectory(dir=bpy.utils.resource_path("USER")))
         self.root = Path(root)
         self.enterContext(
-            patch.object(self.runtime, "paths", return_value=SimpleNamespace(state_dir=Path(root)))
+            patch.object(
+                self.runtime,
+                "paths",
+                return_value=SimpleNamespace(state_dir=Path(root), cache_dir=Path(root) / "cache"),
+            )
         )
         self.adapters, self.sessions, self.requests = [], [], []
         catalog_type, session_type = self.runtime.SDKCatalog, self.runtime.JobSession
@@ -390,6 +397,73 @@ class RuntimeJobTests(unittest.TestCase):
                     dict(context_id="unknown", request_id="request", expected_revision=value)
                 )
         self.assertIsNone(self.runtime.state.catalog)
+
+    def test_session_previews_use_the_private_extension_cache(self):
+        m = self.storemod
+        session = self.runtime.ensure_job_session()
+        root = self.root / "cache" / "result-previews"
+        previews = session.result_previews
+        self.assertEqual(previews.root, root)
+        self.assertTrue(root.is_dir())
+        if os.name == "posix":
+            self.assertEqual(root.stat().st_mode & 0o777, 0o700)
+        # A saved image result previews through the lane into this cache, offline.
+        store, data = self.runtime.state.job_store, b"\x89PNG\r\n\x1a\n" + bytes(24)
+        record = store.create(
+            m.JobIntent(
+                "request",
+                store.scope,
+                m.JobOrigin("file", "scene", "revision"),
+                "model",
+                "model",
+                "a" * 64,
+                "b" * 64,
+                "1.0",
+            )
+        )
+        for value in (m.JobState.SUBMITTING, m.JobState.REMOTE, m.JobState.SUCCEEDED):
+            record = store.transition(
+                "request",
+                expected_revision=record.revision,
+                state=value,
+                remote_job_id="remote" if value == m.JobState.REMOTE else None,
+            )
+        asset = m.ResultAsset("asset-image", "000-asset-image.png", "image/png", len(data))
+        record = store.set_results("request", (asset,), expected_revision=record.revision)
+        record = store.transition(
+            "request", expected_revision=record.revision, state=m.JobState.DOWNLOADING
+        )
+        (session._coordinator._results._directory(record) / asset.name).write_bytes(data)
+        receipt = submodule("core.jobs.transfers").DownloadedResult(
+            asset.name, len(data), hashlib.sha256(data).hexdigest()
+        )
+        record = store.record_download(
+            "request", asset.asset_id, receipt, expected_revision=record.revision
+        )
+        store.transition("request", expected_revision=record.revision, state=m.JobState.READY)
+        previews.request("request")
+        deadline = time.monotonic() + 10
+        while not previews.decode_requests() and time.monotonic() < deadline:
+            session.service_previews()
+            time.sleep(0.02)
+        (request,) = previews.decode_requests()
+        # Windows spells the cache's canonical root in the extended namespace.
+        canonical = submodule("core.jobs.transfers")._root(root)
+        self.assertTrue(request.source.is_relative_to(canonical / "work"))
+        self.assertEqual(request.source.read_bytes(), data)
+        self.assertEqual(self.requests, [])
+
+    def test_unusable_preview_cache_leaves_jobs_available_without_previews(self):
+        # A regular file where the disposable cache directory belongs.
+        (self.root / "cache").mkdir()
+        (self.root / "cache" / "result-previews").write_bytes(b"not a directory")
+        session = self.runtime.ensure_job_session()
+        self.assertIs(self.runtime.state.job_session, session)
+        self.assertFalse(session.service_previews())
+        with self.assertRaisesRegex(submodule("blender.job_session").OriginUnavailable, "config"):
+            session.result_previews  # noqa: B018 - the property enforces configuration
+        self.assertEqual(session.recovery_plan(), ())
+        self.assertEqual(self.requests, [])
 
     def test_session_factory_failure_closes_adapter(self):
         with patch.object(self.runtime, "JobSession", side_effect=RuntimeError("fixture")):

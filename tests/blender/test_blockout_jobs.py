@@ -35,7 +35,9 @@ class BlockoutJobsTests(unittest.TestCase):
                 self.runtime,
                 "paths",
                 return_value=SimpleNamespace(
-                    state_dir=directory, registry_file=directory / "jobs.json"
+                    state_dir=directory,
+                    cache_dir=directory / "cache",
+                    registry_file=directory / "jobs.json",
                 ),
             )
         )

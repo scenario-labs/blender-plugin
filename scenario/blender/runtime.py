@@ -238,6 +238,13 @@ def ensure_job_session():
             upload_root.mkdir(mode=0o700, parents=True, exist_ok=True)
             source_root = upload_root / "sources"
             source_root.mkdir(mode=0o700, exist_ok=True)
+            # Disposable receipt-bound previews; the cache is safe to delete.
+            # Jobs never depend on it: without a usable root, previews are off.
+            preview_root = paths().cache_dir / "result-previews"
+            try:
+                preview_root.mkdir(mode=0o700, parents=True, exist_ok=True)
+            except OSError:
+                preview_root = None
             session = JobSession(
                 adapter,
                 state.job_store,
@@ -246,6 +253,7 @@ def ensure_job_session():
                 upload_store=UploadStore(upload_root / "uploads.sqlite3", state.job_store.scope),
                 upload_sources=UploadSources(source_root),
                 part_uploader=PartUploader(S3UploadPolicy(), online_access=catalog.network_allowed),
+                preview_root=preview_root,
             )
         except BaseException:
             adapter.close()

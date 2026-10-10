@@ -803,3 +803,52 @@ def test_model_retrieve_denial_is_one_status_error(client_factory, status):
         sdk.models.with_raw_response.retrieve("fixture-model", project_id=PROJECT)
     assert error.value.status_code == status
     assert len(requests) == 1
+
+
+def test_asset_bulk_raw_wrapper_keeps_ids_in_body_and_preview_fields(client_factory):
+    fixture = {
+        "assets": [
+            {
+                "id": "fixture-model",
+                "mimeType": "model/gltf-binary",
+                "thumbnail": {"assetId": "fixture-thumbnail", "url": "https://cdn.example/t"},
+                "preview": {"assetId": "fixture-turntable", "url": "https://cdn.example/p"},
+                "futureField": {"retain": True},
+            }
+        ]
+    }
+    requests = []
+
+    def respond(request):
+        requests.append(request)
+        return httpx.Response(200, json=fixture)
+
+    sdk = client_factory(respond)
+    response = sdk.assets.with_raw_response.get_bulk(
+        asset_ids=["fixture-model", "fixture-video"], project_id=PROJECT
+    )
+    assert json.loads(response.read()) == fixture
+    assert len(requests) == 1
+    assert (requests[0].method, requests[0].url.path) == ("POST", "/v1/assets/get-bulk")
+    assert dict(requests[0].url.params) == {"projectId": PROJECT}
+    assert json.loads(requests[0].content) == {"assetIds": ["fixture-model", "fixture-video"]}
+    parsed = sdk.assets.get_bulk(asset_ids=["fixture-model"], project_id=PROJECT).to_dict()
+    assert parsed["assets"][0]["thumbnail"]["url"] == "https://cdn.example/t"
+    assert parsed["assets"][0]["preview"]["assetId"] == "fixture-turntable"
+
+
+def test_asset_retrieve_exposes_server_thumbnail_and_preview(client_factory):
+    fixture = {
+        "asset": {
+            "id": "fixture-video",
+            "mimeType": "video/mp4",
+            "thumbnail": {"assetId": "fixture-still", "url": "https://cdn.example/still"},
+            "preview": {"assetId": "fixture-light", "url": "https://cdn.example/light"},
+        }
+    }
+    sdk = client_factory(lambda request: httpx.Response(200, json=fixture))
+    raw = sdk.assets.with_raw_response.retrieve("fixture-video", project_id=PROJECT)
+    assert json.loads(raw.read()) == fixture
+    parsed = sdk.assets.retrieve("fixture-video", project_id=PROJECT).to_dict()["asset"]
+    assert parsed["thumbnail"]["assetId"] == "fixture-still"
+    assert parsed["preview"]["url"] == "https://cdn.example/light"

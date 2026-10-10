@@ -40,10 +40,11 @@ limits of its current controls. It does not replace Scenario's service policies.
 ## Where it goes
 
 The Scenario API is `https://api.cloud.scenario.com`. Upload parts, generated
-files, full text results and model thumbnails use content URLs returned by the
-service, so content transfers are not limited to the API hostname. The Create a
-key in the portal button opens `https://app.scenario.com/team` in your browser.
-The local agent connection uses loopback HTTP, described below.
+files, full text results, model thumbnails and saved-result preview images or
+clips use content URLs returned by the service, so content transfers are not
+limited to the API hostname. The Create a key in the portal button opens
+`https://app.scenario.com/team` in your browser. The local agent connection uses
+loopback HTTP, described below.
 
 The official update repository and handbook use `https://blender.scenario.com/`,
 hosted by GitHub Pages. The Release ZIPs button opens
@@ -91,9 +92,15 @@ separate scope in that storage.
 
 Verified result files live under `state/shared-results`; upload intents and
 private source copies live under `state/shared-uploads`, including
-`uploads.sqlite3` and `sources`. Capture/export staging and thumbnails also use
-the extension's user state/cache directories. Explicit local output tools can
-write to the configured Output Folder, normally `~/Downloads/Scenario`.
+`uploads.sqlite3` and `sources`. Requested
+[saved-result previews](RESULT_PREVIEWS.md) are cached under
+`cache/result-previews`: server preview images and clips, decoded stills, audio
+envelopes, temporary private copies of saved results awaiting decoding, and
+digests and asset IDs, without signed URLs. Unused entries beyond 512 MiB are
+evicted, and the directory is safe to delete, even while Blender runs.
+Capture/export staging and thumbnails also use the extension's user state/cache
+directories. Explicit local output tools can write to the configured Output
+Folder, normally `~/Downloads/Scenario`.
 Scene properties, imported media and prompts can be saved in your `.blend` file.
 Older `state/jobs.json` or model-cache files may remain from the prototype; local
 record inspection does not resume their cloud jobs or migrate their ownership.

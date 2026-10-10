@@ -45,7 +45,9 @@ class ModelGenerationTests(unittest.TestCase):
                 self.runtime,
                 "paths",
                 return_value=SimpleNamespace(
-                    state_dir=Path(root), registry_file=Path(root) / "jobs.json"
+                    state_dir=Path(root),
+                    cache_dir=Path(root) / "cache",
+                    registry_file=Path(root) / "jobs.json",
                 ),
             )
         )

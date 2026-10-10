@@ -415,6 +415,30 @@ Explicit interrupted-download recovery only reconciles verified local receipts
 and durable state under the cross-process transfer lock. A restarted session can
 recover those downloads, but its completion cannot rebind an old scene or target.
 
+## Saved-result preview ownership
+
+The optional `preview_root` constructor argument gives the session a
+[result preview scheduler](RESULT_PREVIEWS.md) over its own coordinator and the
+workers' dedicated preview lane. The runtime supplies `cache/result-previews`
+under extension user data; if it cannot create that directory, the session still
+runs jobs without previews. On the main thread, `result_previews` returns the
+scheduler only while the session is active and configured; otherwise it raises
+`OriginUnavailable`. Previews are keyed by the saved job, asset and receipt, not
+by a captured origin: they work after a scene switch or restart and never grant
+scene or application authority.
+
+The existing session maintenance timer, and `reap_retired` in headless loops,
+call `service_previews` to collect results and queue due polls or cache maintenance. Preview
+tasks are not session completions, so `drain` never returns them. `deactivate`
+closes the scheduler and cancels its lane work, but an SDK metadata read already
+in flight cannot be interrupted. The timer therefore shuts a retired session
+down only once its preview lane is idle as well as its tracked tasks are done:
+the session stays registered meanwhile, and the main thread never joins
+preview I/O. After `shutdown` joins the workers, it removes private copies still
+owned by outstanding decode requests. Extension disable or exit calls `shutdown`
+directly and still waits for a running preview command. Worker threads cannot
+call these methods.
+
 ## Explicit saved-result World application
 
 `apply_world(completion, asset_id=...)` consumes an owned `verify_results`

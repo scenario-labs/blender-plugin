@@ -24,6 +24,7 @@ from .film_finishing import (
     validate_composition_sources,
 )
 from .film_media import VerifiedComposition
+from .result_previews import PreviewCanceled
 from .results import ResultCommands, ResultError, VerifiedResults
 from .store import (
     CloudJobIntent,
@@ -496,6 +497,38 @@ class JobCoordinator:
         with self._result_guard():
             self._verified_results[id(verified)] = verified
         return verified
+
+    def result_preview_targets(self, request_id, asset_ids=None):
+        """Read receipt-bound preview targets from this scope's store; no I/O beyond it."""
+        return self._results.preview_targets(request_id, asset_ids)
+
+    def prepare_result_previews(self, work, *, root, cancel, maintain=False):
+        """Preview-lane command: cache reads, decode copies and server preview fetches."""
+        batch = self._results.prepare_previews(work, root=root, cancel=cancel, maintain=maintain)
+        try:
+            with self._result_guard():
+                if cancel.is_set():
+                    raise PreviewCanceled("Preview preparation was canceled")
+                return batch
+        except BaseException:
+            for request in batch.requests:
+                self._results.discard_preview(request, root=root)
+            raise
+
+    def maintain_result_previews(self, *, root, cancel):
+        """Preview-lane command: sweep and evict the preview cache; no job read or network."""
+        self._results.maintain_previews(root=root, cancel=cancel)
+
+    def finish_result_preview(self, request, *, root, cancel, envelope=None):
+        """Preview-lane command: cache Blender's decoded output and drop the private copy."""
+        if cancel.is_set():
+            self._results.discard_preview(request, root=root)
+            raise PreviewCanceled("Preview publication was canceled")
+        return self._results.finish_preview(request, root=root, envelope=envelope)
+
+    def discard_result_preview(self, request, *, root, cancel=None):
+        """Preview-lane command: remove an unused copy, even after a cancel request."""
+        self._results.discard_preview(request, root=root)
 
     def claim_application(self, verified: VerifiedResults):
         """Claim verified results before a caller mutates the captured Blender target.

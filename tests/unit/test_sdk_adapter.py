@@ -971,3 +971,88 @@ def test_other_model_read_failures_keep_generic_errors(adapter, status):
         with pytest.raises(AdapterError, match="HTTP 404") as other:
             getattr(denied, method)("fixture-record")
         assert not isinstance(other.value, AdapterUnavailable)
+
+
+@pytest.mark.parametrize("project", [None, "fixture-project"])
+def test_bulk_assets_read_known_records_in_scope_without_retry(adapter, project):
+    requests = []
+    rows = [
+        {"id": "asset-one", "thumbnail": {"assetId": "thumb", "url": "https://cdn.example/t"}},
+        {"id": "asset-two", "futureField": True},
+    ]
+
+    def respond(request):
+        requests.append(request)
+        return httpx.Response(200, json={"assets": rows})
+
+    client = adapter(respond, project_id=project)
+    records = client.bulk_assets(["asset-one", "asset-two", "asset-three"])
+    assert records == {"asset-one": rows[0], "asset-two": rows[1]}
+    assert len(requests) == 1
+    request = requests[0]
+    assert (request.method, request.url.path) == ("POST", "/v1/assets/get-bulk")
+    assert json.loads(request.content) == {"assetIds": ["asset-one", "asset-two", "asset-three"]}
+    assert dict(request.url.params) == ({"projectId": project} if project else {})
+
+
+@pytest.mark.parametrize(
+    "rows",
+    [
+        None,
+        [{"id": "asset-other"}],
+        [{"id": "asset-one", "a": 1}, {"id": "asset-one", "a": 2}],
+        [{"id": "asset-one"}, {"id": "asset-one"}, {"id": "asset-one"}],
+        ["asset-one"],
+    ],
+)
+def test_bulk_assets_reject_unrequested_conflicting_or_malformed_rows(adapter, rows):
+    client = adapter(lambda request: httpx.Response(200, json={"assets": rows}))
+    with pytest.raises(AdapterError):
+        client.bulk_assets(["asset-one", "asset-two"])
+
+
+@pytest.mark.parametrize(
+    "identifiers",
+    [[], ["same", "same"], ["bad/id"], [f"asset-{index}" for index in range(101)]],
+)
+def test_bulk_assets_validate_before_dispatch(adapter, identifiers):
+    client = adapter(lambda request: pytest.fail("Invalid bulk reads must not be sent"))
+    with pytest.raises(ValueError):
+        client.bulk_assets(identifiers)
+
+
+def test_bulk_assets_and_permission_checks_respect_online_access(adapter):
+    online = [False]
+    client = adapter(
+        lambda request: httpx.Response(200, json={"assets": []}), online=lambda: online[0]
+    )
+    assert client.network_allowed() is False
+    with pytest.raises(AdapterError, match="Online access"):
+        client.bulk_assets(["asset-one"])
+    online[0] = True
+    assert client.network_allowed() is True
+    assert client.bulk_assets(["asset-one"]) == {}
+    client.close()
+    assert client.network_allowed() is False
+
+
+@pytest.mark.parametrize("failure", [429, 500, 503, 504, "timeout"])
+def test_bulk_assets_send_retryable_failures_once_and_sanitize_them(adapter, failure):
+    calls = []
+
+    def handler(request):
+        calls.append(request)
+        if failure == "timeout":
+            raise httpx.ReadTimeout("selected-secret signed-url", request=request)
+        return httpx.Response(
+            failure,
+            json={"error": "selected-secret signed-url"},
+            headers={"Retry-After": "0"},
+        )
+
+    with pytest.raises(AdapterError) as error:
+        adapter(handler).bulk_assets(["asset-one", "asset-two"])
+    assert "selected-secret" not in str(error.value)
+    assert "signed-url" not in str(error.value)
+    # max_retries=0: the SDK never repeats a preview metadata read on its own.
+    assert len(calls) == 1

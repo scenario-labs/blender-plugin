@@ -26,6 +26,7 @@ from ..core.jobs.coordinator import (
 from ..core.jobs.film_media import VerifiedComposition
 from ..core.jobs.film_review_media import PreparedFilmReview
 from ..core.jobs.origins import OriginRevisions
+from ..core.jobs.preview_scheduler import ResultPreviewScheduler
 from ..core.jobs.results import ModelTextResult, PromptResults, VerifiedResults
 from ..core.jobs.store import JobOrigin, JobState, StoredJob
 from ..core.jobs.workers import JobWorkers
@@ -176,6 +177,7 @@ class JobSession:
         upload_store=None,
         upload_sources=None,
         part_uploader=None,
+        preview_root=None,
     ):
         _main_thread()
         if not _registered:
@@ -214,6 +216,12 @@ class JobSession:
             part_uploader=part_uploader,
         )
         self._workers = JobWorkers(self._coordinator, workers=workers, pending_limit=pending_limit)
+        # Previews poll and download on the workers' dedicated preview lane.
+        self._previews = (
+            None
+            if preview_root is None
+            else ResultPreviewScheduler(self._workers, self._coordinator, preview_root)
+        )
         self.film_shots = FilmShotCommands(self, store)
         from .film_timeline import FilmTimelineCommands
 
@@ -242,6 +250,26 @@ class JobSession:
     def history_revision(self):
         """Generation of live Blender references; changes across load/undo/retirement."""
         return self._history_revision
+
+    @property
+    def result_previews(self):
+        """Receipt-bound saved-result previews for this connection, on the main thread.
+
+        Previews never resolve an origin, mutate the scene or authorize application.
+        """
+        _main_thread()
+        if self._previews is None:
+            raise OriginUnavailable("Result previews are not configured for this connection")
+        if not self._active:
+            raise OriginUnavailable("This job connection is no longer active")
+        return self._previews
+
+    def service_previews(self):
+        """Advance preview polling from the main-thread GUI timer or headless loop."""
+        _main_thread()
+        if not self._active or self._previews is None:
+            return False
+        return self._previews.pump()
 
     @staticmethod
     def _identity(records, value):
@@ -1391,6 +1419,8 @@ class JobSession:
         _main_thread()
         self._active = False
         self.invalidate_all()
+        if self._previews is not None:
+            self._previews.close()
         self._workers.deactivate()
 
     def shutdown(self):
@@ -1402,6 +1432,8 @@ class JobSession:
             # A failed SDK close occurs after joining. Release local ownership
             # then, but retain it if a control exception interrupted live workers.
             if self._workers.stopped:
+                if self._previews is not None:
+                    self._previews.release()
                 for task in tuple(self._upload_captures):
                     self._cleanup_upload_capture(task)
                 self._pending.clear()
@@ -1441,10 +1473,14 @@ def _reap_inactive():
     for session in _session_snapshot():
         try:
             session.prune_missing_scenes()
+            session.service_previews()
             if (
                 not session._active
                 and time.monotonic() >= session._film_cleanup_retry_at
                 and all(task.done() for task, _ in session._pending)
+                # A preview SDK read or transfer can outlast its cancellation;
+                # never let shutdown join it on Blender's main thread.
+                and session._workers.previews_idle
             ):
                 session.shutdown()
         except Exception:

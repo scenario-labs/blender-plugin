@@ -414,6 +414,38 @@ class SDKAdapter:
     def asset(self, identifier):
         return self._retrieve("assets", identifier, "asset")
 
+    def network_allowed(self):
+        """Read the caller's online permission without contacting Scenario."""
+        return not self._closed and bool(self._online())
+
+    def bulk_assets(self, identifiers):
+        """Read up to 100 known asset records in the selected scope with one SDK request.
+
+        SDK 2.2.0 ``assets.with_raw_response.get_bulk`` documents a 200-ID limit;
+        callers chunk by 100. Assets the server omits are absent from the
+        result, never inferred. This is a read without retries or side effects.
+        """
+        identifiers = tuple(identifiers)
+        if not 1 <= len(identifiers) <= 100 or len(set(identifiers)) != len(identifiers):
+            raise ValueError("Choose from 1 to 100 distinct asset identities")
+        for identifier in identifiers:
+            _identifier(identifier)
+        page = _json(
+            self._request(self._sdk.assets.with_raw_response.get_bulk, asset_ids=list(identifiers))
+        )
+        rows = page.get("assets")
+        if not isinstance(rows, list) or len(rows) > len(identifiers):
+            raise AdapterError("Scenario returned an invalid asset list")
+        records = {}
+        for row in rows:
+            identifier = row.get("id") if isinstance(row, dict) else None
+            if identifier not in identifiers:
+                raise AdapterError("Scenario returned an unrequested asset record")
+            if identifier in records and records[identifier] != row:
+                raise AdapterError("Scenario returned conflicting asset records")
+            records[identifier] = row
+        return records
+
     @staticmethod
     def _asset_rows(rows, limit):
         if not isinstance(rows, list) or len(rows) > limit:

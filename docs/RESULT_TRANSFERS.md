@@ -183,6 +183,26 @@ fails before a composition draft can be prepared; source bytes are preserved.
 See [Film media limits](FILM_PLAN.md#verified-media-preparation), including the
 optional installed ffprobe and metadata-only timing guarantee.
 
+## Saved-result preview transfers
+
+[Result previews](RESULT_PREVIEWS.md) reuse the session's configured downloader
+for server stills and clips: the same exact storage hosts, same-host redirect
+rules, online-access predicate and receipt verification, with per-request caps of
+8 MiB for a still and 64 MiB for a clip. Each transfer stages in a private
+`work/preview-*` directory of the preview cache, not in `shared-results`, and the
+directory is removed after publication or failure. The URL is not persisted.
+Downloaded bytes are accepted only when their content is a supported image or
+video container, and a still only within its pixel bound. A preview transfer
+that does not complete, including one redirected to another host, is fetched
+again by the preview scheduler's bounded polling window; each call is still one
+attempt with the same-host redirect rule. Local image and audio previews make no
+transfer; they copy the saved file while rehashing it against its receipt.
+
+`download` also accepts an optional `cancel` event, checked with online
+permission before each connection and chunk. Preview transfers pass their lane
+task's event, so retirement stops a clip download at its next chunk without
+publishing it. Result downloads do not pass one and are unchanged.
+
 ## Legacy OBJ and MTL byte counts
 
 Asset ingestion can rewrite OBJ material-library names and MTL texture names

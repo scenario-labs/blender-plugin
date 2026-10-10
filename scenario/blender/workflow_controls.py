@@ -21,6 +21,11 @@ from ..core.schema.forms import display_label, schema_defaults, validate_paramet
 from ..core.schema.params import parse_schema
 from . import reference_form, runtime
 
+# Persisted ID properties on workflow file inputs. A marker blocks pricing until
+# its upload attaches or is explicitly resolved; the request records provenance.
+UPLOAD_MARKER = "_scenario_workflow_upload"
+UPLOAD_REQUEST = "_scenario_workflow_upload_request"
+
 
 def _json(value):
     return json.dumps(value, sort_keys=True, ensure_ascii=False, allow_nan=False)
@@ -50,6 +55,13 @@ class ScenarioWorkflowInput(bpy.types.PropertyGroup):
     asset_value: StringProperty()
     options: StringProperty()
     choice: EnumProperty(name="Value", items=_choices)
+    upload_path: StringProperty(
+        name="File",
+        description="Local file to upload explicitly for this workflow input",
+        subtype="FILE_PATH",
+        # Uploads resolve blend-relative paths with bpy.path.abspath.
+        options={"PATH_SUPPORTS_BLEND_RELATIVE"},
+    )
 
 
 class ScenarioWorkflowForm(bpy.types.PropertyGroup):
@@ -143,6 +155,11 @@ def parameters(form):
         raise ValueError("Load the selected workflow's inputs first")
     values = {}
     for item in form.inputs:
+        if item.get(UPLOAD_MARKER):
+            raise ValueError(
+                f"{item.label}: finish the reference upload or inspect its saved progress "
+                "before requesting a price"
+            )
         if not item.enabled:
             continue
         value = input_value(item)
@@ -165,27 +182,31 @@ def parameters(form):
 
 
 def signature(form):
-    return _json(
+    value = [
+        form.workflow_id,
+        form.loaded_id,
+        form.schema_json,
         [
-            form.workflow_id,
-            form.loaded_id,
-            form.schema_json,
-            [
-                (
-                    x.name,
-                    x.kind,
-                    x.enabled,
-                    x.text,
-                    x.boolean,
-                    x.options,
-                    x.choice if x.options else "",
-                    x.asset_scope,
-                    x.asset_value,
-                )
-                for x in form.inputs
-            ],
-        ]
-    )
+            (
+                x.name,
+                x.kind,
+                x.enabled,
+                x.text,
+                x.boolean,
+                x.options,
+                x.choice if x.options else "",
+                x.asset_scope,
+                x.asset_value,
+            )
+            for x in form.inputs
+        ],
+    ]
+    uploads = [(x.name, str(x[UPLOAD_MARKER])) for x in form.inputs if x.get(UPLOAD_MARKER)]
+    if uploads:
+        # Starting or resolving an upload invalidates prior approvals. Unmarked
+        # forms keep the earlier signature so saved-state comparisons still hold.
+        value.append(uploads)
+    return _json(value)
 
 
 @dataclass
@@ -461,7 +482,9 @@ def draw(layout, context):
             prop = "choice" if item.options else "boolean" if item.kind == "boolean" else "text"
             value.prop(item, prop, text=item.label)
             if item.kind in {"file", "file_array"}:
-                box.label(text="Choose Library > Workflow, or enter an uploaded asset ID")
+                from . import workflow_uploads
+
+                workflow_uploads.draw(box, context.scene, item, field)
                 box.operator(
                     "scenario.clear_workflow_reference",
                     text="Clear references" if item.kind == "file_array" else "Clear reference",

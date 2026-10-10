@@ -34,6 +34,7 @@ def _modules():
         studio,
         workflow_controls,
         workflow_references,
+        workflow_uploads,
     )
 
     modules = [
@@ -51,6 +52,7 @@ def _modules():
         panels,
         workflow_controls,
         workflow_references,
+        workflow_uploads,
         library_view,
         studio,
         popover,

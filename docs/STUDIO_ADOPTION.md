@@ -329,8 +329,9 @@ No selected-source runtime, font or icon is copied by this presentation layer.
 This is a bounded adaptation of the retained expanded-view responsibility, not
 complete source/UI adoption. Native workflow input/approval controls now reuse
 the shared session. Native Library search and confirmed model/workflow-reference
-reuse also use that session. Direct workflow uploads, asset organization and
-broader compact composer replacement remain. Earlier Studio interaction evidence
+reuse also use that session, as do explicit local-file and capture uploads into
+workflow inputs (the retained Studio attach-file behavior). Asset organization
+and broader compact composer replacement remain. Earlier Studio interaction evidence
 covers prompt handoff/editing, populated-form scrolling, quote-preserving
 navigation, continued saved-job polling, small-window fit and viewport return.
 The new workflow and Library controls still need native interaction proof;

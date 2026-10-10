@@ -1131,7 +1131,8 @@ def _reference_response(identifier):
     return {
         "context_id": runtime.state.job_context_id,
         **runtime.ensure_reference_uploads().status(identifier),
-        "note": "Poll reference_upload_status; use its imported asset_id in estimate_cost. "
+        "note": "Poll reference_upload_status; use its imported asset_id in estimate_cost "
+        "or estimate_workflow parameters. "
         "Do not restart an uncertain upload. Uploading does not generate or approve spending.",
     }
 
@@ -1326,7 +1327,7 @@ SPECS = (
             "Args: workflow_id is required.\n"
             "Returns: workflow_id, name, description and original inputs with conditional/default/file definitions.\n"
             'Example: {"workflow_id": "workflow-example"}.\n'
-            "This does not prove every workflow feature is supported; estimate_workflow validates supported input forms with fresh metadata before pricing. Use uploaded Scenario asset IDs for file inputs.\n"
+            "This does not prove every workflow feature is supported; estimate_workflow validates supported input forms with fresh metadata before pricing. For file inputs, use Library asset IDs or imported asset IDs from upload_reference or capture_reference.\n"
             "Platform equivalent: workflow_get."
         ),
         _schema({"workflow_id": {"type": "string"}}, ["workflow_id"]),
@@ -1787,7 +1788,7 @@ SPECS = (
             "  - kind: optional string, image (default), audio, video or 3d; must match the file extension.\n"
             "Returns: context_id, reference_id, staging/upload state, request_id when persisted, kind and content_type after staging, and note.\n"
             'Example: {"path": "/chosen/reference.png"}.\n'
-            "This sends the selected file to Scenario without conversion or sidecar discovery. Call only for an authorized upload; it does not generate or approve spending. Poll reference_upload_status until imported, then quote with asset_id. Do not repeat an uncertain upload.\n"
+            "This sends the selected file to Scenario without conversion or sidecar discovery. Call only for an authorized upload; it does not generate or approve spending. Poll reference_upload_status until imported, then pass asset_id in estimate_cost or estimate_workflow parameters. Do not repeat an uncertain upload.\n"
             "Platform equivalent: upload_asset then upload_asset_complete."
         ),
         _schema(
@@ -2302,7 +2303,7 @@ SPECS = (
             "Capture a viewport/camera still or clip, or export selected meshes, and upload the snapshot as a Scenario reference asset.\n"
             "Args:\n"
             "  - source: optional string, VIEWPORT (default), CAMERA, VIEWPORT_CLIP, CAMERA_CLIP or MESH.\n"
-            "Returns: context_id and reference_id; poll reference_upload_status until imported to obtain asset_id for a model file parameter. Captures use private temporary storage cleaned after staging.\n"
+            "Returns: context_id and reference_id; poll reference_upload_status until imported to obtain asset_id for a model or workflow file parameter. Captures use private temporary storage cleaned after staging.\n"
             'Example: {"source": "CAMERA"}.\n'
             "Stills/clips use 1280x720 and require an interactive Blender window with a 3D viewport. Clips use the preview range when enabled, otherwise the scene frame range, without audio or implicit duration padding. MESH exports the selected meshes as one GLB and also works in background mode. This sends scene content to Scenario; use it only for an authorized reference upload.\n"
             "Platform equivalent: upload_asset then upload_asset_complete."

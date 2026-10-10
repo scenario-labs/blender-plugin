@@ -1330,7 +1330,8 @@ Studio's Workflows page has explicit private/public refresh actions, a local
 name search and a Workflow ID fallback. Loading inputs asks for confirmation
 before replacing the form. A saved per-scene schema drives labeled text, numeric,
 boolean, fixed-choice and structured fields. Structured values remain editable
-as JSON; file fields name the requirement for uploaded asset IDs. A field's
+as JSON; file fields accept asset IDs, Library selections and the
+[explicit uploads](#workflow-input-uploads) below. A field's
 inclusion checkbox omits it from the request, allowing declared defaults.
 
 **Request workflow price** starts a shared session quote. **Generate** opens a
@@ -1356,8 +1357,7 @@ The desktop regression checks below record prompt editing, exact price refresh,
 cancel/confirm and saved-job visibility with a synthetic service on their named
 candidate. Broader DPI, IME and platform acceptance remains tracked under #66/#68
 separately from review readiness.
-Interactive nodes, integrated workflow reference upload and live outputs remain
-outside this implementation.
+Interactive nodes and live outputs remain outside this implementation.
 
 ## Native Library controls
 
@@ -1434,3 +1434,66 @@ blocked. They establish native input and popup refresh behavior, not live
 workflow quality, full compact capture-to-apply acceptance, IME composition,
 multiple DPI settings, other OS interaction, sustained GPU/audio behavior or
 human media review. Those remain separate release gates under #68.
+
+## Workflow input uploads
+
+Each loaded image, audio, video or 3D workflow file input offers a **File** path
+field with **Upload file**, plus kind-matched snapshots: **Viewport**, **Camera
+view** and **Render result** for images, **Viewport clip** and **Camera clip** for
+video, and **Selected mesh** for 3D. A separate confirmation names the file or
+snapshot, input and workflow before any content is sent; uploading never
+generates or approves spending. Inputs of other kinds, and file inputs that list
+allowed asset IDs, keep Library selection and typed asset IDs.
+
+Before marking the input, preflight refuses an occupied single input, a full
+array, an unsupported source, a missing or unreadable file, an existing upload
+marker and the shared 128-binding upload capacity. Confirmation rechecks the
+reviewed form, file path, connection and scope. The saved marker invalidates the
+current price and blocks **Request workflow price** until the upload attaches or
+is resolved. The maintenance pump attaches only after an imported observation and
+a fresh origin check, and only into the unchanged scene, workflow, schema, input
+kind and input value. It writes the same scope digest and canonical value as
+Library attachment, and removes the marker. Once the pump observes the saved
+record for an unchanged input, the input records the upload request, even if the
+upload later stops; an upload released as having sent nothing records none. A
+changed destination keeps the marker and an inspectable error.
+
+The shared session refuses the next initialization, part or completion request
+after any scene edit, frame change or undo in the origin scene, so a stopped upload
+never resumes. When an upload whose delivery is still held stopped before anything
+was sent (local staging failed, or the staged record was still prepared) the pump
+removes only its own marker, keeps existing values and draws a read-only note on
+the input that nothing was uploaded, so the content can be uploaded again. The
+note stays through undo and redo while the workflow and the input's values are
+unchanged, and the next upload admitted into the input retires it. It is held in
+memory, so a credential or project change, a blend file load or an extension
+restart also clears it. An upload that already sent something keeps
+the marker. **Cancel preparation** of a prepared record also frees any input still
+marked for it, matched through this connection's ticket for that marker, which
+survives undo, or through the recorded request after reopening or a connection
+change. A blend file saved before the first observation has no request link.
+
+**Inspect uploads** and **Use saved upload** open the shared saved-upload view
+for that input. Attaching an imported upload needs a separate single-use
+confirmation naming the scene, workflow, input and file; it supersedes an
+in-flight upload into the same input. The upload records its own undo step with
+the marker, also when starting fails after a task was admitted. Undo or redo to a
+state that keeps the marker, reopening the blend file and a connection change
+discard in-memory delivery, so the marker then requires this explicit review
+instead of a second upload. A marked input with no running delivery offers
+**Stop waiting** beside **Inspect uploads**: after a confirmation it removes the
+marker and request link, keeps the current values and leaves the upload in saved
+uploads. A running upload is not released this way. Undoing the upload step itself
+removes the marker, so **Upload file** would send the content again. **Clear
+reference** warns that an admitted upload continues in saved uploads, then removes
+the marker and empties the input. Drawing stays read-only.
+
+Installed synthetic tests cover these guards, including missing and unreadable
+files, failed staging, an object move and a frame change after staging on an array
+that already holds a value, cancellation of a waiting, undo-restored or
+retired-connection marker, **Stop waiting** after an upload stopped mid-transfer,
+undo around an upload and a background **Render result** upload, plus shared MCP
+pricing of an uploaded asset ID and selected-mesh provenance at quote time. Native
+interaction proof (file browser and confirmation from the Studio popup, viewport
+and camera captures, rendering with F12 before **Render result**, DPI and IME) and
+live upload acceptance remain under #66/#68.

@@ -318,7 +318,7 @@ and environments.
 | Result downloads | [ModelJobs](../../scenario/blender/model_jobs.py) drives saved manifests, bounded transfers and explicit interrupted-download recovery for model lanes. [Transfers](../RESULT_TRANSFERS.md) retain verified receipts and configured storage hosts. | Only admitted Image jobs automatically apply supported images to their original scene; other model results need explicit destination approval. Unsupported formats and uncertain states remain saved for inspection. |
 | Application claims | Native [saved-job controls](../../scenario/blender/job_recovery.py) and [MCP result commands](../MCP.md) prepare and apply image, media, GLB, material, World and supported mesh-edit destinations through ModelJobs/JobSession. Claims precede scene mutation; known receipt retries do not repeat it. | Restarted uncertain claims require inspection. Format, target, rollback and undo limits differ by application; no atomic blend-file save is promised. |
 | Prompt Spark | [Prompt commands](../SDK_ADOPTION.md#prompt-spark-command-boundary) use exact quotes, durable submission and complete text recovery on the shared workers. Native/MCP New, Rewrite and Translate require unchanged-field approval; render preparation has a separate Spark approval. | Live provider acceptance remains; Spark approval does not authorize the subsequent render generation. |
-| Uploads | [Reference uploads](../SDK_UPLOADS.md) use private staging, signed storage transfers and durable SDK commands on the shared workers. Native/MCP recovery and saved-reference attachment require the selected scope and fresh destination approval. | Workflow direct-file upload integration and live upload/result journeys remain open. |
+| Uploads | [Reference uploads](../SDK_UPLOADS.md) use private staging, signed storage transfers and durable SDK commands on the shared workers. Generation and workflow forms attach through guarded bindings; native/MCP recovery and saved-reference attachment require the selected scope and fresh destination approval. | Live upload/result journeys remain open. |
 | Model forms | [Schema forms](../../scenario/core/schema/forms.py) validate adopted model inputs before shared pricing and submission. | Trained/custom-model discovery and verified routing remain under #97. |
 | Mesh and World | [Mesh](../MESH_APPLICATION.md) and [World](../WORLD_APPLICATION.md) application have explicit UI/MCP destination flows for supported saved results. | Provider-specific mesh contracts under #99 and panoramic generation under #98 remain incomplete; local application does not close them. |
 
@@ -608,8 +608,9 @@ The confirmation shows normalized payload values, including service defaults.
 Credential/project retirement discards the UI controller with the shared owner;
 file-load retirement removes approval handles while saved scene inputs survive.
 Closing Studio owns no cancellation or teardown. No new transport, store or
-worker pool is introduced. Interactive nodes, general workflow cancellation,
-integrated workflow reference upload and physical/live acceptance remain separate.
+worker pool is introduced. File inputs can receive [explicit uploads](#workflow-input-uploads).
+Interactive nodes, general workflow cancellation and physical/live acceptance
+remain separate.
 
 The 32-entry UI projection cache reclaims idle entries under pressure, discarding
 any unused price but preserving saved scene inputs and independently owned jobs.
@@ -667,5 +668,42 @@ parameter builder rejects changed or cross-connection marked inputs; disabling
 an input omits it while preserving its binding. The form signature includes that
 binding, so attachment/clearing invalidates a prior approval even without a native
 RNA edit event. Explicit clearing verifies the original form and retains the
-existing unchecked-input/default semantics. Direct workflow uploads, interactive
-nodes, general cancellation and physical/live acceptance remain separate.
+existing unchecked-input/default semantics. Library choices skip an input with a
+pending upload marker. Interactive nodes, general cancellation and physical/live
+acceptance remain separate.
+
+## Workflow input uploads
+
+[workflow_uploads.py](../../scenario/blender/workflow_uploads.py) connects loaded
+workflow file inputs to the existing [`ReferenceUploads`](../SDK_UPLOADS.md#workflow-input-attachment)
+owner. An explicit confirmation precedes a single local-file or capture upload on
+the selected JobSession; no new SDK operation, transport, store or worker pool is
+added. Review refuses a missing or unreadable file, and starting requires the
+reviewed connection and scope. The input carries a persisted marker before origin
+capture, so pricing and duplicate uploads are refused while it is present. The
+operator records its own undo step, so undoing later edits keeps the marker. The
+form signature includes the marker only when present, which invalidates prior
+approvals without changing the saved signature of unmarked forms.
+
+The application maintenance pump delivers on the main thread. It attaches only
+the imported asset into the unchanged scene, workflow, schema, kind, marker and
+input value, after a fresh origin check, through `workflow_references.bind_asset`.
+That shared binding writes the same scope digest and canonical value as Library
+attachment, so existing pricing checks reject edited or cross-connection values.
+Stale, failed or retired bindings keep the marker and an inspectable error; saved
+uploads attach only through a separate single-use confirmation in the shared
+inspection view. Any scene edit, frame change or undo makes JobSession refuse the
+upload's next initialization, part or completion admission, and the ticket stops.
+The exception to keeping the marker is a stopped ticket that `ReferenceUploads`
+reports as never having reached Scenario (failed staging, a refused admission
+while still prepared, or cancellation): the marker is removed and existing values
+stay. Explicit cancellation of a prepared record frees inputs still marked for it
+through a marker-to-ticket ledger that survives undo, or through the request
+recorded at first observation. Without a running delivery, **Stop waiting**
+releases the marker without changing values. Undo/redo, file load and connection
+retirement discard in-memory bindings; undoing the upload step itself also
+removes the marker.
+Selected-mesh uploads gain their captured source binding at quote time. Local MCP
+keeps its existing `upload_reference`, `capture_reference` and `estimate_workflow`
+sequence; no MCP protocol change is needed. Physical Studio interaction and live
+upload acceptance remain under #66/#68.

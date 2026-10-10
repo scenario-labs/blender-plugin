@@ -737,9 +737,40 @@ Edit the named inputs. Check an input to include it; unchecked inputs use the
 workflow's default when one exists. Booleans have a checkbox and fixed choices
 have a dropdown. Enter numeric values as numbers. Structured
 inputs use JSON, for example `["asset-one", "asset-two"]` for an image list.
-File inputs accept already uploaded asset IDs or confirmed Library selections;
-upload local files separately.
+File inputs accept uploaded asset IDs, confirmed Library selections or the
+uploads described below.
 Conditional requirements and allowed values are checked before pricing.
+
+To upload into an image, audio, video or 3D file input, choose its **File** and
+**Upload file**, or use a snapshot button: **Viewport**, **Camera view** or
+**Render result** for images, **Viewport clip** or **Camera clip** for video, and
+**Selected mesh** for 3D. Confirm the named file, input and workflow; uploading
+sends that content to Scenario but generates nothing. The input shows its
+progress and blocks pricing until the asset attaches, then requires a fresh price.
+A single input must be empty first; arrays append up to their maximum. The chosen
+file must exist and be readable.
+
+Leave the scene unchanged until the upload attaches. Editing the scene (for
+example moving an object) or changing the frame stops an upload that is still
+sending, and it cannot resume; once everything was sent, the import still
+finishes but does not attach automatically. If nothing had been sent yet, or the
+file could not be prepared, the input is freed with its values kept and says that
+nothing was uploaded, so you can upload again; the note stays after undo or redo
+until you change the input, load another workflow or upload into it again.
+Changing credentials or project, opening a file or restarting Blender also
+clears it.
+Otherwise, and when you edit that
+input, load another workflow, undo or reopen the file during an upload, nothing
+attaches automatically; undo also stops an upload that is still sending. An input
+that stays marked shows **Saved upload: inspect before continuing**. Choose
+**Inspect uploads** to attach an imported upload with **Use this reference**, or
+to cancel one that never started with **Cancel preparation**, which usually also
+frees the waiting input. **Stop waiting** frees the input in any of these cases
+and keeps its current values; the upload stays in saved uploads, and uploading
+again sends the file again. Undoing the upload itself also clears the input's
+upload state.
+**Clear reference** stops waiting too, but empties the input.
+Inputs of other kinds, or with listed allowed asset IDs, use Library or an ID.
 
 Choose **Request workflow price**, then **Generate**. The separate confirmation
 shows the server-normalized inputs, original scene and complete exact CU price.
@@ -750,9 +781,8 @@ Changing inputs, scene or connection requires a fresh valid approval.
 The form and its schema save with the scene and remain editable after reopening;
 prices and approval handles do not survive restart. Jobs keep their existing
 durable recovery. This page runs existing workflows; it does not author graphs,
-handle interactive nodes or cancel running workflows. Direct file upload into
-workflow inputs remains to integrate. Native desktop interaction and live
-workflow acceptance are still pending.
+handle interactive nodes or cancel running workflows. Native desktop interaction,
+including workflow uploads, and live workflow acceptance are still pending.
 
 ### Browse Library assets
 

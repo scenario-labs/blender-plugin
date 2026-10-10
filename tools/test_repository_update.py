@@ -312,16 +312,15 @@ def run(args):
             report["update"] = json.loads(evidence.read_text())
             expected = {"before": before_version, "after": after_version, "enabled": True}
             if package_mode:
+                workflow = json.loads((session.directory / "expected-state.json").read_text())[
+                    "workflow"
+                ]
                 expected.update(
                     state_preserved=True,
                     scene_preserved=True,
                     project_scope_preserved=True,
-                    workflow_references_preserved=(
-                        json.loads((session.directory / "expected-state.json").read_text())[
-                            "workflow"
-                        ]
-                        is not None
-                    ),
+                    workflow_references_preserved=workflow is not None,
+                    workflow_uploads_preserved=bool(workflow and workflow.get("pending_upload")),
                     service_requests=0,
                 )
             if report["update"] != expected:

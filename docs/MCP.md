@@ -103,12 +103,12 @@ uses `{"path": "/chosen/reference.wav", "kind": "audio"}`. See the
 [format policy and limits](SDK_UPLOADS.md#active-reference-uploads).
 
 Poll `reference_upload_status` until `imported` before using the returned asset ID
-in a model estimate. Status, `list_reference_uploads` and recovery return saved
+in a model or workflow estimate. Status, `list_reference_uploads` and recovery return saved
 `kind` and `content_type` metadata; initial staging can report null metadata.
 Only the selected file is sent: no conversion, external-buffer or texture-sidecar
 discovery. Upload approval does not approve generation, and a lost response must
 be reconciled using saved progress instead of starting another upload. The same uploads and saved-reference recovery are available in generation
-forms for image, audio, video and 3D inputs. `capture_reference` also supports explicit `VIEWPORT_CLIP`, `CAMERA_CLIP` and
+forms and loaded Studio workflow forms for image, audio, video and 3D inputs. `capture_reference` also supports explicit `VIEWPORT_CLIP`, `CAMERA_CLIP` and
 `MESH` snapshots. Clips use the preview/scene range at 1280x720 without audio,
 trimming or padding; mesh export produces one GLB from the selected meshes.
 Only mesh export works in background mode. `render_form` uses the native render
@@ -803,7 +803,13 @@ its declared inputs. Listing reads the full bounded catalog, deduplicates IDs
 and returns at most 40 filtered rows with `next_offset`. A new call refreshes
 metadata, so pages are not a stable snapshot. Inputs retain conditional and file
 definitions; supported form validation happens again with fresh metadata at
-estimation. File parameters use already uploaded Scenario asset IDs.
+estimation. File parameters use Scenario asset IDs: Library assets, or the
+imported `asset_id` from `upload_reference` or `capture_reference`. This is the
+MCP equivalent of native workflow input uploads from a file, viewport, camera,
+clip or selected mesh; the native **Render result** snapshot has no
+`capture_reference` source. MCP passes the ID in `parameters` rather than binding
+it into the saved Studio form, and the quote binds captured selected-mesh sources
+the same way.
 
 `estimate_workflow` requests a free exact quote through SDK 2.2.0
 [`workflows.run`](https://docs.scenario.com/api/python/resources/workflows/methods/run)

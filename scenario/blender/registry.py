@@ -17,7 +17,6 @@ _log_handler = None
 def _modules():
     from . import (
         apply_video,
-        audio_preview,
         blockout,
         composer,
         film,
@@ -31,6 +30,7 @@ def _modules():
         prompt_tools,
         props,
         reference_form,
+        result_media,
         shot_planner,
         studio,
         workflow_controls,
@@ -42,7 +42,7 @@ def _modules():
     modules = [
         props,
         apply_video,
-        audio_preview,
+        result_media,
         shot_planner,
         operators,
         job_recovery,

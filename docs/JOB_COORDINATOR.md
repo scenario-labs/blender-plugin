@@ -573,10 +573,18 @@ evicts cache entries beyond the budget, without reading a job or the network.
 request's copy in an
 [offline Blender process](RESULT_PREVIEWS.md#offline-audio-envelopes), checks
 and caches the envelope and always removes the copy; the task's cancellation
-event terminates the process. Only `prepare_result_previews` reads the network.
-None of these commands transitions a job, changes its revision, claims
-application or submits work. See [result previews](RESULT_PREVIEWS.md) for
-renditions, limits and the polling window.
+event terminates the process.
+`prepare_playback(request_id, expected_revision=..., asset_id=..., root=...)`
+makes a [private player copy](RESULT_PREVIEWS.md#private-player-copies) of one
+downloaded video or audio receipt at the exact saved revision. It first removes
+copies the owner listed in `discard` and sweeps stale ones not in `keep`, returns
+an unchanged `reuse` copy of the same receipt instead of copying again, and
+rechecks the record at receipt level afterwards. A cancellation or inactive
+coordinator after copying removes the new copy. Only `prepare_result_previews`
+reads the network. None of these commands transitions a job, changes its
+revision, claims application or submits work. See
+[result previews](RESULT_PREVIEWS.md) for renditions, limits and the polling
+window.
 
 ## Durable application claims
 

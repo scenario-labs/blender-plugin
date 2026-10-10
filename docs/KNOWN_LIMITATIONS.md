@@ -272,31 +272,35 @@ establish live generation or full render-lane desktop acceptance.
   desktop interaction, alternate UI scales and screenshots remain #66 work.
 - Viewport screenshots and OpenGL capture require a GUI. Automated GUI probes
   can take keyboard focus; follow the isolated-profile validation procedure.
-- Downloaded audio has an explicit local waveform preview in Generations.
-  It uses the existing result record/file selection, not the durable verified
-  result identity planned in #65. Saved shared results get receipt-keyed audio
-  envelopes on the preview lane, but no view draws them yet; the shared compact/
-  expanded result UI and human audio review remain #189, #66 and #68 work.
-  See the [supported preview limits](USER_GUIDE.md#audio).
+- Saved shared video and audio results offer **Play**, **Play in Blender** for
+  video and **Waveform** for audio in their saved-job controls. Retained
+  prototype results keep Play and Add to sequencer, without a waveform. These
+  controls have installed-ZIP native tests only: no desktop interaction,
+  screenshot, UI-scale or human listening evidence exists yet, which remains
+  [#189](https://github.com/scenario-labs/blender-plugin/issues/189), #66 and
+  [#68](https://github.com/scenario-labs/blender-plugin/issues/68) work. Local MCP
+  cannot read waveform envelopes yet, and no MCP tool launches a player. See the
+  [supported limits](USER_GUIDE.md#audio).
+- Play first copies the saved file, up to 512 MiB, on the preview lane, so a
+  large file waits for its copy and queues behind server thumbnail polls and
+  waveform decodes there. Up to four copies or 1 GiB are kept for reuse, plus any
+  copy a running animation player reads. Windows refuses to delete a copy a player
+  still holds open; it is removed by a later day's sweep. Whether Blender's
+  animation player plays a video's soundtrack, behavior without a default player
+  (for example Linux without `xdg-open`) and sandboxed Blender packages are
+  unverified. Without a usable executable path, Play in Blender fails with an
+  explicit error.
 - Each waveform starts a separate offline Blender process: a one-second file took
   0.65 to 0.9 seconds end to end on macOS arm64 with Blender 5.0.1 to 5.2.1.
   Windows and Linux start-up, antivirus interference and sandboxed Blender
-  packages are unmeasured. Without a usable executable path, waveform previews
-  fail with an explicit error.
-- Waveform decoding and metadata checks run in at most two tracked workers;
-  Blender only displays its captured snapshot after checking the selected record
-  and context. The preview does not monitor later external file changes.
-  Cancellation terminates the decoder process and discards late completion; it
-  cannot interrupt an operating-system filesystem call. A spare worker lets
-  another preview proceed while one canceled check is stuck. Loading expires
-  after 30 seconds, checked by Blender's timer; a waveform that a worker
-  finished before then still displays when that timer runs late. If both
-  workers remain occupied, a new preview times out with retry/restart guidance;
-  capacity becomes available only when a worker actually exits. The UI remains
-  usable. Terminal previews check context invalidation once per second rather
-  than at the loading timer's ten checks per second. Disabling the extension or
-  quitting Blender cancels its workers and waits up to five seconds for them to
-  stop their decoder processes.
+  packages are unmeasured. Without a usable executable path, waveforms fail with
+  an explicit error.
+- A waveform decode occupies the single preview lane for its duration, at most
+  60 seconds; Cancel terminates its decoder process. A decode that cannot start
+  within 120 seconds, for example behind other lane work, fails with Retry. The
+  shown waveform is drawn from its cached envelope and checked once per second
+  for a changed connection; it does not monitor later external file changes, but
+  every Play and decode rechecks the saved receipt.
 - Prompt helpers lack an explicit generic/model-contextual Spark preference
   ([#188](https://github.com/scenario-labs/blender-plugin/issues/188)).
 - Capture timing follows scene settings; native dialogs use Blender's theme

@@ -32,7 +32,7 @@ No `PROVENANCE.json` has been generated for a new recording run.
 
 Audio waveform tests generate their own signals at runtime. The unit tests
 `tests/unit/test_audio_waveform.py` and `test_audio_decode.py` use synthetic
-sample lists. The native `tests/blender/test_audio_preview.py` and
+sample lists. The native `tests/blender/test_result_media.py` and
 `test_result_previews.py` write 16-bit PCM WAV tones, and
 `tests/blender/test_waveform_worker.py` writes WAV, MP3, Ogg Vorbis, FLAC and
 Matroska AAC tones with Blender's audio module. The waveform decoder tests also

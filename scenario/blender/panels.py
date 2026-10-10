@@ -412,10 +412,10 @@ def draw_generate_lane(layout, context, lane):
         hint.label(text="Saved only, not applied to meshes", icon="INFO")
         hint.label(text="Apply from Jobs to a mesh slot", icon="BLANK1")
     if lane == "audio":
-        layout.label(
-            text="Results land in the output folder; add them to the sequencer from Generations",
-            icon="INFO",
-        )
+        # Two short lines: one long label is middle-clipped at the default sidebar width.
+        hint = layout.column(align=True)
+        hint.label(text="Saved jobs offer Play, Waveform", icon="INFO")
+        hint.label(text="and Add audio strip", icon="BLANK1")
     draw_generate_row(layout, lane_state, lane)
 
 
@@ -662,7 +662,8 @@ def draw_result(layout, rec, *, collapsible=True):
             row.label(text=os.path.basename(alt)[-40:], icon="FILE_3D")
             add = row.operator("scenario.import_mesh_file", text="Add")
             add.filepath, add.local_id = alt, rec.local_id
-    elif rec.kind == "video":
+    elif rec.kind == "video" and not rec.meta.get("shared_job"):
+        # Retained prototype rows; shared jobs play saved results from their descriptors.
         for index, path in enumerate(rec.files[:3]):
             row = box.row(align=True)
             row.operator("scenario.play_video", text="Play", icon="PLAY").filepath = path
@@ -673,18 +674,13 @@ def draw_result(layout, rec, *, collapsible=True):
                 "scenario.video_to_sequencer", text="Add video strip", icon="SEQUENCE"
             )
             add.local_id, add.file_index = rec.local_id, index
-    elif rec.kind == "audio":
-        from . import audio_preview
-
+    elif rec.kind == "audio" and not rec.meta.get("shared_job"):
         for path in [p for p in rec.files if p.lower().endswith(AUDIO_EXTS)][:4] or rec.files[:2]:
             row = box.row(align=True)
             row.operator("scenario.play_video", text="Play", icon="PLAY").filepath = path
             row.operator(
                 "scenario.add_sound_strip", text="Add to sequencer", icon="SEQUENCE"
             ).filepath = path
-            preview = box.operator("scenario.preview_audio", text="Preview waveform", icon="SOUND")
-            preview.local_id, preview.file_index = rec.local_id, rec.files.index(path)
-            audio_preview.draw(box, rec, rec.files.index(path))
     elif rec.kind == "material":
         mat_name = (
             rec.meta.get("material_name")

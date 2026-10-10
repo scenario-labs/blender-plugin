@@ -6,9 +6,10 @@ import bpy
 from bpy.props import BoolProperty, EnumProperty, FloatVectorProperty, IntProperty, StringProperty
 
 from ..core.api.errors import ScenarioError
+from ..core.jobs.playback import PLAYBACK_TYPES
 from ..core.scene.panorama import WORLD_MEDIA_TYPES, describe_world_media
 from ..core.ui import saved_job_actions
-from . import render_lanes, review_previews, runtime
+from . import render_lanes, result_media, review_previews, runtime
 from .media_application import MEDIA_TYPES
 from .model_application import MODEL_MEDIA_TYPE
 
@@ -17,6 +18,7 @@ RESULT_TYPES = saved_job_actions.ResultTypes(
     model=MODEL_MEDIA_TYPE,
     media={media_type: value[0] for media_type, value in MEDIA_TYPES.items()},
     world=WORLD_MEDIA_TYPES,
+    playback={media_type: value[0] for media_type, value in PLAYBACK_TYPES.items()},
 )
 
 
@@ -909,10 +911,19 @@ def draw_action(layout, item):
 
 
 def draw_controls(layout, record):
+    """Draw the view's descriptors, review previews and selected waveform from cached state."""
+    row_key = row = None
     for item in result_actions(record):
-        draw_action(layout, item)
+        if not item.row:
+            row_key = None
+            draw_action(layout, item)
+            continue
+        if item.row != row_key:
+            row_key, row = item.row, layout.row(align=True)
+        draw_action(row, item)
     # Waiting workflow steps: Load previews and the review asset icons.
     review_previews.draw_step_previews(layout, record)
+    result_media.draw(layout, record)
 
 
 CLASSES = (

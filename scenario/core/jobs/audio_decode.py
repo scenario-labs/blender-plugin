@@ -20,11 +20,9 @@ import json
 import math
 import os
 import shutil
-import stat
 import sys
 import tempfile
 import threading
-import time
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -54,10 +52,7 @@ DECODE_TIMEOUT = 60.0
 # Decoded float32 samples the child may hold: 256 MiB, enough for ten minutes
 # of 48 kHz stereo. Longer, faster or wider audio fails instead of truncating.
 MAX_DECODED_SAMPLES = 64 * 1024 * 1024
-SOURCE_MAX_BYTES = 256 * 1024 * 1024
 HEADER_MAX_BYTES = 4096
-# Decode directories older than this were abandoned, for example by an exit mid-decode.
-STALE_SECONDS = 24 * 60 * 60
 # One float64 sum of squares and one float64 peak per 10 ms block.
 _BLOCK_BYTES = 16
 _ERRORS = {
@@ -94,43 +89,6 @@ class WaveformSpec:
             raise ValueError("Use a finite waveform decode timeout of at most 600 seconds")
         if type(self.max_samples) is not int or not 1 <= self.max_samples <= MAX_DECODED_SAMPLES:
             raise ValueError("Use a bounded decoded sample limit")
-
-
-def source_stamp(path):
-    """Identity of a regular, nonsymlink local audio file within the source size limit."""
-    try:
-        info = Path(path).lstat()
-    except OSError:
-        raise WaveformError("The audio file is missing or unreadable") from None
-    if not stat.S_ISREG(info.st_mode):
-        raise WaveformError("Choose a regular local audio file")
-    if not 1 <= info.st_size <= SOURCE_MAX_BYTES:
-        raise WaveformError("Audio waveforms support files from 1 byte to 256 MiB")
-    return info.st_dev, info.st_ino, info.st_size, info.st_mtime_ns, info.st_ctime_ns
-
-
-def sweep(directory, *, now=None, older_than=STALE_SECONDS):
-    """Remove abandoned ``decode-*`` children of a caller's private directory.
-
-    Only stale, nonsymlink directories with that prefix are removed; errors are
-    ignored so a sweep never blocks a new decode.
-    """
-    now = time.time() if now is None else now
-    try:
-        children = tuple(Path(directory).iterdir())
-    except OSError:
-        return
-    for child in children:
-        try:
-            info = child.lstat()
-        except OSError:
-            continue
-        if (
-            child.name.startswith("decode-")
-            and stat.S_ISDIR(info.st_mode)
-            and now - info.st_mtime > older_than
-        ):
-            shutil.rmtree(child, ignore_errors=True)
 
 
 def _read(path, limit):
@@ -205,7 +163,7 @@ def decode(source, directory, spec, *, cancel=None, max_seconds=MAX_SECONDS, bin
     ``decode-*`` child in it for the request, disposable profile, temporary
     files, log and output, and removes it on every exit. Errors name no path
     and carry no decoder output. The caller binds ``source`` to its bytes, for
-    example with a receipt-checked private copy or ``source_stamp``.
+    example with a receipt-checked private copy.
     """
     if not isinstance(spec, WaveformSpec):
         raise TypeError("Use a waveform decoder specification")

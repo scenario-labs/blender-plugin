@@ -4,11 +4,13 @@
 [`preview_scheduler`](../scenario/core/jobs/preview_scheduler.py) prepare small
 previews of downloaded saved results for the shared runtime. They are bpy-free.
 Previews are read-only: they never submit, spend, apply, resolve a scene origin or
-write the job store. The only user interface is the private previews of
-[workflow review assets](#workflow-review-assets); saved results have no preview
-view or local MCP tool yet. Audio envelopes are decoded in an owned offline
-Blender process, described below. Blender-side image decoding of saved results,
-display, playback and waveform drawing are follow-up work under
+write the job store. Their user interfaces are the private previews of
+[workflow review assets](#workflow-review-assets), the saved-job **Waveform**
+control, which draws audio envelopes decoded in an owned offline Blender process
+described below, and **Play**, which opens
+[private player copies](#private-player-copies) made on the same lane. Local MCP
+has no saved-result preview tool yet. Blender-side image decoding of saved
+results and display of their stills and clips are follow-up work under
 [#189](https://github.com/scenario-labs/blender-plugin/issues/189) and
 [#66](https://github.com/scenario-labs/blender-plugin/issues/66).
 
@@ -179,6 +181,29 @@ The session builds the decoder specification on Blender's main thread from
 for example when Blender runs as a Python module, envelopes fail with an explicit
 reason instead of waiting. A failed decode caches nothing; Retry decodes again.
 
+## Private player copies
+
+A desktop player opens a file by its name and extension, so **Play** and **Play
+in Blender** never hand it the saved result. The lane command
+`prepare_playback` streams one downloaded receipt of a saved job in a previewable
+state into a new private `play-*` directory of `cache/media-playback`, rehashing
+it against the receipt while copying. It accepts the media types Film inspection
+allows: MP4, MOV, WebM, MKV and AVI video and WAV, MP3, Ogg, FLAC, M4A and AAC
+audio, up to 512 MiB. The copy's container signature must match its saved type,
+and it is named `media` plus that type's suffix, so a downloaded name such as
+`clip.command` never reaches the operating system. The file is read-only and its
+directory private. After copying, the command rechecks the saved record at
+receipt level: an unrelated revision, such as a strip application, keeps the
+copy, while a changed receipt or state discards it. A canceled, failed or
+retired command removes its partial copy.
+
+An unchanged copy of the same receipt, compared by its file metadata, is reused
+instead of copying again. Before copying, the command removes the copies its
+owner evicted and sweeps `play-*` directories older than a day that the owner no
+longer uses, including copies a Windows player kept open. Copies hold the saved
+bytes; no URL, credential or prompt is written. They are disposable and safe to
+delete while no player reads them.
+
 ## Cache
 
 The runtime passes `cache/result-previews` under Blender's extension user
@@ -293,10 +318,17 @@ command is queued or running. Shutdown joins the lane with the other workers.
 thread, and performs no network I/O or preview cache work. `request` reads saved
 receipts from the local job store, `request_review` reads the saved workflow job,
 and `release` removes leftover private copies after the lane stops. `request`,
-`request_review`, `retry`, `status`, `decode_requests`, `finish_decode` and
-`discard_decode` are its interface; `retry` and `status` take `review=True` for
-a review asset. Status snapshots are immutable and safe to read while drawing.
-It sends at most one batch of up to 32 assets at a time.
+`request_review`, `retry`, `cancel`, `status`, `decode_requests`, `finish_decode`
+and `discard_decode` are its interface; `retry` and `status` take `review=True`
+for a review asset. Status snapshots are immutable and safe to read while
+drawing. `request(..., renditions=...)` limits
+a request to some renditions of a result: the Waveform control asks for the
+local envelope only, so it never polls Scenario for a still. `cancel` stops one
+result's local decoding: an issued request is discarded, a running decode is
+signaled, which terminates its child, and a copy an in-flight batch is preparing
+is discarded when that batch returns. Its unfinished local renditions fail as
+canceled until `retry`; server stills keep polling. It sends at most one batch
+of up to 32 assets at a time.
 
 `JobSession(preview_root=...)` exposes it as `result_previews` while the session
 is active. The session's existing maintenance timer, and `reap_retired` in
@@ -321,6 +353,8 @@ and timeout. They passed on Blender 5.0.1, 5.1.2 and 5.2.1 locally on macOS
 arm64 and in hosted CI on Linux x64 and Windows x64 runners. Provider audio
 files, child start-up time and antivirus behavior on real Windows and Linux
 desktops, macOS x64 and sandboxed Blender packages are not covered. The timing
-figures above are macOS arm64 measurements only. Blender-side image decoding of
-saved results, their user interface, MCP parity and native desktop acceptance,
-including of the review previews, remain open under #189, #65 and #66.
+figures above are macOS arm64 measurements only. Player copies and the Play and
+Waveform controls have installed native tests with patched players only.
+Blender-side image decoding of saved results, still and clip display, MCP parity
+and native desktop acceptance, including of the review previews, remain open
+under #189, #65 and #66.

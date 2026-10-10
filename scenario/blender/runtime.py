@@ -115,6 +115,14 @@ class RuntimeState:
 
     def retire_jobs(self):
         """Stop admissions; the session registry retains in-flight persistence."""
+        from . import result_media
+
+        # Saved-media copies and waveforms belong to the retiring connection;
+        # their cleanup must never keep the session itself from retiring.
+        try:
+            result_media.controller.retire()
+        except Exception:
+            log.warning("Saved media cleanup failed")
         if self.job_session is not None:
             self.job_session.deactivate()
             self.job_session = None

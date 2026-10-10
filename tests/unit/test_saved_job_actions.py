@@ -10,6 +10,7 @@ from types import SimpleNamespace
 
 import pytest
 
+from scenario.core.jobs.playback import PLAYBACK_TYPES
 from scenario.core.scene.panorama import WORLD_MEDIA_TYPES
 from scenario.core.ui import saved_job_actions as sja
 
@@ -18,6 +19,12 @@ TYPES = sja.ResultTypes(
     model="model/gltf-binary",
     media={"video/mp4": "video", "video/webm": "video", "audio/wav": "audio"},
     world=WORLD_MEDIA_TYPES,
+)
+PLAYABLE = sja.ResultTypes(
+    model=TYPES.model,
+    media=TYPES.media,
+    world=TYPES.world,
+    playback={media_type: kind for media_type, (kind, _) in PLAYBACK_TYPES.items()},
 )
 CONTEXT = "context-token"
 JOB = (("context_id", CONTEXT), ("request_id", "request"), ("expected_revision", 7))
@@ -745,6 +752,81 @@ def test_saved_360_results_are_labelled_and_ldr_ones_prefill_make_hdri():
     ]
 
 
+def play(asset_id, index, kind):
+    second = (
+        (
+            f"play_in_blender:{asset_id}",
+            "playback",
+            "scenario.play_saved_media",
+            f"Play in Blender ({index})",
+            "NONE",
+            dict(JOB, asset_id=asset_id, player="BLENDER"),
+        )
+        if kind == "video"
+        else (
+            f"waveform:{asset_id}",
+            "playback",
+            "scenario.preview_saved_waveform",
+            f"Waveform ({index})",
+            "NONE",
+            dict(JOB, asset_id=asset_id),
+        )
+    )
+    return [
+        (
+            f"play:{asset_id}",
+            "playback",
+            "scenario.play_saved_media",
+            f"Play {kind} ({index})",
+            "NONE",
+            dict(JOB, asset_id=asset_id, player="SYSTEM"),
+        ),
+        second,
+    ]
+
+
+def test_downloaded_media_offer_play_and_waveform_or_blender_in_one_row_each():
+    assets = (
+        ("clip", "video/mp4"),
+        ("texture", "image/png"),
+        ("sound", "audio/wav"),
+        ("mesh", "model/gltf-binary"),
+        ("stem", "audio/flac"),
+    )
+    items = sja.describe(view(("import_media",), "ready", assets), CONTEXT, PLAYABLE)
+    media = "scenario.import_saved_media"
+    assert rows(items) == [
+        asset("import_media", media, "Add video strip (1)", "clip"),
+        asset("import_media", media, "Add audio strip (3)", "sound"),
+        *play("clip", 1, "video"),
+        *play("sound", 3, "audio"),
+        *play("stem", 5, "audio"),
+        AWAITING,
+    ]
+    playback = [item for item in items if item.group == "playback"]
+    assert [item.row for item in playback] == [
+        "playback:clip",
+        "playback:clip",
+        "playback:sound",
+        "playback:sound",
+        "playback:stem",
+        "playback:stem",
+    ]
+    assert all(not item.row for item in items if item.group != "playback")
+    # Not job actions: MCP job_status never reports them.
+    assert {item.action for item in playback} == {"play", "play_in_blender", "waveform"}
+    assert not {item.action for item in playback} & set(VOCABULARY)
+
+
+@pytest.mark.parametrize("state", ["applying", "apply_failed", "applied"])
+def test_playback_stays_available_for_interrupted_and_applied_results(state):
+    items = sja.describe(view((), state, (("clip", "video/webm"),)), CONTEXT, PLAYABLE)
+    assert [item.key for item in items if item.group == "playback"] == [
+        "play:clip",
+        "play_in_blender:clip",
+    ]
+
+
 @pytest.mark.parametrize(
     ("kinds", "label"),
     [
@@ -781,3 +863,22 @@ def test_views_without_projection_keep_their_previous_descriptors():
         "import_images",
         "awaiting_review",
     ]
+
+
+@pytest.mark.parametrize(
+    "state", ["prepared", "remote", "succeeded", "downloading", "download_failed", "canceled"]
+)
+def test_results_that_are_not_saved_locally_offer_no_playback(state):
+    items = sja.describe(view(("resume",), state, (("clip", "video/mp4"),)), CONTEXT, PLAYABLE)
+    assert [item for item in items if item.group == "playback"] == []
+
+
+def test_playback_needs_owner_media_types_and_a_shared_projection():
+    assets = (("clip", "video/mp4"), ("sound", "audio/wav"))
+    assert [item.group for item in sja.describe(view((), "ready", assets), CONTEXT, TYPES)] == [
+        "status"
+    ]
+    assert sja.describe(view((), "ready", assets, shared_job=False), CONTEXT, PLAYABLE) == ()
+    unrevised = view((), "ready", assets)
+    del unrevised.meta["saved_revision"]
+    assert sja.describe(unrevised, CONTEXT, PLAYABLE) == ()

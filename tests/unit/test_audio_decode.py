@@ -4,11 +4,9 @@
 
 import array
 import json
-import os
 import sys
 import threading
 from pathlib import Path
-from types import SimpleNamespace
 
 import pytest
 
@@ -177,9 +175,9 @@ def test_a_child_failing_after_the_timeouts_length_is_not_a_timeout(
 ):
     # _run polls every 0.1 s, so a child can exit with a failure after the
     # timeout's length has passed without being stopped. Only a child still
-    # running at the deadline timed out; elapsed time alone decides nothing.
-    clock = iter(100.0 + step * audio_decode.DECODE_TIMEOUT for step in range(100))
-    monkeypatch.setattr(audio_decode, "time", SimpleNamespace(monotonic=lambda: next(clock)))
+    # running at the deadline timed out; the decoder reads no clock of its own,
+    # so elapsed time alone decides nothing.
+    assert not hasattr(audio_decode, "time")
     child = install(monkeypatch, Child(error=code))
     child.raise_after = LocalRenderError("Local media process failed; inspect its retained log")
     with pytest.raises(WaveformError, match=message) as error:
@@ -293,58 +291,3 @@ def test_spec_is_validated(spec, options):
     values = {"binary": spec.binary, "worker": spec.worker, **options}
     with pytest.raises(ValueError):
         audio_decode.WaveformSpec(**values)
-
-
-def test_source_stamp_accepts_only_bounded_regular_files(tmp_path, monkeypatch):
-    path = tmp_path / "sound.wav"
-    path.write_bytes(b"synthetic")
-    first = audio_decode.source_stamp(path)
-    assert first == audio_decode.source_stamp(str(path))
-    path.write_bytes(b"synthetic changed")
-    assert audio_decode.source_stamp(path) != first
-    with pytest.raises(WaveformError, match="missing"):
-        audio_decode.source_stamp(tmp_path / "absent.wav")
-    with pytest.raises(WaveformError, match="regular"):
-        audio_decode.source_stamp(tmp_path)
-    empty = tmp_path / "empty.wav"
-    empty.write_bytes(b"")
-    with pytest.raises(WaveformError, match="256 MiB"):
-        audio_decode.source_stamp(empty)
-    monkeypatch.setattr(audio_decode, "SOURCE_MAX_BYTES", 4)
-    with pytest.raises(WaveformError, match="256 MiB"):
-        audio_decode.source_stamp(path)
-    link = tmp_path / "link.wav"
-    try:
-        link.symlink_to(path)
-    except OSError:
-        pytest.skip("Symlink creation is unavailable")
-    with pytest.raises(WaveformError, match="regular"):
-        audio_decode.source_stamp(link)
-    if os.name != "nt":
-        fifo = tmp_path / "fifo.wav"
-        os.mkfifo(fifo)
-        with pytest.raises(WaveformError, match="regular"):
-            audio_decode.source_stamp(fifo)
-
-
-def test_sweep_removes_only_stale_decode_directories(tmp_path):
-    stale, fresh, other = tmp_path / "decode-old", tmp_path / "decode-new", tmp_path / "keep-old"
-    for path in (stale, fresh, other):
-        path.mkdir()
-        (path / "decode.log").write_text("fixture")
-    old = 1_000_000.0
-    for path in (stale, other):
-        os.utime(path, (old, old))
-    os.utime(fresh, (old + audio_decode.STALE_SECONDS, old + audio_decode.STALE_SECONDS))
-    target = tmp_path / "target"
-    target.mkdir()
-    link = tmp_path / "decode-link"
-    try:
-        link.symlink_to(target, target_is_directory=True)
-    except OSError:
-        link = None
-    audio_decode.sweep(tmp_path, now=old + audio_decode.STALE_SECONDS + 1)
-    assert not stale.exists() and fresh.is_dir() and other.is_dir() and target.is_dir()
-    if link is not None:
-        assert link.is_symlink()
-    audio_decode.sweep(tmp_path / "absent")

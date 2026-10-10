@@ -23,11 +23,17 @@ Environment form, so MCP lists no matching action.
 A running workflow job also gets rows from its owner's in-memory step
 projection (`WorkflowSteps`): one review control per waiting step, the decision
 being sent, the last decision's error, or why it cannot be canceled.
+
+Read-only playback controls (Play, Play in Blender and Waveform) are not job
+actions: they never change the job, the scene or spending. They follow the
+view's saved state and downloaded media types instead of ``ModelJobs.actions``,
+and MCP ``job_status`` does not report them; no MCP tool launches a desktop
+player.
 """
 
 import textwrap
 from collections.abc import Collection, Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 RECOVER_OPERATOR = "scenario.recover_job"
 REVIEW_OPERATOR = "scenario.review_workflow_step"
@@ -100,6 +106,11 @@ PANORAMA_LABELS = {
 HDRI_OPERATOR = "scenario.panorama_to_hdri"
 # Saved states whose downloaded results can feed another Environment form.
 PREFILL_STATES = frozenset({"ready", "applied", "apply_failed"})
+# Saved states whose downloaded results can be played; an interrupted
+# application is included because playback never touches the scene.
+PLAYBACK_STATES = frozenset({"ready", "applying", "apply_failed", "applied"})
+PLAYBACK_OPERATOR = "scenario.play_saved_media"
+WAVEFORM_OPERATOR = "scenario.preview_saved_waveform"
 
 
 @dataclass(frozen=True, eq=False)
@@ -114,6 +125,8 @@ class ResultTypes:
     model: str
     media: Mapping[str, str]  # media type -> "video" or "audio" strip kind
     world: Collection[str]
+    # media type -> "video" or "audio" for a private player copy and waveform.
+    playback: Mapping[str, str] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -137,10 +150,11 @@ class SavedJobAction:
     """One saved-job control, or a status row when `operator` is None.
 
     `key` is unique within one view. `action` is the ModelJobs and MCP action
-    name, or empty for a row about the whole view and for a form prefill.
-    `group` is recover, cancel, apply, receipt, decide, prefill or status.
-    `properties` are the operator's property name/value pairs, set exactly as
-    listed.
+    name, a native playback control name, or empty for a row about the whole
+    view and for a form prefill. `group` is recover, cancel, apply, receipt,
+    decide, prefill, playback or status. `properties` are the operator's
+    property name/value pairs, set exactly as listed. Consecutive descriptors
+    with the same non-empty `row` share one row.
     """
 
     key: str
@@ -150,6 +164,7 @@ class SavedJobAction:
     icon: str = "NONE"
     operator: str | None = None
     properties: tuple = ()
+    row: str = ""
 
 
 def _status(key, action, label, icon):
@@ -395,13 +410,61 @@ def _hdri_prefills(view, job):
     )
 
 
+def _playback(view, job, result_types):
+    """Play, then Play in Blender or Waveform, in one row per downloaded media result.
+
+    Numbering counts every saved asset, like per-asset applications.
+    """
+    items = []
+    for index, asset_id in enumerate(view.asset_ids, 1):
+        kind = result_types.playback.get(view.asset_types.get(asset_id))
+        if kind is None:
+            continue
+        asset = (*job, ("asset_id", asset_id))
+        row = f"playback:{asset_id}"
+        items.append(
+            SavedJobAction(
+                f"play:{asset_id}",
+                "play",
+                "playback",
+                f"Play {kind} ({index})",
+                operator=PLAYBACK_OPERATOR,
+                properties=(*asset, ("player", "SYSTEM")),
+                row=row,
+            )
+        )
+        if kind == "video":
+            second = SavedJobAction(
+                f"play_in_blender:{asset_id}",
+                "play_in_blender",
+                "playback",
+                f"Play in Blender ({index})",
+                operator=PLAYBACK_OPERATOR,
+                properties=(*asset, ("player", "BLENDER")),
+                row=row,
+            )
+        else:
+            second = SavedJobAction(
+                f"waveform:{asset_id}",
+                "waveform",
+                "playback",
+                f"Waveform ({index})",
+                operator=WAVEFORM_OPERATOR,
+                properties=asset,
+                row=row,
+            )
+        items.append(second)
+    return items
+
+
 def describe(view, context_id, result_types, blockout_review=None, workflow_steps=None):
     """Return one projected view's saved-job controls in drawing order.
 
     Reads only the in-memory view, the supplied Blockout review for the current
     scene and the supplied workflow step projection; it performs no I/O and
     changes nothing. A view that is not a shared job, or has no saved revision
-    yet, offers nothing.
+    yet, offers nothing. Playback controls follow the job actions and precede
+    the closing status rows.
     """
     meta = view.meta
     if not meta.get("shared_job") or "saved_revision" not in meta:
@@ -427,6 +490,8 @@ def describe(view, context_id, result_types, blockout_review=None, workflow_step
     for action in actions:
         items.extend(_describe_action(action, view, job, result_types, blockout_review, workflow))
     items.extend(_hdri_prefills(view, job))
+    if state in PLAYBACK_STATES:
+        items.extend(_playback(view, job, result_types))
     # Session-local notes about the last import, such as splat thinning.
     for index, text in enumerate(meta.get("import_notices", ())):
         items.append(_status(f"import_notice:{index}", "", text, "INFO"))

@@ -531,6 +531,21 @@ directly and still waits for a running preview command; a running audio decode
 is signaled first, so its process is terminated, or killed three seconds later.
 Worker threads cannot call these methods.
 
+`prepare_playback` queues a [private player copy](RESULT_PREVIEWS.md#private-player-copies)
+of one saved result on the same preview lane and returns its task; it is not a
+session completion either, and `cancel_playback` signals it. The main-thread
+[saved media controller](../scenario/blender/result_media.py) owns the copies:
+it opens the latest one in the system player through `wm.path_open`, or starts
+Blender's animation player (`-a`) in a separate process whose environment drops
+`SCENARIO_`, `PYTHON` and proxy variables. It reuses an unchanged copy of the
+same receipt, keeps at most four copies or 1 GiB plus any copy a running
+animation player reads, and allows two such players. For **Waveform** it asks
+`result_previews` for the envelope rendition only, so no server still is polled,
+and polls its status from a timer; Cancel calls the scheduler's `cancel`, which
+terminates a running decode. A late copy or envelope is discarded unless the
+context token, session and receipt are unchanged. Retirement, a file load and
+unregistering clear the selection and remove copies no running player reads.
+
 ## Explicit saved-result World application
 
 `apply_world(completion, asset_id=...)` consumes an owned `verify_results`
@@ -824,7 +839,7 @@ Native surfaces draw these controls from one descriptor list.
 free of `bpy`: it turns one projected view into ordered descriptors with the
 label, icon, operator and operator properties (the context token, then either
 the request ID and observed revision or a ready Blockout review ID, and any
-asset, purpose, action, or workflow node and step review ID). Each operator descriptor
+asset, purpose, action, or workflow node and step review ID). Each job-action descriptor
 keeps the `ModelJobs.actions` name that MCP `job_status` reports. `import_model`
 draws one control per importable unit that `ModelJobs` projected into the view,
 in classified order, instead of one per GLB media type. The sidebar
@@ -833,11 +848,12 @@ them, draw through `job_recovery.draw_controls`; the compact composer's
 [job strip](UI_STYLE.md#compact-job-strip) dispatches the same descriptors'
 operators with `INVOKE_DEFAULT`, and its job card draws those panels' rows.
 Presence means enabled:
-a descriptor appears only while its action is offered, and rows without an
-operator are status text. Building descriptors reads only in-memory views, the
-current scene's Blockout review and a workflow job's
-[step projection](#native-review-of-waiting-steps), without store reads,
-session creation or scene changes. A descriptor grants nothing: each operator still checks its
+a descriptor appears only while its action, or for playback its downloaded
+result, is offered, and rows without an operator are status text. Building
+descriptors reads only in-memory views, the current scene's Blockout review and
+a workflow job's [step projection](#native-review-of-waiting-steps), without
+store reads, session creation or scene changes. A descriptor grants nothing:
+each operator still checks its
 context token and saved revision or review, and opens its own confirmation or
 destination review where one applies.
 A new saved-job action adds one descriptor here, not a surface-specific branch.
@@ -850,6 +866,16 @@ settled job has a downloaded LDR panorama, one **Make HDRI (N)** descriptor in
 the `prefill` group. A prefill has no `ModelJobs.actions` name because it
 changes no saved job; MCP agents reach the same step with `estimate_cost` on lane
 `panorama` and the saved asset ID.
+
+Downloaded video and audio results also get read-only playback descriptors:
+**Play**, then **Play in Blender** for video or **Waveform** for audio, sharing
+one row per result. They are not `ModelJobs.actions` names: they follow the
+view's saved state (`ready`, `applying`, `apply_failed` or `applied`) and the
+media types `ResultTypes.playback` lists, never change the job, and MCP
+`job_status` does not report them. Their operators recheck the context token,
+saved revision and downloaded receipt, then use the
+[saved media controller](../scenario/blender/result_media.py) described under
+saved-result preview ownership.
 
 No action reconstructs a quote, replays an uncertain submission, guesses a remote
 ID or rebinds the original scene. Missing/stale revisions and retired contexts fail

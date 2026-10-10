@@ -709,6 +709,36 @@ were unchanged. This is desktop interaction evidence, not human listening,
 paid provider acceptance, other OS desktop coverage or resolution of #263.
 Native exact-ZIP tests separately decode synthetic MP4, WebM, MP3, WAV and OGG.
 
+## Saved media playback and waveform
+
+Each downloaded saved video or audio result gets one row of saved-job
+descriptors: **Play video (N)** with **Play in Blender (N)**, or **Play audio
+(N)** with **Waveform (N)**. Numbering counts every saved asset, like **Add
+video/audio strip (N)**. Jobs, Generations and the Studio pages that reuse them
+draw the same row from the same descriptors. These controls are read-only: they
+generate, download, apply and spend nothing and leave the scene unchanged, so
+they open no confirmation, and their tooltips say so. They are not job actions:
+MCP `job_status` does not list them, and no MCP tool launches a player. Play
+reports through the status line once the private copy opens or fails, and is
+unavailable in background Blender.
+
+The waveform box follows the job's controls: a `SOUND` header naming the result,
+with a close button, then status text wrapped to the sidebar width, **Cancel**
+while loading, the waveform icon when ready and **Retry** after an error or
+cancellation. Wrap columns and icon size use `preferences.system.ui_scale` (1
+when background Blender reports 0), never the pixel size times the resolution
+scale, which would count that scale twice. Drawing reads only the controller's
+cached state: no file, store or session access, decode or property write. The
+icon is built in the controller's timer, outside drawing.
+
+Installed exact-ZIP tests on Blender 5.1.2 macOS arm64 cover the descriptor
+rows and their operators, recording-layout draws with file and store reads
+refused, the UI-scale sizing, the Jobs panel drawing the box, and an offline
+waveform decoded by the real child Blender. Physical input, focus, viewport
+interaction, screenshots at UI scales 1.0 and 2.0, an opened system or animation
+player and human listening are not yet recorded; they remain #189 and #68
+acceptance.
+
 ## Saved static model confirmation
 
 Show one import control for each supported GLB result, labelled as in

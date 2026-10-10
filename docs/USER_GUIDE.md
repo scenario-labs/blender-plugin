@@ -130,7 +130,7 @@ Where things are:
 
 - **Scenario**: what to generate. Lane tabs with Scenario's modality icons, laid out Image / Video / 3D, Audio / Materials / Environment, Render Image / Render Video, Blockout. Below the tabs, the form of the lane.
 - **Jobs**: what is running, all lanes together, with a count in the header: "Prompt Spark is writing the look", "uploading and submitting", "submitted", "queued", "generating", "finished on Scenario". A finished generation stays here until its results are downloaded and applied: "finished on Scenario", "downloading results", then "results saved" until you apply them (the Image lane imports supported images by itself). Finished Prompt Spark, Translate and Blockout requests need no download, so they are listed under Generations, also after **Inspect saved jobs**. While Scenario reports a measured fraction, a progress bar shows its percentage; a provider may report none, or stay at 0% until done, so the job may only say "generating". The status refreshes about every two seconds without moving the mouse. "Status is not updating" marks the last reported status. With online access disabled, Blender stops checking and downloading until you allow it again, and the job says so ("Status paused" or "Download paused while online access is disabled"); the job itself continues on Scenario. After a restart, status appears once you choose **Refresh status** or **Resume download**. An approved request that has not been sent yet offers **Cancel prepared job**: a generation, workflow, Blockout, Prompt Spark or Translate request waiting behind other work, or one left over after a restart. Prompt Spark, Translate, Blockout and restarted requests appear here after **Inspect saved jobs**. After confirmation (**Discard unsent job**) it is canceled locally; nothing is sent to Scenario. A canceled Film task stays reserved, so use a new take name to try again. A request already being submitted cannot be canceled this way. A running generation offers **Cancel generation** only when Scenario reports it as an inference job, the only kind its API documents as cancellable; after a restart, choose **Refresh status** first. Other running jobs show no cancel button: they finish or fail on Scenario and stay recoverable from saved jobs.
-- **Generations**: what came back. Each entry has a header (type icon, start of the prompt, price, a collapse arrow), the model, the asset id (click it to copy), a failure marker when something went wrong, the output thumbnail and the actions of its kind (images: View image, Use as reference (3D image to 3D, Image, Video, Render Image style, Render Video style), Remove background, Apply as texture, Add as plane; 3D: Add to scene, Select, Delete; video: Play, Play in Blender, Add video strip; audio: Play, Add to sequencer; applied materials: **Apply saved material** again under **Reuse saved results**). The refresh button **reloads the parameters**: lane, model, prompt, every setting sent and the references come back into the form, ready to tweak and generate again. Objects a generation created are stamped with its id on import, so Select and Delete find them after renames. The info button opens Details: the full prompt, the settings sent, the references with their asset ids, the result assets, the files, the errors. Collapse an entry to keep only its icon and prompt. **Collapse all / Expand all** changes every entry from the panel header. A failed entry has a red error control: hover for the message, or click to read and copy the full text. Then, with the Project history (cloud) checkbox on, the project's cloud history: generations made on the web app, by agents or on another machine, with **Save for recovery** for completed model jobs. Saved jobs use explicit download and destination approval; see [Generations](#generations).
+- **Generations**: what came back. Each entry has a header (type icon, start of the prompt, price, a collapse arrow), the model, the asset id (click it to copy), a failure marker when something went wrong, the output thumbnail and the actions of its kind (images: View image, Use as reference (3D image to 3D, Image, Video, Render Image style, Render Video style), Remove background, Apply as texture, Add as plane; 3D: Add to scene, Select, Delete; video: Play, Play in Blender, Add video strip; audio: Play, Waveform for saved results, Add strip; applied materials: **Apply saved material** again under **Reuse saved results**). The refresh button **reloads the parameters**: lane, model, prompt, every setting sent and the references come back into the form, ready to tweak and generate again. Objects a generation created are stamped with its id on import, so Select and Delete find them after renames. The info button opens Details: the full prompt, the settings sent, the references with their asset ids, the result assets, the files, the errors. Collapse an entry to keep only its icon and prompt. **Collapse all / Expand all** changes every entry from the panel header. A failed entry has a red error control: hover for the message, or click to read and copy the full text. Then, with the Project history (cloud) checkbox on, the project's cloud history: generations made on the web app, by agents or on another machine, with **Save for recovery** for completed model jobs. Saved jobs use explicit download and destination approval; see [Generations](#generations).
 
 - **Agents (MCP)**: the local MCP server, its token, one-click client setups, the Python permission.
 
@@ -244,6 +244,18 @@ Text, images or your Blender scene to video (Seedance 2.0 and 2.5, Kling, Veo, W
   a fresh approval can insert another saved variant or reuse the same one. Select the destination
   scene in the Sequencer header to see the strip. The independent local media
   copy must remain available if you move or share the blend file.
+- Saved video results also offer **Play video (N)** and **Play in Blender (N)**
+  in the same saved-job controls: in Jobs while a result awaits review, and in
+  Generations after it is applied. Play opens a private, read-only copy in your
+  system's default player. Play in Blender opens one in Blender's animation player,
+  a separate Blender process started without your Scenario credentials. The copy
+  is checked against the saved download receipt and named `media` plus the saved
+  type's extension, so the player never receives the saved file or its downloaded
+  name. Nothing is generated, downloaded, spent or changed in the scene, and both
+  work with Online Access disabled. The status line reports when the player opened
+  or why the copy failed. Play in Blender shows the picture; whether that player
+  also plays the soundtrack has not been verified. At most two animation players
+  run at a time. See [Audio](#audio) for MP4, WebM, MOV, MKV and AVI limits.
 - Retained prototype results offer **Play** (system player), **Play in Blender**,
   or **Add video strip**.
   Add video strip inserts the downloaded picture frames at the current frame on
@@ -376,25 +388,30 @@ Select the destination scene in the Sequencer header to inspect the strip.
 
 ![Confirmed saved audio inserted once at the approved frame in Blender Sequencer](images/saved-media-result.png)
 
-The following playback and preview controls describe retained prototype results.
-Speech, music and sound effects: ElevenLabs Music v2, Google Lyria 3, ACE-Step 1.5, Minimax Music 3.0, ElevenLabs 3 (speech), Gemini 3.1 Flash TTS, ElevenLabs Sound Effects 2, Sonilo (text or video to SFX and music), and every other text-to-audio, audio-to-audio or video-to-audio model through the picker. Results go to `audio/<date>/` in the output folder; in Generations, **Play** opens them with the system player and **Add to sequencer** drops a sound strip at the current frame on a free channel.
+Saved audio results also offer **Play audio (N)**, which opens a verified
+private copy in your system player exactly as for video, and **Waveform (N)**,
+which shows the saved audio's waveform below the job's controls without playing
+or submitting anything. A separate offline Blender process decodes the verified
+saved file, so the interface stays responsive while it loads, even with Online
+Access disabled. **Cancel** stops a loading waveform and its decoder, **Retry**
+decodes again after a failure or cancellation, and the close button hides it.
+The waveform scales with the sidebar and draws one envelope for all channels:
+peak bars with brighter RMS cores, and a gray line where the audio is silent.
+Below it, a line gives the duration, channel layout and sample rate, and says
+when the audio is silent. A decoded waveform is kept for that exact saved file,
+so showing it again, including after a restart, needs no new decode. Selecting
+another result's waveform replaces it; changing credentials or project, or
+opening a file, hides it.
 
-For a downloaded result, **Preview waveform** shows a local snapshot without
-playing or submitting anything. A separate offline Blender process decodes the
-file, so the interface stays responsive while it loads. Select another result to
-replace the preview; **Cancel** stops a loading preview and its decoder without
-changing the file or the Play/Add actions. The preview scales with the sidebar
-and draws one envelope for all channels: peak bars with brighter RMS cores.
-Select Preview again to capture a file that changed on disk. Loading times out
-after 30 seconds. Try another file after a timeout. If the error says readers
-remain occupied, retry when the storage responds or restart Blender; Cancel
-cannot interrupt a stuck operating-system file check.
-
-Preview supports WAV, MP3, Ogg, FLAC, M4A and AAC files that Blender's audio
+Waveforms support WAV, MP3, Ogg, FLAC, M4A and AAC files that Blender's audio
 decoder reads, up to 256 MiB, ten minutes, eight channels, 192 kHz and 64 Mi
 decoded samples, enough for ten minutes of 48 kHz stereo. Missing, corrupt, too
-long or unsupported audio shows an error; Play and Add remain available for
-formats supported by their respective players.
+long or unsupported audio shows an error with **Retry**; Play and Add remain
+available. Play accepts the same audio types and MP4, MOV, WebM, MKV and AVI
+video up to 512 MiB; the copy must match its saved type's container signature.
+
+The following playback controls describe retained prototype results.
+Speech, music and sound effects: ElevenLabs Music v2, Google Lyria 3, ACE-Step 1.5, Minimax Music 3.0, ElevenLabs 3 (speech), Gemini 3.1 Flash TTS, ElevenLabs Sound Effects 2, Sonilo (text or video to SFX and music), and every other text-to-audio, audio-to-audio or video-to-audio model through the picker. Results go to `audio/<date>/` in the output folder; in Generations, **Play** opens them with the system player and **Add to sequencer** drops a sound strip at the current frame on a free channel. Prototype results have no waveform.
 
 ![Audio lane with ElevenLabs Music v2, a prompt with the Spark, Rewrite and Translate buttons, duration and format settings](images/panel-audio.png)
 
@@ -678,7 +695,7 @@ and the current limits of online-access and agent controls.
 
 - Results: your Output Folder (`~/Downloads/Scenario` by default), `<kind>/<YYYYMMDD>/<date>_<model>_<asset id>_<n>.<ext>`.
 - Film videos: the new `.mp4` file you choose; **Export video...** suggests your Output Folder's `Film` subfolder, and agents can export only inside the Output Folder. Export staging stays in the extension's user state until discarded or the session ends.
-- Captures, Prompt Spark stills and Edit 3D exports: the extension cache (`captures/`, `exports/` under Blender's extension user directory), thumbnails of models in `thumbs/`.
+- Captures, Prompt Spark stills and Edit 3D exports: the extension cache (`captures/`, `exports/` under Blender's extension user directory), thumbnails of models in `thumbs/`. **Play** copies of saved video and audio go to `media-playback/` there and decoded waveforms to `result-previews/`; both are disposable.
 - Job registry, recent models and model cache: the extension's own user directory under Blender's extensions folder; delete it yourself for a clean removal.
 - Your key: saved as plain text in Blender's `userpref.blend` preferences file. Select Credentials > Environment to use `SCENARIO_API_KEY` and `SCENARIO_API_SECRET` instead; switching sources does not erase saved values. Clear both saved fields and save preferences to remove them; rotate the key in Scenario if it leaks.
 

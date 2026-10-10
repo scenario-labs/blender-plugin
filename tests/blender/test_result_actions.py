@@ -43,6 +43,10 @@ class Layout:
     def __init__(self):
         self.calls = []
 
+    def row(self, align=False):
+        self.calls.append(("row",))
+        return self
+
     def label(self, text, icon="NONE"):
         self.calls.append(("label", text, icon, {}))
 
@@ -61,12 +65,18 @@ class Operator:
 
 
 def expected(items):
-    return [
-        ("label", item.label, item.icon, {})
-        if item.operator is None
-        else ("operator", item.operator, item.label, item.icon, dict(item.properties))
-        for item in items
-    ]
+    """Drawn calls: a row opens before each group of descriptors sharing one row key."""
+    calls, row = [], ""
+    for item in items:
+        if item.row and item.row != row:
+            calls.append(("row",))
+        row = item.row
+        calls.append(
+            ("label", item.label, item.icon, {})
+            if item.operator is None
+            else ("operator", item.operator, item.label, item.icon, dict(item.properties))
+        )
+    return calls
 
 
 class ResultActionTests(unittest.TestCase):
@@ -140,6 +150,8 @@ class ResultActionTests(unittest.TestCase):
                 "scenario.read_saved_blockout",
                 "scenario.use_saved_blockout",
                 "scenario.use_saved_first_frame",
+                "scenario.play_saved_media",
+                "scenario.preview_saved_waveform",
             },
         )
         enum = bpy.ops.scenario.recover_job.get_rna_type().properties["action"].enum_items
@@ -156,7 +168,11 @@ class ResultActionTests(unittest.TestCase):
         self.recovery.draw_controls(layout, view)
         self.assertEqual(layout.calls, expected(items))
         self.assertEqual(
-            [call[2] if call[0] == "operator" else call[1] for call in layout.calls],
+            [
+                call[2] if call[0] == "operator" else call[1]
+                for call in layout.calls
+                if call != ("row",)
+            ],
             [
                 "Add video strip (2)",
                 "Add audio strip (3)",
@@ -164,9 +180,14 @@ class ResultActionTests(unittest.TestCase):
                 "Set panorama as World (1)",
                 "Apply to captured source (4)",
                 "Save import receipt",
+                "Play video (2)",
+                "Play in Blender (2)",
+                "Play audio (3)",
+                "Waveform (3)",
                 "Downloaded result awaits application review",
             ],
         )
+        self.assertEqual(layout.calls.count(("row",)), 2)
         self.assertEqual(
             layout.calls[2][4],
             {

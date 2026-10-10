@@ -272,8 +272,12 @@ class UploadCommands:
             )
         except Exception:
             raise UploadError("Could not prepare a stable upload source") from None
-        with self._guard(origin):
-            return self._store.create(intent)
+        try:
+            with self._guard(origin):
+                return self._store.create(intent)
+        except BaseException:
+            self._discard_unrecorded(intent)
+            raise
 
     def initialize(self, request_id, *, expected_revision):
         current = self._current(request_id, expected_revision, {UploadState.PREPARED})
@@ -527,10 +531,10 @@ class UploadCommands:
         return replacement
 
     def _discard_unrecorded(self, intent):
-        """Remove a new snapshot that no saved request owns after a failed restart.
+        """Remove a new snapshot that no saved request owns after prepare or restart fails.
 
-        Only this call knows the fresh request ID, so no other command can
-        record it. A found record or an unreadable store keeps the copy:
+        Only the failing command knows the fresh request ID, so no other command
+        can record it. A found record or an unreadable store keeps the copy:
         leftover private bytes are safer than removing a referenced snapshot.
         """
         try:

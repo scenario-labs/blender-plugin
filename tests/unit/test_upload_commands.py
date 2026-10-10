@@ -935,26 +935,69 @@ def test_stale_origin_is_rejected_before_staging_but_other_scene_is_independent(
     assert env.requests == []
 
 
-def test_invalidation_during_staging_retains_only_owned_orphan_and_original_source(
-    env, monkeypatch
+@pytest.mark.parametrize("failure", ["origin", "inactive", "conflict", "persistence"])
+def test_failed_prepare_discards_its_unrecorded_copy_and_keeps_the_original(
+    env, monkeypatch, failure
 ):
     original = env.sources.stage
+    error = (
+        StoreConflict("synthetic competing request")
+        if failure == "conflict"
+        else StoreError("synthetic persistence failure")
+    )
 
     def stage(*args, **kwargs):
         assert not env.origin_held
         staged = original(*args, **kwargs)
-        env.origins.invalidate(env.origin.scene_id)
+        assert len(tuple(env.root.glob("*/source.bin"))) == 1
+        if failure == "origin":
+            env.origins.invalidate(env.origin.scene_id)
+        elif failure == "inactive":
+            env.coordinator.deactivate()
         return staged
 
+    def create(intent):
+        raise error
+
     monkeypatch.setattr(env.sources, "stage", stage)
-    with pytest.raises(UploadError, match="origin changed"):
+    if failure in {"conflict", "persistence"}:
+        monkeypatch.setattr(env.store, "create", create)
+    with pytest.raises(UploadError if failure in {"origin", "inactive"} else StoreError) as raised:
         prepare(env)
+    if failure == "origin":
+        assert "origin changed" in str(raised.value)
+    elif failure == "inactive":
+        assert "inactive" in str(raised.value)
+    else:
+        assert raised.value is error
     assert env.store.records() == ()
     assert env.requests == []
     assert env.source.read_bytes() == b"abcde"
-    snapshots = tuple(env.root.glob("*/source.bin"))
-    assert len(snapshots) == 1
-    assert snapshots[0].read_bytes() == b"abcde"
+    assert list(env.root.iterdir()) == []
+
+
+@pytest.mark.parametrize("failure", ["recorded", "unreadable"])
+def test_failed_prepare_keeps_a_copy_a_saved_record_may_reference(env, monkeypatch, failure):
+    create = env.store.create
+
+    def uncertain(intent):
+        if failure == "recorded":
+            create(intent)
+        raise StoreError("synthetic persistence failure")
+
+    def unreadable(request_id):
+        raise StoreError("synthetic unreadable store")
+
+    monkeypatch.setattr(env.store, "create", uncertain)
+    if failure == "unreadable":
+        monkeypatch.setattr(env.store, "get", unreadable)
+    with pytest.raises(StoreError, match="synthetic persistence failure"):
+        prepare(env)
+    (snapshot,) = env.root.glob("*/source.bin")
+    assert snapshot.read_bytes() == b"abcde"
+    if failure == "recorded":
+        (record,) = env.store.records()
+        env.sources.verify(record.intent)
 
 
 @pytest.mark.parametrize(

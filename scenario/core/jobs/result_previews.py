@@ -727,7 +727,12 @@ class PreviewCache:
                 discard_directory(child)
 
     def evict(self, *, max_bytes=CACHE_MAX_BYTES, now=None, keep_seconds=60):
-        """Remove least recently used entries beyond the byte budget."""
+        """Remove least recently used entries beyond the byte budget.
+
+        Only bytes actually removed count as freed: an entry the system keeps,
+        such as a file Windows holds open, leaves the next oldest entry in line
+        and is tried again on the next pass.
+        """
         now = time.time() if now is None else now
         entries, total = [], 0
         try:
@@ -756,7 +761,20 @@ class PreviewCache:
             if total <= max_bytes or now - recent < keep_seconds:
                 break
             shutil.rmtree(entry, ignore_errors=True)
-            total -= size
+            total -= size - _remaining_bytes(entry, size)
+
+
+def _remaining_bytes(entry, size):
+    """Regular-file bytes still in one cache entry; all of them if unreadable."""
+    try:
+        files = [item.lstat() for item in entry.iterdir()]
+    except FileNotFoundError:
+        if not os.path.lexists(entry):
+            return 0
+        return size
+    except OSError:
+        return size
+    return sum(item.st_size for item in files if stat.S_ISREG(item.st_mode))
 
 
 def server_sources(record, target):

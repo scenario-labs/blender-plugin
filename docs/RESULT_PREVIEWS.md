@@ -138,9 +138,12 @@ match its sidecar; anything else is a cache miss. Publication never replaces a
 valid entry. At most every ten minutes the lane removes abandoned work
 directories older than a day and evicts the least recently used entries beyond
 512 MiB, keeping entries used in the last minute. A ready status can therefore
-outlive its file; an explicit retry reads or fetches it again. The cache is safe
-to delete, even while Blender runs: each lane command recreates the root as a
-private directory when its parent still exists.
+outlive its file; an explicit retry reads or fetches it again. Only removed bytes
+count toward the budget: an entry the system refuses to delete, such as a file
+another process holds open on Windows, leaves the next oldest entry to go
+instead and is tried again on the next pass. The cache is safe to delete, even
+while Blender runs: each lane command recreates the root as a private directory
+when its parent still exists.
 
 ## Lane and ownership
 

@@ -716,6 +716,52 @@ def test_eviction_and_sweep_remove_only_owned_stale_entries(env, tmp_path):
     assert unrelated.exists()
 
 
+@pytest.mark.parametrize("failure", ["whole", "partial"])
+def test_eviction_counts_only_freed_bytes_when_an_entry_cannot_be_removed(
+    env, monkeypatch, failure
+):
+    cache = previews.PreviewCache(env.cache)
+    entries = []
+    for index in range(3):
+        key = previews.PreviewKey("a" * 64, "b" * 64, f"asset-{index}", "video/mp4", "c" * 64, 1)
+        staged = cache.workspace() / "file"
+        staged.write_bytes(JPEG)
+        preview = cache.publish(
+            key,
+            STILL,
+            staged,
+            media_type="image/jpeg",
+            size=len(JPEG),
+            sha256=hashlib.sha256(JPEG).hexdigest(),
+            width=32,
+            height=24,
+        )
+        cache.discard(staged.parent)
+        stamp = time.time() - 1000 + index
+        for path in preview.path.parent.iterdir():
+            os.utime(path, (stamp, stamp))
+        entries.append((key, preview))
+    locked = entries[0][1].path.parent
+    remove = shutil.rmtree
+
+    def rmtree(path, ignore_errors=False):
+        # Windows can refuse to delete a file another process keeps open.
+        if Path(path) != locked:
+            return remove(path, ignore_errors=ignore_errors)
+        if failure == "partial":
+            for item in Path(path).iterdir():
+                if item != entries[0][1].path:
+                    item.unlink()
+        return None
+
+    monkeypatch.setattr(previews.shutil, "rmtree", rmtree)
+    cache.evict(max_bytes=len(JPEG) * 2 + 1024)
+    # The locked entry still uses its bytes, so the next oldest one goes instead.
+    assert entries[0][1].path.exists()
+    assert cache.read(entries[1][0], STILL) is None
+    assert cache.read(entries[2][0], STILL) == entries[2][1]
+
+
 def test_publish_keeps_an_existing_valid_entry(env):
     cache = previews.PreviewCache(env.cache)
     key = previews.PreviewKey("a" * 64, "b" * 64, "asset", "video/mp4", "c" * 64, 1)

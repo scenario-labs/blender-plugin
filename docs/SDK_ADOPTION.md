@@ -537,19 +537,20 @@ alternatives.
 
 A conditional rule can name a sibling input that the schema does not declare.
 The service validates only the inputs it declares, and a public schema can omit
-a hidden input that a rule still names. Nothing can set such a sibling, so
-`parse_schema` treats it as never defined: `ifDefined` never applies, and
-`ifNotDefined` makes the input always required. Native panels, local MCP
-`model_schema` and validation, strict form preparation and SDK estimation all
-use that result, so the schema is priced instead of refused. Undeclared names
-remain unknown parameters and are never sent. The captured Seedance 2.0 Mini
-record is the regression: its first-frame rule names an undeclared last-frame
-input, so the first frame is optional. Known sibling relationships remain
-enforced in every path. A rule that is not an object, or whose names are not
-nonblank strings, still fails strict preparation before dispatch; the native
-panel drops blank names so the description can still render. This assumes the
-hidden input has no default; if one did, the dry run would report the service's
-error and nothing would be spent.
+a hidden input that a rule still names. The plugin never sends an input the
+schema does not declare (it is refused as an unknown parameter), so such a
+sibling is never defined in its requests. `parse_schema` therefore treats it as
+never defined: `ifDefined` never applies, and `ifNotDefined` makes the input
+always required. Native panels, local MCP `model_schema` and validation, strict
+form preparation and SDK estimation all use that result, so the schema is priced
+instead of refused. The captured Seedance 2.0 Mini record is the regression:
+its first-frame rule names an undeclared last-frame input, so the first frame is
+optional. Known sibling relationships remain enforced in every path. A rule that
+is not an object, or whose names are not nonblank strings, still fails strict
+preparation before dispatch; the native panel drops blank names so the
+description can still render. This assumes the hidden input has no default; if
+one did, the dry run would report the service's error and nothing would be
+spent.
 
 The pure LoRA/composition routing helper retains required base-model wiring and
 existing scale alignment behavior. Its sanitized remote-MCP projection and

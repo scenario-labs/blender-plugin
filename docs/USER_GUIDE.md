@@ -253,7 +253,9 @@ again and refuses one that was deleted, is no longer accessible, changed type or
 is not trained, before any price is requested. A choice belongs to the
 credentials and project that made it: after switching either, choose it again.
 **Reload parameters** restores a generation's LoRAs or composition when they are
-still listed. Trained models are experimental here: generation results with them
+still listed. A composition ID typed into **LoRA or Composition Model** with an
+earlier version appears there too, as the form's choice: check it, or remove it
+and choose again in the picker. Trained models are experimental here: generation results with them
 have not been accepted yet, project defaults and sidebar strength sliders are not
 available yet, and training stays in Scenario's web app.
 

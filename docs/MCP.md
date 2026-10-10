@@ -712,6 +712,11 @@ Inspection returns only the enabled parameters used by the render lane. Its
 `parameters` object can be passed back to `configure`, including numeric choices
 represented by Blender's string enum identifiers. Only declared numeric choices
 accept these strings; other numeric settings still require JSON numbers.
+Inspection also lists `trained_models`: the LoRAs or composition chosen for the
+Render Image form in the native picker's Trained chip, each with its kind and
+rounded strength. The render quote and generation include them, and a choice
+that cannot run blocks preparation with its reason. MCP cannot change this
+choice yet ([#97](https://github.com/scenario-labs/blender-plugin/issues/97)).
 
 Raw render-lane parameter calls now fail with preparation guidance. Use the
 ordinary Image/Video lanes for direct model parameters. Scene capture, file

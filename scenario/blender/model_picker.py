@@ -48,6 +48,8 @@ _ctx = {
     "panorama_only": False,
     "offers": {},  # model_id -> trained_offers.Offer of the rows under the Trained chip
     "strength": None,  # the highlighted LoRA's strength control on the chosen base
+    "choice": None,  # (offer id, base id) the highlighted row runs with, kept across list rebuilds
+    "open": False,  # whether the picker dialog is open; only then may list deliveries read bases
 }
 _pending_thumbs = set()
 _pending_lock = threading.Lock()
@@ -263,10 +265,19 @@ def is_trained_view(wm=None):
     )
 
 
+def trained_view_open(wm=None):
+    """Whether an open picker dialog shows the Trained chip.
+
+    The chip stays selected on the window manager after the dialog closes, so
+    list deliveries ask this before they start base-description reads.
+    """
+    return _ctx["open"] and bool(_ctx["lane"]) and is_trained_view(wm)
+
+
 def refresh_trained():
     """Rebuild trained rows when their records or base descriptions change (main thread, not draw)."""
     wm = bpy.context.window_manager
-    if is_trained_view(wm) and _ctx["lane"]:
+    if trained_view_open(wm):
         refilter(wm)
 
 
@@ -396,6 +407,7 @@ def _on_base_change(self, context):
     offer, base = highlighted_offer(self), chosen_base(self)
     strength = trained_offers.strength(base.slot) if base is not None else None
     _ctx["strength"] = strength
+    _ctx["choice"] = (offer.id, base.id) if offer is not None and base is not None else None
     if offer is None or strength is None or offer.kind != TRAINED_LORA:
         return
     current = _current_scale(offer, base)
@@ -406,11 +418,23 @@ def _on_highlight(self, context):
     offer = highlighted_offer(self)
     if offer is None:
         _ctx["strength"] = None
+        _ctx["choice"] = None
         return
+    kept = _ctx["choice"]
     try:
+        if kept is not None and kept[0] == offer.id and kept[1] in {b.id for b in offer.bases}:
+            # The same row after its list was rebuilt (base reads, the trained list):
+            # keep the user's base and strength. The enum stores a position that new
+            # bases can shift, so name the base again.
+            value = self.scenario_picker_strength
+            self.scenario_picker_base = kept[1]
+            if offer.kind == TRAINED_LORA and _ctx["strength"] is not None:
+                self.scenario_picker_strength = value  # its update keeps it within range
+            return
         self.scenario_picker_base = _default_base(offer)  # its update sets the strength
     except TypeError:
         _ctx["strength"] = None
+        _ctx["choice"] = None
 
 
 def _on_strength_change(self, context):
@@ -429,6 +453,8 @@ def prepare(context, lane, category="all"):
     lane_state = scene.scenario.lane_state(lane)
     wm = context.window_manager
     _ctx["lane"] = lane
+    _ctx["open"] = True  # execute() and cancel() close it
+    _ctx["choice"] = None  # a new dialog starts from the form's base and strength
     _ctx["current"] = (
         (lane_state.model_key or lane_state.model_id) if lane_state is not None else ""
     )
@@ -802,7 +828,11 @@ class SCENARIO_OT_pick_model(bpy.types.Operator):
         muted.enabled = False
         muted.label(text=record.id)
 
+    def cancel(self, context):
+        _ctx["open"] = False
+
     def execute(self, context):
+        _ctx["open"] = False  # OK closes the dialog, whether or not the choice applies
         if is_trained_view(context.window_manager):
             try:
                 model_id, target = apply_trained_choice(context, self.lane)

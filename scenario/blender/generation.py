@@ -138,6 +138,9 @@ def process_catalog_events():
                     # A later Trained chip or refresh may read the private list again.
                     runtime.state.trained_loading = False
                     runtime.state.trained_error = "Could not read trained models"
+                elif event[0] == "trained_bases":
+                    # End the scan so the picker stops showing progress; a refresh retries it.
+                    trained_models.stop_scan(event[1], "Could not read base model descriptions")
                 runtime.set_message("Could not read a model description; refresh the catalog")
         return bool(events)
     return False

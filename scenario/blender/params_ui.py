@@ -97,7 +97,13 @@ def sync_params(lane_state, schema, model_id):
             if created and not has_default and not spec.required_always:
                 _seed(item, "enabled", False)
     for index in range(len(lane_state.params) - 1, -1, -1):
-        if lane_state.params[index].name not in keep:
+        item = lane_state.params[index]
+        if item.name not in keep:
+            if item.name in hidden and item.model_id == model_id:
+                from . import trained_models
+
+                # An earlier version drew this LoRA input as text; keep a saved ID visible.
+                trained_models.adopt_typed(lane_state, item)
             lane_state.params.remove(index)
     return seeded
 

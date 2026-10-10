@@ -213,6 +213,17 @@ class JobManager:
                 )
             )
             return
+        except Exception as err:
+            # Any other failure must still end loading, or the private list could never be
+            # read again on this connection. Its message stays out of logs and the UI.
+            log.warning("trained models: %s", type(err).__name__)
+            self.catalog_events.put(
+                (
+                    "trained_catalog_failed",
+                    {"catalog": catalog, "error": "Could not read trained models"},
+                )
+            )
+            return
         self.catalog_events.put(
             (
                 "trained_catalog",

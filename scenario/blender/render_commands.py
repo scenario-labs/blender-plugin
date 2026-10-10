@@ -19,6 +19,7 @@ from . import (
     render_lanes,
     render_references,
     runtime,
+    trained_models,
 )
 
 _FIELDS = {
@@ -105,6 +106,15 @@ def inspect(scene, lane):
         "parameters": {
             key: value for key, value in values.items() if enabled.get(key) and key not in hidden
         },
+        # LoRAs or a composition chosen in the native picker; quotes and generation include them.
+        "trained_models": [
+            {
+                "model_id": slot.model_id,
+                "kind": slot.kind,
+                "strength": trained_models.slot_scale(slot),
+            }
+            for slot in state.trained
+        ],
         "references": references,
         "first_frame_route": render_lanes.first_frame_route(schema)
         if schema is not None and lane == "render_video"

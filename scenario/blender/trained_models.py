@@ -93,7 +93,7 @@ def on_catalog(pairs, private=()):
     _rearm_selections()
     from . import model_picker
 
-    if model_picker.is_trained_view() and model_picker._ctx["lane"]:
+    if model_picker.trained_view_open():  # never for a closed dialog's leftover chip
         request_bases(model_picker._ctx["lane"])
     _refresh_picker()
 
@@ -107,12 +107,22 @@ def on_catalog_failed(reason):
 
 
 def _rearm_selections():
-    """Reprice lanes whose trained choice waited for this list; quoted forms stay quoted."""
+    """Reprice lanes whose trained choice waited for this list; quoted forms stay quoted.
+
+    A choice adopted from an earlier version's text field (adopt_typed) learns
+    its kind and name once the list names it.
+    """
+    state = runtime.state
+    kinds = {record.id: kind for kind, record in state.trained_pairs}
     for scene in bpy.data.scenes:
         if not hasattr(scene, "scenario"):
             continue
         for lane in props.GENERATION_LANES:
             lane_state = scene.scenario.lane_state(lane)
+            for slot in lane_state.trained:
+                if not slot.kind and kinds.get(slot.model_id) in catalog.USABLE_TRAINED_KINDS:
+                    slot.kind = kinds[slot.model_id]
+                    slot.name = state.trained_records[slot.model_id].name
             if len(lane_state.trained) and lane_state.estimate_state in ("UNAVAILABLE", "IDLE"):
                 props.mark_estimate_dirty(lane_state)
 
@@ -186,6 +196,14 @@ def on_bases(payload):
         pending=not payload["done"],
     )
     _refresh_picker()
+
+
+def stop_scan(payload, reason):
+    """End a lane's scan whose progress could not be applied; a refresh lets the chip retry it."""
+    lane = payload.get("lane") if isinstance(payload, dict) else None
+    scan = runtime.state.trained_scans.get(trained_lane(lane)) if isinstance(lane, str) else None
+    if scan is not None:
+        scan.update(pending=False, error=reason)
 
 
 def scan_status(lane):
@@ -369,6 +387,32 @@ def restore(lane_state, lane, record, payload):
     ]
     _write(lane_state, trained_lane(lane), _resolved(chosen, slot), slot, scope)
     return len(wanted) - len(chosen)
+
+
+def adopt_typed(lane_state, item):
+    """Keep a trained model ID an earlier version saved in a LoRA text field (#97).
+
+    Called by params_ui.sync_params before it drops a form value for one of the
+    base's LoRA inputs, which are no longer drawn as text. When the form has no
+    trained choice yet, an enabled ID typed into the model input becomes that
+    choice instead of disappearing silently from the request: it runs when it
+    is listed and the base accepts it, otherwise it blocks the price with the
+    reason, and the Model row offers its remove button. A choice saved without
+    a connection gets no scope tag and must be chosen again. Returns whether a
+    choice was added.
+    """
+    value = item.str_value.strip()
+    if item.ptype != "model" or not item.enabled or not value or len(lane_state.trained):
+        return False
+    state = runtime.state
+    kinds = {record.id: kind for kind, record in state.trained_pairs}
+    kind = kinds.get(value, "")
+    slot = lane_state.trained.add()
+    slot.model_id, slot.lane = value, props.lane_of(lane_state)
+    slot.kind = kind if kind in catalog.USABLE_TRAINED_KINDS else ""
+    slot.name = state.trained_records[value].name if slot.kind else value
+    slot[SCOPE] = current_scope() or ""
+    return True
 
 
 def hidden_inputs(model_id):

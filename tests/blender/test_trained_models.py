@@ -232,6 +232,58 @@ class TrainedModelTests(unittest.TestCase):
         self.picker.prepare(bpy.context, "image")
         self.assertNotIn(LORA_A, [item.model_id for item in self.wm.scenario_picker_items])
 
+    def test_a_closed_dialog_left_on_the_trained_chip_starts_no_base_reads(self):
+        self.load_catalog()
+        self.open_trained()
+        self.assertEqual(len(self.gets(FLUX1)), 1)
+        self.picker.SCENARIO_OT_pick_model.cancel(types.SimpleNamespace(), bpy.context)
+        self.assertEqual(self.wm.scenario_picker_category, "trained")  # the chip stays selected
+        self.assertFalse(self.picker.trained_view_open())
+        # Another project retires the connection with its descriptions and scans.
+        self.addCleanup(setattr, self.prefs, "project_id", self.prefs.project_id)
+        self.prefs.project_id = "project-b"
+        self.runtime.sync_catalog_context()
+        self.load_catalog()
+        self.assertTrue(self.runtime.state.trained_loaded, self.runtime.state.trained_error)
+        self.assertEqual(len(self.gets(FLUX1)), 1)  # delivering the list read no description
+        self.assertEqual(self.runtime.state.trained_scans, {})
+        self.open_trained()
+        self.assertEqual(len(self.gets(FLUX1)), 2)  # the reopened chip reads for this connection
+
+    def test_a_rebuilt_list_keeps_the_highlighted_base_and_strength(self):
+        self.load_catalog()
+        self.open_trained()
+        self.highlight(STUDIO_LORA)
+        self.wm.scenario_picker_strength = 0.55
+        # Base-description batches and the trained list rebuild the rows while the dialog is open.
+        self.picker.refresh_trained()
+        items = self.wm.scenario_picker_items
+        self.assertEqual(items[self.wm.scenario_picker_index].model_id, STUDIO_LORA)
+        self.assertEqual(self.wm.scenario_picker_base, FLUX1)
+        self.assertEqual(round(self.wm.scenario_picker_strength, 4), 0.55)
+        self.highlight(LORA_A)
+        self.assertEqual(round(self.wm.scenario_picker_strength, 4), 1.0)  # another row starts anew
+        self.highlight(STUDIO_LORA)
+        self.assertEqual(round(self.wm.scenario_picker_strength, 4), 1.0)
+        self.wm.scenario_picker_strength = 0.3
+        self.open_trained()  # a new dialog starts from the form, not from the last dialog
+        self.highlight(STUDIO_LORA)
+        self.assertEqual(round(self.wm.scenario_picker_strength, 4), 1.0)
+
+    def test_an_unusable_base_batch_ends_the_scan_instead_of_hanging(self):
+        self.load_catalog()
+        self.open_trained()
+        scan = self.runtime.state.trained_scans["image"]
+        scan["pending"] = True
+        malformed = {"catalog": self.runtime.state.catalog, "lane": "image"}
+        self.manager.catalog_events.put(("trained_bases", malformed))
+        self.generation.process_catalog_events()
+        self.assertFalse(scan["pending"])
+        self.assertEqual(
+            self.trained.scan_status("image"),
+            "Could not check every base model: Could not read base model descriptions",
+        )
+
     def test_dialog_draw_reads_the_trained_choice_without_writing_it(self):
         self.load_catalog()
         self.open_trained()
@@ -481,6 +533,57 @@ class TrainedModelTests(unittest.TestCase):
         self.assertEqual(self.body()["lorasScale"], [0.3])
         self.assertEqual(bpy.ops.scenario.reload_generation(local_id=plain.local_id), {"FINISHED"})
         self.assertFalse(len(self.lane.trained))
+
+    def test_an_id_typed_by_an_earlier_version_becomes_the_trained_choice(self):
+        """Earlier versions drew the base's LoRA inputs as text; a saved ID is kept, not dropped."""
+        self.load_catalog()
+        self.open_trained()  # reads the FLUX.1 Dev description
+        params_ui = submodule("blender.params_ui")
+        self.lane.model_id = FLUX1
+        schema = self.generation.schema_for(FLUX1)
+
+        def typed(value, enabled=True):
+            item = self.lane.params.add()
+            item.name, item.ptype, item.model_id = "modelId", "model", FLUX1
+            item.str_value, item.enabled = value, enabled
+            params_ui.sync_params(self.lane, schema, FLUX1)
+            self.assertLess(self.lane.params.find("modelId"), 0)  # still never a text field
+
+        typed(COMPOSITION, enabled=False)
+        self.assertFalse(len(self.lane.trained))  # a disabled field sent nothing before either
+        typed(COMPOSITION)
+        (slot,) = self.lane.trained
+        self.assertEqual(
+            (slot.model_id, slot.kind, slot.has_scale, slot.get(self.trained.SCOPE)),
+            (COMPOSITION, "composition", False, self.trained.current_scope()),
+        )
+        body = self.body()
+        self.assertEqual(body["modelId"], COMPOSITION)
+        self.assertNotIn("loras", body)
+        typed("model_other")
+        self.assertEqual([slot.model_id for slot in self.lane.trained], [COMPOSITION])
+        self.lane.trained.clear()
+        typed("model_gone")
+        self.assertEqual([slot.model_id for slot in self.lane.trained], ["model_gone"])
+        request = self.generation.build_request(self.scene, "image", for_estimate=True)
+        self.assertEqual(
+            request.errors, ["Refresh trained models; a selected model is no longer listed."]
+        )
+
+    def test_render_form_inspection_lists_the_trained_choice_its_quotes_include(self):
+        self.load_catalog()
+        render = self.scene.scenario.lane_state("render_image")
+        slot = render.trained.add()
+        slot.model_id, slot.kind, slot.lane = LORA_A, "lora", "render_image"
+        slot.fmin, slot.fmax, slot.has_scale, slot.scale = 0.0, 2.0, True, 0.8
+        slot[self.trained.SCOPE] = self.trained.current_scope()
+        result = submodule("mcp.tools_scenario").render_form({"lane": "render_image"})
+        self.assertEqual(
+            result["trained_models"], [{"model_id": LORA_A, "kind": "lora", "strength": 0.8}]
+        )
+        render.trained.clear()
+        result = submodule("mcp.tools_scenario").render_form({"lane": "render_image"})
+        self.assertEqual(result["trained_models"], [])
 
     def test_private_thumbnails_are_cached_per_connection_and_need_one(self):
         self.load_catalog()

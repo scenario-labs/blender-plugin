@@ -70,6 +70,18 @@ def test_a_private_list_failure_is_reported_without_blocking_anything_else():
     ]
 
 
+def test_an_unexpected_failure_still_ends_loading_without_its_message(caplog):
+    """Otherwise the main thread would wait for this list forever and never read it again."""
+    connection = Catalog(list_error=RuntimeError("synthetic transfer detail"))
+    assert run(JobManager._run_trained, connection) == [
+        (
+            "trained_catalog_failed",
+            {"catalog": connection, "error": "Could not read trained models"},
+        )
+    ]
+    assert "synthetic transfer detail" not in caplog.text and "RuntimeError" in caplog.text
+
+
 def test_base_descriptions_arrive_in_batches_with_progress():
     ids = [f"model_{index}" for index in range(23)]
     details = {model_id: record(model_id) for model_id in ids}

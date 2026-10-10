@@ -154,14 +154,17 @@ Private plain custom models are not listed here.
 
 Base-model descriptions declare the LoRA inputs, so they are read only when the
 Trained chip opens: in lane order, once per connection, with a progress line and
-the reason when reading stops. A catalog refresh never starts these reads; it only
-lets a later Trained chip retry the descriptions that failed.
+the reason when reading stops. A catalog refresh never starts these reads, and
+neither does a trained list that arrives after the dialog closed on this chip; a
+refresh only lets a later Trained chip retry the descriptions that failed.
 
 The highlighted model's box shows its kind, **Runs with** for a single base or a
 **Run with** choice among several (the form's current base when it runs the model,
 otherwise **Choose a base model**; OK refuses until one is chosen), and for a LoRA
 a **Strength** field bounded by the base's declared range. Without a declared
-default, the strength starts at the visible value 1 within that range. A
+default, the strength starts at the visible value 1 within that range. The chosen
+base and strength stay while base descriptions keep arriving and the rows are
+rebuilt; another row or a new dialog starts again from the form. A
 composition shows how many LoRAs it combines with their own strengths. One line
 states the effect on the form: adding to the LoRAs already chosen, changing this
 LoRA's strength, or replacing the form's trained models. Choosing through another
@@ -178,8 +181,12 @@ base's LoRA inputs are never drawn as text fields. Every request writes the choi
 into the base's declared inputs with the same route function local MCP and the
 quote check use; a base change, a model no longer listed, a choice saved under
 another connection or project, or a route the current schema refuses keeps the
-choice and blocks the price with its reason. Strength editing in the sidebar and
-Studio, project defaults and the composer chip label are follow-up work.
+choice and blocks the price with its reason. An ID that an earlier version saved
+in the base's model text field (such as **LoRA or Composition Model**) becomes the
+form's choice when it has none, so it is neither dropped silently nor sent
+unchecked; it gets the same checks and remove button. Strength editing in the
+sidebar and Studio, project defaults and the composer chip label are follow-up
+work.
 
 ## Duration and Match timeline
 

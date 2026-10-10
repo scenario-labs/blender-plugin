@@ -207,6 +207,12 @@ _ORGANIZATION_CHANGED = (
     "The Scenario connection changed; reviews from another connection or an earlier "
     "session are discarded. Inspect assets with list_assets, then prepare the change again"
 )
+_DISCARDED_UNKNOWN = (
+    "Discarded locally, but its apply outcome is unknown: the change may already be in "
+    "Scenario. Tell the user, then inspect the assets' collections and tags with list_assets "
+    "before assuming nothing changed; never repeat the change automatically. This review "
+    "sends nothing more."
+)
 
 
 def _wait_task(task):
@@ -368,8 +374,15 @@ def asset_organization_status(args):
         raise ValueError("action must be status or discard")
     _, owner, context_id, review_id = _organization_context(args)
     owner.poll()
-    status = owner.discard(review_id) if action == "discard" else owner.status(review_id)
-    return _organization_payload(context_id, status)
+    if action == "status":
+        return _organization_payload(context_id, owner.status(review_id))
+    # FINISHED without a result is an unknown apply outcome; discard replaces its
+    # message, so warn here, where poll may have just delivered that outcome.
+    before = owner.status(review_id)
+    payload = _organization_payload(context_id, owner.discard(review_id))
+    if before["phase"] == "FINISHED" and before["result"] is None:
+        payload["note"] = _DISCARDED_UNKNOWN
+    return payload
 
 
 def _workflow_metadata(args, *, detail=False):

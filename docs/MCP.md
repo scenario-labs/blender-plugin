@@ -905,7 +905,10 @@ report a delivery timeout after the apply was already queued; the status shows
 whether the review is still `READY` (nothing was queued), applying or finished.
 A change continues in Blender after a client timeout, and a review never applies
 twice. `action: discard` releases a review that is not applying; nothing is sent.
-A discarded review that was already applied keeps its `result`.
+A discarded review that was already applied keeps its `result`. Discarding a
+review whose apply ended with an unknown outcome returns a note that the change
+may already be in Scenario: inspect the assets' collections and tags with
+`list_assets` before assuming nothing changed, and never repeat it automatically.
 
 Reviews belong to the selected connection, not to a scene: undo and scene
 switches keep them. Loading a file, changing credentials or the Project ID, or a

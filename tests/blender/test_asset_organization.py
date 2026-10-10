@@ -545,3 +545,28 @@ class AssetOrganizationToolTests(unittest.TestCase):
         self.assertIn("after it was applied", discarded["note"])
         self.assertIn("report its result", discarded["note"])
         self.assertEqual(len(self.service.writes), 1)
+
+    def test_discarding_an_unknown_apply_outcome_still_warns(self):
+        review = self.ready(operation="update_tags", asset_ids=["asset-a"], add_tags=["x"])
+        # A failure after the write was sent leaves the apply outcome unknown.
+        self.enterContext(
+            patch.object(self.organization._Execution, "verify", side_effect=RuntimeError(PRIVATE))
+        )
+        # The client gave up on apply, then one discard call polls and discards.
+        self.tools.apply_asset_organization(
+            {"context_id": review["context_id"], "review_id": review["review_id"]}
+        )
+        owner = self.runtime.state.job_session.asset_organization
+        with self.assertRaises(RuntimeError):
+            owner.task(review["review_id"]).result(5)
+        discarded = self.status(review, action="discard")
+        self.assertEqual(discarded["phase"], "DISCARDED")
+        self.assertIsNone(discarded["result"])
+        self.assertIn("outcome is unknown", discarded["note"])
+        self.assertIn("may already be in Scenario", discarded["note"])
+        self.assertIn("collections and tags with list_assets", discarded["note"])
+        self.assertIn("never repeat the change", discarded["note"])
+        self.assert_public(discarded)
+        # The write did reach the service, exactly once.
+        self.assertEqual(self.service.assets["asset-a"]["tags"], ["x"])
+        self.assertEqual(len(self.service.writes), 1)

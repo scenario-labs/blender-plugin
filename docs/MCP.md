@@ -823,12 +823,18 @@ and price. `run_workflow` requires its `quote_id`, the same workflow and origina
 parameters, and that exact decimal string as `approved_cost`.
 
 Both tools also return `loop_steps`, `quote_may_understate` and `cost_warning`.
-`loop_steps` counts ForEach steps in the retrieved workflow definition; it is
-`null` when the flow is missing or contains a nested workflow step that the quote
-does not read. The server's dry run prices one pass through a loop, so a run
-that iterates more often can be charged more than `cu_cost_exact`. Show the
-warning with the price. It never blocks approval, and `job_status` keeps
-reporting the approved quote rather than the final charge.
+`loop_steps` counts loop nodes in the retrieved workflow definition: nodes of
+type `for-each` and any node that carries a ForEach field (`loopBodyNodeIds`,
+`count`, `loopNodeId` or `iterationIndex`). It is 0 only when every node has a
+known non-loop type. It is `null`, with the warning, when the flow is missing or
+malformed, contains a nested `workflow` step that the quote does not read, or
+has a node whose type is missing, not a string or not a known type. Known
+non-loop types are those of the SDK 2.2.0 `WorkflowFlow.type` other than
+`for-each` and `workflow`, plus the `user-selection` type seen in live workflow
+jobs. The server's dry run prices one pass through a loop, so a run that
+iterates more often can be charged more than `cu_cost_exact`. Show the warning
+with the price. It never blocks approval, and `job_status` keeps reporting the
+approved quote rather than the final charge.
 
 Approval is bound to the current scene revision, file, credential and project.
 It is consumed before local persistence and the single paid dispatch. A timeout

@@ -13,13 +13,17 @@ import pytest
 
 from scenario import __version__
 from scenario.core.api.sdk_adapter import (
+    LOOP_NODE_FIELDS,
     MODEL_BULK_LIMIT,
+    NON_LOOP_NODE_TYPES,
     AdapterError,
     AdapterUnavailable,
     Credentials,
     SDKAdapter,
     model_identifiers,
+    workflow_loop_steps,
 )
+from scenario.core.ui.costs import workflow_quote_notice
 
 URL = "https://service.example.invalid/v1"
 MODEL = {
@@ -973,11 +977,27 @@ def test_other_model_read_failures_keep_generic_errors(adapter, status):
         assert not isinstance(other.value, AdapterUnavailable)
 
 
+# SDK 2.2.0 WorkflowFlow.type values other than for-each and workflow, plus the
+# user-selection node observed in live workflow job flows.
+NON_LOOP_TYPES = (
+    "custom-model",
+    "generate-prompt",
+    "list",
+    "logic",
+    "model",
+    "remove-background",
+    "transform",
+    "user-approval",
+    "user-selection",
+)
+
+
 @pytest.mark.parametrize(
     "flow,expected",
     [
         ([{"id": "step", "type": "custom-model"}], 0),
         ([], 0),
+        ([{"id": f"node-{kind}", "type": kind} for kind in NON_LOOP_TYPES], 0),
         (
             [
                 {"id": "loop-a", "type": "for-each", "loopBodyNodeIds": ["step"]},
@@ -986,12 +1006,28 @@ def test_other_model_read_failures_keep_generic_errors(adapter, status):
             ],
             2,
         ),
-        # Unknown coverage: a missing or malformed flow, or a nested workflow
-        # whose own definition this quote does not read.
+        # Any loop field marks a loop node, whatever its declared type.
+        ([{"id": "a", "type": "custom-model", "loopBodyNodeIds": ["b"]}], 1),
+        ([{"type": "custom-model", "loopNodeId": "x", "iterationIndex": 0}], 1),
+        ([{"id": "a", "type": "transform", "count": 3}], 1),
+        ([{"id": "a", "type": "logic", "iterationIndex": None}], 1),
+        # Unknown coverage: a missing or malformed flow, a nested workflow whose
+        # own definition this quote does not read, or any node whose type is
+        # missing, malformed or not a known non-loop type.
         (None, None),
         ("not a list", None),
+        ({"node": {"type": "custom-model"}}, None),
         ([None], None),
         ([{"id": "nested", "type": "workflow"}], None),
+        ([{"id": "a"}], None),
+        ([{"id": "a", "type": 5}], None),
+        ([{"id": "a", "type": ""}], None),
+        ([{"id": "a", "type": None}], None),
+        ([{"id": "a", "type": ["for-each"]}], None),
+        ([{"type": "ForEach"}], None),
+        ([{"id": "a", "type": "future-node"}], None),
+        ([{"id": "loop", "type": "for-each"}, {"id": "a", "type": "future-node"}], None),
+        ([{"id": "a", "type": "custom-model"}, {"id": "b"}], None),
     ],
 )
 def test_workflow_estimate_reports_loop_steps_from_definition(adapter, flow, expected):
@@ -1002,6 +1038,26 @@ def test_workflow_estimate_reports_loop_steps_from_definition(adapter, flow, exp
     before = copy.deepcopy(workflow)
     estimate = client.estimate_workflow(workflow, {"prompt": "x"})
     assert estimate.loop_steps == expected
+    # Only a definition proven to have no loop omits the one-pass warning.
+    assert workflow_quote_notice(estimate.loop_steps)["quote_may_understate"] is (expected != 0)
     assert estimate.cost == Decimal("0.10000000000000001")
     assert workflow == before
     assert client.estimate_model(copy.deepcopy(MODEL), {"prompt": "x"}).loop_steps == 0
+
+
+@pytest.mark.parametrize("workflow", [None, "fixture-workflow", ["flow"], {}])
+def test_workflow_loop_steps_is_unknown_without_a_definition(workflow):
+    assert workflow_loop_steps(workflow) is None
+
+
+def test_known_non_loop_node_types_match_the_pinned_sdk():
+    """A node type added by an SDK upgrade needs review before it can omit the warning."""
+    from typing import get_args
+
+    from scenario_sdk.types.workflow_retrieve_response import WorkflowFlow
+
+    fields = WorkflowFlow.model_fields
+    sdk_types = set(get_args(fields["type"].annotation))
+    assert sdk_types - {"for-each", "workflow"} == NON_LOOP_NODE_TYPES - {"user-selection"}
+    assert set(NON_LOOP_TYPES) == NON_LOOP_NODE_TYPES
+    assert set(LOOP_NODE_FIELDS) <= {field.alias or name for name, field in fields.items()}

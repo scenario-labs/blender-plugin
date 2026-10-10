@@ -362,10 +362,24 @@ class WorkflowCommandTests(unittest.TestCase):
         )
 
     def test_unknown_flow_is_flagged_without_blocking_approval(self):
-        del self.workflow["flow"]
-        quote = self.quote()
-        self.assertEqual((quote["loop_steps"], quote["quote_may_understate"]), (None, True))
-        self.assertIn("could not be checked", quote["cost_warning"])
-        self.approve(quote)
+        # Coverage is unknown unless every node is proven not to loop.
+        for flow in (
+            None,
+            [{"id": "node-a"}],
+            [{"id": "node-a", "type": 5}],
+            [{"id": "node-a", "type": "ForEach"}],
+            [{"id": "node-a", "type": "future-node"}],
+            [{"id": "node-a", "type": "workflow"}],
+        ):
+            with self.subTest(flow=flow):
+                if flow is None:
+                    self.workflow.pop("flow", None)
+                else:
+                    self.workflow["flow"] = flow
+                quote = self.quote()
+                self.assertEqual((quote["loop_steps"], quote["quote_may_understate"]), (None, True))
+                self.assertIn("could not be checked", quote["cost_warning"])
+                self.tools.discard_workflow_estimate({"quote_id": quote["quote_id"]})
+        self.approve(self.quote())
         self.settle()
         self.assertEqual(len(self.paid), 1)

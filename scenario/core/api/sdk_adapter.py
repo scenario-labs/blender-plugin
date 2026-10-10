@@ -101,7 +101,7 @@ class Estimate:
     response_json: bytes = field(repr=False)
     scope: object = field(repr=False)
     issued_at: float = field(repr=False)
-    # ForEach steps in a quoted workflow definition; None when coverage is unknown.
+    # Loop nodes in a quoted workflow definition; None when coverage is unknown.
     loop_steps: int | None = 0
 
     @property
@@ -113,20 +113,48 @@ class Estimate:
         return _json(self.response_json, exact=True)
 
 
+# SDK 2.2.0 WorkflowFlow.type values that neither loop nor nest a workflow, plus
+# user-selection, observed in live workflow job flows but not in that type.
+NON_LOOP_NODE_TYPES = frozenset(
+    {
+        "custom-model",
+        "generate-prompt",
+        "list",
+        "logic",
+        "model",
+        "remove-background",
+        "transform",
+        "user-approval",
+        "user-selection",
+    }
+)
+# WorkflowFlow fields that only ForEach nodes and their iteration copies carry.
+LOOP_NODE_FIELDS = ("loopBodyNodeIds", "count", "loopNodeId", "iterationIndex")
+
+
 def workflow_loop_steps(workflow):
-    """Count ForEach steps in a retrieved workflow definition, or None if unknown.
+    """Count loop nodes in a retrieved workflow definition, or None if unknown.
 
     The server's workflow dry run prices one pass through a loop, so a run that
-    iterates more often can charge more than its quote. A missing or malformed
-    flow, or a nested workflow step whose definition is not read, is unknown.
+    iterates more often can charge more than its quote. A node is a loop when
+    its type is `for-each` or it carries any ForEach field. The result is 0 only
+    when every node is proven not to loop: a missing or malformed flow, a nested
+    workflow step whose definition is not read, or a node whose type is missing,
+    malformed or not a known non-loop type makes coverage unknown.
     """
     flow = workflow.get("flow") if isinstance(workflow, dict) else None
-    if not isinstance(flow, list) or not all(isinstance(node, dict) for node in flow):
+    if not isinstance(flow, list):
         return None
-    types = [node.get("type") for node in flow]
-    if "workflow" in types:
-        return None
-    return types.count("for-each")
+    loops = 0
+    for node in flow:
+        if not isinstance(node, dict):
+            return None
+        kind = node.get("type")
+        if not isinstance(kind, str) or (kind != "for-each" and kind not in NON_LOOP_NODE_TYPES):
+            return None  # Includes workflow and any renamed or new node type.
+        if kind == "for-each" or any(name in node for name in LOOP_NODE_FIELDS):
+            loops += 1
+    return loops
 
 
 def _reject_constant(value):

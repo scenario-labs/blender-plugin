@@ -1343,11 +1343,12 @@ inclusion checkbox omits it from the request, allowing declared defaults.
 **Request workflow price** starts a shared session quote. **Generate** opens a
 separate confirmation with normalized inputs, scene and the full exact CU price.
 Cancel submits nothing; confirmation rechecks the form, scene, selected session
-and original quote. When the workflow definition has ForEach steps, or its loop
-coverage cannot be checked, the button reads **Generate (from N CU)** and a
-wrapped warning states that the price covers one loop pass and the final charge
-can be higher. The confirmation repeats it. The warning does not disable
-approval. Drawing is read-only and never starts catalog or job workers.
+and original quote. When the workflow definition has loop nodes, or its loop
+coverage cannot be checked (for example, a node type the extension does not
+know), the button reads **Generate (from N CU)** and a wrapped warning states
+that the price covers one loop pass and the final charge can be higher. The
+confirmation repeats it. The warning does not disable approval. Drawing is
+read-only and never starts catalog or job workers.
 Page search/navigation use unsaved WindowManager state; scene form edits require
 a new price. The maintenance pump completes metadata and quote requests even
 after the popup closes. Saved jobs use the existing Jobs and Results controls.

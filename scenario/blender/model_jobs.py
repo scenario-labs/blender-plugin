@@ -17,7 +17,7 @@ from ..core.api.errors import ScenarioError
 from ..core.jobs.coordinator import CancellationUnsupported, RemoteSnapshot, cancellable_job
 from ..core.jobs.records import JobRecord
 from ..core.jobs.store import JobOrigin, JobState, LocalApplicationState, StoredJob, _identity
-from ..core.scene.panorama import WORLD_MEDIA_TYPES
+from ..core.scene.panorama import world_candidate
 from .job_session import (
     ImageResultUncertain,
     MaterialResultUncertain,
@@ -46,6 +46,15 @@ CANCEL_UNSUPPORTED = (
 
 def _snapshot(body):
     return json.dumps(body, sort_keys=True, separators=(",", ":"), allow_nan=False)
+
+
+def _world_assets(record):
+    """Saved results offered as panoramas, in result order; material maps are excluded."""
+    return tuple(
+        item.asset.asset_id
+        for item in record.results
+        if world_candidate(item.asset.media_type, item.asset.texture_role)
+    )
 
 
 def _remember(cache, request_id, values, collection):
@@ -552,6 +561,8 @@ class ModelJobs:
             view.asset_types = {
                 item.asset.asset_id: item.asset.media_type for item in record.results
             }
+            # Drawing reads World candidates here; it has no saved texture roles.
+            view.meta["world_assets"] = _world_assets(record)
             view.meta["saved_revision"] = record.revision
             view.meta["saved_state"] = record.state.value
             view.meta["recovery_actions"] = self.actions(record)
@@ -693,7 +704,7 @@ class ModelJobs:
                 and len(record.intent.mesh_sources[0].mesh_source.objects) == 1
             ):
                 actions.append("apply_mesh_source")
-        if reusable and any(item.asset.media_type in WORLD_MEDIA_TYPES for item in record.results):
+        if reusable and _world_assets(record):
             actions.append("apply_world")
         if reusable:
             try:
@@ -1132,13 +1143,16 @@ class ModelJobs:
         if restore:
             self._world_application(request_id, destination)
         else:
+            candidates = _world_assets(record)
             selected = [
                 item.asset.media_type
                 for item in record.results
-                if item.asset.asset_id == asset_id and item.asset.media_type in WORLD_MEDIA_TYPES
+                if item.asset.asset_id == asset_id and asset_id in candidates
             ]
             if not selected:
-                raise ScenarioError(0, "Choose one saved PNG, JPEG or OpenEXR panorama")
+                raise ScenarioError(
+                    0, "Choose one saved PNG, JPEG or OpenEXR panorama, not a material map"
+                )
             media_type = selected[0]
         ticket = WorldApplicationApproval(
             uuid.uuid4().hex,

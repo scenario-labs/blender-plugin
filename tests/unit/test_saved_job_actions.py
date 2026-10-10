@@ -84,6 +84,8 @@ ASSETS = (
     ("panorama", "image/exr"),
     ("mesh", "model/gltf-binary"),
 )
+# ModelJobs projects World candidates as world_assets.
+WORLD = {"world_assets": ("panorama",)}
 AWAITING = (
     "awaiting_review",
     "status",
@@ -131,17 +133,39 @@ def test_ready_images_offer_import_world_and_material_then_await_review():
         ("third", "image/x-exr"),
     )
     actions = ("import_images", "apply_world", "apply_material")
-    items = sja.describe(view(actions, "ready", assets), CONTEXT, TYPES)
+    candidates = ("first", "second", "third")
+    items = sja.describe(view(actions, "ready", assets, world_assets=candidates), CONTEXT, TYPES)
     world = "scenario.apply_saved_world"
     assert rows(items) == [
         ("import_images", "apply", "scenario.import_saved_images", "Import saved images", "NONE", dict(JOB)),
-        # World numbering counts only panorama candidates, unlike per-asset imports.
+        # World numbering counts every saved asset, as the per-asset imports do.
         asset("apply_world", world, "Set panorama as World (1)", "first", purpose="world"),
-        asset("apply_world", world, "Set panorama as World (2)", "second", purpose="world"),
-        asset("apply_world", world, "Set panorama as World (3)", "third", purpose="world"),
+        asset("apply_world", world, "Set panorama as World (3)", "second", purpose="world"),
+        asset("apply_world", world, "Set panorama as World (4)", "third", purpose="world"),
         ("apply_material", "apply", "scenario.apply_saved_material", "Apply saved material", "NONE", dict(JOB)),
         AWAITING,
     ]  # fmt: skip
+
+
+def test_world_offers_only_projected_candidates_of_an_accepted_media_type():
+    # A 3D package: its PBR maps share PNG with panoramas but are not projected.
+    assets = (
+        ("mesh", "model/gltf-binary"),
+        ("albedo", "image/png"),
+        ("panorama", "image/png"),
+        ("normal", "image/png"),
+        ("depth", "image/webp"),
+    )
+    subject = view(("apply_world",), "ready", assets, world_assets=("panorama", "depth"))
+    items = sja.describe(subject, CONTEXT, TYPES)
+    world = "scenario.apply_saved_world"
+    assert rows(items) == [
+        asset("apply_world", world, "Set panorama as World (3)", "panorama", purpose="world"),
+        AWAITING,
+    ]
+    # Without a projected candidate list, nothing is offered as a World.
+    unprojected = view(("apply_world",), "ready", assets)
+    assert [item.key for item in sja.describe(unprojected, CONTEXT, TYPES)] == ["awaiting_review"]
 
 
 def test_media_and_model_controls_number_every_saved_asset():
@@ -280,7 +304,7 @@ def test_blockout_recovery_follows_the_current_scene_review(review, expected):
 def test_every_offered_action_is_described_with_unique_keys_and_its_action_name():
     for state, length in itertools.product(("ready", "applied"), (1, 2)):
         for actions in itertools.combinations(VOCABULARY, length):
-            items = sja.describe(view(actions, state, ASSETS), CONTEXT, TYPES)
+            items = sja.describe(view(actions, state, ASSETS, **WORLD), CONTEXT, TYPES)
             keys = [item.key for item in items]
             assert len(keys) == len(set(keys)), actions
             offered = {item.action for item in items if item.operator is not None}
@@ -349,7 +373,7 @@ def _mcp_purpose(item):
 
 def test_native_result_applications_have_matching_mcp_purposes():
     schema = ast.literal_eval(_mcp_spec("prepare_result_application")[1])
-    items = sja.describe(view(APPLICATION_ACTIONS, "applied", ASSETS), CONTEXT, TYPES)
+    items = sja.describe(view(APPLICATION_ACTIONS, "applied", ASSETS, **WORLD), CONTEXT, TYPES)
     native = {_mcp_purpose(item) for item in items if item.group == "apply"}
     # Agents can prepare every application a native surface offers.
     assert native == {"import", "world", "restore_world", "material", "mesh_edit", "mesh_source"}

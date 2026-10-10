@@ -91,6 +91,8 @@ class ResultActionTests(unittest.TestCase):
                 "saved_revision": 4,
                 "saved_state": state,
                 "recovery_actions": tuple(actions),
+                # ModelJobs projects the World candidates it found in saved metadata.
+                "world_assets": ("panorama",),
                 **meta,
             }
         )

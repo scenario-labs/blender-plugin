@@ -158,8 +158,9 @@ def _describe_action(action, view, job, result_types, review):
             ),
         )
     if action == "apply_world":
-        # Panorama numbering counts only the World candidates.
-        world = [key for key in view.asset_ids if view.asset_types.get(key) in result_types.world]
+        # The projection lists World candidates without material maps, which share their
+        # media types. Numbering counts every saved asset, as the import buttons do.
+        candidates = frozenset(view.meta.get("world_assets", ()))
         return tuple(
             SavedJobAction(
                 f"{action}:{asset_id}",
@@ -169,7 +170,8 @@ def _describe_action(action, view, job, result_types, review):
                 operator="scenario.apply_saved_world",
                 properties=(*job, ("asset_id", asset_id), ("purpose", "world")),
             )
-            for index, asset_id in enumerate(world, 1)
+            for index, asset_id in enumerate(view.asset_ids, 1)
+            if asset_id in candidates and view.asset_types.get(asset_id) in result_types.world
         )
     if action in {"apply_mesh", "apply_mesh_source"}:
         source = action == "apply_mesh_source"

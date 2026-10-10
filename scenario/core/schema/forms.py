@@ -495,7 +495,14 @@ def _align_lora_scales(component, fields, selected, values):
                 f"{_label(scale)}: choose a LoRA in {_label(model)} for each strength."
             )
         return
-    if len(set(loras)) != len(loras):
+    chosen = selected.get(component.model_input)
+    # Merging mandatory wiring drops repeats, so check the caller's own list too.
+    repeated = (
+        isinstance(chosen, list)
+        and all(isinstance(item, str) for item in chosen)
+        and len(set(chosen)) != len(chosen)
+    )
+    if repeated or len(set(loras)) != len(loras):
         raise RouteError(f"{_label(model)}: choose each LoRA once.")
     default = scale.get("default")
     per_item = default if _finite_number(default) else None
@@ -514,7 +521,6 @@ def _align_lora_scales(component, fields, selected, values):
     mismatch = RouteError(
         f"{_label(scale)}: provide one strength for each LoRA in {_label(model)}."
     )
-    chosen = selected.get(component.model_input)
     if isinstance(chosen, list) and chosen and chosen != loras:
         # Mandatory wiring added LoRAs: align the caller's strengths by LoRA.
         if len(scales) != len(chosen):

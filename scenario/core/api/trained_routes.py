@@ -302,13 +302,17 @@ def apply(base, picks, trained_records, parameters=None, *, operation="model"):
 
 @dataclass(frozen=True)
 class Reference:
-    """One model ID a payload names in a `model` or `model_array` input."""
+    """One model ID a payload names in a `model` or `model_array` input.
+
+    `model_types` is empty when the input accepts any type and None when its
+    declared `modelTypes` is malformed.
+    """
 
     input: str
     label: str
     index: int | None
     model_id: str
-    model_types: tuple[str, ...]
+    model_types: tuple[str, ...] | None
 
     @property
     def where(self):
@@ -328,7 +332,7 @@ def model_references(schema, payload, names=None):
         if kind not in {"model", "model_array"} or (names is not None and name not in names):
             continue
         value = payload.get(name) if isinstance(payload, dict) else None
-        types = _types(field) or ()
+        types = _types(field)
         label = _label(field)
         if kind == "model" and isinstance(value, str) and value:
             references.append(Reference(name, label, None, value, types))
@@ -368,13 +372,21 @@ def check_references(
     if not references:
         return {}
     slot = LoraSlot.from_schema(schema)
+    for reference in references:
+        if reference.model_types is None:
+            raise RouteError(
+                f"{reference.label}: the model types this input accepts changed or are "
+                "malformed. Refresh the model and try again."
+            )
     records = {}
 
-    def fetch(model_id):
+    def fetch(model_id, too_many=None):
         if model_id in records:
             return records[model_id]
         if len(records) >= limit:
-            raise RouteError(f"Too many models to check (at most {limit}); remove some LoRAs.")
+            raise RouteError(
+                too_many or f"Too many models to check (at most {limit}); remove some LoRAs."
+            )
         try:
             record = read(model_id)
         except AdapterUnavailable as error:
@@ -438,7 +450,11 @@ def check_references(
                     f"{where} lists a malformed LoRA; choose another composition."
                 ) from None
             try:
-                concept_record = fetch(identifier)
+                concept_record = fetch(
+                    identifier,
+                    f"{where} combines too many LoRAs to check (at most {limit}); "
+                    "choose another composition.",
+                )
             except _Unavailable as error:
                 raise RouteError(
                     f"{where} uses a LoRA that is not available to the selected credentials "

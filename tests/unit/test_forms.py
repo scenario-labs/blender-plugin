@@ -118,6 +118,15 @@ def test_lora_wiring_takes_caller_strengths_or_a_declared_default_never_an_inven
     )
     assert values["loras"] == ["model_selected", "model_other"]
     assert values["lorasScale"] == [0.75, 0.4]
+    # Merging the wiring drops the caller's repeated LoRA; refuse it rather
+    # than letting the later strength silently win.
+    for loras in (["model_selected", "model_selected"], ["model_other", "model_other"]):
+        with pytest.raises(RouteError, match="choose each LoRA once"):
+            prepare_run(
+                "model_selected",
+                schema,
+                {"prompt": "stone", "loras": loras, "lorasScale": [0.3, 0.7]},
+            )
 
 
 def test_lora_inputs_are_recognized_from_the_lora_component_not_by_name():

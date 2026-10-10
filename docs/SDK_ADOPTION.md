@@ -356,8 +356,10 @@ deduplicated and bounded at 16 per quote, and the scene origin is rechecked
 before each one. A deleted or inaccessible model (`AdapterUnavailable`, HTTP 403
 or 404), an untrained one, a type the input does not accept, a LoRA in
 `modelIdInput`, a composition whose concept LoRAs the stack would not accept,
-or a strength policy failure raises `RouteQuoteError`, a `QuoteError`. Item
-limits and strength bounds stay form validation errors, as before. Nothing is
+or a strength policy failure raises `RouteQuoteError`, a `QuoteError`. So does
+a chosen model in an input whose declared `modelTypes` is malformed, before any
+reference read, rather than accepting every type. Item limits and strength
+bounds stay form validation errors, as before. Nothing is
 quoted, dispatched or persisted. Model and workflow quotes get the same
 check; workflow `lorasComponent` inputs have no captured contract, so the check
 only restricts them. The coordinator then quotes as before and refuses the

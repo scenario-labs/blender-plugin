@@ -472,11 +472,16 @@ def test_reads_are_bounded_per_quote():
 
 def test_a_composition_concept_counts_toward_the_read_bound():
     reader = Reader(concept_records())
-    with pytest.raises(RouteError, match="at most 2"):
+    with pytest.raises(RouteError) as error:
         trained_routes.check_references(
             record_schema("model", BASES[FLUX1]), {"modelId": COMPOSITION}, reader, limit=2
         )
     assert len(reader.calls) == 2
+    # The caller set no LoRA list, so the advice is about the composition.
+    assert str(error.value) == (
+        "LoRA or Composition Model combines too many LoRAs to check (at most 2); "
+        "choose another composition."
+    )
 
 
 def test_invalid_ids_are_refused_before_any_read():
@@ -514,6 +519,22 @@ def test_generic_model_inputs_get_type_and_status_checks_only():
         RouteError, match="Style is a flux.1-composition model; Style accepts flux.1-lora."
     ):
         trained_routes.check_references(schema, {"style": COMPOSITION}, Reader())
+
+
+@pytest.mark.parametrize("model_types", ["flux.1-lora", [3], [""], {"flux.1-lora": True}])
+def test_a_malformed_type_list_on_a_chosen_model_input_refuses_before_any_read(model_types):
+    # Malformed `modelTypes` must not read as "accepts any type".
+    schema = {"parameters": [{"name": "style", "type": "model", "modelTypes": model_types}]}
+    reader = Reader()
+    with pytest.raises(RouteError) as error:
+        trained_routes.check_references(schema, {"style": COMPOSITION}, reader)
+    assert str(error.value) == (
+        "Style: the model types this input accepts changed or are malformed. "
+        "Refresh the model and try again."
+    )
+    assert reader.calls == []
+    # An input the caller did not set stays the service's own.
+    assert trained_routes.check_references(schema, {}, reader) == {}
 
 
 def test_a_malformed_component_refuses_a_request_that_uses_model_inputs():

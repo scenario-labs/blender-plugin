@@ -265,7 +265,9 @@ def test_reference_reads_are_bounded(env):
     }
     for concept in concepts:
         env.records[concept] = {"id": concept, "type": "flux.1-lora", "status": "trained"}
-    with pytest.raises(RouteQuoteError, match="Too many models to check"):
+    with pytest.raises(
+        RouteQuoteError, match="combines too many LoRAs to check .*choose another composition"
+    ):
         quote(env, {"modelId": COMPOSITION})
     # The base, then the composition and 15 of its concepts: 16 reference reads.
     assert len(env.calls) == 1 + trained_routes.MAX_REFERENCE_READS

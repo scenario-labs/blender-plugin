@@ -66,6 +66,59 @@ def temp_credentials(key="fixture-key", secret="fixture-secret"):
         prefs.api_key, prefs.api_secret = saved
 
 
+# Scene properties whose RNA update sends NC_SCENE | ND_FRAME (Blender 5.x
+# rna_scene.cc). In the GUI, the window manager answers that notifier after the
+# calling operator or timer returns with a frame update that runs
+# frame_change_pre, even for a same-value write. Background mode never does.
+FRAME_NOTIFYING = frozenset(
+    {
+        "frame_current",
+        "frame_subframe",
+        "frame_float",
+        "frame_step",
+        "use_preview_range",
+        "frame_preview_start",
+        "frame_preview_end",
+        "lock_frame_selection_to_range",
+        "show_subframe",
+        "show_keys_from_selected_only",
+        "render.frame_map_old",
+        "render.frame_map_new",
+    }
+)
+
+
+class RecordingStruct:
+    """Forward to a real Blender struct and record attribute writes by dotted path.
+
+    Nested non-ID structs are wrapped too; IDs, collections and methods are real.
+    """
+
+    def __init__(self, struct, writes, prefix=""):
+        object.__setattr__(self, "_struct", struct)
+        object.__setattr__(self, "_writes", writes)
+        object.__setattr__(self, "_prefix", prefix)
+
+    def __getattr__(self, name):
+        value = getattr(self._struct, name)
+        if isinstance(value, bpy.types.bpy_struct) and not isinstance(value, bpy.types.ID):
+            return RecordingStruct(value, self._writes, f"{self._prefix}{name}.")
+        return value
+
+    def __setattr__(self, name, value):
+        self._writes.append(f"{self._prefix}{name}")
+        setattr(self._struct, name, value)
+
+
+def recording_context(context, writes):
+    """A capture context whose scene records writes; the window manager stays real."""
+    from types import SimpleNamespace
+
+    return SimpleNamespace(
+        scene=RecordingStruct(context.scene, writes), window_manager=context.window_manager
+    )
+
+
 @contextmanager
 def online_access(enabled):
     """Opt into a real Blender preference branch without leaving it enabled."""

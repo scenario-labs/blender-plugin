@@ -84,11 +84,8 @@ class RenderSettings:
         except TypeError:
             pass
         r.filepath, r.use_stamp = self.filepath, self.use_stamp
-        scene.frame_start, scene.frame_end, scene.use_preview_range = (
-            self.frame_start,
-            self.frame_end,
-            self.use_preview_range,
-        )
+        scene.frame_start, scene.frame_end = self.frame_start, self.frame_end
+        _set_preview_range(scene, self.use_preview_range)
         r.ffmpeg.format, r.ffmpeg.codec, r.ffmpeg.audio_codec = (
             self.ffmpeg_format,
             self.ffmpeg_codec,
@@ -99,6 +96,18 @@ class RenderSettings:
             scene.camera = bpy.data.objects[self.camera_name]
         if scene.frame_current != self.frame_current:
             scene.frame_set(self.frame_current)
+
+
+def _set_preview_range(scene, enabled):
+    """Write the preview-range toggle only when it changes.
+
+    Its RNA update sends a frame notifier even for a same-value write. In the
+    GUI, Blender answers after the capturing operator or timer returns with a
+    same-frame update that runs frame_change_pre, which invalidates any origin
+    captured in between, such as the upload origin of this very capture.
+    """
+    if scene.use_preview_range != enabled:
+        scene.use_preview_range = enabled
 
 
 def set_video_output(render):
@@ -307,7 +316,9 @@ def capture_playblast(
         set_video_output(r)
         r.ffmpeg.format, r.ffmpeg.codec, r.ffmpeg.audio_codec = "MPEG4", "H264", "NONE"
         r.use_stamp = False
-        scene.use_preview_range = False
+        # Blender renders an enabled preview range. Keep it when it is the span.
+        if (start, end) != (scene.frame_preview_start, scene.frame_preview_end):
+            _set_preview_range(scene, False)
         scene.frame_start, scene.frame_end = start, end
         r.filepath = str(path)
         with _Overlays(context, force_solid):

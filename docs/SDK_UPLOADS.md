@@ -353,9 +353,15 @@ inputs also support explicit still captures; video inputs support explicit clips
 runs on the main thread in private temporary storage retained until asynchronous
 staging finishes or the session retires. Clips use the preview range when enabled,
 otherwise the scene range, at 1280x720 with no audio or implicit duration padding.
-Capture settings/current frame and mesh selection are restored. Stills/clips need
-an interactive viewport; mesh export also works headlessly. Uploaded snapshots do
-not track later source edits. It never uploads while drawing or pricing.
+Capture settings/current frame and mesh selection are restored. Restoration writes
+the preview-range toggle only when it changed, and a clip keeps an enabled preview
+range that already equals its span. In the GUI, Blender answers any write to that
+toggle, even an unchanged one, with a same-frame update after the capture returns.
+Its frame hook would invalidate the upload origin captured right after the snapshot.
+Real frame changes still invalidate it; see
+[origin and quote lifetime](BLENDER_JOB_CONTEXT.md#origin-and-quote-lifetime).
+Stills/clips need an interactive viewport; mesh export also works headlessly.
+Uploaded snapshots do not track later source edits. It never uploads while drawing or pricing.
 Render forms use the same lifecycle for explicit scene captures and first frames.
 Their role is part of asynchronous attachment and saved-confirmation guards.
 A disabled first-frame slot is omitted from generation while its upload retains

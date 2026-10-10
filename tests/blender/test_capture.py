@@ -5,7 +5,7 @@ import unittest
 from pathlib import Path
 
 import bpy
-from helpers import reset_scene, submodule
+from helpers import FRAME_NOTIFYING, recording_context, reset_scene, submodule
 
 
 def _is_video(render):
@@ -32,6 +32,11 @@ class CaptureTests(unittest.TestCase):
                 "path": r.filepath,
                 "range": (scene.frame_start, scene.frame_end),
                 "stamp": r.use_stamp,
+                "preview": (
+                    scene.use_preview_range,
+                    scene.frame_preview_start,
+                    scene.frame_preview_end,
+                ),
             }
         )
         target = Path(bpy.path.abspath(r.filepath))
@@ -100,6 +105,56 @@ class CaptureTests(unittest.TestCase):
             self.capture.capture_still(
                 bpy.context, str(self.tmp / "x.png"), source="CAMERA", runner=self.fake_runner
             )
+
+    def test_captures_send_no_frame_notifier_when_nothing_changes(self):
+        # In the GUI, even a same-value write to these properties makes Blender run
+        # frame_change_pre after the capture returns, invalidating upload origins.
+        bpy.ops.object.camera_add()
+        scene = bpy.context.scene
+        scene.camera = bpy.context.active_object
+        scene.frame_start, scene.frame_end = 1, 48
+        # Blender ignores preview bounds while the preview range is disabled.
+        scene.use_preview_range = True
+        scene.frame_preview_start, scene.frame_preview_end = 10, 20
+        scene.frame_set(7)
+        for preview in (False, True):
+            scene.use_preview_range = preview
+            with self.subTest(preview=preview):
+                before = self.capture.RenderSettings.snapshot(scene)
+                writes = []
+                context = recording_context(bpy.context, writes)
+                self.capture.capture_still(
+                    context, str(self.tmp / "still.png"), source="CAMERA", runner=self.fake_runner
+                )
+                info = self.capture.capture_playblast(
+                    context, str(self.tmp / "clip.mp4"), source="CAMERA", runner=self.fake_runner
+                )
+                self.assertEqual(sorted(FRAME_NOTIFYING.intersection(writes)), [])
+                self.assertEqual(self.capture.RenderSettings.snapshot(scene), before)
+                span = (10, 20) if preview else (1, 48)
+                self.assertEqual((info["frame_start"], info["frame_end"]), span)
+                # Blender renders an enabled preview range, which already equals the span.
+                self.assertEqual(self.calls[-1]["preview"], (preview, 10, 20))
+                self.assertEqual(self.calls[-1]["range"], span)
+
+    def test_explicit_clip_span_overrides_then_restores_enabled_preview_range(self):
+        scene = bpy.context.scene
+        scene.frame_start, scene.frame_end = 1, 48
+        scene.use_preview_range = True
+        scene.frame_preview_start, scene.frame_preview_end = 10, 20
+        scene.frame_set(12)
+        before = self.capture.RenderSettings.snapshot(scene)
+        info = self.capture.capture_playblast(
+            bpy.context,
+            str(self.tmp / "clip.mp4"),
+            frame_start=1,
+            frame_end=24,
+            runner=self.fake_runner,
+        )
+        self.assertEqual((info["frame_start"], info["frame_end"]), (1, 24))
+        self.assertEqual(self.calls[-1]["preview"], (False, 10, 20))
+        self.assertEqual(self.calls[-1]["range"], (1, 24))
+        self.assertEqual(self.capture.RenderSettings.snapshot(scene), before)
 
     def test_capture_dir_is_under_cache(self):
         self.assertTrue(str(self.capture.capture_dir()).endswith("captures"))

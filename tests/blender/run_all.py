@@ -78,6 +78,7 @@ BASELINE = (
     "test_workflow_controls",
     "test_asset_library",
     "test_library_view",
+    "test_library_organization",
     "test_workflow_references",
 )
 

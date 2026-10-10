@@ -516,14 +516,15 @@ def sync_catalog_context():
     from . import generation
 
     generation.process_model_jobs()
-    if state.library_view is not None:
-        state.library_view.poll()
     if state.workflow_controls is not None:
         state.workflow_controls.poll()
     if state.job_session is not None:
         state.job_session.film_shots.poll()
         state.job_session.film_capture.poll()
         state.job_session.asset_organization.poll()
+    # After the shared owner, so a finished review reaches the Library card this tick.
+    if state.library_view is not None:
+        state.library_view.poll()
     if state.film_jobs is not None:
         state.film_jobs.poll()
     if state.prompt_jobs is not None:

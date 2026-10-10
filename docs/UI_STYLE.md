@@ -1321,7 +1321,8 @@ discarded. The [desktop regression checks](#studio-and-library-desktop-regressio
 record the earlier scoped input evidence for this behavior.
 
 This view exposes existing creation/Film/result controls and the workflow form
-below, plus Library browsing and model-reference reuse. Interactive workflow
+below, plus Library browsing, model-reference reuse and reviewed
+[collection and tag organization](#library-organization). Interactive workflow
 nodes and complete retained Studio acceptance remain separate.
 
 ### Workflow controls
@@ -1375,14 +1376,77 @@ known file inputs respect their kind and capacity. Confirmation checks the
 unchanged destination, adds a scoped asset reference and invalidates its price.
 The dialog displays a captured scene name, so deleting the scene while it is
 open cannot break redraw; confirmation still rejects the unavailable destination.
-Drawing never starts requests or mutates RNA. Organization writes are separate
-work. Dynamic input choices are retained by the live dialog and resolved through
+Drawing never starts requests or mutates RNA. Collection and tag changes use the
+separate reviewed [Organize](#library-organization) dialog. Dynamic input choices are retained by the live dialog and resolved through
 its RNA properties; Blender passes `OperatorProperties` to the enum callback,
 not the Python operator carrying the prepared approvals. Installed tests exercise
 that registered callback as well as state and command boundaries. The desktop
 checks below record native browsing and reference confirmation for their named
 candidate. Remaining desktop acceptance stays under #66/#68 separately from
 review readiness.
+
+### Library organization
+
+**Load collections** reads one page of 50 collections in the selected connection,
+and **More** appends the next page, up to 200 loaded collections. Each loaded
+collection shows its name, asset count and **Browse**, which sets Collection ID,
+clears Search and Public assets and reads the first page. Each asset row adds a
+tags line and a membership line. Labels that do not fit end with a "+N" count;
+memberships name loaded collections and count the others. These are explicit
+operator reads held by the Library view; drawing never starts one.
+
+**Organize** on an asset row opens a dialog (width 480) showing the captured
+asset name and the selected project label, as on the Connection page. Choose
+Add to collection, Remove from collection, Add tags, Remove tags or New collection
+and add. The collection dropdown lists the loaded collections, plus the browsed
+Collection ID, and preselects the browsed one. Its choices are retained by the
+live dialog and resolved through its RNA properties, like the reference input
+menu. Tags are one comma-separated field; surrounding spaces are removed and
+text is otherwise kept exactly, so tags cannot contain commas. The dialog states
+that changes are immediate account metadata, use no credits and are not reversed
+by Blender Undo, and explains invalid text before OK. OK only prepares a review:
+the shared session owner reads the asset's current tags and memberships, and
+nothing is sent. Cancel prepares nothing.
+
+The Library page then shows one review card. While preparing it says nothing has
+been sent. A ready card lists the asset's current and resulting state, the number
+of requests Apply sends and the 10-minute expiry, with **Apply** and **Discard**.
+Apply is accepted only for that ready card, once; it sends each write once with
+no retry, then the card shows the read-back result: Verified, Refused with the
+HTTP status, Unconfirmed, Not sent or Not verified. When another client added the
+asset first, the service refuses the add as a whole; the read-back shows the
+asset as a member, so nothing more is sent and the card shows Verified with a
+note that it was already in the collection. An unconfirmed card says to
+refresh and inspect; nothing is resent automatically. A finished, refused,
+unchanged, unsent or expired card offers **Dismiss**. Rows take the tags and memberships Scenario
+read back. A row that left the browsed collection stays marked "No longer in this
+collection; refresh" until the next Refresh rather than disappearing. A verified
+new collection joins the loaded collections, even when 200 are already loaded,
+so **Browse** and the dropdown offer it.
+
+Organize is disabled for pages loaded with Public assets, while a Library page is
+loading and while a change applies. Preparing another review discards a card that
+is not applying. The card belongs to the application's job session, not to the
+popup: the maintenance pump advances it, so closing and reopening Studio during
+Apply keeps it. A credential, Project ID or file change retires the session,
+clears the view and discards its reviews; a write already sent keeps its effect.
+Native and [local MCP](MCP.md#asset-organization) reviews share the same owner,
+so only one change applies at a time and they share its 32-review bound. When
+unapplied agent reviews fill it, Organize says so and prepares nothing; unapplied
+reviews expire after 10 minutes.
+
+Installed tests cover operator registration, the dynamic collection enum with
+`OperatorProperties`, read-only drawing, public and busy pages, dialog cancel,
+Apply gating and single use, row updates, an asset added elsewhere before Apply
+(one request, Verified), filtered-row refresh marks, a new
+collection joining a list at the load bound, the card across Studio redraws
+during Apply, connection and file retirement, sanitized refusals, online access
+off, a review bound filled by agent reviews and narrow-width wrapping. Physical desktop evidence is pending: focus, typing
+(including Unicode and IME tags), Escape and dismissal, viewport shortcuts after
+the dialog, a small window and alternate DPI will be collected later in an
+unlocked session and remain tracked under
+[#66](https://github.com/scenario-labs/blender-plugin/issues/66). No live
+collection or tag request was made.
 
 ## Workflow reference selection
 

@@ -92,6 +92,15 @@ def describe_world_media(media_type):
     return _WORLD_MEDIA_LABELS.get(media_type, "Unsupported media type")
 
 
+def world_candidate(media_type, texture_role=None):
+    """Offer a saved result for World application from its metadata, without reading bytes.
+
+    A server-declared texture role marks a material map, never a panorama. The
+    2:1 dimensions and the actual container are still checked during application.
+    """
+    return media_type in WORLD_MEDIA_TYPES and texture_role is None
+
+
 def _dimensions(file_format, width, height, *, panorama=True):
     if panorama and (width < 4 or height < 2 or width != height * 2 or width * height > MAX_PIXELS):
         raise PanoramaError("Use a 2:1 panorama within the supported pixel limit")

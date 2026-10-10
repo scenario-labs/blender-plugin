@@ -719,3 +719,15 @@ def test_world_media_types_name_their_required_container_and_wording():
     for unsupported in ("image/webp", "image/vnd.radiance", "image/jpg", ""):
         assert unsupported not in panorama.WORLD_MEDIA_TYPES
         assert panorama.describe_world_media(unsupported) == "Unsupported media type"
+
+
+def test_world_candidates_exclude_declared_material_maps():
+    # A live Meshy package declared its 2048x2048 PNG maps by role; none is a panorama.
+    for media_type in panorama.WORLD_MEDIA_TYPES:
+        assert panorama.world_candidate(media_type)
+        assert panorama.world_candidate(media_type, None)
+    roles = ("base", "albedo", "normal", "roughness", "metallic", "height", "ao", "edge")
+    for role in roles:
+        assert not panorama.world_candidate("image/png", role)
+    for unsupported in ("image/webp", "model/gltf-binary", "video/mp4", ""):
+        assert not panorama.world_candidate(unsupported)

@@ -363,6 +363,18 @@ MCP refresh requests reuse a pending history read instead of starting more worke
 The MCP `refresh` argument accepts only JSON booleans; other types fail before
 starting or delivering history work.
 
+Each page keeps only model inference (`custom`) jobs; uploads, workflow runs and
+mesh preview renders are skipped locally, so a page can list fewer rows than it
+read, or none. The panel draws every loaded row, keeps **Load older** while a
+cursor remains, and says so when a page listed no generation. MCP
+`list_generations` reports rows beyond its `limit` as `more_loaded` and a
+remaining cursor as `older_page`; `older=true` requests that page through the
+same cursor and pending-read rules as **Load older**, and retries a failed older
+read. It accepts only JSON booleans and cannot be combined with `refresh`. A
+failed older read sets a separate older-page error and keeps the loaded rows and
+cursor, as **Load older** does: later MCP calls return those rows with
+`older_error` and a retry note, and only a repeated cursor points to `refresh=true`.
+
 Cloud rows now identify matching jobs in the selected credential-bound store.
 Those rows offer **Inspect saved jobs**, which exposes the existing recovery and
 destination-approval controls. The native history import entry point rechecks

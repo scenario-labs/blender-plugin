@@ -626,7 +626,7 @@ def draw_history(layout, context, shown_ids=()):
     if not runtime.catalog_selection_matches():
         layout.label(text="Refresh cloud history for the selected connection", icon="INFO")
         return
-    if not runtime.state.history:
+    if not runtime.state.history and not runtime.state.history_token:
         layout.label(text="Press Refresh cloud to list this project's generations", icon="INFO")
         return
     # Explicit history reads cache this projection. Live shared views also cover
@@ -635,13 +635,17 @@ def draw_history(layout, context, shown_ids=()):
     if cached_ids is None:
         layout.label(text="Could not inspect saved jobs; refresh history", icon="ERROR")
         return
+    if not runtime.state.history:
+        # Uploads, workflow runs or previews can fill a page; older pages may list generations.
+        layout.label(text="No generations on this page; load older", icon="INFO")
     saved_ids = cached_ids | {
         view.job_id
         for view in runtime.state.jobs_view
         if view.job_id and view.meta.get("shared_job")
     }
     owner = runtime.state.model_jobs
-    for entry in runtime.state.history[:24]:
+    # Every loaded row: Load older appends a page, so a fixed slice would hide it.
+    for entry in runtime.state.history:
         if entry.job_id in shown_ids:
             continue  # already listed among this session's results
         saved = bool(entry.local_request_ids) or entry.job_id in saved_ids

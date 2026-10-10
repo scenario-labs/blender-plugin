@@ -103,7 +103,9 @@ class ModelGenerationTests(unittest.TestCase):
                             "asset": {
                                 "id": asset_id,
                                 "status": "success",
-                                "mimeType": self.result_media_type,
+                                "mimeType": getattr(self, "result_mime_types", {}).get(
+                                    asset_id, self.result_media_type
+                                ),
                                 "metadata": getattr(self, "result_assets", {}).get(
                                     asset_id, getattr(self, "result_metadata", {})
                                 ),
@@ -2474,6 +2476,80 @@ class ModelGenerationTests(unittest.TestCase):
             with self.assertRaises(self.request_error):
                 self.prepare_material(request_id)
         verify.assert_not_called()
+        self.assertEqual(self.store.get(request_id), before)
+        self.assertFalse(owner._application_approvals)
+
+    @staticmethod
+    def drawn_controls(view):
+        """(operator, text, properties) for each saved-job button draw_controls creates."""
+        buttons = []
+
+        def operator(idname, text=""):
+            properties = SimpleNamespace()
+            buttons.append((idname, text, properties))
+            return properties
+
+        layout = SimpleNamespace(label=lambda **_: None, operator=operator)
+        submodule("blender.job_recovery").draw_controls(layout, view)
+        return buttons
+
+    def prepare_saved_world(self, request_id, asset_id):
+        args = self.recovery_args(request_id, "apply_world")
+        del args["action"]
+        args.update(purpose="world", asset_id=asset_id)
+        return self.tools.prepare_result_application(args)
+
+    def test_world_offers_only_unmapped_images_numbered_like_import_buttons(self):
+        # The live Meshy package shape: GLB first, then PBR maps declared by role.
+        self.result_assets = {
+            "result-model": {"type": "txt23d"},
+            "result-albedo": {"type": "3d-texture-albedo"},
+            "result-panorama": {},
+            "result-normal": {"type": "3d-texture-normal"},
+        }
+        self.result_mime_types = {"result-model": "model/gltf-binary"}
+        request_id = self.recovered_panorama()
+        owner = self.runtime.state.model_jobs
+        view = owner.views[request_id]
+        self.assertEqual(view.asset_ids, list(self.result_assets))
+        actions = owner.status(request_id)["actions"]
+        self.assertIn("import_model", actions)
+        self.assertIn("apply_world", actions)
+        buttons = {
+            text: properties.asset_id
+            for idname, text, properties in self.drawn_controls(view)
+            if idname in {"scenario.import_saved_model", "scenario.apply_saved_world"}
+        }
+        # Both numbers name the result's position in the job, not among candidates.
+        self.assertEqual(
+            buttons,
+            {
+                "Import model (1)": "result-model",
+                "Set panorama as World (3)": "result-panorama",
+            },
+        )
+        before = self.store.get(request_id), len(self.calls), len(self.paid)
+        for texture in ("result-albedo", "result-normal"):
+            with self.subTest(texture=texture), self.assertRaises(self.request_error):
+                self.prepare_saved_world(request_id, texture)
+        self.assertFalse(owner._application_approvals)
+        approval = self.prepare_saved_world(request_id, "result-panorama")
+        self.assertEqual(approval["purpose"], "world")
+        self.assertEqual((self.store.get(request_id), len(self.calls), len(self.paid)), before)
+
+    def test_texture_set_maps_offer_no_world_action(self):
+        request_id = self.recovered_material(("texture-albedo", "texture-normal", "texture-ao"))
+        owner = self.runtime.state.model_jobs
+        before = self.store.get(request_id)
+        status = owner.status(request_id)
+        self.assertEqual([item["media_type"] for item in status["results"]], ["image/png"] * 3)
+        self.assertIn("apply_material", status["actions"])
+        self.assertNotIn("apply_world", status["actions"])
+        texts = [text for _, text, _ in self.drawn_controls(owner.views[request_id])]
+        self.assertIn("Apply saved material", texts)
+        self.assertFalse([text for text in texts if "World" in text])
+        with self.assertRaises(self.request_error):
+            self.prepare_saved_world(request_id, "result-map-0")
         self.assertEqual(self.store.get(request_id), before)
         self.assertFalse(owner._application_approvals)
 

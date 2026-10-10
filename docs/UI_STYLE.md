@@ -295,8 +295,11 @@ PNG or JPEG as LDR, or OpenEXR as float with ACES AP0 in ACES2065-1.
 Invoke computes that text; drawing only displays it. Explain the
 2:1/equirectangular requirement, packed image, preserved original World, LDR/HDR
 distinction and session-local restore limit. The action's presence is a
-media-type offer; byte compatibility is checked during application, never in
-drawing. Cancel discards the prepared handle.
+media-type offer that excludes results declaring a texture role; byte
+compatibility is checked during application, never in drawing. Drawing reads the
+saved-job projection's candidate list and numbers each button by the result's
+position among all results, like **Import model (N)**. Cancel discards the
+prepared handle.
 
 After completed application, **Restore previous World** uses a separate prepared
 approval. It names the current scene/World and explains that edited owned data

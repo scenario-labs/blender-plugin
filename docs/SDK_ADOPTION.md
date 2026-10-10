@@ -293,7 +293,10 @@ Prompt previews use `assets.with_raw_response.retrieve` on the captured connecti
 bounded to 30 per page. Failed lookups and explicitly incomplete previews stay
 unresolved, and no prompt cache crosses requests or connections. Main-thread
 delivery rejects stale credentials, superseded requests and cursor cycles before
-changing the visible history. MCP can explicitly retry with `refresh=true`.
+changing the visible history. MCP can explicitly retry with `refresh=true` and
+read the next page with `older=true`, which uses the same cursor as **Load older**.
+Job types are filtered locally after each page; the SDK's `type` filter is not used.
+In a live read, that filter returned no rows when combined with `hide_results=False`.
 These reads do not activate durable recovery, project-selection UI, downloads,
 submission or result application. See the
 [runtime history boundary](architecture/runtime.md#active-sdk-history).

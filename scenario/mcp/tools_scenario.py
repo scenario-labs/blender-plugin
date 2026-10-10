@@ -1206,10 +1206,22 @@ def list_generations(args):
     refresh = args.get("refresh", False)
     if not isinstance(refresh, bool):
         raise ValueError("refresh must be a boolean")
+    older = args.get("older", False)
+    if not isinstance(older, bool):
+        raise ValueError("older must be a boolean")
+    if refresh and older:
+        raise ValueError("Use refresh or older, not both")
     generation.process_catalog_events()
     if refresh:
         history.refresh()
         return {"generations": [], "note": "history requested, call again without refresh"}
+    if older:
+        # The same cursor as native Load older; a failed older read can be retried.
+        if history.older():
+            return {"generations": [], "note": "older history requested, call again without older"}
+        if runtime.state.history_loading:
+            return {"generations": [], "note": "history read pending, call again without older"}
+        raise ValueError("No older cloud history page is available; call with refresh=true")
     if runtime.state.history_error:
         raise RuntimeError(f"{runtime.state.history_error}; retry with refresh=true")
     if not runtime.state.history_loaded:
@@ -1236,6 +1248,20 @@ def list_generations(args):
             for e in runtime.state.history[:limit]
         ]
     }
+    # Never truncate silently: say what limit hid and whether an older page exists.
+    hidden = len(runtime.state.history) - len(result["generations"])
+    if hidden > 0:
+        result["more_loaded"] = hidden
+    if runtime.state.history_token:
+        result["older_page"] = True
+    if runtime.state.history_older_error:
+        # Like native Load older: keep loaded rows and retry the same cursor, unless it cycled.
+        result["older_error"] = runtime.state.history_older_error
+        result["note"] = (
+            "older pages repeated a cursor; loaded rows kept; call with refresh=true to restart"
+            if runtime.state.history_older_error == history.CURSOR_CYCLE
+            else "older page read failed; loaded rows kept; retry with older=true"
+        )
     if runtime.state.history_loading:
         result["note"] = "showing loaded history while refresh is pending; call again"
     return result
@@ -2323,13 +2349,20 @@ SPECS = (
             "List recent cloud generations using this Blender runtime's loaded history.\n"
             "Args:\n"
             "  - limit: optional integer, default 20, maximum number of rows to return.\n"
+            "  - older: optional boolean, load the next older cloud page when older_page is true, or retry a failed older read; then poll without older. more_loaded counts loaded rows beyond limit. A failed older read keeps the loaded rows and returns older_error; retry it with older, or use refresh when the note reports a repeated cursor.\n"
             "  - refresh: optional boolean, request a new cloud page or retry a failed read; then poll without refresh.\n"
             "Returns: generations[] with job_id, kind, model_id, prompt, status, cu_cost, empty local_files and local_request_ids. Matching scoped saved jobs expose request IDs; inspect list_local_jobs and use explicit result approval. Use recover_cloud_job for unsaved completed model jobs. The first call may return an empty list and a note while history loads; call again after loading.\n"
             'Example: {"limit": 10}.\n'
             "Prefer job_status for a tracked active generation; this is not a fresh platform-wide history query on every call.\n"
             "Platform equivalent: jobs_list."
         ),
-        _schema({"limit": {"type": "integer"}, "refresh": {"type": "boolean"}}),
+        _schema(
+            {
+                "limit": {"type": "integer"},
+                "older": {"type": "boolean"},
+                "refresh": {"type": "boolean"},
+            }
+        ),
         list_generations,
         {"readOnlyHint": True},
     ),

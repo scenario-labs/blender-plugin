@@ -3,6 +3,8 @@
 """Real SDK/coordinator/store acceptance commands with offline service responses."""
 
 import json
+import os
+import re
 import runpy
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
@@ -451,6 +453,50 @@ def test_quote_file_changed_after_approval_rejected(run):
     with pytest.raises(smoke.SmokeError, match="record changed"):
         smoke.execute(approved, SETTINGS)
     assert len(calls) == 2 and not (root / "submission-attempt").exists()
+
+
+# Windows os.open defaults to text mode, which writes each LF of a JSON record as
+# CRLF. A test-only bit stands in for O_BINARY on every platform; the wrapper
+# passes the platform's real value through, so Windows still opens in binary mode.
+BINARY_SENTINEL = 1 << 30
+
+
+@pytest.fixture
+def opened(monkeypatch):
+    real_open, real_binary = os.open, getattr(os, "O_BINARY", 0)
+    calls = {}
+
+    def record(path, flags, *args, **kwargs):
+        calls[Path(path).name] = flags
+        if flags & BINARY_SENTINEL:
+            flags = flags & ~BINARY_SENTINEL | real_binary
+        return real_open(path, flags, *args, **kwargs)
+
+    monkeypatch.setattr(os, "O_BINARY", BINARY_SENTINEL, raising=False)
+    monkeypatch.setattr(os, "open", record)
+    return calls
+
+
+def test_create_file_writes_records_in_binary_mode(tmp_path, opened):
+    raw = smoke.json_bytes({"cost": COST, "cases": [{"name": "first"}, {"name": "second"}]})
+    assert raw.count(b"\n") > 1 and b"\r" not in raw
+    smoke.create_file(tmp_path / "suite.json", raw)
+    flags = opened["suite.json"]
+    assert flags & BINARY_SENTINEL
+    assert flags & os.O_CREAT and flags & os.O_EXCL and flags & os.O_WRONLY
+    assert (tmp_path / "suite.json").read_bytes() == raw
+    with pytest.raises(FileExistsError):
+        smoke.create_file(tmp_path / "suite.json", raw)
+
+
+@pytest.mark.parametrize("run", ["image"], indirect=True)
+def test_printed_quote_approval_matches_the_saved_record_bytes(run, opened, capsys):
+    root, calls, _, _, _, _, execute = run
+    assert execute("quote") == 0
+    printed = re.search(r"Quote approval SHA-256: ([0-9a-f]{64})", capsys.readouterr().out)
+    assert opened["quote.json"] & BINARY_SENTINEL
+    assert printed and printed.group(1) == smoke.digest((root / "quote.json").read_bytes())
+    assert len(calls) == 2 and not paid(calls)
 
 
 def test_missing_scope_key_cannot_silently_replace_history(run):

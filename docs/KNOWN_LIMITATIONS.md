@@ -116,6 +116,20 @@ establish live generation or full render-lane desktop acceptance.
   fractions, and desktop review of the progress bar, still need live and
   [#66](https://github.com/scenario-labs/blender-plugin/issues/66)/[#68](https://github.com/scenario-labs/blender-plugin/issues/68)
   evidence. See [the projection rules](BLENDER_JOB_CONTEXT.md#remote-progress-and-scene-lane-binding).
+- Scenario cannot cancel a running workflow step: rejecting a waiting approval
+  or selection step (**Stop workflow**, or MCP `decide_workflow_step` `reject`)
+  is the only way to stop a workflow, and completed steps stay charged. Steps
+  inside a nested workflow node are not shown. A selection that feeds a ForEach
+  loop, a nested workflow or a node type the API reference does not list can
+  only be rejected until live evidence shows its charge stays within the
+  approved price. Review assets and candidates are asset IDs or text without
+  previews, and the native dialog shows at most 12 wrapped lines of each text
+  candidate. Decisions are not live-verified, including repeated or concurrent
+  decisions, omitted project IDs and rejection inside a loop; desktop interaction
+  evidence for the native review is pending
+  ([#65](https://github.com/scenario-labs/blender-plugin/issues/65),
+  [#66](https://github.com/scenario-labs/blender-plugin/issues/66)). See
+  [waiting workflow steps](UI_STYLE.md#waiting-workflow-steps).
 
 ## Creation and scene application
 

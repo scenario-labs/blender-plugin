@@ -14,12 +14,18 @@ revision or review, and opens its own confirmation or destination review where
 one applies.
 Availability is expressed by presence: every offered operator descriptor is
 enabled. A descriptor without an operator is a status row, never a control.
+
+A running workflow job also gets rows from its owner's in-memory step
+projection (`WorkflowSteps`): one review control per waiting step, the decision
+being sent, the last decision's error, or why it cannot be canceled.
 """
 
+import textwrap
 from collections.abc import Collection, Mapping
 from dataclasses import dataclass
 
 RECOVER_OPERATOR = "scenario.recover_job"
+REVIEW_OPERATOR = "scenario.review_workflow_step"
 
 LABELS = {
     "refresh": "Refresh status",
@@ -50,6 +56,15 @@ RECOVERY_ACTIONS = tuple(RECOVERY_GROUPS)
 STATUS_ACTIONS = {
     "review_step": ("Workflow waits for your decision", "INFO"),
 }
+# Width of wrapped multi-row notes; sidebar labels clip instead of wrapping.
+NOTE_WIDTH = 36
+# Scenario has no workflow cancellation endpoint; rejecting a waiting step stops one.
+RUNNING_WORKFLOW = (
+    "Scenario cannot cancel a running workflow step; it finishes or pauses at its next "
+    "approval or selection."
+)
+# Rows about a workflow decision rather than an action; draw_pending shows them too.
+DECISION_ROWS = frozenset({"decision_sending", "decision_error"})
 # One saved result, applied without per-asset choice.
 SINGLE_APPLY = {
     "import_images": "scenario.import_saved_images",
@@ -88,12 +103,28 @@ class ResultTypes:
 
 
 @dataclass(frozen=True)
+class WorkflowSteps:
+    """One workflow job's in-memory step projection, supplied by its owner for drawing.
+
+    `steps` are the waiting steps (`workflow_nodes.PendingStep`, read by
+    attribute) projected for saved `revision`; they are described only while it
+    equals the view's saved revision. `deciding` is True while a decision is
+    queued or being sent, and `error` is the last decision's text.
+    """
+
+    revision: int | None = None
+    steps: tuple = ()
+    deciding: bool = False
+    error: str = ""
+
+
+@dataclass(frozen=True)
 class SavedJobAction:
     """One saved-job control, or a status row when `operator` is None.
 
     `key` is unique within one view. `action` is the ModelJobs and MCP action
     name, or empty for a row about the whole view. `group` is recover, cancel,
-    apply, receipt or status. `properties` are the operator's property
+    apply, receipt, decide or status. `properties` are the operator's property
     name/value pairs, set exactly as listed.
     """
 
@@ -108,6 +139,50 @@ class SavedJobAction:
 
 def _status(key, action, label, icon):
     return SavedJobAction(key, action, "status", label, icon)
+
+
+def _note(key, text, icon):
+    """Status rows wrapping one message; only the first row carries the icon."""
+    return tuple(
+        _status(key if index == 0 else f"{key}:{index}", "", line, icon if index == 0 else "NONE")
+        for index, line in enumerate(textwrap.wrap(text, NOTE_WIDTH))
+    )
+
+
+def step_label(step):
+    """A waiting step's review control text: what deciding it asks for."""
+    if step.node_type == "user-approval":
+        text = "Review approval"
+    elif step.blocked:
+        text = "Review blocked selection"
+    else:
+        upper = min(step.maximum, len(step.items))
+        count = str(upper) if step.minimum == upper else f"{step.minimum} to {upper}"
+        text = f"Choose {count} of {len(step.items)}"
+    if step.iteration_index is not None:
+        text += f" (loop index {step.iteration_index})"
+    return text
+
+
+def _review_steps(steps, job):
+    """One review control per waiting step; a step without decisions is a status row."""
+    items = []
+    for index, step in enumerate(steps):
+        key = f"review_step:{index}"
+        if not step.actions:
+            items.append(_status(key, "review_step", "This step cannot be decided here", "ERROR"))
+            continue
+        items.append(
+            SavedJobAction(
+                key,
+                "review_step",
+                "decide",
+                step_label(step),
+                operator=REVIEW_OPERATOR,
+                properties=(*job, ("node_id", step.node_id), ("review_id", step.review_id)),
+            )
+        )
+    return tuple(items)
 
 
 def _per_asset(view, action, operator, label, accepts, job, extra=()):
@@ -185,12 +260,17 @@ def _import_units(view, action, job):
     return tuple(items)
 
 
-def _describe_action(action, view, job, result_types, review):
+def _describe_action(action, view, job, result_types, review, workflow=None):
     def is_model(media_type):
         return media_type == result_types.model
 
     if action == "recover_blockout":
         return _blockout(review, job)
+    if action == "review_step":
+        row = _status(action, action, *STATUS_ACTIONS[action])
+        if workflow is None or workflow.revision != dict(job)["expected_revision"]:
+            return (row,)
+        return (row, *_review_steps(workflow.steps, job))
     if action in STATUS_ACTIONS:
         return (_status(action, action, *STATUS_ACTIONS[action]),)
     if action in SINGLE_APPLY:
@@ -277,12 +357,13 @@ def _describe_action(action, view, job, result_types, review):
     )
 
 
-def describe(view, context_id, result_types, blockout_review=None):
+def describe(view, context_id, result_types, blockout_review=None, workflow_steps=None):
     """Return one projected view's saved-job controls in drawing order.
 
-    Reads only the in-memory view and the supplied Blockout review for the
-    current scene; it performs no I/O and changes nothing. A view that is not a
-    shared job, or has no saved revision yet, offers nothing.
+    Reads only the in-memory view, the supplied Blockout review for the current
+    scene and the supplied workflow step projection; it performs no I/O and
+    changes nothing. A view that is not a shared job, or has no saved revision
+    yet, offers nothing.
     """
     meta = view.meta
     if not meta.get("shared_job") or "saved_revision" not in meta:
@@ -294,14 +375,27 @@ def describe(view, context_id, result_types, blockout_review=None):
         ("request_id", view.local_id),
         ("expected_revision", meta["saved_revision"]),
     )
+    running = getattr(view, "kind", None) == "workflow" and state == "remote"
+    workflow = workflow_steps if running else None
+    deciding = workflow is not None and workflow.deciding
     items = []
     if state == "applied" and any(action not in NOT_REUSE for action in actions):
         items.append(_status("reuse", "", "Reuse saved results", "FILE_REFRESH"))
+    if deciding:
+        items.append(_status("decision_sending", "", "Sending your decision...", "TIME"))
+    if workflow is not None and workflow.error:
+        items.extend(_note("decision_error", workflow.error, "ERROR"))
     for action in actions:
-        items.extend(_describe_action(action, view, job, result_types, blockout_review))
+        items.extend(_describe_action(action, view, job, result_types, blockout_review, workflow))
     # Session-local notes about the last import, such as splat thinning.
     for index, text in enumerate(meta.get("import_notices", ())):
         items.append(_status(f"import_notice:{index}", "", text, "INFO"))
+    waiting = "review_step" in actions or (
+        workflow is not None and workflow.revision == meta["saved_revision"] and workflow.steps
+    )
+    if running and not deciding and not waiting:
+        # No button: no request can stop a running step.
+        items.extend(_note("workflow_running", RUNNING_WORKFLOW, "INFO"))
     if state in ("ready", "apply_failed"):
         items.append(
             _status("awaiting_review", "", "Downloaded result awaits application review", "INFO")

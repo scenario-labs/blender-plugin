@@ -904,13 +904,25 @@ Changing inputs, scene or connection requires a fresh valid approval.
 
 The form and its schema save with the scene and remain editable after reopening;
 prices and approval handles do not survive restart. Jobs keep their existing
-durable recovery. This page runs existing workflows; it does not author graphs
-or cancel running workflows. When a workflow waits at an approval or selection
-step, its Jobs row shows **Workflow waits for your decision** and checks for
-changes every 15 seconds. Native controls to decide that step are not available
-yet. A connected agent can read the step and send a decision through the local
-MCP; its tool guidance requires your explicit choice first. Rejecting a step
-stops the workflow.
+durable recovery. This page runs existing workflows; it does not author graphs.
+
+Scenario cannot cancel a running workflow step: the job finishes or pauses at
+its next approval or selection step. When it waits at such a step, its Jobs row
+shows **Workflow waits for your decision**, checks for changes every 15 seconds
+and offers **Review approval** or **Choose 1 to 2 of 3** (the numbers follow the
+step). The Workflows page lists the same steps under **Waiting for your
+decision**. The review shows the workflow, the job, its approved price and the
+result asset IDs to approve, or the candidates to choose from (asset IDs or text;
+no previews). Choose **Approve** or **Select** with the items you want, or
+**Stop workflow** to reject the step, then **Send decision**. Continuing runs
+the remaining steps, which spend credits; their charge is not verified against
+the approved price. Stopping cancels the workflow; completed steps stay charged,
+and inside a loop Scenario may stop only that loop. A selection that feeds a
+loop can only be stopped from Blender for now. The decision is sent once; if its
+outcome is unknown, wait until the step is shown again instead of repeating it.
+After a restart, choose **Refresh status** first. A connected agent can read and
+decide the same steps through the local MCP, whose tool guidance requires your
+explicit choice first.
 Native desktop interaction, including workflow uploads, and live workflow
 acceptance are still pending.
 

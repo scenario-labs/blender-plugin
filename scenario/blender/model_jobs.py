@@ -38,6 +38,7 @@ from ..core.scene.model_formats import MATERIAL_MEDIA_TYPES, ModelFormat, model_
 from ..core.scene.panorama import world_candidate
 from ..core.scene.splats import SplatCancelled, SplatOptions
 from ..core.ui.costs import workflow_quote_notice
+from ..core.ui.saved_job_actions import WorkflowSteps
 from . import first_frame_handoff
 from .blockout_jobs import MODEL as BLOCKOUT_MODEL
 from .job_session import (
@@ -949,6 +950,48 @@ class ModelJobs:
             projection = self._steps.get(request_id)
             return projection.steps if projection is not None else ()
         return {key: value.steps for key, value in self._steps.items() if value.steps}
+
+    def step_view(self, request_id):
+        """One job's step projection, decision in flight and last decision error.
+
+        Reads memory only, so drawing code may call it. The saved-job
+        descriptors use the steps only while their revision equals the view's
+        saved revision.
+        """
+        projection = self._steps.get(request_id)
+        failed = self._step_errors.get(request_id)
+        return WorkflowSteps(
+            revision=projection.revision if projection is not None else None,
+            steps=projection.steps if projection is not None else (),
+            deciding=self._deciding(request_id),
+            error=failed[0] if failed is not None else "",
+        )
+
+    def waiting_step(self, request_id, expected_revision, node_id):
+        """Return the saved record and one of its current waiting steps for a review.
+
+        The native review dialog captures them when it opens; `decide` checks
+        the same binding again before queuing a decision. Reads the store and
+        memory only and queues nothing.
+        """
+        record = self.store.get(request_id)
+        if (
+            type(expected_revision) is not int
+            or record is None
+            or record.revision != expected_revision
+            or record.state != JobState.REMOTE
+            or record.intent.operation != "workflow"
+        ):
+            raise ScenarioError(0, "The saved workflow job changed; inspect it again")
+        if request_id in self._commands or request_id in self.submissions:
+            raise ScenarioError(0, "Wait for the current job command to finish before reviewing")
+        step = next(
+            (item for item in self._current_steps(request_id, record) if item.node_id == node_id),
+            None,
+        )
+        if step is None:
+            raise ScenarioError(0, "The workflow step changed; review it again")
+        return record, step
 
     def read_steps(self, request_id):
         """Queue one retrieval of a saved workflow job's waiting steps; UI and MCP share it.

@@ -144,6 +144,165 @@ def test_waiting_workflow_step_is_a_status_row_before_the_recovery_controls():
     assert items[0].action == "review_step" and items[0].operator is None
 
 
+def step(node_id="check", node_type="user-approval", **fields):
+    values = {
+        "node_id": node_id,
+        "node_type": node_type,
+        "iteration_index": None,
+        "items": (),
+        "minimum": None,
+        "maximum": None,
+        "actions": ("approve", "reject"),
+        "blocked": "",
+        "review_id": f"review-{node_id}",
+        **fields,
+    }
+    return SimpleNamespace(**values)
+
+
+def workflow_view(actions=("review_step", "refresh", "resume"), state="remote", **meta):
+    subject = view(actions, state, **meta)
+    subject.kind = "workflow"
+    return subject
+
+
+def review(label, node_id):
+    return (
+        f"review_step:{label}",
+        "decide",
+        "scenario.review_workflow_step",
+        None,
+        "NONE",
+        dict(JOB, node_id=node_id, review_id=f"review-{node_id}"),
+    )
+
+
+WAITING = ("review_step", "status", None, "Workflow waits for your decision", "INFO", {})
+RUNNING = [
+    ("workflow_running", "status", None, "Scenario cannot cancel a running", "INFO", {}),
+    ("workflow_running:1", "status", None, "workflow step; it finishes or pauses", "NONE", {}),
+    ("workflow_running:2", "status", None, "at its next approval or selection.", "NONE", {}),
+]
+
+
+def test_each_waiting_step_gets_a_review_control_with_its_binding():
+    selection = step(
+        "pick",
+        "user-selection",
+        items=("a", "b", "c"),
+        minimum=1,
+        maximum=2,
+        actions=("select", "reject"),
+        iteration_index=0,
+    )
+    exact = step(
+        "one",
+        "user-selection",
+        items=("a", "b"),
+        minimum=1,
+        maximum=1,
+        actions=("select", "reject"),
+    )
+    blocked = step(
+        "loop",
+        "user-selection",
+        items=("a",),
+        minimum=1,
+        maximum=1,
+        actions=("reject",),
+        blocked="loop",
+    )
+    unsendable = step("bad id ", actions=(), blocked="unidentified")
+    steps = sja.WorkflowSteps(7, (step(), selection, exact, blocked, unsendable))
+    items = sja.describe(workflow_view(), CONTEXT, TYPES, workflow_steps=steps)
+    expected = [
+        WAITING,
+        review(0, "check"),
+        review(1, "pick"),
+        review(2, "one"),
+        review(3, "loop"),
+        ("review_step:4", "status", None, "This step cannot be decided here", "ERROR", {}),
+        recover("refresh", "recover"),
+        recover("resume", "recover"),
+    ]
+    labels = {
+        1: "Review approval",
+        2: "Choose 1 to 2 of 3 (loop index 0)",
+        3: "Choose 1 of 2",
+        4: "Review blocked selection",
+    }
+    for index, label in labels.items():
+        expected[index] = expected[index][:3] + (label,) + expected[index][4:]
+    assert rows(items) == expected
+    # No cancellation notice while a step waits: rejecting it is the way to stop.
+    assert not any(item.key.startswith("workflow_running") for item in items)
+
+
+def test_steps_projected_for_another_revision_offer_no_control():
+    stale = sja.WorkflowSteps(6, (step(),))
+    items = sja.describe(workflow_view(), CONTEXT, TYPES, workflow_steps=stale)
+    assert rows(items) == [WAITING, recover("refresh", "recover"), recover("resume", "recover")]
+    # Without the owner's projection the status row stays, without controls.
+    assert rows(sja.describe(workflow_view(), CONTEXT, TYPES))[0] == WAITING
+
+
+def test_running_workflow_without_waiting_step_explains_that_it_cannot_be_canceled():
+    plain = workflow_view(("refresh", "resume"))
+    items = sja.describe(plain, CONTEXT, TYPES, workflow_steps=sja.WorkflowSteps())
+    assert rows(items) == [recover("refresh", "recover"), recover("resume", "recover"), *RUNNING]
+    assert all(item.operator is None for item in items if item.key.startswith("workflow_running"))
+    # The owner is not needed for the notice, and a refresh in flight keeps it.
+    assert rows(sja.describe(workflow_view(()), CONTEXT, TYPES)) == RUNNING
+    # A refresh in flight hides the controls but a projected step still waits.
+    waiting = sja.WorkflowSteps(7, (step(),))
+    assert sja.describe(workflow_view(()), CONTEXT, TYPES, workflow_steps=waiting) == ()
+    # Model jobs, and workflow jobs no longer running, never show it.
+    model = view(("refresh", "resume", "cancel"))
+    model.kind = "model"
+    assert "workflow_running" not in {item.key for item in sja.describe(model, CONTEXT, TYPES)}
+    for state in ("succeeded", "ready", "canceled", "prepared"):
+        finished = workflow_view((), state)
+        keys = {item.key for item in sja.describe(finished, CONTEXT, TYPES)}
+        assert not any(key.startswith("workflow_running") for key in keys), state
+
+
+def test_a_decision_in_flight_and_its_error_are_status_rows():
+    sending = sja.WorkflowSteps(7, (step(),), deciding=True)
+    items = sja.describe(workflow_view(()), CONTEXT, TYPES, workflow_steps=sending)
+    assert rows(items) == [
+        ("decision_sending", "status", None, "Sending your decision...", "TIME", {}),
+    ]
+    error = (
+        "Decision outcome unknown; refresh the job and do not repeat the decision until the "
+        "step is shown again"
+    )
+    failed = sja.WorkflowSteps(7, (), error=error)
+    items = sja.describe(
+        workflow_view(("refresh", "resume")), CONTEXT, TYPES, workflow_steps=failed
+    )
+    errors = [item for item in items if item.key.startswith("decision_error")]
+    # The whole message is drawn, wrapped, never clipped to one line.
+    assert " ".join(item.label for item in errors) == error
+    assert [item.icon for item in errors] == ["ERROR"] + ["NONE"] * (len(errors) - 1)
+    assert all(len(item.label) <= sja.NOTE_WIDTH and item.action == "" for item in errors)
+    assert {item.key.partition(":")[0] for item in errors} <= sja.DECISION_ROWS
+    # Other jobs never draw a workflow decision row.
+    model = view(("refresh",))
+    model.kind = "model"
+    assert sja.describe(model, CONTEXT, TYPES, workflow_steps=failed) == sja.describe(
+        model, CONTEXT, TYPES
+    )
+
+
+def test_review_labels_name_what_the_step_asks_for():
+    assert sja.step_label(step()) == "Review approval"
+    assert sja.step_label(step(iteration_index=3)) == "Review approval (loop index 3)"
+    many = step("pick", "user-selection", items=("a",) * 5, minimum=2, maximum=100)
+    assert sja.step_label(many) == "Choose 2 to 5 of 5"
+    unreadable = step("pick", "user-selection", blocked="unsupported", actions=("reject",))
+    assert sja.step_label(unreadable) == "Review blocked selection"
+
+
 def test_ready_images_offer_import_world_and_material_then_await_review():
     assets = (
         ("first", "image/png"),
@@ -380,7 +539,7 @@ def test_every_offered_action_is_described_with_unique_keys_and_its_action_name(
             offered = {item.action for item in items if item.operator is not None}
             assert offered == set(actions), actions
             for item in items:
-                assert item.group in {"recover", "cancel", "apply", "receipt", "status"}
+                assert item.group in {"recover", "cancel", "apply", "receipt", "decide", "status"}
                 assert (item.operator is None) == (item.group == "status")
                 if item.operator is not None:
                     assert dict(item.properties)["context_id"] == CONTEXT
@@ -470,7 +629,7 @@ def test_core_descriptor_source_stays_free_of_blender():
             modules.update(alias.name.split(".")[0] for alias in node.names)
         elif isinstance(node, ast.ImportFrom):
             modules.add((node.module or "").split(".")[0])
-    assert modules == {"collections", "dataclasses"}
+    assert modules == {"collections", "dataclasses", "textwrap"}
 
 
 def test_first_frame_controls_follow_the_projected_stills_and_number_every_asset():

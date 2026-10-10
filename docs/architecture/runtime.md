@@ -686,8 +686,10 @@ The same polling projects waiting approval and selection steps, and
 reviewed decision through the shared session; rejecting a waiting step is the
 only workflow cancellation. Local MCP `workflow_job_steps` and
 `decide_workflow_step` read the steps again and send one reviewed decision
-through the same entry. Native decision controls, cancelling a running step and
-live output acceptance remain open under #64/#65/#66/#68.
+through the same entry, as does the native review dialog in Jobs and the Studio
+Workflows page. Cancelling a running step has no documented endpoint; it,
+desktop interaction evidence and live output acceptance remain open under
+#64/#65/#66/#68.
 
 
 ## Explicit expanded native view
@@ -733,8 +735,11 @@ Credential/project retirement discards the UI controller with the shared owner;
 file-load retirement removes approval handles while saved scene inputs survive.
 Closing Studio owns no cancellation or teardown. No new transport, store or
 worker pool is introduced. File inputs can receive [explicit uploads](#workflow-input-uploads).
-Interactive nodes, general workflow cancellation and physical/live acceptance
-remain separate.
+[workflow_steps.py](../../scenario/blender/workflow_steps.py) draws waiting
+approval and selection steps from the shared saved-job descriptors and the
+in-memory step projection, and its review dialog sends one decision through
+`runtime.decide_workflow_step`. Running-step cancellation and physical/live
+acceptance remain separate.
 
 The 32-entry UI projection cache reclaims idle entries under pressure, discarding
 any unused price but preserving saved scene inputs and independently owned jobs.

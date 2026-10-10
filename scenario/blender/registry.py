@@ -34,6 +34,7 @@ def _modules():
         studio,
         workflow_controls,
         workflow_references,
+        workflow_steps,
         workflow_uploads,
     )
 
@@ -44,6 +45,7 @@ def _modules():
         shot_planner,
         operators,
         job_recovery,
+        workflow_steps,
         reference_form,
         prompt_tools,
         blockout,

@@ -43,7 +43,7 @@ records, lane/schema helpers and local display status classification remain.
 | Exact model quote and submission, including render, Blockout and Film models | `JobCoordinator` / `SDKAdapter`: `generate.with_raw_response.run_model`, with `dry_run="true"` only for quotes |
 | New/Rewrite and Translate | Shared prompt commands: `generate.with_raw_response.prompt/translate`, including separate exact estimates and submission claims |
 | Cloud history, known-job recovery, polling, remote progress and inference cancellation | Shared catalog/coordinator: `jobs.with_raw_response.list/retrieve/trigger_action`; progress reads `Job.status` and `Job.progress` from the same polling retrieve, with no extra request |
-| Waiting workflow step decisions (shared job command; no native or MCP control yet) | `JobCoordinator` / `SDKAdapter.workflow_decision`: `workflows.with_raw_response.user_approval`; selection uses the named [SDK issue #33 exception](#workflow-step-decisions); steps are read from the polling `jobs.retrieve`; while one waits, `SDKAdapter.workflow` (`workflows.retrieve`) reads the definition's step links once |
+| Waiting workflow step decisions (shared job command for the native review dialog and local MCP) | `JobCoordinator` / `SDKAdapter.workflow_decision`: `workflows.with_raw_response.user_approval`; selection uses the named [SDK issue #33 exception](#workflow-step-decisions); steps are read from the polling `jobs.retrieve`; while one waits, `SDKAdapter.workflow` (`workflows.retrieve`) reads the definition's step links once |
 | Result and complete prompt/model-text metadata | Shared coordinator: `assets.with_raw_response.retrieve`; bounded complete text uses the signed result transport |
 | Saved-result preview metadata | Shared coordinator on the preview lane: `assets.with_raw_response.get_bulk` for every batch, one asset included, so an omitted asset means the same at any size; stills and clips use the signed result transport ([result previews](RESULT_PREVIEWS.md)) |
 | Asset library browsing and text search | Shared coordinator: `assets.with_raw_response.list` and `search.with_raw_response.asset_search`; explicit single-page reads with selected project scope |
@@ -697,8 +697,9 @@ it once per reviewed step, after retrieving the job and checking the step again.
 That command treats an HTTP 4xx reply as a refusal and every other failure as an
 uncertain outcome, stores no decision record and blocks choosing items for a
 selection that feeds a ForEach loop or nested workflow, or whose links cannot be
-read from the job or its definition in a flow that has one. No native or MCP control
-calls the command yet. Offline contracts do not establish live endpoint acceptance.
+read from the job or its definition in a flow that has one. The native review
+dialog and local MCP `decide_workflow_step` call it through `ModelJobs.decide`.
+Offline contracts do not establish live endpoint acceptance.
 
 ## Known authentication failure
 

@@ -1182,8 +1182,9 @@ releases only a ready local approval, leaving saved jobs unchanged.
 
 A running workflow step cannot be canceled: `recover_local_job` `cancel` on a
 running workflow job returns that explanation and sends nothing. Rejecting a waiting
-approval or selection step is the only way to stop a workflow. Workflow
-authoring, native decision controls, the expanded Studio form and live
+approval or selection step is the only way to stop a workflow. The native
+review dialog in Jobs and Studio sends decisions through the same entry as
+`decide_workflow_step`. Workflow authoring, the expanded Studio form and live
 provider/output acceptance remain incomplete. Do not infer live compatibility
 from the synthetic installed command tests.
 

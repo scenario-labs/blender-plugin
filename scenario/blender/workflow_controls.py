@@ -20,7 +20,7 @@ from ..core.api.errors import ScenarioError
 from ..core.schema.forms import display_label, schema_defaults, validate_parameters
 from ..core.schema.params import parse_schema
 from ..core.ui.costs import workflow_loop_warning
-from . import reference_form, runtime
+from . import reference_form, runtime, workflow_steps
 
 # Persisted ID properties on workflow file inputs. A marker blocks pricing until
 # its upload attaches or is explicitly resolved; the request records provenance.
@@ -439,8 +439,10 @@ class SCENARIO_OT_generate_workflow(bpy.types.Operator):
         self.layout.label(text=f"Exact price: {self._cost} CU")
         _warn(self.layout, self._warning)
         self.layout.label(text="Submit once. Inspect saved jobs after an uncertain response.")
+        self.layout.label(text="Results require separate application.")
+        self.layout.label(text="Approval and selection steps wait for your review in Jobs.")
         self.layout.label(
-            text="Results require separate application. Running workflows cannot be cancelled here."
+            text="A running step cannot be canceled; Stop workflow at a waiting step."
         )
 
     def execute(self, context):
@@ -461,6 +463,7 @@ def _warn(layout, text):
 def draw(layout, context):
     form = context.scene.scenario_workflow
     owner = controls(create=False)
+    workflow_steps.draw_pending(layout, context)
     box = layout.box()
     box.label(text="Workflow", icon="NODETREE")
     row = box.row(align=True)

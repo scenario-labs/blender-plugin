@@ -2,28 +2,32 @@
 {
   "type": "Evidence",
   "id": "docs-user-guide.waiting-workflow-steps",
-  "title": "Waiting workflow steps in Jobs",
-  "description": "A waiting workflow shows a status row; native decisions are not available, while a connected agent can read and decide the step through the local MCP.",
+  "title": "Reviewing waiting workflow steps",
+  "description": "A waiting workflow step is reviewed in Jobs or Studio Workflows and approved, selected or stopped once; a running step cannot be canceled.",
   "evidence": {
     "path": "docs/USER_GUIDE.md",
     "scope": "waiting-workflow-steps",
     "coverage": "source-reviewed",
     "reviewed_at": "2026-10-10",
     "base_revision": "33d00b0554151c4de04731fd1a5e5c64ed50855b",
-    "limits": "Reviewed the review_step status descriptor, its Jobs drawing through job_recovery.draw_controls, the 15 second refresh while a step waits, and the local MCP workflow_job_steps and decide_workflow_step tools with their descriptions and server instructions, which ask the agent for the user's explicit choice; the server cannot verify that a person approved a decision. Installed tests check the descriptor label on a projected view and the MCP tools with synthetic SDK responses; no screenshot, physical desktop interaction or live agent client was exercised. No live or paid request was made: the service's handling of repeated or concurrent decisions, rejection inside a ForEach iteration, omitting projectId for API-key decisions and the charge after an approval or selection are not live-verified. Re-reviewed on 2026-10-10 after the MCP tools were added. Re-reviewed on 2026-10-10 after the workflow cancel explanation was limited to a running workflow job; this section's statements are unchanged by it.",
+    "limits": "Reviewed the Run a workflow paragraphs against the review controls and labels in saved_job_actions, the review dialog in workflow_steps (its contents, the explicit Stop workflow choice, the consequence text, single use and the refusal of a blocked selection), the 15 second refresh while a step waits, Refresh status after a restart, and the local MCP workflow_job_steps and decide_workflow_step tools, whose guidance asks the agent for the user's explicit choice; the server cannot verify that a person approved a decision. Unit tests cover the review controls, their labels and bindings, steps of another revision, the decision in flight and wrapped error rows, the running-workflow note and its absence while a step is projected. Installed tests on the packaged ZIP (macOS arm64 Blender 5.1.2, synthetic SDK responses) cover the sidebar Jobs, Studio Jobs and Studio Workflows drawing with storage reads and owner creation refused, workflow names, the dialog contents, single use, selection bounds and listed order, long text candidates, the explicit stop with a blocked selection, a changed step, revision or connection, offline refusal, a refused decision shown again, review only after an explicit refresh following a restart, job-row redraws and registration. No screenshot or physical desktop input, focus, DPI or IME evidence of the review rows or dialog was collected; it is pending for an unlocked desktop session. A live agent client was not exercised. No live or paid request was made: the service's handling of repeated or concurrent decisions, rejection inside a ForEach iteration, omitting projectId for API-key decisions and the charge after an approval or selection are not live-verified.",
     "sources": {
-      "scenario/core/ui/saved_job_actions.py": "751b2d03f53d0439121dc4528f3fb8b1c683f9368a692b12b5c90cf50b51240e",
-      "scenario/blender/job_recovery.py": "da8df6bde6c9a0613565ea0563e7f1211086448d75e9419414f9c738038bda63",
-      "scenario/blender/model_jobs.py": "69e1baa892ea691fccec82b28cc294bbfeb0672053d629ebca839ff3d8364022",
-      "tests/blender/test_workflow_commands.py": "928f4e45ae6c7d3e44e87dda2c7914f6f6ff3a26a85ab707e7ee3d91c68e898e",
-      "tests/unit/test_saved_job_actions.py": "b5888fd4d1efce167fc71464bb8080b4c0b48cdf72ede9d7029fb73377e6f01a",
+      "scenario/blender/workflow_steps.py": "82c868fd18b362c83c494b72445165f8b1144218c33261ea32d4fe933f397f71",
+      "scenario/core/ui/saved_job_actions.py": "b22a28c37971c21776313bdef903af8ee9d24e627774ffd4d14c48ef59e8ab4b",
+      "scenario/blender/job_recovery.py": "52bfd17d29a253267467c589a67f59449220038754808de77d596186aed36dc5",
+      "scenario/blender/model_jobs.py": "5588e3c4ad43bdd8eba1239fa5b7134217dd2f68900b4c038e7d6b4766906cc2",
+      "scenario/blender/workflow_controls.py": "4de1c7929e512739c96b15f6229f708fd9153fd358f24e9a383647d3117ef8ee",
+      "scenario/core/jobs/workflow_nodes.py": "24a72b8fdeffe9ff9540d5fd57fff10ece53559bbc5ab571880c00298f537a51",
       "scenario/mcp/tools_scenario.py": "015351c9b65663f5209ebf2c29996a3da4e8f6c6595822462aa573cec64c3838",
-      "scenario/mcp/protocol.py": "ee30be5866bbee06918c1145e7e770e90275a4c059c5610d83e6c768a719df7a"
+      "scenario/mcp/protocol.py": "ee30be5866bbee06918c1145e7e770e90275a4c059c5610d83e6c768a719df7a",
+      "tests/blender/test_workflow_steps.py": "530ba44c89c0ac09aaa415f6bec0e34ec5b12aba6e61d1525a3000a990fd8e77",
+      "tests/blender/test_workflow_commands.py": "928f4e45ae6c7d3e44e87dda2c7914f6f6ff3a26a85ab707e7ee3d91c68e898e",
+      "tests/unit/test_saved_job_actions.py": "ac7679b2665509d333855b3c7f26bed297c856a26391a200aa800444f9f16379"
     }
   }
 }
 ---
 
-# Waiting workflow steps in Jobs
+# Reviewing waiting workflow steps
 
 Evidence for [the canonical document](../../USER_GUIDE.md).

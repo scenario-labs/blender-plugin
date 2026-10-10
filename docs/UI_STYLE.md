@@ -1955,9 +1955,10 @@ discarded. The [desktop regression checks](#studio-and-library-desktop-regressio
 record the earlier scoped input evidence for this behavior.
 
 This view exposes existing creation/Film/result controls and the workflow form
-below, plus Library browsing, model-reference reuse and reviewed
-[collection and tag organization](#library-organization). Interactive workflow
-nodes and complete retained Studio acceptance remain separate.
+below, plus Library browsing, model-reference reuse, reviewed
+[collection and tag organization](#library-organization) and the review of
+[waiting workflow steps](#waiting-workflow-steps). Complete retained Studio
+acceptance remains separate.
 
 ### Workflow controls
 
@@ -1984,11 +1985,10 @@ Page search/navigation use unsaved WindowManager state; scene form edits require
 a new price. The maintenance pump completes metadata and quote requests even
 after the popup closes. Saved jobs use the existing Jobs and Results controls.
 
-A workflow job waiting at an approval or selection step shows the status row
-**Workflow waits for your decision** among its saved-job controls. The shared
-descriptor list draws it without an operator, from the in-memory `review_step`
-action. Native review and decision controls are not implemented yet, and
-physical desktop evidence of the row is pending.
+A workflow job waiting at an approval or selection step is reviewed and decided
+as described in [waiting workflow steps](#waiting-workflow-steps). The Generate
+confirmation states that these steps wait for review in Jobs and that a running
+step cannot be canceled, only stopped at a waiting step.
 
 Always-required fields use the shared parsed requirement rules, including
 `required: {always: true}`, and start included. Catalog lists have session-only
@@ -2005,7 +2005,61 @@ The desktop regression checks below record prompt editing, exact price refresh,
 cancel/confirm and saved-job visibility with a synthetic service on their named
 candidate. Broader DPI, IME and platform acceptance remains tracked under #66/#68
 separately from review readiness.
-Interactive nodes and live outputs remain outside this implementation.
+Live outputs remain outside this implementation.
+
+### Waiting workflow steps
+
+A workflow job waiting at an approval or selection step shows the status row
+**Workflow waits for your decision** in its Jobs row, followed by one review
+button per waiting step: **Review approval**, **Choose 1 to 2 of 3** (or
+**Choose 1 of 3** when the bounds are equal) for a selection, or **Review blocked
+selection** when only stopping is offered. A step inside a loop adds its loop
+index. A step whose node ID cannot be sent shows **This step cannot be decided
+here** without a button. Studio's Workflows page lists the same buttons above
+its form under **Waiting for your decision**, with the workflow name and job,
+but without the recovery controls. Every surface draws the shared saved-job
+descriptors from the in-memory step projection; drawing performs no I/O, starts
+no request and changes no property. Offline, the review buttons are disabled.
+
+**Review** opens a dialog that captures the step when it opens. It shows the
+workflow name (from the loaded catalog or form, else its ID), the Scenario job ID,
+the job's exact approved price, the step and its ID, any last decision error,
+and either the result asset IDs an approval reviews or a selection's candidates
+in listed order. Asset candidates are checkboxes named by asset ID; text
+candidates are numbered checkboxes followed by the text, wrapped, up to 12 lines
+each. A line counts the selected items against the bounds. The decision is one
+expanded choice between **Approve** (or **Select**) and **Stop workflow**. Stop
+is never the default, so rejecting always needs that explicit choice; a blocked
+selection disables Select and explains why. The dialog states the consequence of
+the chosen decision: continuing runs the remaining steps, which spend credits,
+and their charge is not verified against the approved price; stopping rejects
+the step and cancels the workflow, completed steps stay charged, and inside a
+loop Scenario may stop only that loop, so the refreshed status is authoritative.
+
+**Send decision** is single use. It sends the choice through the same
+`runtime.decide_workflow_step` entry as local MCP `decide_workflow_step`, which
+checks the context, saved revision, step review, decision and selection bounds
+again and queues one request that is never retried. Selected items are sent in
+listed order. A changed step, revision or connection, a command in flight or
+disabled Online Access sends nothing and reports why. Review assets and
+candidates are IDs or text only; no preview is downloaded.
+
+While the decision is sent, the row shows **Sending your decision...**. A
+refused, uncertain or unsent decision then stays as wrapped error rows until
+another decision, a newly waiting step or the job leaving `remote`; the dialog
+shows it too. A running workflow job with no waiting step shows, without a
+button, that Scenario cannot cancel a running workflow step and that it finishes
+or pauses at its next approval or selection. The pump redraws Jobs rows when a
+step starts or stops waiting, a decision is queued or finishes, or its error
+changes.
+
+Installed tests on macOS arm64 Blender 5.1.2 cover the descriptors drawn in the
+sidebar, Studio Jobs and Studio Workflows with storage reads refused, the dialog
+contents, single use, bounds, listed order, the explicit stop, a blocked
+selection, changed step, revision and connection, offline refusal, a refused
+decision, steps after an explicit refresh following a restart, redraws and
+registration, with synthetic SDK responses. Physical desktop evidence of the
+rows and dialog (input, focus, DPI, IME and screenshots) is pending.
 
 ## Native Library controls
 

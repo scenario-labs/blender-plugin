@@ -85,6 +85,9 @@ class WorkflowControlTests(unittest.TestCase):
         cls.draw(operator, context)
         labels = [call.kwargs.get("text") for call in operator.layout.label.call_args_list]
         self.assertIn("Exact price: 0.1234567890123456789 CU", labels)
+        # Waiting steps are decided in Jobs; only a waiting step can stop the workflow.
+        self.assertIn("Approval and selection steps wait for your review in Jobs.", labels)
+        self.assertIn("A running step cannot be canceled; Stop workflow at a waiting step.", labels)
         with self.assertRaises(ValueError):
             self.owner.approve(self.scene, view.ticket.identifier, "0.12")
         self.assertEqual(cls.execute(operator, context), {"FINISHED"})

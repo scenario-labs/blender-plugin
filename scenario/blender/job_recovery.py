@@ -875,6 +875,14 @@ class SCENARIO_OT_use_saved_first_frame(bpy.types.Operator):
         return {"FINISHED"}
 
 
+def workflow_steps(record):
+    """The owner's in-memory step projection for one of its workflow views, or None."""
+    jobs = runtime.state.model_jobs
+    if jobs is None or record.kind != "workflow" or jobs.views.get(record.local_id) is not record:
+        return None
+    return jobs.step_view(record.local_id)
+
+
 def result_actions(record):
     """Describe one view's saved-job controls from in-memory state, without I/O."""
     review = None
@@ -882,7 +890,11 @@ def result_actions(record):
         jobs = runtime.state.blockout_jobs
         review = jobs.recovery.current(record.local_id, bpy.context.scene) if jobs else None
     return saved_job_actions.describe(
-        record, runtime.state.job_context_id, RESULT_TYPES, blockout_review=review
+        record,
+        runtime.state.job_context_id,
+        RESULT_TYPES,
+        blockout_review=review,
+        workflow_steps=workflow_steps(record),
     )
 
 

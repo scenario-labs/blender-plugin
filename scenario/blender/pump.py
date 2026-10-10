@@ -89,12 +89,23 @@ def _process():
     studio.redraw_popups()
 
 
-def _job_row(row):
+def _job_row(row, jobs):
     # Offered actions are deliberately absent: they empty while each automatic
     # two-second refresh is in flight, and redrawing on that would make the
     # saved-job controls blink. A completed refresh that changes the reading or
-    # saved state redraws after its drain has restored them.
+    # saved state redraws after its drain has restored them. Waiting workflow
+    # steps change without either, so their review IDs, a decision in flight
+    # and the last decision error are compared too.
     reading = row.meta.get("remote")
+    steps = None
+    if jobs is not None and row.kind == "workflow" and jobs.views.get(row.local_id) is row:
+        view = jobs.step_view(row.local_id)
+        steps = (
+            view.revision,
+            tuple(step.review_id for step in view.steps),
+            view.deciding,
+            view.error,
+        )
     return (
         row.local_id,
         row.status,
@@ -103,6 +114,7 @@ def _job_row(row):
         len(row.files),
         row.meta.get("saved_revision"),
         None if reading is None else (reading.status, reading.percent, reading.stale),
+        steps,
     )
 
 
@@ -118,7 +130,7 @@ def _jobs_changed():
     rows = (
         runtime.state.job_context_id,
         runtime.online(),
-        tuple(_job_row(row) for row in runtime.state.jobs_view),
+        tuple(_job_row(row, runtime.state.model_jobs) for row in runtime.state.jobs_view),
     )
     if rows == _job_rows:
         return False

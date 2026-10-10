@@ -10,7 +10,7 @@
     "coverage": "source-reviewed",
     "reviewed_at": "2026-10-09",
     "base_revision": "b57c398f35fb2148c82fb8b26f6a40564d3f52ef",
-    "limits": "Reviewed the uncertain-submission entry against source and tests. A lost submission response moves the saved job to the uncertain state, which only a stored remote job ID can leave; saved-job views mark it unconfirmed and expose no action, and prompt helpers refuse another request for that field. Cloud history lists only custom model jobs, Save for recovery and local MCP recover_cloud_job adopt only a successful custom or inference job whose model ID matches, and adoption matches existing records by remote job ID, so the uncertain record stays unconfirmed beside the recovered one. Workflow and Prompt Spark job types are neither listed nor adoptable, so they have no in-Blender recovery. Documentation-only review: no native, desktop, live provider or paid run; the Scenario web app's presentation of workflow and prompt-helper jobs was not inspected.",
+    "limits": "Reviewed the uncertain-submission entry against source and tests. A lost submission response moves the saved job to the uncertain state, which only a stored remote job ID can leave; saved-job views mark it unconfirmed and expose no action, and prompt helpers refuse another request for that field. Cloud history lists only custom model jobs, Save for recovery and local MCP recover_cloud_job adopt only a successful custom or inference job whose model ID matches, and adoption matches existing records by remote job ID, so the uncertain record stays unconfirmed beside the recovered one. Workflow and Prompt Spark job types are neither listed nor adoptable, so they have no in-Blender recovery. Documentation-only review: no native, desktop, live provider or paid run; the Scenario web app's presentation of workflow and prompt-helper jobs was not inspected. Re-reviewed on 2026-10-10 for workflow_controls drawing the waiting-step section and the Generate confirmation's new waiting-step and stop sentences; an uncertain workflow submission still offers no recovery or resubmission; only the fingerprint of scenario/blender/workflow_controls.py was refreshed.",
     "sources": {
       "scenario/core/jobs/coordinator.py": "a8b7efb39e74a1a34f350ff7274e2e714a06933383743744dd22e6e1b7d7096d",
       "scenario/core/jobs/store.py": "b05eab9cb9a8a83df55889d94acdbd162521e70f71150c15c46e21b62abc554d",
@@ -18,7 +18,7 @@
       "scenario/core/history.py": "70f03b84bd4eaa98712332b97ee492180d91f1663825e8f967cfbb7a9cfce781",
       "scenario/blender/model_jobs.py": "bffb88d51557165fbdd5c22c89087c7a690ad15c17607a543b4a2cbc905ea00c",
       "scenario/blender/prompt_jobs.py": "8fc6c9b949806c086e8595a0aa6221bb217cc3d3b32c92a7e7eb9cabc4714313",
-      "scenario/blender/workflow_controls.py": "fed4151d8476ead8c14de00ca3a30e7da3c814b55fd060b43b8f60c6db62ba78",
+      "scenario/blender/workflow_controls.py": "4de1c7929e512739c96b15f6229f708fd9153fd358f24e9a383647d3117ef8ee",
       "scenario/blender/operators.py": "8fb3a35beb010e81f4d4eaecf22688d8baf051ad88cdf2def50664e0da01a103",
       "scenario/blender/panels.py": "0ea312ede072b4e25c8177120214d404b449ea60db10c02edd12ad5eb985d989",
       "scenario/mcp/tools_scenario.py": "5fa8768f9b8356fb9b5071cf7c889305b06e55905a72d4caf62114f9202b0f4d",

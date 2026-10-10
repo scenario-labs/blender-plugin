@@ -771,7 +771,7 @@ Native surfaces draw these controls from one descriptor list.
 free of `bpy`: it turns one projected view into ordered descriptors with the
 label, icon, operator and operator properties (the context token, then either
 the request ID and observed revision or a ready Blockout review ID, and any
-asset, purpose or action). Each operator descriptor
+asset, purpose, action, or workflow node and step review ID). Each operator descriptor
 keeps the `ModelJobs.actions` name that MCP `job_status` reports. `import_model`
 draws one control per importable unit that `ModelJobs` projected into the view,
 in classified order, instead of one per GLB media type. The sidebar
@@ -781,9 +781,10 @@ them, draw through `job_recovery.draw_controls`; the compact composer's
 operators with `INVOKE_DEFAULT`, and its job card draws those panels' rows.
 Presence means enabled:
 a descriptor appears only while its action is offered, and rows without an
-operator are status text. Building descriptors reads only in-memory views and
-the current scene's Blockout review, without store reads, session creation or
-scene changes. A descriptor grants nothing: each operator still checks its
+operator are status text. Building descriptors reads only in-memory views, the
+current scene's Blockout review and a workflow job's
+[step projection](#native-review-of-waiting-steps), without store reads,
+session creation or scene changes. A descriptor grants nothing: each operator still checks its
 context token and saved revision or review, and opens its own confirmation or
 destination review where one applies.
 A new saved-job action adds one descriptor here, not a surface-specific branch.
@@ -879,9 +880,10 @@ until a projection succeeds again. While a step waits, the next automatic
 refresh is scheduled after `STEP_POLL_INTERVAL` (15 seconds), because each
 retrieval re-signs candidate URLs and only a decision moves the job on; the
 stale marking follows that schedule. `steps()` reads the projection from memory,
-so drawing code may call it. `actions()` lists the status-only `review_step`
-before the refresh controls. The saved-job descriptors draw it as the row
-**Workflow waits for your decision** without an operator, and `control` rejects it.
+so drawing code may call it. `actions()` lists `review_step` before the refresh
+controls, and `control` rejects it. The saved-job descriptors draw it as the row
+**Workflow waits for your decision**, followed by one native review control per
+projected step (see [native review](#native-review-of-waiting-steps)).
 
 `ModelJobs.decide(request_id, expected_revision, node_id, review_id, action, selected_indices=None)`
 is the shared native and MCP entry; `runtime.decide_workflow_step` adds the
@@ -918,7 +920,25 @@ classifies a finished decision task as `applied`, `refused`, `uncertain` or
 
 MCP `workflow_job_steps` and `decide_workflow_step` call these entries and
 `runtime.decide_workflow_step`; see [workflow step decisions](MCP.md#workflow-step-decisions).
-No native control sends a decision yet.
+
+### Native review of waiting steps
+
+`ModelJobs.step_view(request_id)` returns, from memory only, the projection's
+saved revision and steps, whether a decision is queued or being sent, and the
+last decision error, so drawing code may call it. `job_recovery.result_actions`
+passes it to the saved-job descriptors, which add one review control per step
+only while its revision equals the view's saved revision, a **Sending your
+decision...** row, wrapped decision error rows and, for a running workflow job
+without a waiting step, a note that Scenario cannot cancel a running step.
+`ModelJobs.waiting_step(request_id, expected_revision, node_id)` returns the
+saved record and one current waiting step; a changed revision, a job that is not
+a `remote` workflow, a command in flight or a missing step is refused, and
+nothing is queued. [workflow_steps.py](../scenario/blender/workflow_steps.py)
+opens the review dialog with that step and its `review_id`, and sends the chosen
+decision once through `runtime.decide_workflow_step`, the entry MCP
+`decide_workflow_step` uses; `decide` checks the binding again. The dialog,
+its wording and the Workflows page section are described in
+[UI style](UI_STYLE.md#waiting-workflow-steps).
 
 ## Explicit recovered Image application
 

@@ -515,8 +515,10 @@ parts, completion and status reads keep the `uploads.create`,
 `uploads.trigger_action` and `uploads.retrieve` mapping and their one-attempt,
 no-replay rules described above. Its in-flight bindings share the facade's
 128-binding capacity with generation forms. Each upload also takes one of the
-facade's 128 handles per session, which finished uploads keep until a credential
-or project change replaces the facade or the extension restarts.
+facade's 128 handles per session, which finished uploads keep until the facade
+is replaced: after a credential or project change, after a blend file loads
+(Open, Revert or File > New deactivates the job session) or when the extension
+restarts.
 
 Uploadable inputs are file fields whose saved schema kind is image (the default),
 audio, video or 3D, using the same sources as generation forms. Other kinds and
@@ -537,8 +539,9 @@ and leaves a note on the input. Each input keeps only its latest note, stored by
 the scene's session UID and input name, and shown only while the loaded workflow,
 its schema and the input's values match those it was recorded with. It survives
 undo and redo, notes on other inputs never evict it, and another upload admitted
-into the input retires it; a retry refused before admission keeps it. The upload
-operator returns `FINISHED`
+into the input retires it; a retry refused before admission keeps it. Notes live
+only on the facade, so replacing it, as for its handles above, also drops them.
+The upload operator returns `FINISHED`
 whenever a new marker remains after a start failure, so its undo step is recorded.
 
 The maintenance pump attaches only after an imported observation and a fresh

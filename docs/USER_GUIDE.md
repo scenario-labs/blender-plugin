@@ -757,6 +757,8 @@ finishes but does not attach automatically. If nothing had been sent yet, or the
 file could not be prepared, the input is freed with its values kept and says that
 nothing was uploaded, so you can upload again; the note stays after undo or redo
 until you change the input, load another workflow or upload into it again.
+Changing credentials or project, opening a file or restarting Blender also
+clears it.
 Otherwise, and when you edit that
 input, load another workflow, undo or reopen the file during an upload, nothing
 attaches automatically; undo also stops an upload that is still sending. An input

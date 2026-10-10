@@ -1465,8 +1465,9 @@ was sent (local staging failed, or the staged record was still prepared) the pum
 removes only its own marker, keeps existing values and draws a read-only note on
 the input that nothing was uploaded, so the content can be uploaded again. The
 note stays through undo and redo while the workflow and the input's values are
-unchanged, and the next upload admitted into the input retires it. An upload that
-already sent something keeps
+unchanged, and the next upload admitted into the input retires it. It is held in
+memory, so a credential or project change, a blend file load or an extension
+restart also clears it. An upload that already sent something keeps
 the marker. **Cancel preparation** of a prepared record also frees any input still
 marked for it, matched through this connection's ticket for that marker, which
 survives undo, or through the recorded request after reopening or a connection

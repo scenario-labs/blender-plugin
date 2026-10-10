@@ -167,7 +167,12 @@ normalized-equivalent edits keep the current session. Explicit trained-model lan
 defaults follow the same selection: `ensure_model_defaults` opens an owner of the
 selected store's scope without any service request, and this retirement path
 retires it, so a default reviewed under the old selection cannot be written into
-the new one ([runtime owner](../JOB_STORAGE.md#runtime-owner)). Read-only history and Film
+the new one ([runtime owner](../JOB_STORAGE.md#runtime-owner)). The native Image and
+Render Image forms read those defaults into a per-selection cache that drawing only
+reads; the GUI pump, before pricing, and local MCP render inspection or quotes give
+a form with no explicit choice its lane default once the route checks, and block
+its price with the reason otherwise
+([trained models section](../UI_STYLE.md#trained-models-section-and-project-defaults)). Read-only history and Film
 controls check both credentials and project without mutating state in drawing.
 Prototype jobs have no reliable credential or project ownership. Their automatic
 service engine is retired for every selection, including the default project;

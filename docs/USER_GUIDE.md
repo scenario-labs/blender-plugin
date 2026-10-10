@@ -249,8 +249,14 @@ again to change its strength. A composition already combines
 its LoRAs with their own strengths, so it replaces the form's choice. The box says
 before OK whether your choice adds to or replaces what the form holds.
 
-The chosen LoRAs or composition appear under the **Model** button with a remove
-button. Each change requests a fresh price; the quote reads every chosen model
+The chosen LoRAs or composition appear in the **Trained models** box under the
+**Model** box, in the sidebar, in Studio and in Render Image. Each LoRA has its
+own **Strength** field, limited to the range the base model declares; drag it or
+type a value. A composition lists its own LoRAs and strengths, which you cannot
+change here. Use the remove button to drop one, or **Add LoRA or composition** to
+open the picker's Trained chip. A LoRA with no strength yet (for example one kept
+from an earlier version) shows **Set strength**; Blender never adds a strength you
+did not see. Each change requests a fresh price; the quote reads every chosen model
 again and refuses one that was deleted, is no longer accessible, changed type or
 is not trained, before any price is requested. A choice belongs to the
 credentials and project that made it: after switching either, choose it again.
@@ -263,9 +269,30 @@ arrives, which shows their names; one that is no longer listed then stays under
 without a strength needs one before the form is priced, unless its base declares a
 default. A composition ID typed into **LoRA or Composition Model** with an
 earlier version appears there too, as the form's choice: check it, or remove it
-and choose again in the picker. Trained models are experimental here: generation results with them
-have not been accepted yet, project defaults and sidebar strength sliders are not
-available yet, and training stays in Scenario's web app.
+and choose again in the picker.
+
+The floating composer's model chip shows the choice as **FLUX.1 Dev · Studio
+LoRA (+1)** and opens the picker on the Trained chip; edit strengths in the
+sidebar or Studio. The Jobs list names a generation submitted in this session
+the same way.
+
+#### Project defaults for LoRAs
+
+The **Trained models** box ends with the form's project default for the selected
+credentials and Project ID. Choose a base model with its LoRAs and strengths (or
+a composition), then **Save** to make it the default of this form; saving asks
+before replacing an earlier default and requests no price. **Use** puts the
+default back into a form that holds another choice, and **Clear** forgets it
+after a confirmation. A form you have not chosen a model for yet, such as the
+Image form of a new scene or file, takes the default by itself once its models
+are loaded. If the default can no longer run (a LoRA was deleted or the base no
+longer accepts it), the form says **Project default ... is unavailable** with
+the reason and does not offer a price until you choose a model or clear the
+default; it never generates with the base model alone. Defaults of other
+credentials or projects are never shown or used.
+
+Trained models are experimental here: generation results with them have not been
+accepted yet, and training stays in Scenario's web app.
 
 ### Video
 Text, images or your Blender scene to video (Seedance 2.0 and 2.5, Kling, Veo, Wan, LTX and the other video models, including audio-to-video).

@@ -383,7 +383,7 @@ model ID, name or service reply. The sidebar estimate status shows it instead of
 the generic price error, and local MCP `estimate_cost` returns it as the tool
 error. The native picker and every form request now build selections with `apply`
 (see [trained models in the native picker](#trained-models-in-the-native-picker));
-local MCP listings, sidebar strength controls and project defaults remain #97 work.
+local MCP listings and MCP defaults remain #97 work.
 
 Every call here is an existing public SDK 2.2.0 method; there is no raw
 fallback, SDK extension, SDK issue or dependency change. Offline tests compare
@@ -427,6 +427,16 @@ decimals, so Blender's 32-bit property storage does not change the payload. Loca
 MCP still takes the same inputs as base-model parameters; an installed test shows
 that the form's payload and an MCP `estimate_cost` given those parameters dry-run
 identical bytes.
+
+Strength fields, project defaults and the composer label add no new Scenario
+operation. Strengths stay within the range read from the base's description, and
+a project default is checked with the same `apply` against the selected
+connection's descriptions and trained list before it changes a form. When a
+form's default names a base whose description is not loaded yet, the existing
+model-description read loads it (`SDKAdapter.model`,
+`models.with_raw_response.retrieve` with the selected project), once at a time and
+not again after a recorded failure; the quote then reads every chosen model again
+as above. Defaults live in the local job store, not in the service.
 
 Every call here is an existing public SDK 2.2.0 method; there is no new SDK method,
 raw fallback, SDK extension, SDK issue or dependency change. Offline and installed

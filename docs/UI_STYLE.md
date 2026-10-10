@@ -181,34 +181,83 @@ the base's current schema before the form changes, and then the price is
 invalidated. The box ends with **Experimental: LoRAs and compositions not
 accepted**. Drawing reads this state only.
 
-The persistent **Model** row lists the form's choice under the model button, for
-example **Studio LoRA (strength 0.8)** or **Name (composition)**, each with a
-remove button that reprices the form, followed by the same experimental line. The
-base's LoRA inputs are never drawn as text fields. Every request writes the choice
-into the base's declared inputs with the same route function local MCP and the
-quote check use; a base change, a model no longer listed, a choice saved under
-another connection or project, or a route the current schema refuses keeps the
-choice and blocks the price with its reason. An ID that an earlier version saved
-in the base's model text field (such as **LoRA or Composition Model**) becomes the
-form's choice when it has none, so it is neither dropped silently nor sent
-unchecked; it gets the same checks and remove button. Dropping any value an
-earlier version saved in an input the form no longer draws, such as the LoRA
-lists it drew as text, prices the form again, so a price error saved with the
-file gives way to the current reason.
-**Reload parameters** restores the job's LoRAs or composition that are still
-listed, never adds a strength the job did not send (the base's declared default
-applies, otherwise the price asks for one) and warns about the trained models it
-could not restore. Before the trained list has loaded (still loading, or its read
-failed), it keeps every model the base's LoRA inputs describe, unchecked, says
-they are checked once the list loads, and the price waits with the list's reason.
-Until then the Model row shows each by its ID: the job's composition, from the
-base's model ID input, as a composition without a strength, and its LoRAs with
-the strengths they ran with. When the list arrives, the models it names get
-their listed kind and name (a composition sends no strength) and the form is
-priced again; one it does not name stays and
-blocks the price with its reason until it is removed. Strength editing in the
-sidebar and Studio, project defaults and the composer chip label are follow-up
-work.
+The base's LoRA inputs are never drawn as text fields. Every request writes the
+form's choice into the base's declared inputs with the same route function local
+MCP and the quote check use; a base change, a model no longer listed, a choice
+saved under another connection or project, or a route the current schema refuses
+keeps the choice and blocks the price with its reason. An ID that an earlier
+version saved in the base's model text field (such as **LoRA or Composition
+Model**) becomes the form's choice when it has none, so it is neither dropped
+silently nor sent unchecked; it gets the same checks and remove button.
+Dropping any value an earlier version saved in an input the form no longer
+draws, such as the LoRA lists it drew as text, prices the form again, so a price
+error saved with the file gives way to the current reason.
+**Reload parameters** restores the job's LoRAs or composition that
+are still listed, never adds a strength the job did not send (the base's declared
+default applies, otherwise the price asks for one) and warns about the trained
+models it could not restore. Before the trained list has loaded (still loading, or
+its read failed), it keeps every model the base's LoRA inputs describe, unchecked,
+says they are checked once the list loads, and the price waits with the list's
+reason. Until then the Trained models box shows each by its ID: the job's
+composition, from the base's model ID input, as a composition without a strength,
+and its LoRAs, which keep the strengths they ran with. When the list arrives, the
+models it names get their listed kind and name (a composition sends no strength)
+and the form is priced again; one it does not name stays and blocks the price with
+its reason until it is removed.
+
+### Trained models section and project defaults
+
+The Image and Render Image forms show a **Trained models** box (`SHADERFX`) right
+after the **Model** box, in the sidebar, in Studio and in Render Image alike; any
+other form shows it only when it holds a choice. Each chosen LoRA has a row with
+its name and a remove button, then a **Strength (min to max)** field bounded by
+the range the current base declares. Editing a strength clamps it to that range
+and reprices the form; each LoRA keeps its own strength in form order, so removing
+one never shifts another's strength. When the base's description changes, the
+fields take its new range, but a strength outside it is kept and the price is
+blocked with the range until the user edits it; nothing changes silently.
+
+A LoRA without a strength, such as an ID adopted from an earlier text field, gets
+a **Set strength** button when the base declares a range: the strength then starts
+at the visible start value and the price is requested again. A base that declares
+a default but no range shows **Strength: the base model's default (N)** and sends
+that default. A request never adds a strength the user did not see. A composition
+row reads **Name (composition)** with its LoRAs and their own strengths listed
+read-only below it. The reason a choice cannot run is drawn in the box with
+`ERROR` (or `TIME` while trained models load), and **Add LoRA or composition**
+opens the picker on the Trained chip. The box ends with the experimental line.
+
+The project-default row stores one explicit choice per form for the selected
+credentials and optional Project ID, through the
+[runtime owner](JOB_STORAGE.md#runtime-owner). It reads **Project default:
+FLUX.1 Dev · Studio LoRA (+1)** or **No project default for this form**, then
+**Use**, **Save** and **Clear**. **Save** stores the form's base model, LoRAs and
+strengths (or composition) only when that choice runs now, and only over the
+revision and selection drawn on the button; replacing a saved default and
+**Clear** ask for confirmation. Saving or clearing prices nothing and changes no
+payload. **Use** replaces the form's choice with the default after the same route
+check and reprices it.
+
+A form with no explicit choice in this scope (no model chosen and no trained
+model, as in a new scene or file) takes the saved default: the main-thread pump
+applies it once the base description and the trained list are loaded. Until
+then, the price reads **Applying the project default ...**; if the default cannot
+run (a model no longer listed, another type, a refused route, an unreadable stored
+row), the price reads **Project default ... is unavailable: choose a model or
+clear the default.** with the reason, and Generate stays disabled. It never falls
+back to the base model alone. Choosing a model or a trained model makes the
+choice explicit, and the default no longer changes that form. Local MCP render
+inspection and quotes apply the same step first. Drawing reads cached defaults
+only; the owner is opened by the pump, requests and operators.
+
+The compact composer's model chip names the choice as **Base · LoRA (+n)**. A
+long LoRA name is shortened before the count, so the number of further LoRAs
+stays readable; with a trained choice the chip opens the picker on the Trained
+chip. Strengths are
+edited in the sidebar or Studio, and the composer note says so (**Edit LoRA
+strength in the sidebar or Studio**) when nothing more urgent is shown. Job views
+name the base with its trained choice the same way while the session that
+submitted them lasts; a recovered saved job names its base model only.
 
 ## Duration and Match timeline
 

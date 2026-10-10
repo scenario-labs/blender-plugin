@@ -13,6 +13,7 @@ import json
 import random
 import re
 import struct
+import tracemalloc
 import zlib
 from pathlib import Path
 from types import SimpleNamespace
@@ -188,6 +189,32 @@ def test_decoder_rejects_invalid_or_unsupported_png(mutate, message):
     assert fixture.decode_png(data)[:2] == (2, 2)
     with pytest.raises(ValueError, match=message):
         fixture.decode_png(mutate(data))
+
+
+def inflating(size):
+    """A small zlib stream that inflates to `size` zero bytes, built without that buffer."""
+    stream, block = zlib.compressobj(9), bytes(1 << 20)
+    return b"".join(stream.compress(block) for _ in range(size >> 20)) + stream.flush()
+
+
+def test_decoder_stops_inflating_past_the_declared_image_size():
+    data = fixture.encode_png(2, 2, bytes(12))
+    bomb = data.replace(IDAT, chunk(b"IDAT", inflating(32 << 20)))
+    assert len(bomb) < 64 * 1024
+    tracing = tracemalloc.is_tracing()
+    if not tracing:
+        tracemalloc.start()
+    try:
+        tracemalloc.reset_peak()
+        before = tracemalloc.get_traced_memory()[0]
+        with pytest.raises(ValueError, match="header"):
+            fixture.decode_png(bomb)
+        peak = tracemalloc.get_traced_memory()[1] - before
+    finally:
+        if not tracing:
+            tracemalloc.stop()
+    # Inflating the whole stream would hold 32 MiB; the declared 2x2 image needs 14 bytes.
+    assert peak < 1 << 20
 
 
 def test_compare_counts_differing_pixels_and_largest_channel_change():

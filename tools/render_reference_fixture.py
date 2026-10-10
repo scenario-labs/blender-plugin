@@ -101,7 +101,11 @@ def decode_png(data):
     stride = width * 3
     expected = (stride + 1) * height
     decompressor = zlib.decompressobj()
-    raw = decompressor.decompress(b"".join(body for kind, body in chunks if kind == b"IDAT"))
+    # Inflate at most one byte past the declared size: a small stream that would
+    # expand far beyond its header then fails without being inflated in full.
+    raw = decompressor.decompress(
+        b"".join(body for kind, body in chunks if kind == b"IDAT"), expected + 1
+    )
     if len(raw) != expected or not decompressor.eof:
         raise ValueError("PNG image data does not match its header")
     rows, previous, filters = bytearray(), bytearray(stride), set()

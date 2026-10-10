@@ -22,6 +22,7 @@ from ..core.api.errors import ScenarioError
 from ..core.scene import capture_plan
 from ..core.schema.params import build_body, missing_required_files, parse_schema, validate
 from . import params_ui, props, runtime
+from .job_session import OriginUnavailable
 
 log = logging.getLogger("scenario.generation")
 
@@ -894,13 +895,19 @@ def process_model_jobs():
             lane_state.estimate_cu = float(estimate.cost)
             lane_state.estimate_state = "READY"
             lane_state.estimate_error = ""
-        except Exception:
+        except Exception as error:
             jobs.quotes.pop(ticket.identifier, None)
             # Source/transport details can contain private inputs. Keep failures
             # actionable without copying arbitrary exception text into the UI.
             try:
                 lane_state = ticket.scene.scenario.lane_state(ticket.lane)
-                if lane_state.estimate_key == key:
+                if lane_state.estimate_key != key:
+                    continue
+                if isinstance(error, OriginUnavailable) and ticket.scene != bpy.context.scene:
+                    # Another scene was selected before this price arrived. The
+                    # pump prices the form again once its own scene is selected.
+                    props.mark_estimate_dirty(lane_state)
+                else:
                     lane_state.estimate_state = "ERROR"
                     lane_state.estimate_error = "Could not confirm this price; estimate again"
             except ReferenceError:

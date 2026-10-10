@@ -1049,3 +1049,72 @@ def test_retry_after_cancel_while_a_still_poll_is_in_flight_reads_queued(decodin
     drive(scheduler)
     assert state(lane, "asset-sound", ENVELOPE).state == State.READY
     assert len(lane.decoder.calls) == 1 and work_directories(service) == []
+
+
+def test_cancel_after_a_retry_waiting_for_a_still_poll_keeps_the_envelope_canceled(decoding):
+    # Waveform Retry, then Cancel, while a still poll for the same result is on
+    # the lane: the retry waits for that poll, and its restart must not queue
+    # the envelope that the later cancel stopped.
+    lane = decoding
+    service, scheduler = lane.env, lane.scheduler
+    ready_job(service, "request", [("asset-sound", "audio/wav", wav())])
+    service.assets["asset-sound"] = asset_record("asset-sound", "audio/wav")  # No still yet.
+    scheduler.request("request")
+    scheduler.cancel("request", "asset-sound")
+    drive(scheduler)
+    assert state(lane, "asset-sound", ENVELOPE).reason == CANCELED
+    entered, release = _gated(service)
+    lane.clock.now += 60
+    scheduler.pump()
+    assert entered.wait(2)  # The still's next metadata read is in flight.
+    assert scheduler.retry("request", "asset-sound").get(ENVELOPE).state == State.QUEUED
+    canceled = scheduler.cancel("request", "asset-sound")
+    assert canceled.get(ENVELOPE).reason == CANCELED
+    assert canceled.get(STILL).state == State.QUEUED  # The still keeps the retry.
+    release.set()
+    futures.wait([scheduler._task._future], timeout=5)
+    scheduler.pump()
+    # The returned poll is applied and the retry restarts the still only.
+    assert state(lane, "asset-sound", ENVELOPE).reason == CANCELED
+    assert state(lane, "asset-sound").state == State.QUEUED
+    polls = len(service.calls)
+    service.gate = None
+    drive(scheduler)
+    drive(scheduler)
+    assert len(service.calls) > polls  # The still was polled again at once.
+    assert state(lane, "asset-sound", ENVELOPE).reason == CANCELED
+    assert lane.decoder.calls == [] and work_directories(service) == []
+    # Only a retry after the cancel decodes again.
+    scheduler.retry("request", "asset-sound")
+    drive(scheduler)
+    drive(scheduler)
+    assert state(lane, "asset-sound", ENVELOPE).state == State.READY
+    assert len(lane.decoder.calls) == 1 and work_directories(service) == []
+
+
+def test_a_retry_after_that_cancel_decodes_even_when_the_batch_brought_a_copy(decoding):
+    # Retry, Cancel, then Retry again while the batch that copies the audio is
+    # on the lane: the last retry wins over the cancel before it.
+    lane = decoding
+    service, scheduler = lane.env, lane.scheduler
+    ready_job(
+        service, "request", [("asset-video", "video/mp4", MP4), ("asset-sound", "audio/wav", wav())]
+    )
+    service.assets["asset-video"] = asset_record("asset-video", "video/mp4")
+    entered, release = _gated(service)
+    scheduler.request("request")
+    scheduler.pump()
+    assert entered.wait(2)  # The batch has copied the audio and now reads metadata.
+    scheduler.retry("request", "asset-sound")
+    assert scheduler.cancel("request", "asset-sound").get(ENVELOPE).reason == CANCELED
+    assert scheduler.retry("request", "asset-sound").get(ENVELOPE).state == State.QUEUED
+    release.set()
+    futures.wait([scheduler._task._future], timeout=5)
+    scheduler.pump()
+    # The canceled batch's copy is discarded, and the last retry queues a new one.
+    assert state(lane, "asset-sound", ENVELOPE).state in (State.QUEUED, State.DECODE)
+    service.gate = None
+    drive(scheduler)
+    drive(scheduler)
+    assert state(lane, "asset-sound", ENVELOPE).state == State.READY
+    assert len(lane.decoder.calls) == 1 and work_directories(service) == []

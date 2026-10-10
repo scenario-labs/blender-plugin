@@ -107,7 +107,9 @@ snapshot it returns and later `status` reads report the retry rather than the
 old outcome. When that result's batch is already on the lane, the forced fetch
 waits for it. The pump that collects the batch applies its late outcome and
 queues the renditions again in the same call, so that outcome is never reported
-as settled and cannot undo the retry.
+as settled and cannot undo the retry. A `cancel` received before that pump wins
+for local renditions: the pump queues only server renditions again, so a
+canceled envelope stays canceled and no decode starts until another `retry`.
 
 Without online access, renditions report `offline` and are checked every five
 seconds. An offline poll pauses the window, keeping the time already used since

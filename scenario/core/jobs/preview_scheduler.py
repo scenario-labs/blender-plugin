@@ -77,6 +77,7 @@ class _Entry:
         "canceled",
         "due",
         "force",
+        "hold",
         "inflight",
         "poll",
         "renew",
@@ -105,6 +106,9 @@ class _Entry:
         # An explicit retry received while this entry's batch was in flight:
         # its renditions already read queued; the restart follows that batch.
         self.retry = False
+        # A cancel received after that retry: the restart queues only server
+        # renditions, so the local ones it failed stay canceled.
+        self.hold = False
         # A rendition added while this entry's batch was in flight, so that
         # batch's final flag predates the new window.
         self.renew = False
@@ -294,7 +298,8 @@ class ResultPreviewScheduler:
         While a lane batch for this result is in flight, the fetch waits for
         it: the pump that collects that batch applies its outcome and queues
         the renditions again in the same call, so a late outcome is never
-        reported as settled and cannot undo the retry.
+        reported as settled and cannot undo the retry. A ``cancel`` received
+        before then keeps the local renditions it fails canceled.
         ``review`` selects a workflow review asset rather than a saved result.
         """
         self._check()
@@ -303,7 +308,7 @@ class ResultPreviewScheduler:
             raise previews.PreviewError("Request a preview for this saved result first")
         if entry.inflight:
             self._requeue(entry)
-            entry.retry = True
+            entry.retry, entry.hold = True, False
         else:
             self._restart(entry, self._clock())
         return self._snapshot(entry)
@@ -314,7 +319,9 @@ class ResultPreviewScheduler:
         Server stills and clips keep polling. An issued decode request is
         discarded and a running decode is signaled, which terminates its offline
         Blender process. A copy that an in-flight batch is still preparing is
-        discarded when that batch returns. ``retry`` starts again.
+        discarded when that batch returns. A retry still waiting for that
+        batch then restarts server renditions only: local decoding starts
+        again only on a later ``retry``.
         """
         self._check()
         # Saved results only: a workflow review asset has no local renditions.
@@ -337,11 +344,16 @@ class ResultPreviewScheduler:
             ):
                 entry.states[rendition] = RenditionStatus(State.FAILED, reason=CANCELED)
         entry.canceled |= entry.inflight
+        entry.hold |= entry.retry
         self._schedule(entry, self._clock())
         return self._snapshot(entry)
 
-    def _requeue(self, entry):
-        """Queue every rendition a retry fetches again and withdraw its decode requests."""
+    def _requeue(self, entry, *, local=True):
+        """Queue every rendition a retry fetches again and withdraw its decode requests.
+
+        ``local=False`` leaves local renditions as they are, for a deferred
+        retry that a later ``cancel`` overtook.
+        """
         self._release(entry)
         publishing = {
             request.rendition
@@ -349,12 +361,14 @@ class ResultPreviewScheduler:
             if request.key == entry.target.key and task not in self._canceled
         }
         for rendition, status in tuple(entry.states.items()):
-            if status.state != State.UNSUPPORTED and rendition not in publishing:
+            if status.state == State.UNSUPPORTED or rendition in publishing:
+                continue
+            if local or not previews.is_local(entry.target.kind, rendition):
                 entry.states[rendition] = RenditionStatus(State.QUEUED)
 
     def _restart(self, entry, now):
-        self._requeue(entry)
-        entry.force, entry.retry, entry.attempts = True, False, 0
+        self._requeue(entry, local=not entry.hold)
+        entry.force, entry.retry, entry.hold, entry.attempts = True, False, False, 0
         entry.canceled = False
         entry.window, entry.used = None, 0.0
         entry.poll = entry.due = now

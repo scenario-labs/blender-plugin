@@ -1,16 +1,26 @@
 # SPDX-FileCopyrightText: 2026 Scenario Inc.
 # SPDX-License-Identifier: GPL-3.0-or-later
 # Paid execution requires the protected environment and an explicit total cap.
+# The monthly schedule runs tests/smoke/monthly-plan.json with the fixed total
+# cap in tools/smoke_ci.py; it still waits for a required reviewer.
 name: smoke
 
 on:
   workflow_dispatch:
     inputs:
+      plan:
+        description: Committed monthly plan or the private plan secret
+        type: choice
+        required: true
+        default: monthly
+        options:
+          - monthly
+          - private
       max_cu:
-        description: Authorized total CU cap for every case in the private smoke plan
+        description: Authorized total CU cap for every case in the selected plan
         type: string
         required: true
-        default: "0"
+        default: "40"
   schedule:
     - cron: "0 6 1 * *"
 
@@ -31,6 +41,7 @@ jobs:
       actions: read
     outputs:
       max_cu: ${{ steps.gate.outputs.max_cu }}
+      plan: ${{ steps.gate.outputs.plan }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -43,13 +54,14 @@ jobs:
         id: gate
         env:
           GH_TOKEN: ${{ github.token }}
-          MAX_TOTAL_CU: ${{ inputs.max_cu || vars.SMOKE_MAX_TOTAL_CU || '0' }}
-        run: uv run --locked --no-env-file python -m tools.smoke_ci gate --max-cu "$MAX_TOTAL_CU"
+          MAX_TOTAL_CU: ${{ inputs.max_cu }}
+          SMOKE_PLAN: ${{ inputs.plan }}
+        run: uv run --locked --no-env-file python -m tools.smoke_ci gate --max-cu "$MAX_TOTAL_CU" --plan "$SMOKE_PLAN"
 
   smoke:
     needs: gate
     if: github.repository == 'scenario-labs/blender-plugin' && github.ref == 'refs/heads/main' && github.run_attempt == 1
-    name: Budget approval (${{ needs.gate.outputs.max_cu }} CU total)
+    name: Budget approval (${{ needs.gate.outputs.plan }} plan, ${{ needs.gate.outputs.max_cu }} CU total)
     runs-on: ubuntu-24.04
     environment: smoke
     permissions:
@@ -70,9 +82,10 @@ jobs:
         run: uv run --locked --no-env-file python -m tools.smoke_ci gate
       - name: Verify encrypted recovery before any service request
         env:
-          SMOKE_PLAN_JSON: ${{ secrets.SMOKE_PLAN_JSON }}
+          SMOKE_PLAN: ${{ needs.gate.outputs.plan }}
+          SMOKE_PLAN_JSON: ${{ needs.gate.outputs.plan == 'private' && secrets.SMOKE_PLAN_JSON || '' }}
           SMOKE_RECOVERY_PASSPHRASE: ${{ secrets.SMOKE_RECOVERY_PASSPHRASE }}
-        run: uv run --locked --no-env-file python -m tools.smoke_ci prepare --root "$RUNNER_TEMP/private-smoke"
+        run: uv run --locked --no-env-file python -m tools.smoke_ci prepare --root "$RUNNER_TEMP/private-smoke" --plan "$SMOKE_PLAN"
       - name: Upload authorized inputs, quote all cases and enforce the aggregate budget
         env:
           SCENARIO_SMOKE: "1"

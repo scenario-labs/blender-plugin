@@ -9,11 +9,18 @@ import shutil
 import subprocess
 import tarfile
 import tempfile
+from decimal import Decimal
 from pathlib import Path
 
-from tools.smoke_image import SmokeError, create_file, decimal_cost
+from tools.smoke_image import SmokeError, create_file, decimal_cost, read_bytes
 
 REPOSITORY = "scenario-labs/blender-plugin"
+ROOT = Path(__file__).resolve().parents[1]
+# The scheduled run always uses this committed plan and total cap (#40). Change
+# either one only in a reviewed commit, never through repository settings.
+MONTHLY_PLAN = ROOT / "tests" / "smoke" / "monthly-plan.json"
+MONTHLY_MAX_CU = Decimal("40")
+PLANS = ("monthly", "private")
 
 
 def check_context(environ):
@@ -24,6 +31,18 @@ def check_context(environ):
         or environ.get("GITHUB_RUN_ATTEMPT") != "1"
     ):
         raise SmokeError("Hosted smokes require a new base-repository main dispatch or schedule")
+
+
+def admission(environ, max_cu, plan):
+    """Freeze one plan and total cap; a schedule ignores inputs and uses the monthly budget."""
+    if environ.get("GITHUB_EVENT_NAME") == "schedule":
+        return "monthly", MONTHLY_MAX_CU
+    if plan not in PLANS:
+        raise SmokeError("Choose the monthly or private smoke plan")
+    cap = decimal_cost(max_cu)
+    if cap <= 0:
+        raise SmokeError("Authorize a positive aggregate budget before execution", 3)
+    return plan, cap
 
 
 def validate_gate(environment, branches):
@@ -105,7 +124,20 @@ def crypt(source, destination, secret, *, decrypt=False):
             )
 
 
-def prepare(root, environ):
+def plan_bytes(plan, environ):
+    if environ.get("GITHUB_EVENT_NAME") == "schedule" and plan != "monthly":
+        raise SmokeError("Scheduled smokes run only the committed monthly plan")
+    if plan == "monthly":
+        return read_bytes(MONTHLY_PLAN)
+    if plan != "private":
+        raise SmokeError("Choose the monthly or private smoke plan")
+    raw = environ.get("SMOKE_PLAN_JSON", "").encode()
+    if not raw or len(raw) > 1024 * 1024:
+        raise SmokeError("Configure a private smoke plan of at most 1 MiB")
+    return raw
+
+
+def prepare(root, environ, plan="private"):
     check_context(environ)
     secret = passphrase(environ)
     # Test encryption AND recovery before permitting any Scenario request.
@@ -116,9 +148,7 @@ def prepare(root, environ):
         crypt(path / "sealed", path / "restored", secret, decrypt=True)
         if (path / "restored").read_bytes() != (path / "plain").read_bytes():
             raise SmokeError("Recovery encryption self-check failed")
-    raw = environ.get("SMOKE_PLAN_JSON", "").encode()
-    if not raw or len(raw) > 1024 * 1024:
-        raise SmokeError("Configure a private smoke plan of at most 1 MiB")
+    raw = plan_bytes(plan, environ)
     if root.absolute() != root.resolve():
         raise SmokeError("Private smoke storage must not use symbolic links")
     root.mkdir(mode=0o700)
@@ -147,23 +177,31 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     commands = parser.add_subparsers(dest="command", required=True)
     gate = commands.add_parser("gate")
-    gate.add_argument("--max-cu", type=decimal_cost)
+    # Admission passes both raw inputs; they are empty on a schedule. The
+    # post-approval recheck passes neither and freezes nothing.
+    gate.add_argument("--max-cu")
+    gate.add_argument("--plan")
     for command in ("prepare", "seal"):
         item = commands.add_parser(command)
         item.add_argument("--root", type=Path, required=True)
+        if command == "prepare":
+            item.add_argument("--plan", choices=PLANS, required=True)
         if command == "seal":
             item.add_argument("--output", type=Path, required=True)
     args = parser.parse_args(argv)
     try:
         if args.command == "gate":
-            if args.max_cu is not None and args.max_cu <= 0:
-                raise SmokeError("Authorize a positive aggregate budget before execution", 3)
+            frozen = None
+            if args.max_cu is not None or args.plan is not None:
+                frozen = admission(os.environ, args.max_cu, args.plan)
             check_gate(os.environ)
-            if args.max_cu is not None:
+            if frozen is not None:
+                plan, cap = frozen
                 with Path(os.environ["GITHUB_OUTPUT"]).open("a") as output:
-                    output.write(f"max_cu={args.max_cu:f}\n")
+                    output.write(f"max_cu={cap:f}\nplan={plan}\n")
+                print(f"Admitted the {plan} smoke plan with a {cap:f} CU total cap")
         elif args.command == "prepare":
-            prepare(args.root, os.environ)
+            prepare(args.root, os.environ, args.plan)
         else:
             seal(args.root, args.output, os.environ)
         return 0

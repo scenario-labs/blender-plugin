@@ -104,22 +104,71 @@ def test_absent_environment_stops_the_gate_without_mutation(monkeypatch):
         ci.check_gate(CONTEXT)
 
 
-def test_zero_cap_stops_before_github_read_or_service_setup(monkeypatch):
+@pytest.mark.parametrize(
+    "arguments",
+    [
+        ["--max-cu", "0", "--plan", "monthly"],
+        ["--max-cu", "", "--plan", "monthly"],
+        ["--max-cu", "40", "--plan", "other"],
+        ["--max-cu", "40"],
+        ["--plan", "private"],
+    ],
+)
+def test_dispatch_without_a_positive_cap_and_known_plan_stops_before_github_read(
+    monkeypatch, arguments
+):
+    monkeypatch.setenv("GITHUB_EVENT_NAME", "workflow_dispatch")
     monkeypatch.setattr(ci, "check_gate", lambda env: pytest.fail("Gate read with no budget"))
-    assert ci.main(["gate", "--max-cu", "0"]) == 2
+    assert ci.main(["gate", *arguments]) == 2
 
 
 def test_validated_cap_output_cannot_change_between_gate_and_approval(monkeypatch, tmp_path):
     output = tmp_path / "outputs"
     monkeypatch.setenv("GITHUB_OUTPUT", str(output))
+    monkeypatch.setenv("GITHUB_EVENT_NAME", "workflow_dispatch")
     monkeypatch.setattr(ci, "check_gate", lambda env: None)
-    assert ci.main(["gate", "--max-cu", "12.345678901234567890123456789"]) == 0
-    assert output.read_text() == "max_cu=12.345678901234567890123456789\n"
+    assert ci.main(["gate", "--max-cu", "12.345678901234567890123456789", "--plan", "private"]) == 0
+    assert output.read_text() == "max_cu=12.345678901234567890123456789\nplan=private\n"
     workflow = (ROOT / ".github/workflows/smoke.yml").read_text()
     protected = workflow.split("\n  smoke:\n", 1)[1]
     assert protected.count("needs.gate.outputs.max_cu") == 2
-    assert "vars.SMOKE_MAX_TOTAL_CU" not in protected
+    assert protected.count("needs.gate.outputs.plan") == 3
+    assert "vars.SMOKE_MAX_TOTAL_CU" not in workflow
     assert "inputs.max_cu" not in protected
+    assert "inputs.plan" not in protected
+
+
+@pytest.mark.parametrize(
+    "arguments", [["--max-cu", "", "--plan", ""], ["--max-cu", "1000", "--plan", "private"]]
+)
+def test_schedule_always_freezes_the_committed_monthly_plan_and_cap(
+    monkeypatch, tmp_path, arguments
+):
+    output = tmp_path / "outputs"
+    monkeypatch.setenv("GITHUB_OUTPUT", str(output))
+    monkeypatch.setenv("GITHUB_EVENT_NAME", "schedule")
+    monkeypatch.setattr(ci, "check_gate", lambda env: None)
+    assert ci.main(["gate", *arguments]) == 0
+    assert output.read_text() == "max_cu=40\nplan=monthly\n"
+
+
+def test_post_approval_recheck_freezes_nothing(monkeypatch, tmp_path):
+    monkeypatch.setenv("GITHUB_OUTPUT", str(tmp_path / "outputs"))
+    monkeypatch.setattr(ci, "check_gate", lambda env: None)
+    assert ci.main(["gate"]) == 0
+    assert not (tmp_path / "outputs").exists()
+
+
+def test_plan_selection_reads_the_committed_plan_or_the_private_secret():
+    environ = {**CONTEXT, "SMOKE_PLAN_JSON": '{"private":"plan-marker"}'}
+    assert ci.plan_bytes("monthly", environ) == ci.MONTHLY_PLAN.read_bytes()
+    assert ci.plan_bytes("private", environ) == b'{"private":"plan-marker"}'
+    with pytest.raises(SmokeError, match="private smoke plan"):
+        ci.plan_bytes("private", CONTEXT)
+    with pytest.raises(SmokeError, match="monthly or private"):
+        ci.plan_bytes("other", environ)
+    with pytest.raises(SmokeError, match="only the committed monthly plan"):
+        ci.plan_bytes("private", {**environ, "GITHUB_EVENT_NAME": "schedule"})
 
 
 @pytest.mark.skipif(
@@ -132,7 +181,7 @@ def test_encrypted_recovery_round_trip_and_wrong_passphrase(tmp_path, capsys):
         "SMOKE_RECOVERY_PASSPHRASE": SECRET,
         "SMOKE_PLAN_JSON": '{"private":"plan-marker"}',
     }
-    ci.prepare(root, environ)
+    ci.prepare(root, environ, "private")
     job = root / "suite" / "image"
     job.mkdir(parents=True)
     (job / "scope.key").write_bytes(b"synthetic scope key")
@@ -168,6 +217,24 @@ def test_encrypted_recovery_round_trip_and_wrong_passphrase(tmp_path, capsys):
     assert SECRET not in capsys.readouterr().out
 
 
+@pytest.mark.skipif(
+    shutil.which("gpg") is None, reason="GnuPG is required on the hosted smoke runner"
+)
+def test_scheduled_preparation_stores_the_committed_monthly_plan(tmp_path):
+    root = tmp_path / "private"
+    environ = {
+        **CONTEXT,
+        "GITHUB_EVENT_NAME": "schedule",
+        "SMOKE_RECOVERY_PASSPHRASE": SECRET,
+        "SMOKE_PLAN_JSON": '{"private":"plan-marker"}',
+    }
+    with pytest.raises(SmokeError, match="monthly"):
+        ci.prepare(root, environ, "private")
+    assert not root.exists()
+    ci.prepare(root, environ, "monthly")
+    assert (root / "plan.json").read_bytes() == ci.MONTHLY_PLAN.read_bytes()
+
+
 def test_missing_recovery_secret_blocks_before_creating_private_state(tmp_path):
     with pytest.raises(SmokeError, match="passphrase"):
         ci.prepare(tmp_path / "private", CONTEXT)
@@ -184,6 +251,14 @@ def test_workflow_never_spends_on_pr_or_uploads_plaintext():
     assert "cancel-in-progress: false" in workflow
     assert "needs: gate" in workflow
     assert workflow.count("python -m tools.smoke_ci gate") == 2
+    assert workflow.count('cron: "0 6 1 * *"') == 1
+    assert 'default: "40"' in workflow and "default: monthly" in workflow
+    # Only an explicitly selected private plan receives the private plan secret.
+    assert workflow.count("secrets.SMOKE_PLAN_JSON") == 1
+    assert (
+        "SMOKE_PLAN_JSON: ${{ needs.gate.outputs.plan == 'private' && secrets.SMOKE_PLAN_JSON"
+        in workflow
+    )
     assert workflow.index("smoke_ci prepare") < workflow.index("smoke_suite budget-run")
     assert '--upload-inputs --input-root "$GITHUB_WORKSPACE"' in workflow
     assert "path: ${{ runner.temp }}/smoke-recovery.gpg" in workflow

@@ -114,7 +114,9 @@ establish live generation or full render-lane desktop acceptance.
   its image prompt; Recraft V4 Styles' style ID with style reference images; and
   Meshy Smart Topology's prompt with its image. Over the curated models, the
   weekly payload audit fails only on a file input whose wording names no sibling
-  input; wording that involves a setting is listed at `MED` for review.
+  input. Recognized exclusivity wording ("mutually exclusive with", "can't be
+  combined with") that involves a setting is listed at `MED`; other wording,
+  such as Kling V3 Omni's 4K mode and reference-image count, is not reported.
 - Reversible mesh and panoramic World application exist as explicit synchronous
   primitives. Full generation/history integration remains
   [#99](https://github.com/scenario-labs/blender-plugin/issues/99) and

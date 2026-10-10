@@ -823,7 +823,9 @@ result keeps the tile's 1-based `number` and `caption`, such as `Audio (2)`.
 
 A still is Scenario's preview image for video, 3D and audio results
 (`source: scenario`) or a small PNG decoded from a verified saved image
-(`source: local`). Requesting a Scenario still reads asset metadata and
+(`source: local`). A result without a preview kind, such as text, reports an
+`unsupported` still without a `source`: nothing is requested or decoded for it.
+Requesting a Scenario still reads asset metadata and
 downloads the image while Online Access allows, polling for about five minutes
 when it is missing; with Online Access disabled it reports `offline` and sends
 nothing. Only an interactive Blender decodes image stills: in background
@@ -838,10 +840,15 @@ inspecting again, including after a restart, needs no new decode.
 `action: retry` prepares one result's previews again and clears a `missing`
 marker, like **Retry preview (N)**; `action: cancel` stops its local decoding,
 like the waveform's **Cancel**, and fails unfinished local renditions until a
-retry. A `wait` of up to 60 seconds returns once no returned rendition is
-`queued`, `pending` or `decode`; `in_progress` is `true` when the wait expired
-first. `offline` renditions end the wait, because they change only when the
-user allows Online Access. The tool returns state, sizes, dimensions and levels
+retry. A `wait` of up to 60 seconds returns once the requested renditions, the
+envelope with `envelope: true` and otherwise the stills, are no longer
+`queued`, `pending` or `decode`, so an envelope wait does not also wait for a
+Scenario still that keeps polling. A retry reads `queued` at once, even while a
+batch for that result is on the preview lane, so a wait after it returns only
+once the retried renditions settle. `in_progress` is `true` while any returned
+rendition is still in progress, including when the wait expired first.
+`offline` renditions end the wait, because they change only when the user
+allows Online Access. The tool returns state, sizes, dimensions and levels
 only: never image bytes, cache or result paths, signed URLs or the saved file.
 It never generates, spends, applies, writes the saved job or changes the scene,
 and no local MCP tool opens a system or Blender player.

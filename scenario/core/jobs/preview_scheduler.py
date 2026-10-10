@@ -80,14 +80,17 @@ class PreviewWatch:
     """Tells any thread when watched results have no rendition still in progress.
 
     In progress means queued, pending or decoding. An offline rendition waits
-    for Online Access, so it counts as quiet. The scheduler's owner thread sets
-    the signal while it pumps, and on close; statuses must still be read there.
+    for Online Access, so it counts as quiet. ``renditions``, when set, limits
+    the watch to those renditions of each result. The scheduler's owner thread
+    sets the signal while it pumps, and on close; statuses must still be read
+    there.
     """
 
-    __slots__ = ("_event", "keys")
+    __slots__ = ("_event", "keys", "renditions")
 
-    def __init__(self, keys):
+    def __init__(self, keys, renditions=None):
         self.keys = keys
+        self.renditions = renditions
         self._event = threading.Event()
 
     def wait(self, timeout=None):
@@ -411,27 +414,49 @@ class ResultPreviewScheduler:
         entry = self._entries.get((request_id, asset_id, review is True))
         return None if entry is None else self._snapshot(entry)
 
-    def quiet(self, request_id, asset_id):
-        """Whether no rendition of this result is queued, pending or decoding; no I/O."""
+    def quiet(self, request_id, asset_id, renditions=None):
+        """Whether no rendition of this result is queued, pending or decoding; no I/O.
+
+        ``renditions`` limits the check to those renditions, such as the
+        envelope a caller asked for while the result's still keeps polling.
+        A retry deferred behind an in-flight batch already reads queued, so
+        it is never reported quiet.
+        """
         if threading.current_thread() is not self._owner:
             raise RuntimeError("Use result previews from their owning thread")
-        return self._quiet((request_id, asset_id))
+        return self._quiet((request_id, asset_id), self._renditions(renditions))
 
-    def _quiet(self, key):
+    @staticmethod
+    def _renditions(renditions):
+        if renditions is None:
+            return None
+        renditions = frozenset(renditions)
+        if not renditions or not renditions <= set(previews.RENDITIONS):
+            raise previews.PreviewError("Watch supported preview renditions")
+        return renditions
+
+    def _quiet(self, key, renditions=None):
         # A result never requested, or forgotten once settled, has nothing in progress.
         entry = self._entries.get(key)
-        return entry is None or all(status.state in QUIET for status in entry.states.values())
+        return entry is None or all(
+            status.state in QUIET
+            for rendition, status in entry.states.items()
+            if renditions is None or rendition in renditions
+        )
 
-    def watch(self, request_id, asset_ids):
+    def watch(self, request_id, asset_ids, renditions=None):
         """A signal for a wait off the owner thread, set once these results are quiet.
 
-        The owner thread reads their statuses afterwards and calls ``unwatch``.
-        Closing the scheduler sets every signal, so no wait outlives it.
+        ``renditions`` limits the wait to those renditions of each result, as
+        for ``quiet``. The owner thread reads their statuses afterwards and
+        calls ``unwatch``. Closing the scheduler sets every signal, so no wait
+        outlives it.
         """
         self._check()
+        renditions = self._renditions(renditions)
         if len(self._watches) >= WATCH_LIMIT:
             raise previews.PreviewError("Too many preview waits are open; try again shortly")
-        watch = PreviewWatch(tuple((request_id, asset_id) for asset_id in asset_ids))
+        watch = PreviewWatch(tuple((request_id, asset_id) for asset_id in asset_ids), renditions)
         self._watches.append(watch)
         self._notify()
         return watch
@@ -445,7 +470,7 @@ class ResultPreviewScheduler:
 
     def _notify(self):
         for watch in tuple(self._watches):
-            if all(self._quiet(key) for key in watch.keys):
+            if all(self._quiet(key, watch.renditions) for key in watch.keys):
                 self._watches.remove(watch)
                 watch._event.set()
 

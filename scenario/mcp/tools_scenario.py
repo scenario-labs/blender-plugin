@@ -25,6 +25,7 @@ from ..core.jobs.result_previews import (
     PreviewState,
     is_local,
     preview_kind,
+    supports,
 )
 from ..core.jobs.results import PREVIEW_STATES, ResultError
 from ..core.jobs.workflow_nodes import BLOCKED
@@ -1222,7 +1223,9 @@ def _preview_rendition(kind, rendition, status, bins):
                 peaks=list(peaks),
             )
         return value
-    value["source"] = "local" if is_local(kind, rendition) else "scenario"
+    if supports(kind, rendition):
+        # A result without a preview kind is never decoded or requested from Scenario.
+        value["source"] = "local" if is_local(kind, rendition) else "scenario"
     if preview is not None:
         value.update(
             media_type=preview.media_type,
@@ -1342,10 +1345,13 @@ def inspect_result_previews(args):
             "results": results,
         }
 
-    if not wait or all(scheduler.quiet(request_id, value) for value in asset_ids):
+    # Wait for what was asked: the envelope while the still may keep polling
+    # Scenario for minutes, otherwise the stills.
+    watched = (ENVELOPE,) if envelope else (STILL,)
+    if not wait or all(scheduler.quiet(request_id, value, watched) for value in asset_ids):
         return respond()
     try:
-        watch = scheduler.watch(request_id, asset_ids)
+        watch = scheduler.watch(request_id, asset_ids, watched)
     except PreviewError as error:
         raise ScenarioError(0, str(error)) from None
     server = runtime.state.mcp
@@ -3282,8 +3288,8 @@ SPECS = (
             "  - envelope: optional boolean, default false. Also decode this audio result's waveform envelope from its verified saved file in an offline Blender process, like Waveform; requires asset_id.\n"
             "  - action: inspect (default), retry (prepare asset_id's previews again and clear a missing marker, like Retry preview) or cancel (stop asset_id's local decoding, like the waveform's Cancel).\n"
             "  - bins: optional integer from 8 to 256, default 64, the envelope levels returned.\n"
-            "  - wait: optional seconds from 0 to 60, default 0. Waits off Blender's main thread until no returned preview is queued, pending or decoding.\n"
-            "Returns: context_id, request_id, revision, in_progress, more_results (without asset_id, the other downloaded results with a preview kind; otherwise 0) and results[] with asset_id, number, caption, media_type, kind and renditions. Each rendition has state (queued, pending, offline, decode, ready, missing, failed or unsupported) and reason when set. A still adds source (local or scenario); a ready one adds media_type, width, height and size. A ready envelope adds seconds, sample_rate, channels, silent, overall_rms, overall_peak, bins and rms and peaks levels from 0 to 1. Never returns image bytes, file paths or URLs.\n"
+            "  - wait: optional seconds from 0 to 60, default 0. Waits off Blender's main thread until the requested previews, the envelope when envelope is true and otherwise the stills, are no longer queued, pending or decoding; in_progress still reports any returned rendition in progress.\n"
+            "Returns: context_id, request_id, revision, in_progress, more_results (without asset_id, the other downloaded results with a preview kind; otherwise 0) and results[] with asset_id, number, caption, media_type, kind and renditions. Each rendition has state (queued, pending, offline, decode, ready, missing, failed or unsupported) and reason when set. A still of a result with a preview kind adds source (local or scenario); a ready one adds media_type, width, height and size. A ready envelope adds seconds, sample_rate, channels, silent, overall_rms, overall_peak, bins and rms and peaks levels from 0 to 1. Never returns image bytes, file paths or URLs.\n"
             "Video, 3D and audio stills are Scenario's preview images, read while Online Access allows (offline otherwise; nothing is sent) and polled for about five minutes when missing. Image stills and envelopes use only verified saved files; only an interactive Blender decodes image stills. No tool launches a player.\n"
             'Example: {"context_id": "current-context", "request_id": "saved-request", "expected_revision": 4, "asset_id": "asset_audio", "envelope": true, "wait": 10}.\n'
             "Platform equivalent: asset_get and asset_display for Scenario's preview images; envelopes are local."

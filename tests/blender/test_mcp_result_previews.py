@@ -300,9 +300,16 @@ class McpResultPreviewTests(unittest.TestCase):
         notes = self.inspect_until(
             self.args(record, asset_id="notes"), lambda value: not value["in_progress"]
         )
+        # No preview kind: never a lane request, and no source is claimed.
         self.assertEqual(
-            notes["results"][0]["renditions"]["still"]["state"], "unsupported"
-        )  # No preview kind: never a lane request.
+            notes["results"][0]["renditions"],
+            {
+                "still": {
+                    "state": "unsupported",
+                    "reason": "No preview is available for this format",
+                }
+            },
+        )
         # The served tool returns the same JSON through the MCP protocol.
         registry = submodule("blender.mcp_service").build_registry()
         response = self.protocol.handle_message(
@@ -366,6 +373,22 @@ class McpResultPreviewTests(unittest.TestCase):
             self.assertEqual(again["results"][0]["renditions"]["envelope"]["bins"], 25)
         self.assertEqual(self.requests, [])
         self.assertEqual(self.runtime.state.job_store.get("request"), record)
+
+    def test_an_envelope_wait_does_not_wait_for_a_still_that_keeps_polling(self):
+        with online_access(True):
+            # Scenario has no still for this audio yet, so it polls for minutes.
+            record = self.saved([("sound", "sound.wav", "audio/wav", tone())])
+            began = time.monotonic()
+            deferred = self.mcp.inspect_result_previews(
+                self.args(record, asset_id="sound", envelope=True, wait=60)
+            )
+            result = self.wait(deferred, timeout=30)
+            self.assertLess(time.monotonic() - began, 30)
+        (sound,) = result["results"]
+        self.assertEqual(sound["renditions"]["envelope"]["state"], "ready")
+        self.assertEqual(sound["renditions"]["still"]["state"], "pending")
+        self.assertTrue(result["in_progress"])  # The still is still in progress.
+        self.assertEqual({request.url.path for request in self.requests}, {"/v1/assets/get-bulk"})
 
     def test_cancel_and_retry_mirror_the_native_controls(self):
         with online_access(False):

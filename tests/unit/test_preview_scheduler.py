@@ -1224,3 +1224,68 @@ def test_watches_are_bounded_released_on_close_and_owned_by_one_thread(lane):
     scheduler.unwatch(watches[0])  # Still allowed after close.
     with pytest.raises(previews.PreviewError, match="closed"):
         scheduler.watch("request", ["asset-video"])
+
+
+def test_a_retry_behind_an_inflight_poll_is_never_reported_quiet(decoding):
+    # Adapted from a review probe: a retry deferred behind an in-flight offline
+    # poll kept the result's settled states, so quiet and a watch reported it
+    # finished before the retry ran.
+    lane = decoding
+    service, clock, scheduler = lane.env, lane.clock, lane.scheduler
+    ready_job(service, "request", [("asset-sound", "audio/wav", wav())])
+    service.online = False
+    scheduler.request("request", renditions=(STILL, ENVELOPE))
+    scheduler.cancel("request", "asset-sound")  # As the MCP action or Waveform's Cancel.
+    drive(scheduler)
+    assert state(lane, "asset-sound", ENVELOPE).state == State.FAILED
+    assert state(lane, "asset-sound").state == State.OFFLINE
+    assert scheduler.quiet("request", "asset-sound")
+    clock.now += 5
+    scheduler.pump()  # The offline still's next poll is now on the lane.
+    entry = scheduler._entries[("request", "asset-sound")]
+    assert entry.inflight
+    retried = scheduler.retry("request", "asset-sound")
+    assert entry.retry and retried.get(ENVELOPE).state == State.QUEUED
+    assert not scheduler.quiet("request", "asset-sound")
+    assert not scheduler.quiet("request", "asset-sound", (ENVELOPE,))
+    watch = scheduler.watch("request", ["asset-sound"], (ENVELOPE,))
+    waited = []
+    waiter = threading.Thread(target=lambda: waited.append(watch.wait(10)))
+    waiter.start()
+    # The poll returns; the retry follows in the same pump and the wait goes on.
+    futures.wait([scheduler._task._future], timeout=5)
+    scheduler.pump()
+    assert not watch.quiet and waiter.is_alive()
+    drive(scheduler)
+    drive(scheduler)
+    waiter.join(5)
+    assert waited == [True] and scheduler._watches == []
+    assert state(lane, "asset-sound", ENVELOPE).state == State.READY
+    assert state(lane, "asset-sound").state == State.OFFLINE
+    assert len(lane.decoder.calls) == 1
+
+
+def test_a_watch_limited_to_the_envelope_ignores_a_still_that_keeps_polling(decoding):
+    lane = decoding
+    service, scheduler = lane.env, lane.scheduler
+    ready_job(service, "request", [("asset-sound", "audio/wav", wav())])
+    service.assets["asset-sound"] = asset_record("asset-sound", "audio/wav")  # No still yet.
+    scheduler.request("request")
+    whole = scheduler.watch("request", ["asset-sound"])
+    envelope = scheduler.watch("request", ["asset-sound"], (ENVELOPE,))
+    assert not whole.quiet and not envelope.quiet
+    drive(scheduler)
+    assert state(lane, "asset-sound", ENVELOPE).state == State.READY
+    assert state(lane, "asset-sound").state == State.PENDING
+    assert envelope.quiet and not whole.quiet
+    assert scheduler.quiet("request", "asset-sound", (ENVELOPE,))
+    assert not scheduler.quiet("request", "asset-sound")
+    assert not scheduler.quiet("request", "asset-sound", (STILL, ENVELOPE))
+    assert scheduler.quiet("request", "unknown", (ENVELOPE,))
+    for invalid in ((), ("thumbnail",)):
+        with pytest.raises(previews.PreviewError, match="renditions"):
+            scheduler.watch("request", ["asset-sound"], invalid)
+        with pytest.raises(previews.PreviewError, match="renditions"):
+            scheduler.quiet("request", "asset-sound", invalid)
+    assert scheduler._watches == [whole]
+    scheduler.unwatch(whole)

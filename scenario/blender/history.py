@@ -5,7 +5,7 @@
 import uuid
 
 from ..core import history as core_history
-from ..core.api.catalog import LANE_KIND as KIND_BY_LANE
+from ..core.api.catalog import model_kind
 from ..core.api.errors import ScenarioError
 from ..core.jobs.store import StoreError
 from . import runtime
@@ -34,23 +34,28 @@ def saved_matches(reference):
     )
 
 
-def _kinds():
-    """model_id -> kind, most specific lane first so Patina reads as material."""
+def _catalog_kind(model_id):
+    """Read the loaded catalog, not the mode-filtered lane lists a picker shows."""
+    record = runtime.state.records.get(model_id) if model_id else None
+    return model_kind(record) if record is not None else None
+
+
+def _kinds(jobs):
+    """model_id -> catalog kind for one page; missing until the catalog loads."""
     kinds = {}
-    for lane in (
-        "material",
-        "3d",
-        "edit3d",
-        "audio",
-        "video",
-        "render_video",
-        "image",
-        "render_image",
-    ):
-        kind = KIND_BY_LANE.get(lane)
-        for record in runtime.state.lane_models.get(lane, []):
-            kinds.setdefault(record.id, kind)
+    for job in jobs:
+        model_id = ((job.get("metadata") or {}).get("input") or {}).get("modelId")
+        kind = _catalog_kind(model_id) if isinstance(model_id, str) else None
+        if kind:
+            kinds[model_id] = kind
     return kinds
+
+
+def entry_kind(entry):
+    """A row's kind, completed from a catalog that loaded after its page."""
+    if entry.kind != core_history.UNKNOWN_KIND:
+        return entry.kind
+    return _catalog_kind(entry.model_id) or core_history.UNKNOWN_KIND
 
 
 def _request(catalog, token, append):
@@ -101,7 +106,7 @@ def on_history_event(payload):
             entries = core_history.entries_from_jobs(
                 payload["jobs"],
                 manager.registry.all(),
-                kinds=_kinds(),
+                kinds=_kinds(payload["jobs"]),
                 shared_records=saved_records(),
             )
         except ScenarioError:

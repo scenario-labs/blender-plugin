@@ -119,6 +119,29 @@ def lane_kind(lane):
     return LANE_KIND.get(lane, "image")
 
 
+# Most specific lane first, so Patina reads as material and a mesh edit as 3d.
+_KIND_LANES = (
+    "material",
+    "3d",
+    "edit3d",
+    "audio",
+    "video",
+    "render_video",
+    "image",
+    "render_image",
+)
+
+
+def model_kind(record):
+    """The asset kind a catalog model produces, or None when no lane claims it.
+
+    Unlike the displayed lane lists, this ignores deprecation, training and mode
+    filters: they hide a model from a picker, not the kind of its results.
+    """
+    lanes = record.lanes
+    return next((LANE_KIND[lane] for lane in _KIND_LANES if lane in lanes), None)
+
+
 # Video models that address their inputs as @video1 / @image1 in the prompt (Seedance family). The others take plain words.
 TAGGED_VIDEO_MODELS = ("seedance",)
 

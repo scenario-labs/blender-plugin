@@ -1225,7 +1225,7 @@ def list_generations(args):
         "generations": [
             {
                 "job_id": e.job_id,
-                "kind": e.kind,
+                "kind": history.entry_kind(e),
                 "model_id": e.model_id,
                 "prompt": e.prompt,
                 "status": e.status,
@@ -2324,7 +2324,7 @@ SPECS = (
             "Args:\n"
             "  - limit: optional integer, default 20, maximum number of rows to return.\n"
             "  - refresh: optional boolean, request a new cloud page or retry a failed read; then poll without refresh.\n"
-            "Returns: generations[] with job_id, kind, model_id, prompt, status, cu_cost, empty local_files and local_request_ids. Matching scoped saved jobs expose request IDs; inspect list_local_jobs and use explicit result approval. Use recover_cloud_job for unsaved completed model jobs. The first call may return an empty list and a note while history loads; call again after loading.\n"
+            "Returns: generations[] with job_id, kind (image, video, 3d, material, audio or unknown), model_id, prompt, status, cu_cost, empty local_files and local_request_ids. kind comes from local job records and their saved result media types, else the loaded model catalog; unknown means neither describes the row yet, never an image. Matching scoped saved jobs expose request IDs; inspect list_local_jobs and use explicit result approval. Use recover_cloud_job for unsaved completed model jobs. The first call may return an empty list and a note while history loads; call again after loading.\n"
             'Example: {"limit": 10}.\n'
             "Prefer job_status for a tracked active generation; this is not a fresh platform-wide history query on every call.\n"
             "Platform equivalent: jobs_list."

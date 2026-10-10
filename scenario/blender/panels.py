@@ -9,7 +9,7 @@ import textwrap
 import bpy
 
 from ..core.ui.costs import format_cu
-from . import generation, job_recovery, params_ui, props, runtime
+from . import generation, history, job_recovery, params_ui, props, runtime
 
 KIND_ICON = {
     "image": "IMAGE_DATA",
@@ -645,11 +645,10 @@ def draw_history(layout, context, shown_ids=()):
         if entry.job_id in shown_ids:
             continue  # already listed among this session's results
         saved = bool(entry.local_request_ids) or entry.job_id in saved_ids
+        kind = history.entry_kind(entry)
         box = layout.box()
         header = box.row()
-        header.label(
-            text=(entry.prompt or entry.model_id)[:40], icon=KIND_ICON.get(entry.kind, "FILE")
-        )
+        header.label(text=(entry.prompt or entry.model_id)[:40], icon=KIND_ICON.get(kind, "FILE"))
         header.label(
             text=f"{format_cu(entry.cu_cost)} CU" if entry.cu_cost is not None else entry.status
         )
@@ -676,7 +675,7 @@ def draw_history(layout, context, shown_ids=()):
             )
             op.job_id, op.kind, op.model_id, op.prompt = (
                 entry.job_id,
-                entry.kind,
+                kind,
                 entry.model_id,
                 entry.prompt,
             )

@@ -259,8 +259,9 @@ statement is rejected when any of its physical lines starts with a file-reading
 keyword, because Blender 5.0 and 5.1 can read a continuation line by itself at a
 read-buffer boundary. OBJ streaming checks cancellation every 65,536 lines and every
 4 MiB read. `inspect_gltf_json` applies the GLB document bounds and keeps base64
-data URIs; a unit test keeps its duplicated document checks aligned with
-`inspect_glb`. It binds an external buffer by asset-ID file stem or by a unique
+data URIs with a supported media type, also when RFC 2397 `attribute=value`
+parameters precede `;base64`; a unit test keeps its duplicated document checks
+aligned with `inspect_glb`. It binds an external buffer by asset-ID file stem or by a unique
 exact size, and an external image only by asset-ID stem; any other URI, including
 one inside an extension, fails closed. Buffers and images bind separately, and every
 buffer's saved size must equal its own `byteLength`, also when several entries share

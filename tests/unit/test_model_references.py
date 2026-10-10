@@ -463,6 +463,29 @@ def test_data_uris_are_kept_and_checked():
         inspect_gltf_json(encode(document))
 
 
+def test_data_uris_accept_rfc_2397_parameters_before_base64():
+    document, binary = gltf_parts()
+    payload = base64.b64encode(binary).decode()
+    document["buffers"][0]["uri"] = f"data:application/octet-stream;name=a.bin;base64,{payload}"
+    document["images"][0] = {"uri": "data:image/png;charset=x;name=b.png;base64,iVBORw0K"}
+    result = inspect_gltf_json(encode(document))
+    assert result.files == () and result.data_uris == 2
+    rewritten = json.loads(result.document)
+    assert rewritten["buffers"] == document["buffers"]
+    assert rewritten["images"] == document["images"]
+    for header in (
+        "image/png;name;base64",
+        "image/png;=x;base64",
+        "image/png;name=;base64",
+        "image/png;base64;name=x",
+        "image/png;name=x",
+        "text/plain;name=x;base64",
+    ):
+        document["images"][0] = {"uri": f"data:{header},iVBORw0K"}
+        with pytest.raises(ModelPackageError, match="base64 data URI"):
+            inspect_gltf_json(encode(document))
+
+
 @pytest.mark.parametrize(
     "uri",
     [

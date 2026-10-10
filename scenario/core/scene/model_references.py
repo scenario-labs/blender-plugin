@@ -427,10 +427,21 @@ def _relative_stem(uri):
 
 
 def _data_uri(uri, media_types):
-    """Decode a base64 data URI with an allowed media type, or raise."""
+    """Decode a base64 data URI with an allowed media type, or raise.
+
+    RFC 2397 ``attribute=value`` parameters may sit between the media type and
+    ``;base64``. The header holds no comma, so its ``;base64,`` is the first one in
+    the URI, which is where Blender's glTF importer starts decoding.
+    """
     header, separator, payload = uri[5:].partition(",")
-    media, _, encoding = header.partition(";")
-    if not separator or encoding != "base64" or media not in media_types:
+    media, *parameters = header.split(";")
+    encoding = parameters.pop() if parameters else ""
+    if (
+        not separator
+        or encoding != "base64"
+        or media not in media_types
+        or not all(name and value for name, _, value in (p.partition("=") for p in parameters))
+    ):
         raise ModelPackageError("Use a base64 data URI with a supported media type")
     try:
         return base64.b64decode(payload, validate=True)

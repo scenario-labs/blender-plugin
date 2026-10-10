@@ -1,9 +1,10 @@
 # SPDX-FileCopyrightText: 2026 Scenario Inc.
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""Scoped SDK reads and exact estimates for the consolidated runtime.
+"""Scoped SDK reads, exact estimates and unpaid organization writes.
 
 No bpy imports, ambient credentials, redirects or automatic retries. Paid
-dispatch requires an issued estimate and a durable claim callback.
+dispatch requires an issued estimate and a durable claim callback. Organization
+writes are sent once and classified as rejected or uncertain, never replayed.
 SDK imports are lazy so package registration does not start client work.
 """
 
@@ -13,6 +14,7 @@ import math
 import re
 import threading
 import time
+import unicodedata
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from decimal import Decimal
@@ -61,6 +63,74 @@ def _unavailable_on_denial(method):
             raise
 
     return call
+
+
+class WriteRejected(AdapterError):
+    """Scenario refused a sent organization write with a definite client error.
+
+    The adapter never resends it. Apart from the add refusal typed as
+    AlreadyMembers, the API documents no transaction contract, so a refused
+    multi-asset request is not proof that no member changed; read the assets
+    back with ``asset_records`` before reporting that nothing changed.
+    """
+
+    # Keyword defaults keep copy and pickle working: BaseException rebuilds the
+    # instance from the message alone, then restores these attributes.
+    def __init__(self, message, status=None):
+        super().__init__(message)
+        self.status = status
+
+
+class AlreadyMembers(WriteRejected):
+    """Scenario refused a whole add because some assets were already members.
+
+    Raised only for a 400 from the add endpoint whose JSON ``reason`` is the
+    service's exact already-member text. The add was observed to be one
+    transaction: this refusal writes nothing, so repeating the same request can
+    never succeed. Read the assets back with ``asset_records``; the caller may
+    send only those that are not members yet. The adapter never resends.
+    """
+
+    def __init__(self, message=None, status=400):
+        super().__init__(message or _ALREADY_MEMBERS_TEXT, status)
+
+
+class WriteUncertain(AdapterError):
+    """An organization write may have been applied; read it back, never resend it.
+
+    ``collection_id`` is set only when a create was acknowledged with a valid
+    collection ID but another name, so the caller can reconcile by that ID.
+    """
+
+    def __init__(self, message, status=None, *, collection_id=None):
+        super().__init__(message)
+        self.status = status
+        self.collection_id = collection_id
+
+
+# Local bounds. The SDK documents 49 assets per membership change and 200 per
+# bulk read; tag and name limits are undocumented, so labels follow the Film
+# plan's 200-character rule and tag changes allow its 30-tag task list.
+MAX_COLLECTION_ASSETS = 49
+MAX_ASSET_RECORDS = 200
+MAX_ORGANIZATION_LABEL = 200
+MAX_TAG_CHANGES = 30
+# Labels are single-line display text. Reject control and format characters
+# (bidirectional controls and marks, invisible separators and operators, soft
+# hyphens, tag characters), unencodable surrogates and line or paragraph
+# separators by category. Only the two joiners stay, between other characters.
+_LABEL_CATEGORIES = frozenset({"Cc", "Cf", "Cs", "Zl", "Zp"})
+_LABEL_JOINERS = frozenset("\u200c\u200d")
+# 408, 425 and 429 can arrive after the service accepted the work, and 409 has
+# no documented meaning for these endpoints (duplicate member, name or lock).
+_UNCERTAIN_CLIENT_STATUSES = frozenset({408, 409, 425, 429})
+_UNCONFIRMED = "Scenario did not confirm this change; read it back before changing it again"
+# The add endpoint's reason for refusing a request that names an existing
+# member. Matched exactly; the body itself is never echoed.
+_ALREADY_MEMBERS_REASON = "One or more assets are already part of the collection"
+_ALREADY_MEMBERS_TEXT = (
+    "Scenario added none of these assets because some are already in the collection (HTTP 400)"
+)
 
 
 @dataclass(frozen=True)
@@ -120,7 +190,8 @@ def _json(raw, *, exact=False):
         result = json.loads(
             raw, parse_float=Decimal if exact else float, parse_constant=_reject_constant
         )
-    except (ValueError, UnicodeError):
+    except (ValueError, UnicodeError, RecursionError):
+        # Deeply nested arrays or objects exceed the decoder's recursion limit.
         raise AdapterError("Scenario returned invalid JSON") from None
     if not isinstance(result, dict):
         raise AdapterError("Scenario returned an unexpected response")
@@ -150,7 +221,11 @@ def _status_text(status, *, project):
 def _identifier(value):
     if not isinstance(value, str) or not value or value in {".", ".."} or value.strip() != value:
         raise ValueError("A nonempty identifier is required")
-    if any(char in value for char in "/\\?#%") or any(ord(char) < 33 for char in value):
+    # Lone surrogates cannot be encoded as UTF-8; the SDK would fail while
+    # building the request, so reject them here as invalid input.
+    if any(char in value for char in "/\\?#%") or any(
+        ord(char) < 33 or 0xD800 <= ord(char) <= 0xDFFF for char in value
+    ):
         raise ValueError("Identifier contains unsupported characters")
     return value
 
@@ -179,6 +254,132 @@ def _upload_record(raw, identifier=None):
     # Preserve future statuses, transfer instructions and fields verbatim. This
     # is metadata, not a validated transfer plan or proof of completed import.
     return record
+
+
+def _organization_label(value, field):
+    """Accept an exact bounded single-line label; never strip or rewrite what is sent.
+
+    Lone surrogates would fail inside the SDK. Control and format characters
+    (bidirectional controls, invisible separators and operators, tag characters)
+    and line breaks could hide or reorder text or break Library and MCP rows.
+    Joiners (U+200C, U+200D) stay valid between other characters for scripts and
+    emoji sequences. This is not a confusable check: homoglyphs, combining marks
+    and blank-looking letters such as U+3164 pass, so displays must still treat
+    labels as untrusted text.
+    """
+    if (
+        not isinstance(value, str)
+        or not value.strip()
+        or value != value.strip()
+        or len(value) > MAX_ORGANIZATION_LABEL
+    ):
+        raise ValueError(
+            f"{field} must be nonempty, at most {MAX_ORGANIZATION_LABEL} characters "
+            "and without surrounding spaces"
+        )
+    if value[0] in _LABEL_JOINERS or value[-1] in _LABEL_JOINERS:
+        raise ValueError(f"{field} cannot start or end with a joiner")
+    if any(
+        char not in _LABEL_JOINERS and unicodedata.category(char) in _LABEL_CATEGORIES
+        for char in value
+    ):
+        raise ValueError(f"{field} cannot contain control, format or unencodable characters")
+    return value
+
+
+def _tag_changes(values, field):
+    if values is None:
+        return []
+    if not isinstance(values, (list, tuple)) or len(values) > MAX_TAG_CHANGES:
+        raise ValueError(f"Use a list of at most {MAX_TAG_CHANGES} tags to {field}")
+    tags = [_organization_label(value, "Tag") for value in values]
+    if len(set(tags)) != len(tags):
+        raise ValueError(f"Tags to {field} must be unique")
+    return tags
+
+
+def _identifier_list(values, noun):
+    """Valid identifiers in request order with repeats removed; ValueError otherwise."""
+    if isinstance(values, (str, bytes)) or not isinstance(values, (list, tuple)):
+        raise ValueError(f"Use a list of {noun} identifiers")
+    return list(dict.fromkeys(_identifier(value) for value in values))
+
+
+def _asset_ids(values, limit, *, unique):
+    if not isinstance(values, (list, tuple)) or not 1 <= len(values) <= limit:
+        raise ValueError(f"Use a list of 1 to {limit} asset identifiers")
+    identifiers = _identifier_list(values, "asset")
+    if unique and len(identifiers) != len(values):
+        raise ValueError("Asset identifiers must be unique")
+    return identifiers
+
+
+def _records_by_id(rows, noun, hint, requested=None):
+    """Map rows by valid ID; drop identical duplicates and fail on conflicting ones.
+
+    With ``requested``, every row must carry one of those IDs.
+    """
+    records = {}
+    for row in rows:
+        try:
+            identifier = _identifier(row.get("id") if isinstance(row, dict) else None)
+        except ValueError:
+            raise AdapterError(f"Scenario returned an invalid {noun} record") from None
+        if requested is not None and identifier not in requested:
+            article = "an" if noun[0] in "aeiou" else "a"
+            raise AdapterError(f"Scenario returned {article} {noun} that was not requested")
+        if identifier in records and records[identifier] != row:
+            raise AdapterError(f"Scenario returned conflicting {noun} records; {hint}")
+        records[identifier] = row
+    return records
+
+
+def _unique_rows(rows, limit, noun):
+    """Validate one page of at most ``limit`` records by ID."""
+    if not isinstance(rows, list) or len(rows) > limit:
+        raise AdapterError(f"Scenario returned an invalid {noun} page")
+    return _records_by_id(rows, noun, "refresh the library")
+
+
+def _bulk_records(rows, requested, noun):
+    """Records of one bulk read by requested ID, in request order.
+
+    Shared by ``models_bulk`` and ``asset_records``. Every record must carry a
+    requested ID, so identical duplicates collapse and the request bounds the
+    result. IDs the response omits stay absent: the API reference does not say
+    whether a missing or inaccessible ID is omitted or fails the request.
+    """
+    if not isinstance(rows, list):
+        raise AdapterError(f"Scenario returned an invalid bulk {noun} list")
+    records = _records_by_id(rows, noun, "refresh", frozenset(requested))
+    return {identifier: records[identifier] for identifier in requested if identifier in records}
+
+
+def _already_members(status, body):
+    """Whether an add refusal is the service's exact already-member refusal."""
+    return (
+        status == 400 and isinstance(body, dict) and body.get("reason") == _ALREADY_MEMBERS_REASON
+    )
+
+
+def _write_rejected(status):
+    if status == 401:
+        text = "Scenario rejected the selected credentials"
+    elif status == 403:
+        text = "The selected credentials cannot change this asset or collection"
+    elif status == 404:
+        text = "Asset or collection not found in the selected connection"
+    else:
+        text = "Scenario rejected this organization change"
+    return WriteRejected(f"{text} (HTTP {status})", status)
+
+
+def _confirmed(raw):
+    """Parse a 2xx write acknowledgement; malformed bodies leave the outcome unknown."""
+    try:
+        return _json(raw)
+    except AdapterError:
+        raise WriteUncertain(_UNCONFIRMED) from None
 
 
 def _prepare(identifier, fields, parameters):
@@ -231,9 +432,7 @@ def model_identifiers(values):
     Callers that share pending reads by identifier check a request here first,
     so an invalid identifier fails only the request that contains it.
     """
-    if isinstance(values, (str, bytes)) or not isinstance(values, (list, tuple)):
-        raise ValueError("Use a list of model identifiers")
-    return list(dict.fromkeys(_identifier(value) for value in values))
+    return _identifier_list(values, "model")
 
 
 class SDKAdapter:
@@ -331,6 +530,49 @@ class SDKAdapter:
         except APIConnectionError:
             raise AdapterError("Could not reach Scenario") from None
 
+    def _write(self, method, *args, adding=False, **kwargs):
+        """Send one unpaid account mutation through a public SDK raw wrapper.
+
+        A plain AdapterError (closed client, online access disabled) means
+        nothing was sent. After dispatch, failures raise only WriteRejected or
+        WriteUncertain; with ``adding``, the add endpoint's exact already-member
+        refusal raises the AlreadyMembers subclass. The client keeps
+        max_retries=0 because the SDK would otherwise retry 408/409/429/5xx.
+        Collection creation and membership changes document no idempotency
+        contract. Non-strict tag changes are documented to behave as if
+        idempotent, but a resend after an unknown outcome could reapply a change
+        another client has since reverted, so callers read back instead.
+        """
+        from scenario_sdk import APIStatusError
+
+        if self.project_id is not None:
+            kwargs["project_id"] = self.project_id
+        if self._closed:
+            raise AdapterError("Scenario client is closed")
+        if not self._online():
+            raise AdapterError("Online access is disabled")
+        try:
+            return method(*args, **kwargs).read()
+        except APIStatusError as error:
+            status = error.status_code
+            if adding and _already_members(status, error.body):
+                raise AlreadyMembers() from None
+            if 400 <= status < 500 and status not in _UNCERTAIN_CLIENT_STATUSES:
+                raise _write_rejected(status) from None
+            raise WriteUncertain(
+                f"Scenario did not confirm this change (HTTP {status}); "
+                "read it back before changing it again",
+                status,
+            ) from None
+        except Exception:
+            # The SDK wraps every send failure, including timeouts and lost
+            # connections, in APIConnectionError; those can follow an applied
+            # change. It also processes the response outside that wrapper, so
+            # an unexpected failure cannot be proven unsent. Every write method
+            # validates its input, including UTF-8 encodability, before calling
+            # this, so a local request-building failure is not expected here.
+            raise WriteUncertain(_UNCONFIRMED) from None
+
     def _discovery(self, method, wrapper, *args):
         value = _json(self._unscoped_request(method, *args))
         records = value.get(wrapper)
@@ -391,45 +633,16 @@ class SDKAdapter:
             page = _json(
                 self._request(self._sdk.models.with_raw_response.get_bulk, model_ids=batch)
             )
-            rows = page.get("models")
-            if not isinstance(rows, list):
-                raise AdapterError("Scenario returned an invalid bulk model list")
-            for row in rows:
-                try:
-                    identifier = _identifier(row.get("id") if isinstance(row, dict) else None)
-                except ValueError:
-                    raise AdapterError("Scenario returned an invalid model record") from None
-                if identifier not in batch:
-                    raise AdapterError("Scenario returned a model that was not requested")
-                if identifier in records and records[identifier] != row:
-                    raise AdapterError("Scenario returned conflicting model records; refresh")
-                records[identifier] = row
-        return {
-            identifier: records[identifier] for identifier in requested if identifier in records
-        }
+            # Batches are disjoint and each record must belong to its own batch,
+            # so merging them keeps request order and cannot hide a conflict.
+            records.update(_bulk_records(page.get("models"), batch, "model"))
+        return records
 
     def workflow(self, identifier):
         return self._retrieve("workflows", identifier, "workflow")
 
     def asset(self, identifier):
         return self._retrieve("assets", identifier, "asset")
-
-    @staticmethod
-    def _asset_rows(rows, limit):
-        if not isinstance(rows, list) or len(rows) > limit:
-            raise AdapterError("Scenario returned an invalid asset page")
-        records = {}
-        for row in rows:
-            try:
-                identifier = _identifier(row.get("id") if isinstance(row, dict) else None)
-            except ValueError:
-                raise AdapterError("Scenario returned an invalid asset record") from None
-            if identifier in records and records[identifier] != row:
-                raise AdapterError(
-                    "Scenario returned conflicting asset records; refresh the library"
-                )
-            records[identifier] = row
-        return list(records.values())
 
     def asset_page(self, *, public=False, page_size=40, pagination_token=None, collection_id=None):
         """Read one SDK asset page in the selected scope, without automatic traversal."""
@@ -445,7 +658,7 @@ class SDKAdapter:
         if collection_id is not None:
             options["collection_id"] = _identifier(collection_id)
         page = _json(self._request(self._sdk.assets.with_raw_response.list, **options))
-        rows = self._asset_rows(page.get("assets"), page_size)
+        rows = list(_unique_rows(page.get("assets"), page_size, "asset").values())
         token = page.get("nextPaginationToken")
         if token not in (None, "") and (not isinstance(token, str) or token == pagination_token):
             raise AdapterError("Scenario repeated or returned an invalid asset cursor")
@@ -475,7 +688,7 @@ class SDKAdapter:
             )
         )
         hits = page.get("hits")
-        rows = self._asset_rows(hits, limit)
+        rows = list(_unique_rows(hits, limit, "asset").values())
         total = page.get("estimatedTotalHits")
         returned_offset = page.get("offset")
         if (total is not None and (type(total) is not int or total < 0)) or (
@@ -486,6 +699,146 @@ class SDKAdapter:
         end = offset + len(hits)
         more = bool(hits) and (end < total if total is not None else len(hits) == limit)
         return {"assets": rows, "estimated_total": total, "next_offset": end if more else None}
+
+    def collection_page(self, *, page_size=50, pagination_token=None):
+        """Read one collection page in the selected scope, without automatic traversal."""
+        if type(page_size) is not int or not 1 <= page_size <= 100:
+            raise ValueError("Collection page size must be an integer from 1 to 100")
+        options = {"page_size": page_size}
+        if pagination_token is not None:
+            if not isinstance(pagination_token, str) or not pagination_token:
+                raise ValueError("Use a nonempty collection cursor")
+            options["pagination_token"] = pagination_token
+        page = _json(self._request(self._sdk.collections.with_raw_response.list, **options))
+        rows = _unique_rows(page.get("collections"), page_size, "collection")
+        token = page.get("nextPaginationToken")
+        if token not in (None, "") and (not isinstance(token, str) or token == pagination_token):
+            raise AdapterError("Scenario repeated or returned an invalid collection cursor")
+        return {"collections": list(rows.values()), "next_pagination_token": token or None}
+
+    def collection(self, identifier):
+        """Retrieve one known collection; another returned identity is an error."""
+        identifier = _identifier(identifier)
+        record = self._retrieve("collections", identifier, "collection")
+        if record.get("id") != identifier:
+            raise AdapterError("Scenario returned a different collection")
+        return record
+
+    def asset_records(self, asset_ids):
+        """Read current tags and collection memberships of known assets.
+
+        This is the verification read after organization writes; search indexes
+        may lag. Duplicate requested IDs are read once. Assets the service does
+        not return are absent from the result, which the caller must treat as
+        unverified rather than unchanged. Unrequested records are an error, and
+        so is a record whose ``tags`` or ``collectionIds`` is not a list of
+        strings: SDK 2.2.0 declares both required, and absent metadata must
+        never read as an empty, verified state.
+        """
+        identifiers = _asset_ids(asset_ids, MAX_ASSET_RECORDS, unique=False)
+        page = _json(
+            self._request(self._sdk.assets.with_raw_response.get_bulk, asset_ids=identifiers)
+        )
+        records = _bulk_records(page.get("assets"), identifiers, "asset")
+        for record in records.values():
+            for key in ("tags", "collectionIds"):
+                values = record.get(key)
+                if not isinstance(values, list) or any(not isinstance(v, str) for v in values):
+                    raise AdapterError("Scenario returned invalid asset organization metadata")
+        return records
+
+    def create_collection(self, name):
+        """Create one collection; this POST is not idempotent.
+
+        The API documents no name uniqueness. Callers must look the exact name up
+        first and, after WriteUncertain, reconcile by reading instead of
+        creating again. Returns the acknowledged record, whose name must match.
+        A valid acknowledged ID with another name, for example after service
+        normalization, raises WriteUncertain carrying ``collection_id`` so the
+        caller reconciles by ID; an exact-name lookup would miss it.
+        """
+        name = _organization_label(name, "Collection name")
+        raw = self._write(self._sdk.collections.with_raw_response.create, name=name)
+        record = _confirmed(raw).get("collection")
+        if not isinstance(record, dict):
+            raise WriteUncertain(_UNCONFIRMED)
+        try:
+            identifier = _identifier(record.get("id"))
+        except ValueError:
+            raise WriteUncertain(_UNCONFIRMED) from None
+        if record.get("name") != name:
+            raise WriteUncertain(_UNCONFIRMED, collection_id=identifier)
+        return record
+
+    def _membership(self, method, collection_id, asset_ids, *, adding=False):
+        collection_id = _identifier(collection_id)
+        identifiers = _asset_ids(asset_ids, MAX_COLLECTION_ASSETS, unique=True)
+        raw = self._write(method, collection_id, asset_ids=identifiers, adding=adding)
+        record = _confirmed(raw).get("collection")
+        if not isinstance(record, dict) or record.get("id") != collection_id:
+            raise WriteUncertain(_UNCONFIRMED)
+        return record
+
+    def add_collection_assets(self, collection_id, asset_ids):
+        """Add 1 to 49 unique assets to one collection with a single request.
+
+        49 is the API's per-request cap, as the SDK docstring states. The
+        acknowledgement names the collection, not each asset. The add was
+        observed to be one transaction: when any asset is already a member, the
+        service refuses the whole request with a 400 and writes nothing, raised
+        here as AlreadyMembers. Any other 400 stays a plain WriteRejected and a
+        409 is uncertain. Verify the membership with ``asset_records``.
+        """
+        return self._membership(
+            self._sdk.collections.with_raw_response.assets.add,
+            collection_id,
+            asset_ids,
+            adding=True,
+        )
+
+    def remove_collection_assets(self, collection_id, asset_ids):
+        """Remove 1 to 49 unique assets from one collection with a single request.
+
+        The SDK sends the IDs as a DELETE JSON body. A 2xx acknowledgement is not
+        proof that an intermediary preserved that body; verify with
+        ``asset_records``.
+        """
+        return self._membership(
+            self._sdk.collections.with_raw_response.assets.remove, collection_id, asset_ids
+        )
+
+    def update_asset_tags(self, asset_id, *, add=(), remove=()):
+        """Add and remove exact tags on one asset with a single non-strict request.
+
+        ``strict=False`` makes repeated additions and absent removals behave as
+        documented idempotent no-ops, so ``added``/``deleted`` may be empty.
+        Reported tags must be a subset of those requested. Verify with
+        ``asset_records``; the service may normalize tags in undocumented ways.
+        """
+        identifier = _identifier(asset_id)
+        added = _tag_changes(add, "add")
+        removed = _tag_changes(remove, "remove")
+        if not added and not removed:
+            raise ValueError("Add or remove at least one tag")
+        if set(added) & set(removed):
+            raise ValueError("A tag cannot be added and removed in the same change")
+        options = {"strict": False}
+        if added:
+            options["add"] = added
+        if removed:
+            options["delete"] = removed
+        result = _confirmed(
+            self._write(self._sdk.assets.with_raw_response.update_tags, identifier, **options)
+        )
+        for key, sent in (("added", added), ("deleted", removed)):
+            values = result.get(key)
+            if (
+                not isinstance(values, list)
+                or any(not isinstance(value, str) for value in values)
+                or not set(values) <= set(sent)
+            ):
+                raise WriteUncertain(_UNCONFIRMED)
+        return result
 
     def job(self, identifier):
         return self._retrieve("jobs", identifier, "job")

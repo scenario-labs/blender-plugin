@@ -9,7 +9,8 @@ model-specific inputs and exact quote bytes survive unchanged, response fields
 remain accessible, and disabling retries prevents a second submission attempt.
 Upload lifecycle, job discovery, private trained model lists and bulk model
 reads check scope, wrappers and cursors;
-cancellation fixtures preserve acknowledgements and completion races.
+cancellation fixtures preserve acknowledgements and completion races. Collection
+and tag writes check their JSON bodies, including DELETE, and single attempts.
 They also record the known bug where ambient Basic credentials override an
 explicitly selected Bearer token; that assertion is an expected failure.
 
@@ -198,6 +199,7 @@ def test_estimate_wrapper_preserves_exact_decimal_quote(client_factory):
         ("models", "fixture-model", "model"),
         ("assets", "fixture-asset", "asset"),
         ("jobs", "fixture-job", "job"),
+        ("collections", "fixture-collection", "collection"),
     ],
 )
 def test_retrieve_keeps_scope_and_response_extensions(
@@ -803,3 +805,223 @@ def test_model_retrieve_denial_is_one_status_error(client_factory, status):
         sdk.models.with_raw_response.retrieve("fixture-model", project_id=PROJECT)
     assert error.value.status_code == status
     assert len(requests) == 1
+
+
+def _collection_record(**changes):
+    return {
+        "id": "fixture-collection",
+        "name": "Hero props",
+        "assetCount": 2,
+        "itemCount": 2,
+        "modelCount": 0,
+        "ownerId": PROJECT,
+        "createdAt": "2026-01-01T00:00:00Z",
+        "updatedAt": "2026-01-01T00:00:00Z",
+        "futureField": {"retain": True},
+        **changes,
+    }
+
+
+@pytest.mark.parametrize("operation,method", [("add", "PUT"), ("remove", "DELETE")])
+def test_collection_membership_sends_asset_ids_as_json_body(client_factory, operation, method):
+    # Removal relies on a JSON body on DELETE. This proves SDK serialization
+    # only; whether the production edge preserves that body is a live check.
+    requests = []
+    fixture = {"collection": _collection_record()}
+
+    def respond(request):
+        requests.append(request)
+        return httpx.Response(200, json=fixture)
+
+    sdk = client_factory(respond)
+    write = getattr(sdk.collections.with_raw_response.assets, operation)
+    raw = write("fixture-collection", asset_ids=["fixture-a", "fixture-b"], project_id=PROJECT)
+    assert json.loads(raw.read()) == fixture
+    assert len(requests) == 1
+    request = requests[0]
+    assert (request.method, request.url.path) == (
+        method,
+        "/v1/collections/fixture-collection/assets",
+    )
+    assert dict(request.url.params) == {"projectId": PROJECT}
+    assert request.headers["Content-Type"] == "application/json"
+    assert json.loads(request.content) == {"assetIds": ["fixture-a", "fixture-b"]}
+
+
+@pytest.mark.parametrize(
+    "content,body",
+    [
+        (b'{"reason": "fixture reason"}', {"reason": "fixture reason"}),
+        (b"fixture reason", "fixture reason"),
+    ],
+    ids=["json", "text"],
+)
+def test_collection_add_refusal_keeps_the_decoded_body_once(client_factory, content, body):
+    # The adapter types one add refusal by its JSON reason. SDK 2.2.0 exposes
+    # the decoded JSON (or the raw text) as APIStatusError.body, without retry.
+    requests = []
+
+    def refuse(request):
+        requests.append(request)
+        return httpx.Response(400, content=content, headers={"x-should-retry": "true"})
+
+    sdk = client_factory(refuse)
+    with pytest.raises(APIStatusError) as error:
+        sdk.collections.with_raw_response.assets.add(
+            "fixture-collection", asset_ids=["fixture-a"], project_id=PROJECT
+        )
+    assert error.value.status_code == 400
+    assert error.value.body == body
+    assert len(requests) == 1
+
+
+def test_collection_create_sends_only_the_name_with_scope_in_query(client_factory):
+    requests = []
+    fixture = {"collection": _collection_record(assetCount=0, itemCount=0)}
+
+    def respond(request):
+        requests.append(request)
+        return httpx.Response(200, json=fixture)
+
+    sdk = client_factory(respond)
+    raw = sdk.collections.with_raw_response.create(name="Hero props", project_id=PROJECT)
+    assert json.loads(raw.read()) == fixture
+    assert len(requests) == 1
+    assert (requests[0].method, requests[0].url.path) == ("POST", "/v1/collections")
+    assert dict(requests[0].url.params) == {"projectId": PROJECT}
+    assert json.loads(requests[0].content) == {"name": "Hero props"}
+
+
+def test_collection_pages_keep_scope_size_and_opaque_cursor(client_factory):
+    requests = []
+
+    def respond(request):
+        requests.append(request)
+        # Bound this fake service so a broken cursor cannot hang the test.
+        assert len(requests) <= 3
+        return httpx.Response(
+            200,
+            json={
+                "collections": [_collection_record(id=f"fixture-collection-{len(requests)}")],
+                "nextPaginationToken": "cursor+/= fixture" if len(requests) == 1 else None,
+            },
+        )
+
+    sdk = client_factory(respond)
+    first = sdk.collections.list(project_id=PROJECT, page_size=1)
+    assert first.collections[0].id == "fixture-collection-1"
+    assert first.to_dict()["collections"][0]["futureField"] == {"retain": True}
+    second = first.get_next_page()
+    assert not second.has_next_page()
+    assert [request.method for request in requests] == ["GET", "GET"]
+    assert all(request.url.path == "/v1/collections" for request in requests)
+    assert dict(requests[0].url.params) == {"projectId": PROJECT, "pageSize": "1"}
+    assert dict(requests[1].url.params) == {
+        "projectId": PROJECT,
+        "pageSize": "1",
+        "paginationToken": "cursor+/= fixture",
+    }
+    raw = sdk.collections.with_raw_response.list(
+        project_id=PROJECT, page_size=1, pagination_token="cursor+/= fixture"
+    )
+    assert json.loads(raw.read())["collections"][0]["id"] == "fixture-collection-3"
+    assert dict(requests[2].url.params) == dict(requests[1].url.params)
+
+
+@pytest.mark.parametrize(
+    "changes,body",
+    [
+        ({"add": ["hero"]}, {"add": ["hero"], "strict": False}),
+        ({"delete": ["draft"]}, {"delete": ["draft"], "strict": False}),
+        (
+            {"add": ["hero", "café"], "delete": ["draft"]},
+            {"add": ["hero", "café"], "delete": ["draft"], "strict": False},
+        ),
+    ],
+)
+def test_asset_tags_send_explicit_non_strict_changes(client_factory, changes, body):
+    requests = []
+    # Non-strict updates may report empty lists for existing or absent tags.
+    fixture = {"added": [], "deleted": [], "futureField": True}
+
+    def respond(request):
+        requests.append(request)
+        return httpx.Response(200, json=fixture)
+
+    sdk = client_factory(respond)
+    raw = sdk.assets.with_raw_response.update_tags(
+        "fixture-asset", project_id=PROJECT, strict=False, **changes
+    )
+    assert json.loads(raw.read()) == fixture
+    assert len(requests) == 1
+    assert (requests[0].method, requests[0].url.path) == ("PUT", "/v1/assets/fixture-asset/tags")
+    assert dict(requests[0].url.params) == {"projectId": PROJECT}
+    assert json.loads(requests[0].content) == body
+
+
+def test_asset_bulk_read_keeps_ids_in_body_and_organization_fields(client_factory):
+    requests = []
+    fixture = {
+        "assets": [
+            {
+                "id": "fixture-a",
+                "tags": ["hero"],
+                "collectionIds": ["fixture-collection"],
+                "futureField": {"retain": True},
+            }
+        ]
+    }
+
+    def respond(request):
+        requests.append(request)
+        return httpx.Response(200, json=fixture)
+
+    sdk = client_factory(respond)
+    raw = sdk.assets.with_raw_response.get_bulk(
+        asset_ids=["fixture-a", "fixture-missing"], project_id=PROJECT
+    )
+    # A synthetic partial response passes through the raw wrapper unchanged. How
+    # the service answers a missing or inaccessible ID is not documented.
+    assert json.loads(raw.read()) == fixture
+    assert len(requests) == 1
+    assert (requests[0].method, requests[0].url.path) == ("POST", "/v1/assets/get-bulk")
+    assert dict(requests[0].url.params) == {"projectId": PROJECT}
+    assert json.loads(requests[0].content) == {"assetIds": ["fixture-a", "fixture-missing"]}
+
+
+@pytest.mark.parametrize("operation", ["add", "remove", "create", "tags"])
+@pytest.mark.parametrize("failure", ["timeout", "connect", 408, 409, 429, 500, 503])
+def test_organization_writes_make_one_attempt_without_idempotency_key(
+    client_factory, operation, failure
+):
+    # These endpoints document no idempotency contract and the client sends no
+    # idempotency header, so an SDK retry could apply a create twice.
+    requests = []
+
+    def fail(request):
+        requests.append(request)
+        if failure == "timeout":
+            raise httpx.ReadTimeout("fixture lost response", request=request)
+        if failure == "connect":
+            raise httpx.ConnectError("fixture lost connection", request=request)
+        return httpx.Response(
+            failure,
+            json={"error": "fixture failure"},
+            headers={"Retry-After": "0", "x-should-retry": "true"},
+        )
+
+    sdk = client_factory(fail)
+    expected = {"timeout": APITimeoutError, "connect": APIConnectionError}.get(
+        failure, APIStatusError
+    )
+    with pytest.raises(expected):
+        if operation in {"add", "remove"}:
+            getattr(sdk.collections.assets, operation)(
+                "fixture-collection", asset_ids=["fixture-a"], project_id=PROJECT
+            )
+        elif operation == "create":
+            sdk.collections.create(name="Hero props", project_id=PROJECT)
+        else:
+            sdk.assets.update_tags("fixture-a", add=["hero"], strict=False, project_id=PROJECT)
+    assert len(requests) == 1
+    assert not any("idempotency" in name.lower() for name in requests[0].headers)

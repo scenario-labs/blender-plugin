@@ -275,6 +275,7 @@ def saved_panorama(runs_root, name, settings):
     This is the native "Use saved panorama" rule: Scenario's saved metadata
     declares the projection and the asset's own PNG or JPEG file passes the
     2:1 preflight, which also records its measured size for the upscale cap.
+    OpenEXR bytes are refused whatever media type the asset declares.
     """
     verified = saved_results(Path(runs_root) / name, settings)
     for item, path in zip(verified.record.results, verified.paths, strict=True):
@@ -283,6 +284,10 @@ def saved_panorama(runs_root, name, settings):
                 info = inspect_panorama(verified_bytes(item, path))
             except PanoramaError:
                 raise SmokeError("A saved 360 result is not a supported 2:1 panorama", 1) from None
+            if info.hdr_capable:
+                raise SmokeError(
+                    "A saved 360 result holds OpenEXR data, not a 2:1 PNG or JPEG panorama", 1
+                )
             return panorama_contract.PanoramaRef(
                 item.asset.asset_id,
                 producer=verified.record.intent.target_id,

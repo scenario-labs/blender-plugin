@@ -348,6 +348,17 @@ def test_saved_panorama_must_be_a_verified_ldr_result_of_this_scope(runs, servic
     assert requests(service) == before and not (runs.root / "hdri").exists()
 
 
+def test_saved_panorama_refuses_openexr_bytes_declared_as_png(runs, service):
+    # The asset declares a PNG 360 result, but its verified bytes are an OpenEXR file.
+    service.outputs[FLUX] = [("image/png", "skybox-base-360", HDR, None)]
+    runs.complete("text")
+    before = requests(service)
+    with pytest.raises(model.SmokeError, match="OpenEXR data, not a 2:1 PNG or JPEG") as error:
+        runs.quote("hdri", HDRI, "hdri", {"image": {"$panorama": "text"}}, saved=runs.root)
+    assert error.value.code == 1
+    assert requests(service) == before and not (runs.root / "hdri").exists()
+
+
 def test_submit_rechecks_the_contract_and_refuses_schema_drift_without_spending(runs, service):
     assert runs.quote("text", FLUX, "panorama", {"prompt": "a lake"}) == 0
     inputs = service.models[FLUX]["inputs"]

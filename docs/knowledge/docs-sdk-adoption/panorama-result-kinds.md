@@ -12,7 +12,7 @@
     "base_revision": "33d00b0554151c4de04731fd1a5e5c64ed50855b",
     "limits": "Inspected the panorama and hdri result kinds in tools/smoke_image.py: every saved result must be an image, only results whose saved projection is equirectangular are inspected, each such verified file must pass the bounded 2:1 PNG, JPEG or OpenEXR panorama preflight (inspect_panorama) shared with World application, and hdri additionally needs a source: original result labelled image/x-exr or image/aces whose container is OpenEXR. The suite plan accepts both kinds through RESULT_KINDS. Offline tests use the real SDK adapter, coordinator, store and result commands with mocked service responses and synthetic PNG, JPEG and OpenEXR headers: accepted projections with image companions, an accepted 2:1 JPEG panorama, missing or skybox-3d projections, square files, malformed JPEG bytes, a video companion, preview-only, Radiance, PNG and JPEG originals, plus a seven-kind aggregate suite. No live skybox output, pixel decoding, dynamic range, seam review or paid run is claimed; #98 acceptance remains open. Environment lane contract models must use these kinds (hdri for model_hdri-skybox, panorama for the other four); tests/unit/test_smoke_panorama.py exercises both kinds through the contract path.",
     "sources": {
-      "tools/smoke_image.py": "9e9da23fcfb42eca4d379004d1b55a6bc6d57c25080d1fdd1a3d1b3ed39ff32a",
+      "tools/smoke_image.py": "09be50abb53f4edf1ce037eab6cad0006f33800c7ac07aa8f0ef09a1dfeada77",
       "tools/smoke_suite.py": "1b88c666cd76840a8d24a2056c5314096b738ba497c530cb449618c76b895c4e",
       "scenario/core/scene/panorama.py": "1d7d8fb6b0a06675baa2168a73c87a49fa4ecab6d4ad34843690d3c26edcf764",
       "scenario/core/jobs/result_metadata.py": "775986522c43e4b837f3deb333f964ca721eb6b8c74bd0282f40824a19c4af17",
@@ -20,7 +20,7 @@
       "tests/unit/test_smoke_image.py": "0c907d6d03f4dda0ea0bb197e5bdfe629b95000a43b41306351d54788e476940",
       "tests/unit/test_smoke_suite.py": "ee39b9c1b324ccf001a7491affea19f4194d30c2f81e0ba5e41a8cc62c51cd29",
       "tests/unit/test_panorama.py": "f8914ce8c3cbbe10812bed813b3e1fbe1551c71fc6e4f47f8517cb777e9f3fa7",
-      "tests/unit/test_smoke_panorama.py": "f82108630c3bde6db2f170ff82952a3d33ccd16b0bc05eac1e8566c0f0be75ef"
+      "tests/unit/test_smoke_panorama.py": "e47f1ed2e594da734b0303ecebee867d0b935198c005a87a9db6643dea7ae42d"
     }
   }
 }

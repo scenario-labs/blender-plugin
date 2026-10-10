@@ -13,8 +13,8 @@
     "sources": {
       "scenario/blender/job_session.py": "9c6746c15fc4531eb132e28056abfaace4fdd94507300f37c59d18ebc0fa80d7",
       "scenario/blender/runtime.py": "286974e2a90e4776de71d081651a88424c543573add3ed125b072ad47c524883",
-      "scenario/core/jobs/preview_scheduler.py": "259ba661bb90b15d33723bfd7bafc0eb70b4443b5c8a56e70d45b9ffa99ac466",
-      "scenario/core/jobs/workers.py": "fb361cbf1291e9dc426502ba4eaf6a538bebd15a80da9f02dacac8c8fa466dc9",
+      "scenario/core/jobs/preview_scheduler.py": "21d0b8d0265c2e70dc9d9c27372a8205bb6a10cfaeb5e896759705a37c0d482e",
+      "scenario/core/jobs/workers.py": "3389e06b6ec12eba09291ae7d66194c47ec2a86170bbd5079413c56cbf9651b3",
       "scenario/core/jobs/local_render.py": "259ec65d914e12b8a8dce009ea68a07f4ab3ca1007a232a63a2c43fb64e5daaf",
       "tests/blender/test_result_previews.py": "fd31993233db037d73220f4c5e67355da6af5688c864fbe2f62848f228af4c80"
     }

@@ -247,9 +247,12 @@ These are offline contracts with synthetic SDK and storage fixtures. Which asset
 kinds receive server thumbnails or previews, their sizes and dimensions, signed
 URL lifetime and hosts, where a first request may redirect, their timing after a
 job succeeds, and how `get_bulk` reports a deleted asset are not established by
-live evidence. Offline audio decoding was tested natively on macOS arm64 only,
-with synthetic WAV, MP3, Ogg, FLAC, Matroska AAC and MP4 AAC files; provider
-audio files, Windows and Linux child start-up time and antivirus behavior, and
-sandboxed Blender packages are not covered. Blender-side image decoding, the
-user interface, MCP parity and native desktop acceptance remain open under #189,
-#65 and #66.
+live evidence. The installed-ZIP native tests decode synthetic WAV, MP3, Ogg,
+FLAC, Matroska AAC and MP4 AAC files in the offline child and exercise its
+failures, cancellation and timeout. They passed on Blender 5.0.1, 5.1.2 and 5.2.1
+locally on macOS arm64 and in hosted CI on Linux x64 and Windows x64 runners.
+Provider audio files, child start-up time and antivirus behavior on real Windows
+and Linux desktops, macOS x64 and sandboxed Blender packages are not covered.
+The timing figures above are macOS arm64 measurements only. Blender-side image
+decoding, the user interface, MCP parity and native desktop acceptance remain
+open under #189, #65 and #66.

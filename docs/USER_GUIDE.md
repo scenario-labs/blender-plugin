@@ -128,7 +128,7 @@ Where things are:
 
 ## The four panels
 
-- **Scenario**: what to generate. Lane tabs with Scenario's modality icons, laid out Image / Video / 3D, Audio / Materials, Render Image / Render Video, Blockout. Below the tabs, the form of the lane.
+- **Scenario**: what to generate. Lane tabs with Scenario's modality icons, laid out Image / Video / 3D, Audio / Materials / Environment, Render Image / Render Video, Blockout. Below the tabs, the form of the lane.
 - **Jobs**: what is running, all lanes together, with a count in the header: "Prompt Spark is writing the look", "uploading and submitting", "submitted", "queued", "generating", "finished on Scenario". A finished generation stays here until its results are downloaded and applied: "finished on Scenario", "downloading results", then "results saved" until you apply them (the Image lane imports supported images by itself). Finished Prompt Spark, Translate and Blockout requests need no download, so they are listed under Generations, also after **Inspect saved jobs**. While Scenario reports a measured fraction, a progress bar shows its percentage; a provider may report none, or stay at 0% until done, so the job may only say "generating". The status refreshes about every two seconds without moving the mouse. "Status is not updating" marks the last reported status. With online access disabled, Blender stops checking and downloading until you allow it again, and the job says so ("Status paused" or "Download paused while online access is disabled"); the job itself continues on Scenario. After a restart, status appears once you choose **Refresh status** or **Resume download**. An approved request that has not been sent yet offers **Cancel prepared job**: a generation, workflow, Blockout, Prompt Spark or Translate request waiting behind other work, or one left over after a restart. Prompt Spark, Translate, Blockout and restarted requests appear here after **Inspect saved jobs**. After confirmation (**Discard unsent job**) it is canceled locally; nothing is sent to Scenario. A canceled Film task stays reserved, so use a new take name to try again. A request already being submitted cannot be canceled this way. A running generation offers **Cancel generation** only when Scenario reports it as an inference job, the only kind its API documents as cancellable; after a restart, choose **Refresh status** first. Other running jobs show no cancel button: they finish or fail on Scenario and stay recoverable from saved jobs.
 - **Generations**: what came back. Each entry has a header (type icon, start of the prompt, price, a collapse arrow), the model, the asset id (click it to copy), a failure marker when something went wrong, the output thumbnail and the actions of its kind (images: View image, Use as reference (3D image to 3D, Image, Video, Render Image style, Render Video style), Remove background, Apply as texture, Add as plane; 3D: Add to scene, Select, Delete; video: Play, Play in Blender, Add video strip; audio: Play, Add to sequencer; applied materials: **Apply saved material** again under **Reuse saved results**). The refresh button **reloads the parameters**: lane, model, prompt, every setting sent and the references come back into the form, ready to tweak and generate again. Objects a generation created are stamped with its id on import, so Select and Delete find them after renames. The info button opens Details: the full prompt, the settings sent, the references with their asset ids, the result assets, the files, the errors. Collapse an entry to keep only its icon and prompt. **Collapse all / Expand all** changes every entry from the panel header. A failed entry has a red error control: hover for the message, or click to read and copy the full text. Then, with the Project history (cloud) checkbox on, the project's cloud history: generations made on the web app, by agents or on another machine, with **Save for recovery** for completed model jobs. Saved jobs use explicit download and destination approval; see [Generations](#generations).
 
@@ -184,6 +184,8 @@ and prices can change.
 - **Render Image**: use a scene capture as the layout for an image.
 - **Render Video**: use a playblast as the motion and framing for a clip.
 - **Blockout**: describe a scene layout, then refine or rebuild its primitives.
+- **Environment**: generate a 360 panorama, convert a saved one into an HDRI or
+  upscale it, then set it as the scene World after review.
 
 ### Image
 
@@ -479,6 +481,45 @@ old plan; confirming changes only the stored plan. Blender's **Edit > Undo** and
 separately to update geometry. If you change scenes or edit the destination during
 review, read and review it again. Recovery reads never generate another plan.
 
+### Environment
+
+Generate a 360 environment for the scene World. The tab lists only Scenario
+skybox models whose request contract this extension verifies, grouped by mode:
+
+- **Generate**: describe the environment with Scenario Skybox Flux or GPT. Flux
+  makes one panorama unless you raise its number of outputs, which raises the
+  price. GPT offers three 2:1 sizes (2048 x 1024, 3072 x 1536 and 3840 x 1920);
+  free sizes and cubemap layouts are not offered. Flux can also restyle a saved
+  360 panorama.
+- **From image**: turn one image of a place, such as a viewport or camera still,
+  a file or the Render Result, into a 360 panorama with HY World.
+- **HDRI**: convert a saved 360 panorama into an HDR OpenEXR environment. The
+  form fixes the outputs to one OpenEXR file; those settings are greyed.
+- **Upscale**: upscale a saved 360 panorama or a checked local file. The factor
+  stays within the 32-megapixel World limit: at most 2 for a saved result, whose
+  size is not stored, and up to the model's maximum for a small checked file.
+
+An input that takes a 360 panorama offers **Saved panorama**: a downloaded result
+of the selected account and project whose Scenario metadata declares a 360
+projection. It also accepts a local 2:1 PNG or JPEG: **Upload reference** checks
+the file's size and format first, then uploads exactly the checked bytes.
+Captures and other saved uploads are not accepted there. A model whose current
+description no longer matches its contract is refused until the extension is
+updated.
+
+Review the exact price and choose **Generate**. Results stay saved: nothing is
+imported and no World changes by itself. In Jobs and Generations, a result that
+Scenario declares as 360 is labelled **360 panorama (LDR)** or **360 HDR
+environment (OpenEXR)**; choose **Set panorama as World (N)** to
+[apply it](#apply-a-saved-panorama-to-world). **Make HDRI (N)** opens the HDRI
+form on a saved LDR panorama without pricing or generating; review its new price
+before choosing **Generate**. The floating composer's Environment tab uses the
+Generate mode; the other modes live in the sidebar and Studio.
+
+Seam, pole and HDR range quality are not measured by the extension; review the
+result in the viewport. Output formats and sizes are not yet confirmed by an
+authorized live run ([#98](https://github.com/scenario-labs/blender-plugin/issues/98)).
+
 ### Generations
 This session's results appear first, followed by cloud history with prompt, kind,
 price, status and asset identity. **Load older** pages back in time and keeps
@@ -526,7 +567,8 @@ see the reference for token configuration and online-access requirements.
 
 ## Apply a saved panorama to World
 
-For a saved PNG, JPEG or OpenEXR result, choose **Set panorama as World (N)**.
+For a saved PNG, JPEG or OpenEXR result, including an [Environment](#environment)
+result, choose **Set panorama as World (N)**.
 N is the result's position in the job, the same number as its import button.
 Material maps, such as the PBR maps that come with a 3D model or a texture set,
 are not offered.
@@ -582,7 +624,7 @@ that limit disables additional reuse without discarding the history.
 
 ## The floating composer
 
-The pill at the bottom of the viewport shows the current prompt in a field and a Generate button, in the same style as the expanded card. Drag it anywhere in the viewport; dragging stops at the viewport edges and at an open toolbar or sidebar, and a click without moving expands it. The expanded card moves the same way (drag its background) and always stays whole inside the viewport, so its minus button and Generate never leave it. It resizes from the grip in its bottom-right corner, and a double-click on its background puts it back in place; the position is remembered in the preferences. Click the pill to expand: lane tabs (Image, Video, 3D, Materials, Render Image, Render Video), the prompt, the model chip (opens the model picker), a **Settings** chip (opens a dialog with the lane's full form: model, prompt, references, parameters) and Generate with the price. Audio and Blockout live in the sidebar. For 3D Edit mode, choose the 3D tab, open **Settings** and select **Edit**. With the 3D tab in Edit mode, the composer shows, prices and generates the Edit 3D form (its model, prompt and price); choose the task and the mesh in the sidebar or the Settings dialog. Settings and the model chip save the prompt you are typing before their dialog opens. If the form behind a prompt you are typing changes anyway (for example from another window), your text stays in its original form: typing and a click outside the card are refused until you press Esc or click a lane tab, either of which shows the current form, and Enter or Generate submit nothing. When the chosen model takes no prompt, as several Edit 3D tasks do, the field reads *This model takes no prompt* and you cannot type in it. The composer is the quick path: it uses the settings of the current lane as they stand in the sidebar or in that dialog. The bottom-right corner resizes the card (a resize cursor appears when the pointer reaches it). A narrow card shortens the labels that no longer fit (Materials becomes Mat, Render Image becomes R-Img, Render Video becomes R-Vid). When the viewport has no room for the card, for example at a large UI scale with the sidebar open or in a short viewport, the composer stays a pill and a click on it opens the lane's form in that Settings dialog, with a status-bar hint to close the sidebar or enlarge the viewport; the card comes back once you do.
+The pill at the bottom of the viewport shows the current prompt in a field and a Generate button, in the same style as the expanded card. Drag it anywhere in the viewport; dragging stops at the viewport edges and at an open toolbar or sidebar, and a click without moving expands it. The expanded card moves the same way (drag its background) and always stays whole inside the viewport, so its minus button and Generate never leave it. It resizes from the grip in its bottom-right corner, and a double-click on its background puts it back in place; the position is remembered in the preferences. Click the pill to expand: lane tabs (Image, Video, 3D, Materials, Render Image, Render Video, Environment), the prompt, the model chip (opens the model picker), a **Settings** chip (opens a dialog with the lane's full form: model, prompt, references, parameters) and Generate with the price. Audio and Blockout live in the sidebar. The Environment tab writes its Generate mode's prompt; while the sidebar shows another Environment mode, the composer drives Image. For 3D Edit mode, choose the 3D tab, open **Settings** and select **Edit**. With the 3D tab in Edit mode, the composer shows, prices and generates the Edit 3D form (its model, prompt and price); choose the task and the mesh in the sidebar or the Settings dialog. Settings and the model chip save the prompt you are typing before their dialog opens. If the form behind a prompt you are typing changes anyway (for example from another window), your text stays in its original form: typing and a click outside the card are refused until you press Esc or click a lane tab, either of which shows the current form, and Enter or Generate submit nothing. When the chosen model takes no prompt, as several Edit 3D tasks do, the field reads *This model takes no prompt* and you cannot type in it. The composer is the quick path: it uses the settings of the current lane as they stand in the sidebar or in that dialog. The bottom-right corner resizes the card (a resize cursor appears when the pointer reaches it). A narrow card shortens the labels that no longer fit (Materials becomes Mat, Render Image becomes R-Img, Render Video becomes R-Vid, Environment becomes Env). When the viewport has no room for the card, for example at a large UI scale with the sidebar open or in a short viewport, the composer stays a pill and a click on it opens the lane's form in that Settings dialog, with a status-bar hint to close the sidebar or enlarge the viewport; the card comes back once you do.
 
 Editing the prompt: click to place the caret, drag or Shift+arrows to select, double-click selects a word, Home/End, Ctrl/Cmd+A selects all, Ctrl/Cmd+C copies, Ctrl/Cmd+X cuts, Ctrl/Cmd+V pastes, typing replaces the selection, Enter generates, Esc leaves. Only the minus button in the top-right corner collapses the card. Clicking outside keeps it open: an edited prompt is saved to its lane and the click passes to Blender. If drawing ever fails repeatedly the composer switches itself off; re-enable it in Preferences (Floating composer in the viewport). If the composer fails while handling the pointer or the keyboard, Blender reports the error and the composer leaves the prompt; move the pointer over it and click again. Opening, reverting or starting a new file collapses the composer to its pill at its saved place.
 

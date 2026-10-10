@@ -46,7 +46,7 @@ interaction, paid generation, or integrated release acceptance under #68.
 
 ## Tabs and segmented choices
 
-A row of mutually exclusive choices (lane tabs, picker modality tabs and category chips, Edit 3D tasks) is a **continuous segmented control**: cells touch (no gaps), each takes an equal share of the full width, and the icon sits next to its label with the pair centred in the cell.
+A row of mutually exclusive choices (lane tabs, picker modality tabs and category chips, Edit 3D tasks, Environment modes) is a **continuous segmented control**: cells touch (no gaps), each takes an equal share of the full width, and the icon sits next to its label with the pair centred in the cell.
 
 - Use `panels.equal_segments(row, struct, prop, values)` (or `panels.draw_enum_tabs(layout, struct, prop, rows)` for multiple rows). It draws each value with `prop_enum` inside an `align=True` row (Blender merges the borders) and forces equal widths with a chain of even `split()`s.
 - Never use `prop(..., expand=True)` for these (it pins the icon to the left edge) or `grid_flow` (it leaves gaps).
@@ -785,6 +785,50 @@ old handle's refusal, confirmation, the busy-slot refusal reason and cancel.
 Physical desktop evidence of the dropdowns, the dialog fit at other sizes and
 DPI, the post-import status lines, and viewport navigation after a
 1,000,000-point import is pending.
+
+## Environment lane
+
+**Environment** is appended to the lane tabs, in the Audio / Materials row; a
+saved blend stores a tab as its item index, so new tabs are only appended. Its
+form starts with a segmented **Generate / From image / HDRI / Upscale** control
+and a wrapped line describing the mode, then follows the usual order: Model,
+Prompt (when the model has one), References, Settings, then Generate. The model
+picker and dropdown list only the mode's verified panorama contract models; a
+model left from another mode is not priced. GPT's size is a **Panorama size**
+dropdown of its 2:1 presets instead of free width and height. Contract-forced
+settings are drawn greyed, with **Greyed settings are fixed by the Environment
+lane** below them. A result line never calls an LDR result HDR: **Result: LDR
+2:1 panorama, saved until you set it as World** or **Result: HDR OpenEXR
+environment, saved until you set it as World**.
+
+An input that takes a 360 panorama offers **Saved panorama** in its header
+instead of **Saved uploads**, and only **Upload** as a source, with **A saved
+360 result or a 2:1 PNG/JPEG** below. Its references never offer **Use saved
+upload**; a capture left on such an input shows a remedy instead of an upload
+button. **Use saved panorama** lists the selected connection's downloaded LDR
+360 results in a dialog; confirming attaches one and invalidates the price.
+Still inputs (GPT references, HY World's image, upscale style images) keep the
+ordinary image sources.
+
+Saved-job controls label a server-declared 360 result **360 panorama (LDR)**,
+**360 HDR environment (OpenEXR)** or **360 panorama and HDR environment**, keep
+**Set panorama as World (N)**, and offer **Make HDRI (N)** on settled jobs with a
+downloaded LDR panorama. Make HDRI only opens the HDRI form with that reference;
+it never prices, generates or changes a World. The floating composer shows an
+**Environment** tab that drives the Generate mode; choosing it selects that
+mode, and while the sidebar shows another Environment mode the composer drives
+Image. Mode, size and model changes happen in property callbacks or operators;
+drawing never writes.
+
+Installed tests on macOS arm64 Blender 5.1.2 cover the appended tab values
+through a saved and reopened blend, mode model lists and price invalidation,
+contract values, read-only drawing of every mode, picker restriction, Quick
+settings, Reload, the composer tab, the panorama upload preflight, and a fake
+service quote, submission, saved result, restart, Make HDRI and World approval
+in a newly selected scene. Physical desktop evidence (mouse and keyboard on the
+tab and modes, composer text entry, small windows and other scales, viewport
+return after the dialogs) is pending and will be collected in an unlocked
+desktop session; no screenshot of the Environment form is claimed yet.
 
 ## Saved panorama approval and restoration
 

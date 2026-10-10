@@ -169,6 +169,13 @@ establish live generation or full render-lane desktop acceptance.
   primitives. Full generation/history integration remains
   [#99](https://github.com/scenario-labs/blender-plugin/issues/99) and
   [#98](https://github.com/scenario-labs/blender-plugin/issues/98).
+- The Environment lane (sidebar, Studio, the composer's Generate mode and local
+  MCP) generates 360 panoramas, HDRIs and upscales only through verified model
+  contracts, and its results wait for explicit World approval. Output formats and
+  sizes, the HDRI asset layout, seam and pole quality and the measured HDR range
+  still need an authorized live run; native desktop interaction evidence is
+  pending under #98. A panorama input takes a saved 360 result or a checked local
+  2:1 file; local MCP accepts only the saved result.
 - Multi-object mesh export combines the selection. Safe in-place multi-object
   editing needs separate acceptance under #99.
 - Automatic Image-lane import and saved image and material application

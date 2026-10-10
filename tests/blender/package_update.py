@@ -32,6 +32,8 @@ WORKFLOW = {
 }
 WORKFLOW_UPLOAD_SCENE = "Update workflow upload scene"
 WORKFLOW_UPLOAD_KEYS = ("_scenario_workflow_upload", "_scenario_workflow_upload_request")
+# A second saved scene carries the Environment lane when the predecessor has it.
+ENVIRONMENT_SCENE = "Update environment scene"
 
 
 def module(name):
@@ -518,6 +520,66 @@ def workflow_snapshot(scene, other=None):
     return result
 
 
+def seed_lanes(scene, selected):
+    """Seed saved lane tabs: a blend stores the tab as its item index.
+
+    The last tab before Environment was appended must read back unchanged after
+    an update. When the predecessor has the Environment lane, a second scene also
+    saves that appended tab, its mode, size and form with a saved-panorama marker.
+    Older predecessors get no invented Environment state.
+    """
+    import bpy
+
+    try:
+        scene.scenario.lane = "blockout"
+    except TypeError:
+        pass  # a predecessor without the Blockout tab keeps its default tab
+    if not any(item[0] == "panorama" for item in module("blender.props").LANE_ITEMS):
+        return
+    other = bpy.data.scenes.new(ENVIRONMENT_SCENE)
+    other.scenario.lane = "panorama"
+    other.scenario.panorama_mode = "HDRI"
+    other.scenario.panorama_size = "3072x1536"
+    lane = other.scenario.lane_state("panorama")
+    lane.prompt = "Preserve the Environment form"
+    lane.model_key = "model_hdri-skybox"
+    ref = lane.references.add()
+    ref.param_name, ref.source, ref.asset_id = "image", "ASSET", "update-panorama"
+    ref.label = "Saved 360 panorama"
+    ref["_scenario_reference_scope"] = module("blender.reference_form").scope_key(selected.scope)
+    ref["_scenario_reference_asset"] = "update-panorama"
+    ref["_scenario_reference_kind"] = "image"
+    ref["_scenario_reference_projection"] = "equirectangular"
+
+
+def environment_snapshot():
+    """The seeded Environment scene's lane state, or None when none was seeded."""
+    import bpy
+
+    scene = bpy.data.scenes.get(ENVIRONMENT_SCENE)
+    if scene is None:
+        return None
+    scenario = scene.scenario
+    lane = scenario.lane_state("panorama")
+    return {
+        "lane": scenario.lane,
+        "mode": scenario.panorama_mode,
+        "size": scenario.panorama_size,
+        "prompt": lane.prompt,
+        "model": lane.model_key,
+        "references": [
+            {
+                "source": r.source,
+                "parameter": r.param_name,
+                "asset": r.asset_id,
+                "label": r.label,
+                "markers": dict(r.items()),
+            }
+            for r in lane.references
+        ],
+    }
+
+
 def seed(profile):
     import bpy
 
@@ -646,6 +708,7 @@ def seed(profile):
     ref["_scenario_reference_request"] = "upload-imported"
     ref["_scenario_reference_asset"] = "update-asset"
     seed_workflow(scene, selected)
+    seed_lanes(scene, selected)
     bpy.ops.wm.save_userpref()
     bpy.ops.wm.save_as_mainfile(filepath=str(profile / "state.blend"), check_existing=False)
 
@@ -723,6 +786,7 @@ def snapshot(profile):
     scene = {
         "name": bpy.context.scene.name,
         "custom": bpy.context.scene.get("update_fixture"),
+        "lane": bpy.context.scene.scenario.lane,
         "prompt": lane.prompt,
         "references": [
             {
@@ -760,6 +824,7 @@ def snapshot(profile):
         "files": files,
         "scene": scene,
         "workflow": workflow_snapshot(bpy.context.scene, other),
+        "environment": environment_snapshot(),
         "original_source": digest((profile / "reference.png").read_bytes()),
         "original_mesh_source": digest((profile / "reference.glb").read_bytes()),
     }
@@ -851,6 +916,7 @@ def main():
                     "workflow_uploads_preserved": bool(
                         expected["workflow"] and expected["workflow"].get("pending_upload")
                     ),
+                    "environment_lane_preserved": expected["environment"] is not None,
                     "service_requests": 0,
                     **evidence,
                 }

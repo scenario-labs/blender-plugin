@@ -34,6 +34,7 @@ from ..core.jobs.store import (
     _identity,
 )
 from ..core.jobs.workers import WorkerError
+from ..core.scene import panorama_contract
 from ..core.scene.model_formats import MATERIAL_MEDIA_TYPES, ModelFormat, model_format
 from ..core.scene.panorama import world_candidate
 from ..core.scene.splats import SplatCancelled, SplatOptions
@@ -150,6 +151,21 @@ def downloads_results(record):
     return intent.operation == "workflow" or (
         intent.operation == "model" and intent.target_id != BLOCKOUT_MODEL
     )
+
+
+def _panoramas(record):
+    """Asset ID -> "ldr" or "hdr" for results whose saved metadata declares a 360 projection.
+
+    An OpenEXR original or file is an HDR environment; any other image is LDR.
+    """
+    return {
+        item.asset.asset_id: "hdr"
+        if item.asset.source == "original"
+        or item.asset.media_type in panorama_contract.HDR_MEDIA_TYPES
+        else "ldr"
+        for item in record.results
+        if item.asset.projection == "equirectangular"
+    }
 
 
 def _display_status(record):
@@ -769,6 +785,13 @@ class ModelJobs:
             }
             # Drawing reads World candidates here; it has no saved texture roles.
             view.meta["world_assets"] = _world_assets(record)
+            # Server-declared 360 results, for their label and the Make HDRI prefill.
+            view.meta["panoramas"] = _panoramas(record)
+            view.meta["panorama_inputs"] = tuple(
+                item.asset.asset_id
+                for item in record.results
+                if panorama_contract.is_ldr_panorama(item)
+            )
             view.meta["saved_revision"] = record.revision
             view.meta["saved_state"] = record.state.value
             self._project_steps(request_id, record)

@@ -1007,8 +1007,9 @@ panorama run.
 ## Panorama model contracts
 
 The [panorama contracts](../scenario/core/scene/panorama_contract.py) behind the
-MCP [Environment lane](MCP.md#environment-lane-360-panoramas) use no new SDK
-method, extension or raw fallback. Model records come from
+native and MCP [Environment lane](MCP.md#environment-lane-360-panoramas) use no
+new SDK method, extension or raw fallback. The native form quotes and submits
+through the same `ModelJobs` session commands as MCP. Model records come from
 `models.with_raw_response.retrieve`; quotes and the single submission use
 `generate.with_raw_response.run_model` through `SDKAdapter.estimate_model` and the
 coordinator, with `dry_run="true"` only for quotes and `max_retries=0` unchanged.

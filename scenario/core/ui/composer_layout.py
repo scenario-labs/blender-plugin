@@ -13,7 +13,7 @@ GENERATE_WIDTH, MODEL_WIDTH, COLLAPSE_SIZE, SETTINGS_WIDTH = 190, 200, 20, 84
 RESIZE_SIZE, MIN_CARD_WIDTH, MIN_PILL_WIDTH, DRAG_THRESHOLD = 16, 420, 200, 4
 # Blender's default double-click time, for a caller whose preferences cannot say
 DOUBLE_CLICK_MS = 350
-LANE_ORDER = ("image", "video", "3d", "material", "render_image", "render_video")
+LANE_ORDER = ("image", "video", "3d", "material", "render_image", "render_video", "panorama")
 LANE_LABELS = {
     "image": "Image",
     "video": "Video",
@@ -21,6 +21,7 @@ LANE_LABELS = {
     "material": "Materials",
     "render_image": "Render Image",
     "render_video": "Render Video",
+    "panorama": "Environment",
 }
 # what a tab shows when its full label does not fit: distinct, and none is the start of another
 LANE_SHORT_LABELS = {
@@ -30,6 +31,7 @@ LANE_SHORT_LABELS = {
     "material": "Mat",
     "render_image": "R-Img",
     "render_video": "R-Vid",
+    "panorama": "Env",
 }
 CHIP_TEXT_INSET = 12  # horizontal room a chip keeps around its label, in unscaled pixels
 ELLIPSIS = "…"
@@ -41,6 +43,8 @@ PLACEHOLDERS = {
     "render_image": "Describe the look to render the viewport with (empty: Prompt Spark writes it)",
     "render_video": "Describe the look of the video (empty: Prompt Spark writes it)",
     "edit3d": "Describe the edit to the selected mesh",
+    # The composer drives the Environment lane in its Generate mode only.
+    "panorama": "Describe the 360 environment",
 }
 # Forms whose model takes no prompt (several Edit 3D tasks) offer nothing to type.
 NO_PROMPT = "This model takes no prompt"
@@ -48,6 +52,8 @@ NO_PROMPT = "This model takes no prompt"
 FORM_REPLACED_NOTE = "The form changed: press Esc to show it"
 FORM_REPLACED_TYPING = "The form behind the composer changed. Press Esc to show it; your text stays in its original form"
 FORM_REPLACED_GENERATE = "The form behind the composer changed. Check its prompt, then generate"
+# The Environment mode the composer's prompt drives; other modes are sidebar forms.
+PANORAMA_PROMPT_MODE = "GENERATE"
 
 
 def placeholder_for(lane):

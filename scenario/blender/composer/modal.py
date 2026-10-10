@@ -10,6 +10,7 @@ import bpy
 from ...core.ui import composer_layout as cl
 from ...core.ui import job_strip
 from .. import panels, runtime
+from .state import choose_lane
 
 # shown when a strip click no longer matches what the strip showed
 JOB_CHANGED = "The job changed; check its updated actions"
@@ -586,7 +587,7 @@ class SCENARIO_OT_composer_modal(bpy.types.Operator):
                     state.leave_focus(scene)
                 else:
                     state.commit_to_lane(scene)
-                scene.scenario.lane = hit[1]
+                choose_lane(scene, hit[1])
                 if state.focused and not _takes_prompt(scene, state):
                     # The new form takes no prompt: its field explains why instead of keeping focus.
                     state.leave_focus(scene)

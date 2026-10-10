@@ -735,6 +735,37 @@ imports supported images; other lanes stop at saved results for explicit applica
 Local image references use the shared upload path above. Other result types and
 live acceptance remain; this slice must not be advertised as complete release acceptance.
 
+## Environment lane delivery
+
+The native Environment form (lane `panorama`) and local MCP prepare requests with
+the same [`panorama_contract.prepare`](../scenario/core/scene/panorama_contract.py).
+`generation.build_request` applies it after building the form body: the scene's
+mode must match the selected contract model, the GPT size comes from the scene's
+2:1 preset, and locked, default and factor values replace the form's values.
+Files and captures still waiting for upload stand in as placeholders so the
+contract judges the rest of the form; a capture is never a panorama.
+
+A panorama-kind reference is accepted in two forms only. A saved result chosen
+with **Use saved panorama** or **Make HDRI** carries the selected scope, asset
+and projection markers; every build rechecks it against the selected store with
+the same `saved_panorama_refs` as MCP (downloaded, server-declared
+equirectangular, the asset's own non-OpenEXR file). A local 2:1 PNG or JPEG
+passes `inspect_panorama` before upload; the upload is bound to the checked
+bytes' SHA-256 and the reference keeps the measured size, which sets the exact
+upscale cap. `scope_error` still rejects references of another connection, and
+attaching an arbitrary saved upload to a panorama input is refused.
+
+Submission records lane `panorama` with the `image` kind. The lane is never
+admitted to automatic image import, so results stop at saved results and no
+World changes without the explicit approval below. Each maintenance poll
+projects the saved results' server-declared projections into the view
+(`meta["panoramas"]`, LDR or HDR by source and media type, and
+`meta["panorama_inputs"]`, the downloaded LDR results). Schema 10 persists the
+projection, so the label and offers survive a restart. **Make HDRI** is a form
+prefill, not a saved-job command: it checks the context token and the saved
+result, switches the scene to the Environment HDRI form, attaches the scoped
+reference and retires the form's price. It never quotes or submits.
+
 ## Active saved-job controls
 
 The Jobs panel can inspect saved jobs without network activity. Except
@@ -799,6 +830,12 @@ A new saved-job action adds one descriptor here, not a surface-specific branch.
 `use_first_frame` draws one control per still that `ModelJobs` projects as
 `first_frame_assets`, because eligibility needs texture roles and receipts that
 the view's media types do not carry; its numbering counts every saved asset.
+Results whose saved metadata declares a 360 projection add a status row
+(**360 panorama (LDR)**, **360 HDR environment (OpenEXR)** or both) and, once a
+settled job has a downloaded LDR panorama, one **Make HDRI (N)** descriptor in
+the `prefill` group. A prefill has no `ModelJobs.actions` name because it
+changes no saved job; MCP agents reach the same step with `estimate_cost` on lane
+`panorama` and the saved asset ID.
 
 No action reconstructs a quote, replays an uncertain submission, guesses a remote
 ID or rebinds the original scene. Missing/stale revisions and retired contexts fail

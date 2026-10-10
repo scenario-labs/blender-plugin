@@ -201,12 +201,12 @@ simulated unexpected color spaces fail closed after decoding. They make no
 Scenario service calls.
 
 This is a partial slice of #98 and #65. Optional JobSession integration now binds
-verified downloads to guarded durable World application. Local MCP's
-[Environment lane](MCP.md#environment-lane-360-panoramas) quotes and submits
-verified panorama model contracts, and its results stay saved for the approval
-below. The native Environment tab, production storage policy, global undo
-operators, seam/pole quality and authorized live generation remain separate
-integration work.
+verified downloads to guarded durable World application. The
+[Environment lane](MCP.md#environment-lane-360-panoramas), in the native sidebar,
+Studio, composer and local MCP, quotes and submits verified panorama model
+contracts, and its results stay saved for the approval below. Production storage
+policy, global undo operators, seam/pole quality, desktop evidence and authorized
+live generation remain separate work.
 
 ## Saved-result UI and MCP approval
 
@@ -238,8 +238,10 @@ offered and fails locally.
 PNG and JPEG remain LDR, and an accepted EXR does not prove measured HDR range or
 seamless content. Known application failure, including a media type that does not
 match the actual container, is reported with panorama requirements and keeps the
-local retry state. Server-declared panorama projection is not shown: the saved
-job does not yet persist it.
+local retry state. The confirmation does not state the projection; the native
+saved-job rows label a result whose saved metadata declares a 360 projection
+(**360 panorama (LDR)** or **360 HDR environment (OpenEXR)**), and MCP
+`job_status` reports `projection`.
 
 A successful World assignment exposes **Restore previous World** in the same
 session. MCP prepares `purpose: restore_world` without an asset ID, shows the
@@ -268,5 +270,5 @@ Undo/Redo invalidates live scene ownership and retires restoration handles,
 as do session retirement/restart and file load. Deleted or retired destinations
 do not offer restoration, and maintenance removes their handles without touching
 stale Blender data. Manually select a retained World in Blender when needed.
-No global undo transaction, native panorama generation, seam/pole acceptance or
+No global undo transaction, live panorama generation, seam/pole acceptance or
 completion of #98 is claimed.

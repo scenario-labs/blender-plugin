@@ -68,6 +68,7 @@ LANE_MODALITY = {
     "3d": "3d",
     "edit3d": "3d",
     "audio": "audio",
+    "panorama": "image",
 }
 BASE_LANE = {"image": "image", "video": "video", "3d": "3d", "audio": "audio"}
 FEATURED_TAG = "sc:featured"

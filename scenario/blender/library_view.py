@@ -19,7 +19,7 @@ from ..core.jobs.organization import (
     review_payload,
 )
 from ..core.ui import library_organization as organizing
-from . import generation, props, reference_form, runtime, workflow_references
+from . import generation, panorama_lane, props, reference_form, runtime, workflow_references
 from .asset_organization import safe_message
 
 COLLECTION_PAGE = 50
@@ -208,6 +208,8 @@ class LibraryView:
         for spec in schema.specs:
             if reference_form.input_kind(lane, spec.name) != asset_kind(asset):
                 continue
+            if panorama_lane.is_panorama_input(lane, spec.name):
+                continue  # only a saved 360 result or a checked 2:1 file is a panorama
             matching = [ref for ref in lane.references if ref.param_name == spec.name]
             if (spec.ptype == "file" and matching) or (
                 spec.max_length is not None and len(matching) >= spec.max_length

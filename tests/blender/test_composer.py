@@ -86,6 +86,36 @@ class ComposerStateTests(unittest.TestCase):
             scene.scenario.lane = lane
             self.assertEqual(state.lane_for(scene), "image")
 
+    def test_environment_is_a_composer_lane_in_its_generate_mode_only(self):
+        scene = bpy.context.scene
+        state = self.state_mod.ComposerState()
+        scene.scenario.lane_state("image").prompt = "an image prompt"
+        scene.scenario.lane = "panorama"
+        scene.scenario.panorama_mode = "HDRI"
+        # HDRI starts from a saved panorama, so the composer keeps driving Image.
+        self.assertEqual(state.lane_for(scene), "image")
+        self.assertEqual(state.sync_from_lane(scene).prompt, "an image prompt")
+        scene.scenario.lane_state("panorama").prompt = "a misty valley"
+        # A composer tab click: commit, choose the lane, then show its prompt.
+        state.commit_to_lane(scene)
+        self.state_mod.choose_lane(scene, "panorama")
+        lane_state = state.sync_from_lane(scene)
+        self.assertEqual(scene.scenario.panorama_mode, "GENERATE")
+        self.assertEqual(state.lane_for(scene), "panorama")
+        self.assertEqual(
+            (lane_state.prompt, state.field.text), ("a misty valley", "a misty valley")
+        )
+        state.field.set_text("a misty valley at dawn")
+        state.commit_to_lane(scene)
+        self.state_mod.choose_lane(scene, "image")
+        state.sync_from_lane(scene)
+        self.assertEqual(scene.scenario.lane_state("panorama").prompt, "a misty valley at dawn")
+        self.assertEqual(state.field.text, "an image prompt")
+        # The sidebar's own Environment modes are left alone by other tabs.
+        scene.scenario.panorama_mode = "UPSCALE"
+        self.state_mod.choose_lane(scene, "video")
+        self.assertEqual(scene.scenario.panorama_mode, "UPSCALE")
+
     def test_selection_survives_commit_and_sync_resets_it(self):
         scene = bpy.context.scene
         scene.scenario.lane = "image"

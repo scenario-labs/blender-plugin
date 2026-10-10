@@ -30,7 +30,7 @@ log = logging.getLogger("scenario.picker")
 THUMB_LIMIT = 40
 CHIPS_PER_ROW = 6  # more category chips than this wrap onto two centred rows
 RECENT_FILE = "recent_models.json"
-_ctx = {"lane": "", "records": [], "current": "", "material_only": False}
+_ctx = {"lane": "", "records": [], "current": "", "material_only": False, "panorama_only": False}
 _pending_thumbs = set()
 _pending_lock = threading.Lock()
 # Worker-safe mirror of Blender's online access for thumbnails when no catalog is selected. Only the main thread sets
@@ -177,7 +177,7 @@ def refilter(wm):
     """Rebuild the picker rows from the tab, chip and query; keeps the highlighted model when it survives."""
     modality = wm.scenario_picker_modality
     category = wm.scenario_picker_category
-    if _ctx["material_only"]:
+    if _ctx["material_only"] or _ctx["panorama_only"]:
         filtered = [r for r in _ctx["records"] if model_filter.matches(r, wm.scenario_picker_query)]
     else:
         filtered = model_filter.filter_records(
@@ -227,11 +227,17 @@ def prepare(context, lane):
         (lane_state.model_key or lane_state.model_id) if lane_state is not None else ""
     )
     _ctx["material_only"] = lane == "material"
+    # The Environment lane lists only the verified contract models of its mode.
+    _ctx["panorama_only"] = lane == "panorama"
     modality = modality_for_lane(lane)
     if _ctx["material_only"]:
         _ctx["records"] = [
             r for r in runtime.state.records.values() if r.id in PATINA_MODELS
         ] or list(runtime.state.lane_models.get("material") or [])
+    elif _ctx["panorama_only"]:
+        _ctx["records"] = generation.panorama_models(
+            scene.scenario.panorama_mode, list(runtime.state.records.values())
+        )
     else:
         _ctx["records"] = candidate_records(modality)
     wm.scenario_picker_index = -1
@@ -436,6 +442,10 @@ class SCENARIO_OT_pick_model(bpy.types.Operator):
             header = layout.row()
             header.alignment = "CENTER"
             header.label(text="Materials: PATINA models", icon="MATERIAL")
+        elif _ctx["panorama_only"]:
+            header = layout.row()
+            header.alignment = "CENTER"
+            header.label(text="Environment: verified panorama models of this mode", icon="WORLD")
         else:
             draw_filters(layout, wm)
         layout.separator()

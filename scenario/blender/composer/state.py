@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Interaction state of the floating composer, mirrored into the Scene lane state."""
 
-from ...core.ui.composer_layout import LANE_ORDER, DoubleClick, TextField
+from ...core.ui.composer_layout import LANE_ORDER, PANORAMA_PROMPT_MODE, DoubleClick, TextField
 from .. import props
 
 COMPOSER_LANES = tuple(LANE_ORDER)
@@ -20,6 +20,16 @@ def _bounded(cache, key, value, limit):
     cache[key] = value
     while len(cache) > limit:
         del cache[next(iter(cache))]
+
+
+def choose_lane(scene, lane):
+    """Show a tab the composer chose; its Environment tab opens the Generate mode.
+
+    Event handlers call this, never drawing. It neither commits nor syncs text.
+    """
+    scene.scenario.lane = lane
+    if lane == "panorama" and scene.scenario.panorama_mode != PANORAMA_PROMPT_MODE:
+        scene.scenario.panorama_mode = PANORAMA_PROMPT_MODE
 
 
 class ComposerState:
@@ -86,8 +96,13 @@ class ComposerState:
         return (), False
 
     def lane_for(self, scene):
-        """The composer drives the six generation lanes; other tabs (Generations, MCP, 3D tools) fall back to Image."""
+        """The composer drives its generation lanes; other tabs (Blockout, 3D tools) fall back to Image.
+
+        Environment is a composer lane in its Generate mode only: the other modes
+        start from a saved panorama or an image, which the sidebar form chooses."""
         lane = scene.scenario.lane
+        if lane == "panorama" and scene.scenario.panorama_mode != PANORAMA_PROMPT_MODE:
+            return "image"
         if lane in COMPOSER_LANES and scene.scenario.lane_state(lane) is not None:
             return lane
         return "image"

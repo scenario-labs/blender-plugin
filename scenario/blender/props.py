@@ -16,9 +16,11 @@ from bpy.props import (
 )
 
 from ..core.api.catalog import EDIT3D_TASKS
+from ..core.scene import panorama_contract
 from . import runtime
 
 # Lane tabs. Edit 3D lives under the 3D tab (its "Edit" mode); Jobs, Generations and Agents are panels, not tabs.
+# A saved blend stores the tab as its item index, so new tabs are appended: never insert or reorder.
 LANE_ITEMS = [
     ("image", "Image", "Text and reference images to images"),
     ("video", "Video", "Text, images or a Blender playblast to video"),
@@ -44,6 +46,7 @@ LANE_ITEMS = [
         "Blockout",
         "Prompt to Blockout: design a greybox of a whole scene from a description, then refine or replace it with generated 3D assets",
     ),
+    ("panorama", "Environment", "360 panoramas and HDRIs for the scene World"),
 ]
 TAB_ICON = {
     "image": "image",
@@ -54,6 +57,7 @@ TAB_ICON = {
     "render_image": "image",
     "render_video": "video",
     "blockout": "3d",
+    "panorama": "image",
 }
 # Every lane a request can be built for (the tabs plus edit3d, reached through the 3D tab's Edit mode).
 GENERATION_LANES = (
@@ -65,6 +69,7 @@ GENERATION_LANES = (
     "render_image",
     "render_video",
     "edit3d",
+    "panorama",
 )
 LANE_ATTR = {
     "image": "image",
@@ -75,6 +80,7 @@ LANE_ATTR = {
     "render_image": "render_image",
     "render_video": "render_video",
     "edit3d": "edit3d",
+    "panorama": "panorama",
 }
 ATTR_LANE = {attr: lane for lane, attr in LANE_ATTR.items()}
 REFERENCE_SOURCES = [
@@ -138,6 +144,21 @@ THREE_D_MODES = [
     ("MULTI", "Multi-view", "Several views of the same object"),
     ("EDIT", "Edit", "Remesh, retexture, unwrap, rig, animate or split the selected mesh"),
 ]
+# Environment modes, each listing only its verified panorama contract models.
+PANORAMA_MODES = [
+    (mode, panorama_contract.MODE_LABELS[mode], panorama_contract.MODE_DESCRIPTIONS[mode])
+    for mode in panorama_contract.PANORAMA_MODES
+]
+PANORAMA_SIZES = [
+    (f"{width}x{height}", f"{width} x {height}", f"A {width} x {height} pixel 2:1 panorama")
+    for width, height in panorama_contract.SIZE_PRESETS
+]
+
+
+def panorama_size(scene):
+    """The chosen 2:1 size preset as (width, height)."""
+    width, height = scene.scenario.panorama_size.split("x")
+    return int(width), int(height)
 
 
 _T0 = time.monotonic()
@@ -326,6 +347,17 @@ def _on_task_change(self, context):
     generation.refresh_edit3d_models(context)
 
 
+def _on_panorama_mode_change(self, context):
+    from . import generation
+
+    mark_estimate_dirty(self.panorama)
+    generation.refresh_panorama_models(context)
+
+
+def _on_panorama_size_change(self, context):
+    mark_estimate_dirty(self.panorama)
+
+
 class ScenarioLaneState(bpy.types.PropertyGroup):
     lane: StringProperty()
     model_id: EnumProperty(name="Model", items=_model_items, update=_on_model_change)
@@ -427,6 +459,17 @@ class ScenarioSceneProps(bpy.types.PropertyGroup):
     render_image: PointerProperty(type=ScenarioLaneState)
     render_video: PointerProperty(type=ScenarioLaneState)
     edit3d: PointerProperty(type=ScenarioLaneState)
+    panorama: PointerProperty(type=ScenarioLaneState)
+    panorama_mode: EnumProperty(
+        name="Mode", items=PANORAMA_MODES, default="GENERATE", update=_on_panorama_mode_change
+    )
+    panorama_size: EnumProperty(
+        name="Size",
+        items=PANORAMA_SIZES,
+        default=PANORAMA_SIZES[0][0],
+        description="The 2:1 output size; free sizes are not offered",
+        update=_on_panorama_size_change,
+    )
     show_cloud_history: BoolProperty(
         name="Cloud history",
         default=True,

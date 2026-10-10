@@ -323,7 +323,11 @@ their requests through them before the shared quote: locked and lane-default
 values, 2:1 sizes, and panorama references limited to saved, downloaded 360
 results of the selected scope. A changed model schema fails closed. The lane's
 jobs have no automatic image or World application, and the same models stay in
-the Image and Render Image lanes. The native form does not list this lane yet.
+the Image and Render Image lanes. The native Environment tab, Studio Create and
+the composer's Generate mode build the same contract body through
+`generation.build_request`; native panorama references are rechecked saved
+results or files that passed a 2:1 preflight before a byte-bound upload. See
+[Environment lane delivery](../BLENDER_JOB_CONTEXT.md#environment-lane-delivery).
 Render-lane MCP calls use the native form preparation described below, including
 uploaded inputs, prompt decoration and separate Spark approval. Do not describe this slice as
 complete generation, supported release acceptance, or completion of #65.
@@ -376,7 +380,7 @@ and environments.
 | Prompt Spark | [Prompt commands](../SDK_ADOPTION.md#prompt-spark-command-boundary) use exact quotes, durable submission and complete text recovery on the shared workers. Native/MCP New, Rewrite and Translate require unchanged-field approval; render preparation has a separate Spark approval. | Live provider acceptance remains; Spark approval does not authorize the subsequent render generation. |
 | Uploads | [Reference uploads](../SDK_UPLOADS.md) use private staging, signed storage transfers and durable SDK commands on the shared workers. Generation and workflow forms attach through guarded bindings; native/MCP recovery and saved-reference attachment require the selected scope and fresh destination approval. | Live upload/result journeys remain open. |
 | Model forms | [Schema forms](../../scenario/core/schema/forms.py) validate adopted model inputs before shared pricing and submission. | Trained/custom-model discovery and verified routing remain under #97. |
-| Mesh and World | [Mesh](../MESH_APPLICATION.md) and [World](../WORLD_APPLICATION.md) application have explicit UI/MCP destination flows for supported saved results. MCP's [Environment lane](../MCP.md#environment-lane-360-panoramas) generates panoramas through verified [model contracts](../../scenario/core/scene/panorama_contract.py) and leaves results saved for World approval. | Provider-specific mesh contracts under #99 remain incomplete. Under #98, the native Environment tab, live panorama output and seam/pole review remain; local application does not close them. |
+| Mesh and World | [Mesh](../MESH_APPLICATION.md) and [World](../WORLD_APPLICATION.md) application have explicit UI/MCP destination flows for supported saved results. The native and MCP [Environment lane](../MCP.md#environment-lane-360-panoramas) generates panoramas through verified [model contracts](../../scenario/core/scene/panorama_contract.py) and leaves results saved for World approval. | Provider-specific mesh contracts under #99 remain incomplete. Under #98, live panorama output, seam/pole review and desktop evidence for the Environment tab remain; local application does not close them. |
 
 The job lifecycle records intent before submission, binds an exact estimate to
 scope and origin, and treats transport uncertainty as recoverable uncertainty.

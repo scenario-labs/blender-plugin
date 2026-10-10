@@ -742,10 +742,11 @@ local claims without evicting earlier records.
 ### Environment lane (360 panoramas)
 
 Lane `panorama` (Environment) generates 2:1 equirectangular panoramas and HDR
-environments through dedicated Scenario models. It is available through local
-MCP before the native Environment tab. `list_models(lane="panorama")` returns
-only models with a verified [panorama contract](../scenario/core/scene/panorama_contract.py),
-each with a `contract` object:
+environments through dedicated Scenario models. The native
+[Environment tab](USER_GUIDE.md#environment) builds the same contract body for
+the same inputs. `list_models(lane="panorama")` returns every model with a
+verified [panorama contract](../scenario/core/scene/panorama_contract.py), whatever
+mode the native form shows, each with a `contract` object:
 
 | Mode | Model | Output | References |
 | --- | --- | --- | --- |
@@ -783,8 +784,11 @@ Quotes, single-use approval, durable submission and recovery are the same as in
 the other model lanes. Panorama jobs never import an image or change a World by
 themselves: apply a saved result with `prepare_result_application(purpose="world")`
 and [explicit approval](WORLD_APPLICATION.md#saved-result-ui-and-mcp-approval).
-The lane has no native prompt field yet, so `estimate_prompt` does not offer it;
-pass the prompt in `parameters`.
+Pass the prompt in `parameters`. `estimate_prompt` with `lane: panorama` prices
+New, Rewrite or Translate for the native Environment form's own prompt field,
+like the other native lanes. A native panorama input also accepts a local 2:1
+file that passes a preflight before upload; `upload_reference` has no such check,
+so an uploaded file is refused as a panorama reference here.
 The contracts come from recorded model records and zero-spend dry-run quotes;
 output formats, dimensions, asset layout and the HDR original's host are
 unverified until an authorized paid run under

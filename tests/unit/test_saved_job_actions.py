@@ -539,7 +539,15 @@ def test_every_offered_action_is_described_with_unique_keys_and_its_action_name(
             offered = {item.action for item in items if item.operator is not None}
             assert offered == set(actions), actions
             for item in items:
-                assert item.group in {"recover", "cancel", "apply", "receipt", "decide", "status"}
+                assert item.group in {
+                    "recover",
+                    "cancel",
+                    "apply",
+                    "receipt",
+                    "decide",
+                    "prefill",
+                    "status",
+                }
                 assert (item.operator is None) == (item.group == "status")
                 if item.operator is not None:
                     assert dict(item.properties)["context_id"] == CONTEXT
@@ -689,4 +697,87 @@ def test_session_import_notices_are_status_rows_after_the_controls():
         ),
         ("import_notice:0", "status", None, notices[0], "INFO"),
         ("import_notice:1", "status", None, notices[1], "INFO"),
+    ]
+
+
+def prefill(asset_id, index):
+    return (
+        f"make_hdri:{asset_id}",
+        "prefill",
+        sja.HDRI_OPERATOR,
+        f"Make HDRI ({index})",
+        "NONE",
+        dict(JOB, asset_id=asset_id),
+    )
+
+
+def test_saved_360_results_are_labelled_and_ldr_ones_prefill_make_hdri():
+    panoramas = {"flat": "ldr", "exr": "hdr", "second": "ldr"}
+    subject = view(
+        ("apply_world",),
+        "ready",
+        (
+            ("flat", "image/png"),
+            ("exr", "image/aces"),
+            ("plain", "image/png"),
+            ("second", "image/jpeg"),
+        ),
+        panoramas=panoramas,
+        panorama_inputs=("flat", "second"),
+        world_assets=("flat", "exr", "plain", "second"),
+    )
+    items = rows(sja.describe(subject, CONTEXT, TYPES))
+    world = [item for item in items if item[0].startswith("apply_world")]
+    assert items[0] == ("panorama", "status", None, "360 panorama and HDR environment", "WORLD", {})
+    # The World candidates keep their own label and numbering.
+    assert [item[3] for item in world] == [f"Set panorama as World ({n})" for n in range(1, 5)]
+    assert items[len(world) + 1 :] == [
+        prefill("flat", 1),
+        prefill("second", 2),
+        (
+            "awaiting_review",
+            "status",
+            None,
+            "Downloaded result awaits application review",
+            "INFO",
+            {},
+        ),
+    ]
+
+
+@pytest.mark.parametrize(
+    ("kinds", "label"),
+    [
+        ({"a": "ldr"}, "360 panorama (LDR)"),
+        ({"a": "hdr"}, "360 HDR environment (OpenEXR)"),
+        ({"a": "ldr", "b": "hdr"}, "360 panorama and HDR environment"),
+    ],
+)
+def test_panorama_label_never_calls_an_ldr_result_hdr(kinds, label):
+    items = sja.describe(view((), "applied", panoramas=kinds), CONTEXT, TYPES)
+    assert [(item.key, item.label) for item in items] == [("panorama", label)]
+
+
+@pytest.mark.parametrize("state", ["remote", "downloading", "applying", "download_failed"])
+def test_make_hdri_waits_for_a_settled_downloaded_result(state):
+    subject = view((), state, panoramas={"flat": "ldr"}, panorama_inputs=("flat",))
+    items = sja.describe(subject, CONTEXT, TYPES)
+    assert [item.key for item in items] == ["panorama"]
+
+
+@pytest.mark.parametrize("state", sorted(sja.PREFILL_STATES))
+def test_make_hdri_is_offered_on_settled_states_and_absent_without_ldr_inputs(state):
+    with_input = sja.describe(
+        view((), state, panoramas={"flat": "ldr"}, panorama_inputs=("flat",)), CONTEXT, TYPES
+    )
+    assert [item.key for item in with_input if item.group == "prefill"] == ["make_hdri:flat"]
+    hdr_only = sja.describe(view((), state, panoramas={"exr": "hdr"}), CONTEXT, TYPES)
+    assert all(item.group != "prefill" for item in hdr_only)
+
+
+def test_views_without_projection_keep_their_previous_descriptors():
+    plain = view(("import_images",), "ready", (("image", "image/png"),))
+    assert [item.key for item in sja.describe(plain, CONTEXT, TYPES)] == [
+        "import_images",
+        "awaiting_review",
     ]

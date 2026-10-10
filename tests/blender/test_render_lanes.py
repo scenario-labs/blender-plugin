@@ -363,6 +363,7 @@ class RenderLanesTests(unittest.TestCase):
                 "render_image",
                 "render_video",
                 "blockout",
+                "panorama",
             ],
         )
         self.assertIsNotNone(self.scene.scenario.lane_state("render_image"))

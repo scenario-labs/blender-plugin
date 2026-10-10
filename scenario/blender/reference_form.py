@@ -16,7 +16,7 @@ from bpy.props import EnumProperty, IntProperty, StringProperty
 from ..core.api.errors import ScenarioError
 from ..core.jobs.upload_store import UploadState
 from ..core.jobs.uploads import UploadRecoveryAction
-from . import props, runtime
+from . import panorama_lane, props, runtime
 
 _MARKER = "_scenario_reference_upload"
 _SCOPE = "_scenario_reference_scope"
@@ -112,6 +112,7 @@ def _form_snapshot(lane):
             ref.get(_KIND),
             ref.get(RENDER_ROLE),
             ref.get(_RESULT),
+            *(ref.get(marker) for marker in panorama_lane.MARKERS),
         )
         for ref in lane.references
     )
@@ -191,6 +192,9 @@ def prepare_attachment(
     spec = schema.by_name(param_name) if schema is not None else None
     if input_kind(lane, param_name) != record.intent.kind:
         raise ScenarioError(0, "Choose a matching input type for this saved upload")
+    if panorama_lane.is_panorama_input(lane, param_name):
+        # A saved upload's pixels were never checked as a 2:1 panorama.
+        raise ScenarioError(0, "Upload a 2:1 panorama file or choose Use saved panorama")
     matching = [item for item in lane.references if item.param_name == param_name]
     if ref is None and spec.ptype == "file" and matching:
         if len(matching) != 1:
@@ -246,7 +250,7 @@ def apply_attachment(context_id, identifier):
     added = ref is None
     if added:
         ref = lane.references.add()
-    marker_keys = (_MARKER, _SCOPE, _REQUEST, _ASSET, _KIND, _RESULT)
+    marker_keys = (_MARKER, _SCOPE, _REQUEST, _ASSET, _KIND, _RESULT, *panorama_lane.MARKERS)
     previous = (
         reference_values(ref),
         ref.label,
@@ -264,6 +268,9 @@ def apply_attachment(context_id, identifier):
         ref[_KIND] = approval.record.intent.kind
         if _RESULT in ref:
             del ref[_RESULT]  # The upload replaces a slot handed from a saved result.
+        for key in panorama_lane.MARKERS:
+            if key in ref:
+                del ref[key]
         ref.asset_id = approval.record.asset_id
         ref.source = "ASSET"
         ref.label = approval.record.intent.file_name + " (uploaded snapshot)"
@@ -338,9 +345,17 @@ def start(context, index, *, lane_name="image"):
         raise ScenarioError(0, "Choose a local file or a supported snapshot for this input")
     if ref.source == "FILE" and not ref.filepath:
         raise ScenarioError(0, f"Choose a file for this {kind} input first")
+    checked = None
+    if panorama_lane.is_panorama_input(lane, ref.param_name):
+        if ref.source != "FILE":
+            raise ScenarioError(0, "Upload a 2:1 panorama file or choose Use saved panorama")
+        # Measured before any marker, so a refused file leaves the slot unchanged.
+        checked = panorama_lane.preflight_file(bpy.path.abspath(ref.filepath))
     token = uuid.uuid4().hex
     ref[_MARKER] = token
     ref[_SCOPE] = scope_key(owner.session.scope)
+    if checked is not None:
+        ref[panorama_lane.PANORAMA_SIZE] = f"{checked[0].width}x{checked[0].height}"
     binding = FormUpload(
         context.scene,
         ref,
@@ -354,7 +369,13 @@ def start(context, index, *, lane_name="image"):
     props.mark_estimate_dirty(lane)
     try:
         if ref.source == "FILE":
-            binding.ticket = owner.start(context.scene, bpy.path.abspath(ref.filepath), kind=kind)
+            binding.ticket = owner.start(
+                context.scene,
+                bpy.path.abspath(ref.filepath),
+                kind=kind,
+                # Staging must copy the exact bytes the panorama preflight checked.
+                expected_sha256=checked[1] if checked is not None else None,
+            )
         else:
             binding.ticket = capture_upload(
                 context,
@@ -368,6 +389,8 @@ def start(context, index, *, lane_name="image"):
         del owner.forms[token]
         del ref[_MARKER]
         del ref[_SCOPE]
+        if panorama_lane.PANORAMA_SIZE in ref:
+            del ref[panorama_lane.PANORAMA_SIZE]
         raise
     except Exception:
         binding.error = "Upload did not start; inspect progress before choosing another reference"
@@ -454,12 +477,21 @@ def draw(layout, lane_state, index, ref):
     if kind is None:
         return
     marker = ref.get(_MARKER)
+    if ref.get(panorama_lane.PROJECTION):
+        layout.label(text="Saved 360 panorama result", icon="WORLD")
+        return
+    panorama_input = panorama_lane.is_panorama_input(lane_state, ref.param_name)
     if not marker:
-        if ref.source in _upload_sources(kind):
+        if ref.source in _upload_sources(kind) and (not panorama_input or ref.source == "FILE"):
             op = layout.operator(
                 "scenario.upload_reference", text="Upload reference", icon="EXPORT"
             )
             op.index, op.lane = index, lane_name
+        if panorama_input:
+            # Saved uploads were never checked as panoramas; draw the remedy instead.
+            if ref.source != "FILE":
+                layout.label(text="Use a 2:1 file or saved 360 panorama", icon="ERROR")
+            return
         op = layout.operator("scenario.inspect_uploads", text="Use saved upload", icon="VIEWZOOM")
         op.index, op.lane = index, lane_name
         return

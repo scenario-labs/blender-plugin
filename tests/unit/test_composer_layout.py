@@ -67,7 +67,16 @@ def test_scale_multiplies_every_size_and_fits_small_regions():
 
 
 def test_prompt_placeholder_and_lane_labels():
-    assert cl.LANE_ORDER == ("image", "video", "3d", "material", "render_image", "render_video")
+    # Environment is appended, so the existing tabs keep their order.
+    assert cl.LANE_ORDER == (
+        "image",
+        "video",
+        "3d",
+        "material",
+        "render_image",
+        "render_video",
+        "panorama",
+    )
     assert (
         cl.LANE_LABELS["image"] == "Image"
         and cl.LANE_LABELS["render_image"] == "Render Image"
@@ -76,6 +85,10 @@ def test_prompt_placeholder_and_lane_labels():
     assert cl.placeholder_for("image").startswith("Describe")
     assert "Prompt Spark" in cl.placeholder_for("render_image")
     assert "Prompt Spark" in cl.placeholder_for("render_video")
+    assert cl.LANE_LABELS["panorama"] == "Environment"
+    assert set(cl.LANE_LABELS) == set(cl.LANE_ORDER)
+    assert cl.placeholder_for("panorama") == "Describe the 360 environment"
+    assert cl.PANORAMA_PROMPT_MODE == "GENERATE"
     assert cl.placeholder_for("unknown") == "Type a prompt"
     # the 3D tab in Edit mode
     assert "selected mesh" in cl.placeholder_for("edit3d")
@@ -212,8 +225,9 @@ def test_settings_chip_and_corner_minus_button():
     assert s is not None and s.x > expanded.model_rect.right and s.right < expanded.generate_rect.x
     assert expanded.hit(s.x + 1, s.y + 1) == ("settings",)
     assert expanded.hit(c.x + c.w - 1, c.y + c.h - 1) == ("collapse",)
-    assert len(expanded.tab_rects) == 6
+    assert len(expanded.tab_rects) == 7
     assert expanded.hit(*_center(expanded.tab_rects["render_video"])) == ("tab", "render_video")
+    assert expanded.hit(*_center(expanded.tab_rects["panorama"])) == ("tab", "panorama")
     # the narrowest region that still shows the card: its minimum width plus its margins
     narrow = cl.pill_placement(cl.MIN_CARD_WIDTH + 2 * cl.MARGIN, 400, expanded=True, scale=1.0)
     assert narrow.expanded and narrow.card_rect.w == cl.MIN_CARD_WIDTH
@@ -666,6 +680,7 @@ def test_tab_label_switches_to_the_short_label_tab_by_tab():
         "material": "Mat",
         "render_image": "R-Img",
         "render_video": "R-Vid",
+        "panorama": "Env",
     }
     # Render Image and Render Video never share a label once shortened
     assert labels["render_image"] != labels["render_video"]
@@ -715,3 +730,13 @@ def test_every_tab_reads_at_the_minimum_card_width_on_every_scale():
         assert wide.tab_labels(measure) == cl.LANE_LABELS
     # a pill has no tabs to label
     assert cl.pill_placement(1600, 900, expanded=False).tab_labels(_per_char(6.0)) == {}
+
+
+def test_every_lane_tab_fits_the_card_row_at_default_and_minimum_widths():
+    for width in (None, cl.MIN_CARD_WIDTH):
+        layout = cl.pill_placement(1600, 900, expanded=True, width=width)
+        tabs = [layout.tab_rects[lane] for lane in cl.LANE_ORDER]
+        assert list(layout.tab_rects) == list(cl.LANE_ORDER)
+        assert tabs[0].x >= layout.card_rect.x and tabs[-1].right < layout.collapse_rect.x
+        assert all(left.right < right.x for left, right in zip(tabs, tabs[1:], strict=False))
+        assert all(tab.w > 0 for tab in tabs)

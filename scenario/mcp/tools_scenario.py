@@ -14,7 +14,6 @@ from ..core.api.catalog import GENERATION_LANES as LANES
 from ..core.api.catalog import models_for_lane
 from ..core.api.errors import ScenarioError
 from ..core.api.library import asset_summary as _asset_summary
-from ..core.jobs.result_metadata import ORIGINAL_MEDIA_TYPES
 from ..core.jobs.workflow_nodes import BLOCKED
 from ..core.scene import panorama_contract
 from ..core.scene.panorama import describe_world_media
@@ -22,9 +21,6 @@ from ..core.schema.params import build_body, validate
 from ..core.ui import capability_status
 from ..core.ui.costs import workflow_quote_notice
 from .protocol import DeferredTool, ToolSpec
-
-# Saved OpenEXR files are HDR environments, not LDR panorama inputs.
-_HDR_MEDIA_TYPES = ORIGINAL_MEDIA_TYPES | {"image/exr"}
 
 
 def _catalog_ready():
@@ -47,7 +43,8 @@ def list_models(args):
             "IMAGE", everything
         )
     elif lane == "panorama":
-        # The Environment lane has no native form yet, so derive it like 3D.
+        # The native Environment list follows the scene's mode; list every
+        # contract model here, as the 3D lane lists every input mode.
         records = models_for_lane(lane, list(runtime.state.records.values()))
     out, seen = [], set()
     for rec in records:
@@ -137,8 +134,8 @@ def _body_for(model_id, parameters, *, lane=None):
 def _saved_panoramas(contract, body):
     """Saved, downloaded LDR 360 results of the selected scope named by this request.
 
-    Projection comes only from Scenario's saved result metadata. An HDR original
-    is not an input image, and other asset IDs are never assumed to be panoramas.
+    The native Environment form applies the same shared check to its saved
+    panorama references.
     """
     from ..blender import history
 
@@ -150,21 +147,7 @@ def _saved_panoramas(contract, body):
             wanted.update(item for item in values if isinstance(item, str))
     if not wanted:
         return {}
-    refs = {}
-    for record in history.saved_records():
-        for item in record.results:
-            asset = item.asset
-            if (
-                asset.asset_id in wanted
-                and item.receipt is not None
-                and asset.projection == "equirectangular"
-                and asset.source == "asset"
-                and asset.media_type not in _HDR_MEDIA_TYPES
-            ):
-                refs[asset.asset_id] = panorama_contract.PanoramaRef(
-                    asset.asset_id, producer=record.intent.target_id
-                )
-    return refs
+    return panorama_contract.saved_panorama_refs(history.saved_records(), wanted)
 
 
 def _generation_input(args, lane):

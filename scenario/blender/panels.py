@@ -154,8 +154,11 @@ def draw_references(
 ):
     """One file input per group. `fixed_first` names an implicit first entry (the capture, the selected mesh) that
     the lane adds itself; `title_for` overrides the title; `hide` skips inputs entirely. `boxed=False` draws flat,
-    without a box, for callers that are already inside one (avoids nesting coloured boxes)."""
-    from . import mesh_export
+    without a box, for callers that are already inside one (avoids nesting coloured boxes).
+
+    An Environment input that takes a 360 panorama offers only a checked 2:1 file
+    and Use saved panorama; captures and arbitrary saved uploads are not panoramas."""
+    from . import mesh_export, panorama_lane
 
     title_for, fixed_first = title_for or {}, dict(fixed_first or {})
     for ref in lane_state.references:
@@ -198,14 +201,22 @@ def draw_references(
         header.label(
             text=f"{label}  {count}" + (f"/{spec.max_length}" if spec.max_length else ""), icon=icon
         )
-        if kind in {"image", "audio", "video", "3d"}:
+        panorama_input = panorama_lane.is_panorama_input(lane_state, spec.name)
+        if panorama_input:
+            op = header.operator("scenario.use_saved_panorama", text="Saved panorama", icon="WORLD")
+            op.param_name = spec.name
+        elif kind in {"image", "audio", "video", "3d"}:
             op = header.operator("scenario.inspect_uploads", text="Saved uploads", icon="VIEWZOOM")
             op.param_name, op.lane = spec.name, lane
         # the Edit lane's required mesh hides its add options; everywhere else offer the kind-appropriate sources
         # (a 3D input: Upload a model to override the selection; image/video: stills or clips) even when auto-pinned.
         if not (spec.ptype == "file" and spec.name in fixed_first and lane == "edit3d"):
             add_row = box.row(align=True)
-            for source_id, source_label, _desc in props.addable_sources_for(spec.kind):
+            sources = props.addable_sources_for(spec.kind)
+            if panorama_input:
+                sources = [item for item in sources if item[0] == "FILE"]
+                box.label(text="A saved 360 result or a 2:1 PNG/JPEG", icon="INFO")
+            for source_id, source_label, _desc in sources:
                 op = add_row.operator(
                     "scenario.add_reference",
                     text=ADD_SOURCE_LABEL.get(source_id, source_label),
@@ -406,6 +417,58 @@ def draw_generate_lane(layout, context, lane):
             icon="INFO",
         )
     draw_generate_row(layout, lane_state, lane)
+
+
+PANORAMA_PROMPTS = {
+    "GENERATE": "Describe the 360 environment",
+    "FROM_IMAGE": "Optional: describe the place",
+    "UPSCALE": "Optional: describe the details",
+}
+
+
+def draw_panorama_lane(layout, context):
+    """The Environment tab: a mode, then a verified contract model's form.
+
+    Drawing reads the scene and contract only; contract values are written by
+    property callbacks, and pricing happens through the shared exact quote.
+    """
+    from ..core.scene import panorama_contract
+
+    scenario = context.scene.scenario
+    lane_state = scenario.lane_state("panorama")
+    mode = scenario.panorama_mode
+    equal_segments(layout, scenario, "panorama_mode", [item[0] for item in props.PANORAMA_MODES])
+    draw_wrapped(layout, panorama_contract.MODE_DESCRIPTIONS[mode], "INFO")
+    if not runtime.state.lane_models.get("panorama"):
+        draw_wrapped(layout, "No verified panorama model for this mode in the catalog", "ERROR")
+        return
+    draw_model_row(layout, lane_state, "panorama")
+    schema = generation.schema_for(lane_state.model_id)
+    if schema is None:
+        draw_schema_status(layout, lane_state, "panorama")
+        return
+    contract = panorama_contract.contract_for(lane_state.model_id)
+    if contract is None or contract.mode != mode:
+        draw_wrapped(layout, "Pick a verified model for this Environment mode", "ERROR")
+        return
+    if schema.prompt_name:
+        draw_prompt_row(layout, lane_state, "panorama", placeholder=PANORAMA_PROMPTS.get(mode))
+    draw_references(layout, lane_state, schema)
+    if contract.sizes:
+        box = layout.box()
+        box.label(text="Panorama size", icon="IMAGE_DATA")
+        box.prop(scenario, "panorama_size", text="")
+    params_ui.draw_params(
+        layout,
+        lane_state,
+        schema,
+        exclude=set(contract.size_params),
+        locked={name for name, _value in contract.locked},
+    )
+    if contract.locked:
+        draw_wrapped(layout, "Greyed settings are fixed by the Environment lane", "LOCKED")
+    draw_wrapped(layout, panorama_contract.result_line(contract), "WORLD")
+    draw_generate_row(layout, lane_state, "panorama")
 
 
 def draw_edit3d_lane(layout, context):
@@ -792,7 +855,7 @@ class SCENARIO_PT_main(bpy.types.Panel):
             "lane",
             (
                 ("image", "video", "3d"),
-                ("audio", "material"),
+                ("audio", "material", "panorama"),
                 ("render_image", "render_video"),
                 ("blockout",),
             ),
@@ -805,6 +868,8 @@ class SCENARIO_PT_main(bpy.types.Panel):
             draw_loading(layout)
         elif lane in GENERATE_LANES:
             draw_generate_lane(layout, context, lane)
+        elif lane == "panorama":
+            draw_panorama_lane(layout, context)
         elif lane == "render_image":
             from . import render_lanes
 

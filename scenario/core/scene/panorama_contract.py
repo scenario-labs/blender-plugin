@@ -12,6 +12,7 @@ Scenario or touches Blender, so the native form and local MCP share it.
 
 from dataclasses import dataclass
 
+from ..jobs.result_metadata import ORIGINAL_MEDIA_TYPES
 from .panorama import MAX_PIXELS
 
 GENERATE = "GENERATE"
@@ -25,6 +26,14 @@ MODE_LABELS = {
     HDRI: "HDRI",
     UPSCALE: "Upscale",
 }
+MODE_DESCRIPTIONS = {
+    GENERATE: "Describe a 360 environment, or restyle a saved 360 panorama",
+    FROM_IMAGE: "Turn one image of a place into a 360 panorama",
+    HDRI: "Convert a saved 360 panorama into an HDR OpenEXR environment",
+    UPSCALE: "Upscale a saved 360 panorama within the World pixel limit",
+}
+# Saved OpenEXR files are HDR environments, never LDR panorama inputs.
+HDR_MEDIA_TYPES = ORIGINAL_MEDIA_TYPES | {"image/exr"}
 
 STILL = "still"
 PANORAMA = "panorama"
@@ -139,10 +148,50 @@ CONTRACTS = {
     )
 }
 PANORAMA_MODELS = tuple(CONTRACTS)
+# Every 2:1 size preset a contract offers, in order; the first is the default.
+SIZE_PRESETS = tuple(dict.fromkeys(size for c in CONTRACTS.values() for size in c.sizes))
 
 
 def contract_for(model_id):
     return CONTRACTS.get(model_id)
+
+
+def reference_rule(contract, param):
+    """The contract's rule for one file input, or None when it names no such input."""
+    return next((rule for rule in contract.references if rule.param == param), None)
+
+
+def is_ldr_panorama(item):
+    """Whether one saved result item can be a panorama reference.
+
+    It must be downloaded, declare an equirectangular projection in Scenario's
+    saved metadata and be the asset's own file; an OpenEXR original or file is
+    an HDR environment, not an input image.
+    """
+    asset = item.asset
+    return (
+        item.receipt is not None
+        and asset.projection == "equirectangular"
+        and asset.source == "asset"
+        and asset.media_type not in HDR_MEDIA_TYPES
+    )
+
+
+def saved_panorama_refs(records, wanted):
+    """Saved, downloaded LDR 360 results among `wanted` asset IDs, by asset ID.
+
+    `records` are the selected scope's saved jobs. Projection comes only from
+    their saved result metadata, so other asset IDs are never assumed to be
+    panoramas. The native form and local MCP share this check.
+    """
+    refs = {}
+    for record in records:
+        for item in record.results:
+            if item.asset.asset_id in wanted and is_ldr_panorama(item):
+                refs[item.asset.asset_id] = PanoramaRef(
+                    item.asset.asset_id, producer=record.intent.target_id
+                )
+    return refs
 
 
 def models_for_mode(mode, records):
@@ -161,6 +210,13 @@ def describe(contract):
     else:
         result = "LDR 360 panorama image (2:1 equirectangular)"
     return f"{result}; it stays a saved result until you approve it as the scene World"
+
+
+def result_line(contract):
+    """The short result line of the native form; LDR output is never called HDR."""
+    if contract.output == "hdr":
+        return "Result: HDR OpenEXR environment, saved until you set it as World"
+    return "Result: LDR 2:1 panorama, saved until you set it as World"
 
 
 def summary(contract):

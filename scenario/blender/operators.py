@@ -9,6 +9,7 @@ import bpy
 from bpy.props import EnumProperty, FloatProperty, IntProperty, StringProperty
 
 from ..core.api.errors import ScenarioError
+from ..core.scene import panorama_contract
 from ..core.scene.splats import SplatError
 from ..core.ui.costs import format_cu
 from . import apply_image, generation, params_ui, props, runtime
@@ -792,6 +793,14 @@ class SCENARIO_OT_reload_generation(bpy.types.Operator):
             scene.scenario.edit3d_task = task
         else:
             scene.scenario.lane = lane
+            contract = panorama_contract.contract_for(rec.model_id) if lane == "panorama" else None
+            if contract is not None:
+                # The mode lists the model; a matching 2:1 size preset is restored too.
+                if scene.scenario.panorama_mode != contract.mode:
+                    scene.scenario.panorama_mode = contract.mode
+                size = tuple(rec.body.get(name) for name in contract.size_params)
+                if contract.sizes and size in contract.sizes:
+                    scene.scenario.panorama_size = "{}x{}".format(*size)
             if lane == "3d":
                 record = runtime.state.records.get(rec.model_id)
                 mode = next(
@@ -935,6 +944,8 @@ class SCENARIO_OT_quick_settings(bpy.types.Operator):
             render_lanes.draw_render_image_lane(layout, context)
         elif lane == "render_video":
             render_lanes.draw_render_video_lane(layout, context)
+        elif lane == "panorama":
+            panels.draw_panorama_lane(layout, context)
         else:
             panels.draw_generate_lane(layout, context, lane)
 

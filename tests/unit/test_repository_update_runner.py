@@ -365,6 +365,7 @@ def test_lane_defaults_owner_is_detected_from_package_source(runner, tmp_path):
     assert not runner.model_defaults_owner(archive)
 
 
+@pytest.mark.parametrize("environment", ["absent", "preserved", "lost"])
 @pytest.mark.parametrize(
     ("schemas", "owner", "claimed"),
     [
@@ -377,12 +378,14 @@ def test_lane_defaults_owner_is_detected_from_package_source(runner, tmp_path):
     ],
 )
 def test_same_version_previous_code_becomes_the_test_predecessor(
-    runner, tmp_path, monkeypatch, schemas, owner, claimed
+    runner, tmp_path, monkeypatch, schemas, owner, claimed, environment
 ):
     """An unreleased predecessor shares the candidate's version; only metadata changes.
 
     A candidate that ships the lane-defaults owner must report reading the seeded
     defaults through it, and a candidate without one cannot claim that it did.
+    A seeded Environment lane must be reported preserved; an older predecessor
+    seeds none and reports false.
     """
     import contextlib
     import zipfile
@@ -435,6 +438,7 @@ def test_same_version_previous_code_becomes_the_test_predecessor(
             "project_scope_preserved": True,
             "workflow_references_preserved": False,
             "workflow_uploads_preserved": False,
+            "environment_lane_preserved": environment == "preserved",
             "service_requests": 0,
             "store_schema": {"before": schemas[0], "after": schemas[1]},
             "schema_10_state": "before-update"
@@ -444,7 +448,10 @@ def test_same_version_previous_code_becomes_the_test_predecessor(
             else "unavailable",
             "model_defaults_preserved": claimed,
         }
-        (session.directory / "expected-state.json").write_text('{"workflow": null}')
+        seeded = None if environment == "absent" else {"lane": "panorama"}
+        (session.directory / "expected-state.json").write_text(
+            json.dumps({"workflow": None, "environment": seeded})
+        )
         report.write_text(json.dumps(reports[name]))
         return None
 
@@ -469,7 +476,7 @@ def test_same_version_previous_code_becomes_the_test_predecessor(
         candidate_zip=candidate,
         test_predecessor=True,
     )
-    if claimed != owner:
+    if claimed != owner or environment == "lost":
         assert runner.run(args) == 1
         result = json.loads(next(args.artifacts.glob("*/result.json")).read_text())
         assert result["error"] == "Missing native update and enabled-state evidence"
@@ -480,6 +487,7 @@ def test_same_version_previous_code_becomes_the_test_predecessor(
     assert result["status"] == "passed"
     assert result["update"]["model_defaults_preserved"] is owner
     assert result["restart"]["model_defaults_preserved"] is owner
+    assert result["update"]["environment_lane_preserved"] is (environment == "preserved")
     assert result["predecessor_code"] == "previous-zip"
     assert result["previous_sha256"] == runner.sha256(previous)
     assert set(reports) == {"update", "restart"}

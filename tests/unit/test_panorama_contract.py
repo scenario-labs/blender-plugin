@@ -6,6 +6,7 @@ import copy
 import json
 from dataclasses import replace
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -232,3 +233,53 @@ def test_contract_records_are_immutable_and_lane_defaults_stay_lane_scoped():
     # schema defaults of the same models.
     for model_id in contracts.PANORAMA_MODELS:
         assert model_id not in catalog.PARAM_OVERRIDES
+
+
+def _saved(
+    asset_id, media_type="image/png", *, projection="equirectangular", source="asset", receipt=True
+):
+    asset = SimpleNamespace(
+        asset_id=asset_id, media_type=media_type, projection=projection, source=source
+    )
+    return SimpleNamespace(asset=asset, receipt=object() if receipt else None)
+
+
+def _record(target, *items):
+    return SimpleNamespace(intent=SimpleNamespace(target_id=target), results=items)
+
+
+def test_saved_panorama_refs_accept_only_downloaded_ldr_360_results():
+    records = (
+        _record(
+            FLUX,
+            _saved("flat"),
+            _saved("pending", receipt=False),
+            _saved("plain", projection=None),
+            _saved("exr-file", "image/exr"),
+            _saved("exr-original", "image/x-exr", source="original"),
+            _saved("aces-original", "image/aces", source="original"),
+        ),
+        _record(UPSCALE, _saved("upscaled", "image/jpeg")),
+    )
+    wanted = {"flat", "pending", "plain", "exr-file", "exr-original", "aces-original", "upscaled"}
+    refs = contracts.saved_panorama_refs(records, wanted)
+    assert refs == {
+        "flat": contracts.PanoramaRef("flat", producer=FLUX),
+        "upscaled": contracts.PanoramaRef("upscaled", producer=UPSCALE),
+    }
+    # Only requested IDs are returned, so other saved results are never offered.
+    assert contracts.saved_panorama_refs(records, {"other"}) == {}
+    assert contracts.HDR_MEDIA_TYPES == {"image/exr", "image/x-exr", "image/aces"}
+
+
+def test_native_wording_and_lookups_follow_the_contracts():
+    assert set(contracts.MODE_DESCRIPTIONS) == set(contracts.PANORAMA_MODES)
+    assert contracts.SIZE_PRESETS == contracts.CONTRACTS[GPT].sizes
+    assert all(width == 2 * height for width, height in contracts.SIZE_PRESETS)
+    for contract in contracts.CONTRACTS.values():
+        line = contracts.result_line(contract)
+        assert line.startswith("Result: ") and "World" in line
+        assert ("HDR" in line) is (contract.output == "hdr")
+        for rule in contract.references:
+            assert contracts.reference_rule(contract, rule.param) is rule
+        assert contracts.reference_rule(contract, "prompt") is None

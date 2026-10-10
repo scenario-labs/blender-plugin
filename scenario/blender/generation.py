@@ -21,7 +21,7 @@ from ..core.api.catalog import (
 )
 from ..core.api.errors import ScenarioError
 from ..core.jobs.coordinator import RouteQuoteError
-from ..core.scene import capture_plan
+from ..core.scene import capture_plan, panorama_contract
 from ..core.schema.params import build_body, missing_required_files, parse_schema, validate
 from . import params_ui, props, runtime
 from .job_session import OriginUnavailable
@@ -162,6 +162,7 @@ def set_catalog(records, detailed, *, warmup=False):
     if bpy.context.scene is not None:
         refresh_3d_models(bpy.context, mark_dirty=False, prefetch=not warmup)
         refresh_edit3d_models(bpy.context, mark_dirty=False, prefetch=not warmup)
+        refresh_panorama_models(bpy.context, mark_dirty=False, prefetch=not warmup)
 
 
 def restore_model_key(lane_state):
@@ -367,6 +368,35 @@ def refresh_edit3d_models(context=None, *, mark_dirty=True, prefetch=True):
         request_models(missing, mark_dirty=mark_dirty)
 
 
+def panorama_models(mode, records):
+    """The Environment lane's verified contract models of one mode, curated order."""
+    return panorama_contract.models_for_mode(mode, models_for_lane("panorama", records))
+
+
+def refresh_panorama_models(context=None, *, mark_dirty=True, prefetch=True):
+    """The Environment model list follows the mode tabs (Generate, From image, HDRI, Upscale)."""
+    scene = getattr(context, "scene", None) or bpy.context.scene
+    if scene is None:
+        return
+    records = panorama_models(scene.scenario.panorama_mode, list(runtime.state.records.values()))
+    runtime.state.lane_models["panorama"] = records
+    runtime.set_enum_items(
+        ("models", "panorama"), [(r.id, r.name, r.short_description) for r in records]
+    )
+    lane_state = scene.scenario.lane_state("panorama")
+    restore_model_key(lane_state)
+    if records and lane_state.model_id not in [r.id for r in records]:
+        lane_state.model_id = records[0].id  # another mode's model cannot stay selected
+    if records and lane_state.model_key != lane_state.model_id:
+        # A rebuilt list can show its first model without an assignment; record
+        # it as the choice, so a later list change cannot silently swap it.
+        lane_state.model_key = lane_state.model_id
+    on_model_changed(context or bpy.context, lane_state, mark_dirty=mark_dirty)
+    missing = [r.id for r in records if not r.parameters and r.id not in _pending_models][:12]
+    if prefetch and missing:
+        request_models(missing, mark_dirty=mark_dirty)
+
+
 def request_models(model_ids, *, mark_dirty=True):
     runtime.sync_catalog_context()
     if not runtime.online():
@@ -436,13 +466,44 @@ def on_model_changed(context, lane_state, mark_dirty=True):
     schema = schema_for(model_id)
     if schema is None:
         return
+    previous = {item.name for item in lane_state.params if item.model_id == model_id}
     seeded = params_ui.sync_params(lane_state, schema, model_id)
+    if props.lane_of(lane_state) == "panorama":
+        _apply_contract_settings(lane_state, schema, model_id, previous)
     # Seeded values skip their RNA callbacks: re-arm this form's price and let a
     # seeded model duration drive the camera path, as an edit would.
     if seeded or lane_state.estimate_state == "IDLE":
         props.mark_estimate_dirty(lane_state)
     if "duration" in seeded:
         sync_shot_duration(lane_state.id_data)
+
+
+def _apply_contract_settings(lane_state, schema, model_id, previous):
+    """Show the Environment contract's forced values, and its defaults on new settings.
+
+    Runs from property callbacks and catalog delivery, never while drawing.
+    Unchanged values are not written, so a catalog refresh keeps a ready price.
+    """
+    contract = panorama_contract.contract_for(model_id)
+    if contract is None:
+        return
+    values = list(contract.locked)
+    values += [(name, value) for name, value in contract.defaults if name not in previous]
+    for name, value in values:
+        spec = schema.by_name(name)
+        index = lane_state.params.find(name)
+        if spec is None or index < 0:
+            continue
+        item = lane_state.params[index]
+        if spec.ptype == "boolean":
+            if item.bool_value != value:
+                item.bool_value = value
+        elif spec.ptype == "number" and not spec.allowed_values:
+            attr = "int_value" if spec.is_integer else "float_value"
+            if getattr(item, attr) != value:
+                setattr(item, attr, value)
+        if not item.enabled:
+            item.enabled = True
 
 
 @dataclass
@@ -549,6 +610,9 @@ def build_request(scene, lane, for_estimate=False):
         render_lanes.decorate(scene, lane, lane_state, schema, request, for_estimate)
         if request.errors:
             return request
+    contract_errors = []
+    if lane == "panorama":
+        contract_errors = _prepare_panorama(scene, lane_state, schema, request, references)
     pending = {name: list(paths) for name, paths in request.files.items()}
     for cap in request.captures:
         if cap.get("param"):
@@ -585,8 +649,58 @@ def build_request(scene, lane, for_estimate=False):
         request.partial = bool(request.captures) or any(
             spec.cost_impact and spec.name in request.files for spec in schema.specs if spec.is_file
         )
-    request.errors = errors
+    request.errors = contract_errors + [error for error in errors if error not in contract_errors]
     return request
+
+
+def _prepare_panorama(scene, lane_state, schema, request, references):
+    """Apply the shared Environment contract to the native body; return its errors.
+
+    The same panorama_contract.prepare runs for local MCP. Locked, default,
+    size and factor values replace the form's values in the body. Local files
+    and captures still waiting for upload stand in as placeholders, so the
+    contract judges the rest of the form: a waiting panorama file is checked by
+    its upload preflight, and a capture is never a panorama.
+    """
+    from . import panorama_lane
+
+    contract = panorama_contract.contract_for(request.model_id)
+    if contract is None:
+        return ["Choose a verified panorama model for the Environment lane"]
+    if contract.mode != scene.scenario.panorama_mode or lane_state.model_key not in (
+        "",
+        request.model_id,
+    ):
+        return ["Pick the model again for this Environment mode"]
+    body = request.body
+    if contract.sizes:
+        width, height = contract.size_params
+        body[width], body[height] = props.panorama_size(scene)
+    try:
+        refs = panorama_lane.native_refs(lane_state, references)
+    except ScenarioError as error:
+        return [error.reason]
+    check = dict(body)
+    waiting = [(name, len(paths), True) for name, paths in request.files.items()]
+    waiting += [(cap["param"], 1, False) for cap in request.captures if cap.get("param")]
+    for name, count, is_file in waiting:
+        spec = schema.by_name(name)
+        if spec is None:
+            continue
+        placeholders = [f"waiting-upload:{name}:{index}" for index in range(count)]
+        if is_file and panorama_lane.is_panorama_input(lane_state, name):
+            refs.update({item: panorama_contract.PanoramaRef(item) for item in placeholders})
+        if spec.ptype == "file_array":
+            current = check.get(name) or []
+            check[name] = [*current, *placeholders]
+        elif check.get(name) is None:
+            check[name] = placeholders[0]
+    prepared, errors = panorama_contract.prepare(contract, schema.specs, check, panorama_refs=refs)
+    for name, value in prepared.items():
+        spec = schema.by_name(name)
+        if spec is not None and not spec.is_file:
+            body[name] = value
+    return errors
 
 
 def model_duration_value(lane_state):

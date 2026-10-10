@@ -12,6 +12,11 @@ instead of keeping their own branches.
 A descriptor grants nothing. Its operator rechecks its context token and saved
 revision or review, and opens its own confirmation or destination review where
 one applies.
+
+Results whose saved metadata declares a 360 projection add a label row and, for
+each downloaded LDR panorama, a **Make HDRI** form prefill. A prefill is not a
+saved-job action: it changes no saved job, quotes nothing and only opens the
+Environment form, so MCP lists no matching action.
 Availability is expressed by presence: every offered operator descriptor is
 enabled. A descriptor without an operator is a status row, never a control.
 
@@ -86,6 +91,15 @@ MODEL_FORMATS = {
 }
 # Formats that are always Gaussian splats; a PLY can hold a mesh or splats.
 SPLAT_FORMATS = frozenset({"spz", "splat"})
+# Saved 360 results by range ("ldr" or "hdr"); LDR is never called HDR.
+PANORAMA_LABELS = {
+    frozenset({"ldr"}): "360 panorama (LDR)",
+    frozenset({"hdr"}): "360 HDR environment (OpenEXR)",
+    frozenset({"ldr", "hdr"}): "360 panorama and HDR environment",
+}
+HDRI_OPERATOR = "scenario.panorama_to_hdri"
+# Saved states whose downloaded results can feed another Environment form.
+PREFILL_STATES = frozenset({"ready", "applied", "apply_failed"})
 
 
 @dataclass(frozen=True, eq=False)
@@ -123,9 +137,10 @@ class SavedJobAction:
     """One saved-job control, or a status row when `operator` is None.
 
     `key` is unique within one view. `action` is the ModelJobs and MCP action
-    name, or empty for a row about the whole view. `group` is recover, cancel,
-    apply, receipt, decide or status. `properties` are the operator's property
-    name/value pairs, set exactly as listed.
+    name, or empty for a row about the whole view and for a form prefill.
+    `group` is recover, cancel, apply, receipt, decide, prefill or status.
+    `properties` are the operator's property name/value pairs, set exactly as
+    listed.
     """
 
     key: str
@@ -357,6 +372,29 @@ def _describe_action(action, view, job, result_types, review, workflow=None):
     )
 
 
+def _panorama_label(view):
+    kinds = frozenset(view.meta.get("panoramas", {}).values())
+    label = PANORAMA_LABELS.get(kinds)
+    return (_status("panorama", "", label, "WORLD"),) if label else ()
+
+
+def _hdri_prefills(view, job):
+    """One Make HDRI prefill per downloaded LDR 360 result, numbered among them."""
+    if view.meta.get("saved_state") not in PREFILL_STATES:
+        return ()
+    return tuple(
+        SavedJobAction(
+            f"make_hdri:{asset_id}",
+            "",
+            "prefill",
+            f"Make HDRI ({index})",
+            operator=HDRI_OPERATOR,
+            properties=(*job, ("asset_id", asset_id)),
+        )
+        for index, asset_id in enumerate(view.meta.get("panorama_inputs", ()), 1)
+    )
+
+
 def describe(view, context_id, result_types, blockout_review=None, workflow_steps=None):
     """Return one projected view's saved-job controls in drawing order.
 
@@ -385,8 +423,10 @@ def describe(view, context_id, result_types, blockout_review=None, workflow_step
         items.append(_status("decision_sending", "", "Sending your decision...", "TIME"))
     if workflow is not None and workflow.error:
         items.extend(_note("decision_error", workflow.error, "ERROR"))
+    items.extend(_panorama_label(view))
     for action in actions:
         items.extend(_describe_action(action, view, job, result_types, blockout_review, workflow))
+    items.extend(_hdri_prefills(view, job))
     # Session-local notes about the last import, such as splat thinning.
     for index, text in enumerate(meta.get("import_notices", ())):
         items.append(_status(f"import_notice:{index}", "", text, "INFO"))

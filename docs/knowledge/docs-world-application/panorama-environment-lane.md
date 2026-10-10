@@ -3,20 +3,22 @@
   "type": "Evidence",
   "id": "docs-world-application.panorama-environment-lane",
   "title": "Environment lane results and World approval",
-  "description": "Panorama generation through MCP leaves results saved for explicit World approval.",
+  "description": "Panorama generation leaves results saved for explicit World approval.",
   "evidence": {
     "path": "docs/WORLD_APPLICATION.md",
     "scope": "panorama-environment-lane",
     "coverage": "source-reviewed",
     "reviewed_at": "2026-10-12",
     "base_revision": "4bd0061d73f6d049a86adac37119cc7a2c37741c",
-    "limits": "Reviewed that MCP Environment lane jobs stop at saved results without automatic image import or World replacement, that their projection results reach the existing World approval unchanged, and that the guide no longer lists SDK model validation and estimates among missing work while still listing the native tab, storage policy, undo, seam and pole quality and live generation. Installed native tests on macOS arm64 Blender 5.1.2 check that a saved panorama job leaves the scene World and images unchanged. No live panorama output, World application of a generated panorama, other Blender version or desktop interaction is established.",
+    "limits": "Reviewed that native and MCP Environment lane jobs stop at saved results without automatic image import or World replacement, that their projection results reach the existing World approval unchanged, that the World confirmation does not state the projection while native saved-job rows label server-declared 360 results and MCP job_status reports projection, and that the guide still lists storage policy, undo, seam and pole quality, desktop evidence and live generation as open. Installed native tests on macOS arm64 Blender 5.1.2 (exact dev ZIP, isolated profile) cover a native panorama job left unapplied, then applied only to a newly selected scene after approval with the first scene's World unchanged, and the restart label. No paid or live generation, returned output format, size or asset layout, seam, pole or HDR range quality, or Blender 5.0 and 5.2 run is established by this review.",
     "sources": {
-      "docs/WORLD_APPLICATION.md": "007b9f4b31a312261d2038a85486ad851aacf5797c693eaa55e1d600b90b90d6",
-      "scenario/mcp/tools_scenario.py": "54dd2fc57b96ddcac1f8e44fa97df513487a7f3537266797a2f5ab024a760ca0",
-      "scenario/blender/model_jobs.py": "88f17955538534d792b7408cf8e11e705bb2e6ee82d584173d51a365504c467d",
-      "scenario/core/scene/panorama_contract.py": "2110f885c49516bbc985c2948c9542350f74041448348ec34952e23d2fb8fa99",
-      "tests/blender/test_model_generation.py": "402e14442c01ec69eec18d401b3aebbc32ce7d080efc69e2ee32e9ea837a039c"
+      "docs/WORLD_APPLICATION.md": "641180189f11d77793f6a7ca2c35b15a999c7a6b87c4699bc3220c7e24085cfd",
+      "scenario/mcp/tools_scenario.py": "ddd3efd7b48378cec9c3bca01928ce1858cdabcf1d05bdbee086ed0b1d327b14",
+      "scenario/blender/model_jobs.py": "b5174cdf8a73fea86b633fb660a7d942b0fd0f2516e81ec7477e1be6bb956b6b",
+      "scenario/core/scene/panorama_contract.py": "be4c2c949696ca82c18a1062c62ec252eec40d7d4e0e5d7fb2fe3064bab4e518",
+      "scenario/core/ui/saved_job_actions.py": "923ec72acee64754b948547f69d3b7f0b851c5c8d58a3156dc028e2131fa4756",
+      "tests/blender/test_model_generation.py": "7a259312ca4bdbbcf45f14b34985cb71bcd722da2d8546439d4a206704a05049",
+      "tests/blender/test_panorama_lane.py": "539c48697cad7224d20b2638e6f92d63a83352b52190394f8c6842c7825f5e86"
     }
   }
 }

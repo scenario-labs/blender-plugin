@@ -515,6 +515,10 @@ class JobCoordinator:
                 self._results.discard_preview(request, root=root)
             raise
 
+    def maintain_result_previews(self, *, root, cancel):
+        """Preview-lane command: sweep and evict the preview cache; no job read or network."""
+        self._results.maintain_previews(root=root, cancel=cancel)
+
     def finish_result_preview(self, request, *, root, cancel, envelope=None):
         """Preview-lane command: cache Blender's decoded output and drop the private copy."""
         if cancel.is_set():

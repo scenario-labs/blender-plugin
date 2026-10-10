@@ -258,6 +258,11 @@ class JobWorkers:
             maintain=maintain,
         )
 
+    def maintain_result_previews(self, *, root):
+        return self._enqueue_preview(
+            self._coordinator.maintain_result_previews, root=os.fspath(root)
+        )
+
     def finish_result_preview(self, request, *, root, envelope=None):
         return self._enqueue_preview(
             self._coordinator.finish_result_preview,

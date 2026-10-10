@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Preview polling windows and the dedicated lane, with real workers and no network."""
 
+import os
 import threading
 from concurrent import futures
 from functools import partial
@@ -10,8 +11,8 @@ from unittest.mock import Mock
 
 import pytest
 
+from scenario.core.jobs import preview_scheduler, transfers
 from scenario.core.jobs import result_previews as previews
-from scenario.core.jobs import transfers
 from scenario.core.jobs.coordinator import RemoteSnapshot
 from scenario.core.jobs.preview_scheduler import ResultPreviewScheduler
 from scenario.core.jobs.store import JobIntent, JobState
@@ -56,10 +57,11 @@ def lane(env):  # noqa: F811 - pytest injects the shared fixture
 
 
 def drive(scheduler):
-    """Pump until no lane batch or publication remains in flight."""
+    """Pump until no lane batch, maintenance pass or publication remains in flight."""
     scheduler.pump()
     for _ in range(50):
-        tasks = [task for task in (scheduler._task, *scheduler._publishing) if task is not None]
+        pending = (scheduler._task, scheduler._maintenance, *scheduler._publishing)
+        tasks = [task for task in pending if task is not None]
         tasks += [task for task, _ in scheduler._discards if task is not None]
         if not tasks:
             return
@@ -180,6 +182,47 @@ def test_persistent_transfer_failure_settles_failed_at_the_window_end(lane, monk
     assert scheduler.retry("request", "asset-model").get(STILL).state == State.QUEUED
     drive(scheduler)
     assert state(lane, "asset-model").state == State.READY
+
+
+def test_idle_scheduler_evicts_previews_written_after_the_last_pass(lane, monkeypatch):
+    service, clock, scheduler = lane.env, lane.clock, lane.scheduler
+    assets = [(f"asset-{index}", "video/mp4", MP4) for index in range(2)]
+    ready_job(service, "request", assets)
+    for name, _, _ in assets:
+        url = f"{CDN}/{name}.jpg"
+        service.assets[name] = asset_record(name, "video/mp4", thumbnail=url)
+        service.downloader.files[url] = JPEG
+    scheduler.request("request")
+    # The first batch maintained the cache before it wrote both stills.
+    drive(scheduler)
+    ready = [state(lane, name).preview for name, _, _ in assets]
+    assert all(preview is not None for preview in ready)
+    for age, preview in zip((2000, 1000), ready, strict=True):
+        stamp = os.path.getmtime(preview.path) - age
+        for path in preview.path.parent.iterdir():
+            os.utime(path, (stamp, stamp))
+    # A budget that holds exactly one entry, so the cache is now over it.
+    budget = sum(path.stat().st_size for path in ready[1].path.parent.iterdir())
+    original, passes = previews.PreviewCache.evict, []
+
+    def evict(cache, **options):
+        passes.append(threading.current_thread().name)
+        return original(cache, max_bytes=budget, **options)
+
+    monkeypatch.setattr(previews.PreviewCache, "evict", evict)
+    calls, downloads = len(service.calls), len(service.downloader.calls)
+    clock.now += preview_scheduler.MAINTAIN_SECONDS - 1
+    drive(scheduler)
+    assert passes == []  # Throttled: the last pass ran less than ten minutes ago.
+    clock.now += 1
+    drive(scheduler)
+    # No batch was due; a maintenance-only lane command evicted the oldest entry.
+    assert passes == ["ScenarioPreview"]
+    assert not ready[0].path.exists() and ready[1].path.exists()
+    assert (len(service.calls), len(service.downloader.calls)) == (calls, downloads)
+    clock.now += preview_scheduler.MAINTAIN_SECONDS
+    drive(scheduler)
+    assert passes == ["ScenarioPreview"]  # Nothing was written since that pass.
 
 
 def test_offline_time_does_not_consume_the_window(lane):

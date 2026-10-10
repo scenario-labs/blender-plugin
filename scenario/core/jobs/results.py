@@ -656,6 +656,15 @@ class ResultCommands:
             except previews.PreviewError as error:
                 settle(index, rendition, state.FAILED, reason=str(error))
 
+    def _maintain_previews(self, cache):
+        cache.sweep()
+        cache.evict()
+
+    def maintain_previews(self, *, root, cancel):
+        """Sweep abandoned work and evict beyond the cache budget; no job read or network."""
+        self._preview_check(cancel)
+        self._maintain_previews(previews.PreviewCache(root))
+
     def prepare_previews(self, work, *, root, cancel, maintain=False):
         """Resolve preview renditions on the preview lane; never generate, apply or spend.
 
@@ -675,8 +684,7 @@ class ResultCommands:
             raise ValueError("Use a bounded preview batch")
         cache = previews.PreviewCache(root)
         if maintain:
-            cache.sweep()
-            cache.evict()
+            self._maintain_previews(cache)
         outcomes = [{} for _ in work]
         try:
             remote = []

@@ -282,7 +282,8 @@ inference jobs is supported". The SDK's retrieve enum lists `custom` and
 `custom`. Any other type raises `CancellationUnsupported` before the claim: the
 record keeps its state and revision, no action is sent and polling continues.
 `cancellable_job()` is the same predicate for owners deciding whether to offer
-cancellation. This is not a general workflow-cancellation contract. A job
+cancellation. This is not a general workflow-cancellation contract; a workflow
+stops only by [rejecting a waiting step](#waiting-workflow-step-decisions). A job
 already observed terminal is committed without sending a cancellation. An SDK
 contract test fails if the pinned documentation of this limit changes.
 
@@ -318,12 +319,67 @@ fail closed on that record instead of silently treating it as dispatchable.
 `JobWorkers.cancel_remote` uses the bounded application pool and the same task
 polling interface. Deactivation before the action is claimed stops dispatch;
 once claimed, late observations stay bound to the original store. Shutdown
-joins this work before closing the SDK. General workflow cancellation, live
-service acceptance, and which generation lanes return `inference` jobs remain
-outstanding under #65.
+joins this work before closing the SDK. Cancellation of a running workflow step,
+live service acceptance, and which generation lanes return `inference` jobs
+remain outstanding under #65.
 The Image facade now exposes these commands through shared UI/MCP saved-job
-controls; rejecting a workflow approval node is not a substitute. Captured job
-types and offline tests do not establish live cancellation acceptance.
+controls. Captured job types and offline tests do not establish live
+cancellation acceptance.
+
+
+## Waiting workflow step decisions
+
+A workflow job stays `in-progress` while a `user-approval` or `user-selection`
+node of its `metadata.flow` is `processing`: Scenario waits for one decision.
+[`workflow_nodes.pending_steps`](../scenario/core/jobs/workflow_nodes.py) projects
+those nodes from one `jobs.retrieve` response into immutable `PendingStep`
+values, in flow order: node ID and type, iteration index and loop node ID of a
+loop copy, dependencies, and review asset IDs from the dependencies' outputs (at
+most 50, with their total). A selection also carries its frozen candidates, at
+most 50 asset IDs or texts of at most 4,096 characters each, and its declared
+pick bounds (defaults 1 and 100). Signed asset URLs are never copied.
+`review_id` hashes the projected fields with the remote job ID, so a re-signed
+URL keeps it while any reviewed change replaces it. The response must be this
+record's workflow job; a flow of more than 2,048 nodes, or nodes without string
+`id`, `type` and `status`, raises `StepError`.
+
+Each step lists the decisions this extension may send. A selection with
+unreadable candidates or bounds is `unsupported`. A selection whose output
+reaches a ForEach loop or a nested workflow, through input, conditional or
+nested references or `dependsOn`, is blocked as `loop`. Both offer only
+`reject`. The exact estimate approved before the run is not shown to cover the
+runs such a selection starts, so choosing items stays blocked until live
+evidence shows the charge stays within that approval. In a flow with a loop,
+unreadable references block every selection. A node ID the adapter could not
+send, or one shared by several waiting steps, is `unidentified` and offers no
+decision.
+
+`decide_workflow_node(request_id, expected_revision=..., node_id=..., review_id=..., action=..., selected_indices=None)`
+accepts only the current scoped `remote` record of a workflow operation, and one
+decision per request at a time; a concurrent second call fails locally. It first
+retrieves the job. A finished job is committed and returned as a
+`DecisionSnapshot` with `sent` false, without a decision. The step must still
+wait with the reviewed `review_id`, otherwise `StoreConflict`, and the action and
+picks must fit it, otherwise `StepError`. After rechecking that the context is
+active, the coordinator makes one `SDKAdapter.workflow_decision` call, never
+retried. An HTTP 4xx reply raises `DecisionRefused` with its status; any other
+failure, including a lost response, raises `DecisionUncertain`. Both try one
+more retrieval, commit any terminal status it shows and carry it as `snapshot`.
+On success, a fresh retrieval returns a `DecisionSnapshot` with `sent` true; if
+that retrieval fails, the outcome is reported as uncertain.
+
+No decision record is stored and the store schema is unchanged. After a decision
+the step no longer waits, so the next retrieval shows the outcome, also after a
+restart, and another decision must start from a step shown waiting again.
+Rejection is the only workflow cancellation: the API reference documents that it
+stops the workflow, and the retrieval's `canceled` status is committed like any
+other terminal status. Completed steps stay charged. `cancel_remote` stays
+model-only because the job action supports cancelling inference jobs only, and
+a running workflow step cannot be stopped. `JobWorkers.decide_workflow_node`
+queues the command on the shared pool with an immutable copy of the picks.
+The service's handling of repeated or concurrent decisions, rejection inside a
+loop, omitted `projectId` and the charge after an approval or selection are not
+live-verified.
 
 
 ## Result retrieval and download commands

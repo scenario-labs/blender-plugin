@@ -593,6 +593,24 @@ class JobSession:
         """Queue explicit known model-job cancellation under its original scope."""
         return self._record_command("cancel_remote", request_id, expected_revision)
 
+    def decide_workflow_node(
+        self, request_id, *, expected_revision, node_id, review_id, action, selected_indices=None
+    ):
+        """Queue one reviewed waiting-step decision under the saved job's original scope.
+
+        Like cancellation it needs no current scene: the completion carries the
+        stored origin, and the coordinator checks the step and review again.
+        """
+        return self._record_command(
+            "decide_workflow_node",
+            request_id,
+            expected_revision,
+            node_id=node_id,
+            review_id=review_id,
+            action=action,
+            selected_indices=selected_indices,
+        )
+
     def read_prompt_results(self, request_id, *, expected_revision):
         """Read full text off-thread; delivery still checks the originating scene."""
         return self._record_command("read_prompt_results", request_id, expected_revision)

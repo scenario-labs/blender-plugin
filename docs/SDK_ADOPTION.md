@@ -43,7 +43,7 @@ records, lane/schema helpers and local display status classification remain.
 | Exact model quote and submission, including render, Blockout and Film models | `JobCoordinator` / `SDKAdapter`: `generate.with_raw_response.run_model`, with `dry_run="true"` only for quotes |
 | New/Rewrite and Translate | Shared prompt commands: `generate.with_raw_response.prompt/translate`, including separate exact estimates and submission claims |
 | Cloud history, known-job recovery, polling, remote progress and inference cancellation | Shared catalog/coordinator: `jobs.with_raw_response.list/retrieve/trigger_action`; progress reads `Job.status` and `Job.progress` from the same polling retrieve, with no extra request |
-| Waiting workflow step decisions (adapter only; no job, UI or MCP caller yet) | `SDKAdapter.workflow_decision`: `workflows.with_raw_response.user_approval`; selection uses the named [SDK issue #33 exception](#workflow-step-decisions) |
+| Waiting workflow step decisions (shared job command; no native or MCP control yet) | `JobCoordinator` / `SDKAdapter.workflow_decision`: `workflows.with_raw_response.user_approval`; selection uses the named [SDK issue #33 exception](#workflow-step-decisions); steps are read from the polling `jobs.retrieve`, with no extra request |
 | Result and complete prompt/model-text metadata | Shared coordinator: `assets.with_raw_response.retrieve`; bounded complete text uses the signed result transport |
 | Saved-result preview metadata | Shared coordinator on the preview lane: `assets.with_raw_response.get_bulk` for every batch, one asset included, so an omitted asset means the same at any size; stills and clips use the signed result transport ([result previews](RESULT_PREVIEWS.md)) |
 | Asset library browsing and text search | Shared coordinator: `assets.with_raw_response.list` and `search.with_raw_response.asset_search`; explicit single-page reads with selected project scope |
@@ -690,10 +690,13 @@ these contracts pass with its raw-response wrapper.
   not terminal-state evidence and may carry signed asset URLs, which callers must
   not persist or log.
 
-This adapter primitive grants no spending or decision authority. Exact quotes,
-explicit user approval, a selection that feeds a ForEach loop, and durable
-records belong to the job runtime that will call it; no job, UI or MCP path calls
-it yet. Offline contracts do not establish live endpoint acceptance.
+This adapter primitive grants no spending or decision authority. The
+[workflow job command](JOB_COORDINATOR.md#waiting-workflow-step-decisions) calls
+it once per reviewed step, after retrieving the job and checking the step again.
+That command treats an HTTP 4xx reply as a refusal and every other failure as an
+uncertain outcome, stores no decision record and blocks choosing items for a
+selection that feeds a ForEach loop or nested workflow. No native or MCP control
+calls the command yet. Offline contracts do not establish live endpoint acceptance.
 
 ## Known authentication failure
 
@@ -751,7 +754,7 @@ client; the selection request also disables retries on its own options.
 | Inaccessible model detail | `models.retrieve`: HTTP 403 or 404 raises `AdapterUnavailable`, an `AdapterError` carrying the status and fixed text; other reads and statuses keep the generic error |
 | Public/private workflow catalog | `workflows.list`: SDK REST catalog replaces the need for Studio's public-workflow HTTP bypass; pagination and scope are tested synthetically |
 | Known model-job cancellation | `jobs.trigger_action(action="cancel")` through its public raw-response wrapper: one attempt, selected project, no terminal-state assumption from acknowledgement; coordinator retrieves before and after the action |
-| Waiting workflow step decision | `workflows.user_approval` through its public raw-response wrapper, or the named [selection extension](#workflow-step-decisions): explicit action, one attempt, project override only, status-carrying errors and a matching `job` acknowledgement; no runtime caller yet |
+| Waiting workflow step decision | `workflows.user_approval` through its public raw-response wrapper, or the named [selection extension](#workflow-step-decisions): explicit action, one attempt, project override only, status-carrying errors and a matching `job` acknowledgement; called only by the workflow job decision command |
 | Scoped job discovery | `jobs.list` through the public raw-response wrapper: optional author/workflow/type/status filters, 1–200 items per page, bounded pagination and explicit errors instead of partial or conflicting history |
 | Multipart upload metadata | `uploads.create/retrieve/trigger_action(action="complete")`: immutable project scope, strict input/receipt identity, retained processing/future fields; no byte transfer, retry or automatic completion |
 | Collection and tag writes | `collections.create`, `collections.assets.add/remove` and `assets.update_tags(strict=false)` through public raw-response wrappers: one attempt, selected project, acknowledged identity checks, and `WriteRejected` (`AlreadyMembers` for the exact already-member add refusal) or `WriteUncertain` after dispatch |

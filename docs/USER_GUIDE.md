@@ -904,9 +904,12 @@ Changing inputs, scene or connection requires a fresh valid approval.
 
 The form and its schema save with the scene and remain editable after reopening;
 prices and approval handles do not survive restart. Jobs keep their existing
-durable recovery. This page runs existing workflows; it does not author graphs,
-handle interactive nodes or cancel running workflows. Native desktop interaction,
-including workflow uploads, and live workflow acceptance are still pending.
+durable recovery. This page runs existing workflows; it does not author graphs
+or cancel running workflows. When a workflow waits at an approval or selection
+step, its Jobs row shows **Workflow waits for your decision** and checks for
+changes every 15 seconds; deciding that step from Blender is not available yet.
+Native desktop interaction, including workflow uploads, and live workflow
+acceptance are still pending.
 
 ### Browse Library assets
 

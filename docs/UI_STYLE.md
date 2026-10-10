@@ -1984,6 +1984,12 @@ Page search/navigation use unsaved WindowManager state; scene form edits require
 a new price. The maintenance pump completes metadata and quote requests even
 after the popup closes. Saved jobs use the existing Jobs and Results controls.
 
+A workflow job waiting at an approval or selection step shows the status row
+**Workflow waits for your decision** among its saved-job controls. The shared
+descriptor list draws it without an operator, from the in-memory `review_step`
+action. Native review and decision controls are not implemented yet, and
+physical desktop evidence of the row is pending.
+
 Always-required fields use the shared parsed requirement rules, including
 `required: {always: true}`, and start included. Catalog lists have session-only
 delivery authority: editing a form while listing does not discard the catalog

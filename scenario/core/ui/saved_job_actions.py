@@ -46,6 +46,10 @@ RECOVERY_GROUPS = {
     "retry_receipt": "receipt",
 }
 RECOVERY_ACTIONS = tuple(RECOVERY_GROUPS)
+# Status rows offered as ModelJobs actions; their decisions use their own commands.
+STATUS_ACTIONS = {
+    "review_step": ("Workflow waits for your decision", "INFO"),
+}
 # One saved result, applied without per-asset choice.
 SINGLE_APPLY = {
     "import_images": "scenario.import_saved_images",
@@ -187,6 +191,8 @@ def _describe_action(action, view, job, result_types, review):
 
     if action == "recover_blockout":
         return _blockout(review, job)
+    if action in STATUS_ACTIONS:
+        return (_status(action, action, *STATUS_ACTIONS[action]),)
     if action in SINGLE_APPLY:
         operator = SINGLE_APPLY[action]
         return (

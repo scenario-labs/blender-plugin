@@ -16,7 +16,7 @@ from pathlib import Path
 from weakref import WeakKeyDictionary, WeakValueDictionary
 
 from ..api import trained_routes
-from ..api.sdk_adapter import Estimate, SDKAdapter
+from ..api.sdk_adapter import AdapterStatusError, Estimate, SDKAdapter
 from ..scene.splats import SplatCancelled
 from ..schema.forms import RouteError, _fields, chosen_inputs, is_file_field, record_schema
 from . import local_export, local_render
@@ -51,6 +51,7 @@ from .store import (
     _identity,
 )
 from .uploads import UploadCommands, UploadError
+from .workflow_nodes import pending_steps, validate_decision
 
 
 class QuoteError(ValueError):
@@ -150,6 +151,29 @@ def cancellable_job(response):
     return isinstance(response, dict) and response.get("jobType") in CANCELLABLE_JOB_TYPES
 
 
+class DecisionRefused(RecoveryError):
+    """Scenario answered one sent workflow decision with HTTP 4xx, so it was not accepted.
+
+    `snapshot` is the best-effort retrieval that followed, or None.
+    """
+
+    def __init__(self, message, *, status_code, snapshot=None):
+        super().__init__(message)
+        self.status_code = status_code
+        self.snapshot = snapshot
+
+
+class DecisionUncertain(RecoveryError):
+    """A sent workflow decision may have been applied; refresh, never repeat it blindly.
+
+    `snapshot` is the best-effort retrieval that followed, or None.
+    """
+
+    def __init__(self, message, *, snapshot=None):
+        super().__init__(message)
+        self.snapshot = snapshot
+
+
 class ApplicationError(RuntimeError):
     """Application admission failed; preserve the result for explicit review."""
 
@@ -194,6 +218,23 @@ class RemoteSnapshot:
     @property
     def response(self):
         return json.loads(self.response_json)
+
+
+@dataclass(frozen=True)
+class DecisionSnapshot(RemoteSnapshot):
+    """The retrieval that follows a workflow decision command.
+
+    `sent` is False when the job was already finished on the first retrieval,
+    so no decision was sent.
+    """
+
+    sent: bool = False
+
+
+_UNCERTAIN_DECISION = (
+    "Decision outcome unknown; refresh the job and do not repeat the decision "
+    "until the step is shown again"
+)
 
 
 _RECOVERY = {
@@ -274,6 +315,7 @@ class JobCoordinator:
             adapter, store, self._result_guard, downloader=result_downloader, root=result_root
         )
         self._quotes = WeakValueDictionary()
+        self._deciding = set()
         self._compositions = WeakValueDictionary()
         self._film_reviews = {}
         self._film_review_cleanup = set()
@@ -1476,3 +1518,91 @@ class JobCoordinator:
                 "Cancellation outcome is unknown; refresh the known job without repeating cancellation"
             ) from None
         return self._observe_remote(current, response)
+
+    def decide_workflow_node(
+        self, request_id, *, expected_revision, node_id, review_id, action, selected_indices=None
+    ):
+        """Send one reviewed decision for a waiting workflow step, then retrieve the job.
+
+        The job is retrieved first: a finished job sends nothing, and the step
+        must still wait with the reviewed `review_id`. One SDK decision call
+        follows, never retried or replayed. Scenario accepts one decision per
+        waiting step, so the next retrieval is authoritative, also after a
+        restart, and no decision record is stored. Rejection stops the workflow:
+        its observed `canceled` status is committed like any terminal status.
+        This is the only workflow cancellation; `cancel_remote` stays model-only.
+        """
+        with self._lock:
+            if not self._active:
+                raise RecoveryError("This job context is inactive")
+            current = self._store.get(request_id)
+            if (
+                current is None
+                or current.revision != expected_revision
+                or current.state != JobState.REMOTE
+                or current.remote_job_id is None
+            ):
+                raise StoreConflict("Only the current known remote workflow job can be decided")
+            if current.intent.operation != "workflow":
+                raise RecoveryError("Only workflow jobs have approval or selection steps")
+            if request_id in self._deciding:
+                raise StoreConflict("A decision for this workflow job is already being sent")
+            self._deciding.add(request_id)
+        try:
+            return self._decide(current, node_id, review_id, action, selected_indices)
+        finally:
+            with self._lock:
+                self._deciding.discard(request_id)
+
+    def _decide(self, current, node_id, review_id, action, selected_indices):
+        response = self._adapter.job(current.remote_job_id)
+        snapshot = self._observe_remote(current, response)
+        if snapshot.record.state != JobState.REMOTE:
+            return DecisionSnapshot(snapshot.record, snapshot.response_json, sent=False)
+        steps = pending_steps(
+            response, remote_job_id=current.remote_job_id, workflow_id=current.intent.target_id
+        )
+        step = next((item for item in steps if item.node_id == node_id), None)
+        if step is None or not isinstance(review_id, str) or step.review_id != review_id:
+            raise StoreConflict("The workflow step changed; review it again")
+        picks = validate_decision(step, action, selected_indices)
+        with self._lock:
+            if not self._active:
+                raise RecoveryError("This job context is inactive")
+        try:
+            self._adapter.workflow_decision(
+                current.intent.target_id,
+                current.remote_job_id,
+                step.node_id,
+                step.node_type,
+                action,
+                None if picks is None else list(picks),
+            )
+        except ValueError:
+            # The adapter validates before sending; nothing left this process.
+            raise
+        except AdapterStatusError as error:
+            if 400 <= error.status_code < 500:
+                raise DecisionRefused(
+                    f"Scenario refused this decision: {error}",
+                    status_code=error.status_code,
+                    snapshot=self._reread(current),
+                ) from None
+            raise DecisionUncertain(_UNCERTAIN_DECISION, snapshot=self._reread(current)) from None
+        except Exception:
+            raise DecisionUncertain(_UNCERTAIN_DECISION, snapshot=self._reread(current)) from None
+        try:
+            snapshot = self._observe_remote(current, self._adapter.job(current.remote_job_id))
+        except Exception:
+            raise DecisionUncertain(
+                "Scenario acknowledged the decision, but the job could not be read again; "
+                "refresh it before deciding again"
+            ) from None
+        return DecisionSnapshot(snapshot.record, snapshot.response_json, sent=True)
+
+    def _reread(self, current):
+        """Best-effort retrieval after an unsuccessful decision; never raises."""
+        try:
+            return self._observe_remote(current, self._adapter.job(current.remote_job_id))
+        except Exception:
+            return None

@@ -437,6 +437,18 @@ def control_model_job(context_id, request_id, expected_revision, action):
     return jobs, task
 
 
+def decide_workflow_step(
+    context_id, request_id, expected_revision, node_id, review_id, action, selected_indices=None
+):
+    """Shared native/MCP entry for one reviewed waiting workflow-step decision."""
+    jobs = ensure_model_jobs()
+    if context_id != state.job_context_id:
+        raise ScenarioError(0, "The selected job context changed; list local jobs again")
+    task = jobs.decide(request_id, expected_revision, node_id, review_id, action, selected_indices)
+    show_job_views((jobs.views[request_id],))
+    return jobs, task
+
+
 def prepare_image_application(context_id, request_id, expected_revision, scene):
     jobs = ensure_model_jobs()
     if context_id != state.job_context_id:

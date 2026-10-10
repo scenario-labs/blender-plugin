@@ -430,7 +430,8 @@ The [coordinator's model-job cancellation contract](JOB_COORDINATOR.md#known-mod
 still governs eligibility (documented `inference` jobs only), the durable
 single-action claim and authoritative status polling. A canceled acknowledgement alone cannot report terminal success;
 an uncertain response remains recoverable by refreshing the known ID without
-replaying the action. General workflow cancellation is unsupported.
+replaying the action. A running workflow cannot be canceled; rejecting a
+[waiting workflow step](#waiting-workflow-steps) is the only way to stop one.
 
 Cancellation, refresh and recovery inspection deliberately do not require the
 old scene/target to remain available. This allows explicit cancellation and
@@ -819,10 +820,11 @@ the generation.
 
 ## Remote progress and scene lane binding
 
-Automatic and explicit `refresh_remote`/`cancel_remote` completions already carry
-the coordinator's `RemoteSnapshot` from SDK `jobs.retrieve`. `ModelJobs._observe`
-is their single display consumer; the inference cancellation offer above reads
-the same completion on the delivery path, without draining it again.
+Automatic and explicit `refresh_remote`/`cancel_remote` completions, and workflow
+decisions, carry the coordinator's `RemoteSnapshot` from SDK `jobs.retrieve`.
+`ModelJobs._observe` is their single display consumer; the inference cancellation
+offer above reads the same refresh and cancel completions on the delivery path,
+without draining them again.
 [`progress.observe`](../scenario/core/jobs/progress.py)
 turns an active snapshot into one `RemoteProgress` reading (status, fraction,
 UTC and monotonic time) bound to the record's remote job ID and saved revision.
@@ -858,6 +860,43 @@ only through their own approvals and origin checks. Workflow and Film
 submissions are unbound. Bindings and readings retire with their owner on a
 credential, project or file change. Lanes are not persisted: restarted and
 recovered jobs are unbound, and MCP reports `lane: null` for them.
+
+## Waiting workflow steps
+
+`ModelJobs._observe` also projects the waiting approval and selection steps of a
+`remote` workflow record from each refresh and decision snapshot, through the
+[coordinator's step parser](JOB_COORDINATOR.md#waiting-workflow-step-decisions).
+The projection stays in memory, bound to the record's remote job ID and saved
+revision; each maintenance poll drops it once the record changes or leaves
+`remote`. A failed projection drops the steps and logs only the error type, once
+until a projection succeeds again. While a step waits, the next automatic
+refresh is scheduled after `STEP_POLL_INTERVAL` (15 seconds), because each
+retrieval re-signs candidate URLs and only a decision moves the job on; the
+stale marking follows that schedule. `steps()` reads the projection from memory,
+so drawing code may call it. `actions()` lists the status-only `review_step`
+before the refresh controls. The saved-job descriptors draw it as the row
+**Workflow waits for your decision** without an operator, and `control` rejects it.
+
+`ModelJobs.decide(request_id, expected_revision, node_id, review_id, action, selected_indices=None)`
+is the shared native and MCP entry; `runtime.decide_workflow_step` adds the
+context token check. It requires the exact saved revision, a current projected
+step with the same `review_id`, a decision that step allows within its bounds,
+an active session, no command in flight for the job and Online Access. It then
+queues `JobSession.decide_workflow_node`, which, like cancellation, uses the
+stored origin and needs no current scene or target. Deciding clears the last
+decision error and resumes automatic polling, also for a restarted job refreshed
+explicitly. Its completion is projected like a refresh. A refusal, uncertainty,
+changed step or local validation failure never pauses delivery: its text stays
+as the decision error until another decision, a newly waiting step or the record
+leaving `remote`, and without a fresh retrieval the job is refreshed at the next
+poll.
+
+A waiting step does not advance by itself. Until a decision is queued, the job
+is not counted by the `delivery_active` predicate, so `wait_for_job` returns at
+once and `delivery_offline` stays false; MCP `job_status` reports `awaiting_decision`,
+sanitized `pending_steps` and `decision_error`. After a restart, steps appear
+only after an explicit **Refresh status** or **Resume download**. No native
+control or MCP tool sends a decision yet.
 
 ## Explicit recovered Image application
 

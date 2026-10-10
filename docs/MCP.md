@@ -89,6 +89,24 @@ Blockout jobs, which have nothing to download. A native Jobs row in `remote`,
 is disabled` or `Download paused while online access is disabled`, also when it
 is paused or restarted, because its explicit recovery needs Online Access too.
 
+Workflow jobs add `awaiting_decision`, `pending_steps` and `decision_error`.
+`awaiting_decision` is `true` while the last retrieval in this session showed a
+waiting `user-approval` or `user-selection` step and no decision is being sent.
+The job then does not advance by itself, so `delivery_active` is `false` and `wait_for_job` returns at once;
+status refreshes every 15 seconds meanwhile. Each `pending_steps` entry has its
+node ID and type, loop iteration, dependencies, up to 50 review asset IDs with
+their total, a selection's frozen candidates (`items`: asset IDs or texts, per
+`item_kind`) with `min` and `max`, the decisions that may be sent (`actions`),
+`blocked` and `review_id`. Signed URLs are never included. `blocked` is `loop`
+when the selection feeds a ForEach loop or nested workflow, which the approved
+price may not cover, and `unsupported` for unreadable candidates or limits; both
+leave only `reject`, while `unidentified` leaves no decision. Rejecting stops the
+workflow and is the only workflow cancellation. `decision_error` explains the
+last refused, unsent or uncertain decision; never repeat an uncertain one until
+the step is shown again. The `review_step` action marks a waiting step; it is
+not a `recover_local_job` action, and no local MCP tool sends a decision yet.
+See [waiting workflow steps](BLENDER_JOB_CONTEXT.md#waiting-workflow-steps).
+
 To import recovered PNG/EXR results, call `prepare_result_application` with the
 current context, request and revision, then show its destination and image list
 to the user. After approval, `apply_result_application` consumes the returned
@@ -410,7 +428,7 @@ Do not edit this block by hand; run `make mcp-docs`. An asterisk marks a require
 | `estimate_cost` | Get the exact CU cost with a dry run that spends no credits. | `model_id`*: string<br>`parameters`: object<br>`lane`: string (enum: see tools/list) | read-only annotation |
 | `generate` | Submit a generation that spends the user's credits. Every model lane uses durable shared jobs. | `lane`*: string (enum: see tools/list)<br>`quote_id`*: string<br>`approved_cost`*: string<br>`model_id`*: string<br>`parameters`: object; Model parameters; file parameters take Scenario asset ids | spends credits |
 | `job_status` | Read one local generation's status and cost without spending credits. Active model jobs advance through shared remote polling and verified downloads; restarted jobs remain inspection-only. | `job_id`: string; Scenario job id (job_...) or the local_id returned by generate<br>`id`: string; Same as job_id, kept for compatibility | read-only annotation |
-| `wait_for_job` | Wait for a generation while Blender remains responsive. Shared jobs return when delivery finishes, pauses for review, is held by disabled Online Access, or the wait expires. Restarted shared jobs remain inspection-only until explicitly resumed. Prototype records return a local snapshot immediately with scoped recovery guidance. | `job_id`: string; Scenario job id (job_...) or the local_id returned by generate<br>`id`: string; Same as job_id, kept for compatibility<br>`timeout`: number | read-only annotation |
+| `wait_for_job` | Wait for a generation while Blender remains responsive. Shared jobs return when delivery finishes, pauses for review, a workflow waits for a decision, is held by disabled Online Access, or the wait expires. Restarted shared jobs remain inspection-only until explicitly resumed. Prototype records return a local snapshot immediately with scoped recovery guidance. | `job_id`: string; Scenario job id (job_...) or the local_id returned by generate<br>`id`: string; Same as job_id, kept for compatibility<br>`timeout`: number | read-only annotation |
 | `recover_cloud_job` | Read one completed cloud model job into the selected credential-scoped saved jobs. | `job_id`*: string<br>`model_id`*: string | - |
 | `import_result` | Reject direct cached-file import and explain the required saved-result approval flow. | `job_id`: string; Scenario job id (job_...) or the local_id returned by generate<br>`id`: string; Same as job_id, kept for compatibility | - |
 | `capture_reference` | Capture a viewport/camera still or clip, or export selected meshes, and upload the snapshot as a Scenario reference asset. | `source`: string (['VIEWPORT', 'CAMERA', 'VIEWPORT_CLIP', 'CAMERA_CLIP', 'MESH']) | - |
@@ -1149,10 +1167,11 @@ same polling, download, explicit application and restart recovery as model jobs.
 Workflow results are never automatically imported. `discard_workflow_estimate`
 releases only a ready local approval, leaving saved jobs unchanged.
 
-General workflow cancellation and interactive approval/selection nodes are not
-exposed. Workflow authoring, the expanded Studio form and live provider/output
-acceptance remain incomplete. Do not substitute node rejection for cancellation
-or infer live compatibility from the synthetic installed command tests.
+A running workflow step cannot be canceled. `job_status` reports waiting approval
+and selection steps, but no local MCP tool decides them yet; rejecting such a
+step is the only way to stop a workflow. Workflow authoring, the expanded Studio
+form and live provider/output acceptance remain incomplete. Do not infer live
+compatibility from the synthetic installed command tests.
 
 
 ## Asset library metadata

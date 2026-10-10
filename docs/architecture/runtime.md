@@ -681,8 +681,11 @@ approval of the exact quoted string. Approval consumes the handle before
 persistence and requires unchanged input, scene and connection. Results stay
 saved for explicit application; there is no workflow-specific worker pool, store
 or automatic import. Native workflow controls below now share those commands.
-Interactive nodes, general cancellation and live output acceptance remain open
-under #64/#65/#66/#68.
+The same polling projects waiting approval and selection steps, and
+[`ModelJobs.decide`](../BLENDER_JOB_CONTEXT.md#waiting-workflow-steps) sends one
+reviewed decision through the shared session; rejecting a waiting step is the
+only workflow cancellation. Native and MCP decision controls, cancelling a
+running step and live output acceptance remain open under #64/#65/#66/#68.
 
 
 ## Explicit expanded native view

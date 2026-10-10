@@ -440,6 +440,21 @@ class JobWorkers:
             self._coordinator.cancel_remote, request_id, expected_revision=expected_revision
         )
 
+    def decide_workflow_node(
+        self, request_id, *, expected_revision, node_id, review_id, action, selected_indices=None
+    ):
+        """Queue one reviewed workflow-step decision; it is sent at most once."""
+        picks = None if selected_indices is None else tuple(selected_indices)
+        return self._enqueue(
+            self._coordinator.decide_workflow_node,
+            request_id,
+            expected_revision=expected_revision,
+            node_id=node_id,
+            review_id=review_id,
+            action=action,
+            selected_indices=picks,
+        )
+
     def cancel_prepared(self, request_id, *, expected_revision):
         """Persist local cancellation now; a queued command then cannot dispatch."""
         with self._condition:

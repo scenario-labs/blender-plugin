@@ -15,11 +15,24 @@ from mathutils import Matrix
 
 from ..core.api.catalog import GENERATION_LANES, LANE_KIND
 from ..core.api.errors import ScenarioError
-from ..core.jobs import progress
-from ..core.jobs.coordinator import CancellationUnsupported, RemoteSnapshot, cancellable_job
+from ..core.jobs import progress, workflow_nodes
+from ..core.jobs.coordinator import (
+    CancellationUnsupported,
+    DecisionRefused,
+    DecisionUncertain,
+    RemoteSnapshot,
+    cancellable_job,
+)
 from ..core.jobs.records import JobRecord
 from ..core.jobs.results import ResultError
-from ..core.jobs.store import JobOrigin, JobState, LocalApplicationState, StoredJob, _identity
+from ..core.jobs.store import (
+    JobOrigin,
+    JobState,
+    LocalApplicationState,
+    StoreConflict,
+    StoredJob,
+    _identity,
+)
 from ..core.jobs.workers import WorkerError
 from ..core.scene.model_formats import MATERIAL_MEDIA_TYPES, ModelFormat, model_format
 from ..core.scene.panorama import world_candidate
@@ -71,6 +84,10 @@ _FIRST_FRAME_HISTORY = 128
 # scheduled interval never reads as stale merely because it is longer.
 POLL_INTERVAL = 2.0
 STALE_GRACE = 2 * POLL_INTERVAL
+# While a workflow waits for a decision, poll less often: each retrieval
+# re-signs up to 50 candidate URLs, and only a decision moves the job on.
+STEP_POLL_INTERVAL = 15.0
+DECIDE = "decide_workflow_node"
 # Saved states this session never advances by itself; READY is settled too
 # unless an automatic image import is still pending.
 _SETTLED = frozenset(
@@ -168,6 +185,15 @@ class JobBinding:
 
     scene_uid: int
     lane: str
+
+
+@dataclass(frozen=True)
+class StepProjection:
+    """Waiting workflow steps from one retrieval, bound to the record that produced it."""
+
+    remote_job_id: str
+    revision: int
+    steps: tuple
 
 
 @dataclass
@@ -283,6 +309,11 @@ class ModelJobs:
         self._online_seen = online()
         self._commands = {}
         self._next_poll = {}
+        # In-memory workflow step projections and the last decision's error
+        # text with the review IDs then waiting; never persisted.
+        self._steps = {}
+        self._step_errors = {}
+        self._unreadable_steps = set()
         self._paused = set()
         self._images = {}
         self._receipts = {}
@@ -536,6 +567,9 @@ class ModelJobs:
             if not task.done():
                 continue
             del self._commands[request_id]
+            if command == DECIDE:
+                self._finish_decision(request_id, task)
+                continue
             destination = self._application_destinations.pop(request_id, None)
             media = self._media_destinations.pop(request_id, None)
             model = self._model_destinations.pop(request_id, None)
@@ -718,6 +752,7 @@ class ModelJobs:
             view.meta["world_assets"] = _world_assets(record)
             view.meta["saved_revision"] = record.revision
             view.meta["saved_state"] = record.state.value
+            self._project_steps(request_id, record)
             view.meta["recovery_actions"] = self.actions(record)
             # Native first-frame controls name only the stills a review accepts.
             view.meta["first_frame_assets"] = tuple(
@@ -796,10 +831,10 @@ class ModelJobs:
     def _observe(self, request_id, snapshot):
         """Project one validated remote reading; terminal or other snapshots clear it.
 
-        This is the only display consumer of refresh/cancel snapshots;
-        `_observe_cancellation` reads the same completion for the cancel offer.
-        Later remote interpretations extend this hook instead of draining them
-        separately.
+        This is the only display consumer of refresh, cancel and decision
+        snapshots; `_observe_cancellation` reads the same completion for the
+        cancel offer. Later remote interpretations extend this hook instead of
+        draining them separately; waiting workflow steps are one of them.
         """
         meta = self.views[request_id].meta
         try:
@@ -812,6 +847,177 @@ class ModelJobs:
             meta.pop("remote", None)
         else:
             meta["remote"] = reading
+        self._observe_steps(request_id, snapshot)
+
+    def _observe_steps(self, request_id, snapshot):
+        """Project a workflow's waiting approval and selection steps from one snapshot.
+
+        A failed projection drops the steps and logs only the error type, once
+        until a projection succeeds again. While a step waits, the next
+        automatic refresh moves to STEP_POLL_INTERVAL.
+        """
+        record = snapshot.record
+        if (
+            record.intent.operation != "workflow"
+            or record.state != JobState.REMOTE
+            or record.remote_job_id is None
+        ):
+            self._steps.pop(request_id, None)
+            return
+        try:
+            steps = workflow_nodes.pending_steps(
+                snapshot.response,
+                remote_job_id=record.remote_job_id,
+                workflow_id=record.intent.target_id,
+            )
+        except Exception as error:
+            # Warn once per unreadable stretch; polling repeats every few seconds.
+            if request_id not in self._unreadable_steps:
+                self._unreadable_steps.add(request_id)
+                _log.warning("Workflow steps dropped (%s)", type(error).__name__)
+            self._steps.pop(request_id, None)
+            return
+        self._unreadable_steps.discard(request_id)
+        self._steps[request_id] = StepProjection(record.remote_job_id, record.revision, steps)
+        failed = self._step_errors.get(request_id)
+        if failed is not None and {step.review_id for step in steps} - failed[1]:
+            # A step that was not waiting at the failed decision supersedes it.
+            del self._step_errors[request_id]
+        if steps:
+            self._next_poll[request_id] = max(
+                self._next_poll.get(request_id, 0.0), time.monotonic() + STEP_POLL_INTERVAL
+            )
+
+    def _current_steps(self, request_id, record):
+        """Steps still bound to this saved record; reads memory only (any thread)."""
+        projection = self._steps.get(request_id)
+        if (
+            projection is None
+            or record.state != JobState.REMOTE
+            or record.remote_job_id != projection.remote_job_id
+            or record.revision != projection.revision
+        ):
+            return ()
+        return projection.steps
+
+    def _deciding(self, request_id):
+        """Whether a decision for this job is queued or being sent; memory only."""
+        command = self._commands.get(request_id)
+        return command is not None and command[0] == DECIDE
+
+    def _project_steps(self, request_id, record):
+        """Drop steps and decision errors once their record changed or left `remote`."""
+        projection = self._steps.get(request_id)
+        if projection is not None and (
+            record.state != JobState.REMOTE
+            or (record.remote_job_id, record.revision)
+            != (projection.remote_job_id, projection.revision)
+        ):
+            del self._steps[request_id]
+        if record.state != JobState.REMOTE:
+            self._step_errors.pop(request_id, None)
+            self._unreadable_steps.discard(request_id)
+
+    def steps(self, request_id=None):
+        """Read-only waiting workflow steps from memory, so drawing code may call it.
+
+        With a request ID, return its steps (possibly empty); otherwise map each
+        job with waiting steps to them. Maintenance polls drop projections whose
+        saved record changed or left `remote`.
+        """
+        if request_id is not None:
+            projection = self._steps.get(request_id)
+            return projection.steps if projection is not None else ()
+        return {key: value.steps for key, value in self._steps.items() if value.steps}
+
+    def decide(
+        self, request_id, expected_revision, node_id, review_id, action, selected_indices=None
+    ):
+        """Queue one reviewed decision for a waiting workflow step; UI and MCP share it.
+
+        The decision is bound to the saved revision and to the projected step's
+        `review_id`, and validated against its actions and selection bounds
+        before anything is queued. The coordinator retrieves the job and checks
+        that binding again immediately before its single SDK call. Rejection
+        stops the workflow. A selection blocked because it feeds a loop is
+        refused here and by the coordinator.
+        """
+        record = self.store.get(request_id)
+        if (
+            type(expected_revision) is not int
+            or record is None
+            or record.revision != expected_revision
+            or record.state != JobState.REMOTE
+            or record.intent.operation != "workflow"
+        ):
+            raise ScenarioError(0, "The saved workflow job changed; inspect it again")
+        step = next(
+            (item for item in self._current_steps(request_id, record) if item.node_id == node_id),
+            None,
+        )
+        if step is None or not isinstance(review_id, str) or step.review_id != review_id:
+            raise ScenarioError(0, "The workflow step changed; review it again")
+        try:
+            picks = workflow_nodes.validate_decision(step, action, selected_indices)
+        except workflow_nodes.StepError as error:
+            raise ScenarioError(0, str(error)) from None
+        if not self.session.active:
+            raise ScenarioError(0, "The job context changed; inspect saved jobs again")
+        if request_id in self._commands or request_id in self.submissions:
+            raise ScenarioError(0, "Wait for the current job command to finish before deciding")
+        if not self._online():
+            raise ScenarioError(0, "Allow Online Access before contacting Scenario")
+        view = self._view(record)
+        task = self.session.decide_workflow_node(
+            request_id,
+            expected_revision=expected_revision,
+            node_id=step.node_id,
+            review_id=review_id,
+            action=action,
+            selected_indices=picks,
+        )
+        self._commands[request_id] = (DECIDE, task)
+        self._step_errors.pop(request_id, None)
+        # Deciding is explicit recovery too: a restarted or refreshed job
+        # resumes automatic polling after it.
+        self._paused.discard(request_id)
+        self._automatic_application.discard(request_id)
+        view.meta["recovery_actions"] = ()
+        view.error = None
+        return task
+
+    def _finish_decision(self, request_id, task):
+        """Project a decision's retrieval; refusal or uncertainty refreshes, never pauses."""
+        snapshot = None
+        message = None
+        try:
+            completions = self.session.drain(task=task)
+            if not completions:
+                raise RuntimeError("Missing owned decision completion")
+            completion = completions[0]
+            if completion.error is not None:
+                raise completion.error
+            snapshot = completion.result
+        except (DecisionRefused, DecisionUncertain) as error:
+            message, snapshot = str(error), error.snapshot
+        except StoreConflict:
+            message = "The workflow step changed; review it again before deciding"
+        except ValueError as error:
+            # Local validation before sending, by the coordinator or the adapter.
+            message = f"The decision was not sent: {error}"
+        except Exception:
+            message = "The decision was not sent; refresh the job and review the step again"
+        if message is None:
+            self._step_errors.pop(request_id, None)
+        else:
+            waiting = frozenset(step.review_id for step in self.steps(request_id))
+            self._step_errors[request_id] = (message, waiting)
+        # Without a fresh retrieval, refresh at the next poll instead of pausing.
+        self._next_poll[request_id] = (
+            time.monotonic() + POLL_INTERVAL if snapshot is not None else 0.0
+        )
+        if snapshot is not None:
+            self._observe(request_id, snapshot)
 
     def _project_remote(self, request_id, record, view, *, online):
         """Keep a reading only for its unchanged known job, and mark it stale.
@@ -945,6 +1151,9 @@ class ModelJobs:
         if blockout_available(record):
             return ("recover_blockout",)
         actions = []
+        if state == JobState.REMOTE and self._current_steps(request_id, record):
+            # Status only here: decisions go through ModelJobs.decide, never control.
+            actions.append("review_step")
         if state in (JobState.REMOTE, JobState.CANCEL_REQUESTED):
             actions += ["refresh", "resume"]
         elif state in (JobState.SUCCEEDED, JobState.DOWNLOAD_FAILED):
@@ -1022,6 +1231,7 @@ class ModelJobs:
                 "apply_mesh_source",
                 "use_first_frame",
                 "recover_blockout",
+                "review_step",
             }
         ):
             raise ScenarioError(0, "The saved job or available action changed; inspect it again")
@@ -1720,6 +1930,8 @@ class ModelJobs:
             and (record.state != JobState.SUCCEEDED or downloads_results(record))
             and (record.state != JobState.PREPARED or request_id in self.submissions)
             and (record.state != JobState.READY or request_id in self._automatic_application)
+            # A waiting workflow step moves on only after a decision.
+            and (not self._current_steps(request_id, record) or self._deciding(request_id))
         )
 
     def _held_offline(self, record):
@@ -1830,6 +2042,8 @@ class ModelJobs:
             # count this session did not record is unknown coverage.
             notice = workflow_quote_notice(view.meta.get("workflow_loop_steps") if view else None)
         reading = view.meta.get("remote") if view is not None else None
+        steps = self._current_steps(record.intent.request_id, record)
+        failed = self._step_errors.get(record.intent.request_id)
         binding = self._bindings.get(record.intent.request_id)
         units, findings = self._import_units_status(record)
         return {
@@ -1884,6 +2098,10 @@ class ModelJobs:
                 }
                 for item in record.local_applications
             ],
+            # Waiting workflow steps, never with URLs; see workflow_nodes.
+            "awaiting_decision": bool(steps) and not self._deciding(record.intent.request_id),
+            "pending_steps": [step.summary() for step in steps],
+            "decision_error": failed[0] if failed is not None else None,
             "delivery_paused": record.intent.request_id in self._paused,
             "delivery_active": self._delivering(record.intent.request_id, record),
             "delivery_offline": self._offline(record.intent.request_id, record),

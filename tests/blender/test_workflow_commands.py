@@ -5,6 +5,7 @@
 import json
 import tempfile
 import threading
+import time
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
@@ -49,6 +50,13 @@ class WorkflowCommandTests(unittest.TestCase):
         }
         self.lose_response, self.fail_metadata = False, False
         self.project = None
+        self.remote_job = {
+            "jobId": "workflow-job",
+            "jobType": "workflow",
+            "status": "in-progress",
+            "metadata": {"input": {"workflowId": self.workflow["id"]}},
+        }
+        self.decisions, self.decision_reply = [], None
         api = submodule("core.api.sdk_adapter")
         catalog_type, session_type = self.runtime.SDKCatalog, self.runtime.JobSession
 
@@ -70,20 +78,16 @@ class WorkflowCommandTests(unittest.TestCase):
                         },
                     )
                 if "/jobs/" in request.url.path:
-                    return httpx.Response(
-                        200,
-                        json={
-                            "job": {
-                                "jobId": "workflow-job",
-                                "jobType": "workflow",
-                                "status": "in-progress",
-                                "metadata": {"input": {"workflowId": self.workflow["id"]}},
-                            }
-                        },
-                    )
+                    return httpx.Response(200, json={"job": self.remote_job})
                 self.assertEqual(request.url.path, "/v1/workflows/fixture-workflow")
                 return httpx.Response(200, json={"workflow": self.workflow})
             self.assertEqual(request.method, "PUT")
+            if request.url.path.rsplit("/", 1)[-1] in ("user-approval", "user-selection"):
+                self.decisions.append(request)
+                reply = self.decision_reply(request) if self.decision_reply else None
+                if isinstance(reply, httpx.Response):
+                    return reply
+                return httpx.Response(200, json={"job": {"jobId": "workflow-job"}})
             self.assertEqual(request.url.path, "/v1/workflows/fixture-workflow/run")
             self.assertEqual(json.loads(request.content), {"prompt": "a cup", "count": 1})
             if request.url.params.get("dryRun") == "true":
@@ -437,3 +441,295 @@ class WorkflowCommandTests(unittest.TestCase):
         self.assertEqual((status["loop_steps"], status["quote_may_understate"]), (None, True))
         self.assertIn("could not be checked", status["cost_warning"])
         self.assertEqual(len(self.paid), 1)
+
+    # Waiting workflow steps: projection, decisions and their guards.
+
+    def waiting(self, *nodes, status="in-progress"):
+        signed = "https://cdn.example.invalid/render.png?X-Signature=private-signature"
+        self.remote_job = {
+            "jobId": "workflow-job",
+            "jobType": "workflow",
+            "status": status,
+            "progress": 0.5,
+            "metadata": {
+                "input": {"workflowId": self.workflow["id"]},
+                "flow": [
+                    {
+                        "id": "render",
+                        "type": "model",
+                        "status": "success",
+                        "assets": [{"assetId": "asset-render", "url": signed}],
+                    },
+                    *nodes,
+                ],
+            },
+        }
+
+    @staticmethod
+    def approval(status="processing"):
+        return {"id": "check", "type": "user-approval", "status": status, "dependsOn": ["render"]}
+
+    @staticmethod
+    def selection(status="processing"):
+        return {
+            "id": "pick",
+            "type": "user-selection",
+            "status": status,
+            "items": ["asset-a", "asset-b", "asset-c"],
+            "inputs": [{"name": "choices", "type": "file_array", "min": 1, "max": 2}],
+        }
+
+    def paused_workflow(self, *nodes):
+        self.waiting(*nodes)
+        result = self.approve(self.quote())
+        self.settle()
+        return result["local_id"]
+
+    def step(self, local_id, node_id):
+        owner = self.runtime.state.model_jobs
+        return next(item for item in owner.steps(local_id) if item.node_id == node_id)
+
+    def decide(self, local_id, node_id, action, picks=None, *, context=None):
+        record = self.store.get(local_id)
+        return self.runtime.decide_workflow_step(
+            self.runtime.state.job_context_id if context is None else context,
+            local_id,
+            record.revision,
+            node_id,
+            self.step(local_id, node_id).review_id,
+            action,
+            picks,
+        )
+
+    def test_waiting_steps_are_projected_after_polling_without_urls(self):
+        local_id = self.paused_workflow(self.approval(), self.selection())
+        owner = self.runtime.state.model_jobs
+        status = self.tools.job_status({"job_id": local_id})
+        self.assertTrue(status["awaiting_decision"])
+        self.assertEqual(
+            [(row["node_id"], row["type"]) for row in status["pending_steps"]],
+            [("check", "user-approval"), ("pick", "user-selection")],
+        )
+        approval, selection = status["pending_steps"]
+        self.assertEqual(approval["review_asset_ids"], ["asset-render"])
+        self.assertEqual(approval["actions"], ["approve", "reject"])
+        self.assertEqual(selection["items"], ["asset-a", "asset-b", "asset-c"])
+        self.assertEqual((selection["min"], selection["max"]), (1, 2))
+        self.assertEqual(selection["actions"], ["select", "reject"])
+        self.assertIsNone(status["decision_error"])
+        self.assertEqual(status["actions"][0], "review_step")
+        # A waiting step needs a decision, so the session does not advance it.
+        self.assertFalse(status["delivery_active"])
+        self.assertFalse(status["delivery_paused"])
+        text = json.dumps(status)
+        self.assertNotIn("https", text)
+        self.assertNotIn("Signature", text)
+        self.assertGreater(owner._next_poll[local_id], time.monotonic() + 10)
+        started = time.monotonic()
+        waited = self.finish(self.tools.wait_for_job({"job_id": local_id, "timeout": 30}))
+        self.assertLess(time.monotonic() - started, 5)
+        self.assertTrue(waited["awaiting_decision"])
+        rows = submodule("blender.job_recovery").result_actions(owner.views[local_id])
+        self.assertEqual(
+            (rows[0].action, rows[0].label, rows[0].operator),
+            ("review_step", "Workflow waits for your decision", None),
+        )
+        self.assertFalse(self.decisions)
+        self.assertEqual(len(self.paid), 1)
+
+    def test_approval_is_sent_once_from_any_scene_and_polling_resumes(self):
+        local_id = self.paused_workflow(self.approval())
+
+        def proceed(request):
+            self.waiting(self.approval("success"))
+
+        self.decision_reply = proceed
+        original = bpy.context.scene
+        other = bpy.data.scenes.new("Other decision scene")
+        try:
+            # Like cancellation, a decision needs no current scene or target.
+            bpy.context.window.scene = other
+            owner, task = self.decide(local_id, "check", "approve")
+            self.assertIn(local_id, owner._commands)
+            with self.assertRaisesRegex(Exception, "current job command"):
+                self.decide(local_id, "check", "approve")
+            task.result(5)
+            owner.poll()
+        finally:
+            bpy.context.window.scene = original
+            bpy.data.scenes.remove(other)
+        self.assertEqual(len(self.decisions), 1)
+        self.assertEqual(self.decisions[0].url.path, "/v1/workflows/fixture-workflow/user-approval")
+        self.assertIsNone(self.decisions[0].url.params.get("projectId"))
+        self.assertEqual(
+            json.loads(self.decisions[0].content),
+            {"nodeId": "check", "workflowJobId": "workflow-job", "action": "approve"},
+        )
+        status = self.tools.job_status({"job_id": local_id})
+        self.assertFalse(status["awaiting_decision"])
+        self.assertEqual(status["pending_steps"], [])
+        self.assertIsNone(status["decision_error"])
+        self.assertEqual(status["status"], "remote")
+        self.assertTrue(status["delivery_active"])
+        self.assertNotIn("review_step", status["actions"])
+        self.assertLess(owner._next_poll[local_id], time.monotonic() + 3)
+        self.assertEqual(len(self.paid), 1)
+
+    def test_a_decision_in_flight_is_not_reported_as_waiting(self):
+        local_id = self.paused_workflow(self.approval())
+        entered, release = threading.Event(), threading.Event()
+
+        def hold(request):
+            entered.set()
+            self.assertTrue(release.wait(5))
+            self.waiting(self.approval("success"))
+
+        self.decision_reply = hold
+        owner, task = self.decide(local_id, "check", "approve")
+        try:
+            self.assertTrue(entered.wait(5))
+            status = self.tools.job_status({"job_id": local_id})
+            self.assertFalse(status["awaiting_decision"])
+            self.assertTrue(status["delivery_active"])
+            self.assertEqual(status["actions"], ())
+            # The wait keeps waiting while the decision is being sent.
+            waited = self.finish(self.tools.wait_for_job({"job_id": local_id, "timeout": 0.3}))
+            self.assertTrue(waited["delivery_active"])
+        finally:
+            release.set()
+        task.result(5)
+        owner.poll()
+        self.assertFalse(owner.steps(local_id))
+        self.assertEqual(len(self.decisions), 1)
+
+    def test_reject_stops_the_workflow_and_persists_its_cancellation(self):
+        local_id = self.paused_workflow(self.selection())
+
+        def stop(request):
+            self.waiting(self.selection("rejected"), status="canceled")
+
+        self.decision_reply = stop
+        owner, task = self.decide(local_id, "pick", "reject")
+        task.result(5)
+        owner.poll()
+        self.assertEqual(len(self.decisions), 1)
+        self.assertEqual(
+            json.loads(self.decisions[0].content),
+            {"action": "reject", "nodeId": "pick", "workflowJobId": "workflow-job"},
+        )
+        self.assertEqual(self.store.get(local_id).state.value, "canceled")
+        status = self.tools.job_status({"job_id": local_id})
+        self.assertEqual(status["status"], "canceled")
+        self.assertFalse(status["awaiting_decision"])
+        self.assertEqual(owner.steps(local_id), ())
+        self.assertEqual(owner.views[local_id].status, "canceled")
+        self.assertEqual(len(self.paid), 1)
+
+    def test_selection_sends_ordered_picks(self):
+        local_id = self.paused_workflow(self.selection())
+        owner, task = self.decide(local_id, "pick", "select", [2, 0])
+        task.result(5)
+        owner.poll()
+        self.assertEqual(
+            json.loads(self.decisions[0].content),
+            {
+                "action": "select",
+                "nodeId": "pick",
+                "workflowJobId": "workflow-job",
+                "selectedIndices": [2, 0],
+            },
+        )
+        self.assertEqual(
+            self.decisions[0].url.path, "/v1/workflows/fixture-workflow/user-selection"
+        )
+
+    def test_blocked_or_invalid_decisions_send_nothing(self):
+        loop = {
+            "id": "loop",
+            "type": "for-each",
+            "status": "pending",
+            "inputs": [{"name": "items", "ref": {"node": "pick"}}],
+        }
+        local_id = self.paused_workflow(self.selection(), loop)
+        status = self.tools.job_status({"job_id": local_id})
+        self.assertEqual(status["pending_steps"][0]["blocked"], "loop")
+        self.assertEqual(status["pending_steps"][0]["actions"], ["reject"])
+        with self.assertRaisesRegex(Exception, "ForEach loop"):
+            self.decide(local_id, "pick", "select", [0])
+        record = self.store.get(local_id)
+        review = self.step(local_id, "pick").review_id
+        context = self.runtime.state.job_context_id
+        for args, message in (
+            ((local_id, record.revision, "pick", "0" * 64, "reject"), "step changed"),
+            ((local_id, record.revision + 1, "pick", review, "reject"), "job changed"),
+            ((local_id, record.revision, "pick", review, "approve"), "decision this workflow"),
+        ):
+            with self.subTest(args=args), self.assertRaisesRegex(Exception, message):
+                self.runtime.decide_workflow_step(context, *args)
+        with self.assertRaisesRegex(Exception, "job context changed"):
+            self.decide(local_id, "pick", "reject", context="stale-context")
+        with patch.object(self.runtime.state.model_jobs, "_online", return_value=False):
+            with self.assertRaisesRegex(Exception, "Allow Online Access"):
+                self.decide(local_id, "pick", "reject")
+        self.assertFalse(self.decisions)
+        self.assertNotIn(local_id, self.runtime.state.model_jobs._commands)
+
+    def test_refused_decision_is_reported_without_pausing_delivery(self):
+        local_id = self.paused_workflow(self.approval())
+
+        def refuse(request):
+            self.waiting(self.approval("success"))
+            return httpx.Response(400, json={"message": "private detail"})
+
+        self.decision_reply = refuse
+        owner, task = self.decide(local_id, "check", "approve")
+        with self.assertRaisesRegex(Exception, "refused this decision"):
+            task.result(5)
+        # The owner drains the same completion and reports it without raising.
+        owner.poll()
+        status = self.tools.job_status({"job_id": local_id})
+        self.assertTrue(status["decision_error"].startswith("Scenario refused this decision"))
+        self.assertNotIn("private", status["decision_error"])
+        self.assertFalse(status["delivery_paused"])
+        self.assertFalse(status["awaiting_decision"])
+        self.assertEqual(status["status"], "remote")
+        self.assertEqual(len(self.decisions), 1)
+
+    def test_restarted_jobs_show_steps_only_after_explicit_refresh(self):
+        local_id = self.paused_workflow(self.approval())
+        self.runtime.state.reset()
+        count = len(self.calls)
+        owner = self.runtime.ensure_model_jobs()
+        owner.inspect()
+        status = self.tools.job_status({"job_id": local_id})
+        self.assertFalse(status["awaiting_decision"])
+        self.assertTrue(status["delivery_paused"])
+        self.assertEqual(len(self.calls), count)
+        record = self.store.get(local_id)
+        _, task = self.runtime.control_model_job(
+            self.runtime.state.job_context_id, local_id, record.revision, "refresh"
+        )
+        task.result(5)
+        owner.poll()
+        self.assertEqual([step.node_id for step in owner.steps(local_id)], ["check"])
+        owner, task = self.decide(local_id, "check", "approve")
+        self.assertNotIn(local_id, owner._paused)
+        task.result(5)
+        owner.poll()
+        self.assertEqual(len(self.decisions), 1)
+        self.assertEqual(len(self.paid), 1)
+
+    def test_project_switch_retires_waiting_steps_and_decisions(self):
+        local_id = self.paused_workflow(self.approval())
+        context = self.runtime.state.job_context_id
+        review = self.step(local_id, "check").review_id
+        revision = self.store.get(local_id).revision
+        self.prefs.project_id = "another-project"
+        self.project = "another-project"
+        with self.assertRaisesRegex(Exception, "context changed"):
+            self.runtime.decide_workflow_step(
+                context, local_id, revision, "check", review, "approve"
+            )
+        owner = self.runtime.ensure_model_jobs()
+        self.assertEqual(owner.steps(), {})
+        self.assertFalse(self.decisions)

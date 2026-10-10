@@ -133,6 +133,17 @@ def test_recovery_controls_dispatch_the_recovery_operator_with_their_action():
     assert sja.LABELS["cancel"] == "Cancel generation"
 
 
+def test_waiting_workflow_step_is_a_status_row_before_the_recovery_controls():
+    items = sja.describe(view(("review_step", "refresh", "resume")), CONTEXT, TYPES)
+    assert rows(items) == [
+        ("review_step", "status", None, "Workflow waits for your decision", "INFO", {}),
+        recover("refresh", "recover"),
+        recover("resume", "recover"),
+    ]
+    # The row keeps the ModelJobs and MCP action name but grants no control.
+    assert items[0].action == "review_step" and items[0].operator is None
+
+
 def test_ready_images_offer_import_world_and_material_then_await_review():
     assets = (
         ("first", "image/png"),

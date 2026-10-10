@@ -9,6 +9,9 @@ below come from the commits that first added each file, not a recent API refresh
 | --- | --- | --- |
 | `models/*.json` | Eighteen model records from `GET /models/{id}` | 2026-08-28 and 2026-08-29 |
 | `models_list_page1.json` | Five public models from `GET /models?privacy=public&pageSize=5` | 2026-08-28 |
+| `models/trained/bases/*.json` | Five public LoRA-capable base model records from `GET /models/{id}`; see [trained-model contracts](#trained-model-contracts) | 2026-10-09 |
+| `models/trained/public/*.json` | Routing-field projections of six public Scenario LoRA and composition records from `GET /models/{id}` | 2026-10-09 |
+| `models/trained/contracts.json` | Catalog and bulk-read observations, composition concept reads, 21 `dryRun=true` probe replies and 8 production-path quotes for trained-model routes | 2026-10-09 |
 | `patina-copper-512/model_record.json` | Model record from `GET /models/model_patina-material` | 2026-08-28 |
 | `patina-copper-512/dryrun_response.json` | Estimate from `POST /models/model_patina-material/inferences?dryRun=true` | 2026-08-28 |
 | `patina-copper-512/job.json` | Patina job response from `GET /jobs/{jobId}` | 2026-08-28 |
@@ -162,6 +165,58 @@ acceptance and maintainer confirmation of media rights remain under #9.
 Live recording requires explicitly selected test credentials and authorization;
 see [contributor configuration](../../CONTRIBUTING.md#environment-variables).
 The default test suite needs neither credentials nor a Scenario account.
+
+## Trained-model contracts
+
+`models/trained/` records how the service treats trained models. A separate
+recorder writes it with reads and `dryRun=true` quotes only, never a submission:
+
+```sh
+uv run --locked --env-file .env.local python tools/capture_trained_contracts.py
+```
+
+It reads the selected scope's private trained list, the public catalog, five
+fixed LoRA-capable base models, six fixed public Scenario LoRAs and compositions,
+their bulk summaries, each composition concept and one image of the scope. It
+then sends the dry runs listed in its `CASES` and quotes each accepted base-model
+route again through `SDKAdapter.estimate_model`. A fixed public model missing
+from the public catalog, a server error or any other failed read stops the run;
+a 4xx dry-run reply is recorded as evidence. The whole directory is staged and
+replaced in one step, so a failed run leaves the previous fixtures in place. If
+the replacement fails and moving the previous directory back fails too, the
+recorder keeps its `.recording-*` staging directory, which then holds the only
+previous copy, and prints where it is.
+
+What is written:
+
+- `bases/`: complete base records, scrubbed like the records above. Random
+  model and asset identifiers that are not in the public catalog, such as
+  example asset IDs, also become `FIXTURE` placeholders.
+- `public/`: projections of public trained records. They keep only the routing
+  fields (`id`, `type`, `privacy`, `status`, `custom`, `capabilities`,
+  `compliantModelIds`, `concepts`, `parentModelId`) plus `observedFields`, the
+  field names of the full record. Training parameters, which can hold signed
+  storage URLs and internal paths, are dropped. A parent or concept ID that is
+  not in the public catalog becomes a placeholder.
+- `contracts.json`: the recording date, SDK version and whether a project
+  override was set, never the project itself; the public type counts and
+  whether list, bulk and detail records carry `inputs` or `uiConfig`;
+  readability and type of each composition concept; every dry-run request
+  body, HTTP status and the reply's exact quote fields or rejection reason; and
+  the route decision derived from those statuses.
+
+Private records are never written. For the private list the recorder keeps
+only whether it is empty and, per REST type, schema presence and dry-run
+statuses, with no reason text, since a reason could name a private model. The
+selected project, the scope's asset IDs and private record IDs are replaced
+wherever they occur; the reference image used for image-to-image quotes is
+written as `asset_FIXTUREREFERENCE00000000`. A final check refuses to write
+anything if one of those private values remains. The
+[offline contract tests](../unit/test_trained_contracts.py) pin the captured
+shapes; the [recorder tests](../unit/test_capture_trained_contracts.py) exercise
+the real SDK and adapter against a synthetic service. The captured results and
+what they mean for routing are summarized in
+[SDK contracts](../../docs/SDK_ADOPTION.md#trained-model-rest-contracts).
 
 ## Synthetic static GLB
 

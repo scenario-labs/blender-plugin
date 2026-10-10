@@ -1,0 +1,72 @@
+{
+ "model": {
+  "id": "model_7oiHtKChpcLpy4jq3Jq2BG8n",
+  "type": "flux.1-composition",
+  "privacy": "public",
+  "status": "trained",
+  "custom": false,
+  "capabilities": [
+   "txt2img",
+   "img2img",
+   "img2img_texture",
+   "txt2img_texture",
+   "controlnet",
+   "controlnet_texture",
+   "controlnet_img2img",
+   "controlnet_inpaint",
+   "inpaint",
+   "outpaint",
+   "txt2img_ip_adapter",
+   "img2img_ip_adapter",
+   "controlnet_ip_adapter"
+  ],
+  "compliantModelIds": [
+   "flux.1-dev",
+   "flux.1-schnell"
+  ],
+  "concepts": [
+   {
+    "modelId": "model_EgNxyAdrL9QG1ysY9QAN57GH",
+    "scale": 0.45
+   },
+   {
+    "modelId": "model_5rfu3ne7esgRrFKWeHcF2N3z",
+    "scale": 0.55
+   },
+   {
+    "modelId": "model_wudVvdEEnz7JKkZvBk7gx9jV",
+    "scale": 0.65
+   }
+  ],
+  "parentModelId": "model_FIXTURE0000000000000001",
+  "observedFields": [
+   "accessRestrictions",
+   "authorId",
+   "capabilities",
+   "collectionIds",
+   "complianceMetadata",
+   "compliantModelIds",
+   "concepts",
+   "createdAt",
+   "custom",
+   "exampleAssetIds",
+   "id",
+   "name",
+   "ownerId",
+   "parameters",
+   "parentModelId",
+   "privacy",
+   "shortDescription",
+   "source",
+   "status",
+   "tags",
+   "thumbnail",
+   "trainingImagePairs",
+   "trainingImagesNumber",
+   "trainingProgress",
+   "type",
+   "updatedAt",
+   "userId"
+  ]
+ }
+}

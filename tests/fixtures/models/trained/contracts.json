@@ -1,0 +1,724 @@
+{
+ "recordedAt": "2026-10-09",
+ "recorder": "tools/capture_trained_contracts.py",
+ "sdkVersion": "2.2.0",
+ "scope": {
+  "credentials": "explicit API-key pair",
+  "projectOverride": false
+ },
+ "scrub": "Account fields use placeholders and signed URLs are replaced. Private records are never written; private and random non-public identifiers use placeholders.",
+ "catalog": {
+  "privateTrained": {
+   "present": false
+  },
+  "public": {
+   "types": {
+    "custom": 550,
+    "flux.1-composition": 14,
+    "flux.1-kontext-lora": 5,
+    "flux.1-lora": 137,
+    "flux.2-dev-lora": 3
+   },
+   "listRowsCarry": {
+    "inputs": false,
+    "uiConfig": false
+   }
+  },
+  "bulk": {
+   "requested": 11,
+   "returned": 11,
+   "rowsCarry": {
+    "inputs": false,
+    "uiConfig": false
+   }
+  },
+  "trainedDetailsCarry": {
+   "flux1_composition": {
+    "inputs": false,
+    "uiConfig": false
+   },
+   "flux1_composition_unlisted_concept": {
+    "inputs": false,
+    "uiConfig": false
+   },
+   "flux1_lora_a": {
+    "inputs": false,
+    "uiConfig": false
+   },
+   "flux1_lora_b": {
+    "inputs": false,
+    "uiConfig": false
+   },
+   "flux2_dev_lora": {
+    "inputs": false,
+    "uiConfig": false
+   },
+   "kontext_lora": {
+    "inputs": false,
+    "uiConfig": false
+   }
+  },
+  "compositionConcepts": {
+   "flux1_composition": [
+    {
+     "listedPublic": true,
+     "readable": true,
+     "type": "flux.1-lora",
+     "privacy": "public"
+    },
+    {
+     "listedPublic": true,
+     "readable": true,
+     "type": "flux.1-lora",
+     "privacy": "public"
+    },
+    {
+     "listedPublic": true,
+     "readable": true,
+     "type": "flux.1-lora",
+     "privacy": "public"
+    }
+   ],
+   "flux1_composition_unlisted_concept": [
+    {
+     "listedPublic": false,
+     "readable": true,
+     "type": "flux.1-lora",
+     "privacy": "unlisted"
+    },
+    {
+     "listedPublic": true,
+     "readable": true,
+     "type": "flux.1-lora",
+     "privacy": "public"
+    }
+   ]
+  }
+ },
+ "publicTrained": {
+  "flux1_composition": "model_7oiHtKChpcLpy4jq3Jq2BG8n",
+  "flux1_composition_unlisted_concept": "model_MYqiLuoTmgR2F1hzXPX3BBgY",
+  "flux1_lora_a": "model_YQrES2iPys22nYwh3YhVfMh8",
+  "flux1_lora_b": "model_2taP2G9BJL1Rw8t81NwiXGZA",
+  "flux2_dev_lora": "model_CMUu7BjxV8TpdhG3FKoxZRxC",
+  "kontext_lora": "model_hFh8M6nQbqGFSKJdP536GXhE"
+ },
+ "routes": {
+  "stack": {
+   "result": "accepted",
+   "cases": [
+    "stack_one",
+    "stack_two",
+    "stack_flux2",
+    "stack_kontext"
+   ]
+  },
+  "model_id": {
+   "result": "accepted",
+   "cases": [
+    "model_id_lora"
+   ]
+  },
+  "composition": {
+   "result": "accepted",
+   "cases": [
+    "composition",
+    "composition_unlisted_concept",
+    "composition_with_loras"
+   ]
+  },
+  "direct": {
+   "result": "rejected",
+   "cases": [
+    "direct_lora",
+    "direct_composition",
+    "direct_flux2_lora"
+   ]
+  }
+ },
+ "dryRuns": [
+  {
+   "case": "base_only",
+   "route": "base",
+   "target": "model_bfl-flux-1-dev",
+   "body": {
+    "prompt": "a small wooden cabin in a snowy forest"
+   },
+   "status": 269,
+   "reply": {
+    "creativeUnitsCost": 10.75,
+    "creativeUnitsDiscount": 0,
+    "costDetails": {
+     "custom-generation": 9,
+     "quality-gate": 1.75
+    }
+   }
+  },
+  {
+   "case": "stack_one",
+   "route": "stack",
+   "target": "model_bfl-flux-1-dev",
+   "body": {
+    "prompt": "a small wooden cabin in a snowy forest",
+    "loras": [
+     "model_YQrES2iPys22nYwh3YhVfMh8"
+    ],
+    "lorasScale": [
+     0.8
+    ]
+   },
+   "status": 269,
+   "reply": {
+    "creativeUnitsCost": 10.75,
+    "creativeUnitsDiscount": 0,
+    "costDetails": {
+     "custom-generation": 9,
+     "quality-gate": 1.75
+    }
+   },
+   "adapterQuote": {
+    "addedDefaults": [
+     "controlEnd",
+     "controlModality",
+     "controlStart",
+     "controlStrength",
+     "guidance",
+     "height",
+     "numInferenceSteps",
+     "numOutputs",
+     "strength",
+     "width"
+    ],
+    "reply": {
+     "creativeUnitsCost": 10.75,
+     "creativeUnitsDiscount": 0,
+     "costDetails": {
+      "custom-generation": 9,
+      "quality-gate": 1.75
+     }
+    }
+   }
+  },
+  {
+   "case": "stack_two",
+   "route": "stack",
+   "target": "model_bfl-flux-1-dev",
+   "body": {
+    "prompt": "a small wooden cabin in a snowy forest",
+    "loras": [
+     "model_YQrES2iPys22nYwh3YhVfMh8",
+     "model_2taP2G9BJL1Rw8t81NwiXGZA"
+    ],
+    "lorasScale": [
+     0.8,
+     0.5
+    ]
+   },
+   "status": 269,
+   "reply": {
+    "creativeUnitsCost": 10.75,
+    "creativeUnitsDiscount": 0,
+    "costDetails": {
+     "custom-generation": 9,
+     "quality-gate": 1.75
+    }
+   },
+   "adapterQuote": {
+    "addedDefaults": [
+     "controlEnd",
+     "controlModality",
+     "controlStart",
+     "controlStrength",
+     "guidance",
+     "height",
+     "numInferenceSteps",
+     "numOutputs",
+     "strength",
+     "width"
+    ],
+    "reply": {
+     "creativeUnitsCost": 10.75,
+     "creativeUnitsDiscount": 0,
+     "costDetails": {
+      "custom-generation": 9,
+      "quality-gate": 1.75
+     }
+    }
+   }
+  },
+  {
+   "case": "stack_flux2",
+   "route": "stack",
+   "target": "model_bfl-flux-2-dev",
+   "body": {
+    "prompt": "a small wooden cabin in a snowy forest",
+    "loras": [
+     "model_CMUu7BjxV8TpdhG3FKoxZRxC"
+    ],
+    "lorasScale": [
+     1.0
+    ]
+   },
+   "status": 269,
+   "reply": {
+    "creativeUnitsCost": 17.75,
+    "creativeUnitsDiscount": 0,
+    "costDetails": {
+     "custom-generation": 16,
+     "quality-gate": 1.75
+    }
+   },
+   "adapterQuote": {
+    "addedDefaults": [
+     "guidance",
+     "numInferenceSteps",
+     "numOutputs"
+    ],
+    "reply": {
+     "creativeUnitsCost": 17.75,
+     "creativeUnitsDiscount": 0,
+     "costDetails": {
+      "custom-generation": 16,
+      "quality-gate": 1.75
+     }
+    }
+   }
+  },
+  {
+   "case": "kontext_reference_only",
+   "route": "base",
+   "target": "model_flux-kontext-editing",
+   "body": {
+    "prompt": "a small wooden cabin in a snowy forest",
+    "referenceImages": [
+     "asset_FIXTUREREFERENCE00000000"
+    ]
+   },
+   "status": 269,
+   "reply": {
+    "creativeUnitsCost": 12.75,
+    "creativeUnitsDiscount": 0,
+    "costDetails": {
+     "custom-generation": 11,
+     "quality-gate": 1.75
+    }
+   }
+  },
+  {
+   "case": "stack_kontext",
+   "route": "stack",
+   "target": "model_flux-kontext-editing",
+   "body": {
+    "prompt": "a small wooden cabin in a snowy forest",
+    "referenceImages": [
+     "asset_FIXTUREREFERENCE00000000"
+    ],
+    "loras": [
+     "model_hFh8M6nQbqGFSKJdP536GXhE"
+    ],
+    "lorasScale": [
+     1.0
+    ]
+   },
+   "status": 269,
+   "reply": {
+    "creativeUnitsCost": 17.75,
+    "creativeUnitsDiscount": 0,
+    "costDetails": {
+     "custom-generation": 16,
+     "quality-gate": 1.75
+    }
+   },
+   "adapterQuote": {
+    "addedDefaults": [
+     "aspectRatio",
+     "guidanceScale",
+     "numOutputs",
+     "quality"
+    ],
+    "reply": {
+     "creativeUnitsCost": 17.75,
+     "creativeUnitsDiscount": 0,
+     "costDetails": {
+      "custom-generation": 16,
+      "quality-gate": 1.75
+     }
+    }
+   }
+  },
+  {
+   "case": "model_id_lora",
+   "route": "model_id",
+   "target": "model_bfl-flux-1-dev",
+   "body": {
+    "prompt": "a small wooden cabin in a snowy forest",
+    "modelId": "model_YQrES2iPys22nYwh3YhVfMh8"
+   },
+   "status": 269,
+   "reply": {
+    "creativeUnitsCost": 10.75,
+    "creativeUnitsDiscount": 0,
+    "costDetails": {
+     "custom-generation": 9,
+     "quality-gate": 1.75
+    }
+   },
+   "adapterQuote": {
+    "addedDefaults": [
+     "controlEnd",
+     "controlModality",
+     "controlStart",
+     "controlStrength",
+     "guidance",
+     "height",
+     "numInferenceSteps",
+     "numOutputs",
+     "strength",
+     "width"
+    ],
+    "reply": {
+     "creativeUnitsCost": 10.75,
+     "creativeUnitsDiscount": 0,
+     "costDetails": {
+      "custom-generation": 9,
+      "quality-gate": 1.75
+     }
+    }
+   }
+  },
+  {
+   "case": "composition",
+   "route": "composition",
+   "target": "model_bfl-flux-1-dev",
+   "body": {
+    "prompt": "a small wooden cabin in a snowy forest",
+    "modelId": "model_7oiHtKChpcLpy4jq3Jq2BG8n"
+   },
+   "status": 269,
+   "reply": {
+    "creativeUnitsCost": 10.75,
+    "creativeUnitsDiscount": 0,
+    "costDetails": {
+     "custom-generation": 9,
+     "quality-gate": 1.75
+    }
+   },
+   "adapterQuote": {
+    "addedDefaults": [
+     "controlEnd",
+     "controlModality",
+     "controlStart",
+     "controlStrength",
+     "guidance",
+     "height",
+     "numInferenceSteps",
+     "numOutputs",
+     "strength",
+     "width"
+    ],
+    "reply": {
+     "creativeUnitsCost": 10.75,
+     "creativeUnitsDiscount": 0,
+     "costDetails": {
+      "custom-generation": 9,
+      "quality-gate": 1.75
+     }
+    }
+   }
+  },
+  {
+   "case": "composition_unlisted_concept",
+   "route": "composition",
+   "target": "model_bfl-flux-1-dev",
+   "body": {
+    "prompt": "a small wooden cabin in a snowy forest",
+    "modelId": "model_MYqiLuoTmgR2F1hzXPX3BBgY"
+   },
+   "status": 269,
+   "reply": {
+    "creativeUnitsCost": 10.75,
+    "creativeUnitsDiscount": 0,
+    "costDetails": {
+     "custom-generation": 9,
+     "quality-gate": 1.75
+    }
+   },
+   "adapterQuote": {
+    "addedDefaults": [
+     "controlEnd",
+     "controlModality",
+     "controlStart",
+     "controlStrength",
+     "guidance",
+     "height",
+     "numInferenceSteps",
+     "numOutputs",
+     "strength",
+     "width"
+    ],
+    "reply": {
+     "creativeUnitsCost": 10.75,
+     "creativeUnitsDiscount": 0,
+     "costDetails": {
+      "custom-generation": 9,
+      "quality-gate": 1.75
+     }
+    }
+   }
+  },
+  {
+   "case": "composition_with_loras",
+   "route": "composition",
+   "target": "model_bfl-flux-1-dev",
+   "body": {
+    "prompt": "a small wooden cabin in a snowy forest",
+    "modelId": "model_7oiHtKChpcLpy4jq3Jq2BG8n",
+    "loras": [
+     "model_YQrES2iPys22nYwh3YhVfMh8"
+    ],
+    "lorasScale": [
+     0.5
+    ]
+   },
+   "status": 269,
+   "reply": {
+    "creativeUnitsCost": 10.75,
+    "creativeUnitsDiscount": 0,
+    "costDetails": {
+     "custom-generation": 9,
+     "quality-gate": 1.75
+    }
+   },
+   "adapterQuote": {
+    "addedDefaults": [
+     "controlEnd",
+     "controlModality",
+     "controlStart",
+     "controlStrength",
+     "guidance",
+     "height",
+     "numInferenceSteps",
+     "numOutputs",
+     "strength",
+     "width"
+    ],
+    "reply": {
+     "creativeUnitsCost": 10.75,
+     "creativeUnitsDiscount": 0,
+     "costDetails": {
+      "custom-generation": 9,
+      "quality-gate": 1.75
+     }
+    }
+   }
+  },
+  {
+   "case": "direct_lora",
+   "route": "direct",
+   "target": "model_YQrES2iPys22nYwh3YhVfMh8",
+   "body": {
+    "prompt": "a small wooden cabin in a snowy forest",
+    "aspectRatio": "1:1"
+   },
+   "status": 400,
+   "reply": {
+    "reason": "Custom models only are supported for this endpoint"
+   }
+  },
+  {
+   "case": "direct_composition",
+   "route": "direct",
+   "target": "model_7oiHtKChpcLpy4jq3Jq2BG8n",
+   "body": {
+    "prompt": "a small wooden cabin in a snowy forest",
+    "aspectRatio": "1:1"
+   },
+   "status": 400,
+   "reply": {
+    "reason": "Custom models only are supported for this endpoint"
+   }
+  },
+  {
+   "case": "direct_flux2_lora",
+   "route": "direct",
+   "target": "model_CMUu7BjxV8TpdhG3FKoxZRxC",
+   "body": {
+    "prompt": "a small wooden cabin in a snowy forest",
+    "aspectRatio": "1:1"
+   },
+   "status": 400,
+   "reply": {
+    "reason": "Custom models only are supported for this endpoint"
+   }
+  },
+  {
+   "case": "check_without_scale",
+   "route": "check",
+   "target": "model_bfl-flux-1-dev",
+   "body": {
+    "prompt": "a small wooden cabin in a snowy forest",
+    "loras": [
+     "model_YQrES2iPys22nYwh3YhVfMh8"
+    ]
+   },
+   "status": 269,
+   "reply": {
+    "creativeUnitsCost": 10.75,
+    "creativeUnitsDiscount": 0,
+    "costDetails": {
+     "custom-generation": 9,
+     "quality-gate": 1.75
+    }
+   }
+  },
+  {
+   "case": "check_scale_count_mismatch",
+   "route": "check",
+   "target": "model_bfl-flux-1-dev",
+   "body": {
+    "prompt": "a small wooden cabin in a snowy forest",
+    "loras": [
+     "model_YQrES2iPys22nYwh3YhVfMh8",
+     "model_2taP2G9BJL1Rw8t81NwiXGZA"
+    ],
+    "lorasScale": [
+     0.8
+    ]
+   },
+   "status": 269,
+   "reply": {
+    "creativeUnitsCost": 10.75,
+    "creativeUnitsDiscount": 0,
+    "costDetails": {
+     "custom-generation": 9,
+     "quality-gate": 1.75
+    }
+   }
+  },
+  {
+   "case": "check_scale_below_min",
+   "route": "check",
+   "target": "model_bfl-flux-1-dev",
+   "body": {
+    "prompt": "a small wooden cabin in a snowy forest",
+    "loras": [
+     "model_YQrES2iPys22nYwh3YhVfMh8"
+    ],
+    "lorasScale": [
+     -0.5
+    ]
+   },
+   "status": 269,
+   "reply": {
+    "creativeUnitsCost": 10.75,
+    "creativeUnitsDiscount": 0,
+    "costDetails": {
+     "custom-generation": 9,
+     "quality-gate": 1.75
+    }
+   }
+  },
+  {
+   "case": "check_scale_above_max",
+   "route": "check",
+   "target": "model_bfl-flux-1-dev",
+   "body": {
+    "prompt": "a small wooden cabin in a snowy forest",
+    "loras": [
+     "model_YQrES2iPys22nYwh3YhVfMh8"
+    ],
+    "lorasScale": [
+     3.0
+    ]
+   },
+   "status": 400,
+   "reply": {
+    "reason": "Input lorasScale must be at most 2"
+   }
+  },
+  {
+   "case": "check_over_item_limit",
+   "route": "check",
+   "target": "model_bfl-flux-1-dev",
+   "body": {
+    "prompt": "a small wooden cabin in a snowy forest",
+    "loras": [
+     "model_YQrES2iPys22nYwh3YhVfMh8",
+     "model_YQrES2iPys22nYwh3YhVfMh8",
+     "model_YQrES2iPys22nYwh3YhVfMh8",
+     "model_YQrES2iPys22nYwh3YhVfMh8",
+     "model_YQrES2iPys22nYwh3YhVfMh8",
+     "model_YQrES2iPys22nYwh3YhVfMh8",
+     "model_YQrES2iPys22nYwh3YhVfMh8"
+    ],
+    "lorasScale": [
+     0.5,
+     0.5,
+     0.5,
+     0.5,
+     0.5,
+     0.5,
+     0.5
+    ]
+   },
+   "status": 400,
+   "reply": {
+    "reason": "Input loras must be at most 6 items long"
+   }
+  },
+  {
+   "case": "check_incompatible_type",
+   "route": "check",
+   "target": "model_bfl-flux-1-dev",
+   "body": {
+    "prompt": "a small wooden cabin in a snowy forest",
+    "loras": [
+     "model_CMUu7BjxV8TpdhG3FKoxZRxC"
+    ],
+    "lorasScale": [
+     0.8
+    ]
+   },
+   "status": 400,
+   "reply": {
+    "reason": "Invalid model(s): model_CMUu7BjxV8TpdhG3FKoxZRxC.\nAllowed model types: flux.1-lora, flux.1-composition"
+   }
+  },
+  {
+   "case": "check_composition_in_loras",
+   "route": "check",
+   "target": "model_bfl-flux-1-dev",
+   "body": {
+    "prompt": "a small wooden cabin in a snowy forest",
+    "loras": [
+     "model_7oiHtKChpcLpy4jq3Jq2BG8n"
+    ],
+    "lorasScale": [
+     0.8
+    ]
+   },
+   "status": 400,
+   "reply": {
+    "reason": "Invalid model(s): model_7oiHtKChpcLpy4jq3Jq2BG8n.\nAllowed model types: flux.1-lora"
+   }
+  },
+  {
+   "case": "check_unknown_model",
+   "route": "check",
+   "target": "model_bfl-flux-1-dev",
+   "body": {
+    "prompt": "a small wooden cabin in a snowy forest",
+    "loras": [
+     "model_FIXTUREMISSING0000000000"
+    ],
+    "lorasScale": [
+     0.8
+    ]
+   },
+   "status": 404,
+   "reply": {
+    "reason": "Model model_FIXTUREMISSING0000000000 not found"
+   }
+  }
+ ]
+}

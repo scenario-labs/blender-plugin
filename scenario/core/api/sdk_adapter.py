@@ -355,11 +355,11 @@ class SDKAdapter:
         """Return one team's discovery response, ignoring the selected project."""
         return self._discovery(self._extensions.projects, "projects", _identifier(team_id))
 
-    def _retrieve(self, resource, identifier, wrapper, *, unavailable=False):
+    def _retrieve(self, resource, identifier, wrapper, *, unavailable=False, **options):
         method = getattr(self._sdk, resource).with_raw_response.retrieve
         if unavailable:
             method = _unavailable_on_denial(method)
-        value = _json(self._request(method, _identifier(identifier)))
+        value = _json(self._request(method, _identifier(identifier), **options))
         record = value.get(wrapper)
         if not isinstance(record, dict):
             raise AdapterError(f"Scenario returned no {wrapper} record")
@@ -411,8 +411,17 @@ class SDKAdapter:
     def workflow(self, identifier):
         return self._retrieve("workflows", identifier, "workflow")
 
-    def asset(self, identifier):
-        return self._retrieve("assets", identifier, "asset")
+    def asset(self, identifier, *, original_assets=False):
+        """Read one asset; pass original_assets=True before downloading its bytes.
+
+        SDK 2.2.0 `original_assets` "returns the original asset without
+        transformation". The default `url` of a large image can serve a converted
+        file whose bytes differ from `mimeType` and `properties.size`.
+        """
+        if type(original_assets) is not bool:
+            raise ValueError("Choose whether to request the original asset")
+        options = {"original_assets": True} if original_assets else {}
+        return self._retrieve("assets", identifier, "asset", **options)
 
     @staticmethod
     def _asset_rows(rows, limit):

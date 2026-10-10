@@ -50,7 +50,8 @@ def setup(tmp_path):
         calls.append(request)
         assert request.method == "GET"
         assert request.headers["Authorization"] == "Basic c2VsZWN0ZWQ6c2VjcmV0"
-        assert dict(request.url.params) == {"projectId": "selected-project"}
+        original = {"originalAssets": "true"} if "/assets/" in request.url.path else {}
+        assert dict(request.url.params) == {"projectId": "selected-project", **original}
         if state["after"]:
             state["after"]()
         if request.url.path == "/v1/jobs/remote":

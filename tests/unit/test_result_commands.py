@@ -157,6 +157,142 @@ def test_explicit_retry_reuses_verified_receipt_and_refreshes_failed_asset_url(s
     assert ready.results[0].receipt == failed.results[0].receipt
 
 
+PNG = b"\x89PNG\r\n\x1a\n untransformed panorama"
+JPEG = b"\xff\xd8\xff\xe0 converted"
+
+
+@pytest.fixture
+def panorama(tmp_path, monkeypatch):
+    """A large panorama whose default `url` serves a converted JPEG, as observed live."""
+    import io
+    from unittest.mock import Mock
+
+    from scenario.core.jobs import transfers
+
+    scope = JobScope("https://service.example.invalid/v1", "account", "project", "team")
+    store = JobStore(tmp_path / "jobs.sqlite3", scope)
+    intent = JobIntent(
+        "request",
+        scope,
+        JobOrigin("file", "scene", "revision", "target"),
+        "model",
+        "model",
+        "a" * 64,
+        "b" * 64,
+        "1.0",
+    )
+    current = store.create(intent)
+    for state in (JobState.SUBMITTING, JobState.REMOTE, JobState.SUCCEEDED):
+        current = store.transition(
+            "request",
+            expected_revision=current.revision,
+            state=state,
+            remote_job_id="remote" if state == JobState.REMOTE else None,
+        )
+    job = {"jobId": "remote", "status": "success", "metadata": {"assetIds": ["asset-sky"]}}
+    asset = {
+        "id": "asset-sky",
+        "status": "success",
+        "mimeType": "image/png",
+        "metadata": {"type": "upscale-skybox"},
+        "properties": {"size": len(PNG), "width": 4096, "height": 2048},
+    }
+    reads = []
+
+    def respond(request):
+        reads.append(request)
+        assert request.method == "GET", "Result recovery must never submit generation"
+        if request.url.path == "/v1/jobs/remote":
+            return httpx.Response(200, json={"job": job})
+        assert request.url.path == "/v1/assets/asset-sky"
+        original = request.url.params.get("originalAssets") == "true"
+        query = "signed=original" if original else "format=jpeg&signed=converted"
+        url = f"https://storage.example.invalid/asset-sky?{query}"
+        return httpx.Response(200, json={"asset": {**asset, "url": url}})
+
+    class Response(io.BytesIO):
+        status = 200
+
+        def getheader(self, key, default=None):
+            return str(len(self.getvalue())) if key == "Content-Length" else default
+
+    targets = []
+
+    def connect(*args, **kwargs):
+        connection = Mock()
+
+        def request(method, target, headers):
+            targets.append(target)
+            served = JPEG if "format=jpeg" in target else PNG
+            connection.getresponse.return_value = Response(served)
+
+        connection.request.side_effect = request
+        return connection
+
+    monkeypatch.setattr(transfers.http.client, "HTTPSConnection", connect)
+    downloader = ResultDownloader(
+        StoragePolicy(frozenset({"storage.example.invalid"})), online_access=lambda: True
+    )
+    root = tmp_path / "results"
+    root.mkdir()
+    with SDKAdapter(
+        Credentials("fixture-key", "fixture-secret"),
+        online=lambda: True,
+        base_url=scope.service,
+        account_id=scope.account_id,
+        team_id=scope.team_id,
+        project_id=scope.project_id,
+        transport=httpx.MockTransport(respond),
+    ) as adapter:
+        coordinator = JobCoordinator(adapter, store, result_root=root, result_downloader=downloader)
+        yield coordinator, store, current, adapter, downloader, reads, targets
+
+
+def test_result_downloads_request_untransformed_originals(panorama):
+    coordinator, _, current, _, _, reads, targets = panorama
+    ready = coordinator.download_results("request", expected_revision=current.revision)
+    assert ready.state == JobState.READY
+    saved = ready.results[0]
+    assert (saved.asset.media_type, saved.asset.expected_size) == ("image/png", len(PNG))
+    verified = coordinator.verify_results("request", expected_revision=ready.revision)
+    assert verified.paths[0].read_bytes() == PNG
+    asset_reads = [read for read in reads if read.url.path.startswith("/v1/assets/")]
+    assert len(asset_reads) == 2  # manifest metadata, then the fresh download URL
+    assert all(
+        dict(read.url.params) == {"originalAssets": "true", "projectId": "project"}
+        for read in asset_reads
+    )
+    assert targets == ["/asset-sky?signed=original"]
+
+
+def test_manifest_from_a_converted_response_resumes_with_the_original(panorama, tmp_path):
+    from scenario.core.jobs.results import _asset
+
+    coordinator, store, current, adapter, downloader, reads, targets = panorama
+    # A manifest saved from the default response: same MIME and size metadata.
+    default = adapter.asset("asset-sky")
+    assert "format=jpeg" in default["url"]
+    manifest = _asset(default, "asset-sky", "000-sky.png")
+    staging = tmp_path / "default-url"
+    staging.mkdir()
+    with pytest.raises(TransferError, match="size does not match"):
+        downloader.download(
+            default["url"], root=staging, name="sky.png", expected_size=manifest.expected_size
+        )
+    current = store.set_results("request", (manifest,), expected_revision=current.revision)
+    for state in (JobState.DOWNLOADING, JobState.DOWNLOAD_FAILED):
+        current = store.transition("request", expected_revision=current.revision, state=state)
+    before = len(reads)
+    ready = coordinator.download_results("request", expected_revision=current.revision)
+    assert ready.state == JobState.READY and ready.results[0].asset == manifest
+    assert [dict(read.url.params) for read in reads[before:]] == [
+        {"originalAssets": "true", "projectId": "project"}
+    ]
+    assert targets[-1] == "/asset-sky?signed=original"
+    verified = coordinator.verify_results("request", expected_revision=ready.revision)
+    assert verified.paths[0].read_bytes() == PNG
+
+
 def test_corrupt_receipted_file_does_not_trigger_redownload_or_generation(setup):
     coordinator, store, current, _, _, downloader, calls, _ = setup
     downloader.fail_at = 2

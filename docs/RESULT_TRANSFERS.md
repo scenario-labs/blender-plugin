@@ -107,6 +107,26 @@ submission. Synthetic native tests exercise the real downloader with mocked HTTP
 bytes, exact saved digests, packed images, stale origins and failed transfers.
 They do not establish live CDN or provider format acceptance.
 
+## Untransformed result assets
+
+The default `url` in an asset response is not always the stored file. For large
+panoramas, such as upscale-skybox PNGs from 3072x1536 to 12288x6144, it served a
+converted JPEG whose byte count differed from `properties.size`. Every download
+and explicit retry then failed the exact size check. Result manifests, fresh
+download URLs and complete text reads therefore call
+`SDKAdapter.asset(identifier, original_assets=True)`. The pinned SDK sends the
+documented `originalAssets=true` query, which "returns the original asset without
+transformation"; this is SDK usage, not a raw fallback.
+
+Read-only service checks found that the flag changed only `url`: `mimeType`,
+`properties`, `metadata` and any `originalFileUrl` were identical. For every
+owned asset sampled, including OBJ/MTL files with stale byte counts, both URLs
+served identical bytes. A manifest saved from a default response keeps the same
+MIME type and size, so a failed download resumes without regeneration. Cloud
+history prompt previews and Library pages read metadata only and keep the
+default request. This does not establish Blender import of every large panorama,
+provider format guarantees or HDRI originals.
+
 ## Integration still required
 
 Other generation lanes remain unintegrated. Explicit recovered Image application

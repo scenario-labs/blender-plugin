@@ -11,7 +11,13 @@ import bpy
 from bpy.props import BoolProperty, EnumProperty, PointerProperty, StringProperty
 
 from ..core.api.library import asset_summary
-from ..core.jobs.organization import Outcome, Phase, ReviewUnavailable, review_payload
+from ..core.jobs.organization import (
+    OrganizationBusy,
+    Outcome,
+    Phase,
+    ReviewUnavailable,
+    review_payload,
+)
 from ..core.ui import library_organization as organizing
 from . import generation, props, reference_form, runtime, workflow_references
 from .asset_organization import safe_message
@@ -384,7 +390,10 @@ class LibraryView:
             tags=tags,
         )
         owner = self.session.asset_organization
-        review_id = owner.prepare(operation, **arguments)
+        try:
+            review_id = owner.prepare(operation, **arguments)
+        except OrganizationBusy as error:
+            raise ValueError(organizing.REVIEWS_FULL) from error
         previous = self.review_id
         self.review_id, self.review = review_id, None
         self.review_label = str(asset.get("name") or asset_id)

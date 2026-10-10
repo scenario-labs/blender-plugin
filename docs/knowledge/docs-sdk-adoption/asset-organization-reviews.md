@@ -17,10 +17,10 @@
       "scenario/core/jobs/coordinator.py": "329f641b24e7cd23603d1eae840072006a080a03b2911dca44d17b8b9aa56e9a",
       "scenario/blender/asset_organization.py": "597a1026ad96d07f563f54ff2651591dc9c9fc4bf6a3f19bee5bf43509ada7ce",
       "scenario/mcp/tools_scenario.py": "f4e87186806f93466220ef04f7c2530f0532ded790d4a8754a2a5b81183db08a",
-      "scenario/blender/library_view.py": "128d5f59000c37e6ddce965fbe2c1f61da7d6e55a45a33661ba8a13baf20cc14",
+      "scenario/blender/library_view.py": "f2b832b67d2eb388901782f45621e49c009d3fa40e876c5b4ad4f35a98449555",
       "tests/blender/test_asset_organization.py": "b00e136dfcf7667b1d93bb54b3efc84c1643380e88e8524ea12238edb6e793d5",
-      "scenario/core/ui/library_organization.py": "79ce2541b2ec332797e64c56a436e917f7431b9e96e45866d2b7abb413aabd20",
-      "tests/blender/test_library_organization.py": "54dc4032b89c4849760280aced9e784855552fb8296f61e6c0a6128bdc4c1653"
+      "scenario/core/ui/library_organization.py": "e583e5b900b4532c25f6fc146c97d4ab3989243a0295ec915546e6b9dadd974f",
+      "tests/blender/test_library_organization.py": "54d7098acbae666f86ff0d14eb6a568da0af6972a1eb733b0cc6678c30a1f6a4"
     }
   }
 }

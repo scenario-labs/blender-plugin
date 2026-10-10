@@ -20,8 +20,8 @@
       "scenario/mcp/tools_scenario.py": "f4e87186806f93466220ef04f7c2530f0532ded790d4a8754a2a5b81183db08a",
       "tests/blender/test_organization_session.py": "a1b663c4e83c3028696c5ae64f06596aff85e78de5d7670d2e2a1323124de346",
       "tests/blender/test_asset_organization.py": "b00e136dfcf7667b1d93bb54b3efc84c1643380e88e8524ea12238edb6e793d5",
-      "scenario/blender/library_view.py": "128d5f59000c37e6ddce965fbe2c1f61da7d6e55a45a33661ba8a13baf20cc14",
-      "tests/blender/test_library_organization.py": "54dc4032b89c4849760280aced9e784855552fb8296f61e6c0a6128bdc4c1653"
+      "scenario/blender/library_view.py": "f2b832b67d2eb388901782f45621e49c009d3fa40e876c5b4ad4f35a98449555",
+      "tests/blender/test_library_organization.py": "54d7098acbae666f86ff0d14eb6a568da0af6972a1eb733b0cc6678c30a1f6a4"
     }
   }
 }

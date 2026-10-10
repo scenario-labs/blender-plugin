@@ -823,5 +823,7 @@ Closing Studio does not stop a change; reopen it to see the result. Changing
 credentials, the Project ID or the open file clears the Library and its reviews.
 With Online Access off, nothing is sent. A connected agent can make the same
 changes through [local MCP](MCP.md#asset-organization), one at a time with the
-Library. Collection rename and deletion are not available here; use the Scenario
-web app. Physical desktop checks of this dialog remain pending.
+Library. If the agent leaves too many reviews open, Organize says so and prepares
+nothing; unapplied reviews expire after 10 minutes. Collection rename and
+deletion are not available here; use the Scenario web app. Physical desktop
+checks of this dialog remain pending.

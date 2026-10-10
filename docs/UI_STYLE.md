@@ -1426,16 +1426,19 @@ popup: the maintenance pump advances it, so closing and reopening Studio during
 Apply keeps it. A credential, Project ID or file change retires the session,
 clears the view and discards its reviews; a write already sent keeps its effect.
 Native and [local MCP](MCP.md#asset-organization) reviews share the same owner,
-so only one change applies at a time.
+so only one change applies at a time and they share its 32-review bound. When
+unapplied agent reviews fill it, Organize says so and prepares nothing; unapplied
+reviews expire after 10 minutes.
 
 Installed tests cover operator registration, the dynamic collection enum with
 `OperatorProperties`, read-only drawing, public and busy pages, dialog cancel,
 Apply gating and single use, row updates, filtered-row refresh marks, the card
 across Studio redraws during Apply, connection and file retirement, sanitized
-refusals, online access off and narrow-width wrapping. Physical desktop evidence
-is pending: focus, typing (including Unicode and IME tags), Escape and dismissal,
-viewport shortcuts after the dialog, a small window and alternate DPI will be
-collected later in an unlocked session and remain tracked under
+refusals, online access off, a review bound filled by agent reviews and
+narrow-width wrapping. Physical desktop evidence is pending: focus, typing
+(including Unicode and IME tags), Escape and dismissal, viewport shortcuts after
+the dialog, a small window and alternate DPI will be collected later in an
+unlocked session and remain tracked under
 [#66](https://github.com/scenario-labs/blender-plugin/issues/66). No live
 collection or tag request was made.
 

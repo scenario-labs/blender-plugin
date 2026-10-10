@@ -627,3 +627,30 @@ class LibraryOrganizationTests(unittest.TestCase):
         )
         self.assertIsNone(self.owner.review)
         self.assertEqual(self.service.writes, [])
+
+    def test_reviews_full_of_agent_reviews_explain_the_cause_and_keep_the_card(self):
+        self.refresh()
+        self.organize("asset-b", action="ADD_TAGS", tags="x")
+        card = self.owner.review_id
+        owner = self.session.asset_organization
+        # Local MCP shares the bounded review pool; a bound of 2 stands for 31 agent reviews.
+        self.enterContext(patch.object(owner.reviews, "_limit", 2))
+        agent = owner.prepare("update_tags", asset_ids=["asset-a"], add_tags=["agent"])
+        self.settle()
+        reads = len(self.service.requests)
+        cls, operator, context, _ = self.dialog("asset-a", action="ADD_TAGS", tags="y")
+        self.assertEqual(cls.execute(operator, context), {"CANCELLED"})
+        message = operator.report.call_args.args[1]
+        self.assertIn("connected agent", message)
+        self.assertIn("expire after 10 minutes", message)
+        self.assertNotIn("before preparing another", message)
+        self.assertEqual(self.owner.review_id, card)
+        self.assertEqual(self.owner.review["phase"], "READY")
+        self.assertEqual(len(self.service.requests), reads)
+        # Once the agent's review is discarded, Organize prepares again.
+        owner.discard(agent)
+        self.assertEqual(cls.execute(operator, context), {"FINISHED"})
+        self.settle()
+        self.assertEqual(self.owner.review["phase"], "READY")
+        self.assertNotEqual(self.owner.review_id, card)
+        self.assertEqual(self.service.writes, [])

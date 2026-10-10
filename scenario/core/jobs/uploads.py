@@ -510,15 +510,34 @@ class UploadCommands:
             raise UploadError(
                 "The saved upload copy is unavailable or changed; upload the original file again"
             ) from None
-        with self._guard(origin):
-            with self._plans_lock:
-                if request_id in self._sending:
-                    raise StoreConflict("An upload part is still being sent; wait for it to finish")
-            _, replacement = self._store.abandon(
-                request_id, expected_revision=current.revision, replacement=intent
-            )
+        try:
+            with self._guard(origin):
+                with self._plans_lock:
+                    if request_id in self._sending:
+                        raise StoreConflict(
+                            "An upload part is still being sent; wait for it to finish"
+                        )
+                _, replacement = self._store.abandon(
+                    request_id, expected_revision=current.revision, replacement=intent
+                )
+        except BaseException:
+            self._discard_unrecorded(intent)
+            raise
         self._drop_plan(request_id)
         return replacement
+
+    def _discard_unrecorded(self, intent):
+        """Remove a new snapshot that no saved request owns after a failed restart.
+
+        Only this call knows the fresh request ID, so no other command can
+        record it. A found record or an unreadable store keeps the copy:
+        leftover private bytes are safer than removing a referenced snapshot.
+        """
+        try:
+            if self._store.get(intent.request_id) is None:
+                self._sources.discard(intent)
+        except Exception:
+            pass  # The original failure is what the caller must see.
 
     def finalize(self, request_id, *, expected_revision):
         current = self._current(request_id, expected_revision, {UploadState.UPLOADING})

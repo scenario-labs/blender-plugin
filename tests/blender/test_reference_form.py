@@ -5,6 +5,7 @@
 import json
 import unittest
 from pathlib import Path
+from threading import Event
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
@@ -570,9 +571,15 @@ class ReferenceFormTests(unittest.TestCase):
             self.form.apply_attachment("fixture-context", approval.identifier)
 
     def inspect_labels(self, index=0):
+        return self.draw_labels(*self.open_inspection(index))
+
+    def open_inspection(self, index=0):
         operator = SimpleNamespace(lane="image", index=index, param_name="", page=0)
         context = SimpleNamespace(window_manager=Mock(), scene=self.scene)
         self.form.SCENARIO_OT_inspect_uploads.invoke(operator, context, None)
+        return operator, context
+
+    def draw_labels(self, operator, context):
         labels, layout = [], Mock()
         layout.row.return_value = layout
         layout.box.return_value = layout
@@ -635,6 +642,38 @@ class ReferenceFormTests(unittest.TestCase):
         ref = self.form.apply_attachment(self.runtime.state.job_context_id, approval.identifier)
         self.assertEqual(ref.asset_id, "reference-asset")
         self.fixture.fixture.uploader.upload.assert_called_once()
+
+    def test_open_saved_uploads_offer_upload_again_after_a_background_stop(self):
+        original, entered, release = self.fixture.fixture.handler, Event(), Event()
+
+        def held_read(request):
+            if request.method == "GET" and not entered.is_set():
+                entered.set()
+                self.assertTrue(release.wait(5))
+                raise httpx.ReadTimeout("synthetic private read loss", request=request)
+            return original(request)
+
+        self.fixture.fixture.handler = held_read
+        self.addCleanup(release.set)
+        ticket = self.start().ticket
+        for _ in ("prepare_upload", "initialize_upload"):
+            ticket.task.result(5)
+            self.owner.poll()
+        self.assertEqual(ticket.command, "transfer_upload_part")
+        self.assertTrue(entered.wait(5))
+        # The transfer is still owned here, so the open dialog has no restart.
+        dialog = self.open_inspection()
+        record = self.owner.saved[ticket.record.intent.request_id]
+        self.assertEqual(record.state.value, "uploading")
+        self.assertNotIn("Upload again", self.draw_labels(*dialog))
+        release.set()
+        with self.assertRaisesRegex(submodule("core.jobs.uploads").UploadError, "no bytes"):
+            ticket.task.result(5)
+        self.owner.poll()
+        self.assertTrue(ticket.error)
+        # Background poll() refreshes the suggestion; draw() only reads it.
+        self.assertIn("Upload again", self.draw_labels(*dialog))
+        self.fixture.fixture.uploader.upload.assert_not_called()
 
     def test_native_cleanup_runs_without_dialog_and_preserves_original(self):
         record = self.saved_upload()

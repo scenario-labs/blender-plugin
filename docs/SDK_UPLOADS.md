@@ -281,12 +281,14 @@ keeping its remote ID and receipts, and saves the replacement as PREPARED.
 Completion was never requested for the abandoned upload, so it cannot become an
 asset; this client never transfers to, completes or polls it again. The remote
 pending upload stays unaborted, because no abort operation exists. A missing or
-changed snapshot abandons nothing. The replacement keeps captured-mesh provenance
-only when it reuses the original, still current origin; otherwise it is an
-ordinary upload of the same verified bytes. Only an explicit user or caller action
-restarts; nothing retries automatically. An uncertain part is never sent to the
-same upload again. Older readers reject the new `abandoned` state; do not
-downgrade a store that contains one.
+changed snapshot abandons nothing. A restart that fails after copying, for example
+because a concurrent command changed the record's revision or the origin changed,
+abandons nothing and removes its new copy unless a saved record references it. The
+replacement keeps captured-mesh provenance only when it reuses the original, still
+current origin; otherwise it is an ordinary upload of the same verified bytes. Only
+an explicit user or caller action restarts; nothing retries automatically. An
+uncertain part is never sent to the same upload again. Older readers reject the
+new `abandoned` state; do not downgrade a store that contains one.
 
 Deactivation before a mutation claim prevents dispatch. Once claimed, responses
 can persist only to the old scope; a later command is rejected by that inactive

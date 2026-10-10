@@ -233,10 +233,12 @@ class ReferenceUploads:
         if not self.session.active:
             return
         self._poll_recoveries()
+        completed = False
         for ticket in tuple(self.references.values()):
             if ticket.task is not None:
                 if not ticket.task.done():
                     continue
+                completed = True
                 try:
                     completion = self.session.drain(task=ticket.task)[0]
                     if completion.error is not None:
@@ -294,6 +296,8 @@ class ReferenceUploads:
                     ticket.error = (
                         "The upload origin changed or work could not start; inspect saved progress"
                     )
+        if completed:
+            self._observe_actions()
         if self.forms:
             from .reference_form import deliver
 
@@ -336,12 +340,31 @@ class ReferenceUploads:
                     if record.state in {UploadState.IMPORTED, UploadState.PROCESSING}:
                         ticket.error = None
                         ticket.next_poll = time.monotonic() + 2.0
+        self._observe_actions()
 
     def inspect_saved(self):
         items = self.session.upload_recovery_plan()
         self.saved = {item.record.intent.request_id: item.record for item in items}
         self.saved_actions = {item.record.intent.request_id: item.action for item in items}
         return tuple(item.record for item in items)
+
+    def _observe_actions(self):
+        """Keep inspected suggestions current on the main thread; draw() only reads them.
+
+        A transfer can stop or a recovery finish while saved uploads are open.
+        Records and actions come from one recovery plan, the same eligibility
+        check a restart repeats. A failed read hides every suggestion until a
+        new inspection.
+        """
+        if not self.saved_actions:
+            return
+        try:
+            items = self.session.upload_recovery_plan()
+        except Exception:
+            self.saved_actions = {}
+            return
+        self.saved.update((item.record.intent.request_id, item.record) for item in items)
+        self.saved_actions = {item.record.intent.request_id: item.action for item in items}
 
     def recover(self, request_id, expected_revision, action):
         commands = {

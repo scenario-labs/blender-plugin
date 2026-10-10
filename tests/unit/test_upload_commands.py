@@ -637,6 +637,60 @@ def test_restart_with_missing_saved_copy_abandons_nothing(env):
     assert env.store.records() == (record,)
 
 
+def restartable(env):
+    record = initialized(env)
+    env.fail = "get"
+    with pytest.raises(UploadError):
+        invoke(env, "transfer_upload_part", record)
+    env.fail = None
+    assert env.coordinator.upload_recovery_plan()[0].action == UploadRecoveryAction.RESTART_UPLOAD
+    return record
+
+
+@pytest.mark.parametrize("failure", ["conflict", "origin"])
+def test_failed_restart_discards_its_unrecorded_copy(env, monkeypatch, failure):
+    record = restartable(env)
+    roots = set(env.root.iterdir())
+    if failure == "conflict":
+        # A concurrent restart or refresh moved the revision after the eligibility check.
+        def abandon(*args, **kwargs):
+            raise StoreConflict("synthetic competing change")
+
+        monkeypatch.setattr(env.store, "abandon", abandon)
+    else:
+        restage = env.sources.restage
+
+        def changed(*args, **kwargs):
+            intent = restage(*args, **kwargs)
+            env.origins.invalidate(env.origin.scene_id)
+            return intent
+
+        monkeypatch.setattr(env.sources, "restage", changed)
+    with pytest.raises(StoreConflict if failure == "conflict" else UploadError):
+        env.coordinator.restart_upload(
+            record.intent.request_id, expected_revision=record.revision, origin=env.origin
+        )
+    assert env.store.records() == (record,)
+    assert set(env.root.iterdir()) == roots
+
+
+def test_restart_keeps_a_copy_its_replacement_record_may_reference(env, monkeypatch):
+    record = restartable(env)
+    abandon = env.store.abandon
+
+    def uncertain(*args, **kwargs):
+        abandon(*args, **kwargs)
+        raise StoreError("synthetic persistence failure after commit")
+
+    monkeypatch.setattr(env.store, "abandon", uncertain)
+    with pytest.raises(StoreError):
+        env.coordinator.restart_upload(
+            record.intent.request_id, expected_revision=record.revision, origin=env.origin
+        )
+    (replacement,) = (row for row in env.store.records() if row.state == UploadState.PREPARED)
+    env.sources.verify(replacement.intent)
+
+
 def test_restart_under_a_new_origin_drops_mesh_provenance_only_when_origin_changes(env):
     record = invoke(env, "transfer_upload_part", initialized(env))
     env.origins.invalidate(env.origin.scene_id)

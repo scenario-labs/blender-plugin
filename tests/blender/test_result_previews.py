@@ -318,6 +318,15 @@ class SessionPreviewTests(unittest.TestCase):
         self.enterContext(patch.object(decoder, "decode", side_effect=decode))
         return entered, record
 
+    def cached_envelopes(self):
+        """Envelope sidecars, listed through the cache's canonical root.
+
+        Below a deep extension profile, such as a Windows CI runner's, entry
+        directories exceed MAX_PATH. The cache writes them through Windows'
+        extended namespace; enumerating the plain spelling would find nothing.
+        """
+        return list(self.transfers._root(self.cache).joinpath("v1").rglob("envelope.json"))
+
     def test_audio_envelope_decodes_in_an_offline_child_on_the_lane(self):
         self.offline_session()
         record = self.ready([("asset-sound", "audio/wav", tone())])
@@ -332,7 +341,7 @@ class SessionPreviewTests(unittest.TestCase):
         self.assertAlmostEqual(envelope.overall_rms, 0.5 / math.sqrt(2), delta=0.01)
         self.assertEqual(calls, ["ScenarioPreview"])
         self.assertFalse(any((self.cache / "work").glob("preview-*")))
-        self.assertEqual(len(list((self.cache / "v1").rglob("envelope.json"))), 1)
+        self.assertEqual(len(self.cached_envelopes()), 1)
         self.assertEqual(self.session.result_previews.decode_requests(), ())
         self.assertSceneUnchanged()
         self.assertEqual(self.store.get("request"), record)
@@ -361,5 +370,5 @@ class SessionPreviewTests(unittest.TestCase):
         self.assertTrue(self.session._workers.stopped)
         self.assertEqual(calls, ["ScenarioPreview", "WaveformCanceled"])
         self.assertFalse(any((self.cache / "work").glob("preview-*")))
-        self.assertFalse(any((self.cache / "v1").rglob("envelope.json")))
+        self.assertEqual(self.cached_envelopes(), [])
         self.assertSceneUnchanged()

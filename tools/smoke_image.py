@@ -74,7 +74,10 @@ def sync_directory(root):
 
 
 def create_file(path, data):
-    descriptor = os.open(path, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
+    # Windows os.open defaults to text mode and would write LF as CRLF, so a
+    # printed approval digest of these bytes would never match the saved record.
+    flags = os.O_CREAT | os.O_EXCL | os.O_WRONLY | getattr(os, "O_BINARY", 0)
+    descriptor = os.open(path, flags, 0o600)
     with os.fdopen(descriptor, "wb") as output:
         output.write(data)
         output.flush()

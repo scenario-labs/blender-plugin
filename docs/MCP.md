@@ -828,10 +828,14 @@ Both tools also return `loop_steps`, `quote_may_understate` and `cost_warning`.
 `loop_steps` counts loop nodes in the retrieved workflow definition: nodes of
 type `for-each` and any node that carries a ForEach field (`loopBodyNodeIds`,
 `count`, `loopNodeId` or `iterationIndex`). It is 0 only when every node has a
-known non-loop type. It is `null`, with the warning, when the flow is missing or
-malformed, contains a nested `workflow` step that the quote does not read, or
-has a node whose type is missing, not a string or not a known type. Known
-non-loop types are those of the SDK 2.2.0 `WorkflowFlow.type` other than
+known non-loop type, or when the flow is empty and the record says
+`hasFlow: false`. It is `null`, with the warning, when the flow is missing or
+malformed; when it is an empty flow, unless the record says `hasFlow: false`;
+when it contains a nested `workflow` step or any node carrying a `workflowId`,
+whose definition the quote does not read; or when a node's type is missing, not
+a string or not a known type. The SDK documents `hasFlow` as present even when
+`flow` is not, so an empty list alone does not prove the workflow is empty.
+Known non-loop types are those of the SDK 2.2.0 `WorkflowFlow.type` other than
 `for-each` and `workflow`, plus the `user-selection` type seen in live workflow
 jobs. The server's dry run prices one pass through a loop, so a run that
 iterates more often can be charged more than `cu_cost_exact`. Show the warning

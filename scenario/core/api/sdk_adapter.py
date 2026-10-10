@@ -138,12 +138,14 @@ def workflow_loop_steps(workflow):
     The server's workflow dry run prices one pass through a loop, so a run that
     iterates more often can charge more than its quote. A node is a loop when
     its type is `for-each` or it carries any ForEach field. The result is 0 only
-    when every node is proven not to loop: a missing or malformed flow, a nested
-    workflow step whose definition is not read, or a node whose type is missing,
-    malformed or not a known non-loop type makes coverage unknown.
+    when every node is proven not to loop. Coverage is unknown for a missing or
+    malformed flow; an empty flow, unless the record says `hasFlow: false` (the
+    SDK documents `hasFlow` as present even when `flow` is not); a nested
+    workflow step, or any node carrying a `workflowId`, whose definition is not
+    read; or a node whose type is missing, malformed or not a known non-loop type.
     """
     flow = workflow.get("flow") if isinstance(workflow, dict) else None
-    if not isinstance(flow, list):
+    if not isinstance(flow, list) or (not flow and workflow.get("hasFlow") is not False):
         return None
     loops = 0
     for node in flow:
@@ -152,6 +154,8 @@ def workflow_loop_steps(workflow):
         kind = node.get("type")
         if not isinstance(kind, str) or (kind != "for-each" and kind not in NON_LOOP_NODE_TYPES):
             return None  # Includes workflow and any renamed or new node type.
+        if "workflowId" in node:
+            return None  # The SDK names it for workflow tasks; its flow is not read.
         if kind == "for-each" or any(name in node for name in LOOP_NODE_FIELDS):
             loops += 1
     return loops

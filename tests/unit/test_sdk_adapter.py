@@ -996,7 +996,6 @@ NON_LOOP_TYPES = (
     "flow,expected",
     [
         ([{"id": "step", "type": "custom-model"}], 0),
-        ([], 0),
         ([{"id": f"node-{kind}", "type": kind} for kind in NON_LOOP_TYPES], 0),
         (
             [
@@ -1015,10 +1014,15 @@ NON_LOOP_TYPES = (
         # own definition this quote does not read, or any node whose type is
         # missing, malformed or not a known non-loop type.
         (None, None),
+        # An empty flow proves nothing unless the record says hasFlow false.
+        ([], None),
         ("not a list", None),
         ({"node": {"type": "custom-model"}}, None),
         ([None], None),
         ([{"id": "nested", "type": "workflow"}], None),
+        # A workflowId on a known type may still run a nested workflow.
+        ([{"id": "a", "type": "custom-model", "workflowId": "nested"}], None),
+        ([{"id": "a", "type": "logic", "workflowId": None}], None),
         ([{"id": "a"}], None),
         ([{"id": "a", "type": 5}], None),
         ([{"id": "a", "type": ""}], None),
@@ -1048,6 +1052,33 @@ def test_workflow_estimate_reports_loop_steps_from_definition(adapter, flow, exp
 @pytest.mark.parametrize("workflow", [None, "fixture-workflow", ["flow"], {}])
 def test_workflow_loop_steps_is_unknown_without_a_definition(workflow):
     assert workflow_loop_steps(workflow) is None
+
+
+@pytest.mark.parametrize(
+    "has_flow,expected",
+    [
+        (True, None),
+        (False, 0),
+        # Only an explicit boolean false proves the flow is empty.
+        (None, None),
+        (0, None),
+        ("false", None),
+    ],
+)
+def test_empty_flow_is_loop_free_only_when_the_record_says_it_has_none(adapter, has_flow, expected):
+    client = adapter()
+    workflow = {
+        "id": "fixture-workflow",
+        "inputs": MODEL["inputs"],
+        "flow": [],
+        "hasFlow": has_flow,
+    }
+    estimate = client.estimate_workflow(workflow, {"prompt": "x"})
+    assert estimate.loop_steps == expected
+    assert workflow_quote_notice(estimate.loop_steps)["quote_may_understate"] is (expected != 0)
+    # A populated flow is always read node by node, whatever hasFlow says.
+    workflow["flow"] = [{"id": "a", "type": "for-each"}]
+    assert workflow_loop_steps(workflow) == 1
 
 
 def test_known_non_loop_node_types_match_the_pinned_sdk():

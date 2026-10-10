@@ -369,11 +369,13 @@ class WorkflowCommandTests(unittest.TestCase):
         # Coverage is unknown unless every node is proven not to loop.
         for flow in (
             None,
+            [],
             [{"id": "node-a"}],
             [{"id": "node-a", "type": 5}],
             [{"id": "node-a", "type": "ForEach"}],
             [{"id": "node-a", "type": "future-node"}],
             [{"id": "node-a", "type": "workflow"}],
+            [{"id": "node-a", "type": "custom-model", "workflowId": "nested"}],
         ):
             with self.subTest(flow=flow):
                 if flow is None:

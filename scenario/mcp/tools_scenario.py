@@ -1345,7 +1345,7 @@ SPECS = (
         (
             "Request a free exact workflow price bound to the selected scene and connection.\n"
             "Args: workflow_id is required; parameters is an input object (default empty).\n"
-            "Returns: quote_id, workflow_id, original parameters, normalized payload, cu_cost_exact, mesh_sources, loop_steps, quote_may_understate and cost_warning. loop_steps counts ForEach steps in the workflow definition (null when unknown); when quote_may_understate is true the price covers one loop pass and the final charge can be higher. Show cost_warning with the price; it does not block approval.\n"
+            "Returns: quote_id, workflow_id, original parameters, normalized payload, cu_cost_exact, mesh_sources, loop_steps, quote_may_understate and cost_warning. loop_steps counts loop nodes (for-each, or any node carrying a ForEach field) in the workflow definition, or is null when coverage is unknown, including an empty flow not marked hasFlow false; when quote_may_understate is true the price covers one loop pass and the final charge can be higher. Show cost_warning with the price; it does not block approval.\n"
             'Example: {"workflow_id": "workflow-example", "parameters": {"prompt": "a cup"}}.\n'
             "No paid submission or upload. Review the normalized payload and exact price; run_workflow requires the same original parameters and explicit approved_cost. Scene, file, credential or project changes require a fresh estimate.\n"
             "Platform equivalent: dry_run on workflow_run."

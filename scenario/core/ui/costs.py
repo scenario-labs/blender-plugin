@@ -35,7 +35,7 @@ def format_cu(value):
 def workflow_loop_warning(loop_steps):
     """Nonblocking text for a workflow quote that may not cover every loop pass.
 
-    `loop_steps` is the quoted definition's ForEach count, or None when unknown.
+    `loop_steps` counts the quoted definition's loop nodes, or is None when unknown.
     """
     if loop_steps == 0:
         return None

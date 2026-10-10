@@ -580,10 +580,14 @@ and `cost_warning`; `job_status` repeats them for saved workflow jobs, with
 unknown coverage after a restart because the record keeps no loop count. The
 adapter counts loop nodes (`for-each`, or any node carrying a ForEach field) in
 the same retrieved definition the quote validated. It reports 0 only when every
-node has a known non-loop type: the SDK 2.2.0 `WorkflowFlow.type` values other
-than `for-each` and `workflow`, plus the observed `user-selection`. A missing or
-malformed flow, a nested workflow step, or a node whose type is missing, not a
-string or unknown makes coverage unknown, which also warns. A unit test fails
+node has a known non-loop type (the SDK 2.2.0 `WorkflowFlow.type` values other
+than `for-each` and `workflow`, plus the observed `user-selection`), or when the
+flow is empty and the record says `hasFlow: false`. Coverage is unknown, which
+also warns, for a missing or malformed flow; an empty flow, unless the record
+says `hasFlow: false`; a nested workflow step or any node carrying a
+`workflowId`; or a node whose type is missing, not a string or unknown. The SDK
+documents `hasFlow` as present even when `flow` is not, so an empty list alone
+does not prove the server's flow is empty. A unit test fails
 when an SDK upgrade changes that type list. The server's dry run prices one loop
 pass, so a run that iterates more often can cost more. The warning never blocks
 approval of the exact quoted string. Approval consumes the handle before

@@ -89,9 +89,15 @@ lane: if that poll leaves it `missing` or `failed`, it polls again in the new
 window when the batch returns. That forced poll clears the `missing` marker the
 final poll wrote, and any older marker of the requested rendition. A failed
 download in that final poll is polled again too, because its outcome does not
-show whether the window's end caused it. A retry received while that result's
-batch is on the lane is recorded and applied when the batch returns, so the
-late outcome cannot undo it.
+show whether the window's end caused it.
+
+A retry queues every rendition of the result at once, except unsupported ones
+and decoded previews being published, and withdraws their outstanding decode
+requests, so the snapshot it returns and later `status` reads report the retry
+rather than the old outcome. When that result's batch is already on the lane,
+the forced fetch waits for it. The pump that collects the batch applies its
+late outcome and queues the renditions again in the same call, so that outcome
+is never reported as settled and cannot undo the retry.
 
 Without online access, renditions report `offline` and are checked every five
 seconds. An offline poll pauses the window, keeping the time already used since

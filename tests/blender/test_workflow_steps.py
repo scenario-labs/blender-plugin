@@ -26,7 +26,11 @@ class Layout:
     def _child(self, *args, **kwargs):
         return Layout(self.calls, self.enabled)
 
-    box = row = column = split = _child
+    box = row = column = _child
+
+    def split(self, factor=0.0, align=False, **kwargs):
+        self.calls.append(("split", factor, align))
+        return self._child()
 
     def separator(self, *args, **kwargs):
         pass
@@ -277,7 +281,8 @@ class WorkflowStepTests(unittest.TestCase):
         operator = self.opened(local_id, "check")
         dialog = self.context.window_manager.invoke_props_dialog
         self.assertEqual(dialog.call_args.kwargs["confirm_text"], "Send decision")
-        self.assertGreaterEqual(dialog.call_args.kwargs["width"], 420)
+        # At least the Generate workflow confirmation's width, which wraps at the same width.
+        self.assertGreaterEqual(dialog.call_args.kwargs["width"], 540)
         drawn = self.draw(operator)
         labels = drawn.labels()
         for text in (
@@ -290,8 +295,15 @@ class WorkflowStepTests(unittest.TestCase):
             "asset-render",
         ):
             self.assertIn(text, labels)
-        self.assertIn(("prop_enum", "CONTINUE", "Approve", True), drawn.calls)
-        self.assertIn(("prop_enum", "STOP", "Stop workflow", True), drawn.calls)
+        # The decision is one segmented control: two equal, touching cells.
+        start = drawn.calls.index(("split", 0.5, True))
+        self.assertEqual(
+            drawn.calls[start + 1 : start + 3],
+            [
+                ("prop_enum", "CONTINUE", "Approve", True),
+                ("prop_enum", "STOP", "Stop workflow", True),
+            ],
+        )
         self.assertTrue(any(text.startswith("Continuing runs the remaining") for text in labels))
         self.assertFalse(any("https" in text or "Signature" in text for text in labels))
         # Drawing changes neither the dialog nor the job.

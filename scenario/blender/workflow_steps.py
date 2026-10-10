@@ -25,6 +25,8 @@ from . import job_recovery, runtime
 
 # Dialog text width in characters at the default popup width.
 WRAP = 70
+# Smallest dialog width: the Generate workflow confirmation's, which wraps at the same width.
+MIN_WIDTH = 540
 # Lines of one text candidate drawn in the dialog before it is shortened.
 ITEM_LINES = 12
 CONTINUE_TEXT = (
@@ -267,7 +269,10 @@ class SCENARIO_OT_review_workflow_step(bpy.types.Operator):
         except Exception:
             width = 560
         return context.window_manager.invoke_props_dialog(
-            self, width=max(width, 420), title="Review workflow step", confirm_text="Send decision"
+            self,
+            width=max(width, MIN_WIDTH),
+            title="Review workflow step",
+            confirm_text="Send decision",
         )
 
     def check(self, context):
@@ -298,8 +303,10 @@ class SCENARIO_OT_review_workflow_step(bpy.types.Operator):
         else:
             _draw_selection(box, step, self.candidates, review.can_continue)
         layout.separator(factor=0.5)
-        row = layout.row(align=True)
-        go = row.row(align=True)
+        # One continuous segmented control with equal cells (UI_STYLE "Tabs and
+        # segmented choices"); the Select cell alone may be disabled.
+        split = layout.split(factor=0.5, align=True)
+        go = split.row(align=True)
         go.enabled = review.can_continue
         go.prop_enum(
             self,
@@ -307,7 +314,7 @@ class SCENARIO_OT_review_workflow_step(bpy.types.Operator):
             "CONTINUE",
             text="Approve" if step.node_type == "user-approval" else "Select",
         )
-        row.prop_enum(self, "decision", "STOP", text="Stop workflow")
+        split.prop_enum(self, "decision", "STOP", text="Stop workflow")
         if self.decision == "STOP":
             _wrapped(layout, STOP_TEXT, "ERROR")
         elif review.can_continue:

@@ -2028,9 +2028,10 @@ and either the result asset IDs an approval reviews or a selection's candidates
 in listed order. Asset candidates are checkboxes named by asset ID; text
 candidates are numbered checkboxes followed by the text, wrapped, up to 12 lines
 each. A line counts the selected items against the bounds. The decision is one
-expanded choice between **Approve** (or **Select**) and **Stop workflow**. Stop
-is never the default, so rejecting always needs that explicit choice; a blocked
-selection disables Select and explains why. The dialog states the consequence of
+[segmented choice](#tabs-and-segmented-choices) of two equal cells, **Approve**
+(or **Select**) and **Stop workflow**. Stop is never the default, so rejecting
+always needs that explicit choice; a blocked selection disables Select and
+explains why. The dialog states the consequence of
 the chosen decision: continuing runs the remaining steps, which spend credits,
 and their charge is not verified against the approved price; stopping rejects
 the step and cancels the workflow, completed steps stay charged, and inside a

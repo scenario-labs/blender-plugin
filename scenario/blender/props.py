@@ -252,8 +252,14 @@ def _param_items(self, context):
     return runtime.enum_items(key)
 
 
-def _find_lane_state(context, lane):
-    scene = getattr(context, "scene", None) or bpy.context.scene
+def _find_lane_state(context, lane, item=None):
+    """The lane state an edited form item belongs to: its own scene, else the context's.
+
+    A default applied to another scene's form must not reprice the visible one.
+    """
+    scene = getattr(item, "id_data", None)
+    if not isinstance(scene, bpy.types.Scene):
+        scene = getattr(context, "scene", None) or bpy.context.scene
     if scene is None or not lane:
         return None
     return scene.scenario.lane_state(lane)
@@ -275,7 +281,7 @@ def clamp_param(item, assign=setattr):
 
 def _on_param_update(self, context):
     clamp_param(self)
-    lane_state = _find_lane_state(context, self.lane)
+    lane_state = _find_lane_state(context, self.lane, self)
     if lane_state is not None:
         mark_estimate_dirty(lane_state)
     if self.name == "duration":
@@ -308,7 +314,7 @@ def _on_trained_update(self, context):
         if value != self.scale:
             self.scale = value  # this assignment runs the callback once more, within bounds
             return
-    lane_state = _find_lane_state(context, self.lane)
+    lane_state = _find_lane_state(context, self.lane, self)
     if lane_state is not None:
         mark_estimate_dirty(lane_state)
 

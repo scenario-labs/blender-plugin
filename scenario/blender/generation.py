@@ -558,6 +558,12 @@ def build_request(scene, lane, for_estimate=False):
 
     lane_state = scene.scenario.lane_state(lane)
     model_id = lane_state.model_id
+    from . import trained_defaults
+
+    # A form with no explicit choice takes the project default; it never prices the base
+    # alone. Checked first, so a blocked form always shows the reason the pump compares.
+    if error := trained_defaults.blocking_reason(lane_state):
+        return Request(lane, lane_kind(lane), model_id, {}, errors=[error])
     if runtime.state.prompt_jobs is not None:
         from .prompt_jobs import BUSY
 
@@ -576,11 +582,6 @@ def build_request(scene, lane, for_estimate=False):
 
         references = active_references(lane_state)
     if error := scope_error(lane_state, references=references):
-        return Request(lane, lane_kind(lane), model_id, {}, errors=[error])
-    from . import trained_defaults
-
-    # A form with no explicit choice takes the project default; it never prices the base alone.
-    if error := trained_defaults.blocking_reason(lane_state):
         return Request(lane, lane_kind(lane), model_id, {}, errors=[error])
     schema = schema_for(model_id)
     if schema is None:

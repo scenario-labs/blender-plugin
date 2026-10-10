@@ -100,6 +100,7 @@ class TrainedSectionTests(unittest.TestCase):
     highlight = _shared("highlight")
     pick = _shared("pick")
     body = _shared("body")
+    gets = _shared("gets")
 
     # -- helpers -------------------------------------------------------------------
     @property
@@ -506,6 +507,104 @@ class TrainedSectionTests(unittest.TestCase):
             result["trained_models"], [{"model_id": LORA_A, "kind": "lora", "strength": 0.6}]
         )
         self.assertEqual(render.model_key, FLUX1)
+
+    def test_naming_the_shown_render_model_through_mcp_is_an_explicit_choice(self):
+        self.load_catalog()
+        render = self.scene.scenario.lane_state("render_image")
+        self.open_trained("render_image")
+        self.highlight(LORA_A)
+        self.wm.scenario_picker_strength = 0.6
+        self.assertEqual(bpy.ops.scenario.pick_model(lane="render_image"), {"FINISHED"})
+        self.defaults.load()
+        self.save_default("render_image")
+        self.release(render, FLUX1)  # the default's base is already shown, without its LoRA
+        tools = submodule("mcp.tools_scenario")
+        result = tools.render_form(
+            {"lane": "render_image", "action": "configure", "settings": {"model_id": FLUX1}}
+        )
+        self.assertEqual((result["model_id"], result["trained_models"]), (FLUX1, []))
+        self.assertEqual((render.model_key, len(render.trained)), (FLUX1, 0))
+        self.assertNotIn("project default", " ".join(result["errors"]).lower())
+        # Settings that name no model leave a form without a choice to its default.
+        self.release(render, FLUX1)
+        result = tools.render_form(
+            {"lane": "render_image", "action": "configure", "settings": {"look": "dusk"}}
+        )
+        self.assertEqual(
+            result["trained_models"], [{"model_id": LORA_A, "kind": "lora", "strength": 0.6}]
+        )
+
+    def test_a_default_saved_in_one_scene_reprices_no_other_scene(self):
+        self.choose_stack()
+        self.defaults.load()
+        second = bpy.data.scenes.new("Second shot")
+        self.addCleanup(bpy.data.scenes.remove, second)
+        self.lane.estimate_state = "READY"
+        body = self.body()
+        self.save_default()
+        other = second.scenario.lane_state("image")
+        self.assertEqual(
+            (other.model_key, [s.model_id for s in other.trained]), (FLUX1, [STUDIO_LORA, LORA_A])
+        )
+        self.assertEqual(other.estimate_state, "PENDING")
+        self.assertEqual(self.lane.estimate_state, "READY")  # the saving form is not repriced
+        self.assertEqual(self.body(), body)
+        other.trained[0].scale = 0.5  # editing that scene's strength reprices only that scene
+        self.assertEqual(self.lane.estimate_state, "READY")
+
+    def test_a_blocked_form_keeps_its_reason_without_repricing_again(self):
+        self.choose_stack()
+        self.defaults.load()
+        self.save_default()
+        self.private = [record for record in self.private if record["id"] != STUDIO_LORA]
+        self.trained.request(self.runtime.ensure_manager(), self.runtime.ensure_catalog())
+        self.settle()
+        self.release(self.lane)
+        form = submodule("blender.reference_form")
+        ref = self.lane.references.add()
+        ref.source, ref.asset_id = "ASSET", "asset_from_another_scope"
+        ref[form._SCOPE], ref[form._ASSET] = "another-scope", ref.asset_id
+        reason = self.errors()[0]
+        self.assertTrue(reason.startswith("Project default "), reason)
+        self.lane.estimate_state = "IDLE"
+        self.assertTrue(self.defaults.apply_pending())  # its price did not show the reason
+        self.generation.request_estimate(self.scene, "image")
+        self.assertEqual(
+            (self.lane.estimate_state, self.lane.estimate_error), ("UNAVAILABLE", reason)
+        )
+        self.assertFalse(self.defaults.apply_pending())  # current: no repricing loop
+        self.assertEqual(self.lane.estimate_state, "UNAVAILABLE")
+
+    def test_a_default_lands_only_on_a_base_its_form_lists(self):
+        self.choose_stack()
+        self.defaults.load()
+        self.save_default()
+        self.release(self.lane)
+        self.runtime.set_enum_items(("models", "image"), [(ZIMAGE, "Z-Image", "")])
+        self.defaults.apply_pending()
+        self.assertEqual((self.lane.model_id, self.lane.model_key), (ZIMAGE, ""))
+        self.assertFalse(len(self.lane.trained))
+        self.assertIn("Its base model is not in this form's model list.", self.errors()[0])
+        self.assertEqual(bpy.ops.scenario.trained_default_apply(lane="image"), {"CANCELLED"})
+        self.assertFalse(len(self.lane.trained))
+
+    def test_a_base_described_without_inputs_is_read_once(self):
+        self.choose_stack()
+        self.defaults.load()
+        self.save_default()
+        catalog = submodule("core.api.catalog")
+        self.details[FLUX1] = trained_tests.row(self.details[FLUX1])
+        self.runtime.state.records[FLUX1] = catalog.ModelRecord.from_api(self.details[FLUX1])
+        self.release(self.lane)
+        render = self.scene.scenario.lane_state("render_image")
+        render.model_id = ZIMAGE  # no form shows the base whose description changed
+        reads = len(self.gets(FLUX1))
+        for _tick in range(3):
+            self.defaults.apply_pending()
+            self.settle()
+        self.assertEqual(len(self.gets(FLUX1)), reads + 1)
+        self.assertFalse(len(self.lane.trained))
+        self.assertIn("Its base model's description declares no inputs.", self.errors()[0])
 
     def test_the_pump_applies_defaults_before_pricing_and_survives_a_failure(self):
         self.choose_stack()

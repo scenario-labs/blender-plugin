@@ -259,6 +259,10 @@ def configure(scene, lane, changes):
             limit = 1 if style_spec.ptype == "file" else style_spec.max_length
             if limit and occupied + len(styles) > limit:
                 raise ValueError("Not enough space for these styles and the render snapshot")
+    if "model_id" in changes:
+        # Naming a model is an explicit choice, even the one already shown: a project
+        # default no longer replaces it (a model change below records it as well).
+        state.model_key = model_id
     if state.model_id != model_id:
         state.model_id = model_id
     if "duration" in params_ui.sync_params(state, schema, model_id):

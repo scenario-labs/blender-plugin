@@ -78,9 +78,13 @@ def _sentence(text):
     return text if text.endswith((".", "!", "?")) else f"{text}."
 
 
+_reads = {}  # base model id -> the owner context_id that already read its description
+
+
 def forget():
-    """Drop the cached defaults of a retired connection."""
+    """Drop the cached defaults and description reads of a retired or refreshed connection."""
     runtime.state.trained_defaults = None
+    _reads.clear()
 
 
 # -- reading -------------------------------------------------------------------------
@@ -138,7 +142,11 @@ def label(default):
 
 
 def _base_waiting(base_id, read):
-    """Why a base without its description cannot be checked yet, or the reason it never will."""
+    """Why a base without its description cannot be checked yet, or the reason it never will.
+
+    A default starts at most one description read per base and selection: a read
+    that delivers no inputs is not repeated by every pump tick.
+    """
     from . import generation
 
     failure = runtime.state.model_errors.get(base_id)
@@ -148,9 +156,19 @@ def _base_waiting(base_id, read):
         return "loading its base model.", ""
     if not runtime.online():
         return "online access is disabled.", ""
+    owner = runtime.state.model_defaults
+    context = owner.context_id if owner is not None else None
+    if context is not None and _reads.get(base_id) == context:
+        return "", "Its base model's description declares no inputs."
     if read:
+        _reads[base_id] = context
         generation.request_model(base_id, mark_dirty=False)
     return "loading its base model.", ""
+
+
+def _listed(model_id, lane):
+    """Whether the form's own model list offers this model (read-only, safe in draw)."""
+    return model_id in {item[0] for item in runtime.enum_items(("models", lane))}
 
 
 def resolve(default, lane, *, read=False):
@@ -169,6 +187,11 @@ def resolve(default, lane, *, read=False):
         return Resolution(text, waiting="loading models.")
     if not catalog.models_for_lane(lane, [record]):
         return Resolution(text, reason="Its base model does not run in this form.")
+    if not _listed(record.id, lane):
+        # A default only lands on a base the form can select, never under another one.
+        if state.catalog_loaded:
+            return Resolution(text, reason="Its base model is not in this form's model list.")
+        return Resolution(text, waiting="loading models.")
     if not record.parameters:
         waiting, reason = _base_waiting(record.id, read)
         return Resolution(text, waiting=waiting, reason=reason)
@@ -251,18 +274,15 @@ def blocking_reason(lane_state):
 # -- applying --------------------------------------------------------------------------
 def _apply(lane_state, lane, resolution):
     """Write a resolved default into the form: base model, then its trained choice."""
-    from . import generation
-
     scope = trained_models.current_scope()
     if scope is None:
         raise ScenarioError(0, "Connect to Scenario before using a project default")
     base = resolution.base
+    if not _listed(base.id, lane):
+        raise ScenarioError(0, "Its base model is not in this form's model list")
     lane_state.model_key = base.id
-    if base.id in [item[0] for item in runtime.enum_items(("models", lane))]:
-        if lane_state.model_id != base.id:
-            lane_state.model_id = base.id  # its update callback runs on_model_changed
-    else:
-        generation.request_model(base.id)
+    if lane_state.model_id != base.id:
+        lane_state.model_id = base.id  # its update callback runs on_model_changed
     trained_models.write_slots(lane_state, lane, resolution.chosen, base.slot, scope)
     props.mark_estimate_dirty(lane_state)
 

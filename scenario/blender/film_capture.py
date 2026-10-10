@@ -276,7 +276,11 @@ class FilmCaptureCommands:
             if review.phase == "UPLOADING":
                 ticket = review.upload
                 state = ticket.record.state if ticket.record is not None else None
-                if ticket.error or state in {UploadState.FAILED, UploadState.CANCELED}:
+                if ticket.error or state in {
+                    UploadState.FAILED,
+                    UploadState.CANCELED,
+                    UploadState.ABANDONED,
+                }:
                     review.phase, review.error = (
                         "UPLOAD_REVIEW",
                         "Inspect saved upload progress; do not retry",

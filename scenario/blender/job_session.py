@@ -760,6 +760,19 @@ class JobSession:
     def finalize_upload(self, request_id, *, expected_revision):
         return self._upload_command("finalize_upload", request_id, expected_revision)
 
+    def restart_upload(self, request_id, *, expected_revision, origin):
+        """Queue abandonment of an uncompleted upload and restaging under a current origin."""
+        _main_thread()
+        self._check_capacity()
+        if self.inspect_upload(request_id) is None:
+            raise OriginUnavailable("The upload is not in this connection's store")
+        self._resolve(origin)
+        task = self._workers.restart_upload(
+            request_id, expected_revision=expected_revision, origin=origin
+        )
+        self._pending.append((task, origin))
+        return task
+
     def refresh_upload(self, request_id, *, expected_revision):
         return self._upload_command("refresh_upload", request_id, expected_revision, recover=True)
 

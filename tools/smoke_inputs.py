@@ -17,10 +17,17 @@ from scenario.core.jobs.store import JobOrigin
 from scenario.core.jobs.upload_sources import UploadSources
 from scenario.core.jobs.upload_store import UploadState, UploadStore
 from scenario.core.jobs.upload_transfers import PartUploader, S3UploadPolicy
+from scenario.core.jobs.uploads import UploadPlanUnavailable
 from tools import smoke_image as model
 from tools.dev_config import live_settings
 
 MAX_BYTES = 32 * 1024 * 1024
+# Scenario returns signed part URLs only when an upload is created, so only the
+# run that created it can send its parts. Abandon it and upload again instead.
+RESTART = (
+    "Saved upload cannot continue outside the run that created it; "
+    "start a new input upload run (nothing was resent)"
+)
 
 
 def resolve(value, assets, used):
@@ -128,11 +135,12 @@ def follow(coordinator, record, *, mutate, timeout, clock=time.monotonic, sleep=
                 "Saved upload needs review; no initialization or bytes replayed", 4
             )
         previous = record
-        record = method(record.intent.request_id, expected_revision=record.revision)
-        if not mutate and record.state == UploadState.UPLOADING:
-            raise model.SmokeError(
-                "Incomplete upload needs explicit review; recovery cannot send bytes", 4
-            )
+        try:
+            record = method(record.intent.request_id, expected_revision=record.revision)
+        except UploadPlanUnavailable:
+            raise model.SmokeError(RESTART, 4) from None
+        if not mutate and record.state in {UploadState.UPLOADING, UploadState.PART_UNCERTAIN}:
+            raise model.SmokeError(RESTART, 4)
         if record == previous:
             sleep(min(2, max(0, deadline - clock())))
     return record.asset_id

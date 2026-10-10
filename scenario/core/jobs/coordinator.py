@@ -454,6 +454,12 @@ class JobCoordinator:
     def finalize_upload(self, request_id, *, expected_revision):
         return self._upload_commands().finalize(request_id, expected_revision=expected_revision)
 
+    def restart_upload(self, request_id, *, expected_revision, origin):
+        """Abandon an uncompleted upload and stage its saved copy as a new request."""
+        return self._upload_commands().restart(
+            request_id, expected_revision=expected_revision, origin=origin
+        )
+
     def refresh_upload(self, request_id, *, expected_revision):
         return self._upload_commands().refresh(request_id, expected_revision=expected_revision)
 
@@ -650,6 +656,9 @@ class JobCoordinator:
             self._quotes.clear()
             self._compositions.clear()
             self._verified_results.clear()
+            if self._uploads is not None:
+                # Signed part destinations never outlive their selected context.
+                self._uploads.retire()
 
     def close(self):
         """Release the SDK client after the application owner has joined workers."""

@@ -121,7 +121,9 @@ validation rejected before task admission permits correcting and retrying the in
 uncertain admitted work retains its duplicate-upload guard.
 
 **Inspect uploads** offers explicit known-status refresh, unclaimed preparation
-cancellation and finished staging cleanup; cancellation/cleanup require confirmation.
+cancellation, **Upload again** for an unfinished upload whose suggested recovery is
+a restart, and finished staging cleanup; cancellation, restart and cleanup require
+confirmation. A restarted upload never attaches itself to the slot.
 **Use saved upload** and an input's **Saved uploads** open the same paginated
 view. Offer attachment only for imported uploads matching the input kind
 (image, audio, video or 3D). Attaching one needs a separate confirmation of its

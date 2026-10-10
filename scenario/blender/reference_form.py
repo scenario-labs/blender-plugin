@@ -15,6 +15,7 @@ from bpy.props import EnumProperty, IntProperty, StringProperty
 
 from ..core.api.errors import ScenarioError
 from ..core.jobs.upload_store import UploadState
+from ..core.jobs.uploads import UploadRecoveryAction
 from . import props, runtime
 
 _MARKER = "_scenario_reference_upload"
@@ -372,6 +373,7 @@ def _deliver_binding(owner, token, binding):
     if ticket.record is not None and ticket.record.state in {
         UploadState.FAILED,
         UploadState.CANCELED,
+        UploadState.ABANDONED,
     }:
         binding.error = "Upload finished without an asset; inspect saved progress"
         return
@@ -624,10 +626,22 @@ class SCENARIO_OT_inspect_uploads(bpy.types.Operator):
             actions = []
             if record.state == UploadState.PREPARED:
                 actions.append(("cancel_prepared", "Cancel preparation"))
-            elif record.state in {UploadState.IMPORTED, UploadState.FAILED, UploadState.CANCELED}:
+            elif record.state in {
+                UploadState.IMPORTED,
+                UploadState.FAILED,
+                UploadState.CANCELED,
+                UploadState.ABANDONED,
+            }:
                 actions.append(("cleanup", "Clean staged copy"))
             elif record.upload_id:
                 actions.append(("refresh", "Refresh status"))
+                if (
+                    valid
+                    and record.state in {UploadState.UPLOADING, UploadState.PART_UNCERTAIN}
+                    and owner.saved_actions.get(record.intent.request_id)
+                    == UploadRecoveryAction.RESTART_UPLOAD
+                ):
+                    actions.append(("restart", "Upload again"))
             for action, label in actions:
                 op = row.operator("scenario.recover_upload", text=label)
                 op.context_id, op.request_id = self._context_id, record.intent.request_id
@@ -647,7 +661,12 @@ class SCENARIO_OT_inspect_uploads(bpy.types.Operator):
                     self.index,
                     self.param_name,
                 )
-        layout.label(text="Uncertain uploads are preserved; recovery never resends their bytes.")
+        for line in textwrap.wrap(
+            "Uncertain uploads are preserved and never resent. Upload again abandons an "
+            "unfinished upload and sends its saved copy as a new upload.",
+            70,
+        ):
+            layout.label(text=line)
 
     def execute(self, context):
         return {"FINISHED"}
@@ -657,7 +676,8 @@ class SCENARIO_OT_recover_upload(bpy.types.Operator):
     bl_idname = "scenario.recover_upload"
     bl_label = "Recover reference upload"
     bl_description = (
-        "Refresh saved progress, cancel unclaimed preparation or remove its finished staged copy"
+        "Refresh saved progress, cancel unclaimed preparation, upload an unfinished "
+        "upload again or remove its finished staged copy"
     )
     context_id: StringProperty(options={"HIDDEN"})
     request_id: StringProperty(options={"HIDDEN"})
@@ -666,12 +686,17 @@ class SCENARIO_OT_recover_upload(bpy.types.Operator):
         items=[
             ("refresh", "Refresh status", "Read known remote progress"),
             ("cancel_prepared", "Cancel preparation", "Cancel only an unclaimed local preparation"),
+            (
+                "restart",
+                "Upload again",
+                "Abandon this unfinished upload and upload its saved copy as a new one",
+            ),
             ("cleanup", "Clean staged copy", "Delete only a verified finished private copy"),
         ]
     )
 
     def invoke(self, context, event):
-        if self.action in {"cancel_prepared", "cleanup"}:
+        if self.action in {"cancel_prepared", "restart", "cleanup"}:
             return context.window_manager.invoke_confirm(self, event)
         return self.execute(context)
 

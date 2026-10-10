@@ -569,6 +569,73 @@ class ReferenceFormTests(unittest.TestCase):
         with self.assertRaises(submodule("core.api.errors").ScenarioError):
             self.form.apply_attachment("fixture-context", approval.identifier)
 
+    def inspect_labels(self, index=0):
+        operator = SimpleNamespace(lane="image", index=index, param_name="", page=0)
+        context = SimpleNamespace(window_manager=Mock(), scene=self.scene)
+        self.form.SCENARIO_OT_inspect_uploads.invoke(operator, context, None)
+        labels, layout = [], Mock()
+        layout.row.return_value = layout
+        layout.box.return_value = layout
+
+        def operator_button(name, text="", **kwargs):
+            labels.append(text)
+            return SimpleNamespace()
+
+        layout.operator.side_effect = operator_button
+        operator.layout = layout
+        self.form.SCENARIO_OT_inspect_uploads.draw(operator, context)
+        return labels
+
+    def test_native_upload_again_restarts_only_an_unfinished_upload_after_confirmation(self):
+        original, failures = self.fixture.fixture.handler, []
+
+        def fail_first_read(request):
+            if request.method == "GET" and not failures:
+                failures.append(request)
+                raise httpx.ReadTimeout("synthetic private read loss", request=request)
+            return original(request)
+
+        self.fixture.fixture.handler = fail_first_read
+        binding = self.start()
+        self.fixture.settle()
+        self.assertTrue(binding.error)
+        record = binding.ticket.record
+        self.assertEqual(record.state.value, "uploading")
+        self.assertIn("Upload again", self.inspect_labels())
+        window_manager = Mock()
+        self.form.SCENARIO_OT_recover_upload.invoke(
+            SimpleNamespace(action="restart"), SimpleNamespace(window_manager=window_manager), None
+        )
+        window_manager.invoke_confirm.assert_called_once()
+        self.fixture.fixture.remote["id"] = "upload-two"
+        self.assertEqual(
+            bpy.ops.scenario.recover_upload(
+                context_id=self.runtime.state.job_context_id,
+                request_id=record.intent.request_id,
+                expected_revision=record.revision,
+                action="restart",
+            ),
+            {"FINISHED"},
+        )
+        command = self.owner._recovering[record.intent.request_id]
+        command.task.result(5)
+        self.fixture.settle()
+        self.assertIsNone(command.error)
+        replacement = self.owner.references[command.reference_id].record
+        self.assertEqual(replacement.state.value, "imported")
+        self.assertEqual(
+            self.owner.session.inspect_upload(record.intent.request_id).state.value, "abandoned"
+        )
+        labels = self.inspect_labels()
+        self.assertNotIn("Upload again", labels)
+        self.assertIn("Use this reference", labels)
+        # The slot still needs explicit attachment of the replacement upload.
+        self.assertEqual(self.ref.source, "FILE")
+        approval = self.approve(replacement)
+        ref = self.form.apply_attachment(self.runtime.state.job_context_id, approval.identifier)
+        self.assertEqual(ref.asset_id, "reference-asset")
+        self.fixture.fixture.uploader.upload.assert_called_once()
+
     def test_native_cleanup_runs_without_dialog_and_preserves_original(self):
         record = self.saved_upload()
         source = self.fixture.fixture.source

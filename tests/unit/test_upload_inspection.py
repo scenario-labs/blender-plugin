@@ -129,6 +129,8 @@ def seed(env, state, *, active=False, complete=False):
             )
     if state == UploadState.UPLOADING:
         return record
+    if state == UploadState.ABANDONED:
+        return transition(state)
     if state in {UploadState.FINALIZING, UploadState.FINALIZATION_UNCERTAIN}:
         record = transition(UploadState.FINALIZING)
         if state == UploadState.FINALIZING:
@@ -147,16 +149,19 @@ def seed(env, state, *, active=False, complete=False):
             False,
             UploadRecoveryAction.RECONCILE_UNKNOWN,
         ),
-        (UploadState.UPLOADING, False, False, UploadRecoveryAction.REVIEW_TRANSFER),
+        # Part URLs exist only in the owner that created the upload: a saved
+        # transfer with parts left, or a claim nobody here is sending, restarts.
+        (UploadState.UPLOADING, False, False, UploadRecoveryAction.RESTART_UPLOAD),
         (UploadState.UPLOADING, False, True, UploadRecoveryAction.REVIEW_TRANSFER),
-        (UploadState.UPLOADING, True, False, UploadRecoveryAction.POLL_REMOTE),
-        (UploadState.PART_UNCERTAIN, False, False, UploadRecoveryAction.POLL_REMOTE),
+        (UploadState.UPLOADING, True, False, UploadRecoveryAction.RESTART_UPLOAD),
+        (UploadState.PART_UNCERTAIN, False, False, UploadRecoveryAction.RESTART_UPLOAD),
         (UploadState.FINALIZING, False, False, UploadRecoveryAction.POLL_REMOTE),
         (UploadState.FINALIZATION_UNCERTAIN, False, False, UploadRecoveryAction.POLL_REMOTE),
         (UploadState.PROCESSING, False, False, UploadRecoveryAction.POLL_REMOTE),
         (UploadState.IMPORTED, False, False, UploadRecoveryAction.FINISHED),
         (UploadState.FAILED, False, False, UploadRecoveryAction.FINISHED),
         (UploadState.CANCELED, False, False, UploadRecoveryAction.FINISHED),
+        (UploadState.ABANDONED, False, False, UploadRecoveryAction.FINISHED),
     ],
 )
 def test_inspection_preserves_each_durable_state_without_source_or_remote_access(
@@ -209,7 +214,7 @@ def test_restart_inspection_retains_immutable_origin_claims_and_safe_metadata(ma
     original.coordinator.close()
     reopened = make_env()
     plan = reopened.coordinator.upload_recovery_plan()
-    assert plan == (UploadRecoveryItem(record, UploadRecoveryAction.POLL_REMOTE),)
+    assert plan == (UploadRecoveryItem(record, UploadRecoveryAction.RESTART_UPLOAD),)
     assert reopened.coordinator.inspect_upload(record.intent.request_id) == record
     assert plan[0].record.intent.origin == ORIGIN
     with pytest.raises(FrozenInstanceError):
@@ -291,7 +296,18 @@ def test_late_initialization_receipt_stays_in_old_scope_and_does_not_update_snap
                     "kind": "image",
                     "source": "multipart",
                     "status": "pending",
-                    "parts": [{"url": "https://storage.example.invalid/part?secret=fixture"}],
+                    "originalFileName": "input.png",
+                    "contentType": "image/png",
+                    "fileSize": 5,
+                    "partsCount": 2,
+                    "parts": [
+                        {
+                            "number": number,
+                            "url": "https://storage.example.invalid/part?secret=fixture",
+                            "expires": "2099-01-01T00:00:00.000Z",
+                        }
+                        for number in (1, 2)
+                    ],
                 }
             },
         )
@@ -325,11 +341,12 @@ def test_late_initialization_receipt_stays_in_old_scope_and_does_not_update_snap
     assert completed.intent.origin == ORIGIN
     assert completed.intent.scope == SCOPE
     assert before.record.state == UploadState.INITIALIZING
+    # The retired owner kept no signed destinations for its late receipt.
+    assert old.coordinator._uploads._plans == {}
     reopened = make_env()
     assert reopened.coordinator.inspect_upload(prepared.intent.request_id) == completed
     assert (
-        reopened.coordinator.upload_recovery_plan()[0].action
-        == UploadRecoveryAction.REVIEW_TRANSFER
+        reopened.coordinator.upload_recovery_plan()[0].action == UploadRecoveryAction.RESTART_UPLOAD
     )
     with pytest.raises(StoreConflict):
         reopened.coordinator.initialize_upload(

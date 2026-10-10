@@ -17,7 +17,7 @@ import tempfile
 import threading
 import unittest
 import zlib
-from pathlib import Path, PurePath
+from pathlib import Path, PurePath, PureWindowsPath
 from unittest.mock import patch
 
 import bpy
@@ -119,7 +119,7 @@ class PreviewDecodeTests(unittest.TestCase):
             self.module.decode(*args, **kwargs)
         except self.module.PreviewDecodeError as error:
             return error
-        self.fail("The decode did not raise PreviewDecodeError")
+        raise self.failureException("The decode did not raise PreviewDecodeError")
 
     def assertNoBlockReferences(self, error):
         """No reference into the freed temporary block survives on ``error``."""
@@ -291,6 +291,33 @@ class PreviewDecodeTests(unittest.TestCase):
         )
         self.assertIsNone(caught.exception.__cause__)
         self.assertTrue(caught.exception.__suppress_context__)
+
+    def test_paths_blender_cannot_encode_raise_a_sanitized_error(self):
+        # On Windows the path check encodes paths as UTF-16, which rejects a lone
+        # surrogate with UnicodeEncodeError rather than LocalRenderError.
+        path = "C:\\previews\\result\udc80.png"
+        start = path.index("\udc80")
+        refused = UnicodeEncodeError("utf-16-le", path, start, start + 1, "surrogates not allowed")
+        cases = (
+            # The real check on Windows path objects, on any system.
+            ("source", patch.object(self.module, "Path", PureWindowsPath), (path,), {}),
+            (
+                "output",
+                patch.object(self.module, "Path", PureWindowsPath),
+                ("C:\\previews\\result.png",),
+                {"output": path},
+            ),
+            ("raised", patch.object(self.module, "blender_path", side_effect=refused), (path,), {}),
+        )
+        for name, patched, args, kwargs in cases:
+            with self.subTest(name), patched:
+                with self.assertRaises(self.module.PreviewDecodeError) as caught:
+                    self.module.decode(*args, 64, accept, **kwargs)
+                message = str(caught.exception)
+                self.assertEqual(message, "Blender cannot use these preview paths on this system")
+                self.assertNotIn("previews", message)
+                self.assertIsNone(caught.exception.__cause__)
+                self.assertTrue(caught.exception.__suppress_context__)
 
     def test_decode_refuses_other_threads(self):
         path = self.file("result.png", png(8, 8))

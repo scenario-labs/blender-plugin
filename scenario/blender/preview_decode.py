@@ -127,15 +127,19 @@ def decode(path, edge, limit, *, output=None):
         output = None if output is None else blender_path(Path(output))
     except LocalRenderError:
         raise PreviewDecodeError("Preview paths are too long for Blender on this system") from None
-    result, failed = None, False
+    except ValueError:
+        # On Windows the check encodes paths as UTF-16, which rejects a lone
+        # surrogate with UnicodeEncodeError.
+        raise PreviewDecodeError("Blender cannot use these preview paths on this system") from None
+    result, failed, scene = None, False, None
     with bpy.data.temp_data() as data:
         try:
-            scene = None if output is None else _png_scene(data)
+            if output is not None:
+                scene = _png_scene(data)
             result = _scaled(data, source, edge, limit, output, scene)
         except Exception:
             failed = True
-        scene = None
-        del data
+        del data, scene
     if failed or result is None:
         raise PreviewDecodeError("Blender could not decode this preview")
     return result

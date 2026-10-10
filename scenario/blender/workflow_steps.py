@@ -39,6 +39,11 @@ STOP_TEXT = (
     "authoritative."
 )
 BLOCKED_CONTINUE = "Choose Stop workflow to reject this step, or Cancel to keep it waiting."
+# An approval whose step links could not all be read; see workflow_nodes.
+UNLINKED = (
+    "This extension could not read how this workflow's steps connect, so results to "
+    "review may be missing here. Check them in Scenario before approving."
+)
 ONCE_TEXT = (
     "The decision is sent once and never repeated. If its outcome is unknown, wait until "
     "the job is read again before deciding."
@@ -161,6 +166,8 @@ def _wrapped(layout, text, icon="NONE", width=WRAP):
 
 
 def _draw_approval(box, step):
+    if not step.links_complete:
+        _wrapped(box, UNLINKED, "ERROR")
     if not step.review_asset_ids:
         box.label(text="No result assets are listed for this step.")
         return

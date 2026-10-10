@@ -438,6 +438,41 @@ class WorkflowStepTests(unittest.TestCase):
         self.assertEqual(self.recovery.result_actions(self.view(local_id)), ())
         self.assertEqual(len(self.fixture.paid), 1)
 
+    def test_an_unverified_selection_into_a_loop_offers_only_stop(self):
+        loop = {"id": "loop", "type": "for-each", "status": "pending"}
+        local_id = self.paused(self.fixture.live_selection(), loop)
+        labels = [item.label for item in self.recovery.result_actions(self.view(local_id))]
+        self.assertIn("Review blocked selection", labels)
+        operator = self.opened(local_id, "pick")
+        drawn = self.draw(operator)
+        self.assertIn(("prop_enum", "CONTINUE", "Select", False), drawn.calls)
+        self.assertIn(("prop_enum", "STOP", "Stop workflow", True), drawn.calls)
+        self.assertTrue(
+            any(text.startswith("This extension could not read") for text in drawn.labels())
+        )
+        self.assertEqual(self.dialog.execute(operator, self.context), {"CANCELLED"})
+        self.assertFalse(self.fixture.decisions)
+
+    def test_an_approval_with_unread_links_warns_that_results_may_be_missing(self):
+        live = {"id": "check", "type": "user-approval", "status": "processing"}
+        local_id = self.paused(live)
+        drawn = self.draw(self.opened(local_id, "check"))
+        labels = drawn.labels()
+        self.assertTrue(any(text.startswith(self.steps.UNLINKED[:40]) for text in labels))
+        self.assertIn("No result assets are listed for this step.", labels)
+        self.assertFalse(self.fixture.decisions)
+
+    def test_an_approval_lists_the_results_its_workflow_definition_links(self):
+        self.fixture.live_definition(
+            {"id": "check", "type": "user-approval", "dependsOn": ["render"]}
+        )
+        live = {"id": "check", "type": "user-approval", "status": "processing"}
+        local_id = self.paused(live)
+        labels = self.draw(self.opened(local_id, "check")).labels()
+        self.assertIn("Results to review before approving:", labels)
+        self.assertIn("asset-render", labels)
+        self.assertFalse(any(text.startswith(self.steps.UNLINKED[:40]) for text in labels))
+
     def test_changed_step_revision_or_connection_rejects_the_reviewed_decision(self):
         local_id = self.paused(self.fixture.approval())
         operator = self.opened(local_id, "check")

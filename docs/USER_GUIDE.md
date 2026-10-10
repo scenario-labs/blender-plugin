@@ -918,7 +918,10 @@ no previews). Choose **Approve** or **Select** with the items you want, or
 the remaining steps, which spend credits; their charge is not verified against
 the approved price. Stopping cancels the workflow; completed steps stay charged,
 and inside a loop Scenario may stop only that loop. A selection that feeds a
-loop can only be stopped from Blender for now. The decision is sent once; if its
+loop can only be stopped from Blender for now. Blender reads how the steps
+connect from the workflow itself; when it cannot, a selection in a workflow
+with a loop can only be stopped too, and an approval warns that results to
+review may be missing, so check them in Scenario first. The decision is sent once; if its
 outcome is unknown, wait until the step is shown again instead of repeating it.
 After a restart, choose **Refresh status** first. A connected agent can read and
 decide the same steps through the local MCP, whose tool guidance requires your

@@ -122,7 +122,10 @@ establish live generation or full render-lane desktop acceptance.
   inside a nested workflow node are not shown. A selection that feeds a ForEach
   loop, a nested workflow or a node type the API reference does not list can
   only be rejected until live evidence shows its charge stays within the
-  approved price. Review assets and candidates are asset IDs or text without
+  approved price. So can any selection in a workflow with such a node when the
+  links between its steps cannot be read from the job or the workflow
+  definition; an approval then warns that its review assets may be incomplete.
+  Review assets and candidates are asset IDs or text without
   previews, and the native dialog shows at most 12 wrapped lines of each text
   candidate. Decisions are not live-verified, including repeated or concurrent
   decisions, omitted project IDs and rejection inside a loop; desktop interaction

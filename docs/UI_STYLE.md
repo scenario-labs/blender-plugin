@@ -2031,7 +2031,10 @@ each. A line counts the selected items against the bounds. The decision is one
 [segmented choice](#tabs-and-segmented-choices) of two equal cells, **Approve**
 (or **Select**) and **Stop workflow**. Stop is never the default, so rejecting
 always needs that explicit choice; a blocked selection disables Select and
-explains why. The dialog states the consequence of
+explains why, including a selection whose step links could not be read in a
+workflow with a loop. When an approval's step links could not all be read, the
+dialog warns above its result list that results to review may be missing and
+should be checked in Scenario. The dialog states the consequence of
 the chosen decision: continuing runs the remaining steps, which spend credits,
 and their charge is not verified against the approved price; stopping rejects
 the step and cancels the workflow, completed steps stay charged, and inside a
@@ -2057,7 +2060,9 @@ changes.
 Installed tests on macOS arm64 Blender 5.1.2 cover the descriptors drawn in the
 sidebar, Studio Jobs and Studio Workflows with storage reads refused, the dialog
 contents, single use, bounds, listed order, the explicit stop, a blocked
-selection, changed step, revision and connection, offline refusal, a refused
+selection (also one blocked because its links could not be read), the approval
+warning for unread links and the results a workflow definition links, changed
+step, revision and connection, offline refusal, a refused
 decision, steps after an explicit refresh following a restart, redraws and
 registration, with synthetic SDK responses. Physical desktop evidence of the
 rows and dialog (input, focus, DPI, IME and screenshots) is pending.

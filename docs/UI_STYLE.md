@@ -138,7 +138,10 @@ again as style references. The scene snapshot precedes styles; a first frame
 precedes other images in the same array. Disabled first frames are omitted without
 canceling or deleting their upload. Changed first-frame paths require explicit
 replacement. Result reuse must not silently replace a role-tagged single-file
-scene or first-frame slot; require explicit removal first. Changing the path or automatic Spark option invalidates the price.
+scene or first-frame slot; require explicit removal first. A saved image reaches
+the first frame only through its own reviewed
+[first-frame handoff](#saved-image-first-frame-handoff), never through
+**Use as reference**. Changing the path or automatic Spark option invalidates the price.
 An empty look with automatic Spark enabled blocks quoting; display its unavailable
 status until separate Spark approval is integrated. Drawing remains read-only.
 
@@ -412,6 +415,43 @@ vendor executable code and extension ZIP were unchanged. See the
 live provider quality, other OS desktop support, resolution of #263 or release
 acceptance. An earlier window-targeting attempt was not counted as interaction
 proof.
+
+## Saved image first-frame handoff
+
+A saved job shows **Use as video first frame (N)** for each downloaded PNG,
+JPEG or WebP colour result that the shared owner accepts; numbering counts every
+saved asset, as for other per-asset controls. Normal, height and other texture
+maps, EXR files and results that are not downloaded get no button, and the
+button is hidden, never drawn disabled, while the job has other work pending.
+The 520 px confirmation titled **Use as video first frame** names the scene,
+the Render Video form, model, input and saved image. When the model can't use an
+exact first frame with the scene clip, or has no first-frame input, two lines
+under the input say so and that the image is sent as image 1 of that input, as
+the form does under **First frame** once a frame is chosen. It states that the saved
+Scenario asset is reused with nothing uploaded, no new generation and no file
+path stored in the blend, and lists which chosen first-frame file it replaces
+and whether it turns the first frame on only when they apply. It says the Render
+Video and Prompt Spark prices become invalid and that removing the slot undoes
+the change. **Use as first frame** confirms; Cancel discards the approval.
+Refusals report their reason as a Blender error instead of opening the
+dialog. Invoke computes every line; drawing only displays them.
+
+The binding is asynchronous: confirming queues verification and shows
+**Verifying the saved image for the Render Video first frame**. The form then
+shows the slot, labelled with the image name and `(saved result)`, with its
+Remove button and a read-only **From a saved result** line. There is no
+thumbnail because no file path is kept. Do not switch the active lane from the
+pump; the message names Render Video. Drawing that line reads only the slot's
+provenance.
+
+Installed tests on macOS arm64 Blender 5.1.2 cover the per-asset buttons drawn
+through the shared descriptors without store reads, the exact dialog lines with
+fixed lines within the 59 characters verified for a 520 px dialog, cancellation,
+refusal reasons, single use of an MCP-prepared approval through the operator,
+the provenance line and memfile Undo/Redo of the binding in the runner's window.
+No desktop interaction, screenshot, focus, DPI or small-window evidence is
+recorded yet, and the undo step recorded from the maintenance-pump timer is not
+yet shown on Blender 5.0, 5.1 or 5.2; those checks remain #66 and #68 acceptance.
 
 ## Saved mesh edit review
 

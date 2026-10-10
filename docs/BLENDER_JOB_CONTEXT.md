@@ -624,10 +624,9 @@ scene changes. A descriptor grants nothing: each operator still checks its
 context token and saved revision or review, and opens its own confirmation or
 destination review where one applies.
 A new saved-job action adds one descriptor here, not a surface-specific branch.
-`use_first_frame` is the one action offered to local MCP before any native
-control exists: `saved_job_actions.MCP_ONLY` names it, native surfaces skip it
-and draw no reuse row for it alone, and any other unknown action still fails
-to describe.
+`use_first_frame` draws one control per still that `ModelJobs` projects as
+`first_frame_assets`, because eligibility needs texture roles and receipts that
+the view's media types do not carry; its numbering counts every saved asset.
 
 No action reconstructs a quote, replays an uncertain submission, guesses a remote
 ID or rebinds the original scene. Missing/stale revisions and retired contexts fail
@@ -852,7 +851,8 @@ claim and at most 128 local applications. Prompt and translate jobs never offer 
 
 `ModelJobs.prepare_first_frame_application`, reached through MCP
 `prepare_result_application` with `purpose="video_first_frame"` and the
-`asset_id`, reads no file, sends no request and changes no form. It requires the
+`asset_id`, or through the native **Use as video first frame (N)** control,
+reads no file, sends no request and changes no form. It requires the
 selected scene, a loaded Render Video model whose first-frame target is an
 image input, no existing first-frame slot (including a pending or uncertain
 upload marker) and room in that input. The target is
@@ -867,8 +867,8 @@ approval binds the job revision, the asset and its receipt digest, the scene
 revision and the reviewed form: model, input, existing references, any chosen
 first-frame file and whether the first frame is enabled.
 
-`apply_result_application` rechecks the record, the scene and that form, then
-queues the existing receipt verification. On delivery,
+`apply_result_application`, or confirming the native dialog, rechecks the
+record, the scene and that form, then queues the existing receipt verification. On delivery,
 [`first_frame_handoff.bind`](../scenario/blender/first_frame_handoff.py) consumes
 the verification through `JobSession.verified_result`, which takes no
 application claim. It rehashes the file against its receipt (at most 128 MiB,
@@ -880,8 +880,12 @@ chosen first-frame file, enables the first frame and invalidates the Render
 Video and Prompt Spark prices. A failure removes the new slot and restores the
 file and enabled state. It then records one Blender undo step when global undo,
 the undo step count and a window context allow it, and status reports whether
-it did (`undo_recorded`). Background sessions have no desktop history; the undo
-step is not yet proven on the desktop.
+it did (`undo_recorded`). Background sessions have no desktop history. An
+installed test enables global undo, lets the runner's window record the step,
+then checks that Undo removes the slot and restores the enabled state and Redo
+restores the slot, with no saved-job change or request. Whether the
+maintenance-pump timer supplies that window context on the desktop is not yet
+proven on Blender 5.0, 5.1 or 5.2.
 
 The handoff is a form binding like a saved-upload or Library attachment, not a
 scene application. The job keeps its state and gains no `local_applications`
@@ -899,8 +903,28 @@ accepts the slot only under the same credential and project scope. Choosing a
 local first-frame file afterwards requires removing the slot, as for any changed
 first frame, and a saved upload attached over the slot drops its provenance.
 Quotes send the asset ID like any other existing asset; a deleted or
-inaccessible asset fails the quote and nothing retries. Native sidebar and
-Studio controls are not implemented yet.
+inaccessible asset fails the quote and nothing retries.
+
+### Native first-frame control
+
+The sidebar Generations and Jobs panels and the Studio Results and Jobs pages
+draw **Use as video first frame (N)** from the shared descriptor. The
+[`scenario.use_saved_first_frame`](../scenario/blender/job_recovery.py)
+operator prepares the same approval as MCP and opens a confirmation naming the
+scene, the Render Video form, model, input and saved image. It states that the
+saved asset is reused without an upload, generation or stored file path, which
+chosen first-frame file it replaces and whether it turns the first frame on,
+that the Render Video and Prompt Spark prices become invalid and that removing
+the slot undoes it. Refusals report their reason, such as an existing slot, a
+model without an image input or a model that is not loaded; a retired
+connection asks to inspect saved jobs again. Cancel discards the approval.
+Confirming runs the operator's execute step, which consumes the approval once
+through the shared apply command; it accepts an approval prepared through MCP
+the same way, and a second use fails. Drawing reads only the projected view
+and the slot's provenance; it opens no store, file or session. The Render Video
+form shows a read-only **From a saved result** line under a first-frame slot
+whose provenance is intact. The slot has no thumbnail because no file path is
+kept.
 
 ## Explicit saved model application
 

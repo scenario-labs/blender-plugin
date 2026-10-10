@@ -53,9 +53,8 @@ SINGLE_APPLY = {
 }
 # Offered alone on an applied job, these do not reuse its results.
 NOT_REUSE = frozenset({"restore_world", "retry_receipt"})
-# Offered through local MCP before any native control exists. Native surfaces
-# skip only these, by name; any other unknown action still fails to describe.
-MCP_ONLY = frozenset({"use_first_frame"})
+# The Render Video first-frame review; ModelJobs projects its accepted assets.
+FIRST_FRAME_OPERATOR = "scenario.use_saved_first_frame"
 
 
 @dataclass(frozen=True, eq=False)
@@ -204,6 +203,22 @@ def _describe_action(action, view, job, result_types, review):
             lambda media_type: media_type in result_types.media,
             job,
         )
+    if action == "use_first_frame":
+        # Eligibility needs texture roles and receipts, so the owner projects
+        # the accepted asset IDs; numbering still counts every saved asset.
+        accepted = frozenset(view.meta.get("first_frame_assets", ()))
+        return tuple(
+            SavedJobAction(
+                f"{action}:{asset_id}",
+                action,
+                "apply",
+                f"Use as video first frame ({index})",
+                operator=FIRST_FRAME_OPERATOR,
+                properties=(*job, ("asset_id", asset_id)),
+            )
+            for index, asset_id in enumerate(view.asset_ids, 1)
+            if asset_id in accepted
+        )
     if action not in RECOVERY_GROUPS:
         raise ValueError(f"No saved-job control describes action {action!r}")
     return (
@@ -236,11 +251,9 @@ def describe(view, context_id, result_types, blockout_review=None):
         ("expected_revision", meta["saved_revision"]),
     )
     items = []
-    if state == "applied" and any(action not in NOT_REUSE | MCP_ONLY for action in actions):
+    if state == "applied" and any(action not in NOT_REUSE for action in actions):
         items.append(_status("reuse", "", "Reuse saved results", "FILE_REFRESH"))
     for action in actions:
-        if action in MCP_ONLY:
-            continue
         items.extend(_describe_action(action, view, job, result_types, blockout_review))
     if state in ("ready", "apply_failed"):
         items.append(

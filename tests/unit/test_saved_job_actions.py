@@ -77,13 +77,17 @@ APPLICATION_ACTIONS = (
     "apply_material",
     "apply_mesh",
     "apply_mesh_source",
+    "use_first_frame",
 )
 VOCABULARY = (*sja.RECOVERY_ACTIONS, *APPLICATION_ACTIONS, "recover_blockout")
 ASSETS = (
     ("clip", "video/webm"),
     ("panorama", "image/exr"),
     ("mesh", "model/gltf-binary"),
+    ("still", "image/png"),
 )
+# ModelJobs projects the stills a first-frame review accepts.
+FIRST_FRAME = {"first_frame_assets": ("still",)}
 AWAITING = (
     "awaiting_review",
     "status",
@@ -280,7 +284,7 @@ def test_blockout_recovery_follows_the_current_scene_review(review, expected):
 def test_every_offered_action_is_described_with_unique_keys_and_its_action_name():
     for state, length in itertools.product(("ready", "applied"), (1, 2)):
         for actions in itertools.combinations(VOCABULARY, length):
-            items = sja.describe(view(actions, state, ASSETS), CONTEXT, TYPES)
+            items = sja.describe(view(actions, state, ASSETS, **FIRST_FRAME), CONTEXT, TYPES)
             keys = [item.key for item in items]
             assert len(keys) == len(set(keys)), actions
             offered = {item.action for item in items if item.operator is not None}
@@ -342,6 +346,8 @@ def _mcp_purpose(item):
     properties = dict(item.properties)
     if item.operator == "scenario.apply_saved_world":
         return properties["purpose"]
+    if item.operator == sja.FIRST_FRAME_OPERATOR:
+        return "video_first_frame"
     if item.operator == "scenario.apply_saved_mesh":
         return "mesh_source" if properties["original_source"] else "mesh_edit"
     return "material" if item.operator == "scenario.apply_saved_material" else "import"
@@ -349,10 +355,20 @@ def _mcp_purpose(item):
 
 def test_native_result_applications_have_matching_mcp_purposes():
     schema = ast.literal_eval(_mcp_spec("prepare_result_application")[1])
-    items = sja.describe(view(APPLICATION_ACTIONS, "applied", ASSETS), CONTEXT, TYPES)
+    items = sja.describe(
+        view(APPLICATION_ACTIONS, "applied", ASSETS, **FIRST_FRAME), CONTEXT, TYPES
+    )
     native = {_mcp_purpose(item) for item in items if item.group == "apply"}
     # Agents can prepare every application a native surface offers.
-    assert native == {"import", "world", "restore_world", "material", "mesh_edit", "mesh_source"}
+    assert native == {
+        "import",
+        "world",
+        "restore_world",
+        "material",
+        "mesh_edit",
+        "mesh_source",
+        "video_first_frame",
+    }
     assert native <= set(schema["purpose"]["enum"])
 
 
@@ -367,20 +383,36 @@ def test_core_descriptor_source_stays_free_of_blender():
     assert modules == {"collections", "dataclasses"}
 
 
-def test_mcp_only_first_frame_handoff_draws_no_native_control_or_reuse_row():
-    assets = (("still", "image/png"),)
-    alone = sja.describe(view(("use_first_frame",), "applied", assets), CONTEXT, TYPES)
-    assert alone == ()
-    ready = sja.describe(
-        view(("import_images", "use_first_frame"), "ready", assets), CONTEXT, TYPES
+def test_first_frame_controls_follow_the_projected_stills_and_number_every_asset():
+    assets = (
+        ("clip", "video/mp4"),
+        ("colour", "image/png"),
+        ("normal", "image/png"),
+        ("base", "image/webp"),
     )
-    assert [item.key for item in ready] == ["import_images", "awaiting_review"]
+    accepted = {"first_frame_assets": ("colour", "base")}
+    first_frame = sja.FIRST_FRAME_OPERATOR
+    ready = sja.describe(view(("use_first_frame",), "ready", assets, **accepted), CONTEXT, TYPES)
+    assert rows(ready) == [
+        asset("use_first_frame", first_frame, "Use as video first frame (2)", "colour"),
+        asset("use_first_frame", first_frame, "Use as video first frame (4)", "base"),
+        AWAITING,
+    ]
+    assert first_frame == "scenario.use_saved_first_frame"
+    # The media type alone never offers a still: a normal map is a PNG too.
+    unprojected = sja.describe(view(("use_first_frame",), "ready", assets), CONTEXT, TYPES)
+    assert rows(unprojected) == [AWAITING]
+    # On a completed job it is a reuse action like any other saved application.
     applied = sja.describe(
-        view(("import_images", "use_first_frame"), "applied", assets), CONTEXT, TYPES
+        view(("import_images", "use_first_frame"), "applied", assets, **accepted), CONTEXT, TYPES
     )
-    assert [item.key for item in applied] == ["reuse", "import_images"]
-    assert sja.MCP_ONLY == {"use_first_frame"}
-    # Agents prepare it through the shared application tool.
+    assert [item.key for item in applied] == [
+        "reuse",
+        "import_images",
+        "use_first_frame:colour",
+        "use_first_frame:base",
+    ]
+    # Agents prepare the same review through the shared application tool.
     schema = ast.literal_eval(_mcp_spec("prepare_result_application")[1])
     assert "video_first_frame" in schema["purpose"]["enum"]
     description, _ = _mcp_spec("job_status")

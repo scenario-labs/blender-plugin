@@ -647,6 +647,10 @@ class ModelJobs:
             view.meta["saved_revision"] = record.revision
             view.meta["saved_state"] = record.state.value
             view.meta["recovery_actions"] = self.actions(record)
+            # Native first-frame controls name only the stills a review accepts.
+            view.meta["first_frame_assets"] = tuple(
+                item.asset.asset_id for item in first_frame_handoff.eligible_assets(record)
+            )
             self._project_remote(request_id, record, view, online=online)
             if record.state in (JobState.SUBMITTING, JobState.UNCERTAIN):
                 view.error = "Submission outcome is not confirmed; do not submit it again"

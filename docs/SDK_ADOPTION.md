@@ -43,7 +43,7 @@ records, lane/schema helpers and local display status classification remain.
 | Exact model quote and submission, including render, Blockout and Film models | `JobCoordinator` / `SDKAdapter`: `generate.with_raw_response.run_model`, with `dry_run="true"` only for quotes |
 | New/Rewrite and Translate | Shared prompt commands: `generate.with_raw_response.prompt/translate`, including separate exact estimates and submission claims |
 | Cloud history, known-job recovery, polling, remote progress and inference cancellation | Shared catalog/coordinator: `jobs.with_raw_response.list/retrieve/trigger_action`; progress reads `Job.status` and `Job.progress` from the same polling retrieve, with no extra request |
-| Waiting workflow step decisions (shared job command; no native or MCP control yet) | `JobCoordinator` / `SDKAdapter.workflow_decision`: `workflows.with_raw_response.user_approval`; selection uses the named [SDK issue #33 exception](#workflow-step-decisions); steps are read from the polling `jobs.retrieve`, with no extra request |
+| Waiting workflow step decisions (shared job command; no native or MCP control yet) | `JobCoordinator` / `SDKAdapter.workflow_decision`: `workflows.with_raw_response.user_approval`; selection uses the named [SDK issue #33 exception](#workflow-step-decisions); steps are read from the polling `jobs.retrieve`; while one waits, `SDKAdapter.workflow` (`workflows.retrieve`) reads the definition's step links once |
 | Result and complete prompt/model-text metadata | Shared coordinator: `assets.with_raw_response.retrieve`; bounded complete text uses the signed result transport |
 | Saved-result preview metadata | Shared coordinator on the preview lane: `assets.with_raw_response.get_bulk` for every batch, one asset included, so an omitted asset means the same at any size; stills and clips use the signed result transport ([result previews](RESULT_PREVIEWS.md)) |
 | Asset library browsing and text search | Shared coordinator: `assets.with_raw_response.list` and `search.with_raw_response.asset_search`; explicit single-page reads with selected project scope |
@@ -102,6 +102,7 @@ using the locked environment.
 | Job discovery | `jobs.list`: `jobs` page wrapper, filters, comma-separated `types`, opaque cursor and project/filter preservation on the next page |
 | Workflow approval decisions | `workflows.with_raw_response.user_approval`: one PUT with workflow, job and node identity and an explicit `approve` or `reject` action; `projectId` only when supplied, because `omit` drops it. Rejection stops a waiting step; it is not general workflow cancellation |
 | Workflow selection gap | 2.2.0 has no `workflows.user_selection` ([#33](https://github.com/scenario-labs/scenario-sdk-python/issues/33)); the low-level `put` sends one PUT with the documented body and optional `projectId`, and a per-request `max_retries=0` holds even on a client configured to retry |
+| Workflow step links | `workflows.with_raw_response.retrieve`: GET with `projectId` only when supplied; the raw JSON keeps each flow node's `dependsOn`, `inputs` references, `loopBodyNodeIds` and the workflow's `updatedAt`, including `user-selection` nodes that 2.2.0's typed flow model does not list |
 | Remote cancellation | `jobs.trigger_action(action="cancel")`: POST action and project query; acknowledgements can remain in progress or report a completion race; upload/cancel failures make one attempt |
 | Collection and tag writes | `collections.assets.add/remove`: PUT and DELETE with a JSON `assetIds` body; `collections.create`: POST `name`; `assets.update_tags`: PUT `add`/`delete` with explicit `strict=false`; `projectId` stays in the query. Timeouts, lost connections and 408/409/429/5xx make one attempt even with `x-should-retry: true`, and no idempotency header is sent. A refused add exposes its decoded JSON body, or the raw text, as `APIStatusError.body` |
 | Collection pages and organization read-back | `collections.list/retrieve`: `collections` page wrapper, opaque cursor with unchanged scope and `collection` wrapper; `assets.get_bulk`: POST `assetIds` body, `projectId` query, `tags` and `collectionIds` retained, and a synthetic partial response passes through unchanged |
@@ -695,7 +696,8 @@ This adapter primitive grants no spending or decision authority. The
 it once per reviewed step, after retrieving the job and checking the step again.
 That command treats an HTTP 4xx reply as a refusal and every other failure as an
 uncertain outcome, stores no decision record and blocks choosing items for a
-selection that feeds a ForEach loop or nested workflow. No native or MCP control
+selection that feeds a ForEach loop or nested workflow, or whose links cannot be
+read from the job or its definition in a flow that has one. No native or MCP control
 calls the command yet. Offline contracts do not establish live endpoint acceptance.
 
 ## Known authentication failure

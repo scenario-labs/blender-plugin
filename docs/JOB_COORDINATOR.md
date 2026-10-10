@@ -334,8 +334,9 @@ node of its `metadata.flow` is `processing`: Scenario waits for one decision.
 [`workflow_nodes.pending_steps`](../scenario/core/jobs/workflow_nodes.py) projects
 those nodes from one `jobs.retrieve` response into immutable `PendingStep`
 values, in flow order: node ID and type, iteration index and loop node ID of a
-loop copy, dependencies, and review asset IDs from the dependencies' outputs (at
-most 50, with their total). A selection also carries its frozen candidates, at
+loop copy, dependencies, review asset IDs from the dependencies' outputs (at
+most 50, with their total) and whether every node's links were read
+(see [step links](#step-links)). A selection also carries its frozen candidates, at
 most 50 asset IDs or texts of at most 4,096 characters each, and its declared
 pick bounds (defaults 1 and 100). Signed asset URLs are never copied.
 `review_id` hashes the projected fields with the remote job ID, so a re-signed
@@ -350,10 +351,8 @@ does not list, through input, conditional or nested references or `dependsOn`,
 is blocked as `loop`. Both offer only `reject`. The exact estimate approved
 before the run is not shown to cover the runs such a selection starts, so
 choosing items stays blocked until live evidence shows the charge stays within
-that approval. In a flow with a loop or an unlisted node type, unreadable
-references block every selection. A node ID the adapter could not
-send, or one shared by several waiting steps, is `unidentified` and offers no
-decision.
+that approval. A node ID the adapter could not send, or one shared by several
+waiting steps, is `unidentified` and offers no decision.
 
 `decide_workflow_node(request_id, expected_revision=..., node_id=..., review_id=..., action=..., selected_indices=None)`
 accepts only the current scoped `remote` record of a workflow operation, and one
@@ -381,6 +380,37 @@ queues the command on the shared pool with an immutable copy of the picks.
 The service's handling of repeated or concurrent decisions, rejection inside a
 loop, omitted `projectId` and the charge after an approval or selection are not
 live-verified.
+
+### Step links
+
+A retrieved job's flow may omit the links between nodes: live jobs listed
+`inputs` only on `user-selection` nodes and no `dependsOn` on `custom-model`,
+`for-each` or `user-approval` nodes. In the job flow, a node with neither field
+therefore has unknown links, not none. While a retrieval shows a waiting step,
+`_observe_remote` reads the workflow definition once with
+`SDKAdapter.workflow` (SDK `workflows.retrieve`), and
+[`workflow_nodes.definition_links`](../scenario/core/jobs/workflow_nodes.py)
+keeps only node IDs, types, input references, `dependsOn` and ForEach body IDs
+as a `FlowLinks` value attached to the `RemoteSnapshot`. The coordinator keeps it
+in memory for that remote job until no step waits; a failed read or an
+unreadable definition attaches nothing and is read again at the next retrieval.
+Read-only checks of live public definitions confirmed `inputs` references and
+`loopBodyNodeIds`; definitions with approval or selection steps, and their
+`dependsOn`, follow the SDK model and are covered offline only.
+
+`pending_steps` uses the definition only when it describes the job: the same
+workflow, an `updatedAt` no later than the job's `createdAt`, the job's nodes
+with the same types, agreement with every link the job flow shows itself, and
+every other job node a `<template>__iter__<n>` copy of a ForEach body node. Its
+`dependsOn` then lists an approval's dependencies and review assets; inside a
+ForEach copy, a dependency's copy from the same iteration replaces it.
+Otherwise the job flow's own links apply. If some node's links stay unknown in
+a flow with a loop, a nested workflow or an unlisted node type, a selection not
+proven to feed one is blocked as `unverified`, which offers only `reject`, so
+a parsing gap never unblocks choosing items. `links_complete` is false while
+any node's links are unknown; an approval is still offered then, with possibly
+incomplete review assets. The links are part of the reviewed projection, so a
+decision whose retrieval no longer reads them conflicts with its `review_id`.
 
 
 ## Result retrieval and download commands

@@ -865,10 +865,12 @@ class ModelJobs:
             self._steps.pop(request_id, None)
             return
         try:
+            # The coordinator attaches the workflow definition's step links.
             steps = workflow_nodes.pending_steps(
                 snapshot.response,
                 remote_job_id=record.remote_job_id,
                 workflow_id=record.intent.target_id,
+                links=getattr(snapshot, "links", None),
             )
         except Exception as error:
             # Warn once per unreadable stretch; polling repeats every few seconds.

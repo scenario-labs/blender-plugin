@@ -9,6 +9,13 @@ through `SDKAdapter.job`. A workflow job stays `in-progress` while a
 `SDKAdapter.workflow_decision` sends. This module only projects those nodes
 into bounded, immutable steps; it sends and stores nothing.
 
+A retrieved job's flow may omit the links between nodes: live jobs list
+`inputs` only on `user-selection` nodes and no `dependsOn` at all. The
+workflow definition (SDK `workflows.retrieve` through `SDKAdapter.workflow`)
+carries them; `definition_links` reads them, and `pending_steps` uses them only
+when the definition describes the job exactly. Missing or untrusted links never
+unblock a selection in a flow that may loop.
+
 Signed asset URLs in the flow are never copied. `review_id` hashes every
 projected field with the remote job ID, so a decision is bound to the exact
 step a person reviewed.
@@ -16,7 +23,9 @@ step a person reviewed.
 
 import hashlib
 import json
+import re
 from dataclasses import asdict, dataclass, replace
+from datetime import datetime
 
 from .store import _identity
 
@@ -57,12 +66,21 @@ DOCUMENTED_TYPES = frozenset(
     }
 )
 _ARRAY_KINDS = {"file_array": "asset", "string_array": "text"}
+# A ForEach copy of a loop body node, as live job flows name them.
+_COPY = re.compile(r"(.+)__iter__(0|[1-9][0-9]{0,5})")
 # Why a step offers only rejection (or nothing, without a sendable node ID).
 BLOCKED = {
     "loop": (
         "This selection feeds a ForEach loop, a nested workflow or a step type this "
         "extension does not know, which the approved price may not cover, so choosing "
         "items is blocked here. Rejecting the step stops the workflow."
+    ),
+    "unverified": (
+        "This extension could not read how this workflow's steps connect, and the "
+        "workflow contains a ForEach loop, a nested workflow or a step type this "
+        "extension does not know. The selection may feed it, which the approved price "
+        "may not cover, so choosing items is blocked here. Rejecting the step stops "
+        "the workflow."
     ),
     "unsupported": (
         "This selection cannot be reviewed here: its candidates or limits are missing, "
@@ -87,8 +105,11 @@ class PendingStep:
     input (`item_kind` "asset") or texts for a `string_array` input ("text").
     `minimum` and `maximum` bound the pick count as declared. `actions` lists
     the decisions this extension may send. `blocked` names why choosing is
-    unavailable: "loop" or "unsupported" leave rejection, while "unidentified"
-    (an unreadable or repeated node ID) leaves no decision at all.
+    unavailable: "loop", "unverified" (unknown links in a flow that may loop)
+    or "unsupported" leave rejection, while "unidentified" (an unreadable or
+    repeated node ID) leaves no decision at all. `links_complete` is False when
+    some node's links are unknown, so `depends_on` and the review assets may be
+    incomplete.
     """
 
     node_id: str
@@ -104,6 +125,7 @@ class PendingStep:
     maximum: int | None
     actions: tuple
     blocked: str
+    links_complete: bool
     review_id: str = ""
 
     def summary(self):
@@ -122,8 +144,24 @@ class PendingStep:
             "max": self.maximum,
             "actions": list(self.actions),
             "blocked": self.blocked or None,
+            "links_complete": self.links_complete,
             "review_id": self.review_id,
         }
+
+
+@dataclass(frozen=True)
+class FlowLinks:
+    """Node links read from one workflow definition, without values or URLs.
+
+    `nodes` holds (node ID, type, upstream node IDs, `dependsOn`) per
+    definition node, `loop_bodies` the IDs ForEach nodes clone per item, and
+    `updated_at` the definition's `updatedAt`.
+    """
+
+    workflow_id: str
+    updated_at: str
+    nodes: tuple
+    loop_bodies: frozenset
 
 
 def _node_id(value):
@@ -158,15 +196,19 @@ def _whole(value, default):
     return value
 
 
-def _references(node, budget):
-    """Upstream node IDs of one flow node, or None when its references are unreadable."""
-    found = set()
+def _depends(node):
+    """A node's `dependsOn` IDs, () when absent, None when unreadable."""
     depends = node.get("dependsOn")
-    if depends is not None:
-        if not isinstance(depends, list) or not all(isinstance(item, str) for item in depends):
-            return None
-        found.update(depends)
-    inputs = node.get("inputs")
+    if depends is None:
+        return ()
+    if not isinstance(depends, list) or not all(isinstance(item, str) for item in depends):
+        return None
+    return tuple(depends)
+
+
+def _input_references(inputs, budget):
+    """Node IDs a node's `inputs` reference, none when absent, None when unreadable."""
+    found = set()
     if inputs is None:
         return found
     if not isinstance(inputs, list):
@@ -204,49 +246,197 @@ def _references(node, budget):
     return found
 
 
-def _may_loop(node):
+def _may_loop(kind):
     """A ForEach loop, a nested workflow or a node type the API reference does not list."""
-    return node["type"] in LOOPING or node["type"] not in DOCUMENTED_TYPES
+    return kind in LOOPING or kind not in DOCUMENTED_TYPES
+
+
+def _timestamp(value):
+    """A timezone-aware time from an ISO 8601 string, else None."""
+    if not isinstance(value, str) or len(value) > 64:
+        return None
+    try:
+        moment = datetime.fromisoformat(value)
+    except ValueError:
+        return None
+    return moment if moment.tzinfo is not None else None
+
+
+def definition_links(workflow, *, workflow_id):
+    """Read the node links of one retrieved workflow definition; keep no values or URLs.
+
+    `workflow` is the record `SDKAdapter.workflow` returns (SDK
+    `workflows.retrieve`). In a definition, a node without `dependsOn` or
+    `inputs` reads no other node. Raises StepError when the record is not this
+    workflow's, or its flow, links or `updatedAt` are unreadable.
+    """
+    if not isinstance(workflow, dict) or workflow.get("id") != workflow_id:
+        raise StepError("Scenario returned another workflow")
+    flow = workflow.get("flow")
+    updated = workflow.get("updatedAt")
+    if (
+        _timestamp(updated) is None
+        or not isinstance(flow, list)
+        or not 0 < len(flow) <= MAX_FLOW_NODES
+    ):
+        raise StepError("Scenario returned an unreadable workflow definition")
+    budget = [_REFERENCE_BUDGET]
+    entries, bodies = {}, set()
+    for node in flow:
+        if (
+            not isinstance(node, dict)
+            or not isinstance(node.get("id"), str)
+            or not isinstance(node.get("type"), str)
+            or node["id"] in entries
+        ):
+            raise StepError("Scenario returned an unreadable workflow definition")
+        depends = _depends(node)
+        inputs = _input_references(node.get("inputs"), budget)
+        body = node.get("loopBodyNodeIds")
+        if (
+            depends is None
+            or inputs is None
+            or (
+                body is not None
+                and (not isinstance(body, list) or not all(isinstance(item, str) for item in body))
+            )
+        ):
+            raise StepError("Scenario returned unreadable workflow step links")
+        bodies.update(body or ())
+        entries[node["id"]] = (node["id"], node["type"], tuple(sorted(inputs)), depends)
+    return FlowLinks(workflow_id, updated, tuple(entries.values()), frozenset(bodies))
+
+
+def waiting(job):
+    """Whether a retrieved job lists a `processing` approval or selection node; never raises."""
+    metadata = job.get("metadata") if isinstance(job, dict) else None
+    flow = metadata.get("flow") if isinstance(metadata, dict) else None
+    return isinstance(flow, list) and any(
+        isinstance(node, dict)
+        and node.get("status") == "processing"
+        and isinstance(node.get("type"), str)
+        and node["type"] in STEP_ACTIONS
+        for node in flow[:MAX_FLOW_NODES]
+    )
+
+
+def _described(links, job, flow, workflow_id):
+    """Map the job's ForEach copies to their templates when `links` describe it, else None.
+
+    The definition must be this workflow's, unchanged since the job was
+    created, list the job's nodes with the same types and agree with every
+    link the job flow shows itself. Any other job node must be a copy of a
+    loop body node of the same type.
+    """
+    if links is None or links.workflow_id != workflow_id:
+        return None
+    created, updated = _timestamp(job.get("createdAt")), _timestamp(links.updated_at)
+    if created is None or updated is None or updated > created:
+        return None
+    known = {entry[0]: entry for entry in links.nodes}
+    budget = [_REFERENCE_BUDGET]
+    templates, present = {}, set()
+    for node in flow:
+        node_id, kind = node["id"], node["type"]
+        entry = known.get(node_id)
+        if entry is not None:
+            if entry[1] != kind:
+                return None
+            if node.get("dependsOn") is not None:
+                depends = _depends(node)
+                if depends is None or set(depends) != set(entry[3]):
+                    return None
+            if node.get("inputs") is not None:
+                if _input_references(node["inputs"], budget) != set(entry[2]):
+                    return None
+            present.add(node_id)
+            continue
+        copy = _COPY.fullmatch(node_id)
+        template = known.get(copy[1]) if copy is not None else None
+        if template is None or template[1] != kind or copy[1] not in links.loop_bodies:
+            return None
+        templates[node_id] = copy[1]
+    return templates if present == known.keys() else None
 
 
 class _Flow:
-    """Node index and downstream edges of one retrieved flow."""
+    """Node index and downstream edges of one retrieved flow.
 
-    def __init__(self, nodes):
+    Edges come from the workflow definition when it describes the job, else
+    from the job flow, where a node with neither `dependsOn` nor `inputs` has
+    unknown links. Assets are always read from the job.
+    """
+
+    def __init__(self, job, nodes, workflow_id, links):
         self.by_id = {}
-        self.children = {}
-        self.unreadable = False
-        budget = [_REFERENCE_BUDGET]
         for node in nodes:
             self.by_id.setdefault(node["id"], []).append(node)
-        for node in nodes:
-            references = _references(node, budget)
+        self.kinds, self.children, self.depends = {}, {}, {}
+        self.unknown = False
+        templates = _described(links, job, nodes, workflow_id)
+        if templates is None:
+            self.templates = {}
+            budget = [_REFERENCE_BUDGET]
+            entries = []
+            for node in nodes:
+                references = None
+                if node.get("dependsOn") is not None or node.get("inputs") is not None:
+                    depends = _depends(node)
+                    inputs = _input_references(node.get("inputs"), budget)
+                    if depends is not None and inputs is not None:
+                        references = inputs.union(depends)
+                entries.append((node["id"], node["type"], references))
+        else:
+            self.templates = templates
+            entries = [(entry[0], entry[1], {*entry[2], *entry[3]}) for entry in links.nodes]
+            self.depends = {entry[0]: entry[3] for entry in links.nodes}
+        for node_id, kind, references in entries:
+            self.kinds.setdefault(node_id, set()).add(kind)
             if references is None:
-                self.unreadable = True
+                self.unknown = True
                 continue
             for reference in references:
-                self.children.setdefault(reference, set()).add(node["id"])
-        self.looping = any(_may_loop(node) for node in nodes)
+                self.children.setdefault(reference, set()).add(node_id)
+        self.looping = any(_may_loop(kind) for kinds in self.kinds.values() for kind in kinds)
 
-    def feeds_loop(self, node_id):
-        """Whether anything that reads this node, directly or not, may loop over it.
+    def loop_block(self, node_id):
+        """Why choosing this node's items is blocked by loops, or "" when it is not.
 
-        Unreadable references anywhere in a flow that has a loop, or a node of
-        an undocumented type, count as feeding it, so a parsing gap never
-        unblocks a selection.
+        "loop" when anything reading the node, directly or not, may loop over
+        it. Otherwise "unverified" when some node's links are unknown in a flow
+        with a loop, a nested workflow or an undocumented node type, so a
+        parsing gap never unblocks a selection.
         """
-        if self.unreadable and self.looping:
-            return True
-        seen, queue = {node_id}, [node_id]
+        start = self.templates.get(node_id, node_id)
+        seen, queue = {start}, [start]
         while queue:
             for child in self.children.get(queue.pop(), ()):
                 if child in seen:
                     continue
-                if any(_may_loop(node) for node in self.by_id.get(child, ())):
-                    return True
+                if any(_may_loop(kind) for kind in self.kinds.get(child, ())):
+                    return "loop"
                 seen.add(child)
                 queue.append(child)
-        return False
+        return "unverified" if self.unknown and self.looping else ""
+
+    def dependencies(self, node):
+        """The step's `dependsOn` and the definition's, without repeats.
+
+        In a ForEach copy, a dependency's copy from the same iteration replaces
+        the dependency, so an approval reviews its own iteration's results.
+        """
+        node_id = node["id"]
+        template = self.templates.get(node_id)
+        values = list(_depends(node) or ())
+        values.extend(self.depends.get(template or node_id, ()))
+        if template is not None:
+            suffix = "__iter__" + _COPY.fullmatch(node_id)[2]
+            values = [value + suffix if value + suffix in self.by_id else value for value in values]
+        unique = []
+        for value in values:
+            if _node_id(value) and value not in unique:
+                unique.append(value)
+        return tuple(unique[:MAX_DEPENDENCIES])
 
     def review_assets(self, depends_on):
         assets = []
@@ -305,12 +495,7 @@ def _step(node, flow, duplicate):
     node_type = node["type"]
     iteration = _whole(node.get("iterationIndex"), None)
     loop = node.get("loopNodeId")
-    depends = node.get("dependsOn")
-    depends_on = (
-        tuple(value for value in depends if _node_id(value))[:MAX_DEPENDENCIES]
-        if isinstance(depends, list)
-        else ()
-    )
+    depends_on = flow.dependencies(node)
     blocked = ""
     items, kind, minimum, maximum = (), None, None, None
     assets = []
@@ -318,10 +503,7 @@ def _step(node, flow, duplicate):
         assets = flow.review_assets(depends_on)
     else:
         items, kind, minimum, maximum, readable = _selection(node)
-        if not readable:
-            blocked = "unsupported"
-        elif flow.feeds_loop(node_id):
-            blocked = "loop"
+        blocked = flow.loop_block(node_id) if readable else "unsupported"
     sendable = _node_id(node_id) and not duplicate
     if not sendable:
         blocked, actions = "unidentified", ()
@@ -343,6 +525,7 @@ def _step(node, flow, duplicate):
         maximum=maximum,
         actions=actions,
         blocked=blocked,
+        links_complete=not flow.unknown,
     )
 
 
@@ -365,12 +548,15 @@ def _metadata_workflow(metadata, workflow_id):
             raise StepError("Scenario returned another workflow's job")
 
 
-def pending_steps(job, *, remote_job_id, workflow_id):
+def pending_steps(job, *, remote_job_id, workflow_id, links=None):
     """Project the waiting steps of one retrieved workflow job, in flow order.
 
-    Raises StepError when the response is not this workflow's job or its flow
-    is malformed. A job without a flow, or with no `processing` approval or
-    selection node, has no waiting step.
+    `links` are this workflow's `definition_links`, or None when its definition
+    was not read. They replace the job flow's own links only when they
+    describe this job exactly; otherwise unknown links block choosing items in
+    a flow that may loop. Raises StepError when the response is not this
+    workflow's job or its flow is malformed. A job without a flow, or with no
+    `processing` approval or selection node, has no waiting step.
     """
     if not isinstance(job, dict) or job.get("jobId") != remote_job_id:
         raise StepError("Scenario returned another job")
@@ -392,17 +578,17 @@ def pending_steps(job, *, remote_job_id, workflow_id):
             isinstance(node.get(key), str) for key in ("id", "type", "status")
         ):
             raise StepError("Scenario returned an unreadable workflow flow")
-    waiting = [
+    paused = [
         node for node in flow if node["status"] == "processing" and node["type"] in STEP_ACTIONS
     ]
-    if not waiting:
+    if not paused:
         return ()
-    graph = _Flow(flow)
+    graph = _Flow(job, flow, workflow_id, links)
     counts = {}
-    for node in waiting:
+    for node in paused:
         counts[node["id"]] = counts.get(node["id"], 0) + 1
     steps = []
-    for node in waiting:
+    for node in paused:
         step = _step(node, graph, counts[node["id"]] > 1)
         steps.append(replace(step, review_id=review_id(step, remote_job_id)))
     return tuple(steps)

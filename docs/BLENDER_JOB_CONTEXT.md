@@ -865,7 +865,9 @@ recovered jobs are unbound, and MCP reports `lane: null` for them.
 
 `ModelJobs._observe` also projects the waiting approval and selection steps of a
 `remote` workflow record from each refresh and decision snapshot, through the
-[coordinator's step parser](JOB_COORDINATOR.md#waiting-workflow-step-decisions).
+[coordinator's step parser](JOB_COORDINATOR.md#waiting-workflow-step-decisions),
+with the [step links](JOB_COORDINATOR.md#step-links) the coordinator attached
+from the workflow definition.
 The projection stays in memory, bound to the record's remote job ID and saved
 revision; each maintenance poll drops it once the record changes or leaves
 `remote`. A failed projection drops the steps and logs only the error type, once

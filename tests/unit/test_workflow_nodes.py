@@ -257,11 +257,33 @@ def test_loops_that_do_not_read_the_selection_do_not_block_it():
 
 def test_unreadable_references_block_selections_only_when_a_loop_exists():
     unreadable = node("odd", "model", "pending", inputs=[{"name": "a", "ref": "pick"}])
-    assert only(selection(), unreadable).blocked == ""
+    plain = only(selection(), unreadable)
+    assert plain.blocked == "" and not plain.links_complete
     looped = only(selection(), unreadable, node("loop", "for-each", "pending"))
-    assert looped.blocked == "loop"
+    assert looped.blocked == "unverified" and looped.actions == ("reject",)
     unknown = only(selection(), unreadable, node("next", "batch-run", "pending"))
-    assert unknown.blocked == "loop"
+    assert unknown.blocked == "unverified"
+    with pytest.raises(StepError) as error:
+        nodes.validate_decision(looped, "select", [0])
+    assert str(error.value) == BLOCKED["unverified"]
+
+
+def test_nodes_without_links_are_unknown_not_unconnected():
+    # Live job flows omit dependsOn and inputs on most nodes; a loop may read anything.
+    bare = only(selection(), node("loop", "for-each", "pending"))
+    assert bare.blocked == "unverified" and not bare.links_complete
+    linked = only(
+        selection(),
+        node("loop", "for-each", "pending", inputs=[{"name": "a", "ref": {"node": "workflow"}}]),
+    )
+    assert linked.blocked == "" and linked.links_complete
+    # A loop proven downstream stays "loop" even when other links are unknown.
+    proven = only(
+        selection(),
+        node("other", "model", "pending"),
+        node("loop", "for-each", "pending", inputs=[{"name": "a", "ref": {"node": "pick"}}]),
+    )
+    assert proven.blocked == "loop" and not proven.links_complete
 
 
 @pytest.mark.parametrize("kind", sorted(nodes.DOCUMENTED_TYPES - nodes.LOOPING))
@@ -368,16 +390,18 @@ def test_summary_is_json_ready_and_complete():
         "max",
         "actions",
         "blocked",
+        "links_complete",
         "review_id",
     }
     assert summary["blocked"] is None and summary["actions"] == ["select", "reject"]
+    assert summary["links_complete"] is True
 
 
 def test_hostile_reference_nesting_is_bounded():
     deep = [{"name": "a", "type": "inputs_array", "items": [[{"name": "b"}] * 1000] * 200}]
     step = only(selection(), node("m", "model", "pending", inputs=deep), node("l", "for-each"))
     # The budget marks the flow unreadable, which keeps the selection blocked.
-    assert step.blocked == "loop"
+    assert step.blocked == "unverified" and not step.links_complete
 
 
 def test_parser_stays_free_of_blender_and_network_modules():

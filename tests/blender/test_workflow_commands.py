@@ -451,6 +451,7 @@ class WorkflowCommandTests(unittest.TestCase):
             "jobType": "workflow",
             "status": status,
             "progress": 0.5,
+            "createdAt": "2026-10-10T10:56:00.366Z",
             "metadata": {
                 "input": {"workflowId": self.workflow["id"]},
                 "flow": [
@@ -733,3 +734,116 @@ class WorkflowCommandTests(unittest.TestCase):
         owner = self.runtime.ensure_model_jobs()
         self.assertEqual(owner.steps(), {})
         self.assertFalse(self.decisions)
+
+    # Live job flows list links only on selections; the definition read with
+    # SDK workflows.retrieve supplies the rest, and its absence fails closed.
+
+    def live_definition(self, *flow):
+        render = {"id": "render", "type": "model", "inputs": [{"name": "p", "type": "string"}]}
+        self.workflow["flow"] = [render, *flow]
+        self.workflow["updatedAt"] = "2026-10-10T10:23:21.000Z"
+
+    def definition_reads(self):
+        """Workflow reads after the first job retrieval; quoting reads it before."""
+        first = next(index for index, item in enumerate(self.calls) if "/jobs/" in item.url.path)
+        return [
+            request
+            for request in self.calls[first:]
+            if (request.method, request.url.path) == ("GET", "/v1/workflows/fixture-workflow")
+        ]
+
+    def live_selection(self):
+        selection = self.selection()
+        selection["inputs"][0]["ref"] = {"node": "workflow", "name": "prompt"}
+        return selection
+
+    def test_a_live_selection_into_a_loop_without_its_definition_offers_only_reject(self):
+        loop = {"id": "loop", "type": "for-each", "status": "pending"}
+        local_id = self.paused_workflow(self.live_selection(), loop)
+        (step,) = self.tools.job_status({"job_id": local_id})["pending_steps"]
+        self.assertEqual(step["blocked"], "unverified")
+        self.assertEqual(step["actions"], ["reject"])
+        self.assertFalse(step["links_complete"])
+        # The definition lacks a flow, so it was read and not trusted.
+        self.assertEqual(len(self.definition_reads()), 1)
+        with self.assertRaisesRegex(Exception, "could not read how this workflow"):
+            self.decide(local_id, "pick", "select", [0])
+        self.assertFalse(self.decisions)
+
+        def stop(request):
+            self.waiting(self.live_selection() | {"status": "rejected"}, status="canceled")
+
+        self.decision_reply = stop
+        owner, task = self.decide(local_id, "pick", "reject")
+        task.result(5)
+        owner.poll()
+        self.assertEqual(json.loads(self.decisions[0].content)["action"], "reject")
+        self.assertEqual(self.store.get(local_id).state.value, "canceled")
+        self.assertEqual(len(self.paid), 1)
+
+    def test_the_definition_proves_a_live_selection_feeds_a_loop(self):
+        self.live_definition(
+            {
+                "id": "pick",
+                "type": "user-selection",
+                "inputs": [{"name": "choices", "type": "file_array", "ref": {"node": "workflow"}}],
+            },
+            {
+                "id": "loop",
+                "type": "for-each",
+                "loopBodyNodeIds": [],
+                "inputs": [{"name": "items", "ref": {"node": "pick"}}],
+            },
+        )
+        loop = {"id": "loop", "type": "for-each", "status": "pending"}
+        local_id = self.paused_workflow(self.live_selection(), loop)
+        (step,) = self.tools.job_status({"job_id": local_id})["pending_steps"]
+        self.assertEqual((step["blocked"], step["actions"]), ("loop", ["reject"]))
+        self.assertTrue(step["links_complete"])
+        with self.assertRaisesRegex(Exception, "ForEach loop"):
+            self.decide(local_id, "pick", "select", [0])
+        self.assertFalse(self.decisions)
+
+    def test_a_live_selection_after_a_loop_is_offered_with_its_definition(self):
+        self.live_definition(
+            {
+                "id": "loop",
+                "type": "for-each",
+                "loopBodyNodeIds": ["cut"],
+                "inputs": [{"name": "items", "ref": {"node": "workflow"}}],
+            },
+            {"id": "cut", "type": "model", "inputs": [{"name": "i", "ref": {"node": "loop"}}]},
+            {
+                "id": "pick",
+                "type": "user-selection",
+                "inputs": [{"name": "choices", "type": "file_array", "ref": {"node": "workflow"}}],
+            },
+            {"id": "grid", "type": "model", "inputs": [{"name": "i", "ref": {"node": "pick"}}]},
+        )
+        local_id = self.paused_workflow(
+            {"id": "loop", "type": "for-each", "status": "success"},
+            {"id": "cut", "type": "model", "status": "skipped"},
+            {"id": "cut__iter__0", "type": "model", "status": "success"},
+            self.live_selection(),
+            {"id": "grid", "type": "model", "status": "pending"},
+        )
+        (step,) = self.tools.job_status({"job_id": local_id})["pending_steps"]
+        self.assertEqual((step["blocked"], step["actions"]), (None, ["select", "reject"]))
+        owner, task = self.decide(local_id, "pick", "select", [2, 0])
+        task.result(5)
+        owner.poll()
+        self.assertEqual(json.loads(self.decisions[0].content)["selectedIndices"], [2, 0])
+        self.assertEqual(len(self.definition_reads()), 1)
+
+    def test_a_live_approval_lists_its_definition_review_assets(self):
+        self.live_definition({"id": "check", "type": "user-approval", "dependsOn": ["render"]})
+        local_id = self.paused_workflow(
+            {"id": "check", "type": "user-approval", "status": "processing"}
+        )
+        (step,) = self.tools.job_status({"job_id": local_id})["pending_steps"]
+        self.assertEqual(step["depends_on"], ["render"])
+        self.assertEqual(step["review_asset_ids"], ["asset-render"])
+        self.assertTrue(step["links_complete"])
+        self.assertEqual(step["actions"], ["approve", "reject"])
+        self.assertNotIn("https", json.dumps(step))
+        self.assertEqual(len(self.definition_reads()), 1)

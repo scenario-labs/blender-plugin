@@ -28,7 +28,7 @@ from scenario.core.jobs.store import (
     StoreConflict,
 )
 from scenario.core.jobs.workers import JobWorkers
-from scenario.core.jobs.workflow_nodes import StepError, pending_steps
+from scenario.core.jobs.workflow_nodes import BLOCKED, StepError, definition_links, pending_steps
 
 SCOPE = JobScope("https://service.example.invalid/v1", "account", "project", "team")
 INTENT = JobIntent(
@@ -109,8 +109,18 @@ def no_network(monkeypatch):
 @pytest.fixture
 def setup(tmp_path):
     adapters = []
+    # Workflow definition reads, kept apart from `calls` (job reads and decisions).
+    reads = []
 
-    def create(replies, *, intent=INTENT, online=None, state=JobState.REMOTE, project=True):
+    def create(
+        replies,
+        *,
+        intent=INTENT,
+        online=None,
+        state=JobState.REMOTE,
+        project=True,
+        definition=None,
+    ):
         replies = list(replies)
         calls = []
         scope = SCOPE if project else replace(SCOPE, project_id=None)
@@ -132,6 +142,16 @@ def setup(tmp_path):
             expected = {"projectId": "project"} if project else {}
             assert dict(request.url.params) == expected
             assert request.headers["Authorization"] == Credentials("key", "secret").authorization()
+            if request.method == "GET" and request.url.path == "/v1/workflows/workflow":
+                # SDK workflows.retrieve: the definition carries the step links.
+                calls.pop()
+                reads.append(request)
+                value = definition(request) if callable(definition) else definition
+                if isinstance(value, httpx.Response):
+                    return value
+                if value is None:
+                    return httpx.Response(404, json={"message": "private fixture detail"})
+                return httpx.Response(200, json={"workflow": value})
             if request.method == "GET":
                 assert request.url.path == "/v1/jobs/remote"
             else:
@@ -159,6 +179,7 @@ def setup(tmp_path):
         adapters.append(adapter)
         return JobCoordinator(adapter, store), store, calls, record
 
+    create.reads = reads
     yield create
     for adapter in adapters:
         adapter.close()
@@ -478,3 +499,243 @@ def test_workers_run_decisions_with_an_immutable_selection(setup):
         workers.shutdown()
     assert snapshot.sent
     assert json.loads(puts(calls)[0].content)["selectedIndices"] == [1]
+
+
+# Live-shaped job flows: only the selection lists its inputs (see test_workflow_step_links).
+CREATED = "2026-10-10T10:56:00.366Z"
+
+
+def live_job(*flow, status="in-progress"):
+    return {
+        "jobId": "remote",
+        "jobType": "workflow",
+        "status": status,
+        "createdAt": CREATED,
+        "metadata": {"workflowId": "workflow", "flow": list(flow)},
+    }
+
+
+def live_selection(source, status="processing"):
+    return {
+        "id": "select1",
+        "type": "user-selection",
+        "status": status,
+        "items": ["asset_a", "asset_b", "asset_c"],
+        "inputs": [{"name": "images", "type": "file_array", "min": 2, "max": 2, "ref": source}],
+    }
+
+
+def live_definition(*flow):
+    return {"id": "workflow", "updatedAt": "2026-10-10T10:23:21.000Z", "flow": list(flow)}
+
+
+INTO_LOOP = live_definition(
+    {
+        "id": "select1",
+        "type": "user-selection",
+        "inputs": [
+            {"name": "images", "type": "file_array", "ref": {"node": "workflow", "name": "x"}}
+        ],
+    },
+    {
+        "id": "loop1",
+        "type": "for-each",
+        "loopBodyNodeIds": ["cutout1"],
+        "inputs": [{"name": "image0", "type": "file_array", "ref": {"node": "select1"}}],
+    },
+    {
+        "id": "cutout1",
+        "type": "custom-model",
+        "inputs": [{"name": "image", "type": "file", "ref": {"node": "loop1", "name": "image0"}}],
+    },
+)
+AFTER_LOOP = live_definition(
+    {
+        "id": "loop1",
+        "type": "for-each",
+        "loopBodyNodeIds": ["cutout1"],
+        "inputs": [{"name": "image0", "type": "file_array", "ref": {"node": "workflow"}}],
+    },
+    {
+        "id": "cutout1",
+        "type": "custom-model",
+        "inputs": [{"name": "image", "type": "file", "ref": {"node": "loop1", "name": "image0"}}],
+    },
+    {
+        "id": "select1",
+        "type": "user-selection",
+        "inputs": [{"name": "images", "type": "file_array", "ref": {"node": "loop1"}}],
+    },
+    {
+        "id": "grid1",
+        "type": "custom-model",
+        "inputs": [{"name": "images", "type": "file_array", "ref": {"node": "select1"}}],
+    },
+)
+APPROVAL = live_definition(
+    {"id": "cutout1", "type": "custom-model", "inputs": []},
+    {"id": "approval1", "type": "user-approval", "dependsOn": ["cutout1"]},
+)
+
+
+def into_loop(status="processing", job_status="in-progress"):
+    return live_job(
+        live_selection({"node": "workflow", "name": "x"}, status),
+        {"id": "loop1", "type": "for-each", "status": "pending"},
+        {"id": "cutout1", "type": "custom-model", "status": "pending"},
+        status=job_status,
+    )
+
+
+def after_loop():
+    return live_job(
+        {"id": "loop1", "type": "for-each", "status": "success"},
+        {"id": "cutout1", "type": "custom-model", "status": "skipped"},
+        *(
+            {
+                "id": f"cutout1__iter__{index}",
+                "type": "custom-model",
+                "status": "success",
+                "assets": [{"assetId": f"asset_{index}", "url": SIGNED}],
+            }
+            for index in range(3)
+        ),
+        live_selection({"node": "loop1"}),
+        {"id": "grid1", "type": "custom-model", "status": "pending"},
+    )
+
+
+def linked_step(node_id, value, workflow):
+    links = None if workflow is None else definition_links(workflow, workflow_id="workflow")
+    (item,) = (
+        item
+        for item in pending_steps(
+            value, remote_job_id="remote", workflow_id="workflow", links=links
+        )
+        if item.node_id == node_id
+    )
+    return item
+
+
+def test_polling_a_waiting_job_reads_its_workflow_definition_once(setup):
+    waiting = into_loop()
+    coordinator, _, calls, record = setup([waiting, waiting, into_loop()], definition=INTO_LOOP)
+    first = coordinator.refresh_remote("request", expected_revision=record.revision)
+    assert len(setup.reads) == 1
+    assert setup.reads[0].url.path == "/v1/workflows/workflow"
+    assert dict(setup.reads[0].url.params) == {"projectId": "project"}
+    assert first.links == definition_links(INTO_LOOP, workflow_id="workflow")
+    assert "Signature" not in repr(first) and "Signature" not in repr(first.links)
+    (item,) = pending_steps(
+        first.response, remote_job_id="remote", workflow_id="workflow", links=first.links
+    )
+    assert item.blocked == "loop" and item.links_complete
+    second = coordinator.refresh_remote("request", expected_revision=record.revision)
+    assert second.links == first.links and len(setup.reads) == 1
+    assert [request.url.path for request in calls] == ["/v1/jobs/remote"] * 2
+
+
+def test_jobs_without_a_waiting_step_read_no_definition(setup):
+    coordinator, _, _, record = setup([job(), job("success")], definition=INTO_LOOP)
+    assert coordinator.refresh_remote("request", expected_revision=record.revision).links is None
+    finished = coordinator.refresh_remote("request", expected_revision=record.revision)
+    assert finished.links is None and finished.record.state == JobState.SUCCEEDED
+    assert setup.reads == []
+
+
+def test_a_cached_definition_is_dropped_once_the_step_stops_waiting(setup):
+    replies = [into_loop(), into_loop("success"), into_loop()]
+    coordinator, _, _, record = setup(replies, definition=INTO_LOOP)
+    for _ in replies:
+        coordinator.refresh_remote("request", expected_revision=record.revision)
+    assert len(setup.reads) == 2
+
+
+@pytest.mark.parametrize(
+    "definition",
+    [
+        None,
+        httpx.Response(500, json={"message": "private fixture detail"}),
+        {**INTO_LOOP, "id": "another"},
+        {**INTO_LOOP, "flow": "unreadable"},
+    ],
+)
+def test_an_unreadable_definition_blocks_choosing_and_is_read_again(setup, definition):
+    waiting = into_loop()
+    coordinator, _, calls, record = setup([waiting, waiting], definition=definition)
+    snapshot = coordinator.refresh_remote("request", expected_revision=record.revision)
+    assert snapshot.links is None
+    (item,) = pending_steps(
+        snapshot.response, remote_job_id="remote", workflow_id="workflow", links=snapshot.links
+    )
+    assert item.blocked == "unverified" and item.actions == ("reject",)
+    coordinator.refresh_remote("request", expected_revision=record.revision)
+    assert len(setup.reads) == 2 and len(calls) == 2
+
+
+@pytest.mark.parametrize("definition", [INTO_LOOP, None])
+def test_a_selection_the_flow_does_not_link_is_never_chosen_into_a_loop(setup, definition):
+    # The live defect: the job flow alone showed no link from the selection to the loop.
+    waiting = into_loop()
+    coordinator, store, calls, record = setup([waiting], definition=definition)
+    review = linked_step("select1", waiting, definition).review_id
+    with pytest.raises(StepError) as error:
+        decide(coordinator, record, "select1", waiting, "select", [0, 2], review=review)
+    assert str(error.value) == BLOCKED["loop" if definition else "unverified"]
+    assert [request.method for request in calls] == ["GET"]
+    assert store.get("request") == record
+
+
+def test_rejecting_an_unverified_selection_is_still_sent(setup):
+    waiting = into_loop()
+    rejected = into_loop("rejected", "canceled")
+    coordinator, _, calls, record = setup([waiting, {"jobId": "remote"}, rejected])
+    review = linked_step("select1", waiting, None).review_id
+    snapshot = decide(coordinator, record, "select1", waiting, "reject", review=review)
+    assert snapshot.sent and snapshot.record.state == JobState.CANCELED
+    assert json.loads(calls[1].content)["action"] == "reject"
+
+
+def test_a_selection_after_a_loop_is_sent_with_the_definition(setup):
+    waiting = after_loop()
+    coordinator, _, calls, record = setup(
+        [waiting, {"jobId": "remote"}, live_job(status="in-progress")], definition=AFTER_LOOP
+    )
+    review = linked_step("select1", waiting, AFTER_LOOP).review_id
+    # A projection without the definition is a different review.
+    assert review != linked_step("select1", waiting, None).review_id
+    snapshot = decide(coordinator, record, "select1", waiting, "select", [0, 2], review=review)
+    assert snapshot.sent and len(puts(calls)) == 1
+    assert json.loads(calls[1].content)["selectedIndices"] == [0, 2]
+    assert len(setup.reads) == 1
+
+
+def test_a_review_made_with_links_conflicts_when_the_definition_is_now_unreadable(setup):
+    waiting = after_loop()
+    coordinator, store, calls, record = setup([waiting], definition=None)
+    review = linked_step("select1", waiting, AFTER_LOOP).review_id
+    with pytest.raises(StoreConflict, match="step changed"):
+        decide(coordinator, record, "select1", waiting, "select", [0, 2], review=review)
+    assert [request.method for request in calls] == ["GET"]
+
+
+def test_an_approval_decision_is_bound_to_its_linked_review_assets(setup):
+    waiting = live_job(
+        {"id": "approval1", "type": "user-approval", "status": "processing"},
+        {
+            "id": "cutout1",
+            "type": "custom-model",
+            "status": "success",
+            "assets": [{"assetId": "asset_cut", "url": SIGNED}],
+        },
+    )
+    coordinator, _, calls, record = setup(
+        [waiting, {"jobId": "remote"}, live_job(status="in-progress")], definition=APPROVAL
+    )
+    step = linked_step("approval1", waiting, APPROVAL)
+    assert step.review_asset_ids == ("asset_cut",) and step.depends_on == ("cutout1",)
+    snapshot = decide(coordinator, record, "approval1", waiting, "approve", review=step.review_id)
+    assert snapshot.sent and json.loads(calls[1].content)["action"] == "approve"
+    # The step no longer waits after the decision, so no links are kept.
+    assert snapshot.links is None and coordinator._step_links_cache == {}
+    assert len(setup.reads) == 1

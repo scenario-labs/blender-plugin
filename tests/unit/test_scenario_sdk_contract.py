@@ -12,7 +12,8 @@ reads check scope, wrappers and cursors;
 cancellation fixtures preserve acknowledgements and completion races. Collection
 and tag writes check their JSON bodies, including DELETE, and single attempts.
 Workflow step decisions check explicit actions, optional project scope, single
-attempts and the missing generated user-selection method.
+attempts and the missing generated user-selection method; workflow definitions
+keep the step links a retrieved job's flow omits.
 They also record the known bug where ambient Basic credentials override an
 explicitly selected Bearer token; that assertion is an expected failure.
 
@@ -29,6 +30,7 @@ import base64
 import copy
 import json
 import socket
+import typing
 from decimal import Decimal
 
 import httpx
@@ -680,6 +682,69 @@ def test_workflow_selection_gap_and_low_level_put_contract(client_factory, proje
     assert dict(request.url.params) == params
     # Selected indices keep their order: the node output preserves it.
     assert json.loads(request.content) == body
+
+
+@pytest.mark.parametrize("project", [PROJECT, omit])
+def test_workflow_definition_raw_wrapper_keeps_step_links(client_factory, project):
+    # Waiting-step projection reads the links a retrieved job's flow omits from
+    # the definition: workflows.retrieve through SDKAdapter.workflow.
+    requests = []
+    flow = [
+        {
+            "id": "select1",
+            "type": "user-selection",
+            "inputs": [
+                {
+                    "name": "images",
+                    "type": "file_array",
+                    "min": 2,
+                    "max": 2,
+                    "ref": {"node": "workflow", "name": "images1"},
+                }
+            ],
+        },
+        {
+            "id": "loop1",
+            "type": "for-each",
+            "loopBodyNodeIds": ["cutout1"],
+            "inputs": [{"name": "image0", "type": "file_array", "ref": {"node": "select1"}}],
+        },
+        {
+            "id": "cutout1",
+            "type": "custom-model",
+            "modelId": "fixture-model",
+            "inputs": [
+                {"name": "image", "type": "file", "ref": {"node": "loop1", "name": "image0"}}
+            ],
+        },
+        {"id": "approval1", "type": "user-approval", "dependsOn": ["cutout1"]},
+    ]
+    payload = {
+        "workflow": {
+            "id": "fixture-workflow",
+            "updatedAt": "2026-10-10T10:23:21.000Z",
+            "flow": flow,
+            "futureField": True,
+        }
+    }
+
+    def respond(request):
+        requests.append(request)
+        return httpx.Response(200, json=payload)
+
+    sdk = client_factory(respond)
+    raw = sdk.workflows.with_raw_response.retrieve("fixture-workflow", project_id=project)
+    assert json.loads(raw.read()) == payload
+    assert len(requests) == 1
+    assert (requests[0].method, requests[0].url.path) == ("GET", "/v1/workflows/fixture-workflow")
+    assert dict(requests[0].url.params) == ({} if project is omit else {"projectId": PROJECT})
+    # 2.2.0's typed flow model has no user-selection node type, so the raw
+    # JSON wrapper, not the parsed model, is the contract the projection uses.
+    from scenario_sdk.types.workflow_retrieve_response import WorkflowFlow
+
+    types = typing.get_args(WorkflowFlow.model_fields["type"].annotation)
+    assert "user-selection" not in types and "for-each" in types
+    assert {"depends_on", "inputs", "loop_body_node_ids"} <= set(WorkflowFlow.model_fields)
 
 
 @pytest.mark.parametrize("failure", ["timeout", 400, 409, 503])

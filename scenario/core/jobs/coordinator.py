@@ -51,7 +51,7 @@ from .store import (
     _identity,
 )
 from .uploads import UploadCommands, UploadError
-from .workflow_nodes import pending_steps, validate_decision
+from .workflow_nodes import definition_links, pending_steps, validate_decision, waiting
 
 
 class QuoteError(ValueError):
@@ -212,8 +212,16 @@ class RecoveryItem:
 
 @dataclass(frozen=True)
 class RemoteSnapshot:
+    """One validated retrieval of a known remote job.
+
+    `links` are the step links of a waiting workflow job's definition
+    (`workflow_nodes.FlowLinks`), or None when no step waits or the definition
+    could not be read; `workflow_nodes.pending_steps` takes them as they are.
+    """
+
     record: StoredJob
     response_json: bytes = field(repr=False)
+    links: object = field(default=None, repr=False)
 
     @property
     def response(self):
@@ -316,6 +324,8 @@ class JobCoordinator:
         )
         self._quotes = WeakValueDictionary()
         self._deciding = set()
+        # Definition links of waiting workflow jobs, by remote job ID; see _step_links.
+        self._step_links_cache = {}
         self._compositions = WeakValueDictionary()
         self._film_reviews = {}
         self._film_review_cleanup = set()
@@ -1466,7 +1476,38 @@ class JobCoordinator:
             updated = self._store.get(request_id)
             if updated != current:
                 raise StoreConflict("Job changed during polling; refresh the local record")
-        return RemoteSnapshot(updated, raw)
+        links = None
+        if current.intent.operation == "workflow":
+            links = self._step_links(current, response if status not in terminal else None)
+        return RemoteSnapshot(updated, raw, links)
+
+    def _step_links(self, current, response):
+        """Definition links for a workflow job whose retrieval shows a waiting step.
+
+        The flow of a retrieved job may omit the links between its nodes, so
+        the workflow definition is read once per waiting period with SDK
+        `workflows.retrieve` and kept in memory until no step waits. Any read
+        or parsing failure returns None and is retried at the next retrieval;
+        `pending_steps` then blocks choosing items in a flow that may loop.
+        """
+        key = current.remote_job_id
+        if response is None or not waiting(response):
+            with self._lock:
+                self._step_links_cache.pop(key, None)
+            return None
+        with self._lock:
+            links = self._step_links_cache.get(key)
+        if links is not None:
+            return links
+        workflow_id = current.intent.target_id
+        try:
+            links = definition_links(self._adapter.workflow(workflow_id), workflow_id=workflow_id)
+        except Exception:
+            # Never log the record: it may carry signed thumbnail URLs.
+            return None
+        with self._lock:
+            self._step_links_cache[key] = links
+        return links
 
     def cancel_remote(self, request_id, *, expected_revision):
         """Claim one documented inference-job cancellation durably, then retrieve it.
@@ -1559,8 +1600,12 @@ class JobCoordinator:
         snapshot = self._observe_remote(current, response)
         if snapshot.record.state != JobState.REMOTE:
             return DecisionSnapshot(snapshot.record, snapshot.response_json, sent=False)
+        # The same definition links as the reviewed projection, or a mismatch.
         steps = pending_steps(
-            response, remote_job_id=current.remote_job_id, workflow_id=current.intent.target_id
+            response,
+            remote_job_id=current.remote_job_id,
+            workflow_id=current.intent.target_id,
+            links=snapshot.links,
         )
         step = next((item for item in steps if item.node_id == node_id), None)
         if step is None or not isinstance(review_id, str) or step.review_id != review_id:
@@ -1598,7 +1643,7 @@ class JobCoordinator:
                 "Scenario acknowledged the decision, but the job could not be read again; "
                 "refresh it before deciding again"
             ) from None
-        return DecisionSnapshot(snapshot.record, snapshot.response_json, sent=True)
+        return DecisionSnapshot(snapshot.record, snapshot.response_json, snapshot.links, sent=True)
 
     def _reread(self, current):
         """Best-effort retrieval after an unsuccessful decision; never raises."""

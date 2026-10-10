@@ -97,11 +97,16 @@ status refreshes every 15 seconds meanwhile. Each `pending_steps` entry has its
 node ID and type, loop iteration, dependencies, up to 50 review asset IDs with
 their total, a selection's frozen candidates (`items`: asset IDs or texts, per
 `item_kind`) with `min` and `max`, the decisions that may be sent (`actions`),
-`blocked` and `review_id`. Signed URLs are never included. `blocked` is `loop`
-when the selection feeds a ForEach loop, a nested workflow or a node type the
-API reference does not list, which the approved price may not cover, and
-`unsupported` for unreadable candidates or limits; both
-leave only `reject`, while `unidentified` leaves no decision. Rejecting stops the
+`blocked`, `links_complete` and `review_id`. Signed URLs are never included.
+`blocked` is `loop` when the selection feeds a ForEach loop, a nested workflow
+or a node type the API reference does not list, which the approved price may
+not cover; `unverified` when the links between the workflow's steps could not be
+read and the workflow contains such a node, so the selection may feed it; and
+`unsupported` for unreadable candidates or limits. These three leave only
+`reject`, while `unidentified` leaves no decision. Step links come from the job
+and, while a step waits, from the workflow's definition, read once per waiting
+period; `links_complete` is `false` while some are unknown, so `depends_on` and
+the review assets may be incomplete. Rejecting stops the
 workflow and is the only workflow cancellation. `decision_error` explains the
 last refused, unsent or uncertain decision; never repeat an uncertain one until
 the step is shown again. The `review_step` action marks a waiting step; it is

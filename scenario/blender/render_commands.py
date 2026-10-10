@@ -234,6 +234,15 @@ def configure(scene, lane, changes):
                 state, render_references.SCENE
             ):
                 occupied += 1
+            # Likewise an enabled first frame sent as image 1 of the style input.
+            first_frame = render_references.target(lane, schema, render_references.FIRST_FRAME)
+            if (
+                style_spec is first_frame
+                and changes.get("use_first_frame", state.use_first_frame)
+                and changes.get("first_frame_path", state.first_frame_path)
+                and not render_references.slot(state, render_references.FIRST_FRAME)
+            ):
+                occupied += 1
             limit = 1 if style_spec.ptype == "file" else style_spec.max_length
             if limit and occupied + len(styles) > limit:
                 raise ValueError("Not enough space for these styles and the render snapshot")

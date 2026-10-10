@@ -15,16 +15,29 @@ from dataclasses import asdict
 from decimal import Decimal
 from pathlib import Path
 
+from scenario.core.api.catalog import ModelRecord
 from scenario.core.api.sdk_adapter import Credentials, SDKAdapter
 from scenario.core.jobs.coordinator import JobCoordinator
 from scenario.core.jobs.credential_storage import open_credential_store
 from scenario.core.jobs.result_metadata import ORIGINAL_MEDIA_TYPES
-from scenario.core.jobs.store import JobOrigin, JobState
+from scenario.core.jobs.results import ResultError
+from scenario.core.jobs.store import JobOrigin, JobState, StoreError
 from scenario.core.jobs.transfers import ResultDownloader, StoragePolicy
+from scenario.core.scene import panorama_contract
 from scenario.core.scene.panorama import MAX_FILE_BYTES, PanoramaError, inspect_panorama
+from scenario.core.schema.params import parse_schema, validate
 from tools.dev_config import live_settings
 
 RESULT_KINDS = ("image", "material", "video", "model", "audio", "panorama", "hdri")
+# Lowercase labels without paths: suite case names and saved run names.
+RUN_NAME = re.compile(r"[a-z][a-z0-9_-]{0,39}")
+# {"$panorama": "RUN"} names a completed run whose saved 360 result fills a
+# contract input that takes a saved panorama, as the Environment lane requires.
+PANORAMA_REFERENCE = "$panorama"
+# Quotes of Environment lane contract models keep their verified references.
+CONTRACT_QUOTE = 4
+FINISHED = frozenset({JobState.READY, JobState.APPLY_FAILED, JobState.APPLIED})
+STORAGE_HOSTS = frozenset({"cdn.cloud.scenario.com", "cdn.scenario.com"})
 # Patina's selectable maps use these input names. Smoothness is the inverse
 # representation supported by the shared material application contract.
 MATERIAL_MAP_ROLES = {
@@ -133,6 +146,222 @@ def material_requirements(payload_json):
             "Material checks require supported maps and output count in the quote", 4
         ) from None
     return maps, count
+
+
+def _placeholders(value):
+    """Count saved panorama placeholders anywhere in one JSON value."""
+    if isinstance(value, dict):
+        return (PANORAMA_REFERENCE in value) + sum(_placeholders(item) for item in value.values())
+    if isinstance(value, list):
+        return sum(_placeholders(item) for item in value)
+    return 0
+
+
+def _placeholder(value):
+    return (
+        isinstance(value, dict)
+        and set(value) == {PANORAMA_REFERENCE}
+        and isinstance(value[PANORAMA_REFERENCE], str)
+        and RUN_NAME.fullmatch(value[PANORAMA_REFERENCE]) is not None
+    )
+
+
+def panorama_case(model_id, result_kind, parameters):
+    """Check one case against the Environment lane contracts, before any network.
+
+    A contract model must use the result kind of its output, so its saved
+    projection and, for an HDR contract, its OpenEXR original are checked.
+    A contract input that takes a saved 360 panorama accepts only saved
+    panorama placeholders, and they fit nowhere else. Other models keep the
+    plain result-kind checks. Returns the contract or None.
+    """
+    contract = panorama_contract.contract_for(model_id)
+    if contract is not None:
+        expected = "hdri" if contract.output == "hdr" else "panorama"
+        if result_kind != expected:
+            raise SmokeError(f"Use the {expected} result kind for this panorama model")
+    inputs = (
+        ()
+        if contract is None
+        else [rule.param for rule in contract.references if rule.kind == panorama_contract.PANORAMA]
+    )
+    allowed = 0
+    for name in inputs:
+        if name not in parameters:
+            continue
+        value = parameters[name]
+        items = value if isinstance(value, list) else [value]
+        if not all(map(_placeholder, items)):
+            # The contract refuses any other asset; refuse before uploads or quotes.
+            raise SmokeError(
+                "Fill a saved 360 panorama input only with saved panorama placeholders"
+            )
+        allowed += len(items)
+    if _placeholders(parameters) != allowed:
+        raise SmokeError(
+            "Use a saved panorama placeholder only in a panorama model input "
+            "that takes a saved 360 panorama"
+        )
+    return contract
+
+
+def saved_results(run_dir, settings):
+    """Verify one completed run's saved receipts offline.
+
+    The run's credential-scoped store must open with the selected API-key pair
+    and project and match its saved quote scope; it must hold one finished job
+    whose files still match their download receipts. The adapter refuses
+    online access, so no Scenario request can be made.
+    """
+    root = Path(run_dir).absolute()
+    if root != root.resolve() or not root.is_dir():
+        raise SmokeError("Use a completed private run directory without symbolic links")
+    for name in ("quote.json", "jobs.sqlite3", "scope.key"):
+        if (root / name).is_symlink() or not (root / name).is_file():
+            raise SmokeError("Saved run storage is incomplete; preserve it for review", 4)
+    plan = json.loads(read_bytes(root / "quote.json"))
+    credentials = Credentials(settings.credentials.key, settings.credentials.secret)
+    try:
+        store = open_credential_store(root, credentials, project_id=settings.project_id)
+        records = store.records()
+    except StoreError:
+        raise SmokeError(
+            "Saved run storage could not be opened; preserve it for review", 4
+        ) from None
+    if not isinstance(plan, dict) or asdict(store.scope) != plan.get("scope"):
+        raise SmokeError("Saved runs must use the selected credentials and project")
+    if len(records) != 1 or records[0].state not in FINISHED:
+        raise SmokeError("The saved run has no completed, downloaded job", 4)
+    adapter = SDKAdapter(
+        credentials,
+        account_id=store.scope.account_id,
+        project_id=store.scope.project_id,
+        online=lambda: False,
+    )
+    try:
+        coordinator = JobCoordinator(
+            adapter,
+            store,
+            result_downloader=ResultDownloader(
+                StoragePolicy(STORAGE_HOSTS), online_access=lambda: False
+            ),
+            result_root=root / "results",
+        )
+        return coordinator.verify_results(
+            records[0].intent.request_id, expected_revision=records[0].revision
+        )
+    except (ResultError, StoreError):
+        raise SmokeError("Saved result files could not be verified; preserve the run", 1) from None
+    finally:
+        adapter.close()
+
+
+def verified_bytes(item, path):
+    """Read one verified result again and bind the bytes to its receipt."""
+    try:
+        if path.stat().st_size > MAX_FILE_BYTES:
+            raise OSError
+        data = path.read_bytes()
+    except OSError:
+        raise SmokeError("A saved result file is unreadable or too large", 1) from None
+    if len(data) != item.receipt.size or digest(data) != item.receipt.sha256:
+        raise SmokeError("A saved result file changed after verification", 1)
+    return data
+
+
+def saved_panorama(runs_root, name, settings):
+    """The first downloaded LDR 360 result of one completed run, as a contract reference.
+
+    This is the native "Use saved panorama" rule: Scenario's saved metadata
+    declares the projection and the asset's own PNG or JPEG file passes the
+    2:1 preflight, which also records its measured size for the upscale cap.
+    """
+    verified = saved_results(Path(runs_root) / name, settings)
+    for item, path in zip(verified.record.results, verified.paths, strict=True):
+        if panorama_contract.is_ldr_panorama(item):
+            try:
+                info = inspect_panorama(verified_bytes(item, path))
+            except PanoramaError:
+                raise SmokeError("A saved 360 result is not a supported 2:1 panorama", 1) from None
+            return panorama_contract.PanoramaRef(
+                item.asset.asset_id,
+                producer=verified.record.intent.target_id,
+                width=info.width,
+                height=info.height,
+            )
+    raise SmokeError("The saved run has no downloaded LDR 360 panorama result", 1)
+
+
+def resolve_panoramas(parameters, runs_root, settings):
+    """Replace saved panorama placeholders with verified asset IDs, offline.
+
+    Returns (parameters, references by asset ID). Without placeholders nothing
+    is read; with them, `runs_root` must name a directory of completed runs.
+    """
+    if not _placeholders(parameters):
+        return parameters, {}
+    if runs_root is None:
+        raise SmokeError("Name completed runs with --saved-runs for saved panorama inputs")
+    root = Path(runs_root).absolute()
+    if root != root.resolve() or not root.is_dir():
+        raise SmokeError("Use a saved runs directory without symbolic links")
+    found = {}
+
+    def resolve(value):
+        if isinstance(value, dict) and PANORAMA_REFERENCE in value:
+            if not _placeholder(value):
+                raise SmokeError("Use an exact saved panorama placeholder")
+            name = value[PANORAMA_REFERENCE]
+            if name not in found:
+                found[name] = saved_panorama(root, name, settings)
+            return found[name].asset_id
+        if isinstance(value, dict):
+            return {key: resolve(item) for key, item in value.items()}
+        if isinstance(value, list):
+            return [resolve(item) for item in value]
+        return value
+
+    resolved = resolve(parameters)
+    return resolved, {ref.asset_id: ref for ref in found.values()}
+
+
+def contract_body(adapter, contract, parameters, refs, *, code=2):
+    """Apply the Environment lane contract to parameters against the current schema.
+
+    The native form and local MCP run the same `panorama_contract.prepare`:
+    schema drift fails closed, forced and default values are applied and only
+    verified saved panoramas fill panorama inputs. The model read is free.
+    """
+    schema = parse_schema(ModelRecord.from_api(adapter.model(contract.model_id)))
+    body, errors = panorama_contract.prepare(contract, schema.specs, parameters, panorama_refs=refs)
+    errors += [
+        error for error in validate(schema.specs, body, schema.one_of) if error not in errors
+    ]
+    if errors:
+        raise SmokeError("Panorama contract refused the request: " + "; ".join(errors), code)
+    return body
+
+
+def _saved_refs(plan):
+    """Rebuild the verified references bound into a contract quote."""
+    refs = plan.get("panorama_refs")
+    if not isinstance(refs, list):
+        raise SmokeError("Invalid saved panorama references", 4)
+    result = {}
+    for ref in refs:
+        if (
+            not isinstance(ref, dict)
+            or set(ref) != {"asset_id", "producer", "width", "height"}
+            or not isinstance(ref["asset_id"], str)
+            or not isinstance(ref["producer"], str)
+            or any(
+                ref[name] is not None and (type(ref[name]) is not int or ref[name] < 1)
+                for name in ("width", "height")
+            )
+        ):
+            raise SmokeError("Invalid saved panorama references", 4)
+        result[ref["asset_id"]] = panorama_contract.PanoramaRef(**ref)
+    return result
 
 
 def panoramas(record, paths):
@@ -258,6 +487,8 @@ def follow(
 def execute(args, settings, *, transport=None, downloader=None):
     """Use a private run directory; injected transports are for offline tests only."""
     material_payload = None
+    contract = None
+    refs = {}
     root = args.run_dir.absolute()
     if root != root.resolve() or (root.exists() and not root.is_dir()):
         raise SmokeError("Use a private run directory without symlink components")
@@ -267,6 +498,11 @@ def execute(args, settings, *, transport=None, downloader=None):
         if not isinstance(parameters, dict):
             raise SmokeError("Parameters must be one JSON object")
         json_bytes(parameters)
+        contract = panorama_case(args.model, result_kind, parameters)
+        # Saved panorama inputs are verified offline before the run exists.
+        parameters, refs = resolve_panoramas(
+            parameters, getattr(args, "saved_runs", None), settings
+        )
         # Never overwrite another quote, job, uncertain attempt or scope key.
         root.mkdir(mode=0o700)
         sync_directory(root.parent)
@@ -277,7 +513,7 @@ def execute(args, settings, *, transport=None, downloader=None):
             raise SmokeError("Run storage is incomplete; preserve it for review", 4)
         raw = read_bytes(root / "quote.json")
         plan = json.loads(raw)
-        if plan.get("schema_version") not in (1, 2, 3):
+        if plan.get("schema_version") not in (1, 2, 3, CONTRACT_QUOTE):
             raise SmokeError("Unsupported quote record")
         result_kind = "image" if plan["schema_version"] == 1 else plan.get("result_kind")
         if result_kind not in RESULT_KINDS:
@@ -286,6 +522,19 @@ def execute(args, settings, *, transport=None, downloader=None):
             raise SmokeError("Use the entry point matching this run's approved result kind")
         if args.command == "submit" and digest(raw) != args.approved_quote:
             raise SmokeError("Quote record changed; approve its current exact contents")
+        saved_model = plan.get("model")
+        if not isinstance(saved_model, str):
+            raise SmokeError("Unsupported quote record")
+        if plan["schema_version"] == CONTRACT_QUOTE:
+            if panorama_contract.contract_for(saved_model) is None:
+                raise SmokeError("Invalid saved panorama contract quote", 4)
+            contract = panorama_case(saved_model, result_kind, {})
+            refs = _saved_refs(plan)
+        elif args.command == "submit" and panorama_contract.contract_for(saved_model):
+            # An older quote of a contract model never ran the contract check.
+            raise SmokeError(
+                "This panorama quote has no contract check; create a new quote in a new run", 4
+            )
         if plan["schema_version"] == 3:
             material_payload = plan.get("material_payload_json")
             if (
@@ -312,7 +561,7 @@ def execute(args, settings, *, transport=None, downloader=None):
         raise SmokeError("Credentials or project changed; use the run's original scope")
     result_root = root / "results"
     result_root.mkdir(mode=0o700, exist_ok=True)
-    policy = StoragePolicy(frozenset({"cdn.cloud.scenario.com", "cdn.scenario.com"}))
+    policy = StoragePolicy(STORAGE_HOSTS)
     adapter = SDKAdapter(
         credentials,
         account_id=store.scope.account_id,
@@ -328,6 +577,8 @@ def execute(args, settings, *, transport=None, downloader=None):
             result_root=result_root,
         )
         if args.command == "quote":
+            if contract is not None:
+                parameters = contract_body(adapter, contract, parameters, refs)
             origin = JobOrigin(uuid.uuid4().hex, "model-smoke", "1", "download-only")
             quote = coordinator.quote_model(args.model, parameters, origin=origin)
             plan = {
@@ -340,6 +591,9 @@ def execute(args, settings, *, transport=None, downloader=None):
                 "payload_sha256": digest(quote.estimate.payload_json),
                 "cost": format(quote.estimate.cost, "f"),
             }
+            if contract is not None:
+                plan["schema_version"] = CONTRACT_QUOTE
+                plan["panorama_refs"] = [asdict(refs[key]) for key in sorted(refs)]
             if result_kind == "material":
                 material_payload = quote.estimate.payload_json.decode()
                 material_requirements(material_payload)
@@ -363,6 +617,13 @@ def execute(args, settings, *, transport=None, downloader=None):
                     "Submission was already attempted; use resume or inspect", 4
                 ) from None
             origin = JobOrigin(**plan["origin"])
+            if contract is not None:
+                # The contract must still accept the approved body unchanged.
+                body = contract_body(adapter, contract, plan["parameters"], refs, code=3)
+                if body != plan["parameters"]:
+                    raise SmokeError(
+                        "Panorama contract changed; nothing submitted, review again", 3
+                    )
             quote = coordinator.quote_model(plan["model"], plan["parameters"], origin=origin)
             if (
                 quote.estimate.cost != args.approved_cost
@@ -406,6 +667,11 @@ def parser(*, default_result_kind="image"):
                 item.set_defaults(result_kind=default_result_kind)
             item.add_argument("--model", required=True)
             item.add_argument("--parameters", type=Path, required=True)
+            item.add_argument(
+                "--saved-runs",
+                type=Path,
+                help="Directory of completed runs named by saved panorama placeholders",
+            )
         else:
             item.add_argument(
                 "--timeout", type=int, default=300, choices=range(1, 3601), metavar="SECONDS"

@@ -13,7 +13,7 @@ from types import SimpleNamespace
 from tools import smoke_image as model
 from tools.dev_config import live_settings
 
-NAME = re.compile(r"[a-z][a-z0-9_-]{0,39}")
+NAME = model.RUN_NAME
 SHA256 = re.compile(r"[a-f0-9]{64}")
 MAX_CASES = 8
 ATTEMPT_MARKER = "suite-attempt"
@@ -57,11 +57,16 @@ def validate_plan(plan, settings):
         ):
             raise model.SmokeError("Each case requires a model, result kind and input object")
         model.json_bytes(case)
+        model.panorama_case(case["model"], case["result_kind"], case["parameters"])
     return entries
 
 
 def quote(args, settings, execute):
     entries = validate_plan(json.loads(model.read_bytes(args.plan)), settings)
+    saved_runs = getattr(args, "saved_runs", None)
+    # Verify every saved panorama input offline before the first service request.
+    for case in entries:
+        model.resolve_panoramas(case["parameters"], saved_runs, settings)
     root = args.run_dir
     root.mkdir(mode=0o700)
     model.sync_directory(root.parent)
@@ -76,6 +81,7 @@ def quote(args, settings, execute):
                 result_kind=case["result_kind"],
                 model=case["model"],
                 parameters=parameters,
+                saved_runs=saved_runs,
             ),
             settings,
         )
@@ -201,6 +207,13 @@ def run(args, settings, *, execute=model.execute):
                 raise model.SmokeError("Existing suites cannot prepare or upload new inputs", 4)
             from tools import smoke_inputs
 
+            # Saved panorama inputs must verify before any upload is sent.
+            smoke_inputs.validate(plan, settings)
+            for case in plan["cases"]:
+                model.resolve_panoramas(
+                    case["parameters"], getattr(args, "saved_runs", None), settings
+                )
+
             args.plan = smoke_inputs.execute(
                 SimpleNamespace(
                     command="upload",
@@ -233,6 +246,11 @@ def parser():
         item.add_argument("--run-dir", type=Path, required=True)
         if command in {"quote", "budget-run"}:
             item.add_argument("--plan", type=Path, required=True)
+            item.add_argument(
+                "--saved-runs",
+                type=Path,
+                help="Completed suite whose cases fill saved panorama placeholders",
+            )
         if command != "quote":
             item.add_argument(
                 "--timeout", type=int, default=300, choices=range(1, 3601), metavar="SECONDS"

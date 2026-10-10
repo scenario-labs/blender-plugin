@@ -26,7 +26,9 @@ Create a private JSON input object appropriate to the selected custom model,
 for example a prompt and that model's supported size/output parameters. The tool
 retrieves the current model schema and validates those inputs through the shared
 adapter. It does not upload local references. Use an already imported asset ID
-when an authorized reference is needed.
+when an authorized reference is needed. An Environment lane model's saved 360
+panorama input instead names a completed run; see
+[Panorama contract cases](#panorama-contract-cases).
 
 ```sh
 mkdir -p workdir
@@ -156,6 +158,9 @@ original saved in place of the asset's preview with an OpenEXR container; a
 preview, a Radiance original or PNG/JPEG bytes never qualify. Neither kind
 decodes pixels, measures dynamic range or judges seams; those remain native and
 human review under [#98](https://github.com/scenario-labs/blender-plugin/issues/98).
+The Environment lane's contract models must use these kinds and their contract;
+see [Panorama contract cases](#panorama-contract-cases). The
+[advisory report](#advisory-panorama-report) measures seams, poles and range.
 
 A mismatch fails the check while preserving downloaded results for inspection.
 `resume` rechecks them without submitting again. MIME metadata alone does not
@@ -384,6 +389,160 @@ quote approval. An offline unit test validates this example against the plan
 checker, the committed file and the shared upload staging. It does not show that
 a provider accepts this image, and it is not live upload or paid generation
 acceptance.
+
+## Panorama contract cases
+
+The five Environment lane models, `model_scenario-skybox-flux`,
+`model_scenario-skybox-gpt`, `model_hunyuan-world-image-to-skybox`,
+`model_hdri-skybox` and `model_sc-upscale-flux-skybox`, go through the same
+[contract](../../scenario/core/scene/panorama_contract.py) as the native
+Environment form and local MCP, in single runs and in suites:
+
+- The result kind must match the model's output: `hdri` for `model_hdri-skybox`
+  and `panorama` for the others. A mismatch fails before any request.
+- `quote` reads the model's current schema, a free read, and applies the
+  contract before the dry run. Schema drift fails closed; forced values (the
+  HDRI's OpenEXR-only outputs) and the lane default (one Flux output) are
+  applied; a GPT size must be one of the 2:1 presets; the result must pass the
+  schema's own checks. A refused case prints the contract's reasons and quotes
+  nothing. The quote record, version 4, keeps the prepared parameters and the
+  verified panorama references.
+- `submit` applies the contract to the fresh schema again after claiming the
+  attempt; a change refuses submission with exit 3. A contract model quoted
+  without this check (record versions 1 to 3) cannot submit; quote it again in
+  a new run directory. `resume` is unchanged.
+
+An input that takes a saved 360 panorama, the HDRI and upscale `image` and the
+Flux restyle `image`, accepts only `{"$panorama": "RUN"}`. `RUN` names a
+completed run in the directory given by `--saved-runs`: a completed suite, whose
+cases are runs, or a directory holding single runs. Uploaded files and other
+asset IDs are refused there, as in local MCP, and a placeholder anywhere else
+fails before any request. Before any upload or service request, the tool opens
+that run's store with the selected key pair and project, which must match the
+run's saved scope, requires one finished job and verifies its files against
+their download receipts. It takes the first downloaded result whose saved
+metadata declares an equirectangular projection and that is the asset's own
+file, not an OpenEXR original. That file must pass the 2:1 PNG or JPEG
+preflight, and its measured size sets the exact upscale cap. Resolving a
+placeholder makes no service request.
+
+A suite quotes every case before its first submission, so a case cannot use
+another case's output from the same suite. Panorama acceptance therefore uses
+two suites, each with its own exact quotes and aggregate approval. The first
+generates a panorama from a prompt and another from a captured still. Render a
+camera still of an isolated Blender scene, save it as a PNG, review it and
+replace `CAPTURE_SHA256` with its SHA-256. Review HY World's `backend` input
+before quoting: it changes the price.
+
+```json
+{
+  "schema_version": 2,
+  "project_id": null,
+  "inputs": [
+    {
+      "name": "capture",
+      "file": "capture.png",
+      "sha256": "CAPTURE_SHA256",
+      "kind": "image",
+      "content_type": "image/png"
+    }
+  ],
+  "cases": [
+    {
+      "name": "panorama-text",
+      "result_kind": "panorama",
+      "model": "model_scenario-skybox-flux",
+      "parameters": {"prompt": "A quiet alpine lake at dawn surrounded by snowy peaks"}
+    },
+    {
+      "name": "panorama-capture",
+      "result_kind": "panorama",
+      "model": "model_hunyuan-world-image-to-skybox",
+      "parameters": {"image": {"$input": "capture"}}
+    }
+  ]
+}
+```
+
+Upload, quote and approve it as in [Prepare reference inputs](#prepare-reference-inputs)
+and [One aggregate budget](#one-aggregate-budget-for-a-suite), for example with
+`--run-dir workdir/panorama-suite`. Once both cases are verified, a second plan
+converts the prompt panorama to an HDRI and upscales the captured one:
+
+```json
+{
+  "schema_version": 1,
+  "project_id": null,
+  "cases": [
+    {
+      "name": "hdri",
+      "result_kind": "hdri",
+      "model": "model_hdri-skybox",
+      "parameters": {"image": {"$panorama": "panorama-text"}}
+    },
+    {
+      "name": "upscale",
+      "result_kind": "panorama",
+      "model": "model_sc-upscale-flux-skybox",
+      "parameters": {"image": {"$panorama": "panorama-capture"}, "upscaleFactor": 2}
+    }
+  ]
+}
+```
+
+```sh
+make smoke SMOKE_ARGS="quote --plan workdir/panorama-hdri-plan.json --run-dir workdir/panorama-hdri --saved-runs workdir/panorama-suite"
+```
+
+`budget-run` accepts the same option. `submit` and `resume` need none: the
+verified references are part of each approved quote. The hosted workflow runs
+one suite per dispatch without `--saved-runs`, so it can run the first suite
+only. Run the second locally against the preserved first suite, or against the
+`smoke/suite` directory of its decrypted recovery archive, with the same API-key
+pair and project. As for every suite, nothing is spent without `SCENARIO_SMOKE=1`
+and an authorized project, plan and budget.
+
+## Advisory panorama report
+
+```sh
+uv run --locked --env-file .env.local python -m tools.panorama_report report \
+  --run-dir workdir/panorama-suite/panorama-text --run-dir workdir/panorama-hdri/hdri \
+  --output workdir/panorama-report.json
+```
+
+`tools.panorama_report` reads completed runs only. With the runs' API-key pair
+and project it verifies their saved files against the download receipts
+offline, as `--saved-runs` does, and selects up to 16 results whose saved
+metadata declares an equirectangular projection. It copies them to a private
+temporary directory and runs background Blender with a fresh offline profile
+through `tools/blender_env.py run`; choose the executable with `--blender` or
+`BLENDER`. Blender decodes each copy, which must match the preflight's format
+and size, and the report lists for each file:
+
+| Field | Meaning |
+| --- | --- |
+| `container` | Format, size, OpenEXR flag and declared chromaticities from the bounded preflight |
+| `decoded` | Blender's format, size, channel count, float flag and color space |
+| `seam` | Mean absolute luminance difference across the wrap (`edge`), between adjacent columns (`neighbor`) and between columns a quarter turn apart (`quarter_turn`), with the `edge_to_neighbor` and `edge_to_quarter_turn` ratios |
+| `poles` | Mean row variance of the top and bottom 1% of rows relative to the whole image's variance |
+| `dynamic_range` | OpenEXR only: luminance percentiles 0.1, 1, 50, 99 and 99.9, minimum, maximum, non-finite count and `stops_p1_to_p99_9`, log2(p99.9 / p1) |
+
+Luminance uses Rec.709 weights on the values Blender decodes. For OpenEXR these
+are floats after Blender's color space conversion, which turns an ACES2065-1
+file into its scene-linear Rec.709 space; `decoded.colorspace` records Blender's
+choice. PNG and JPEG values keep their stored sRGB encoding, so their seam and
+pole values describe luma and no dynamic range is reported. Across a seamless
+wrap the edge differs like adjacent columns do, so `edge_to_neighbor` stays
+around 1 or below and `edge_to_quarter_turn` well below 1; a visible seam raises
+both. Uniform poles score near 0. These are advisory evidence, not thresholds:
+the report never accepts or rejects a panorama, and seams, poles and lighting
+still need review in Blender.
+
+The JSON names run and result positions, the contract model ID, media type,
+source, receipt size and SHA-256 and Blender's version. It omits credentials,
+project, job and asset IDs, URLs, file paths and case names; review it before
+attaching it as evidence. The command makes no Scenario request and changes no
+saved job.
 
 ## Protected hosted execution and recovery
 

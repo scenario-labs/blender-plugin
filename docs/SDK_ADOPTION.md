@@ -422,6 +422,16 @@ from the same `assets.with_raw_response.retrieve` metadata, then the bounded
 original. They add no SDK call or dependency. Offline tests use synthetic PNG,
 JPEG and OpenEXR headers, not live skybox output.
 
+[Panorama contract cases](../tests/smoke/README.md#panorama-contract-cases) for
+the five Environment lane models read the model's current record with the same
+`models.with_raw_response.retrieve`, through `SDKAdapter.model`, before the dry
+run and again after claiming the submission attempt, and apply the shared
+`panorama_contract.prepare` to it. Quotes and the single submission still use
+`generate.with_raw_response.run_model` through the shared coordinator.
+Saved panorama inputs and the
+[advisory report](../tests/smoke/README.md#advisory-panorama-report) verify local
+saved receipts with an adapter that refuses online access; they make no SDK call.
+
 ## Shared model text reads
 
 The shared coordinator's [model text reader](JOB_COORDINATOR.md#model-text-recovery)

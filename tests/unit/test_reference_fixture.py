@@ -42,6 +42,13 @@ def chunk(kind, data):
     return struct.pack(">I", len(data)) + kind + data + struct.pack(">I", zlib.crc32(kind + data))
 
 
+def paeth(left, up, corner):
+    """The PNG specification's predictor, independent of the helper under test."""
+    estimate = left + up - corner
+    distances = [abs(estimate - left), abs(estimate - up), abs(estimate - corner)]
+    return (left, up, corner)[distances.index(min(distances))]
+
+
 def filtered_png(width, height, rows, kinds):
     """Encode RGB rows with an explicit PNG filter type per row (forward filters)."""
     stride, previous, raw = width * 3, bytes(width * 3), bytearray()
@@ -56,7 +63,7 @@ def filtered_png(width, height, rows, kinds):
                 left,
                 previous[i],
                 (left + previous[i]) // 2,
-                fixture._paeth(left, previous[i], corner),
+                paeth(left, previous[i], corner),
             )[kind]
             out.append((value - predictor) & 255)
         raw += bytes((kind,)) + out
@@ -114,11 +121,13 @@ def test_reference_frames_one_object_on_a_plain_backdrop():
     assert len(set(colours)) > 1000
 
 
-@pytest.mark.parametrize("kinds", [[0] * 5, [1] * 5, [2] * 5, [3] * 5, [4] * 5, [4, 3, 2, 1, 0]])
+@pytest.mark.parametrize(
+    "kinds", [[0] * 12, [1] * 12, [2] * 12, [3] * 12, [4] * 12, [4, 3, 2, 1, 0] * 2 + [4, 4]]
+)
 def test_decoder_reverses_every_png_row_filter(kinds):
-    rows = noise(7, 5)
-    width, height, decoded, filters = fixture.decode_png(filtered_png(7, 5, rows, kinds))
-    assert (width, height, decoded, filters) == (7, 5, rows, set(kinds))
+    rows = noise(16, 12)
+    width, height, decoded, filters = fixture.decode_png(filtered_png(16, 12, rows, kinds))
+    assert (width, height, decoded, filters) == (16, 12, rows, set(kinds))
 
 
 def test_decoder_matches_pillow_adaptive_encoding():
@@ -143,38 +152,48 @@ def replace_header(data, header):
     return data[:8] + chunk(b"IHDR", header) + data[end:]
 
 
+RAW = b"\0" + bytes(6) + b"\0" + bytes(6)
+IDAT = chunk(b"IDAT", zlib.compress(RAW, 9))
+
+
+def unterminated(data):
+    stream = zlib.compressobj(9)
+    return stream.compress(data) + stream.flush(zlib.Z_SYNC_FLUSH)
+
+
 @pytest.mark.parametrize(
-    "mutate",
+    ("mutate", "message"),
     [
-        lambda data: b"\x89PNG\r\n\x1a\x00" + data[8:],
-        lambda data: data[:-1],
-        lambda data: data + b"\0",
-        lambda data: data[:20] + bytes((data[20] ^ 1,)) + data[21:],
-        lambda data: data[: -len(chunk(b"IEND", b""))],
-        lambda data: replace_header(data, struct.pack(">IIBBBBB", 2, 2, 8, 6, 0, 0, 0)),
-        lambda data: replace_header(data, struct.pack(">IIBBBBB", 2, 2, 16, 2, 0, 0, 0)),
-        lambda data: replace_header(data, struct.pack(">IIBBBBB", 2, 2, 8, 2, 0, 0, 1)),
-        lambda data: replace_header(data, struct.pack(">IIBBBBB", 2, 3, 8, 2, 0, 0, 0)),
-        lambda data: filtered_png(2, 2, bytes(12), [0, 0]).replace(
-            chunk(b"IDAT", zlib.compress(bytes(14))), chunk(b"IDAT", zlib.compress(bytes(13)))
-        ),
-        lambda data: data.replace(
-            chunk(b"IDAT", zlib.compress(b"\0" + bytes(6) + b"\0" + bytes(6), 9)),
-            chunk(b"IDAT", zlib.compress(b"\5" + bytes(6) + b"\0" + bytes(6), 9)),
-        ),
+        (lambda data: b"\x89PNG\r\n\x1a\x00" + data[8:], "Not a bounded PNG"),
+        (lambda data: data[:-1], "Truncated"),
+        (lambda data: data + b"\0", "end at IEND"),
+        (lambda data: data[:29] + bytes((data[29] ^ 1,)) + data[30:], "CRC mismatch"),
+        (lambda data: data[: -len(chunk(b"IEND", b""))], "Truncated"),
+        (lambda data: chunk(b"tEXt", b"x") + data, "Not a bounded PNG"),
+        (lambda data: data[:8] + chunk(b"tEXt", b"x") + data[8:], "start with IHDR"),
+        (lambda data: replace_header(data, struct.pack(">IIBBBBB", 2, 2, 8, 6, 0, 0, 0)), "RGB"),
+        (lambda data: replace_header(data, struct.pack(">IIBBBBB", 2, 2, 16, 2, 0, 0, 0)), "RGB"),
+        (lambda data: replace_header(data, struct.pack(">IIBBBBB", 2, 2, 8, 2, 0, 0, 1)), "RGB"),
+        (lambda data: replace_header(data, struct.pack(">IIBBBBB", 0, 2, 8, 2, 0, 0, 0)), "RGB"),
+        (lambda data: replace_header(data, struct.pack(">IIBBBBB", 2, 3, 8, 2, 0, 0, 0)), "header"),
+        (lambda data: data.replace(IDAT, chunk(b"IDAT", zlib.compress(RAW[:-1]))), "header"),
+        (lambda data: data.replace(IDAT, chunk(b"IDAT", zlib.compress(RAW + b"\0"))), "header"),
+        (lambda data: data.replace(IDAT, chunk(b"IDAT", unterminated(RAW))), "header"),
+        (lambda data: data.replace(IDAT, chunk(b"IDAT", zlib.compress(b"\5" + RAW[1:]))), "filter"),
     ],
 )
-def test_decoder_rejects_invalid_or_unsupported_png(mutate):
+def test_decoder_rejects_invalid_or_unsupported_png(mutate, message):
     data = fixture.encode_png(2, 2, bytes(12))
+    assert IDAT in data
     assert fixture.decode_png(data)[:2] == (2, 2)
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match=message):
         fixture.decode_png(mutate(data))
 
 
 def test_compare_counts_differing_pixels_and_largest_channel_change():
     rows = noise(4, 4)
     changed = bytearray(rows)
-    changed[0] ^= 2
+    changed[0] ^= 1
     changed[10] = (changed[10] + 7) & 255
     assert fixture.compare(rows, rows) == (0, 0)
     assert fixture.compare(rows, bytes(changed)) == (2, 7)

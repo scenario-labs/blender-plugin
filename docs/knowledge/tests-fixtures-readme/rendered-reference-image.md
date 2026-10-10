@@ -14,7 +14,7 @@
     "sources": {
       "tests/fixtures/synthetic/reference-toadstool-512.png": "b70e8debff0ba0fc7dd8823a9a38229600e3fd7b8f22a1a32c490b4310182e02",
       "tools/render_reference_fixture.py": "cc8b83fc56a33275f731be8ec54e8ca181dfca7c39f64af583ce4dd777c7786d",
-      "tests/unit/test_reference_fixture.py": "16ff652fa346f81e864d61c97fb89c38035902116014653d2f67c7ab56048d3f",
+      "tests/unit/test_reference_fixture.py": "475556b4c88fd0dec70fa6e342b803e03ccdd439936d48ffd748346cf7676eb2",
       "tools/blender_env.py": "53df246afea605b7c45f4c67296872a0d62571da3336268b6e84c303314eddde"
     }
   }

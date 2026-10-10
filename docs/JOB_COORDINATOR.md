@@ -552,7 +552,7 @@ with a known remote ID and returns review targets keyed by scope, request,
 remote job and asset, without a receipt. The caller, which owns the waiting
 step projection, supplies that step's asset IDs.
 
-The [preview lane](#application-owned-workers) runs five commands with the cache
+The [preview lane](#application-owned-workers) runs six commands with the cache
 root supplied by the application. `prepare_result_previews(work, root=...)`
 rechecks that each target still holds the same receipt (a review target, the
 same `remote` workflow job), reads verified cache

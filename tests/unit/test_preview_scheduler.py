@@ -4,14 +4,18 @@
 
 import threading
 from concurrent import futures
+from functools import partial
 from types import SimpleNamespace
+from unittest.mock import Mock
 
 import pytest
 
 from scenario.core.jobs import result_previews as previews
+from scenario.core.jobs import transfers
 from scenario.core.jobs.coordinator import RemoteSnapshot
 from scenario.core.jobs.preview_scheduler import ResultPreviewScheduler
 from scenario.core.jobs.store import JobIntent, JobState
+from scenario.core.jobs.transfers import ResultDownloader
 from scenario.core.jobs.workers import JobWorkers
 from tests.unit.test_result_previews import (
     CDN,
@@ -27,6 +31,7 @@ from tests.unit.test_result_previews import (
     wav,
     work_directories,
 )
+from tests.unit.test_result_transfers import Response
 
 STILL, CLIP, ENVELOPE = previews.STILL, previews.CLIP, previews.ENVELOPE
 State = previews.PreviewState
@@ -106,6 +111,75 @@ def test_available_thumbnail_and_requested_clip_need_one_poll(lane):
     lane.clock.now += 1000
     drive(scheduler)
     assert len(service.calls) == 1 and len(service.downloader.calls) == 2
+
+
+def _storage(service, monkeypatch, *responses):
+    """The real downloader over a mocked HTTPS connection answering ``responses`` in turn."""
+    connection = Mock()
+    connection.getresponse.side_effect = responses
+    monkeypatch.setattr(transfers.http.client, "HTTPSConnection", Mock(return_value=connection))
+    monkeypatch.setattr(
+        service.downloader, "download", partial(ResultDownloader.download, service.downloader)
+    )
+    return connection
+
+
+def _redirect():
+    # A first request for a new preview can redirect off the configured host.
+    return Response(b"", status=302, headers={"Location": "https://images.example.invalid/t"})
+
+
+def test_cross_host_redirect_is_polled_again_until_storage_serves_the_still(lane, monkeypatch):
+    service, clock, scheduler = lane.env, lane.clock, lane.scheduler
+    ready_job(service, "request", [("asset-video", "video/mp4", MP4)])
+    url = f"{CDN}/still.jpg?Signature=preview-secret"
+    service.assets["asset-video"] = asset_record("asset-video", "video/mp4", thumbnail=url)
+    connection = _storage(service, monkeypatch, _redirect(), Response(JPEG))
+    scheduler.request("request")
+    drive(scheduler)
+    first = state(lane, "asset-video")
+    assert first.state == State.PENDING and "retrying" in first.reason
+    assert "https" not in first.reason and "Signature" not in first.reason
+    assert work_directories(service) == []
+    clock.now += 4
+    drive(scheduler)
+    assert len(service.calls) == 1  # The backoff holds the next poll.
+    clock.now += 1
+    drive(scheduler)
+    ready = state(lane, "asset-video")
+    assert ready.state == State.READY and ready.preview.path.read_bytes() == JPEG
+    assert len(service.calls) == 2 and connection.request.call_count == 2
+    # Only the configured storage host was contacted; the redirect was not followed.
+    assert {call.args[0] for call in transfers.http.client.HTTPSConnection.call_args_list} == {
+        "cdn.cloud.scenario.com"
+    }
+
+
+def test_persistent_transfer_failure_settles_failed_at_the_window_end(lane, monkeypatch):
+    service, clock, scheduler = lane.env, lane.clock, lane.scheduler
+    ready_job(service, "request", [("asset-model", "model/gltf-binary", GLB)])
+    url = f"{CDN}/model.png?Signature=preview-secret"
+    service.assets["asset-model"] = asset_record("asset-model", "model/gltf-binary", thumbnail=url)
+    connection = _storage(service, monkeypatch)
+    connection.getresponse.side_effect = lambda: _redirect()
+    scheduler.request("request")
+    start, polls = clock.now, []
+    for _ in range(420):
+        before = len(service.calls)
+        drive(scheduler)
+        if len(service.calls) > before:
+            polls.append(clock.now - start)
+        clock.now += 1
+    assert polls == [0, 5, 15, 35, 75, 135, 195, 255, 300]
+    assert connection.request.call_count == len(polls)
+    failed = state(lane, "asset-model")
+    assert failed.state == State.FAILED and "Retry" in failed.reason
+    assert list(service.cache.rglob("still.*")) == [] and work_directories(service) == []
+    # No missing marker was written: an explicit retry fetches again at once.
+    connection.getresponse.side_effect = [Response(png(4, 4))]
+    assert scheduler.retry("request", "asset-model").get(STILL).state == State.QUEUED
+    drive(scheduler)
+    assert state(lane, "asset-model").state == State.READY
 
 
 def test_offline_time_does_not_consume_the_window(lane):

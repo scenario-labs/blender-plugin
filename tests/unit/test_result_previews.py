@@ -568,9 +568,7 @@ def test_audio_still_and_envelope_use_server_and_local_paths(env):
 @pytest.mark.parametrize(
     "thumbnail,data,reason",
     [
-        ("https://other.example.invalid/thumb.png", png(2, 2), "download"),
         (f"{CDN}/thumb.gif", GIF, "unsupported"),
-        (f"{CDN}/huge.png", b"\x89PNG\r\n\x1a\n" + b"\x00" * previews.STILL_MAX_BYTES, "download"),
         (f"{CDN}/wide.png", png(previews.STILL_MAX_EDGE + 1, 1), "larger"),
         (f"{CDN}/tall.jpg", jpeg(16, previews.STILL_MAX_EDGE + 1), "larger"),
         (f"{CDN}/lossy.webp", webp(previews.STILL_MAX_EDGE + 1, 8), "larger"),
@@ -580,7 +578,7 @@ def test_audio_still_and_envelope_use_server_and_local_paths(env):
         (f"{CDN}/empty.jpg", jpeg(0, 4), "dimensions"),
     ],
 )
-def test_untrusted_hosts_formats_and_sizes_fail_without_caching(env, thumbnail, data, reason):
+def test_unsupported_formats_and_pixel_sizes_fail_without_caching(env, thumbnail, data, reason):
     ready_job(env, "request", [("asset-video", "video/mp4", MP4)])
     env.assets["asset-video"] = asset_record("asset-video", "video/mp4", thumbnail=thumbnail)
     env.downloader.files[thumbnail] = data
@@ -589,6 +587,66 @@ def test_untrusted_hosts_formats_and_sizes_fail_without_caching(env, thumbnail, 
     assert "https" not in result.reason and "Signature" not in result.reason
     assert list(env.cache.rglob("still.*")) == []
     assert work_directories(env) == []
+
+
+@pytest.mark.parametrize(
+    "thumbnail,data",
+    [
+        ("https://other.example.invalid/thumb.png?Signature=s", png(2, 2)),
+        (f"{CDN}/huge.png?Signature=s", b"\x89PNG\r\n\x1a\n" + b"\x00" * previews.STILL_MAX_BYTES),
+        (f"{CDN}/redirected.png?Signature=s", None),
+    ],
+    ids=["untrusted-host", "oversized", "cross-host-redirect"],
+)
+def test_incomplete_transfers_stay_pending_until_the_window_ends(env, monkeypatch, thumbnail, data):
+    ready_job(env, "request", [("asset-video", "video/mp4", MP4)])
+    env.assets["asset-video"] = asset_record("asset-video", "video/mp4", thumbnail=thumbnail)
+    if data is None:
+
+        def download(url, **kwargs):
+            # The real downloader's answer to a redirect to another host.
+            raise TransferError("Storage redirect destination rejected")
+
+        monkeypatch.setattr(env.downloader, "download", download)
+    else:
+        env.downloader.files[thumbnail] = data
+    first = outcome(run(env, work(env, "request", [STILL])))
+    assert first.state == State.PENDING and "retrying" in first.reason
+    final = outcome(run(env, work(env, "request", [STILL], final=True)))
+    assert final.state == State.FAILED and "Retry" in final.reason
+    for result in (first, final):
+        assert "https" not in result.reason and "Signature" not in result.reason
+    assert previews.PreviewCache(env.cache).read(final_key(env), STILL) is None
+    assert list(env.cache.rglob("still.*")) == [] and work_directories(env) == []
+
+
+def test_preview_bytes_that_fail_their_receipt_fail_at_once(env, monkeypatch):
+    ready_job(env, "request", [("asset-video", "video/mp4", MP4)])
+    url = f"{CDN}/thumb.jpg"
+    env.assets["asset-video"] = asset_record("asset-video", "video/mp4", thumbnail=url)
+    env.downloader.files[url] = JPEG
+
+    def verify(root, receipt):
+        raise TransferError("Result does not match its receipt")
+
+    monkeypatch.setattr(env.downloader, "verify", verify)
+    result = outcome(run(env, work(env, "request", [STILL])))
+    assert result.state == State.FAILED and "receipt" in result.reason
+    assert list(env.cache.rglob("still.*")) == [] and work_directories(env) == []
+
+
+def test_transfer_stopped_by_revoked_online_access_reports_offline(env, monkeypatch):
+    ready_job(env, "request", [("asset-video", "video/mp4", MP4)])
+    url = f"{CDN}/thumb.jpg"
+    env.assets["asset-video"] = asset_record("asset-video", "video/mp4", thumbnail=url)
+
+    def download(url, **kwargs):
+        env.online = False
+        raise TransferError("Storage transfer interrupted")
+
+    monkeypatch.setattr(env.downloader, "download", download)
+    result = outcome(run(env, work(env, "request", [STILL], final=True)))
+    assert result.state == State.OFFLINE and work_directories(env) == []
 
 
 @pytest.mark.parametrize(

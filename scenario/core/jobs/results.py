@@ -634,6 +634,25 @@ class ResultCommands:
                     )
             except previews.PreviewCanceled:
                 raise
+            except previews.PreviewUnavailable:
+                # Storage can redirect elsewhere or fail before it serves a new
+                # preview, so an incomplete transfer polls again like a late one.
+                if not self._adapter.network_allowed():
+                    settle(index, rendition, state.OFFLINE, reason="Online access is disabled")
+                elif item.final:
+                    settle(
+                        index,
+                        rendition,
+                        state.FAILED,
+                        reason="The preview download did not complete; use Retry",
+                    )
+                else:
+                    settle(
+                        index,
+                        rendition,
+                        state.PENDING,
+                        reason="The preview download did not complete; retrying",
+                    )
             except previews.PreviewError as error:
                 settle(index, rendition, state.FAILED, reason=str(error))
 
@@ -643,8 +662,9 @@ class ResultCommands:
         Verified cache entries are reused. Images and audio get decode requests
         holding a private copy rehashed against the saved receipt. Server stills
         and clips read SDK asset metadata once per batch with ``get_bulk``, then
-        use the bounded result downloader and its storage hosts. The caller owns returned decode
-        requests and must finish or discard them.
+        use the bounded result downloader and its storage hosts; a transfer that
+        does not complete stays pending until the batch is ``final``. The caller
+        owns returned decode requests and must finish or discard them.
         """
         if self._downloader is None:
             raise ResultError("Result storage has not been configured")

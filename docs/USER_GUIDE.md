@@ -684,7 +684,7 @@ private local files after work stops, preserving saved uploads. Capture files
 also expire when the session shuts down; upload the desired output or copy it
 elsewhere before that. Captures do not resume automatically after restart.
 See [capture approval](FILM_PLAN.md#shared-capture-and-upload-approval) for limits
-and MCP equivalents. Local final assembly and Film export remain unavailable.
+and MCP equivalents. Film video export is not available yet.
 Desktop still capture, approval cancellation, synthetic upload and cleanup pass
 on macOS Blender 5.1.2; see [the evidence and limits](UI_STYLE.md#film-capture-controls).
 Live uploads, desktop video cancellation, other OS/DPI and integrated release
@@ -701,13 +701,36 @@ use **Inspect saved jobs** instead of repeating an uncertain generation. See
 source requirements and acceptance limits. Synthetic desktop interaction passes
 on macOS Blender 5.1.2; live provider and other OS/DPI acceptance remain pending.
 
+**Film > Review** assembles saved source media into a new final or previs review
+scene. Choose **Prepare review** and confirm. Preparation copies up to 2 GiB of
+downloaded results and retained uploads into private storage and measures them
+with installed `ffprobe`; video frame rates must match the recipe. When the
+recipe's master is saved, you can include it as a muted alternate. Then choose
+**Build review scene** and check its separate confirmation. Your working scene stays
+selected; select the new scene in the scene selector or Video Sequencer to watch
+it. Saved jobs record the generated sources as applied. Prepare and build one
+review at a time: building a review also invalidates any other unbuilt review for
+the same working scene.
+
+Changing the recipe, frame or scene before building, including selecting, adding or
+editing objects in it or using Undo or Redo, deletes the private copies; prepare
+again. The panel reminds you: "Selecting, editing or Undo here discards it".
+Leaving the working scene and selecting it again counts as a change, even when preparation
+finished while you were away. **Discard review** deletes an unbuilt review's copies.
+If a build is uncertain, save the offered receipt, or inspect saved jobs and
+acknowledge the inspection; never build the same review again. Undo removes the
+review scene but keeps its private copies and saved receipts. See
+[review controls](FILM_PLAN.md#native-and-mcp-review-controls) for MCP equivalents
+and limits. Desktop interaction for these controls has not been verified, and video
+export is not available yet.
+
 
 ## Expanded Studio view
 
 Choose **Studio** beside **Scenario** in the 3D viewport header to open expanded
 controls. It opens only when requested. Create uses the same prompt, model,
 references and settings as the composer and sidebar. Film groups task, shot,
-capture, timeline and composition controls; Jobs and Results expose the same
+capture, timeline, composition and review controls; Jobs and Results expose the same
 saved work and explicit apply actions. Connection shows the selected credential
 source and optional project and provides Preferences and local agent setup.
 

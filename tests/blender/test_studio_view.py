@@ -240,6 +240,28 @@ class StudioViewTests(unittest.TestCase):
         self.assertNotIn(marker, [c.kwargs for c in layout.label.call_args_list])
         self.assertFalse(self.workflow.calls)
 
+    def test_film_review_page_draws_shared_review_panel_in_bounded_rows(self):
+        panels = submodule("blender.panels")
+        review = submodule("blender.film_review_controls")
+        self.assertIs(self.studio.FILM_PANELS["REVIEW"], review.SCENARIO_PT_film_review)
+        self.view.page, self.view.film_page = "FILM", "REVIEW"
+        layout = MagicMock()
+        with patch.object(panels, "draw_enum_tabs") as tabs:
+            self.studio.draw_view(layout, bpy.context, width=400)
+        self.assertEqual(
+            tabs.call_args_list[1].args[3],
+            (("TASKS", "SHOTS", "CAPTURE"), ("TIMELINE", "COMPOSITION", "REVIEW")),
+        )
+        box = layout.box.return_value
+        self.assertIn(
+            {"text": "Assemble review", "icon": "SEQUENCE"},
+            [c.kwargs for c in box.label.call_args_list],
+        )
+        self.assertIn(
+            "scenario.prepare_film_review", [c.args[0] for c in box.operator.call_args_list]
+        )
+        self.assertFalse(self.workflow.calls)
+
     def test_compact_navigation_bounds_segment_rows(self):
         panels = submodule("blender.panels")
         self.view.page = "JOBS"

@@ -24,6 +24,9 @@ EXPECTED = {
         "film_composition_review",
         "estimate_film_composition",
         "generate_film_composition",
+        "prepare_film_review",
+        "film_review_status",
+        "build_film_review",
         "film_capture_sources",
         "prepare_film_capture",
         "render_film_capture",
@@ -149,6 +152,20 @@ def test_experimental_paths_are_explicit_without_removing_tools():
         assert "without Blender application" not in description, name
         for capability in UNACCEPTED_CAPABILITIES:
             assert f"({capability})" in description, (name, capability)
+
+
+def test_film_review_descriptions_name_every_pre_build_invalidation():
+    _, calls = specs("tools_scenario")
+    descriptions = {call.args[0].value: call.args[1].value for call in calls}
+    for name in ("prepare_film_review", "film_review_status"):
+        description = descriptions[name]
+        for change in (
+            "object selection or edits",
+            "Undo or Redo",
+            "building another review for the scene",
+            "selecting it again",
+        ):
+            assert change in description, (name, change)
 
 
 def test_list_models_reports_the_picker_status():

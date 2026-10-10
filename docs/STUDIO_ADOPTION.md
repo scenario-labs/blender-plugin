@@ -290,9 +290,12 @@ invalid sound strip. Matching movie/cut frame rates are required until explicit
 normalization is implemented. The [contract](FILM_PLAN.md#native-saved-media-review-primitive)
 records limits and installed synthetic tests. The shared session now prepares
 independent copies on existing workers and separately approves native application
-with generated-source claims and receipt-only recovery. Active controls, portable
-export and provider/desktop acceptance remain separate; no prototype client or
-production ledger is imported.
+with generated-source claims and receipt-only recovery. First-party
+[native/MCP review controls](FILM_PLAN.md#native-and-mcp-review-controls) expose
+those commands in the sidebar, the Studio Film **Review** page and local MCP, with
+separate preparation and build approvals; no Studio UI code is copied for them.
+Video export, the retained case-study bundle and provider/desktop acceptance
+remain separate; no prototype client or production ledger is imported.
 
 ## Next implementation gates
 

@@ -12,6 +12,7 @@ from . import (
     film,
     film_capture_controls,
     film_composition_controls,
+    film_review_controls,
     film_scene_controls,
     film_timeline_controls,
     library_view,
@@ -34,7 +35,7 @@ def redraw_popups():
 
 PAGES = (
     ("CREATE", "Create", "Use the same model, prompt, references and settings as the composer"),
-    ("FILM", "Film", "Prepare Film tasks, shots, captures, timeline and composition"),
+    ("FILM", "Film", "Prepare Film tasks, shots, captures, timeline, composition and review"),
     ("WORKFLOWS", "Workflows", "Choose a workflow, edit its inputs and approve its exact price"),
     ("LIBRARY", "Library", "Browse and search assets in the selected connection"),
     ("JOBS", "Jobs", "Inspect running and saved jobs in the selected connection"),
@@ -47,6 +48,7 @@ FILM_PAGES = (
     ("CAPTURE", "Capture", "Review local rendering and separately approve capture upload"),
     ("TIMELINE", "Timeline", "Build an editable sequence from selected shot scenes"),
     ("COMPOSITION", "Composition", "Review and approve final or previs composition"),
+    ("REVIEW", "Review", "Assemble saved media into a new final or previs review scene"),
 )
 FILM_PANELS = {
     "TASKS": film.SCENARIO_PT_film,
@@ -54,6 +56,7 @@ FILM_PANELS = {
     "CAPTURE": film_capture_controls.SCENARIO_PT_film_capture,
     "TIMELINE": film_timeline_controls.SCENARIO_PT_film_timeline,
     "COMPOSITION": film_composition_controls.SCENARIO_PT_film_composition,
+    "REVIEW": film_review_controls.SCENARIO_PT_film_review,
 }
 
 

@@ -10,7 +10,7 @@ is Blender 5.0; dependency and runtime acceptance have separate gates.
 | Responsibility | Source | Current behavior |
 | --- | --- | --- |
 | Registration | [registry.py](../../scenario/blender/registry.py) | Registers properties, panels, operators, composer, pump and local server integration. The `scenario_blender` headless command serves local MCP on the main thread. |
-| UI lifetime and state | [runtime.py](../../scenario/blender/runtime.py) | Owns the credential-bound SDK catalog and process-wide UI/MCP state; native form quote/submission and Film task/capture/composition controls use the selected `JobSession`; local Film final assembly/export remain to integrate. |
+| UI lifetime and state | [runtime.py](../../scenario/blender/runtime.py) | Owns the credential-bound SDK catalog and process-wide UI/MCP state; native form quote/submission and Film task/capture/composition/review controls use the selected `JobSession`; Film video export remains to integrate. |
 | UI generation | [generation.py](../../scenario/blender/generation.py) | Every native model form consumes a lane-bound session quote before durable submission; unfinished file/capture/Spark inputs block final pricing and submission. |
 | Main-thread application | [pump.py](../../scenario/blender/pump.py) | Drains SDK catalog events and maintains shared job delivery. Unbound prototype completions cannot apply results. GUI timer handling differs from headless execution. |
 | Local MCP | [server.py](../../scenario/mcp/server.py), [tools_scenario.py](../../scenario/mcp/tools_scenario.py), [mcp_service.py](../../scenario/blender/mcp_service.py) | Queues scene tools for main-thread execution; model listing/schema use the same SDK catalog as the UI, all model generation lanes use the shared session; prototype records remain local snapshots. |
@@ -548,8 +548,12 @@ The [native review primitive](../FILM_PLAN.md#native-saved-media-review-primitiv
 now assembles independent receipt-bound picture/audio sequences. Its
 [shared command layer](../FILM_PLAN.md#shared-native-review-preparation-and-application)
 prepares copies on existing workers, then separately checks original recipe/scene
-approval and durable generated-source application claims. Native/MCP presentation
-and approval controls still need wiring. Portable export remains unimplemented.
+approval and durable generated-source application claims.
+[Native/MCP review controls](../FILM_PLAN.md#native-and-mcp-review-controls) now
+present it through session-owned `JobSession.film_review` handles with separate
+preparation and build approvals; runtime maintenance polls them independently of
+the panel. Installed synthetic tests cover the controls; desktop interaction is
+pending. Portable export remains unimplemented.
 
 
 ## Active workflow commands

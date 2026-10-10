@@ -47,8 +47,16 @@ establish live generation or full render-lane desktop acceptance.
   after restart. Synthetic composition approval, mode navigation, invalidation and
   saved-job inspection pass on macOS Blender 5.1.2; see
   [the evidence and limits](UI_STYLE.md#film-composition-controls). Live provider
-  acceptance and other OS/DPI behavior remain pending; local final assembly and
-  export remain unavailable. Complete runtime adoption
+  acceptance and other OS/DPI behavior remain pending. Native/MCP review assembly
+  now prepares private saved-media copies and separately approves a new review
+  scene with application claims; it has installed synthetic coverage only, and
+  desktop interaction, live media and human motion/audio review remain pending.
+  A frame, recipe or object edit, object selection, an Undo or Redo, building
+  another review for the same scene, or leaving the recipe scene and selecting it
+  again, before building deletes the copies and requires a fresh preparation;
+  Undo after a build keeps them. See
+  [review controls](FILM_PLAN.md#native-and-mcp-review-controls). Video export of
+  review scenes remains unavailable. Complete runtime adoption
   and live/native acceptance remain open
   ([#64](https://github.com/scenario-labs/blender-plugin/issues/64),
   [#65](https://github.com/scenario-labs/blender-plugin/issues/65)).

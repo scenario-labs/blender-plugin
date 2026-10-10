@@ -566,8 +566,9 @@ adds no Scenario operation: it places a saved result's existing asset ID in the
 Render Video first-frame target, and the existing
 `generate.with_raw_response.run_model` dry run and submission send it like any
 other asset ID. That dry run resolves asset IDs but does not check which inputs
-may be combined, so the shared form preparation refuses inputs a model describes
-as mutually exclusive before any quote. This is local validation, not an SDK gap. There is no new Scenario API
+may be combined, so the shared form preparation refuses two file inputs whose
+descriptions say they can't be combined, before any quote. Settings described that
+way are not checked. This is local validation, not an SDK gap. There is no new Scenario API
 fallback or dependency change. See the [active upload contract](SDK_UPLOADS.md#active-reference-uploads)
 for destination trust, source limits and recovery. Form attachment captures
 scene, lane, model, input kind and slot; pending marked uploads block duplicate

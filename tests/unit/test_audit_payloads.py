@@ -744,3 +744,115 @@ def test_described_exclusivity_without_a_matching_sibling_is_high_finding(tmp_pa
     captured = ["model_bytedance-seedance-2-0", "model_minimax-h3"]
     assert audit.run(["--offline", "--cache", str(FIXTURES), "--models", *captured]) == 0
     assert "unparsed-exclusive-input" not in capsys.readouterr().out
+
+
+# Public wording of curated inputs, checked on 2026-10-10. The shared guard
+# (Schema.exclusive) pairs file inputs only, so these combinations are not refused
+# locally; the weekly HIGH gate must stay green while the report still names them.
+SETTING_EXCLUSIVE = {
+    "model_kling-like": [
+        {"name": "referenceVideo", "type": "file", "kind": "video", "label": "Reference Video"},
+        {
+            "name": "generateAudio",
+            "type": "boolean",
+            "label": "Generate Audio",
+            "default": False,
+            "description": "Generate native audio. Mutually exclusive with reference video.",
+        },
+    ],
+    "model_meshy-like": [
+        {
+            "name": "texturePrompt",
+            "type": "string",
+            "label": "Texture Prompt",
+            "default": "",
+            "description": "Optional text to guide texturing (max 600 characters). "
+            "Cannot be combined with Multi-View Texture Images.",
+        },
+        {
+            "name": "textureImages",
+            "type": "file_array",
+            "kind": "image",
+            "label": "Texture Reference Images",
+            "description": "Provide 1-4 images of the same object from different views. "
+            "Requires Texture enabled, and cannot be combined with Texture Prompt.",
+        },
+    ],
+    "model_tripo-like": [
+        {
+            "name": "prompt",
+            "type": "string",
+            "label": "Text Prompt",
+            "description": "Text description for texture generation. "
+            "Mutually exclusive with image prompt and multiview images.",
+        },
+        {
+            "name": "imagePrompt",
+            "type": "file",
+            "kind": "image",
+            "label": "Image Prompt",
+            "description": "Single image used as texture prompt. Mutually exclusive with text prompt.",
+        },
+    ],
+}
+
+
+def test_described_exclusivity_with_a_setting_is_med_not_high(tmp_path, capsys):
+    for model_id, inputs in SETTING_EXCLUSIVE.items():
+        (tmp_path / f"{model_id}.json").write_text(json.dumps({"id": model_id, "inputs": inputs}))
+    args = ["--offline", "--cache", str(tmp_path), "--models", *SETTING_EXCLUSIVE]
+    assert audit.run([*args, "--fail-on", "HIGH"]) == 0
+    report = capsys.readouterr().out
+    assert "unparsed-exclusive-input" not in report
+    assert "**HIGH**" not in report
+    findings = [line for line in report.splitlines() if "`unguarded-exclusive-setting`" in line]
+    assert all(line.startswith("- **MED** ") for line in findings)
+    assert any(
+        "setting 'generateAudio' (Generate Audio)" in line and "'referenceVideo'" in line
+        for line in findings
+    )
+    assert any(
+        "file 'textureImages' (Texture Reference Images)" in line and "'texturePrompt'" in line
+        for line in findings
+    )
+    # "Multi-View Texture Images" names no input label, so the setting side is unmapped.
+    assert any(
+        "setting 'texturePrompt' (Texture Prompt)" in line
+        and "'multi-view texture images', but no sibling input matches" in line
+        for line in findings
+    )
+    assert any(
+        "file 'imagePrompt' (Image Prompt)" in line and "'prompt'" in line for line in findings
+    )
+    assert any(
+        "setting 'prompt' (Text Prompt)" in line and "'imagePrompt'" in line for line in findings
+    )
+    assert audit.run([*args, "--fail-on", "MED"]) == 1
+    capsys.readouterr()
+
+
+def test_file_clause_naming_nothing_stays_high_even_when_another_clause_pairs(tmp_path, capsys):
+    inputs = [
+        {
+            "name": "image",
+            "type": "file",
+            "kind": "image",
+            "label": "First Frame",
+            "description": "Mutually exclusive with reference videos. "
+            "Cannot be combined with multi-anchor keyframes.",
+        },
+        {
+            "name": "referenceVideos",
+            "type": "file_array",
+            "kind": "video",
+            "label": "Reference Videos",
+        },
+    ]
+    (tmp_path / "model_two-clauses.json").write_text(
+        json.dumps({"id": "model_two-clauses", "inputs": inputs})
+    )
+    args = ["--offline", "--cache", str(tmp_path), "--models", "model_two-clauses"]
+    assert audit.run([*args, "--fail-on", "HIGH"]) == 1
+    report = capsys.readouterr().out
+    assert report.count("`unparsed-exclusive-input`") == 1
+    assert "multi-anchor keyframes" in report

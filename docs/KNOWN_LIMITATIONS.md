@@ -34,9 +34,8 @@ establish live generation or full render-lane desktop acceptance.
   reference videos aren't allowed together. Seedance 2.x, Minimax H3 and Wan 3.0
   state that limit only in input description text. Their first frame is now sent
   as image 1 of the reference images with the clip, and every shared quote path
-  refuses inputs a model describes as mutually exclusive. That rule reads
-  description wording, so differently worded limits are not caught; the payload
-  audit reports unrecognized ones. No successful paid Render Video job has used a
+  refuses a first frame sent with reference images or videos on these models
+  (see the input-exclusivity limits below). No successful paid Render Video job has used a
   first frame sent this way, so how closely the clip opens on that image is
   unverified. The native control is not implemented yet and the desktop undo
   step is unproven.
@@ -96,6 +95,26 @@ establish live generation or full render-lane desktop acceptance.
 - MCP Render Image/Video now share native form preparation, uploaded references,
   prompt decoration and exact approvals. Live provider and desktop acceptance
   remain open under #65/#68; scene captures require a GUI.
+- Input combinations are checked only where model descriptions state them. No
+  schema field marks inputs that cannot be sent together, and a free dry run
+  prices such a body. In every lane, the shared quote path refuses two file
+  inputs when one's description says it can't be combined with the other. On
+  2026-10-10 that matched 11 of 709 public models: first or last frames with
+  reference inputs on Seedance 2.5, 2.0 Fast and 2.0 Mini, Minimax H3 and Wan
+  3.0 (Video and Render Video lanes) and on the deprecated Seedance 2.0;
+  reference images with an input video on Gemini 3.1 Flash and Nano Banana 2.1
+  (Image lane); an image with a video on Wan 2.7 i2v, which no lane lists; and
+  audio references with an image reference on BytePlus Seed Audio 1.0 and its
+  multilingual version (Audio lane). Differently worded limits are not caught.
+  Settings and item counts stated only in text are not checked either, so those
+  limits are left to the service, for example: Kling V3 Omni's Generate Audio,
+  or its 4K mode, with a reference video, and more than 4 reference images with
+  a video; Luma Ray 3.2 Edit's guide frame with keyframes; Meshy's Texture
+  Prompt with texture reference images; Tripo v3.0 Texturing's text prompt with
+  its image prompt; Recraft V4 Styles' style ID with style reference images; and
+  Meshy Smart Topology's prompt with its image. Over the curated models, the
+  weekly payload audit fails only on a file input whose wording names no sibling
+  input; wording that involves a setting is listed at `MED` for review.
 - Reversible mesh and panoramic World application exist as explicit synchronous
   primitives. Full generation/history integration remains
   [#99](https://github.com/scenario-labs/blender-plugin/issues/99) and

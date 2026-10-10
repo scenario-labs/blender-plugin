@@ -585,8 +585,11 @@ before explicitly replacing a snapshot. A model change requires removing its
 old references first. `style_assets` replaces only unmarked style references;
 marked uploads require explicit removal. Optional scalar parameters accept null
 to disable them; invalid edits fail before changing the form. Final quotes still
-validate conditional and one-of schema requirements, and refuse inputs a model
-describes as mutually exclusive.
+validate conditional and one-of schema requirements, and refuse two file inputs
+whose descriptions say they can't be combined. That guard reads description
+wording and checks file inputs only: a setting described as exclusive, such as
+Kling V3 Omni's `generateAudio` with a reference video, is still sent (see
+[known limitations](KNOWN_LIMITATIONS.md#creation-and-scene-application)).
 
 Inspection returns only the enabled parameters used by the render lane. Its
 `parameters` object can be passed back to `configure`, including numeric choices

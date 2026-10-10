@@ -13,7 +13,7 @@ import pytest
 
 from scenario.core.api.sdk_adapter import Credentials, SDKAdapter
 from scenario.core.schema.forms import prepare_run, validate_parameters
-from scenario.core.schema.params import parse_schema, validate
+from scenario.core.schema.params import clause_inputs, exclusive_clauses, parse_schema, validate
 
 FIXTURES = Path(__file__).parents[1] / "fixtures/models"
 
@@ -563,3 +563,55 @@ def test_described_exclusive_inputs_fail_closed_before_dispatch():
     assert "image" not in sent
     assert (sent["referenceImages"], sent["referenceVideos"]) == (["frame"], ["clip"])
     assert quote.payload == sent
+
+
+def test_exclusivity_clauses_name_settings_but_only_file_pairs_are_guarded():
+    inputs = [
+        {"name": "referenceVideo", "type": "file", "kind": "video", "label": "Reference Video"},
+        {
+            "name": "referenceImages",
+            "type": "file_array",
+            "kind": "image",
+            "label": "Reference Images",
+        },
+        {
+            "name": "generateAudio",
+            "type": "boolean",
+            "label": "Generate Audio",
+            "default": False,
+            "description": "Generate native audio. Mutually exclusive with reference video.",
+        },
+    ]
+    parsed = parsed_inputs(inputs)
+    audio = parsed.by_name("generateAudio")
+    (clause,) = exclusive_clauses(audio.description)
+    assert [spec.name for spec in clause_inputs(audio, parsed.specs, clause)] == ["referenceVideo"]
+    # The guard pairs file inputs only: a setting is never refused, whatever its value.
+    assert parsed.exclusive == []
+    for generate_audio in (False, True):
+        body = {"referenceVideo": "clip", "generateAudio": generate_audio}
+        assert validate(parsed.specs, body, parsed.one_of, parsed.exclusive) == []
+
+
+def test_reference_fallback_names_file_inputs_only():
+    inputs = [
+        {
+            "name": "endImage",
+            "type": "file",
+            "kind": "image",
+            "label": "Last Frame",
+            "description": "Can't be combined with reference inputs.",
+        },
+        {
+            "name": "referenceImages",
+            "type": "file_array",
+            "kind": "image",
+            "label": "Reference Images",
+        },
+        {"name": "referenceStrength", "type": "number", "label": "Strength"},
+    ]
+    parsed = parsed_inputs(inputs)
+    end = parsed.by_name("endImage")
+    (clause,) = exclusive_clauses(end.description)
+    assert [spec.name for spec in clause_inputs(end, parsed.specs, clause)] == ["referenceImages"]
+    assert parsed.exclusive == [("endImage", "referenceImages")]

@@ -84,11 +84,14 @@ def _is_conditional(description):
 # say so in their description: Seedance 2.x "Mutually exclusive with reference
 # images/videos.", Minimax H3 and Wan 3.0 "Can't be combined with reference images,
 # videos, or audio." The service quotes such a body and accepts the job, which then
-# fails. This narrow rule reads file-input descriptions only. After a marker, the
-# clause names a sibling file input when every word of its label (its server name
-# when unlabelled) appears in it: "a first or last frame" names First Frame and Last
-# Frame. A clause that names none but mentions references ("reference inputs") names
-# the siblings whose server names start with "reference". Either side is enough.
+# fails. This narrow rule pairs file inputs only and reads file-input descriptions
+# only. After a marker, the clause names a sibling input when every word of its label
+# (its server name when unlabelled) appears in it: "a first or last frame" names First
+# Frame and Last Frame. A clause that names no file input but mentions references
+# ("reference inputs") names the file inputs whose server names start with
+# "reference". Either side is enough. A setting on either side is not guarded (Kling
+# V3 Omni Generate Audio: "Mutually exclusive with reference video."), and wording
+# that names no sibling maps to nothing; tools/audit_payloads.py reports both.
 EXCLUSIVE_MARKERS = (
     "mutually exclusive with",
     "can't be combined with",
@@ -116,17 +119,31 @@ def _words(text):
     }
 
 
+def clause_inputs(spec, specs, clause):
+    """The sibling inputs, files and settings alike, that one exclusivity clause names."""
+    words = _words(clause)
+    others = [other for other in specs if other is not spec]
+    named = [other for other in others if set() < _words(other.label) <= words]
+    if not any(other.is_file for other in named) and "reference" in words:
+        named += [
+            other
+            for other in others
+            if other.is_file and other.name.lower().startswith("reference")
+        ]
+    return named
+
+
 def _exclusive_pairs(specs):
-    files = [spec for spec in specs if spec.is_file]
     pairs = set()
-    for spec in files:
+    for spec in specs:
+        if not spec.is_file:
+            continue
         for clause in exclusive_clauses(spec.description):
-            words = _words(clause)
-            others = [other for other in files if other is not spec]
-            named = [other for other in others if set() < _words(other.label) <= words]
-            if not named and "reference" in words:
-                named = [other for other in others if other.name.lower().startswith("reference")]
-            pairs.update(tuple(sorted((spec.name, other.name))) for other in named)
+            pairs.update(
+                tuple(sorted((spec.name, other.name)))
+                for other in clause_inputs(spec, specs, clause)
+                if other.is_file
+            )
     return sorted(pairs)
 
 

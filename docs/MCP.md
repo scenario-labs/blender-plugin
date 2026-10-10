@@ -678,6 +678,21 @@ selected credential-bound store. All cloud rows expose empty `local_files`; use
 and explicit result preparation/approval. Matching is refreshed even when the
 cloud page was loaded before a local remote-job acknowledgement.
 
+Each row's `cu_cost` is the job's `billing.cuCost` plus its `cuCostDetails`
+add-ons, such as quality-gate fees. Workflow runs appear as `kind=workflow`
+rows whose own charge is normally 0; their `cu_cost` adds the charges of the
+step jobs named by the run's flow or by each step's `workflowJobId`. Steps
+missing from the page are read on the history worker, at most 24 per page,
+whole runs with the fewest missing steps first, then once more for the steps of
+nested runs within the same limit. If any step cannot be read or priced, the
+finished run reports `cu_cost: null` and `cost_unavailable: true` instead of 0;
+a running workflow reports no cost yet. A row whose own billing is malformed
+reports the same, while the other rows keep their costs.
+Step rows keep their own cost and name their run in `workflow_job_id`. A run's
+non-null `cu_cost` already includes them, so do not add them again; while the
+run is running or its cost is unavailable, no total includes them yet. Workflow
+rows cannot use `recover_cloud_job`.
+
 `job_status`, `wait_for_job` and the old `import_result` lookup prefer a matching
 scoped record to an old unscoped cache. `import_result` rejects direct application
 of both saved jobs and prototype cache entries. Ambiguous remote IDs require a
@@ -811,6 +826,28 @@ with `dry_run="true"` in the query. It returns the original `parameters`, the
 normalized `payload` including defaults, and `cu_cost_exact`. Review that payload
 and price. `run_workflow` requires its `quote_id`, the same workflow and original
 parameters, and that exact decimal string as `approved_cost`.
+
+Both tools also return `loop_steps`, `quote_may_understate` and `cost_warning`.
+`loop_steps` counts loop nodes in the retrieved workflow definition: nodes of
+type `for-each` and any node that carries a ForEach field (`loopBodyNodeIds`,
+`count`, `loopNodeId` or `iterationIndex`). It is 0 only when every node has a
+known non-loop type, or when the flow is empty and the record says
+`hasFlow: false`. It is `null`, with the warning, when the flow is missing or
+malformed; when it is an empty flow, unless the record says `hasFlow: false`;
+when it contains a nested `workflow` step or any node carrying a `workflowId`,
+whose definition the quote does not read; or when a node's type is missing, not
+a string or not a known type. The SDK documents `hasFlow` as present even when
+`flow` is not, so an empty list alone does not prove the workflow is empty.
+Known non-loop types are those of the SDK 2.2.0 `WorkflowFlow.type` other than
+`for-each` and `workflow`, plus the `user-selection` type seen in live workflow
+jobs. The server's dry run prices one pass through a loop, so a run that
+iterates more often can be charged more than `cu_cost_exact`. Show the warning
+with the price. It never blocks approval.
+
+`job_status` keeps reporting the approved quote as `cu_cost_exact`, not the
+final charge. For a saved workflow job it also returns the same three fields.
+The saved record does not keep the loop count, so after a restart `loop_steps`
+is `null` and `quote_may_understate` is true.
 
 Approval is bound to the current scene revision, file, credential and project.
 It is consumed before local persistence and the single paid dispatch. A timeout

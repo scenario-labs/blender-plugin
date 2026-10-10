@@ -290,3 +290,80 @@ class WorkflowControlTests(unittest.TestCase):
         finally:
             for scene in scenes:
                 bpy.data.scenes.remove(scene)
+
+    def generate_labels(self, layout):
+        return [
+            call.kwargs.get("text")
+            for call in layout.row.return_value.operator.call_args_list
+            if call.args and call.args[0] == "scenario.generate_workflow"
+        ]
+
+    def test_loop_price_shows_lower_bound_and_warning_without_blocking(self):
+        layout = MagicMock()
+        view = self.price()
+        self.ui.draw(layout, bpy.context)
+        self.assertEqual(self.generate_labels(layout), ["Generate (0.1234567890123456789 CU)"])
+        self.assertFalse(view.cost_warning)
+        self.fixture.workflow["flow"] = [
+            {"id": "loop", "type": "for-each", "loopBodyNodeIds": ["node-a"]},
+            {"id": "node-a", "type": "custom-model"},
+        ]
+        view = self.wait(self.owner.start(self.scene, "price"))
+        self.assertIn("covers one loop pass", view.cost_warning)
+        layout = MagicMock()
+        before = self.ui.signature(self.form)
+        self.ui.draw(layout, bpy.context)
+        self.assertEqual(self.ui.signature(self.form), before)
+        self.assertEqual(self.generate_labels(layout), ["Generate (from 0.1234567890123456789 CU)"])
+        warnings = [
+            call.kwargs
+            for call in layout.label.call_args_list
+            if call.kwargs.get("icon") in {"ERROR", "BLANK1"}
+        ]
+        self.assertEqual(warnings[0]["icon"], "ERROR")
+        self.assertIn("loop", " ".join(item["text"] for item in warnings))
+        operator = SimpleNamespace(report=MagicMock(), layout=MagicMock())
+        context = SimpleNamespace(
+            scene=self.scene,
+            window_manager=SimpleNamespace(
+                invoke_props_dialog=MagicMock(return_value={"RUNNING_MODAL"})
+            ),
+        )
+        cls = self.ui.SCENARIO_OT_generate_workflow
+        self.assertEqual(cls.invoke(operator, context, None), {"RUNNING_MODAL"})
+        cls.draw(operator, context)
+        labels = [call.kwargs.get("text") for call in operator.layout.label.call_args_list]
+        self.assertIn("Exact price: 0.1234567890123456789 CU", labels)
+        self.assertIn("one loop pass", " ".join(text or "" for text in labels))
+        self.assertEqual(cls.execute(operator, context), {"FINISHED"})
+        self.fixture.settle()
+        self.assertEqual(len(self.fixture.paid), 1)
+        # The session result row keeps the approved quote as a lower bound.
+        (result,) = self.fixture.runtime.state.model_jobs.views.values()
+        self.assertEqual(self.result_costs(result), ["from 0.123 CU"])
+
+    def result_costs(self, record):
+        layout = MagicMock()
+        submodule("blender.panels").draw_result(layout, record)
+        header = layout.box.return_value.row.return_value
+        return [
+            call.kwargs["text"]
+            for call in header.label.call_args_list
+            if call.kwargs.get("text", "").endswith("CU")
+        ]
+
+    def test_session_workflow_cost_is_a_lower_bound_unless_proven_loop_free(self):
+        records = submodule("core.jobs.records")
+        for meta, expected in (
+            ({"workflow_loop_steps": 0}, "0.5 CU"),
+            ({"workflow_loop_steps": 2}, "from 0.5 CU"),
+            # Recovered saved jobs do not record the definition's loop count.
+            ({}, "from 0.5 CU"),
+        ):
+            with self.subTest(meta=meta):
+                record = records.JobRecord.new("workflow", "workflow", "fixture", {}, meta=meta)
+                record.cu_cost = 0.5
+                self.assertEqual(self.result_costs(record), [expected])
+        model = records.JobRecord.new("image", "image", "fixture", {}, meta={})
+        model.cu_cost = 0.5
+        self.assertEqual(self.result_costs(model), ["0.5 CU"])

@@ -101,6 +101,8 @@ class Estimate:
     response_json: bytes = field(repr=False)
     scope: object = field(repr=False)
     issued_at: float = field(repr=False)
+    # Loop nodes in a quoted workflow definition; None when coverage is unknown.
+    loop_steps: int | None = 0
 
     @property
     def payload(self):
@@ -109,6 +111,54 @@ class Estimate:
     @property
     def details(self):
         return _json(self.response_json, exact=True)
+
+
+# SDK 2.2.0 WorkflowFlow.type values that neither loop nor nest a workflow, plus
+# user-selection, observed in live workflow job flows but not in that type.
+NON_LOOP_NODE_TYPES = frozenset(
+    {
+        "custom-model",
+        "generate-prompt",
+        "list",
+        "logic",
+        "model",
+        "remove-background",
+        "transform",
+        "user-approval",
+        "user-selection",
+    }
+)
+# WorkflowFlow fields that only ForEach nodes and their iteration copies carry.
+LOOP_NODE_FIELDS = ("loopBodyNodeIds", "count", "loopNodeId", "iterationIndex")
+
+
+def workflow_loop_steps(workflow):
+    """Count loop nodes in a retrieved workflow definition, or None if unknown.
+
+    The server's workflow dry run prices one pass through a loop, so a run that
+    iterates more often can charge more than its quote. A node is a loop when
+    its type is `for-each` or it carries any ForEach field. The result is 0 only
+    when every node is proven not to loop. Coverage is unknown for a missing or
+    malformed flow; an empty flow, unless the record says `hasFlow: false` (the
+    SDK documents `hasFlow` as present even when `flow` is not); a nested
+    workflow step, or any node carrying a `workflowId`, whose definition is not
+    read; or a node whose type is missing, malformed or not a known non-loop type.
+    """
+    flow = workflow.get("flow") if isinstance(workflow, dict) else None
+    if not isinstance(flow, list) or (not flow and workflow.get("hasFlow") is not False):
+        return None
+    loops = 0
+    for node in flow:
+        if not isinstance(node, dict):
+            return None
+        kind = node.get("type")
+        if not isinstance(kind, str) or (kind != "for-each" and kind not in NON_LOOP_NODE_TYPES):
+            return None  # Includes workflow and any renamed or new node type.
+        if "workflowId" in node:
+            return None  # The SDK names it for workflow tasks; its flow is not read.
+        if kind == "for-each" or any(name in node for name in LOOP_NODE_FIELDS):
+            loops += 1
+    return loops
 
 
 def _reject_constant(value):
@@ -765,7 +815,7 @@ class SDKAdapter:
         if fields is None:
             fields = workflow.get("inputs")
         target, payload = _prepare(identifier, fields, parameters)
-        return self._estimate("workflow", target, payload)
+        return self._estimate("workflow", target, payload, loop_steps=workflow_loop_steps(workflow))
 
     def estimate_prompt(self, parameters):
         """Quote a bounded Prompt Spark request through the public SDK method.
@@ -839,7 +889,7 @@ class SDKAdapter:
             raise ValueError("Unsupported generation operation")
         return self._request(method, identifier, body=payload, **options)
 
-    def _estimate(self, operation, identifier, payload):
+    def _estimate(self, operation, identifier, payload, *, loop_steps=0):
         try:
             payload_json = json.dumps(payload, ensure_ascii=False, allow_nan=False).encode()
         except (TypeError, ValueError):
@@ -860,6 +910,7 @@ class SDKAdapter:
             raw,
             self._scope,
             time.monotonic(),
+            loop_steps,
         )
         with self._estimate_lock:
             self._estimates[id(estimate)] = estimate

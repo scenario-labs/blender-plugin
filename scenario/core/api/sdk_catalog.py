@@ -21,6 +21,10 @@ from .sdk_adapter import (
     model_identifiers,
 )
 
+# Step jobs read per history page to price workflow runs whose steps are not
+# listed on that page. Unread steps leave the run's cost unavailable, never 0.
+WORKFLOW_STEP_READS = 24
+
 
 class SDKCatalog:
     """One application catalog context, independent of the view that requested it.
@@ -190,10 +194,30 @@ class SDKCatalog:
         return rows, records
 
     def history_page(self, token=None):
-        """Read one cloud page and bounded prompt previews on this connection."""
+        """Read one cloud page, bounded prompt previews and workflow steps.
+
+        Finished workflow runs name their step jobs; steps missing from this
+        page are read with `jobs.retrieve` and returned as `related_jobs`,
+        which price runs but are not history rows. A second pass reads the
+        missing steps of nested runs the first pass found. Both passes share
+        WORKFLOW_STEP_READS and never retry an identifier.
+        """
         with self._read() as adapter:
             page = adapter.job_page(pagination_token=token)
             rows = page["jobs"]
+            related, attempted = [], []
+            for _ in range(2):
+                for identifier in history.missing_workflow_steps(
+                    [*rows, *related],
+                    limit=WORKFLOW_STEP_READS - len(attempted),
+                    attempted=attempted,
+                ):
+                    attempted.append(identifier)
+                    try:
+                        related.append(adapter.job(identifier))
+                    except (AdapterError, ValueError):
+                        continue  # An unread step leaves its run's cost unavailable.
+            page["related_jobs"] = related
             texts = {}
             for identifier in history.prompt_asset_ids(rows)[:30]:
                 try:

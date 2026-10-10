@@ -103,6 +103,7 @@ def on_history_event(payload):
                 manager.registry.all(),
                 kinds=_kinds(),
                 shared_records=saved_records(),
+                related=payload.get("related", ()),
             )
         except ScenarioError:
             error = "Could not inspect saved jobs; preserve storage for recovery"

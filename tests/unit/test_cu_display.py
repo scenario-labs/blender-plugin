@@ -35,3 +35,26 @@ from scenario.core.ui.costs import format_cu
 def test_web_generation_indicator_format(value, expected):
     assert format_cu(value) == expected
     assert format_cu(Decimal(str(value))) == expected
+
+
+@pytest.mark.parametrize(
+    ("loop_steps", "flagged", "phrase"),
+    [
+        (0, False, None),
+        (1, True, "covers one loop pass"),
+        (3, True, "covers one loop pass"),
+        (None, True, "could not be checked"),
+    ],
+)
+def test_workflow_quote_notice_flags_loops_without_blocking(loop_steps, flagged, phrase):
+    from scenario.core.ui.costs import workflow_loop_warning, workflow_quote_notice
+
+    notice = workflow_quote_notice(loop_steps)
+    assert notice["loop_steps"] == loop_steps
+    assert notice["quote_may_understate"] is flagged
+    warning = workflow_loop_warning(loop_steps)
+    assert notice["cost_warning"] == warning
+    if flagged:
+        assert phrase in warning and "charge can be higher" in warning
+    else:
+        assert warning is None

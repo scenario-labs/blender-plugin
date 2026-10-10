@@ -11,6 +11,7 @@ import pytest
 from scenario.core.api.errors import ScenarioError
 from scenario.core.api.sdk_adapter import AdapterError, Credentials, SDKAdapter
 from scenario.core.jobs.manager import JobManager
+from scenario.core.jobs.store import JobScope
 from tests.unit.test_sdk_catalog import catalog
 
 
@@ -204,5 +205,135 @@ def test_offline_history_never_sends():
     try:
         with pytest.raises(ScenarioError, match="Online"):
             context.history_page()
+    finally:
+        context.close()
+
+
+def workflow_row(identifier, steps):
+    return {
+        "jobId": identifier,
+        "jobType": "workflow",
+        "status": "success",
+        "billing": {"cuCost": 0, "cuDiscount": 0},
+        "metadata": {
+            "input": {},
+            "flow": [
+                {"id": f"n{i}", "type": "custom-model", "jobId": s} for i, s in enumerate(steps)
+            ],
+        },
+    }
+
+
+def read_history(listed, readable):
+    """One history page with the given listed rows; other jobs read from `readable`."""
+    calls = []
+
+    def respond(request):
+        calls.append(request)
+        assert request.method == "GET"
+        if request.url.path == "/v1/jobs":
+            return httpx.Response(200, json={"jobs": listed})
+        identifier = request.url.path.rsplit("/", 1)[1]
+        if identifier not in readable:
+            return httpx.Response(404, json={"message": "private detail"})
+        return httpx.Response(200, json={"job": readable[identifier]})
+
+    scope = JobScope("https://api.cloud.scenario.com/v1", "local-key-fixture", "selected-project")
+    context, _ = catalog(respond, scope=scope)
+    try:
+        page = context.history_page()
+    finally:
+        context.close()
+    assert all(r.url.params.get("projectId") == "selected-project" for r in calls)
+    return page, [r.url.path.rsplit("/", 1)[1] for r in calls[1:]]
+
+
+def priced(identifier):
+    return {**job(identifier), "status": "success", "billing": {"cuCost": 1, "cuDiscount": 0}}
+
+
+def test_history_page_reads_missing_workflow_steps_with_a_bound():
+    from scenario.core import history
+    from scenario.core.api import sdk_catalog
+
+    # Listed first, a loop needing more reads than the cap must not starve the pair.
+    large = [f"job-large-{i}" for i in range(sdk_catalog.WORKFLOW_STEP_READS + 3)]
+    present = {**job(large[0], "listed"), "metadata": {"workflowJobId": "job-large"}}
+    listed = [
+        present,
+        workflow_row("job-large", large),
+        workflow_row("job-pair", ["job-p0", "job-gone"]),
+        workflow_row("job-single", ["job-s0"]),
+    ]
+    readable = {s: priced(s) for s in [*large, "job-p0", "job-s0"]}
+    page, reads = read_history(listed, readable)
+    assert reads == ["job-s0", "job-p0", "job-gone"]
+    assert [row["jobId"] for row in page["related_jobs"]] == ["job-s0", "job-p0"]
+    assert [row["jobId"] for row in page["jobs"]] == [row["jobId"] for row in listed]
+    entries = {
+        e.job_id: e
+        for e in history.entries_from_jobs(page["jobs"], [], related=page["related_jobs"])
+    }
+    assert entries["job-single"].cu_cost == 1.0
+    assert entries["job-pair"].cost_unavailable and entries["job-large"].cost_unavailable
+
+
+def test_nested_workflow_steps_get_one_more_discovery_pass_within_the_cap():
+    from scenario.core import history
+    from scenario.core.api import sdk_catalog
+
+    readable = {
+        "job-inner": workflow_row("job-inner", ["job-a", "job-b"]),
+        "job-a": priced("job-a"),
+        "job-b": priced("job-b"),
+        "job-deep": workflow_row("job-deep", ["job-deeper"]),
+        "job-deeper": workflow_row("job-deeper", ["job-c"]),
+        "job-c": priced("job-c"),
+    }
+    listed = [workflow_row("job-outer", ["job-inner"]), workflow_row("job-top", ["job-deep"])]
+    page, reads = read_history(listed, readable)
+    # The first pass reads the nested runs, the second their steps; there is no third.
+    assert reads == ["job-inner", "job-deep", "job-deeper", "job-a", "job-b"]
+    entries = {
+        e.job_id: e
+        for e in history.entries_from_jobs(page["jobs"], [], related=page["related_jobs"])
+    }
+    assert entries["job-outer"].cu_cost == 2.0 and not entries["job-outer"].cost_unavailable
+    assert entries["job-top"].cu_cost is None and entries["job-top"].cost_unavailable
+    # Both passes share one cap: a nested run whose steps no longer fit gets no reads.
+    cap = sdk_catalog.WORKFLOW_STEP_READS
+    steps = [f"job-n{i}" for i in range(cap)]
+    readable = {"job-inner": workflow_row("job-inner", steps), **{s: priced(s) for s in steps}}
+    _, reads = read_history([workflow_row("job-outer", ["job-inner"])], readable)
+    assert reads == ["job-inner"]
+    readable["job-inner"] = workflow_row("job-inner", steps[:-1])
+    page, reads = read_history([workflow_row("job-outer", ["job-inner"])], readable)
+    assert reads == ["job-inner", *steps[:-1]] and len(reads) == cap
+    [entry] = history.entries_from_jobs(page["jobs"], [], related=page["related_jobs"])
+    assert entry.cu_cost == cap - 1
+
+
+def test_worker_delivers_related_workflow_steps_with_the_page():
+    run = {
+        "jobId": "job-run",
+        "jobType": "workflow",
+        "status": "success",
+        "metadata": {"flow": [{"id": "n", "type": "custom-model", "jobId": "job-step"}]},
+    }
+
+    def respond(request):
+        if request.url.path == "/v1/jobs":
+            return httpx.Response(200, json={"jobs": [run]})
+        return httpx.Response(200, json={"job": job("job-step")})
+
+    context, _ = catalog(respond)
+    manager = JobManager(None, None)
+    try:
+        manager.fetch_history(context, "request")
+        manager.join(5)
+        [(name, payload)] = manager.drain_catalog()
+        assert name == "history"
+        assert payload["jobs"] == [run]
+        assert payload["related"] == [job("job-step")]
     finally:
         context.close()

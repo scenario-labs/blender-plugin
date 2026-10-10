@@ -118,7 +118,11 @@ class JobManager:
         payload = {"catalog": catalog, "key": key, "cursor": token, "append": append}
         try:
             page = catalog.history_page(token)
-            payload.update(jobs=page["jobs"], token=page.get("nextPaginationToken"))
+            payload.update(
+                jobs=page["jobs"],
+                token=page.get("nextPaginationToken"),
+                related=page.get("related_jobs", []),
+            )
         except ScenarioError as err:
             payload["error"] = err.reason
         except Exception:

@@ -17,6 +17,7 @@ from ..core.api.errors import ScenarioError
 from ..core.jobs.records import JobRecord
 from ..core.jobs.store import JobOrigin, JobState, LocalApplicationState, StoredJob, _identity
 from ..core.scene.panorama import WORLD_MEDIA_TYPES
+from ..core.ui.costs import workflow_quote_notice
 from .job_session import (
     ImageResultUncertain,
     MaterialResultUncertain,
@@ -316,7 +317,12 @@ class ModelJobs:
         ):
             raise ScenarioError(0, "Approve the unchanged workflow and exact price while online")
         ticket.used = True
-        return self._submit_quote(ticket.quote, lane="workflow", kind="workflow")
+        return self._submit_quote(
+            ticket.quote,
+            lane="workflow",
+            kind="workflow",
+            meta={"workflow_loop_steps": estimate.loop_steps},
+        )
 
     def discard_workflow_quote(self, quote_id):
         ticket = self.require_quote(quote_id)
@@ -1223,7 +1229,14 @@ class ModelJobs:
         if len(matches) != 1:
             return None
         record = matches[0]
+        view = self.views.get(record.intent.request_id)
+        notice = {}
+        if record.intent.operation == "workflow":
+            # The saved intent keeps the approved quote, not the loop count; a
+            # count this session did not record is unknown coverage.
+            notice = workflow_quote_notice(view.meta.get("workflow_loop_steps") if view else None)
         return {
+            **notice,
             "local_id": record.intent.request_id,
             "job_id": record.remote_job_id,
             "status": record.state.value,
